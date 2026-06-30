@@ -10,6 +10,15 @@ relying on individual engineers' experience.
 > **Scope: V1.** Drawing-content reading and 3D Variation Analysis (VSA) are explicitly **out of
 > scope** for V1 and tracked for V2.
 
+## Documentation
+
+Full design docs live in [`docs/`](docs/README.md) (Mermaid diagrams render natively on GitHub):
+
+- [01 · System Architecture · 系统架构图](docs/01-architecture.md)
+- [02 · End-to-End Flow · 端到端流程图](docs/02-end-to-end-flow.md)
+- [03 · Differentiation · 差异化对比](docs/03-differentiation.md)
+- [04 · Feature Breakdown · 功能分解](docs/04-feature-breakdown.md)
+
 ---
 
 ## Why an Agent (not Excel, not a generic LLM)
