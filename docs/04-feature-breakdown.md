@@ -1,7 +1,7 @@
 # Feature Breakdown (V1) · 功能分解
 
 > 层级结构：**Epic → Feature → User Story → Task**，附 Risk / Issue 提示。
-> Feature 编号 (F1–F7) 与 [GitHub Milestones](https://github.com/XUMAX-GH/AI-TVA-Analysis-Agent/milestones) 及 Issues 一一对应。
+> Feature 编号 (F1–F7) 与 [GitHub Milestones](https://github.com/MS-AI-in-Product-Making/AI-TVA-Analysis-Agent/milestones) 及 Issues 一一对应。
 
 ## Epic
 
