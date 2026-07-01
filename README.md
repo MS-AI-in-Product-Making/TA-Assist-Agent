@@ -18,20 +18,45 @@ Full design docs live in [`docs/`](docs/README.md) (Mermaid diagrams render nati
 - [02 · End-to-End Flow · 端到端流程图](docs/02-end-to-end-flow.md)
 - [03 · Differentiation · 差异化对比](docs/03-differentiation.md)
 - [04 · Feature Breakdown · 功能分解](docs/04-feature-breakdown.md)
+- [05 · Design Decisions · 设计决策 (D1–D6)](docs/05-design-decisions.md)
+
+---
+
+## Positioning
+
+**Objective evidence provider + verifiable decision support** — not a black-box adviser.
+Every statement is tagged **FACT** (computed) / **RULE** (threshold check) → asserted, or
+**SIGNAL** (needs engineering judgment) / **OPTION** (parallel path) → flagged only. Options are
+presented in parallel and **not ranked**; the final judgment stays with the engineer. When evidence
+is insufficient (e.g. the assembly datum face), the agent **stops and asks** instead of guessing
+(fail-closed).
 
 ---
 
 ## Why an Agent (not Excel, not a generic LLM)
 
-| Dimension | Traditional TA Excel | Generic LLM | **Dedicated TA Agent** |
-|---|---|---|---|
-| Data cleansing | Manual, error-prone | No basis | Missing-field check + per-category spec/distribution validation |
-| Method choice | By experience | Unconstrained | Rule-based recommendation; **both WC & RSS computed** |
-| Calculation | Reliable formulas | Often wrong / non-reproducible | Reuses the **same Excel engine** |
-| Interpretation basis | Personal experience | No rules / knowledge base | TA-expert role + fixed **5-section output** |
-| Result | Hard to standardize | One-off, unstructured | Structured, standardized, reproducible |
-| Multi-sheet | Page-by-page manual | Serial, uncontrolled | Parallel acceleration (review still per-page) |
-| Positioning | Calculation tool | One-off helper | Standardized interpretation + decision assistant |
+Ordered by value priority (P0 highest). See [full table](docs/03-differentiation.md).
+
+| Priority · Stage | Dimension | Traditional TA Excel | Generic LLM | **Dedicated TA Agent** |
+|---|---|---|---|---|
+| **P0 · Cleansing** | Data cleansing | Manual, error-prone | No basis | Missing-field check + per-category **Capability Library** (tolerance band / process capability / distribution) validation |
+| **P1 · What-if** | Decision support | Manual re-runs | Cannot compute | What-if + **Spec reverse-solver** (2–3 parallel options, **over-capability warning**) + mean-centering |
+| **P2 · Engine** | Calculation | Reliable formulas | Often wrong / non-reproducible | Reuses the **same Excel engine** |
+| **P3 · Interpret** | Interpretation | Personal experience | No rules / knowledge base | TA-expert role, fixed **5-section** output — **objective, judgment left to user** |
+| **P4 · Parse** | Multi-sheet | Page-by-page manual | Serial, uncontrolled | Parallel acceleration (review still per-page) |
+| **P5 · Method** | Method choice | By experience | Unconstrained | Rule-based reference; **both WC & RSS computed** |
+| Global | Result | Hard to standardize | One-off, unstructured | Structured, standardized, traceable |
+| Global | Basis | Engineer's experience | None | Rules + curated **knowledge base**, every claim cited |
+
+---
+
+## Knowledge Base (3 classes — the foundation, F0)
+
+1. **Classified Capability Library** — reasonable tolerance band + process capability (**source-tiered** T1 measured/PPAP → T3 empirical → T0 no-data) + recommended distribution.
+2. **Engineering Rules Library** — CTS = 6σ / CTF = 4σ / Cpk ≥ 1.33 (distribution factors are engine constants, not stored here).
+3. **Terminology / Ontology Library** — part-category vocabulary / subsystem (ME·PCBA·Glass) / datum.
+
+Human-curated with source / confidence / coverage. T0 (no data) is marked "capability unknown, confirm with supplier" — never asserted feasible.
 
 ---
 
@@ -66,20 +91,21 @@ matches the template exactly.
 
 | Feature | Summary |
 |---|---|
+| **F0 Knowledge base** | 3-class library: Classified Capability Library (source-tiered) / Engineering Rules / Terminology·Ontology |
 | **F1 Report parsing & asset prep** | Auto-detect TA worksheets; parallel processing; factor-table parse (E14:T26); extract Loop screenshot |
-| **F2 Data cleansing** | Missing required-field check; per-category spec & distribution validation; two correction paths |
+| **F2 Data cleansing** | Missing required-field check; per-category Capability Library & distribution validation; two correction paths |
 | **F3 Method recommendation** | Factor count + CTS/CTF; `<4`→WC, `4–10`→RSS, `>10`→refer to DM; both WC & RSS computed |
 | **F4 Calculation engine** | Excel-consistent per-factor / system / capability; sample regression |
-| **F5 Standardized interpretation** | TA-expert role, fixed 5-section output (see below) |
-| **F6 What-if & centering analysis** | Quantify tighten-impact on Cpk; zero-cost mean-centering gains |
-| **F7 Output report** | Consolidated interpretation report incl. Loop image |
+| **F5 Standardized interpretation** | TA-expert role, fixed 5-section output — **objective (FACT/RULE/SIGNAL/OPTION)**; clarification card when uncertain |
+| **F6 What-if / Spec reverse-solve / centering** | Quantify tighten-impact on Cpk; 2–3 reverse-solve options (over-capability warning); zero-cost mean-centering |
+| **F7 Output report** | Consolidated report incl. Loop image; **read-only evidence pane** (no need to reopen Excel) |
 
-### F5 — Fixed 5-section interpretation
-1. **Loop validity** — closed loop? same datum chain? add/subtract direction correct?
+### F5 — Fixed 5-section interpretation (objective; judgment left to user)
+1. **Loop validity** — closed loop? same datum chain? **assembly datum face / stack start** clear? (if uncertain → clarification card)
 2. **Capability vs Spec** — RSS σ / Cpk (`<1` FAIL · `1–1.33` risk · `≥1.33` PASS); spec window `<6σ` physically infeasible?
 3. **Top contributors** — ranked by % contribution; Top 2–3 with cause (large tol / mid-stack amplification / direct single-direction effect)
-4. **Structural risk** — cross-domain datum chain (ME/PCBA/Glass); non-geometric variables (switch travel, foam/adhesive); over-long stack (`>10`)
-5. **Decision** — A keep design / B adjust spec / C optimize capability; CTF allows spec↔yield trade-off, CTS forbids loosening spec; one-line summary
+4. **Structural risk (SIGNAL, flag only)** — cross-domain datum chain (ME/PCBA/Glass); non-geometric variables (switch travel, foam/adhesive); over-long stack (`>10`)
+5. **Options (OPTION, not ranked)** — A keep design / B adjust spec / C optimize capability, each with quantified consequence; CTF allows spec↔yield trade-off, CTS forbids loosening spec; one-line **FACT** summary (no recommended action)
 
 ---
 
