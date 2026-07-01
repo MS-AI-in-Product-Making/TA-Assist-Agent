@@ -28,15 +28,18 @@ flowchart TD
     H2 --> I
     I --> J["能力分析<br/>Cp · Cpk · Z · DPM · Yield"]
     J --> K{"目标判定<br/>Cpk≥1.33 / σ达标?"}
-    K -->|"PASS"| L["模式 3：标准化解读 (F5)"]
-    K -->|"FAIL"| L
-    L --> M1["① Loop 合理性<br/>闭环/datum/方向"]
+    K -->|"PASS"| CC{"不确定项?<br/>装配基准面 / 跨体系归属"}
+    K -->|"FAIL"| CC
+    CC -->|"有歧义 → 确认卡"| CQ["⚠ 停下询问用户<br/>确认后依赖结论解锁 (Fail-closed)"]
+    CQ --> L
+    CC -->|"证据充分"| L["模式 3：客观呈现 5 段式 (F5)"]
+    L --> M1["① Loop 合理性<br/>闭环 / datum / 装配基准面"]
     L --> M2["② 能力 vs Spec<br/>Cpk 判定 · 6σ 可行性"]
     L --> M3["③ Top 贡献者<br/>排序 + 原因"]
-    L --> M4["④ 结构级风险<br/>跨体系/非几何/长stack"]
-    L --> M5["⑤ 决策建议<br/>A保持/B调Spec/C优化 · CTS/CTF"]
-    L --> M6["What-if 敏感度 + 均值居中 (F6)<br/>收紧件→Cpk变化 · nominal居中收益"]
-    M1 & M2 & M3 & M4 & M5 & M6 --> N["结构化 TA 解读报告 + Loop 图 (F7)<br/>可复现 · 可执行工程决策"]
+    L --> M4["④ 结构级风险 (SIGNAL)<br/>跨体系 / 非几何 / 长stack · 只标注"]
+    L --> M5["⑤ 可选路径 (OPTION)<br/>A保持 / B调Spec / C优化 · 不排序·判断留用户"]
+    L --> M6["What-if / Spec反解 / 居中 (F6)<br/>反解 2-3 方案 · 超制程可达→红色预警"]
+    M1 & M2 & M3 & M4 & M5 & M6 --> N["结构化 TA 解读报告 + Loop 图 (F7)<br/>逐条可溯源 · 可复现"]
     H3 --> N
     classDef start fill:#e3f2fd,stroke:#1565c0,color:#0d47a1
     classDef proc fill:#e8f5e9,stroke:#2e7d32,color:#1b5e20
@@ -45,10 +48,10 @@ flowchart TD
     classDef v2 fill:#fffde7,stroke:#f9a825,color:#f57f17
     classDef done fill:#c8e6c9,stroke:#2e7d32,color:#1b5e20
     class A,B,C start
-    class A2,D,E,E2,G,K dec
+    class A2,D,E,E2,G,K,CC dec
     class A1 proc
     class F,H1,H2,I,J,L,M1,M2,M3,M4,M5,M6,E3a,E3b proc
-    class E1 warn
+    class E1,CQ warn
     class H3 v2
     class N done
 ```
@@ -58,12 +61,14 @@ flowchart TD
 | 节点 | 判定 | 分支 |
 |---|---|---|
 | Worksheet 确认 | 哪些页需解读 | 用户确认 / 兜底人工选择 |
-| 数据清洗一致性 | 必填项 + 分类规范库匹配 | 一致 → 继续；不一致 → 标记差异 |
+| 数据清洗一致性 | 必填项 + 分类公差能力库匹配 | 一致 → 继续；不一致 → 标记差异（库内/库外有据）|
 | 差异处理 | 由谁修正 | 用户改 Excel / Agent 改数据重算 |
 | 方法推荐 | factor 数量 | `<4` WC · `4–10` RSS · `>10` 转 DM |
 | 目标判定 | Cpk≥1.33 / σ 达标 | PASS / FAIL 均进入解读 |
+| 不确定项确认 | 装配基准面 / 跨体系归属有歧义 | 停下弹确认卡，确认后依赖结论解锁（Fail-closed）|
 
 > 多页报告可**并行加速处理**，但审核仍逐页人工把关。
+> 解读只陈述 `FACT`/`RULE`，`SIGNAL`/`OPTION` 平行呈现、不排序——**判断留用户**。
 
 ---
-**相关文档：** [系统架构图](01-architecture.md) · [差异化对比](03-differentiation.md) · [功能分解](04-feature-breakdown.md)
+**相关文档：** [系统架构图](01-architecture.md) · [差异化对比](03-differentiation.md) · [功能分解](04-feature-breakdown.md) · [设计决策](05-design-decisions.md)

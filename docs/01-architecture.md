@@ -22,9 +22,10 @@ flowchart TB
         P2["图片抽取器<br/>单独导出 Loop 截图"]
         P3["知识库加载器<br/>Part_Sub Required Dims"]
     end
-    subgraph KB["④ 知识库 / 参考源"]
-        KBA["按零件分类公差规格知识库<br/>(当前为 example，待拓展)<br/>标称 / 公差 / σ 范围 / 分布"]
-        KBB["规则库<br/>CTS=6σ · CTF=4σ · Cpk≥1.33"]
+    subgraph KB["④ 知识库 / 参考源 (3 类 · 受控策展)"]
+        KBA["库1 分类公差能力库<br/>合理公差带 + 制程能力(来源分级 T0-T3) + 推荐分布"]
+        KBB["库2 工程规则库<br/>CTS=6σ · CTF=4σ · Cpk≥1.33"]
+        KBC["库3 术语/本体库<br/>零件分类 · 子系统(ME/PCBA/Glass) · datum"]
     end
     subgraph ENG["⑤ 核心计算引擎 (1D · 与 Excel 公式严格一致)"]
         E0["仅校验用户填写项<br/>标称 / 公差 / σ / 分布"]
@@ -34,10 +35,10 @@ flowchart TB
         E0 --> E1 --> E2 --> E3
     end
     subgraph MODE["⑥ 输出模式（对齐 F2 / F3 / F5 · F6）"]
-        M1["提示 · 数据清洗 (F2)<br/>①必填项缺失校验<br/>②对照分类规范库: 公差范围 + 分布合理性"]
+        M1["提示 · 数据清洗 (F2)<br/>①必填项缺失校验<br/>②对照库1: 公差范围+分布, 标注库内/库外有据"]
         M2["分配 · 方法推荐 (F3)<br/>按 factor 数推荐目标公差参考<br/>WC / RSS 均计算并解读"]
-        M3["解读 · 标准化 5 段式 (F5)<br/>①Loop合理性 ②能力vsSpec ③Top贡献者<br/>④结构级风险 ⑤决策 A/B/C"]
-        M4["增值 · What-if & 居中 (F6)<br/>收紧件→Cpk 变化 · nominal 居中收益"]
+        M3["解读 · 客观呈现 5 段式 (F5)<br/>FACT/RULE 断言 · SIGNAL/OPTION 呈现<br/>不确定→确认卡(装配基准面) · 判断留用户"]
+        M4["增值 · What-if / Spec反解 / 居中 (F6)<br/>反解 2-3 并列方案 · 超制程可达→红色预警"]
     end
     subgraph OUT["⑦ 输出层 (F7)"]
         O1["审核确认提示<br/>差异高亮"]
@@ -52,6 +53,8 @@ flowchart TB
     KBA -.-> M1
     KBB -.-> M2
     KBB -.-> M3
+    KBC -.-> M3
+    KBA -.-> M4
     M1 --> O1
     M2 --> O2
     M3 --> O3
@@ -68,7 +71,7 @@ flowchart TB
     class S1 sel
     class S2 warn
     class P1,P2,P3 ext
-    class KBA,KBB kb
+    class KBA,KBB,KBC kb
     class E0,E1,E2,E3 eng
     class M1,M2,M3,M4 mode
     class O1,O2,O3 out
@@ -81,12 +84,12 @@ flowchart TB
 | ① 输入层 | 接收用户上传的 `.xlsx` | 可能含多个 TA worksheet |
 | ② Worksheet 选择确认 | 自动识别含 TA 内容的页，提示用户确认 | 兜底人工选择 |
 | ③ 解析 / 抽取层 | 读取 factor 表、抽取 Loop 截图、加载知识库 | factor 表区域 `E14:T26` |
-| ④ 知识库 / 参考源 | 按零件分类规范库 + 规则库 | 规范库当前为 example，待拓展 |
+| ④ 知识库 / 参考源 | 库1 分类公差能力库 + 库2 工程规则库 + 库3 术语/本体库 | 人工策展；条目带来源分级/置信度；覆盖率公开 |
 | ⑤ 核心计算引擎 | 1D 计算，**与 Excel 公式严格一致** | 仅校验用户填写项，自动量不重算 |
-| ⑥ 输出模式 | F2 清洗 / F3 方法推荐 / F5 解读 / F6 增值 | 对齐功能分解 |
-| ⑦ 输出层 | 审核提示 / 方法建议 / 结构化解读报告 | 含 Loop 图，可复现可执行 |
+| ⑥ 输出模式 | F2 清洗 / F3 方法推荐 / F5 客观解读 / F6 增值反解 | 解读只陈述证据，判断留用户；不确定弹确认卡 |
+| ⑦ 输出层 | 审核提示 / 方法建议 / 结构化解读报告 | 含 Loop 图，逐条可溯源，可复现 |
 
-> **V2 规划（本期不做）：** 图纸信息读取 → 三方一致性比对（用户值 ⇄ 图纸 ⇄ 知识库）。
+> **V2 规划（本期不做）：** 图纸信息读取 → 三方一致性比对（用户值 ⇄ 图纸 ⇄ 知识库）；知识库闭环反馈（实测 Cpk 回灌库1）。
 
 ---
-**相关文档：** [端到端流程图](02-end-to-end-flow.md) · [差异化对比](03-differentiation.md) · [功能分解](04-feature-breakdown.md)
+**相关文档：** [端到端流程图](02-end-to-end-flow.md) · [差异化对比](03-differentiation.md) · [功能分解](04-feature-breakdown.md) · [设计决策](05-design-decisions.md)

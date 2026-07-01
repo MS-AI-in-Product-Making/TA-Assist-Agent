@@ -8,6 +8,7 @@ Surface T/VA Analysis Agent (V1) 的设计文档集。所有图表使用 Mermaid
 | 02 | [端到端流程图 · End-to-End Flow](02-end-to-end-flow.md) | 上传 → 清洗 → 方法推荐 → 解读 → 输出 的运行时流程 |
 | 03 | [差异化对比 · Differentiation](03-differentiation.md) | 传统 Excel vs 通用 LLM vs 专用 Agent |
 | 04 | [功能分解 · Feature Breakdown](04-feature-breakdown.md) | Epic → Feature → Story → Task（对应 Milestones / Issues）|
+| 05 | [设计决策 · Design Decisions](05-design-decisions.md) | 知识库3类 · 解读客观化 · 确认卡 · Spec反解 · 只读证据区 |
 
 ## 约定
 
