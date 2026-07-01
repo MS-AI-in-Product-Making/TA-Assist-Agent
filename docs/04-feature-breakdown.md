@@ -1,7 +1,7 @@
 # Feature Breakdown (V1) · 功能分解
 
 > 层级结构：**Epic → Feature → User Story → Task**，附 Risk / Issue 提示。
-> Feature 编号 (F1–F7) 与 [GitHub Milestones](https://github.com/MS-AI-in-Product-Making/AI-TVA-Analysis-Agent/milestones) 及 Issues 一一对应。
+> Feature 编号 (F0–F7) 与 [GitHub Milestones](https://github.com/MS-AI-in-Product-Making/AI-TVA-Analysis-Agent/milestones) 及 Issues 一一对应。
 
 ## Epic
 
@@ -10,6 +10,17 @@
 > 战略 / 项目级——把"算 + 经验解读"靠人的 TA，升级为有规则 + 分类规范库支撑、多页高效处理、可给出可执行工程决策的智能助手。
 
 ---
+
+## F0 · 知识库（3 类库 · 整个差异化的地基）
+
+> 人工策展，带来源 / 置信度 / 覆盖率。详见 [设计决策 D1](05-design-decisions.md)。
+
+| 类型 | 内容 |
+|---|---|
+| 📘 Story | **分类公差能力库**（Tier 0 地基）— 合理公差带 + 制程能力（来源分级 T1 实测·PPAP → T3 经验 → T0 无数据标"未知"）+ 推荐分布 |
+| 📘 Story | **工程规则库** — CTS=6σ / CTF=4σ / Cpk≥1.33；分布因子=引擎常量，不入库 |
+| 📘 Story | **术语·本体库** — 零件分类词表 / 子系统 (ME·PCBA·Glass·Display) / datum；供 F5 跨体系识别，查不到→确认项 |
+| ⚠ Risk | 库缺失或过期 → 标注覆盖率；Tier0 不断言可行性（Fail-closed）|
 
 ## F1 · 报告解析与素材准备
 
@@ -62,6 +73,8 @@
 | 🔧 Task | 跨体系识别（查库3本体）· 非几何变量标记 · 长 stack 预警 |
 | 📘 Story | **⑤ 可选路径（OPTION，不排序）** — 平行列出 A 保持设计 / B 调整 Spec / C 优化 Capability 及各自量化后果；CTF 允许 spec↔yield trade-off，CTS 禁止放宽只能优化 design/process；结尾一句话**事实**总结 |
 | 🔧 Task | 三路径量化 · CTS/CTF 规则约束 · 事实总结（不给推荐动作）|
+| 📘 Story | **⑥ 确认卡 / 假设登记（Fail-closed）** — 证据不足时不猜，就**装配基准面/堆叠起点**弹确认卡（给候选），局部阻断依赖结论；跨体系归属查库3查不到→确认项 |
+| 🔧 Task | 假设登记表 + 置信度闸门 · 装配基准面确认卡 · 局部阻断 |
 | ⚠ Risk | 解读幻觉 → 断言标签制 + 强制引用规则/数据来源 + 不确定弹确认卡（Fail-closed）|
 
 ## F6 · What-if 敏感度 / Spec 反解 / 居中分析（高价值决策）
@@ -81,6 +94,8 @@
 |---|---|
 | 📘 Story | 含 Loop 图的完整解读报告 |
 | 🔧 Task | 整合输出 |
+| 📘 Story | **只读证据区**（D6）— 上传后无需再开 Excel；左栏原表只读还原 + Loop 图，右栏 Agent 每条结论引用可见行、点击联动高亮，源数据绝不静默改写 |
+| 🔧 Task | 原表只读渲染 · Loop 图嵌入 · 结论↔单元格引用联动 |
 
 ---
 **相关文档：** [系统架构图](01-architecture.md) · [端到端流程图](02-end-to-end-flow.md) · [差异化对比](03-differentiation.md) · [设计决策](05-design-decisions.md)
