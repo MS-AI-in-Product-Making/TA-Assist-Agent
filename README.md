@@ -14,11 +14,11 @@ relying on individual engineers' experience.
 
 Full design docs live in [`docs/`](docs/README.md) (Mermaid diagrams render natively on GitHub):
 
-- [01 · System Architecture · 系统架构图](docs/01-architecture.md)
-- [02 · End-to-End Flow · 端到端流程图](docs/02-end-to-end-flow.md)
-- [03 · Differentiation · 差异化对比](docs/03-differentiation.md)
-- [04 · Feature Breakdown · 功能分解](docs/04-feature-breakdown.md)
-- [05 · Design Decisions · 设计决策 (D1–D6)](docs/05-design-decisions.md)
+- [01 · System Architecture](docs/01-architecture.md)
+- [02 · End-to-End Flow](docs/02-end-to-end-flow.md)
+- [03 · Differentiation](docs/03-differentiation.md)
+- [04 · Feature Breakdown](docs/04-feature-breakdown.md)
+- [05 · Design Decisions (D1–D6)](docs/05-design-decisions.md)
 
 ---
 

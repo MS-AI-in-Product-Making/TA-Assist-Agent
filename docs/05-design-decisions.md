@@ -1,156 +1,156 @@
-# Design Decisions (V1) · 关键设计决策
+# Design Decisions (V1)
 
-> 本文件记录 V1 的核心设计取舍，是架构图 / 流程图 / 功能分解的"为什么"层。
-> 立场：**确定性、可验证、可审计优先；客观呈现证据，判断权留给用户；不确定就停下来问，绝不编造。**
+> This document records the core design trade-offs of V1 — the "why" layer behind the architecture / flow / feature breakdown.
+> Positioning: **determinism, verifiability, auditability first; present evidence objectively, leave judgment to the user; stop and ask when uncertain, never fabricate.**
 
 ---
 
-## D1 · 知识库设计（3 类 + 来源分级）
+## D1 · Knowledge Base Design (3 classes + source tiers)
 
-差异化押在知识库上，因此**它的完备度与诚实度直接决定项目成败**。V1 收敛为 **3 类受控库**（人工策展，非自动学习）。
+The differentiation is bet on the knowledge base, so **its completeness and honesty directly decide the project's success**. V1 converges to **3 controlled libraries** (human-curated, not auto-learned).
 
-### 库 1 · 分类公差能力库
+### Lib 1 · Classified Capability Library
 
-按零件分类，每条目包含三个维度：
+By part category, each entry has three dimensions:
 
-| 维度 | 回答的问题 | 来源 |
+| Dimension | Question answered | Source |
 |---|---|---|
-| 合理公差带 | 用户填的公差**合不合常理**（设计侧规范）| 标准 / 历史图纸 / 工程经验 |
-| 制程能力（带来源分级）| 这个公差**现实做得到吗**（制造侧现实）| 实测 / PPAP / 供应商声明 |
-| 推荐分布 | 该类特征**该用什么分布**（防止默认 Normal 算错 σ）| 工艺特性归纳 |
+| Reasonable tolerance band | Is the user-filled tolerance **sensible** (design-side norm)? | Standards / historical drawings / engineering experience |
+| Process capability (source-tiered) | Is this tolerance **actually achievable** (manufacturing-side reality)? | Measured / PPAP / supplier statement |
+| Recommended distribution | Which distribution should this **feature class use** (prevents wrong σ from defaulting to Normal)? | Process-characteristic induction |
 
-> **合并说明：** 原"制程能力库"与"分类公差规范库"形式重复，在此合并为一类；"推荐分布"也按零件分类，故并为同表一列，不再单列。
+> **Merge note:** The former "process capability library" and "classified tolerance spec library" were structurally duplicated and are merged into one class here; "recommended distribution" is also per part category, so it becomes a column in the same table rather than a separate library.
 
-**来源分级（解决"实测数据常常没有"）：**
+**Source tiers (solve "measured data is often missing"):**
 
-| 分级 | 数据来源 | 反解 / 清洗行为 |
+| Tier | Data source | Reverse-solve / cleansing behavior |
 |---|---|---|
-| Tier 1 | 实测 / PPAP | 直接断言可行性 |
-| Tier 2 | 供应商声明 / 历史项目 | 断言 + 标"待复核" |
-| Tier 3 | 工程经验 / 标准估算 | 默认兜底值 |
-| **Tier 0** | **无数据** | **不断言可行性，标"制程能力未知，需与供应商确认"** |
+| Tier 1 | Measured / PPAP | Assert feasibility directly |
+| Tier 2 | Supplier statement / historical project | Assert + mark "to be reviewed" |
+| Tier 3 | Engineering experience / standard estimate | Default fallback value |
+| **Tier 0** | **No data** | **Do not assert feasibility, mark "process capability unknown, confirm with supplier"** |
 
-**为什么：** 现实里 Tier 1 经常缺失。分级让系统**优雅降级**——有数据严谨、无数据诚实标"未知"，而非瞎猜（fail-closed）。
+**Why:** In reality Tier 1 is often missing. Tiering lets the system **degrade gracefully** — rigorous when data exists, honestly marked "unknown" when it does not, rather than guessing (fail-closed).
 
-### 库 2 · 工程规则库
+### Lib 2 · Engineering Rules Library
 
-CTS = 6σ · CTF = 4σ · 默认目标 Cpk ≥ 1.33 等标准。变化极慢、权威，需**版本锁定 + 变更日志**。
+Standards such as CTS = 6σ · CTF = 4σ · default target Cpk ≥ 1.33. They change very slowly and are authoritative, so they need **version locking + change log**.
 
-### 库 3 · 术语 / 本体库（受控字典）
+### Lib 3 · Terminology / Ontology Library (controlled dictionary)
 
-一本"受控字典"，**防止模型自造词、乱归类**。三张查找表：
+A "controlled dictionary" that **prevents the model from inventing terms or misclassifying**. Three lookup tables:
 
-1. **零件分类词表**：固定类别清单（housing / bracket / screw / foam / adhesive / switch / glass / PCBA…）→ 校验 `part category`、给库 1 当索引键。
-2. **子系统 / 体系词表**：给每个件打体系标签（ME / PCBA / Glass / Display…）→ **"跨体系风险"识别的前提**。
-3. **datum / 基准词表**：基准面命名约定。
+1. **Part-category vocabulary**: a fixed category list (housing / bracket / screw / foam / adhesive / switch / glass / PCBA…) → validate `part category`, serve as index key for Lib 1.
+2. **Subsystem vocabulary**: tag each part with a subsystem (ME / PCBA / Glass / Display…) → **the prerequisite for "cross-subsystem risk" detection**.
+3. **datum vocabulary**: datum-face naming conventions.
 
-**怎么建：** 不用 AI——从现有 TA 模板已出现的 part name 抽取，整理成扁平清单，每件标体系。就是 lookup table，新件出现再补。
+**How to build:** No AI — extract from part names already present in the existing TA template, organize into a flat list, tag each part with its subsystem. It is just a lookup table; extend when new parts appear.
 
-**为什么：** 没有它，"跨体系""分类匹配"都无从谈起——模型不知道 Glass 与 bracket 分属不同体系。它是让另外两库和结构风险判断**能对上号的索引层**。
+**Why:** Without it, "cross-subsystem" and "category matching" are meaningless — the model would not know Glass and bracket belong to different subsystems. It is the index layer that lets the other two libraries and the structural-risk judgment **line up**.
 
-### 维护原则
+### Maintenance Principles
 
-- 人工策展，不自动学习（同"经验沉淀"被否的理由——错误固化风险）。
-- 每条目带 **来源 / 置信度 / 生效版本**；清洗结论才能标"库内有据 / 库外无据"。
-- 单一 owner + 变更日志 + **覆盖率指标**公开（如"库 1 覆盖 6/20 类高频件"）。
-- 分布因子常数（Normal=1 / Uniform=1.732 / …）为**引擎内置常量**，不属知识库。
-- **闭环反馈（实测 Cpk 回灌库 1）移至 V2。**
+- Human-curated, not auto-learned (same reason "experience distillation" was rejected — the risk of ossifying errors).
+- Every entry carries **source / confidence / effective version**; only then can a cleansing conclusion be flagged "in-library evidenced / out-of-library".
+- Single owner + change log + **coverage metric** published (e.g. "Lib 1 covers 6/20 high-frequency part classes").
+- Distribution factor constants (Normal=1 / Uniform=1.732 / …) are **engine built-in constants**, not part of the knowledge base.
+- **Closed-loop feedback (feeding measured Cpk back into Lib 1) is moved to V2.**
 
 ---
 
-## D2 · 解读客观化：陈述证据，判断留用户
+## D2 · Objective Interpretation: State Evidence, Leave Judgment to the User
 
-**不给引导性建议**，只断言可被计算 / 规则证明的部分。机制 = **每句话打"断言类型"标签**：
+**No prescriptive advice** — assert only what can be proven by calculation / rules. Mechanism = **tag every statement with an "assertion type"**:
 
-| 标签 | 含义 | 能否断言 |
+| Tag | Meaning | Can assert? |
 |---|---|---|
-| `FACT` | 纯计算结果（Cpk=0.74、A 贡献 62%）| ✅ 直接陈述 |
-| `RULE` | 与阈值的客观对照（0.74 < 1.33）| ✅ 直接陈述 |
-| `SIGNAL` | 需工程判断的信号 | ⚠ 只标"值得注意"，不定性 |
-| `OPTION` | 可选路径 + 各自量化后果 | 📊 平行列出，不排序、不推荐 |
+| `FACT` | Pure computed result (Cpk=0.74, A contributes 62%) | ✅ State directly |
+| `RULE` | Objective comparison to a threshold (0.74 < 1.33) | ✅ State directly |
+| `SIGNAL` | A signal needing engineering judgment | ⚠ Only flag "worth noting", no conclusion |
+| `OPTION` | Alternative path + its quantified consequence | 📊 Presented in parallel, not ranked, not recommended |
 
-**改写示例：** 把"建议收紧 A 件" → 改成 **"A 件贡献 62%；若其公差 ×0.5，Cpk 由 0.74→1.05（计算所得）"**。陈述因果与数字，动作留用户。结尾一句话是**事实总结**，非建议。
+**Rewrite example:** Change "recommend tightening part A" → **"Part A contributes 62%; if its tolerance ×0.5, Cpk goes 0.74→1.05 (computed)"**. State the causality and numbers, leave the action to the user. The closing one-liner is a **factual summary**, not advice.
 
-**好处：** 无 ground truth 的"判断"被移出系统；验证集只需校验 `FACT` / `RULE`，天然可回归。
-
----
-
-## D3 · SIGNAL 清单（只标注、不自动定性）
-
-**跨体系**（尺寸链跨不同工程体系，公差习惯 / 热膨胀 / 装配方式不同）：
-
-- ME 结构件 ↔ PCBA（板厚、元件高度）
-- ME ↔ Glass / 盖板（玻璃切割、贴合）
-- ME ↔ Display 模组
-- 金属件 ↔ 塑胶件（CTE 热膨胀系数差异大）
-- 硬质件 ↔ 软质件（foam / adhesive / gasket）
-
-**非几何变量**（含物理行为，不能当刚体线性叠加）：
-
-- switch / 按键行程与压缩量
-- foam / 泡棉压缩率（非线性、受压变化）
-- adhesive / 胶层厚度（固化收缩、压合变形）
-- gasket / 密封圈压缩
-- 螺丝扭矩导致的预压 / 形变
-- 热膨胀（温度相关，非装配态）
-- 弹性件 / 卡扣装配变形
+**Benefit:** "Judgments" without ground truth are removed from the system; the validation set only needs to check `FACT` / `RULE`, naturally regressable.
 
 ---
 
-## D4 · 幻觉治理：不确定就停下来确认（Fail-closed）
+## D3 · SIGNAL List (flag only, no automatic conclusion)
 
-**原则：宁可问，不可编。** 真正的不确定不是基准"方向"，而是**装配基准面 / 堆叠起点**——模型能读数字，却无法从表格得知实物从哪个面开始堆叠、哪个面贴合哪个面（该信息在图纸 / 3D 中，V1 已排除）。
+**Cross-subsystem** (the dimension chain crosses different engineering subsystems with different tolerance habits / thermal expansion / assembly methods):
 
-机制 = **假设登记表 + 置信度闸门**：
+- ME structural part ↔ PCBA (board thickness, component height)
+- ME ↔ Glass / cover (glass cutting, lamination)
+- ME ↔ Display module
+- Metal part ↔ plastic part (large CTE difference)
+- Hard part ↔ soft part (foam / adhesive / gasket)
 
-1. 每个"非纯计算"的推断（装配基准面、loop 是否闭环、跨体系归属）必须能从输入取到证据才可断言。
-2. 证据缺失 / 有歧义 → **不猜**，弹**定向确认卡**并给候选：
-   > ⚠ 需你确认：本尺寸链的**装配基准面**是 A 件的哪个面？（决定堆叠起点，无法从表格判断）
-3. **局部阻断**：已确认部分照常分析，依赖该假设的结论挂起，不带病下算。
-4. 所有假设集中列出，用户确认 / 更正后再出终稿。
+**Non-geometric variables** (involve physical behavior, cannot be linearly stacked as rigid bodies):
 
-> **跨体系归属**：判断某件属于哪个体系（ME/PCBA/Glass…），由库 3 子系统词表判定；**查不到 → 也变确认项**。
+- switch / button travel and compression
+- foam compression ratio (non-linear, changes under load)
+- adhesive layer thickness (cure shrinkage, press deformation)
+- gasket compression
+- preload / deformation from screw torque
+- thermal expansion (temperature-dependent, not the assembly state)
+- elastic part / snap-fit assembly deformation
 
 ---
 
-## D5 · Spec 反解算器（2–3 并列方案 + 超规格预警）
+## D4 · Hallucination Handling: Stop and Confirm When Uncertain (fail-closed)
 
-目标：达到 Cpk_target=1.33 所需总 σ，反推需消除的变差量，生成**并列**方案（不推荐、只对比）：
+**Principle: better to ask than to fabricate.** The real uncertainty is not the datum "direction" but the **assembly datum face / stack start** — the model can read numbers but cannot tell from the table which face the physical stack starts from or which face mates with which (that information lives in the drawing / 3D, excluded from V1).
 
-| 方案 | 策略 | 适用 |
+Mechanism = **assumption register + confidence gate**:
+
+1. Every "non-pure-calculation" inference (assembly datum face, whether the loop is closed, cross-subsystem attribution) may only be asserted if evidence can be obtained from the input.
+2. Evidence missing / ambiguous → **do not guess**, raise a **targeted clarification card** with candidates:
+   > ⚠ Need your confirmation: which face of part A is the **assembly datum face** of this dimension chain? (Determines the stack start; cannot be judged from the table.)
+3. **Local blocking**: confirmed parts are analyzed as usual, conclusions depending on that assumption are held, nothing is computed on a faulty basis.
+4. All assumptions are listed together; the final version is issued after the user confirms / corrects them.
+
+> **Cross-subsystem attribution**: deciding which subsystem a part belongs to (ME/PCBA/Glass…) is judged by the Lib 3 subsystem vocabulary; **not found → also becomes a confirmation item**.
+
+---
+
+## D5 · Spec Reverse-Solver (2-3 parallel options + over-spec warning)
+
+Goal: the total σ needed to reach Cpk_target=1.33, back-solve the variation to be eliminated, and generate **parallel** options (not recommended, only compared):
+
+| Option | Strategy | Applicability |
 |---|---|---|
-| Option A · 单点收紧 | 只收紧 Top-1 贡献件到达标 | 简单；超制程能力则标不可行 |
-| Option B · Top 2–3 组合收紧 | 按贡献比例分摊削减量 | 更现实、单件压力小 |
-| Option C · 居中 + 收紧 | 先零成本均值居中，再收紧剩余缺口 | 存在 nominal 偏置时最省 |
+| Option A · single-point tighten | Tighten only the Top-1 contributor to pass | Simple; if over process capability, flag infeasible |
+| Option B · Top 2-3 combined tighten | Share the reduction by contribution ratio | More realistic, less pressure per part |
+| Option C · center + tighten | Zero-cost mean-centering first, then tighten the remaining gap | Most economical when a nominal offset exists |
 
-每方案输出：各件新公差 → 达成 Cpk → **可行性标记（对照库 1 制程能力）** → 相对代价代理值。
+Each option outputs: new tolerance per part → resulting Cpk → **feasibility flag (vs Lib 1 process capability)** → relative cost proxy.
 
-**超规格预警（核心）：** 当反解出的公差比该类件制程可达值还紧 → **红色预警**，防止用户一味缩公差带：
+**Over-spec warning (core):** when the back-solved tolerance is tighter than the process-achievable value for that part class → **RED warning**, to stop the user from blindly shrinking the tolerance band:
 
-> ⚠ 目标公差 0.02 已低于该类件制程可达 0.05（Tier 2）——**制程上做不到，硬压会导致良率崩塌 / 成本剧增**。
+> ⚠ Target tolerance 0.02 is already below the process-achievable 0.05 for this part class (Tier 2) — **not achievable in process; forcing it will collapse yield / spike cost.**
 
-Tier 0（无能力数据）时标"可行性未知，需与供应商确认"。
-
----
-
-## D6 · 用户交互：只读证据区 + 所见即所据
-
-**用户上传后无需再打开 Excel。** 前提：把原始 TA 数据**原封不动、只读、忠实**呈现，让用户信眼睛而非黑盒。
-
-**布局：左证据 / 右对话**
-
-- **左栏（只读证据区）**：忠实还原 `Example_TA` factor 表——同值、同布局、同单位，**不可编辑**；下方紧贴抽取的 **Loop 截图**。是"复刻视图"，非重新录入。
-- **右栏（Agent 对话区）**：每条结论**引用左栏可见行 / 单元格**（"见第 3 行 A 件，%贡献 62%"）；点结论 → 左栏对应行高亮联动。
-
-**信任阶梯（三级）：** 看原始数据（信眼睛）→ 看 Agent 值与 Excel 一致（信引擎）→ 看解读逐条可溯源（信结论）。
-
-**只读保证 + 改数据两条路：** 源数据绝不被静默改写；要改时，用户改 Excel 重传 / Agent 提差异建议待批准。
+For Tier 0 (no capability data), mark "feasibility unknown, confirm with supplier".
 
 ---
 
-## 决策对功能优先级的影响
+## D6 · User Interaction: Read-Only Evidence Pane + What-You-See-Is-The-Basis
 
-价值主线由此确立：**P0 F2 数据清洗 → P1 F6 What-if/反解/居中 → P2 F4 引擎 → P3 F5 客观解读 → P4 F1 解析 → P5 F3 方法提示**。F5 从"给建议"转为"客观呈现 + 用户决策"。
+**No need to reopen Excel after upload.** Premise: present the original TA data **faithfully, read-only, unaltered**, so the user trusts their eyes rather than a black box.
+
+**Layout: evidence on the left / dialogue on the right**
+
+- **Left pane (read-only evidence)**: faithfully reproduce the `Example_TA` factor table — same values, same layout, same units, **not editable**; the extracted **Loop screenshot** directly below. It is a "replica view", not re-entry.
+- **Right pane (Agent dialogue)**: every conclusion **cites a visible row / cell in the left pane** ("see row 3, part A, %contribution 62%"); clicking a conclusion highlights the corresponding row on the left.
+
+**Trust ladder (three levels):** see the raw data (trust your eyes) → see the Agent values match Excel (trust the engine) → see each interpretation is traceable (trust the conclusion).
+
+**Read-only guarantee + two paths to change data:** source data is never silently overwritten; to change it, the user edits Excel and re-uploads / the Agent proposes a difference for approval.
 
 ---
-**相关文档：** [系统架构图](01-architecture.md) · [端到端流程图](02-end-to-end-flow.md) · [差异化对比](03-differentiation.md) · [功能分解](04-feature-breakdown.md)
+
+## Impact of Decisions on Feature Priority
+
+The value backbone is thus established: **P0 F2 data cleansing → P1 F6 What-if/reverse-solve/centering → P2 F4 engine → P3 F5 objective interpretation → P4 F1 parsing → P5 F3 method recommendation**. F5 shifts from "giving advice" to "objective presentation + user decision".
+
+---
+**Related docs:** [Architecture](01-architecture.md) · [End-to-End Flow](02-end-to-end-flow.md) · [Differentiation](03-differentiation.md) · [Feature Breakdown](04-feature-breakdown.md)

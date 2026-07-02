@@ -1,26 +1,26 @@
-# Differentiation · 差异化对比
+# Differentiation
 
-> 传统 TA Excel vs 通用 LLM vs 专用 TA Agent（本项目）。
-> 本 Agent 的价值不在"计算自动化"（引擎复用 Excel），而在**有据可依的证据呈现、自动清洗把关、把根因量化为可选方案——判断权留给用户**。
+> Traditional TA Excel vs generic LLM vs dedicated TA Agent (this project).
+> This Agent's value is not "calculation automation" (the engine reuses Excel), but **evidence-backed presentation, automated cleansing gatekeeping, and quantifying root causes into optional plans — with the judgment left to the user**.
 
-## Three-Way Comparison · 三方对比（按优先级 P0→P5，保留流程阶段）
+## Three-Way Comparison (by priority P0→P5, pipeline stage preserved)
 
-行按价值从高到低排序；`流程阶段` 列对应 [功能分解](04-feature-breakdown.md) 的 Feature，两种顺序同表可读。
+Rows are ordered by value from high to low; the `Stage` column maps to the Features in the [Feature Breakdown](04-feature-breakdown.md), so both orderings are readable in one table.
 
-| 优先级 | 流程阶段 | 维度 | 传统 TA Excel | 通用 LLM | 专用 TA Agent（本项目）|
+| Priority | Stage | Dimension | Traditional TA Excel | Generic LLM | Dedicated TA Agent (this project) |
 |:---:|:---:|---|---|---|---|
-| **P0** | F2 | 数据清洗 | 靠人工，易错 | 无依据，泛谈 | ①必填项缺失校验；②对照分类公差能力库判断公差范围 + 分布，标注"库内有据 / 库外无据" |
-| **P1** | F6 | What-if / Spec 反解 / 居中 | 手动试算，费时 | 无法可靠计算 | 量化"收紧 X→Cpk 变化"、Spec 反解 2–3 并列方案、居中收益；**超制程可达则红色预警**（防止一味缩公差带做不到）|
-| **P2** | F4 | 计算（信任基座）| 模板公式可靠 | 易算错 / 不复现 | 复用 Excel 同款引擎，一致可复现 |
-| **P3** | F5 | 解读（客观呈现）| 个人经验，难标准化 | 无规则 / 知识库，一次性 | 事实 + 阈值对照 + 贡献分解，**客观陈述、判断留用户**；不确定则停下确认，不编造 |
-| **P4** | F1 | 多页 / 素材处理 | 人工逐页串行 | 串行、不可控 | 自动识别 + 并行加速（审核仍逐页人工把关）|
-| **P5** | F3 | 方法选择 | 凭经验 | 通用建议无约束 | 按 factor 数规则化提示（WC / RSS 均计算）|
-| — | 全局 | 可规模化 | 弱（依赖人力）| 弱（不可信）| 强（标准 / 高效 / 可审计）|
-| — | 全局 | 定位 | 计算工具 | 一次性辅助 | **客观证据提供 + 可验证决策支持** |
+| **P0** | F2 | Data cleansing | Manual, error-prone | No basis, generic talk | 1 missing required-field check; 2 vs Classified Capability Library for tolerance range + distribution, flagged "in-library evidenced / out-of-library" |
+| **P1** | F6 | What-if / Spec reverse-solve / centering | Manual trial, time-consuming | Cannot compute reliably | Quantify "tighten X -> Cpk change", 2-3 parallel spec reverse-solve options, centering gains; **over-capability -> RED warning** (prevents blindly shrinking a tolerance band that cannot be made) |
+| **P2** | F4 | Calculation (trust foundation) | Template formulas reliable | Often miscalculates / non-reproducible | Reuses the same Excel engine, consistent and reproducible |
+| **P3** | F5 | Interpretation (objective presentation) | Personal experience, hard to standardize | No rules / knowledge base, one-off | Facts + threshold checks + contribution breakdown, **objectively stated, judgment left to user**; stops to confirm when uncertain, never fabricates |
+| **P4** | F1 | Multi-sheet / asset processing | Manual, page-by-page serial | Serial, uncontrolled | Auto-detect + parallel acceleration (review still per-page, human-gated) |
+| **P5** | F3 | Method choice | By experience | Generic advice, unconstrained | Rule-based reference by factor count (both WC / RSS computed) |
+| — | Global | Scalability | Weak (labor-dependent) | Weak (untrustworthy) | Strong (standardized / efficient / auditable) |
+| — | Global | Positioning | Calculation tool | One-off helper | **Objective evidence provider + verifiable decision support** |
 
-## One-Line Differentiation · 一句话差异化
+## One-Line Differentiation
 
-> Excel 只解决"算"、通用 LLM 是无依据的一次性工具；专用 Agent 在**可靠引擎之上叠加规则库 + 分类公差能力库**，给出**结构化、可复现、可审计**的证据与量化选项——**判断权交还用户**，不确定处停下确认。
+> Excel only solves "the math"; a generic LLM is an unfounded one-off tool. The dedicated Agent **layers a rules library + Classified Capability Library on top of a reliable engine**, delivering **structured, reproducible, auditable** evidence and quantified options — **the judgment is returned to the user**, and it stops to confirm wherever it is uncertain.
 
 ---
-**相关文档：** [系统架构图](01-architecture.md) · [端到端流程图](02-end-to-end-flow.md) · [功能分解](04-feature-breakdown.md) · [设计决策](05-design-decisions.md)
+**Related docs:** [Architecture](01-architecture.md) · [End-to-End Flow](02-end-to-end-flow.md) · [Feature Breakdown](04-feature-breakdown.md) · [Design Decisions](05-design-decisions.md)

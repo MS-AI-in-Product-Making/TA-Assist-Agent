@@ -1,49 +1,49 @@
-# System Architecture (V1) · 系统架构图
+# System Architecture (V1)
 
-> Surface T/VA Analysis Agent — V1 端到端系统架构。
-> 范围：不含图纸读取、不含 3D VA（见 V2 规划）。
+> Surface T/VA Analysis Agent — V1 end-to-end system architecture.
+> Scope: no drawing-content reading, no 3D VA (see V2 backlog).
 
 ## Architecture Diagram
 
 ```mermaid
 flowchart TB
-    subgraph IN["① 输入层"]
-        U["用户<br/>PD / DM / ID / DFx / Supplier"]
-        XLSX["T/VA 报告 .xlsx<br/>(可能含多个 TA worksheet)"]
+    subgraph IN["1 Input Layer"]
+        U["User<br/>PD / DM / ID / DFx / Supplier"]
+        XLSX["T/VA report .xlsx<br/>(may contain multiple TA worksheets)"]
         U --> XLSX
     end
-    subgraph SEL["② Worksheet 选择确认"]
-        S1["扫描所有 worksheet<br/>识别含 TA 内容的页"]
-        S2["⚠ 提示用户确认<br/>选择需 Agent 解读的 worksheet"]
+    subgraph SEL["2 Worksheet Selection & Confirmation"]
+        S1["Scan all worksheets<br/>detect sheets containing TA content"]
+        S2["Prompt user to confirm<br/>select worksheets for Agent interpretation"]
         S1 --> S2
     end
-    subgraph EXT["③ 解析 / 抽取层"]
-        P1["XLSX 解析器<br/>读取 factor 表 E14:T26"]
-        P2["图片抽取器<br/>单独导出 Loop 截图"]
-        P3["知识库加载器<br/>Part_Sub Required Dims"]
+    subgraph EXT["3 Parse / Extract Layer"]
+        P1["XLSX parser<br/>read factor table E14:T26"]
+        P2["Image extractor<br/>export the Loop screenshot separately"]
+        P3["Knowledge-base loader<br/>Part_Sub Required Dims"]
     end
-    subgraph KB["④ 知识库 / 参考源 (3 类 · 受控策展)"]
-        KBA["库1 分类公差能力库<br/>合理公差带 + 制程能力(来源分级 T0-T3) + 推荐分布"]
-        KBB["库2 工程规则库<br/>CTS=6σ · CTF=4σ · Cpk≥1.33"]
-        KBC["库3 术语/本体库<br/>零件分类 · 子系统(ME/PCBA/Glass) · datum"]
+    subgraph KB["4 Knowledge Base / References (3 classes, controlled curation)"]
+        KBA["Lib 1 Classified Capability Library<br/>reasonable tolerance band + process capability (source tiers T0-T3) + recommended distribution"]
+        KBB["Lib 2 Engineering Rules Library<br/>CTS=6-sigma · CTF=4-sigma · Cpk&ge;1.33"]
+        KBC["Lib 3 Terminology / Ontology Library<br/>part category · subsystem (ME/PCBA/Glass) · datum"]
     end
-    subgraph ENG["⑤ 核心计算引擎 (1D · 与 Excel 公式严格一致)"]
-        E0["仅校验用户填写项<br/>标称 / 公差 / σ / 分布"]
-        E1["表格自动计算<br/>Mean / Tol / 1σ / %贡献度"]
-        E2["系统级: RSS √ΣR² · Worst Case ΣQ"]
-        E3["能力分析: Cp / Cpk / Z / DPM / Yield"]
+    subgraph ENG["5 Core Calculation Engine (1D, strictly consistent with Excel formulas)"]
+        E0["Validate user-filled fields only<br/>nominal / tolerance / sigma / distribution"]
+        E1["Auto-computed table<br/>Mean / Tol / 1-sigma / % contribution"]
+        E2["System level: RSS sqrt(sum R^2) · Worst Case sum Q"]
+        E3["Capability: Cp / Cpk / Z / DPM / Yield"]
         E0 --> E1 --> E2 --> E3
     end
-    subgraph MODE["⑥ 输出模式（对齐 F2 / F3 / F5 · F6）"]
-        M1["提示 · 数据清洗 (F2)<br/>①必填项缺失校验<br/>②对照库1: 公差范围+分布, 标注库内/库外有据"]
-        M2["分配 · 方法推荐 (F3)<br/>按 factor 数推荐目标公差参考<br/>WC / RSS 均计算并解读"]
-        M3["解读 · 客观呈现 5 段式 (F5)<br/>FACT/RULE 断言 · SIGNAL/OPTION 呈现<br/>不确定→确认卡(装配基准面) · 判断留用户"]
-        M4["增值 · What-if / Spec反解 / 居中 (F6)<br/>反解 2-3 并列方案 · 超制程可达→红色预警"]
+    subgraph MODE["6 Output Modes (aligned with F2 / F3 / F5 · F6)"]
+        M1["Prompt · Data cleansing (F2)<br/>1 missing required-field check<br/>2 vs Lib 1: tolerance range + distribution, flag in-library / out-of-library (evidenced)"]
+        M2["Assign · Method recommendation (F3)<br/>recommend target-tolerance reference by factor count<br/>both WC / RSS computed and interpreted"]
+        M3["Interpret · Objective 5-section (F5)<br/>FACT/RULE asserted · SIGNAL/OPTION presented<br/>uncertain -&gt; clarification card (assembly datum face) · judgment left to user"]
+        M4["Value-add · What-if / Spec reverse-solve / centering (F6)<br/>2-3 parallel reverse-solve options · over-capability -&gt; RED warning"]
     end
-    subgraph OUT["⑦ 输出层 (F7)"]
-        O1["审核确认提示<br/>差异高亮"]
-        O2["方法建议 + 目标公差参考"]
-        O3["结构化 TA 解读报告 + Loop 图<br/>可复现 · 可执行工程决策"]
+    subgraph OUT["7 Output Layer (F7)"]
+        O1["Review-confirmation prompt<br/>difference highlighting"]
+        O2["Method recommendation + target-tolerance reference"]
+        O3["Structured TA interpretation report + Loop image<br/>reproducible · actionable engineering decisions"]
     end
     IN --> SEL --> EXT
     EXT --> ENG
@@ -77,19 +77,19 @@ flowchart TB
     class O1,O2,O3 out
 ```
 
-## Layer Notes · 分层说明
+## Layer Notes
 
-| 层 | 职责 | 关键点 |
+| Layer | Responsibility | Key points |
 |---|---|---|
-| ① 输入层 | 接收用户上传的 `.xlsx` | 可能含多个 TA worksheet |
-| ② Worksheet 选择确认 | 自动识别含 TA 内容的页，提示用户确认 | 兜底人工选择 |
-| ③ 解析 / 抽取层 | 读取 factor 表、抽取 Loop 截图、加载知识库 | factor 表区域 `E14:T26` |
-| ④ 知识库 / 参考源 | 库1 分类公差能力库 + 库2 工程规则库 + 库3 术语/本体库 | 人工策展；条目带来源分级/置信度；覆盖率公开 |
-| ⑤ 核心计算引擎 | 1D 计算，**与 Excel 公式严格一致** | 仅校验用户填写项，自动量不重算 |
-| ⑥ 输出模式 | F2 清洗 / F3 方法推荐 / F5 客观解读 / F6 增值反解 | 解读只陈述证据，判断留用户；不确定弹确认卡 |
-| ⑦ 输出层 | 审核提示 / 方法建议 / 结构化解读报告 | 含 Loop 图，逐条可溯源，可复现 |
+| 1 Input | Receive the user-uploaded `.xlsx` | May contain multiple TA worksheets |
+| 2 Worksheet selection | Auto-detect sheets with TA content, ask user to confirm | Manual fallback selection |
+| 3 Parse / Extract | Read factor table, extract Loop screenshot, load knowledge base | Factor table region `E14:T26` |
+| 4 Knowledge base | Lib 1 Classified Capability Library + Lib 2 Engineering Rules Library + Lib 3 Terminology / Ontology Library | Human-curated; entries carry source tier / confidence; coverage published |
+| 5 Core engine | 1D calculation, **strictly consistent with Excel formulas** | Validates user-filled fields only; auto-computed quantities not recomputed |
+| 6 Output modes | F2 cleansing / F3 method recommendation / F5 objective interpretation / F6 value-add reverse-solve | Interpretation only states evidence, judgment left to user; uncertain -> clarification card |
+| 7 Output | Review prompt / method recommendation / structured interpretation report | Includes Loop image, per-item traceable, reproducible |
 
-> **V2 规划（本期不做）：** 图纸信息读取 → 三方一致性比对（用户值 ⇄ 图纸 ⇄ 知识库）；知识库闭环反馈（实测 Cpk 回灌库1）。
+> **V2 backlog (out of scope this cycle):** Drawing-content reading -> three-way consistency check (user value ⇄ drawing ⇄ knowledge base); closed-loop knowledge-base feedback (feed measured Cpk back into Lib 1).
 
 ---
-**相关文档：** [端到端流程图](02-end-to-end-flow.md) · [差异化对比](03-differentiation.md) · [功能分解](04-feature-breakdown.md) · [设计决策](05-design-decisions.md)
+**Related docs:** [End-to-End Flow](02-end-to-end-flow.md) · [Differentiation](03-differentiation.md) · [Feature Breakdown](04-feature-breakdown.md) · [Design Decisions](05-design-decisions.md)
