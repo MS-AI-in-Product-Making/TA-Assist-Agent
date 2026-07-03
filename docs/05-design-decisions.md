@@ -155,7 +155,11 @@ Mechanism:
 
 1. Build an anchor table `DIM ID ↔ factor ↔ (future) measurement`; validate uniqueness.
 2. **Placeholder-first, backfill-later**: early in a program there may be no drawing / no ID yet. Allocate a placeholder anchor and add a reminder process step so purpose-dimension requirements are backfilled into the TA task once the drawing exists (per the field discussion).
-3. **Naming-convention governance** so IDs stay unique and do not drift across revisions.
+3. **Uniqueness + cross-source reconciliation** so IDs stay unique and the anchor does not drift.
+   Inside MS a shared template keeps IDs consistent, so a strict naming convention is low-value;
+   the actual drift risk is at the **MS ↔ supplier boundary** (their own numbering + revisions).
+   The mechanism is therefore an **alias / crosswalk table** mapping external IDs onto the canonical
+   anchor, with fail-closed confirmation (D4) on collisions — not an enforced naming scheme.
 
 **Why V1:** it needs no image understanding, reuses an existing column, and is the **hard prerequisite for the D8 closed loop** (you cannot route measured data back without a stable key).
 

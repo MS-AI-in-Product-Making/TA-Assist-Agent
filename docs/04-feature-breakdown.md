@@ -56,12 +56,15 @@
 
 | Type | Content |
 |---|---|
-| 📘 Story | Uniquely link each factor to a drawing dimension by `DIM ID` |
-| 🔧 Task | Build the anchor table `DIM ID ↔ factor ↔ (future) measurement`; validate uniqueness |
+| 📘 Story | Uniquely link each factor to a drawing dimension by `DIM ID` (the canonical anchor) |
+| 🔧 Task | Build the anchor table `DIM ID ↔ factor ↔ (future) measurement`; validate **uniqueness + completeness** within a submission |
 | 📘 Story | Handle the "no drawing / no ID early on" case (placeholder-first, backfill-later) |
 | 🔧 Task | Allocate placeholder anchors · reminder step to backfill purpose-dimension requirements into the TA task |
-| 📘 Story | Naming-convention governance so IDs stay unique and do not drift |
-| ⚠ Risk | Missing / non-unique DIM IDs break the anchor → governance + placeholder mechanism required |
+| 📘 Story | **MS ↔ supplier ID reconciliation** — map external supplier IDs (per revision) onto the canonical MS anchor via an alias / crosswalk table |
+| 🔧 Task | Alias table (supplier ID + revision → canonical DIM ID) · uniqueness check · versioned mapping so a supplier ID change updates the alias, not the anchor |
+| 📘 Story | Light format sanity-check only (MS templates already uniform → no strict convention needed internally) |
+| 🔧 Task | Duplicate / missing / malformed DIM ID detection → surface for review (non-blocking); on collision / unmapped external ID → **clarification card (fail-closed, reuse D4)** |
+| ⚠ Risk | Real drift risk is at the **supplier boundary**, not inside MS → mapping + conflict-confirmation is the core, strict internal naming rules are de-emphasized |
 
 ## F4 · Method Recommendation (supporting)
 
