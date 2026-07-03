@@ -134,7 +134,6 @@ For Tier 0 (no capability data), mark "feasibility unknown, confirm with supplie
 ---
 
 ## D6 · User Interaction: Read-Only Evidence Pane + What-You-See-Is-The-Basis
-
 **No need to reopen Excel after upload.** Premise: present the original TA data **faithfully, read-only, unaltered**, so the user trusts their eyes rather than a black box.
 
 **Layout: evidence on the left / dialogue on the right**
@@ -148,9 +147,46 @@ For Tier 0 (no capability data), mark "feasibility unknown, confirm with supplie
 
 ---
 
-## Impact of Decisions on Feature Priority
+## D7 · Dimension-to-Drawing Association (DIM ID) — metadata link, not image reading
 
-The value backbone is thus established: **P0 F2 data cleansing → P1 F6 What-if/reverse-solve/centering → P2 F4 engine → P3 F5 objective interpretation → P4 F1 parsing → P5 F3 method recommendation**. F5 shifts from "giving advice" to "objective presentation + user decision".
+**The field team's real need is traceability from the TA table to the drawing dimension.** The chosen mechanism is deliberately **lightweight**: use the `DIM ID` field (plus tags) that already exists in the TA template to anchor each factor to a unique drawing dimension. This is **metadata association, not OCR / image reading** — reading drawing images stays in V2.
+
+Mechanism:
+
+1. Build an anchor table `DIM ID ↔ factor ↔ (future) measurement`; validate uniqueness.
+2. **Placeholder-first, backfill-later**: early in a program there may be no drawing / no ID yet. Allocate a placeholder anchor and add a reminder process step so purpose-dimension requirements are backfilled into the TA task once the drawing exists (per the field discussion).
+3. **Naming-convention governance** so IDs stay unique and do not drift across revisions.
+
+**Why V1:** it needs no image understanding, reuses an existing column, and is the **hard prerequisite for the D8 closed loop** (you cannot route measured data back without a stable key).
+
+**Bottleneck:** the missing / non-unique DIM ID case. Without governance the anchor is meaningless; hence placeholder + convention rules are part of the feature, not an afterthought.
+
+---
+
+## D8 · Closed-Loop Real-Cpk Feedback — the knowledge base gets better the more it is used
+
+**The loop that gives the whole system compounding value:** real measured yield / Cpk from the line → routed by `DIM ID` back to the corresponding factor → upgrades that entry's process capability in Lib 1 from "empirical estimate (Tier 3)" to "measured (Tier 1)". Better capability data → better cleansing, interpretation and optimization next time. The **feedback target is F0**, closing the D1 loop.
+
+**V1 scope = read-in side only:**
+
+1. Define a measurement-data schema keyed by `DIM ID`.
+2. Ingest measured distributions; recompute σ (handle non-normal distributions honestly).
+3. Promote the Lib 1 entry tier (T3 → T1) and bump its version.
+4. **No auto write-back to Excel** — suggesting spec changes back into the workbook stays in V2.
+
+**Bottlenecks:**
+
+- **DIM ID governance (D7) is a hard prerequisite** — no stable key, no routing.
+- Measured distributions are often **non-normal**, so σ conversion must not blindly assume Normal.
+- Data pipeline / permissions for supplier measurement data.
+
+**Why read-in only:** it delivers the "gets more accurate over time" value while deferring the riskier write-back and cost/economics coupling. It also makes Lib 1's source-tier design (D1) a concrete, exercised path rather than a documentation concept.
+
+---
+
+## Impact of Decisions on Feature Flow
+
+Features are ordered by the end-to-end **process flow** (not priority): **F0 knowledge base (soul) → F1 parse → F2 cleanse → F3 DIM link → F4 method → F5 engine → F6 objective interpretation → F7 tolerance optimization → F9 interaction/output**, with **F8 closed loop** feeding measured Cpk back into F0. The knowledge base (F0) and objective interpretation (F6) are the "soul" of the tool; the closed loop (F8) is what lets that soul improve over time.
 
 ---
 **Related docs:** [Architecture](01-architecture.md) · [End-to-End Flow](02-end-to-end-flow.md) · [Differentiation](03-differentiation.md) · [Feature Breakdown](04-feature-breakdown.md)

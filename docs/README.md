@@ -14,4 +14,4 @@ Design document set for the Surface T/VA Analysis Agent (V1). All diagrams use M
 
 - **Scope (V1):** No drawing-content reading, no 3D VA.
 - **Calculation engine:** 1D, **strictly consistent with the T/VA template Excel formulas**.
-- **Tracking:** Feature IDs (F0–F7) ↔ GitHub Milestones; Stories / Tasks ↔ Issues.
+- **Tracking:** Feature IDs (F0–F9), ordered by process flow, ↔ GitHub Milestones; Stories / Tasks ↔ Issues.
