@@ -29,7 +29,7 @@ flowchart TB
     end
     subgraph LINK["5 DIM ID Anchor + Active Drawing Loop (F3)"]
         L1["Anchor each factor to a drawing dimension<br/>DIM ID &lt;-&gt; factor &lt;-&gt; (future) measurement"]
-        L2["Placeholder-first / backfill-later<br/>naming-convention governance"]
+        L2["Placeholder-first / backfill-later<br/>MS &lt;-&gt; supplier ID alias / crosswalk"]
         L3["Dimension-chain list per part<br/>part name / join number / DIM ID"]
         L1 --> L2 --> L3
     end
