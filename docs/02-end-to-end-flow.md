@@ -7,7 +7,7 @@
 
 ```mermaid
 flowchart TD
-    A["User uploads .xlsx report"] --> A1["Scan worksheets, detect TA content (F1)"]
+    A["User creates ADO work item + attaches .xlsx (F3)<br/>auto-trigger · owner from ADO owner / Request By"] --> A1["Scan worksheets, detect TA content (F1)"]
     A1 --> A2{"User confirmation<br/>select worksheets for TA analysis"}
     A2 --> B["Parse selected worksheets, read factor specs (F1)"]
     B --> C["Extract the dimension-chain Loop screenshot (F1)"]
@@ -20,7 +20,10 @@ flowchart TD
     E3a --> LK
     E3b --> LK
     E -->|"Consistent"| LK["Anchor factors to drawing dims by DIM ID (F3)<br/>placeholder-first if no ID yet"]
-    LK --> F["Proceed to method recommendation"]
+    LK --> LG["Emit per-part dimension-chain list (F3)<br/>part name / join number / DIM ID"]
+    LK -.->|"placeholder / missing DIM ID"| SCH["Scheduled service weekly / monthly (F3)<br/>surface-mcp milestones + workiq"]
+    SCH -.->|"near EV1"| RM["@mention owner on ADO (F3)<br/>backfill DIM ID · put chain on drawing"]
+    LG --> F["Proceed to method recommendation"]
     F --> G{"Method recommendation (F4)<br/>by factor count"}
     G -->|"&lt; 4 factors"| H1["Recommend Worst Case<br/>sum of Tolerance"]
     G -->|"4 - 10 factors"| H2["Recommend 1D RSS<br/>sqrt(sum R^2)"]
@@ -42,7 +45,8 @@ flowchart TD
     M1 & M2 & M3 & M4 & M5 & M6 --> N["Read-only evidence pane + cited report + Loop image (F9)<br/>per-item traceable · reproducible"]
     H3 --> N
     N --> R{"Measured data available later?"}
-    R -->|"Yes: measured yield / Cpk by DIM ID"| CL["Closed loop (F8)<br/>upgrade Lib 1 tier T3 -&gt; T1, recompute sigma"]
+    R -->|"Yes: measured yield / Cpk by DIM ID<br/>V1 manual MDA-export import (V2 MDA API)"| CL["Closed loop (F8)<br/>real gap vs estimate · upgrade Lib 1 T3 -&gt; T1"]
+    CL -.->|"deviation -> adjustment"| M6
     CL ==>|"feeds back"| KB["Knowledge Base (F0)"]
     classDef start fill:#e3f2fd,stroke:#1565c0,color:#0d47a1
     classDef proc fill:#e8f5e9,stroke:#2e7d32,color:#1b5e20
@@ -52,11 +56,13 @@ flowchart TD
     classDef link fill:#e8eaf6,stroke:#3949ab,color:#1a237e
     classDef loop fill:#f1f8e9,stroke:#558b2f,color:#33691e
     classDef done fill:#c8e6c9,stroke:#2e7d32,color:#1b5e20
+    classDef orch fill:#fff8e1,stroke:#f9a825,color:#f57f17
     class A,B,C start
     class A2,D,E,E2,G,K,CC,R dec
     class A1 proc
     class F,H1,H2,I,J,L,M1,M2,M3,M4,M5,M6,E3a,E3b proc
-    class LK link
+    class LK,LG link
+    class SCH,RM orch
     class E1,CQ warn
     class H3 v2
     class CL,KB loop
@@ -67,14 +73,16 @@ flowchart TD
 
 | Node | Decision | Branches |
 |---|---|---|
+| Entry trigger | How the run starts | ADO work item + xlsx attached → auto-run; owner from ADO owner / Request By |
 | Worksheet confirmation | Which sheets to interpret | User confirms / manual fallback selection |
 | Cleansing consistency | Required fields + DIM ID + Capability Library match | Consistent → continue; inconsistent → flag differences |
 | DIM ID anchor | Factor has a drawing dimension? | Linked / placeholder-first, backfill later |
+| Scheduled reminder | Near EV1 with missing DIM ID? | Yes → @mention owner on ADO + drawing reminder |
 | Difference handling | Who fixes it | User edits Excel / Agent edits data and recomputes |
 | Method recommendation | Factor count | `<4` WC · `4-10` RSS · `>10` refer to DM |
 | Target judgment | Cpk≥1.33 / sigma met | Both PASS / FAIL proceed to interpretation |
 | Uncertainty confirmation | Assembly datum face / cross-subsystem ambiguous | Stop and raise clarification card (fail-closed) |
-| Measured data feedback | Real Cpk arrives later | Closed loop upgrades F0 Lib 1 |
+| Measured data feedback | Real Cpk arrives later | Real gap vs estimate → closed loop upgrades F0 Lib 1 |
 
 > Multi-sheet reports can be **processed in parallel for speed**, but review is still per-page and human-gated.
 > Interpretation only states `FACT`/`RULE` (each citing an F0 entry); `SIGNAL`/`OPTION` are presented in parallel, not ranked — **judgment is left to the user**.

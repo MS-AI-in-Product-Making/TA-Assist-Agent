@@ -50,9 +50,13 @@
 | 📘 Story | Two correction paths for differences: user edits Excel / Agent edits data and recomputes |
 | ⚠ Issue | Library is an example and incomplete for now → publish coverage; no measured data (Tier 0) marked "process capability unknown" |
 
-## F3 · Dimension-to-Drawing Association (DIM ID) ⭐ (NEW · lightweight metadata link, not image reading)
+## F3 · Dimension-to-Drawing Association — Active DIM-ID Drawing Closed Loop ⭐ (NEW · metadata link + ADO-driven governance, not image reading)
 
-> Anchors each factor to a unique drawing dimension via the existing `DIM ID` field + tags. This is **metadata association, not OCR / image reading** (image extraction stays in V2). It is the prerequisite for the F8 closed loop. See [Design Decision D7](05-design-decisions.md).
+> Anchors each factor to a unique drawing dimension via the existing `DIM ID` field + tags (**metadata association, not OCR / image reading** — image extraction stays in V2), **and actively drives the DIM ID + dimension chain onto the drawing before EV1**. This is the *drawing closed loop*: it also owns the shared **ADO trigger + scheduled reminder service** that the F8 data loop reuses. See [Design Decision D7](05-design-decisions.md).
+>
+> **User scenario:** an engineer creates an ADO work item and attaches the TA `.xlsx`. The agent runs automatically. If the program is still **pre-ASR** (no drawing yet, so `Part Number` / `DIM ID` are placeholders), a background service checks the program milestones each week/month; as **EV1** approaches it **@mentions the owner on ADO** to backfill the DIM IDs, and reminds the designer to reflect the dimension chain on the drawing — closing the loop.
+
+**Sub-loop A · Anchor (the metadata link)**
 
 | Type | Content |
 |---|---|
@@ -65,6 +69,24 @@
 | 📘 Story | Light format sanity-check only (MS templates already uniform → no strict convention needed internally) |
 | 🔧 Task | Duplicate / missing / malformed DIM ID detection → surface for review (non-blocking); on collision / unmapped external ID → **clarification card (fail-closed, reuse D4)** |
 | ⚠ Risk | Real drift risk is at the **supplier boundary**, not inside MS → mapping + conflict-confirmation is the core, strict internal naming rules are de-emphasized |
+
+**Sub-loop B · ADO orchestration + scheduled governance (shared substrate, reused by F8)**
+
+| Type | Content |
+|---|---|
+| 📘 Story | **Event trigger** — creating an ADO work item with the TA `.xlsx` attached auto-runs the agent |
+| 🔧 Task | ADO work-item webhook / poll · pull the attached workbook · kick off the F1→F9 run |
+| 📘 Story | **Owner identification** — bind the run to a responsible person automatically |
+| 🔧 Task | Resolve owner from ADO task owner / `Request By` field · fall back to a clarification prompt if absent |
+| 📘 Story | **Scheduled EV1 reminder** — weekly / monthly check that nudges owners before information is missing |
+| 🔧 Task | Background service reads program milestones via `surface-mcp` (`GetProgramMilestones`) + open items via `workiq` · frequency set from milestone cadence · when nearing EV1 with placeholder / missing DIM IDs → **@mention the owner on ADO** |
+| 📘 Story | **Dimension-chain list** — auto-generate a per-part list from the TA report for drawing mapping |
+| 🔧 Task | Group by part · emit `part name / join number / DIM ID` · this list is the mapping target for the drawing |
+| 📘 Story | **Drawing reminder** — remind the design owner to reflect the dimension chain on the drawing |
+| 🔧 Task | Post the dimension-chain list to the owner (ADO) · track prerequisite "shown on drawing" state |
+| 📘 Story | **State & history** — ADO maintains the loop status for traceability |
+| 🔧 Task | Track `placeholder → DIM ID filled → shown on drawing` per factor · keep history on the work item |
+| ⚠ Risk | Reminder fatigue / wrong owner → cadence tied to milestones + owner clarification fallback; MCP/ADO permission scope needed for the background service |
 
 ## F4 · Method Recommendation (supporting)
 
@@ -119,17 +141,22 @@
 | 📘 Story | **Spec reverse-solve** — 2-3 parallel options (single-point tighten / Top 2-3 combination / center + tighten), each with new tolerance, resulting Cpk, feasibility |
 | 🔧 Task | Generate 2-3 options · **over-capability → RED warning** (vs F0 Lib 1 process capability); Tier 0 → "feasibility unknown" |
 
-## F8 · Closed-Loop Real-Cpk Feedback ⭐ (NEW · V1 read-in side only)
+## F8 · Closed-Loop Real-Cpk Feedback ⭐ (NEW · measured data → real gap + knowledge base)
 
-> Feed supplier **measured yield / Cpk** back to the corresponding factor by `DIM ID`, upgrading process capability from "empirical estimate (Tier 3)" to "measured (Tier 1)". The **feedback target is F0**, so analysis gets more accurate the more it is used. V1 does the **read-in side only** (no auto write-back to Excel — that stays V2). See [Design Decision D8](05-design-decisions.md).
+> Feed supplier **measured yield / Cpk** back to the corresponding factor by `DIM ID`. Two things happen: (1) the target dimension is recomputed with **real** capability so the user sees the **actual gap and actual tolerance range** (vs the initial estimate), and (2) the matching Lib 1 entry is upgraded from "empirical estimate (Tier 3)" to "measured (Tier 1)" so the knowledge base gets better the more it is used. Reuses the F3 ADO orchestration substrate. See [Design Decision D8](05-design-decisions.md).
+>
+> **User scenario:** once real measurement exists, the owner backfills measured Cpk (keyed by `DIM ID`); the agent regenerates the TA result on real capability and diffs it against the initial estimate — on deviation it hands off to F7 for adjustment options.
 
 | Type | Content |
 |---|---|
 | 📘 Story | Ingest measured data keyed by `DIM ID` |
-| 🔧 Task | Define measurement schema (DIM ID key) · import pipeline · permissions |
+| 🔧 Task | Define measurement schema (DIM ID key) · **V1: manual import of MDA-exported standardized data** · permissions |
+| 📘 Story | **Real gap / real tolerance** — recompute the target dimension with measured capability |
+| 🔧 Task | Recompute σ from measured data (handle non-normal) · report **initial (estimated) vs actual (measured)** diff · deviation → hand off to F7 |
 | 📘 Story | Update F0 Lib 1 tier and σ from measured distributions |
-| 🔧 Task | Recompute σ from measured data (handle non-normal) · promote entry tier T3→T1 · version bump |
+| 🔧 Task | Promote entry tier T3→T1 · version bump · feed back into F0 |
 | ⚠ Risk | DIM ID governance (F3) is a hard prerequisite; measured distribution may be non-normal → affects σ conversion |
+| 🔭 V2 | **MDA API auto-capture** (direct pull of measurement data; manual upload is unrealistic for multi-part assemblies) — budget + MDA-team dependency · auto write-back of suggested spec to Excel |
 
 ## F9 · User Interaction / Read-Only Evidence Pane + Output Report ⭐
 

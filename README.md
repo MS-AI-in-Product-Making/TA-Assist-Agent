@@ -42,11 +42,11 @@ In process-flow order. See [full table](docs/03-differentiation.md).
 |---|---|---|---|---|
 | **F0 · Knowledge base (soul)** | Basis | Lives in the engineer's head | No grounding | 3 controlled libraries; every judgment traces to a library entry |
 | **F2 · Cleansing** | Data cleansing | Manual, error-prone | No basis | Missing-field + DIM ID check + per-category **Capability Library** (tolerance band / capability / distribution) validation |
-| **F3 · DIM link** | Data-to-drawing | Manual, ambiguous | Cannot link | Anchor each factor to a drawing dimension by **DIM ID** (metadata, not image reading) |
+| **F3 · DIM link** | Data-to-drawing | Manual, ambiguous | Cannot link | Anchor each factor to a drawing dimension by **DIM ID** (metadata, not image reading); **ADO auto-trigger + scheduled EV1 reminder** (surface-mcp + workiq) drives DIM IDs onto the drawing |
 | **F5 · Engine** | Calculation | Reliable formulas | Often wrong / non-reproducible | Reuses the **same Excel engine** |
 | **F6 · Interpret** | Interpretation | Personal experience | No rules / knowledge base | Fixed **5-section** output, **objective, each RULE cites its F0 entry**, judgment left to user |
 | **F7 · Optimize** | Tolerance optimization | Manual re-runs | Cannot compute | Mean-shift centering + contribution economics + RSS apportionment + **spec reverse-solve** (over-capability warning) |
-| **F8 · Closed loop** | Real Cpk | Measured data never returns | None | Feed measured Cpk back by DIM ID → library **T3 empirical → T1 measured** |
+| **F8 · Closed loop** | Real Cpk | Measured data never returns | None | Backfill measured Cpk by DIM ID → **real gap vs estimate** + library **T3 empirical → T1 measured** |
 | **F9 · Interaction** | User trust | Read raw Excel yourself | Chat only | Read-only faithful evidence pane + cited dialogue |
 | Global | Result | Hard to standardize | One-off, unstructured | Structured, standardized, traceable |
 
@@ -98,12 +98,12 @@ matches the template exactly.
 | **F0 Knowledge base** ⭐ | 3-class library: Classified Capability Library (source-tiered) / Engineering Rules / Terminology·Ontology — the soul |
 | **F1 Report parsing & asset prep** | Auto-detect TA worksheets; parallel processing; factor-table parse (E14:T26); extract Loop screenshot |
 | **F2 Data cleansing** ⭐ | Missing required-field + DIM ID check; per-category Capability Library & distribution validation; two correction paths |
-| **F3 Dimension-to-drawing link (DIM ID)** ⭐ | Anchor each factor to a drawing dimension by DIM ID (metadata, not image reading); placeholder-first, backfill-later |
+| **F3 Dimension-to-drawing link (DIM ID)** ⭐ | Anchor each factor to a drawing dimension by DIM ID (metadata, not image reading); placeholder-first, backfill-later; **ADO auto-trigger + scheduled service (surface-mcp milestones + workiq) @mentions owner before EV1** + reminds to put the chain on the drawing |
 | **F4 Method recommendation** | Factor count + CTS/CTF; `<4`→WC, `4–10`→RSS, `>10`→refer to DM; both WC & RSS computed |
 | **F5 Calculation engine** | Excel-consistent per-factor / system / capability; sample regression |
 | **F6 Data interpretation** ⭐ | Fixed 5-section output — **objective (FACT/RULE/SIGNAL/OPTION)**, each RULE cites its F0 entry; clarification card when uncertain |
 | **F7 Tolerance / dimension-chain optimization** ⭐ | Mean-shift centering + contribution economics + RSS apportionment + spec reverse-solve (over-capability warning) |
-| **F8 Closed-loop real-Cpk feedback** ⭐ | Ingest measured Cpk by DIM ID → upgrade library T3→T1 (V1: read-in side only) |
+| **F8 Closed-loop real-Cpk feedback** ⭐ | Backfill measured Cpk by DIM ID → real gap vs estimate + upgrade library T3→T1 (V1: read-in via manual MDA-export import; MDA API is V2) |
 | **F9 User interaction / read-only pane + output** ⭐ | Read-only faithful evidence pane + cited dialogue + consolidated report incl. Loop image |
 
 ### F6 — Fixed 5-section interpretation (objective; judgment left to user)
@@ -120,11 +120,11 @@ matches the template exactly.
 - Drawing-content **image** reading (extract nominal/tol from 2D drawings/PDF)
 - Three-way consistency (user ⇄ drawing ⇄ knowledge base)
 - 3D VA (VSA-class tool integration)
+- **MDA API auto-capture** of measurement data (V1 uses manual MDA-export import) — budget + MDA-team dependency
 - Write-back to Excel (Auto Summary / suggested spec)
-- ADO linkage (auto-create work items for FAIL)
 - Monte Carlo (Quantum XL) integration
 
-> Note: DIM ID data-to-drawing linking (F3) and the measured-Cpk closed loop (F8, read-in side) were **promoted into V1**. Reading drawing **images** and auto write-back remain in V2.
+> Note: DIM ID data-to-drawing linking (F3, now an **active ADO-driven drawing loop**) and the measured-Cpk closed loop (F8, read-in side) were **promoted into V1**. Reading drawing **images**, MDA API auto-capture, and auto write-back remain in V2.
 
 ---
 

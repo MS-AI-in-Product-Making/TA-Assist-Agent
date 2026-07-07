@@ -147,11 +147,11 @@ For Tier 0 (no capability data), mark "feasibility unknown, confirm with supplie
 
 ---
 
-## D7 · Dimension-to-Drawing Association (DIM ID) — metadata link, not image reading
+## D7 · Dimension-to-Drawing Association (DIM ID) — Active Drawing Closed Loop, not image reading
 
-**The field team's real need is traceability from the TA table to the drawing dimension.** The chosen mechanism is deliberately **lightweight**: use the `DIM ID` field (plus tags) that already exists in the TA template to anchor each factor to a unique drawing dimension. This is **metadata association, not OCR / image reading** — reading drawing images stays in V2.
+**The field team's real need is traceability from the TA table to the drawing dimension, *enforced before it is too late*.** The chosen mechanism is deliberately **lightweight**: use the `DIM ID` field (plus tags) that already exists in the TA template to anchor each factor to a unique drawing dimension. This is **metadata association, not OCR / image reading** — reading drawing images stays in V2.
 
-Mechanism:
+Mechanism — **Sub-loop A · anchor:**
 
 1. Build an anchor table `DIM ID ↔ factor ↔ (future) measurement`; validate uniqueness.
 2. **Placeholder-first, backfill-later**: early in a program there may be no drawing / no ID yet. Allocate a placeholder anchor and add a reminder process step so purpose-dimension requirements are backfilled into the TA task once the drawing exists (per the field discussion).
@@ -161,30 +161,45 @@ Mechanism:
    The mechanism is therefore an **alias / crosswalk table** mapping external IDs onto the canonical
    anchor, with fail-closed confirmation (D4) on collisions — not an enforced naming scheme.
 
-**Why V1:** it needs no image understanding, reuses an existing column, and is the **hard prerequisite for the D8 closed loop** (you cannot route measured data back without a stable key).
+Mechanism — **Sub-loop B · ADO orchestration + scheduled governance** (per the factory meeting; this substrate is **shared with the D8 data loop**):
 
-**Bottleneck:** the missing / non-unique DIM ID case. Without governance the anchor is meaningless; hence placeholder + convention rules are part of the feature, not an afterthought.
+4. **Event trigger:** creating an ADO work item with the TA `.xlsx` attached auto-runs the agent.
+5. **Owner identification:** bind the run to the ADO task owner / `Request By` field (clarification fallback if absent) so reminders reach a real person.
+6. **Scheduled EV1 reminder:** a background service runs weekly / monthly, reads Surface program milestones via `surface-mcp` (`GetProgramMilestones`) and open items via `workiq`; as **EV1** approaches with placeholder / missing DIM IDs it **@mentions the owner on ADO**. Reminding early avoids discovering missing information only at EV1.
+7. **Dimension-chain list + drawing reminder:** auto-generate a per-part list (`part name / join number / DIM ID`) from the TA report and remind the design owner to reflect that chain **on the drawing** — the drawing-side prerequisite.
+8. **State & history on ADO:** track `placeholder → DIM ID filled → shown on drawing` for traceability.
+
+**Why V1:** it needs no image understanding, reuses an existing column, and is the **hard prerequisite for the D8 closed loop** (you cannot route measured data back without a stable key). The ADO/scheduler substrate is grounded in tools we already have (`surface-mcp`, `workiq`, ADO).
+
+**Bottleneck:** the missing / non-unique DIM ID case (governance + placeholder), reminder fatigue / wrong owner (cadence tied to milestones + owner fallback), and the background service's ADO / MCP permission scope.
 
 ---
 
-## D8 · Closed-Loop Real-Cpk Feedback — the knowledge base gets better the more it is used
+## D8 · Closed-Loop Real-Cpk Feedback — real gap now, better knowledge base over time
 
-**The loop that gives the whole system compounding value:** real measured yield / Cpk from the line → routed by `DIM ID` back to the corresponding factor → upgrades that entry's process capability in Lib 1 from "empirical estimate (Tier 3)" to "measured (Tier 1)". Better capability data → better cleansing, interpretation and optimization next time. The **feedback target is F0**, closing the D1 loop.
+**The loop that gives the whole system compounding value:** real measured yield / Cpk from the line → routed by `DIM ID` back to the corresponding factor. Two payoffs:
+
+- **Immediate:** the target dimension is recomputed on **real** capability, so the user sees the **actual gap and actual tolerance range** — and a diff against the initial estimate. On deviation the agent hands off to F7 for adjustment options (matching the field ask: "regenerate the report, compare to the initial result, propose adjustments").
+- **Compounding:** the matching Lib 1 entry is upgraded from "empirical estimate (Tier 3)" to "measured (Tier 1)", so cleansing, interpretation and optimization all get better next time. The **feedback target is F0**, closing the D1 loop.
+
+**Data-source path (V1 / V2 split):**
+
+1. **V1 — manual import of MDA-exported standardized data.** MDA data is already standardized, so it parses cleanly; a manual/file import is enough to prove the loop.
+2. **V2 — MDA API auto-capture.** Direct pull from MDA (manual upload is unrealistic for multi-part assemblies). Explicitly gated on **budget + MDA-team API availability**.
 
 **V1 scope = read-in side only:**
 
-1. Define a measurement-data schema keyed by `DIM ID`.
-2. Ingest measured distributions; recompute σ (handle non-normal distributions honestly).
-3. Promote the Lib 1 entry tier (T3 → T1) and bump its version.
-4. **No auto write-back to Excel** — suggesting spec changes back into the workbook stays in V2.
+3. Define a measurement-data schema keyed by `DIM ID`; ingest measured distributions; recompute σ (handle non-normal distributions honestly).
+4. Report **initial (estimated) vs actual (measured)** and promote the Lib 1 entry tier (T3 → T1) with a version bump.
+5. **No auto write-back to Excel** — suggesting spec changes back into the workbook stays in V2.
 
 **Bottlenecks:**
 
 - **DIM ID governance (D7) is a hard prerequisite** — no stable key, no routing.
 - Measured distributions are often **non-normal**, so σ conversion must not blindly assume Normal.
-- Data pipeline / permissions for supplier measurement data.
+- **MDA API availability / budget** for auto-capture; V1 falls back to manual standardized import.
 
-**Why read-in only:** it delivers the "gets more accurate over time" value while deferring the riskier write-back and cost/economics coupling. It also makes Lib 1's source-tier design (D1) a concrete, exercised path rather than a documentation concept.
+**Why read-in only:** it delivers the "real gap now + gets more accurate over time" value while deferring the riskier write-back and the MDA-API cost/economics coupling. It also makes Lib 1's source-tier design (D1) a concrete, exercised path rather than a documentation concept.
 
 ---
 
