@@ -54,7 +54,7 @@ A "controlled dictionary" that **prevents the model from inventing terms or misc
 - Every entry carries **source / confidence / effective version**; only then can a cleansing conclusion be flagged "in-library evidenced / out-of-library".
 - Single owner + change log + **coverage metric** published (e.g. "Lib 1 covers 6/20 high-frequency part classes").
 - Distribution factor constants (Normal=1 / Uniform=1.732 / …) are **engine built-in constants**, not part of the knowledge base.
-- **Closed-loop feedback (feeding measured Cpk back into Lib 1) is handled by F8 (see D8).**
+- **Closed-loop feedback (feeding measured Cpk back into Lib 1) is handled by S8 (see D8).**
 
 ---
 
@@ -166,7 +166,7 @@ Mechanism — **Sub-loop B · ADO orchestration + scheduled governance** (per th
 4. **Event trigger:** creating an ADO work item with the TA `.xlsx` attached auto-runs the agent.
 5. **Owner identification:** bind the run to the ADO task owner / `Request By` field (clarification fallback if absent) so reminders reach a real person.
 6. **Scheduled EV1 reminder (server-side):** a **server-side background service** runs weekly / monthly **independently of whether the agent is running**, reads Surface program milestones via `surface-mcp` (`GetProgramMilestones`) and open items via `workiq`; as **EV1** approaches with placeholder / missing DIM IDs it **@mentions the owner on ADO**. Reminding early avoids discovering missing information only at EV1.
-7. **Ontology-driven grouping + dimension-chain list:** when a workbook has many worksheets, group factors by **part category + part description** using the **F0 Lib 3 Terminology / Ontology Library** — because same-category dimensions usually live on the *same* drawing. For each group emit a per-part list (`part name / join number / DIM ID`). Because the same textual description at different locations can mean *different* dimensions, every item keeps a **traceable link from `DIM ID` to its specific location**, so a designer can jump straight to the exact dimension (traceable + sourceable).
+7. **Ontology-driven grouping + dimension-chain list:** when a workbook has many worksheets, group factors by **part category + part description** using the **S0 Lib 3 Terminology / Ontology Library** — because same-category dimensions usually live on the *same* drawing. For each group emit a per-part list (`part name / join number / DIM ID`). Because the same textual description at different locations can mean *different* dimensions, every item keeps a **traceable link from `DIM ID` to its specific location**, so a designer can jump straight to the exact dimension (traceable + sourceable).
 8. **Packaged drawing reminder (server-side):** on the same server-side scheduler, remind the design owner — **once per drawing / group**, not per factor — to reflect that chain **on the drawing**, the drawing-side prerequisite.
 9. **State & history on ADO:** track `placeholder → DIM ID filled → shown on drawing` for traceability.
 
@@ -180,8 +180,8 @@ Mechanism — **Sub-loop B · ADO orchestration + scheduled governance** (per th
 
 **The loop that gives the whole system compounding value:** real measured yield / Cpk from the line → routed by `DIM ID` back to the corresponding factor. Two payoffs:
 
-- **Immediate:** the target dimension is recomputed on **real** capability, so the user sees the **actual gap and actual tolerance range** — and a diff against the initial estimate. On deviation the agent hands off to F7 for adjustment options (matching the field ask: "regenerate the report, compare to the initial result, propose adjustments").
-- **Compounding:** the matching Lib 1 entry is upgraded from "empirical estimate (Tier 3)" to "measured (Tier 1)", so cleansing, interpretation and optimization all get better next time. The **feedback target is F0**, closing the D1 loop.
+- **Immediate:** the target dimension is recomputed on **real** capability, so the user sees the **actual gap and actual tolerance range** — and a diff against the initial estimate. On deviation the agent hands off to S7 for adjustment options (matching the field ask: "regenerate the report, compare to the initial result, propose adjustments").
+- **Compounding:** the matching Lib 1 entry is upgraded from "empirical estimate (Tier 3)" to "measured (Tier 1)", so cleansing, interpretation and optimization all get better next time. The **feedback target is S0**, closing the D1 loop.
 
 **External prerequisite — where the measured data lives:**
 
@@ -209,7 +209,7 @@ Automatic API capture of measured data (which would avoid manual upload for mult
 
 ## Impact of Decisions on Feature Flow
 
-Features are ordered by the end-to-end **process flow** (not priority): **F0 knowledge base (soul) → F1 parse → F2 cleanse → F3 DIM link → F4 method → F5 engine → F6 objective interpretation → F7 tolerance optimization → F9 interaction/output**, with **F8 closed loop** feeding measured Cpk back into F0. The knowledge base (F0) and objective interpretation (F6) are the "soul" of the tool; the closed loop (F8) is what lets that soul improve over time.
+Features are ordered by the end-to-end **process flow** (not priority): **S0 knowledge base (soul) → S1 parse → S2 cleanse → S3 DIM link → S4 method → S5 engine → S6 objective interpretation → S7 tolerance optimization → S9 interaction/output**, with **S8 closed loop** feeding measured Cpk back into S0. The knowledge base (S0) and objective interpretation (S6) are the "soul" of the tool; the closed loop (S8) is what lets that soul improve over time.
 
 ---
 **Related docs:** [Architecture](01-architecture.md) · [End-to-End Flow](02-end-to-end-flow.md) · [Differentiation](03-differentiation.md) · [Feature Breakdown](04-feature-breakdown.md)

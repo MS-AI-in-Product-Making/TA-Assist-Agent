@@ -12,6 +12,6 @@ Design document set for the Surface TA Analysis Agent (V1). All diagrams use Mer
 
 ## Conventions
 
-- **Scope (V1):** No drawing-content **image** reading, no 3D VA (out of scope for now, may merge into V1 later). Data-to-drawing linking is done via **DIM ID metadata** (F3); the measured-Cpk closed loop (F8) reads in via manual import from a centralized store (SharePoint / platform), an out-of-band prerequisite.
+- **Scope (V1):** No drawing-content **image** reading, no 3D VA (out of scope for now, may merge into V1 later). Data-to-drawing linking is done via **DIM ID metadata** (S3); the measured-Cpk closed loop (S8) reads in via manual import from a centralized store (SharePoint / platform), an out-of-band prerequisite.
 - **Calculation engine:** 1D, **strictly consistent with the TA template Excel formulas**.
-- **Tracking:** User Story IDs (F0–F9), ordered by process flow, ↔ GitHub Milestones; Features / Tasks ↔ Issues.
+- **Tracking:** User Story IDs (S0–S9), ordered by process flow, ↔ GitHub Milestones; Features / Tasks ↔ Issues.
