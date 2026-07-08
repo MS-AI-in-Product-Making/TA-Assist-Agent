@@ -1,7 +1,7 @@
 # End-to-End Flow (V1)
 
 > The complete runtime flow from the user uploading `.xlsx` to producing a structured interpretation report, with the measured-Cpk closed loop feeding back into the knowledge base.
-> The `(Fx)` labels on nodes map to the Feature IDs in the [Feature Breakdown](04-feature-breakdown.md).
+> The `(Fx)` labels on nodes map to the User Story IDs in the [Feature Breakdown](04-feature-breakdown.md).
 
 ## Flow Chart
 
@@ -45,14 +45,14 @@ flowchart TD
     M1 & M2 & M3 & M4 & M5 & M6 --> N["Read-only evidence pane + cited report + Loop image (F9)<br/>per-item traceable · reproducible"]
     H3 --> N
     N --> R{"Measured data available later?"}
-    R -->|"Yes: measured yield / Cpk by DIM ID<br/>V1 manual MDA-export import (V2 MDA API)"| CL["Closed loop (F8)<br/>real gap vs estimate · upgrade Lib 1 T3 -&gt; T1"]
+    R -->|"Yes: measured yield / Cpk by DIM ID<br/>manual import from centralized store (SharePoint / platform)"| CL["Closed loop (F8)<br/>real gap vs estimate · upgrade Lib 1 T3 -&gt; T1"]
     CL -.->|"deviation -> adjustment"| M6
     CL ==>|"feeds back"| KB["Knowledge Base (F0)"]
     classDef start fill:#e3f2fd,stroke:#1565c0,color:#0d47a1
     classDef proc fill:#e8f5e9,stroke:#2e7d32,color:#1b5e20
     classDef dec fill:#fff3e0,stroke:#ef6c00,color:#e65100
     classDef warn fill:#ffebee,stroke:#c62828,color:#b71c1c
-    classDef v2 fill:#fffde7,stroke:#f9a825,color:#f57f17
+    classDef oos fill:#fffde7,stroke:#f9a825,color:#f57f17
     classDef link fill:#e8eaf6,stroke:#3949ab,color:#1a237e
     classDef loop fill:#f1f8e9,stroke:#558b2f,color:#33691e
     classDef done fill:#c8e6c9,stroke:#2e7d32,color:#1b5e20
@@ -64,7 +64,7 @@ flowchart TD
     class LK,LG link
     class SCH,RM orch
     class E1,CQ warn
-    class H3 v2
+    class H3 oos
     class CL,KB loop
     class N done
 ```

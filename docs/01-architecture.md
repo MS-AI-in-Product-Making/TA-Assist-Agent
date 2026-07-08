@@ -1,7 +1,7 @@
 # System Architecture (V1)
 
-> Surface T/VA Analysis Agent — V1 end-to-end system architecture.
-> Scope: no drawing-content **image** reading, no 3D VA (see V2 backlog). Data-to-drawing linking in V1 is metadata-only via DIM ID.
+> Surface TA Analysis Agent — V1 end-to-end system architecture.
+> Scope: no drawing-content **image** reading, no 3D VA (out of scope for now). Data-to-drawing linking in V1 is metadata-only via DIM ID.
 
 ## Architecture Diagram
 
@@ -9,7 +9,7 @@
 flowchart TB
     subgraph IN["1 Input Layer"]
         U["User<br/>PD / DM / ID / DFx / Supplier"]
-        XLSX["T/VA report .xlsx<br/>(may contain multiple TA worksheets)"]
+        XLSX["TA report .xlsx<br/>(may contain multiple TA worksheets)"]
         U --> XLSX
     end
     subgraph SEL["2 Worksheet Selection & Confirmation (F1)"]
@@ -53,7 +53,7 @@ flowchart TB
         M4["Optimize · What-if / reverse-solve / centering (F7)<br/>mean-shift + contribution economics + RSS apportionment<br/>over-capability -&gt; RED warning"]
     end
     subgraph LOOP["8 Closed Loop (F8)"]
-        CL["Ingest measured yield / Cpk by DIM ID<br/>V1 manual MDA-export import (V2 MDA API)<br/>real gap vs initial estimate · upgrade Lib 1 T3 -&gt; T1"]
+        CL["Ingest measured yield / Cpk by DIM ID<br/>manual import from centralized store (SharePoint / platform)<br/>real gap vs initial estimate · upgrade Lib 1 T3 -&gt; T1"]
     end
     subgraph OUT["9 Interaction / Output (F9)"]
         O1["Read-only evidence pane<br/>faithful copy + Loop image"]
@@ -108,20 +108,20 @@ flowchart TB
 
 ## Layer Notes
 
-| Layer | Feature | Responsibility | Key points |
+| Layer | User Story | Responsibility | Key points |
 |---|---|---|---|
 | 1 Input | — | Receive the user-uploaded `.xlsx` | May contain multiple TA worksheets |
 | 2 Worksheet selection | F1 | Auto-detect sheets with TA content, ask user to confirm | Manual fallback selection |
 | 3 Parse / Extract | F1 | Read factor table, extract Loop screenshot, load knowledge base | Factor table region `E14:T26` |
 | 4 Knowledge base (soul) | **F0** | Lib 1 Classified Capability + Lib 2 Engineering Rules + Lib 3 Terminology / Ontology | Human-curated; source tier / confidence; coverage published; **fed by F8** |
-| 5 DIM ID anchor | **F3** | Link each factor to a drawing dimension via DIM ID + emit per-part dimension-chain list | Metadata, not image reading; placeholder-first |
-| 5b ADO orchestration | **F3** | Event trigger (work item + xlsx), owner id, scheduled EV1 reminder, drawing reminder | Uses `surface-mcp` milestones + `workiq`; shared with F8 |
+| 5 DIM ID anchor | **F3** | Link each factor to a drawing dimension via DIM ID + emit per-part dimension-chain list | Metadata, not image reading; placeholder-first; grouped by part category (Lib 3 ontology); DIM ID traceable to its exact location |
+| 5b ADO orchestration | **F3** | Event trigger (work item + xlsx), owner id, **server-side scheduled** EV1 reminder, drawing reminder | Uses `surface-mcp` milestones + `workiq`; runs independent of the agent; shared with F8 |
 | 6 Core engine | F5 | 1D calculation, **strictly consistent with Excel formulas** | Validates user-filled fields only |
 | 7 Output modes | F2/F4/F6/F7 | Cleansing / method / objective interpretation / optimization | Interpretation cites F0, judgment left to user; uncertain → clarification card |
-| 8 Closed loop | **F8** | Ingest measured Cpk by DIM ID → real gap vs estimate, feed back into F0 | V1 manual MDA-export import; MDA API + write-back are V2 |
+| 8 Closed loop | **F8** | Ingest measured Cpk by DIM ID → real gap vs estimate, feed back into F0 | Manual import from a centralized store (SharePoint / platform), an out-of-band prerequisite; auto API capture + write-back come later |
 | 9 Interaction / Output | **F9** | Read-only evidence pane + cited dialogue + structured report | Includes Loop image, per-item traceable, reproducible |
 
-> **V2 backlog (out of scope this cycle):** Drawing-content **image** reading → three-way consistency check (user value ⇄ drawing ⇄ knowledge base); **MDA API auto-capture** of measurement data; auto write-back of suggested spec to Excel.
+> **Out of scope for now (may merge into V1 later):** Drawing-content **image** reading → three-way consistency check (user value ⇄ drawing ⇄ knowledge base); **automatic API capture** of measurement data; auto write-back of suggested spec to Excel.
 
 ---
 **Related docs:** [End-to-End Flow](02-end-to-end-flow.md) · [Differentiation](03-differentiation.md) · [Feature Breakdown](04-feature-breakdown.md) · [Design Decisions](05-design-decisions.md)

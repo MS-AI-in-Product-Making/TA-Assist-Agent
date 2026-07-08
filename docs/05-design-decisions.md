@@ -54,7 +54,7 @@ A "controlled dictionary" that **prevents the model from inventing terms or misc
 - Every entry carries **source / confidence / effective version**; only then can a cleansing conclusion be flagged "in-library evidenced / out-of-library".
 - Single owner + change log + **coverage metric** published (e.g. "Lib 1 covers 6/20 high-frequency part classes").
 - Distribution factor constants (Normal=1 / Uniform=1.732 / …) are **engine built-in constants**, not part of the knowledge base.
-- **Closed-loop feedback (feeding measured Cpk back into Lib 1) is moved to V2.**
+- **Closed-loop feedback (feeding measured Cpk back into Lib 1) is handled by F8 (see D8).**
 
 ---
 
@@ -149,7 +149,7 @@ For Tier 0 (no capability data), mark "feasibility unknown, confirm with supplie
 
 ## D7 · Dimension-to-Drawing Association (DIM ID) — Active Drawing Closed Loop, not image reading
 
-**The field team's real need is traceability from the TA table to the drawing dimension, *enforced before it is too late*.** The chosen mechanism is deliberately **lightweight**: use the `DIM ID` field (plus tags) that already exists in the TA template to anchor each factor to a unique drawing dimension. This is **metadata association, not OCR / image reading** — reading drawing images stays in V2.
+**The field team's real need is traceability from the TA table to the drawing dimension, *enforced before it is too late*.** The chosen mechanism is deliberately **lightweight**: use the `DIM ID` field (plus tags) that already exists in the TA template to anchor each factor to a unique drawing dimension. This is **metadata association, not OCR / image reading** — reading drawing images is out of scope for now.
 
 Mechanism — **Sub-loop A · anchor:**
 
@@ -165,11 +165,12 @@ Mechanism — **Sub-loop B · ADO orchestration + scheduled governance** (per th
 
 4. **Event trigger:** creating an ADO work item with the TA `.xlsx` attached auto-runs the agent.
 5. **Owner identification:** bind the run to the ADO task owner / `Request By` field (clarification fallback if absent) so reminders reach a real person.
-6. **Scheduled EV1 reminder:** a background service runs weekly / monthly, reads Surface program milestones via `surface-mcp` (`GetProgramMilestones`) and open items via `workiq`; as **EV1** approaches with placeholder / missing DIM IDs it **@mentions the owner on ADO**. Reminding early avoids discovering missing information only at EV1.
-7. **Dimension-chain list + drawing reminder:** auto-generate a per-part list (`part name / join number / DIM ID`) from the TA report and remind the design owner to reflect that chain **on the drawing** — the drawing-side prerequisite.
-8. **State & history on ADO:** track `placeholder → DIM ID filled → shown on drawing` for traceability.
+6. **Scheduled EV1 reminder (server-side):** a **server-side background service** runs weekly / monthly **independently of whether the agent is running**, reads Surface program milestones via `surface-mcp` (`GetProgramMilestones`) and open items via `workiq`; as **EV1** approaches with placeholder / missing DIM IDs it **@mentions the owner on ADO**. Reminding early avoids discovering missing information only at EV1.
+7. **Ontology-driven grouping + dimension-chain list:** when a workbook has many worksheets, group factors by **part category + part description** using the **F0 Lib 3 Terminology / Ontology Library** — because same-category dimensions usually live on the *same* drawing. For each group emit a per-part list (`part name / join number / DIM ID`). Because the same textual description at different locations can mean *different* dimensions, every item keeps a **traceable link from `DIM ID` to its specific location**, so a designer can jump straight to the exact dimension (traceable + sourceable).
+8. **Packaged drawing reminder (server-side):** on the same server-side scheduler, remind the design owner — **once per drawing / group**, not per factor — to reflect that chain **on the drawing**, the drawing-side prerequisite.
+9. **State & history on ADO:** track `placeholder → DIM ID filled → shown on drawing` for traceability.
 
-**Why V1:** it needs no image understanding, reuses an existing column, and is the **hard prerequisite for the D8 closed loop** (you cannot route measured data back without a stable key). The ADO/scheduler substrate is grounded in tools we already have (`surface-mcp`, `workiq`, ADO).
+**Why in scope:** it needs no image understanding, reuses an existing column, and is the **hard prerequisite for the D8 closed loop** (you cannot route measured data back without a stable key). The ADO/scheduler substrate is grounded in tools we already have (`surface-mcp`, `workiq`, ADO).
 
 **Bottleneck:** the missing / non-unique DIM ID case (governance + placeholder), reminder fatigue / wrong owner (cadence tied to milestones + owner fallback), and the background service's ADO / MCP permission scope.
 
@@ -182,24 +183,27 @@ Mechanism — **Sub-loop B · ADO orchestration + scheduled governance** (per th
 - **Immediate:** the target dimension is recomputed on **real** capability, so the user sees the **actual gap and actual tolerance range** — and a diff against the initial estimate. On deviation the agent hands off to F7 for adjustment options (matching the field ask: "regenerate the report, compare to the initial result, propose adjustments").
 - **Compounding:** the matching Lib 1 entry is upgraded from "empirical estimate (Tier 3)" to "measured (Tier 1)", so cleansing, interpretation and optimization all get better next time. The **feedback target is F0**, closing the D1 loop.
 
-**Data-source path (V1 / V2 split):**
+**External prerequisite — where the measured data lives:**
 
-1. **V1 — manual import of MDA-exported standardized data.** MDA data is already standardized, so it parses cleanly; a manual/file import is enough to prove the loop.
-2. **V2 — MDA API auto-capture.** Direct pull from MDA (manual upload is unrealistic for multi-part assemblies). Explicitly gated on **budget + MDA-team API availability**.
+The collection and storage of real Cpk data is **not something this project can control**; it needs an out-of-band agreement so measured data lands in a **single, centralized store — a SharePoint folder or platform system** — with a stable structure. This is a hard, non-engineering prerequisite: without a known, agreed place to read from, the loop cannot start.
 
-**V1 scope = read-in side only:**
+**Scope — read-in side only:**
 
-3. Define a measurement-data schema keyed by `DIM ID`; ingest measured distributions; recompute σ (handle non-normal distributions honestly).
-4. Report **initial (estimated) vs actual (measured)** and promote the Lib 1 entry tier (T3 → T1) with a version bump.
-5. **No auto write-back to Excel** — suggesting spec changes back into the workbook stays in V2.
+1. Define a measurement-data schema keyed by `DIM ID`; **manually import** the standardized measured data from the centralized store; ingest measured distributions; recompute σ (handle non-normal distributions honestly).
+2. Report **initial (estimated) vs actual (measured)** and promote the Lib 1 entry tier (T3 → T1) with a version bump.
+3. **No auto write-back to Excel** — suggesting spec changes back into the workbook is out of scope for now.
+
+Automatic API capture of measured data (which would avoid manual upload for multi-part assemblies) is a natural next step once the loop and the centralized store are proven.
 
 **Bottlenecks:**
 
 - **DIM ID governance (D7) is a hard prerequisite** — no stable key, no routing.
 - Measured distributions are often **non-normal**, so σ conversion must not blindly assume Normal.
-- **MDA API availability / budget** for auto-capture; V1 falls back to manual standardized import.
+- **Centralized measured-data store** (SharePoint / platform) must be agreed and maintained out-of-band; without it there is no source to import from.
+- Measured distributions are often **non-normal**, so σ conversion must not blindly assume Normal.
+- Manual import is the proving path; automatic API capture can follow once the store and loop are established.
 
-**Why read-in only:** it delivers the "real gap now + gets more accurate over time" value while deferring the riskier write-back and the MDA-API cost/economics coupling. It also makes Lib 1's source-tier design (D1) a concrete, exercised path rather than a documentation concept.
+**Why read-in only:** it delivers the "real gap now + gets more accurate over time" value while deferring the riskier write-back and the auto-capture cost/economics coupling. It also makes Lib 1's source-tier design (D1) a concrete, exercised path rather than a documentation concept.
 
 ---
 

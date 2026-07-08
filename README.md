@@ -1,15 +1,18 @@
-# AI TVA Analysis Agent
+# AI TA Analysis Agent
 
-An AI agent that automates **Tolerance / Variation Analysis (T/VA)** interpretation for the
+An AI agent that automates **Tolerance Analysis (TA)** interpretation for the
 Microsoft Surface program and its downstream ODM / supplier partners.
 
-The agent ingests a filled-in T/VA template (`.xlsx`), reuses the exact calculation engine of the
+The agent ingests a filled-in TA template (`.xlsx`), reuses the exact calculation engine of the
 Excel template, and produces **standardized, evidence-backed engineering decisions** — instead of
 relying on individual engineers' experience.
 
-> **Scope: V1.** Drawing-content **image** reading and 3D Variation Analysis (VSA) are explicitly
-> **out of scope** for V1 and tracked for V2. Data-to-drawing linking is done in V1 via **DIM ID
-> metadata** (not image reading).
+## Two Core Highlights
+
+1. **Process automation** — ADO-triggered runs, **server-side scheduled reminders** (independent of whether the agent is running), and measured-data backfill that connect **design ⇄ analysis ⇄ real data** into a traceable closed loop.
+2. **Data interpretation** — objective, evidence-backed **5-section** reading (every RULE cites a knowledge-base entry), with the final judgment left to the engineer.
+
+> **Scope.** Drawing-content **image** reading and 3D VA are out of scope for now (they may be merged in later when needed). Data-to-drawing linking is done via **DIM ID metadata** (not image reading).
 
 ## Documentation
 
@@ -89,21 +92,21 @@ matches the template exactly.
 
 ---
 
-## V1 Scope (Epic → Feature → Story → Task)
+## V1 Scope (Epic → User Story → Feature → Task)
 
-**Epic:** Surface T/VA Analysis Agent (V1)
+**Epic:** Surface TA Analysis Agent (V1)
 
-| Feature | Summary |
+| User Story | Summary |
 |---|---|
 | **F0 Knowledge base** ⭐ | 3-class library: Classified Capability Library (source-tiered) / Engineering Rules / Terminology·Ontology — the soul |
 | **F1 Report parsing & asset prep** | Auto-detect TA worksheets; parallel processing; factor-table parse (E14:T26); extract Loop screenshot |
 | **F2 Data cleansing** ⭐ | Missing required-field + DIM ID check; per-category Capability Library & distribution validation; two correction paths |
-| **F3 Dimension-to-drawing link (DIM ID)** ⭐ | Anchor each factor to a drawing dimension by DIM ID (metadata, not image reading); placeholder-first, backfill-later; **ADO auto-trigger + scheduled service (surface-mcp milestones + workiq) @mentions owner before EV1** + reminds to put the chain on the drawing |
+| **F3 Dimension-to-drawing link (DIM ID)** ⭐ | Anchor each factor to a drawing dimension by DIM ID (metadata, not image reading); placeholder-first, backfill-later; **group worksheets by part category (F0 Lib 3 ontology)** so same-category dimensions are packaged per drawing, with a traceable link from each item to its specific location; **ADO auto-trigger + server-side scheduled reminders (surface-mcp milestones + workiq) @mention owner before EV1** + remind to put the chain on the drawing |
 | **F4 Method recommendation** | Factor count + CTS/CTF; `<4`→WC, `4–10`→RSS, `>10`→refer to DM; both WC & RSS computed |
 | **F5 Calculation engine** | Excel-consistent per-factor / system / capability; sample regression |
 | **F6 Data interpretation** ⭐ | Fixed 5-section output — **objective (FACT/RULE/SIGNAL/OPTION)**, each RULE cites its F0 entry; clarification card when uncertain |
 | **F7 Tolerance / dimension-chain optimization** ⭐ | Mean-shift centering + contribution economics + RSS apportionment + spec reverse-solve (over-capability warning) |
-| **F8 Closed-loop real-Cpk feedback** ⭐ | Backfill measured Cpk by DIM ID → real gap vs estimate + upgrade library T3→T1 (V1: read-in via manual MDA-export import; MDA API is V2) |
+| **F8 Closed-loop real-Cpk feedback** ⭐ | Backfill measured Cpk by DIM ID → real gap vs estimate + upgrade library T3→T1. Reads in via manual import from a **centralized measured-data store (SharePoint / platform)** that must be set up out-of-band (external prerequisite) |
 | **F9 User interaction / read-only pane + output** ⭐ | Read-only faithful evidence pane + cited dialogue + consolidated report incl. Loop image |
 
 ### F6 — Fixed 5-section interpretation (objective; judgment left to user)
@@ -115,16 +118,16 @@ matches the template exactly.
 
 ---
 
-## V2 Backlog (not in V1)
+## Out of Scope (for now)
+
+Deferred until there is a proven need; each can be merged into the product later.
 
 - Drawing-content **image** reading (extract nominal/tol from 2D drawings/PDF)
 - Three-way consistency (user ⇄ drawing ⇄ knowledge base)
 - 3D VA (VSA-class tool integration)
-- **MDA API auto-capture** of measurement data (V1 uses manual MDA-export import) — budget + MDA-team dependency
+- **Automatic API capture** of measurement data (the loop is proven first via manual import from the centralized store)
 - Write-back to Excel (Auto Summary / suggested spec)
 - Monte Carlo (Quantum XL) integration
-
-> Note: DIM ID data-to-drawing linking (F3, now an **active ADO-driven drawing loop**) and the measured-Cpk closed loop (F8, read-in side) were **promoted into V1**. Reading drawing **images**, MDA API auto-capture, and auto write-back remain in V2.
 
 ---
 
