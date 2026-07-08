@@ -20,8 +20,8 @@ flowchart TD
     E3a --> LK
     E3b --> LK
     E -->|"Consistent"| LK["Anchor factors to drawing dims by DIM ID (F3)<br/>placeholder-first if no ID yet"]
-    LK --> LG["Emit per-part dimension-chain list (F3)<br/>part name / join number / DIM ID"]
-    LK -.->|"placeholder / missing DIM ID"| SCH["Scheduled service weekly / monthly (F3)<br/>surface-mcp milestones + workiq"]
+    LK --> LG["Group by part category (Lib 3 ontology) + per-part dimension-chain list (F3)<br/>part name / join number / DIM ID"]
+    LK -.->|"placeholder / missing DIM ID"| SCH["Server-side scheduled service weekly / monthly (F3)<br/>surface-mcp milestones + workiq"]
     SCH -.->|"near EV1"| RM["@mention owner on ADO (F3)<br/>backfill DIM ID · put chain on drawing"]
     LG --> F["Proceed to method recommendation"]
     F --> G{"Method recommendation (F4)<br/>by factor count"}
@@ -77,7 +77,7 @@ flowchart TD
 | Worksheet confirmation | Which sheets to interpret | User confirms / manual fallback selection |
 | Cleansing consistency | Required fields + DIM ID + Capability Library match | Consistent → continue; inconsistent → flag differences |
 | DIM ID anchor | Factor has a drawing dimension? | Linked / placeholder-first, backfill later |
-| Scheduled reminder | Near EV1 with missing DIM ID? | Yes → @mention owner on ADO + drawing reminder |
+| Scheduled reminder (server-side) | Near EV1 with missing DIM ID? | Yes → @mention owner on ADO + drawing reminder |
 | Difference handling | Who fixes it | User edits Excel / Agent edits data and recomputes |
 | Method recommendation | Factor count | `<4` WC · `4-10` RSS · `>10` refer to DM |
 | Target judgment | Cpk≥1.33 / sigma met | Both PASS / FAIL proceed to interpretation |

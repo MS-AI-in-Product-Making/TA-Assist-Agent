@@ -35,7 +35,7 @@ flowchart TB
     end
     subgraph ORCH["5b ADO Orchestration + Scheduled Governance (F3 · shared substrate)"]
         G1["Event trigger<br/>ADO work item + .xlsx attached -&gt; auto-run · owner from ADO owner / Request By"]
-        G2["Scheduled service (weekly / monthly)<br/>surface-mcp GetProgramMilestones + workiq"]
+        G2["Server-side scheduled service (weekly / monthly)<br/>surface-mcp GetProgramMilestones + workiq"]
         G3["Near EV1 with missing DIM ID<br/>@mention owner on ADO · remind: put chain on drawing"]
         G2 --> G3
     end

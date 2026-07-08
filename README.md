@@ -45,7 +45,7 @@ In process-flow order. See [full table](docs/03-differentiation.md).
 |---|---|---|---|---|
 | **F0 · Knowledge base (soul)** | Basis | Lives in the engineer's head | No grounding | 3 controlled libraries; every judgment traces to a library entry |
 | **F2 · Cleansing** | Data cleansing | Manual, error-prone | No basis | Missing-field + DIM ID check + per-category **Capability Library** (tolerance band / capability / distribution) validation |
-| **F3 · DIM link** | Data-to-drawing | Manual, ambiguous | Cannot link | Anchor each factor to a drawing dimension by **DIM ID** (metadata, not image reading); **ADO auto-trigger + scheduled EV1 reminder** (surface-mcp + workiq) drives DIM IDs onto the drawing |
+| **F3 · DIM link** | Data-to-drawing | Manual, ambiguous | Cannot link | Anchor each factor to a drawing dimension by **DIM ID** (metadata, not image reading); **ADO auto-trigger + server-side scheduled EV1 reminder** (surface-mcp + workiq, independent of the agent) drives DIM IDs onto the drawing |
 | **F5 · Engine** | Calculation | Reliable formulas | Often wrong / non-reproducible | Reuses the **same Excel engine** |
 | **F6 · Interpret** | Interpretation | Personal experience | No rules / knowledge base | Fixed **5-section** output, **objective, each RULE cites its F0 entry**, judgment left to user |
 | **F7 · Optimize** | Tolerance optimization | Manual re-runs | Cannot compute | Mean-shift centering + contribution economics + RSS apportionment + **spec reverse-solve** (over-capability warning) |
@@ -135,7 +135,7 @@ Deferred until there is a proven need; each can be merged into the product later
 
 - `test/` and all `*.xlsx` (confidential templates / sample data) are **git-ignored**.
 - Internal `*.html` design reports are **git-ignored** and not committed.
-- Project planning is tracked via GitHub **Milestones** (one per Feature) and **Issues** (Stories/Tasks).
+- Project planning is tracked via GitHub **Milestones** (one per User Story, F0–F9) and **Issues** (Features / Tasks).
 
 ---
 
