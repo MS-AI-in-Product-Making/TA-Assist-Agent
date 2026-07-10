@@ -1,6 +1,6 @@
 # Overview · What / Why / How
 
-One-page summary of the Surface TA Analysis Agent (V1).
+One-page summary of the Surface TA Analysis Agent.
 
 ## What
 
