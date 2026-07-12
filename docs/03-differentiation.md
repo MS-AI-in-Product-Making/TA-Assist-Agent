@@ -1,30 +1,30 @@
 # Differentiation
 
-> Traditional TA Excel vs generic LLM vs dedicated TA Agent (this project).
-> This Agent's value is not "calculation automation" (the engine reuses Excel), but a **knowledge base + objective interpretation** that gives TA its soul, plus data-to-drawing traceability and a measured-Cpk closed loop — with the judgment left to the user.
+> Traditional TA Excel vs. general-purpose LLM vs. dedicated TA Agent (this project).
+> This tool's value isn't "automating the calculation" (the calculation itself reuses Excel). It's the combination of a knowledge base and grounded, objective interpretation, plus traceable linking between data and drawings and a measured-Cpk closed loop — while leaving the final judgment to the user.
 
-## Three-Way Comparison (in process-flow order)
+## Three-Way Comparison (in process order)
 
-Rows follow the end-to-end flow; the `Stage` column maps to the User Stories in the [Feature Breakdown](04-feature-breakdown.md).
+Rows follow the end-to-end flow; the "Stage" column maps to the User Stories in the [Feature Breakdown](04-feature-breakdown.md).
 
-| Stage | Dimension | Traditional TA Excel | Generic LLM | Dedicated TA Agent (this project) |
+| Stage | Dimension | Traditional TA Excel | General-purpose LLM | Dedicated TA Agent (this project) |
 |:---:|---|---|---|---|
-| **S0** | Knowledge base (the soul) | None — lives in the engineer's head | None — no grounding | 3 controlled libraries (classified capability [source-tiered] / engineering rules / terminology·ontology); every judgment traces to a library entry |
-| **S2** | Data cleansing | Manual, error-prone | No basis, generic talk | Missing required-field check + vs Classified Capability Library for tolerance range + distribution, flagged "in-library evidenced / out-of-library"; DIM ID completeness |
-| **S3** | Data-to-drawing link (DIM ID) | Manual, description-based, ambiguous | Cannot link | Uniquely anchors each factor to a drawing dimension by DIM ID (metadata, not image reading); **groups worksheets by part category via Lib 3 ontology, DIM ID traceable to its exact location**; placeholder-first, backfill-later; **server-side ADO auto-trigger + scheduled service (surface-mcp milestones + workiq), independent of the agent, @mentions the owner before EV1 and reminds to put the chain on the drawing** |
-| **S5** | Calculation (trust foundation) | Template formulas reliable | Often miscalculates / non-reproducible | Reuses the same Excel engine, consistent and reproducible |
-| **S6** | Data interpretation (objective) | Personal experience, hard to standardize | No rules / knowledge base, one-off | Facts + threshold checks + contribution breakdown, **each RULE cites its S0 entry**; objectively stated, judgment left to user; stops to confirm when uncertain, never fabricates |
-| **S7** | Tolerance / dimension-chain optimization | Manual trial, time-consuming | Cannot compute reliably | Mean-shift centering + contribution economics + RSS apportionment + spec reverse-solve (2-3 parallel options); **over-capability → RED warning** |
-| **S8** | Closed loop (real Cpk) | None — measured data never returns | None | Backfill measured Cpk by DIM ID → **real gap vs initial estimate** + upgrade library from empirical (Tier 3) to measured (Tier 1); manual import from a centralized store (SharePoint / platform, out-of-band prerequisite); gets more accurate the more it is used |
-| **S9** | User interaction | Read the raw Excel yourself | Chat only, no source view | Read-only faithful evidence pane + cited dialogue with click-to-highlight; source never silently edited |
-| Global | Scalability | Weak (labor-dependent) | Weak (untrustworthy) | Strong (standardized / efficient / auditable) |
-| Global | Positioning | Calculation tool | One-off helper | **Objective evidence provider + verifiable decision support** |
+| **S0** | Knowledge base | None — lives only in the engineer's head | None — no grounding | Three controlled knowledge bases (capability / rules / terminology); every judgment traces back to a specific entry |
+| **S2** | Data cleansing | Manual, error-prone | No basis, generic talk | Checks required fields and validates tolerance range and distribution against the capability library, flagging "in-library / out-of-library"; also checks whether DIM IDs are complete |
+| **S3** | Data-to-drawing linking (DIM ID) | Manual, description-based, ambiguous | Cannot link | Uniquely links each factor to a drawing dimension via DIM ID (identifier only, no image recognition); groups by category and locates the exact position; placeholder first, backfill later; a server-side ADO trigger plus scheduled service reminds the owner before a key milestone (e.g. EV1) to complete and mark it on the drawing |
+| **S5** | Calculation | Template formulas are reliable | Often miscalculates, not reproducible | Reuses the same Excel formulas; consistent and reproducible |
+| **S6** | Data interpretation | Depends on individual experience, hard to standardize | No rules, no knowledge base, one-off answers | Facts plus threshold checks plus contribution breakdown, with every rule-based judgment citing a knowledge-base entry; states things objectively and leaves judgment to the user; confirms when in doubt, never fabricates |
+| **S7** | Tolerance / dimension-chain optimization | Manual trial and error, time-consuming | Cannot calculate reliably | Mean-shift centering plus contribution economics plus RSS apportionment plus spec reverse-solve (2–3 parallel options); a red warning when a target exceeds process capability |
+| **S8** | Measured closed loop | None — measured data never flows back | None | Backfills measured Cpk by DIM ID, compares against the initial estimate, and upgrades capability-library entries from empirical (Tier 3) to measured (Tier 1); imported manually from a centralized store at first, and gets more accurate with more data |
+| **S9** | Interaction | Read the raw Excel yourself | Chat only, no view of the source data | A read-only evidence pane on the left plus citable interpretation on the right, with click-to-highlight linking; source data is never silently changed |
+| Global | Scalability | Weak (depends on labor) | Weak (not trustworthy) | Strong (standardized / efficient / auditable) |
+| Global | Positioning | A calculation tool | A one-off helper | **An objective-evidence provider + verifiable decision support** |
 
-> Note: supporting features S1 (multi-sheet parsing) and S4 (method recommendation) also differ (parallel acceleration; rule-based reference with both WC/RSS computed) but are not the differentiating core.
+> Note: The supporting features S1 (multi-worksheet parsing) and S4 (method recommendation) also differ (parallel speed-up; rule-based recommendation with both WC and RSS computed), but they are not the core differentiator.
 
-## One-Line Differentiation
+## In One Sentence
 
-> Excel only solves "the math"; a generic LLM is an unfounded one-off tool. The dedicated Agent **grounds a reliable engine in a curated knowledge base**, delivers **structured, reproducible, auditable** objective interpretation, links data to drawings and closes the loop with measured Cpk — **the judgment is returned to the user**, and it stops to confirm wherever it is uncertain.
+> Excel only handles "getting the math right"; a general-purpose LLM is an ungrounded, one-off tool. This tool adds a controlled knowledge base on top of a reliable calculation engine, delivers structured, reproducible, auditable objective interpretation, links data to drawings via DIM ID, and closes the loop with measured Cpk — returning the final judgment to the user and stopping to confirm wherever there is doubt.
 
 ---
 **Related docs:** [Architecture](01-architecture.md) · [End-to-End Flow](02-end-to-end-flow.md) · [Feature Breakdown](04-feature-breakdown.md) · [Design Decisions](05-design-decisions.md)

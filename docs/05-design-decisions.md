@@ -1,215 +1,211 @@
 # Design Decisions (V1)
 
-> This document records the core design trade-offs of V1 — the "why" layer behind the architecture / flow / feature breakdown.
-> Positioning: **determinism, verifiability, auditability first; present evidence objectively, leave judgment to the user; stop and ask when uncertain, never fabricate.**
+> This document records the key trade-offs of V1 — the "why" behind the architecture, flow, and feature breakdown.
+> Stance: **certainty, verifiability, and auditability first; present evidence objectively and leave judgment to the user; when in doubt, stop and ask, and never fabricate.**
 
 ---
 
-## D1 · Knowledge Base Design (3 classes + source tiers)
+## D1 · Knowledge Base Design (three libraries + source tiers)
 
-The differentiation is bet on the knowledge base, so **its completeness and honesty directly decide the project's success**. V1 converges to **3 controlled libraries** (human-curated, not auto-learned).
+Differentiation is bet on the knowledge base, so **how complete and how honest it is directly decides how far the project can go**. V1 converges on **three controlled knowledge bases** (human-maintained, not auto-learned).
 
-### Lib 1 · Classified Capability Library
+### Capability Library (Lib 1)
 
-By part category, each entry has three dimensions:
+Organized by part category, each entry has three dimensions:
 
-| Dimension | Question answered | Source |
+| Dimension | Question it answers | Source |
 |---|---|---|
-| Reasonable tolerance band | Is the user-filled tolerance **sensible** (design-side norm)? | Standards / historical drawings / engineering experience |
-| Process capability (source-tiered) | Is this tolerance **actually achievable** (manufacturing-side reality)? | Measured / PPAP / supplier statement |
-| Recommended distribution | Which distribution should this **feature class use** (prevents wrong σ from defaulting to Normal)? | Process-characteristic induction |
+| Reasonable tolerance band | Is the user-entered tolerance **reasonable** (from a design standpoint)? | Standards / historical drawings / engineering experience |
+| Process capability (tiered) | Can this tolerance **actually be achieved** (from a manufacturing standpoint)? | Measured / PPAP / supplier statement |
+| Recommended distribution | Which distribution **should this feature class use** (to avoid a wrong σ from defaulting to normal)? | Induced from process characteristics |
 
-> **Merge note:** The former "process capability library" and "classified tolerance spec library" were structurally duplicated and are merged into one class here; "recommended distribution" is also per part category, so it becomes a column in the same table rather than a separate library.
+> **Merge note:** The former "process capability library" and "classified tolerance spec library" overlapped structurally and are merged into one library here; "recommended distribution" is also per category, so it becomes a column in the same table rather than a separate library.
 
-**Source tiers (solve "measured data is often missing"):**
+**Source tiers (to solve "measured data is often missing"):**
 
-| Tier | Data source | Reverse-solve / cleansing behavior |
+| Tier | Data source | Behavior in reverse-solve / cleansing |
 |---|---|---|
 | Tier 1 | Measured / PPAP | Assert feasibility directly |
-| Tier 2 | Supplier statement / historical project | Assert + mark "to be reviewed" |
-| Tier 3 | Engineering experience / standard estimate | Default fallback value |
-| **Tier 0** | **No data** | **Do not assert feasibility, mark "process capability unknown, confirm with supplier"** |
+| Tier 2 | Supplier statement / historical project | Assert, but mark "to be reviewed" |
+| Tier 3 | Engineering experience / standard estimate | Use as the default fallback |
+| **Tier 0** | **No data** | **Assert no feasibility; mark "process capability unknown, confirm with supplier"** |
 
-**Why:** In reality Tier 1 is often missing. Tiering lets the system **degrade gracefully** — rigorous when data exists, honestly marked "unknown" when it does not, rather than guessing (fail-closed).
+**Why:** In reality Tier 1 is often missing. Tiering lets the system **degrade gracefully** — rigorous when data exists, honestly marked "unknown" when it doesn't, rather than guessing.
 
-### Lib 2 · Engineering Rules Library
+### Rules Library (Lib 2)
 
-Standards such as CTS = 6σ · CTF = 4σ · default target Cpk ≥ 1.33. They change very slowly and are authoritative, so they need **version locking + change log**.
+Standards such as CTS=6σ, CTF=4σ, and a default target of Cpk≥1.33. They change slowly and are authoritative, so they need **version locking and change logs**.
 
-### Lib 3 · Terminology / Ontology Library (controlled dictionary)
+### Terminology Library (Lib 3, a controlled dictionary)
 
-A "controlled dictionary" that **prevents the model from inventing terms or misclassifying**. Three lookup tables:
+A "controlled dictionary" that **keeps the model from inventing terms or misclassifying**. It has three lookup tables:
 
-1. **Part-category vocabulary**: a fixed category list (housing / bracket / screw / foam / adhesive / switch / glass / PCBA…) → validate `part category`, serve as index key for Lib 1.
-2. **Subsystem vocabulary**: tag each part with a subsystem (ME / PCBA / Glass / Display…) → **the prerequisite for "cross-subsystem risk" detection**.
-3. **datum vocabulary**: datum-face naming conventions.
+1. **Part-category vocabulary**: a fixed list of categories (housing / bracket / screw / foam / adhesive / switch / glass / PCBA…) → validates the part category and serves as the index key for Lib 1.
+2. **Subsystem vocabulary**: tags each part with a subsystem (ME / PCBA / Glass / Display…) → the prerequisite for detecting "cross-subsystem risk."
+3. **Datum vocabulary**: naming conventions for datum faces.
 
-**How to build:** No AI — extract from part names already present in the existing TA template, organize into a flat list, tag each part with its subsystem. It is just a lookup table; extend when new parts appear.
+**How to build it:** No AI — extract from the part names already in the existing TA template, organize them into a flat list, and tag each part with its subsystem. It's just a lookup table, extended when new parts appear.
 
-**Why:** Without it, "cross-subsystem" and "category matching" are meaningless — the model would not know Glass and bracket belong to different subsystems. It is the index layer that lets the other two libraries and the structural-risk judgment **line up**.
+**Why:** Without it, "cross-subsystem" and "category matching" are meaningless — the model wouldn't know that Glass and bracket belong to different subsystems. It's the index layer that lets the other two libraries and the structural-risk judgment line up.
 
 ### Maintenance Principles
 
-- Human-curated, not auto-learned (same reason "experience distillation" was rejected — the risk of ossifying errors).
-- Every entry carries **source / confidence / effective version**; only then can a cleansing conclusion be flagged "in-library evidenced / out-of-library".
-- Single owner + change log + **coverage metric** published (e.g. "Lib 1 covers 6/20 high-frequency part classes").
-- Distribution factor constants (Normal=1 / Uniform=1.732 / …) are **engine built-in constants**, not part of the knowledge base.
-- **Closed-loop feedback (feeding measured Cpk back into Lib 1) is handled by S8 (see D8).**
+- Human-maintained, not auto-learned (the same reason "experience distillation" was rejected — the risk of hardening mistakes).
+- Every entry carries **source / confidence / effective version**; only then can a cleansing conclusion be flagged "in-library / out-of-library."
+- A single owner, a change log, and published **coverage** (e.g. "Lib 1 covers 6/20 high-frequency categories").
+- Distribution factor constants (Normal=1 / Uniform=1.732 / …) are **built-in engine constants**, not part of the knowledge base.
+- **Feeding measured Cpk back into Lib 1 is handled by S8 (see D8).**
 
 ---
 
-## D2 · Objective Interpretation: State Evidence, Leave Judgment to the User
+## D2 · Objective Interpretation: State the Evidence, Leave Judgment to the User
 
-**No prescriptive advice** — assert only what can be proven by calculation / rules. Mechanism = **tag every statement with an "assertion type"**:
+**No prescriptive advice** — assert only what calculation or rules can prove. The mechanism: **tag every statement with an "assertion type."**
 
-| Tag | Meaning | Can assert? |
+| Tag | Meaning | Can assert directly? |
 |---|---|---|
-| `FACT` | Pure computed result (Cpk=0.74, A contributes 62%) | ✅ State directly |
-| `RULE` | Objective comparison to a threshold (0.74 < 1.33) | ✅ State directly |
-| `SIGNAL` | A signal needing engineering judgment | ⚠ Only flag "worth noting", no conclusion |
-| `OPTION` | Alternative path + its quantified consequence | 📊 Presented in parallel, not ranked, not recommended |
+| `FACT` | A pure computed result (Cpk=0.74, A contributes 62%) | ✅ State directly |
+| `RULE` | An objective comparison to a threshold (0.74 < 1.33) | ✅ State directly |
+| `SIGNAL` | A signal needing engineering judgment | ⚠ Flag "worth noting" only, no conclusion |
+| `OPTION` | An alternative path and its quantified consequence | 📊 Presented in parallel, not ranked, not recommended |
 
-**Rewrite example:** Change "recommend tightening part A" → **"Part A contributes 62%; if its tolerance ×0.5, Cpk goes 0.74→1.05 (computed)"**. State the causality and numbers, leave the action to the user. The closing one-liner is a **factual summary**, not advice.
+**Rewrite example:** Change "recommend tightening part A" to **"Part A contributes 62%; if its tolerance is ×0.5, Cpk goes from 0.74 to 1.05 (computed)."** State the cause and the numbers; leave the action to the user. The closing line is a **factual summary**, not advice.
 
-**Benefit:** "Judgments" without ground truth are removed from the system; the validation set only needs to check `FACT` / `RULE`, naturally regressable.
+**Benefit:** Judgments with no basis are removed from the system; the validation set only needs to check `FACT` and `RULE`, which is naturally regressable.
 
 ---
 
 ## D3 · SIGNAL List (flag only, no automatic conclusion)
 
-**Cross-subsystem** (the dimension chain crosses different engineering subsystems with different tolerance habits / thermal expansion / assembly methods):
+**Cross-subsystem** (the dimension chain crosses different engineering subsystems with different tolerance habits, thermal expansion, and assembly methods):
 
 - ME structural part ↔ PCBA (board thickness, component height)
 - ME ↔ Glass / cover (glass cutting, lamination)
 - ME ↔ Display module
-- Metal part ↔ plastic part (large CTE difference)
+- Metal part ↔ plastic part (large difference in thermal expansion)
 - Hard part ↔ soft part (foam / adhesive / gasket)
 
-**Non-geometric variables** (involve physical behavior, cannot be linearly stacked as rigid bodies):
+**Non-geometric variables** (involve physical behavior and can't be stacked linearly as rigid bodies):
 
-- switch / button travel and compression
-- foam compression ratio (non-linear, changes under load)
-- adhesive layer thickness (cure shrinkage, press deformation)
-- gasket compression
-- preload / deformation from screw torque
-- thermal expansion (temperature-dependent, not the assembly state)
-- elastic part / snap-fit assembly deformation
-
----
-
-## D4 · Hallucination Handling: Stop and Confirm When Uncertain (fail-closed)
-
-**Principle: better to ask than to fabricate.** The real uncertainty is not the datum "direction" but the **assembly datum face / stack start** — the model can read numbers but cannot tell from the table which face the physical stack starts from or which face mates with which (that information lives in the drawing / 3D, excluded from V1).
-
-Mechanism = **assumption register + confidence gate**:
-
-1. Every "non-pure-calculation" inference (assembly datum face, whether the loop is closed, cross-subsystem attribution) may only be asserted if evidence can be obtained from the input.
-2. Evidence missing / ambiguous → **do not guess**, raise a **targeted clarification card** with candidates:
-   > ⚠ Need your confirmation: which face of part A is the **assembly datum face** of this dimension chain? (Determines the stack start; cannot be judged from the table.)
-3. **Local blocking**: confirmed parts are analyzed as usual, conclusions depending on that assumption are held, nothing is computed on a faulty basis.
-4. All assumptions are listed together; the final version is issued after the user confirms / corrects them.
-
-> **Cross-subsystem attribution**: deciding which subsystem a part belongs to (ME/PCBA/Glass…) is judged by the Lib 3 subsystem vocabulary; **not found → also becomes a confirmation item**.
+- Switch / button travel and compression
+- Foam compression ratio (non-linear, changes under load)
+- Adhesive layer thickness (cure shrinkage, press deformation)
+- Gasket compression
+- Preload and deformation from screw torque
+- Thermal expansion (varies with temperature, not the assembly state)
+- Elastic-part / snap-fit assembly deformation
 
 ---
 
-## D5 · Spec Reverse-Solver (2-3 parallel options + over-spec warning)
+## D4 · Preventing Fabrication: When in Doubt, Stop and Confirm
 
-Goal: the total σ needed to reach Cpk_target=1.33, back-solve the variation to be eliminated, and generate **parallel** options (not recommended, only compared):
+**Principle: better to ask than to invent.** The real uncertainty isn't the datum "direction" but the **assembly datum face / stack start** — the model can read the numbers but can't tell from the table which face the physical stack starts from or which faces mate (that information is in the drawing / 3D, out of scope for V1).
+
+The mechanism is an **assumption list plus a confirmation gate**:
+
+1. Any "non-pure-calculation" inference (assembly datum face, whether the loop is closed, cross-subsystem attribution) may only be asserted if evidence can be obtained from the input.
+2. When evidence is missing or ambiguous — **don't guess** — raise a targeted clarification card with candidates:
+   > ⚠ Need your confirmation: in this dimension chain, which face of part A is the **assembly datum face**? (It determines the stack start and can't be judged from the table.)
+3. **Local hold**: confirmed parts are analyzed as usual; conclusions that depend on this assumption are held, and nothing is computed on a wrong premise.
+4. All assumptions are listed together; the final version is issued after the user confirms or corrects them.
+
+> **Cross-subsystem attribution**: which subsystem a part belongs to (ME/PCBA/Glass…) is judged by the Lib 3 subsystem vocabulary; **when not found, it also becomes a confirmation item.**
+
+---
+
+## D5 · Spec Reverse-Solve (2–3 parallel options + over-spec warning)
+
+Goal: compute the total σ needed to reach Cpk_target=1.33, back out the variation to eliminate, and generate **parallel** options (not recommended, only compared):
 
 | Option | Strategy | Applicability |
 |---|---|---|
-| Option A · single-point tighten | Tighten only the Top-1 contributor to pass | Simple; if over process capability, flag infeasible |
-| Option B · Top 2-3 combined tighten | Share the reduction by contribution ratio | More realistic, less pressure per part |
-| Option C · center + tighten | Zero-cost mean-centering first, then tighten the remaining gap | Most economical when a nominal offset exists |
+| Option A · single-point tighten | Tighten only the top contributor to pass | Simple; if it exceeds process capability, mark it infeasible |
+| Option B · top 2–3 combined tighten | Split the tightening by contribution ratio | More realistic, less pressure on any single part |
+| Option C · center plus tighten | Do zero-cost mean-centering first, then tighten the remaining gap | Most economical when there is a nominal offset |
 
-Each option outputs: new tolerance per part → resulting Cpk → **feasibility flag (vs Lib 1 process capability)** → relative cost proxy.
+Each option outputs: new tolerance per part → resulting Cpk → **feasibility flag (against Lib 1 process capability)** → relative cost estimate.
 
-**Over-spec warning (core):** when the back-solved tolerance is tighter than the process-achievable value for that part class → **RED warning**, to stop the user from blindly shrinking the tolerance band:
+**Over-spec warning (core):** when the solved tolerance is tighter than what the process can achieve for that part class → a **red warning**, to keep the user from blindly narrowing the tolerance:
 
-> ⚠ Target tolerance 0.02 is already below the process-achievable 0.05 for this part class (Tier 2) — **not achievable in process; forcing it will collapse yield / spike cost.**
+> ⚠ Target tolerance 0.02 is already below the process-achievable 0.05 for this part class (Tier 2) — **not achievable in process; forcing it will collapse yield and spike cost.**
 
-For Tier 0 (no capability data), mark "feasibility unknown, confirm with supplier".
-
----
-
-## D6 · User Interaction: Read-Only Evidence Pane + What-You-See-Is-The-Basis
-**No need to reopen Excel after upload.** Premise: present the original TA data **faithfully, read-only, unaltered**, so the user trusts their eyes rather than a black box.
-
-**Layout: evidence on the left / dialogue on the right**
-
-- **Left pane (read-only evidence)**: faithfully reproduce the `Example_TA` factor table — same values, same layout, same units, **not editable**; the extracted **Loop screenshot** directly below. It is a "replica view", not re-entry.
-- **Right pane (Agent dialogue)**: every conclusion **cites a visible row / cell in the left pane** ("see row 3, part A, %contribution 62%"); clicking a conclusion highlights the corresponding row on the left.
-
-**Trust ladder (three levels):** see the raw data (trust your eyes) → see the Agent values match Excel (trust the engine) → see each interpretation is traceable (trust the conclusion).
-
-**Read-only guarantee + two paths to change data:** source data is never silently overwritten; to change it, the user edits Excel and re-uploads / the Agent proposes a difference for approval.
+For Tier 0 (no capability data), mark "feasibility unknown, confirm with supplier."
 
 ---
 
-## D7 · Dimension-to-Drawing Association (DIM ID) — Active Drawing Closed Loop, not image reading
+## D6 · Interaction Design: Read-Only Evidence Pane, What You See Is the Basis
 
-**The field team's real need is traceability from the TA table to the drawing dimension, *enforced before it is too late*.** The chosen mechanism is deliberately **lightweight**: use the `DIM ID` field (plus tags) that already exists in the TA template to anchor each factor to a unique drawing dimension. This is **metadata association, not OCR / image reading** — reading drawing images is out of scope for now.
+**No need to reopen Excel after uploading.** The premise: present the original TA data **faithfully, read-only, and unaltered**, so the user trusts what they see rather than a black box.
 
-Mechanism — **Sub-loop A · anchor:**
+**Layout: evidence on the left, dialogue on the right**
 
-1. Build an anchor table `DIM ID ↔ factor ↔ (future) measurement`; validate uniqueness.
-2. **Placeholder-first, backfill-later**: early in a program there may be no drawing / no ID yet. Allocate a placeholder anchor and add a reminder process step so purpose-dimension requirements are backfilled into the TA task once the drawing exists (per the field discussion).
-3. **Uniqueness + cross-source reconciliation** so IDs stay unique and the anchor does not drift.
-   Inside MS a shared template keeps IDs consistent, so a strict naming convention is low-value;
-   the actual drift risk is at the **MS ↔ supplier boundary** (their own numbering + revisions).
-   The mechanism is therefore an **alias / crosswalk table** mapping external IDs onto the canonical
-   anchor, with fail-closed confirmation (D4) on collisions — not an enforced naming scheme.
+- **Left (read-only evidence)**: reproduce the `Example_TA` factor table exactly — same values, layout, and units, **not editable** — with the extracted **Loop screenshot** directly below. It is a "replica view," not re-entry.
+- **Right (dialogue)**: every conclusion **cites a visible row or cell on the left** ("see row 3, part A, contribution 62%"); clicking a conclusion highlights the corresponding row on the left.
 
-Mechanism — **Sub-loop B · ADO orchestration + scheduled governance** (per the factory meeting; this substrate is **shared with the D8 data loop**):
+**Three levels of trust**: see the raw data (trust your eyes) → see the system's values match Excel (trust the engine) → see that each interpretation is traceable (trust the conclusion).
 
-4. **Event trigger:** creating an ADO work item with the TA `.xlsx` attached auto-runs the agent.
-5. **Owner identification:** bind the run to the ADO task owner / `Request By` field (clarification fallback if absent) so reminders reach a real person.
-6. **Scheduled EV1 reminder (server-side):** a **server-side background service** runs weekly / monthly **independently of whether the agent is running**, reads Surface program milestones via `surface-mcp` (`GetProgramMilestones`) and open items via `workiq`; as **EV1** approaches with placeholder / missing DIM IDs it **@mentions the owner on ADO**. Reminding early avoids discovering missing information only at EV1.
-7. **Ontology-driven grouping + dimension-chain list:** when a workbook has many worksheets, group factors by **part category + part description** using the **S0 Lib 3 Terminology / Ontology Library** — because same-category dimensions usually live on the *same* drawing. For each group emit a per-part list (`part name / join number / DIM ID`). Because the same textual description at different locations can mean *different* dimensions, every item keeps a **traceable link from `DIM ID` to its specific location**, so a designer can jump straight to the exact dimension (traceable + sourceable).
-8. **Packaged drawing reminder (server-side):** on the same server-side scheduler, remind the design owner — **once per drawing / group**, not per factor — to reflect that chain **on the drawing**, the drawing-side prerequisite.
-9. **State & history on ADO:** track `placeholder → DIM ID filled → shown on drawing` for traceability.
-
-**Why in scope:** it needs no image understanding, reuses an existing column, and is the **hard prerequisite for the D8 closed loop** (you cannot route measured data back without a stable key). The ADO/scheduler substrate is grounded in tools we already have (`surface-mcp`, `workiq`, ADO).
-
-**Bottleneck:** the missing / non-unique DIM ID case (governance + placeholder), reminder fatigue / wrong owner (cadence tied to milestones + owner fallback), and the background service's ADO / MCP permission scope.
+**Read-only guarantee plus two paths to change data:** source data is never silently overwritten; to change it, the user edits Excel and re-uploads, or the system proposes a difference that is applied only after confirmation.
 
 ---
 
-## D8 · Closed-Loop Real-Cpk Feedback — real gap now, better knowledge base over time
+## D7 · Data-to-Drawing Linking (DIM ID): Active Drawing Loop, No Image Recognition
 
-**The loop that gives the whole system compounding value:** real measured yield / Cpk from the line → routed by `DIM ID` back to the corresponding factor. Two payoffs:
+**The field's real need is to trace from the TA table to the drawing dimension — and to enforce it before it's too late.** The approach here is deliberately **lightweight**: reuse the `DIM ID` field (plus tags) already in the TA template to uniquely link each factor to a drawing dimension. This is **identifier linking, not OCR / image recognition** — reading drawing images is out of scope for now.
 
-- **Immediate:** the target dimension is recomputed on **real** capability, so the user sees the **actual gap and actual tolerance range** — and a diff against the initial estimate. On deviation the agent hands off to S7 for adjustment options (matching the field ask: "regenerate the report, compare to the initial result, propose adjustments").
-- **Compounding:** the matching Lib 1 entry is upgraded from "empirical estimate (Tier 3)" to "measured (Tier 1)", so cleansing, interpretation and optimization all get better next time. The **feedback target is S0**, closing the D1 loop.
+Mechanism — **Sub-loop A · linking:**
+
+1. Build a link table `DIM ID ↔ factor ↔ (future) measurement` and validate uniqueness.
+2. **Placeholder first, backfill later**: early in a program there may be no drawing and no ID yet. Assign a placeholder ID and add a reminder step so the purpose-dimension requirements are backfilled into the TA task once the drawing exists.
+3. **Uniqueness plus cross-source reconciliation**, so IDs stay unique and the link doesn't drift. Inside Microsoft a shared template already keeps IDs consistent, so a strict naming convention adds little value; the real drift risk is at the **Microsoft-to-supplier boundary** (their own numbering plus revisions). So the mechanism is a **crosswalk table** that maps external IDs onto the canonical ID, stopping to confirm on conflicts (see D4) — not an enforced naming scheme.
+
+Mechanism — **Sub-loop B · ADO orchestration and scheduled governance** (from the factory meeting; this substrate is **shared with the D8 data loop**):
+
+4. **Event trigger:** creating an ADO work item with the TA `.xlsx` attached runs the system automatically.
+5. **Owner assignment:** bind this run to the ADO owner or `Request By` field (with a clarification fallback when missing) so reminders reach a real person.
+6. **Scheduled reminders (server-side):** a **server-side background service** runs weekly or monthly, **independent of whether the analysis is running**, reading Microsoft program milestones via `surface-mcp` (`GetProgramMilestones`) and open items via `workiq`; as a **key milestone (e.g. EV1)** approaches with DIM IDs still placeholder or missing, it **reminds the owner on ADO**. Reminding early avoids discovering missing information only at the key milestone.
+7. **Grouping by the terminology library plus a dimension-chain list:** when a report has many worksheets, use the Lib 3 terminology library to group by **part category plus description** — because same-category dimensions usually live on the **same** drawing. For each group, produce a list (`part name / join number / DIM ID`). Because the same description at a different position can be a **different** dimension, each item keeps a link from its `DIM ID` to its exact position, so the designer can jump straight to the right dimension.
+8. **Packaged drawing reminder (server-side):** using the same server-side scheduler, remind the design owner — **once per drawing or group**, not per factor — to mark the dimension chain **on the drawing**.
+9. **State and history on ADO:** track `placeholder → DIM ID filled → marked on drawing` for traceability.
+
+**Why it's in scope:** it needs no image understanding, reuses an existing field, and is a **hard prerequisite for the D8 loop** (without a stable identifier, measured data can't be routed back). The ADO / scheduler substrate is all built on tools we already have (`surface-mcp`, `workiq`, ADO).
+
+**Difficulties:** missing or non-unique DIM IDs (handled by governance plus placeholders), reminders that are too frequent or sent to the wrong person (cadence tied to milestones plus an owner fallback), and the background service's ADO / MCP permission scope.
+
+---
+
+## D8 · Measured-Cpk Closed Loop: See the Real Gap Now, Improve the Knowledge Base Over Time
+
+**This loop is what makes the whole system more valuable the more it's used:** real yield / Cpk from production is routed back to the corresponding factor by `DIM ID`. Two payoffs:
+
+- **Immediate:** the target dimension is recomputed with **real** capability, so the user sees the **real gap and real tolerance range** — and a comparison against the initial estimate. When the gap is large, the system hands off to S7 for adjustment options (matching the field's ask: "re-generate the report, compare to the initial result, and propose adjustments").
+- **Compounding:** the matching Lib 1 entry is upgraded from "empirical estimate (Tier 3)" to "measured (Tier 1)," so cleansing, interpretation, and optimization are all more accurate next time. **The feedback target is S0**, closing the D1 loop.
 
 **External prerequisite — where the measured data lives:**
 
-The collection and storage of real Cpk data is **not something this project can control**; it needs an out-of-band agreement so measured data lands in a **single, centralized store — a SharePoint folder or platform system** — with a stable structure. This is a hard, non-engineering prerequisite: without a known, agreed place to read from, the loop cannot start.
+Collecting and storing real Cpk data is **not something this project can control**; it needs an external agreement so measured data lands in a **single, centralized store — a SharePoint folder or a platform system** — with a stable structure. This is a hard, non-engineering prerequisite: without a known, agreed place to read from, the loop can't start.
 
-**Scope — read-in side only:**
+**Scope — the read-in side only:**
 
-1. Define a measurement-data schema keyed by `DIM ID`; **manually import** the standardized measured data from the centralized store; ingest measured distributions; recompute σ (handle non-normal distributions honestly).
-2. Report **initial (estimated) vs actual (measured)** and promote the Lib 1 entry tier (T3 → T1) with a version bump.
-3. **No auto write-back to Excel** — suggesting spec changes back into the workbook is out of scope for now.
+1. Define a measurement data schema keyed by `DIM ID`; **manually import** the standardized measured data from the centralized store; read in the measured distribution; recompute σ (handling non-normal cases honestly).
+2. Report "**initial estimate vs. measured**" and upgrade the Lib 1 entry from T3 to T1 with a version bump.
+3. **No automatic write-back to Excel** — writing suggested specs back into the workbook is out of scope for now.
 
-Automatic API capture of measured data (which would avoid manual upload for multi-part assemblies) is a natural next step once the loop and the centralized store are proven.
+Automatic capture of measured data (avoiding manual upload for multi-part assemblies) is the natural next step once the loop and the centralized store are proven.
 
-**Bottlenecks:**
+**Difficulties:**
 
-- **DIM ID governance (D7) is a hard prerequisite** — no stable key, no routing.
-- Measured distributions are often **non-normal**, so σ conversion must not blindly assume Normal.
-- **Centralized measured-data store** (SharePoint / platform) must be agreed and maintained out-of-band; without it there is no source to import from.
-- Measured distributions are often **non-normal**, so σ conversion must not blindly assume Normal.
-- Manual import is the proving path; automatic API capture can follow once the store and loop are established.
+- **DIM ID governance (D7) is a hard prerequisite** — without a stable identifier, there's nothing to route by.
+- Measured distributions are often **non-normal**, so σ conversion must not blindly assume normal.
+- The **centralized store** (SharePoint / platform) must be agreed and maintained externally; without it there's no source to import from.
+- Manual import proves the loop first; automatic capture can follow once the store and loop are stable.
 
-**Why read-in only:** it delivers the "real gap now + gets more accurate over time" value while deferring the riskier write-back and the auto-capture cost/economics coupling. It also makes Lib 1's source-tier design (D1) a concrete, exercised path rather than a documentation concept.
+**Why read-in only:** it delivers the value of "see the real gap now, get more accurate over time" while deferring the riskier write-back and the cost questions of automatic capture. It also turns Lib 1's source-tier design (D1) from a documented concept into a path that is actually exercised.
 
 ---
 
-## Impact of Decisions on Feature Flow
+## How the Decisions Shape the Feature Flow
 
-Features are ordered by the end-to-end **process flow** (not priority): **S0 knowledge base (soul) → S1 parse → S2 cleanse → S3 DIM link → S4 method → S5 engine → S6 objective interpretation → S7 tolerance optimization → S9 interaction/output**, with **S8 closed loop** feeding measured Cpk back into S0. The knowledge base (S0) and objective interpretation (S6) are the "soul" of the tool; the closed loop (S8) is what lets that soul improve over time.
+Features are ordered by process flow (not by priority): **S0 knowledge base → S1 parse → S2 cleanse → S3 DIM linking → S4 method → S5 engine → S6 objective interpretation → S7 tolerance optimization → S9 interaction/output**, with the **S8 closed loop** feeding measured Cpk back into S0. The knowledge base (S0) and objective interpretation (S6) decide the quality of the tool's judgment; the closed loop (S8) decides whether it gets better over time.
 
 ---
 **Related docs:** [Architecture](01-architecture.md) · [End-to-End Flow](02-end-to-end-flow.md) · [Differentiation](03-differentiation.md) · [Feature Breakdown](04-feature-breakdown.md)

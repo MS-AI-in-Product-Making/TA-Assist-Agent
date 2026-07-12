@@ -1,176 +1,176 @@
 # Feature Breakdown (V1)
 
 > Hierarchy: **Epic → User Story → Feature → Task**, with Risk / Issue notes.
-> User Story IDs (S0–S9) are ordered by the end-to-end **process flow** and map one-to-one to [GitHub Milestones](https://github.com/MS-AI-in-Product-Making/AI-TVA-Analysis-Agent/milestones); their child Features / Tasks map to Issues.
+> User Story IDs (S0–S9) are ordered by process flow and map to [GitHub Milestones](https://github.com/MS-AI-in-Product-Making/AI-TVA-Analysis-Agent/milestones); their child Features / Tasks map to Issues.
 
 ## Epic
 
 **Surface TA Analysis Agent (V1)**
 
-> Strategic / project level — upgrade TA that relies on people for "calculation + experience-based interpretation" into an intelligent assistant backed by a knowledge base + rules, with data-to-drawing traceability and a measured-Cpk closed loop, delivering objective, evidence-backed engineering decisions.
+> Goal: upgrade TA — previously done by people through "calculation plus experience-based interpretation" — into a tool with a knowledge base, rules, traceability, and a closed loop, delivering objective, well-grounded engineering decision support.
 
-> **Process backbone:** S0 foundation → S1 parse → S2 cleanse → S3 DIM link → S4 method → S5 engine → S6 interpret → S7 optimize → S9 interact/output; **S8 closed loop** flows measured data from the line back into **S0**, forming a "gets better the more it is used" cycle.
+> **Process backbone:** S0 foundation → S1 parse → S2 cleanse → S3 DIM linking → S4 method → S5 engine → S6 interpret → S7 optimize → S9 interaction/output; **S8 closed loop** feeds production measured data back into S0, making the system more accurate over time.
 
-> **Focus features (⭐):** S0, S2, S3, S6, S7, S8, S9. Supporting features (S1, S4, S5) are kept minimal.
+> **Core features (⭐):** S0, S2, S3, S6, S7, S8, S9. Supporting features (S1, S4, S5) are kept lightweight.
 
 ---
 
-## S0 · Knowledge Base ⭐ (the soul — the source of all judgment)
+## S0 · Knowledge Base ⭐ (the source of every judgment)
 
-> Without the knowledge base, TA is a soulless calculator: cleansing has no yardstick, interpretation has no basis, optimization has no cost view. Human-curated, with source / confidence / coverage. See [Design Decision D1](05-design-decisions.md).
+> Without a knowledge base, TA is just a calculator with no reference: cleansing has no basis, interpretation has no foundation, optimization has no view of cost. The knowledge base is human-maintained, with source, confidence, and coverage on every entry. See [Design Decision D1](05-design-decisions.md).
 
 | Type | Content |
 |---|---|
-| 📘 Feature | **Classified Capability Library** (Tier 0 foundation) — reasonable tolerance band + process capability (source tiers T1 measured·PPAP → T3 empirical → T0 no-data marked "unknown") + recommended distribution |
-| 📘 Feature | **Engineering Rules Library** — CTS=6-sigma / CTF=4-sigma / Cpk≥1.33; distribution factors are engine constants, not stored here |
-| 📘 Feature | **Terminology · Ontology Library** — part-category vocabulary / subsystem (ME·PCBA·Glass·Display) / datum; used by S6 for cross-subsystem detection, not found → confirmation item |
-| 🔧 Task | Entry schema (source / confidence / effective version) · coverage metric published · single owner + change log |
-| ⚠ Risk | Library missing or stale → publish coverage; Tier 0 does not assert feasibility (fail-closed) |
+| 📘 Feature | **Capability Library (Lib 1)**: reasonable tolerance band + process capability (source tiers: T1 measured/PPAP → T3 empirical → T0 no data) + recommended distribution |
+| 📘 Feature | **Rules Library (Lib 2)**: CTS=6-sigma / CTF=4-sigma / Cpk≥1.33; distribution factors are engine constants and don't belong here |
+| 📘 Feature | **Terminology Library (Lib 3)**: part-category vocabulary / subsystem (ME, PCBA, Glass, Display) / datum; used by S6 to detect cross-subsystem cases, and becomes a confirmation item when not found |
+| 🔧 Task | Entry schema (source / confidence / effective version); publish coverage; single owner plus change log |
+| ⚠ Risk | A missing or stale library misleads judgment: coverage must be published; T0 (no data) asserts no feasibility — when in doubt, stop |
 
 ## S1 · Report Parsing & Asset Prep (supporting)
 
 | Type | Content |
 |---|---|
-| 📘 Feature | Upload xlsx and auto-detect worksheets containing TA content, no manual selection needed |
-| 🔧 Task | Scan worksheets · recognize fixed layout · list for user confirmation |
-| 📘 Feature | Parallel-accelerated processing of multi-sheet reports for fast output (review still per-page, human-gated) |
-| 🔧 Task | Parallel scheduling · factor table (E14:T26) parsing · Loop screenshot extraction · aggregation |
-| ⚠ Risk | Irregular worksheet naming / layout causes missed detection → manual fallback selection |
+| 📘 Feature | After uploading the xlsx, auto-detect worksheets containing TA content, reducing manual selection |
+| 🔧 Task | Scan worksheets, recognize the fixed layout, list them for user confirmation |
+| 📘 Feature | Process multiple worksheets in parallel to speed up output (review is still done page by page, gated by a human) |
+| 🔧 Task | Parallel scheduling, parse the factor table (E14:T26), extract the Loop screenshot, aggregate |
+| ⚠ Risk | Irregular worksheet names or layouts may cause missed detection, requiring manual selection as a fallback |
 
-## S2 · Data Cleansing ⭐ (solves "cleansing by hand is error-prone")
+## S2 · Data Cleansing ⭐ (solves "manual cleansing is error-prone")
 
 | Type | Content |
 |---|---|
-| 📘 Feature | Validate whether user-filled information is missing |
-| 🔧 Task | Required-field check — factor description / part name / part category / design nominal / tolerance / long term·safety factor / sigma level / distribution (missing optional fields such as drawing number only prompt, do not block) |
-| 📘 Feature | Judge reasonableness against the per-category **Classified Capability Library** (S0 Lib 1) |
-| 🔧 Task | Load Lib 1 · tolerance-range match · distribution reasonableness check · difference highlighting, flag "in-library evidenced / out-of-library" |
+| 📘 Feature | Check whether user-filled information is missing |
+| 🔧 Task | Required-field check: factor description / part name / part category / design nominal / tolerance / long-term and safety factor / sigma level / distribution (optional fields such as drawing number only prompt, not block) |
+| 📘 Feature | Judge whether the input is reasonable against the Capability Library (Lib 1) |
+| 🔧 Task | Load Lib 1, compare tolerance range, check whether the distribution is reasonable, highlight differences, and flag "in-library / out-of-library" |
 | 📘 Feature | Include **DIM ID completeness** as part of cleansing (feeds S3) |
-| 🔧 Task | Flag factors missing a DIM ID as a key-optional gap; do not block, but surface for later linking |
-| 📘 Feature | Two correction paths for differences: user edits Excel / Agent edits data and recomputes |
-| ⚠ Issue | Library is an example and incomplete for now → publish coverage; no measured data (Tier 0) marked "process capability unknown" |
+| 🔧 Task | Flag factors missing a DIM ID as a gap; do not block calculation, but carry it into later linking and reminders |
+| 📘 Feature | Two paths to fix a difference: the user edits Excel, or the system edits the data and recomputes |
+| ⚠ Issue | The library is still being filled in and incomplete, so coverage must be published honestly; when there is no measured data (T0), mark "process capability unknown" |
 
-## S3 · Dimension-to-Drawing Association — Active DIM-ID Drawing Closed Loop ⭐ (NEW · metadata link + ADO-driven governance, not image reading)
+## S3 · Data-to-Drawing Linking · Active Drawing Loop ⭐ (NEW: identifier linking + ADO governance, no image recognition)
 
-> Anchors each factor to a unique drawing dimension via the existing `DIM ID` field + tags (**metadata association, not OCR / image reading** — image extraction is out of scope for now), **and actively drives the DIM ID + dimension chain onto the drawing before EV1**. This is the *drawing closed loop*: it also owns the shared **ADO trigger + server-side scheduled reminder service** that the S8 data loop reuses. See [Design Decision D7](05-design-decisions.md).
+> Uses the `DIM ID` field already present in the TA template to uniquely link each factor to a drawing dimension (**identifier linking only, no OCR or image recognition**), and actively drives the DIM IDs and dimension chain onto the drawing before a key milestone (e.g. EV1). This is the "drawing loop." It also provides a shared ADO-trigger plus server-side scheduled reminder service, which the S8 data loop reuses as well. See [Design Decision D7](05-design-decisions.md).
 >
-> **User scenario:** an engineer creates an ADO work item and attaches the TA `.xlsx`. The agent runs automatically. If the program is still **pre-ASR** (no drawing yet, so `Part Number` / `DIM ID` are placeholders), a background service checks the program milestones each week/month; as **EV1** approaches it **@mentions the owner on ADO** to backfill the DIM IDs, and reminds the designer to reflect the dimension chain on the drawing — closing the loop.
+> **Scenario:** An engineer creates an ADO work item and attaches the TA `.xlsx`; the system runs automatically. If the program is still pre-ASR (no drawing yet, so `Part Number` and `DIM ID` are just placeholders), a background service checks program milestones weekly or monthly; as a key milestone (e.g. EV1) approaches, it reminds the owner on ADO to complete the DIM IDs and reminds the designer to mark the dimension chain on the drawing — closing the loop.
 
-**Sub-loop A · Anchor (the metadata link)**
-
-| Type | Content |
-|---|---|
-| 📘 Feature | Uniquely link each factor to a drawing dimension by `DIM ID` (the canonical anchor) |
-| 🔧 Task | Build the anchor table `DIM ID ↔ factor ↔ (future) measurement`; validate **uniqueness + completeness** within a submission |
-| 📘 Feature | Handle the "no drawing / no ID early on" case (placeholder-first, backfill-later) |
-| 🔧 Task | Allocate placeholder anchors · reminder step to backfill purpose-dimension requirements into the TA task |
-| 📘 Feature | **MS ↔ supplier ID reconciliation** — map external supplier IDs (per revision) onto the canonical MS anchor via an alias / crosswalk table |
-| 🔧 Task | Alias table (supplier ID + revision → canonical DIM ID) · uniqueness check · versioned mapping so a supplier ID change updates the alias, not the anchor |
-| 📘 Feature | Light format sanity-check only (MS templates already uniform → no strict convention needed internally) |
-| 🔧 Task | Duplicate / missing / malformed DIM ID detection → surface for review (non-blocking); on collision / unmapped external ID → **clarification card (fail-closed, reuse D4)** |
-| ⚠ Risk | Real drift risk is at the **supplier boundary**, not inside MS → mapping + conflict-confirmation is the core, strict internal naming rules are de-emphasized |
-
-**Sub-loop B · ADO orchestration + scheduled governance (shared substrate, reused by S8)**
+**Sub-loop A · Linking (establish the link by identifier)**
 
 | Type | Content |
 |---|---|
-| 📘 Feature | **Event trigger** — creating an ADO work item with the TA `.xlsx` attached auto-runs the agent |
-| 🔧 Task | ADO work-item webhook / poll · pull the attached workbook · kick off the S1→S9 run |
-| 📘 Feature | **Owner identification** — bind the run to a responsible person automatically |
-| 🔧 Task | Resolve owner from ADO task owner / `Request By` field · fall back to a clarification prompt if absent |
-| 📘 Feature | **Scheduled EV1 reminder (server-side)** — weekly / monthly check that nudges owners before information is missing, **independent of whether the agent is running** |
-| 🔧 Task | **Server-side** background service reads program milestones via `surface-mcp` (`GetProgramMilestones`) + open items via `workiq` · frequency set from milestone cadence · when nearing EV1 with placeholder / missing DIM IDs → **@mention the owner on ADO** |
-| 📘 Feature | **Part-category grouping (ontology-driven)** — when a workbook has many worksheets, group factors by **part category + description** using the **S0 Lib 3 ontology**, since same-category dimensions usually live on one drawing |
-| 🔧 Task | Query Lib 3 to classify parts · aggregate per category / drawing · keep a **traceable link from `DIM ID` to its specific location** (same description at different locations may be a different dimension) so designers can jump to the exact dimension |
-| 📘 Feature | **Dimension-chain list** — auto-generate a per-part list from the TA report for drawing mapping |
-| 🔧 Task | Group by part · emit `part name / join number / DIM ID` · this list is the mapping target for the drawing |
-| 📘 Feature | **Drawing reminder (server-side scheduled)** — remind the design owner to reflect the dimension chain on the drawing, **packaged per drawing / group** |
-| 🔧 Task | A **server-side scheduler reminds on a cadence independent of the agent** · post the grouped chain list to the owner (ADO) · track prerequisite "shown on drawing" state |
-| 📘 Feature | **State & history** — ADO maintains the loop status for traceability |
-| 🔧 Task | Track `placeholder → DIM ID filled → shown on drawing` per factor · keep history on the work item |
-| ⚠ Risk | Reminder fatigue / wrong owner → cadence tied to milestones + owner clarification fallback; MCP/ADO permission scope needed for the background service |
+| 📘 Feature | Use `DIM ID` as the unique identifier to link each factor to a drawing dimension |
+| 🔧 Task | Build a `DIM ID ↔ factor ↔ (future) measurement` link table; validate uniqueness and completeness within a submission |
+| 📘 Feature | Handle the "no drawing or ID early on" case (placeholder first, backfill later) |
+| 🔧 Task | Assign placeholder IDs and add a reminder step so the purpose-dimension requirements are backfilled into the TA task later |
+| 📘 Feature | **Microsoft-to-supplier ID reconciliation**: map the supplier's external IDs (by revision) onto Microsoft's canonical IDs |
+| 🔧 Task | Build a crosswalk table (supplier ID + revision → canonical DIM ID) with uniqueness checks and versioning; a supplier ID change updates the crosswalk, not the canonical ID |
+| 📘 Feature | Do only a lightweight format check (Microsoft templates are already fairly uniform; no strict naming convention needed internally) |
+| 🔧 Task | Detect duplicate / missing / malformed DIM IDs and flag them (non-blocking); on a conflict or an unmapped external ID, raise a clarification card and stop to confirm first |
+| ⚠ Risk | The real drift risk is at the supplier boundary, not inside Microsoft: the core is good mapping and conflict confirmation, not enforcing an internal naming convention |
+
+**Sub-loop B · ADO orchestration and scheduled governance (shared substrate, reused by S8)**
+
+| Type | Content |
+|---|---|
+| 📘 Feature | **Event trigger**: creating an ADO work item with the TA `.xlsx` attached runs the system automatically |
+| 🔧 Task | ADO work-item webhook or polling, pull the attachment, start S1→S9 |
+| 📘 Feature | **Owner assignment**: bind this run to a responsible person automatically |
+| 🔧 Task | Resolve the owner from the ADO owner or `Request By` field; raise a clarification when missing |
+| 📘 Feature | **Scheduled reminders (by milestone)**: check weekly or monthly and remind before information goes missing, independent of whether the analysis is running |
+| 🔧 Task | A server-side background service reads milestones via `surface-mcp` (`GetProgramMilestones`) and open items via `workiq`; the cadence follows the milestones; as a key milestone (e.g. EV1) approaches with DIM IDs still missing, it reminds the owner on ADO |
+| 📘 Feature | **Grouping by category (using the terminology library)**: when a report has many worksheets, group by part category plus description, since same-category dimensions usually live on the same drawing |
+| 🔧 Task | Classify with Lib 3, aggregate by category or drawing, and keep a link from each `DIM ID` to its exact position (the same description at a different position may be a different dimension) so designers can jump to the exact dimension |
+| 📘 Feature | **Dimension-chain list**: auto-generate a per-part list from the TA report for drawing markup |
+| 🔧 Task | Generate `part name / join number / DIM ID` per part, as the reference target for drawing markup |
+| 📘 Feature | **Drawing reminder (server-side scheduled)**: remind the design owner to mark the dimension chain on the drawing, packaged per drawing or group |
+| 🔧 Task | The server-side scheduler reminds on a cadence, sends the grouped list to the owner (ADO), and tracks whether it has been marked on the drawing |
+| 📘 Feature | **State and history**: record loop state on ADO for traceability |
+| 🔧 Task | Track `placeholder → DIM ID filled → marked on drawing` per factor, keeping history on the work item |
+| ⚠ Risk | Reminders too frequent or sent to the wrong person: tie the cadence to milestones and keep an owner fallback; the background service needs ADO / MCP permissions |
 
 ## S4 · Method Recommendation (supporting)
 
 | Type | Content |
 |---|---|
 | 📘 Feature | Recommend a suitable target-tolerance reference method by factor count |
-| 🔧 Task | Count + CTS/CTF identification · `<4` recommend WC · `4-10` recommend RSS · `>10` prompt to refer to DM; both WC and RSS computed and output |
+| 🔧 Task | Count and identify CTS/CTF: `<4` recommend WC, `4–10` recommend RSS, `>10` prompt to refer to DM; compute and output both WC and RSS |
 
-## S5 · Calculation Engine (trust foundation · strictly consistent with Excel)
+## S5 · Calculation Engine (foundation of trust, fully consistent with Excel)
 
 | Type | Content |
 |---|---|
 | 📘 Feature | Results are trustworthy and reproducible |
-| 🔧 Task | Per-factor / system-level / capability replication · sample regression (Cpk 0.74 / DPM 26500 / FAIL) |
+| 🔧 Task | Reproduce factor-level / system-level / capability metrics; regress against a sample (Cpk 0.74 / DPM 26500 / FAIL) |
 
-## S6 · Data Interpretation ⭐ (objective 5-section · the delivery face of the "soul")
+## S6 · Data Interpretation ⭐ (objective five sections, the output face of the knowledge base)
 
-> Positioning: assert only `FACT` (computed) / `RULE` (threshold check); `SIGNAL` (needs engineering judgment) is flagged as uncertainty only; `OPTION` (alternative paths) is presented in parallel, not ranked, not recommended — **judgment is left to the user**. **Every RULE / capability judgment cites the S0 library entry it relies on (entry vX, coverage y%)** — this is what makes "evidence-backed" hard rather than hand-wavy. See [Design Decisions D2/D3](05-design-decisions.md).
-
-| Type | Content |
-|---|---|
-| 📘 Feature | **1 Loop Validity** — closed loop? same datum chain? is the **assembly datum face / stack start** clear (uncertain → clarification card) |
-| 🔧 Task | Closed-loop check · datum-chain consistency · assembly datum face confirmation · additive / subtractive direction validation |
-| 📘 Feature | **2 Capability vs Spec** — RSS σ / Cpk judgment (`<1` FAIL · `1~1.33` risk · `≥1.33` PASS), and whether the spec window is `<6σ` (physically infeasible) |
-| 🔧 Task | Capability calculation · threshold judgment (cite S0 Lib 2 rule) · 6-sigma feasibility check |
-| 📘 Feature | **3 Top Contributors** — ranked by % contribution, mark Top 2~3 with causes (large tolerance / mid-stack amplification / direct single-direction effect on output) |
-| 🔧 Task | Contribution ranking · cause classification |
-| 📘 Feature | **4 Structural Risk (SIGNAL, flag only)** — cross-subsystem datum chain (ME/PCBA/Glass), non-pure-geometric variables (switch travel / foam·adhesive non-linearity), over-long stack (`>10`) |
-| 🔧 Task | Cross-subsystem detection (query S0 Lib 3 ontology) · non-geometric variable flagging · long-stack warning |
-| 📘 Feature | **5 Options (OPTION, not ranked)** — present in parallel A keep design / B adjust Spec / C optimize Capability with quantified consequences; CTF allows spec↔yield trade-off, CTS forbids loosening; closing one-line **FACT** summary |
-| 🔧 Task | Three-path quantification · CTS/CTF rule constraints · factual summary (no recommended action) |
-| 📘 Feature | **6 Clarification Card / Assumption Register (fail-closed)** — do not guess when evidence is insufficient; raise a clarification card for the **assembly datum face / stack start** (with candidates), locally block dependent conclusions; cross-subsystem attribution not found in S0 Lib 3 → confirmation item |
-| 🔧 Task | Assumption register + confidence gate · assembly datum face clarification card · local blocking |
-| 📘 Feature | **7 Evidence-chain citation** — each RULE / capability statement carries a reference to its S0 library entry and version |
-| 🔧 Task | Attach entry id / version / coverage to every RULE-tagged statement |
-| ⚠ Risk | Interpretation hallucination → assertion-tag system + forced citation of S0 entries + clarification card when uncertain (fail-closed) |
-
-## S7 · Tolerance / Dimension-Chain Optimization ⭐ (was What-if · the most hands-on part per field feedback)
-
-> Not just "compute Cpk" but answer "how to change it most economically". The three tolerance-shortfall types from the field map to three optimization levers. Output stays **parallel, not ranked, judgment left to user**. See [Design Decisions D5](05-design-decisions.md).
+> Positioning: assert only `FACT` (computed result) and `RULE` (threshold check); `SIGNAL` (needs engineering judgment) is only a flag, no conclusion; `OPTION` (alternatives) is presented in parallel, not ranked, not recommended — the final judgment is left to the user. Every `RULE` or capability judgment must cite the knowledge-base entry it relies on (entry version, coverage), so "grounded" is concrete rather than hand-wavy. See [Design Decisions D2 and D3](05-design-decisions.md).
 
 | Type | Content |
 |---|---|
-| 📘 Feature | **Mean-shift centering** — detect nominal offset (often from part compression / empty-insert), give the zero-cost centering gain first |
-| 🔧 Task | Offset detection · recompute Cpk after centering · output before/after |
-| 📘 Feature | **Contribution economics** — the larger a factor's contribution, the more economical it is to loosen; rank parts by cost-saving leverage |
-| 🔧 Task | Contribution-weighted ranking · relative-cost proxy (loosen ratio × contribution) · both tighten and loosen directions |
-| 📘 Feature | **RSS apportionment (square-tolerance)** — share the required σ reduction across Top contributors by proportion |
-| 🔧 Task | Compute required σ reduction · apportion across Top 2-3 |
-| 📘 Feature | **What-if simulation** — quantify "tighten / loosen X → Cpk change", turning root causes into numbers |
-| 🔧 Task | Single-part tolerance perturbation · recompute · before/after comparison |
-| 📘 Feature | **Spec reverse-solve** — 2-3 parallel options (single-point tighten / Top 2-3 combination / center + tighten), each with new tolerance, resulting Cpk, feasibility |
-| 🔧 Task | Generate 2-3 options · **over-capability → RED warning** (vs S0 Lib 1 process capability); Tier 0 → "feasibility unknown" |
+| 📘 Feature | **1 Loop validity**: Is it closed? Is it the same datum chain? Is the assembly datum face / stack start clear (raise a clarification card if not)? |
+| 🔧 Task | Closed-loop check, datum-chain consistency, assembly datum face confirmation, additive/subtractive direction check |
+| 📘 Feature | **2 Capability vs. spec**: RSS σ / Cpk judgment (`<1` fail, `1~1.33` at risk, `≥1.33` pass), and whether the spec window is `<6σ` (physically impossible) |
+| 🔧 Task | Capability calculation, threshold judgment (cite the Lib 2 rule), 6-sigma feasibility check |
+| 📘 Feature | **3 Top contributors**: ranked by contribution, with the top 2–3 marked and their causes (large tolerance / amplified mid-chain / direct one-directional effect on output) |
+| 🔧 Task | Contribution ranking, cause classification |
+| 📘 Feature | **4 Structural risk (SIGNAL, flag only)**: cross-subsystem datum chains (ME/PCBA/Glass), non-geometric variables (switch travel, non-linearity of foam and adhesive), overly long chains (`>10`) |
+| 🔧 Task | Cross-subsystem detection (query Lib 3), non-geometric variable flagging, long-chain warning |
+| 📘 Feature | **5 Options (OPTION, not ranked)**: present in parallel A keep design / B adjust spec / C optimize capability, with quantified consequences; CTF allows a spec-vs-yield trade-off, CTS forbids loosening; close with one `FACT` factual summary |
+| 🔧 Task | Quantify the three paths, apply CTS/CTF constraints, produce a factual summary (no recommended action) |
+| 📘 Feature | **6 Clarification card / assumption list (when in doubt, stop)**: don't guess when evidence is insufficient; raise a clarification card for the assembly datum face / stack start (with candidates) and hold the conclusions that depend on it; when cross-subsystem attribution isn't in Lib 3, make it a confirmation item |
+| 🔧 Task | Assumption list plus a confirmation gate, assembly datum face clarification card, local hold |
+| 📘 Feature | **7 Evidence citation**: every `RULE` or capability conclusion carries a reference to the knowledge-base entry and version it relies on |
+| 🔧 Task | Attach entry ID / version / coverage to each `RULE` |
+| ⚠ Risk | Interpretation may fabricate: controlled by the assertion-tag system + forced citation of knowledge-base entries + a clarification card when in doubt |
 
-## S8 · Closed-Loop Real-Cpk Feedback ⭐ (NEW · measured data → real gap + knowledge base)
+## S7 · Tolerance & Dimension-Chain Optimization ⭐ (formerly What-if, the part the field values most)
 
-> Feed supplier **measured yield / Cpk** back to the corresponding factor by `DIM ID`. Two things happen: (1) the target dimension is recomputed with **real** capability so the user sees the **actual gap and actual tolerance range** (vs the initial estimate), and (2) the matching Lib 1 entry is upgraded from "empirical estimate (Tier 3)" to "measured (Tier 1)" so the knowledge base gets better the more it is used. Reuses the S3 ADO orchestration substrate. See [Design Decision D8](05-design-decisions.md).
+> Not just "compute Cpk," but answer "how to change it most economically." The three types of tolerance shortfall reported from the field map to three optimization levers. Output stays parallel and unranked, with judgment left to the user. See [Design Decision D5](05-design-decisions.md).
+
+| Type | Content |
+|---|---|
+| 📘 Feature | **Mean-shift centering**: detect nominal offset (often from a compressed part or empty insert) and give the zero-cost centering gain first |
+| 🔧 Task | Detect the offset, recompute Cpk after centering, show before/after |
+| 📘 Feature | **Contribution economics**: the larger a factor's contribution, the more economical it is to loosen; rank parts by cost-saving leverage |
+| 🔧 Task | Rank by contribution-weighted leverage, estimate relative cost (loosen ratio × contribution), consider both tightening and loosening |
+| 📘 Feature | **RSS apportionment**: distribute the required σ reduction across the top contributors by proportion |
+| 🔧 Task | Compute the required σ reduction and apportion it across the top 2–3 |
+| 📘 Feature | **What-if simulation**: quantify "tighten / loosen X → change in Cpk," turning causes into numbers |
+| 🔧 Task | Perturb a single part's tolerance, recompute, compare before/after |
+| 📘 Feature | **Spec reverse-solve**: give 2–3 parallel options (single-point tighten / top 2–3 combined / center plus tighten), each with new tolerances, resulting Cpk, and feasibility |
+| 🔧 Task | Generate 2–3 options; a red warning when a target exceeds process capability (against Lib 1); mark T0 as "feasibility unknown" |
+
+## S8 · Measured-Cpk Closed Loop ⭐ (NEW: measured data → real gap + knowledge-base upgrade)
+
+> Backfill the supplier's **measured yield / Cpk** to the corresponding factor by `DIM ID`. Two things happen: (1) the target dimension is recomputed with real capability so the user sees the **real gap and real tolerance range** (versus the initial estimate); and (2) the matching Lib 1 entry is upgraded from "empirical estimate (T3)" to "measured (T1)," making the system more accurate over time. It reuses the ADO orchestration substrate from S3. See [Design Decision D8](05-design-decisions.md).
 >
-> **User scenario:** once real measurement exists, the owner backfills measured Cpk (keyed by `DIM ID`); the agent regenerates the TA result on real capability and diffs it against the initial estimate — on deviation it hands off to S7 for adjustment options.
+> **Scenario:** Once measured data is available, the owner backfills measured Cpk by `DIM ID`; the system re-runs TA with real capability and compares it against the initial estimate — when the gap is significant, it hands off to S7 for adjustment options.
 
 | Type | Content |
 |---|---|
-| 📘 Feature | Ingest measured data keyed by `DIM ID` |
-| 🔧 Task | Define measurement schema (DIM ID key) · **manual import from a centralized measured-data store (SharePoint / platform, agreed & set up out-of-band)** · permissions |
-| 📘 Feature | **Real gap / real tolerance** — recompute the target dimension with measured capability |
-| 🔧 Task | Recompute σ from measured data (handle non-normal) · report **initial (estimated) vs actual (measured)** diff · deviation → hand off to S7 |
-| 📘 Feature | Update S0 Lib 1 tier and σ from measured distributions |
-| 🔧 Task | Promote entry tier T3→T1 · version bump · feed back into S0 |
-| ⚠ Risk | A **centralized measured-data store (SharePoint / platform) is an external, out-of-band prerequisite** the project cannot control; DIM ID governance (S3) is a hard prerequisite; measured distribution may be non-normal → affects σ conversion |
-| 🔭 Later | **Automatic API capture** of measurement data (direct pull; manual upload is unrealistic for multi-part assemblies) once the loop + centralized store are proven · auto write-back of suggested spec to Excel |
+| 📘 Feature | Ingest measured data by `DIM ID` |
+| 🔧 Task | Define the measurement data schema (keyed by DIM ID); **manually import** from the centralized store (SharePoint / platform, agreed and set up externally); handle permissions |
+| 📘 Feature | **Real gap / real tolerance**: recompute the target dimension with real capability |
+| 🔧 Task | Recompute σ from measured data (handle non-normal cases); report the "estimated vs. measured" gap; hand off to S7 when the gap is large |
+| 📘 Feature | Update the tier and σ of the Lib 1 entry from the measured distribution |
+| 🔧 Task | Upgrade the entry from T3 to T1, bump the version, feed back into S0 |
+| ⚠ Risk | **The centralized store (SharePoint / platform) is an external prerequisite** outside our control; DIM ID governance (S3) is a hard prerequisite; measured distributions may be non-normal, which affects σ conversion |
+| 🔭 Later | Once the loop and the centralized store are proven, add **automatic capture** of measured data (manual upload is impractical for multi-part assemblies) and automatically writing suggested specs back into Excel |
 
-## S9 · User Interaction / Read-Only Evidence Pane + Output Report ⭐
+## S9 · User Interaction · Read-Only Evidence Pane + Output Report ⭐
 
-> No need to reopen Excel after upload. Present the original TA data faithfully, read-only, so the user trusts their eyes rather than a black box. See [Design Decision D6](05-design-decisions.md).
+> No need to reopen Excel after uploading. Present the original TA data faithfully and read-only, so the user trusts what they see rather than a black box. See [Design Decision D6](05-design-decisions.md).
 
 | Type | Content |
 |---|---|
-| 📘 Feature | **Read-only evidence pane** — left pane read-only reproduces the `Example_TA` factor table (same values / layout / units) + the extracted Loop image below |
-| 🔧 Task | Read-only rendering of the original table · Loop image embedding |
-| 📘 Feature | **Cited dialogue** — right pane Agent cites visible rows/cells for every conclusion; click-to-highlight linkage; source data never silently edited |
-| 🔧 Task | Conclusion↔cell citation linkage · read-only guarantee + two change-data paths |
-| 📘 Feature | **Consolidated report** — complete interpretation report including the Loop image, per-item traceable |
+| 📘 Feature | **Read-only evidence pane**: the left side reproduces the `Example_TA` factor table read-only (same values, layout, and units), with the extracted Loop image below |
+| 🔧 Task | Render the original table read-only, embed the Loop image |
+| 📘 Feature | **Citable dialogue**: on the right, every conclusion cites a visible row or cell on the left; clicking highlights it; source data is never silently changed |
+| 🔧 Task | Conclusion-to-cell citation linkage, read-only guarantee, two paths to change data |
+| 📘 Feature | **Consolidated report**: a complete interpretation report including the Loop image, traceable item by item |
 | 🔧 Task | Consolidated output |
 
 ---

@@ -1,7 +1,7 @@
 # System Architecture (V1)
 
-> Surface TA Analysis Agent — V1 end-to-end system architecture.
-> Scope: no drawing-content **image** reading, no 3D VA (out of scope for now). Data-to-drawing linking in V1 is metadata-only via DIM ID.
+> V1 end-to-end architecture of the Surface TA Analysis Agent.
+> Scope: no drawing image recognition and no 3D VA for now. Data-to-drawing linking is done through DIM ID.
 
 ## Architecture Diagram
 
@@ -22,7 +22,7 @@ flowchart TB
         P2["Image extractor<br/>export the Loop screenshot separately"]
         P3["Knowledge-base loader<br/>Part_Sub Required Dims"]
     end
-    subgraph KB["4 Knowledge Base / References (S0 · 3 classes · the soul)"]
+    subgraph KB["4 Knowledge Base / References (S0 · 3 classes)"]
         KBA["Lib 1 Classified Capability Library<br/>reasonable tolerance band + process capability (source tiers T0-T3) + recommended distribution"]
         KBB["Lib 2 Engineering Rules Library<br/>CTS=6-sigma · CTF=4-sigma · Cpk&ge;1.33"]
         KBC["Lib 3 Terminology / Ontology Library<br/>part category · subsystem (ME/PCBA/Glass) · datum"]
@@ -36,7 +36,7 @@ flowchart TB
     subgraph ORCH["5b ADO Orchestration + Scheduled Governance (S3 · shared substrate)"]
         G1["Event trigger<br/>ADO work item + .xlsx attached -&gt; auto-run · owner from ADO owner / Request By"]
         G2["Server-side scheduled service (weekly / monthly)<br/>surface-mcp GetProgramMilestones + workiq"]
-        G3["Near EV1 with missing DIM ID<br/>@mention owner on ADO · remind: put chain on drawing"]
+        G3["Before key milestone (e.g. EV1) with missing DIM ID<br/>@mention owner on ADO · remind: put chain on drawing"]
         G2 --> G3
     end
     subgraph ENG["6 Core Calculation Engine (S5 · 1D · strictly consistent with Excel)"]
@@ -111,17 +111,17 @@ flowchart TB
 | Layer | User Story | Responsibility | Key points |
 |---|---|---|---|
 | 1 Input | — | Receive the user-uploaded `.xlsx` | May contain multiple TA worksheets |
-| 2 Worksheet selection | S1 | Auto-detect sheets with TA content, ask user to confirm | Manual fallback selection |
-| 3 Parse / Extract | S1 | Read factor table, extract Loop screenshot, load knowledge base | Factor table region `E14:T26` |
-| 4 Knowledge base (soul) | **S0** | Lib 1 Classified Capability + Lib 2 Engineering Rules + Lib 3 Terminology / Ontology | Human-curated; source tier / confidence; coverage published; **fed by S8** |
-| 5 DIM ID anchor | **S3** | Link each factor to a drawing dimension via DIM ID + emit per-part dimension-chain list | Metadata, not image reading; placeholder-first; grouped by part category (Lib 3 ontology); DIM ID traceable to its exact location |
-| 5b ADO orchestration | **S3** | Event trigger (work item + xlsx), owner id, **server-side scheduled** EV1 reminder, drawing reminder | Uses `surface-mcp` milestones + `workiq`; runs independent of the agent; shared with S8 |
-| 6 Core engine | S5 | 1D calculation, **strictly consistent with Excel formulas** | Validates user-filled fields only |
-| 7 Output modes | S2/S4/S6/S7 | Cleansing / method / objective interpretation / optimization | Interpretation cites S0, judgment left to user; uncertain → clarification card |
-| 8 Closed loop | **S8** | Ingest measured Cpk by DIM ID → real gap vs estimate, feed back into S0 | Manual import from a centralized store (SharePoint / platform), an out-of-band prerequisite; auto API capture + write-back come later |
-| 9 Interaction / Output | **S9** | Read-only evidence pane + cited dialogue + structured report | Includes Loop image, per-item traceable, reproducible |
+| 2 Worksheet selection | S1 | Auto-detect worksheets with TA content and ask the user to confirm | Manual selection as a fallback |
+| 3 Parse & extract | S1 | Read the factor table, extract the Loop screenshot, load the knowledge base | Factor table region is `E14:T26` |
+| 4 Knowledge base | **S0** | Capability Library (Lib 1), Rules Library (Lib 2), Terminology Library (Lib 3) | Human-maintained; each entry carries source, confidence, and coverage; fed back by S8 |
+| 5 DIM ID linking | **S3** | Link each factor to a drawing dimension via DIM ID and output a per-part dimension-chain list | Identifier-only linking, no image recognition; placeholder first, backfill later; grouped by category; locatable to the exact position |
+| 5b ADO orchestration | **S3** | Event trigger, owner assignment, server-side scheduled reminders, drawing reminders | Based on `surface-mcp` milestones and `workiq`; runs independently of the analysis; shared with S8 |
+| 6 Calculation engine | S5 | One-dimensional calculation, fully consistent with Excel formulas | Validates only user-filled fields |
+| 7 Output modes | S2/S4/S6/S7 | Cleansing, method recommendation, objective interpretation, optimization | Interpretation must cite knowledge-base evidence; judgment left to the user; raises a clarification card when in doubt |
+| 8 Closed loop | **S8** | Backfill measured Cpk by DIM ID, compare the real gap, and feed back into S0 | Manual import from a centralized store (SharePoint / platform) at first; auto-capture and write-back come later |
+| 9 Interaction & output | **S9** | Read-only evidence pane, citable dialogue, structured report | Includes the Loop image; traceable and reproducible item by item |
 
-> **Out of scope for now (may merge into V1 later):** Drawing-content **image** reading → three-way consistency check (user value ⇄ drawing ⇄ knowledge base); **automatic API capture** of measurement data; auto write-back of suggested spec to Excel.
+> **Out of scope for now (may be merged into V1 later):** drawing image recognition and three-way consistency checks (user-filled values, drawing, knowledge base); automatic capture of measured data; automatically writing suggested specs back into Excel.
 
 ---
 **Related docs:** [End-to-End Flow](02-end-to-end-flow.md) · [Differentiation](03-differentiation.md) · [Feature Breakdown](04-feature-breakdown.md) · [Design Decisions](05-design-decisions.md)

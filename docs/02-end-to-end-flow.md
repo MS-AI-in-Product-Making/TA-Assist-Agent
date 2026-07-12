@@ -1,9 +1,9 @@
 # End-to-End Flow (V1)
 
-> The complete runtime flow from the user uploading `.xlsx` to producing a structured interpretation report, with the measured-Cpk closed loop feeding back into the knowledge base.
-> The `(Fx)` labels on nodes map to the User Story IDs in the [Feature Breakdown](04-feature-breakdown.md).
+> The full runtime flow, from a user uploading the `.xlsx` to producing a structured interpretation report, including the closed loop that feeds measured Cpk back into the knowledge base.
+> The `(Sx)` labels in the diagram map to the User Story IDs in the [Feature Breakdown](04-feature-breakdown.md).
 
-## Flow Chart
+## Flow Diagram
 
 ```mermaid
 flowchart TD
@@ -22,7 +22,7 @@ flowchart TD
     E -->|"Consistent"| LK["Anchor factors to drawing dims by DIM ID (S3)<br/>placeholder-first if no ID yet"]
     LK --> LG["Group by part category (Lib 3 ontology) + per-part dimension-chain list (S3)<br/>part name / join number / DIM ID"]
     LK -.->|"placeholder / missing DIM ID"| SCH["Server-side scheduled service weekly / monthly (S3)<br/>surface-mcp milestones + workiq"]
-    SCH -.->|"near EV1"| RM["@mention owner on ADO (S3)<br/>backfill DIM ID · put chain on drawing"]
+    SCH -.->|"before key milestone (e.g. EV1)"| RM["@mention owner on ADO (S3)<br/>backfill DIM ID · put chain on drawing"]
     LG --> F["Proceed to method recommendation"]
     F --> G{"Method recommendation (S4)<br/>by factor count"}
     G -->|"&lt; 4 factors"| H1["Recommend Worst Case<br/>sum of Tolerance"]
@@ -73,19 +73,19 @@ flowchart TD
 
 | Node | Decision | Branches |
 |---|---|---|
-| Entry trigger | How the run starts | ADO work item + xlsx attached → auto-run; owner from ADO owner / Request By |
-| Worksheet confirmation | Which sheets to interpret | User confirms / manual fallback selection |
-| Cleansing consistency | Required fields + DIM ID + Capability Library match | Consistent → continue; inconsistent → flag differences |
-| DIM ID anchor | Factor has a drawing dimension? | Linked / placeholder-first, backfill later |
-| Scheduled reminder (server-side) | Near EV1 with missing DIM ID? | Yes → @mention owner on ADO + drawing reminder |
-| Difference handling | Who fixes it | User edits Excel / Agent edits data and recomputes |
-| Method recommendation | Factor count | `<4` WC · `4-10` RSS · `>10` refer to DM |
-| Target judgment | Cpk≥1.33 / sigma met | Both PASS / FAIL proceed to interpretation |
-| Uncertainty confirmation | Assembly datum face / cross-subsystem ambiguous | Stop and raise clarification card (fail-closed) |
-| Measured data feedback | Real Cpk arrives later | Real gap vs estimate → closed loop upgrades S0 Lib 1 |
+| Entry trigger | How the flow starts | An ADO work item with an xlsx attached auto-runs; the owner comes from the ADO owner / Request By field |
+| Worksheet confirmation | Which worksheets go into interpretation | User confirms, or manual selection as a fallback |
+| Cleansing consistency | Whether required fields, DIM ID, and the capability library align | Aligned → continue; not aligned → flag the differences |
+| DIM ID linking | Whether the factor is already linked to a drawing dimension | Linked, or placeholder first and backfill later |
+| Server-side reminder | Approaching a key milestone with DIM ID missing? | Yes → remind the owner on ADO and prompt to mark it on the drawing |
+| Difference handling | Who fixes it | The user edits Excel, or the system edits the data and recomputes |
+| Method recommendation | Number of factors | `<4` use WC; `4–10` use RSS; `>10` refer to the DM team |
+| Target judgment | Whether Cpk≥1.33 or sigma is met | Both pass and fail proceed to interpretation |
+| Uncertainty confirmation | Whether the assembly datum face or cross-subsystem is ambiguous | Raise a clarification card and stop to confirm first |
+| Measured feedback | When measured Cpk arrives later | Compare estimated vs. real gap and upgrade the capability-library entry |
 
-> Multi-sheet reports can be **processed in parallel for speed**, but review is still per-page and human-gated.
-> Interpretation only states `FACT`/`RULE` (each citing an S0 entry); `SIGNAL`/`OPTION` are presented in parallel, not ranked — **judgment is left to the user**.
+> Multiple worksheets can be processed in parallel for speed, but review is still done page by page and gated by a human.
+> Interpretation gives only `FACT` (computed result) and `RULE` (threshold check), citing knowledge-base entries; `SIGNAL` (a flag) and `OPTION` (alternatives) are presented in parallel and not ranked — the final judgment is left to the user.
 
 ---
 **Related docs:** [Architecture](01-architecture.md) · [Differentiation](03-differentiation.md) · [Feature Breakdown](04-feature-breakdown.md) · [Design Decisions](05-design-decisions.md)
