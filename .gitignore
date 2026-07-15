@@ -12,6 +12,7 @@ Thumbs.db
 .DS_Store
 .vscode/
 .idea/
+.superpowers/
 
 # Python
 __pycache__/

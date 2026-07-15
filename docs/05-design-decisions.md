@@ -54,7 +54,7 @@ A "controlled dictionary" that **keeps the model from inventing terms or misclas
 - Every entry carries **source / confidence / effective version**; only then can a cleansing conclusion be flagged "in-library / out-of-library."
 - A single owner, a change log, and published **coverage** (e.g. "Lib 1 covers 6/20 high-frequency categories").
 - Distribution factor constants (Normal=1 / Uniform=1.732 / …) are **built-in engine constants**, not part of the knowledge base.
-- **Feeding measured Cpk back into Lib 1 is handled by S8 (see D8).**
+- **Feeding measured Cpk back into Lib 1 is handled by F8 (see D8).**
 
 ---
 
@@ -160,14 +160,14 @@ Mechanism — **Sub-loop A · linking:**
 
 Mechanism — **Sub-loop B · ADO orchestration and scheduled governance** (from the factory meeting; this substrate is **shared with the D8 data loop**):
 
-4. **Event trigger:** creating an ADO work item with the TA `.xlsx` attached runs the system automatically.
-5. **Owner assignment:** bind this run to the ADO owner or `Request By` field (with a clarification fallback when missing) so reminders reach a real person.
-6. **Scheduled reminders (server-side):** a **server-side background service** runs weekly or monthly, **independent of whether the analysis is running**, reading Microsoft program milestones via `surface-mcp` (`GetProgramMilestones`) and open items via `workiq`; as a **key milestone (e.g. EV1)** approaches with DIM IDs still placeholder or missing, it **reminds the owner on ADO**. Reminding early avoids discovering missing information only at the key milestone.
+4. **Run entry:** the user manually uploads the TA `.xlsx`; creating or linking an ADO work item is optional. The tool runs on the uploaded file; auto-parsing an ADO attachment is a later goal.
+5. **Owner assignment:** when an ADO item is linked, bind the governed reminder workflow to its owner or `Request By` field, with a clarification fallback when missing.
+6. **Scheduled reminders (server-side):** for a linked ADO item, a **server-side background service** runs weekly or monthly, **independent of whether the analysis is running**, reading Microsoft program milestones via `surface-mcp` (`GetProgramMilestones`) and open items via `workiq`; as a **key milestone (e.g. EV1)** approaches with DIM IDs still placeholder or missing, it **reminds the owner on ADO**. Reminding early avoids discovering missing information only at the key milestone.
 7. **Grouping by the terminology library plus a dimension-chain list:** when a report has many worksheets, use the Lib 3 terminology library to group by **part category plus description** — because same-category dimensions usually live on the **same** drawing. For each group, produce a list (`part name / join number / DIM ID`). Because the same description at a different position can be a **different** dimension, each item keeps a link from its `DIM ID` to its exact position, so the designer can jump straight to the right dimension.
 8. **Packaged drawing reminder (server-side):** using the same server-side scheduler, remind the design owner — **once per drawing or group**, not per factor — to mark the dimension chain **on the drawing**.
 9. **State and history on ADO:** track `placeholder → DIM ID filled → marked on drawing` for traceability.
 
-**Why it's in scope:** it needs no image understanding, reuses an existing field, and is a **hard prerequisite for the D8 loop** (without a stable identifier, measured data can't be routed back). The ADO / scheduler substrate is all built on tools we already have (`surface-mcp`, `workiq`, ADO).
+**Why it's in scope:** it needs no image understanding, reuses an existing field, and is a **hard prerequisite for the D8 loop** (without a stable identifier, measured data can't be routed back). When an ADO item is linked, the scheduler uses the available ADO, `surface-mcp`, and `workiq` capabilities.
 
 **Difficulties:** missing or non-unique DIM IDs (handled by governance plus placeholders), reminders that are too frequent or sent to the wrong person (cadence tied to milestones plus an owner fallback), and the background service's ADO / MCP permission scope.
 
@@ -175,10 +175,10 @@ Mechanism — **Sub-loop B · ADO orchestration and scheduled governance** (from
 
 ## D8 · Measured-Cpk Closed Loop: See the Real Gap Now, Improve the Knowledge Base Over Time
 
-**This loop is what makes the whole system more valuable the more it's used:** real yield / Cpk from production is routed back to the corresponding factor by `DIM ID`. Two payoffs:
+**This loop is what makes the whole system more valuable the more it's used:** when measured yield / Cpk becomes available, it is manually imported and routed back to the corresponding factor by `DIM ID`. Two payoffs:
 
-- **Immediate:** the target dimension is recomputed with **real** capability, so the user sees the **real gap and real tolerance range** — and a comparison against the initial estimate. When the gap is large, the system hands off to S7 for adjustment options (matching the field's ask: "re-generate the report, compare to the initial result, and propose adjustments").
-- **Compounding:** the matching Lib 1 entry is upgraded from "empirical estimate (Tier 3)" to "measured (Tier 1)," so cleansing, interpretation, and optimization are all more accurate next time. **The feedback target is S0**, closing the D1 loop.
+- **Immediate:** the target dimension is recomputed with **real** capability, so the user sees the **real gap and real tolerance range** — and a comparison against the initial estimate. When the gap is large, the system hands off to F7 for adjustment options.
+- **Compounding:** the matching Lib 1 entry is upgraded from "empirical estimate (Tier 3)" to "measured (Tier 1)," so cleansing, interpretation, and optimization are all more accurate next time. **The feedback target is F0**, closing the D1 loop.
 
 **External prerequisite — where the measured data lives:**
 
@@ -205,7 +205,7 @@ Automatic capture of measured data (avoiding manual upload for multi-part assemb
 
 ## How the Decisions Shape the Feature Flow
 
-Features are ordered by process flow (not by priority): **S0 knowledge base → S1 parse → S2 cleanse → S3 DIM linking → S4 method → S5 engine → S6 objective interpretation → S7 tolerance optimization → S9 interaction/output**, with the **S8 closed loop** feeding measured Cpk back into S0. The knowledge base (S0) and objective interpretation (S6) decide the quality of the tool's judgment; the closed loop (S8) decides whether it gets better over time.
+Features are ordered by process flow (not by priority): **F0 knowledge base → F1 parse → F2 cleanse → F3 DIM linking → F4 method → F5 engine → F6 objective interpretation → F7 tolerance optimization → F9 interaction/output**, with the **F8 closed loop** feeding measured Cpk back into F0. The knowledge base (F0) and objective interpretation (F6) decide the quality of the tool's judgment; the closed loop (F8) decides whether it gets better over time.
 
 ---
 **Related docs:** [Architecture](01-architecture.md) · [End-to-End Flow](02-end-to-end-flow.md) · [Differentiation](03-differentiation.md) · [Feature Breakdown](04-feature-breakdown.md)
