@@ -1,4 +1,4 @@
-# AI TA Analysis Agent
+# AI Assist Agent
 
 An AI agent that automates **Tolerance Analysis (TA)** interpretation for the
 Microsoft Surface program and its downstream ODM / supplier partners.
@@ -41,7 +41,7 @@ is insufficient (e.g. the assembly datum face), the agent **stops and asks** ins
 
 In process-flow order. See [full table](docs/03-differentiation.md).
 
-| Stage | Dimension | Traditional TA Excel | Generic LLM | **Dedicated TA Agent** |
+| Stage | Dimension | Traditional TA Excel | Generic LLM | **AI Assist Agent** |
 |---|---|---|---|---|
 | **S0 · Knowledge base (soul)** | Basis | Lives in the engineer's head | No grounding | 3 controlled libraries; every judgment traces to a library entry |
 | **S2 · Cleansing** | Data cleansing | Manual, error-prone | No basis | Missing-field + DIM ID check + per-category **Capability Library** (tolerance band / capability / distribution) validation |
@@ -94,7 +94,7 @@ matches the template exactly.
 
 ## V1 Scope (Epic → User Story → Feature → Task)
 
-**Epic:** Surface TA Analysis Agent (V1)
+**Epic:** AI Assist Agent (V1)
 
 | User Story | Summary |
 |---|---|
@@ -135,7 +135,7 @@ Deferred until there is a proven need; each can be merged into the product later
 
 - `test/` and all `*.xlsx` (confidential templates / sample data) are **git-ignored**.
 - Internal `*.html` design reports are **git-ignored** and not committed.
-- Project planning is tracked via GitHub **Milestones** (one per User Story, S0–S9) and **Issues** (Features / Tasks).
+- Project planning is tracked via GitHub **Project #1** as four ME User Stories, Feature issues (F0-F9), and implementation tasks in each Feature checklist.
 
 ---
 

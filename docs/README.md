@@ -1,6 +1,6 @@
 # Documentation Index
 
-Design document set for the Surface TA Analysis Agent (V1). All diagrams use Mermaid and render directly on GitHub.
+Design document set for AI Assist Agent (V1). All diagrams use Mermaid and render directly on GitHub.
 
 | No. | Document | Content |
 |---|---|---|
@@ -22,7 +22,7 @@ Design document set for the Surface TA Analysis Agent (V1). All diagrams use Mer
 
 - **V1 scope:** No drawing image recognition and no 3D VA. Data-to-drawing linking is done through **DIM ID** (F3); more than 10 factors are referred to the DM team for 3D VA. The measured-data closed loop (F8) first imports data manually from a centralized store (SharePoint / platform), which is an external prerequisite outside the project's control.
 - **Calculation engine:** One-dimensional, and **fully consistent** with the Excel formulas in the TA template.
-- **Tracking:** The four ME User Stories group the work; Feature IDs (F0-F9) map to the ADO features and their tasks map to implementation work items.
+- **Tracking:** Four ME User Stories group the work; Feature IDs (F0-F9) map to GitHub Feature issues and their task checklists map to implementation work items.
 - **Reminder timing:** When an ADO item is linked, a server-side service periodically checks program milestones and reminds the owner to complete missing information **before a key milestone (e.g. EV1)**.
 
 ## Terminology

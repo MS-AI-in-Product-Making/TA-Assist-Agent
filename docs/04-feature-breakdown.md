@@ -4,7 +4,7 @@
 
 ## Epic
 
-**Surface TA Analysis Agent (V1)**
+**AI Assist Agent (V1)**
 
 > Goal: help ME engineers turn a TA workbook into a reliable, traceable first-pass analysis quickly. The assistant cleans the input, runs Excel-consistent calculations, highlights risks with evidence, and keeps DIM IDs and measured capability connected over time.
 
