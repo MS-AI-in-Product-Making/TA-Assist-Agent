@@ -1,13 +1,13 @@
 # Differentiation
 
-> Traditional TA Excel vs. general-purpose LLM vs. dedicated TA Agent (this project).
+> Traditional TA Excel vs. general-purpose LLM vs. AI Assist Agent.
 > This tool's value isn't "automating the calculation" (the calculation itself reuses Excel). It's the combination of a knowledge base and grounded, objective interpretation, plus traceable linking between data and drawings and a measured-Cpk closed loop — while leaving the final judgment to the user.
 
 ## Three-Way Comparison (in process order)
 
 Rows follow the end-to-end flow; the "Stage" column maps to the Feature IDs in the [Feature Breakdown](04-feature-breakdown.md).
 
-| Stage | Dimension | Traditional TA Excel | General-purpose LLM | Dedicated TA Agent (this project) |
+| Stage | Dimension | Traditional TA Excel | General-purpose LLM | AI Assist Agent |
 |:---:|---|---|---|---|
 | **F0** | Knowledge base | None — lives only in the engineer's head | None — no grounding | Three controlled knowledge bases (capability / rules / terminology); every judgment traces back to a specific entry |
 | **F2** | Data cleansing | Manual, error-prone | No basis, generic talk | Checks required fields and validates tolerance range and distribution against the capability library, flagging "in-library / out-of-library"; also checks whether DIM IDs are complete |

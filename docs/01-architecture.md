@@ -1,6 +1,6 @@
 # System Architecture (V1)
 
-> V1 end-to-end architecture of the Surface TA Analysis Agent.
+> V1 end-to-end architecture of AI Assist Agent.
 > Scope: no drawing image recognition and no 3D VA for now. Data-to-drawing linking is done through DIM ID.
 
 ## Architecture Diagram
