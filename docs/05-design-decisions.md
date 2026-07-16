@@ -155,7 +155,7 @@ For Tier 0 (no capability data), mark "feasibility unknown, confirm with supplie
 Mechanism — **Sub-loop A · linking:**
 
 1. Build a link table `DIM ID ↔ factor ↔ (future) measurement` and validate uniqueness.
-2. **Placeholder first, backfill later**: early in a program there may be no drawing and no ID yet. Assign a placeholder ID and add a reminder step so the purpose-dimension requirements are backfilled into the TA task once the drawing exists.
+2. **Missing-ID handling**: when a DIM ID or PN is missing, keep the 1D TA path available but group the affected factors by Lib 3 part category/drawing and create a locatable dimension-chain list. The list carries part name, join number, DIM ID/PN state, and exact source location.
 3. **Uniqueness plus cross-source reconciliation**, so IDs stay unique and the link doesn't drift. Inside Microsoft a shared template already keeps IDs consistent, so a strict naming convention adds little value; the real drift risk is at the **Microsoft-to-supplier boundary** (their own numbering plus revisions). So the mechanism is a **crosswalk table** that maps external IDs onto the canonical ID, stopping to confirm on conflicts (see D4) — not an enforced naming scheme.
 
 Mechanism — **Sub-loop B · ADO orchestration and scheduled governance** (from the factory meeting; this substrate is **shared with the D8 data loop**):
@@ -163,11 +163,11 @@ Mechanism — **Sub-loop B · ADO orchestration and scheduled governance** (from
 4. **Run entry:** the user manually uploads the TA `.xlsx`; creating or linking an ADO work item is optional. The tool runs on the uploaded file; auto-parsing an ADO attachment is a later goal.
 5. **Owner assignment:** when an ADO item is linked, bind the governed reminder workflow to its owner or `Request By` field, with a clarification fallback when missing.
 6. **Scheduled reminders (server-side):** for a linked ADO item, a **server-side background service** runs weekly or monthly, **independent of whether the analysis is running**, reading Microsoft program milestones via `surface-mcp` (`GetProgramMilestones`) and open items via `workiq`; as a **key milestone (e.g. EV1)** approaches with DIM IDs still placeholder or missing, it **reminds the owner on ADO**. Reminding early avoids discovering missing information only at the key milestone.
-7. **Grouping by the terminology library plus a dimension-chain list:** when a report has many worksheets, use the Lib 3 terminology library to group by **part category plus description** — because same-category dimensions usually live on the **same** drawing. For each group, produce a list (`part name / join number / DIM ID`). Because the same description at a different position can be a **different** dimension, each item keeps a link from its `DIM ID` to its exact position, so the designer can jump straight to the right dimension.
+7. **ADO or local fallback:** reuse the ADO choice made at upload. If an ADO item is linked, ask the user to confirm the reminder, @mention the owner, and write the missing-ID list to `Comment 0`. If the user did not create or link ADO, save the list locally rather than blocking analysis.
 8. **Packaged drawing reminder (server-side):** using the same server-side scheduler, remind the design owner — **once per drawing or group**, not per factor — to mark the dimension chain **on the drawing**.
-9. **State and history on ADO:** track `placeholder → DIM ID filled → marked on drawing` for traceability.
+9. **State and history on ADO:** for linked items, record missing-ID resolution and drawing-markup status for traceability.
 
-**Why it's in scope:** it needs no image understanding, reuses an existing field, and is a **hard prerequisite for the D8 loop** (without a stable identifier, measured data can't be routed back). When an ADO item is linked, the scheduler uses the available ADO, `surface-mcp`, and `workiq` capabilities.
+**Why it's in scope:** it needs no image understanding, reuses existing fields, and is a **hard prerequisite for the D8 loop** (without a stable identifier, measured data cannot be routed back). ADO governance is optional: it adds owner-based traceability and reminders, while the local-list path preserves analysis when no ADO work item is desired.
 
 **Difficulties:** missing or non-unique DIM IDs (handled by governance plus placeholders), reminders that are too frequent or sent to the wrong person (cadence tied to milestones plus an owner fallback), and the background service's ADO / MCP permission scope.
 
@@ -205,7 +205,7 @@ Automatic capture of measured data (avoiding manual upload for multi-part assemb
 
 ## How the Decisions Shape the Feature Flow
 
-Features are ordered by process flow (not by priority): **F0 knowledge base → F1 parse → F2 cleanse → F3 DIM linking → F4 method → F5 engine → F6 objective interpretation → F7 tolerance optimization → F9 interaction/output**, with the **F8 closed loop** feeding measured Cpk back into F0. The knowledge base (F0) and objective interpretation (F6) decide the quality of the tool's judgment; the closed loop (F8) decides whether it gets better over time.
+Features are ordered by process flow (not by priority): **F0 knowledge base → F1 parse → F2 cleanse → F3 DIM linking/governance → F4 method → F5 engine → F6 objective interpretation → F9 evidence/report → F7 tolerance optimization**, followed by the **F8 closed loop** feeding measured Cpk back into F0. In the method branch, `>10` factors notify the DM team for 3D VA while F5 continues to calculate WC and RSS. The knowledge base (F0) and objective interpretation (F6) decide the quality of the tool's judgment; the closed loop (F8) decides whether it gets better over time.
 
 ---
 **Related docs:** [Architecture](01-architecture.md) · [End-to-End Flow](02-end-to-end-flow.md) · [Differentiation](03-differentiation.md) · [Feature Breakdown](04-feature-breakdown.md)

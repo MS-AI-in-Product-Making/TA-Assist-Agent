@@ -9,7 +9,7 @@
 flowchart TB
     subgraph IN["1 Input Layer"]
         U["User<br/>PD / DM / ID / DFx / Supplier"]
-        XLSX["TA report .xlsx<br/>(may contain multiple TA worksheets)"]
+        XLSX["One or more TA .xlsx files<br/>manual upload · unique file names"]
         U --> XLSX
     end
     subgraph SEL["2 Worksheet Selection & Confirmation (F1)"]
@@ -18,8 +18,8 @@ flowchart TB
         SEL1 --> SEL2
     end
     subgraph EXT["3 Parse / Extract Layer (F1)"]
-        P1["XLSX parser<br/>read factor table E14:T26"]
-        P2["Image extractor<br/>export the Loop screenshot separately"]
+        P1["XLSX parser<br/>read factor tables and retain normalized JSON + processing trace"]
+        P2["Image extractor<br/>export Loop screenshots with source labels and version"]
         P3["Knowledge-base loader<br/>Part_Sub Required Dims"]
     end
     subgraph KB["4 Knowledge Base / References (F0 · 3 classes)"]
@@ -29,26 +29,26 @@ flowchart TB
     end
     subgraph LINK["5 DIM ID Anchor + Active Drawing Loop (F3)"]
         L1["Anchor each factor to a drawing dimension<br/>DIM ID &lt;-&gt; factor &lt;-&gt; (future) measurement"]
-        L2["Placeholder-first / backfill-later<br/>MS &lt;-&gt; supplier ID alias / crosswalk"]
-        L3["Dimension-chain list per part<br/>part name / join number / DIM ID"]
+        L2["Validate DIM ID / PN completeness<br/>missing IDs are governed after Lib 3 grouping"]
+        L3["Dimension-chain list by Lib 3 category / drawing<br/>part name / join number / DIM ID / exact location"]
         L1 --> L2 --> L3
     end
     subgraph ORCH["5b Optional ADO Governance (F3 · shared substrate)"]
         G1["Optional ADO work item<br/>manual .xlsx upload starts analysis<br/>when linked, resolve owner from ADO owner / Request By"]
         G2["Server-side scheduled service (weekly / monthly)<br/>surface-mcp GetProgramMilestones + workiq"]
-        G3["Before key milestone (e.g. EV1) with missing DIM ID<br/>@mention owner on ADO · remind: put chain on drawing"]
+        G3["For grouped missing DIM ID / PN items<br/>user confirms ADO reminder · write list to Comment 0<br/>without ADO, save the list locally"]
         G2 --> G3
     end
     subgraph ENG["6 Core Calculation Engine (F5 · 1D · strictly consistent with Excel)"]
-        E0["Validate user-filled fields only<br/>nominal / tolerance / sigma / distribution"]
+        E0["Validated, user-filled analysis inputs<br/>nominal / tolerance / safety factor / sigma / distribution"]
         E1["Auto-computed table<br/>Mean / Tol / 1-sigma / % contribution"]
         E2["System level: RSS sqrt(sum R^2) · Worst Case sum Q"]
         E3["Capability: Cp / Cpk / Z / DPM / Yield"]
         E0 --> E1 --> E2 --> E3
     end
     subgraph MODE["7 Output Modes"]
-        M1["Prompt · Data cleansing (F2)<br/>missing-field check + DIM ID completeness<br/>vs Lib 1: tolerance range + distribution"]
-        M2["Assign · Method recommendation (F4)<br/>recommend by factor count · both WC / RSS computed"]
+        M1["Prompt · Data cleansing (F2)<br/>required-field check + DIM ID/PN completeness<br/>vs Lib 1: tolerance range + distribution"]
+        M2["Assign · Method recommendation (F4)<br/>&lt;4 WC · 4-10 RSS · &gt;10 notify DM for 3D VA<br/>both WC / RSS computed"]
         M3["Interpret · Objective 5-section (F6)<br/>FACT/RULE asserted (cite F0) · SIGNAL/OPTION presented<br/>uncertain -&gt; clarification card · judgment left to user"]
         M4["Optimize · What-if / reverse-solve / centering (F7)<br/>mean-shift + contribution economics + RSS apportionment<br/>over-capability -&gt; RED warning"]
     end
@@ -80,8 +80,8 @@ flowchart TB
     M4 --> O3
     OUT --> LOOP
     L1 -.-> CL
-    CL ==>|"measured Cpk feeds back"| KBA
-    CL -.->|"deviation -> adjustment"| M4
+    CL -->|measured Cpk feeds back| KBA
+    CL -->|deviation to adjustment| M4
     classDef in fill:#e3f2fd,stroke:#1565c0,color:#0d47a1
     classDef sel fill:#ede7f6,stroke:#5e35b1,color:#311b92
     classDef ext fill:#f3e5f5,stroke:#8e24aa,color:#4a148c
@@ -108,20 +108,20 @@ flowchart TB
 
 ## Layer Notes
 
-| Layer | User Story | Responsibility | Key points |
+| Layer | Feature | Responsibility | Key points |
 |---|---|---|---|
-| 1 Input | — | Receive the user-uploaded `.xlsx` | May contain multiple TA worksheets |
+| 1 Input | — | Receive one or more manually uploaded `.xlsx` files | File names must be unique; files may contain multiple TA worksheets |
 | 2 Worksheet selection | F1 | Auto-detect worksheets with TA content and ask the user to confirm | Manual selection as a fallback |
-| 3 Parse & extract | F1 | Read the factor table, extract the Loop screenshot, load the knowledge base | Factor table region is `E14:T26` |
+| 3 Parse & extract | F1 | Read factor tables, extract Loop screenshots, and load the knowledge base | Retain normalized JSON, source labels, version, and processing trace |
 | 4 Knowledge base | **F0** | Capability Library (Lib 1), Rules Library (Lib 2), Terminology Library (Lib 3) | Human-maintained; each entry carries source, confidence, and coverage; fed back by F8 |
-| 5 DIM ID linking | **F3** | Link each factor to a drawing dimension via DIM ID and output a per-part dimension-chain list | Identifier-only linking, no image recognition; placeholder first, backfill later; grouped by category; locatable to the exact position |
-| 5b ADO governance | **F3** | Optional ADO task link, owner assignment, server-side scheduled reminders, drawing reminders | Manual upload starts analysis; when ADO is linked, reminders use `surface-mcp` milestones and `workiq`, independent of the analysis |
+| 5 DIM ID linking | **F3** | Link each factor to a drawing dimension via DIM ID and produce a dimension-chain list for missing ID/PN items | Identifier-only linking, no image recognition; lists are grouped by Lib 3 category/drawing and locatable to the exact position |
+| 5b ADO governance | **F3** | Optional ADO link, owner assignment, missing-ID reminder, and local-list fallback | Manual upload starts analysis. With ADO, the user confirms a reminder and the list is saved in Comment 0; without ADO, the list is saved locally. Linked ADO items may also receive milestone-based reminders independently of analysis. |
 | 6 Calculation engine | F5 | One-dimensional calculation, fully consistent with Excel formulas | Validates only user-filled fields |
-| 7 Output modes | F2/F4/F6/F7 | Cleansing, method recommendation, objective interpretation, optimization | Interpretation must cite knowledge-base evidence; judgment left to the user; raises a clarification card when in doubt |
+| 7 Output modes | F2/F4/F6/F7 | Cleansing, method recommendation, objective interpretation, and optimization | `<4` recommends WC; `4-10` recommends RSS; `>10` notifies DM for 3D VA while the engine still computes WC/RSS. Interpretation cites knowledge-base evidence; judgment remains with the user. |
 | 8 Closed loop | **F8** | Backfill measured Cpk by DIM ID, compare the real gap, and feed back into F0 | Manual import from a centralized store (SharePoint / platform) at first; auto-capture and write-back come later |
 | 9 Interaction & output | **F9** | Read-only evidence pane, citable dialogue, structured report | Includes the Loop image; traceable and reproducible item by item |
 
-> **Out of scope for now (may be merged into V1 later):** drawing image recognition and three-way consistency checks (user-filled values, drawing, knowledge base); automatic capture of measured data; automatically writing suggested specs back into Excel.
+> **Out of scope for now:** drawing image recognition, DM-owned 3D variation analysis, automatic capture of measured data, and automatically writing suggested specs back into Excel.
 
 ---
 **Related docs:** [End-to-End Flow](02-end-to-end-flow.md) · [Differentiation](03-differentiation.md) · [Feature Breakdown](04-feature-breakdown.md) · [Design Decisions](05-design-decisions.md)
