@@ -1,0 +1,40 @@
+name: 治理变更
+description: 提议变更协作、质量、安全或发布治理规则。
+title: "[Governance]: "
+labels: ["governance"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 变更动机
+      description: 说明现有规则、问题和不变更的风险。
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 拟议规则
+      description: 清楚描述要新增、修改或移除的治理要求。
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: 影响评估
+      description: 说明对开发流程、契约、隐私、权限和现有交付物的影响。
+    validations:
+      required: true
+  - type: textarea
+    id: rollout
+    attributes:
+      label: 推行与回滚
+      description: 说明生效条件、迁移步骤、验证方式和回滚条件。
+    validations:
+      required: true
+  - type: textarea
+    id: decision_evidence
+    attributes:
+      label: 决策依据
+      description: 提供相关 Issue、规范、风险评估或会议结论。
+    validations:
+      required: true

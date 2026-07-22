@@ -1,0 +1,7 @@
+# 示例文件：请复制为 CODEOWNERS 并按仓库实际团队账号维护。
+# 本示例不绑定任何实际人员，也不会被 GitHub 自动应用。
+
+# * @example-team
+# /apps/ @example-app-team
+# /packages/ @example-platform-team
+# /docs/governance/ @example-governance-team

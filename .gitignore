@@ -1,5 +1,7 @@
 # Sensitive data / confidential templates
 test/
+# Only public fixtures are committable; the repository checker enforces this across path casing.
+fixtures/confidential/
 *.xlsx
 *.xlsm
 ~$*
@@ -13,6 +15,19 @@ Thumbs.db
 .vscode/
 .idea/
 .superpowers/
+.worktrees/
+
+# Node.js
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+runtime/
+exports/
+*.runbundle.zip
 
 # Python
 __pycache__/
