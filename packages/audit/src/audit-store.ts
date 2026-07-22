@@ -62,6 +62,8 @@ interface AuditManifest {
 
 export interface AuditStore {
   append(event: AuditEventInput): Promise<void>;
+  hasEventType(type: AuditEventType): Promise<boolean>;
+  isSealed(): Promise<boolean>;
   writeManifest(manifest: ManifestInput): Promise<void>;
   verify(): Promise<VerifyResult>;
 }
@@ -73,6 +75,7 @@ export async function createAuditStore(root: string): Promise<AuditStore> {
   const eventsPath = resolve(rootRealPath, "events.jsonl");
   const manifestPath = resolve(rootRealPath, "manifest.json");
   const lockPath = resolve(rootRealPath, lockFileName);
+  await writeFile(eventsPath, "", { encoding: "utf8", flag: "a" });
   let pendingOperation = Promise.resolve();
 
   function serialize<T>(operation: () => Promise<T>): Promise<T> {
@@ -102,6 +105,19 @@ export async function createAuditStore(root: string): Promise<AuditStore> {
           await appendFile(eventsPath, `${JSON.stringify(eventRecord)}\n`, "utf8");
         });
       });
+    },
+
+    async hasEventType(type) {
+      if (!eventTypes.includes(type)) {
+        throw new Error("validation_error: invalid audit event type");
+      }
+      return serialize(() => withRootLock(lockPath, async () =>
+        (await readEvents(eventsPath)).some((event) => event.type === type),
+      ));
+    },
+
+    async isSealed() {
+      return serialize(() => withRootLock(lockPath, () => manifestExists(manifestPath)));
     },
 
     async writeManifest(input) {
@@ -384,4 +400,47 @@ async function manifestExists(manifestPath: string): Promise<boolean> {
 
 function isErrorCode(error: unknown, code: string): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === code;
+}
+
+interface AuditEventRecord {
+  eventId: string;
+  timestamp: string;
+  type: AuditEventType;
+  classification: Classification;
+  payloadHash: string;
+}
+
+async function readEvents(eventsPath: string): Promise<AuditEventRecord[]> {
+  let contents: string;
+  try {
+    contents = await readFile(eventsPath, "utf8");
+  } catch (error: unknown) {
+    if (isErrorCode(error, "ENOENT")) {
+      throw new Error("validation_error: audit events file is missing");
+    }
+    throw error;
+  }
+  return contents.split("\n").filter((line) => line.length > 0).map((line) => {
+    let event: unknown;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      throw new Error("validation_error: audit events file is malformed");
+    }
+    if (!isAuditEventRecord(event)) {
+      throw new Error("validation_error: audit events file is malformed");
+    }
+    return event;
+  });
+}
+
+function isAuditEventRecord(value: unknown): value is AuditEventRecord {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const event = value as Record<string, unknown>;
+  return isUuid(event.eventId) && typeof event.timestamp === "string" &&
+    typeof event.type === "string" && eventTypes.includes(event.type as AuditEventType) &&
+    typeof event.classification === "string" && classifications.includes(event.classification as Classification) &&
+    typeof event.payloadHash === "string" && isSha256Hash(event.payloadHash);
 }

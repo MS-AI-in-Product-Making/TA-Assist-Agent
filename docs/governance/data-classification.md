@@ -15,6 +15,13 @@
 | `confidential` | TA 工作簿、DIM ID、供应商信息、Cpk、ADO 内容 | 默认仅保留哈希和必要元数据；原始工件的本地保留须有显式选择 | 不得提交到 Git；不得输出到控制台或共享位置，除非有显式审批 | 不得导出；只有经明确确认和策略批准的受控导出才可进行 |
 | `secret` | Token、密码、连接字符串、证书 | 仅可放入环境变量或系统凭据存储；不得写入 memory、audit、logs 或运行工件 | 不得提交、显示、序列化或通过错误信息输出 | 永不导出 |
 
+每个 run 的受控根目录直接包含 `transcript.jsonl`、`decisions.jsonl`、
+`events.jsonl`、`artifacts/`，并在最终封存时由 audit 写入根目录
+`manifest.json`。`events.jsonl` 和 `manifest.json` 只能由 audit API 管理；memory
+不得自行写入、解析或在损坏时把审计查询降级为“未找到事件”。未显式选择保留时，
+`confidential` transcript、decision 和 artifact 原文均不得落盘，只可记录不含原文的
+hash 或必要元数据；`secret` 始终以 `policy_denied` 拒绝且不得持久化。
+
 ## 策略门
 
 以下限制是当前策略规则与后续运行时集成的共同设计目标。当前 `evaluatePolicy` 只提供
@@ -50,5 +57,10 @@
   边界。
 - 导出先生成分类 manifest。发现 `secret` 时拒绝；发现 `confidential` 时默认拒绝，
   只有用户明确确认且策略批准的受控场景才能继续。
+- 清理是封存前的生命周期步骤。`planPurge` 和 `executePurge` 发现 run 已由
+  `manifest.json` 封存时必须以 `dependency_error` 拒绝，且不得删除任何内容。对未
+  封存 run，审计必须先成功记录 `purge_planned` 和 `purge_completed`，然后才执行删除；
+  删除完成后方可写入最终 `manifest.json`。这样不会发生“数据已删除但没有清理证据”的
+  状态。
 - 后续生产编排器遇到策略拒绝时，不得执行替代动作，必须以 `policy_denied` 记录可
   审计的拒绝事件。Phase 0 评估器本身不执行外部动作或审计写入。

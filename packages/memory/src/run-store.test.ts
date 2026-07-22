@@ -1,7 +1,8 @@
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
+import { createAuditStore } from "@ai-assist/audit";
 import { createRunStore } from "./index.js";
 
 async function createTemporaryRoot(): Promise<string> {
@@ -24,6 +25,26 @@ it("does not retain confidential artifacts without opt-in", async () => {
   }
 });
 
+it("does not persist confidential transcript or decision contents without opt-in", async () => {
+  const rootDir = await createTemporaryRoot();
+  const transcriptMarker = "confidential-transcript-marker";
+  const decisionMarker = "confidential-decision-marker";
+
+  try {
+    const store = await createRunStore({ rootDir, retainConfidentialArtifacts: false });
+    await expect(store.recordTranscript("confidential", { transcriptMarker })).rejects.toThrow("policy_denied");
+    await expect(store.recordDecision("confidential", { decisionMarker })).rejects.toThrow("policy_denied");
+
+    const diskContents = await readAllFiles(rootDir);
+    expect(diskContents).not.toContain(transcriptMarker);
+    expect(diskContents).not.toContain(decisionMarker);
+    expect(await readFile(join(store.runDirectory, "transcript.jsonl"), "utf8")).not.toContain(transcriptMarker);
+    expect(await readFile(join(store.runDirectory, "decisions.jsonl"), "utf8")).not.toContain(decisionMarker);
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
 it("purges scoped artifacts while retaining cleanup evidence", async () => {
   const rootDir = await createTemporaryRoot();
 
@@ -36,6 +57,34 @@ it("purges scoped artifacts while retaining cleanup evidence", async () => {
 
     expect(await store.listArtifacts()).toEqual([]);
     expect(await store.hasEvent("purge_completed")).toBe(true);
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+it("fails closed before planning or deleting a sealed run", async () => {
+  const rootDir = await createTemporaryRoot();
+
+  try {
+    const store = await createRunStore({
+      rootDir,
+      projectId: "project",
+      sessionId: "session",
+      runId: "00000000-0000-4000-8000-000000000001",
+      retainConfidentialArtifacts: true,
+    });
+    await store.recordArtifact({ name: "ta.xlsx", classification: "confidential", content: "retained" });
+    const plan = await store.planPurge();
+    const auditStore = await createAuditStore(store.runDirectory);
+    await auditStore.writeManifest({
+      runId: "00000000-0000-4000-8000-000000000001",
+      artifacts: [],
+    });
+
+    await expect(store.planPurge()).rejects.toThrow("dependency_error");
+    await expect(store.executePurge(plan.confirmationToken)).rejects.toThrow("dependency_error");
+    await expect(readFile(join(store.runDirectory, "artifacts", "ta.xlsx"), "utf8")).resolves.toBe("retained");
+    expect(await store.listArtifacts()).toEqual([{ name: "ta.xlsx", classification: "confidential" }]);
   } finally {
     await rm(rootDir, { recursive: true, force: true });
   }
@@ -77,6 +126,45 @@ it("retains opted-in confidential content and safe metadata", async () => {
   }
 });
 
+it("serializes concurrent artifacts into complete metadata without orphan files", async () => {
+  const rootDir = await createTemporaryRoot();
+
+  try {
+    const store = await createRunStore({ rootDir });
+    await Promise.all([
+      store.recordArtifact({ name: "first.txt", classification: "public", content: "first" }),
+      store.recordArtifact({ name: "second.txt", classification: "internal", content: "second" }),
+      store.recordArtifact({ name: "third.txt", classification: "public", content: "third" }),
+    ]);
+
+    expect(await store.listArtifacts()).toEqual(expect.arrayContaining([
+      { name: "first.txt", classification: "public" },
+      { name: "second.txt", classification: "internal" },
+      { name: "third.txt", classification: "public" },
+    ]));
+    const metadata = await store.listArtifactMetadata();
+    expect(metadata).toHaveLength(3);
+    expect(JSON.parse(await readFile(join(store.runDirectory, "artifact-metadata.json"), "utf8"))).toHaveLength(3);
+    expect((await readdir(join(store.runDirectory, "artifacts"))).sort()).toEqual(metadata.map(({ name }) => name).sort());
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+it("rejects Windows-unsafe artifact names and allows a normal basename", async () => {
+  const rootDir = await createTemporaryRoot();
+
+  try {
+    const store = await createRunStore({ rootDir });
+    for (const name of ["report.txt:shadow", "C:\\report.txt", "../report.txt", "dir/report.txt", "report. ", "CON", "nul.txt", "COM1.log", "Lpt9"]) {
+      await expect(store.recordArtifact({ name, classification: "public", content: "content" })).rejects.toThrow("validation_error");
+    }
+    await expect(store.recordArtifact({ name: "report.txt", classification: "public", content: "content" })).resolves.toBeUndefined();
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
 it("requires confidential export confirmation and rejects secret export requests", async () => {
   const rootDir = await createTemporaryRoot();
 
@@ -113,19 +201,29 @@ it("rejects invalid and reused purge tokens without touching another run", async
   }
 });
 
-it("writes lifecycle events only through the dedicated audit ledger", async () => {
+it("uses the run root as the audit ledger and rejects corrupted audit queries", async () => {
   const rootDir = await createTemporaryRoot();
 
   try {
     const store = await createRunStore({ rootDir, projectId: "project", sessionId: "session", runId: "run" });
-    const plan = await store.planPurge();
-    await store.executePurge(plan.confirmationToken);
-
-    await expect(readdir(store.runDirectory)).resolves.not.toContain("events.jsonl");
-    const ledger = await readFile(join(store.runDirectory, "audit", "events.jsonl"), "utf8");
-    expect(ledger).toContain("purge_completed");
-    expect(await store.hasEvent("purge_completed")).toBe(true);
+    await expect(readdir(store.runDirectory)).resolves.toEqual(expect.arrayContaining([
+      "transcript.jsonl",
+      "decisions.jsonl",
+      "events.jsonl",
+      "artifacts",
+    ]));
+    await expect(readdir(store.runDirectory)).resolves.not.toContain("audit");
+    await writeFile(join(store.runDirectory, "events.jsonl"), "not-json\n", "utf8");
+    await expect(store.hasEvent("purge_completed")).rejects.toThrow("validation_error");
   } finally {
     await rm(rootDir, { recursive: true, force: true });
   }
 });
+
+async function readAllFiles(directory: string): Promise<string> {
+  const entries = await readdir(directory, { recursive: true, withFileTypes: true });
+  const contents = await Promise.all(entries
+    .filter((entry) => entry.isFile())
+    .map((entry) => readFile(join(entry.parentPath, entry.name), "utf8")));
+  return contents.join("\n");
+}

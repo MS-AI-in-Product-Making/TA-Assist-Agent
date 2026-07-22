@@ -38,6 +38,19 @@ it("appends events and verifies manifest hashes", async () => {
   }
 });
 
+it("initializes an audit events file and rejects malformed read queries", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ai-assist-audit-"));
+
+  try {
+    const store = await createAuditStore(directory);
+    await expect(readFile(join(directory, "events.jsonl"), "utf8")).resolves.toBe("");
+    await writeFile(join(directory, "events.jsonl"), "not-json\n", "utf8");
+    await expect(store.hasEventType("purge_completed")).rejects.toThrow("validation_error");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 it("seals events in the manifest and detects events tampering", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ai-assist-audit-"));
   const eventsPath = join(directory, "events.jsonl");

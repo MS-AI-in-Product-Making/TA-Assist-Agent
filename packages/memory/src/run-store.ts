@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { basename, isAbsolute, relative, resolve } from "node:path";
 import { createAuditStore, type AuditStore } from "@ai-assist/audit";
 import type { DataClassification } from "@ai-assist/contracts";
@@ -47,7 +47,6 @@ export interface RunStore {
 
 interface RunStoreState {
   runDirectory: string;
-  auditDirectory: string;
   artifactsDirectory: string;
   metadataPath: string;
   transcriptPath: string;
@@ -55,6 +54,7 @@ interface RunStoreState {
   auditStore: AuditStore;
   retainConfidentialArtifacts: boolean;
   purgeToken?: string;
+  pendingOperation: Promise<void>;
 }
 
 export async function createRunStore(options: CreateRunStoreOptions): Promise<RunStore> {
@@ -73,16 +73,15 @@ export async function createRunStore(options: CreateRunStoreOptions): Promise<Ru
     throw new Error("validation_error: run directory must remain within the runtime root");
   }
   const artifactsDirectory = resolve(runDirectory, "artifacts");
-  const auditDirectory = resolve(runDirectory, "audit");
   const state: RunStoreState = {
     runDirectory,
-    auditDirectory,
     artifactsDirectory,
     metadataPath: resolve(runDirectory, "artifact-metadata.json"),
     transcriptPath: resolve(runDirectory, "transcript.jsonl"),
     decisionsPath: resolve(runDirectory, "decisions.jsonl"),
-    auditStore: await createAuditStore(auditDirectory),
+    auditStore: await createAuditStore(runDirectory),
     retainConfidentialArtifacts: options.retainConfidentialArtifacts ?? false,
+    pendingOperation: Promise.resolve(),
   };
 
   await mkdir(artifactsDirectory, { recursive: true });
@@ -96,55 +95,73 @@ export async function createRunStore(options: CreateRunStoreOptions): Promise<Ru
   return {
     runDirectory,
     async recordArtifact(input) {
-      assertSafeArtifactName(input.name);
-      if (input.classification === "secret") {
-        throw new Error("policy_denied: secret artifacts cannot be persisted");
-      }
-      const content = Buffer.isBuffer(input.content) ? input.content : Buffer.from(input.content, "utf8");
-      const metadata: ArtifactMetadata = {
-        classification: input.classification,
-        name: input.name,
-        hash: hash(content),
-        retention: input.classification === "confidential" && !state.retainConfidentialArtifacts
-          ? "metadata_only"
-          : "retained",
-      };
-      if (metadata.retention === "retained") {
-        await writeFile(resolve(state.artifactsDirectory, input.name), content, { flag: "wx" });
-      }
-      await writeMetadata(state.metadataPath, metadata);
+      return serialize(state, async () => {
+        assertSafeArtifactName(input.name);
+        if (input.classification === "secret") {
+          throw new Error("policy_denied: secret artifacts cannot be persisted");
+        }
+        const content = Buffer.isBuffer(input.content) ? input.content : Buffer.from(input.content, "utf8");
+        const metadata: ArtifactMetadata = {
+          classification: input.classification,
+          name: input.name,
+          hash: hash(content),
+          retention: input.classification === "confidential" && !state.retainConfidentialArtifacts
+            ? "metadata_only"
+            : "retained",
+        };
+        const entries = await readMetadata(state.metadataPath);
+        if (entries.some((entry) => entry.name === metadata.name)) {
+          throw new Error("validation_error: artifact name already exists");
+        }
+        if (metadata.retention === "retained") {
+          const artifactPath = resolve(state.artifactsDirectory, input.name);
+          await writeFile(artifactPath, content, { flag: "wx" });
+          try {
+            await writeMetadata(state.metadataPath, [...entries, metadata]);
+          } catch (error) {
+            await rm(artifactPath, { force: true });
+            throw error;
+          }
+          return;
+        }
+        await writeMetadata(state.metadataPath, [...entries, metadata]);
+      });
     },
     async recordTranscript(classification, entry) {
-      await appendRecord(state.transcriptPath, classification, entry);
+      return serialize(state, () => appendRecord(state.transcriptPath, classification, entry, state.retainConfidentialArtifacts));
     },
     async recordDecision(classification, entry) {
-      await appendRecord(state.decisionsPath, classification, entry);
+      return serialize(state, () => appendRecord(state.decisionsPath, classification, entry, state.retainConfidentialArtifacts));
     },
     async listArtifacts() {
-      return (await readMetadata(state.metadataPath))
+      return serialize(state, async () => (await readMetadata(state.metadataPath))
         .filter((metadata) => metadata.retention === "retained")
-        .map(({ name, classification }) => ({ name, classification }));
+        .map(({ name, classification }) => ({ name, classification })));
     },
     async listArtifactMetadata() {
-      return readMetadata(state.metadataPath);
+      return serialize(state, () => readMetadata(state.metadataPath));
     },
     async createExport(options) {
-      return createExport(state, options);
+      return serialize(state, () => createExport(state, options));
     },
     async planPurge() {
-      const plan = await planPurge(state);
-      state.purgeToken = plan.confirmationToken;
-      return plan;
+      return serialize(state, async () => {
+        const plan = await planPurge(state);
+        state.purgeToken = plan.confirmationToken;
+        return plan;
+      });
     },
     async executePurge(confirmationToken) {
-      if (confirmationToken !== state.purgeToken) {
-        throw new Error("policy_denied: purge confirmation token is invalid or has already been used");
-      }
-      delete state.purgeToken;
-      await executePurge(state);
+      return serialize(state, async () => {
+        if (confirmationToken !== state.purgeToken) {
+          throw new Error("policy_denied: purge confirmation token is invalid or has already been used");
+        }
+        delete state.purgeToken;
+        await executePurge(state);
+      });
     },
     async hasEvent(type) {
-      return hasAuditEvent(state.auditDirectory, type);
+      return serialize(state, () => state.auditStore.hasEventType(type));
     },
   };
 }
@@ -152,7 +169,9 @@ export async function createRunStore(options: CreateRunStoreOptions): Promise<Ru
 export type { RunStoreState };
 
 function assertSafeArtifactName(name: string): void {
-  if (!isSafeDirectoryName(name)) {
+  const deviceName = name.split(".", 1)[0]?.toUpperCase();
+  if (!isSafeDirectoryName(name) || name.includes(":") || /[. ]$/.test(name) ||
+    /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/.test(deviceName ?? "")) {
     throw new Error("validation_error: artifact name must be a safe basename");
   }
 }
@@ -182,29 +201,38 @@ async function readMetadata(path: string): Promise<ArtifactMetadata[]> {
   }
 }
 
-async function writeMetadata(path: string, metadata: ArtifactMetadata): Promise<void> {
-  const entries = await readMetadata(path);
-  if (entries.some((entry) => entry.name === metadata.name)) {
-    throw new Error("validation_error: artifact name already exists");
+async function writeMetadata(path: string, entries: ArtifactMetadata[]): Promise<void> {
+  const temporaryPath = `${path}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporaryPath, JSON.stringify(entries, null, 2), { encoding: "utf8", flag: "wx" });
+    await rename(temporaryPath, path);
+  } finally {
+    await rm(temporaryPath, { force: true });
   }
-  await writeFile(path, JSON.stringify([...entries, metadata], null, 2), "utf8");
 }
 
-async function appendRecord(path: string, classification: DataClassification, entry: unknown): Promise<void> {
+async function appendRecord(
+  path: string,
+  classification: DataClassification,
+  entry: unknown,
+  retainConfidentialArtifacts: boolean,
+): Promise<void> {
   if (classification === "secret") {
     throw new Error("policy_denied: secrets cannot be persisted");
+  }
+  if (classification === "confidential" && !retainConfidentialArtifacts) {
+    throw new Error("policy_denied: confidential records require explicit retention opt-in");
   }
   await appendFile(path, `${JSON.stringify({ classification, entry })}\n`, "utf8");
 }
 
-async function hasAuditEvent(auditDirectory: string, type: string): Promise<boolean> {
-  const eventsPath = resolve(auditDirectory, "events.jsonl");
-  try {
-    const events = await readFile(eventsPath, "utf8");
-    return events.split("\n").some((line) => line.length > 0 && JSON.parse(line).type === type);
-  } catch {
-    return false;
-  }
+function serialize<T>(state: RunStoreState, operation: () => Promise<T>): Promise<T> {
+  const result = state.pendingOperation.then(operation, operation);
+  state.pendingOperation = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
 }
 
 function isErrorCode(error: unknown, code: string): boolean {

@@ -9,12 +9,19 @@ export interface PurgePlan {
 }
 
 export async function planPurge(state: RunStoreState): Promise<PurgePlan> {
+  if (await state.auditStore.isSealed()) {
+    throw new Error("dependency_error: sealed audit runs cannot be purged; purge must complete before final sealing");
+  }
   const confirmationToken = randomBytes(32).toString("base64url");
   await state.auditStore.append({ type: "purge_planned", classification: "internal", payload: { confirmationToken } });
   return { confirmationToken, runDirectory: state.runDirectory };
 }
 
 export async function executePurge(state: RunStoreState): Promise<void> {
+  if (await state.auditStore.isSealed()) {
+    throw new Error("dependency_error: sealed audit runs cannot be purged; purge must complete before final sealing");
+  }
+  await state.auditStore.append({ type: "purge_completed", classification: "internal", payload: { runDirectory: state.runDirectory } });
   for (const path of [
     state.transcriptPath,
     state.decisionsPath,
@@ -24,5 +31,4 @@ export async function executePurge(state: RunStoreState): Promise<void> {
   ]) {
     await rm(path, { recursive: true, force: true });
   }
-  await state.auditStore.append({ type: "purge_completed", classification: "internal", payload: { runDirectory: state.runDirectory } });
 }
