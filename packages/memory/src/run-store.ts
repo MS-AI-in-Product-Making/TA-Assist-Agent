@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { appendFile, mkdir, open, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, open, readFile, readdir, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { basename, isAbsolute, relative, resolve } from "node:path";
 import { createAuditStore, type AuditStore } from "@ai-assist/audit";
 import type { DataClassification } from "@ai-assist/contracts";
@@ -12,6 +12,11 @@ export interface CreateRunStoreOptions {
   sessionId?: string;
   runId?: string;
   retainConfidentialArtifacts?: boolean;
+}
+
+export interface OpenRunStoreOptions {
+  rootDir: string;
+  runId: string;
 }
 
 export interface ArtifactInput {
@@ -54,7 +59,6 @@ interface RunStoreState {
   decisionsPath: string;
   auditStore: AuditStore;
   retainConfidentialArtifacts: boolean;
-  purgeToken?: string;
   pendingOperation: Promise<void>;
   withMemoryLock<T>(operation: () => Promise<T>): Promise<T>;
 }
@@ -166,20 +170,62 @@ export async function createRunStore(options: CreateRunStoreOptions): Promise<Ru
       return serialize(state, () => createExport(state, options));
     },
     async planPurge() {
-      return serialize(state, async () => {
-        const plan = await planPurge(state);
-        state.purgeToken = plan.confirmationToken;
-        return plan;
-      });
+      return serialize(state, () => planPurge(state));
     },
     async executePurge(confirmationToken) {
-      return serialize(state, async () => {
-        if (confirmationToken !== state.purgeToken) {
-          throw new Error("policy_denied: purge confirmation token is invalid or has already been used");
-        }
-        delete state.purgeToken;
-        await executePurge(state);
-      });
+      return serialize(state, () => executePurge(state, confirmationToken));
+    },
+    async hasEvent(type) {
+      return serialize(state, () => state.auditStore.hasEventType(type));
+    },
+  };
+}
+
+export async function openRunStore(options: OpenRunStoreOptions): Promise<RunStore> {
+  if (!isUuid(options.runId) || typeof options.rootDir !== "string" || options.rootDir.length === 0) {
+    throw new Error("validation_error: runtime root and run id are invalid");
+  }
+  const rootDirectory = resolve(options.rootDir);
+  const runDirectory = await findRunDirectory(rootDirectory, options.runId);
+  const state: RunStoreState = {
+    runDirectory,
+    artifactsDirectory: resolve(runDirectory, "artifacts"),
+    metadataPath: resolve(runDirectory, "artifact-metadata.json"),
+    metadataLockPath: resolve(runDirectory, "memory.lock"),
+    transcriptPath: resolve(runDirectory, "transcript.jsonl"),
+    decisionsPath: resolve(runDirectory, "decisions.jsonl"),
+    auditStore: await createAuditStore(runDirectory),
+    retainConfidentialArtifacts: false,
+    pendingOperation: Promise.resolve(),
+    withMemoryLock: async <T>(operation: () => Promise<T>): Promise<T> => withMetadataLock(state, operation),
+  };
+  return {
+    runDirectory,
+    async recordArtifact() {
+      throw new Error("policy_denied: opened runs are read-only");
+    },
+    async recordTranscript() {
+      throw new Error("policy_denied: opened runs are read-only");
+    },
+    async recordDecision() {
+      throw new Error("policy_denied: opened runs are read-only");
+    },
+    async listArtifacts() {
+      return serialize(state, async () => (await withMetadataLock(state, () => readMetadata(state.metadataPath)))
+        .filter((metadata) => metadata.retention === "retained")
+        .map(({ name, classification }) => ({ name, classification })));
+    },
+    async listArtifactMetadata() {
+      return serialize(state, () => withMetadataLock(state, () => readMetadata(state.metadataPath)));
+    },
+    async createExport(options) {
+      return serialize(state, () => createExport(state, options));
+    },
+    async planPurge() {
+      return serialize(state, () => planPurge(state));
+    },
+    async executePurge(confirmationToken) {
+      return serialize(state, () => executePurge(state, confirmationToken));
     },
     async hasEvent(type) {
       return serialize(state, () => state.auditStore.hasEventType(type));
@@ -200,6 +246,47 @@ function assertSafeArtifactName(name: string): void {
 function isSafeDirectoryName(value: string): boolean {
   return typeof value === "string" && value.length > 0 && value !== "." && value !== ".." &&
     !isAbsolute(value) && basename(value) === value && !value.includes("/") && !value.includes("\\");
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+async function findRunDirectory(rootDirectory: string, runId: string): Promise<string> {
+  const projectsDirectory = resolve(rootDirectory, "projects");
+  let projects: string[];
+  try {
+    projects = await readdir(projectsDirectory);
+  } catch {
+    throw new Error("validation_error: run was not found");
+  }
+  for (const projectId of projects) {
+    if (!isSafeDirectoryName(projectId)) {
+      continue;
+    }
+    let sessions: string[];
+    try {
+      sessions = await readdir(resolve(projectsDirectory, projectId, "sessions"));
+    } catch {
+      continue;
+    }
+    for (const sessionId of sessions) {
+      if (!isSafeDirectoryName(sessionId)) {
+        continue;
+      }
+      const candidate = resolve(projectsDirectory, projectId, "sessions", sessionId, "runs", runId);
+      if (!isWithin(rootDirectory, candidate)) {
+        continue;
+      }
+      try {
+        await readFile(resolve(candidate, "events.jsonl"), "utf8");
+        return candidate;
+      } catch {
+        continue;
+      }
+    }
+  }
+  throw new Error("validation_error: run was not found");
 }
 
 function isWithin(rootDirectory: string, candidate: string): boolean {
