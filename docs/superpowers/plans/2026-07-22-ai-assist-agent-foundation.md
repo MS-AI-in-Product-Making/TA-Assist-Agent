@@ -660,7 +660,7 @@ git commit -m "feat: add local run management CLI"
 - Create: `.github/ISSUE_TEMPLATE/governance-change.yml`
 - Create: `.github/pull_request_template.md`
 - Create: `.github/CODEOWNERS.example`
-- Create: `.github/workflows/ci.example.yml`
+- Create: `.github/ci.example.yml`
 - Create: `docs/governance/development-standard.md`
 - Create: `docs/governance/github-admin-checklist.md`
 - Create: `eslint.config.mjs`
@@ -702,7 +702,8 @@ CODEOWNERS；必须明确这些不是 Phase 0 自动执行内容。
 
 `feature.yml` 必须要求 Feature ID、用户故事、输入/输出契约、数据分类、依赖、验收
 检查和外部前置条件。PR 模板必须要求 Issue 链接、变更摘要、测试命令及结果、隐私
-检查和回滚说明。`ci.example.yml` 只能包含以下命令：
+检查和回滚说明。`.github/ci.example.yml` 是非活动模板；仅在管理员明确复制为
+`.github/workflows/ci.yml` 后才启用。模板不能包含触发器，且只能包含以下命令：
 
 ```yaml
 - run: npm ci

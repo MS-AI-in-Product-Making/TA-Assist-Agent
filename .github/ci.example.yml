@@ -1,8 +1,5 @@
-# 示例工作流：文件名含 .example.yml，不会被 GitHub Actions 自动执行。
-name: CI 示例
-
-on:
-  workflow_dispatch:
+# 非活动 CI 模板：管理员明确复制到 .github/workflows/ci.yml 后才会启用。
+name: CI
 
 jobs:
   verify:

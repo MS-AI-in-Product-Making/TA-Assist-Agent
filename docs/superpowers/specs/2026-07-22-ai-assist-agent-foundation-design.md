@@ -203,8 +203,7 @@ ID、未满足依赖和启用要求。
     governance-change.yml
   pull_request_template.md
   CODEOWNERS.example
-  workflows/
-    ci.example.yml
+  ci.example.yml
 docs/governance/
   development-standard.md
   github-admin-checklist.md
@@ -220,7 +219,8 @@ Request 必须关联 Issue，说明契约和隐私影响，给出测试证据并
 记录和 `.env` 文件不得提交。对 contracts、governance、memory 或 calculation
 的修改必须同步更新 schema、fixture、文档和专项审查。管理员清单描述后续
 GitHub 分支保护配置：Pull Request、审查、必需检查、受限绕过、禁止 force push
-和可选 CODEOWNERS。
+和可选 CODEOWNERS。`.github/ci.example.yml` 是不会被 GitHub Actions 发现的非活动
+模板；仅在管理员明确复制为 `.github/workflows/ci.yml` 后才启用。
 
 ## 验证
 

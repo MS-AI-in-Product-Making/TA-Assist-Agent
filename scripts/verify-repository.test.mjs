@@ -25,11 +25,15 @@ describe("isForbiddenRepositoryPath", () => {
     ".github/ISSUE_TEMPLATE/governance-change.yml",
     ".github/pull_request_template.md",
     ".github/CODEOWNERS.example",
-    ".github/workflows/ci.example.yml",
+    ".github/ci.example.yml",
     "docs/governance/development-standard.md",
     "docs/governance/github-admin-checklist.md",
   ])("includes the required collaboration asset %s", (repositoryPath) => {
     expect(existsSync(resolve(process.cwd(), repositoryPath))).toBe(true);
+  });
+
+  it("keeps the CI example outside GitHub Actions workflow discovery", () => {
+    expect(existsSync(resolve(process.cwd(), ".github/workflows/ci.example.yml"))).toBe(false);
   });
 
   it.each([".env", ".ENV", "runtime/projects/a/run.json", "RUNTIME/run.json", "sample.xlsx", "sample.xlsm"])(

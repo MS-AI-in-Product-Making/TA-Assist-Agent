@@ -2,6 +2,11 @@
 
 本清单记录后续仓库管理员需要在 GitHub 仓库设置中完成的治理配置。Phase0 不会自动强制执行以下设置；在配置完成前，团队仍须按开发协作标准进行人工审查。
 
+## 启用 CI
+
+- Phase0 仅提供非活动模板 `.github/ci.example.yml`，不会被 GitHub Actions 发现或执行。
+- 仅在管理员明确决定启用后，才将该模板复制为 `.github/workflows/ci.yml`，并在合并前确认必需检查名称与分支保护设置一致。
+
 ## 分支保护
 
 - 对 `main` 启用 Pull Request 合并要求，禁止直接推送。
