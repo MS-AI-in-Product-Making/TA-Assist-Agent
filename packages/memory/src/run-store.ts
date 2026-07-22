@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { appendFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, open, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { basename, isAbsolute, relative, resolve } from "node:path";
 import { createAuditStore, type AuditStore } from "@ai-assist/audit";
 import type { DataClassification } from "@ai-assist/contracts";
@@ -49,6 +49,7 @@ interface RunStoreState {
   runDirectory: string;
   artifactsDirectory: string;
   metadataPath: string;
+  metadataLockPath: string;
   transcriptPath: string;
   decisionsPath: string;
   auditStore: AuditStore;
@@ -56,6 +57,9 @@ interface RunStoreState {
   purgeToken?: string;
   pendingOperation: Promise<void>;
 }
+
+const maximumLockRetryDelayMs = 50;
+const maximumLockAttempts = 10;
 
 export async function createRunStore(options: CreateRunStoreOptions): Promise<RunStore> {
   const rootDirectory = resolve(options.rootDir);
@@ -77,6 +81,7 @@ export async function createRunStore(options: CreateRunStoreOptions): Promise<Ru
     runDirectory,
     artifactsDirectory,
     metadataPath: resolve(runDirectory, "artifact-metadata.json"),
+    metadataLockPath: resolve(runDirectory, "memory.lock"),
     transcriptPath: resolve(runDirectory, "transcript.jsonl"),
     decisionsPath: resolve(runDirectory, "decisions.jsonl"),
     auditStore: await createAuditStore(runDirectory),
@@ -88,8 +93,10 @@ export async function createRunStore(options: CreateRunStoreOptions): Promise<Ru
   await Promise.all([
     writeFile(state.transcriptPath, "", { encoding: "utf8", flag: "a" }),
     writeFile(state.decisionsPath, "", { encoding: "utf8", flag: "a" }),
-    writeFile(state.metadataPath, "[]", { encoding: "utf8", flag: "a" }),
   ]);
+  await withMetadataLock(state, async () => {
+    await ensureMetadataFile(state.metadataPath);
+  });
   await state.auditStore.append({ type: "run_created", classification: "internal", payload: { runId } });
 
   return {
@@ -109,22 +116,24 @@ export async function createRunStore(options: CreateRunStoreOptions): Promise<Ru
             ? "metadata_only"
             : "retained",
         };
-        const entries = await readMetadata(state.metadataPath);
-        if (entries.some((entry) => entry.name === metadata.name)) {
-          throw new Error("validation_error: artifact name already exists");
-        }
-        if (metadata.retention === "retained") {
-          const artifactPath = resolve(state.artifactsDirectory, input.name);
-          await writeFile(artifactPath, content, { flag: "wx" });
-          try {
-            await writeMetadata(state.metadataPath, [...entries, metadata]);
-          } catch (error) {
-            await rm(artifactPath, { force: true });
-            throw error;
+        await withMetadataLock(state, async () => {
+          const entries = await readMetadata(state.metadataPath);
+          if (entries.some((entry) => entry.name === metadata.name)) {
+            throw new Error("validation_error: artifact name already exists");
           }
-          return;
-        }
-        await writeMetadata(state.metadataPath, [...entries, metadata]);
+          if (metadata.retention === "retained") {
+            const artifactPath = resolve(state.artifactsDirectory, input.name);
+            await writeFile(artifactPath, content, { flag: "wx" });
+            try {
+              await writeMetadata(state.metadataPath, [...entries, metadata]);
+            } catch (error) {
+              await rm(artifactPath, { force: true });
+              throw error;
+            }
+            return;
+          }
+          await writeMetadata(state.metadataPath, [...entries, metadata]);
+        });
       });
     },
     async recordTranscript(classification, entry) {
@@ -134,12 +143,12 @@ export async function createRunStore(options: CreateRunStoreOptions): Promise<Ru
       return serialize(state, () => appendRecord(state.decisionsPath, classification, entry, state.retainConfidentialArtifacts));
     },
     async listArtifacts() {
-      return serialize(state, async () => (await readMetadata(state.metadataPath))
+      return serialize(state, async () => (await withMetadataLock(state, () => readMetadata(state.metadataPath)))
         .filter((metadata) => metadata.retention === "retained")
         .map(({ name, classification }) => ({ name, classification })));
     },
     async listArtifactMetadata() {
-      return serialize(state, () => readMetadata(state.metadataPath));
+      return serialize(state, () => withMetadataLock(state, () => readMetadata(state.metadataPath)));
     },
     async createExport(options) {
       return serialize(state, () => createExport(state, options));
@@ -238,4 +247,67 @@ function serialize<T>(state: RunStoreState, operation: () => Promise<T>): Promis
 function isErrorCode(error: unknown, code: string): boolean {
   return typeof error === "object" && error !== null && "code" in error &&
     (error as { code?: unknown }).code === code;
+}
+
+async function ensureMetadataFile(path: string): Promise<void> {
+  try {
+    await writeFile(path, "[]", { encoding: "utf8", flag: "wx" });
+  } catch (error: unknown) {
+    if (!isErrorCode(error, "EEXIST")) {
+      throw error;
+    }
+  }
+}
+
+async function withMetadataLock<T>(state: RunStoreState, operation: () => Promise<T>): Promise<T> {
+  const lockId = await acquireMetadataLock(state.metadataLockPath);
+  try {
+    return await operation();
+  } finally {
+    await releaseMetadataLock(state.metadataLockPath, lockId);
+  }
+}
+
+async function acquireMetadataLock(lockPath: string): Promise<string> {
+  const lockId = randomUUID();
+  let retryDelayMs = 1;
+
+  for (let attempt = 0; attempt < maximumLockAttempts; attempt += 1) {
+    try {
+      const lockFile = await open(lockPath, "wx");
+      try {
+        await lockFile.writeFile(JSON.stringify({ lockId, processId: process.pid, createdAt: new Date().toISOString() }));
+      } finally {
+        await lockFile.close();
+      }
+      return lockId;
+    } catch (error: unknown) {
+      if (!isErrorCode(error, "EEXIST") && !isErrorCode(error, "EPERM")) {
+        throw error;
+      }
+      if (attempt === maximumLockAttempts - 1) {
+        throw new Error("dependency_error: memory root is locked; controlled maintenance must verify and remove stale lock");
+      }
+      await delay(retryDelayMs);
+      retryDelayMs = Math.min(retryDelayMs * 2, maximumLockRetryDelayMs);
+    }
+  }
+  throw new Error("dependency_error: memory root is locked; controlled maintenance must verify and remove stale lock");
+}
+
+async function releaseMetadataLock(lockPath: string, lockId: string): Promise<void> {
+  try {
+    const lock = JSON.parse(await readFile(lockPath, "utf8")) as { lockId?: unknown };
+    if (lock.lockId === lockId) {
+      await unlink(lockPath);
+    }
+  } catch (error: unknown) {
+    if (!isErrorCode(error, "ENOENT")) {
+      throw error;
+    }
+  }
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
 }

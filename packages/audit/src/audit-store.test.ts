@@ -224,6 +224,69 @@ it("stores only payload hashes and rejects invalid event input", async () => {
   }
 });
 
+it("rejects secret classifications before creating audit events", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ai-assist-audit-"));
+  const secret = "must-not-enter-audit";
+
+  try {
+    const store = await createAuditStore(directory);
+
+    await expect(store.append({
+      type: "policy_evaluated",
+      classification: "secret" as "public",
+      payload: { secret },
+    })).rejects.toThrow("policy_denied");
+    await expect(readFile(join(directory, "events.jsonl"), "utf8")).resolves.toBe("");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+it("holds an unsealed transaction against concurrent sealing", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ai-assist-audit-"));
+  let releaseTransaction!: () => void;
+  const transactionBlocked = new Promise<void>((resolve) => {
+    releaseTransaction = resolve;
+  });
+  let transactionStarted!: () => void;
+  const transactionReady = new Promise<void>((resolve) => {
+    transactionStarted = resolve;
+  });
+
+  try {
+    const transactionStore = await createAuditStore(directory);
+    const sealingStore = await createAuditStore(directory);
+    const transaction = transactionStore.runUnsealedTransaction(async (audit) => {
+      await audit.append({
+        type: "purge_completed",
+        classification: "internal",
+        payload: { run: "transaction" },
+      });
+      transactionStarted();
+      await transactionBlocked;
+    });
+
+    await transactionReady;
+    let sealingSettled = false;
+    const sealing = sealingStore.writeManifest({
+      runId: "00000000-0000-4000-8000-000000000007",
+      artifacts: [],
+    }).finally(() => {
+      sealingSettled = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(sealingSettled).toBe(false);
+
+    releaseTransaction();
+    await transaction;
+    await sealing;
+    await expect(transactionStore.hasEventType("purge_completed")).resolves.toBe(true);
+    await expect(transactionStore.verify()).resolves.toEqual({ valid: true, failures: [] });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 it("detects altered artifacts and rejects manifest path traversal", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ai-assist-audit-"));
   const missingArtifactDirectory = await mkdtemp(join(tmpdir(), "ai-assist-audit-"));

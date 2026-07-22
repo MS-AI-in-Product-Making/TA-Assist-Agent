@@ -18,17 +18,16 @@ export async function planPurge(state: RunStoreState): Promise<PurgePlan> {
 }
 
 export async function executePurge(state: RunStoreState): Promise<void> {
-  if (await state.auditStore.isSealed()) {
-    throw new Error("dependency_error: sealed audit runs cannot be purged; purge must complete before final sealing");
-  }
-  await state.auditStore.append({ type: "purge_completed", classification: "internal", payload: { runDirectory: state.runDirectory } });
-  for (const path of [
-    state.transcriptPath,
-    state.decisionsPath,
-    state.metadataPath,
-    state.artifactsDirectory,
-    resolve(state.runDirectory, "exports"),
-  ]) {
-    await rm(path, { recursive: true, force: true });
-  }
+  await state.auditStore.runUnsealedTransaction(async (audit) => {
+    await audit.append({ type: "purge_completed", classification: "internal", payload: { runDirectory: state.runDirectory } });
+    for (const path of [
+      state.transcriptPath,
+      state.decisionsPath,
+      state.metadataPath,
+      state.artifactsDirectory,
+      resolve(state.runDirectory, "exports"),
+    ]) {
+      await rm(path, { recursive: true, force: true });
+    }
+  });
 }

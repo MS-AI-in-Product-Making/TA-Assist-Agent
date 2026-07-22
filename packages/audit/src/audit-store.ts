@@ -14,7 +14,7 @@ const eventTypes = [
   "purge_completed",
 ] as const;
 
-const classifications = ["public", "internal", "confidential", "secret"] as const;
+const classifications = ["public", "internal", "confidential"] as const;
 const manifestSchema = "ai-assist.audit.manifest.v1";
 const sha256Pattern = /^[a-f0-9]{64}$/;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -23,11 +23,11 @@ const maximumLockRetryDelayMs = 50;
 const maximumLockAttempts = 10;
 
 export type AuditEventType = (typeof eventTypes)[number];
-export type Classification = (typeof classifications)[number];
+export type AuditClassification = (typeof classifications)[number];
 
 export interface AuditEventInput {
   type: AuditEventType;
-  classification: Classification;
+  classification: AuditClassification;
   payload: unknown;
 }
 
@@ -49,6 +49,10 @@ export interface VerifyResult {
   failures: string[];
 }
 
+export interface UnsealedAuditTransaction {
+  append(event: AuditEventInput): Promise<void>;
+}
+
 interface AuditManifest {
   runId: string;
   schemaHash: string;
@@ -64,6 +68,7 @@ export interface AuditStore {
   append(event: AuditEventInput): Promise<void>;
   hasEventType(type: AuditEventType): Promise<boolean>;
   isSealed(): Promise<boolean>;
+  runUnsealedTransaction<T>(operation: (audit: UnsealedAuditTransaction) => Promise<T>): Promise<T>;
   writeManifest(manifest: ManifestInput): Promise<void>;
   verify(): Promise<VerifyResult>;
 }
@@ -87,6 +92,18 @@ export async function createAuditStore(root: string): Promise<AuditStore> {
     return result;
   }
 
+  async function appendUnsealed(event: AuditEventInput): Promise<void> {
+    validateEvent(event);
+    const eventRecord = {
+      eventId: randomUUID(),
+      timestamp: new Date().toISOString(),
+      type: event.type,
+      classification: event.classification,
+      payloadHash: hashPayload(event.payload),
+    };
+    await appendFile(eventsPath, `${JSON.stringify(eventRecord)}\n`, "utf8");
+  }
+
   return {
     async append(event) {
       validateEvent(event);
@@ -95,14 +112,7 @@ export async function createAuditStore(root: string): Promise<AuditStore> {
           if (await manifestExists(manifestPath)) {
             throw new Error("validation_error: audit events are sealed by the manifest");
           }
-          const eventRecord = {
-            eventId: randomUUID(),
-            timestamp: new Date().toISOString(),
-            type: event.type,
-            classification: event.classification,
-            payloadHash: hashPayload(event.payload),
-          };
-          await appendFile(eventsPath, `${JSON.stringify(eventRecord)}\n`, "utf8");
+          await appendUnsealed(event);
         });
       });
     },
@@ -118,6 +128,15 @@ export async function createAuditStore(root: string): Promise<AuditStore> {
 
     async isSealed() {
       return serialize(() => withRootLock(lockPath, () => manifestExists(manifestPath)));
+    },
+
+    async runUnsealedTransaction(operation) {
+      return serialize(() => withRootLock(lockPath, async () => {
+        if (await manifestExists(manifestPath)) {
+          throw new Error("dependency_error: sealed audit runs cannot be modified");
+        }
+        return operation({ append: appendUnsealed });
+      }));
     },
 
     async writeManifest(input) {
@@ -263,7 +282,13 @@ function delay(milliseconds: number): Promise<void> {
 }
 
 function validateEvent(event: AuditEventInput): void {
-  if (!eventTypes.includes(event.type) || !classifications.includes(event.classification)) {
+  if (!eventTypes.includes(event.type)) {
+    throw new Error("validation_error: invalid event type or classification");
+  }
+  if ((event as { classification: unknown }).classification === "secret") {
+    throw new Error("policy_denied: secret classifications cannot be persisted in audit events");
+  }
+  if (!classifications.includes(event.classification)) {
     throw new Error("validation_error: invalid event type or classification");
   }
   if (event.payload === undefined || !isJsonValue(event.payload)) {
@@ -406,7 +431,7 @@ interface AuditEventRecord {
   eventId: string;
   timestamp: string;
   type: AuditEventType;
-  classification: Classification;
+  classification: AuditClassification;
   payloadHash: string;
 }
 
@@ -441,6 +466,6 @@ function isAuditEventRecord(value: unknown): value is AuditEventRecord {
   const event = value as Record<string, unknown>;
   return isUuid(event.eventId) && typeof event.timestamp === "string" &&
     typeof event.type === "string" && eventTypes.includes(event.type as AuditEventType) &&
-    typeof event.classification === "string" && classifications.includes(event.classification as Classification) &&
+    typeof event.classification === "string" && classifications.includes(event.classification as AuditClassification) &&
     typeof event.payloadHash === "string" && isSha256Hash(event.payloadHash);
 }

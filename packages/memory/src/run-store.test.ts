@@ -151,6 +151,70 @@ it("serializes concurrent artifacts into complete metadata without orphan files"
   }
 });
 
+it("coordinates independent stores sharing one run during initialization and artifact writes", async () => {
+  const rootDir = await createTemporaryRoot();
+  const options = {
+    rootDir,
+    projectId: "project",
+    sessionId: "session",
+    runId: "00000000-0000-4000-8000-000000000008",
+  };
+
+  try {
+    const [firstStore, secondStore] = await Promise.all([
+      createRunStore(options),
+      createRunStore(options),
+    ]);
+    await Promise.all([
+      firstStore.recordArtifact({ name: "first.txt", classification: "public", content: "first" }),
+      secondStore.recordArtifact({ name: "second.txt", classification: "internal", content: "second" }),
+    ]);
+
+    const metadataPath = join(firstStore.runDirectory, "artifact-metadata.json");
+    const metadata = JSON.parse(await readFile(metadataPath, "utf8")) as Array<{ name: string }>;
+    expect(metadata.map(({ name }) => name).sort()).toEqual(["first.txt", "second.txt"]);
+    expect((await firstStore.listArtifacts()).map(({ name }) => name).sort()).toEqual(["first.txt", "second.txt"]);
+    expect((await readdir(join(firstStore.runDirectory, "artifacts"))).sort()).toEqual(["first.txt", "second.txt"]);
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+it("never deletes scoped data from a run sealed by a concurrent store", async () => {
+  const rootDir = await createTemporaryRoot();
+  const options = {
+    rootDir,
+    projectId: "project",
+    sessionId: "session",
+    runId: "00000000-0000-4000-8000-000000000009",
+  };
+
+  try {
+    const store = await createRunStore(options);
+    await store.recordArtifact({ name: "purge.txt", classification: "public", content: "purge" });
+    const plan = await store.planPurge();
+    const sealingStore = await createAuditStore(store.runDirectory);
+    const purge = store.executePurge(plan.confirmationToken);
+    const sealing = sealingStore.writeManifest({
+      runId: options.runId,
+      artifacts: [],
+    });
+
+    const [purgeResult, sealingResult] = await Promise.allSettled([purge, sealing]);
+    expect(sealingResult.status).toBe("fulfilled");
+    if (purgeResult.status === "fulfilled") {
+      await expect(readFile(join(store.runDirectory, "artifacts", "purge.txt"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+      expect(await store.hasEvent("purge_completed")).toBe(true);
+    } else {
+      expect(String(purgeResult.reason)).toContain("dependency_error");
+      await expect(readFile(join(store.runDirectory, "artifacts", "purge.txt"), "utf8")).resolves.toBe("purge");
+    }
+    await expect(sealingStore.verify()).resolves.toEqual({ valid: true, failures: [] });
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
 it("rejects Windows-unsafe artifact names and allows a normal basename", async () => {
   const rootDir = await createTemporaryRoot();
 

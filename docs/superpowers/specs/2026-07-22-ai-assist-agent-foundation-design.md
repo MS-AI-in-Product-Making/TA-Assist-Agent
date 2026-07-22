@@ -137,6 +137,23 @@ runtime/
 - 错误事件仅包含分类、别名、哈希和错误码，不得包含工作簿内容、DIM ID、
   供应商名称或环境变量值。
 
+### 审计与清理并发保证
+
+- 审计事件分类仅允许 `public`、`internal` 和 `confidential`；`secret` 在审计
+  追加前以 `policy_denied` 拒绝，因而不创建或写入对应事件。
+- 同一 run root 的审计操作使用非自动恢复的文件锁。`runUnsealedTransaction`
+  在持有该锁期间确认未封印，并允许事务内追加审计证据；其他实例的追加和
+  `writeManifest` 必须等待或因锁超时失败。陈旧锁只能由受控维护确认后删除。
+- 清理在一个未封印审计事务中先写入 `purge_completed`，再删除 scoped data。
+  因此封印不能插入证据写入与删除之间。若封印先完成，清理拒绝且不删除；若
+  清理先获得锁，封印只能在清理事务结束后进行。
+- 删除发生在不可变审计证据之后。删除 I/O 失败时操作返回错误，但
+  `purge_completed` 已保留，表示已开始且结果需由调用方根据实际文件状态处理；
+  Phase 0 没有 `purge_failed` 事件类型。
+- 多个 `RunStore` 实例对同一 run 的 artifact metadata 使用独立的 `memory.lock`
+  包住初始化与读改写。锁采用 `wx` 和有限退避，遇到现存锁失败关闭，不进行自动
+  陈旧锁恢复。
+
 ## Feature Register 与延后能力契约
 
 Register 将 F0-F8 作为工程工作项进行跟踪，而不是模糊的占位符。每个条目
