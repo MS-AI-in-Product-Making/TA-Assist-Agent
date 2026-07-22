@@ -18,6 +18,22 @@ Design document set for AI Assist Agent (V1). All diagrams use Mermaid and rende
 | 06 | [System Architecture Visual](06-system-architecture-visual.html) | Dark-theme visual architecture board (high-level + detailed flow), suitable for review screenshots |
 | 07 | [Proposed Roadmap 2026H2](07-proposed-roadmap-2026H2.html) | Management-facing roadmap aligned to proposed milestones (planning/design/develop/test/release/launch), covering information gathering, program development, and feature delivery |
 
+## Phase 0 工程基座
+
+Phase 0 是本地优先、可审计、契约驱动的工程基础，不是 F0-F8 业务功能交付。当前 F0-F7
+均不可用，F4 仅返回 `feature_not_available`；F8 仅提供匿名 `public` fixture 的受治理
+Skill 运行时验收，不包含真实工作簿、外部 Adapter、模型、ADO、SharePoint 或 UI 行为。
+
+| 文档 | 内容 |
+|---|---|
+| [Phase 0 设计](superpowers/specs/2026-07-22-ai-assist-agent-foundation-design.md) | 架构、契约、策略门、审计和清理生命周期 |
+| [Phase 0 实施计划](superpowers/plans/2026-07-22-ai-assist-agent-foundation.md) | 任务分解、TDD 步骤和质量门 |
+| [系统架构](01-architecture.md) | 产品架构与后续业务能力边界 |
+| [Feature Register](governance/feature-register.md) | F0-F8 可用性、依赖、契约和禁用行为 |
+| [数据分类](governance/data-classification.md) | `public`、`internal`、`confidential`、`secret` 处理规则 |
+| [开发协作标准](governance/development-standard.md) | 分支、PR、文档和验收要求 |
+| [Phase 0 验收](governance/phase-0-acceptance.md) | Definition of Done、命令、预期结果和安全边界 |
+
 ## Shared Conventions
 
 - **V1 scope:** No drawing image recognition and no 3D VA. Data-to-drawing linking is done through **DIM ID** (F3); more than 10 factors are referred to the DM team for 3D VA. The measured-data closed loop (F7) first imports data manually from a centralized store (SharePoint / platform), which is an external prerequisite outside the project's control.
