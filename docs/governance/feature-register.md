@@ -2,10 +2,10 @@
 
 ## 目的
 
-Feature Register 是 Phase 0 对 F0-F8 的唯一可查询能力清单。它区分已完成的
-工程基座与尚未交付的业务能力，避免调用方、测试或文档将规划能力误认为可用。
-当前所有 F0-F8 均为 `unavailable`；运行时禁用行为统一为返回
-`feature_not_available`，不得尝试降级为未声明的外部调用或临时实现。
+Feature Register 是 Phase 0 对 F0-F8 的唯一可查询能力清单。它提供规则和查询接口，
+用于区分已完成的工程基座与尚未交付的业务能力，避免调用方、测试或文档将规划能力
+误认为可用。当前所有 F0-F8 均为 `unavailable`。本阶段未交付生产编排器，因此不应
+宣称已端到端拦截业务执行；调用方和后续编排器必须在执行前查询该清单。
 
 ## 当前条目
 
@@ -25,7 +25,8 @@ Feature Register 是 Phase 0 对 F0-F8 的唯一可查询能力清单。它区�
 
 - 调用方先通过 `getFeatureStatus(featureId)` 查询条目；未知 ID 返回 `undefined`，
   调用方必须按不可用处理。
-- 条目状态为 `unavailable` 时，不得执行相应业务逻辑。响应应包含
-  `feature_not_available`，并说明未满足的依赖或外部前置条件。
+- 条目状态为 `unavailable` 时，调用方和后续生产编排器不得执行相应业务逻辑。后续
+  运行时必须返回 `feature_not_available`，并说明未满足的依赖或外部前置条件；这是
+  后续实现义务，不代表 Phase 0 已完成端到端拦截。
 - 修改任一条目时，必须同步更新 `packages/governance` 的测试、此文档、相关契约
   和匿名验收 fixture。若涉及外部访问，还必须经过策略门审批。

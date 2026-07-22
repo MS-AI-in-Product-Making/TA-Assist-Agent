@@ -38,6 +38,21 @@ describe("policy gate", () => {
     });
   });
 
+  it("fails closed when an input classification getter throws", () => {
+    const request = {
+      get inputClassification(): never {
+        throw new Error("malformed input");
+      },
+      permission: "read",
+    };
+
+    expect(() => evaluatePolicy(request)).not.toThrow();
+    expect(evaluatePolicy(request)).toEqual({
+      allowed: false,
+      reason: "policy_denied",
+    });
+  });
+
   it("reports F4 as unavailable", () => {
     expect(getFeatureStatus("F4")).toEqual({
       featureId: "F4",

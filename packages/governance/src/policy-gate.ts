@@ -25,29 +25,42 @@ const policyPermissions = new Set<PolicyPermission>([
   "read",
 ]);
 
-function isPolicyRequest(request: unknown): request is PolicyRequest {
-  if (typeof request !== "object" || request === null) {
-    return false;
+function parsePolicyRequest(request: unknown): PolicyRequest | undefined {
+  try {
+    if (typeof request !== "object" || request === null) {
+      return undefined;
+    }
+
+    const { inputClassification, permission } = request as Record<string, unknown>;
+
+    if (
+      typeof inputClassification !== "string" ||
+      !dataClassifications.has(inputClassification as DataClassification) ||
+      typeof permission !== "string" ||
+      !policyPermissions.has(permission as PolicyPermission)
+    ) {
+      return undefined;
+    }
+
+    return {
+      inputClassification: inputClassification as DataClassification,
+      permission: permission as PolicyPermission,
+    };
+  } catch {
+    return undefined;
   }
-
-  const { inputClassification, permission } = request as Record<string, unknown>;
-
-  return (
-    typeof inputClassification === "string" &&
-    dataClassifications.has(inputClassification as DataClassification) &&
-    typeof permission === "string" &&
-    policyPermissions.has(permission as PolicyPermission)
-  );
 }
 
 export function evaluatePolicy(request: unknown): PolicyDecision {
-  if (!isPolicyRequest(request)) {
+  const policyRequest = parsePolicyRequest(request);
+
+  if (policyRequest === undefined) {
     return { allowed: false, reason: "policy_denied" };
   }
 
   if (
-    request.inputClassification === "public" &&
-    request.permission === "read"
+    policyRequest.inputClassification === "public" &&
+    policyRequest.permission === "read"
   ) {
     return { allowed: true };
   }
