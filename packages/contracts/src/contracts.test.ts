@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import {
   dataClassificationSchema,
@@ -45,5 +46,19 @@ describe("Phase 0 contracts", () => {
         output: { passed: true },
       }).output,
     ).toEqual({ passed: true });
+  });
+
+  it("exposes runRequestSchema through the Node ESM package entrypoint", () => {
+    const output = execFileSync(
+      process.execPath,
+      [
+        "--input-type=module",
+        "--eval",
+        "import { runRequestSchema } from '@ai-assist/contracts'; console.log(runRequestSchema ? 'loaded' : 'missing');",
+      ],
+      { cwd: process.cwd(), encoding: "utf8" },
+    );
+
+    expect(output.trim()).toBe("loaded");
   });
 });
