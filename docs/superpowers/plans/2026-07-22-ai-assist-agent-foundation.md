@@ -745,16 +745,33 @@ git commit -m "docs: add Chinese collaboration standards"
 
 ```ts
 import { expect, it } from "vitest";
+import { readFile } from "node:fs/promises";
 import { executeCli } from "./index.js";
 
-it("completes smoke and exports a public run", async () => {
+it("验证 sealed smoke 失败关闭导出，并导出独立 unsealed public run", async () => {
   const smoke = await executeCli(["smoke", "--root", "./runtime-test"]);
-  const runId = smoke.stdout.match(/runId: ([0-9a-f-]{36})/)?.[1];
-  expect(runId).toBeDefined();
+  const sealedRunId = smoke.stdout.match(/runId: ([0-9a-f-]{36})/)?.[1];
+  expect(sealedRunId).toBeDefined();
   expect(smoke.stdout).toContain("manifestValid: true");
-  const exported = await executeCli(["export", "--run-id", runId, "--root", "./runtime-test"]);
-  expect(exported.exitCode).toBe(0);
   expect(smoke.stdout).toContain("F4: feature_not_available");
+
+  const sealedExport = await executeCli(["export", "--run-id", sealedRunId!, "--root", "./runtime-test"]);
+  expect(sealedExport.exitCode).not.toBe(0);
+  expect(sealedExport.stdout).toContain("policy_denied");
+  expect(sealedExport.stdout).not.toContain("export_created");
+
+  const publicRun = await executeCli(["run", "--fixture", "./fixtures/public/smoke-request.json", "--root", "./runtime-test"]);
+  const publicRunId = publicRun.stdout.match(/runId: ([0-9a-f-]{36})/)?.[1];
+  expect(publicRunId).toBeDefined();
+  const exported = await executeCli(["export", "--run-id", publicRunId!, "--root", "./runtime-test"]);
+  expect(exported.exitCode).toBe(0);
+  const auditLog = await readFile("./runtime-test/audit/events.jsonl", "utf8");
+  expect(auditLog.indexOf("export_created")).toBeLessThan(auditLog.indexOf("export_published"));
+
+  const purgePlan = await executeCli(["purge-plan", "--run-id", publicRunId!, "--root", "./runtime-test"]);
+  const purgeToken = purgePlan.stdout.match(/purgeToken: ([^\s]+)/)?.[1];
+  const purged = await executeCli(["purge", "--run-id", publicRunId!, "--token", purgeToken!, "--root", "./runtime-test"]);
+  expect(purged.exitCode).toBe(0);
 });
 ```
 
@@ -768,9 +785,11 @@ Expected: FAIL，直到 CLI、导出和 Feature 占位逻辑完成。
 
 - [ ] **步骤 3：补齐最小行为与中文使用说明**
 
-修正 CLI 或存储实现，使验收测试能够运行匿名 smoke、导出 public run、显示 F4 的
-`feature_not_available`、生成 purge plan 并仅以正确 token 清理。不得添加真实外部
-adapter、真实 workbook 或模型调用。
+修正 CLI 或存储实现，使验收测试能够运行匿名 sealed smoke 并验证 manifest 与 F4 的
+`feature_not_available`；对该 sealed smoke 的导出必须在任何副作用前失败关闭。另建独立
+unsealed public run 才可接受导出，且必须先审计 `export_created` 再原子发布；随后生成
+purge plan 并仅以正确 token 清理该 public run。不得添加真实外部 adapter、真实 workbook
+或模型调用。
 
 更新 `README.md` 与 `docs/README.md`，链接工程基座设计、中文协作标准、Feature
 Register 和 Phase 0 验收说明。`docs/governance/phase-0-acceptance.md` 必须用中文列出
