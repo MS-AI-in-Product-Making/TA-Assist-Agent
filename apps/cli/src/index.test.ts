@@ -1,7 +1,7 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createRunStore } from "@ai-assist/memory";
+import { createRunStore, openRunStore } from "@ai-assist/memory";
 import { expect, it } from "vitest";
 import { executeCli } from "./index.js";
 
@@ -102,5 +102,64 @@ it("rejects unknown flags, duplicated flags, and malformed run ids", async () =>
     await expect(executeCli(["inspect", "--run-id", "../unsafe", "--root", rootDir])).resolves.toMatchObject({ exitCode: 2 });
   } finally {
     await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+it("rejects a redirected managed runs directory before CLI operations read or mutate it", async () => {
+  const rootDir = await createTemporaryRoot();
+  const outsideRoot = await createTemporaryRoot();
+  const runId = "00000000-0000-4000-8000-000000000021";
+  const outsideRuns = join(outsideRoot, "projects", "project", "sessions", "session", "runs");
+  const sentinelPath = join(outsideRuns, "sentinel.txt");
+
+  try {
+    const externalStore = await createRunStore({
+      rootDir: outsideRoot,
+      projectId: "project",
+      sessionId: "session",
+      runId,
+    });
+    await externalStore.recordArtifact({ name: "scope.txt", classification: "public", content: "outside-content" });
+    await writeFile(sentinelPath, "outside-sentinel", "utf8");
+
+    const redirectedRuns = join(rootDir, "projects", "project", "sessions", "session", "runs");
+    await mkdir(join(rootDir, "projects", "project", "sessions", "session"), { recursive: true });
+    await symlink(outsideRuns, redirectedRuns, process.platform === "win32" ? "junction" : "dir");
+
+    await expect(openRunStore({ rootDir, runId })).rejects.toThrow("policy_denied");
+    for (const command of [
+      ["inspect", "--run-id", runId, "--root", rootDir],
+      ["export", "--run-id", runId, "--root", rootDir],
+      ["purge", "--run-id", runId, "--root", rootDir, "--confirmation-token", "unused-token"],
+    ]) {
+      await expect(executeCli(command)).resolves.toMatchObject({ exitCode: 2, stderr: expect.stringContaining("policy_denied") });
+    }
+    await expect(readFile(sentinelPath, "utf8")).resolves.toBe("outside-sentinel");
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+    await rm(outsideRoot, { recursive: true, force: true });
+  }
+});
+
+it("rejects creating a run through a redirected managed hierarchy", async () => {
+  const rootDir = await createTemporaryRoot();
+  const outsideRuns = await createTemporaryRoot();
+
+  try {
+    const redirectedRuns = join(rootDir, "projects", "project", "sessions", "session", "runs");
+    await mkdir(join(rootDir, "projects", "project", "sessions", "session"), { recursive: true });
+    await symlink(outsideRuns, redirectedRuns, process.platform === "win32" ? "junction" : "dir");
+
+    await expect(createRunStore({
+      rootDir,
+      projectId: "project",
+      sessionId: "session",
+      runId: "00000000-0000-4000-8000-000000000022",
+    })).rejects.toThrow("policy_denied");
+    await expect(readFile(join(outsideRuns, "00000000-0000-4000-8000-000000000022", "events.jsonl"), "utf8"))
+      .rejects.toMatchObject({ code: "ENOENT" });
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+    await rm(outsideRuns, { recursive: true, force: true });
   }
 });

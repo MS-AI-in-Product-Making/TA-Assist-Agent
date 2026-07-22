@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { appendFile, mkdir, open, readFile, readdir, rename, rm, unlink, writeFile } from "node:fs/promises";
+import { appendFile, lstat, mkdir, open, readFile, readdir, realpath, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { basename, isAbsolute, relative, resolve } from "node:path";
 import { createAuditStore, type AuditStore } from "@ai-assist/audit";
 import type { DataClassification } from "@ai-assist/contracts";
@@ -67,7 +67,7 @@ const maximumLockRetryDelayMs = 50;
 const maximumLockAttempts = 10;
 
 export async function createRunStore(options: CreateRunStoreOptions): Promise<RunStore> {
-  const rootDirectory = resolve(options.rootDir);
+  const rootDirectory = await resolveRuntimeRoot(options.rootDir);
   const projectId = options.projectId ?? randomUUID();
   const sessionId = options.sessionId ?? randomUUID();
   const runId = options.runId ?? randomUUID();
@@ -77,10 +77,7 @@ export async function createRunStore(options: CreateRunStoreOptions): Promise<Ru
     }
   }
 
-  const runDirectory = resolve(rootDirectory, "projects", projectId, "sessions", sessionId, "runs", runId);
-  if (!isWithin(rootDirectory, runDirectory)) {
-    throw new Error("validation_error: run directory must remain within the runtime root");
-  }
+  const runDirectory = await ensureManagedRunDirectory(rootDirectory, projectId, sessionId, runId);
   const artifactsDirectory = resolve(runDirectory, "artifacts");
   const state: RunStoreState = {
     runDirectory,
@@ -185,7 +182,7 @@ export async function openRunStore(options: OpenRunStoreOptions): Promise<RunSto
   if (!isUuid(options.runId) || typeof options.rootDir !== "string" || options.rootDir.length === 0) {
     throw new Error("validation_error: runtime root and run id are invalid");
   }
-  const rootDirectory = resolve(options.rootDir);
+  const rootDirectory = await resolveRuntimeRoot(options.rootDir);
   const runDirectory = await findRunDirectory(rootDirectory, options.runId);
   const state: RunStoreState = {
     runDirectory,
@@ -254,6 +251,7 @@ function isUuid(value: string): boolean {
 
 async function findRunDirectory(rootDirectory: string, runId: string): Promise<string> {
   const projectsDirectory = resolve(rootDirectory, "projects");
+  await assertContainedDirectory(rootDirectory, projectsDirectory);
   let projects: string[];
   try {
     projects = await readdir(projectsDirectory);
@@ -265,8 +263,12 @@ async function findRunDirectory(rootDirectory: string, runId: string): Promise<s
       continue;
     }
     let sessions: string[];
+    const projectDirectory = resolve(projectsDirectory, projectId);
+    await assertContainedDirectory(rootDirectory, projectDirectory);
+    const sessionsDirectory = resolve(projectDirectory, "sessions");
     try {
-      sessions = await readdir(resolve(projectsDirectory, projectId, "sessions"));
+      await assertContainedDirectory(rootDirectory, sessionsDirectory);
+      sessions = await readdir(sessionsDirectory);
     } catch {
       continue;
     }
@@ -274,10 +276,12 @@ async function findRunDirectory(rootDirectory: string, runId: string): Promise<s
       if (!isSafeDirectoryName(sessionId)) {
         continue;
       }
-      const candidate = resolve(projectsDirectory, projectId, "sessions", sessionId, "runs", runId);
-      if (!isWithin(rootDirectory, candidate)) {
-        continue;
-      }
+      const sessionDirectory = resolve(sessionsDirectory, sessionId);
+      await assertContainedDirectory(rootDirectory, sessionDirectory);
+      const runsDirectory = resolve(sessionDirectory, "runs");
+      await assertContainedDirectory(rootDirectory, runsDirectory);
+      const candidate = resolve(runsDirectory, runId);
+      await assertContainedDirectory(rootDirectory, candidate);
       try {
         await readFile(resolve(candidate, "events.jsonl"), "utf8");
         return candidate;
@@ -289,9 +293,49 @@ async function findRunDirectory(rootDirectory: string, runId: string): Promise<s
   throw new Error("validation_error: run was not found");
 }
 
-function isWithin(rootDirectory: string, candidate: string): boolean {
+async function resolveRuntimeRoot(rootDir: string): Promise<string> {
+  if (typeof rootDir !== "string" || rootDir.length === 0) {
+    throw new Error("validation_error: runtime root is invalid");
+  }
+  try {
+    return await realpath(resolve(rootDir));
+  } catch {
+    throw new Error("validation_error: runtime root is invalid");
+  }
+}
+
+async function ensureManagedRunDirectory(
+  rootDirectory: string,
+  projectId: string,
+  sessionId: string,
+  runId: string,
+): Promise<string> {
+  let directory = rootDirectory;
+  for (const component of ["projects", projectId, "sessions", sessionId, "runs", runId]) {
+    directory = resolve(directory, component);
+    await mkdir(directory, { recursive: true });
+    await assertContainedDirectory(rootDirectory, directory);
+  }
+  return directory;
+}
+
+async function assertContainedDirectory(rootDirectory: string, candidate: string): Promise<void> {
+  let metadata: Awaited<ReturnType<typeof lstat>>;
+  let physicalPath: string;
+  try {
+    metadata = await lstat(candidate);
+    physicalPath = await realpath(candidate);
+  } catch {
+    throw new Error("validation_error: managed runtime directory is invalid");
+  }
+  if (metadata.isSymbolicLink() || !isWithinOrEqual(rootDirectory, physicalPath)) {
+    throw new Error("policy_denied: managed runtime directory must remain within the runtime root");
+  }
+}
+
+function isWithinOrEqual(rootDirectory: string, candidate: string): boolean {
   const difference = relative(rootDirectory, candidate);
-  return difference !== "" && !difference.startsWith("..") && !isAbsolute(difference);
+  return (difference === "" || !difference.startsWith("..")) && !isAbsolute(difference);
 }
 
 function hash(content: Buffer): string {
