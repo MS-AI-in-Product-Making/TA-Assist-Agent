@@ -32,19 +32,24 @@ Windows 上一个符号链接测试可能因为创建 symlink 所需的权限而
 1. 执行 `smoke --root <temporary-root>`，从输出取得 UUID `runId`，并断言
    `manifestValid: true` 与 `F4: feature_not_available`。这证明匿名 smoke workflow
    生成了可验证 manifest，且未交付的 F4 没有被宣称为可用。
-2. 执行 `export --run-id <smoke-run-id> --root <temporary-root>` 并断言退出码为 0。
-   该流程只导出分类 manifest 与匿名 public 工件元数据。
-3. 对 sealed smoke run 执行 `purge-plan` 并断言拒绝。smoke 的 manifest 已封存，清理
-   会修改审计事件，因此必须 fail closed；不得为方便验收而解除封存或改变不可变审计语义。
-4. 在另一个独立临时根目录创建未封存的 anonymous `public` controlled run，写入
-   `public-fixture.txt`。执行 `purge-plan`，从输出读取 `confirmationToken`。
+2. 执行 `export --run-id <smoke-run-id> --root <temporary-root>` 并断言退出码为 2、
+  `stderr` 包含 `dependency_error`，且 run 内不存在 `exports` 目录或文件。smoke 的
+  manifest 已封存；导出会持久化新文件并要求 `export_created` 审计事件覆盖，因此必须
+  fail closed，不得为方便验收而解除封存、重封或产生任何封存后副作用。
+3. 对同一 sealed smoke run 执行 `purge-plan` 并断言拒绝。清理同样会修改审计事件，
+  必须保持不可变审计语义。
+4. 在另一个独立临时根目录创建未封存的 anonymous `public` controlled run。先执行
+  `export` 并断言退出码为 0、`stderr` 为空、`classification: public`、`artifactCount: 0`，
+  且输出不含原始 smoke 内容。该导出在审计事务中记录 `export_created`，随后才原子写入
+  分类 manifest。之后写入 `public-fixture.txt`，执行 `purge-plan`，从输出读取
+  `confirmationToken`。
 5. 使用错误 token 执行 `purge` 并断言失败；仅使用计划返回的正确 token 执行 `purge`
    并断言成功。验证 `purge_completed` 审计事件存在、artifact 列表为空，并通过
    `inspect` 断言 `artifactCount: 0`。
 
-这个双生命周期验收同时覆盖 CLI 的清理计划和确认机制，并保留 sealed run 的完整性保证。
-它不声称 sealed smoke run 可以被清理；其安全结果是拒绝修改，清理成功的证据来自受控、
-未封存的 public run。
+这个双生命周期验收同时覆盖 CLI 的导出、清理计划和确认机制，并保留 sealed run 的完整性
+保证。它不声称 sealed smoke run 可以被导出或清理；所有持久化导出与清理成功证据都来自
+受控、未封存的 public run。
 
 ## 安全与功能边界
 
@@ -56,6 +61,9 @@ Windows 上一个符号链接测试可能因为创建 symlink 所需的权限而
   测量数据、计划任务或外部系统行为。
 - `secret` 不得写入 memory、audit、日志、导出或 Git。`confidential` 数据不得作为验收
   fixture；真实 runtime 与 `.env`、导出包和工作簿路径均须通过仓库检查排除。
+- 持久化 `export` 必须在审计未封存时执行：先追加 `export_created`，再原子写入分类
+  manifest。已封存 run 的导出必须在创建 `exports` 目录或文件前以 `dependency_error`
+  拒绝，且不得产生封存后副作用。
 - 清理在未封存审计事务内先写入 `purge_completed`，再删除 scoped data；若已封存则拒绝，
   从而保证不会为清理破坏 manifest 的不可变性。
 

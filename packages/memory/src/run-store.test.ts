@@ -175,6 +175,8 @@ it("fails closed before planning or deleting a sealed run", async () => {
 
     await expect(store.planPurge()).rejects.toThrow("dependency_error");
     await expect(store.executePurge(plan.confirmationToken)).rejects.toThrow("dependency_error");
+    await expect(store.createExport()).rejects.toThrow("dependency_error: sealed audit runs cannot be modified");
+    await expect(readdir(store.runDirectory)).resolves.not.toContain("exports");
     await expect(readFile(join(store.runDirectory, "artifacts", "ta.xlsx"), "utf8")).resolves.toBe("retained");
     expect(await store.listArtifacts()).toEqual([{ name: "ta.xlsx", classification: "confidential" }]);
   } finally {
@@ -434,6 +436,29 @@ it("requires confidential export confirmation and rejects secret export requests
     const exported = await store.createExport({ confirmConfidential: true });
     expect(exported.manifest.artifacts).toEqual([{ name: "ta.xlsx", classification: "confidential" }]);
     await expect(readFile(exported.path, "utf8")).resolves.not.toContain("retained");
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+it("records unsealed exports in audit before writing a safe manifest", async () => {
+  const rootDir = await createTemporaryRoot();
+  const content = "public-artifact-content-must-not-appear-in-export";
+
+  try {
+    const store = await createRunStore({ rootDir });
+    await store.recordArtifact({ name: "public-fixture.txt", classification: "public", content });
+
+    const exported = await store.createExport();
+    expect(exported.manifest.artifacts).toEqual([{ name: "public-fixture.txt", classification: "public" }]);
+    await expect(readFile(exported.path, "utf8")).resolves.toBe(JSON.stringify(exported.manifest, null, 2));
+    await expect(readFile(exported.path, "utf8")).resolves.not.toContain(content);
+
+    const events = (await readFile(join(store.runDirectory, "events.jsonl"), "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { type: string });
+    expect(events.map((event) => event.type)).toContain("export_created");
   } finally {
     await rm(rootDir, { recursive: true, force: true });
   }

@@ -1,4 +1,4 @@
-import { writeFile } from "node:fs/promises";
+import { rename, rm, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { relative, resolve } from "node:path";
 import { ensureManagedChildDirectory, type ArtifactMetadata, type RunStoreState } from "./run-store.js";
@@ -19,36 +19,50 @@ export async function createExport(state: RunStoreState, options: ExportOptions 
   if (options.includeSecret) {
     throw new Error("policy_denied: secret data cannot be exported");
   }
-  if (await state.auditStore.isSealed()) {
-    return createExportFile(state, options);
-  }
   return state.auditStore.runUnsealedTransaction(async (audit) => {
     if (await audit.hasEventType("purge_completed")) {
       throw new Error("dependency_error: run has been purged");
     }
-    const exported = await createExportFile(state, options);
-    await audit.append({ type: "export_created", classification: "internal", payload: { artifactCount: exported.manifest.artifacts.length } });
-    return exported;
+    const manifest = await createExportManifest(state, options);
+    await audit.append({ type: "export_created", classification: "internal", payload: { artifactCount: manifest.artifacts.length } });
+    return createExportFile(state, manifest);
   });
 }
 
-async function createExportFile(state: RunStoreState, options: ExportOptions): Promise<ExportResult> {
+async function createExportManifest(
+  state: RunStoreState,
+  options: ExportOptions,
+): Promise<ExportResult["manifest"]> {
   return state.withMemoryLock(async () => {
     const metadata = await readMetadata(state.metadataPath);
     if (metadata.some((artifact) => artifact.classification === "confidential") && !options.confirmConfidential) {
       throw new Error("policy_denied: confidential export requires explicit confirmation");
     }
+    return {
+      artifacts: metadata
+        .filter((artifact) => artifact.retention === "retained")
+        .map(({ name, classification }) => ({ name, classification })),
+    };
+  });
+}
+
+async function createExportFile(
+  state: RunStoreState,
+  manifest: ExportResult["manifest"],
+): Promise<ExportResult> {
+  return state.withMemoryLock(async () => {
     const exportsDirectory = await ensureManagedChildDirectory(state, "exports");
     const path = resolve(exportsDirectory, `export-${randomUUID()}.json`);
     if (!isWithin(exportsDirectory, path)) {
       throw new Error("validation_error: export path must remain in the run exports directory");
     }
-    const manifest = {
-      artifacts: metadata
-        .filter((artifact) => artifact.retention === "retained")
-        .map(({ name, classification }) => ({ name, classification })),
-    };
-    await writeFile(path, JSON.stringify(manifest, null, 2), { encoding: "utf8", flag: "wx" });
+    const temporaryPath = `${path}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(temporaryPath, JSON.stringify(manifest, null, 2), { encoding: "utf8", flag: "wx" });
+      await rename(temporaryPath, path);
+    } finally {
+      await rm(temporaryPath, { force: true });
+    }
     return { path, manifest };
   });
 }

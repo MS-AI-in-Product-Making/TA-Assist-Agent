@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRunStore, openRunStore } from "@ai-assist/memory";
@@ -44,7 +44,7 @@ it("requires a purge confirmation token", async () => {
   }
 });
 
-it("inspects only safe metadata and exports a public smoke run", async () => {
+it("inspects only safe metadata and rejects exporting a sealed smoke run", async () => {
   const rootDir = await createTemporaryRoot();
 
   try {
@@ -60,8 +60,9 @@ it("inspects only safe metadata and exports a public smoke run", async () => {
     expect(inspected.stdout).toContain("manifestValid: true");
     expect(inspected.stdout).toContain("eventCount:");
     expect(inspected.stdout).not.toContain("public smoke");
-    expect(exported).toMatchObject({ exitCode: 0, stderr: "" });
-    expect(exported.stdout).toContain("classification: public");
+    expect(exported).toMatchObject({ exitCode: 2, stdout: "" });
+    expect(exported.stderr).toContain("dependency_error: sealed audit runs cannot be modified");
+    await expect(readdir((await openRunStore({ rootDir, runId: runId ?? "" })).runDirectory)).resolves.not.toContain("exports");
   } finally {
     await rm(rootDir, { recursive: true, force: true });
   }

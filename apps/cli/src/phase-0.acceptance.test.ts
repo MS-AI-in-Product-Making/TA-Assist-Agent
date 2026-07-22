@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRunStore, openRunStore } from "@ai-assist/memory";
@@ -18,12 +18,10 @@ it("accepts the sealed smoke workflow and safely purges a separate public run", 
     expect(smoke.stdout).toContain("manifestValid: true");
     expect(smoke.stdout).toContain("F4: feature_not_available");
 
-    const exported = await executeCli(["export", "--run-id", runId ?? "", "--root", rootDir]);
-    expect(exported.exitCode).toBe(0);
-    expect(exported.stderr).toBe("");
-    expect(exported.stdout).toContain("classification: public");
-    expect(exported.stdout).toContain("artifactCount: 0");
-    expect(exported.stdout).not.toContain("public smoke");
+    const sealedExport = await executeCli(["export", "--run-id", runId ?? "", "--root", rootDir]);
+    expect(sealedExport.exitCode).toBe(2);
+    expect(sealedExport.stderr).toContain("dependency_error: sealed audit runs cannot be modified");
+    await expect(readdir((await openRunStore({ rootDir, runId: runId ?? "" })).runDirectory)).resolves.not.toContain("exports");
     expect((await executeCli(["purge-plan", "--run-id", runId ?? "", "--root", rootDir])).exitCode).toBe(2);
 
     const purgeRunId = "00000000-0000-4000-8000-000000000101";
@@ -33,6 +31,14 @@ it("accepts the sealed smoke workflow and safely purges a separate public run", 
       sessionId: "acceptance",
       runId: purgeRunId,
     });
+
+    const exported = await executeCli(["export", "--run-id", purgeRunId, "--root", purgeRootDir]);
+    expect(exported.exitCode).toBe(0);
+    expect(exported.stderr).toBe("");
+    expect(exported.stdout).toContain("classification: public");
+    expect(exported.stdout).toContain("artifactCount: 0");
+    expect(exported.stdout).not.toContain("public smoke");
+
     await purgeStore.recordArtifact({ name: "public-fixture.txt", classification: "public", content: "anonymous" });
 
     const purgePlan = await executeCli(["purge-plan", "--run-id", purgeRunId, "--root", purgeRootDir]);
