@@ -1,4 +1,6 @@
 import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { isForbiddenRepositoryPath } from "./verify-repository.mjs";
 
@@ -27,6 +29,13 @@ describe("isForbiddenRepositoryPath", () => {
   });
   it("allows public fixtures", () => {
     expect(isForbiddenRepositoryPath("fixtures/public/smoke-request.json")).toBe(false);
+  });
+
+  it("provides a parseable public smoke fixture", () => {
+    const fixturePath = resolve(process.cwd(), "fixtures/public/smoke-request.json");
+
+    expect(existsSync(fixturePath)).toBe(true);
+    expect(() => JSON.parse(readFileSync(fixturePath, "utf8"))).not.toThrow();
   });
 
   it("can be imported in an ESM process without an entry script", () => {
