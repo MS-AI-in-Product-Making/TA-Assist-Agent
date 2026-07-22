@@ -1,9 +1,22 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { isForbiddenRepositoryPath } from "./verify-repository.mjs";
+
+function writeRepositoryFixture(repositoryPath, fixturePath, content) {
+  const filePath = resolve(repositoryPath, fixturePath);
+  const relativePath = relative(repositoryPath, filePath);
+
+  if (isAbsolute(fixturePath) || relativePath === ".." || relativePath.startsWith(`..${sep}`)) {
+    throw new Error(`Fixture path must stay within the temporary repository: ${fixturePath}`);
+  }
+
+  mkdirSync(dirname(filePath), { recursive: true });
+  writeFileSync(filePath, content);
+  return filePath;
+}
 
 describe("isForbiddenRepositoryPath", () => {
   it.each([".env", ".ENV", "runtime/projects/a/run.json", "RUNTIME/run.json", "sample.xlsx", "sample.xlsm"])(
@@ -70,44 +83,27 @@ describe("isForbiddenRepositoryPath", () => {
 
   it("rejects forcibly tracked Windows case variants in an isolated Git repository", () => {
     const repositoryPath = mkdtempSync(join(tmpdir(), "verify-repository-"));
-    const environmentPath = join(repositoryPath, ".ENV");
-    const runtimePath = join(repositoryPath, "RUNTIME", "run.json");
-    const exportsPath = join(repositoryPath, "EXPORTS", "bundle.json");
-    const confidentialFixturePath = join(repositoryPath, "fixtures", "Confidential", "sample.json");
-    const workbookPath = join(repositoryPath, "sample.XLSX");
-    const environmentTemplatePath = join(repositoryPath, ".ENV.EXAMPLE");
-    const publicFixturePath = join(repositoryPath, "fixtures", "public", "smoke-request.json");
-    const confidentialNotesFixturePath = join(repositoryPath, "fixtures", "confidential-notes", "sample.json");
+    const fixtures = [
+      [".ENV", "SECRET=value\n"],
+      ["RUNTIME/run.json", "{}\n"],
+      ["EXPORTS/bundle.json", "{}\n"],
+      ["fixtures/Confidential/sample.json", "{}\n"],
+      ["sample.XLSX", "anonymous workbook placeholder\n"],
+      [".ENV.EXAMPLE", "EXAMPLE=value\n"],
+      ["fixtures/public/smoke-request.json", "{}\n"],
+      ["fixtures/confidential-notes/sample.json", "{}\n"],
+    ];
 
     try {
-      mkdirSync(resolve(runtimePath, ".."), { recursive: true });
-      mkdirSync(resolve(exportsPath, ".."), { recursive: true });
-      mkdirSync(resolve(confidentialFixturePath, ".."), { recursive: true });
-      mkdirSync(resolve(publicFixturePath, ".."), { recursive: true });
-      mkdirSync(resolve(confidentialNotesFixturePath, ".."), { recursive: true });
-      writeFileSync(environmentPath, "SECRET=value\n");
-      writeFileSync(runtimePath, "{}\n");
-      writeFileSync(exportsPath, "{}\n");
-      writeFileSync(confidentialFixturePath, "{}\n");
-      writeFileSync(workbookPath, "anonymous workbook placeholder\n");
-      writeFileSync(environmentTemplatePath, "EXAMPLE=value\n");
-      writeFileSync(publicFixturePath, "{}\n");
-      writeFileSync(confidentialNotesFixturePath, "{}\n");
+      const fixturePaths = fixtures.map(([fixturePath, content]) =>
+        writeRepositoryFixture(repositoryPath, fixturePath, content),
+      );
+
+      expect(fixturePaths.every((fixturePath) => existsSync(fixturePath))).toBe(true);
       execFileSync("git", ["init", "--quiet"], { cwd: repositoryPath });
       execFileSync(
         "git",
-        [
-          "add",
-          "--force",
-          ".ENV",
-          "RUNTIME/run.json",
-          "EXPORTS/bundle.json",
-          "fixtures/Confidential/sample.json",
-          "sample.XLSX",
-          ".ENV.EXAMPLE",
-          "fixtures/public/smoke-request.json",
-          "fixtures/confidential-notes/sample.json",
-        ],
+        ["add", "--force", ...fixtures.map(([fixturePath]) => fixturePath)],
         { cwd: repositoryPath },
       );
 
