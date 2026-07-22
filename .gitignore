@@ -15,6 +15,17 @@ Thumbs.db
 .superpowers/
 .worktrees/
 
+# Node.js
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+runtime/
+exports/
+*.runbundle.zip
+
 # Python
 __pycache__/
 *.pyc
