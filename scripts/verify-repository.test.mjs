@@ -74,19 +74,40 @@ describe("isForbiddenRepositoryPath", () => {
     const runtimePath = join(repositoryPath, "RUNTIME", "run.json");
     const exportsPath = join(repositoryPath, "EXPORTS", "bundle.json");
     const confidentialFixturePath = join(repositoryPath, "fixtures", "Confidential", "sample.json");
+    const workbookPath = join(repositoryPath, "sample.XLSX");
+    const environmentTemplatePath = join(repositoryPath, ".ENV.EXAMPLE");
+    const publicFixturePath = join(repositoryPath, "fixtures", "public", "smoke-request.json");
+    const confidentialNotesFixturePath = join(repositoryPath, "fixtures", "confidential-notes", "sample.json");
 
     try {
       mkdirSync(resolve(runtimePath, ".."), { recursive: true });
       mkdirSync(resolve(exportsPath, ".."), { recursive: true });
       mkdirSync(resolve(confidentialFixturePath, ".."), { recursive: true });
+      mkdirSync(resolve(publicFixturePath, ".."), { recursive: true });
+      mkdirSync(resolve(confidentialNotesFixturePath, ".."), { recursive: true });
       writeFileSync(environmentPath, "SECRET=value\n");
       writeFileSync(runtimePath, "{}\n");
       writeFileSync(exportsPath, "{}\n");
       writeFileSync(confidentialFixturePath, "{}\n");
+      writeFileSync(workbookPath, "anonymous workbook placeholder\n");
+      writeFileSync(environmentTemplatePath, "EXAMPLE=value\n");
+      writeFileSync(publicFixturePath, "{}\n");
+      writeFileSync(confidentialNotesFixturePath, "{}\n");
       execFileSync("git", ["init", "--quiet"], { cwd: repositoryPath });
       execFileSync(
         "git",
-        ["add", "--force", ".ENV", "RUNTIME/run.json", "EXPORTS/bundle.json", "fixtures/Confidential/sample.json"],
+        [
+          "add",
+          "--force",
+          ".ENV",
+          "RUNTIME/run.json",
+          "EXPORTS/bundle.json",
+          "fixtures/Confidential/sample.json",
+          "sample.XLSX",
+          ".ENV.EXAMPLE",
+          "fixtures/public/smoke-request.json",
+          "fixtures/confidential-notes/sample.json",
+        ],
         { cwd: repositoryPath },
       );
 
@@ -109,6 +130,10 @@ describe("isForbiddenRepositoryPath", () => {
       expect(result.stderr).toContain("RUNTIME/run.json");
       expect(result.stderr).toContain("EXPORTS/bundle.json");
       expect(result.stderr).toContain("fixtures/Confidential/sample.json");
+      expect(result.stderr).toContain("sample.XLSX");
+      expect(result.stderr).not.toContain(".ENV.EXAMPLE");
+      expect(result.stderr).not.toContain("fixtures/public/smoke-request.json");
+      expect(result.stderr).not.toContain("fixtures/confidential-notes/sample.json");
     } finally {
       rmSync(repositoryPath, { force: true, recursive: true });
     }
