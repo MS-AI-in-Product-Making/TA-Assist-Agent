@@ -62,6 +62,56 @@ it("purges scoped artifacts while retaining cleanup evidence", async () => {
   }
 });
 
+it("rejects initializing a purged run without recreating scoped data", async () => {
+  const rootDir = await createTemporaryRoot();
+  const options = {
+    rootDir,
+    projectId: "project",
+    sessionId: "session",
+    runId: "00000000-0000-4000-8000-000000000011",
+  };
+
+  try {
+    const store = await createRunStore(options);
+    const plan = await store.planPurge();
+    await store.executePurge(plan.confirmationToken);
+    const eventsPath = join(store.runDirectory, "events.jsonl");
+    const events = await readFile(eventsPath);
+
+    await expect(readdir(store.runDirectory)).resolves.toEqual(["events.jsonl"]);
+    await expect(createRunStore(options)).rejects.toThrow("dependency_error: run has been purged");
+    await expect(readdir(store.runDirectory)).resolves.toEqual(["events.jsonl"]);
+    await expect(readFile(eventsPath)).resolves.toEqual(events);
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+it("rejects concurrent initialization of a purged run without recreation", async () => {
+  const rootDir = await createTemporaryRoot();
+  const options = {
+    rootDir,
+    projectId: "project",
+    sessionId: "session",
+    runId: "00000000-0000-4000-8000-000000000012",
+  };
+
+  try {
+    const store = await createRunStore(options);
+    const plan = await store.planPurge();
+    await store.executePurge(plan.confirmationToken);
+    const eventsPath = join(store.runDirectory, "events.jsonl");
+    const events = await readFile(eventsPath);
+
+    await expect(Promise.all([createRunStore(options), createRunStore(options)]))
+      .rejects.toThrow("dependency_error: run has been purged");
+    await expect(readdir(store.runDirectory)).resolves.toEqual(["events.jsonl"]);
+    await expect(readFile(eventsPath)).resolves.toEqual(events);
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
 it("fails closed before planning or deleting a sealed run", async () => {
   const rootDir = await createTemporaryRoot();
 

@@ -91,15 +91,20 @@ export async function createRunStore(options: CreateRunStoreOptions): Promise<Ru
     withMemoryLock: async <T>(operation: () => Promise<T>): Promise<T> => withMetadataLock(state, operation),
   };
 
-  await mkdir(artifactsDirectory, { recursive: true });
-  await Promise.all([
-    writeFile(state.transcriptPath, "", { encoding: "utf8", flag: "a" }),
-    writeFile(state.decisionsPath, "", { encoding: "utf8", flag: "a" }),
-  ]);
-  await withMetadataLock(state, async () => {
-    await ensureMetadataFile(state.metadataPath);
+  await state.auditStore.runUnsealedTransaction(async (audit) => {
+    if (await audit.hasEventType("purge_completed")) {
+      throw new Error("dependency_error: run has been purged");
+    }
+    await withMetadataLock(state, async () => {
+      await mkdir(artifactsDirectory, { recursive: true });
+      await Promise.all([
+        writeFile(state.transcriptPath, "", { encoding: "utf8", flag: "a" }),
+        writeFile(state.decisionsPath, "", { encoding: "utf8", flag: "a" }),
+        ensureMetadataFile(state.metadataPath),
+      ]);
+    });
+    await audit.append({ type: "run_created", classification: "internal", payload: { runId } });
   });
-  await state.auditStore.append({ type: "run_created", classification: "internal", payload: { runId } });
 
   return {
     runDirectory,
