@@ -192,6 +192,61 @@ it("detects altered artifacts and rejects manifest path traversal", async () => 
   }
 });
 
+it("detects replacement of an invalid UTF-8 artifact byte", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ai-assist-audit-"));
+  const artifactPath = join(directory, "binary.bin");
+
+  try {
+    await writeFile(artifactPath, Buffer.from([0x80]));
+    const store = await createAuditStore(directory);
+    await store.writeManifest({
+      runId: "00000000-0000-4000-8000-000000000001",
+      artifacts: [{ path: "binary.bin" }],
+    });
+    await expect(store.verify()).resolves.toEqual({ valid: true, failures: [] });
+
+    await writeFile(artifactPath, Buffer.from([0x81]));
+    await expect(store.verify()).resolves.toMatchObject({
+      valid: false,
+      failures: [expect.stringContaining("binary.bin")],
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+it("serializes concurrent appends and sealing into a valid audit bundle", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ai-assist-audit-"));
+
+  try {
+    const store = await createAuditStore(directory);
+    const beforeSeal = Array.from({ length: 100 }, (_, index) => store.append({
+      type: "skill_started",
+      classification: "internal",
+      payload: { index },
+    }));
+    const sealing = store.writeManifest({
+      runId: "00000000-0000-4000-8000-000000000001",
+      artifacts: [],
+    });
+    const afterSeal = Array.from({ length: 100 }, (_, index) => store.append({
+      type: "skill_completed",
+      classification: "internal",
+      payload: { index },
+    }));
+
+    const beforeResults = await Promise.allSettled(beforeSeal);
+    await expect(sealing).resolves.toBeUndefined();
+    const afterResults = await Promise.allSettled(afterSeal);
+
+    expect(beforeResults.filter((result) => result.status === "fulfilled")).toHaveLength(100);
+    expect(afterResults.filter((result) => result.status === "rejected")).toHaveLength(100);
+    await expect(store.verify()).resolves.toEqual({ valid: true, failures: [] });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 it("rejects invalid manifest input and safely rejects malformed manifest files", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ai-assist-audit-"));
 

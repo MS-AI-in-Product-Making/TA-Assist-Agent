@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { appendFile, mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, open, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
-import { hashUtf8 } from "./hash.js";
+import { hashBytes, hashUtf8 } from "./hash.js";
 
 const eventTypes = [
   "run_created",
@@ -69,44 +69,58 @@ export async function createAuditStore(root: string): Promise<AuditStore> {
   const rootRealPath = await realpath(rootDirectory);
   const eventsPath = resolve(rootRealPath, "events.jsonl");
   const manifestPath = resolve(rootRealPath, "manifest.json");
+  let pendingOperation = Promise.resolve();
+
+  function serialize<T>(operation: () => Promise<T>): Promise<T> {
+    const result = pendingOperation.then(operation, operation);
+    pendingOperation = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
 
   return {
     async append(event) {
       validateEvent(event);
-      if (await manifestExists(manifestPath)) {
-        throw new Error("validation_error: audit events are sealed by the manifest");
-      }
-      const eventRecord = {
-        eventId: randomUUID(),
-        timestamp: new Date().toISOString(),
-        type: event.type,
-        classification: event.classification,
-        payloadHash: hashPayload(event.payload),
-      };
-      await appendFile(eventsPath, `${JSON.stringify(eventRecord)}\n`, "utf8");
+      await serialize(async () => {
+        if (await manifestExists(manifestPath)) {
+          throw new Error("validation_error: audit events are sealed by the manifest");
+        }
+        const eventRecord = {
+          eventId: randomUUID(),
+          timestamp: new Date().toISOString(),
+          type: event.type,
+          classification: event.classification,
+          payloadHash: hashPayload(event.payload),
+        };
+        await appendFile(eventsPath, `${JSON.stringify(eventRecord)}\n`, "utf8");
+      });
     },
 
     async writeManifest(input) {
       validateManifestInput(input);
-      const artifacts = await Promise.all(
-        input.artifacts.map(async ({ path }) => ({
-          path,
-          sha256: await hashArtifact(rootRealPath, path),
-        })),
-      );
-      const manifest: AuditManifest = {
-        runId: input.runId,
-        schemaHash: hashUtf8(manifestSchema),
-        skillHash: input.skillHash ?? hashUtf8(""),
-        configurationHash: input.configurationHash ?? hashUtf8(""),
-        inputHash: input.inputHash ?? hashUtf8(""),
-        outputHash: input.outputHash ?? hashUtf8(""),
-        eventsHash: await hashEvents(eventsPath),
-        artifacts,
-      };
-      const temporaryManifestPath = resolve(rootRealPath, `manifest.${randomUUID()}.tmp`);
-      await writeFile(temporaryManifestPath, JSON.stringify(manifest, null, 2), "utf8");
-      await rename(temporaryManifestPath, manifestPath);
+      await serialize(async () => {
+        const artifacts = await Promise.all(
+          input.artifacts.map(async ({ path }) => ({
+            path,
+            sha256: await hashArtifact(rootRealPath, path),
+          })),
+        );
+        const manifest: AuditManifest = {
+          runId: input.runId,
+          schemaHash: hashUtf8(manifestSchema),
+          skillHash: input.skillHash ?? hashUtf8(""),
+          configurationHash: input.configurationHash ?? hashUtf8(""),
+          inputHash: input.inputHash ?? hashUtf8(""),
+          outputHash: input.outputHash ?? hashUtf8(""),
+          eventsHash: await hashEvents(eventsPath),
+          artifacts,
+        };
+        const temporaryManifestPath = resolve(rootRealPath, `manifest.${randomUUID()}.tmp`);
+        await writeFile(temporaryManifestPath, JSON.stringify(manifest, null, 2), "utf8");
+        await rename(temporaryManifestPath, manifestPath);
+      });
     },
 
     async verify() {
@@ -183,11 +197,21 @@ async function hashArtifact(rootDirectory: string, artifactPath: string): Promis
   if (!isSafeRelativePath(rootDirectory, artifactPath)) {
     throw new Error("validation_error: artifact path must remain within the audit root");
   }
-  const artifactRealPath = await realpath(resolve(rootDirectory, artifactPath));
+  const resolvedArtifactPath = resolve(rootDirectory, artifactPath);
+  const artifactFile = await open(resolvedArtifactPath, "r");
+  let artifactBytes: Buffer;
+  try {
+    artifactBytes = await artifactFile.readFile();
+  } finally {
+    await artifactFile.close();
+  }
+
+  // Phase 0 requires a private, immutable audit root; this check limits path-swap exposure but cannot secure a shared root.
+  const artifactRealPath = await realpath(resolvedArtifactPath);
   if (!isPathWithin(rootDirectory, artifactRealPath)) {
     throw new Error("validation_error: artifact path resolves outside the audit root");
   }
-  return hashUtf8(await readFile(artifactRealPath, "utf8"));
+  return hashBytes(artifactBytes);
 }
 
 function isSafeRelativePath(rootDirectory: string, artifactPath: string): boolean {
