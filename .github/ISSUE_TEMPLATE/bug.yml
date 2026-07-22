@@ -1,0 +1,49 @@
+name: 缺陷报告
+description: 报告可复现的产品、代码或文档缺陷。
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: 问题概述
+      description: 简明说明实际问题和受影响的用户或流程。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤
+      description: 提供从干净状态开始的最小复现步骤。
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: expected_actual
+    attributes:
+      label: 预期结果与实际结果
+      description: 分别说明预期行为与实际行为。
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 证据与环境
+      description: 提供日志、截图、版本、浏览器或运行环境；请勿提交敏感数据。
+    validations:
+      required: true
+  - type: dropdown
+    id: data_classification
+    attributes:
+      label: 涉及的数据分级
+      options:
+        - 未涉及数据
+        - 公开
+        - 内部
+        - 机密
+        - 受限
+    validations:
+      required: true

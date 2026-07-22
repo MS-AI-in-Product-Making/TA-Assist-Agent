@@ -1,0 +1,20 @@
+# 示例工作流：文件名含 .example.yml，不会被 GitHub Actions 自动执行。
+name: CI 示例
+
+on:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      - run: npm test
+      - run: npm run check:repository
