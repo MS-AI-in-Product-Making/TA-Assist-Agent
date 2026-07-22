@@ -24,6 +24,8 @@ Full design docs live in [`docs/`](docs/README.md) (Mermaid diagrams render nati
 - [03 · Differentiation](docs/03-differentiation.md)
 - [04 · Feature Breakdown](docs/04-feature-breakdown.md)
 - [05 · Design Decisions (D1–D8)](docs/05-design-decisions.md)
+- [06 · System Architecture Visual](docs/06-system-architecture-visual.html)
+- [07 · Proposed Roadmap 2026H2](docs/07-proposed-roadmap-2026H2.html)
 - [中文文档索引](docs/README.md)
 
 ---
@@ -45,14 +47,15 @@ In process-flow order. See [full table](docs/03-differentiation.md).
 
 | Stage | Dimension | Traditional TA Excel | Generic LLM | **AI Assist Agent** |
 |---|---|---|---|---|
-| **F0 · Knowledge base (soul)** | Basis | Lives in the engineer's head | No grounding | 3 controlled libraries; every judgment traces to a library entry |
-| **F2 · Cleansing** | Data cleansing | Manual, error-prone | No basis | Missing-field + DIM ID check + per-category **Capability Library** (tolerance band / capability / distribution) validation |
-| **F3 · DIM link** | Data-to-drawing | Manual, ambiguous | Cannot link | Anchor each factor to a drawing dimension by **DIM ID** (metadata, not image reading); missing IDs are grouped by category/drawing. ADO governance is optional: linked items receive owner reminders; otherwise the list is saved locally. |
-| **F5 · Engine** | Calculation | Reliable formulas | Often wrong / non-reproducible | Reuses the **same Excel engine** |
-| **F6 · Interpret** | Interpretation | Personal experience | No rules / knowledge base | Fixed **5-section** output, **objective, each RULE cites its F0 entry**, judgment left to user |
-| **F7 · Optimize** | Tolerance optimization | Manual re-runs | Cannot compute | Mean-shift centering + contribution economics + RSS apportionment + **spec reverse-solve** (over-capability warning) |
-| **F8 · Closed loop** | Real Cpk | Measured data never returns | None | Backfill measured Cpk by DIM ID → **real gap vs estimate** + library **T3 empirical → T1 measured** |
-| **F9 · Interaction** | User trust | Read raw Excel yourself | Chat only | Read-only faithful evidence pane + cited dialogue |
+| **F0 · Knowledge base** | Basis | Lives in the engineer's head | No grounding | 3 controlled libraries; every judgment traces to a library entry |
+| **F1 · Report parsing & asset prep** | Input prep | Manual worksheet review | No reliable extraction | Auto-detect TA worksheets, process selected sheets in parallel, and extract Loop screenshots |
+| **F2 · Data cleansing** | Data cleansing | Manual, error-prone | No basis | Missing-field + DIM ID check + per-category **Capability Library** validation |
+| **F3 · DIM-to-drawing linking** | Data-to-drawing | Manual, ambiguous | Cannot link | Anchor each factor to a drawing dimension by **DIM ID** (metadata, not image reading); missing IDs are grouped by category/drawing. ADO governance is optional: linked items receive owner reminders; otherwise the list is saved locally. |
+| **F4 · Method recommendation / calculation** | Calculation | Reliable formulas | Often wrong / non-reproducible | Reuses the **same Excel engine** and selects WC or RSS by factor count |
+| **F5 · Data interpretation** | Interpretation | Personal experience | No rules / knowledge base | Fixed **5-section** output, **objective, each RULE cites its F0 entry**, judgment left to user |
+| **F6 · Optimization** | Tolerance optimization | Manual re-runs | Cannot compute | Mean-shift centering + contribution economics + RSS apportionment + **spec reverse-solve** (over-capability warning) |
+| **F7 · Closed loop** | Real Cpk | Measured data never returns | None | Backfill measured Cpk by DIM ID → **real gap vs estimate** + library **T3 empirical → T1 measured** |
+| **F8 · Interaction / output** | User trust | Read raw Excel yourself | Chat only | Read-only faithful evidence pane + cited dialogue + consolidated report |
 | Global | Result | Hard to standardize | One-off, unstructured | Structured, standardized, traceable |
 
 ---
@@ -65,7 +68,7 @@ The knowledge base is what gives TA its soul: without it, cleansing has no yards
 2. **Engineering Rules Library** — CTS = 6σ / CTF = 4σ / Cpk ≥ 1.33 (distribution factors are engine constants, not stored here).
 3. **Terminology / Ontology Library** — part-category vocabulary / subsystem (ME·PCBA·Glass) / datum.
 
-Human-curated with source / confidence / coverage. T0 (no data) is marked "capability unknown, confirm with supplier" — never asserted feasible. **Fed by the F8 closed loop** so it improves over time.
+Human-curated with source / confidence / coverage. T0 (no data) is marked "capability unknown, confirm with supplier" — never asserted feasible. **Fed by the F7 closed loop** so it improves over time.
 
 ---
 
@@ -103,15 +106,14 @@ matches the template exactly.
 | **F0 Knowledge base** ⭐ | 3-class library: Classified Capability Library (source-tiered) / Engineering Rules / Terminology·Ontology — the soul |
 | **F1 Report parsing & asset prep** | Manual upload; auto-detect TA worksheets; parallel processing; factor-table parse (E14:T26); extract Loop screenshot |
 | **F2 Data cleansing** ⭐ | Missing required-field + DIM ID check; per-category Capability Library & distribution validation; source-Excel correction or recorded exception |
-| **F3 Dimension-to-drawing link (DIM ID)** ⭐ | Anchor each factor to a drawing dimension by DIM ID (metadata, not image reading); group missing DIM ID/PN items by part category and drawing, keeping each item traceable to its source location; for a linked ADO item, confirmation sends an owner reminder and writes the list to Comment 0; without ADO, save the list locally |
-| **F4 Method recommendation** | Factor count + CTS/CTF; `<4`→WC, `4–10`→RSS, `>10`→notify DM for 3D VA follow-up; F5 still computes both WC and RSS |
-| **F5 Calculation engine** | Excel-consistent per-factor / system / capability; sample regression |
-| **F6 Data interpretation** ⭐ | Fixed 5-section output — **objective (FACT/RULE/SIGNAL/OPTION)**, each RULE cites its F0 entry; clarification card when uncertain |
-| **F7 Tolerance / dimension-chain optimization** ⭐ | Mean-shift centering + contribution economics + RSS apportionment + spec reverse-solve (over-capability warning) |
-| **F8 Closed-loop real-Cpk feedback** ⭐ | Backfill measured Cpk by DIM ID → real gap vs estimate + upgrade library T3→T1. Reads in via manual import from a **centralized measured-data store (SharePoint / platform)** that must be set up out-of-band (external prerequisite) |
-| **F9 User interaction / read-only pane + output** ⭐ | Read-only faithful evidence pane + cited dialogue + consolidated report incl. Loop image |
+| **F3 DIM-to-drawing linking (DIM ID)** ⭐ | Anchor each factor to a drawing dimension by DIM ID (metadata, not image reading); group missing DIM ID/PN items by part category and drawing, keeping each item traceable to its source location; for a linked ADO item, confirmation sends an owner reminder and writes the list to Comment 0; without ADO, save the list locally |
+| **F4 Method recommendation / calculation** | Factor count + CTS/CTF; `<4`→WC, `4–10`→RSS, `>10`→notify DM for 3D VA follow-up; F4 continues to compute both WC and RSS |
+| **F5 Data interpretation** ⭐ | Fixed 5-section output — **objective (FACT/RULE/SIGNAL/OPTION)**, each RULE cites its F0 entry; clarification card when uncertain |
+| **F6 Tolerance / dimension-chain optimization** ⭐ | Mean-shift centering + contribution economics + RSS apportionment + spec reverse-solve (over-capability warning) |
+| **F7 Closed-loop real-Cpk feedback** ⭐ | Backfill measured Cpk by DIM ID → real gap vs estimate + upgrade library T3→T1. Reads in via manual import from a **centralized measured-data store (SharePoint / platform)** that must be set up out-of-band (external prerequisite) |
+| **F8 User interaction / read-only pane + output** ⭐ | Read-only faithful evidence pane + cited dialogue + consolidated report incl. Loop image |
 
-### F6 — Fixed 5-section interpretation (objective; judgment left to user)
+### F5 — Fixed 5-section interpretation (objective; judgment left to user)
 1. **Loop validity** — closed loop? same datum chain? **assembly datum face / stack start** clear? (if uncertain → clarification card)
 2. **Capability vs Spec** — RSS σ / Cpk (`<1` FAIL · `1–1.33` risk · `≥1.33` PASS); spec window `<6σ` physically infeasible?
 3. **Top contributors** — ranked by % contribution; Top 2–3 with cause (large tol / mid-stack amplification / direct single-direction effect)
@@ -137,7 +139,7 @@ Deferred until there is a proven need; each can be merged into the product later
 
 - `test/` and all `*.xlsx` (confidential templates / sample data) are **git-ignored**.
 - Internal `*.html` design reports are **git-ignored** and not committed.
-- Project planning is tracked via GitHub **Project #1** as four ME User Stories, Feature issues (F0-F9), and implementation tasks in each Feature checklist.
+- Project planning is tracked via GitHub **Project #1** as four ME User Stories, Feature issues (F0-F8), and implementation tasks in each Feature checklist.
 
 ---
 
