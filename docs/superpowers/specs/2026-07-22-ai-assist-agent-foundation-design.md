@@ -1,104 +1,99 @@
-# AI Assist Agent Foundation Design
+# AI Assist Agent 工程基座设计
 
-**Date:** 2026-07-22
+**日期：**2026-07-22
 
-## Purpose and Scope
+## 目标与范围
 
-Build Phase 0, a local-first engineering foundation for AI Assist Agent. It must
-support the future F0-F8 product roadmap without pretending that unfinished
-features exist. Phase 0 establishes a TypeScript monorepo, a CLI entry point,
-versioned contracts, an Agent + Skill runtime, local memory and audit records,
-data-governance controls, verification fixtures, and GitHub collaboration
-standards.
+构建 Phase 0，即 AI Assist Agent 的本地优先工程基座。它必须支持未来
+F0-F8 的产品路线图，但不得将未完成的功能伪装成已存在。Phase 0 建立
+TypeScript Monorepo、CLI 入口、版本化契约、Agent + Skill 运行时、本地记忆
+与审计记录、数据治理控制、验证 fixture 以及 GitHub 协作规范。
 
-Phase 0 does not implement real TA workbook parsing, Excel calculation, a
-knowledge-base decision engine, external model calls, ADO or SharePoint calls,
-scheduled reminders, real measurement-data imports, or a web UI. Each deferred
-capability must have an explicit adapter contract, Feature Register entry, and
-`feature_not_available` response.
+Phase 0 不实现真实 TA 工作簿解析、Excel 计算、知识库决策引擎、外部模型
+调用、ADO 或 SharePoint 调用、定时提醒、真实测量数据导入或 Web UI。每个
+延后能力都必须有明确的 adapter 契约、Feature Register 条目和
+`feature_not_available` 响应。
 
-## Decisions
+## 已确认决策
 
-- **Architecture:** TypeScript monorepo as the product, orchestration, Skill,
-  contract, integration, and future UI layer.
-- **Calculation boundary:** a future Python/Windows Excel Worker is the only
-  path to strict template-consistent calculation. The TypeScript system uses a
-  versioned calculation adapter and never directly manipulates a TA workbook.
-- **Execution:** local Windows development first. External integrations default
-  to `deny`; tests may use explicit `mock` adapters.
-- **Memory:** retain complete work records locally when enabled, but never
-  retain or attempt to recover a model's raw internal chain of thought. Record
-  user-visible outputs, decisions, evidence references, tool events, hashes,
-  and auditable decision summaries instead.
-- **Collaboration:** provide repository standards, GitHub templates, local
-  quality checks, and an administrator checklist. Do not require organization
-  administrator permissions during Phase 0.
+- **架构：**采用 TypeScript Monorepo 作为产品、编排、Skill、契约、集成和
+  未来 UI 的主系统。
+- **计算边界：**未来的 Python/Windows Excel Worker 是实现与模板严格一致
+  计算的唯一途径。TypeScript 系统通过版本化 calculation adapter 调用它，
+  不得直接操作 TA 工作簿。
+- **运行方式：**本地 Windows 开发优先。外部集成默认 `deny`；测试可显式
+  使用 `mock` adapter。
+- **记忆：**在启用时本地保留完整工作记录，但绝不保留或尝试恢复模型原始
+  内部思维链。应保存用户可见输出、决策、证据引用、工具事件、哈希和可审计
+  的决策摘要。
+- **协作：**提供仓库规范、GitHub 模板、本地质量检查和管理员清单。Phase 0
+  不要求组织管理员权限。
+- **文档语言：**本项目的计划、实施、执行和验收说明默认使用中文。代码、
+  路径、命令、错误码、协议和契约标识保留英文，以确保技术精确性与兼容性。
 
-## Architecture
+## 架构
 
 ```mermaid
 flowchart LR
-    CLI["Local CLI"] --> ORCH["Orchestrator"]
-    ORCH --> POLICY["Policy Gate"]
-    ORCH --> SKILL["Versioned Skills"]
-    ORCH --> AUDIT["Memory and Audit Store"]
-    SKILL --> CONTRACTS["Contracts"]
-    SKILL --> ADAPTERS["Adapter Ports"]
-    ADAPTERS --> MOCK["Mock or Deny Adapter"]
+    CLI["本地 CLI"] --> ORCH["编排器"]
+    ORCH --> POLICY["策略门"]
+    ORCH --> SKILL["版本化 Skill"]
+    ORCH --> AUDIT["记忆与审计存储"]
+    SKILL --> CONTRACTS["契约"]
+    SKILL --> ADAPTERS["Adapter 端口"]
+    ADAPTERS --> MOCK["Mock 或 Deny Adapter"]
     ADAPTERS -. future .-> EXT["ADO / SharePoint / Model"]
-    ORCH --> CALC["Calculation Adapter"]
+    ORCH --> CALC["计算 Adapter"]
     CALC -. future .-> WORKER["Python / Windows Excel Worker"]
 ```
 
-### Module Boundaries
+### 模块边界
 
-| Module | Responsibility | Phase 0 state |
+| 模块 | 职责 | Phase 0 状态 |
 |---|---|---|
-| `apps/cli` | Start, inspect, export, and purge runs | Implement |
-| `packages/contracts` | Versioned schemas for requests, results, errors, and events | Implement |
-| `packages/orchestrator` | Run lifecycle, Skill selection, retry, and recovery | Implement |
-| `packages/skill-sdk` | Skill manifests, permission checks, and execution wrappers | Implement |
-| `packages/skills` | Smoke, policy-check, and feature-placeholder Skills | Implement |
-| `packages/memory` | Local conversation, decision, artifact, export, and purge records | Implement |
-| `packages/audit` | Append-only events, manifests, hashes, and bundle verification | Implement |
-| `packages/governance` | Data classification, retention, and Feature Register | Implement |
-| `packages/adapters` | Typed external ports with deny and mock implementations | Implement |
-| `workers/calculation` | Future Excel-consistent calculation Worker | Contract and stub only |
-| `fixtures/public` | Anonymous, Git-safe test fixtures | Implement |
+| `apps/cli` | 启动、查看、导出和清理运行记录 | 实现 |
+| `packages/contracts` | 请求、结果、错误和事件的版本化 schema | 实现 |
+| `packages/orchestrator` | run 生命周期、Skill 选择、重试和恢复 | 实现 |
+| `packages/skill-sdk` | Skill manifest、权限检查和执行封装 | 实现 |
+| `packages/skills` | smoke、policy-check 和 feature-placeholder Skill | 实现 |
+| `packages/memory` | 本地对话、决策、工件、导出和清理记录 | 实现 |
+| `packages/audit` | 追加式事件、manifest、哈希和 bundle 校验 | 实现 |
+| `packages/governance` | 数据分类、保留策略和 Feature Register | 实现 |
+| `packages/adapters` | 类型化外部端口及 deny/mock 实现 | 实现 |
+| `workers/calculation` | 未来 Excel 一致性计算 Worker | 仅契约和 stub |
+| `fixtures/public` | 匿名且可安全提交的测试 fixture | 实现 |
 
-## Agent and Skill Model
+## Agent 与 Skill 模式
 
-The Agent only selects and orchestrates registered Skills. It cannot directly
-read or write files, access a network, call external systems, or persist memory.
-Those actions must go through a Skill and a Policy Gate.
+Agent 只能选择和编排已注册的 Skill，不能直接读写文件、访问网络、调用外部
+系统或持久化记忆。此类动作必须经过 Skill 和策略门。
 
-Every Skill manifest must declare:
+每个 Skill manifest 必须声明：
 
-- Stable Skill ID and version.
-- Versioned input and output schemas.
-- Allowed data classifications.
-- File, network, external-service, and write permissions.
-- Idempotency and retry behavior.
-- Required audit event types.
-- Anonymous acceptance fixture and check.
-- Owning F0-F8 Feature ID and GitHub Issue link placeholder.
+- 稳定的 Skill ID 与版本。
+- 版本化的输入与输出 schema。
+- 允许处理的数据分类。
+- 文件、网络、外部服务和写入权限。
+- 幂等性与重试行为。
+- 必需的审计事件类型。
+- 匿名验收 fixture 与检查。
+- 所属 F0-F8 Feature ID 和 GitHub Issue 链接占位。
 
-Each run receives a `run_id`. The system records the Skill and contract
-versions, configuration, input and output hashes, policy decisions, user
-confirmations, evidence references, artifacts, and failures associated with it.
+每次运行都有 `run_id`。系统必须记录与其关联的 Skill 和契约版本、配置、
+输入和输出哈希、策略决策、用户确认、证据引用、工件及失败信息。
 
-## Data Governance, Memory, and Audit
+## 数据治理、记忆与审计
 
-### Data Classification
+### 数据分类
 
-| Classification | Examples | Handling |
+| 分类 | 示例 | 处理方式 |
 |---|---|---|
-| `public` | Anonymous fixtures, schemas, docs | May be committed |
-| `internal` | Non-sensitive configuration and metadata | Local; submission checks apply |
-| `confidential` | TA workbooks, DIM IDs, suppliers, Cpk, ADO content | Git prohibited; no default console output; persistence requires explicit choice |
-| `secret` | Tokens, passwords, connection strings, certificates | Environment variables or system credential store only; never in memory or audit logs |
+| `public` | 匿名 fixture、schema、文档 | 可提交 |
+| `internal` | 非敏感配置和元数据 | 本地保存；提交前检查 |
+| `confidential` | TA 工作簿、DIM ID、供应商、Cpk、ADO 内容 | 禁止提交到 Git；默认不输出到控制台；持久化须显式选择 |
+| `secret` | Token、密码、连接字符串、证书 | 仅环境变量或系统凭据存储；不得进入记忆或审计日志 |
 
-### Local Run Records
+### 本地运行记录
 
 ```text
 runtime/
@@ -112,57 +107,53 @@ runtime/
         artifacts/
 ```
 
-The manifest stores hashes, classifications, origins, versions, and artifact
-references rather than raw confidential data. The transcript stores complete
-user and user-visible system messages only when retention is enabled. The
-decision log stores user confirmations, explicit assumptions, evidence
-references, and reviewable decision summaries, not raw internal reasoning.
+`manifest` 保存哈希、分类、来源、版本和工件引用，而不是原始机密数据。仅在
+启用保留时，`transcript` 保存完整用户消息和用户可见的系统消息。`decisions`
+保存用户确认、明确假设、证据引用和可复核的决策摘要，而非原始内部推理。
 
-### Retention, Export, and Purge
+### 保留、导出与清理
 
-- All records are scoped by project, user, session, and run.
-- Confidential artifact retention is opt-in at run creation; otherwise only
-  hashes and required metadata are retained.
-- Records include a `retention_until` value. Purge first displays a scoped
-  deletion plan, requires confirmation, removes scoped artifacts, and writes a
-  cleanup audit event.
-- Export produces a classification manifest. It rejects secrets and requires
-  explicit confirmation before including confidential artifacts.
-- Error events contain classifications, aliases, hashes, and error codes, not
-  workbook content, DIM IDs, supplier names, or environment values.
+- 所有记录均按项目、用户、会话和 run 隔离。
+- 在创建 run 时，机密工件保留必须由用户显式选择；否则仅保留哈希和必要
+  元数据。
+- 记录包含 `retention_until`。清理先展示有明确作用域的删除计划，获得确认
+  后移除相应工件，并写入清理审计事件。
+- 导出生成分类 manifest。它拒绝导出 secret；包含机密工件前必须显式确认。
+- 错误事件仅包含分类、别名、哈希和错误码，不得包含工作簿内容、DIM ID、
+  供应商名称或环境变量值。
 
-## Feature Register and Deferred Capability Contracts
+## Feature Register 与延后能力契约
 
-The register tracks F0-F8 as engineering work items rather than ambiguous
-placeholders. Each entry has:
+Register 将 F0-F8 作为工程工作项进行跟踪，而不是模糊的占位符。每个条目
+包含：
 
-- Feature ID, title, status, owner, and GitHub Issue link.
-- Dependencies and external prerequisites.
-- Input and output contract IDs.
-- Highest data classification handled.
-- Acceptance checks and anonymous fixture location.
-- Rollback or disable behavior.
+- Feature ID、标题、状态、责任人和 GitHub Issue 链接。
+- 依赖项和外部前置条件。
+- 输入和输出契约 ID。
+- 可处理的最高数据分类。
+- 验收检查和匿名 fixture 位置。
+- 回滚或禁用行为。
 
-At runtime, unavailable Features must return `feature_not_available` with the
-Feature ID, unmet dependencies, and activation requirements.
+运行时，未可用的 Feature 必须返回 `feature_not_available`，并提供 Feature
+ID、未满足依赖和启用要求。
 
-## Error Model
+## 错误模型
 
-| Error code | Meaning | Required behavior |
+| 错误码 | 含义 | 必需行为 |
 |---|---|---|
-| `validation_error` | Invalid data or incompatible schema | Stop the affected Skill and provide field-level remediation |
-| `policy_denied` | Missing authorization or disallowed data action | Do not execute a substitute action; audit the denial |
-| `feature_not_available` | Deferred or unconfigured Feature | Return dependency and enablement detail |
-| `dependency_error` | External service or calculation Worker unavailable | Preserve safe context and allow retry only when declared safe |
-| `transient_error` | Temporary lock or timeout | Use limited exponential retry and audit every attempt |
-| `internal_error` | Unexpected failure | Produce a safe diagnostic linked to `run_id` without exposing confidential data |
+| `validation_error` | 数据无效或 schema 不兼容 | 停止受影响的 Skill，并提供字段级修复说明 |
+| `policy_denied` | 缺少授权或数据操作不被允许 | 不执行替代动作；审计此次拒绝 |
+| `feature_not_available` | Feature 被延后或尚未配置 | 返回依赖和启用细节 |
+| `dependency_error` | 外部服务或计算 Worker 不可用 | 保留安全上下文，仅在声明安全时允许重试 |
+| `transient_error` | 临时锁定或超时 | 有限指数退避；审计每次尝试 |
+| `internal_error` | 非预期失败 | 生成关联 `run_id` 的安全诊断，且不暴露机密数据 |
 
-All errors include `code`, `run_id`, a user-readable summary, retryability,
-suggested action, and affected input references.
+所有错误均包含 `code`、`run_id`、用户可读摘要、是否可重试、建议操作和受影响
+的输入引用。
 
-## GitHub Collaboration Standard
+## GitHub 协作标准
 
-The repository must provide:
+仓库必须提供：
 
 ```text
 .github/
@@ -181,63 +172,54 @@ docs/governance/
   feature-register.md
 ```
 
-The development standard requires that work starts from a GitHub Issue and is
-developed in a branch created from current `main`. Direct development on `main`
-is prohibited. Branches use `feature/`, `fix/`, or `docs/` prefixes. Pull
-requests must link their issue, state contract and privacy impact, show test
-evidence, and state rollback behavior.
+开发标准要求工作从 GitHub Issue 开始，并在基于当前 `main` 创建的分支上开发。
+禁止直接在 `main` 开发。分支使用 `feature/`、`fix/` 或 `docs/` 前缀。Pull
+Request 必须关联 Issue，说明契约和隐私影响，给出测试证据并声明回滚行为。
 
-Real TA data, supplier data, DIM IDs, ADO data, measured data, secrets, local
-runtime records, and `.env` files must not be committed. Changes to contracts,
-governance, memory, or calculation require schema, fixture, documentation, and
-specialist-review updates. The administrator checklist describes the later
-GitHub branch-protection configuration: pull requests, reviews, required
-checks, restricted bypasses, force-push prevention, and optional CODEOWNERS.
+真实 TA 数据、供应商数据、DIM ID、ADO 数据、测量数据、secret、本地 runtime
+记录和 `.env` 文件不得提交。对 contracts、governance、memory 或 calculation
+的修改必须同步更新 schema、fixture、文档和专项审查。管理员清单描述后续
+GitHub 分支保护配置：Pull Request、审查、必需检查、受限绕过、禁止 force push
+和可选 CODEOWNERS。
 
-## Verification
+## 验证
 
-Every Skill and Feature uses the same acceptance package:
+每个 Skill 和 Feature 使用相同的验收包：
 
 ```text
-Input fixture
--> schema validation result
--> expected output or expected policy error
--> audit-event assertions
--> data-leak assertion
--> run-bundle integrity assertion
+输入 fixture
+-> schema 验证结果
+-> 预期输出或预期策略错误
+-> 审计事件断言
+-> 数据泄露断言
+-> run bundle 完整性断言
 ```
 
-The Phase 0 smoke workflow must:
+Phase 0 smoke workflow 必须：
 
-1. Create an anonymous run and execute at least two registered mock Skills.
-2. Produce schema-valid output, an audit trail, and an exportable run manifest.
-3. Reject unconfigured network access, confidential writes, secret persistence,
-   and unavailable Features with typed errors.
-4. Purge a scoped test run and verify artifacts are removed while the cleanup
-   audit event remains available.
-5. Verify controlled runtime paths, `.env` files, and confidential fixtures are
-   excluded from Git.
+1. 创建匿名 run，并执行至少两个已注册的 mock Skill。
+2. 生成 schema 有效的输出、审计轨迹和可导出的 run manifest。
+3. 对未配置网络访问、机密写入、secret 持久化和未可用 Feature 返回类型化错误。
+4. 清理一个有明确作用域的测试 run，并验证工件已删除而清理审计事件仍可用。
+5. 验证受控 runtime 路径、`.env` 文件和机密 fixture 被 Git 排除。
 
-## Delivery Phases
+## 交付阶段
 
-| Phase | Scope | Preconditions |
+| 阶段 | 范围 | 前置条件 |
 |---|---|---|
-| 0 | Foundation described in this document | Local Node.js/TypeScript tooling |
-| 1 | F0, F1, F2, F4, and F8 first-pass TA workflow | Approved anonymous calculation fixtures and calculation Worker validation |
-| 2 | F3 DIM ID and drawing governance | Canonical-ID policy, ADO permissions, and milestone source |
-| 3 | F5/F6 objective interpretation and comparable options | Versioned knowledge libraries and validated calculation results |
-| 4 | F7 measured-Cpk loop | Stable DIM ID anchors and an approved centralized measurement store |
+| 0 | 本文定义的工程基座 | 本地 Node.js/TypeScript 工具链 |
+| 1 | F0、F1、F2、F4 和 F8 的首轮 TA 工作流 | 已批准的匿名计算 fixture 和 calculation Worker 验证 |
+| 2 | F3 DIM ID 和图纸治理 | Canonical ID 策略、ADO 权限和里程碑来源 |
+| 3 | F5/F6 客观解释和可比较选项 | 版本化知识库和已验证计算结果 |
+| 4 | F7 实测 Cpk 闭环 | 稳定 DIM ID 锚点和已批准的集中测量数据存储 |
 
-## Phase 0 Definition of Done
+## Phase 0 完成定义
 
-- The project installs, builds, lints, type-checks, and tests on local Windows.
-- The CLI completes the smoke workflow and produces verifiable run records.
-- Policy controls block unauthorized adapters, network use, secret persistence,
-  and data leakage.
-- Export and purge enforce classification and produce audit evidence.
-- At least two Skills prove the manifest, schema, permission, fixture, and
-  audit path end to end.
-- The Feature Register covers F0-F8 with contracts, dependencies, sensitivity,
-  acceptance checks, and GitHub placeholders.
-- The repository includes the collaboration standard, templates, local checks,
-  and GitHub administrator checklist.
+- 项目可在本地 Windows 上安装、构建、lint、类型检查和测试。
+- CLI 能完成 smoke workflow 并产生可验证的运行记录。
+- 策略控制能阻止未授权 adapter、网络访问、secret 持久化和数据泄露。
+- 导出和清理遵循数据分类，并产生审计证据。
+- 至少两个 Skill 端到端验证 manifest、schema、权限、fixture 和审计路径。
+- Feature Register 覆盖 F0-F8，包含契约、依赖、敏感级别、验收检查和 GitHub
+  占位。
+- 仓库包含协作标准、模板、本地检查和 GitHub 管理员清单。
