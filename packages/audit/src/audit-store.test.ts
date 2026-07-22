@@ -1,8 +1,14 @@
-import { mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 import { createAuditStore } from "./index.js";
+
+const testHookKey = "__aiAssistAuditStoreTestHooks";
+
+function setAuditStoreTestHooks(hooks: unknown): void {
+  (globalThis as Record<string, unknown>)[testHookKey] = hooks;
+}
 
 it("appends events and verifies manifest hashes", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ai-assist-audit-"));
@@ -406,6 +412,92 @@ it("recovers an audit root lock left by an exited process", async () => {
     await expect(store.verify()).resolves.toEqual({ valid: true, failures: [] });
     await expect(readdir(directory)).resolves.not.toContain("audit.lock");
   } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+it("coordinates concurrent stale-lock recovery without leaving claims behind", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ai-assist-audit-"));
+
+  try {
+    await writeFile(
+      join(directory, "audit.lock"),
+      JSON.stringify({ lockId: "abandoned", processId: 2_147_483_647, createdAt: "2026-07-22T00:00:00.000Z" }),
+      "utf8",
+    );
+    const firstStore = await createAuditStore(directory);
+    const secondStore = await createAuditStore(directory);
+
+    const appends = await Promise.allSettled([
+      firstStore.append({ type: "run_created", classification: "public", payload: { store: "first" } }),
+      secondStore.append({ type: "policy_evaluated", classification: "internal", payload: { store: "second" } }),
+    ]);
+    for (const result of appends) {
+      if (result.status === "rejected") {
+        throw result.reason;
+      }
+    }
+
+    const seals = await Promise.allSettled([
+      firstStore.writeManifest({ runId: "00000000-0000-4000-8000-000000000097", artifacts: [] }),
+      secondStore.writeManifest({ runId: "00000000-0000-4000-8000-000000000098", artifacts: [] }),
+    ]);
+    expect(seals.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(seals.filter((result) => result.status === "rejected")).toHaveLength(1);
+    await expect(firstStore.verify()).resolves.toEqual({ valid: true, failures: [] });
+    await expect(secondStore.verify()).resolves.toEqual({ valid: true, failures: [] });
+    await expect(readdir(directory)).resolves.not.toContainEqual(expect.stringMatching(/^audit\.lock(?:\.stale-.*)?$/));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+it("never removes a lock acquired after stale recovery has inspected its predecessor", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ai-assist-audit-"));
+  const lockPath = join(directory, "audit.lock");
+  const freshLock = JSON.stringify({
+    lockId: "fresh-owner",
+    processId: process.pid,
+    createdAt: new Date().toISOString(),
+  });
+  let replacedStaleLock = false;
+  let restoredFreshLock = false;
+
+  try {
+    await writeFile(
+      lockPath,
+      JSON.stringify({ lockId: "abandoned", processId: 2_147_483_647, createdAt: "2026-07-22T00:00:00.000Z" }),
+      "utf8",
+    );
+    setAuditStoreTestHooks({
+      afterStaleLockCheck: async (checkedLockPath) => {
+        if (!replacedStaleLock) {
+          replacedStaleLock = true;
+          await unlink(checkedLockPath);
+          await writeFile(checkedLockPath, freshLock, { encoding: "utf8", flag: "wx" });
+        }
+      },
+      afterStaleClaimMismatch: async (checkedLockPath) => {
+        expect(await readFile(checkedLockPath, "utf8")).toBe(freshLock);
+        restoredFreshLock = true;
+        await unlink(checkedLockPath);
+      },
+      beforeUnlink: async (targetPath) => {
+        if (targetPath === lockPath) {
+          expect(await readFile(lockPath, "utf8")).not.toBe(freshLock);
+        }
+      },
+    });
+    const store = await createAuditStore(directory);
+
+    await expect(store.append({
+      type: "run_created",
+      classification: "public",
+      payload: { recovered: true },
+    })).resolves.toBeUndefined();
+    expect(restoredFreshLock).toBe(true);
+  } finally {
+    setAuditStoreTestHooks(undefined);
     await rm(directory, { recursive: true, force: true });
   }
 });

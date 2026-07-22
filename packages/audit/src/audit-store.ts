@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { appendFile, link, mkdir, open, readFile, realpath, stat, unlink, writeFile } from "node:fs/promises";
+import { appendFile, link, mkdir, open, readFile, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import { hashBytes, hashUtf8 } from "./hash.js";
 
@@ -64,6 +64,18 @@ export interface AuditStore {
   append(event: AuditEventInput): Promise<void>;
   writeManifest(manifest: ManifestInput): Promise<void>;
   verify(): Promise<VerifyResult>;
+}
+
+interface AuditStoreTestHooks {
+  afterStaleLockCheck?(lockPath: string): Promise<void>;
+  afterStaleClaimMismatch?(lockPath: string): Promise<void>;
+  beforeUnlink?(path: string): Promise<void>;
+}
+
+const testHookKey = "__aiAssistAuditStoreTestHooks";
+
+function getAuditStoreTestHooks(): AuditStoreTestHooks | undefined {
+  return (globalThis as Record<string, unknown>)[testHookKey] as AuditStoreTestHooks | undefined;
 }
 
 export async function createAuditStore(root: string): Promise<AuditStore> {
@@ -219,12 +231,12 @@ async function acquireRootLock(lockPath: string): Promise<string> {
       if (!isErrorCode(error, "EEXIST") && !isErrorCode(error, "EPERM")) {
         throw error;
       }
-      if (isErrorCode(error, "EEXIST") && await isStaleRootLock(lockPath)) {
-        await unlink(lockPath).catch((unlinkError: unknown) => {
-          if (!isErrorCode(unlinkError, "ENOENT")) {
-            throw unlinkError;
-          }
-        });
+      const staleLockContents = isErrorCode(error, "EEXIST")
+        ? await staleRootLockContents(lockPath)
+        : undefined;
+      if (staleLockContents !== undefined) {
+        await getAuditStoreTestHooks()?.afterStaleLockCheck?.(lockPath);
+        await claimStaleRootLock(lockPath, staleLockContents);
         continue;
       }
       await delay(retryDelayMs);
@@ -233,11 +245,53 @@ async function acquireRootLock(lockPath: string): Promise<string> {
   }
 }
 
+async function claimStaleRootLock(lockPath: string, staleLockContents: string): Promise<void> {
+  const staleClaimPath = `${lockPath}.stale-${randomUUID()}`;
+
+  try {
+    await rename(lockPath, staleClaimPath);
+  } catch (error: unknown) {
+    if (isErrorCode(error, "ENOENT") || isErrorCode(error, "EACCES") || isErrorCode(error, "EPERM")) {
+      return;
+    }
+    throw error;
+  }
+
+  try {
+    let claimedLockContents: string;
+    try {
+      claimedLockContents = await readFile(staleClaimPath, "utf8");
+    } catch (error: unknown) {
+      if (isErrorCode(error, "ENOENT")) {
+        return;
+      }
+      throw error;
+    }
+
+    if (claimedLockContents !== staleLockContents) {
+      try {
+        await link(staleClaimPath, lockPath);
+      } catch (error: unknown) {
+        if (!isErrorCode(error, "EEXIST")) {
+          throw error;
+        }
+      }
+      await getAuditStoreTestHooks()?.afterStaleClaimMismatch?.(lockPath);
+    }
+  } finally {
+    await unlinkRootLock(staleClaimPath).catch((error: unknown) => {
+      if (!isErrorCode(error, "ENOENT")) {
+        throw error;
+      }
+    });
+  }
+}
+
 async function releaseRootLock(lockPath: string, lockId: string): Promise<void> {
   try {
     const lock = JSON.parse(await readFile(lockPath, "utf8")) as { lockId?: unknown };
     if (lock.lockId === lockId) {
-      await unlink(lockPath);
+      await unlinkRootLock(lockPath);
     }
   } catch (error: unknown) {
     if (!isErrorCode(error, "ENOENT")) {
@@ -246,34 +300,43 @@ async function releaseRootLock(lockPath: string, lockId: string): Promise<void> 
   }
 }
 
-async function isStaleRootLock(lockPath: string): Promise<boolean> {
+async function staleRootLockContents(lockPath: string): Promise<string | undefined> {
+  let lockContents: string | undefined;
   try {
-    const lock = JSON.parse(await readFile(lockPath, "utf8")) as { processId?: unknown };
+    lockContents = await readFile(lockPath, "utf8");
+    const lock = JSON.parse(lockContents) as { processId?: unknown };
     if (typeof lock.processId === "number" && Number.isInteger(lock.processId) && lock.processId > 0) {
       try {
         process.kill(lock.processId, 0);
-        return false;
+        return undefined;
       } catch (error: unknown) {
         if (isErrorCode(error, "ESRCH")) {
-          return true;
+          return lockContents;
         }
-        return false;
+        return undefined;
       }
     }
   } catch (error: unknown) {
     if (isErrorCode(error, "ENOENT")) {
-      return false;
+      return undefined;
     }
   }
 
   try {
-    return Date.now() - (await stat(lockPath)).mtimeMs > malformedLockStaleAfterMs;
+    return Date.now() - (await stat(lockPath)).mtimeMs > malformedLockStaleAfterMs
+      ? lockContents
+      : undefined;
   } catch (error: unknown) {
     if (isErrorCode(error, "ENOENT")) {
-      return false;
+      return undefined;
     }
     throw error;
   }
+}
+
+async function unlinkRootLock(path: string): Promise<void> {
+  await getAuditStoreTestHooks()?.beforeUnlink?.(path);
+  await unlink(path);
 }
 
 function delay(milliseconds: number): Promise<void> {
