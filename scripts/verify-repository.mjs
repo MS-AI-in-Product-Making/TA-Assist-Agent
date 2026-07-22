@@ -9,7 +9,8 @@ const forbiddenPatterns = [
 ];
 
 export function isForbiddenRepositoryPath(path) {
-  return forbiddenPatterns.some((pattern) => pattern.test(path.replaceAll("\\", "/")));
+  const normalizedPath = path.replaceAll("\\", "/").toLowerCase();
+  return forbiddenPatterns.some((pattern) => pattern.test(normalizedPath));
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

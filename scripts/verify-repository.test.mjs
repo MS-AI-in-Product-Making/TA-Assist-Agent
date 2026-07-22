@@ -6,19 +6,20 @@ import { describe, expect, it } from "vitest";
 import { isForbiddenRepositoryPath } from "./verify-repository.mjs";
 
 describe("isForbiddenRepositoryPath", () => {
-  it.each([".env", "runtime/projects/a/run.json", "sample.xlsx", "sample.xlsm"])(
+  it.each([".env", ".ENV", "runtime/projects/a/run.json", "RUNTIME/run.json", "sample.xlsx", "sample.xlsm"])(
     "rejects %s",
     (path) => expect(isForbiddenRepositoryPath(path)).toBe(true),
   );
   it.each([
     ".env.local",
     "exports/release/manifest.json",
+    "EXPORTS/bundle.json",
     "sample.XLSX",
     "sample.XlsM",
     "a/runtime",
     "a/exports",
   ])("rejects %s", (path) => expect(isForbiddenRepositoryPath(path)).toBe(true));
-  it.each([".env.example", "config/.env.example"])("allows environment templates at %s", (path) =>
+  it.each([".env.example", ".ENV.EXAMPLE", "config/.env.example"])("allows Windows-equivalent environment templates at %s", (path) =>
     expect(isForbiddenRepositoryPath(path)).toBe(false),
   );
   it.each([".env.example.local", "config/.env.production"])("rejects non-template environment files at %s", (path) =>
@@ -67,15 +68,27 @@ describe("isForbiddenRepositoryPath", () => {
     expect(output).toBe("module-import-ok\n");
   });
 
-  it("rejects a forcibly tracked confidential fixture in an isolated Git repository", () => {
+  it("rejects forcibly tracked Windows case variants in an isolated Git repository", () => {
     const repositoryPath = mkdtempSync(join(tmpdir(), "verify-repository-"));
+    const environmentPath = join(repositoryPath, ".ENV");
+    const runtimePath = join(repositoryPath, "RUNTIME", "run.json");
+    const exportsPath = join(repositoryPath, "EXPORTS", "bundle.json");
     const confidentialFixturePath = join(repositoryPath, "fixtures", "Confidential", "sample.json");
 
     try {
+      mkdirSync(resolve(runtimePath, ".."), { recursive: true });
+      mkdirSync(resolve(exportsPath, ".."), { recursive: true });
       mkdirSync(resolve(confidentialFixturePath, ".."), { recursive: true });
+      writeFileSync(environmentPath, "SECRET=value\n");
+      writeFileSync(runtimePath, "{}\n");
+      writeFileSync(exportsPath, "{}\n");
       writeFileSync(confidentialFixturePath, "{}\n");
       execFileSync("git", ["init", "--quiet"], { cwd: repositoryPath });
-      execFileSync("git", ["add", "--force", "fixtures/Confidential/sample.json"], { cwd: repositoryPath });
+      execFileSync(
+        "git",
+        ["add", "--force", ".ENV", "RUNTIME/run.json", "EXPORTS/bundle.json", "fixtures/Confidential/sample.json"],
+        { cwd: repositoryPath },
+      );
 
       const result = (() => {
         try {
@@ -92,6 +105,9 @@ describe("isForbiddenRepositoryPath", () => {
 
       expect(result.status).not.toBe(0);
       expect(result.stderr).toContain("Forbidden tracked paths:");
+      expect(result.stderr).toContain(".ENV");
+      expect(result.stderr).toContain("RUNTIME/run.json");
+      expect(result.stderr).toContain("EXPORTS/bundle.json");
       expect(result.stderr).toContain("fixtures/Confidential/sample.json");
     } finally {
       rmSync(repositoryPath, { force: true, recursive: true });
