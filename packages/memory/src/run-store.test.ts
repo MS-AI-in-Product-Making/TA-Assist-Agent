@@ -429,6 +429,51 @@ it("rejects invalid and reused purge tokens without touching another run", async
   }
 });
 
+it("rejects purge planning after completion without appending another audit event", async () => {
+  const rootDir = await createTemporaryRoot();
+
+  try {
+    const store = await createRunStore({ rootDir });
+    const plan = await store.planPurge();
+    await store.executePurge(plan.confirmationToken);
+    const eventsPath = join(store.runDirectory, "events.jsonl");
+    const events = await readFile(eventsPath);
+
+    await expect(store.planPurge()).rejects.toThrow("dependency_error: run has been purged");
+    await expect(readFile(eventsPath)).resolves.toEqual(events);
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+it("rejects a valid token after another store completes purge without appending another completion", async () => {
+  const rootDir = await createTemporaryRoot();
+  const options = {
+    rootDir,
+    projectId: "project",
+    sessionId: "session",
+    runId: "00000000-0000-4000-8000-000000000014",
+  };
+
+  try {
+    const [firstStore, secondStore] = await Promise.all([
+      createRunStore(options),
+      createRunStore(options),
+    ]);
+    const stalePlan = await firstStore.planPurge();
+    const completingPlan = await secondStore.planPurge();
+    await secondStore.executePurge(completingPlan.confirmationToken);
+    const eventsPath = join(firstStore.runDirectory, "events.jsonl");
+    const events = await readFile(eventsPath);
+
+    await expect(firstStore.executePurge(stalePlan.confirmationToken)).rejects
+      .toThrow("dependency_error: run has been purged");
+    await expect(readFile(eventsPath)).resolves.toEqual(events);
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
 it("uses the run root as the audit ledger and rejects corrupted audit queries", async () => {
   const rootDir = await createTemporaryRoot();
 
