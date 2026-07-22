@@ -56,6 +56,12 @@ const smokeWorkflowRequestSchema = z.object({
   }),
 });
 
+const unavailableFeatureDetailsSchema = z.object({
+  featureId: z.string().min(1),
+  dependencies: z.array(z.string()),
+  enablementRequirements: z.array(z.string()),
+});
+
 interface WorkflowDependencies {
   readonly auditStoreFactory: (runDirectory: string) => Promise<AuditStore>;
   readonly delay: (milliseconds: number) => Promise<void>;
@@ -279,9 +285,43 @@ function validateSmokeWorkflowRequest(request: unknown): SmokeWorkflowRequest {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
+
+function readOwnDataProperty(record: Record<string, unknown>, key: string): unknown {
+  return Object.getOwnPropertyDescriptor(record, key)?.value;
+}
+
 function toWorkflowError(error: unknown, runId: string): Error & TypedError {
   const parsed = typedErrorSchema.safeParse(error);
   if (parsed.success) {
+    if (parsed.data.code === "feature_not_available") {
+      const unavailableFeatureDetails = unavailableFeatureDetailsSchema.safeParse(
+        isRecord(error)
+          ? {
+            featureId: readOwnDataProperty(error, "featureId"),
+            dependencies: readOwnDataProperty(error, "dependencies"),
+            enablementRequirements: readOwnDataProperty(error, "enablementRequirements"),
+          }
+          : undefined,
+      );
+      if (!unavailableFeatureDetails.success) {
+        return createTypedError({
+          code: "internal_error",
+          runId,
+          summary: "Workflow execution failed unexpectedly.",
+          suggestedAction: "Inspect the audited run and contact the Skill owner.",
+          affectedInputReferences: [],
+        });
+      }
+      return createTypedError({
+        code: parsed.data.code,
+        runId,
+        summary: parsed.data.summary,
+        retryable: parsed.data.retryable,
+        suggestedAction: parsed.data.suggestedAction,
+        affectedInputReferences: parsed.data.affectedInputReferences,
+        details: unavailableFeatureDetails.data,
+      });
+    }
     return createTypedError({
       code: parsed.data.code,
       runId,

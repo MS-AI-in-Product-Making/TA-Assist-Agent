@@ -108,6 +108,102 @@ it("normalizes a foreign typed Skill error to the current run and records a corr
   }
 });
 
+it("preserves validated unavailable feature details while normalizing its foreign run ID", async () => {
+  const rootDir = await mkdtemp(join(tmpdir(), "ai-assist-orchestrator-"));
+  const registry = new SkillRegistry();
+  const foreignRunId = "22222222-2222-4222-8222-222222222222";
+  registry.register({
+    trusted: true,
+    manifest: {
+      skillId: "unavailable-f4-skill",
+      version: "v1",
+      featureId: "F8",
+      inputClassification: ["public"],
+      permissions: [],
+      adapterCapabilities: [],
+      idempotent: true,
+      retryable: false,
+      auditEventTypes: ["skill_started", "skill_completed"],
+    },
+    async execute() {
+      throw createTypedError({
+        code: "feature_not_available",
+        runId: foreignRunId,
+        summary: "Feature 'F4' is not available.",
+        suggestedAction: "Complete its enablement requirements.",
+        affectedInputReferences: [],
+        details: {
+          featureId: "F4",
+          dependencies: ["calculation-worker-v1"],
+          enablementRequirements: ["approved-windows-excel-worker"],
+        },
+      });
+    },
+  });
+
+  try {
+    const thrown = await runWorkflow({
+      rootDir,
+      registry,
+      steps: [{ skillId: "unavailable-f4-skill" }],
+    }).catch((error: unknown) => error) as Error & {
+      code: string;
+      runId: string;
+      runDirectory: string;
+      featureId?: string;
+      dependencies?: string[];
+      enablementRequirements?: string[];
+    };
+
+    expect(thrown.code).toBe("feature_not_available");
+    expect(thrown.runId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(thrown.runId).not.toBe(foreignRunId);
+    expect(thrown.featureId).toBe("F4");
+    expect(thrown.dependencies).toEqual(["calculation-worker-v1"]);
+    expect(thrown.enablementRequirements).toEqual(["approved-windows-excel-worker"]);
+    const auditContents = await readFile(join(thrown.runDirectory, "events.jsonl"), "utf8");
+    expect(auditContents).not.toContain("calculation-worker-v1");
+    expect(auditContents).not.toContain("approved-windows-excel-worker");
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+it("normalizes malformed unavailable feature details to a current-run internal error", async () => {
+  const rootDir = await mkdtemp(join(tmpdir(), "ai-assist-orchestrator-"));
+  const registry = new SkillRegistry();
+  const foreignRunId = "33333333-3333-4333-8333-333333333333";
+  registry.register(createTestSkill("malformed-unavailable-skill", false, async () => {
+    throw createTypedError({
+      code: "feature_not_available",
+      runId: foreignRunId,
+      summary: "Feature 'F4' is not available.",
+      suggestedAction: "Complete its enablement requirements.",
+      affectedInputReferences: [],
+      details: {
+        featureId: "F4",
+        dependencies: ["calculation-worker-v1", 1],
+        enablementRequirements: ["approved-windows-excel-worker"],
+      },
+    });
+  }));
+
+  try {
+    const thrown = await runWorkflow({
+      rootDir,
+      registry,
+      steps: [{ skillId: "malformed-unavailable-skill" }],
+    }).catch((error: unknown) => error) as Error & { code: string; runId: string; featureId?: string };
+
+    expect(thrown.code).toBe("internal_error");
+    expect(thrown.runId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(thrown.runId).not.toBe(foreignRunId);
+    expect(thrown.featureId).toBeUndefined();
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
 it("records only monotonic run-level lifecycle state transitions", async () => {
   const rootDir = await mkdtemp(join(tmpdir(), "ai-assist-orchestrator-"));
   const registry = new SkillRegistry();
