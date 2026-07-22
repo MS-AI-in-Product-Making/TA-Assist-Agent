@@ -1,12 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { createAuditStore, hashUtf8 } from "@ai-assist/audit";
+import { createAuditStore, hashUtf8, type AuditStore } from "@ai-assist/audit";
 import { MockAdapter } from "@ai-assist/adapters";
-import { createTypedError, type DataClassification, typedErrorSchema } from "@ai-assist/contracts";
+import { createTypedError, type DataClassification, typedErrorSchema, type TypedError } from "@ai-assist/contracts";
 import { createRunStore } from "@ai-assist/memory";
 import {
   runRegisteredSkill,
   SkillRegistry,
-  type SkillRunRequest,
   type SkillRunResult,
 } from "@ai-assist/skill-sdk";
 import { createAnonymousSkillRegistry } from "@ai-assist/skills";
@@ -24,7 +23,6 @@ export interface RunWorkflowOptions {
   readonly registry: SkillRegistry;
   readonly steps: readonly WorkflowStep[];
   readonly adapters?: Readonly<Record<string, { execute(action: string): Promise<unknown> }>>;
-  readonly runner?: (request: SkillRunRequest) => Promise<SkillRunResult>;
 }
 
 export interface WorkflowResult {
@@ -36,6 +34,21 @@ export interface WorkflowResult {
 
 export interface RunSmokeWorkflowOptions {
   readonly rootDir: string;
+  readonly request?: SmokeWorkflowRequest;
+}
+
+export interface SmokeWorkflowRequest {
+  readonly version: 1;
+  readonly kind: "public-smoke-request";
+  readonly data: {
+    readonly message: string;
+    readonly classification: "public";
+  };
+}
+
+interface WorkflowDependencies {
+  readonly auditStoreFactory: (runDirectory: string) => Promise<AuditStore>;
+  readonly delay: (milliseconds: number) => Promise<void>;
 }
 
 const lifecycleEventTypes: Readonly<Record<WorkflowState, "run_created" | "policy_evaluated" | "skill_started" | "skill_completed" | "skill_failed" | "purge_completed">> = {
@@ -49,27 +62,49 @@ const lifecycleEventTypes: Readonly<Record<WorkflowState, "run_created" | "polic
 
 export async function runSmokeWorkflow(options: RunSmokeWorkflowOptions): Promise<WorkflowResult> {
   const echoAdapter = new MockAdapter({ accepted: true });
+  const request = options.request ?? {
+    version: 1,
+    kind: "public-smoke-request",
+    data: { message: "public smoke", classification: "public" },
+  };
 
   return runWorkflow({
     rootDir: options.rootDir,
     registry: createAnonymousSkillRegistry(),
     adapters: { echo: echoAdapter },
     steps: [
-      { skillId: "public-echo", input: { message: "public smoke" } },
-      { skillId: "classification-check", input: { classification: "public" } },
+      { skillId: "public-echo", input: { message: request.data.message } },
+      { skillId: "classification-check", input: { classification: request.data.classification } },
     ],
   });
 }
 
 export async function runWorkflow(options: RunWorkflowOptions): Promise<WorkflowResult> {
+  if ("runner" in (options as unknown as Record<string, unknown>)) {
+    throw createTypedError({
+      code: "policy_denied",
+      summary: "Arbitrary Skill runners are not supported.",
+      suggestedAction: "Register a trusted Skill and use the governed runtime.",
+      affectedInputReferences: ["runner"],
+    });
+  }
+  return runWorkflowWithDependencies(options, {
+    auditStoreFactory: createAuditStore,
+    delay: delay,
+  });
+}
+
+export async function runWorkflowWithDependencies(
+  options: RunWorkflowOptions,
+  dependencies: WorkflowDependencies,
+): Promise<WorkflowResult> {
   const runId = randomUUID();
   const runStore = await createRunStore({ rootDir: options.rootDir, runId });
-  const audit = await createAuditStore(runStore.runDirectory);
-  const runner = options.runner ?? ((request) => runRegisteredSkill(request, {
-    registry: options.registry,
-    ...(options.adapters === undefined ? {} : { adapters: options.adapters }),
-  }));
+  const audit = await dependencies.auditStoreFactory(runStore.runDirectory);
   const skillResults: SkillRunResult[] = [];
+  let terminalStateRecorded = false;
+  let runningStateRecorded = false;
+  let workflowError: (Error & TypedError) | undefined;
 
   await runStore.recordDecision("public", { runId, state: "created" satisfies WorkflowState });
   await audit.append({
@@ -97,21 +132,30 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<Workflow
         await audit.append({
           type: lifecycleEventTypes.running,
           classification: "public",
-          payload: { runId, state: "running" satisfies WorkflowState, skillId: step.skillId, attempt },
+          payload: {
+            runId,
+            ...(runningStateRecorded ? {} : { state: "running" satisfies WorkflowState }),
+            skillId: step.skillId,
+            attempt,
+          },
         });
+        runningStateRecorded = true;
 
         try {
-          const result = await runner({
+          const result = await runRegisteredSkill({
             skillId: step.skillId,
             ...(step.input === undefined ? {} : { input: step.input }),
             ...(step.inputClassification === undefined ? {} : { inputClassification: step.inputClassification }),
             runId,
+          }, {
+            registry: options.registry,
+            ...(options.adapters === undefined ? {} : { adapters: options.adapters }),
           });
           skillResults.push(result);
           await audit.append({
             type: lifecycleEventTypes.completed,
             classification: "public",
-            payload: { runId, state: "completed" satisfies WorkflowState, skillId: step.skillId, attempt },
+            payload: { runId, skillId: step.skillId, attempt },
           });
           break;
         } catch (error: unknown) {
@@ -122,7 +166,6 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<Workflow
             classification: "public",
             payload: {
               runId,
-              state: "failed" satisfies WorkflowState,
               skillId: step.skillId,
               attempt,
               code: typedError.code,
@@ -130,20 +173,49 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<Workflow
             },
           });
           if (mayRetry) {
+            await dependencies.delay(10 * (2 ** (attempt - 1)));
             continue;
           }
           throw typedError;
         }
       }
     }
-
-    const result = await sealAndVerify(audit, runId, skillResults, options.steps);
-    return { runId, runDirectory: runStore.runDirectory, skillResults, manifestValid: result };
   } catch (error: unknown) {
-    const typedError = toWorkflowError(error, runId);
-    await sealAndVerify(audit, runId, skillResults, options.steps);
-    Object.assign(typedError, { runDirectory: runStore.runDirectory });
-    throw typedError;
+    workflowError = toWorkflowError(error, runId);
+    await audit.append({
+      type: lifecycleEventTypes.failed,
+      classification: "public",
+      payload: { runId, state: "failed" satisfies WorkflowState, code: workflowError.code },
+    });
+    terminalStateRecorded = true;
+  }
+
+  if (!terminalStateRecorded) {
+    await audit.append({
+      type: lifecycleEventTypes.completed,
+      classification: "public",
+      payload: { runId, state: "completed" satisfies WorkflowState },
+    });
+  }
+
+  try {
+    const manifestValid = await sealAndVerify(audit, runId, skillResults, options.steps);
+    if (workflowError !== undefined) {
+      Object.assign(workflowError, { runDirectory: runStore.runDirectory });
+      throw workflowError;
+    }
+    return { runId, runDirectory: runStore.runDirectory, skillResults, manifestValid };
+  } catch (error: unknown) {
+    const auditError = toAuditError(error, runId);
+    if (workflowError !== undefined) {
+      Object.assign(workflowError, {
+        runDirectory: runStore.runDirectory,
+        auditError: safeAuditDiagnostic(auditError),
+      });
+      throw workflowError;
+    }
+    Object.assign(auditError, { runDirectory: runStore.runDirectory });
+    throw auditError;
   }
 }
 
@@ -164,9 +236,17 @@ async function sealAndVerify(
   return (await audit.verify()).valid;
 }
 
-function toWorkflowError(error: unknown, runId: string): Error & { code: string } {
-  if (typedErrorSchema.safeParse(error).success) {
-    return error as Error & { code: string };
+function toWorkflowError(error: unknown, runId: string): Error & TypedError {
+  const parsed = typedErrorSchema.safeParse(error);
+  if (parsed.success) {
+    return createTypedError({
+      code: parsed.data.code,
+      runId,
+      summary: parsed.data.summary,
+      retryable: parsed.data.retryable,
+      suggestedAction: parsed.data.suggestedAction,
+      affectedInputReferences: parsed.data.affectedInputReferences,
+    });
   }
   return createTypedError({
     code: "internal_error",
@@ -175,4 +255,37 @@ function toWorkflowError(error: unknown, runId: string): Error & { code: string 
     suggestedAction: "Inspect the audited run and contact the Skill owner.",
     affectedInputReferences: [],
   });
+}
+
+function toAuditError(error: unknown, runId: string): Error & TypedError {
+  const parsed = typedErrorSchema.safeParse(error);
+  if (parsed.success && (parsed.data.code === "dependency_error" || parsed.data.code === "internal_error")) {
+    return createTypedError({
+      code: parsed.data.code,
+      runId,
+      summary: parsed.data.summary,
+      suggestedAction: parsed.data.suggestedAction,
+      affectedInputReferences: parsed.data.affectedInputReferences,
+    });
+  }
+  return createTypedError({
+    code: "dependency_error",
+    runId,
+    summary: "Audit sealing or verification failed.",
+    suggestedAction: "Inspect the run storage and retry the workflow after the audit dependency is available.",
+    affectedInputReferences: [],
+  });
+}
+
+function safeAuditDiagnostic(error: TypedError): Pick<TypedError, "code" | "runId" | "summary" | "suggestedAction"> {
+  return {
+    code: error.code,
+    runId: error.runId,
+    summary: error.summary,
+    suggestedAction: error.suggestedAction,
+  };
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
 }

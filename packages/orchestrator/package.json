@@ -5,7 +5,16 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": ["dist"],
+  "files": [
+    "dist/index.d.ts",
+    "dist/index.d.ts.map",
+    "dist/index.js",
+    "dist/index.js.map",
+    "dist/run-orchestrator.d.ts",
+    "dist/run-orchestrator.d.ts.map",
+    "dist/run-orchestrator.js",
+    "dist/run-orchestrator.js.map"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

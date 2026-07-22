@@ -103,7 +103,7 @@ export async function createRunStore(options: CreateRunStoreOptions): Promise<Ru
         ensureMetadataFile(state.metadataPath),
       ]);
     });
-    await audit.append({ type: "run_created", classification: "internal", payload: { runId } });
+    await audit.append({ type: "run_created", classification: "internal", payload: { runId, state: "created" } });
   });
 
   return {
