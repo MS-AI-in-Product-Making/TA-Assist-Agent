@@ -1,4 +1,4 @@
-import { access, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
@@ -390,6 +390,35 @@ it("rejects Windows-unsafe artifact names and allows a normal basename", async (
     await expect(store.recordArtifact({ name: "report.txt", classification: "public", content: "content" })).resolves.toBeUndefined();
   } finally {
     await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+it("rejects redirected managed artifact and export directories without writing outside the run", async () => {
+  const rootDir = await createTemporaryRoot();
+  const outsideRoot = await createTemporaryRoot();
+  const artifactSentinel = join(outsideRoot, "artifact-sentinel.txt");
+  const exportSentinel = join(outsideRoot, "export-sentinel.txt");
+
+  try {
+    const store = await createRunStore({ rootDir });
+    await writeFile(artifactSentinel, "artifact-sentinel", "utf8");
+    await writeFile(exportSentinel, "export-sentinel", "utf8");
+    const artifactsDirectory = join(store.runDirectory, "artifacts");
+    const exportsDirectory = join(store.runDirectory, "exports");
+    await rm(artifactsDirectory, { recursive: true, force: true });
+    await symlink(outsideRoot, artifactsDirectory, process.platform === "win32" ? "junction" : "dir");
+    await symlink(outsideRoot, exportsDirectory, process.platform === "win32" ? "junction" : "dir");
+
+    await expect(store.recordArtifact({ name: "escaped.txt", classification: "public", content: "must-not-escape" }))
+      .rejects.toThrow("policy_denied");
+    await expect(store.createExport()).rejects.toThrow("policy_denied");
+    await expect(readFile(artifactSentinel, "utf8")).resolves.toBe("artifact-sentinel");
+    await expect(readFile(exportSentinel, "utf8")).resolves.toBe("export-sentinel");
+    await expect(readFile(join(outsideRoot, "escaped.txt"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readdir(outsideRoot)).resolves.not.toContainEqual(expect.stringMatching(/^export-[a-f0-9-]+\.json$/));
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+    await rm(outsideRoot, { recursive: true, force: true });
   }
 });
 

@@ -1,7 +1,7 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { relative, resolve } from "node:path";
-import type { ArtifactMetadata, RunStoreState } from "./run-store.js";
+import { ensureManagedChildDirectory, type ArtifactMetadata, type RunStoreState } from "./run-store.js";
 
 export interface ExportOptions {
   confirmConfidential?: boolean;
@@ -38,7 +38,7 @@ async function createExportFile(state: RunStoreState, options: ExportOptions): P
     if (metadata.some((artifact) => artifact.classification === "confidential") && !options.confirmConfidential) {
       throw new Error("policy_denied: confidential export requires explicit confirmation");
     }
-    const exportsDirectory = resolve(state.runDirectory, "exports");
+    const exportsDirectory = await ensureManagedChildDirectory(state, "exports");
     const path = resolve(exportsDirectory, `export-${randomUUID()}.json`);
     if (!isWithin(exportsDirectory, path)) {
       throw new Error("validation_error: export path must remain in the run exports directory");
@@ -48,7 +48,6 @@ async function createExportFile(state: RunStoreState, options: ExportOptions): P
         .filter((artifact) => artifact.retention === "retained")
         .map(({ name, classification }) => ({ name, classification })),
     };
-    await mkdir(exportsDirectory, { recursive: true });
     await writeFile(path, JSON.stringify(manifest, null, 2), { encoding: "utf8", flag: "wx" });
     return { path, manifest };
   });

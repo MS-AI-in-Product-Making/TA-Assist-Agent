@@ -113,8 +113,31 @@ function isUuid(value: string): boolean {
 }
 
 function safeMessage(error: unknown): string {
-  const message = error instanceof Error ? error.message : "internal_error: command failed";
-  return message.replace(/[A-Za-z]:\\[^\s]+|\/[^\s]+/g, "[path]");
+  const code = typedErrorCode(error);
+  const summary = typedErrorSummary(error);
+  return code !== undefined && summary !== undefined
+    ? `${code}: ${summary}`
+    : "internal_error: operation failed";
+}
+
+function typedErrorCode(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null || !("code" in error)) {
+    const message = error instanceof Error ? error.message : undefined;
+    return message?.match(/^(validation_error|policy_denied|feature_not_available|dependency_error|transient_error|internal_error): /)?.[1];
+  }
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" && /^(validation_error|policy_denied|feature_not_available|dependency_error|transient_error|internal_error)$/.test(code)
+    ? code
+    : undefined;
+}
+
+function typedErrorSummary(error: unknown): string | undefined {
+  const summary = typeof error === "object" && error !== null && "summary" in error
+    ? (error as { summary?: unknown }).summary
+    : error instanceof Error ? error.message.replace(/^[a-z_]+: /, "") : undefined;
+  return typeof summary === "string" && /^[A-Za-z0-9][A-Za-z0-9 ,;()._-]*$/.test(summary)
+    ? summary
+    : undefined;
 }
 
 const invokedPath = process.argv[1]?.replaceAll("\\", "/");

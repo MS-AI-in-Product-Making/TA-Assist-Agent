@@ -51,6 +51,7 @@ export interface RunStore {
 }
 
 interface RunStoreState {
+  rootDirectory: string;
   runDirectory: string;
   artifactsDirectory: string;
   metadataPath: string;
@@ -78,10 +79,10 @@ export async function createRunStore(options: CreateRunStoreOptions): Promise<Ru
   }
 
   const runDirectory = await ensureManagedRunDirectory(rootDirectory, projectId, sessionId, runId);
-  const artifactsDirectory = resolve(runDirectory, "artifacts");
   const state: RunStoreState = {
+    rootDirectory,
     runDirectory,
-    artifactsDirectory,
+    artifactsDirectory: resolve(runDirectory, "artifacts"),
     metadataPath: resolve(runDirectory, "artifact-metadata.json"),
     metadataLockPath: resolve(runDirectory, "memory.lock"),
     transcriptPath: resolve(runDirectory, "transcript.jsonl"),
@@ -97,7 +98,7 @@ export async function createRunStore(options: CreateRunStoreOptions): Promise<Ru
       throw new Error("dependency_error: run has been purged");
     }
     await withMetadataLock(state, async () => {
-      await mkdir(artifactsDirectory, { recursive: true });
+      state.artifactsDirectory = await ensureManagedChildDirectory(state, "artifacts");
       await Promise.all([
         writeFile(state.transcriptPath, "", { encoding: "utf8", flag: "a" }),
         writeFile(state.decisionsPath, "", { encoding: "utf8", flag: "a" }),
@@ -134,7 +135,8 @@ export async function createRunStore(options: CreateRunStoreOptions): Promise<Ru
               throw new Error("validation_error: artifact name already exists");
             }
             if (metadata.retention === "retained") {
-              const artifactPath = resolve(state.artifactsDirectory, input.name);
+              const artifactsDirectory = await ensureManagedChildDirectory(state, "artifacts");
+              const artifactPath = resolve(artifactsDirectory, input.name);
               await writeFile(artifactPath, content, { flag: "wx" });
               try {
                 await writeMetadata(state.metadataPath, [...entries, metadata]);
@@ -185,6 +187,7 @@ export async function openRunStore(options: OpenRunStoreOptions): Promise<RunSto
   const rootDirectory = await resolveRuntimeRoot(options.rootDir);
   const runDirectory = await findRunDirectory(rootDirectory, options.runId);
   const state: RunStoreState = {
+    rootDirectory,
     runDirectory,
     artifactsDirectory: resolve(runDirectory, "artifacts"),
     metadataPath: resolve(runDirectory, "artifact-metadata.json"),
@@ -467,4 +470,22 @@ async function releaseMetadataLock(lockPath: string, lockId: string): Promise<vo
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
+}
+
+export async function ensureManagedChildDirectory(state: RunStoreState, name: "artifacts" | "exports"): Promise<string> {
+  const directory = resolve(state.runDirectory, name);
+  await mkdir(directory, { recursive: true });
+  let metadata: Awaited<ReturnType<typeof lstat>>;
+  let physicalPath: string;
+  try {
+    metadata = await lstat(directory);
+    physicalPath = await realpath(directory);
+  } catch {
+    throw new Error("validation_error: managed run directory is invalid");
+  }
+  if (metadata.isSymbolicLink() || !isWithinOrEqual(state.rootDirectory, physicalPath) ||
+    !isWithinOrEqual(state.runDirectory, physicalPath)) {
+    throw new Error("policy_denied: managed run directory must remain within the runtime root");
+  }
+  return physicalPath;
 }

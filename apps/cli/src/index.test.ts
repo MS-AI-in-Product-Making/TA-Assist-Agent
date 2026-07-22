@@ -105,6 +105,21 @@ it("rejects unknown flags, duplicated flags, and malformed run ids", async () =>
   }
 });
 
+it("renders operational filesystem failures without exposing a root path or raw OS error", async () => {
+  const rootDir = join(tmpdir(), "ai assist cli invalid root");
+
+  try {
+    await writeFile(rootDir, "not-a-directory", "utf8");
+    const result = await executeCli(["smoke", "--root", rootDir]);
+
+    expect(result).toEqual({ exitCode: 2, stdout: "", stderr: "internal_error: operation failed\n" });
+    expect(result.stderr).not.toContain(rootDir);
+    expect(result.stderr).not.toContain("ENOTDIR");
+  } finally {
+    await rm(rootDir, { force: true });
+  }
+});
+
 it("rejects a redirected managed runs directory before CLI operations read or mutate it", async () => {
   const rootDir = await createTemporaryRoot();
   const outsideRoot = await createTemporaryRoot();
