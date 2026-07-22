@@ -9,6 +9,7 @@ export const publicEchoSkill: RegisteredSkill = {
     featureId: "F8",
     inputClassification: ["public"],
     permissions: ["persist"],
+    adapterCapabilities: ["echo"],
     idempotent: true,
     retryable: false,
     auditEventTypes: ["skill_started", "skill_completed"],

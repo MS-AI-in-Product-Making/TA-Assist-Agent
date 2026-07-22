@@ -8,6 +8,7 @@ export const classificationCheckSkill: RegisteredSkill = {
     featureId: "F8",
     inputClassification: ["public", "internal", "confidential"],
     permissions: [],
+    adapterCapabilities: [],
     idempotent: true,
     retryable: false,
     auditEventTypes: ["skill_started", "skill_completed"],

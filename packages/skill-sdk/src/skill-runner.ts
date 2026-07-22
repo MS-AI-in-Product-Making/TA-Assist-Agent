@@ -1,6 +1,11 @@
 import { createTypedError, type DataClassification, typedErrorSchema } from "@ai-assist/contracts";
 import { evaluatePolicy, getFeatureStatus } from "@ai-assist/governance";
-import { SkillRegistry, type SkillAdapter, type SkillPermission } from "./registry.js";
+import {
+  SkillRegistry,
+  type SkillAdapter,
+  type SkillAdapterCapability,
+  type SkillPermission,
+} from "./registry.js";
 
 export interface SkillRunRequest {
   readonly skillId: string;
@@ -19,6 +24,10 @@ export interface SkillRunOptions {
   readonly registry: SkillRegistry;
   readonly adapters?: Readonly<Record<string, SkillAdapter>>;
 }
+
+const adapterCapabilityPermissions: Readonly<Record<SkillAdapterCapability, SkillPermission>> = {
+  echo: "read",
+};
 
 function runtimeError(
   runId: string | undefined,
@@ -39,6 +48,34 @@ function resolveOptions(registryOrOptions: SkillRegistry | SkillRunOptions): Ski
   return typeof (registryOrOptions as SkillRegistry).get === "function"
     ? { registry: registryOrOptions as SkillRegistry }
     : registryOrOptions as SkillRunOptions;
+}
+
+function resolveAdapterCapabilities(
+  capabilities: readonly SkillAdapterCapability[],
+  adapters: Readonly<Record<string, SkillAdapter>>,
+  inputClassification: DataClassification,
+  runId: string | undefined,
+): Readonly<Record<string, SkillAdapter>> {
+  const authorizedAdapters: Record<string, SkillAdapter> = {};
+
+  for (const capability of capabilities) {
+    const permission = adapterCapabilityPermissions[capability];
+    if (permission === undefined || !evaluatePolicy({ inputClassification, permission }).allowed) {
+      throw runtimeError(
+        runId,
+        "policy_denied",
+        "Adapter capability is denied by policy.",
+        "Use an adapter capability allowed for this input classification.",
+      );
+    }
+
+    const adapter = adapters[capability];
+    if (adapter !== undefined) {
+      authorizedAdapters[capability] = adapter;
+    }
+  }
+
+  return Object.freeze(authorizedAdapters);
 }
 
 export async function runRegisteredSkill(
@@ -86,10 +123,17 @@ export async function runRegisteredSkill(
     throw runtimeError(runId, "policy_denied", "Requested permission is denied by policy.", "Request a policy-allowed permission.");
   }
 
+  const adapters = resolveAdapterCapabilities(
+    skill.manifest.adapterCapabilities,
+    options.adapters ?? {},
+    inputClassification,
+    runId,
+  );
+
   try {
     const output = await skill.execute({
       input: Object.freeze({ ...(request.input ?? {}) }),
-      adapters: Object.freeze({ ...(options.adapters ?? {}) }),
+      adapters,
     });
     return { skillId: skill.manifest.skillId, output };
   } catch (error) {

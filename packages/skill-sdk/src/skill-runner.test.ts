@@ -12,6 +12,16 @@ import {
   publicEchoSkill,
 } from "@ai-assist/skills";
 
+function expectTypedRegistrationError(register: () => void, code: "validation_error" | "policy_denied"): void {
+  try {
+    register();
+    throw new Error("Expected registration to fail.");
+  } catch (error) {
+    expect(typedErrorSchema.safeParse(error).success).toBe(true);
+    expect(error).toMatchObject({ code });
+  }
+}
+
 it("denies undeclared network access", async () => {
   await expect(
     runRegisteredSkill({
@@ -79,23 +89,25 @@ it("rejects duplicate and untrusted registrations", () => {
   const registry = new SkillRegistry();
   registry.register(publicEchoSkill);
 
-  expect(() => registry.register(publicEchoSkill)).toThrow("already registered");
-  expect(() =>
+  expectTypedRegistrationError(() => registry.register(publicEchoSkill), "validation_error");
+  expectTypedRegistrationError(() =>
     registry.register({
       ...publicEchoSkill,
       manifest: { ...publicEchoSkill.manifest, skillId: "untrusted-echo" },
       trusted: false,
     } as unknown as RegisteredSkill),
-  ).toThrow("Only trusted skills");
+  "policy_denied");
 });
 
 it("keeps an immutable manifest snapshot after registration", async () => {
   const registry = new SkillRegistry();
+  const echo = new MockAdapter({ accepted: true });
   const manifest = {
     ...publicEchoSkill.manifest,
     skillId: "immutable-echo",
     inputClassification: ["public"],
     permissions: ["persist"],
+    adapterCapabilities: [...publicEchoSkill.manifest.adapterCapabilities],
     auditEventTypes: ["skill_started", "skill_completed"],
   };
   const skill: RegisteredSkill = {
@@ -107,6 +119,7 @@ it("keeps an immutable manifest snapshot after registration", async () => {
   manifest.featureId = "F4";
   manifest.inputClassification.push("secret");
   manifest.permissions.push("network");
+  manifest.adapterCapabilities.pop();
   manifest.auditEventTypes.push("skill_started");
 
   await expect(
@@ -126,6 +139,14 @@ it("keeps an immutable manifest snapshot after registration", async () => {
       registry,
     ),
   ).rejects.toMatchObject({ code: "policy_denied" });
+
+  await expect(
+    runRegisteredSkill(
+      { skillId: "immutable-echo", input: { message: "public" } },
+      { registry, adapters: { echo } },
+    ),
+  ).resolves.toMatchObject({ output: { message: "public" } });
+  expect(echo.invocations).toEqual(["echo"]);
 });
 
 it("denies declared persist through the policy gate", async () => {
@@ -170,18 +191,122 @@ it("runs the actual public echo Skill through a named mock adapter", async () =>
   const registry = new SkillRegistry();
   registry.register(publicEchoSkill);
   const adapter = new MockAdapter({ accepted: true });
-  const execute = runRegisteredSkill as unknown as (
-    request: Parameters<typeof runRegisteredSkill>[0],
-    options: { registry: SkillRegistry; adapters: { echo: MockAdapter<{ accepted: boolean }> } },
-  ) => ReturnType<typeof runRegisteredSkill>;
 
   await expect(
-    execute(
+    runRegisteredSkill(
       { skillId: "public-echo", input: { message: "hello" } },
       { registry, adapters: { echo: adapter } },
     ),
   ).resolves.toMatchObject({ output: { message: "hello" } });
   expect(adapter.invocations).toEqual(["echo"]);
+  expect((publicEchoSkill.manifest as { adapterCapabilities?: unknown }).adapterCapabilities).toEqual(["echo"]);
+});
+
+it("does not expose undeclared adapters to the Skill handler", async () => {
+  const registry = new SkillRegistry();
+  const echo = new MockAdapter({ accepted: true });
+  registry.register({
+    trusted: true,
+    manifest: {
+      ...publicEchoSkill.manifest,
+      skillId: "no-adapter-capability",
+      permissions: [],
+      adapterCapabilities: [],
+    },
+    async execute(context) {
+      return { adapterNames: Object.keys(context.adapters) };
+    },
+  });
+
+  await expect(
+    runRegisteredSkill(
+      { skillId: "no-adapter-capability" },
+      { registry, adapters: { echo } },
+    ),
+  ).resolves.toMatchObject({ output: { adapterNames: [] } });
+  expect(echo.invocations).toEqual([]);
+});
+
+it("denies a declared adapter capability when its policy action is denied", async () => {
+  const registry = new SkillRegistry();
+  let executed = false;
+  registry.register({
+    trusted: true,
+    manifest: {
+      ...publicEchoSkill.manifest,
+      skillId: "internal-echo",
+      inputClassification: ["internal"],
+      permissions: [],
+      adapterCapabilities: ["echo"],
+    } as unknown as RegisteredSkill["manifest"],
+    async execute() {
+      executed = true;
+      return {};
+    },
+  });
+
+  await expect(
+    runRegisteredSkill(
+      { skillId: "internal-echo", inputClassification: "internal" },
+      { registry, adapters: { echo: new MockAdapter({ accepted: true }) } },
+    ),
+  ).rejects.toMatchObject({ code: "policy_denied" });
+  expect(executed).toBe(false);
+});
+
+it("exposes only the declared public echo adapter capability", async () => {
+  const registry = new SkillRegistry();
+  const echo = new MockAdapter({ accepted: true });
+  const unrecognized = new MockAdapter({ accepted: false });
+  registry.register({
+    trusted: true,
+    manifest: {
+      ...publicEchoSkill.manifest,
+      skillId: "adapter-allowlist",
+      permissions: [],
+      adapterCapabilities: ["echo"],
+    } as unknown as RegisteredSkill["manifest"],
+    async execute(context) {
+      await context.adapters.echo?.execute("echo");
+      return { adapterNames: Object.keys(context.adapters) };
+    },
+  });
+
+  await expect(
+    runRegisteredSkill(
+      { skillId: "adapter-allowlist" },
+      {
+        registry,
+        adapters: { echo, unrecognized } as unknown as Record<string, MockAdapter<{ accepted: boolean }>>,
+      },
+    ),
+  ).resolves.toMatchObject({ output: { adapterNames: ["echo"] } });
+  expect(echo.invocations).toEqual(["echo"]);
+  expect(unrecognized.invocations).toEqual([]);
+});
+
+it("normalizes all registry registration failures to typed errors", () => {
+  const invalidManifestRegistry = new SkillRegistry();
+  const untrustedRegistry = new SkillRegistry();
+  const duplicateRegistry = new SkillRegistry();
+  duplicateRegistry.register(publicEchoSkill);
+
+  const failures = [
+    () => invalidManifestRegistry.register({
+      ...publicEchoSkill,
+      manifest: { ...publicEchoSkill.manifest, skillId: "" },
+    }),
+    () => untrustedRegistry.register({
+      ...publicEchoSkill,
+      manifest: { ...publicEchoSkill.manifest, skillId: "untrusted-error" },
+      trusted: false,
+    } as unknown as RegisteredSkill),
+    () => duplicateRegistry.register(publicEchoSkill),
+  ];
+
+  for (const register of failures) {
+    expectTypedRegistrationError(register, register === failures[1] ? "policy_denied" : "validation_error");
+  }
 });
 
 it("normalizes malformed Skill handler failures to the typed error contract", async () => {
