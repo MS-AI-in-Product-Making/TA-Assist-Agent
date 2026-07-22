@@ -1,3 +1,4 @@
+import { createTypedError, type TypedError } from "@ai-assist/contracts";
 import { z } from "zod";
 
 export const CalculationRequestV1 = z.object({
@@ -15,7 +16,7 @@ export const CalculationResultV1 = z.object({
 export type CalculationRequestV1 = z.infer<typeof CalculationRequestV1>;
 export type CalculationResultV1 = z.infer<typeof CalculationResultV1>;
 
-export interface CalculationAdapterError extends Error {
+export interface CalculationAdapterError extends Error, TypedError {
   readonly code: "feature_not_available";
   readonly featureId: "F4";
   readonly dependencies: readonly string[];
@@ -23,13 +24,26 @@ export interface CalculationAdapterError extends Error {
 }
 
 export class CalculationAdapter {
-  async calculate(request: CalculationRequestV1): Promise<never> {
-    void request;
-    throw Object.assign(new Error("Calculation Worker is not configured."), {
-      code: "feature_not_available" as const,
-      featureId: "F4" as const,
-      dependencies: ["calculation-worker-v1"],
-      enablementRequirements: ["approved-windows-excel-worker"],
+  async calculate(request: unknown): Promise<never> {
+    if (!CalculationRequestV1.safeParse(request).success) {
+      throw createTypedError({
+        code: "validation_error",
+        summary: "Calculation request does not match CalculationRequestV1.",
+        suggestedAction: "Provide a valid CalculationRequestV1 payload.",
+        affectedInputReferences: [],
+      });
+    }
+
+    throw createTypedError({
+      code: "feature_not_available",
+      summary: "Calculation Worker is not configured.",
+      suggestedAction: "Configure the approved Windows Excel Worker.",
+      affectedInputReferences: [],
+      details: {
+        featureId: "F4",
+        dependencies: ["calculation-worker-v1"],
+        enablementRequirements: ["approved-windows-excel-worker"],
+      },
     });
   }
 }

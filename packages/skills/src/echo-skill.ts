@@ -1,3 +1,4 @@
+import { createTypedError } from "@ai-assist/contracts";
 import type { RegisteredSkill } from "@ai-assist/skill-sdk";
 
 export const publicEchoSkill: RegisteredSkill = {
@@ -12,11 +13,20 @@ export const publicEchoSkill: RegisteredSkill = {
     retryable: false,
     auditEventTypes: ["skill_started", "skill_completed"],
   },
-  async execute(input) {
-    if (typeof input.message !== "string") {
-      throw new Error("public-echo requires a string message.");
+  async execute(context) {
+    if (typeof context.input.message !== "string") {
+      throw createTypedError({
+        code: "validation_error",
+        summary: "public-echo requires a string message.",
+        suggestedAction: "Provide input.message as a string.",
+        affectedInputReferences: ["input.message"],
+      });
     }
 
-    return { message: input.message };
+    if (context.adapters.echo !== undefined) {
+      await context.adapters.echo.execute("echo");
+    }
+
+    return { message: context.input.message };
   },
 };

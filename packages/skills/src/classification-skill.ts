@@ -12,8 +12,8 @@ export const classificationCheckSkill: RegisteredSkill = {
     retryable: false,
     auditEventTypes: ["skill_started", "skill_completed"],
   },
-  async execute(input) {
-    const classification = input.classification;
+  async execute(context) {
+    const classification = context.input.classification;
     if (classification !== "public" && classification !== "internal" && classification !== "confidential") {
       throw new Error("classification-check requires a supported classification.");
     }

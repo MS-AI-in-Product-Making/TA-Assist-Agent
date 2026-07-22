@@ -19,3 +19,27 @@ export const typedErrorSchema = z.object({
 });
 
 export type TypedError = z.infer<typeof typedErrorSchema>;
+
+export type TypedErrorCode = z.infer<typeof errorCodeSchema>;
+
+export interface TypedErrorOptions {
+  readonly code: TypedErrorCode;
+  readonly runId?: string;
+  readonly summary: string;
+  readonly retryable?: boolean;
+  readonly suggestedAction: string;
+  readonly affectedInputReferences?: readonly string[];
+  readonly details?: Record<string, unknown>;
+}
+
+export function createTypedError(options: TypedErrorOptions): Error & TypedError {
+  return Object.assign(new Error(options.summary), {
+    code: options.code,
+    runId: options.runId ?? crypto.randomUUID(),
+    summary: options.summary,
+    retryable: options.retryable ?? false,
+    suggestedAction: options.suggestedAction,
+    affectedInputReferences: [...(options.affectedInputReferences ?? [])],
+    ...options.details,
+  });
+}

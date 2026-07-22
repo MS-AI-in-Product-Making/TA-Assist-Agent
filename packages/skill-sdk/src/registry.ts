@@ -21,11 +21,25 @@ export const skillManifestSchema = z.object({
 
 export type SkillPermission = z.infer<typeof skillPermissionSchema>;
 export type SkillManifest = z.infer<typeof skillManifestSchema>;
+export type ImmutableSkillManifest = Omit<SkillManifest, "inputClassification" | "permissions" | "auditEventTypes"> & {
+  readonly inputClassification: readonly DataClassification[];
+  readonly permissions: readonly SkillPermission[];
+  readonly auditEventTypes: readonly ("skill_started" | "skill_completed")[];
+};
+
+export interface SkillAdapter {
+  execute(action: string): Promise<unknown>;
+}
+
+export interface SkillRuntimeContext {
+  readonly input: Readonly<Record<string, unknown>>;
+  readonly adapters: Readonly<Record<string, SkillAdapter>>;
+}
 
 export interface RegisteredSkill {
-  readonly manifest: SkillManifest;
+  readonly manifest: ImmutableSkillManifest;
   readonly trusted: true;
-  execute(input: Record<string, unknown>): Promise<Record<string, unknown>>;
+  execute(context: SkillRuntimeContext): Promise<Record<string, unknown>>;
 }
 
 export class SkillRegistry {
@@ -42,7 +56,17 @@ export class SkillRegistry {
       throw new Error(`Skill '${skill.manifest.skillId}' is already registered.`);
     }
 
-    this.#skills.set(skill.manifest.skillId, skill);
+    const manifest: ImmutableSkillManifest = Object.freeze({
+      ...skill.manifest,
+      inputClassification: Object.freeze([...skill.manifest.inputClassification]),
+      permissions: Object.freeze([...skill.manifest.permissions]),
+      auditEventTypes: Object.freeze([...skill.manifest.auditEventTypes]),
+    });
+    this.#skills.set(manifest.skillId, Object.freeze({
+      trusted: true,
+      manifest,
+      execute: skill.execute,
+    }));
   }
 
   get(skillId: string): RegisteredSkill | undefined {
@@ -51,7 +75,7 @@ export class SkillRegistry {
 }
 
 export function isSupportedClassification(
-  manifest: SkillManifest,
+  manifest: ImmutableSkillManifest,
   inputClassification: DataClassification,
 ): boolean {
   return manifest.inputClassification.includes(inputClassification);

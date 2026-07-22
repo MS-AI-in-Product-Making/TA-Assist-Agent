@@ -1,6 +1,6 @@
 import type { DataClassification } from "@ai-assist/contracts";
 
-export type FeatureStatus = "unavailable";
+export type FeatureStatus = "available" | "unavailable";
 
 export interface FeatureRegistration {
   readonly featureId: string;
@@ -144,16 +144,18 @@ const featureRegister: ReadonlyMap<string, FeatureRegistration> = new Map([
   ],
   [
     "F8",
-    unavailableFeature(
-      "F8",
-      "TA 工作流编排",
-      ["orchestrator-v1", "skill-runtime-v1"],
-      "workflow-request-v1",
-      "workflow-result-v1",
-      "internal",
-      ["anonymous-workflow-fixture"],
-      ["approved-skill-manifests"],
-    ),
+    {
+      featureId: "F8",
+      title: "TA 工作流编排",
+      status: "available",
+      dependsOn: ["orchestrator-v1", "skill-runtime-v1"],
+      inputContractId: "workflow-request-v1",
+      outputContractId: "workflow-result-v1",
+      maximumClassification: "public",
+      acceptanceChecks: ["anonymous-workflow-fixture", "anonymous-governed-skill"],
+      externalPrerequisites: ["approved-skill-manifests"],
+      disableBehavior: "return feature_not_available",
+    },
   ],
 ]);
 
