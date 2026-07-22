@@ -9,6 +9,7 @@ import {
   type SkillRunResult,
 } from "@ai-assist/skill-sdk";
 import { createAnonymousSkillRegistry } from "@ai-assist/skills";
+import { z } from "zod";
 
 type WorkflowState = "created" | "policy_checked" | "running" | "completed" | "failed" | "purged";
 
@@ -34,7 +35,7 @@ export interface WorkflowResult {
 
 export interface RunSmokeWorkflowOptions {
   readonly rootDir: string;
-  readonly request?: SmokeWorkflowRequest;
+  readonly request?: unknown;
 }
 
 export interface SmokeWorkflowRequest {
@@ -45,6 +46,15 @@ export interface SmokeWorkflowRequest {
     readonly classification: "public";
   };
 }
+
+const smokeWorkflowRequestSchema = z.object({
+  version: z.literal(1),
+  kind: z.literal("public-smoke-request"),
+  data: z.object({
+    message: z.string().trim().min(1).max(4_096),
+    classification: z.literal("public"),
+  }),
+});
 
 interface WorkflowDependencies {
   readonly auditStoreFactory: (runDirectory: string) => Promise<AuditStore>;
@@ -61,12 +71,12 @@ const lifecycleEventTypes: Readonly<Record<WorkflowState, "run_created" | "polic
 };
 
 export async function runSmokeWorkflow(options: RunSmokeWorkflowOptions): Promise<WorkflowResult> {
-  const echoAdapter = new MockAdapter({ accepted: true });
-  const request = options.request ?? {
+  const request = validateSmokeWorkflowRequest(options.request ?? {
     version: 1,
     kind: "public-smoke-request",
     data: { message: "public smoke", classification: "public" },
-  };
+  });
+  const echoAdapter = new MockAdapter({ accepted: true });
 
   return runWorkflow({
     rootDir: options.rootDir,
@@ -233,9 +243,42 @@ async function sealAndVerify(
     inputHash: hashUtf8(JSON.stringify(steps)),
     outputHash: hashUtf8(JSON.stringify(skillResults)),
   });
-  return (await audit.verify()).valid;
+  const verification = await audit.verify();
+  if (!verification.valid) {
+    throw createTypedError({
+      code: "dependency_error",
+      runId,
+      summary: "Audit sealing or verification failed.",
+      suggestedAction: "Inspect the run storage and retry the workflow after the audit dependency is available.",
+      affectedInputReferences: [],
+    });
+  }
+  return true;
 }
 
+function validateSmokeWorkflowRequest(request: unknown): SmokeWorkflowRequest {
+  const parsed = smokeWorkflowRequestSchema.safeParse(request);
+  if (parsed.success) {
+    return parsed.data;
+  }
+
+  const classification = isRecord(request) && isRecord(request.data) ? request.data.classification : undefined;
+  throw createTypedError({
+    code: classification === "secret" || classification === "internal" || classification === "confidential"
+      ? "policy_denied"
+      : "validation_error",
+    runId: randomUUID(),
+    summary: classification === "secret" || classification === "internal" || classification === "confidential"
+      ? "Smoke workflows only accept public input."
+      : "Smoke workflow input is invalid.",
+    suggestedAction: "Provide a public smoke request with a non-empty message.",
+    affectedInputReferences: ["request"],
+  });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
 function toWorkflowError(error: unknown, runId: string): Error & TypedError {
   const parsed = typedErrorSchema.safeParse(error);
   if (parsed.success) {

@@ -1,10 +1,11 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createAuditStore, hashUtf8, type AuditStore } from "@ai-assist/audit";
 import { createTypedError } from "@ai-assist/contracts";
 import { SkillRegistry, type RegisteredSkill } from "@ai-assist/skill-sdk";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
+import { MockAdapter } from "@ai-assist/adapters";
 import { runSmokeWorkflow, runWorkflow } from "./index.js";
 import { runWorkflowForTest } from "./run-orchestrator.test-support.js";
 
@@ -198,6 +199,135 @@ it("preserves the primary Skill error when audit sealing also fails", async () =
   }
 });
 
+it("normalizes an invalid audit verification result to a current-run dependency error", async () => {
+  const rootDir = await mkdtemp(join(tmpdir(), "ai-assist-orchestrator-"));
+  const registry = new SkillRegistry();
+  registry.register(createTestSkill("verify-skill", false, async () => ({ verified: false })));
+
+  try {
+    const thrown = await runWorkflowForTest({
+      rootDir,
+      registry,
+      steps: [{ skillId: "verify-skill" }],
+    }, {
+      auditStoreFactory: async (runDirectory) => invalidVerificationAuditStore(await createAuditStore(runDirectory)),
+    }).catch((error: unknown) => error) as Error & { code: string; runId: string; runDirectory: string; summary: string };
+
+    expect(thrown.code).toBe("dependency_error");
+    expect(thrown.runId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(thrown.runDirectory).toContain(rootDir);
+    expect(thrown.summary).not.toContain(rootDir);
+    expect(thrown.summary).not.toContain("events.jsonl");
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+it("preserves a primary Skill error and attaches a safe diagnostic for invalid audit verification", async () => {
+  const rootDir = await mkdtemp(join(tmpdir(), "ai-assist-orchestrator-"));
+  const registry = new SkillRegistry();
+  registry.register(createTestSkill("failing-verify-skill", false, async () => {
+    throw createTypedError({
+      code: "policy_denied",
+      summary: "The requested operation is denied.",
+      suggestedAction: "Use a public-only workflow.",
+      affectedInputReferences: [],
+    });
+  }));
+
+  try {
+    const thrown = await runWorkflowForTest({
+      rootDir,
+      registry,
+      steps: [{ skillId: "failing-verify-skill" }],
+    }, {
+      auditStoreFactory: async (runDirectory) => invalidVerificationAuditStore(await createAuditStore(runDirectory)),
+    }).catch((error: unknown) => error) as Error & {
+      code: string;
+      runId: string;
+      auditError?: { code: string; runId: string; summary: string };
+    };
+
+    expect(thrown.code).toBe("policy_denied");
+    expect(thrown.runId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(thrown.auditError).toEqual({
+      code: "dependency_error",
+      runId: thrown.runId,
+      summary: "Audit sealing or verification failed.",
+      suggestedAction: "Inspect the run storage and retry the workflow after the audit dependency is available.",
+    });
+    expect(thrown.auditError?.summary).not.toContain(rootDir);
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+it("rejects secret smoke input before creating runtime artifacts or invoking an adapter", async () => {
+  const rootDir = join(await mkdtemp(join(tmpdir(), "ai-assist-orchestrator-")), "runtime");
+  const adapterExecute = vi.spyOn(MockAdapter.prototype, "execute");
+
+  try {
+    const thrown = await runSmokeWorkflow({
+      rootDir,
+      request: {
+        version: 1,
+        kind: "public-smoke-request",
+        data: { message: "do not retain", classification: "secret" },
+      } as unknown,
+    }).catch((error: unknown) => error) as Error & { code: string; runId: string };
+
+    expect(thrown.code).toBe("policy_denied");
+    expect(thrown.runId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(adapterExecute).not.toHaveBeenCalled();
+    await expect(access(rootDir)).rejects.toMatchObject({ code: "ENOENT" });
+  } finally {
+    adapterExecute.mockRestore();
+    await rm(join(rootDir, ".."), { recursive: true, force: true });
+  }
+});
+
+it("rejects malformed smoke input with a generated validation error before runtime setup", async () => {
+  const rootDir = join(await mkdtemp(join(tmpdir(), "ai-assist-orchestrator-")), "runtime");
+
+  try {
+    const thrown = await runSmokeWorkflow({
+      rootDir,
+      request: {
+        version: 1,
+        kind: "public-smoke-request",
+        data: { message: "", classification: "public" },
+      } as unknown,
+    }).catch((error: unknown) => error) as Error & { code: string; runId: string };
+
+    expect(thrown.code).toBe("validation_error");
+    expect(thrown.runId).toMatch(/^[0-9a-f-]{36}$/);
+    await expect(access(rootDir)).rejects.toMatchObject({ code: "ENOENT" });
+  } finally {
+    await rm(join(rootDir, ".."), { recursive: true, force: true });
+  }
+});
+
+it("rejects internal smoke input with a generated policy error before runtime setup", async () => {
+  const rootDir = join(await mkdtemp(join(tmpdir(), "ai-assist-orchestrator-")), "runtime");
+
+  try {
+    const thrown = await runSmokeWorkflow({
+      rootDir,
+      request: {
+        version: 1,
+        kind: "public-smoke-request",
+        data: { message: "internal", classification: "internal" },
+      } as unknown,
+    }).catch((error: unknown) => error) as Error & { code: string; runId: string };
+
+    expect(thrown.code).toBe("policy_denied");
+    expect(thrown.runId).toMatch(/^[0-9a-f-]{36}$/);
+    await expect(access(rootDir)).rejects.toMatchObject({ code: "ENOENT" });
+  } finally {
+    await rm(join(rootDir, ".."), { recursive: true, force: true });
+  }
+});
+
 it("retries only retryable transient Skills with finite exponential backoff", async () => {
   const rootDir = await mkdtemp(join(tmpdir(), "ai-assist-orchestrator-"));
   const registry = new SkillRegistry();
@@ -262,6 +392,15 @@ function failingSealAuditStore(audit: AuditStore): AuditStore {
     ...audit,
     async writeManifest() {
       throw new Error("audit storage unavailable");
+    },
+  };
+}
+
+function invalidVerificationAuditStore(audit: AuditStore): AuditStore {
+  return {
+    ...audit,
+    async verify() {
+      return { valid: false, failures: ["C:\\private\\runtime\\events.jsonl"] };
     },
   };
 }
