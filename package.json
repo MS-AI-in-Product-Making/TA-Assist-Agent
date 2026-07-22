@@ -6,7 +6,7 @@
   "scripts": {
     "build": "tsc -b",
     "lint": "eslint .",
-    "test": "vitest run --workspace vitest.workspace.ts",
+    "test": "npm run build -- --force && vitest run --workspace vitest.workspace.ts",
     "check:repository": "node scripts/verify-repository.mjs"
   },
   "devDependencies": {
