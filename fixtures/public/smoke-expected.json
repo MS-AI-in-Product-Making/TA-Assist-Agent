@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "kind": "public-smoke-expected",
+  "skillIds": ["public-echo", "classification-check"],
+  "manifestValid": true
+}

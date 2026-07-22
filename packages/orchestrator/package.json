@@ -1,0 +1,24 @@
+{
+  "name": "@ai-assist/orchestrator",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@ai-assist/adapters": "0.1.0",
+    "@ai-assist/audit": "0.1.0",
+    "@ai-assist/contracts": "0.1.0",
+    "@ai-assist/governance": "0.1.0",
+    "@ai-assist/memory": "0.1.0",
+    "@ai-assist/skill-sdk": "0.1.0",
+    "@ai-assist/skills": "0.1.0"
+  }
+}

@@ -8,6 +8,7 @@
     { "path": "./packages/governance" },
     { "path": "./packages/skill-sdk" },
     { "path": "./packages/skills" },
+    { "path": "./packages/orchestrator" },
     { "path": "./packages/adapters" }
   ]
 }

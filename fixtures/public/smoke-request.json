@@ -1,5 +1,8 @@
 {
   "version": 1,
   "kind": "public-smoke-request",
-  "data": {}
+  "data": {
+    "message": "public smoke",
+    "classification": "public"
+  }
 }
