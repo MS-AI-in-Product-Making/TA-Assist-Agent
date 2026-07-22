@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
@@ -26,12 +26,49 @@ it("appends events and verifies manifest hashes", async () => {
       runId: "00000000-0000-4000-8000-000000000001",
     });
     expect(manifest.schemaHash).toEqual(expect.stringMatching(/^[a-f0-9]{64}$/));
+    expect(manifest.eventsHash).toEqual(expect.stringMatching(/^[a-f0-9]{64}$/));
     expect(manifest.skillHash).toEqual(expect.stringMatching(/^[a-f0-9]{64}$/));
     expect(manifest.configurationHash).toEqual(expect.stringMatching(/^[a-f0-9]{64}$/));
     expect(manifest.inputHash).toEqual(expect.stringMatching(/^[a-f0-9]{64}$/));
     expect(manifest.outputHash).toEqual(expect.stringMatching(/^[a-f0-9]{64}$/));
 
     await expect(store.verify()).resolves.toEqual({ valid: true, failures: [] });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+it("seals events in the manifest and detects events tampering", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ai-assist-audit-"));
+  const eventsPath = join(directory, "events.jsonl");
+
+  try {
+    const store = await createAuditStore(directory);
+    await store.append({
+      type: "run_created",
+      classification: "public",
+      payload: { id: "run-1" },
+    });
+    await store.writeManifest({
+      runId: "00000000-0000-4000-8000-000000000001",
+      artifacts: [],
+    });
+
+    await expect(
+      store.append({
+        type: "skill_started",
+        classification: "internal",
+        payload: { name: "extract" },
+      }),
+    ).rejects.toThrow("validation_error");
+
+    for (const replacement of ["tampered\n", "", "replaced\n"]) {
+      await writeFile(eventsPath, replacement, "utf8");
+      await expect(store.verify()).resolves.toMatchObject({
+        valid: false,
+        failures: expect.arrayContaining([expect.stringContaining("events")]),
+      });
+    }
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -137,6 +174,11 @@ it("detects altered artifacts and rejects manifest path traversal", async () => 
       JSON.stringify({
         runId: "00000000-0000-4000-8000-000000000001",
         schemaHash: "0".repeat(64),
+        skillHash: "0".repeat(64),
+        configurationHash: "0".repeat(64),
+        inputHash: "0".repeat(64),
+        outputHash: "0".repeat(64),
+        eventsHash: "0".repeat(64),
         artifacts: [{ path: "../outside.txt", sha256: "0".repeat(64) }],
       }),
       "utf8",
@@ -149,3 +191,146 @@ it("detects altered artifacts and rejects manifest path traversal", async () => 
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+it("rejects invalid manifest input and safely rejects malformed manifest files", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ai-assist-audit-"));
+
+  try {
+    const store = await createAuditStore(directory);
+    await expect(
+      store.writeManifest({
+        runId: "not-a-uuid",
+        artifacts: [],
+      }),
+    ).rejects.toThrow("validation_error");
+    await expect(
+      store.writeManifest({
+        runId: "00000000-0000-4000-8000-000000000001",
+        skillHash: "A".repeat(64),
+        artifacts: [],
+      }),
+    ).rejects.toThrow("validation_error");
+    await expect(
+      store.writeManifest({
+        runId: "00000000-0000-4000-8000-000000000001",
+        artifacts: [null] as unknown as { path: string }[],
+      }),
+    ).rejects.toThrow("validation_error");
+
+    for (const manifest of [
+      null,
+      {
+        runId: "not-a-uuid",
+        schemaHash: "0".repeat(64),
+        skillHash: "0".repeat(64),
+        configurationHash: "0".repeat(64),
+        inputHash: "0".repeat(64),
+        outputHash: "0".repeat(64),
+        eventsHash: "0".repeat(64),
+        artifacts: [],
+      },
+      {
+        runId: "00000000-0000-4000-8000-000000000001",
+        schemaHash: "A".repeat(64),
+        skillHash: "0".repeat(64),
+        configurationHash: "0".repeat(64),
+        inputHash: "0".repeat(64),
+        outputHash: "0".repeat(64),
+        eventsHash: "0".repeat(64),
+        artifacts: [],
+      },
+      {
+        runId: "00000000-0000-4000-8000-000000000001",
+        schemaHash: "0".repeat(64),
+        skillHash: "0".repeat(64),
+        configurationHash: "0".repeat(64),
+        inputHash: "0".repeat(64),
+        outputHash: "0".repeat(64),
+        eventsHash: "0".repeat(64),
+        artifacts: [null],
+      },
+    ]) {
+      await writeFile(join(directory, "manifest.json"), JSON.stringify(manifest), "utf8");
+      await expect(store.verify()).resolves.toMatchObject({
+        valid: false,
+        failures: expect.any(Array),
+      });
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+it("rejects artifact paths that resolve through a directory symlink", async ({ skip }) => {
+  const directory = await mkdtemp(join(tmpdir(), "ai-assist-audit-"));
+  const outsideDirectory = await mkdtemp(join(tmpdir(), "ai-assist-audit-outside-"));
+
+  try {
+    await writeFile(join(outsideDirectory, "secret.txt"), "test-only-secret", "utf8");
+    try {
+      await symlink(outsideDirectory, join(directory, "linked-dir"), "dir");
+    } catch (error: unknown) {
+      if (isLinkPermissionError(error)) {
+        skip("directory symlinks are unavailable in this environment");
+        return;
+      }
+      throw error;
+    }
+
+    const store = await createAuditStore(directory);
+    await expect(
+      store.writeManifest({
+        runId: "00000000-0000-4000-8000-000000000001",
+        artifacts: [{ path: "linked-dir/secret.txt" }],
+      }),
+    ).rejects.toThrow("validation_error");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+    await rm(outsideDirectory, { recursive: true, force: true });
+  }
+});
+
+it.skipIf(process.platform !== "win32")("rejects artifact paths that resolve through a junction", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ai-assist-audit-"));
+  const outsideDirectory = await mkdtemp(join(tmpdir(), "ai-assist-audit-outside-"));
+
+  try {
+    await writeFile(join(outsideDirectory, "secret.txt"), "test-only-secret", "utf8");
+    await symlink(outsideDirectory, join(directory, "linked-dir"), "junction");
+    const store = await createAuditStore(directory);
+
+    await expect(
+      store.writeManifest({
+        runId: "00000000-0000-4000-8000-000000000001",
+        artifacts: [{ path: "linked-dir/secret.txt" }],
+      }),
+    ).rejects.toThrow("validation_error");
+
+    await writeFile(
+      join(directory, "manifest.json"),
+      JSON.stringify({
+        runId: "00000000-0000-4000-8000-000000000001",
+        schemaHash: "0".repeat(64),
+        skillHash: "0".repeat(64),
+        configurationHash: "0".repeat(64),
+        inputHash: "0".repeat(64),
+        outputHash: "0".repeat(64),
+        eventsHash: "0".repeat(64),
+        artifacts: [{ path: "linked-dir/secret.txt", sha256: "0".repeat(64) }],
+      }),
+      "utf8",
+    );
+    await expect(store.verify()).resolves.toMatchObject({
+      valid: false,
+      failures: expect.arrayContaining([expect.stringContaining("unreadable")]),
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+    await rm(outsideDirectory, { recursive: true, force: true });
+  }
+});
+
+function isLinkPermissionError(error: unknown): boolean {
+  return typeof error === "object" && error !== null &&
+    "code" in error && (error.code === "EPERM" || error.code === "EACCES");
+}

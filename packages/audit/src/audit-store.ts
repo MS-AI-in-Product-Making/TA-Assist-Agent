@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import { hashUtf8 } from "./hash.js";
 
@@ -16,6 +16,8 @@ const eventTypes = [
 
 const classifications = ["public", "internal", "confidential", "secret"] as const;
 const manifestSchema = "ai-assist.audit.manifest.v1";
+const sha256Pattern = /^[a-f0-9]{64}$/;
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export type AuditEventType = (typeof eventTypes)[number];
 export type Classification = (typeof classifications)[number];
@@ -51,6 +53,7 @@ interface AuditManifest {
   configurationHash: string;
   inputHash: string;
   outputHash: string;
+  eventsHash: string;
   artifacts: Array<{ path: string; sha256: string }>;
 }
 
@@ -63,12 +66,16 @@ export interface AuditStore {
 export async function createAuditStore(root: string): Promise<AuditStore> {
   const rootDirectory = resolve(root);
   await mkdir(rootDirectory, { recursive: true });
-  const eventsPath = resolve(rootDirectory, "events.jsonl");
-  const manifestPath = resolve(rootDirectory, "manifest.json");
+  const rootRealPath = await realpath(rootDirectory);
+  const eventsPath = resolve(rootRealPath, "events.jsonl");
+  const manifestPath = resolve(rootRealPath, "manifest.json");
 
   return {
     async append(event) {
       validateEvent(event);
+      if (await manifestExists(manifestPath)) {
+        throw new Error("validation_error: audit events are sealed by the manifest");
+      }
       const eventRecord = {
         eventId: randomUUID(),
         timestamp: new Date().toISOString(),
@@ -84,7 +91,7 @@ export async function createAuditStore(root: string): Promise<AuditStore> {
       const artifacts = await Promise.all(
         input.artifacts.map(async ({ path }) => ({
           path,
-          sha256: await hashArtifact(rootDirectory, path),
+          sha256: await hashArtifact(rootRealPath, path),
         })),
       );
       const manifest: AuditManifest = {
@@ -94,35 +101,44 @@ export async function createAuditStore(root: string): Promise<AuditStore> {
         configurationHash: input.configurationHash ?? hashUtf8(""),
         inputHash: input.inputHash ?? hashUtf8(""),
         outputHash: input.outputHash ?? hashUtf8(""),
+        eventsHash: await hashEvents(eventsPath),
         artifacts,
       };
-      const temporaryManifestPath = resolve(rootDirectory, `manifest.${randomUUID()}.tmp`);
+      const temporaryManifestPath = resolve(rootRealPath, `manifest.${randomUUID()}.tmp`);
       await writeFile(temporaryManifestPath, JSON.stringify(manifest, null, 2), "utf8");
       await rename(temporaryManifestPath, manifestPath);
     },
 
     async verify() {
-      let manifest: AuditManifest;
+      let manifest: unknown;
       try {
-        manifest = JSON.parse(await readFile(manifestPath, "utf8")) as AuditManifest;
+        manifest = JSON.parse(await readFile(manifestPath, "utf8"));
       } catch {
         return { valid: false, failures: ["manifest is missing or invalid"] };
       }
 
+      const manifestFailures = validateManifest(manifest, rootRealPath);
+      if (manifestFailures.length > 0) {
+        return { valid: false, failures: manifestFailures };
+      }
+      if (!isAuditManifest(manifest)) {
+        return { valid: false, failures: ["manifest structure is invalid"] };
+      }
+
       const failures: string[] = [];
-      if (!isSafeRelativePath(rootDirectory, "manifest.json") || manifest.schemaHash !== hashUtf8(manifestSchema)) {
+      if (manifest.schemaHash !== hashUtf8(manifestSchema)) {
         failures.push("manifest schema hash is invalid");
       }
-      if (!Array.isArray(manifest.artifacts)) {
-        return { valid: false, failures: [...failures, "manifest artifacts are invalid"] };
+      if (manifest.eventsHash !== await hashEvents(eventsPath)) {
+        failures.push("events hash mismatch");
       }
       for (const artifact of manifest.artifacts) {
-        if (!isSafeRelativePath(rootDirectory, artifact.path)) {
+        if (!isSafeRelativePath(rootRealPath, artifact.path)) {
           failures.push(`artifact path is unsafe: ${artifact.path}`);
           continue;
         }
         try {
-          if (await hashArtifact(rootDirectory, artifact.path) !== artifact.sha256) {
+          if (await hashArtifact(rootRealPath, artifact.path) !== artifact.sha256) {
             failures.push(`artifact hash mismatch: ${artifact.path}`);
           }
         } catch {
@@ -144,7 +160,7 @@ function validateEvent(event: AuditEventInput): void {
 }
 
 function validateManifestInput(input: ManifestInput): void {
-  if (typeof input.runId !== "string" || input.runId.length === 0 || !Array.isArray(input.artifacts)) {
+  if (!isUuid(input.runId) || !Array.isArray(input.artifacts)) {
     throw new Error("validation_error: invalid manifest input");
   }
   for (const value of [input.skillHash, input.configurationHash, input.inputHash, input.outputHash]) {
@@ -153,7 +169,7 @@ function validateManifestInput(input: ManifestInput): void {
     }
   }
   for (const artifact of input.artifacts) {
-    if (!isSafeRelativePath(".", artifact.path)) {
+    if (!isManifestArtifactInput(artifact) || !isSafeRelativePath(".", artifact.path)) {
       throw new Error("validation_error: artifact path must remain within the audit root");
     }
   }
@@ -167,14 +183,23 @@ async function hashArtifact(rootDirectory: string, artifactPath: string): Promis
   if (!isSafeRelativePath(rootDirectory, artifactPath)) {
     throw new Error("validation_error: artifact path must remain within the audit root");
   }
-  return hashUtf8(await readFile(resolve(rootDirectory, artifactPath), "utf8"));
+  const artifactRealPath = await realpath(resolve(rootDirectory, artifactPath));
+  if (!isPathWithin(rootDirectory, artifactRealPath)) {
+    throw new Error("validation_error: artifact path resolves outside the audit root");
+  }
+  return hashUtf8(await readFile(artifactRealPath, "utf8"));
 }
 
 function isSafeRelativePath(rootDirectory: string, artifactPath: string): boolean {
   return typeof artifactPath === "string" &&
     artifactPath.length > 0 &&
     !isAbsolute(artifactPath) &&
-    !relative(resolve(rootDirectory), resolve(rootDirectory, artifactPath)).startsWith("..");
+    isPathWithin(resolve(rootDirectory), resolve(rootDirectory, artifactPath));
+}
+
+function isPathWithin(rootDirectory: string, candidatePath: string): boolean {
+  const pathRelativeToRoot = relative(rootDirectory, candidatePath);
+  return pathRelativeToRoot !== "" && !pathRelativeToRoot.startsWith("..") && !isAbsolute(pathRelativeToRoot);
 }
 
 function isJsonValue(value: unknown): boolean {
@@ -186,5 +211,67 @@ function isJsonValue(value: unknown): boolean {
 }
 
 function isSha256Hash(value: string): boolean {
-  return /^[a-f0-9]{64}$/.test(value);
+  return sha256Pattern.test(value);
+}
+
+function isUuid(value: unknown): value is string {
+  return typeof value === "string" && uuidPattern.test(value);
+}
+
+function isManifestArtifactInput(value: unknown): value is ManifestArtifactInput {
+  return typeof value === "object" && value !== null &&
+    "path" in value && typeof value.path === "string";
+}
+
+function isAuditManifest(value: unknown): value is AuditManifest {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const manifest = value as Record<string, unknown>;
+  return isUuid(manifest.runId) &&
+    [
+      manifest.schemaHash,
+      manifest.skillHash,
+      manifest.configurationHash,
+      manifest.inputHash,
+      manifest.outputHash,
+      manifest.eventsHash,
+    ].every((hash) => typeof hash === "string" && isSha256Hash(hash)) &&
+    Array.isArray(manifest.artifacts) &&
+    manifest.artifacts.every(
+      (artifact) => isManifestArtifactInput(artifact) &&
+        "sha256" in artifact && typeof artifact.sha256 === "string" && isSha256Hash(artifact.sha256),
+    );
+}
+
+function validateManifest(manifest: unknown, rootDirectory: string): string[] {
+  if (!isAuditManifest(manifest)) {
+    return ["manifest structure is invalid"];
+  }
+  return manifest.artifacts
+    .filter((artifact) => !isSafeRelativePath(rootDirectory, artifact.path))
+    .map((artifact) => `artifact path is unsafe: ${artifact.path}`);
+}
+
+async function hashEvents(eventsPath: string): Promise<string> {
+  try {
+    return hashUtf8(await readFile(eventsPath, "utf8"));
+  } catch (error: unknown) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") {
+      return hashUtf8("");
+    }
+    throw error;
+  }
+}
+
+async function manifestExists(manifestPath: string): Promise<boolean> {
+  try {
+    await readFile(manifestPath, "utf8");
+    return true;
+  } catch (error: unknown) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") {
+      return false;
+    }
+    throw error;
+  }
 }
