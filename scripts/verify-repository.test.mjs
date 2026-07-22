@@ -15,6 +15,12 @@ describe("isForbiddenRepositoryPath", () => {
     "a/runtime",
     "a/exports",
   ])("rejects %s", (path) => expect(isForbiddenRepositoryPath(path)).toBe(true));
+  it.each([".env.example", "config/.env.example"])("allows environment templates at %s", (path) =>
+    expect(isForbiddenRepositoryPath(path)).toBe(false),
+  );
+  it.each([".env.example.local", "config/.env.production"])("rejects non-template environment files at %s", (path) =>
+    expect(isForbiddenRepositoryPath(path)).toBe(true),
+  );
   it("allows path segments that only start with forbidden names", () => {
     expect(isForbiddenRepositoryPath("a/runtime-value/config.json")).toBe(false);
     expect(isForbiddenRepositoryPath("a/exports-value/config.json")).toBe(false);

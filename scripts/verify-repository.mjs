@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
 const forbiddenPatterns = [
-  /(^|\/)\.env(?:\..+)?$/,
+  /(^|\/)\.env(?:\.(?!example$).+)?$/,
   /(^|\/)(?:runtime|exports)(?:\/|$)/,
   /\.(xlsx|xlsm)$/i,
 ];
