@@ -5,6 +5,9 @@
     { "path": "./packages/contracts" },
     { "path": "./packages/audit" },
     { "path": "./packages/memory" },
-    { "path": "./packages/governance" }
+    { "path": "./packages/governance" },
+    { "path": "./packages/skill-sdk" },
+    { "path": "./packages/skills" },
+    { "path": "./packages/adapters" }
   ]
 }
