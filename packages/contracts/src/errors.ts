@@ -32,10 +32,16 @@ export interface TypedErrorOptions {
   readonly details?: Record<string, unknown>;
 }
 
+export function normalizeRunId(runId: string | undefined): string {
+  return typeof runId === "string" && z.string().uuid().safeParse(runId).success
+    ? runId
+    : crypto.randomUUID();
+}
+
 export function createTypedError(options: TypedErrorOptions): Error & TypedError {
   return Object.assign(new Error(options.summary), {
     code: options.code,
-    runId: options.runId ?? crypto.randomUUID(),
+    runId: normalizeRunId(options.runId),
     summary: options.summary,
     retryable: options.retryable ?? false,
     suggestedAction: options.suggestedAction,

@@ -285,6 +285,106 @@ it("exposes only the declared public echo adapter capability", async () => {
   expect(unrecognized.invocations).toEqual([]);
 });
 
+it("denies undeclared echo adapter actions before they reach the underlying adapter", async () => {
+  const registry = new SkillRegistry();
+  const echo = new MockAdapter({ accepted: true });
+  registry.register({
+    trusted: true,
+    manifest: {
+      ...publicEchoSkill.manifest,
+      skillId: "malicious-echo-action",
+      permissions: [],
+      adapterCapabilities: ["echo"],
+    } as unknown as RegisteredSkill["manifest"],
+    async execute(context) {
+      await context.adapters.echo?.execute("network");
+      return {};
+    },
+  });
+
+  await expect(
+    runRegisteredSkill(
+      { skillId: "malicious-echo-action" },
+      { registry, adapters: { echo } },
+    ),
+  ).rejects.toMatchObject({ code: "policy_denied" });
+  expect(echo.invocations).toEqual([]);
+});
+
+it("uses a schema-valid run ID when rejecting a request with an invalid run ID", async () => {
+  const registry = new SkillRegistry();
+
+  await expect(
+    runRegisteredSkill(
+      { skillId: "unregistered", runId: "not-a-uuid" },
+      registry,
+    ),
+  ).rejects.toSatisfy((error: unknown) => {
+    const parsed = typedErrorSchema.safeParse(error);
+    return parsed.success && parsed.data.code === "policy_denied";
+  });
+});
+
+it("passes a deeply frozen input clone to the Skill", async () => {
+  const registry = new SkillRegistry();
+  const input = { nested: { value: "original" } };
+  registry.register({
+    trusted: true,
+    manifest: {
+      ...publicEchoSkill.manifest,
+      skillId: "immutable-input",
+      permissions: [],
+      adapterCapabilities: [],
+    } as unknown as RegisteredSkill["manifest"],
+    async execute(context) {
+      let mutationBlocked = false;
+      try {
+        (context.input.nested as { value: string }).value = "changed";
+      } catch {
+        mutationBlocked = true;
+      }
+      return { mutationBlocked, value: (context.input.nested as { value: string }).value };
+    },
+  });
+
+  await expect(
+    runRegisteredSkill({ skillId: "immutable-input", input }, registry),
+  ).resolves.toMatchObject({
+    output: { mutationBlocked: true, value: "original" },
+  });
+  expect(input).toEqual({ nested: { value: "original" } });
+});
+
+it("fails closed with typed validation errors for cyclic and unsupported inputs", async () => {
+  const registry = new SkillRegistry();
+  let executed = false;
+  registry.register({
+    trusted: true,
+    manifest: {
+      ...publicEchoSkill.manifest,
+      skillId: "input-boundary",
+      permissions: [],
+      adapterCapabilities: [],
+    } as unknown as RegisteredSkill["manifest"],
+    async execute() {
+      executed = true;
+      return {};
+    },
+  });
+  const cyclic: Record<string, unknown> = {};
+  cyclic.self = cyclic;
+
+  for (const input of [cyclic, { callback: () => undefined }]) {
+    await expect(
+      runRegisteredSkill({ skillId: "input-boundary", input }, registry),
+    ).rejects.toSatisfy((error: unknown) => {
+      const parsed = typedErrorSchema.safeParse(error);
+      return parsed.success && parsed.data.code === "validation_error";
+    });
+  }
+  expect(executed).toBe(false);
+});
+
 it("normalizes all registry registration failures to typed errors", () => {
   const invalidManifestRegistry = new SkillRegistry();
   const untrustedRegistry = new SkillRegistry();
@@ -307,6 +407,18 @@ it("normalizes all registry registration failures to typed errors", () => {
   for (const register of failures) {
     expectTypedRegistrationError(register, register === failures[1] ? "policy_denied" : "validation_error");
   }
+});
+
+it("normalizes invalid optional registry run IDs in exported errors", () => {
+  const registry = new SkillRegistry();
+
+  expectTypedRegistrationError(
+    () => registry.register({
+      ...publicEchoSkill,
+      manifest: { ...publicEchoSkill.manifest, skillId: "" },
+    }, "not-a-uuid"),
+    "validation_error",
+  );
 });
 
 it("normalizes malformed Skill handler failures to the typed error contract", async () => {
