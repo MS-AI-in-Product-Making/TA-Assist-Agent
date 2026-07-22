@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { appendFile, mkdir, open, readFile, realpath, rename, writeFile } from "node:fs/promises";
+import { appendFile, link, mkdir, open, readFile, realpath, unlink, writeFile } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import { hashBytes, hashUtf8 } from "./hash.js";
 
@@ -121,8 +121,26 @@ export async function createAuditStore(root: string): Promise<AuditStore> {
           artifacts,
         };
         const temporaryManifestPath = resolve(rootRealPath, `manifest.${randomUUID()}.tmp`);
-        await writeFile(temporaryManifestPath, JSON.stringify(manifest, null, 2), "utf8");
-        await rename(temporaryManifestPath, manifestPath);
+        try {
+          await writeFile(temporaryManifestPath, JSON.stringify(manifest, null, 2), {
+            encoding: "utf8",
+            flag: "wx",
+          });
+          try {
+            await link(temporaryManifestPath, manifestPath);
+          } catch (error: unknown) {
+            if (isErrorCode(error, "EEXIST")) {
+              throw new Error("validation_error: audit manifest is already sealed");
+            }
+            throw error;
+          }
+        } finally {
+          await unlink(temporaryManifestPath).catch((error: unknown) => {
+            if (!isErrorCode(error, "ENOENT")) {
+              throw error;
+            }
+          });
+        }
       });
     },
 
@@ -301,4 +319,8 @@ async function manifestExists(manifestPath: string): Promise<boolean> {
     }
     throw error;
   }
+}
+
+function isErrorCode(error: unknown, code: string): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }

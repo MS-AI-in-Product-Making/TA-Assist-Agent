@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
@@ -118,6 +118,46 @@ it("keeps a sealed manifest immutable across sequential and concurrent reseal at
   } finally {
     await rm(directory, { recursive: true, force: true });
     await rm(concurrentDirectory, { recursive: true, force: true });
+  }
+});
+
+it("atomically seals a manifest when independent stores share an audit root", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ai-assist-audit-"));
+
+  try {
+    const firstStore = await createAuditStore(directory);
+    const secondStore = await createAuditStore(directory);
+    const seals = await Promise.allSettled([
+      firstStore.writeManifest({
+        runId: "00000000-0000-4000-8000-000000000005",
+        artifacts: [],
+      }),
+      secondStore.writeManifest({
+        runId: "00000000-0000-4000-8000-000000000006",
+        artifacts: [],
+      }),
+    ]);
+
+    expect(seals.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(seals.filter((result) => result.status === "rejected")).toHaveLength(1);
+    await expect(Promise.all(seals.filter((result) => result.status === "rejected").map(async (result) => {
+      if (result.status === "rejected") {
+        throw result.reason;
+      }
+    }))).rejects.toThrow("validation_error");
+
+    const sealedManifest = await readFile(join(directory, "manifest.json"));
+    const manifest = JSON.parse(sealedManifest.toString()) as Record<string, unknown>;
+    expect(manifest.runId).toBeOneOf([
+      "00000000-0000-4000-8000-000000000005",
+      "00000000-0000-4000-8000-000000000006",
+    ]);
+    await expect(readFile(join(directory, "manifest.json"))).resolves.toEqual(sealedManifest);
+    await expect(readdir(directory)).resolves.not.toContainEqual(expect.stringMatching(/^manifest\..*\.tmp$/));
+    await expect(firstStore.verify()).resolves.toEqual({ valid: true, failures: [] });
+    await expect(secondStore.verify()).resolves.toEqual({ valid: true, failures: [] });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
   }
 });
 
