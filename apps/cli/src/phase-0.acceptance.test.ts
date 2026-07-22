@@ -20,6 +20,10 @@ it("accepts the sealed smoke workflow and safely purges a separate public run", 
 
     const exported = await executeCli(["export", "--run-id", runId ?? "", "--root", rootDir]);
     expect(exported.exitCode).toBe(0);
+    expect(exported.stderr).toBe("");
+    expect(exported.stdout).toContain("classification: public");
+    expect(exported.stdout).toContain("artifactCount: 0");
+    expect(exported.stdout).not.toContain("public smoke");
     expect((await executeCli(["purge-plan", "--run-id", runId ?? "", "--root", rootDir])).exitCode).toBe(2);
 
     const purgeRunId = "00000000-0000-4000-8000-000000000101";
