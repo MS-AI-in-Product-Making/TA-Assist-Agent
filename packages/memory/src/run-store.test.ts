@@ -45,6 +45,23 @@ it("does not persist confidential transcript or decision contents without opt-in
   }
 });
 
+it("persists public and internal text records for an unpurged run", async () => {
+  const rootDir = await createTemporaryRoot();
+
+  try {
+    const store = await createRunStore({ rootDir });
+    await store.recordTranscript("public", { marker: "public-transcript" });
+    await store.recordDecision("internal", { marker: "internal-decision" });
+
+    await expect(readFile(join(store.runDirectory, "transcript.jsonl"), "utf8"))
+      .resolves.toContain("public-transcript");
+    await expect(readFile(join(store.runDirectory, "decisions.jsonl"), "utf8"))
+      .resolves.toContain("internal-decision");
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
 it("purges scoped artifacts while retaining cleanup evidence", async () => {
   const rootDir = await createTemporaryRoot();
 
@@ -80,6 +97,31 @@ it("rejects initializing a purged run without recreating scoped data", async () 
 
     await expect(readdir(store.runDirectory)).resolves.toEqual(["events.jsonl"]);
     await expect(createRunStore(options)).rejects.toThrow("dependency_error: run has been purged");
+    await expect(readdir(store.runDirectory)).resolves.toEqual(["events.jsonl"]);
+    await expect(readFile(eventsPath)).resolves.toEqual(events);
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+it("rejects stale public writes after purge without recreating records", async () => {
+  const rootDir = await createTemporaryRoot();
+
+  try {
+    const store = await createRunStore({ rootDir });
+    const plan = await store.planPurge();
+    await store.executePurge(plan.confirmationToken);
+    const eventsPath = join(store.runDirectory, "events.jsonl");
+    const events = await readFile(eventsPath);
+
+    await expect(store.recordArtifact({ name: "after-purge.txt", classification: "public", content: "after-purge" }))
+      .rejects.toThrow("dependency_error: run has been purged");
+    await expect(store.recordTranscript("public", { marker: "after-purge" }))
+      .rejects.toThrow("dependency_error: run has been purged");
+    await expect(store.recordDecision("internal", { marker: "after-purge" }))
+      .rejects.toThrow("dependency_error: run has been purged");
+    await expect(store.createExport()).rejects.toThrow("dependency_error: run has been purged");
+
     await expect(readdir(store.runDirectory)).resolves.toEqual(["events.jsonl"]);
     await expect(readFile(eventsPath)).resolves.toEqual(events);
   } finally {
@@ -292,13 +334,46 @@ it("coordinates purge and artifact writes across independent stores without recr
     });
     await rm(memoryLockPath);
 
-    await expect(artifact).rejects.toThrow("validation_error: run has been purged");
+    await expect(artifact).rejects.toThrow("dependency_error: run has been purged");
     await purge;
     expect(await purgingStore.listArtifactMetadata()).toEqual([]);
     expect(await purgingStore.listArtifacts()).toEqual([]);
     await expect(readdir(join(purgingStore.runDirectory, "artifacts"))).rejects.toMatchObject({ code: "ENOENT" });
     expect(await purgingStore.hasEvent("purge_completed")).toBe(true);
     await expect(readdir(purgingStore.runDirectory)).resolves.not.toContainEqual(expect.stringMatching(/^(audit|memory)\.lock$/));
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+it("coordinates purge and text writes across independent stores without recreating records", async () => {
+  const rootDir = await createTemporaryRoot();
+  const options = {
+    rootDir,
+    projectId: "project",
+    sessionId: "session",
+    runId: "00000000-0000-4000-8000-000000000013",
+  };
+
+  try {
+    const [purgingStore, writingStore] = await Promise.all([
+      createRunStore(options),
+      createRunStore(options),
+    ]);
+    const plan = await purgingStore.planPurge();
+    const memoryLockPath = join(purgingStore.runDirectory, "memory.lock");
+    await writeFile(memoryLockPath, JSON.stringify({ lockId: "test-lock" }), "utf8");
+
+    const purge = purgingStore.executePurge(plan.confirmationToken);
+    await waitForPath(join(purgingStore.runDirectory, "audit.lock"));
+    const transcript = writingStore.recordTranscript("public", { marker: "must-not-survive-purge" });
+    const decision = writingStore.recordDecision("internal", { marker: "must-not-survive-purge" });
+    await rm(memoryLockPath);
+
+    await expect(transcript).rejects.toThrow("dependency_error: run has been purged");
+    await expect(decision).rejects.toThrow("dependency_error: run has been purged");
+    await purge;
+    await expect(readdir(purgingStore.runDirectory)).resolves.toEqual(["events.jsonl"]);
   } finally {
     await rm(rootDir, { recursive: true, force: true });
   }

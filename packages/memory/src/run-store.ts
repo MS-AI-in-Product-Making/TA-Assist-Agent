@@ -126,7 +126,7 @@ export async function createRunStore(options: CreateRunStoreOptions): Promise<Ru
         await state.auditStore.runUnsealedTransaction(async (audit) => {
           await withMetadataLock(state, async () => {
             if (await audit.hasEventType("purge_completed")) {
-              throw new Error("validation_error: run has been purged");
+              throw new Error("dependency_error: run has been purged");
             }
             const entries = await readMetadata(state.metadataPath);
             if (entries.some((entry) => entry.name === metadata.name)) {
@@ -149,10 +149,10 @@ export async function createRunStore(options: CreateRunStoreOptions): Promise<Ru
       });
     },
     async recordTranscript(classification, entry) {
-      return serialize(state, () => appendRecord(state.transcriptPath, classification, entry, state.retainConfidentialArtifacts));
+      return serialize(state, () => recordTextRecord(state, state.transcriptPath, classification, entry));
     },
     async recordDecision(classification, entry) {
-      return serialize(state, () => appendRecord(state.decisionsPath, classification, entry, state.retainConfidentialArtifacts));
+      return serialize(state, () => recordTextRecord(state, state.decisionsPath, classification, entry));
     },
     async listArtifacts() {
       return serialize(state, async () => (await withMetadataLock(state, () => readMetadata(state.metadataPath)))
@@ -245,6 +245,20 @@ async function appendRecord(
     throw new Error("policy_denied: confidential records require explicit retention opt-in");
   }
   await appendFile(path, `${JSON.stringify({ classification, entry })}\n`, "utf8");
+}
+
+async function recordTextRecord(
+  state: RunStoreState,
+  path: string,
+  classification: DataClassification,
+  entry: unknown,
+): Promise<void> {
+  await state.auditStore.runUnsealedTransaction(async (audit) => {
+    if (await audit.hasEventType("purge_completed")) {
+      throw new Error("dependency_error: run has been purged");
+    }
+    await appendRecord(path, classification, entry, state.retainConfidentialArtifacts);
+  });
 }
 
 function serialize<T>(state: RunStoreState, operation: () => Promise<T>): Promise<T> {
