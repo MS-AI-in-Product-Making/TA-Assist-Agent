@@ -137,6 +137,14 @@ runtime/
 - 错误事件仅包含分类、别名、哈希和错误码，不得包含工作簿内容、DIM ID、
   供应商名称或环境变量值。
 
+### 并发与清理
+
+同一 run 同时需要审计和内存互斥时，固定按 `audit root lock -> memory.lock`
+获取，且不得反向获取。工件写入在此顺序下先检查 `purge_completed` 审计事件；
+该事件是清理 tombstone，因此清理开始后不得重新创建工件或其元数据。审计未封存
+事务的回调只能使用提供的 transaction context，回调中重入同一 `AuditStore` 的
+公开 API 必须立即返回 `validation_error`，不得进入自身串行队列。
+
 ### 审计与清理并发保证
 
 - 审计事件分类仅允许 `public`、`internal` 和 `confidential`；`secret` 在审计

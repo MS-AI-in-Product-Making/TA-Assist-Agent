@@ -56,6 +56,7 @@ interface RunStoreState {
   retainConfidentialArtifacts: boolean;
   purgeToken?: string;
   pendingOperation: Promise<void>;
+  withMemoryLock<T>(operation: () => Promise<T>): Promise<T>;
 }
 
 const maximumLockRetryDelayMs = 50;
@@ -87,6 +88,7 @@ export async function createRunStore(options: CreateRunStoreOptions): Promise<Ru
     auditStore: await createAuditStore(runDirectory),
     retainConfidentialArtifacts: options.retainConfidentialArtifacts ?? false,
     pendingOperation: Promise.resolve(),
+    withMemoryLock: async <T>(operation: () => Promise<T>): Promise<T> => withMetadataLock(state, operation),
   };
 
   await mkdir(artifactsDirectory, { recursive: true });
@@ -116,23 +118,28 @@ export async function createRunStore(options: CreateRunStoreOptions): Promise<Ru
             ? "metadata_only"
             : "retained",
         };
-        await withMetadataLock(state, async () => {
-          const entries = await readMetadata(state.metadataPath);
-          if (entries.some((entry) => entry.name === metadata.name)) {
-            throw new Error("validation_error: artifact name already exists");
-          }
-          if (metadata.retention === "retained") {
-            const artifactPath = resolve(state.artifactsDirectory, input.name);
-            await writeFile(artifactPath, content, { flag: "wx" });
-            try {
-              await writeMetadata(state.metadataPath, [...entries, metadata]);
-            } catch (error) {
-              await rm(artifactPath, { force: true });
-              throw error;
+        await state.auditStore.runUnsealedTransaction(async (audit) => {
+          await withMetadataLock(state, async () => {
+            if (await audit.hasEventType("purge_completed")) {
+              throw new Error("validation_error: run has been purged");
             }
-            return;
-          }
-          await writeMetadata(state.metadataPath, [...entries, metadata]);
+            const entries = await readMetadata(state.metadataPath);
+            if (entries.some((entry) => entry.name === metadata.name)) {
+              throw new Error("validation_error: artifact name already exists");
+            }
+            if (metadata.retention === "retained") {
+              const artifactPath = resolve(state.artifactsDirectory, input.name);
+              await writeFile(artifactPath, content, { flag: "wx" });
+              try {
+                await writeMetadata(state.metadataPath, [...entries, metadata]);
+              } catch (error) {
+                await rm(artifactPath, { force: true });
+                throw error;
+              }
+              return;
+            }
+            await writeMetadata(state.metadataPath, [...entries, metadata]);
+          });
         });
       });
     },

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
@@ -215,6 +215,45 @@ it("never deletes scoped data from a run sealed by a concurrent store", async ()
   }
 });
 
+it("coordinates purge and artifact writes across independent stores without recreating purged data", async () => {
+  const rootDir = await createTemporaryRoot();
+  const options = {
+    rootDir,
+    projectId: "project",
+    sessionId: "session",
+    runId: "00000000-0000-4000-8000-000000000010",
+  };
+
+  try {
+    const [purgingStore, writingStore] = await Promise.all([
+      createRunStore(options),
+      createRunStore(options),
+    ]);
+    const plan = await purgingStore.planPurge();
+    const memoryLockPath = join(purgingStore.runDirectory, "memory.lock");
+    await writeFile(memoryLockPath, JSON.stringify({ lockId: "test-lock" }), "utf8");
+
+    const purge = purgingStore.executePurge(plan.confirmationToken);
+    await waitForPath(join(purgingStore.runDirectory, "audit.lock"));
+    const artifact = writingStore.recordArtifact({
+      name: "late.txt",
+      classification: "public",
+      content: "must-not-survive-purge",
+    });
+    await rm(memoryLockPath);
+
+    await expect(artifact).rejects.toThrow("validation_error: run has been purged");
+    await purge;
+    expect(await purgingStore.listArtifactMetadata()).toEqual([]);
+    expect(await purgingStore.listArtifacts()).toEqual([]);
+    await expect(readdir(join(purgingStore.runDirectory, "artifacts"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await purgingStore.hasEvent("purge_completed")).toBe(true);
+    await expect(readdir(purgingStore.runDirectory)).resolves.not.toContainEqual(expect.stringMatching(/^(audit|memory)\.lock$/));
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
 it("rejects Windows-unsafe artifact names and allows a normal basename", async () => {
   const rootDir = await createTemporaryRoot();
 
@@ -290,4 +329,16 @@ async function readAllFiles(directory: string): Promise<string> {
     .filter((entry) => entry.isFile())
     .map((entry) => readFile(join(entry.parentPath, entry.name), "utf8")));
   return contents.join("\n");
+}
+
+async function waitForPath(path: string): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    try {
+      await access(path);
+      return;
+    } catch {
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 1));
+    }
+  }
+  throw new Error(`test setup failed: ${path} was not created`);
 }

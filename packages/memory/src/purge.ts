@@ -20,14 +20,16 @@ export async function planPurge(state: RunStoreState): Promise<PurgePlan> {
 export async function executePurge(state: RunStoreState): Promise<void> {
   await state.auditStore.runUnsealedTransaction(async (audit) => {
     await audit.append({ type: "purge_completed", classification: "internal", payload: { runDirectory: state.runDirectory } });
-    for (const path of [
-      state.transcriptPath,
-      state.decisionsPath,
-      state.metadataPath,
-      state.artifactsDirectory,
-      resolve(state.runDirectory, "exports"),
-    ]) {
-      await rm(path, { recursive: true, force: true });
-    }
+    await state.withMemoryLock(async () => {
+      for (const path of [
+        state.transcriptPath,
+        state.decisionsPath,
+        state.metadataPath,
+        state.artifactsDirectory,
+        resolve(state.runDirectory, "exports"),
+      ]) {
+        await rm(path, { recursive: true, force: true });
+      }
+    });
   });
 }

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { appendFile, link, mkdir, open, readFile, realpath, unlink, writeFile } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import { hashBytes, hashUtf8 } from "./hash.js";
@@ -51,6 +52,7 @@ export interface VerifyResult {
 
 export interface UnsealedAuditTransaction {
   append(event: AuditEventInput): Promise<void>;
+  hasEventType(type: AuditEventType): Promise<boolean>;
 }
 
 interface AuditManifest {
@@ -82,6 +84,13 @@ export async function createAuditStore(root: string): Promise<AuditStore> {
   const lockPath = resolve(rootRealPath, lockFileName);
   await writeFile(eventsPath, "", { encoding: "utf8", flag: "a" });
   let pendingOperation = Promise.resolve();
+  const transactionContext = new AsyncLocalStorage<boolean>();
+
+  function assertNotInTransaction(): void {
+    if (transactionContext.getStore()) {
+      throw new Error("validation_error: audit store public APIs cannot be called from an unsealed transaction");
+    }
+  }
 
   function serialize<T>(operation: () => Promise<T>): Promise<T> {
     const result = pendingOperation.then(operation, operation);
@@ -106,6 +115,7 @@ export async function createAuditStore(root: string): Promise<AuditStore> {
 
   return {
     async append(event) {
+      assertNotInTransaction();
       validateEvent(event);
       await serialize(async () => {
         await withRootLock(lockPath, async () => {
@@ -118,6 +128,7 @@ export async function createAuditStore(root: string): Promise<AuditStore> {
     },
 
     async hasEventType(type) {
+      assertNotInTransaction();
       if (!eventTypes.includes(type)) {
         throw new Error("validation_error: invalid audit event type");
       }
@@ -127,19 +138,30 @@ export async function createAuditStore(root: string): Promise<AuditStore> {
     },
 
     async isSealed() {
+      assertNotInTransaction();
       return serialize(() => withRootLock(lockPath, () => manifestExists(manifestPath)));
     },
 
     async runUnsealedTransaction(operation) {
+      assertNotInTransaction();
       return serialize(() => withRootLock(lockPath, async () => {
         if (await manifestExists(manifestPath)) {
           throw new Error("dependency_error: sealed audit runs cannot be modified");
         }
-        return operation({ append: appendUnsealed });
+        return transactionContext.run(true, () => operation({
+          append: appendUnsealed,
+          hasEventType: async (type) => {
+            if (!eventTypes.includes(type)) {
+              throw new Error("validation_error: invalid audit event type");
+            }
+            return (await readEvents(eventsPath)).some((event) => event.type === type);
+          },
+        }));
       }));
     },
 
     async writeManifest(input) {
+      assertNotInTransaction();
       validateManifestInput(input);
       await serialize(async () => {
         await withRootLock(lockPath, async () => {
@@ -188,6 +210,7 @@ export async function createAuditStore(root: string): Promise<AuditStore> {
     },
 
     async verify() {
+      assertNotInTransaction();
       let manifest: unknown;
       try {
         manifest = JSON.parse(await readFile(manifestPath, "utf8"));

@@ -242,6 +242,32 @@ it("rejects secret classifications before creating audit events", async () => {
   }
 });
 
+it("rejects public API re-entry from an unsealed transaction and releases the audit lock", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ai-assist-audit-"));
+
+  try {
+    const store = await createAuditStore(directory);
+
+    await expect(store.runUnsealedTransaction(async () => {
+      await store.append({
+        type: "skill_started",
+        classification: "internal",
+        payload: { reentrant: true },
+      });
+    })).rejects.toThrow("validation_error");
+
+    await expect(store.append({
+      type: "skill_completed",
+      classification: "internal",
+      payload: { followsRejectedReentry: true },
+    })).resolves.toBeUndefined();
+    await expect(store.hasEventType("skill_completed")).resolves.toBe(true);
+    await expect(readdir(directory)).resolves.not.toContain("audit.lock");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 it("holds an unsealed transaction against concurrent sealing", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ai-assist-audit-"));
   let releaseTransaction!: () => void;
