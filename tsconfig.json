@@ -4,6 +4,7 @@
     { "path": "./apps/cli" },
     { "path": "./packages/contracts" },
     { "path": "./packages/audit" },
+    { "path": "./packages/memory" },
     { "path": "./packages/governance" }
   ]
 }
