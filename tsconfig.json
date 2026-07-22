@@ -3,6 +3,7 @@
   "references": [
     { "path": "./apps/cli" },
     { "path": "./packages/contracts" },
+    { "path": "./packages/audit" },
     { "path": "./packages/governance" }
   ]
 }
