@@ -1,5 +1,6 @@
 # Sensitive data / confidential templates
 test/
+# Only public fixtures are committable; the repository checker enforces this across path casing.
 fixtures/confidential/
 *.xlsx
 *.xlsm

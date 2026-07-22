@@ -31,7 +31,11 @@ describe("isForbiddenRepositoryPath", () => {
   it("allows public fixtures", () => {
     expect(isForbiddenRepositoryPath("fixtures/public/smoke-request.json")).toBe(false);
   });
-  it.each(["fixtures/confidential/sample.json", "a/fixtures/confidential/sample.json"])(
+  it.each([
+    "fixtures/confidential/sample.json",
+    "fixtures/Confidential/sample.json",
+    "a/fixtures/confidential/sample.json",
+  ])(
     "rejects confidential fixture path %s",
     (path) => expect(isForbiddenRepositoryPath(path)).toBe(true),
   );
@@ -65,13 +69,13 @@ describe("isForbiddenRepositoryPath", () => {
 
   it("rejects a forcibly tracked confidential fixture in an isolated Git repository", () => {
     const repositoryPath = mkdtempSync(join(tmpdir(), "verify-repository-"));
-    const confidentialFixturePath = join(repositoryPath, "fixtures", "confidential", "sample.json");
+    const confidentialFixturePath = join(repositoryPath, "fixtures", "Confidential", "sample.json");
 
     try {
       mkdirSync(resolve(confidentialFixturePath, ".."), { recursive: true });
       writeFileSync(confidentialFixturePath, "{}\n");
       execFileSync("git", ["init", "--quiet"], { cwd: repositoryPath });
-      execFileSync("git", ["add", "--force", "fixtures/confidential/sample.json"], { cwd: repositoryPath });
+      execFileSync("git", ["add", "--force", "fixtures/Confidential/sample.json"], { cwd: repositoryPath });
 
       const result = (() => {
         try {
@@ -88,7 +92,7 @@ describe("isForbiddenRepositoryPath", () => {
 
       expect(result.status).not.toBe(0);
       expect(result.stderr).toContain("Forbidden tracked paths:");
-      expect(result.stderr).toContain("fixtures/confidential/sample.json");
+      expect(result.stderr).toContain("fixtures/Confidential/sample.json");
     } finally {
       rmSync(repositoryPath, { force: true, recursive: true });
     }
