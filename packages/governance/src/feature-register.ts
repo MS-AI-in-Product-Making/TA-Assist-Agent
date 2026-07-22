@@ -3,16 +3,16 @@ import type { DataClassification } from "@ai-assist/contracts";
 export type FeatureStatus = "unavailable";
 
 export interface FeatureRegistration {
-  featureId: string;
-  title: string;
-  status: FeatureStatus;
+  readonly featureId: string;
+  readonly title: string;
+  readonly status: FeatureStatus;
   dependsOn: readonly string[];
-  inputContractId: string;
-  outputContractId: string;
-  maximumClassification: DataClassification;
+  readonly inputContractId: string;
+  readonly outputContractId: string;
+  readonly maximumClassification: DataClassification;
   acceptanceChecks: readonly string[];
   externalPrerequisites: readonly string[];
-  disableBehavior: "return feature_not_available";
+  readonly disableBehavior: "return feature_not_available";
 }
 
 const unavailableFeature = (
@@ -160,5 +160,16 @@ const featureRegister: ReadonlyMap<string, FeatureRegistration> = new Map([
 export function getFeatureStatus(
   featureId: string,
 ): FeatureRegistration | undefined {
-  return featureRegister.get(featureId);
+  const registration = featureRegister.get(featureId);
+
+  if (!registration) {
+    return undefined;
+  }
+
+  return {
+    ...registration,
+    dependsOn: [...registration.dependsOn],
+    acceptanceChecks: [...registration.acceptanceChecks],
+    externalPrerequisites: [...registration.externalPrerequisites],
+  };
 }

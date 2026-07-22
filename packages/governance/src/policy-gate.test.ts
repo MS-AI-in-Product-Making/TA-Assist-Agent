@@ -26,6 +26,18 @@ describe("policy gate", () => {
     ).toEqual({ allowed: true });
   });
 
+  it.each([
+    null,
+    undefined,
+    { inputClassification: "unknown", permission: "read" },
+    { inputClassification: "public" },
+  ])("fails closed for malformed runtime input %#", (request) => {
+    expect(evaluatePolicy(request as never)).toEqual({
+      allowed: false,
+      reason: "policy_denied",
+    });
+  });
+
   it("reports F4 as unavailable", () => {
     expect(getFeatureStatus("F4")).toEqual({
       featureId: "F4",
@@ -38,6 +50,25 @@ describe("policy gate", () => {
       acceptanceChecks: ["approved-template-regression"],
       externalPrerequisites: ["approved-windows-excel-worker"],
       disableBehavior: "return feature_not_available",
+    });
+  });
+
+  it("does not expose mutable F4 register state", () => {
+    const firstResult = getFeatureStatus("F4");
+    const mutableResult = firstResult as unknown as {
+      status: string;
+      maximumClassification: string;
+      dependsOn: string[];
+    };
+
+    mutableResult.status = "available";
+    mutableResult.maximumClassification = "public";
+    mutableResult.dependsOn.push("attacker-controlled-dependency");
+
+    expect(getFeatureStatus("F4")).toMatchObject({
+      status: "unavailable",
+      maximumClassification: "confidential",
+      dependsOn: ["calculation-worker-v1"],
     });
   });
 
