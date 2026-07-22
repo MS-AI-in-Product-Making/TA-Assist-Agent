@@ -337,6 +337,79 @@ it("serializes concurrent appends and sealing into a valid audit bundle", async 
   }
 });
 
+it("coordinates concurrent appends and sealing across independent stores sharing an audit root", async () => {
+  const attempts = 8;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const directory = await mkdtemp(join(tmpdir(), "ai-assist-audit-"));
+
+    try {
+      const sealingStore = await createAuditStore(directory);
+      const appendingStore = await createAuditStore(directory);
+      const preSealAppends = Array.from({ length: 10 }, (_, index) => appendingStore.append({
+        type: "skill_started",
+        classification: "internal",
+        payload: { attempt, index },
+      }));
+      const sealing = sealingStore.writeManifest({
+        runId: `00000000-0000-4000-8000-${String(attempt + 100).padStart(12, "0")}`,
+        artifacts: [],
+      });
+      const concurrentAppends = Array.from({ length: 40 }, (_, index) => appendingStore.append({
+        type: "skill_completed",
+        classification: "internal",
+        payload: { attempt, index },
+      }));
+
+      const [preSealResults, sealingResult, concurrentAppendResults] = await Promise.all([
+        Promise.allSettled(preSealAppends),
+        sealing.then(
+          () => "fulfilled" as const,
+          (error: unknown) => error,
+        ),
+        Promise.allSettled(concurrentAppends),
+      ]);
+
+      expect(sealingResult).toBe("fulfilled");
+      expect([...preSealResults, ...concurrentAppendResults].every((result) => result.status === "fulfilled" ||
+        (result.status === "rejected" && String(result.reason).includes("validation_error")))).toBe(true);
+      await expect(sealingStore.verify()).resolves.toEqual({ valid: true, failures: [] });
+      await expect(appendingStore.verify()).resolves.toEqual({ valid: true, failures: [] });
+      await expect(readdir(directory)).resolves.not.toContainEqual(expect.stringMatching(/^audit\.lock$|^manifest\..*\.tmp$/));
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  }
+});
+
+it("recovers an audit root lock left by an exited process", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ai-assist-audit-"));
+
+  try {
+    await writeFile(
+      join(directory, "audit.lock"),
+      JSON.stringify({ lockId: "abandoned", processId: 2_147_483_647, createdAt: "2026-07-22T00:00:00.000Z" }),
+      "utf8",
+    );
+    const store = await createAuditStore(directory);
+
+    await store.append({
+      type: "run_created",
+      classification: "public",
+      payload: { recovered: true },
+    });
+    await store.writeManifest({
+      runId: "00000000-0000-4000-8000-000000000099",
+      artifacts: [],
+    });
+
+    await expect(store.verify()).resolves.toEqual({ valid: true, failures: [] });
+    await expect(readdir(directory)).resolves.not.toContain("audit.lock");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 it("rejects invalid manifest input and safely rejects malformed manifest files", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ai-assist-audit-"));
 

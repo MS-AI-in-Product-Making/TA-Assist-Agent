@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { appendFile, link, mkdir, open, readFile, realpath, unlink, writeFile } from "node:fs/promises";
+import { appendFile, link, mkdir, open, readFile, realpath, stat, unlink, writeFile } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import { hashBytes, hashUtf8 } from "./hash.js";
 
@@ -18,6 +18,9 @@ const classifications = ["public", "internal", "confidential", "secret"] as cons
 const manifestSchema = "ai-assist.audit.manifest.v1";
 const sha256Pattern = /^[a-f0-9]{64}$/;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const lockFileName = "audit.lock";
+const maximumLockRetryDelayMs = 50;
+const malformedLockStaleAfterMs = 5 * 60 * 1000;
 
 export type AuditEventType = (typeof eventTypes)[number];
 export type Classification = (typeof classifications)[number];
@@ -69,6 +72,7 @@ export async function createAuditStore(root: string): Promise<AuditStore> {
   const rootRealPath = await realpath(rootDirectory);
   const eventsPath = resolve(rootRealPath, "events.jsonl");
   const manifestPath = resolve(rootRealPath, "manifest.json");
+  const lockPath = resolve(rootRealPath, lockFileName);
   let pendingOperation = Promise.resolve();
 
   function serialize<T>(operation: () => Promise<T>): Promise<T> {
@@ -84,63 +88,67 @@ export async function createAuditStore(root: string): Promise<AuditStore> {
     async append(event) {
       validateEvent(event);
       await serialize(async () => {
-        if (await manifestExists(manifestPath)) {
-          throw new Error("validation_error: audit events are sealed by the manifest");
-        }
-        const eventRecord = {
-          eventId: randomUUID(),
-          timestamp: new Date().toISOString(),
-          type: event.type,
-          classification: event.classification,
-          payloadHash: hashPayload(event.payload),
-        };
-        await appendFile(eventsPath, `${JSON.stringify(eventRecord)}\n`, "utf8");
+        await withRootLock(lockPath, async () => {
+          if (await manifestExists(manifestPath)) {
+            throw new Error("validation_error: audit events are sealed by the manifest");
+          }
+          const eventRecord = {
+            eventId: randomUUID(),
+            timestamp: new Date().toISOString(),
+            type: event.type,
+            classification: event.classification,
+            payloadHash: hashPayload(event.payload),
+          };
+          await appendFile(eventsPath, `${JSON.stringify(eventRecord)}\n`, "utf8");
+        });
       });
     },
 
     async writeManifest(input) {
       validateManifestInput(input);
       await serialize(async () => {
-        if (await manifestExists(manifestPath)) {
-          throw new Error("validation_error: audit manifest is already sealed");
-        }
-        const artifacts = await Promise.all(
-          input.artifacts.map(async ({ path }) => ({
-            path,
-            sha256: await hashArtifact(rootRealPath, path),
-          })),
-        );
-        const manifest: AuditManifest = {
-          runId: input.runId,
-          schemaHash: hashUtf8(manifestSchema),
-          skillHash: input.skillHash ?? hashUtf8(""),
-          configurationHash: input.configurationHash ?? hashUtf8(""),
-          inputHash: input.inputHash ?? hashUtf8(""),
-          outputHash: input.outputHash ?? hashUtf8(""),
-          eventsHash: await hashEvents(eventsPath),
-          artifacts,
-        };
-        const temporaryManifestPath = resolve(rootRealPath, `manifest.${randomUUID()}.tmp`);
-        try {
-          await writeFile(temporaryManifestPath, JSON.stringify(manifest, null, 2), {
-            encoding: "utf8",
-            flag: "wx",
-          });
-          try {
-            await link(temporaryManifestPath, manifestPath);
-          } catch (error: unknown) {
-            if (isErrorCode(error, "EEXIST")) {
-              throw new Error("validation_error: audit manifest is already sealed");
-            }
-            throw error;
+        await withRootLock(lockPath, async () => {
+          if (await manifestExists(manifestPath)) {
+            throw new Error("validation_error: audit manifest is already sealed");
           }
-        } finally {
-          await unlink(temporaryManifestPath).catch((error: unknown) => {
-            if (!isErrorCode(error, "ENOENT")) {
+          const artifacts = await Promise.all(
+            input.artifacts.map(async ({ path }) => ({
+              path,
+              sha256: await hashArtifact(rootRealPath, path),
+            })),
+          );
+          const manifest: AuditManifest = {
+            runId: input.runId,
+            schemaHash: hashUtf8(manifestSchema),
+            skillHash: input.skillHash ?? hashUtf8(""),
+            configurationHash: input.configurationHash ?? hashUtf8(""),
+            inputHash: input.inputHash ?? hashUtf8(""),
+            outputHash: input.outputHash ?? hashUtf8(""),
+            eventsHash: await hashEvents(eventsPath),
+            artifacts,
+          };
+          const temporaryManifestPath = resolve(rootRealPath, `manifest.${randomUUID()}.tmp`);
+          try {
+            await writeFile(temporaryManifestPath, JSON.stringify(manifest, null, 2), {
+              encoding: "utf8",
+              flag: "wx",
+            });
+            try {
+              await link(temporaryManifestPath, manifestPath);
+            } catch (error: unknown) {
+              if (isErrorCode(error, "EEXIST")) {
+                throw new Error("validation_error: audit manifest is already sealed");
+              }
               throw error;
             }
-          });
-        }
+          } finally {
+            await unlink(temporaryManifestPath).catch((error: unknown) => {
+              if (!isErrorCode(error, "ENOENT")) {
+                throw error;
+              }
+            });
+          }
+        });
       });
     },
 
@@ -183,6 +191,93 @@ export async function createAuditStore(root: string): Promise<AuditStore> {
       return { valid: failures.length === 0, failures };
     },
   };
+}
+
+async function withRootLock<T>(lockPath: string, operation: () => Promise<T>): Promise<T> {
+  const lockId = await acquireRootLock(lockPath);
+  try {
+    return await operation();
+  } finally {
+    await releaseRootLock(lockPath, lockId);
+  }
+}
+
+async function acquireRootLock(lockPath: string): Promise<string> {
+  const lockId = randomUUID();
+  let retryDelayMs = 1;
+
+  while (true) {
+    try {
+      const lockFile = await open(lockPath, "wx");
+      try {
+        await lockFile.writeFile(JSON.stringify({ lockId, processId: process.pid, createdAt: new Date().toISOString() }));
+      } finally {
+        await lockFile.close();
+      }
+      return lockId;
+    } catch (error: unknown) {
+      if (!isErrorCode(error, "EEXIST") && !isErrorCode(error, "EPERM")) {
+        throw error;
+      }
+      if (isErrorCode(error, "EEXIST") && await isStaleRootLock(lockPath)) {
+        await unlink(lockPath).catch((unlinkError: unknown) => {
+          if (!isErrorCode(unlinkError, "ENOENT")) {
+            throw unlinkError;
+          }
+        });
+        continue;
+      }
+      await delay(retryDelayMs);
+      retryDelayMs = Math.min(retryDelayMs * 2, maximumLockRetryDelayMs);
+    }
+  }
+}
+
+async function releaseRootLock(lockPath: string, lockId: string): Promise<void> {
+  try {
+    const lock = JSON.parse(await readFile(lockPath, "utf8")) as { lockId?: unknown };
+    if (lock.lockId === lockId) {
+      await unlink(lockPath);
+    }
+  } catch (error: unknown) {
+    if (!isErrorCode(error, "ENOENT")) {
+      throw error;
+    }
+  }
+}
+
+async function isStaleRootLock(lockPath: string): Promise<boolean> {
+  try {
+    const lock = JSON.parse(await readFile(lockPath, "utf8")) as { processId?: unknown };
+    if (typeof lock.processId === "number" && Number.isInteger(lock.processId) && lock.processId > 0) {
+      try {
+        process.kill(lock.processId, 0);
+        return false;
+      } catch (error: unknown) {
+        if (isErrorCode(error, "ESRCH")) {
+          return true;
+        }
+        return false;
+      }
+    }
+  } catch (error: unknown) {
+    if (isErrorCode(error, "ENOENT")) {
+      return false;
+    }
+  }
+
+  try {
+    return Date.now() - (await stat(lockPath)).mtimeMs > malformedLockStaleAfterMs;
+  } catch (error: unknown) {
+    if (isErrorCode(error, "ENOENT")) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
 }
 
 function validateEvent(event: AuditEventInput): void {
