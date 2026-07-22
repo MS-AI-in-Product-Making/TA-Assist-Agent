@@ -24,10 +24,10 @@
 
 | New User Story | Feature issues |
 |---|---|
-| User Story 1 - Reliable First-Pass TA Result and Summary | F0.1-F0.3, F1.1-F1.2, F2.1-F2.4, F4.1, F5.1, F9.1-F9.2 |
+| User Story 1 - Reliable First-Pass TA Result and Summary | F0.1-F0.3, F1.1-F1.2, F2.1-F2.4, F4.1, F8.1-F8.2 |
 | User Story 2 - DIM ID and Drawing Governance Before Key Milestones | F3.1-F3.10 |
-| User Story 3 - Objective Conclusions and Comparable Options | F6.1-F6.7, F7.1-F7.5 |
-| User Story 4 - Measured Cpk Feedback and Continuous Accuracy Improvement | F8.1-F8.3 |
+| User Story 3 - Objective Conclusions and Comparable Options | F5.1-F5.7, F6.1-F6.5 |
+| User Story 4 - Measured Cpk Feedback and Continuous Accuracy Improvement | F7.1-F7.3 |
 
 ### Task 1: Update Repository Product Naming
 
@@ -59,13 +59,13 @@ In `README.md`, change repository planning notes from S0-S9 milestones to the fo
 Expected wording:
 
 ```markdown
-- Project planning is tracked via GitHub **Project #1** as four ME User Stories, Feature issues (F0-F9), and implementation tasks in each Feature checklist.
+- Project planning is tracked via GitHub **Project #1** as four ME User Stories, Feature issues (F0-F8), and implementation tasks in each Feature checklist.
 ```
 
 In `docs/README.md`, change the shared convention tracking bullet to:
 
 ```markdown
-- **Tracking:** Four ME User Stories group the work; Feature IDs (F0-F9) map to GitHub Feature issues and their task checklists map to implementation work items.
+- **Tracking:** Four ME User Stories group the work; Feature IDs (F0-F8) map to GitHub Feature issues and their task checklists map to implementation work items.
 ```
 
 - [ ] **Step 3: Verify repository naming**
@@ -100,7 +100,7 @@ Expected: commit succeeds.
 Run:
 
 ```powershell
-gh project edit 1 --owner MS-AI-in-Product-Making --title "AI Assist Agent Roadmap" --description "V1 roadmap: 4 ME User Stories x F0-F9 Features. Tasks live as checklists inside each Feature issue." --readme "V1 roadmap board for AI Assist Agent. The board tracks four ME User Stories, Feature issues F0-F9, and implementation tasks inside each Feature issue checklist. Use the User Story field to group Feature cards by product outcome."
+gh project edit 1 --owner MS-AI-in-Product-Making --title "AI Assist Agent Roadmap" --description "V1 roadmap: 4 ME User Stories x F0-F8 Features. Tasks live as checklists inside each Feature issue." --readme "V1 roadmap board for AI Assist Agent. The board tracks four ME User Stories, Feature issues F0-F8, and implementation tasks inside each Feature issue checklist. Use the User Story field to group Feature cards by product outcome."
 ```
 
 Expected: command exits 0.
@@ -141,8 +141,8 @@ $issueMap = @{
   22 = @{ Title='F2.4 DIM ID presence & format check'; Story='User Story 1 - Reliable First-Pass TA Result and Summary'; Purpose='Detect DIM ID and Part Number quality issues during cleansing.'; Tasks=@('Check DIM ID and Part Number completeness.','Detect duplicate IDs and malformed IDs.','Detect supplier-to-Microsoft ID crosswalk conflicts.') }
   6  = @{ Title='F4.1 Recommend method by factor count'; Story='User Story 1 - Reliable First-Pass TA Result and Summary'; Purpose='Choose the appropriate 1D reference method by factor count and CTS/CTF context.'; Tasks=@('Recommend Worst Case for fewer than 4 factors.','Recommend 1D RSS for 4-10 factors.','Flag a DM-team 3D VA referral for more than 10 factors while still computing WC and RSS.') }
   7  = @{ Title='F5.1 Excel-consistent calculation engine'; Story='User Story 1 - Reliable First-Pass TA Result and Summary'; Purpose='Reproduce TA workbook calculation results exactly.'; Tasks=@('Compute and show both Worst Case and RSS outputs when in V1 scope.','Calculate mean, tolerance, 1-sigma, contribution, Cp, Cpk, Z, DPM, and yield.','Regress against the approved sample result: Cpk 0.74, DPM about 26,500, FAIL.') }
-  15 = @{ Title='F9.1 Consolidated interpretation report'; Story='User Story 1 - Reliable First-Pass TA Result and Summary'; Purpose='Produce one consolidated report across selected worksheets.'; Tasks=@('Include a quick summary of highlighted TA risks.','Include the extracted Loop image with the corresponding worksheet evidence.','Keep source data read-only and require re-upload or user-confirmed proposals for changes.') }
-  21 = @{ Title='F9.2 Read-only evidence pane UX'; Story='User Story 1 - Reliable First-Pass TA Result and Summary'; Purpose='Show source evidence faithfully and link conclusions to visible rows or cells.'; Tasks=@('Render the original factor table with the same values, layout, and units as the source workbook.','Link each conclusion to its visible source row or cell.','Highlight related evidence when a conclusion is selected.') }
+  15 = @{ Title='F8.1 Consolidated interpretation report'; Story='User Story 1 - Reliable First-Pass TA Result and Summary'; Purpose='Produce one consolidated report across selected worksheets.'; Tasks=@('Include a quick summary of highlighted TA risks.','Include the extracted Loop image with the corresponding worksheet evidence.','Keep source data read-only and require re-upload or user-confirmed proposals for changes.') }
+  21 = @{ Title='F8.2 Read-only evidence pane UX'; Story='User Story 1 - Reliable First-Pass TA Result and Summary'; Purpose='Show source evidence faithfully and link conclusions to visible rows or cells.'; Tasks=@('Render the original factor table with the same values, layout, and units as the source workbook.','Link each conclusion to its visible source row or cell.','Highlight related evidence when a conclusion is selected.') }
   23 = @{ Title='F3.1 Unique DIM ID <-> factor anchor'; Story='User Story 2 - DIM ID and Drawing Governance Before Key Milestones'; Purpose='Link every TA factor to the drawing lifecycle using a stable DIM ID.'; Tasks=@('Create a unique DIM ID <-> factor <-> future measurement anchor for every factor.','Validate anchors during submission.','Keep the anchor usable for future measured-data routing.') }
   24 = @{ Title='F3.2 Placeholder-first, backfill-later'; Story='User Story 2 - DIM ID and Drawing Governance Before Key Milestones'; Purpose='Allow TA calculation to continue before final DIM IDs exist while enforcing later backfill.'; Tasks=@('Assign a placeholder when no DIM ID or drawing exists yet.','Allow TA calculation to continue with the placeholder.','Require DIM ID backfill before EV1 or another configured key milestone.') }
   25 = @{ Title='F3.3 DIM ID uniqueness & MS-supplier reconciliation'; Story='User Story 2 - DIM ID and Drawing Governance Before Key Milestones'; Purpose='Prevent identifier drift between supplier and Microsoft drawing systems.'; Tasks=@('Raise a clarification card when an ID is duplicated, conflicted, or cannot be mapped.','Maintain a versioned crosswalk from supplier ID plus revision to Microsoft canonical DIM ID.','Track reconciliation decisions for traceability.') }
@@ -165,9 +165,9 @@ $issueMap = @{
   28 = @{ Title='F7.3 RSS tolerance apportionment'; Story='User Story 3 - Objective Conclusions and Comparable Options'; Purpose='Distribute required RSS sigma reduction across top contributors.'; Tasks=@('Calculate the required RSS sigma reduction.','Apportion reduction across the top two or three contributors.','Show resulting tolerance targets and Cpk impact.') }
   13 = @{ Title='F7.4 What-if sensitivity simulation'; Story='User Story 3 - Objective Conclusions and Comparable Options'; Purpose='Show the effect of tightening or loosening individual factors.'; Tasks=@('Run what-if calculations for tightening an individual factor.','Run what-if calculations for loosening an individual factor.','Show the resulting Cpk change.') }
   16 = @{ Title='F7.5 Spec reverse-solver (options)'; Story='User Story 3 - Objective Conclusions and Comparable Options'; Purpose='Generate parallel reverse-solve options with feasibility warnings.'; Tasks=@('Generate single-point tighten, combined top-contributor tighten, and center-plus-tighten options.','Check each option against the Capability Library.','Show a red warning when required tolerance is not process-achievable and mark T0 as feasibility unknown.') }
-  29 = @{ Title='F8.1 Ingest measured yield/Cpk by DIM ID'; Story='User Story 4 - Measured Cpk Feedback and Continuous Accuracy Improvement'; Purpose='Import measured capability keyed by canonical DIM ID.'; Tasks=@('Define a measured-data schema keyed by canonical DIM ID.','Include measured Cpk, yield, distribution, source, and revision.','Manually import standardized data from the agreed centralized SharePoint or platform store.') }
-  38 = @{ Title='F8.2 Real gap vs initial estimate - recompute on measured capability'; Story='User Story 4 - Measured Cpk Feedback and Continuous Accuracy Improvement'; Purpose='Show the actual capability gap after measured data arrives.'; Tasks=@('Validate that the imported record has a stable DIM ID anchor.','Recompute sigma and actual capability using measured data.','Show initial estimate versus measured result, including the real gap and updated tolerance range.') }
-  30 = @{ Title='F8.3 Upgrade Lib1 entry tier from measured data'; Story='User Story 4 - Measured Cpk Feedback and Continuous Accuracy Improvement'; Purpose='Improve future judgment accuracy by feeding measured capability back into Lib 1.'; Tasks=@('Upgrade the matching Capability Library entry from T3 empirical to T1 measured.','Increment the Lib 1 version and retain history.','Document external prerequisites: maintained centralized measured-data store, permissions, and DIM ID governance from F3.') }
+  29 = @{ Title='F7.1 Ingest measured yield/Cpk by DIM ID'; Story='User Story 4 - Measured Cpk Feedback and Continuous Accuracy Improvement'; Purpose='Import measured capability keyed by canonical DIM ID.'; Tasks=@('Define a measured-data schema keyed by canonical DIM ID.','Include measured Cpk, yield, distribution, source, and revision.','Manually import standardized data from the agreed centralized SharePoint or platform store.') }
+  38 = @{ Title='F7.2 Real gap vs initial estimate - recompute on measured capability'; Story='User Story 4 - Measured Cpk Feedback and Continuous Accuracy Improvement'; Purpose='Show the actual capability gap after measured data arrives.'; Tasks=@('Validate that the imported record has a stable DIM ID anchor.','Recompute sigma and actual capability using measured data.','Show initial estimate versus measured result, including the real gap and updated tolerance range.') }
+  30 = @{ Title='F7.3 Upgrade Lib1 entry tier from measured data'; Story='User Story 4 - Measured Cpk Feedback and Continuous Accuracy Improvement'; Purpose='Improve future judgment accuracy by feeding measured capability back into Lib 1.'; Tasks=@('Upgrade the matching Capability Library entry from T3 empirical to T1 measured.','Increment the Lib 1 version and retain history.','Document external prerequisites: maintained centralized measured-data store, permissions, and DIM ID governance from F3.') }
 }
 
 foreach ($entry in $issueMap.GetEnumerator()) {
@@ -193,7 +193,7 @@ Run:
 ```powershell
 $Artifacts = 'C:\Users\xumax\.copilot\session-state\961187a3-a96e-4b4f-9737-95b6d7b368c9\files\issue-bodies'
 $titles = @{
-  1='F1.1 Auto-detect TA worksheets'; 2='F1.2 Parallel multi-sheet processing'; 3='F2.1 Missing required-field check'; 4='F2.2 Per-category spec & distribution validation'; 5='F2.3 Two correction paths for differences'; 6='F4.1 Recommend method by factor count'; 7='F5.1 Excel-consistent calculation engine'; 8='F6.1 Loop validity'; 9='F6.2 Capability vs Spec'; 10='F6.3 Top contributors'; 11='F6.4 Structural risk identification'; 12='F6.5 Options presentation (objective, no recommendation)'; 13='F7.4 What-if sensitivity simulation'; 14='F7.1 Mean-shift centering analysis'; 15='F9.1 Consolidated interpretation report'; 16='F7.5 Spec reverse-solver (options)'; 17='F0.1 Classified Capability Library'; 18='F0.2 Engineering Rules Library'; 19='F0.3 Terminology / Ontology Library'; 20='F6.6 Clarification card & assumption register (fail-closed)'; 21='F9.2 Read-only evidence pane UX'; 22='F2.4 DIM ID presence & format check'; 23='F3.1 Unique DIM ID <-> factor anchor'; 24='F3.2 Placeholder-first, backfill-later'; 25='F3.3 DIM ID uniqueness & MS-supplier reconciliation'; 26='F6.7 Evidence-chain citation to S0'; 27='F7.2 Contribution economics analysis'; 28='F7.3 RSS tolerance apportionment'; 29='F8.1 Ingest measured yield/Cpk by DIM ID'; 30='F8.3 Upgrade Lib1 entry tier from measured data'; 32='F3.4 ADO work item link after manual .xlsx upload'; 33='F3.5 Owner identification - bind run to a responsible person'; 34='F3.6 Scheduled EV1 reminder - milestone-driven nudge before info is missing'; 35='F3.7 Dimension-chain list - per-part list for drawing mapping'; 36='F3.8 Drawing reminder (server-side scheduled) - reflect the dimension chain on the drawing'; 37='F3.9 State & history - ADO maintains loop status for traceability'; 38='F8.2 Real gap vs initial estimate - recompute on measured capability'; 39='F3.10 Part-category grouping (ontology-driven) for drawing packaging'
+  1='F1.1 Auto-detect TA worksheets'; 2='F1.2 Parallel multi-sheet processing'; 3='F2.1 Missing required-field check'; 4='F2.2 Per-category spec & distribution validation'; 5='F2.3 Two correction paths for differences'; 6='F4.1 Recommend method by factor count'; 7='F4.2 Excel-consistent calculation engine'; 8='F5.1 Loop validity'; 9='F5.2 Capability vs Spec'; 10='F5.3 Top contributors'; 11='F5.4 Structural risk identification'; 12='F5.5 Options presentation (objective, no recommendation)'; 13='F6.4 What-if sensitivity simulation'; 14='F6.1 Mean-shift centering analysis'; 15='F8.1 Consolidated interpretation report'; 16='F6.5 Spec reverse-solver (options)'; 17='F0.1 Classified Capability Library'; 18='F0.2 Engineering Rules Library'; 19='F0.3 Terminology / Ontology Library'; 20='F5.6 Clarification card & assumption register (fail-closed)'; 21='F8.2 Read-only evidence pane UX'; 22='F2.4 DIM ID presence & format check'; 23='F3.1 Unique DIM ID <-> factor anchor'; 24='F3.2 Placeholder-first, backfill-later'; 25='F3.3 DIM ID uniqueness & MS-supplier reconciliation'; 26='F5.7 Evidence-chain citation to S0'; 27='F6.2 Contribution economics analysis'; 28='F6.3 RSS tolerance apportionment'; 29='F7.1 Ingest measured yield/Cpk by DIM ID'; 30='F7.3 Upgrade Lib1 entry tier from measured data'; 32='F3.4 ADO work item link after manual .xlsx upload'; 33='F3.5 Owner identification - bind run to a responsible person'; 34='F3.6 Scheduled EV1 reminder - milestone-driven nudge before info is missing'; 35='F3.7 Dimension-chain list - per-part list for drawing mapping'; 36='F3.8 Drawing reminder (server-side scheduled) - reflect the dimension chain on the drawing'; 37='F3.9 State & history - ADO maintains loop status for traceability'; 38='F7.2 Real gap vs initial estimate - recompute on measured capability'; 39='F3.10 Part-category grouping (ontology-driven) for drawing packaging'
 }
 foreach ($n in $titles.Keys | Sort-Object) {
   gh issue edit $n --repo MS-AI-in-Product-Making/AI-TVA-Analysis-Agent --title $titles[$n] --body-file (Join-Path $Artifacts "$n.md")
@@ -286,7 +286,7 @@ mutation {
     fieldId: "PVTSSF_lADOEcYMrc4Bc-hlzhXjhNE",
     name: "User Story",
     singleSelectOptions: [
-      { id: "ea881fdb", name: "US1 Reliable First-Pass TA Result and Summary", color: BLUE, description: "F0/F1/F2/F4/F5/F9" },
+      { id: "ea881fdb", name: "US1 Reliable First-Pass TA Result and Summary", color: BLUE, description: "F0/F1/F2/F4/F8" },
       { id: "fc35550b", name: "US2 DIM ID and Drawing Governance Before Key Milestones", color: GREEN, description: "F3" },
       { id: "ab23da05", name: "US3 Objective Conclusions and Comparable Options", color: PURPLE, description: "F6/F7" },
       { id: "4ad25bc9", name: "US4 Measured Cpk Feedback and Continuous Accuracy Improvement", color: ORANGE, description: "F8" }
@@ -331,7 +331,7 @@ Run:
 gh project item-list 1 --owner MS-AI-in-Product-Making --limit 100 --format json
 ```
 
-Expected: every open F0-F9 feature issue appears in Project #1 and has a User Story value matching the approved four-story mapping or the documented fallback mapping.
+Expected: every open F0-F8 feature issue appears in Project #1 and has a User Story value matching the approved four-story mapping or the documented fallback mapping.
 
 ### Task 6: Final Verification
 

@@ -54,7 +54,7 @@ A "controlled dictionary" that **keeps the model from inventing terms or misclas
 - Every entry carries **source / confidence / effective version**; only then can a cleansing conclusion be flagged "in-library / out-of-library."
 - A single owner, a change log, and published **coverage** (e.g. "Lib 1 covers 6/20 high-frequency categories").
 - Distribution factor constants (Normal=1 / Uniform=1.732 / …) are **built-in engine constants**, not part of the knowledge base.
-- **Feeding measured Cpk back into Lib 1 is handled by F8 (see D8).**
+- **Feeding measured Cpk back into Lib 1 is handled by F7 (see D8).**
 
 ---
 
@@ -177,7 +177,7 @@ Mechanism — **Sub-loop B · ADO orchestration and scheduled governance** (from
 
 **This loop is what makes the whole system more valuable the more it's used:** when measured yield / Cpk becomes available, it is manually imported and routed back to the corresponding factor by `DIM ID`. Two payoffs:
 
-- **Immediate:** the target dimension is recomputed with **real** capability, so the user sees the **real gap and real tolerance range** — and a comparison against the initial estimate. When the gap is large, the system hands off to F7 for adjustment options.
+- **Immediate:** the target dimension is recomputed with **real** capability, so the user sees the **real gap and real tolerance range** — and a comparison against the initial estimate. When the gap is large, the system hands off to F6 for adjustment options.
 - **Compounding:** the matching Lib 1 entry is upgraded from "empirical estimate (Tier 3)" to "measured (Tier 1)," so cleansing, interpretation, and optimization are all more accurate next time. **The feedback target is F0**, closing the D1 loop.
 
 **External prerequisite — where the measured data lives:**
@@ -205,7 +205,7 @@ Automatic capture of measured data (avoiding manual upload for multi-part assemb
 
 ## How the Decisions Shape the Feature Flow
 
-Features are ordered by process flow (not by priority): **F0 knowledge base → F1 parse → F2 cleanse → F3 DIM linking/governance → F4 method → F5 engine → F6 objective interpretation → F9 evidence/report → F7 tolerance optimization**, followed by the **F8 closed loop** feeding measured Cpk back into F0. In the method branch, `>10` factors notify the DM team for 3D VA while F5 continues to calculate WC and RSS. The knowledge base (F0) and objective interpretation (F6) decide the quality of the tool's judgment; the closed loop (F8) decides whether it gets better over time.
+Features are ordered by process flow (not by priority): **F0 knowledge base → F1 TA report parsing and asset prep → F2 data cleansing → F3 data-to-drawing linking (DIM ID) → F4 method recommendation and calculation engine → F5 data interpretation → F8 user interaction, read-only pane and output → F6 tolerance / dimension-chain optimization**, followed by the **F7 measured-Cpk closed loop** feeding measured Cpk back into F0. In the method branch, `>10` factors notify the DM team for 3D VA while F4 continues to calculate WC and RSS. The knowledge base (F0) and data interpretation (F5) decide the quality of the tool's judgment; the closed loop (F7) decides whether it gets better over time.
 
 ---
 **Related docs:** [Architecture](01-architecture.md) · [End-to-End Flow](02-end-to-end-flow.md) · [Differentiation](03-differentiation.md) · [Feature Breakdown](04-feature-breakdown.md)

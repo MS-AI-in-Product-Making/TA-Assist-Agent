@@ -7,7 +7,7 @@ Rename the product-facing project from the TA-specific working name to **AI Assi
 ## Source of Truth
 
 - Product name: **AI Assist Agent**.
-- V1 roadmap shape: one Epic, four ME User Stories, and F0-F9 Features.
+- V1 roadmap shape: one Epic, four ME User Stories, and F0-F8 Features.
 - Existing GitHub issue numbers should be preserved where possible to avoid breaking links.
 - TA domain language remains valid: TA workbook, DIM ID, Cpk, RSS, WC, CTS/CTF, measured Cpk, and evidence pane terminology should not be generalized away.
 
@@ -26,13 +26,13 @@ Keep detailed product scope intact:
 Use the docs-defined structure as the planning model:
 
 1. **User Story 1 - Reliable First-Pass TA Result and Summary**
-   - Covers F0, F1, F2, F4/F5, and F9.
+   - Covers F0, F1, F2, F4, and F8.
 2. **User Story 2 - DIM ID and Drawing Governance Before Key Milestones**
    - Covers F3.
 3. **User Story 3 - Objective Conclusions and Comparable Options**
-   - Covers F6 and F7.
+   - Covers F5 and F6.
 4. **User Story 4 - Measured Cpk Feedback and Continuous Accuracy Improvement**
-   - Covers F8.
+   - Covers F7.
 
 Preserve existing Feature issue numbers and update their bodies/checklists to match `docs/04-feature-breakdown.md`.
 
@@ -45,7 +45,7 @@ Rename Project #1 to **AI Assist Agent Roadmap**.
 Update the project short description/readme to explain that the board tracks the V1 roadmap as:
 
 - 4 User Stories
-- F0-F9 Features
+- F0-F8 Features
 - implementation tasks inside Feature issue checklists
 
 Update the `User Story` single-select project field from S0-S9 options to the four docs-defined User Stories, then assign each Feature issue to the correct option.

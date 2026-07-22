@@ -39,7 +39,7 @@ flowchart TB
         G3["For grouped missing DIM ID / PN items<br/>user confirms ADO reminder · write list to Comment 0<br/>without ADO, save the list locally"]
         G2 --> G3
     end
-    subgraph ENG["6 Core Calculation Engine (F5 · 1D · strictly consistent with Excel)"]
+    subgraph ENG["6 Core Calculation Engine (F4 · 1D · strictly consistent with Excel)"]
         E0["Validated, user-filled analysis inputs<br/>nominal / tolerance / safety factor / sigma / distribution"]
         E1["Auto-computed table<br/>Mean / Tol / 1-sigma / % contribution"]
         E2["System level: RSS sqrt(sum R^2) · Worst Case sum Q"]
@@ -49,13 +49,13 @@ flowchart TB
     subgraph MODE["7 Output Modes"]
         M1["Prompt · Data cleansing (F2)<br/>required-field check + DIM ID/PN completeness<br/>vs Lib 1: tolerance range + distribution"]
         M2["Assign · Method recommendation (F4)<br/>&lt;4 WC · 4-10 RSS · &gt;10 notify DM for 3D VA<br/>both WC / RSS computed"]
-        M3["Interpret · Objective 5-section (F6)<br/>FACT/RULE asserted (cite F0) · SIGNAL/OPTION presented<br/>uncertain -&gt; clarification card · judgment left to user"]
-        M4["Optimize · What-if / reverse-solve / centering (F7)<br/>mean-shift + contribution economics + RSS apportionment<br/>over-capability -&gt; RED warning"]
+        M3["Interpret · Objective 5-section (F5)<br/>FACT/RULE asserted (cite F0) · SIGNAL/OPTION presented<br/>uncertain -&gt; clarification card · judgment left to user"]
+        M4["Optimize · What-if / reverse-solve / centering (F6)<br/>mean-shift + contribution economics + RSS apportionment<br/>over-capability -&gt; RED warning"]
     end
-    subgraph LOOP["8 Closed Loop (F8)"]
+    subgraph LOOP["8 Closed Loop (F7)"]
         CL["Ingest measured yield / Cpk by DIM ID<br/>manual import from centralized store (SharePoint / platform)<br/>real gap vs initial estimate · upgrade Lib 1 T3 -&gt; T1"]
     end
-    subgraph OUT["9 Interaction / Output (F9)"]
+    subgraph OUT["9 Interaction / Output (F8)"]
         O1["Read-only evidence pane<br/>faithful copy + Loop image"]
         O2["Cited dialogue<br/>click-to-highlight linkage"]
         O3["Structured TA interpretation report + Loop image<br/>reproducible · actionable · traceable"]
@@ -113,13 +113,13 @@ flowchart TB
 | 1 Input | — | Receive one or more manually uploaded `.xlsx` files | File names must be unique; files may contain multiple TA worksheets |
 | 2 Worksheet selection | F1 | Auto-detect worksheets with TA content and ask the user to confirm | Manual selection as a fallback |
 | 3 Parse & extract | F1 | Read factor tables, extract Loop screenshots, and load the knowledge base | Retain normalized JSON, source labels, version, and processing trace |
-| 4 Knowledge base | **F0** | Capability Library (Lib 1), Rules Library (Lib 2), Terminology Library (Lib 3) | Human-maintained; each entry carries source, confidence, and coverage; fed back by F8 |
+| 4 Knowledge base | **F0** | Capability Library (Lib 1), Rules Library (Lib 2), Terminology Library (Lib 3) | Human-maintained; each entry carries source, confidence, and coverage; fed back by F7 |
 | 5 DIM ID linking | **F3** | Link each factor to a drawing dimension via DIM ID and produce a dimension-chain list for missing ID/PN items | Identifier-only linking, no image recognition; lists are grouped by Lib 3 category/drawing and locatable to the exact position |
 | 5b ADO governance | **F3** | Optional ADO link, owner assignment, missing-ID reminder, and local-list fallback | Manual upload starts analysis. With ADO, the user confirms a reminder and the list is saved in Comment 0; without ADO, the list is saved locally. Linked ADO items may also receive milestone-based reminders independently of analysis. |
-| 6 Calculation engine | F5 | One-dimensional calculation, fully consistent with Excel formulas | Validates only user-filled fields |
-| 7 Output modes | F2/F4/F6/F7 | Cleansing, method recommendation, objective interpretation, and optimization | `<4` recommends WC; `4-10` recommends RSS; `>10` notifies DM for 3D VA while the engine still computes WC/RSS. Interpretation cites knowledge-base evidence; judgment remains with the user. |
-| 8 Closed loop | **F8** | Backfill measured Cpk by DIM ID, compare the real gap, and feed back into F0 | Manual import from a centralized store (SharePoint / platform) at first; auto-capture and write-back come later |
-| 9 Interaction & output | **F9** | Read-only evidence pane, citable dialogue, structured report | Includes the Loop image; traceable and reproducible item by item |
+| 6 Calculation engine | F4 | One-dimensional calculation, fully consistent with Excel formulas | Validates only user-filled fields |
+| 7 Output modes | F2/F4/F5/F6 | Cleansing, method recommendation, objective interpretation, and optimization | `<4` recommends WC; `4-10` recommends RSS; `>10` notifies DM for 3D VA while the engine still computes WC/RSS. Interpretation cites knowledge-base evidence; judgment remains with the user. |
+| 8 Closed loop | **F7** | Backfill measured Cpk by DIM ID, compare the real gap, and feed back into F0 | Manual import from a centralized store (SharePoint / platform) at first; auto-capture and write-back come later |
+| 9 Interaction & output | **F8** | Read-only evidence pane, citable dialogue, structured report | Includes the Loop image; traceable and reproducible item by item |
 
 > **Out of scope for now:** drawing image recognition, DM-owned 3D variation analysis, automatic capture of measured data, and automatically writing suggested specs back into Excel.
 

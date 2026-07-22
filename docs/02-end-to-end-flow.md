@@ -37,29 +37,29 @@ flowchart TB
     G -- Fewer than 4 factors --> H1["Recommend Worst Case (WC) (F4)<br>Arithmetic tolerance sum"]
     G -- 4 to 10 factors --> H2["Recommend 1D RSS (F4)<br>sqrt(sum R^2)"]
     G -- More than 10 factors --> DM["Notify DM team for 3D VA follow-up (F4)<br>Flag cumulative tolerance risk"]
-    H1 --> I["Core calculation engine (F5)<br>Calculate both WC and RSS"]
+    H1 --> I["Core calculation engine (F4)<br>Calculate both WC and RSS"]
     H2 --> I
     DM --> I
-    I --> J["Capability analysis (F5)<br>Cp · Cpk · Z · DPM · Yield"]
-    J --> CC{"Is evidence sufficient? (F6)<br>Assembly datum face / stack start / cross-subsystem"}
-    CC -- No --> CQ["Clarification card (F6): pause only conclusions dependent on the missing information<br>Engineer confirms before continuing"]
-    CQ --> L["Objective interpretation (F6)<br>FACT and RULE cite F0 entries<br>SIGNAL and OPTION are unranked"]
+    I --> J["Capability analysis (F4)<br>Cp · Cpk · Z · DPM · Yield"]
+    J --> CC{"Is evidence sufficient? (F5)<br>Assembly datum face / stack start / cross-subsystem"}
+    CC -- No --> CQ["Clarification card (F5): pause only conclusions dependent on the missing information<br>Engineer confirms before continuing"]
+    CQ --> L["Objective interpretation (F5)<br>FACT and RULE cite F0 entries<br>SIGNAL and OPTION are unranked"]
     CC -- Yes --> L
-    L --> M1["Loop validity (F6)<br>Optional: further investigate image-model effectiveness"]
-    L --> M2["Capability versus specification (F6)"]
-    L --> M3["Top contributors (F6)"]
-    L --> M4["Structural risks (F6)"]
-    L --> M5["Parallel improvement options (F6)<br>Provide multiple options when targets are not met"]
-    L --> M6["Optimization (F7)<br>Centering · contribution economics · RSS apportionment<br>Reverse-solve 2-3 options; real-time bar feedback<br><br>With ADO: link ADO and save date, milestone, version, and attachment1<br>Without ADO: save locally"]
-    M1 --> N["User view (F9)<br>Read-only evidence pane, cited report, and Loop images<br>Traceable and reproducible"]
+    L --> M1["Loop validity (F5)<br>Optional: further investigate image-model effectiveness"]
+    L --> M2["Capability versus specification (F5)"]
+    L --> M3["Top contributors (F5)"]
+    L --> M4["Structural risks (F5)"]
+    L --> M5["Parallel improvement options (F5)<br>Provide multiple options when targets are not met"]
+    L --> M6["Optimization (F6)<br>Centering · contribution economics · RSS apportionment<br>Reverse-solve 2-3 options; real-time bar feedback<br><br>With ADO: link ADO and save date, milestone, version, and attachment1<br>Without ADO: save locally"]
+    M1 --> N["User view (F8)<br>Read-only evidence pane, cited report, and Loop images<br>Traceable and reproducible"]
     M2 --> N
     M3 --> N
     M4 --> N
     M5 --> N
     N --> M6
-    M6 --> R{"Is measured yield / Cpk available? (F8)"}
-    R -- No: wait for later measurement --> WAIT["Retain baseline report (F8)<br>Await later measured-data import"]
-    R -- Yes: manual import by DIM ID --> CL["Closed loop (F8)<br>Compare estimate with actual and recompute real capability<br>Upgrade Lib 1 evidence tier from T3 to T1<br><br>Output actual tolerance range and optimization report: attachment2"]
+    M6 --> R{"Is measured yield / Cpk available? (F7)"}
+    R -- No: wait for later measurement --> WAIT["Retain baseline report (F7)<br>Await later measured-data import"]
+    R -- Yes: manual import by DIM ID --> CL["Closed loop (F7)<br>Compare estimate with actual and recompute real capability<br>Upgrade Lib 1 evidence tier from T3 to T1<br><br>Output actual tolerance range and optimization report: attachment2"]
     CL -->|Feed measured evidence| KB["Knowledge Base (F0)"]
 
     A:::start
@@ -177,29 +177,29 @@ flowchart TB
     G -- 4 to 10 factors --> H2["Recommend 1D RSS<br>sqrt(sum R^2)"]
     G -- &gt; 10 factors --> H3["Refer to DM team for 3D VA<br>not in V1"]
     H3 --> DM["End this automated 1D analysis path<br>DM team owns the 3D VA follow-up"]
-    H1 --> I["Core calculation engine (F5)<br>Compute both WC and RSS"]
+    H1 --> I["Core calculation engine (F4)<br>Compute both WC and RSS"]
     H2 --> I
-    I --> J["Capability analysis<br>Cp · Cpk · Z · DPM · Yield"]
-    J --> CC{"Evidence sufficient?<br>datum face / stack start / cross-subsystem"}
-    CC -- No --> CQ["Clarification card: stop dependent conclusions<br>Continue after engineer confirmation"]
+    I --> J["Capability analysis (F4)<br>Cp · Cpk · Z · DPM · Yield"]
+    J --> CC{"Evidence sufficient? (F5)<br>datum face / stack start / cross-subsystem"}
+    CC -- No --> CQ["Clarification card (F5): stop dependent conclusions<br>Continue after engineer confirmation"]
     CQ --> L
-    CC -- Yes --> L["Objective interpretation (F6)<br>FACT and RULE cite F0 entries<br>SIGNAL and OPTION are unranked"]
-    L --> M1["Loop validity"]
-    L --> M2["Capability vs. spec"]
-    L --> M3["Top contributors"]
-    L --> M4["Structural risk"]
-    L --> M5["Parallel options"]
-    L --> M6["Optimization (F7)<br>centering · contribution economics · RSS apportionment<br>reverse-solve 2-3 options"]
-    M1 --> N["Read-only evidence pane + cited report + Loop image (F9)<br>Traceable and reproducible per item"]
+    CC -- Yes --> L["Objective interpretation (F5)<br>FACT and RULE cite F0 entries<br>SIGNAL and OPTION are unranked"]
+    L --> M1["Loop validity (F5)"]
+    L --> M2["Capability vs. spec (F5)"]
+    L --> M3["Top contributors (F5)"]
+    L --> M4["Structural risk (F5)"]
+    L --> M5["Parallel options (F5)"]
+    L --> M6["Optimization (F6)<br>centering · contribution economics · RSS apportionment<br>reverse-solve 2-3 options"]
+    M1 --> N["Read-only evidence pane + cited report + Loop image (F8)<br>Traceable and reproducible per item"]
     M2 --> N
     M3 --> N
     M4 --> N
     M5 --> N
     M6 --> N
 
-    N --> R{"Measured yield / Cpk available?"}
-    R -- No: wait for later measurement --> WAIT["Baseline report remains available<br>Await later measured-data import"]
-    R -- Yes: manual import by DIM ID --> CL["Closed loop (F8)<br>Compare estimate vs. actual and recompute real capability<br>Upgrade Lib 1 evidence tier T3 to T1"]
+    N --> R{"Measured yield / Cpk available? (F7)"}
+    R -- No: wait for later measurement --> WAIT["Baseline report remains available (F7)<br>Await later measured-data import"]
+    R -- Yes: manual import by DIM ID --> CL["Closed loop (F7)<br>Compare estimate vs. actual and recompute real capability<br>Upgrade Lib 1 evidence tier T3 to T1"]
     CL -. Significant gap .-> M6
     CL ==>|Feed measured evidence| KB["Knowledge Base (F0)"]
 

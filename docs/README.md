@@ -20,9 +20,9 @@ Design document set for AI Assist Agent (V1). All diagrams use Mermaid and rende
 
 ## Shared Conventions
 
-- **V1 scope:** No drawing image recognition and no 3D VA. Data-to-drawing linking is done through **DIM ID** (F3); more than 10 factors are referred to the DM team for 3D VA. The measured-data closed loop (F8) first imports data manually from a centralized store (SharePoint / platform), which is an external prerequisite outside the project's control.
+- **V1 scope:** No drawing image recognition and no 3D VA. Data-to-drawing linking is done through **DIM ID** (F3); more than 10 factors are referred to the DM team for 3D VA. The measured-data closed loop (F7) first imports data manually from a centralized store (SharePoint / platform), which is an external prerequisite outside the project's control.
 - **Calculation engine:** One-dimensional, and **fully consistent** with the Excel formulas in the TA template.
-- **Tracking:** Four ME User Stories group the work; Feature IDs (F0-F9) map to GitHub Feature issues and their task checklists map to implementation work items.
+- **Tracking:** Four ME User Stories group the work; Feature IDs (F0-F8) map to GitHub Feature issues and their task checklists map to implementation work items.
 - **Reminder timing:** When an ADO item is linked, a server-side service periodically checks program milestones and reminds the owner to complete missing information **before a key milestone (e.g. EV1)**.
 
 ## Terminology
