@@ -101,6 +101,9 @@ export async function createAuditStore(root: string): Promise<AuditStore> {
     async writeManifest(input) {
       validateManifestInput(input);
       await serialize(async () => {
+        if (await manifestExists(manifestPath)) {
+          throw new Error("validation_error: audit manifest is already sealed");
+        }
         const artifacts = await Promise.all(
           input.artifacts.map(async ({ path }) => ({
             path,

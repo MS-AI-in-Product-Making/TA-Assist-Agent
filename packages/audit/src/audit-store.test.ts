@@ -74,6 +74,53 @@ it("seals events in the manifest and detects events tampering", async () => {
   }
 });
 
+it("keeps a sealed manifest immutable across sequential and concurrent reseal attempts", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ai-assist-audit-"));
+  const concurrentDirectory = await mkdtemp(join(tmpdir(), "ai-assist-audit-"));
+
+  try {
+    const store = await createAuditStore(directory);
+    await store.append({
+      type: "run_created",
+      classification: "public",
+      payload: { id: "run-1" },
+    });
+    await store.writeManifest({
+      runId: "00000000-0000-4000-8000-000000000001",
+      artifacts: [],
+    });
+    const sealedManifest = await readFile(join(directory, "manifest.json"));
+
+    await expect(
+      store.writeManifest({
+        runId: "00000000-0000-4000-8000-000000000002",
+        artifacts: [],
+      }),
+    ).rejects.toThrow("validation_error");
+    await expect(readFile(join(directory, "manifest.json"))).resolves.toEqual(sealedManifest);
+    await expect(store.verify()).resolves.toEqual({ valid: true, failures: [] });
+
+    const concurrentStore = await createAuditStore(concurrentDirectory);
+    const concurrentSeals = await Promise.allSettled([
+      concurrentStore.writeManifest({
+        runId: "00000000-0000-4000-8000-000000000003",
+        artifacts: [],
+      }),
+      concurrentStore.writeManifest({
+        runId: "00000000-0000-4000-8000-000000000004",
+        artifacts: [],
+      }),
+    ]);
+
+    expect(concurrentSeals.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(concurrentSeals.filter((result) => result.status === "rejected")).toHaveLength(1);
+    await expect(concurrentStore.verify()).resolves.toEqual({ valid: true, failures: [] });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+    await rm(concurrentDirectory, { recursive: true, force: true });
+  }
+});
+
 it("stores only payload hashes and rejects invalid event input", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ai-assist-audit-"));
   const payload = { token: "must-not-be-persisted" };
@@ -126,6 +173,7 @@ it("stores only payload hashes and rejects invalid event input", async () => {
 
 it("detects altered artifacts and rejects manifest path traversal", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ai-assist-audit-"));
+  const missingArtifactDirectory = await mkdtemp(join(tmpdir(), "ai-assist-audit-"));
   const artifactPath = join(directory, "result.txt");
 
   try {
@@ -143,14 +191,15 @@ it("detects altered artifacts and rejects manifest path traversal", async () => 
       failures: [expect.stringContaining("result.txt")],
     });
 
-    const missingArtifactPath = join(directory, "missing.txt");
+    const missingArtifactPath = join(missingArtifactDirectory, "missing.txt");
     await writeFile(missingArtifactPath, "present", "utf8");
-    await store.writeManifest({
+    const missingArtifactStore = await createAuditStore(missingArtifactDirectory);
+    await missingArtifactStore.writeManifest({
       runId: "00000000-0000-4000-8000-000000000001",
       artifacts: [{ path: "missing.txt" }],
     });
     await rm(missingArtifactPath);
-    await expect(store.verify()).resolves.toMatchObject({
+    await expect(missingArtifactStore.verify()).resolves.toMatchObject({
       valid: false,
       failures: [expect.stringContaining("missing.txt")],
     });
@@ -189,6 +238,7 @@ it("detects altered artifacts and rejects manifest path traversal", async () => 
     });
   } finally {
     await rm(directory, { recursive: true, force: true });
+    await rm(missingArtifactDirectory, { recursive: true, force: true });
   }
 });
 
