@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { isForbiddenRepositoryPath } from "./verify-repository.mjs";
 
@@ -30,6 +31,16 @@ describe("isForbiddenRepositoryPath", () => {
   it("allows public fixtures", () => {
     expect(isForbiddenRepositoryPath("fixtures/public/smoke-request.json")).toBe(false);
   });
+  it.each(["fixtures/confidential/sample.json", "a/fixtures/confidential/sample.json"])(
+    "rejects confidential fixture path %s",
+    (path) => expect(isForbiddenRepositoryPath(path)).toBe(true),
+  );
+  it("rejects confidential fixture paths with Windows separators", () => {
+    expect(isForbiddenRepositoryPath("fixtures\\confidential\\sample.json")).toBe(true);
+  });
+  it("allows fixture paths with similar confidential prefixes", () => {
+    expect(isForbiddenRepositoryPath("fixtures/confidential-notes/sample.json")).toBe(false);
+  });
 
   it("provides a parseable public smoke fixture", () => {
     const fixturePath = resolve(process.cwd(), "fixtures/public/smoke-request.json");
@@ -50,5 +61,36 @@ describe("isForbiddenRepositoryPath", () => {
     );
 
     expect(output).toBe("module-import-ok\n");
+  });
+
+  it("rejects a forcibly tracked confidential fixture in an isolated Git repository", () => {
+    const repositoryPath = mkdtempSync(join(tmpdir(), "verify-repository-"));
+    const confidentialFixturePath = join(repositoryPath, "fixtures", "confidential", "sample.json");
+
+    try {
+      mkdirSync(resolve(confidentialFixturePath, ".."), { recursive: true });
+      writeFileSync(confidentialFixturePath, "{}\n");
+      execFileSync("git", ["init", "--quiet"], { cwd: repositoryPath });
+      execFileSync("git", ["add", "--force", "fixtures/confidential/sample.json"], { cwd: repositoryPath });
+
+      const result = (() => {
+        try {
+          execFileSync(process.execPath, [resolve(process.cwd(), "scripts/verify-repository.mjs")], {
+            cwd: repositoryPath,
+            encoding: "utf8",
+            stdio: "pipe",
+          });
+          return { status: 0, stderr: "" };
+        } catch (error) {
+          return { status: error.status, stderr: error.stderr };
+        }
+      })();
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("Forbidden tracked paths:");
+      expect(result.stderr).toContain("fixtures/confidential/sample.json");
+    } finally {
+      rmSync(repositoryPath, { force: true, recursive: true });
+    }
   });
 });

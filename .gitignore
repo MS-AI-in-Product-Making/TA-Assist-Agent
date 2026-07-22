@@ -1,5 +1,6 @@
 # Sensitive data / confidential templates
 test/
+fixtures/confidential/
 *.xlsx
 *.xlsm
 ~$*
