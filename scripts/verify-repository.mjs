@@ -3,8 +3,7 @@ import { pathToFileURL } from "node:url";
 
 const forbiddenPatterns = [
   /(^|\/)\.env(?:\..+)?$/,
-  /(^|\/)runtime\//,
-  /(^|\/)exports\//,
+  /(^|\/)(?:runtime|exports)(?:\/|$)/,
   /\.(xlsx|xlsm)$/i,
 ];
 
@@ -12,7 +11,7 @@ export function isForbiddenRepositoryPath(path) {
   return forbiddenPatterns.some((pattern) => pattern.test(path.replaceAll("\\", "/")));
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const tracked = execFileSync("git", ["ls-files"], { encoding: "utf8" })
     .split("\n")
     .filter(Boolean);
