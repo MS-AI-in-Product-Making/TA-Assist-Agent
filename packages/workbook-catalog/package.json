@@ -1,0 +1,21 @@
+{
+  "name": "@ai-assist/workbook-catalog",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@ai-assist/contracts": "0.1.0",
+    "zod": "^3.24.0",
+    "fflate": "^0.8.2",
+    "@xmldom/xmldom": "^0.9.10"
+  }
+}

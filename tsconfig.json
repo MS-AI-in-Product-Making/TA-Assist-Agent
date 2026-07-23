@@ -4,6 +4,7 @@
     { "path": "./apps/cli" },
     { "path": "./packages/contracts" },
     { "path": "./packages/knowledge-base" },
+    { "path": "./packages/workbook-catalog" },
     { "path": "./packages/audit" },
     { "path": "./packages/memory" },
     { "path": "./packages/governance" },
