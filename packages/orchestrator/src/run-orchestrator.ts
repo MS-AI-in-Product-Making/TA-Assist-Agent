@@ -217,21 +217,15 @@ export async function runWorkflowWithDependencies(
   try {
     const manifestValid = await sealAndVerify(audit, runId, skillResults, options.steps);
     if (workflowError !== undefined) {
-      Object.assign(workflowError, { runDirectory: runStore.runDirectory });
-      throw workflowError;
+      throw enrichWorkflowError(workflowError, runStore.runDirectory);
     }
     return { runId, runDirectory: runStore.runDirectory, skillResults, manifestValid };
   } catch (error: unknown) {
     const auditError = toAuditError(error, runId);
     if (workflowError !== undefined) {
-      Object.assign(workflowError, {
-        runDirectory: runStore.runDirectory,
-        auditError: safeAuditDiagnostic(auditError),
-      });
-      throw workflowError;
+      throw enrichWorkflowError(workflowError, runStore.runDirectory, safeAuditDiagnostic(auditError));
     }
-    Object.assign(auditError, { runDirectory: runStore.runDirectory });
-    throw auditError;
+    throw enrichWorkflowError(auditError, runStore.runDirectory);
   }
 }
 
@@ -357,6 +351,35 @@ function toAuditError(error: unknown, runId: string): Error & TypedError {
     summary: "Audit sealing or verification failed.",
     suggestedAction: "Inspect the run storage and retry the workflow after the audit dependency is available.",
     affectedInputReferences: [],
+  });
+}
+
+function enrichWorkflowError(
+  error: Error & TypedError,
+  runDirectory: string,
+  auditError?: ReturnType<typeof safeAuditDiagnostic>,
+): Error & TypedError {
+  const errorDetails = isRecord(error) ? error : undefined;
+  const unavailableFeatureDetails = error.code === "feature_not_available" && errorDetails !== undefined
+    ? unavailableFeatureDetailsSchema.safeParse({
+      featureId: readOwnDataProperty(errorDetails, "featureId"),
+      dependencies: readOwnDataProperty(errorDetails, "dependencies"),
+      enablementRequirements: readOwnDataProperty(errorDetails, "enablementRequirements"),
+    })
+    : undefined;
+
+  return createTypedError({
+    code: error.code,
+    runId: error.runId,
+    summary: error.summary,
+    retryable: error.retryable,
+    suggestedAction: error.suggestedAction,
+    affectedInputReferences: error.affectedInputReferences,
+    details: {
+      ...(unavailableFeatureDetails?.success ? unavailableFeatureDetails.data : {}),
+      runDirectory,
+      ...(auditError === undefined ? {} : { auditError }),
+    },
   });
 }
 

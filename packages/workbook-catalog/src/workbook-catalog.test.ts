@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { describe, expect, it, vi } from "vitest";
 import { typedErrorSchema, workbookCatalogResultSchema } from "@ai-assist/contracts";
 import { createAnonymousWorkbookZip } from "./test-support.js";
@@ -117,6 +118,20 @@ function expectCatalogError(action: () => unknown, code = "validation_error", su
 }
 
 describe("workbook catalog", () => {
+  it("exports createWorkbookCatalog from the built ESM package entrypoint", () => {
+    const output = execFileSync(
+      process.execPath,
+      [
+        "--input-type=module",
+        "--eval",
+        'import { createWorkbookCatalog } from "@ai-assist/workbook-catalog"; process.stdout.write(typeof createWorkbookCatalog);',
+      ],
+      { cwd: process.cwd(), encoding: "utf8" },
+    );
+
+    expect(output).toBe("function");
+  });
+
   it("catalogs all populated Auto Summary rows without inspecting status fields", () => {
     const workbookBytes = catalogWorkbook({ dateFormula: "TODAY()" });
     const result = createWorkbookCatalog(request(workbookBytes));

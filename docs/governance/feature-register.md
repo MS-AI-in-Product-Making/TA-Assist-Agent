@@ -42,3 +42,19 @@ Feature Register 是 Phase 0 对 F0-F8 的唯一可查询能力清单。它提�
   `network` 和其他外部权限仍由策略门拒绝；不得将该状态解释为生产能力可用。
 - 修改任一条目时，必须同步更新 `packages/governance` 的测试、此文档、相关契约
   和匿名验收 fixture。若涉及外部访问，还必须经过策略门审批。
+
+## F1 验收命令
+
+在仓库根目录执行以下命令。聚焦测试仅使用匿名、内存中的 workbook fixture；不得传入
+或修改真实工作簿。
+
+```powershell
+npm exec -- vitest run --workspace vitest.workspace.ts packages/contracts/src/contracts.test.ts packages/workbook-catalog/src/zip-security.test.ts packages/workbook-catalog/src/ooxml-reader.test.ts packages/workbook-catalog/src/workbook-catalog.test.ts packages/governance/src/policy-gate.test.ts
+npm run build -- --force
+npm run lint
+npm test
+npm run check:repository
+npm ci --dry-run
+git diff --check
+git ls-files | Select-String '\.(xlsx|xlsm)$|^test/|^fixtures/confidential/'
+```

@@ -252,6 +252,7 @@ it("normalizes audit sealing failures to a current-run dependency error", async 
     expect(thrown.code).toBe("dependency_error");
     expect(thrown.runId).toMatch(/^[0-9a-f-]{36}$/);
     expect(thrown.runDirectory).toContain(rootDir);
+    expect(Object.isFrozen(thrown)).toBe(true);
   } finally {
     await rm(rootDir, { recursive: true, force: true });
   }
@@ -279,17 +280,88 @@ it("preserves the primary Skill error when audit sealing also fails", async () =
     }).catch((error: unknown) => error) as Error & {
       code: string;
       runId: string;
+      runDirectory: string;
       auditError?: { code: string; runId: string };
     };
 
     expect(thrown.code).toBe("policy_denied");
     expect(thrown.runId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(thrown.runDirectory).toContain(rootDir);
     expect(thrown.auditError).toEqual({
       code: "dependency_error",
       runId: thrown.runId,
       summary: "Audit sealing or verification failed.",
       suggestedAction: "Inspect the run storage and retry the workflow after the audit dependency is available.",
     });
+    expect(Object.isFrozen(thrown)).toBe(true);
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+it("preserves frozen unavailable feature diagnostics when audit sealing also fails", async () => {
+  const rootDir = await mkdtemp(join(tmpdir(), "ai-assist-orchestrator-"));
+  const registry = new SkillRegistry();
+  const foreignRunId = "44444444-4444-4444-8444-444444444444";
+  registry.register(createTestSkill("unavailable-seal-skill", false, async () => {
+    throw createTypedError({
+      code: "feature_not_available",
+      runId: foreignRunId,
+      summary: "Feature 'F4' is not available.",
+      retryable: true,
+      suggestedAction: "Complete its enablement requirements.",
+      affectedInputReferences: ["input.workbook"],
+      details: {
+        featureId: "F4",
+        dependencies: ["calculation-worker-v1"],
+        enablementRequirements: ["approved-windows-excel-worker"],
+      },
+    });
+  }));
+
+  try {
+    const thrown = await runWorkflowForTest({
+      rootDir,
+      registry,
+      steps: [{ skillId: "unavailable-seal-skill" }],
+    }, {
+      auditStoreFactory: async (runDirectory) => failingSealAuditStore(await createAuditStore(runDirectory)),
+    }).catch((error: unknown) => error) as Error & {
+      code: string;
+      runId: string;
+      summary: string;
+      retryable: boolean;
+      suggestedAction: string;
+      affectedInputReferences: string[];
+      featureId: string;
+      dependencies: string[];
+      enablementRequirements: string[];
+      auditError: { code: string; runId: string; summary: string; suggestedAction: string };
+      runDirectory: string;
+    };
+
+    expect(thrown.code).toBe("feature_not_available");
+    expect(thrown.runId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(thrown.runId).not.toBe(foreignRunId);
+    expect(thrown.summary).toBe("Feature 'F4' is not available.");
+    expect(thrown.retryable).toBe(true);
+    expect(thrown.suggestedAction).toBe("Complete its enablement requirements.");
+    expect(thrown.affectedInputReferences).toEqual(["input.workbook"]);
+    expect(thrown.featureId).toBe("F4");
+    expect(thrown.dependencies).toEqual(["calculation-worker-v1"]);
+    expect(thrown.enablementRequirements).toEqual(["approved-windows-excel-worker"]);
+    expect(thrown.auditError).toEqual({
+      code: "dependency_error",
+      runId: thrown.runId,
+      summary: "Audit sealing or verification failed.",
+      suggestedAction: "Inspect the run storage and retry the workflow after the audit dependency is available.",
+    });
+    expect(thrown.runDirectory).toContain(rootDir);
+    expect(Object.isFrozen(thrown)).toBe(true);
+    expect(Object.isFrozen(thrown.affectedInputReferences)).toBe(true);
+    expect(Object.isFrozen(thrown.dependencies)).toBe(true);
+    expect(Object.isFrozen(thrown.enablementRequirements)).toBe(true);
+    expect(Object.isFrozen(thrown.auditError)).toBe(true);
   } finally {
     await rm(rootDir, { recursive: true, force: true });
   }
