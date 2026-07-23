@@ -30,13 +30,15 @@ Full design docs live in [`docs/`](docs/README.md) (Mermaid diagrams render nati
 
 ## Phase 0 工程基座
 
-Phase 0 建立面向产品路线图的本地优先、可审计 TypeScript 工程基础，不交付 F0-F8 业务
-工作流：F0-F7 保持不可用，F4 返回 `feature_not_available`，F8 仅限用于受治理 Skill
-运行时验收的匿名 `public` fixture。此阶段不包含真实工作簿、外部 Adapter、模型、ADO、
-SharePoint 或 UI 行为。
+Phase 0 建立面向产品路线图的本地优先、可审计 TypeScript 工程基础。F0 仅提供匿名
+`public` 的本地只读知识库查询；F1-F7 保持不可用，F4 返回 `feature_not_available`，F8
+仅限用于受治理 Skill 运行时验收的匿名 `public` fixture。此阶段不包含真实工作簿、真实
+工程知识、外部 Adapter、模型、ADO、SharePoint 或 UI 行为。
 
 - [Phase 0 设计](docs/superpowers/specs/2026-07-22-ai-assist-agent-foundation-design.md)
 - [Phase 0 实施计划](docs/superpowers/plans/2026-07-22-ai-assist-agent-foundation.md)
+- [F0 知识库设计](docs/superpowers/specs/2026-07-22-f0-knowledge-base-design.md)
+- [F0 知识库实施计划](docs/superpowers/plans/2026-07-22-f0-knowledge-base.md)
 - [系统架构](docs/01-architecture.md) 与 [Feature Register](docs/governance/feature-register.md)
 - [数据分类](docs/governance/data-classification.md) 与 [开发协作标准](docs/governance/development-standard.md)
 - [Phase 0 验收](docs/governance/phase-0-acceptance.md)

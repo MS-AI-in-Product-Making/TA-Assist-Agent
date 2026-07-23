@@ -53,6 +53,35 @@ describe("policy gate", () => {
     });
   });
 
+  it("reports F0 as the available public read-only knowledge base", () => {
+    expect(getFeatureStatus("F0")).toEqual({
+      featureId: "F0",
+      title: "知识库",
+      status: "available",
+      dependsOn: ["knowledge-base-v1"],
+      inputContractId: "knowledge-base-query-request-v1",
+      outputContractId: "knowledge-base-query-result-v1",
+      maximumClassification: "public",
+      acceptanceChecks: [
+        "anonymous-knowledge-base-fixture",
+        "unknown-capability-t0-fixture",
+        "knowledge-base-integrity-check",
+      ],
+      externalPrerequisites: ["approved-public-knowledge-snapshot"],
+      disableBehavior: "return feature_not_available",
+    });
+  });
+
+  it.each(["F1", "F2", "F3", "F4", "F5", "F6", "F7"])(
+    "keeps %s unavailable",
+    (featureId) => {
+      expect(getFeatureStatus(featureId)).toMatchObject({
+        featureId,
+        status: "unavailable",
+      });
+    },
+  );
+
   it("reports F4 as unavailable", () => {
     expect(getFeatureStatus("F4")).toEqual({
       featureId: "F4",

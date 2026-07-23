@@ -53,8 +53,9 @@ Windows 上一个符号链接测试可能因为创建 symlink 所需的权限而
 
 ## 安全与功能边界
 
-- Feature Register 中 F0-F7 均为 `unavailable`。F4 只能返回
-  `feature_not_available`，不执行方法推荐或 Excel 一致性计算。
+- F0 仅对本地匿名 `public` 的只读 `knowledge-base-v1` 查询可用，且内容由 Git/PR
+  维护；F1-F7 仍为 `unavailable`。F4 只能返回 `feature_not_available`，不执行方法推荐或
+  Excel 一致性计算。
 - F8 的 `available` 仅表示匿名 `public` fixture 的受治理 Skill runtime 可验收，绝不
   表示 TA 产品工作流、生产编排、网络访问或外部写入已实现。
 - 默认 Adapter 拒绝外部访问。Phase 0 不包含真实工作簿、模型、ADO、SharePoint、UI、
