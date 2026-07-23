@@ -227,11 +227,13 @@ export const terminologyUnknownResultSchema = z
   })
   .strict();
 
+const filenameControlCharacters = new RegExp(`^[^/\\\\${String.fromCharCode(0)}-${String.fromCharCode(31)}${String.fromCharCode(127)}${String.fromCharCode(0x2028)}${String.fromCharCode(0x2029)}]+\\.xlsx$`, "i");
+
 const workbookCatalogFileNameSchema = z
   .string()
   .min(1)
   .max(240)
-  .regex(/^[^/\\\u0000-\u001F\u007F\u2028\u2029]+\.xlsx$/i)
+  .regex(filenameControlCharacters)
   .refine((fileName) => !fileName.includes(".."), {
     message: "fileName must not contain traversal segments",
   });
