@@ -40,16 +40,22 @@ const unavailableFeature = (
 const featureRegister: ReadonlyMap<string, FeatureRegistration> = new Map([
   [
     "F0",
-    unavailableFeature(
-      "F0",
-      "TA 工作簿基础解析",
-      ["workbook-parser-v1"],
-      "workbook-request-v1",
-      "workbook-summary-v1",
-      "confidential",
-      ["anonymous-workbook-fixture"],
-      ["approved-workbook-parser"],
-    ),
+    {
+      featureId: "F0",
+      title: "知识库",
+      status: "available",
+      dependsOn: ["knowledge-base-v1"],
+      inputContractId: "knowledge-base-query-request-v1",
+      outputContractId: "knowledge-base-query-result-v1",
+      maximumClassification: "public",
+      acceptanceChecks: [
+        "anonymous-knowledge-base-fixture",
+        "unknown-capability-t0-fixture",
+        "knowledge-base-integrity-check",
+      ],
+      externalPrerequisites: ["approved-public-knowledge-snapshot"],
+      disableBehavior: "return feature_not_available",
+    },
   ],
   [
     "F1",
