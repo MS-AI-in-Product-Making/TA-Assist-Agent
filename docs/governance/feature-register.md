@@ -4,15 +4,16 @@
 
 Feature Register 是 Phase 0 对 F0-F8 的唯一可查询能力清单。它提供规则和查询接口，
 用于区分已完成的工程基座与尚未交付的业务能力，避免调用方、测试或文档将规划能力
-误认为可用。F0-F7 均为 `unavailable`；F8 仅为 Phase 0 的匿名、`public`、受治理
-Skill 验收 fixture 而标记为 `available`。这不表示已交付 TA 产品工作流、生产编排器
-或任何外部写入能力；调用方和后续编排器仍必须在执行前查询该清单。
+误认为可用。F0 为本地、匿名、`public`、只读的 `knowledge-base-v1` 查询而标记为
+`available`；F1-F7 均为 `unavailable`。F8 仅为 Phase 0 的匿名、`public`、受治理
+Skill 验收 fixture 而标记为 `available`。这些状态不表示已交付 TA 产品工作流、生产
+编排器、真实工程知识或任何外部写入能力；调用方和后续编排器仍必须在执行前查询该清单。
 
 ## 当前条目
 
 | Feature | 标题 | 当前状态 | 依赖与外部前置条件 | 输入/输出契约 | 最大分类 | 验收检查 | 禁用行为 |
 |---|---|---|---|---|---|---|---|
-| F0 | TA 工作簿基础解析 | `unavailable` | `workbook-parser-v1`; `approved-workbook-parser` | `workbook-request-v1` / `workbook-summary-v1` | `confidential` | `anonymous-workbook-fixture` | `return feature_not_available` |
+| F0 | 知识库 | `available` | `knowledge-base-v1`; `approved-public-knowledge-snapshot` | `knowledge-base-query-request-v1` / `knowledge-base-query-result-v1` | `public` | `anonymous-knowledge-base-fixture`, `unknown-capability-t0-fixture`, `knowledge-base-integrity-check` | `return feature_not_available` |
 | F1 | TA 数据质量检查 | `unavailable` | `workbook-parser-v1`, `quality-rules-v1`; `approved-quality-rules` | `quality-check-request-v1` / `quality-check-result-v1` | `confidential` | `anonymous-quality-fixture` | `return feature_not_available` |
 | F2 | TA 风险与行动建议 | `unavailable` | `quality-rules-v1`, `recommendation-engine-v1`; `approved-recommendation-rules` | `recommendation-request-v1` / `recommendation-result-v1` | `confidential` | `anonymous-recommendation-fixture` | `return feature_not_available` |
 | F3 | DIM ID 与图纸治理 | `unavailable` | `dim-id-service-v1`; `approved-ado-access`, `canonical-dim-id-policy` | `drawing-governance-request-v1` / `drawing-governance-result-v1` | `confidential` | `anonymous-dim-id-fixture` | `return feature_not_available` |
@@ -29,6 +30,9 @@ Skill 验收 fixture 而标记为 `available`。这不表示已交付 TA 产品�
 - 条目状态为 `unavailable` 时，调用方和后续生产编排器不得执行相应业务逻辑。后续
   运行时必须返回 `feature_not_available`，并说明未满足的依赖或外部前置条件；这是
   后续实现义务，不代表 Phase 0 已完成端到端拦截。
+- F0 的 `available` 仅允许本地、匿名 `public` 请求对 `knowledge-base-v1` 执行只读
+  查询，并以已审批的公共知识快照为内容来源。知识条目通过 Git/PR 维护；不得将该状态
+  解释为可使用真实工程知识，也不得据此启用 F1-F7。
 - F8 的 `available` 仅允许匿名 `public` Skill fixture 在 runner 中通过输入分类、
   Feature 状态和策略门检查后执行纯函数或显式注入的 mock adapter。`persist`、
   `network` 和其他外部权限仍由策略门拒绝；不得将该状态解释为生产能力可用。
