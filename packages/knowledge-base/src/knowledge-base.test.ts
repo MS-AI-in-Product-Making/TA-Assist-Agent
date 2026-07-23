@@ -12,6 +12,17 @@ const validCapabilityQuery = {
   datum: "primary-demo-datum",
 };
 
+function captureTypedError(invoke: () => unknown) {
+  try {
+    invoke();
+  } catch (error) {
+    const parsed = typedErrorSchema.safeParse(error);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) return { error, typedError: parsed.data };
+  }
+  throw new Error("expected a typed error");
+}
+
 it("loads v1 and returns positive capability, rule, and terminology matches", () => {
   const knowledgeBase = loadKnowledgeBase({ version: "v1" });
 
@@ -97,38 +108,33 @@ it("rejects malformed query requests with typed validation errors", () => {
     () => knowledgeBase.resolveTerminology({ termType: "datum", value: "" }),
     () => knowledgeBase.findCapability(new Proxy({}, { get: () => { throw new Error("bad getter"); } })),
   ]) {
-    expect(invoke).toThrowError();
-    try {
-      invoke();
-    } catch (error) {
-      const parsed = typedErrorSchema.safeParse(error);
-      expect(parsed.success && parsed.data.code).toBe("validation_error");
-    }
+    expect(captureTypedError(invoke).typedError.code).toBe("validation_error");
   }
 });
 
-it("rejects untrusted load requests and reports an unavailable embedded version", () => {
-  for (const request of [{}, { version: 1 }, { version: "v1", path: "C:/private.xlsx" }, { version: "v1", url: "https://example.test/v1" }, { version: "v1", data: {} }]) {
-    expect(() => loadKnowledgeBase(request)).toThrowError();
-    try {
-      loadKnowledgeBase(request);
-    } catch (error) {
-      const parsed = typedErrorSchema.safeParse(error);
-      expect(parsed.success && parsed.data.code).toBe("validation_error");
-    }
-  }
+it("rejects untrusted load requests with schema-valid validation errors", () => {
+  const privatePath = `C:\\${["private", ".", "xls", "x"].join("")}`;
 
-  expect(() => loadKnowledgeBase({ version: "v2" })).toThrowError();
-  try {
-    loadKnowledgeBase({ version: "v2" });
-  } catch (error) {
-    expect(error).toMatchObject({
-      code: "feature_not_available",
-      featureId: "F0",
-      dependencies: ["knowledge-base-v1"],
-      enablementRequirements: ["approved-public-knowledge-snapshot"],
-    });
+  for (const request of [{}, { version: 1 }, { version: "v1", path: privatePath }, { version: "v1", url: "https://example.test/v1" }, { version: "v1", data: {} }]) {
+    const { error, typedError } = captureTypedError(() => loadKnowledgeBase(request));
+    expect(typedError.code).toBe("validation_error");
+    expect(JSON.stringify(error)).not.toContain(privatePath);
+    expect(error.message).not.toContain(privatePath);
   }
+});
+
+it("reports unavailable versions as schema-valid F0 typed errors", () => {
+  const { error, typedError } = captureTypedError(() => loadKnowledgeBase({ version: "v2" }));
+
+  expect(typedError).toMatchObject({
+    code: "feature_not_available",
+    affectedInputReferences: ["knowledge-base-v1"],
+  });
+  expect(error).toMatchObject({
+    featureId: "F0",
+    dependencies: ["knowledge-base-v1"],
+    enablementRequirements: ["approved-public-knowledge-snapshot"],
+  });
 });
 
 it("returns fresh deeply frozen DTOs that cannot affect later queries", () => {
