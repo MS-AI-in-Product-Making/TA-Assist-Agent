@@ -59,16 +59,22 @@ const featureRegister: ReadonlyMap<string, FeatureRegistration> = new Map([
   ],
   [
     "F1",
-    unavailableFeature(
-      "F1",
-      "TA 数据质量检查",
-      ["workbook-parser-v1", "quality-rules-v1"],
-      "quality-check-request-v1",
-      "quality-check-result-v1",
-      "confidential",
-      ["anonymous-quality-fixture"],
-      ["approved-quality-rules"],
-    ),
+    {
+      featureId: "F1",
+      title: "TA 报告解析与资产准备",
+      status: "available",
+      dependsOn: ["workbook-catalog-v1"],
+      inputContractId: "workbook-catalog-request-v1",
+      outputContractId: "workbook-catalog-result-v1",
+      maximumClassification: "confidential",
+      acceptanceChecks: [
+        "anonymous-workbook-catalog-fixture",
+        "dynamic-date-cache-fixture",
+        "workbook-catalog-privacy-check",
+      ],
+      externalPrerequisites: ["approved-ooxml-parser"],
+      disableBehavior: "return feature_not_available",
+    },
   ],
   [
     "F2",

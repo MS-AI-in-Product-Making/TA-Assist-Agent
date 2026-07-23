@@ -227,6 +227,71 @@ export const terminologyUnknownResultSchema = z
   })
   .strict();
 
+const filenameControlCharacters = new RegExp(`^[^/\\\\${String.fromCharCode(0)}-${String.fromCharCode(31)}${String.fromCharCode(127)}${String.fromCharCode(0x2028)}${String.fromCharCode(0x2029)}]+\\.xlsx$`, "i");
+
+const workbookCatalogFileNameSchema = z
+  .string()
+  .min(1)
+  .max(240)
+  .regex(filenameControlCharacters)
+  .refine((fileName) => !fileName.includes(".."), {
+    message: "fileName must not contain traversal segments",
+  });
+
+export const workbookCatalogRequestSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    fileName: workbookCatalogFileNameSchema,
+    inputClassification: z.literal("confidential"),
+    workbookBytes: z.instanceof(Uint8Array).refine((workbookBytes) => workbookBytes.length > 0, {
+      message: "workbookBytes must not be empty",
+    }),
+  })
+  .strict();
+
+export const workbookCatalogDateSchema = z
+  .object({
+    value: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    formula: z.string().min(1).optional(),
+    sourceCell: z.string().regex(/^Title Page![A-Z]+[1-9]\d*$/),
+  })
+  .strict();
+
+export const workbookCatalogAnalysisSchema = z
+  .object({
+    worksheetName: z.string().min(1),
+    toleranceLoopDescription: z.string().min(1),
+    source: z
+      .object({
+        summarySheet: z.literal("Auto Summary"),
+        summaryRow: z.number().int().positive(),
+        worksheetAnchor: z.string().regex(/^[^!]+!A1$/),
+      })
+      .strict(),
+  })
+  .strict();
+
+export const workbookCatalogResultSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    workbook: z
+      .object({
+        fileName: workbookCatalogFileNameSchema,
+        classification: z.literal("confidential"),
+        contentHash: z.string().regex(/^[a-f0-9]{64}$/),
+        metadata: z
+          .object({
+            documentNo: z.string().min(1),
+            revision: z.string().min(1),
+            date: workbookCatalogDateSchema,
+          })
+          .strict(),
+      })
+      .strict(),
+    analyses: z.array(workbookCatalogAnalysisSchema).min(1),
+  })
+  .strict();
+
 export const knowledgeBaseManifestResponseSchema = knowledgeBaseManifestSchema;
 
 export const knowledgeBaseQueryResultSchema = z.union([
@@ -260,3 +325,5 @@ export type TerminologyMatchResult = z.infer<typeof terminologyMatchResultSchema
 export type TerminologyUnknownResult = z.infer<typeof terminologyUnknownResultSchema>;
 export type KnowledgeBaseManifestResponse = z.infer<typeof knowledgeBaseManifestResponseSchema>;
 export type KnowledgeBaseQueryResult = z.infer<typeof knowledgeBaseQueryResultSchema>;
+export type WorkbookCatalogRequest = z.infer<typeof workbookCatalogRequestSchema>;
+export type WorkbookCatalogResult = z.infer<typeof workbookCatalogResultSchema>;

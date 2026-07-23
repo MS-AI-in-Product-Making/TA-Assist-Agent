@@ -3,11 +3,14 @@ import { describe, expect, it } from "vitest";
 import {
   capabilityEntrySchema,
   capabilityTierSchema,
+  createTypedError,
   engineeringRuleEntrySchema,
   engineeringRuleQuerySchema,
   knowledgeBaseQueryResultSchema,
   knowledgeBaseManifestSchema,
   knowledgeBaseQueryRequestSchema,
+  workbookCatalogRequestSchema,
+  workbookCatalogResultSchema,
   dataClassificationSchema,
   errorCodeSchema,
   runRequestSchema,
@@ -32,6 +35,25 @@ describe("Phase 0 contracts", () => {
 
   it("rejects an error without run_id", () => {
     expect(() => typedErrorSchema.parse({ code: "policy_denied" })).toThrow();
+  });
+
+  it("deeply freezes typed errors and caller-provided nested details", () => {
+    const nested = { entries: [{ value: "safe" }] };
+    const error = createTypedError({
+      code: "validation_error",
+      summary: "Safe error.",
+      suggestedAction: "Use valid input.",
+      affectedInputReferences: ["safe-reference"],
+      details: { nested },
+    }) as Error & { readonly nested: { readonly entries: readonly { readonly value: string }[] } };
+
+    expect(Object.isFrozen(error)).toBe(true);
+    expect(Object.isFrozen(error.affectedInputReferences)).toBe(true);
+    expect(Object.isFrozen(error.nested)).toBe(true);
+    expect(Object.isFrozen(error.nested.entries)).toBe(true);
+    expect(Object.isFrozen(error.nested.entries[0]!)).toBe(true);
+    expect(() => { (error.affectedInputReferences as string[]).push("changed"); }).toThrow();
+    expect(() => { (error.nested.entries[0] as { value: string }).value = "changed"; }).toThrow();
   });
 
   it("allows only the supported data classifications", () => {
@@ -345,5 +367,120 @@ describe("knowledge-base contracts", () => {
     expect(matchedCapability.queryType).toBe("capability");
     expect(knowledgeBaseQueryResultSchema.parse(unknownCapability)).toEqual(unknownCapability);
     expect(() => knowledgeBaseQueryResultSchema.parse({ ...unknownCapability, feasible: true })).toThrow();
+  });
+});
+
+describe("workbook catalog contracts", () => {
+  const confidentialRequest = {
+    contractVersion: "v1",
+    fileName: "anonymous-ta.xlsx",
+    inputClassification: "confidential",
+    workbookBytes: new Uint8Array([0x50, 0x4b, 3, 4]),
+  };
+
+  const confidentialResult = {
+    contractVersion: "v1",
+    workbook: {
+      fileName: "anonymous-ta.xlsx",
+      classification: "confidential",
+      contentHash: "a".repeat(64),
+      metadata: {
+        documentNo: "TA-001",
+        revision: "A",
+        date: {
+          value: "2026-07-23",
+          formula: "=TODAY()",
+          sourceCell: "Title Page!B6",
+        },
+      },
+    },
+    analyses: [
+      {
+        worksheetName: "Auto Summary",
+        toleranceLoopDescription: "Cataloged tolerance analysis.",
+        source: {
+          summarySheet: "Auto Summary",
+          summaryRow: 1,
+          worksheetAnchor: "Auto Summary!A1",
+        },
+      },
+    ],
+  };
+
+  it("accepts a confidential workbook catalog request", () => {
+    expect(workbookCatalogRequestSchema.parse(confidentialRequest)).toEqual(confidentialRequest);
+  });
+
+  it("accepts an approved confidential workbook catalog result", () => {
+    expect(workbookCatalogResultSchema.parse(confidentialResult)).toEqual(confidentialResult);
+  });
+
+  it.each([
+    ["a Windows path", { ...confidentialRequest, fileName: "C:\\private\\anonymous-ta.xlsx" }],
+    ["a traversal path", { ...confidentialRequest, fileName: "../anonymous-ta.xlsx" }],
+    ...["safe\u0000.xlsx", "safe\u000b.xlsx", "safe\u007f.xlsx", "safe\u2028.xlsx", "safe\u2029.xlsx"].map(
+      (fileName) => ["a filename with a control character", { ...confidentialRequest, fileName }] as const,
+    ),
+    ["a public classification", { ...confidentialRequest, inputClassification: "public" }],
+    ["empty workbook bytes", { ...confidentialRequest, workbookBytes: new Uint8Array() }],
+    ["an extra field", { ...confidentialRequest, unexpected: true }],
+  ])("rejects a request with %s", (_description, request) => {
+    expect(workbookCatalogRequestSchema.safeParse(request).success).toBe(false);
+  });
+
+  it.each(["Auto Summary!A12", "Auto Summary!A1-extra"])(
+    "rejects a result with a malformed worksheet anchor: %s",
+    (worksheetAnchor) => {
+      expect(
+        workbookCatalogResultSchema.safeParse({
+          ...confidentialResult,
+          analyses: [
+            {
+              ...confidentialResult.analyses[0],
+              source: { ...confidentialResult.analyses[0].source, worksheetAnchor },
+            },
+          ],
+        }).success,
+      ).toBe(false);
+    },
+  );
+
+  it("rejects a result with unknown raw fields", () => {
+    expect(
+      workbookCatalogResultSchema.safeParse({
+        ...confidentialResult,
+        workbook: { ...confidentialResult.workbook, rawWorkbookXml: "<workbook />" },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects a result with a non-confidential classification", () => {
+    expect(
+      workbookCatalogResultSchema.safeParse({
+        ...confidentialResult,
+        workbook: { ...confidentialResult.workbook, classification: "internal" },
+      }).success,
+    ).toBe(false);
+  });
+
+  it.each([
+    ["legacy worksheet", { worksheet: "Auto Summary" }],
+    ["legacy description", { description: "Cataloged tolerance analysis." }],
+    [
+      "an analysis-level date",
+      {
+        date: {
+          value: "2026-07-23",
+          sourceCell: "Title Page!B6",
+        },
+      },
+    ],
+  ])("rejects a result with %s", (_description, legacyFields) => {
+    expect(
+      workbookCatalogResultSchema.safeParse({
+        ...confidentialResult,
+        analyses: [{ ...confidentialResult.analyses[0], ...legacyFields }],
+      }).success,
+    ).toBe(false);
   });
 });
