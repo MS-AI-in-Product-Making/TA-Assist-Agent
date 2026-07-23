@@ -72,7 +72,26 @@ describe("policy gate", () => {
     });
   });
 
-  it.each(["F1", "F2", "F3", "F4", "F5", "F6", "F7"])(
+  it("reports F1 as the available TA report parsing and asset preparation feature", () => {
+    expect(getFeatureStatus("F1")).toEqual({
+      featureId: "F1",
+      title: "TA 报告解析与资产准备",
+      status: "available",
+      dependsOn: ["workbook-catalog-v1"],
+      inputContractId: "workbook-catalog-request-v1",
+      outputContractId: "workbook-catalog-result-v1",
+      maximumClassification: "confidential",
+      acceptanceChecks: [
+        "anonymous-workbook-catalog-fixture",
+        "dynamic-date-cache-fixture",
+        "workbook-catalog-privacy-check",
+      ],
+      externalPrerequisites: ["approved-ooxml-parser"],
+      disableBehavior: "return feature_not_available",
+    });
+  });
+
+  it.each(["F2", "F3", "F4", "F5", "F6", "F7"])(
     "keeps %s unavailable",
     (featureId) => {
       expect(getFeatureStatus(featureId)).toMatchObject({

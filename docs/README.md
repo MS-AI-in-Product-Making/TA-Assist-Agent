@@ -21,10 +21,12 @@ Design document set for AI Assist Agent (V1). All diagrams use Mermaid and rende
 ## Phase 0 工程基座
 
 Phase 0 是本地优先、可审计、契约驱动的工程基础，不是 F0-F8 业务功能交付。F0 仅以本地、
-匿名、`public`、只读的 `knowledge-base-v1` 查询能力可用，知识条目通过 Git/PR 维护；F1-F7
-均不可用，F4 仅返回 `feature_not_available`。F0 不代表可使用真实工程知识，也不会启用其他
-功能；F8 仅提供匿名 `public` fixture 的受治理 Skill 运行时验收，不包含真实工作簿、外部
-Adapter、模型、ADO、SharePoint 或 UI 行为。
+匿名、`public`、只读的 `knowledge-base-v1` 查询能力可用，知识条目通过 Git/PR 维护；F1
+仅接受受控 `confidential` `.xlsx` 字节并创建只读 worksheet catalog，不读取因子表、不计算、
+不提取图片、不调用外部服务，也不跟踪或导出原始 `.xlsx`；F2-F7 均不可用，F4 仅返回
+`feature_not_available`。F0 不代表可使用真实工程知识，也不会启用其他功能；F8 仅提供匿名
+`public` fixture 的受治理 Skill 运行时验收，不包含外部 Adapter、模型、ADO、SharePoint 或 UI
+行为。
 
 | 文档 | 内容 |
 |---|---|
@@ -32,6 +34,8 @@ Adapter、模型、ADO、SharePoint 或 UI 行为。
 | [Phase 0 实施计划](superpowers/plans/2026-07-22-ai-assist-agent-foundation.md) | 任务分解、TDD 步骤和质量门 |
 | [F0 知识库设计](superpowers/specs/2026-07-22-f0-knowledge-base-design.md) | F0 本地匿名公共只读查询能力、Git/PR 维护边界和契约 |
 | [F0 知识库实施计划](superpowers/plans/2026-07-22-f0-knowledge-base.md) | F0 实施任务、TDD 步骤和质量门 |
+| [F1 工作簿目录设计](superpowers/specs/2026-07-23-f1-workbook-catalog-design.md) | F1 受控机密字节、只读 worksheet catalog 和隐私边界 |
+| [F1 工作簿目录实施计划](superpowers/plans/2026-07-23-f1-workbook-catalog.md) | F1 实施任务、TDD 步骤和质量门 |
 | [系统架构](01-architecture.md) | 产品架构与后续业务能力边界 |
 | [Feature Register](governance/feature-register.md) | F0-F8 可用性、依赖、契约和禁用行为 |
 | [数据分类](governance/data-classification.md) | `public`、`internal`、`confidential`、`secret` 处理规则 |

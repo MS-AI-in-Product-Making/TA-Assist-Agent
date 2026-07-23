@@ -54,12 +54,14 @@ Windows 上一个符号链接测试可能因为创建 symlink 所需的权限而
 ## 安全与功能边界
 
 - F0 仅对本地匿名 `public` 的只读 `knowledge-base-v1` 查询可用，且内容由 Git/PR
-  维护；F1-F7 仍为 `unavailable`。F4 只能返回 `feature_not_available`，不执行方法推荐或
-  Excel 一致性计算。
+  维护。F1 仅接受受控 `confidential` `.xlsx` 字节并创建只读 worksheet catalog；不读取
+  因子表、不计算、不提取图片、不调用外部服务，也不跟踪或导出原始 `.xlsx`。F2-F7 仍为
+  `unavailable`；F4 只能返回 `feature_not_available`，不执行方法推荐或 Excel 一致性计算。
 - F8 的 `available` 仅表示匿名 `public` fixture 的受治理 Skill runtime 可验收，绝不
   表示 TA 产品工作流、生产编排、网络访问或外部写入已实现。
-- 默认 Adapter 拒绝外部访问。Phase 0 不包含真实工作簿、模型、ADO、SharePoint、UI、
-  测量数据、计划任务或外部系统行为。
+- 默认 Adapter 拒绝外部访问。除 F1 在受控内存处理的 `confidential` 字节外，Phase 0
+  不包含真实工作簿、模型、ADO、SharePoint、UI、测量数据、计划任务或外部系统行为；F1
+  不会持久化、跟踪或导出原始 `.xlsx`。
 - `secret` 不得写入 memory、audit、日志、导出或 Git。`confidential` 数据不得作为验收
   fixture；真实 runtime 与 `.env`、导出包和工作簿路径均须通过仓库检查排除。
 - 持久化 `export` 必须在审计未封存时执行：先追加 `export_created`，再原子写入分类
