@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { z } from "zod";
 import {
   capabilityEntrySchema,
   createTypedError,
@@ -21,6 +22,18 @@ const LIBRARY_IDS = [
   "terminology-ontology",
 ] as const;
 const MANIFEST_REFERENCE = "knowledge-base-manifest";
+const SAFE_VALIDATION_ERRORS = new WeakSet<object>();
+const VALIDATION_ERROR_SUMMARY = "Knowledge-base package is invalid.";
+const VALIDATION_ERROR_ACTION = "Provide a valid public knowledge-base package.";
+
+const seedPackageSchema = z
+  .object({
+    manifest: z.unknown(),
+    capabilities: z.array(z.unknown()),
+    rules: z.array(z.unknown()),
+    terminology: z.array(z.unknown()),
+  })
+  .strict();
 
 export interface KnowledgeBaseSeedPackage {
   manifest: KnowledgeBaseManifest;
@@ -32,11 +45,11 @@ export interface KnowledgeBaseSeedPackage {
 export type KnowledgeSnapshot = Readonly<KnowledgeBaseSeedPackage>;
 
 export function canonicalJson(value: unknown): string {
-  return JSON.stringify(canonicalize(value));
+  return failClosed(() => JSON.stringify(canonicalize(value)));
 }
 
 export function contentHash(value: unknown): string {
-  return createHash("sha256").update(canonicalJson(value)).digest("hex");
+  return failClosed(() => createHash("sha256").update(canonicalJson(value)).digest("hex"));
 }
 
 export function createSeedPackage(): KnowledgeBaseSeedPackage {
@@ -83,19 +96,22 @@ export function createSeedPackage(): KnowledgeBaseSeedPackage {
 }
 
 export function createKnowledgeSnapshot(value: unknown): KnowledgeSnapshot {
-  const seed = validateSeedPackage(value);
-  return deepFreeze(structuredClone(seed));
+  return failClosed(() => {
+    const seed = validateSeedPackage(value);
+    return deepFreeze(structuredClone(seed));
+  });
 }
 
 function validateSeedPackage(value: unknown): KnowledgeBaseSeedPackage {
-  if (!isSeedPackage(value) || containsBannedString(value)) {
+  const root = safeParse(seedPackageSchema, value);
+  if (!root.success || containsBannedString(root.data)) {
     throw validationError([]);
   }
 
-  const manifest = knowledgeBaseManifestSchema.safeParse(value.manifest);
-  const capabilities = value.capabilities.map((entry) => capabilityEntrySchema.safeParse(entry));
-  const rules = value.rules.map((entry) => engineeringRuleEntrySchema.safeParse(entry));
-  const terminology = value.terminology.map((entry) => terminologyEntrySchema.safeParse(entry));
+  const manifest = safeParse(knowledgeBaseManifestSchema, root.data.manifest);
+  const capabilities = root.data.capabilities.map((entry) => safeParse(capabilityEntrySchema, entry));
+  const rules = root.data.rules.map((entry) => safeParse(engineeringRuleEntrySchema, entry));
+  const terminology = root.data.terminology.map((entry) => safeParse(terminologyEntrySchema, entry));
   if (!manifest.success || capabilities.some((entry) => !entry.success) || rules.some((entry) => !entry.success) || terminology.some((entry) => !entry.success)) {
     throw validationError([]);
   }
@@ -115,17 +131,6 @@ function validateSeedPackage(value: unknown): KnowledgeBaseSeedPackage {
   validateTerminologyGraph(parsed.terminology);
   validateTerminologyNames(parsed.terminology);
   return parsed;
-}
-
-function isSeedPackage(value: unknown): value is {
-  manifest: unknown;
-  capabilities: unknown[];
-  rules: unknown[];
-  terminology: unknown[];
-} {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-  const candidate = value as Record<string, unknown>;
-  return Array.isArray(candidate.capabilities) && Array.isArray(candidate.rules) && Array.isArray(candidate.terminology) && "manifest" in candidate;
 }
 
 function validateUniqueIds<Entry>(
@@ -220,12 +225,14 @@ function containsBannedString(value: unknown, activeObjects = new WeakSet<object
 }
 
 function validationError(affectedInputReferences: readonly string[]): Error {
-  return createTypedError({
+  const error = createTypedError({
     code: "validation_error",
-    summary: "Knowledge-base package is invalid.",
-    suggestedAction: "Provide a valid public knowledge-base package.",
+    summary: VALIDATION_ERROR_SUMMARY,
+    suggestedAction: VALIDATION_ERROR_ACTION,
     affectedInputReferences,
   });
+  SAFE_VALIDATION_ERRORS.add(error);
+  return error;
 }
 
 function canonicalize(value: unknown): unknown {
@@ -246,4 +253,39 @@ function deepFreeze<Value>(value: Value): Value {
     Object.freeze(value);
   }
   return value;
+}
+
+function safeParse<Output>(schema: z.ZodType<Output>, value: unknown): z.SafeParseReturnType<unknown, Output> {
+  try {
+    return schema.safeParse(value);
+  } catch {
+    return { success: false, error: new z.ZodError([]) };
+  }
+}
+
+function failClosed<Output>(action: () => Output): Output {
+  try {
+    return action();
+  } catch (error) {
+    if (isSafeValidationError(error)) throw error;
+    throw validationError([]);
+  }
+}
+
+function isSafeValidationError(error: unknown): error is Error {
+  if (typeof error !== "object" || error === null || !SAFE_VALIDATION_ERRORS.has(error)) return false;
+
+  try {
+    const properties = Object.getOwnPropertyDescriptors(error);
+    const affectedInputReferences = properties.affectedInputReferences?.value;
+    return properties.code?.value === "validation_error"
+      && properties.summary?.value === VALIDATION_ERROR_SUMMARY
+      && properties.suggestedAction?.value === VALIDATION_ERROR_ACTION
+      && properties.retryable?.value === false
+      && typeof properties.runId?.value === "string"
+      && Array.isArray(affectedInputReferences)
+      && affectedInputReferences.every((reference) => typeof reference === "string");
+  } catch {
+    return false;
+  }
 }

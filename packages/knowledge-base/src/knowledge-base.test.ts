@@ -1,8 +1,16 @@
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
-import { typedErrorSchema } from "@ai-assist/contracts";
-import { loadKnowledgeBase } from "./index.js";
+import {
+  knowledgeBaseManifestResponseSchema,
+  knowledgeBaseQueryResultSchema,
+  typedErrorSchema,
+} from "@ai-assist/contracts";
+import {
+  createKnowledgeSnapshot,
+  createSeedPackage,
+  loadKnowledgeBase,
+} from "./index.js";
 
 const validCapabilityQuery = {
   partCategory: "demo-bracket",
@@ -31,11 +39,15 @@ it("loads v1 and returns positive capability, rule, and terminology matches", ()
     classification: "public",
   });
   expect(knowledgeBase.findCapability(validCapabilityQuery)).toMatchObject({
+    queryType: "capability",
+    contractVersion: "v1",
     status: "matched",
     knowledgeBaseVersion: "v1",
     entry: { entryId: "cap-demo-bracket" },
   });
   expect(knowledgeBase.getEngineeringRule({ ruleId: "cts-sigma" })).toMatchObject({
+    queryType: "rule",
+    contractVersion: "v1",
     status: "matched",
     knowledgeBaseVersion: "v1",
     entry: { ruleId: "cts-sigma" },
@@ -46,6 +58,8 @@ it("loads v1 and returns positive capability, rule, and terminology matches", ()
       value: "DEMONSTRATION BRACKET",
     }),
   ).toMatchObject({
+    queryType: "terminology",
+    contractVersion: "v1",
     status: "matched",
     knowledgeBaseVersion: "v1",
     entry: { entryId: "demo-bracket" },
@@ -55,7 +69,9 @@ it("loads v1 and returns positive capability, rule, and terminology matches", ()
 it("returns the mandatory T0 response without feasibility fields for unavailable capabilities", () => {
   const knowledgeBase = loadKnowledgeBase({ version: "v1" });
   const expected = {
+    queryType: "capability",
     status: "unknown",
+    contractVersion: "v1",
     knowledgeBaseVersion: "v1",
     capabilityTier: "T0",
     message: "制程能力未知，请与供应商确认",
@@ -82,7 +98,9 @@ it("returns unknown for unavailable rules and terminology without fuzzy terminol
   const knowledgeBase = loadKnowledgeBase({ version: "v1" });
 
   expect(knowledgeBase.getEngineeringRule({ ruleId: "not-a-rule" } as unknown)).toEqual({
+    queryType: "rule",
     status: "unknown",
+    contractVersion: "v1",
     knowledgeBaseVersion: "v1",
   });
   expect(
@@ -90,13 +108,23 @@ it("returns unknown for unavailable rules and terminology without fuzzy terminol
       termType: "part-category",
       value: "demonstration bracket plus",
     }),
-  ).toEqual({ status: "unknown", knowledgeBaseVersion: "v1" });
+  ).toEqual({
+    queryType: "terminology",
+    status: "unknown",
+    contractVersion: "v1",
+    knowledgeBaseVersion: "v1",
+  });
   expect(
     knowledgeBase.resolveTerminology({
       termType: "datum",
       value: "demonstration bracket",
     }),
-  ).toEqual({ status: "unknown", knowledgeBaseVersion: "v1" });
+  ).toEqual({
+    queryType: "terminology",
+    status: "unknown",
+    contractVersion: "v1",
+    knowledgeBaseVersion: "v1",
+  });
 });
 
 it("rejects malformed query requests with typed validation errors", () => {
@@ -110,6 +138,26 @@ it("rejects malformed query requests with typed validation errors", () => {
   ]) {
     expect(captureTypedError(invoke).typedError.code).toBe("validation_error");
   }
+});
+
+it("retains the duplicate capability library reference in validation errors", () => {
+  const seed = createSeedPackage();
+  seed.capabilities.push(structuredClone(seed.capabilities[0]!));
+
+  expect(captureTypedError(() => createKnowledgeSnapshot(seed)).typedError).toMatchObject({
+    code: "validation_error",
+    affectedInputReferences: ["capability-library"],
+  });
+});
+
+it("retains the manifest reference for a content hash mismatch", () => {
+  const seed = createSeedPackage();
+  seed.manifest.libraries[0]!.contentHash = "0".repeat(64);
+
+  expect(captureTypedError(() => createKnowledgeSnapshot(seed)).typedError).toMatchObject({
+    code: "validation_error",
+    affectedInputReferences: ["knowledge-base-manifest"],
+  });
 });
 
 it("rejects untrusted load requests with schema-valid validation errors", () => {
@@ -199,4 +247,20 @@ it("exports loadKnowledgeBase through the built ESM package entrypoint", () => {
   );
 
   expect(output.trim()).toBe("function");
+});
+
+it("returns DTOs that satisfy the strict versioned query result contract", () => {
+  const knowledgeBase = loadKnowledgeBase({ version: "v1" });
+
+  expect(knowledgeBaseManifestResponseSchema.safeParse(knowledgeBase.getKnowledgeBaseManifest()).success).toBe(true);
+  for (const result of [
+    knowledgeBase.findCapability(validCapabilityQuery),
+    knowledgeBase.findCapability({ ...validCapabilityQuery, partCategory: "unknown-category" }),
+    knowledgeBase.getEngineeringRule({ ruleId: "cts-sigma" }),
+    knowledgeBase.getEngineeringRule({ ruleId: "not-a-rule" } as unknown),
+    knowledgeBase.resolveTerminology({ termType: "part-category", value: "demo-bracket" }),
+    knowledgeBase.resolveTerminology({ termType: "part-category", value: "unknown" }),
+  ]) {
+    expect(knowledgeBaseQueryResultSchema.safeParse(result).success).toBe(true);
+  }
 });

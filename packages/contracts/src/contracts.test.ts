@@ -4,6 +4,7 @@ import {
   capabilityEntrySchema,
   capabilityTierSchema,
   engineeringRuleEntrySchema,
+  knowledgeBaseQueryResultSchema,
   knowledgeBaseManifestSchema,
   knowledgeBaseQueryRequestSchema,
   dataClassificationSchema,
@@ -276,5 +277,43 @@ describe("knowledge-base contracts", () => {
         unit: "mm",
       }),
     ).toThrow();
+  });
+
+  it("validates strict versioned knowledge-base query results", () => {
+    const matchedCapability = knowledgeBaseQueryResultSchema.parse({
+      queryType: "capability",
+      status: "matched",
+      contractVersion: "v1",
+      knowledgeBaseVersion: "v1",
+      entry: {
+        entryId: "demo-bracket-capability",
+        partCategory: "demo-bracket",
+        toleranceMin: 0.1,
+        toleranceMax: 0.2,
+        unit: "mm",
+        recommendedDistribution: "normal",
+        capabilityTier: "T1",
+        provenance: {
+          source: "fixture",
+          confidence: 1,
+          owner: "contracts-test",
+          coverage: ["demo-bracket"],
+          effectiveVersion: "v1",
+          changeSummary: "Initial fixture.",
+        },
+      },
+    });
+    const unknownCapability = {
+      queryType: "capability" as const,
+      status: "unknown" as const,
+      contractVersion: "v1" as const,
+      knowledgeBaseVersion: "v1" as const,
+      capabilityTier: "T0" as const,
+      message: "制程能力未知，请与供应商确认" as const,
+    };
+
+    expect(matchedCapability.queryType).toBe("capability");
+    expect(knowledgeBaseQueryResultSchema.parse(unknownCapability)).toEqual(unknownCapability);
+    expect(() => knowledgeBaseQueryResultSchema.parse({ ...unknownCapability, feasible: true })).toThrow();
   });
 });

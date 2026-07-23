@@ -168,6 +168,76 @@ export const terminologyQuerySchema = z
   })
   .strict();
 
+export const capabilityMatchResultSchema = z
+  .object({
+    queryType: z.literal("capability"),
+    status: z.literal("matched"),
+    contractVersion: contractVersionSchema,
+    knowledgeBaseVersion: knowledgeBaseVersionSchema,
+    entry: capabilityEntrySchema,
+  })
+  .strict();
+
+export const capabilityUnknownResultSchema = z
+  .object({
+    queryType: z.literal("capability"),
+    status: z.literal("unknown"),
+    contractVersion: contractVersionSchema,
+    knowledgeBaseVersion: knowledgeBaseVersionSchema,
+    capabilityTier: z.literal("T0"),
+    message: z.literal("制程能力未知，请与供应商确认"),
+  })
+  .strict();
+
+export const engineeringRuleMatchResultSchema = z
+  .object({
+    queryType: z.literal("rule"),
+    status: z.literal("matched"),
+    contractVersion: contractVersionSchema,
+    knowledgeBaseVersion: knowledgeBaseVersionSchema,
+    entry: engineeringRuleEntrySchema,
+  })
+  .strict();
+
+export const engineeringRuleUnknownResultSchema = z
+  .object({
+    queryType: z.literal("rule"),
+    status: z.literal("unknown"),
+    contractVersion: contractVersionSchema,
+    knowledgeBaseVersion: knowledgeBaseVersionSchema,
+  })
+  .strict();
+
+export const terminologyMatchResultSchema = z
+  .object({
+    queryType: z.literal("terminology"),
+    status: z.literal("matched"),
+    contractVersion: contractVersionSchema,
+    knowledgeBaseVersion: knowledgeBaseVersionSchema,
+    entry: terminologyEntrySchema,
+  })
+  .strict();
+
+export const terminologyUnknownResultSchema = z
+  .object({
+    queryType: z.literal("terminology"),
+    status: z.literal("unknown"),
+    contractVersion: contractVersionSchema,
+    knowledgeBaseVersion: knowledgeBaseVersionSchema,
+  })
+  .strict();
+
+export const knowledgeBaseManifestResponseSchema = knowledgeBaseManifestSchema;
+
+export const knowledgeBaseQueryResultSchema = z.union([
+  capabilityMatchResultSchema,
+  capabilityUnknownResultSchema,
+  engineeringRuleMatchResultSchema,
+  engineeringRuleUnknownResultSchema,
+  terminologyMatchResultSchema,
+  terminologyUnknownResultSchema,
+]);
+
 export type DataClassification = z.infer<typeof dataClassificationSchema>;
 export type RunRequest = z.infer<typeof runRequestSchema>;
 export type CapabilityTier = z.infer<typeof capabilityTierSchema>;
@@ -182,3 +252,11 @@ export type KnowledgeBaseManifest = z.infer<typeof knowledgeBaseManifestSchema>;
 export type KnowledgeBaseQueryRequest = z.infer<typeof knowledgeBaseQueryRequestSchema>;
 export type EngineeringRuleQuery = z.infer<typeof engineeringRuleQuerySchema>;
 export type TerminologyQuery = z.infer<typeof terminologyQuerySchema>;
+export type CapabilityMatchResult = z.infer<typeof capabilityMatchResultSchema>;
+export type CapabilityUnknownResult = z.infer<typeof capabilityUnknownResultSchema>;
+export type EngineeringRuleMatchResult = z.infer<typeof engineeringRuleMatchResultSchema>;
+export type EngineeringRuleUnknownResult = z.infer<typeof engineeringRuleUnknownResultSchema>;
+export type TerminologyMatchResult = z.infer<typeof terminologyMatchResultSchema>;
+export type TerminologyUnknownResult = z.infer<typeof terminologyUnknownResultSchema>;
+export type KnowledgeBaseManifestResponse = z.infer<typeof knowledgeBaseManifestResponseSchema>;
+export type KnowledgeBaseQueryResult = z.infer<typeof knowledgeBaseQueryResultSchema>;

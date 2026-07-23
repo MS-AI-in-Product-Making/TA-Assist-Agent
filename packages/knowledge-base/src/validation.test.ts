@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { typedErrorSchema } from "@ai-assist/contracts";
 import { createCanonicalSeedData } from "./data/v1.js";
 import {
   canonicalJson,
@@ -43,6 +44,19 @@ function getValidationError(action: () => unknown): {
     };
   }
   throw new Error("Expected a validation error.");
+}
+
+function expectSafeTypedValidationError(action: () => unknown, rawMarker: string): void {
+  const error = getValidationError(action);
+
+  expect(typedErrorSchema.safeParse(error).success).toBe(true);
+  expect(error).toMatchObject({
+    code: "validation_error",
+    summary: "Knowledge-base package is invalid.",
+  });
+  expect(error.message).not.toContain(rawMarker);
+  expect(error.affectedInputReferences.join(" ")).not.toContain(rawMarker);
+  expect(error.affectedInputReferences.every((reference) => SAFE_INPUT_REFERENCES.has(reference))).toBe(true);
 }
 
 function expectRedactedValidationError(rawMarker: string): void {
@@ -125,6 +139,26 @@ describe("knowledge-base v1 seed package", () => {
       contentHash({ a: ["first", { x: null, y: true }], b: 2 }),
     );
     expect(contentHash(validPackage().capabilities)).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it.each([
+    ["canonicalJson", (value: unknown) => canonicalJson(value)],
+    ["contentHash", (value: unknown) => contentHash(value)],
+  ])("fails closed when %s receives throwing or cyclic public input", (_name, invoke) => {
+    const rawMarker = "raw-hostile-marker";
+    const throwingGetter = Object.defineProperty({}, "value", {
+      enumerable: true,
+      get: () => { throw new Error(rawMarker); },
+    });
+    const throwingProxy = new Proxy({}, {
+      ownKeys: () => { throw new Error(rawMarker); },
+    });
+    const cyclic: { self?: unknown } = {};
+    cyclic.self = cyclic;
+
+    for (const value of [throwingGetter, throwingProxy, cyclic]) {
+      expectSafeTypedValidationError(() => invoke(value), rawMarker);
+    }
   });
 
   it("rejects a duplicate capability stable ID", () => {
@@ -323,6 +357,34 @@ describe("knowledge-base v1 seed package", () => {
       summary: "Knowledge-base package is invalid.",
     });
     expect(error.message).not.toContain("cycle");
+  });
+
+  it("fails closed for throwing or cyclic createKnowledgeSnapshot input", () => {
+    const rawMarker = "raw-snapshot-marker";
+    const throwingGetter = Object.defineProperty({}, "manifest", {
+      enumerable: true,
+      get: () => { throw new Error(rawMarker); },
+    });
+    const throwingProxy = new Proxy({}, {
+      get: () => { throw new Error(rawMarker); },
+    });
+    const cyclic: { manifest?: unknown; capabilities?: unknown[]; rules?: unknown[]; terminology?: unknown[] } = {
+      capabilities: [],
+      rules: [],
+      terminology: [],
+    };
+    cyclic.manifest = cyclic;
+
+    for (const value of [throwingGetter, throwingProxy, cyclic]) {
+      expectSafeTypedValidationError(() => createKnowledgeSnapshot(value), rawMarker);
+    }
+  });
+
+  it("rejects extra root seed package properties", () => {
+    const seed = validPackage() as KnowledgeBaseSeedPackage & { extra: string };
+    seed.extra = "not part of the seed contract";
+
+    expectValidationError(() => createKnowledgeSnapshot(seed));
   });
 
   it("clones seed data and recursively freezes validated snapshots", () => {

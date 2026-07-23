@@ -15,37 +15,49 @@ const loadKnowledgeBaseRequestSchema = z.object({ version: z.string() }).strict(
 const UNKNOWN_CAPABILITY_MESSAGE = "制程能力未知，请与供应商确认";
 
 export interface CapabilityMatch {
+  readonly queryType: "capability";
   readonly status: "matched";
+  readonly contractVersion: "v1";
   readonly knowledgeBaseVersion: "v1";
   readonly entry: CapabilityEntry;
 }
 
 export interface CapabilityUnknown {
+  readonly queryType: "capability";
   readonly status: "unknown";
+  readonly contractVersion: "v1";
   readonly knowledgeBaseVersion: "v1";
   readonly capabilityTier: "T0";
   readonly message: "制程能力未知，请与供应商确认";
 }
 
 export interface RuleMatch {
+  readonly queryType: "rule";
   readonly status: "matched";
+  readonly contractVersion: "v1";
   readonly knowledgeBaseVersion: "v1";
   readonly entry: EngineeringRuleEntry;
 }
 
 export interface RuleUnknown {
+  readonly queryType: "rule";
   readonly status: "unknown";
+  readonly contractVersion: "v1";
   readonly knowledgeBaseVersion: "v1";
 }
 
 export interface TerminologyMatch {
+  readonly queryType: "terminology";
   readonly status: "matched";
+  readonly contractVersion: "v1";
   readonly knowledgeBaseVersion: "v1";
   readonly entry: TerminologyEntry;
 }
 
 export interface TerminologyUnknown {
+  readonly queryType: "terminology";
   readonly status: "unknown";
+  readonly contractVersion: "v1";
   readonly knowledgeBaseVersion: "v1";
 }
 
@@ -84,7 +96,7 @@ function findCapability(
 
   return entry === undefined
     ? immutableDto(unknownCapability())
-    : immutableDto({ status: "matched", knowledgeBaseVersion: "v1", entry });
+    : immutableDto({ queryType: "capability", status: "matched", contractVersion: "v1", knowledgeBaseVersion: "v1", entry });
 }
 
 function getEngineeringRule(
@@ -94,8 +106,8 @@ function getEngineeringRule(
   const query = parseRuleQueryOrThrow(request);
   const entry = entries.find((candidate) => candidate.ruleId === query.ruleId);
   return entry === undefined
-    ? immutableDto(unknownResult())
-    : immutableDto({ status: "matched", knowledgeBaseVersion: "v1", entry });
+    ? immutableDto(unknownResult("rule"))
+    : immutableDto({ queryType: "rule", status: "matched", contractVersion: "v1", knowledgeBaseVersion: "v1", entry });
 }
 
 function resolveTerminology(
@@ -109,8 +121,8 @@ function resolveTerminology(
     && [candidate.canonicalName, ...candidate.aliases]
       .some((name) => name.toLocaleLowerCase() === normalizedValue));
   return entry === undefined
-    ? immutableDto(unknownResult())
-    : immutableDto({ status: "matched", knowledgeBaseVersion: "v1", entry });
+    ? immutableDto(unknownResult("terminology"))
+    : immutableDto({ queryType: "terminology", status: "matched", contractVersion: "v1", knowledgeBaseVersion: "v1", entry });
 }
 
 function parseRuleQueryOrThrow(request: unknown): { ruleId: string } {
@@ -142,15 +154,17 @@ function safeParse<Output>(schema: z.ZodType<Output>, value: unknown): z.SafePar
 
 function unknownCapability(): CapabilityUnknown {
   return {
+    queryType: "capability",
     status: "unknown",
+    contractVersion: "v1",
     knowledgeBaseVersion: "v1",
     capabilityTier: "T0",
     message: UNKNOWN_CAPABILITY_MESSAGE,
   };
 }
 
-function unknownResult(): RuleUnknown & TerminologyUnknown {
-  return { status: "unknown", knowledgeBaseVersion: "v1" };
+function unknownResult<QueryType extends "rule" | "terminology">(queryType: QueryType): QueryType extends "rule" ? RuleUnknown : TerminologyUnknown {
+  return { queryType, status: "unknown", contractVersion: "v1", knowledgeBaseVersion: "v1" } as QueryType extends "rule" ? RuleUnknown : TerminologyUnknown;
 }
 
 function validationError(reference: string): Error {
