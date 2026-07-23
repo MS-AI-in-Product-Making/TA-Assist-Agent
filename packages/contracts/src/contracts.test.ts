@@ -4,6 +4,7 @@ import {
   capabilityEntrySchema,
   capabilityTierSchema,
   engineeringRuleEntrySchema,
+  engineeringRuleQuerySchema,
   knowledgeBaseQueryResultSchema,
   knowledgeBaseManifestSchema,
   knowledgeBaseQueryRequestSchema,
@@ -277,6 +278,35 @@ describe("knowledge-base contracts", () => {
         unit: "mm",
       }),
     ).toThrow();
+  });
+
+  it("accepts unknown nonempty engineering rule IDs while rejecting malformed queries", () => {
+    expect(engineeringRuleQuerySchema.parse({ ruleId: "not-a-rule" })).toEqual({
+      ruleId: "not-a-rule",
+    });
+    expect(() => engineeringRuleQuerySchema.parse({ ruleId: "" })).toThrow();
+    expect(() => engineeringRuleQuerySchema.parse({})).toThrow();
+    expect(() => engineeringRuleQuerySchema.parse({ ruleId: "cts-sigma", extra: true })).toThrow();
+  });
+
+  it("rejects an engineering rule entry with an unknown stored rule ID", () => {
+    expect(
+      engineeringRuleEntrySchema.safeParse({
+        ruleId: "unknown-stored-rule",
+        ruleType: "sigma",
+        threshold: 3,
+        unit: "sigma",
+        applicability: "all capability studies",
+        provenance: {
+          source: "fixture",
+          confidence: 1,
+          owner: "contracts-test",
+          coverage: ["sigma"],
+          effectiveVersion: "v1",
+          changeSummary: "Initial fixture.",
+        },
+      }).success,
+    ).toBe(false);
   });
 
   it("validates strict versioned knowledge-base query results", () => {

@@ -94,15 +94,17 @@ it("returns the mandatory T0 response without feasibility fields for unavailable
   }
 });
 
-it("returns unknown for unavailable rules and terminology without fuzzy terminology matching", () => {
+it("returns an output-schema-valid unknown DTO for unavailable rules and terminology without fuzzy terminology matching", () => {
   const knowledgeBase = loadKnowledgeBase({ version: "v1" });
 
-  expect(knowledgeBase.getEngineeringRule({ ruleId: "not-a-rule" } as unknown)).toEqual({
+  const unavailableRule = knowledgeBase.getEngineeringRule({ ruleId: "not-a-rule" });
+  expect(unavailableRule).toEqual({
     queryType: "rule",
     status: "unknown",
     contractVersion: "v1",
     knowledgeBaseVersion: "v1",
   });
+  expect(knowledgeBaseQueryResultSchema.safeParse(unavailableRule).success).toBe(true);
   expect(
     knowledgeBase.resolveTerminology({
       termType: "part-category",
@@ -257,7 +259,7 @@ it("returns DTOs that satisfy the strict versioned query result contract", () =>
     knowledgeBase.findCapability(validCapabilityQuery),
     knowledgeBase.findCapability({ ...validCapabilityQuery, partCategory: "unknown-category" }),
     knowledgeBase.getEngineeringRule({ ruleId: "cts-sigma" }),
-    knowledgeBase.getEngineeringRule({ ruleId: "not-a-rule" } as unknown),
+    knowledgeBase.getEngineeringRule({ ruleId: "not-a-rule" }),
     knowledgeBase.resolveTerminology({ termType: "part-category", value: "demo-bracket" }),
     knowledgeBase.resolveTerminology({ termType: "part-category", value: "unknown" }),
   ]) {

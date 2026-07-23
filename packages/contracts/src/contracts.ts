@@ -157,7 +157,7 @@ export const knowledgeBaseQueryRequestSchema = z
 
 export const engineeringRuleQuerySchema = z
   .object({
-    ruleId: z.enum(["cts-sigma", "ctf-sigma", "default-cpk-target"]),
+    ruleId: z.string().min(1),
   })
   .strict();
 

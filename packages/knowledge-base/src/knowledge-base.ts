@@ -103,7 +103,7 @@ function getEngineeringRule(
   entries: readonly EngineeringRuleEntry[],
   request: unknown,
 ): RuleMatch | RuleUnknown {
-  const query = parseRuleQueryOrThrow(request);
+  const query = parseOrThrow(engineeringRuleQuerySchema, request, "engineering rule query");
   const entry = entries.find((candidate) => candidate.ruleId === query.ruleId);
   return entry === undefined
     ? immutableDto(unknownResult("rule"))
@@ -123,15 +123,6 @@ function resolveTerminology(
   return entry === undefined
     ? immutableDto(unknownResult("terminology"))
     : immutableDto({ queryType: "terminology", status: "matched", contractVersion: "v1", knowledgeBaseVersion: "v1", entry });
-}
-
-function parseRuleQueryOrThrow(request: unknown): { ruleId: string } {
-  const parsed = safeParse(engineeringRuleQuerySchema, request);
-  if (parsed.success) return parsed.data;
-
-  const relaxed = safeParse(z.object({ ruleId: z.string().min(1) }).strict(), request);
-  if (relaxed.success) return relaxed.data;
-  throw validationError("engineering rule query");
 }
 
 function parseOrThrow<Output>(
