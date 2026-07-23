@@ -9,6 +9,8 @@ function expectArchiveError(action: () => unknown, rawMarker = "anonymous-privat
   } catch (error) {
     expect(typedErrorSchema.safeParse(error).success).toBe(true);
     expect(error).toMatchObject({ code: "validation_error", summary: "Workbook-catalog archive cannot be processed." });
+    expect(Object.isFrozen(error)).toBe(true);
+    expect(Object.isFrozen((error as { affectedInputReferences: unknown }).affectedInputReferences)).toBe(true);
     expect((error as Error).message).not.toContain(rawMarker);
     expect(JSON.stringify(error)).not.toContain(rawMarker);
     return;

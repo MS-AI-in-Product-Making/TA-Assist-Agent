@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   capabilityEntrySchema,
   capabilityTierSchema,
+  createTypedError,
   engineeringRuleEntrySchema,
   engineeringRuleQuerySchema,
   knowledgeBaseQueryResultSchema,
@@ -34,6 +35,25 @@ describe("Phase 0 contracts", () => {
 
   it("rejects an error without run_id", () => {
     expect(() => typedErrorSchema.parse({ code: "policy_denied" })).toThrow();
+  });
+
+  it("deeply freezes typed errors and caller-provided nested details", () => {
+    const nested = { entries: [{ value: "safe" }] };
+    const error = createTypedError({
+      code: "validation_error",
+      summary: "Safe error.",
+      suggestedAction: "Use valid input.",
+      affectedInputReferences: ["safe-reference"],
+      details: { nested },
+    }) as Error & { readonly nested: { readonly entries: readonly { readonly value: string }[] } };
+
+    expect(Object.isFrozen(error)).toBe(true);
+    expect(Object.isFrozen(error.affectedInputReferences)).toBe(true);
+    expect(Object.isFrozen(error.nested)).toBe(true);
+    expect(Object.isFrozen(error.nested.entries)).toBe(true);
+    expect(Object.isFrozen(error.nested.entries[0]!)).toBe(true);
+    expect(() => { (error.affectedInputReferences as string[]).push("changed"); }).toThrow();
+    expect(() => { (error.nested.entries[0] as { value: string }).value = "changed"; }).toThrow();
   });
 
   it("allows only the supported data classifications", () => {

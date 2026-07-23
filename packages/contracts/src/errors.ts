@@ -18,7 +18,9 @@ export const typedErrorSchema = z.object({
   affectedInputReferences: z.array(z.string()),
 });
 
-export type TypedError = z.infer<typeof typedErrorSchema>;
+export type TypedError = Readonly<Omit<z.infer<typeof typedErrorSchema>, "affectedInputReferences"> & {
+  readonly affectedInputReferences: readonly string[];
+}>;
 
 export type TypedErrorCode = z.infer<typeof errorCodeSchema>;
 
@@ -38,8 +40,18 @@ export function normalizeRunId(runId: string | undefined): string {
     : crypto.randomUUID();
 }
 
+function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
+  if (!value || typeof value !== "object" || seen.has(value)) return value;
+  seen.add(value);
+  for (const key of Reflect.ownKeys(value)) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor && "value" in descriptor) deepFreeze(descriptor.value, seen);
+  }
+  return Object.freeze(value);
+}
+
 export function createTypedError(options: TypedErrorOptions): Error & TypedError {
-  return Object.assign(new Error(options.summary), {
+  return deepFreeze(Object.assign(new Error(options.summary), {
     code: options.code,
     runId: normalizeRunId(options.runId),
     summary: options.summary,
@@ -47,5 +59,5 @@ export function createTypedError(options: TypedErrorOptions): Error & TypedError
     suggestedAction: options.suggestedAction,
     affectedInputReferences: [...(options.affectedInputReferences ?? [])],
     ...options.details,
-  });
+  }));
 }
