@@ -31,11 +31,13 @@ Full design docs live in [`docs/`](docs/README.md) (Mermaid diagrams render nati
 ## Phase 0 工程基座
 
 Phase 0 建立面向产品路线图的本地优先、可审计 TypeScript 工程基础。F0 仅提供匿名
-`public` 的本地只读知识库查询；F1 仅接受受控 `confidential` `.xlsx` 字节并创建只读
-worksheet catalog，不读取因子表、不计算、不提取图片、不调用外部服务，也不跟踪或导出
-原始 `.xlsx`；F2-F7 保持不可用，F4 返回 `feature_not_available`，F8 仅限用于受治理 Skill
-运行时验收的匿名 `public` fixture。此阶段不包含真实工程知识、外部 Adapter、模型、ADO、
-SharePoint 或 UI 行为。
+`public` 的本地只读知识库查询；F1 仅接受受控 `confidential` `.xlsx` 字节，创建只读
+worksheet catalog，并从 catalog 确认的 worksheet 提取因子表、公式及缓存值、嵌入图片元数据，
+图片字节只可由 workbook hash 与唯一 image hash 共同验证后读取。F1 不计算公式、不换算单位、
+不执行 OCR、渲染、风险解释、行动建议或 workbook 写回，也不调用外部服务、不跟踪或导出原始
+`.xlsx`；F2-F7 保持不可用，F4 返回 `feature_not_available`，F8 仅限用于受治理 Skill 运行时
+验收的匿名 `public` fixture。此阶段不包含真实工程知识、外部 Adapter、模型、ADO、SharePoint
+或 UI 行为。
 
 - [Phase 0 设计](docs/superpowers/specs/2026-07-22-ai-assist-agent-foundation-design.md)
 - [Phase 0 实施计划](docs/superpowers/plans/2026-07-22-ai-assist-agent-foundation.md)
@@ -43,6 +45,8 @@ SharePoint 或 UI 行为。
 - [F0 知识库实施计划](docs/superpowers/plans/2026-07-22-f0-knowledge-base.md)
 - [F1 工作簿目录设计](docs/superpowers/specs/2026-07-23-f1-workbook-catalog-design.md)
 - [F1 工作簿目录实施计划](docs/superpowers/plans/2026-07-23-f1-workbook-catalog.md)
+- [F1.1 工作表资产提取设计](docs/superpowers/specs/2026-07-24-f1-1-worksheet-analysis-assets-design.md)
+- [F1.1 工作表资产提取实施计划](docs/superpowers/plans/2026-07-24-f1-1-worksheet-analysis-assets.md)
 - [系统架构](docs/01-architecture.md) 与 [Feature Register](docs/governance/feature-register.md)
 - [数据分类](docs/governance/data-classification.md) 与 [开发协作标准](docs/governance/development-standard.md)
 - [Phase 0 验收](docs/governance/phase-0-acceptance.md)
