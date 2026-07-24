@@ -1,22 +1,64 @@
 import { DOMParser, type Document, type Element } from "@xmldom/xmldom";
+import { createHash } from "node:crypto";
 import { createTypedError } from "@ai-assist/contracts";
 import { MAX_XML_PART_BYTES, readSafeZip } from "./zip-security.js";
 
 export interface OoxmlCell { readonly reference: string; readonly value: string; readonly formula?: string; readonly cachedValue?: string; }
-export interface OoxmlWorksheet { readonly name: string; readonly partName: string; readonly cells: readonly OoxmlCell[]; }
+export interface OoxmlImage { readonly contentHash: string; readonly mediaType: string; readonly byteLength: number; readonly sourcePart: string; readonly drawingSourcePart: string; readonly anchor?: { readonly from: string; readonly to: string }; readonly bytes: Uint8Array; }
+export interface OoxmlWorksheet { readonly name: string; readonly partName: string; readonly cells: readonly OoxmlCell[]; readonly images: readonly OoxmlImage[]; }
 export interface OoxmlWorkbook { readonly worksheets: ReadonlyMap<string, OoxmlWorksheet>; }
 
 const ARCHIVE_SUMMARY = "Workbook-catalog archive cannot be processed.";
 export const MAX_DOM_NODES_PER_PART = 50_000;
 export const MAX_DOM_DEPTH = 128;
+export const MAX_IMAGES_PER_WORKSHEET = 64;
+export const MAX_IMAGES_PER_WORKBOOK = 256;
 export const MAX_SHARED_STRINGS = 10_000;
 export const MAX_ROWS_PER_WORKSHEET = 10_000;
+const DRAWINGML_NAMESPACE = "http://schemas.openxmlformats.org/drawingml/2006/main";
+const SPREADSHEET_DRAWING_NAMESPACE = "http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing";
+const OFFICE_RELATIONSHIPS_NAMESPACE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 export const MAX_CELLS_PER_WORKSHEET = 10_000;
 export const MAX_TOTAL_CELLS = 50_000;
 const utf8 = new TextDecoder("utf-8", { fatal: true });
 const PACKAGE_RELATIONSHIPS_NAMESPACE = "http://schemas.openxmlformats.org/package/2006/relationships";
 const WORKBOOK_CHILDREN = ["fileVersion", "fileSharing", "workbookPr", "workbookProtection", "bookViews", "sheets", "functionGroups", "externalReferences", "definedNames", "calcPr", "oleSize", "customWorkbookViews", "pivotCaches", "smartTagPr", "smartTagTypes", "webPublishing", "fileRecoveryPr", "webPublishObjects", "extLst"];
 const WORKSHEET_CHILDREN = ["sheetPr", "dimension", "sheetViews", "sheetFormatPr", "cols", "sheetData", "sheetCalcPr", "sheetProtection", "protectedRanges", "scenarios", "autoFilter", "sortState", "dataConsolidate", "customSheetViews", "mergeCells", "phoneticPr", "conditionalFormatting", "dataValidations", "hyperlinks", "printOptions", "pageMargins", "pageSetup", "pageSetupPr", "headerFooter", "rowBreaks", "colBreaks", "customProperties", "cellWatches", "ignoredErrors", "smartTags", "drawing", "legacyDrawing", "legacyDrawingHF", "picture", "oleObjects", "controls", "webPublishItems", "tableParts", "extLst"];
+function relationshipPartName(partName: string): string {
+  const index = partName.lastIndexOf("/");
+  if (index < 0) throw archiveError();
+  return `${partName.slice(0, index)}/_rels/${partName.slice(index + 1)}.rels`;
+}
+
+function resolveTarget(sourcePart: string, target: string): string | undefined {
+  if (!target || target.includes("\\") || target.startsWith("/") || /^[A-Za-z]:/.test(target)) return undefined;
+  const resolved = sourcePart.split("/");
+  resolved.pop();
+  for (const component of target.split("/")) {
+    if (!component || component === ".") continue;
+    if (component === "..") {
+      if (resolved.length <= 1) return undefined;
+      resolved.pop();
+    } else resolved.push(component);
+  }
+  const name = resolved.join("/");
+  return name.startsWith("xl/") ? name : undefined;
+}
+
+interface Relationship { readonly target: string; readonly type: string; }
+
+function relationships(document: Document, sourcePart: string): ReadonlyMap<string, Relationship> {
+  const root = document.documentElement;
+  if (!isElement(root, PACKAGE_RELATIONSHIPS_NAMESPACE, "Relationships")) throw archiveError();
+  const result = new Map<string, Relationship>();
+  for (const relationship of onlyChildren(root, PACKAGE_RELATIONSHIPS_NAMESPACE, "Relationship")) {
+    const id = relationship.getAttribute("Id");
+    const target = resolveTarget(sourcePart, relationship.getAttribute("Target") ?? "");
+    if (!id || !target || relationship.getAttribute("TargetMode") === "External" || result.has(id)) throw archiveError();
+    result.set(id, { target, type: relationship.getAttribute("Type") ?? "" });
+  }
+  return result;
+}
 const RICH_TEXT_RUN_PROPERTIES = ["rFont", "charset", "family", "b", "i", "strike", "outline", "shadow", "condense", "extend", "color", "sz", "u", "vertAlign", "scheme"];
 
 interface OoxmlNamespaceFamily {
@@ -111,7 +153,6 @@ function assertDomBudget(document: Document): void {
       const child = node.childNodes.item(childIndex);
       if (!child) continue;
       count += 1;
-      if (count > MAX_DOM_NODES_PER_PART) throw archiveError();
       pending.push({ node: child as Element, depth: depth + 1 });
     }
   }
@@ -192,6 +233,83 @@ function readCells(document: Document, strings: readonly string[], family: Ooxml
   return cells;
 }
 
+function anchorCell(anchor: Element, name: "from" | "to"): string | undefined {
+  const marker = allowedChildren(anchor, SPREADSHEET_DRAWING_NAMESPACE, ["from", "to", "pic", "clientData"])
+    .find((child) => child.localName === name);
+  if (!marker) return undefined;
+  const values = new Map<string, number>();
+  for (const value of allowedChildren(marker, SPREADSHEET_DRAWING_NAMESPACE, ["col", "colOff", "row", "rowOff"])) {
+    const localName = value.localName;
+    if (!localName || localName === "colOff" || localName === "rowOff") continue;
+    const number = Number(text(value));
+    if (!Number.isInteger(number) || number < 0 || values.has(localName)) throw archiveError();
+    values.set(localName, number);
+  }
+  const column = values.get("col");
+  const row = values.get("row");
+  if (column === undefined || row === undefined) throw archiveError();
+  let letters = "";
+  for (let value = column + 1; value > 0; value = Math.floor((value - 1) / 26)) letters = String.fromCharCode(65 + (value - 1) % 26) + letters;
+  return `${letters}${row + 1}`;
+}
+
+function imageIds(anchor: Element): string[] {
+  const pending: Element[] = [anchor];
+  const ids: string[] = [];
+  for (let index = 0; index < pending.length; index += 1) {
+    for (const node of Array.from(pending[index]!.childNodes)) {
+      if (node.nodeType !== 1) continue;
+      const child = node as Element;
+      if (child.namespaceURI !== SPREADSHEET_DRAWING_NAMESPACE && child.namespaceURI !== DRAWINGML_NAMESPACE) throw archiveError();
+      if (child.namespaceURI === DRAWINGML_NAMESPACE && child.localName === "blip") {
+        const id = child.getAttributeNS(OFFICE_RELATIONSHIPS_NAMESPACE, "embed");
+        if (!id) throw archiveError();
+        ids.push(id);
+      }
+      pending.push(child);
+    }
+  }
+  return ids;
+}
+
+function imageMediaType(partName: string): string {
+  const extension = partName.slice(partName.lastIndexOf(".") + 1).toLowerCase();
+  return ({ png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", bmp: "image/bmp", tif: "image/tiff", tiff: "image/tiff", emf: "image/emf", wmf: "image/wmf" } as Record<string, string>)[extension] ?? "application/octet-stream";
+}
+
+function readImages(document: Document, worksheetPart: string, parts: ReadonlyMap<string, Uint8Array>, total: { value: number }): OoxmlImage[] {
+  const root = document.documentElement;
+  if (!root) throw archiveError();
+  const drawings = allowedChildren(root, root.namespaceURI ?? "", WORKSHEET_CHILDREN).filter((child) => child.localName === "drawing");
+  if (drawings.length === 0) return [];
+  if (drawings.length !== 1) throw archiveError();
+  const worksheetRels = parts.get(relationshipPartName(worksheetPart));
+  const drawingId = drawings[0]!.getAttributeNS(OFFICE_RELATIONSHIPS_NAMESPACE, "id");
+  const drawing = worksheetRels && drawingId ? relationships(parseXml(worksheetRels), worksheetPart).get(drawingId) : undefined;
+  if (!drawing || !drawing.type.endsWith("/drawing") || !parts.has(drawing.target)) throw archiveError();
+  const drawingDocument = parseXml(parts.get(drawing.target)!);
+  if (!isElement(drawingDocument.documentElement, SPREADSHEET_DRAWING_NAMESPACE, "wsDr")) throw archiveError();
+  const drawingRels = parts.get(relationshipPartName(drawing.target));
+  if (!drawingRels) throw archiveError();
+  const drawingRelationships = relationships(parseXml(drawingRels), drawing.target);
+  const images: OoxmlImage[] = [];
+  const mediaParts = new Set<string>();
+  for (const anchor of allowedChildren(drawingDocument.documentElement, SPREADSHEET_DRAWING_NAMESPACE, ["twoCellAnchor", "oneCellAnchor"])) {
+    const from = anchorCell(anchor, "from");
+    const to = anchor.localName === "twoCellAnchor" ? anchorCell(anchor, "to") : from;
+    const coordinates = from && to ? { from, to } : undefined;
+    for (const id of imageIds(anchor)) {
+      const relationship = drawingRelationships.get(id);
+      if (!relationship || !relationship.type.endsWith("/image") || mediaParts.has(relationship.target) || !parts.has(relationship.target) || images.length >= MAX_IMAGES_PER_WORKSHEET || total.value >= MAX_IMAGES_PER_WORKBOOK) throw archiveError();
+      const bytes = parts.get(relationship.target)!;
+      images.push({ contentHash: createHash("sha256").update(bytes).digest("hex"), mediaType: imageMediaType(relationship.target), byteLength: bytes.byteLength, sourcePart: relationship.target, drawingSourcePart: drawing.target, ...(coordinates ? { anchor: coordinates } : {}), bytes: bytes.slice() });
+      mediaParts.add(relationship.target);
+      total.value += 1;
+    }
+  }
+  return images;
+}
+
 export function readOoxmlWorkbook(bytes: Uint8Array): OoxmlWorkbook {
   try {
     const parts = readSafeZip(bytes);
@@ -213,13 +331,15 @@ export function readOoxmlWorkbook(bytes: Uint8Array): OoxmlWorkbook {
     const sheetsElement = sheets[0];
     if (sheets.length !== 1 || !sheetsElement) throw archiveError();
     const cellBudget: CellBudget = { total: 0 };
+    const imageBudget = { value: 0 };
     for (const sheet of onlyChildren(sheetsElement, family.spreadsheetml, "sheet")) {
       const name = sheet.getAttribute("name");
       const relationshipId = sheet.getAttributeNS(family.officeRelationships, "id");
       const relationship = relationshipId ? relationshipTargets.get(relationshipId) : undefined;
       const partName = relationship?.type === family.worksheetRelationshipType ? relationship.target : undefined;
       if (!name || worksheets.has(name) || !partName || !parts.has(partName)) throw archiveError();
-      worksheets.set(name, { name, partName, cells: readCells(parseXml(parts.get(partName)!), strings, family, cellBudget) });
+      const worksheet = parseXml(parts.get(partName)!);
+      worksheets.set(name, { name, partName, cells: readCells(worksheet, strings, family, cellBudget), images: readImages(worksheet, partName, parts, imageBudget) });
     }
     return { worksheets };
   } catch (error) {
