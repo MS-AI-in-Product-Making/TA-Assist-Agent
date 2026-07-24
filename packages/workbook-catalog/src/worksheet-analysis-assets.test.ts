@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
 import { createWorkbookCatalog } from "./workbook-catalog.js";
 import { createAnonymousWorkbookZip } from "./test-support.js";
-import { createWorksheetAnalysisAssets } from "./worksheet-analysis-assets.js";
+import { createWorksheetAnalysisAssets, readWorksheetImageAsset } from "./worksheet-analysis-assets.js";
 
 describe("worksheet analysis assets", () => {
   it("extracts assets only for worksheets confirmed by the matching catalog", () => {
@@ -52,5 +53,38 @@ describe("worksheet analysis assets", () => {
       { sourceRow: 12, fields: { nominalValue: { status: "unavailable", reasonCode: "invalid_format", sourceCell: "Analysis-A!E12" } } },
     ]);
     expect(result.worksheets[0]?.formulaCells).toContainEqual({ sourceCell: "Analysis-A!H3", formula: "=SUM(A1:A1)", cachedValue: { status: "available", rawText: "1.25" } });
+  });
+
+  it("returns a defensive image byte copy only when both hashes match uniquely", () => {
+    const imageBytes = new Uint8Array([9, 8, 7]);
+    const workbookBytes = createAnonymousWorkbookZip({
+      xmlParts: {
+        "xl/worksheets/sheet3.xml": '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData><row r="2"><c r="A2"><v>2</v></c></row></sheetData><drawing r:id="rIdDrawing"/></worksheet>',
+        "xl/worksheets/_rels/sheet3.xml.rels": '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDrawing" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/></Relationships>',
+        "xl/drawings/drawing1.xml": '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><xdr:oneCellAnchor><xdr:from><xdr:col>0</xdr:col><xdr:row>0</xdr:row></xdr:from><xdr:pic><xdr:blipFill><a:blip r:embed="rIdImage"/></xdr:blipFill></xdr:pic><xdr:clientData/></xdr:oneCellAnchor></xdr:wsDr>',
+        "xl/drawings/_rels/drawing1.xml.rels": '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdImage" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"/></Relationships>',
+      },
+      binaryParts: { "xl/media/image1.png": imageBytes },
+    });
+    const workbookContentHash = createHash("sha256").update(workbookBytes).digest("hex");
+    const imageContentHash = createHash("sha256").update(imageBytes).digest("hex");
+
+    const result = readWorksheetImageAsset({ contractVersion: "v1", inputClassification: "confidential", workbookBytes, workbookContentHash, imageContentHash });
+    expect(result).toMatchObject({ classification: "confidential", workbookContentHash, imageContentHash, mediaType: "image/png", bytes: new Uint8Array([9, 8, 7]) });
+    expect(result.bytes).not.toBe(imageBytes);
+    result.bytes[0] = 0;
+    expect(readWorksheetImageAsset({ contractVersion: "v1", inputClassification: "confidential", workbookBytes, workbookContentHash, imageContentHash }).bytes).toEqual(new Uint8Array([9, 8, 7]));
+  });
+
+  it("rejects image reads when the supplied workbook hash does not match", () => {
+    const workbookBytes = createAnonymousWorkbookZip();
+
+    expect(() => readWorksheetImageAsset({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbookBytes,
+      workbookContentHash: "a".repeat(64),
+      imageContentHash: "b".repeat(64),
+    })).toThrow("Worksheet-analysis assets request is invalid.");
   });
 });

@@ -3,7 +3,10 @@ import {
   createTypedError,
   worksheetAnalysisAssetsRequestSchema,
   worksheetAnalysisAssetsResultSchema,
+  worksheetImageReadRequestSchema,
+  worksheetImageReadResultSchema,
   type WorksheetAnalysisAssetsResult,
+  type WorksheetImageReadResult,
 } from "@ai-assist/contracts";
 import { readOoxmlWorkbook, type OoxmlCell, type OoxmlWorksheet } from "./ooxml-reader.js";
 
@@ -156,6 +159,36 @@ export function createWorksheetAnalysisAssets(request: unknown): WorksheetAnalys
     const result = worksheetAnalysisAssetsResultSchema.safeParse({ contractVersion: "v1", workbook: { classification: "confidential", contentHash, catalogContractVersion: parsed.data.workbookCatalog.contractVersion }, worksheets });
     if (!result.success) throw assetsError(REQUEST_SUMMARY, "workbook-request");
     return deepFreeze(structuredClone(result.data));
+  } catch (error) {
+    if (error instanceof Error && (error as { summary?: string }).summary === REQUEST_SUMMARY) throw error;
+    throw assetsError(ARCHIVE_SUMMARY, "workbook-archive");
+  }
+}
+
+export function readWorksheetImageAsset(request: unknown): WorksheetImageReadResult {
+  let classification: unknown;
+  try { classification = (request as { inputClassification?: unknown })?.inputClassification; } catch { throw assetsError(REQUEST_SUMMARY, "image-read-request"); }
+  if (typeof classification === "string" && classification !== "confidential") throw assetsError(POLICY_SUMMARY, "image-read-request", "policy_denied");
+  const parsed = worksheetImageReadRequestSchema.safeParse(request);
+  if (!parsed.success) throw assetsError(REQUEST_SUMMARY, "image-read-request");
+  try {
+    const actualWorkbookHash = createHash("sha256").update(parsed.data.workbookBytes).digest("hex");
+    if (actualWorkbookHash !== parsed.data.workbookContentHash) throw assetsError(REQUEST_SUMMARY, "workbook-content-hash");
+    const matches = [...readOoxmlWorkbook(parsed.data.workbookBytes).worksheets.values()]
+      .flatMap((worksheet) => worksheet.images)
+      .filter((image) => image.contentHash === parsed.data.imageContentHash);
+    if (matches.length !== 1) throw assetsError(REQUEST_SUMMARY, "image-content-hash");
+    const image = matches[0]!;
+    const result = worksheetImageReadResultSchema.safeParse({
+      contractVersion: "v1",
+      classification: "confidential",
+      workbookContentHash: actualWorkbookHash,
+      imageContentHash: image.contentHash,
+      mediaType: image.mediaType,
+      bytes: image.bytes.slice(),
+    });
+    if (!result.success) throw assetsError(REQUEST_SUMMARY, "image-content-hash");
+    return result.data;
   } catch (error) {
     if (error instanceof Error && (error as { summary?: string }).summary === REQUEST_SUMMARY) throw error;
     throw assetsError(ARCHIVE_SUMMARY, "workbook-archive");
