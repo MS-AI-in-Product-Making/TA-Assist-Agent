@@ -167,6 +167,23 @@ describe("OOXML workbook reader", () => {
     expectArchiveError(() => readOoxmlWorkbook(archive));
   });
 
+  it.each([
+    ["drawing", "urn:anonymous/drawing", "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"],
+    ["image", "http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing", "urn:anonymous/image"],
+  ])("rejects noncanonical internal %s relationship types", (_name, drawingType, imageType) => {
+    const archive = createAnonymousWorkbookZip({
+      xmlParts: {
+        "xl/worksheets/sheet3.xml": '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData><row r="2"><c r="A2"><v>2</v></c></row></sheetData><drawing r:id="rIdDrawing"/></worksheet>',
+        "xl/worksheets/_rels/sheet3.xml.rels": `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDrawing" Type="${drawingType}" Target="../drawings/drawing1.xml"/></Relationships>`,
+        "xl/drawings/drawing1.xml": '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><xdr:oneCellAnchor><xdr:from><xdr:col>0</xdr:col><xdr:row>0</xdr:row></xdr:from><xdr:pic><xdr:blipFill><a:blip r:embed="rIdImage"/></xdr:blipFill></xdr:pic><xdr:clientData/></xdr:oneCellAnchor></xdr:wsDr>',
+        "xl/drawings/_rels/drawing1.xml.rels": `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdImage" Type="${imageType}" Target="../media/image1.png"/></Relationships>`,
+      },
+      binaryParts: { "xl/media/image1.png": new Uint8Array([1]) },
+    });
+
+    expectArchiveError(() => readOoxmlWorkbook(archive));
+  });
+
   it("rejects a worksheet with more than 64 embedded images", () => {
     const anchors = Array.from({ length: 65 }, (_, index) => `<xdr:oneCellAnchor><xdr:from><xdr:col>${index}</xdr:col><xdr:row>0</xdr:row></xdr:from><xdr:pic><xdr:blipFill><a:blip r:embed="rIdImage${index}"/></xdr:blipFill></xdr:pic><xdr:clientData/></xdr:oneCellAnchor>`).join("");
     const relationships = Array.from({ length: 65 }, (_, index) => `<Relationship Id="rIdImage${index}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image${index}.png"/>`).join("");

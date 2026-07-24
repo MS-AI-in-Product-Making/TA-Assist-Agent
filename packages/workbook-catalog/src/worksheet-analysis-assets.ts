@@ -60,7 +60,7 @@ function cellValue(cell: OoxmlCell | undefined): string { return cell?.formula ?
 function field(cell: OoxmlCell | undefined, worksheetName: string, semanticField: FieldName) {
   const sourceCell = cell ? `${worksheetName}!${cell.reference}` : undefined;
   if (!cell) return { status: "unavailable" as const, reasonCode: "missing" as const };
-  if (cell.formula && cell.cachedValue === undefined) return { status: "unavailable" as const, reasonCode: "missing_cached_value" as const, sourceCell };
+  if (cell.formula && !cell.cachedValue?.trim()) return { status: "unavailable" as const, reasonCode: "missing_cached_value" as const, sourceCell };
   const rawText = cellValue(cell);
   if (!rawText.trim()) return { status: "unavailable" as const, reasonCode: "missing" as const, sourceCell };
   const parsed = /^([+-]?(?:\d+(?:\.\d+)?|\.\d+))(?:\s+([^\s]+))?$/.exec(rawText.trim());
@@ -128,7 +128,7 @@ function sheetAssets(worksheet: OoxmlWorksheet, worksheetName: string, tolerance
   const formulaCells = worksheet.cells.filter((cell) => cell.formula && !tableFormulaReferences.has(cell.reference)).map((cell) => ({
     sourceCell: `${worksheetName}!${cell.reference}`,
     formula: cell.formula!,
-    cachedValue: cell.cachedValue === undefined ? { status: "unavailable" as const, reasonCode: "missing_cached_value" as const } : { status: "available" as const, rawText: cell.cachedValue },
+    cachedValue: !cell.cachedValue?.trim() ? { status: "unavailable" as const, reasonCode: "missing_cached_value" as const } : { status: "available" as const, rawText: cell.cachedValue },
   }));
   const imageAssets = worksheet.images.map((image) => ({
     contentHash: image.contentHash,
@@ -150,7 +150,7 @@ export function createWorksheetAnalysisAssets(request: unknown): WorksheetAnalys
   try {
     const contentHash = createHash("sha256").update(parsed.data.workbookBytes).digest("hex");
     if (contentHash !== parsed.data.workbookCatalog.workbook.contentHash) throw assetsError(REQUEST_SUMMARY, "workbook-catalog");
-    const workbook = readOoxmlWorkbook(parsed.data.workbookBytes);
+    const workbook = readOoxmlWorkbook(parsed.data.workbookBytes, parsed.data.workbookCatalog.analyses.map((analysis) => analysis.worksheetName));
     const worksheets = parsed.data.workbookCatalog.analyses.map((analysis) => {
       const worksheet = workbook.worksheets.get(analysis.worksheetName);
       if (!worksheet) throw assetsError(REQUEST_SUMMARY, "workbook-catalog");

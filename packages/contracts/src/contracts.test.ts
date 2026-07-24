@@ -705,4 +705,17 @@ describe("worksheet analysis asset contracts", () => {
       }).success,
     ).toBe(true);
   });
+
+  it("accepts the controlled application/octet-stream image fallback", () => {
+    expect(
+      worksheetImageReadResultSchema.safeParse({
+        contractVersion: "v1",
+        classification: "confidential",
+        workbookContentHash: "a".repeat(64),
+        imageContentHash: "b".repeat(64),
+        mediaType: "application/octet-stream",
+        bytes: new Uint8Array([1]),
+      }).success,
+    ).toBe(true);
+  });
 });

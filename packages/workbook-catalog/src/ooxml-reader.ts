@@ -277,7 +277,7 @@ function imageMediaType(partName: string): string {
   return ({ png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", bmp: "image/bmp", tif: "image/tiff", tiff: "image/tiff", emf: "image/emf", wmf: "image/wmf" } as Record<string, string>)[extension] ?? "application/octet-stream";
 }
 
-function readImages(document: Document, worksheetPart: string, parts: ReadonlyMap<string, Uint8Array>, total: { value: number }): OoxmlImage[] {
+function readImages(document: Document, worksheetPart: string, parts: ReadonlyMap<string, Uint8Array>, family: OoxmlNamespaceFamily, total: { value: number; mediaParts: Set<string> }): OoxmlImage[] {
   const root = document.documentElement;
   if (!root) throw archiveError();
   const drawings = allowedChildren(root, root.namespaceURI ?? "", WORKSHEET_CHILDREN).filter((child) => child.localName === "drawing");
@@ -286,31 +286,30 @@ function readImages(document: Document, worksheetPart: string, parts: ReadonlyMa
   const worksheetRels = parts.get(relationshipPartName(worksheetPart));
   const drawingId = drawings[0]!.getAttributeNS(OFFICE_RELATIONSHIPS_NAMESPACE, "id");
   const drawing = worksheetRels && drawingId ? relationships(parseXml(worksheetRels), worksheetPart).get(drawingId) : undefined;
-  if (!drawing || !drawing.type.endsWith("/drawing") || !parts.has(drawing.target)) throw archiveError();
+  if (!drawing || drawing.type !== `${family.officeRelationships}/drawing` || !parts.has(drawing.target)) throw archiveError();
   const drawingDocument = parseXml(parts.get(drawing.target)!);
   if (!isElement(drawingDocument.documentElement, SPREADSHEET_DRAWING_NAMESPACE, "wsDr")) throw archiveError();
   const drawingRels = parts.get(relationshipPartName(drawing.target));
   if (!drawingRels) throw archiveError();
   const drawingRelationships = relationships(parseXml(drawingRels), drawing.target);
   const images: OoxmlImage[] = [];
-  const mediaParts = new Set<string>();
   for (const anchor of allowedChildren(drawingDocument.documentElement, SPREADSHEET_DRAWING_NAMESPACE, ["twoCellAnchor", "oneCellAnchor"])) {
     const from = anchorCell(anchor, "from");
     const to = anchor.localName === "twoCellAnchor" ? anchorCell(anchor, "to") : from;
     const coordinates = from && to ? { from, to } : undefined;
     for (const id of imageIds(anchor)) {
       const relationship = drawingRelationships.get(id);
-      if (!relationship || !relationship.type.endsWith("/image") || mediaParts.has(relationship.target) || !parts.has(relationship.target) || images.length >= MAX_IMAGES_PER_WORKSHEET || total.value >= MAX_IMAGES_PER_WORKBOOK) throw archiveError();
+      if (!relationship || relationship.type !== `${family.officeRelationships}/image` || total.mediaParts.has(relationship.target) || !parts.has(relationship.target) || images.length >= MAX_IMAGES_PER_WORKSHEET || total.value >= MAX_IMAGES_PER_WORKBOOK) throw archiveError();
       const bytes = parts.get(relationship.target)!;
       images.push({ contentHash: createHash("sha256").update(bytes).digest("hex"), mediaType: imageMediaType(relationship.target), byteLength: bytes.byteLength, sourcePart: relationship.target, drawingSourcePart: drawing.target, ...(coordinates ? { anchor: coordinates } : {}), bytes: bytes.slice() });
-      mediaParts.add(relationship.target);
+      total.mediaParts.add(relationship.target);
       total.value += 1;
     }
   }
   return images;
 }
 
-export function readOoxmlWorkbook(bytes: Uint8Array): OoxmlWorkbook {
+export function readOoxmlWorkbook(bytes: Uint8Array, worksheetNames?: readonly string[]): OoxmlWorkbook {
   try {
     const parts = readSafeZip(bytes);
     const workbook = parseXml(parts.get("xl/workbook.xml")!);
@@ -331,15 +330,17 @@ export function readOoxmlWorkbook(bytes: Uint8Array): OoxmlWorkbook {
     const sheetsElement = sheets[0];
     if (sheets.length !== 1 || !sheetsElement) throw archiveError();
     const cellBudget: CellBudget = { total: 0 };
-    const imageBudget = { value: 0 };
+    const imageBudget = { value: 0, mediaParts: new Set<string>() };
+    const requestedWorksheets = worksheetNames ? new Set(worksheetNames) : undefined;
     for (const sheet of onlyChildren(sheetsElement, family.spreadsheetml, "sheet")) {
       const name = sheet.getAttribute("name");
       const relationshipId = sheet.getAttributeNS(family.officeRelationships, "id");
       const relationship = relationshipId ? relationshipTargets.get(relationshipId) : undefined;
       const partName = relationship?.type === family.worksheetRelationshipType ? relationship.target : undefined;
       if (!name || worksheets.has(name) || !partName || !parts.has(partName)) throw archiveError();
+      if (requestedWorksheets && !requestedWorksheets.has(name)) continue;
       const worksheet = parseXml(parts.get(partName)!);
-      worksheets.set(name, { name, partName, cells: readCells(worksheet, strings, family, cellBudget), images: readImages(worksheet, partName, parts, imageBudget) });
+      worksheets.set(name, { name, partName, cells: readCells(worksheet, strings, family, cellBudget), images: readImages(worksheet, partName, parts, family, imageBudget) });
     }
     return { worksheets };
   } catch (error) {

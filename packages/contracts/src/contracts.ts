@@ -389,6 +389,8 @@ const imageAnchorSchema = z.discriminatedUnion("status", [
     .strict(),
 ]);
 
+  const worksheetImageMediaTypeSchema = z.string().regex(/^(?:image\/[a-z0-9.+-]+|application\/octet-stream)$/);
+
 const factorTableSchema = z
   .object({
     tableId: z.string().min(1),
@@ -454,7 +456,7 @@ export const worksheetAnalysisAssetsResultSchema = z
             z
               .object({
                 contentHash: sha256Schema,
-                mediaType: z.string().regex(/^image\/[a-z0-9.+-]+$/),
+                mediaType: worksheetImageMediaTypeSchema,
                 byteLength: z.number().int().positive(),
                 sourcePart: z.string().min(1),
                 drawingSourcePart: z.string().min(1),
@@ -484,7 +486,7 @@ export const worksheetImageReadResultSchema = z
     classification: z.literal("confidential"),
     workbookContentHash: sha256Schema,
     imageContentHash: sha256Schema,
-    mediaType: z.string().regex(/^image\/[a-z0-9.+-]+$/),
+    mediaType: worksheetImageMediaTypeSchema,
     bytes: z.instanceof(Uint8Array).refine((bytes) => bytes.length > 0, {
       message: "bytes must not be empty",
     }),

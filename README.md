@@ -12,7 +12,7 @@ relying on individual engineers' experience.
 1. **Process automation** — Manual TA workbook upload, optional ADO governance, **server-side scheduled reminders** for linked ADO items (independent of whether the agent is running), and measured-data backfill connect **design ⇄ analysis ⇄ real data** into a traceable closed loop.
 2. **Data interpretation** — objective, evidence-backed **5-section** reading (every RULE cites a knowledge-base entry), with the final judgment left to the engineer.
 
-> **Scope.** Drawing-content **image** reading and 3D VA are out of scope for now (they may be merged in later when needed). Data-to-drawing linking is done via **DIM ID metadata** (not image reading).
+> **Scope.** Drawing-content image understanding, OCR, dimension recognition, and 3D VA are out of scope for now. F1.1 may register embedded-image metadata and return hash-gated raw bytes, but it does not interpret image content. Data-to-drawing linking is done via **DIM ID metadata** (not image recognition).
 
 ## Documentation
 

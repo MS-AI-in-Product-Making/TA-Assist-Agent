@@ -97,6 +97,47 @@ describe("worksheet analysis assets", () => {
     })).toThrow("Worksheet-analysis assets input is not permitted.");
   });
 
+  it("does not parse an unapproved worksheet with an unsafe drawing", () => {
+    const workbookBytes = createAnonymousWorkbookZip({ xmlParts: {
+      "xl/worksheets/sheet4.xml": '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData><row r="1"><c r="A1"><v>4</v></c></row></sheetData><drawing r:id="rIdDrawing"/></worksheet>',
+      "xl/worksheets/_rels/sheet4.xml.rels": '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDrawing" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="https://anonymous.invalid/drawing.xml" TargetMode="External"/></Relationships>',
+    } });
+    const contentHash = createHash("sha256").update(workbookBytes).digest("hex");
+
+    const result = createWorksheetAnalysisAssets({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbookBytes,
+      workbookCatalog: {
+        contractVersion: "v1",
+        workbook: { fileName: "anonymous.xlsx", classification: "confidential", contentHash, metadata: { documentNo: "DOC", revision: "R", date: { value: "2026-07-24", sourceCell: "Title Page!A1" } } },
+        analyses: [{ worksheetName: "Analysis-A", toleranceLoopDescription: "anonymous", source: { summarySheet: "Auto Summary", summaryRow: 1, worksheetAnchor: "Analysis-A!A1" } }],
+      },
+    });
+
+    expect(result.worksheets).toHaveLength(1);
+    expect(result.worksheets[0]?.worksheetName).toBe("Analysis-A");
+  });
+
+  it("marks an empty formula cache as unavailable evidence", () => {
+    const workbookBytes = createAnonymousWorkbookZip({ xmlParts: {
+      "xl/worksheets/sheet3.xml": '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Factor</t></is></c><c r="B1" t="inlineStr"><is><t>Nominal Value</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>anonymous-factor</t></is></c><c r="B2"><f>SUM(A1:A1)</f><v></v></c></row></sheetData></worksheet>',
+    } });
+    const contentHash = createHash("sha256").update(workbookBytes).digest("hex");
+    const result = createWorksheetAnalysisAssets({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbookBytes,
+      workbookCatalog: {
+        contractVersion: "v1",
+        workbook: { fileName: "anonymous.xlsx", classification: "confidential", contentHash, metadata: { documentNo: "DOC", revision: "R", date: { value: "2026-07-24", sourceCell: "Title Page!A1" } } },
+        analyses: [{ worksheetName: "Analysis-A", toleranceLoopDescription: "anonymous", source: { summarySheet: "Auto Summary", summaryRow: 1, worksheetAnchor: "Analysis-A!A1" } }],
+      },
+    });
+
+    expect(result.worksheets[0]?.factorTables[0]?.rows[0]?.fields.nominalValue).toEqual({ status: "unavailable", reasonCode: "missing_cached_value", sourceCell: "Analysis-A!B2" });
+  });
+
   it("keeps returned image evidence metadata-only and deeply immutable", () => {
     const workbookBytes = createAnonymousWorkbookZip();
     const result = createWorksheetAnalysisAssets({
