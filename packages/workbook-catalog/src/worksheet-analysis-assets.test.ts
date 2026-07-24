@@ -87,4 +87,36 @@ describe("worksheet analysis assets", () => {
       imageContentHash: "b".repeat(64),
     })).toThrow("Worksheet-analysis assets request is invalid.");
   });
+
+  it("denies non-confidential assets requests before workbook processing", () => {
+    expect(() => createWorksheetAnalysisAssets({
+      contractVersion: "v1",
+      inputClassification: "secret",
+      workbookBytes: new Uint8Array([1]),
+      workbookCatalog: {},
+    })).toThrow("Worksheet-analysis assets input is not permitted.");
+  });
+
+  it("keeps returned image evidence metadata-only and deeply immutable", () => {
+    const workbookBytes = createAnonymousWorkbookZip();
+    const result = createWorksheetAnalysisAssets({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbookBytes,
+      workbookCatalog: {
+        contractVersion: "v1",
+        workbook: {
+          fileName: "anonymous.xlsx",
+          classification: "confidential",
+          contentHash: createHash("sha256").update(workbookBytes).digest("hex"),
+          metadata: { documentNo: "DOC", revision: "R", date: { value: "2026-07-24", sourceCell: "Title Page!A1" } },
+        },
+        analyses: [{ worksheetName: "Analysis-A", toleranceLoopDescription: "anonymous", source: { summarySheet: "Auto Summary", summaryRow: 1, worksheetAnchor: "Analysis-A!A1" } }],
+      },
+    });
+
+    expect(JSON.stringify(result)).not.toContain("bytes");
+    expect(Object.isFrozen(result.worksheets)).toBe(true);
+    expect(Object.isFrozen(result.worksheets[0]!)).toBe(true);
+  });
 });
