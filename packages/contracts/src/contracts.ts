@@ -292,6 +292,205 @@ export const workbookCatalogResultSchema = z
   })
   .strict();
 
+const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
+
+const nonEmptyWorkbookBytesSchema = z.instanceof(Uint8Array).refine(
+  (workbookBytes) => workbookBytes.length > 0,
+  { message: "workbookBytes must not be empty" },
+);
+
+export const worksheetAnalysisAssetsRequestSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    inputClassification: z.literal("confidential"),
+    workbookBytes: nonEmptyWorkbookBytesSchema,
+    workbookCatalog: workbookCatalogResultSchema,
+  })
+  .strict();
+
+const worksheetFieldNameSchema = z.enum([
+  "factorName",
+  "nominalValue",
+  "upperTolerance",
+  "lowerTolerance",
+  "upperSpecificationLimit",
+  "lowerSpecificationLimit",
+  "unit",
+  "distribution",
+  "assumption",
+  "contribution",
+  "sensitivity",
+  "mean",
+  "standardDeviation",
+  "cpk",
+  "assemblyDirection",
+]);
+
+const worksheetSourceCellSchema = z.string().regex(/^[^!]+![A-Z]+[1-9]\d*$/);
+
+const availableWorksheetFieldSchema = z
+  .object({
+    status: z.literal("available"),
+    rawText: z.string(),
+    sourceCell: worksheetSourceCellSchema,
+    numericValue: z.number().finite().optional(),
+    unit: z.string().min(1).optional(),
+    formula: z.string().min(1).optional(),
+    cachedValue: z.string().optional(),
+  })
+  .strict()
+  .refine((field) => !field.formula || field.cachedValue !== undefined, {
+    message: "cachedValue is required when formula is present",
+    path: ["cachedValue"],
+  });
+
+const unavailableWorksheetFieldSchema = z
+  .object({
+    status: z.literal("unavailable"),
+    reasonCode: z.enum([
+      "missing",
+      "duplicate_mapping",
+      "invalid_format",
+      "ambiguous_mapping",
+      "missing_cached_value",
+    ]),
+    sourceCell: worksheetSourceCellSchema.optional(),
+  })
+  .strict();
+
+const worksheetFieldSchema = z.union([
+  availableWorksheetFieldSchema,
+  unavailableWorksheetFieldSchema,
+]);
+
+const formulaCachedValueSchema = z.union([
+  z.object({ status: z.literal("available"), rawText: z.string() }).strict(),
+  z
+    .object({
+      status: z.literal("unavailable"),
+      reasonCode: z.literal("missing_cached_value"),
+    })
+    .strict(),
+]);
+
+const imageAnchorSchema = z.discriminatedUnion("status", [
+  z
+    .object({
+      status: z.literal("available"),
+      from: z.string().regex(/^[A-Z]+[1-9]\d*$/),
+      to: z.string().regex(/^[A-Z]+[1-9]\d*$/),
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("unavailable"),
+      reasonCode: z.literal("unparsed_anchor"),
+    })
+    .strict(),
+]);
+
+const factorTableSchema = z
+  .object({
+    tableId: z.string().min(1),
+    headerRow: z.number().int().positive(),
+    dataRange: z
+      .object({
+        startRow: z.number().int().positive(),
+        endRow: z.number().int().positive(),
+      })
+      .strict()
+      .refine((range) => range.startRow <= range.endRow, {
+        message: "dataRange startRow must not exceed endRow",
+        path: ["startRow"],
+      }),
+    columns: z
+      .array(
+        z
+          .object({
+            semanticField: worksheetFieldNameSchema,
+            headerText: z.string().min(1),
+            sourceColumn: z.string().regex(/^[A-Z]+$/),
+          })
+          .strict(),
+      )
+      .min(1),
+    rows: z.array(
+      z
+        .object({
+          sourceRow: z.number().int().positive(),
+          fields: z.record(worksheetFieldNameSchema, worksheetFieldSchema),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+export const worksheetAnalysisAssetsResultSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    workbook: z
+      .object({
+        classification: z.literal("confidential"),
+        contentHash: sha256Schema,
+        catalogContractVersion: contractVersionSchema,
+      })
+      .strict(),
+    worksheets: z.array(
+      z
+        .object({
+          worksheetName: z.string().min(1),
+          toleranceLoopDescription: z.string().min(1),
+          factorTables: z.array(factorTableSchema),
+          formulaCells: z.array(
+            z
+              .object({
+                sourceCell: worksheetSourceCellSchema,
+                formula: z.string().min(1),
+                cachedValue: formulaCachedValueSchema,
+              })
+              .strict(),
+          ),
+          imageAssets: z.array(
+            z
+              .object({
+                contentHash: sha256Schema,
+                mediaType: z.string().regex(/^image\/[a-z0-9.+-]+$/),
+                byteLength: z.number().int().positive(),
+                sourcePart: z.string().min(1),
+                drawingSourcePart: z.string().min(1),
+                anchor: imageAnchorSchema,
+              })
+              .strict(),
+          ),
+        })
+        .strict(),
+    ).min(1),
+  })
+  .strict();
+
+export const worksheetImageReadRequestSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    inputClassification: z.literal("confidential"),
+    workbookBytes: nonEmptyWorkbookBytesSchema,
+    workbookContentHash: sha256Schema,
+    imageContentHash: sha256Schema,
+  })
+  .strict();
+
+export const worksheetImageReadResultSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    classification: z.literal("confidential"),
+    workbookContentHash: sha256Schema,
+    imageContentHash: sha256Schema,
+    mediaType: z.string().regex(/^image\/[a-z0-9.+-]+$/),
+    bytes: z.instanceof(Uint8Array).refine((bytes) => bytes.length > 0, {
+      message: "bytes must not be empty",
+    }),
+  })
+  .strict();
+
 export const knowledgeBaseManifestResponseSchema = knowledgeBaseManifestSchema;
 
 export const knowledgeBaseQueryResultSchema = z.union([
@@ -327,3 +526,7 @@ export type KnowledgeBaseManifestResponse = z.infer<typeof knowledgeBaseManifest
 export type KnowledgeBaseQueryResult = z.infer<typeof knowledgeBaseQueryResultSchema>;
 export type WorkbookCatalogRequest = z.infer<typeof workbookCatalogRequestSchema>;
 export type WorkbookCatalogResult = z.infer<typeof workbookCatalogResultSchema>;
+export type WorksheetAnalysisAssetsRequest = z.infer<typeof worksheetAnalysisAssetsRequestSchema>;
+export type WorksheetAnalysisAssetsResult = z.infer<typeof worksheetAnalysisAssetsResultSchema>;
+export type WorksheetImageReadRequest = z.infer<typeof worksheetImageReadRequestSchema>;
+export type WorksheetImageReadResult = z.infer<typeof worksheetImageReadResultSchema>;

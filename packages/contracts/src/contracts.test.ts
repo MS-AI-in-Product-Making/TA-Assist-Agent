@@ -17,6 +17,10 @@ import {
   skillResultSchema,
   terminologyEntrySchema,
   typedErrorSchema,
+  worksheetAnalysisAssetsRequestSchema,
+  worksheetAnalysisAssetsResultSchema,
+  worksheetImageReadRequestSchema,
+  worksheetImageReadResultSchema,
 } from "./index.js";
 
 describe("Phase 0 contracts", () => {
@@ -482,5 +486,223 @@ describe("workbook catalog contracts", () => {
         analyses: [{ ...confidentialResult.analyses[0], ...legacyFields }],
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("worksheet analysis asset contracts", () => {
+  const contentHash = "a".repeat(64);
+  const workbookCatalog = {
+    contractVersion: "v1",
+    workbook: {
+      fileName: "anonymous-ta.xlsx",
+      classification: "confidential",
+      contentHash,
+      metadata: {
+        documentNo: "TA-001",
+        revision: "A",
+        date: { value: "2026-07-24", sourceCell: "Title Page!B6" },
+      },
+    },
+    analyses: [
+      {
+        worksheetName: "Analysis",
+        toleranceLoopDescription: "Anonymous analysis.",
+        source: { summarySheet: "Auto Summary", summaryRow: 1, worksheetAnchor: "Analysis!A1" },
+      },
+    ],
+  };
+
+  const request = {
+    contractVersion: "v1",
+    inputClassification: "confidential",
+    workbookBytes: new Uint8Array([0x50, 0x4b, 3, 4]),
+    workbookCatalog,
+  };
+
+  const result = {
+    contractVersion: "v1",
+    workbook: { classification: "confidential", contentHash, catalogContractVersion: "v1" },
+    worksheets: [
+      {
+        worksheetName: "Analysis",
+        toleranceLoopDescription: "Anonymous analysis.",
+        factorTables: [
+          {
+            tableId: "table-a",
+            headerRow: 12,
+            dataRange: { startRow: 13, endRow: 13 },
+            columns: [{ semanticField: "factorName", headerText: "Factor", sourceColumn: "B" }],
+            rows: [
+              {
+                sourceRow: 13,
+                fields: {
+                  factorName: {
+                    status: "available",
+                    rawText: "Anonymous factor",
+                    sourceCell: "Analysis!B13",
+                    numericValue: 1.25,
+                    unit: "mm",
+                    formula: "=B12",
+                    cachedValue: "1.25",
+                  },
+                  nominalValue: { status: "unavailable", reasonCode: "missing", sourceCell: "Analysis!C13" },
+                },
+              },
+            ],
+          },
+        ],
+        formulaCells: [
+          {
+            sourceCell: "Analysis!K13",
+            formula: "=B13",
+            cachedValue: { status: "available", rawText: "1.25" },
+          },
+        ],
+        imageAssets: [
+          {
+            contentHash,
+            mediaType: "image/png",
+            byteLength: 12,
+            sourcePart: "xl/media/image1.png",
+            drawingSourcePart: "xl/drawings/drawing1.xml",
+            anchor: { status: "available", from: "C3", to: "K20" },
+          },
+        ],
+      },
+    ],
+  };
+
+  it("accepts confidential v1 worksheet analysis asset contracts", () => {
+    expect(worksheetAnalysisAssetsRequestSchema.parse(request)).toEqual(request);
+    expect(worksheetAnalysisAssetsResultSchema.parse(result)).toEqual(result);
+    expect(
+      worksheetImageReadRequestSchema.parse({
+        contractVersion: "v1",
+        inputClassification: "confidential",
+        workbookBytes: new Uint8Array([0x50, 0x4b, 3, 4]),
+        workbookContentHash: contentHash,
+        imageContentHash: "b".repeat(64),
+      }),
+    ).toMatchObject({ workbookContentHash: contentHash });
+    expect(
+      worksheetImageReadResultSchema.parse({
+        contractVersion: "v1",
+        classification: "confidential",
+        workbookContentHash: contentHash,
+        imageContentHash: "b".repeat(64),
+        mediaType: "image/png",
+        bytes: new Uint8Array([1, 2, 3]),
+      }).bytes,
+    ).toEqual(new Uint8Array([1, 2, 3]));
+  });
+
+  it.each([
+    ["a public input", { ...request, inputClassification: "public" }],
+    ["an uppercase hash", { ...result, workbook: { ...result.workbook, contentHash: "A".repeat(64) } }],
+    ["an invalid hash", { ...result, workbook: { ...result.workbook, contentHash: "not-a-hash" } }],
+    ["an extra field", { ...request, unexpected: true }],
+  ])("rejects worksheet assets with %s", (_description, value) => {
+    const schema = "workbook" in value ? worksheetAnalysisAssetsResultSchema : worksheetAnalysisAssetsRequestSchema;
+    expect(schema.safeParse(value).success).toBe(false);
+  });
+
+  it.each([
+    ["workbookContentHash", { imageContentHash: contentHash }],
+    ["imageContentHash", { workbookContentHash: contentHash }],
+  ])("rejects an image read request missing %s", (_missingField, hashes) => {
+    expect(
+      worksheetImageReadRequestSchema.safeParse({
+        contractVersion: "v1",
+        inputClassification: "confidential",
+        workbookBytes: new Uint8Array([0x50]),
+        ...hashes,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects raw text leaked through an unavailable field", () => {
+    expect(
+      worksheetAnalysisAssetsResultSchema.safeParse({
+        ...result,
+        worksheets: [
+          {
+            ...result.worksheets[0],
+            factorTables: [
+              {
+                ...result.worksheets[0].factorTables[0],
+                rows: [
+                  {
+                    ...result.worksheets[0].factorTables[0].rows[0],
+                    fields: {
+                      factorName: {
+                        status: "unavailable",
+                        reasonCode: "invalid_format",
+                        rawText: "must not leak",
+                      },
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("requires a cached value for an available formula field", () => {
+    expect(
+      worksheetAnalysisAssetsResultSchema.safeParse({
+        ...result,
+        worksheets: [{
+          ...result.worksheets[0],
+          factorTables: [{
+            ...result.worksheets[0].factorTables[0],
+            rows: [{
+              ...result.worksheets[0].factorTables[0].rows[0],
+              fields: {
+                factorName: {
+                  status: "available",
+                  rawText: "Anonymous factor",
+                  sourceCell: "Analysis!B13",
+                  formula: "=A1",
+                },
+              },
+            }],
+          }],
+        }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("retains an independent formula cell when its cached value is unavailable", () => {
+    expect(
+      worksheetAnalysisAssetsResultSchema.safeParse({
+        ...result,
+        worksheets: [{
+          ...result.worksheets[0],
+          formulaCells: [{
+            sourceCell: "Analysis!K13",
+            formula: "=B13",
+            cachedValue: { status: "unavailable", reasonCode: "missing_cached_value" },
+          }],
+        }],
+      }).success,
+    ).toBe(true);
+  });
+
+  it("accepts an unavailable image anchor without guessing coordinates", () => {
+    expect(
+      worksheetAnalysisAssetsResultSchema.safeParse({
+        ...result,
+        worksheets: [{
+          ...result.worksheets[0],
+          imageAssets: [{
+            ...result.worksheets[0].imageAssets[0],
+            anchor: { status: "unavailable", reasonCode: "unparsed_anchor" },
+          }],
+        }],
+      }).success,
+    ).toBe(true);
   });
 });
