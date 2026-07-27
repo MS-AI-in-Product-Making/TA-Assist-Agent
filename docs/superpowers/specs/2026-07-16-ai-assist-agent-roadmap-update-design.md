@@ -1,61 +1,61 @@
-# AI Assist Agent Roadmap Update Design
+# AI Assist Agent 路线图更新设计
 
-## Purpose
+## 目的
 
-Rename the product-facing project from the TA-specific working name to **AI Assist Agent** and align GitHub planning artifacts with the product definition in `docs/04-feature-breakdown.md`.
+将面向产品的项目名称从 TA 专用的工作名称更改为 **AI Assist Agent**，并使 GitHub 规划工件与 `docs/04-feature-breakdown.md` 中的产品定义保持一致。
 
-## Source of Truth
+## 唯一事实来源
 
-- Product name: **AI Assist Agent**.
-- V1 roadmap shape: one Epic, four ME User Stories, and F0-F8 Features.
-- Existing GitHub issue numbers should be preserved where possible to avoid breaking links.
-- TA domain language remains valid: TA workbook, DIM ID, Cpk, RSS, WC, CTS/CTF, measured Cpk, and evidence pane terminology should not be generalized away.
+- 产品名称：**AI Assist Agent**。
+- V1 路线图结构：一个 Epic、四个 ME User Story，以及 F0-F8 Feature。
+- 应尽可能保留现有 GitHub issue 编号，以免破坏链接。
+- TA 领域术语仍然有效：TA workbook、DIM ID、Cpk、RSS、WC、CTS/CTF、measured Cpk 和 evidence pane 等术语不应被泛化。
 
-## Repository Naming Update
+## 仓库命名更新
 
-Update user-facing repository documentation from **AI TA Analysis Agent** / **Surface TA Analysis Agent** to **AI Assist Agent**.
+将面向用户的仓库文档中的 **AI TA Analysis Agent** / **Surface TA Analysis Agent** 更新为 **AI Assist Agent**。
 
-Keep detailed product scope intact:
+保持详细产品范围不变：
 
-- The V1 product still assists tolerance-analysis workflows.
-- Feature documents still describe the TA-specific workflow.
-- Confidential engineering notes and formula references are not removed unless they conflict with the new product name.
+- V1 产品仍用于辅助公差分析工作流。
+- Feature 文档仍描述 TA 专用工作流。
+- 除非与新产品名称冲突，否则不移除机密工程说明和公式引用。
 
-## GitHub Issues Update
+## GitHub Issue 更新
 
-Use the docs-defined structure as the planning model:
+使用文档定义的结构作为规划模型：
 
-1. **User Story 1 - Reliable First-Pass TA Result and Summary**
-   - Covers F0, F1, F2, F4, and F8.
-2. **User Story 2 - DIM ID and Drawing Governance Before Key Milestones**
-   - Covers F3.
-3. **User Story 3 - Objective Conclusions and Comparable Options**
-   - Covers F5 and F6.
-4. **User Story 4 - Measured Cpk Feedback and Continuous Accuracy Improvement**
-   - Covers F7.
+1. **User Story 1 - 可靠的首次 TA 结果与摘要**
+   - 覆盖 F0、F1、F2、F4 和 F8。
+2. **User Story 2 - 关键里程碑之前的 DIM ID 与图纸治理**
+   - 覆盖 F3。
+3. **User Story 3 - 客观结论与可比较选项**
+   - 覆盖 F5 和 F6。
+4. **User Story 4 - Measured Cpk 反馈与持续准确性改进**
+   - 覆盖 F7。
 
-Preserve existing Feature issue numbers and update their bodies/checklists to match `docs/04-feature-breakdown.md`.
+保留现有 Feature issue 编号，并更新其正文和检查清单，使之符合 `docs/04-feature-breakdown.md`。
 
-Treat existing S0-S9 User Story issues as historical migration records rather than deleting them. If closing is supported safely, close them with a note pointing to the new four-story structure; otherwise update their body/title to mark them migrated.
+将现有 S0-S9 User Story issue 视为历史迁移记录，而不是删除它们。如果可以安全关闭，请以说明指向新的四个故事结构后关闭；否则更新其正文和标题以标记为已迁移。
 
-## GitHub Project Update
+## GitHub Project 更新
 
-Rename Project #1 to **AI Assist Agent Roadmap**.
+将 Project #1 重命名为 **AI Assist Agent Roadmap**。
 
-Update the project short description/readme to explain that the board tracks the V1 roadmap as:
+更新项目简短描述/readme，说明看板按以下结构跟踪 V1 路线图：
 
-- 4 User Stories
-- F0-F8 Features
-- implementation tasks inside Feature issue checklists
+- 4 个 User Story
+- F0-F8 Feature
+- Feature issue 检查清单中的实现任务
 
-Update the `User Story` single-select project field from S0-S9 options to the four docs-defined User Stories, then assign each Feature issue to the correct option.
+将 `User Story` 单选项目字段从 S0-S9 选项更新为文档定义的四个 User Story，然后将每个 Feature issue 分配给正确的选项。
 
-## Safety and Verification
+## 安全性与验证
 
-- Do not delete issues.
-- Do not break existing issue links.
-- Keep old issue numbers where possible.
-- Verify Project #1 title and item grouping after update.
-- Verify repository docs contain the new product-facing name.
-- Verify feature issue bodies contain concrete task checklists aligned with docs.
+- 不删除 issue。
+- 不破坏现有 issue 链接。
+- 尽可能保留旧 issue 编号。
+- 更新后验证 Project #1 标题和项目分组。
+- 验证仓库文档包含新的面向产品的名称。
+- 验证 Feature issue 正文包含与文档一致的具体任务检查清单。
 

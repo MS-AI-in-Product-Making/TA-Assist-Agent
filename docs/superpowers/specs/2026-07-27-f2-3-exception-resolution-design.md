@@ -1,86 +1,72 @@
-# F2.3 Non-Blocking Exception Resolution Design
+# F2.3 非阻塞例外处置设计
 
-**Date:** 2026-07-27
+**日期：** 2026-07-27
 
-## Goal
+## 目标
 
-F2.3 lets an engineer explicitly account for every non-blocking F2.2 consistency signal before a
-later workflow may continue. It validates and assembles immutable exception-resolution evidence; it
-does not bypass F2.1, calculate engineering feasibility, modify a workbook, or persist data.
+F2.3 允许工程师在后续工作流继续之前，显式处理每个非阻塞 F2.2 一致性信号。它验证并组装不可变的例外处置证据；不会绕过 F2.1、计算工程可行性、修改 workbook 或持久化数据。
 
-F2.3 implements the documented correction path: an engineer may correct and re-upload the source
-workbook, or proceed only after recording an auditable exception for each current non-blocking
-difference. Required-field blockers remain outside this path.
+F2.3 实现已记录的纠正路径：工程师可以纠正并重新上传源 workbook，或仅在为每个当前非阻塞差异记录可审计例外后继续。必填字段阻塞项仍不在此路径内。
 
-## Scope and Boundaries
+## 范围与边界
 
-### In scope
+### 范围内
 
-1. Consume a confidential, completed F2.2 `CapabilityValidationResult`.
-2. Accept one engineer-authored exception candidate for each actionable F2.2 signal.
-3. Validate candidate coverage, uniqueness, reason text, recorder identity, timestamp, and source
-   binding against the current F2.2 result.
-4. Produce an immutable confidential resolution DTO with accepted records, pending signals, and a
-   precise continuation status.
+1. 使用机密、已完成的 F2.2 `CapabilityValidationResult`。
+2. 为每个可操作的 F2.2 信号接受一项由工程师编写的例外候选项。
+3. 针对当前 F2.2 结果验证候选项的覆盖度、唯一性、原因文本、记录者身份、时间戳和源绑定。
+4. 生成包含已接受记录、待处理信号和精确继续状态的不可变机密处置 DTO。
 
-### Explicitly out of scope
+### 明确不在范围内
 
-- F2.1 required-field bypass, repair, or override.
-- Reopening OOXML, accepting workbook bytes, paths, URLs, images, or external values.
-- Re-running F2.2, loading F0, converting units, selecting alternate capability entries, or
-  producing engineering feasibility, risk, or recommendation conclusions.
-- DIM ID/Part Number governance in F2.4 or F3.
-- Audit/run-store persistence, identity authentication, network calls, approval workflow, external
-  adapters, or workbook writeback.
+- F2.1 必填字段的绕过、修复或覆盖。
+- 重新打开 OOXML，接受 workbook 字节、路径、URL、图像或外部值。
+- 重新运行 F2.2、加载 F0、进行单位换算、选择备选 capability 条目，或生成工程可行性、风险或建议结论。
+- F2.4 或 F3 中的 DIM ID/Part Number 治理。
+- 审计/run-store 持久化、身份验证、网络调用、批准工作流、外部 adapter 或 workbook 回写。
 
-## Architecture and Data Flow
+## 架构与数据流
 
-F2.3 is a pure `createExceptionResolution(request)` service in
-`@ai-assist/workbook-catalog`. It consumes the validated F2.2 DTO and candidate exception data only.
-The next governed runtime may decide whether and how to persist the returned resolution DTO.
+F2.3 在 `@ai-assist/workbook-catalog` 中实现为纯 `createExceptionResolution(request)` 服务。它仅使用已验证的 F2.2 DTO 和候选例外数据。后续受治理的运行时可决定是否以及如何持久化返回的处置 DTO。
 
 ```mermaid
 flowchart LR
     F21[F2.1 ready] --> F22[F2.2 completed]
-    F22 --> SIG[Actionable non-blocking signals]
-    CAND[Engineer exception candidates] --> F23[F2.3 pure resolution]
+    F22 --> SIG[可操作的非阻塞信号]
+    CAND[工程师例外候选项] --> F23[F2.3 纯处置]
     SIG --> F23
-    F23 --> DEC{Every signal covered once?}
-    DEC -- no --> PENDING[pendingExceptions]
-    DEC -- yes --> READY[readyToContinue]
-    READY --> NEXT[Later governed workflow]
+    F23 --> DEC{每个信号均恰好覆盖一次？}
+    DEC -- 否 --> PENDING[pendingExceptions]
+    DEC -- 是 --> READY[readyToContinue]
+    READY --> NEXT[后续受治理工作流]
 ```
 
-F2.3 rejects F2.2 `required_fields_not_ready` input as a validation error. It never turns that gate
-into a continuable state.
+F2.3 将 F2.2 `required_fields_not_ready` 输入作为验证错误拒绝。它绝不会将该门禁转换为可继续状态。
 
-## Actionable Signals
+## 可操作信号
 
-For each F2.2 row, F2.3 derives the following actionable signals:
+对于每个 F2.2 行，F2.3 推导以下可操作信号：
 
-| Row result | Actionable signal |
+| 行结果 | 可操作信号 |
 |---|---|
 | `tolerance.status: "out_of_library"` | `tolerance_out_of_library` |
 | `tolerance.status: "unable_to_validate"` | `tolerance_unable_to_validate` |
 | `distribution.status: "distribution_mismatch"` | `distribution_mismatch` |
 | `distribution.status: "unable_to_validate"` | `distribution_unable_to_validate` |
 
-`in_library` and `matches_recommendation` have no exception requirement. `not_applicable` is derived
-from a tolerance result that could not produce an in-library comparison, so it does not create a
-second exception requirement.
+`in_library` 和 `matches_recommendation` 没有例外要求。`not_applicable` 源自无法产生库内比较的公差结果，因此不会产生第二项例外要求。
 
-An actionable signal reference is canonical and source-bound:
+可操作信号引用是规范的并与源绑定：
 
 ```text
 workbookContentHash + worksheetName + tableId + sourceRow + signalKind
 ```
 
-F2.3 derives this reference from F2.2; callers must not provide arbitrary worksheet/table/row
-coordinates or a raw workbook identifier.
+F2.3 从 F2.2 推导该引用；调用方不得提供任意 worksheet/table/row 坐标或原始 workbook 标识符。
 
-## Request Contract
+## 请求契约
 
-The strict confidential request has the following shape:
+严格的机密请求具有以下结构：
 
 ```ts
 {
@@ -96,27 +82,20 @@ The strict confidential request has the following shape:
 }
 ```
 
-`recordedAt` is caller-supplied controlled runtime evidence in ISO-8601 UTC form. F2.3 does not
-read a clock or authenticate `recordedBy`; those responsibilities belong to the later governed
-runtime. Candidate data is confidential and must not be emitted to normal logs.
+`recordedAt` 是调用方提供的受控运行时证据，采用 ISO-8601 UTC 格式。F2.3 不读取时钟或验证 `recordedBy`；这些职责属于后续受治理的运行时。候选数据是机密的，不得输出到常规日志。
 
-## Resolution Rules
+## 处置规则
 
-1. The F2.2 result must be schema-valid and `completed`; its workbook content hash and knowledge-base
-   version define the current resolution context.
-2. A candidate must reference exactly one currently actionable signal. Unknown, stale, malformed, or
-   source-mismatched references are invalid candidates.
-3. Every candidate requires a non-empty `recordedBy`, non-empty trimmed `rationale`, and valid UTC
-   timestamp.
-4. A signal may be covered by exactly one valid candidate. Repeated candidates for the same signal are
-   invalid; they never silently overwrite another rationale.
-5. Each actionable signal without one valid candidate remains pending.
-6. `readyToContinue` is true only if there are no pending signals and no invalid candidates. This is a
-   data-cleanliness continuation state, not engineering approval, feasibility, or risk acceptance.
+1. F2.2 结果必须 schema 有效且为 `completed`；其 workbook 内容哈希和 knowledge-base 版本定义当前处置上下文。
+2. 候选项必须恰好引用一个当前可操作信号。未知、过期、格式错误或源不匹配的引用均为无效候选项。
+3. 每个候选项均需要非空 `recordedBy`、非空且已修剪的 `rationale` 和有效 UTC 时间戳。
+4. 一个信号只能由一项有效候选项覆盖。针对同一信号的重复候选项无效；它们绝不静默覆盖其他 rationale。
+5. 每个没有有效候选项的可操作信号保持待处理状态。
+6. 仅当不存在待处理信号和无效候选项时，`readyToContinue` 才为 true。这是数据整洁度的继续状态，而非工程批准、可行性或风险接受。
 
-## Result Contract
+## 结果契约
 
-The result is confidential, cloned, and recursively frozen:
+结果为机密、已克隆且递归冻结：
 
 ```ts
 {
@@ -154,33 +133,23 @@ The result is confidential, cloned, and recursively frozen:
 }
 ```
 
-The final runtime schema will use discriminated unions for signal snapshots and result status. The
-status, `readyToContinue`, arrays, and summary counts must remain mutually consistent.
+最终运行时 schema 将对信号快照和结果状态使用判别联合。状态、`readyToContinue`、数组和摘要计数必须保持相互一致。
 
-## Privacy, Audit, and Governance
+## 隐私、审计与治理
 
-- F2.2 row provenance, F2.3 rationales, identities, timestamps, and result DTOs are confidential.
-- F0 version and public capability entry metadata may be included only where already present in the
-  F2.2 signal snapshot; F2.3 does not query or enrich F0 data.
-- Normal logs may include fixed contract versions and aggregate counts, but not source names, cells,
-  factor labels, raw values, rationale text, or identities.
-- The returned DTO is an auditable record payload, not durable storage. A future governed runtime
-  must persist it atomically with its own authentication, retention, and audit policy.
-- F2.3 becomes available only after implementation and tests. Root F2, F2.4, and F3-F7 remain
-  unavailable.
+- F2.2 行溯源信息、F2.3 rationale、身份、时间戳和结果 DTO 均为机密。
+- F0 版本和公开 capability 条目元数据仅可在已存在于 F2.2 信号快照的情况下包含；F2.3 不查询或扩充 F0 数据。
+- 常规日志可包含固定契约版本和汇总计数，但不得包含源名称、单元格、因子标签、原始值、rationale 文本或身份。
+- 返回的 DTO 是可审计记录载荷，而非持久化存储。未来受治理的运行时必须根据自身身份验证、保留和审计策略以原子方式持久化它。
+- 仅在实现和测试完成后，F2.3 才变为可用。根 F2、F2.4 和 F3-F7 保持不可用。
 
-## Tests and Acceptance
+## 测试与验收
 
-1. Strict request/result parsing, unknown-key rejection, discriminated-union validity, summary/status
-   invariants, cloned output, and deep freeze.
-2. F2.2 non-completed input is rejected rather than treated as an exception opportunity.
-3. Each actionable tolerance/distribution state derives one canonical signal; `not_applicable` does
-   not duplicate a tolerance exception requirement.
-4. Complete unique coverage returns `readyToContinue`; missing coverage returns `pendingExceptions`.
-5. Duplicate, unknown, malformed, stale, blank-rationale, blank-recorder, and invalid-time candidates
-   are listed as pending/invalid and cannot permit continuation.
-6. Multi-worksheet/table/row anonymous fixtures verify count aggregation and source binding.
-7. F2.3 never accepts bytes, paths, URLs, images, or external services; no real workbook or
-   confidential fixture is committed.
-8. Governance, documentation, and policy tests make F2.3 available while preserving root F2, F2.4,
-   and F3-F7 as unavailable.
+1. 严格请求/结果解析、未知键拒绝、判别联合有效性、摘要/状态不变量、克隆输出和深度冻结。
+2. F2.2 未完成输入会被拒绝，而非视为例外处理机会。
+3. 每个可操作的公差/分布状态均推导一项规范信号；`not_applicable` 不重复产生公差例外要求。
+4. 完整且唯一的覆盖返回 `readyToContinue`；覆盖缺失返回 `pendingExceptions`。
+5. 重复、未知、格式错误、过期、空 rationale、空记录者和无效时间候选项均列为待处理/无效，且无法允许继续。
+6. 多 worksheet/table/row 匿名 fixture 验证计数聚合和源绑定。
+7. F2.3 绝不接受字节、路径、URL、图像或外部服务；不提交真实 workbook 或机密 fixture。
+8. 治理、文档和策略测试使 F2.3 可用，同时保留根 F2、F2.4 和 F3-F7 为不可用。

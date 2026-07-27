@@ -1,61 +1,52 @@
-# F2.2 Capability Library and Distribution Validation Design
+# F2.2 能力库与分布验证设计
 
-**Date:** 2026-07-27
+**日期：** 2026-07-27
 
-## Goal
+## 目标
 
-F2.2 compares each complete TA factor-row evidence record with an approved public F0
-Capability Library snapshot. It reports whether the row's total tolerance is represented
-by a matching category/unit/range entry and whether the supplied distribution agrees with
-that entry's recommended distribution.
+F2.2 将每条完整的 TA 因子行证据记录与已批准的公开 F0 Capability Library 快照进行比较。它报告该行的总公差是否由类别、单位和范围均匹配的条目表示，以及所提供的分布是否符合该条目的推荐分布。
 
-F2.2 is a non-blocking consistency check that can run only after F2.1 has confirmed all
-required fields are ready. It creates no engineering-feasibility conclusion, no exception
-record, no calculation, and no workbook modification.
+F2.2 是一项非阻塞一致性检查，只有在 F2.1 确认所有必填字段就绪后才能运行。它不生成工程可行性结论、例外记录、计算结果，也不修改 workbook。
 
-## Scope and Boundaries
+## 范围与边界
 
-### In scope
+### 范围内
 
-1. Consume validated F1.1 worksheet-analysis assets and a ready F2.1 required-field result.
-2. Bind the F2.1 result to the same F1.1 workbook evidence using its confidential content hash.
-3. Load an explicitly requested, approved public knowledge-base snapshot through F0.
-4. For each factor row, compare total tolerance against the matching Capability Library range.
-5. Compare a recognized, normalized input distribution with the matched entry's recommended
-   distribution.
-6. Return confidential, immutable, provenance-preserving row results and summaries.
+1. 使用已验证的 F1.1 worksheet-analysis assets 和就绪的 F2.1 required-field 结果。
+2. 使用其机密内容哈希，将 F2.1 结果绑定到同一份 F1.1 workbook 证据。
+3. 通过 F0 加载显式请求且已批准的公开 knowledge-base 快照。
+4. 针对每个因子行，将总公差与匹配的 Capability Library 范围进行比较。
+5. 将已识别、已规范化的输入分布与匹配条目的推荐分布进行比较。
+6. 返回机密、不可变且保留溯源信息的行结果和摘要。
 
-### Explicitly out of scope
+### 明确不在范围内
 
-- Reopening or parsing OOXML, accepting workbook bytes, paths, URLs, images, or external data.
-- Required-field validation, data repair, unit conversion, fuzzy matching, or inferred values.
-- Cpk, feasibility, tolerance-stack calculations, engineering recommendations, or risk scoring.
-- F2.3 exception creation, approval, persistence, or a decision to continue despite a difference.
-- F2.4 identifier governance, F3 DIM governance, and all later workflow behavior.
-- Network calls, external capability-library updates, or persistence of confidential workbook data.
+- 重新打开或解析 OOXML，接受 workbook 字节、路径、URL、图像或外部数据。
+- 必填字段验证、数据修复、单位换算、模糊匹配或推断值。
+- Cpk、可行性、公差叠加计算、工程建议或风险评分。
+- F2.3 例外创建、批准、持久化，或在存在差异时继续的决策。
+- F2.4 标识符治理、F3 DIM 治理及所有后续工作流行为。
+- 网络调用、外部能力库更新或机密 workbook 数据的持久化。
 
-## Data Flow
+## 数据流
 
 ```mermaid
 flowchart LR
-    A[F1.1 worksheet-analysis assets] --> B[F2.1 required-field check]
-    A --> C[F2.2 capability validation]
-    B --> D{readyForNextCheck and same content hash?}
-    D -- no --> E[required_fields_not_ready]
-    D -- yes --> C
-    K[Approved F0 snapshot v1] --> C
-    C --> R[Non-blocking row consistency results]
-    R --> X[F2.3 exception workflow, later]
+    A[F1.1 worksheet-analysis assets] --> B[F2.1 必填字段检查]
+    A --> C[F2.2 能力验证]
+    B --> D{readyForNextCheck 且内容哈希相同？}
+    D -- 否 --> E[required_fields_not_ready]
+    D -- 是 --> C
+    K[已批准的 F0 snapshot v1] --> C
+    C --> R[非阻塞行一致性结果]
+    R --> X[后续 F2.3 例外工作流]
 ```
 
-F2.2 is implemented as a pure `createCapabilityValidation(request)` service in
-`@ai-assist/workbook-catalog`. It calls the public `loadKnowledgeBase({ version })` API from
-`@ai-assist/knowledge-base`; it does not import embedded seed data directly. The only currently
-approved version is `v1`, and F0 rejects any unavailable version with its existing typed error.
+F2.2 在 `@ai-assist/workbook-catalog` 中实现为纯 `createCapabilityValidation(request)` 服务。它调用 `@ai-assist/knowledge-base` 的公开 `loadKnowledgeBase({ version })` API；不直接导入嵌入式种子数据。目前唯一获批准的版本为 `v1`，F0 会通过其现有类型化错误拒绝任何不可用版本。
 
-## Input Contract and Gate
+## 输入契约与门禁
 
-The confidential request contains:
+机密请求包含：
 
 ```ts
 {
@@ -67,60 +58,39 @@ The confidential request contains:
 }
 ```
 
-F2.2 requires F2.1 result status `readyForNextCheck`. If F2.1 is blocked, F2.2 returns a
-normal confidential result with status `required_fields_not_ready`, no row conclusions, and
-the supplied F2.1 blocking/advisory counts. It does not recreate or reinterpret F2.1 issues.
+F2.2 要求 F2.1 结果状态为 `readyForNextCheck`。如果 F2.1 被阻塞，F2.2 会返回状态为 `required_fields_not_ready` 的常规机密结果，不包含行结论，但包含所提供的 F2.1 阻塞/建议计数。它不会重新创建或重新解释 F2.1 问题。
 
-F2.1's current public result does not identify the F1.1 assets it checked. To make the gate
-auditable and prevent a ready result for one workbook being used with a different asset set,
-F2.1 will add `workbookContentHash`, copied from
-`worksheetAnalysisAssets.workbook.contentHash`, to its result contract. F2.2 validates it against
-the F1.1 asset hash before examining rows. A mismatch is a `validation_error`, not a business
-consistency conclusion.
+F2.1 当前的公开结果未标识其检查的 F1.1 assets。为使门禁可审计，并防止某个 workbook 的就绪结果被用于不同的资产集，F2.1 将在其结果契约中添加从 `worksheetAnalysisAssets.workbook.contentHash` 复制的 `workbookContentHash`。F2.2 会在检查行之前将其与 F1.1 asset 哈希进行验证。哈希不匹配属于 `validation_error`，而非业务一致性结论。
 
-Malformed requests, schema version mismatches, unavailable knowledge-base versions, and forged
-F2.1/F1.1 binding data are rejected through typed errors. Inputs that are not `confidential` are
-rejected by the policy boundary.
+格式错误的请求、schema 版本不匹配、不可用的 knowledge-base 版本和伪造的 F2.1/F1.1 绑定数据均通过类型化错误拒绝。非 `confidential` 的输入由策略边界拒绝。
 
-## Row Semantics
+## 行语义
 
-### Tolerance lookup
+### 公差查找
 
-For a row with finite numeric upper and lower tolerances, F2.2 computes the total tolerance band:
+对于具有有限数值上、下公差的行，F2.2 会计算总公差带：
 
 $$
 \text{totalTolerance} = \text{upperTolerance} - \text{lowerTolerance}
 $$
 
-For example, $+0.10/-0.05$ becomes $0.15$. F2.2 passes this value, the exact `partCategory`, and
-the normalized unit to F0 `findCapability`. F0 matches only when category and unit are equal and
-the tolerance is within the entry's inclusive range. F2.2 does not convert units, relax category
-matching, select a nearest range, or use an entry from another row, table, or worksheet.
+例如，$+0.10/-0.05$ 会得到 $0.15$。F2.2 将此值、精确的 `partCategory` 和规范化单位传递给 F0 `findCapability`。仅当类别和单位相等，且公差处于条目的包含边界范围内时，F0 才会匹配。F2.2 不进行单位换算、放宽类别匹配、选择最近范围，也不使用其他行、表或 worksheet 中的条目。
 
-The current F0 capability contract accepts only `mm`. F2.2 treats a missing, unavailable,
-blank, or non-`mm` unit as a non-blocking `unable_to_validate` outcome. It does not claim either
-in-library or out-of-library in that case.
+当前 F0 capability 契约仅接受 `mm`。F2.2 将缺失、不可用、空白或非 `mm` 的单位视为非阻塞的 `unable_to_validate` 结果。在该情况下，它不会声称结果在库内或库外。
 
-### Capability states
+### 能力状态
 
-- `in_library`: F0 returns a matched capability entry. The result retains the entry ID,
-  recommended distribution, capability tier, and F0 version as public evidence.
-- `out_of_library`: F0 returns `unknown`, meaning no exact category/unit/tolerance match exists.
-  This is distinct from a matched entry whose tier is `T0`.
-- `unable_to_validate`: a required F2.2 comparison input is unusable, including the unit cases
-  above or an invalid non-negative computed tolerance. This is non-blocking and does not invent a
-  library conclusion.
+- `in_library`：F0 返回匹配的 capability 条目。结果会保留条目 ID、推荐分布、capability 层级和 F0 版本，作为公开证据。
+- `out_of_library`：F0 返回 `unknown`，表示不存在精确的类别/单位/公差匹配。这不同于层级为 `T0` 的已匹配条目。
+- `unable_to_validate`：必需的 F2.2 比较输入不可用，包括上述单位情形或无效的非负计算公差。此结果是非阻塞的，且不会虚构库结论。
 
-`capabilityTier: "T0"` on an `in_library` result only records that the matched library entry has
-unknown capability. F2.2 must not call it feasible, infeasible, accepted, rejected, or otherwise
-derive an engineering conclusion.
+`in_library` 结果上的 `capabilityTier: "T0"` 仅记录匹配的库条目具有未知能力。F2.2 不得称其为可行、不可行、已接受、已拒绝，也不得以其他方式推导工程结论。
 
-### Distribution comparison
+### 分布比较
 
-F2.2 compares distribution only when the capability state is `in_library`. It applies one
-controlled, local normalization table before an exact comparison:
+F2.2 仅在 capability 状态为 `in_library` 时比较分布。在精确比较前，它应用一个受控的本地规范化表：
 
-| Accepted input spelling | Canonical distribution |
+| 接受的输入拼写 | 规范分布 |
 |---|---|
 | `normal`, `gaussian`, `正态分布` | `normal` |
 | `uniform`, `均匀分布` | `uniform` |
@@ -129,26 +99,20 @@ controlled, local normalization table before an exact comparison:
 | `elliptical`, `椭圆分布` | `elliptical` |
 | `beta`, `贝塔分布` | `beta` |
 
-Normalization trims surrounding whitespace and uses locale-independent case folding before the
-explicit alias lookup. It does not use substring, fuzzy, model-based, or configurable matching.
+规范化会修剪周围空白，并在显式别名查找前使用与区域设置无关的大小写折叠。它不使用子字符串、模糊、基于模型或可配置的匹配。
 
-The resulting distribution check is one of:
+所得分布检查为以下之一：
 
-- `matches_recommendation`: canonical input equals the entry's recommended distribution.
-- `distribution_mismatch`: both values are recognized but differ.
-- `unable_to_validate`: input distribution is missing, unavailable, blank, or not one of the
-  controlled aliases.
-- `not_applicable`: no matched capability entry is available for comparison.
+- `matches_recommendation`：规范输入等于条目的推荐分布。
+- `distribution_mismatch`：两个值均已识别，但彼此不同。
+- `unable_to_validate`：输入分布缺失、不可用、空白，或不属于受控别名。
+- `not_applicable`：没有可供比较的匹配 capability 条目。
 
-All distribution outcomes are non-blocking. A distribution mismatch is a consistency signal for
-subsequent F2.3 handling, not an exception record and not an engineering conclusion.
+所有分布结果均为非阻塞。分布不匹配是供后续 F2.3 处理的一致性信号，不是例外记录，也不是工程结论。
 
-## Result Contract
+## 结果契约
 
-The F2.2 result is confidential and includes a status, F0 version evidence, a row result for every
-F1.1 factor row reached through the ready gate, and counts. Each row keeps only the necessary
-confidential worksheet/table/row/factor provenance required to locate the issue in the controlled
-source. It does not echo raw confidential values or rejected candidate mappings.
+F2.2 结果为机密，包含状态、F0 版本证据、每个通过就绪门禁到达的 F1.1 因子行的行结果和计数。每行仅保留在受控源中定位问题所必需的机密 worksheet/table/row/factor 溯源信息。它不会回显原始机密值或被拒绝的候选映射。
 
 ```ts
 {
@@ -189,39 +153,26 @@ source. It does not echo raw confidential values or rejected candidate mappings.
 }
 ```
 
-The final schema will use discriminated unions so state-specific fields cannot be supplied for an
-incompatible outcome. Summary counts must exactly match the row results. A gate result has an empty
-row array and zero row-derived summary counts.
+最终 schema 将使用判别联合，以免为不兼容的结果提供状态专属字段。摘要计数必须与行结果完全匹配。门禁结果包含空行数组和零行派生摘要计数。
 
-F2.2 deep-clones and recursively freezes all public DTOs. It returns no mutable references to
-inputs, F0 entries, or internal arrays.
+F2.2 对所有公开 DTO 进行深度克隆并递归冻结。它不会返回对输入、F0 条目或内部数组的可变引用。
 
-## Privacy, Audit, and Governance
+## 隐私、审计与治理
 
-- F1.1/F2.1/F2.2 data remains confidential. The F0 snapshot and its manifest are public.
-- Normal logs may contain contract version, F0 version, content hash, and aggregate counts, but
-  not raw cell text, worksheet names, source cells, workbook paths, bytes, or images.
-- Anonymous in-memory OOXML fixtures remain the only workbook inputs in tests; no real workbook
-  artifact is committed.
-- Governance exposes F2.2 as available only after this implementation is complete. Root F2,
-  F2.3, F2.4, and F3-F7 remain unavailable.
+- F1.1/F2.1/F2.2 数据保持机密。F0 快照及其 manifest 是公开的。
+- 常规日志可包含契约版本、F0 版本、内容哈希和汇总计数，但不得包含原始单元格文本、worksheet 名称、源单元格、workbook 路径、字节或图像。
+- 匿名内存中 OOXML fixture 仍是测试中唯一的 workbook 输入；不提交真实 workbook 工件。
+- 仅在该实现完成后，治理才将 F2.2 标记为可用。根 F2、F2.3、F2.4 和 F3-F7 保持不可用。
 
-## Tests and Acceptance
+## 测试与验收
 
-1. Strict request/result contract parsing, unknown-key rejection, discriminated state invariants,
-   summary invariants, F2.1 content-hash binding, and deep-freeze behavior.
-2. A blocked F2.1 result returns the gate status with no row conclusions; a hash mismatch is
-   rejected rather than treated as a gate result.
-3. Inclusive lower/upper tolerance-range boundaries, category mismatch, and no exact range match
-   distinguish `in_library` from `out_of_library`.
-4. A matched `T0` entry remains `in_library`; no feasibility field or conclusion is emitted.
-5. Missing, blank, unsupported, or unavailable units produce only non-blocking
-   `unable_to_validate` tolerance results.
-6. Total tolerance uses the approved upper-minus-lower rule, including asymmetric tolerances.
-7. Every controlled distribution alias normalizes correctly; unknown distributions produce
-   `unable_to_validate`; recognized unequal values produce `distribution_mismatch`.
-8. Multi-worksheet/table/row fixtures validate complete aggregation and exact summary counts.
-9. F2.2 never accepts workbook bytes or reparses OOXML; no test requires external services or
-   real engineering data.
-10. Public exports, feature registration, policy tests, root documentation, and the feature
-   register reflect F2.2's non-blocking scope without enabling F2.3 or later features.
+1. 严格的请求/结果契约解析、未知键拒绝、判别状态不变量、摘要不变量、F2.1 内容哈希绑定和深度冻结行为。
+2. 被阻塞的 F2.1 结果返回不包含行结论的门禁状态；哈希不匹配会被拒绝，而非视为门禁结果。
+3. 包含边界的公差范围下限/上限、类别不匹配和不存在精确范围匹配，可区分 `in_library` 与 `out_of_library`。
+4. 匹配的 `T0` 条目仍为 `in_library`；不产生可行性字段或结论。
+5. 缺失、空白、不支持或不可用的单位仅产生非阻塞的 `unable_to_validate` 公差结果。
+6. 总公差使用已批准的上限减下限规则，包括非对称公差。
+7. 每个受控分布别名均可正确规范化；未知分布产生 `unable_to_validate`；已识别但不相等的值产生 `distribution_mismatch`。
+8. 多 worksheet/table/row fixture 验证完整聚合和精确摘要计数。
+9. F2.2 绝不接受 workbook 字节或重新解析 OOXML；任何测试均不需要外部服务或真实工程数据。
+10. 公开导出、Feature 注册、策略测试、根文档和 Feature register 反映 F2.2 的非阻塞范围，且不会启用 F2.3 或后续 Feature。
