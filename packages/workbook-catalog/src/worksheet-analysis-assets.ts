@@ -16,26 +16,31 @@ const ARCHIVE_SUMMARY = "Worksheet-analysis assets archive cannot be processed."
 const CELL_REFERENCE = /^([A-Z]+)([1-9]\d*)$/;
 
 const HEADER_ALIASES = {
-  factorName: ["factor", "factor name"],
-  nominalValue: ["nominal", "nominal value"],
-  upperTolerance: ["upper tol", "upper tolerance"],
-  lowerTolerance: ["lower tol", "lower tolerance"],
+  factorName: ["factor", "factor name", "factor description"],
+  partName: ["part name"],
+  partCategory: ["part category"],
+  nominalValue: ["nominal", "nominal value", "design nominal"],
+  upperTolerance: ["upper tol", "upper tolerance", "+ tolerance", "+ tolerence"],
+  lowerTolerance: ["lower tol", "lower tolerance", "- tolerance", "- tolerence"],
+  longTermSafetyFactor: ["long term factor", "safety factor", "long term/safety factor"],
   upperSpecificationLimit: ["usl", "upper spec limit"],
   lowerSpecificationLimit: ["lsl", "lower spec limit"],
   unit: ["unit"],
   distribution: ["distribution"],
+  drawingNumber: ["drawing number"],
+  dimCharacteristicId: ["dim id", "characteristic id", "dim/characteristic id"],
   assumption: ["assumption"],
   contribution: ["contribution"],
   sensitivity: ["sensitivity"],
   mean: ["mean"],
-  standardDeviation: ["standard deviation", "sigma"],
+  standardDeviation: ["standard deviation", "sigma", "sigma level"],
   cpk: ["cpk"],
   assemblyDirection: ["assembly direction"],
 } as const;
 
 type FieldName = keyof typeof HEADER_ALIASES;
 type Column = { readonly semanticField: FieldName; readonly sourceColumn: string; readonly headerText: string };
-const NUMERIC_FIELDS = new Set<FieldName>(["nominalValue", "upperTolerance", "lowerTolerance", "upperSpecificationLimit", "lowerSpecificationLimit", "contribution", "sensitivity", "mean", "standardDeviation", "cpk"]);
+const NUMERIC_FIELDS = new Set<FieldName>(["nominalValue", "upperTolerance", "lowerTolerance", "longTermSafetyFactor", "upperSpecificationLimit", "lowerSpecificationLimit", "contribution", "sensitivity", "mean", "standardDeviation", "cpk"]);
 
 function assetsError(summary: string, reference: string, code: "validation_error" | "policy_denied" = "validation_error"): Error {
   return createTypedError({ code, summary, suggestedAction: "Provide a supported confidential worksheet-analysis assets request.", affectedInputReferences: [reference] });
@@ -115,15 +120,13 @@ function sheetAssets(worksheet: OoxmlWorksheet, worksheetName: string, tolerance
       }
       dataRows.push({ sourceRow, fields });
     }
-    if (dataRows.length > 0) {
-      factorTables.push({
-        tableId: createHash("sha256").update(`${worksheetName}:${headerRow}`).digest("hex").slice(0, 16),
-        headerRow,
-        dataRange: { startRow: headerRow + 1, endRow: headerRow + dataRows.length },
-        columns,
-        rows: dataRows,
-      });
-    }
+    factorTables.push({
+      tableId: createHash("sha256").update(`${worksheetName}:${headerRow}`).digest("hex").slice(0, 16),
+      headerRow,
+      dataRange: { startRow: headerRow + 1, endRow: headerRow + Math.max(dataRows.length, 1) },
+      columns,
+      rows: dataRows,
+    });
   }
   const formulaCells = worksheet.cells.filter((cell) => cell.formula && !tableFormulaReferences.has(cell.reference)).map((cell) => ({
     sourceCell: `${worksheetName}!${cell.reference}`,

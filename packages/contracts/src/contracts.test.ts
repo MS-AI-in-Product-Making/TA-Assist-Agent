@@ -14,6 +14,8 @@ import {
   dataClassificationSchema,
   errorCodeSchema,
   runRequestSchema,
+  requiredFieldCheckRequestSchema,
+  requiredFieldCheckResultSchema,
   skillResultSchema,
   terminologyEntrySchema,
   typedErrorSchema,
@@ -717,5 +719,100 @@ describe("worksheet analysis asset contracts", () => {
         bytes: new Uint8Array([1]),
       }).success,
     ).toBe(true);
+  });
+
+  it("accepts the F2.1 semantic fields and strict required-field check contracts", () => {
+    const assets = {
+      ...result,
+      worksheets: [{
+        ...result.worksheets[0],
+        factorTables: [{
+          ...result.worksheets[0]!.factorTables[0],
+          columns: [
+            { semanticField: "partName", headerText: "Part Name", sourceColumn: "C" },
+            { semanticField: "partCategory", headerText: "Part Category", sourceColumn: "D" },
+            { semanticField: "longTermSafetyFactor", headerText: "Safety Factor", sourceColumn: "E" },
+            { semanticField: "drawingNumber", headerText: "Drawing Number", sourceColumn: "F" },
+            { semanticField: "dimCharacteristicId", headerText: "DIM ID", sourceColumn: "G" },
+          ],
+          rows: [],
+          dataRange: { startRow: 13, endRow: 13 },
+        }],
+      }],
+    };
+
+    expect(requiredFieldCheckRequestSchema.parse({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      worksheetAnalysisAssets: assets,
+    }).worksheetAnalysisAssets).toEqual(assets);
+    expect(requiredFieldCheckResultSchema.parse({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      status: "blocked",
+      blockingIssues: [{
+        issueCode: "required_field_unavailable",
+        worksheetName: "Analysis",
+        tableId: "table-a",
+        sourceRow: 13,
+        field: "longTermSafetyFactor",
+        reasonCode: "missing",
+      }],
+      advisoryIssues: [{
+        issueCode: "optional_identifier_unavailable",
+        worksheetName: "Analysis",
+        tableId: "table-a",
+        sourceRow: 13,
+        field: "dimCharacteristicId",
+        reasonCode: "missing",
+      }],
+      summary: {
+        worksheetsChecked: 1,
+        factorTablesChecked: 1,
+        factorRowsChecked: 1,
+        blockingIssueCount: 1,
+        advisoryIssueCount: 1,
+      },
+    }).status).toBe("blocked");
+  });
+
+  it("rejects F2.1 state and count inconsistencies", () => {
+    const result = {
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      status: "readyForNextCheck",
+      blockingIssues: [{ issueCode: "factor_table_has_no_rows", worksheetName: "Analysis", tableId: "table-a" }],
+      advisoryIssues: [],
+      summary: { worksheetsChecked: 1, factorTablesChecked: 1, factorRowsChecked: 0, blockingIssueCount: 1, advisoryIssueCount: 0 },
+    };
+
+    expect(requiredFieldCheckResultSchema.safeParse(result).success).toBe(false);
+    expect(requiredFieldCheckResultSchema.safeParse({
+      ...result,
+      status: "blocked",
+      summary: { ...result.summary, blockingIssueCount: 0 },
+    }).success).toBe(false);
+    expect(requiredFieldCheckResultSchema.safeParse({ ...result, unexpected: true }).success).toBe(false);
+  });
+
+  it("permits the canonical zero-row table range but rejects an inverted range", () => {
+    const zeroRowTable = {
+      ...result.worksheets[0]!.factorTables[0],
+      dataRange: { startRow: 13, endRow: 13 },
+      rows: [],
+    };
+    const zeroRowAssets = {
+      ...result,
+      worksheets: [{ ...result.worksheets[0], factorTables: [zeroRowTable] }],
+    };
+
+    expect(worksheetAnalysisAssetsResultSchema.safeParse(zeroRowAssets).success).toBe(true);
+    expect(worksheetAnalysisAssetsResultSchema.safeParse({
+      ...zeroRowAssets,
+      worksheets: [{
+        ...zeroRowAssets.worksheets[0],
+        factorTables: [{ ...zeroRowTable, dataRange: { startRow: 13, endRow: 12 } }],
+      }],
+    }).success).toBe(false);
   });
 });
