@@ -12,6 +12,8 @@ import {
   exceptionResolutionResultSchema,
   identifierQualityCheckRequestSchema,
   identifierQualityCheckResultSchema,
+  interpretationRequestSchema,
+  interpretationResultSchema,
   unifiedExceptionResolutionV2RequestSchema,
   unifiedExceptionResolutionV2ResultSchema,
   engineeringRuleEntrySchema,
@@ -141,6 +143,38 @@ describe("F4 calculation placeholder contracts", () => {
       ...result,
       requiredPrerequisites: ["approved-windows-excel-worker", "approved-template-regression"],
     }).success).toBe(false);
+  });
+});
+
+describe("F5 interpretation placeholder contracts", () => {
+  const request = {
+    contractVersion: "v1",
+    inputClassification: "confidential",
+    projectReference: "controlled-project-reference",
+    runReference: "controlled-run-reference",
+    worksheetReferences: ["controlled-worksheet-reference"],
+  };
+
+  const result = {
+    contractVersion: "v1",
+    outputClassification: "confidential",
+    featureId: "F5",
+    status: "feature_not_available",
+    projectReference: "controlled-project-reference",
+    runReference: "controlled-run-reference",
+    worksheetReferences: ["controlled-worksheet-reference"],
+    requiredPrerequisites: ["approved-knowledge-base"],
+  };
+
+  it("accepts only confidential controlled references and a fixed unavailable result", () => {
+    expect(interpretationRequestSchema.parse(request)).toEqual(request);
+    expect(interpretationResultSchema.parse(result)).toEqual(result);
+  });
+
+  it("rejects public classification, unknown fields, and altered prerequisites", () => {
+    expect(interpretationRequestSchema.safeParse({ ...request, inputClassification: "public" }).success).toBe(false);
+    expect(interpretationRequestSchema.safeParse({ ...request, unexpected: true }).success).toBe(false);
+    expect(interpretationResultSchema.safeParse({ ...result, requiredPrerequisites: [] }).success).toBe(false);
   });
 });
 

@@ -1143,6 +1143,31 @@ export const calculationResultSchema = z
   })
   .strict();
 
+const controlledInterpretationReferenceSchema = z.string().min(1);
+
+export const interpretationRequestSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    inputClassification: z.literal("confidential"),
+    projectReference: controlledInterpretationReferenceSchema,
+    runReference: controlledInterpretationReferenceSchema,
+    worksheetReferences: z.array(controlledInterpretationReferenceSchema),
+  })
+  .strict();
+
+export const interpretationResultSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    outputClassification: z.literal("confidential"),
+    featureId: z.literal("F5"),
+    status: z.literal("feature_not_available"),
+    projectReference: controlledInterpretationReferenceSchema,
+    runReference: controlledInterpretationReferenceSchema,
+    worksheetReferences: z.array(controlledInterpretationReferenceSchema),
+    requiredPrerequisites: z.tuple([z.literal("approved-knowledge-base")]),
+  })
+  .strict();
+
 export const worksheetImageReadRequestSchema = z
   .object({
     contractVersion: contractVersionSchema,
@@ -1219,3 +1244,5 @@ export type UnifiedExceptionResolutionRequest = UnifiedExceptionResolutionV2Requ
 export type UnifiedExceptionResolutionResult = UnifiedExceptionResolutionV2Result;
 export type CalculationRequest = z.infer<typeof calculationRequestSchema>;
 export type CalculationResult = z.infer<typeof calculationResultSchema>;
+export type InterpretationRequest = z.infer<typeof interpretationRequestSchema>;
+export type InterpretationResult = z.infer<typeof interpretationResultSchema>;

@@ -181,6 +181,21 @@ describe("policy gate", () => {
     });
   });
 
+  it("keeps F5 unavailable with its established interpretation contracts", () => {
+    expect(getFeatureStatus("F5")).toEqual({
+      featureId: "F5",
+      title: "客观结果解释",
+      status: "unavailable",
+      dependsOn: ["calculation-worker-v1", "knowledge-base-v1"],
+      inputContractId: "interpretation-request-v1",
+      outputContractId: "interpretation-result-v1",
+      maximumClassification: "confidential",
+      acceptanceChecks: ["anonymous-interpretation-fixture"],
+      externalPrerequisites: ["approved-knowledge-base"],
+      disableBehavior: "return feature_not_available",
+    });
+  });
+
   it.each(["F2", "F3", "F4", "F5", "F6", "F7"])(
     "keeps %s unavailable",
     (featureId) => {

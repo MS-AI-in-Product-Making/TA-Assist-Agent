@@ -8,11 +8,14 @@ export { createExceptionResolution } from "./exception-resolution.js";
 export { createIdentifierQualityCheck } from "./identifier-quality-check.js";
 export { createUnifiedExceptionResolution } from "./unified-exception-resolution.js";
 export { createCalculationPlaceholder } from "./calculation-placeholder.js";
+export { createInterpretationPlaceholder } from "./interpretation-placeholder.js";
 export type {
 	CapabilityValidationRequest,
 	CapabilityValidationResult,
 	CalculationRequest,
 	CalculationResult,
+	InterpretationRequest,
+	InterpretationResult,
 	ExceptionResolutionRequest,
 	ExceptionResolutionResult,
 	IdentifierQualityCheckRequest,
