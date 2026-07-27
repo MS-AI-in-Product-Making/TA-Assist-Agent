@@ -1143,6 +1143,34 @@ export const calculationResultSchema = z
   })
   .strict();
 
+const controlledReferenceSchema = z.string().min(1);
+
+export const drawingGovernanceRequestSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    inputClassification: z.literal("confidential"),
+    projectReference: controlledReferenceSchema,
+    runReference: controlledReferenceSchema,
+    worksheetReferences: z.array(controlledReferenceSchema),
+  })
+  .strict();
+
+export const drawingGovernanceResultSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    outputClassification: z.literal("confidential"),
+    featureId: z.literal("F3"),
+    status: z.literal("feature_not_available"),
+    projectReference: controlledReferenceSchema,
+    runReference: controlledReferenceSchema,
+    worksheetReferences: z.array(controlledReferenceSchema),
+    requiredPrerequisites: z.tuple([
+      z.literal("approved-ado-access"),
+      z.literal("canonical-dim-id-policy"),
+    ]),
+  })
+  .strict();
+
 export const worksheetImageReadRequestSchema = z
   .object({
     contractVersion: contractVersionSchema,
@@ -1219,3 +1247,5 @@ export type UnifiedExceptionResolutionRequest = UnifiedExceptionResolutionV2Requ
 export type UnifiedExceptionResolutionResult = UnifiedExceptionResolutionV2Result;
 export type CalculationRequest = z.infer<typeof calculationRequestSchema>;
 export type CalculationResult = z.infer<typeof calculationResultSchema>;
+export type DrawingGovernanceRequest = z.infer<typeof drawingGovernanceRequestSchema>;
+export type DrawingGovernanceResult = z.infer<typeof drawingGovernanceResultSchema>;
