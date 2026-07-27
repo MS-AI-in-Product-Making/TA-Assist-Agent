@@ -211,6 +211,21 @@ describe("policy gate", () => {
     });
   });
 
+  it("keeps F6 unavailable with its established comparison contracts", () => {
+    expect(getFeatureStatus("F6")).toEqual({
+      featureId: "F6",
+      title: "可比较的方案选项",
+      status: "unavailable",
+      dependsOn: ["knowledge-base-v1", "comparison-engine-v1"],
+      inputContractId: "comparison-request-v1",
+      outputContractId: "comparison-result-v1",
+      maximumClassification: "confidential",
+      acceptanceChecks: ["anonymous-comparison-fixture"],
+      externalPrerequisites: ["approved-knowledge-base"],
+      disableBehavior: "return feature_not_available",
+    });
+  });
+
   it.each(["F2", "F3", "F4", "F5", "F6", "F7"])(
     "keeps %s unavailable",
     (featureId) => {
