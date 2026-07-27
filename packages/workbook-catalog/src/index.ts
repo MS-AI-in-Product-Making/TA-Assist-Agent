@@ -9,6 +9,7 @@ export { createIdentifierQualityCheck } from "./identifier-quality-check.js";
 export { createUnifiedExceptionResolution } from "./unified-exception-resolution.js";
 export { createCalculationPlaceholder } from "./calculation-placeholder.js";
 export { createDrawingGovernancePlaceholder } from "./drawing-governance-placeholder.js";
+export { createInterpretationPlaceholder } from "./interpretation-placeholder.js";
 export type {
 	CapabilityValidationRequest,
 	CapabilityValidationResult,
@@ -16,6 +17,8 @@ export type {
 	CalculationResult,
 	DrawingGovernanceRequest,
 	DrawingGovernanceResult,
+	InterpretationRequest,
+	InterpretationResult,
 	ExceptionResolutionRequest,
 	ExceptionResolutionResult,
 	IdentifierQualityCheckRequest,
