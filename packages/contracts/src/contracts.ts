@@ -324,6 +324,11 @@ const worksheetFieldNameSchema = z.enum([
   "standardDeviation",
   "cpk",
   "assemblyDirection",
+  "partName",
+  "partCategory",
+  "longTermSafetyFactor",
+  "drawingNumber",
+  "dimCharacteristicId",
 ]);
 
 const worksheetSourceCellSchema = z.string().regex(/^[^!]+![A-Z]+[1-9]\d*$/);
@@ -470,6 +475,97 @@ export const worksheetAnalysisAssetsResultSchema = z
   })
   .strict();
 
+const requiredFieldNameSchema = z.enum([
+  "factorName",
+  "partName",
+  "partCategory",
+  "nominalValue",
+  "upperTolerance",
+  "lowerTolerance",
+  "longTermSafetyFactor",
+  "standardDeviation",
+  "distribution",
+]);
+const optionalIdentifierFieldNameSchema = z.enum(["drawingNumber", "dimCharacteristicId"]);
+const worksheetUnavailableReasonCodeSchema = z.enum([
+  "missing",
+  "duplicate_mapping",
+  "invalid_format",
+  "ambiguous_mapping",
+  "missing_cached_value",
+]);
+
+export const requiredFieldCheckRequestSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    inputClassification: z.literal("confidential"),
+    worksheetAnalysisAssets: worksheetAnalysisAssetsResultSchema,
+  })
+  .strict();
+
+const requiredFieldUnavailableIssueSchema = z
+  .object({
+    issueCode: z.literal("required_field_unavailable"),
+    worksheetName: z.string().min(1),
+    tableId: z.string().min(1),
+    sourceRow: z.number().int().positive(),
+    field: requiredFieldNameSchema,
+    reasonCode: worksheetUnavailableReasonCodeSchema,
+    sourceCell: worksheetSourceCellSchema.optional(),
+  })
+  .strict();
+const emptyFactorTableIssueSchema = z
+  .object({
+    issueCode: z.literal("factor_table_has_no_rows"),
+    worksheetName: z.string().min(1),
+    tableId: z.string().min(1),
+  })
+  .strict();
+const optionalIdentifierUnavailableIssueSchema = z
+  .object({
+    issueCode: z.literal("optional_identifier_unavailable"),
+    worksheetName: z.string().min(1),
+    tableId: z.string().min(1),
+    sourceRow: z.number().int().positive(),
+    field: optionalIdentifierFieldNameSchema,
+    reasonCode: worksheetUnavailableReasonCodeSchema,
+    sourceCell: worksheetSourceCellSchema.optional(),
+  })
+  .strict();
+
+export const requiredFieldCheckResultSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    inputClassification: z.literal("confidential"),
+    status: z.enum(["blocked", "readyForNextCheck"]),
+    blockingIssues: z.array(z.discriminatedUnion("issueCode", [
+      requiredFieldUnavailableIssueSchema,
+      emptyFactorTableIssueSchema,
+    ])),
+    advisoryIssues: z.array(optionalIdentifierUnavailableIssueSchema),
+    summary: z
+      .object({
+        worksheetsChecked: z.number().int().nonnegative(),
+        factorTablesChecked: z.number().int().nonnegative(),
+        factorRowsChecked: z.number().int().nonnegative(),
+        blockingIssueCount: z.number().int().nonnegative(),
+        advisoryIssueCount: z.number().int().nonnegative(),
+      })
+      .strict(),
+  })
+  .strict()
+  .superRefine((result, context) => {
+    if ((result.status === "blocked") !== (result.blockingIssues.length > 0)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "status must match blocking issues", path: ["status"] });
+    }
+    if (result.summary.blockingIssueCount !== result.blockingIssues.length) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "blocking issue count must match", path: ["summary", "blockingIssueCount"] });
+    }
+    if (result.summary.advisoryIssueCount !== result.advisoryIssues.length) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "advisory issue count must match", path: ["summary", "advisoryIssueCount"] });
+    }
+  });
+
 export const worksheetImageReadRequestSchema = z
   .object({
     contractVersion: contractVersionSchema,
@@ -532,3 +628,5 @@ export type WorksheetAnalysisAssetsRequest = z.infer<typeof worksheetAnalysisAss
 export type WorksheetAnalysisAssetsResult = z.infer<typeof worksheetAnalysisAssetsResultSchema>;
 export type WorksheetImageReadRequest = z.infer<typeof worksheetImageReadRequestSchema>;
 export type WorksheetImageReadResult = z.infer<typeof worksheetImageReadResultSchema>;
+export type RequiredFieldCheckRequest = z.infer<typeof requiredFieldCheckRequestSchema>;
+export type RequiredFieldCheckResult = z.infer<typeof requiredFieldCheckResultSchema>;

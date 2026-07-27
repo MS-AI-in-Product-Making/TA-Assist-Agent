@@ -26,9 +26,10 @@ Phase 0 是本地优先、可审计、契约驱动的工程基础，不是 F0-F8
 worksheet 提取因子表、公式及缓存值、嵌入图片元数据；图片字节必须由 workbook hash 与唯一
 image hash 共同验证后读取。F1 不计算公式、不换算单位、不 OCR、不渲染、不输出风险解释或
 行动建议，也不写回 workbook、不调用外部服务、不跟踪或导出原始 `.xlsx`；F2-F7 均不可用，
-F4 仅返回 `feature_not_available`。F0 不代表可使用真实工程知识，也不会启用其他功能；F8
-仅提供匿名 `public` fixture 的受治理 Skill 运行时验收，不包含外部 Adapter、模型、ADO、
-SharePoint 或 UI 行为。
+F2.1 仅对 F1.1 资产中的九项必填因子字段执行严格阻断，并将 Drawing Number、
+DIM/Characteristic ID 保留为非阻断提示；根 F2、F2.2-F2.4 和 F3-F7 均不可用，F4 仅返回
+`feature_not_available`。F0 不代表可使用真实工程知识，也不会启用其他功能；F8 仅提供匿名
+`public` fixture 的受治理 Skill 运行时验收，不包含外部 Adapter、模型、ADO、SharePoint 或 UI 行为。
 
 | 文档 | 内容 |
 |---|---|
@@ -40,6 +41,8 @@ SharePoint 或 UI 行为。
 | [F1 工作簿目录实施计划](superpowers/plans/2026-07-23-f1-workbook-catalog.md) | F1 实施任务、TDD 步骤和质量门 |
 | [F1.1 工作表资产提取设计](superpowers/specs/2026-07-24-f1-1-worksheet-analysis-assets-design.md) | catalog 绑定的因子表、公式缓存和图片证据边界 |
 | [F1.1 工作表资产提取实施计划](superpowers/plans/2026-07-24-f1-1-worksheet-analysis-assets.md) | F1.1 实施任务、TDD 步骤和质量门 |
+| [F2.1 必填字段严格校验设计](superpowers/specs/2026-07-27-f2-1-required-field-validation-design.md) | 基于 F1.1 证据的九项严格阻断与两项 ID 提示 |
+| [F2.1 必填字段严格校验实施计划](superpowers/plans/2026-07-27-f2-1-required-field-validation.md) | F2.1 实施任务、TDD 步骤和质量门 |
 | [系统架构](01-architecture.md) | 产品架构与后续业务能力边界 |
 | [Feature Register](governance/feature-register.md) | F0-F8 可用性、依赖、契约和禁用行为 |
 | [数据分类](governance/data-classification.md) | `public`、`internal`、`confidential`、`secret` 处理规则 |

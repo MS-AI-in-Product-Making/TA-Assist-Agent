@@ -93,7 +93,26 @@ describe("policy gate", () => {
     });
   });
 
-  it.each(["F2", "F3", "F4", "F5", "F6", "F7"])(
+  it("reports F2.1 as the available strict required-field check only", () => {
+    expect(getFeatureStatus("F2.1")).toEqual({
+      featureId: "F2.1",
+      title: "TA 必填字段严格校验",
+      status: "available",
+      dependsOn: ["worksheet-analysis-assets-v1", "required-field-check-v1"],
+      inputContractId: "required-field-check-request-v1",
+      outputContractId: "required-field-check-result-v1",
+      maximumClassification: "confidential",
+      acceptanceChecks: [
+        "anonymous-required-field-check-fixture",
+        "required-field-blocking-check",
+        "required-field-privacy-check",
+      ],
+      externalPrerequisites: ["approved-ooxml-parser"],
+      disableBehavior: "return feature_not_available",
+    });
+  });
+
+  it.each(["F2", "F2.2", "F2.3", "F2.4", "F3", "F4", "F5", "F6", "F7"])(
     "keeps %s unavailable",
     (featureId) => {
       expect(getFeatureStatus(featureId)).toMatchObject({
@@ -138,7 +157,7 @@ describe("policy gate", () => {
   });
 
   it("provides a register entry for every planned feature", () => {
-    for (const featureId of ["F0", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8"]) {
+    for (const featureId of ["F0", "F1", "F2", "F2.1", "F2.2", "F2.3", "F2.4", "F3", "F4", "F5", "F6", "F7", "F8"]) {
       expect(getFeatureStatus(featureId)).toMatchObject({ featureId });
     }
   });
