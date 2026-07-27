@@ -1115,6 +1115,34 @@ export const unifiedExceptionResolutionV2ResultSchema = z
     }
   });
 
+const controlledCalculationReferenceSchema = z.string().min(1);
+
+export const calculationRequestSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    inputClassification: z.literal("confidential"),
+    projectReference: controlledCalculationReferenceSchema,
+    runReference: controlledCalculationReferenceSchema,
+    worksheetReferences: z.array(controlledCalculationReferenceSchema),
+  })
+  .strict();
+
+export const calculationResultSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    outputClassification: z.literal("confidential"),
+    featureId: z.literal("F4"),
+    status: z.literal("feature_not_available"),
+    projectReference: controlledCalculationReferenceSchema,
+    runReference: controlledCalculationReferenceSchema,
+    worksheetReferences: z.array(controlledCalculationReferenceSchema),
+    requiredPrerequisites: z.tuple([
+      z.literal("approved-template-regression"),
+      z.literal("approved-windows-excel-worker"),
+    ]),
+  })
+  .strict();
+
 export const worksheetImageReadRequestSchema = z
   .object({
     contractVersion: contractVersionSchema,
@@ -1189,3 +1217,5 @@ export type UnifiedExceptionResolutionV2Request = z.infer<typeof unifiedExceptio
 export type UnifiedExceptionResolutionV2Result = z.infer<typeof unifiedExceptionResolutionV2ResultSchema>;
 export type UnifiedExceptionResolutionRequest = UnifiedExceptionResolutionV2Request;
 export type UnifiedExceptionResolutionResult = UnifiedExceptionResolutionV2Result;
+export type CalculationRequest = z.infer<typeof calculationRequestSchema>;
+export type CalculationResult = z.infer<typeof calculationResultSchema>;
