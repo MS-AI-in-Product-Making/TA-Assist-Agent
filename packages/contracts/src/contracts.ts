@@ -1196,6 +1196,31 @@ export const interpretationResultSchema = z
   })
   .strict();
 
+const controlledComparisonReferenceSchema = z.string().min(1);
+
+export const comparisonRequestSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    inputClassification: z.literal("confidential"),
+    projectReference: controlledComparisonReferenceSchema,
+    runReference: controlledComparisonReferenceSchema,
+    worksheetReferences: z.array(controlledComparisonReferenceSchema),
+  })
+  .strict();
+
+export const comparisonResultSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    outputClassification: z.literal("confidential"),
+    featureId: z.literal("F6"),
+    status: z.literal("feature_not_available"),
+    projectReference: controlledComparisonReferenceSchema,
+    runReference: controlledComparisonReferenceSchema,
+    worksheetReferences: z.array(controlledComparisonReferenceSchema),
+    requiredPrerequisites: z.tuple([z.literal("approved-knowledge-base")]),
+  })
+  .strict();
+
 export const worksheetImageReadRequestSchema = z
   .object({
     contractVersion: contractVersionSchema,
@@ -1276,3 +1301,5 @@ export type DrawingGovernanceRequest = z.infer<typeof drawingGovernanceRequestSc
 export type DrawingGovernanceResult = z.infer<typeof drawingGovernanceResultSchema>;
 export type InterpretationRequest = z.infer<typeof interpretationRequestSchema>;
 export type InterpretationResult = z.infer<typeof interpretationResultSchema>;
+export type ComparisonRequest = z.infer<typeof comparisonRequestSchema>;
+export type ComparisonResult = z.infer<typeof comparisonResultSchema>;

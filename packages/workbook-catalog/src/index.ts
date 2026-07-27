@@ -10,11 +10,14 @@ export { createUnifiedExceptionResolution } from "./unified-exception-resolution
 export { createCalculationPlaceholder } from "./calculation-placeholder.js";
 export { createDrawingGovernancePlaceholder } from "./drawing-governance-placeholder.js";
 export { createInterpretationPlaceholder } from "./interpretation-placeholder.js";
+export { createComparisonPlaceholder } from "./comparison-placeholder.js";
 export type {
 	CapabilityValidationRequest,
 	CapabilityValidationResult,
 	CalculationRequest,
 	CalculationResult,
+	ComparisonRequest,
+	ComparisonResult,
 	DrawingGovernanceRequest,
 	DrawingGovernanceResult,
 	InterpretationRequest,
