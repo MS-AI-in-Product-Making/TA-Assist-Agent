@@ -567,6 +567,101 @@ export const requiredFieldCheckResultSchema = z
     }
   });
 
+const identifierQualityFieldSchema = z.enum(["drawingNumber", "dimCharacteristicId"]);
+
+export const identifierQualityCheckRequestSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    inputClassification: z.literal("confidential"),
+    worksheetAnalysisAssets: worksheetAnalysisAssetsResultSchema,
+    requiredFieldCheck: requiredFieldCheckResultSchema,
+  })
+  .strict()
+  .superRefine((request, context) => {
+    if (request.worksheetAnalysisAssets.workbook.contentHash !== request.requiredFieldCheck.workbookContentHash) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "worksheet-analysis assets and required-field check must share a workbook hash",
+        path: ["requiredFieldCheck", "workbookContentHash"],
+      });
+    }
+  });
+
+const identifierQualitySignalSourceSchema = z
+  .object({
+    worksheetName: z.string().min(1),
+    tableId: z.string().min(1),
+    field: identifierQualityFieldSchema,
+    sourceRows: z.array(z.number().int().positive()).min(1),
+  })
+  .strict();
+
+const identifierQualitySignalSchema = z
+  .discriminatedUnion("signalKind", [
+    identifierQualitySignalSourceSchema.extend({ signalKind: z.literal("identifier_missing") }).strict(),
+    identifierQualitySignalSourceSchema.extend({
+      signalKind: z.literal("identifier_evidence_unavailable"),
+      reasonCode: worksheetUnavailableReasonCodeSchema,
+    }).strict(),
+    identifierQualitySignalSourceSchema.extend({ signalKind: z.literal("identifier_text_invalid") }).strict(),
+    identifierQualitySignalSourceSchema.extend({
+      signalKind: z.literal("dim_id_duplicate"),
+      field: z.literal("dimCharacteristicId"),
+      normalizedDimId: z.string().min(1),
+    }).strict(),
+  ])
+  .superRefine((signal, context) => {
+    if (new Set(signal.sourceRows).size !== signal.sourceRows.length
+      || signal.sourceRows.some((sourceRow, index) => index > 0 && sourceRow <= signal.sourceRows[index - 1]!)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "sourceRows must be unique and ascending", path: ["sourceRows"] });
+    }
+  });
+
+const identifierQualitySummarySchema = z
+  .object({
+    factorRowsChecked: z.number().int().nonnegative(),
+    actionableSignalCount: z.number().int().nonnegative(),
+    identifierMissingCount: z.number().int().nonnegative(),
+    identifierEvidenceUnavailableCount: z.number().int().nonnegative(),
+    identifierTextInvalidCount: z.number().int().nonnegative(),
+    dimIdDuplicateCount: z.number().int().nonnegative(),
+  })
+  .strict();
+
+const identifierQualityCheckResultBase = z.object({
+  contractVersion: contractVersionSchema,
+  inputClassification: z.literal("confidential"),
+  workbookContentHash: sha256Schema,
+  signals: z.array(identifierQualitySignalSchema),
+  summary: identifierQualitySummarySchema,
+});
+
+export const identifierQualityCheckResultSchema = z
+  .discriminatedUnion("status", [
+    identifierQualityCheckResultBase.extend({ status: z.literal("completed") }).strict(),
+    identifierQualityCheckResultBase.extend({
+      status: z.literal("required_fields_not_ready"),
+      signals: z.array(identifierQualitySignalSchema).length(0),
+    }).strict(),
+  ])
+  .superRefine((result, context) => {
+    const counts = {
+      actionableSignalCount: result.signals.length,
+      identifierMissingCount: result.signals.filter((signal) => signal.signalKind === "identifier_missing").length,
+      identifierEvidenceUnavailableCount: result.signals.filter((signal) => signal.signalKind === "identifier_evidence_unavailable").length,
+      identifierTextInvalidCount: result.signals.filter((signal) => signal.signalKind === "identifier_text_invalid").length,
+      dimIdDuplicateCount: result.signals.filter((signal) => signal.signalKind === "dim_id_duplicate").length,
+    };
+    for (const [field, expected] of Object.entries(counts)) {
+      if (result.summary[field as keyof typeof counts] !== expected) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: `${field} must match signals`, path: ["summary", field] });
+      }
+    }
+    if (result.status === "required_fields_not_ready" && result.summary.factorRowsChecked !== 0) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "gate results must not count factor rows", path: ["summary", "factorRowsChecked"] });
+    }
+  });
+
 export const capabilityValidationRequestSchema = z
   .object({
     contractVersion: contractVersionSchema,
@@ -835,6 +930,191 @@ export const exceptionResolutionResultSchema = z
     }
   });
 
+const contractVersionV2Schema = z.literal("v2");
+
+const unifiedCapabilitySignalSourceSchema = z.object({
+  source: z.literal("capability_validation"),
+  worksheetName: z.string().min(1),
+  tableId: z.string().min(1),
+  sourceRow: z.number().int().positive(),
+  factorName: z.string().min(1),
+});
+
+const unifiedCapabilitySignalSnapshotSchema = z.discriminatedUnion("signalKind", [
+  unifiedCapabilitySignalSourceSchema.extend({
+    signalKind: z.literal("tolerance_out_of_library"),
+    signal: z.object({
+      status: z.literal("out_of_library"),
+      totalTolerance: z.number().finite().nonnegative(),
+      unit: z.literal("mm"),
+    }).strict(),
+  }).strict(),
+  unifiedCapabilitySignalSourceSchema.extend({
+    signalKind: z.literal("tolerance_unable_to_validate"),
+    signal: z.object({
+      status: z.literal("unable_to_validate"),
+      reasonCode: z.enum(["unit_unavailable", "invalid_tolerance"]),
+    }).strict(),
+  }).strict(),
+  unifiedCapabilitySignalSourceSchema.extend({
+    signalKind: z.literal("distribution_mismatch"),
+    signal: z.object({
+      status: z.literal("distribution_mismatch"),
+      actual: distributionSchema,
+      recommended: distributionSchema,
+    }).strict(),
+  }).strict(),
+  unifiedCapabilitySignalSourceSchema.extend({
+    signalKind: z.literal("distribution_unable_to_validate"),
+    signal: z.object({
+      status: z.literal("unable_to_validate"),
+      reasonCode: z.literal("distribution_unavailable"),
+    }).strict(),
+  }).strict(),
+]);
+
+const unifiedIdentifierSignalSourceSchema = z.object({
+  source: z.literal("identifier_quality"),
+  worksheetName: z.string().min(1),
+  tableId: z.string().min(1),
+  field: identifierQualityFieldSchema,
+  sourceRows: z.array(z.number().int().positive()).min(1),
+});
+
+const unifiedIdentifierSignalSnapshotSchema = z.discriminatedUnion("signalKind", [
+  unifiedIdentifierSignalSourceSchema.extend({ signalKind: z.literal("identifier_missing") }).strict(),
+  unifiedIdentifierSignalSourceSchema.extend({
+    signalKind: z.literal("identifier_evidence_unavailable"),
+    reasonCode: worksheetUnavailableReasonCodeSchema,
+  }).strict(),
+  unifiedIdentifierSignalSourceSchema.extend({ signalKind: z.literal("identifier_text_invalid") }).strict(),
+  unifiedIdentifierSignalSourceSchema.extend({
+    signalKind: z.literal("dim_id_duplicate"),
+    field: z.literal("dimCharacteristicId"),
+    normalizedDimId: z.string().min(1),
+  }).strict(),
+]);
+
+const unifiedExceptionSignalSnapshotSchema = z.union([
+  unifiedCapabilitySignalSnapshotSchema,
+  unifiedIdentifierSignalSnapshotSchema,
+]);
+
+const unifiedExceptionCandidateSubmissionSchema = z.object({
+  signalRef: z.string(),
+  recordedBy: z.string(),
+  recordedAt: z.string(),
+  rationale: z.string(),
+}).strict();
+
+const unifiedAcceptedExceptionSchema = z.object({
+  signalRef: z.string().min(1),
+  recordedBy: z.string().trim().min(1),
+  recordedAt: utcTimestampSchema,
+  rationale: z.string().trim().min(1),
+  snapshot: unifiedExceptionSignalSnapshotSchema,
+}).strict();
+
+const unifiedPendingExceptionSchema = z.object({
+  signalRef: z.string().min(1),
+  reasonCode: z.enum(["missing_candidate", "duplicate_candidate", "invalid_candidate"]),
+  snapshot: unifiedExceptionSignalSnapshotSchema,
+}).strict();
+
+export const unifiedExceptionResolutionV2RequestSchema = z
+  .object({
+    contractVersion: contractVersionV2Schema,
+    inputClassification: z.literal("confidential"),
+    capabilityValidation: capabilityValidationResultSchema,
+    identifierQualityCheck: identifierQualityCheckResultSchema,
+    candidates: z.array(unifiedExceptionCandidateSubmissionSchema),
+  })
+  .strict()
+  .superRefine((request, context) => {
+    if (request.capabilityValidation.status !== "completed") {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "capability validation must be completed", path: ["capabilityValidation", "status"] });
+    }
+    if (request.identifierQualityCheck.status !== "completed") {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "identifier quality check must be completed", path: ["identifierQualityCheck", "status"] });
+    }
+    if (request.capabilityValidation.workbookContentHash !== request.identifierQualityCheck.workbookContentHash) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "validation inputs must share a workbook hash", path: ["identifierQualityCheck", "workbookContentHash"] });
+    }
+  });
+
+const unifiedExceptionResolutionV2SummarySchema = z.object({
+  actionableSignalCount: z.number().int().nonnegative(),
+  capabilitySignalCount: z.number().int().nonnegative(),
+  identifierSignalCount: z.number().int().nonnegative(),
+  acceptedExceptionCount: z.number().int().nonnegative(),
+  acceptedCapabilityExceptionCount: z.number().int().nonnegative(),
+  acceptedIdentifierExceptionCount: z.number().int().nonnegative(),
+  pendingExceptionCount: z.number().int().nonnegative(),
+  pendingCapabilityExceptionCount: z.number().int().nonnegative(),
+  pendingIdentifierExceptionCount: z.number().int().nonnegative(),
+  invalidCandidateCount: z.number().int().nonnegative(),
+}).strict();
+
+const unifiedExceptionResolutionV2ResultBase = z.object({
+  contractVersion: contractVersionV2Schema,
+  inputClassification: z.literal("confidential"),
+  workbookContentHash: sha256Schema,
+  knowledgeBaseVersion: knowledgeBaseVersionSchema,
+  acceptedExceptions: z.array(unifiedAcceptedExceptionSchema),
+  pendingExceptions: z.array(unifiedPendingExceptionSchema),
+  summary: unifiedExceptionResolutionV2SummarySchema,
+});
+
+export const unifiedExceptionResolutionV2ResultSchema = z
+  .discriminatedUnion("status", [
+    unifiedExceptionResolutionV2ResultBase.extend({
+      status: z.literal("readyToContinue"),
+      readyToContinue: z.literal(true),
+    }).strict(),
+    unifiedExceptionResolutionV2ResultBase.extend({
+      status: z.literal("pendingExceptions"),
+      readyToContinue: z.literal(false),
+    }).strict(),
+  ])
+  .superRefine((result, context) => {
+    const acceptedRefs = result.acceptedExceptions.map((entry) => entry.signalRef);
+    const pendingRefs = result.pendingExceptions.map((entry) => entry.signalRef);
+    const acceptedRefSet = new Set(acceptedRefs);
+    const pendingRefSet = new Set(pendingRefs);
+    const acceptedCapabilityCount = result.acceptedExceptions.filter((entry) => entry.snapshot.source === "capability_validation").length;
+    const pendingCapabilityCount = result.pendingExceptions.filter((entry) => entry.snapshot.source === "capability_validation").length;
+    const acceptedIdentifierCount = result.acceptedExceptions.length - acceptedCapabilityCount;
+    const pendingIdentifierCount = result.pendingExceptions.length - pendingCapabilityCount;
+    const summary = result.summary;
+
+    const expectedCounts = {
+      actionableSignalCount: result.acceptedExceptions.length + result.pendingExceptions.length,
+      capabilitySignalCount: acceptedCapabilityCount + pendingCapabilityCount,
+      identifierSignalCount: acceptedIdentifierCount + pendingIdentifierCount,
+      acceptedExceptionCount: result.acceptedExceptions.length,
+      acceptedCapabilityExceptionCount: acceptedCapabilityCount,
+      acceptedIdentifierExceptionCount: acceptedIdentifierCount,
+      pendingExceptionCount: result.pendingExceptions.length,
+      pendingCapabilityExceptionCount: pendingCapabilityCount,
+      pendingIdentifierExceptionCount: pendingIdentifierCount,
+    };
+    for (const [field, expected] of Object.entries(expectedCounts)) {
+      if (summary[field as keyof typeof expectedCounts] !== expected) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: `${field} must match exception records`, path: ["summary", field] });
+      }
+    }
+    if (acceptedRefSet.size !== acceptedRefs.length || pendingRefSet.size !== pendingRefs.length) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "signal references must be unique", path: ["acceptedExceptions"] });
+    }
+    if (acceptedRefs.some((signalRef) => pendingRefSet.has(signalRef))) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "accepted and pending signal references must not overlap", path: ["pendingExceptions"] });
+    }
+    const isReady = result.pendingExceptions.length === 0 && summary.invalidCandidateCount === 0;
+    if ((result.status === "readyToContinue") !== isReady) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "status must match pending and invalid candidates", path: ["status"] });
+    }
+  });
+
 export const worksheetImageReadRequestSchema = z
   .object({
     contractVersion: contractVersionSchema,
@@ -899,7 +1179,13 @@ export type WorksheetImageReadRequest = z.infer<typeof worksheetImageReadRequest
 export type WorksheetImageReadResult = z.infer<typeof worksheetImageReadResultSchema>;
 export type RequiredFieldCheckRequest = z.infer<typeof requiredFieldCheckRequestSchema>;
 export type RequiredFieldCheckResult = z.infer<typeof requiredFieldCheckResultSchema>;
+export type IdentifierQualityCheckRequest = z.infer<typeof identifierQualityCheckRequestSchema>;
+export type IdentifierQualityCheckResult = z.infer<typeof identifierQualityCheckResultSchema>;
 export type CapabilityValidationRequest = z.infer<typeof capabilityValidationRequestSchema>;
 export type CapabilityValidationResult = z.infer<typeof capabilityValidationResultSchema>;
 export type ExceptionResolutionRequest = z.infer<typeof exceptionResolutionRequestSchema>;
 export type ExceptionResolutionResult = z.infer<typeof exceptionResolutionResultSchema>;
+export type UnifiedExceptionResolutionV2Request = z.infer<typeof unifiedExceptionResolutionV2RequestSchema>;
+export type UnifiedExceptionResolutionV2Result = z.infer<typeof unifiedExceptionResolutionV2ResultSchema>;
+export type UnifiedExceptionResolutionRequest = UnifiedExceptionResolutionV2Request;
+export type UnifiedExceptionResolutionResult = UnifiedExceptionResolutionV2Result;

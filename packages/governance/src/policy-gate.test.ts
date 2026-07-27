@@ -137,21 +137,36 @@ describe("policy gate", () => {
       featureId: "F2.3",
       title: "非阻断差异例外处理",
       status: "available",
-      dependsOn: ["capability-validation-v1", "exception-resolution-v1"],
-      inputContractId: "exception-resolution-request-v1",
-      outputContractId: "exception-resolution-result-v1",
+      dependsOn: ["capability-validation-v1", "identifier-quality-check-v1", "unified-exception-resolution-v2"],
+      inputContractId: "unified-exception-resolution-request-v2",
+      outputContractId: "unified-exception-resolution-result-v2",
       maximumClassification: "confidential",
       acceptanceChecks: [
-        "anonymous-exception-resolution-fixture",
-        "exception-resolution-coverage-check",
-        "exception-resolution-privacy-check",
+        "anonymous-unified-exception-resolution-fixture",
+        "unified-exception-resolution-coverage-check",
+        "unified-exception-resolution-privacy-check",
       ],
       externalPrerequisites: ["approved-exception-policy"],
       disableBehavior: "return feature_not_available",
     });
   });
 
-  it.each(["F2", "F2.4", "F3", "F4", "F5", "F6", "F7"])(
+  it("reports F2.4 as the available identifier-quality check", () => {
+    expect(getFeatureStatus("F2.4")).toEqual({
+      featureId: "F2.4",
+      title: "DIM ID 与 Drawing Number 质量检查",
+      status: "available",
+      dependsOn: ["worksheet-analysis-assets-v1", "required-field-check-v1", "identifier-quality-check-v1"],
+      inputContractId: "identifier-quality-check-request-v1",
+      outputContractId: "identifier-quality-check-result-v1",
+      maximumClassification: "confidential",
+      acceptanceChecks: ["anonymous-identifier-quality-fixture", "identifier-quality-gate-check", "identifier-quality-privacy-check"],
+      externalPrerequisites: ["approved-ooxml-parser"],
+      disableBehavior: "return feature_not_available",
+    });
+  });
+
+  it.each(["F2", "F3", "F4", "F5", "F6", "F7"])(
     "keeps %s unavailable",
     (featureId) => {
       expect(getFeatureStatus(featureId)).toMatchObject({

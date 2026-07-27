@@ -5,13 +5,19 @@ export { createWorksheetAnalysisAssets, readWorksheetImageAsset } from "./worksh
 export { createRequiredFieldCheck } from "./required-field-check.js";
 export { createCapabilityValidation } from "./capability-validation.js";
 export { createExceptionResolution } from "./exception-resolution.js";
+export { createIdentifierQualityCheck } from "./identifier-quality-check.js";
+export { createUnifiedExceptionResolution } from "./unified-exception-resolution.js";
 export type {
 	CapabilityValidationRequest,
 	CapabilityValidationResult,
 	ExceptionResolutionRequest,
 	ExceptionResolutionResult,
+	IdentifierQualityCheckRequest,
+	IdentifierQualityCheckResult,
 	RequiredFieldCheckRequest,
 	RequiredFieldCheckResult,
+	UnifiedExceptionResolutionRequest,
+	UnifiedExceptionResolutionResult,
 	WorkbookCatalogResult,
 	WorksheetAnalysisAssetsRequest,
 	WorksheetAnalysisAssetsResult,
