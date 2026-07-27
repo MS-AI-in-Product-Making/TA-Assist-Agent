@@ -137,11 +137,14 @@ describe("required field check", () => {
     fields.drawingNumber = unavailable("missing");
     fields.dimCharacteristicId = unavailable("missing");
 
-    expect(createRequiredFieldCheck(requestFor(fields))).toMatchObject({
+    const result = createRequiredFieldCheck(requestFor(fields));
+
+    expect(result).toMatchObject({
       status: "readyForNextCheck",
       blockingIssues: [],
       summary: { advisoryIssueCount: 2 },
     });
+    expect(result.workbookContentHash).toBe("a".repeat(64));
   });
 
   it("counts every worksheet, factor table, and row", () => {

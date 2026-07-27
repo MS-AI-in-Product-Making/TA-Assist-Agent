@@ -6,8 +6,8 @@ Feature Register 是 Phase 0 对 F0-F8 的唯一可查询能力清单。它提�
 用于区分已完成的工程基座与尚未交付的业务能力，避免调用方、测试或文档将规划能力
 误认为可用。F0 为本地、匿名、`public`、只读的 `knowledge-base-v1` 查询而标记为
 `available`；F1 为受控 `confidential` 工作簿字节的只读 catalog 与 F1.1 资产准备而标记为
-`available`；F2.1 为严格必填字段校验而标记为 `available`；根 F2、F2.2-F2.4 和 F3-F7 均为
-`unavailable`。F8 仅为 Phase 0 的匿名、`public`、受治理 Skill 验收 fixture 而标记为
+`available`；F2.1 为严格必填字段校验而标记为 `available`；F2.2 为非阻断能力库与 distribution
+一致性校验而标记为 `available`；根 F2、F2.3-F2.4 和 F3-F7 均为 `unavailable`。F8 仅为 Phase 0 的匿名、`public`、受治理 Skill 验收 fixture 而标记为
 `available`。这些状态不表示已交付 TA 产品工作流、生产编排器、真实工程知识或任何外部写入
 能力；调用方和后续编排器仍必须在执行前查询该清单。
 
@@ -19,7 +19,7 @@ Feature Register 是 Phase 0 对 F0-F8 的唯一可查询能力清单。它提�
 | F1 | TA 报告解析与资产准备 | `available` | `workbook-catalog-v1`, `worksheet-analysis-assets-v1`; `approved-ooxml-parser` | `worksheet-analysis-assets-request-v1` / `worksheet-analysis-assets-result-v1` | `confidential` | `anonymous-workbook-catalog-fixture`, `dynamic-date-cache-fixture`, `workbook-catalog-privacy-check`, `anonymous-worksheet-analysis-assets-fixture`, `worksheet-image-read-privacy-check` | `return feature_not_available` |
 | F2 | TA 风险与行动建议 | `unavailable` | `quality-rules-v1`, `recommendation-engine-v1`; `approved-recommendation-rules` | `recommendation-request-v1` / `recommendation-result-v1` | `confidential` | `anonymous-recommendation-fixture` | `return feature_not_available` |
 | F2.1 | TA 必填字段严格校验 | `available` | `worksheet-analysis-assets-v1`, `required-field-check-v1`; `approved-ooxml-parser` | `required-field-check-request-v1` / `required-field-check-result-v1` | `confidential` | `anonymous-required-field-check-fixture`, `required-field-blocking-check`, `required-field-privacy-check` | `return feature_not_available` |
-| F2.2 | 能力库与分布一致性校验 | `unavailable` | `knowledge-base-v1`, `capability-validation-v1`; `approved-public-knowledge-snapshot` | `capability-validation-request-v1` / `capability-validation-result-v1` | `confidential` | `anonymous-capability-validation-fixture` | `return feature_not_available` |
+| F2.2 | 能力库与分布一致性校验 | `available` | `worksheet-analysis-assets-v1`, `required-field-check-v1`, `knowledge-base-v1`, `capability-validation-v1`; `approved-public-knowledge-snapshot` | `capability-validation-request-v1` / `capability-validation-result-v1` | `confidential` | `anonymous-capability-validation-fixture`, `capability-validation-gate-check`, `capability-validation-nonblocking-check`, `capability-validation-privacy-check` | `return feature_not_available` |
 | F2.3 | 非阻断差异例外处理 | `unavailable` | `exception-resolution-v1`; `approved-exception-policy` | `exception-resolution-request-v1` / `exception-resolution-result-v1` | `confidential` | `anonymous-exception-resolution-fixture` | `return feature_not_available` |
 | F2.4 | DIM ID 与 Part Number 质量检查 | `unavailable` | `identifier-quality-check-v1`; `approved-canonical-dim-id-policy` | `identifier-quality-check-request-v1` / `identifier-quality-check-result-v1` | `confidential` | `anonymous-identifier-quality-fixture` | `return feature_not_available` |
 | F3 | DIM ID 与图纸治理 | `unavailable` | `dim-id-service-v1`; `approved-ado-access`, `canonical-dim-id-policy` | `drawing-governance-request-v1` / `drawing-governance-result-v1` | `confidential` | `anonymous-dim-id-fixture` | `return feature_not_available` |
@@ -46,6 +46,10 @@ Feature Register 是 Phase 0 对 F0-F8 的唯一可查询能力清单。它提�
 - F2.1 的 `available` 只接受已验证的 F1.1 confidential 资产，严格阻断缺失或不可用的九项
   因子字段。Drawing Number 与 DIM/Characteristic ID 仅为非阻断提示；F2.1 不查询能力库、
   不记录例外、不治理 DIM ID、不计算、不解释风险、不写回或调用外部服务。
+- F2.2 的 `available` 只接受 ready、内容哈希绑定的 F2.1 结果与同一份 F1.1 confidential
+  资产。它仅按类别、`mm` 公差范围和受控 distribution 别名查询批准的公共 F0 快照，输出
+  in-library、out-of-library、mismatch 或 unable 信号。所有信号均为非阻断；它不换算单位、
+  推断可行性、记录例外、重读 workbook、调用外部服务或写回数据。F2.3 仍不可用。
 - F8 的 `available` 仅允许匿名 `public` Skill fixture 在 runner 中通过输入分类、
   Feature 状态和策略门检查后执行纯函数或显式注入的 mock adapter。`persist`、
   `network` 和其他外部权限仍由策略门拒绝；不得将该状态解释为生产能力可用。

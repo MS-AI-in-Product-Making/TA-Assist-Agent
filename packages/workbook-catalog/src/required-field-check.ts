@@ -174,6 +174,7 @@ export function createRequiredFieldCheck(request: unknown): RequiredFieldCheckRe
   const result = requiredFieldCheckResultSchema.safeParse({
     contractVersion: "v1",
     inputClassification: "confidential",
+    workbookContentHash: parsed.data.worksheetAnalysisAssets.workbook.contentHash,
     status: blockingIssues.length === 0 ? "readyForNextCheck" : "blocked",
     blockingIssues,
     advisoryIssues,

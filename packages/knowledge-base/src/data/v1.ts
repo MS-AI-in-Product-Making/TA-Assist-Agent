@@ -45,6 +45,16 @@ const canonicalSeedData: CanonicalSeedData = {
     capabilityTier: "T3",
     provenance,
   },
+  {
+    entryId: "cap-demo-t0-clip",
+    partCategory: "demo-t0-clip",
+    toleranceMin: 0.05,
+    toleranceMax: 0.15,
+    unit: "mm",
+    recommendedDistribution: "normal",
+    capabilityTier: "T0",
+    provenance,
+  },
   ],
   rules: [
   {

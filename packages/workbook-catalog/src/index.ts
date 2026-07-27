@@ -3,7 +3,10 @@ export { readSafeZip } from "./zip-security.js";
 export { createWorkbookCatalog } from "./workbook-catalog.js";
 export { createWorksheetAnalysisAssets, readWorksheetImageAsset } from "./worksheet-analysis-assets.js";
 export { createRequiredFieldCheck } from "./required-field-check.js";
+export { createCapabilityValidation } from "./capability-validation.js";
 export type {
+	CapabilityValidationRequest,
+	CapabilityValidationResult,
 	RequiredFieldCheckRequest,
 	RequiredFieldCheckResult,
 	WorkbookCatalogResult,

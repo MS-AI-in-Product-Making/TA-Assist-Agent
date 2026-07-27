@@ -112,16 +112,23 @@ const featureRegister: ReadonlyMap<string, FeatureRegistration> = new Map([
   ],
   [
     "F2.2",
-    unavailableFeature(
-      "F2.2",
-      "能力库与分布一致性校验",
-      ["knowledge-base-v1", "capability-validation-v1"],
-      "capability-validation-request-v1",
-      "capability-validation-result-v1",
-      "confidential",
-      ["anonymous-capability-validation-fixture"],
-      ["approved-public-knowledge-snapshot"],
-    ),
+    {
+      featureId: "F2.2",
+      title: "能力库与分布一致性校验",
+      status: "available",
+      dependsOn: ["worksheet-analysis-assets-v1", "required-field-check-v1", "knowledge-base-v1", "capability-validation-v1"],
+      inputContractId: "capability-validation-request-v1",
+      outputContractId: "capability-validation-result-v1",
+      maximumClassification: "confidential",
+      acceptanceChecks: [
+        "anonymous-capability-validation-fixture",
+        "capability-validation-gate-check",
+        "capability-validation-nonblocking-check",
+        "capability-validation-privacy-check",
+      ],
+      externalPrerequisites: ["approved-public-knowledge-snapshot"],
+      disableBehavior: "return feature_not_available",
+    },
   ],
   [
     "F2.3",

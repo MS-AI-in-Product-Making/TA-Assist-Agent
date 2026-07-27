@@ -2,6 +2,8 @@ import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import {
   capabilityEntrySchema,
+  capabilityValidationRequestSchema,
+  capabilityValidationResultSchema,
   capabilityTierSchema,
   createTypedError,
   engineeringRuleEntrySchema,
@@ -749,6 +751,7 @@ describe("worksheet analysis asset contracts", () => {
     expect(requiredFieldCheckResultSchema.parse({
       contractVersion: "v1",
       inputClassification: "confidential",
+      workbookContentHash: contentHash,
       status: "blocked",
       blockingIssues: [{
         issueCode: "required_field_unavailable",
@@ -780,6 +783,7 @@ describe("worksheet analysis asset contracts", () => {
     const result = {
       contractVersion: "v1",
       inputClassification: "confidential",
+      workbookContentHash: contentHash,
       status: "readyForNextCheck",
       blockingIssues: [{ issueCode: "factor_table_has_no_rows", worksheetName: "Analysis", tableId: "table-a" }],
       advisoryIssues: [],
@@ -793,6 +797,57 @@ describe("worksheet analysis asset contracts", () => {
       summary: { ...result.summary, blockingIssueCount: 0 },
     }).success).toBe(false);
     expect(requiredFieldCheckResultSchema.safeParse({ ...result, unexpected: true }).success).toBe(false);
+  });
+
+  it("accepts strict F2.2 gates while rejecting gate rows", () => {
+    const requiredFieldCheck = requiredFieldCheckResultSchema.parse({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbookContentHash: contentHash,
+      status: "readyForNextCheck",
+      blockingIssues: [],
+      advisoryIssues: [],
+      summary: {
+        worksheetsChecked: 1,
+        factorTablesChecked: 1,
+        factorRowsChecked: 1,
+        blockingIssueCount: 0,
+        advisoryIssueCount: 0,
+      },
+    });
+
+    expect(capabilityValidationRequestSchema.parse({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      knowledgeBaseVersion: "v1",
+      worksheetAnalysisAssets: result,
+      requiredFieldCheck,
+    }).knowledgeBaseVersion).toBe("v1");
+
+    const gateResult = {
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      knowledgeBaseVersion: "v1",
+      workbookContentHash: contentHash,
+      status: "required_fields_not_ready",
+      rows: [],
+      summary: {
+        factorRowsChecked: 0,
+        inLibraryCount: 0,
+        outOfLibraryCount: 0,
+        toleranceUnableToValidateCount: 0,
+        distributionMatchCount: 0,
+        distributionMismatchCount: 0,
+        distributionUnableToValidateCount: 0,
+        distributionNotApplicableCount: 0,
+      },
+    };
+
+    expect(capabilityValidationResultSchema.parse(gateResult).status).toBe("required_fields_not_ready");
+    expect(capabilityValidationResultSchema.safeParse({
+      ...gateResult,
+      rows: [{ worksheetName: "Analysis" }],
+    }).success).toBe(false);
   });
 
   it("permits the canonical zero-row table range but rejects an inverted range", () => {

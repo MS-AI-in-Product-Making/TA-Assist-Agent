@@ -91,8 +91,8 @@ function findCapability(
     && candidate.unit === query.unit
     && query.tolerance >= candidate.toleranceMin
     && query.tolerance <= candidate.toleranceMax
-    && (candidate.subsystem === undefined || candidate.subsystem === query.subsystem)
-    && (candidate.datum === undefined || candidate.datum === query.datum));
+    && (query.subsystem === undefined || candidate.subsystem === undefined || candidate.subsystem === query.subsystem)
+    && (query.datum === undefined || candidate.datum === undefined || candidate.datum === query.datum));
 
   return entry === undefined
     ? immutableDto(unknownCapability())

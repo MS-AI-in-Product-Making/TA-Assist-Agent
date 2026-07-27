@@ -537,6 +537,7 @@ export const requiredFieldCheckResultSchema = z
   .object({
     contractVersion: contractVersionSchema,
     inputClassification: z.literal("confidential"),
+    workbookContentHash: sha256Schema,
     status: z.enum(["blocked", "readyForNextCheck"]),
     blockingIssues: z.array(z.discriminatedUnion("issueCode", [
       requiredFieldUnavailableIssueSchema,
@@ -563,6 +564,132 @@ export const requiredFieldCheckResultSchema = z
     }
     if (result.summary.advisoryIssueCount !== result.advisoryIssues.length) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: "advisory issue count must match", path: ["summary", "advisoryIssueCount"] });
+    }
+  });
+
+export const capabilityValidationRequestSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    inputClassification: z.literal("confidential"),
+    knowledgeBaseVersion: knowledgeBaseVersionSchema,
+    worksheetAnalysisAssets: worksheetAnalysisAssetsResultSchema,
+    requiredFieldCheck: requiredFieldCheckResultSchema,
+  })
+  .strict();
+
+const capabilityToleranceValidationSchema = z.discriminatedUnion("status", [
+  z
+    .object({
+      status: z.literal("in_library"),
+      totalTolerance: z.number().finite().nonnegative(),
+      unit: z.literal("mm"),
+      capabilityEntryId: z.string().min(1),
+      capabilityTier: capabilityTierSchema,
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("out_of_library"),
+      totalTolerance: z.number().finite().nonnegative(),
+      unit: z.literal("mm"),
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("unable_to_validate"),
+      reasonCode: z.enum(["unit_unavailable", "invalid_tolerance"]),
+    })
+    .strict(),
+]);
+
+const capabilityDistributionValidationSchema = z.discriminatedUnion("status", [
+  z
+    .object({
+      status: z.literal("matches_recommendation"),
+      actual: distributionSchema,
+      recommended: distributionSchema,
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("distribution_mismatch"),
+      actual: distributionSchema,
+      recommended: distributionSchema,
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("unable_to_validate"),
+      reasonCode: z.literal("distribution_unavailable"),
+    })
+    .strict(),
+  z.object({ status: z.literal("not_applicable") }).strict(),
+]);
+
+const capabilityValidationRowSchema = z
+  .object({
+    worksheetName: z.string().min(1),
+    tableId: z.string().min(1),
+    sourceRow: z.number().int().positive(),
+    factorName: z.string().min(1),
+    tolerance: capabilityToleranceValidationSchema,
+    distribution: capabilityDistributionValidationSchema,
+  })
+  .strict();
+
+const capabilityValidationSummarySchema = z
+  .object({
+    factorRowsChecked: z.number().int().nonnegative(),
+    inLibraryCount: z.number().int().nonnegative(),
+    outOfLibraryCount: z.number().int().nonnegative(),
+    toleranceUnableToValidateCount: z.number().int().nonnegative(),
+    distributionMatchCount: z.number().int().nonnegative(),
+    distributionMismatchCount: z.number().int().nonnegative(),
+    distributionUnableToValidateCount: z.number().int().nonnegative(),
+    distributionNotApplicableCount: z.number().int().nonnegative(),
+  })
+  .strict();
+
+const capabilityValidationResultBase = z.object({
+  contractVersion: contractVersionSchema,
+  inputClassification: z.literal("confidential"),
+  knowledgeBaseVersion: knowledgeBaseVersionSchema,
+  workbookContentHash: sha256Schema,
+});
+
+export const capabilityValidationResultSchema = z
+  .discriminatedUnion("status", [
+    capabilityValidationResultBase.extend({
+      status: z.literal("completed"),
+      rows: z.array(capabilityValidationRowSchema),
+      summary: capabilityValidationSummarySchema,
+    }).strict(),
+    capabilityValidationResultBase.extend({
+      status: z.literal("required_fields_not_ready"),
+      rows: z.array(capabilityValidationRowSchema).length(0),
+      summary: capabilityValidationSummarySchema,
+    }).strict(),
+  ])
+  .superRefine((result, context) => {
+    const summary = result.summary;
+    const counts = {
+      factorRowsChecked: result.rows.length,
+      inLibraryCount: result.rows.filter((row) => row.tolerance.status === "in_library").length,
+      outOfLibraryCount: result.rows.filter((row) => row.tolerance.status === "out_of_library").length,
+      toleranceUnableToValidateCount: result.rows.filter((row) => row.tolerance.status === "unable_to_validate").length,
+      distributionMatchCount: result.rows.filter((row) => row.distribution.status === "matches_recommendation").length,
+      distributionMismatchCount: result.rows.filter((row) => row.distribution.status === "distribution_mismatch").length,
+      distributionUnableToValidateCount: result.rows.filter((row) => row.distribution.status === "unable_to_validate").length,
+      distributionNotApplicableCount: result.rows.filter((row) => row.distribution.status === "not_applicable").length,
+    };
+    for (const [field, expected] of Object.entries(counts)) {
+      if (summary[field as keyof typeof summary] !== expected) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `${field} must match row outcomes`,
+          path: ["summary", field],
+        });
+      }
     }
   });
 
@@ -630,3 +757,5 @@ export type WorksheetImageReadRequest = z.infer<typeof worksheetImageReadRequest
 export type WorksheetImageReadResult = z.infer<typeof worksheetImageReadResultSchema>;
 export type RequiredFieldCheckRequest = z.infer<typeof requiredFieldCheckRequestSchema>;
 export type RequiredFieldCheckResult = z.infer<typeof requiredFieldCheckResultSchema>;
+export type CapabilityValidationRequest = z.infer<typeof capabilityValidationRequestSchema>;
+export type CapabilityValidationResult = z.infer<typeof capabilityValidationResultSchema>;

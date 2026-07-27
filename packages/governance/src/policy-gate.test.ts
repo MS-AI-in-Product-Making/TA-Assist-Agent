@@ -112,7 +112,27 @@ describe("policy gate", () => {
     });
   });
 
-  it.each(["F2", "F2.2", "F2.3", "F2.4", "F3", "F4", "F5", "F6", "F7"])(
+  it("reports F2.2 as the available non-blocking capability validation", () => {
+    expect(getFeatureStatus("F2.2")).toEqual({
+      featureId: "F2.2",
+      title: "能力库与分布一致性校验",
+      status: "available",
+      dependsOn: ["worksheet-analysis-assets-v1", "required-field-check-v1", "knowledge-base-v1", "capability-validation-v1"],
+      inputContractId: "capability-validation-request-v1",
+      outputContractId: "capability-validation-result-v1",
+      maximumClassification: "confidential",
+      acceptanceChecks: [
+        "anonymous-capability-validation-fixture",
+        "capability-validation-gate-check",
+        "capability-validation-nonblocking-check",
+        "capability-validation-privacy-check",
+      ],
+      externalPrerequisites: ["approved-public-knowledge-snapshot"],
+      disableBehavior: "return feature_not_available",
+    });
+  });
+
+  it.each(["F2", "F2.3", "F2.4", "F3", "F4", "F5", "F6", "F7"])(
     "keeps %s unavailable",
     (featureId) => {
       expect(getFeatureStatus(featureId)).toMatchObject({
