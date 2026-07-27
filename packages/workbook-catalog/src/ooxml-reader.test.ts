@@ -105,6 +105,102 @@ describe("OOXML workbook reader", () => {
     expect(workbook.worksheets.get("Analysis-A")?.cells).toContainEqual({ reference: "C2", value: "3", formula: "=SUM(B2:B2)", cachedValue: "3" });
   });
 
+  it("reads internal worksheet drawing media with safe anchors", () => {
+    const workbook = readOoxmlWorkbook(createAnonymousWorkbookZip({
+      xmlParts: {
+        "xl/worksheets/_rels/sheet3.xml.rels": '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDrawing" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/></Relationships>',
+        "xl/worksheets/sheet3.xml": '<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData><row r="2"><c r="A2" t="s"><v>2</v></c></row></sheetData><drawing r:id="rIdDrawing"/></worksheet>',
+        "xl/drawings/drawing1.xml": '<?xml version="1.0"?><xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><xdr:twoCellAnchor><xdr:from><xdr:col>2</xdr:col><xdr:row>2</xdr:row></xdr:from><xdr:to><xdr:col>10</xdr:col><xdr:row>19</xdr:row></xdr:to><xdr:pic><xdr:blipFill><a:blip r:embed="rIdImage1"/></xdr:blipFill></xdr:pic><xdr:clientData/></xdr:twoCellAnchor><xdr:oneCellAnchor><xdr:from><xdr:col>0</xdr:col><xdr:row>0</xdr:row></xdr:from><xdr:pic><xdr:blipFill><a:blip r:embed="rIdImage2"/></xdr:blipFill></xdr:pic><xdr:clientData/></xdr:oneCellAnchor></xdr:wsDr>',
+        "xl/drawings/_rels/drawing1.xml.rels": '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdImage1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"/><Relationship Id="rIdImage2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image2.jpeg"/></Relationships>',
+      },
+      binaryParts: {
+        "xl/media/image1.png": new Uint8Array([1, 2, 3]),
+        "xl/media/image2.jpeg": new Uint8Array([4, 5, 6]),
+      },
+    }));
+
+    expect(workbook.worksheets.get("Analysis-A")?.images).toEqual([
+      expect.objectContaining({ mediaType: "image/png", byteLength: 3, anchor: { from: "C3", to: "K20" } }),
+      expect.objectContaining({ mediaType: "image/jpeg", byteLength: 3, anchor: { from: "A1", to: "A1" } }),
+    ]);
+  });
+
+  it("retains image metadata when its drawing anchor cannot be parsed", () => {
+    const workbook = readOoxmlWorkbook(createAnonymousWorkbookZip({
+      xmlParts: {
+        "xl/worksheets/sheet3.xml": '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData><row r="2"><c r="A2"><v>2</v></c></row></sheetData><drawing r:id="rIdDrawing"/></worksheet>',
+        "xl/worksheets/_rels/sheet3.xml.rels": '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDrawing" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/></Relationships>',
+        "xl/drawings/drawing1.xml": '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><xdr:oneCellAnchor><xdr:pic><xdr:blipFill><a:blip r:embed="rIdImage"/></xdr:blipFill></xdr:pic><xdr:clientData/></xdr:oneCellAnchor></xdr:wsDr>',
+        "xl/drawings/_rels/drawing1.xml.rels": '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdImage" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.gif"/></Relationships>',
+      },
+      binaryParts: { "xl/media/image1.gif": new Uint8Array([7, 8]) },
+    }));
+
+    const image = workbook.worksheets.get("Analysis-A")?.images[0];
+    expect(image).toMatchObject({ mediaType: "image/gif", byteLength: 2 });
+    expect(image).not.toHaveProperty("anchor");
+  });
+
+  it.each([
+    ["external drawing relationship", "<Relationship Id=\"rIdDrawing\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing\" Target=\"https://anonymous-private-marker.invalid/drawing.xml\" TargetMode=\"External\"/>"],
+    ["escaping drawing relationship", "<Relationship Id=\"rIdDrawing\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing\" Target=\"../../../anonymous-private-marker.xml\"/>"],
+  ])("rejects %s without leaking drawing markers", (_name, relationship) => {
+    const archive = createAnonymousWorkbookZip({ xmlParts: {
+      "xl/worksheets/sheet3.xml": '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData><row r="2"><c r="A2"><v>2</v></c></row></sheetData><drawing r:id="rIdDrawing"/></worksheet>',
+      "xl/worksheets/_rels/sheet3.xml.rels": `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${relationship}</Relationships>`,
+    } });
+
+    expectArchiveError(() => readOoxmlWorkbook(archive));
+  });
+
+  it("rejects duplicated image media targets in one drawing", () => {
+    const archive = createAnonymousWorkbookZip({
+      xmlParts: {
+        "xl/worksheets/sheet3.xml": '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData><row r="2"><c r="A2"><v>2</v></c></row></sheetData><drawing r:id="rIdDrawing"/></worksheet>',
+        "xl/worksheets/_rels/sheet3.xml.rels": '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDrawing" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/></Relationships>',
+        "xl/drawings/drawing1.xml": '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><xdr:oneCellAnchor><xdr:from><xdr:col>0</xdr:col><xdr:row>0</xdr:row></xdr:from><xdr:pic><xdr:blipFill><a:blip r:embed="rIdImage1"/><a:blip r:embed="rIdImage2"/></xdr:blipFill></xdr:pic><xdr:clientData/></xdr:oneCellAnchor></xdr:wsDr>',
+        "xl/drawings/_rels/drawing1.xml.rels": '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdImage1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"/><Relationship Id="rIdImage2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"/></Relationships>',
+      },
+      binaryParts: { "xl/media/image1.png": new Uint8Array([1]) },
+    });
+
+    expectArchiveError(() => readOoxmlWorkbook(archive));
+  });
+
+  it.each([
+    ["drawing", "urn:anonymous/drawing", "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"],
+    ["image", "http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing", "urn:anonymous/image"],
+  ])("rejects noncanonical internal %s relationship types", (_name, drawingType, imageType) => {
+    const archive = createAnonymousWorkbookZip({
+      xmlParts: {
+        "xl/worksheets/sheet3.xml": '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData><row r="2"><c r="A2"><v>2</v></c></row></sheetData><drawing r:id="rIdDrawing"/></worksheet>',
+        "xl/worksheets/_rels/sheet3.xml.rels": `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDrawing" Type="${drawingType}" Target="../drawings/drawing1.xml"/></Relationships>`,
+        "xl/drawings/drawing1.xml": '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><xdr:oneCellAnchor><xdr:from><xdr:col>0</xdr:col><xdr:row>0</xdr:row></xdr:from><xdr:pic><xdr:blipFill><a:blip r:embed="rIdImage"/></xdr:blipFill></xdr:pic><xdr:clientData/></xdr:oneCellAnchor></xdr:wsDr>',
+        "xl/drawings/_rels/drawing1.xml.rels": `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdImage" Type="${imageType}" Target="../media/image1.png"/></Relationships>`,
+      },
+      binaryParts: { "xl/media/image1.png": new Uint8Array([1]) },
+    });
+
+    expectArchiveError(() => readOoxmlWorkbook(archive));
+  });
+
+  it("rejects a worksheet with more than 64 embedded images", () => {
+    const anchors = Array.from({ length: 65 }, (_, index) => `<xdr:oneCellAnchor><xdr:from><xdr:col>${index}</xdr:col><xdr:row>0</xdr:row></xdr:from><xdr:pic><xdr:blipFill><a:blip r:embed="rIdImage${index}"/></xdr:blipFill></xdr:pic><xdr:clientData/></xdr:oneCellAnchor>`).join("");
+    const relationships = Array.from({ length: 65 }, (_, index) => `<Relationship Id="rIdImage${index}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image${index}.png"/>`).join("");
+    const binaryParts = Object.fromEntries(Array.from({ length: 65 }, (_, index) => [`xl/media/image${index}.png`, new Uint8Array([index]) ]));
+    const archive = createAnonymousWorkbookZip({
+      xmlParts: {
+        "xl/worksheets/sheet3.xml": '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData><row r="2"><c r="A2"><v>2</v></c></row></sheetData><drawing r:id="rIdDrawing"/></worksheet>',
+        "xl/worksheets/_rels/sheet3.xml.rels": '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDrawing" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/></Relationships>',
+        "xl/drawings/drawing1.xml": `<?xml version="1.0"?><xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${anchors}</xdr:wsDr>`,
+        "xl/drawings/_rels/drawing1.xml.rels": `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${relationships}</Relationships>`,
+      },
+      binaryParts,
+    });
+
+    expectArchiveError(() => readOoxmlWorkbook(archive));
+  });
+
   it("reads direct SpreadsheetML metadata around workbook sheets and worksheet sheetData", () => {
     const workbook = readOoxmlWorkbook(createAnonymousWorkbookZip({ xmlParts: {
       "xl/workbook.xml": '<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><workbookPr/><sheets><sheet name="Title Page" sheetId="1" r:id="rId1"/><sheet name="Auto Summary" sheetId="2" r:id="rId2"/><sheet name="Analysis-A" sheetId="3" r:id="rId3"/><sheet name="Analysis-B" sheetId="4" r:id="rId4"/></sheets><calcPr/></workbook>',
