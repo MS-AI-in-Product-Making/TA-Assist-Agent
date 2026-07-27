@@ -6,6 +6,8 @@ import {
   capabilityValidationResultSchema,
   capabilityTierSchema,
   createTypedError,
+  drawingGovernanceRequestSchema,
+  drawingGovernanceResultSchema,
   exceptionResolutionRequestSchema,
   exceptionResolutionResultSchema,
   identifierQualityCheckRequestSchema,
@@ -107,6 +109,40 @@ describe("Phase 0 contracts", () => {
   });
 });
 
+describe("F3 drawing governance placeholder contracts", () => {
+  const request = {
+    contractVersion: "v1",
+    inputClassification: "confidential",
+    projectReference: "controlled-project-reference",
+    runReference: "controlled-run-reference",
+    worksheetReferences: ["controlled-worksheet-reference"],
+  };
+
+  const result = {
+    contractVersion: "v1",
+    outputClassification: "confidential",
+    featureId: "F3",
+    status: "feature_not_available",
+    projectReference: "controlled-project-reference",
+    runReference: "controlled-run-reference",
+    worksheetReferences: ["controlled-worksheet-reference"],
+    requiredPrerequisites: ["approved-ado-access", "canonical-dim-id-policy"],
+  };
+
+  it("accepts only confidential controlled references and a fixed unavailable result", () => {
+    expect(drawingGovernanceRequestSchema.parse(request)).toEqual(request);
+    expect(drawingGovernanceResultSchema.parse(result)).toEqual(result);
+  });
+
+  it("rejects public classification, unknown fields, and altered prerequisites", () => {
+    expect(drawingGovernanceRequestSchema.safeParse({ ...request, inputClassification: "public" }).success).toBe(false);
+    expect(drawingGovernanceRequestSchema.safeParse({ ...request, unexpected: true }).success).toBe(false);
+    expect(drawingGovernanceResultSchema.safeParse({
+      ...result,
+      requiredPrerequisites: ["canonical-dim-id-policy", "approved-ado-access"],
+    }).success).toBe(false);
+  });
+});
 describe("knowledge-base contracts", () => {
   const publicManifest = {
     contractVersion: "v1",

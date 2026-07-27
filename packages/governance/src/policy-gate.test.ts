@@ -166,6 +166,21 @@ describe("policy gate", () => {
     });
   });
 
+  it("keeps F3 unavailable with its established drawing governance contracts", () => {
+    expect(getFeatureStatus("F3")).toEqual({
+      featureId: "F3",
+      title: "DIM ID 与图纸治理",
+      status: "unavailable",
+      dependsOn: ["dim-id-service-v1"],
+      inputContractId: "drawing-governance-request-v1",
+      outputContractId: "drawing-governance-result-v1",
+      maximumClassification: "confidential",
+      acceptanceChecks: ["anonymous-dim-id-fixture"],
+      externalPrerequisites: ["approved-ado-access", "canonical-dim-id-policy"],
+      disableBehavior: "return feature_not_available",
+    });
+  });
+
   it.each(["F2", "F3", "F4", "F5", "F6", "F7"])(
     "keeps %s unavailable",
     (featureId) => {

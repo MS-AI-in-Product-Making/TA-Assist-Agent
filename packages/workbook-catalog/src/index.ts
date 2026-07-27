@@ -7,9 +7,12 @@ export { createCapabilityValidation } from "./capability-validation.js";
 export { createExceptionResolution } from "./exception-resolution.js";
 export { createIdentifierQualityCheck } from "./identifier-quality-check.js";
 export { createUnifiedExceptionResolution } from "./unified-exception-resolution.js";
+export { createDrawingGovernancePlaceholder } from "./drawing-governance-placeholder.js";
 export type {
 	CapabilityValidationRequest,
 	CapabilityValidationResult,
+	DrawingGovernanceRequest,
+	DrawingGovernanceResult,
 	ExceptionResolutionRequest,
 	ExceptionResolutionResult,
 	IdentifierQualityCheckRequest,
