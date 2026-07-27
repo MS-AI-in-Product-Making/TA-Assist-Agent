@@ -693,6 +693,148 @@ export const capabilityValidationResultSchema = z
     }
   });
 
+const utcTimestampSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
+  .refine((value) => !Number.isNaN(Date.parse(value)), {
+    message: "timestamp must be a valid UTC ISO-8601 value",
+  });
+
+const exceptionSignalSourceSchema = z.object({
+  worksheetName: z.string().min(1),
+  tableId: z.string().min(1),
+  sourceRow: z.number().int().positive(),
+  factorName: z.string().min(1),
+});
+
+const exceptionSignalSnapshotSchema = z.discriminatedUnion("signalKind", [
+  exceptionSignalSourceSchema.extend({
+    signalKind: z.literal("tolerance_out_of_library"),
+    signal: z.object({
+      status: z.literal("out_of_library"),
+      totalTolerance: z.number().finite().nonnegative(),
+      unit: z.literal("mm"),
+    }).strict(),
+  }).strict(),
+  exceptionSignalSourceSchema.extend({
+    signalKind: z.literal("tolerance_unable_to_validate"),
+    signal: z.object({
+      status: z.literal("unable_to_validate"),
+      reasonCode: z.enum(["unit_unavailable", "invalid_tolerance"]),
+    }).strict(),
+  }).strict(),
+  exceptionSignalSourceSchema.extend({
+    signalKind: z.literal("distribution_mismatch"),
+    signal: z.object({
+      status: z.literal("distribution_mismatch"),
+      actual: distributionSchema,
+      recommended: distributionSchema,
+    }).strict(),
+  }).strict(),
+  exceptionSignalSourceSchema.extend({
+    signalKind: z.literal("distribution_unable_to_validate"),
+    signal: z.object({
+      status: z.literal("unable_to_validate"),
+      reasonCode: z.literal("distribution_unavailable"),
+    }).strict(),
+  }).strict(),
+]);
+
+const exceptionCandidateSubmissionSchema = z.object({
+  signalRef: z.string(),
+  recordedBy: z.string(),
+  recordedAt: z.string(),
+  rationale: z.string(),
+}).strict();
+
+const acceptedExceptionSchema = z.object({
+  signalRef: z.string().min(1),
+  recordedBy: z.string().trim().min(1),
+  recordedAt: utcTimestampSchema,
+  rationale: z.string().trim().min(1),
+  snapshot: exceptionSignalSnapshotSchema,
+}).strict();
+
+const pendingExceptionSchema = z.object({
+  signalRef: z.string().min(1),
+  reasonCode: z.enum(["missing_candidate", "duplicate_candidate", "invalid_candidate"]),
+  snapshot: exceptionSignalSnapshotSchema,
+}).strict();
+
+export const exceptionResolutionRequestSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    inputClassification: z.literal("confidential"),
+    capabilityValidation: capabilityValidationResultSchema,
+    candidates: z.array(exceptionCandidateSubmissionSchema),
+  })
+  .strict()
+  .superRefine((request, context) => {
+    if (request.capabilityValidation.status !== "completed") {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "capability validation must be completed",
+        path: ["capabilityValidation", "status"],
+      });
+    }
+  });
+
+const exceptionResolutionSummarySchema = z.object({
+  actionableSignalCount: z.number().int().nonnegative(),
+  acceptedExceptionCount: z.number().int().nonnegative(),
+  pendingExceptionCount: z.number().int().nonnegative(),
+  invalidCandidateCount: z.number().int().nonnegative(),
+}).strict();
+
+const exceptionResolutionResultBase = z.object({
+  contractVersion: contractVersionSchema,
+  inputClassification: z.literal("confidential"),
+  workbookContentHash: sha256Schema,
+  knowledgeBaseVersion: knowledgeBaseVersionSchema,
+  acceptedExceptions: z.array(acceptedExceptionSchema),
+  pendingExceptions: z.array(pendingExceptionSchema),
+  summary: exceptionResolutionSummarySchema,
+});
+
+export const exceptionResolutionResultSchema = z
+  .discriminatedUnion("status", [
+    exceptionResolutionResultBase.extend({
+      status: z.literal("readyToContinue"),
+      readyToContinue: z.literal(true),
+    }).strict(),
+    exceptionResolutionResultBase.extend({
+      status: z.literal("pendingExceptions"),
+      readyToContinue: z.literal(false),
+    }).strict(),
+  ])
+  .superRefine((result, context) => {
+    const acceptedRefs = result.acceptedExceptions.map((entry) => entry.signalRef);
+    const pendingRefs = result.pendingExceptions.map((entry) => entry.signalRef);
+    const acceptedRefSet = new Set(acceptedRefs);
+    const pendingRefSet = new Set(pendingRefs);
+    const summary = result.summary;
+
+    if (summary.acceptedExceptionCount !== result.acceptedExceptions.length) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "accepted exception count must match records", path: ["summary", "acceptedExceptionCount"] });
+    }
+    if (summary.pendingExceptionCount !== result.pendingExceptions.length) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "pending exception count must match records", path: ["summary", "pendingExceptionCount"] });
+    }
+    if (summary.actionableSignalCount !== result.acceptedExceptions.length + result.pendingExceptions.length) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "actionable signal count must match records", path: ["summary", "actionableSignalCount"] });
+    }
+    if (acceptedRefSet.size !== acceptedRefs.length || pendingRefSet.size !== pendingRefs.length) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "signal references must be unique", path: ["acceptedExceptions"] });
+    }
+    if (acceptedRefs.some((signalRef) => pendingRefSet.has(signalRef))) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "accepted and pending signal references must not overlap", path: ["pendingExceptions"] });
+    }
+    const isReady = result.pendingExceptions.length === 0 && summary.invalidCandidateCount === 0;
+    if ((result.status === "readyToContinue") !== isReady) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "status must match pending and invalid candidates", path: ["status"] });
+    }
+  });
+
 export const worksheetImageReadRequestSchema = z
   .object({
     contractVersion: contractVersionSchema,
@@ -759,3 +901,5 @@ export type RequiredFieldCheckRequest = z.infer<typeof requiredFieldCheckRequest
 export type RequiredFieldCheckResult = z.infer<typeof requiredFieldCheckResultSchema>;
 export type CapabilityValidationRequest = z.infer<typeof capabilityValidationRequestSchema>;
 export type CapabilityValidationResult = z.infer<typeof capabilityValidationResultSchema>;
+export type ExceptionResolutionRequest = z.infer<typeof exceptionResolutionRequestSchema>;
+export type ExceptionResolutionResult = z.infer<typeof exceptionResolutionResultSchema>;

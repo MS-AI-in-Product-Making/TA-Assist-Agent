@@ -132,16 +132,22 @@ const featureRegister: ReadonlyMap<string, FeatureRegistration> = new Map([
   ],
   [
     "F2.3",
-    unavailableFeature(
-      "F2.3",
-      "非阻断差异例外处理",
-      ["exception-resolution-v1"],
-      "exception-resolution-request-v1",
-      "exception-resolution-result-v1",
-      "confidential",
-      ["anonymous-exception-resolution-fixture"],
-      ["approved-exception-policy"],
-    ),
+    {
+      featureId: "F2.3",
+      title: "非阻断差异例外处理",
+      status: "available",
+      dependsOn: ["capability-validation-v1", "exception-resolution-v1"],
+      inputContractId: "exception-resolution-request-v1",
+      outputContractId: "exception-resolution-result-v1",
+      maximumClassification: "confidential",
+      acceptanceChecks: [
+        "anonymous-exception-resolution-fixture",
+        "exception-resolution-coverage-check",
+        "exception-resolution-privacy-check",
+      ],
+      externalPrerequisites: ["approved-exception-policy"],
+      disableBehavior: "return feature_not_available",
+    },
   ],
   [
     "F2.4",

@@ -6,6 +6,8 @@ import {
   capabilityValidationResultSchema,
   capabilityTierSchema,
   createTypedError,
+  exceptionResolutionRequestSchema,
+  exceptionResolutionResultSchema,
   engineeringRuleEntrySchema,
   engineeringRuleQuerySchema,
   knowledgeBaseQueryResultSchema,
@@ -869,5 +871,91 @@ describe("worksheet analysis asset contracts", () => {
         factorTables: [{ ...zeroRowTable, dataRange: { startRow: 13, endRow: 12 } }],
       }],
     }).success).toBe(false);
+  });
+
+  it("accepts completed F2.2 evidence for F2.3 while enforcing resolution status invariants", () => {
+    const completedCapabilityValidation = {
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      knowledgeBaseVersion: "v1",
+      workbookContentHash: contentHash,
+      status: "completed",
+      rows: [{
+        worksheetName: "Analysis-A",
+        tableId: "table-a",
+        sourceRow: 2,
+        factorName: "anonymous-factor",
+        tolerance: { status: "out_of_library", totalTolerance: 0.2, unit: "mm" },
+        distribution: { status: "not_applicable" },
+      }],
+      summary: {
+        factorRowsChecked: 1,
+        inLibraryCount: 0,
+        outOfLibraryCount: 1,
+        toleranceUnableToValidateCount: 0,
+        distributionMatchCount: 0,
+        distributionMismatchCount: 0,
+        distributionUnableToValidateCount: 0,
+        distributionNotApplicableCount: 1,
+      },
+    };
+    const signalRef = `${contentHash}|Analysis-A|table-a|2|tolerance_out_of_library`;
+
+    expect(exceptionResolutionRequestSchema.parse({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      capabilityValidation: completedCapabilityValidation,
+      candidates: [{
+        signalRef,
+        recordedBy: "anonymous-engineer",
+        recordedAt: "2026-07-27T10:15:30.000Z",
+        rationale: "Anonymous evidence reviewed.",
+      }],
+    }).candidates).toHaveLength(1);
+
+    expect(exceptionResolutionRequestSchema.safeParse({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      capabilityValidation: { ...completedCapabilityValidation, status: "required_fields_not_ready", rows: [], summary: {
+        ...completedCapabilityValidation.summary,
+        factorRowsChecked: 0,
+        outOfLibraryCount: 0,
+        distributionNotApplicableCount: 0,
+      } },
+      candidates: [],
+    }).success).toBe(false);
+
+    const result = {
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      status: "readyToContinue",
+      readyToContinue: true,
+      workbookContentHash: contentHash,
+      knowledgeBaseVersion: "v1",
+      acceptedExceptions: [{
+        signalRef,
+        recordedBy: "anonymous-engineer",
+        recordedAt: "2026-07-27T10:15:30.000Z",
+        rationale: "Anonymous evidence reviewed.",
+        snapshot: {
+          signalKind: "tolerance_out_of_library",
+          worksheetName: "Analysis-A",
+          tableId: "table-a",
+          sourceRow: 2,
+          factorName: "anonymous-factor",
+          signal: { status: "out_of_library", totalTolerance: 0.2, unit: "mm" },
+        },
+      }],
+      pendingExceptions: [],
+      summary: {
+        actionableSignalCount: 1,
+        acceptedExceptionCount: 1,
+        pendingExceptionCount: 0,
+        invalidCandidateCount: 0,
+      },
+    };
+
+    expect(exceptionResolutionResultSchema.parse(result).status).toBe("readyToContinue");
+    expect(exceptionResolutionResultSchema.safeParse({ ...result, readyToContinue: false }).success).toBe(false);
   });
 });

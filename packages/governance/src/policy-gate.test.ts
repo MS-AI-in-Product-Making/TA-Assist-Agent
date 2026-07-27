@@ -132,7 +132,26 @@ describe("policy gate", () => {
     });
   });
 
-  it.each(["F2", "F2.3", "F2.4", "F3", "F4", "F5", "F6", "F7"])(
+  it("reports F2.3 as the available non-blocking exception resolution", () => {
+    expect(getFeatureStatus("F2.3")).toEqual({
+      featureId: "F2.3",
+      title: "非阻断差异例外处理",
+      status: "available",
+      dependsOn: ["capability-validation-v1", "exception-resolution-v1"],
+      inputContractId: "exception-resolution-request-v1",
+      outputContractId: "exception-resolution-result-v1",
+      maximumClassification: "confidential",
+      acceptanceChecks: [
+        "anonymous-exception-resolution-fixture",
+        "exception-resolution-coverage-check",
+        "exception-resolution-privacy-check",
+      ],
+      externalPrerequisites: ["approved-exception-policy"],
+      disableBehavior: "return feature_not_available",
+    });
+  });
+
+  it.each(["F2", "F2.4", "F3", "F4", "F5", "F6", "F7"])(
     "keeps %s unavailable",
     (featureId) => {
       expect(getFeatureStatus(featureId)).toMatchObject({

@@ -46,6 +46,8 @@ distribution 产生非阻断一致性信号；根 F2、F2.3-F2.4 和 F3-F7 均�
 | [F2.1 必填字段严格校验实施计划](superpowers/plans/2026-07-27-f2-1-required-field-validation.md) | F2.1 实施任务、TDD 步骤和质量门 |
 | [F2.2 能力库与分布一致性校验设计](superpowers/specs/2026-07-27-f2-2-capability-distribution-validation-design.md) | 基于 ready F2.1 证据的非阻断能力库与 distribution 比对 |
 | [F2.2 能力库与分布一致性校验实施计划](superpowers/plans/2026-07-27-f2-2-capability-distribution-validation.md) | F2.2 契约、F0 查询、治理和质量门 |
+| [F2.3 非阻断差异例外处理设计](superpowers/specs/2026-07-27-f2-3-exception-resolution-design.md) | 基于 completed F2.2 信号的纯例外覆盖解析 |
+| [F2.3 非阻断差异例外处理实施计划](superpowers/plans/2026-07-27-f2-3-exception-resolution.md) | F2.3 契约、纯服务、治理和质量门 |
 | [系统架构](01-architecture.md) | 产品架构与后续业务能力边界 |
 | [Feature Register](governance/feature-register.md) | F0-F8 可用性、依赖、契约和禁用行为 |
 | [数据分类](governance/data-classification.md) | `public`、`internal`、`confidential`、`secret` 处理规则 |

@@ -53,6 +53,8 @@ fixture。此阶段不包含真实工程知识、外部 Adapter、模型、ADO�
 - [F2.1 必填字段严格校验实施计划](docs/superpowers/plans/2026-07-27-f2-1-required-field-validation.md)
 - [F2.2 能力库与分布一致性校验设计](docs/superpowers/specs/2026-07-27-f2-2-capability-distribution-validation-design.md)
 - [F2.2 能力库与分布一致性校验实施计划](docs/superpowers/plans/2026-07-27-f2-2-capability-distribution-validation.md)
+- [F2.3 非阻断差异例外处理设计](docs/superpowers/specs/2026-07-27-f2-3-exception-resolution-design.md)
+- [F2.3 非阻断差异例外处理实施计划](docs/superpowers/plans/2026-07-27-f2-3-exception-resolution.md)
 - [系统架构](docs/01-architecture.md) 与 [Feature Register](docs/governance/feature-register.md)
 - [数据分类](docs/governance/data-classification.md) 与 [开发协作标准](docs/governance/development-standard.md)
 - [Phase 0 验收](docs/governance/phase-0-acceptance.md)
