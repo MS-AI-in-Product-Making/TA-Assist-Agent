@@ -5,6 +5,8 @@ import {
   capabilityValidationRequestSchema,
   capabilityValidationResultSchema,
   capabilityTierSchema,
+  calculationRequestSchema,
+  calculationResultSchema,
   createTypedError,
   exceptionResolutionRequestSchema,
   exceptionResolutionResultSchema,
@@ -104,6 +106,41 @@ describe("Phase 0 contracts", () => {
     );
 
     expect(output.trim()).toBe("loaded");
+  });
+});
+
+describe("F4 calculation placeholder contracts", () => {
+  const request = {
+    contractVersion: "v1",
+    inputClassification: "confidential",
+    projectReference: "controlled-project-reference",
+    runReference: "controlled-run-reference",
+    worksheetReferences: ["controlled-worksheet-reference"],
+  };
+
+  const result = {
+    contractVersion: "v1",
+    outputClassification: "confidential",
+    featureId: "F4",
+    status: "feature_not_available",
+    projectReference: "controlled-project-reference",
+    runReference: "controlled-run-reference",
+    worksheetReferences: ["controlled-worksheet-reference"],
+    requiredPrerequisites: ["approved-template-regression", "approved-windows-excel-worker"],
+  };
+
+  it("accepts only confidential controlled references and a fixed unavailable result", () => {
+    expect(calculationRequestSchema.parse(request)).toEqual(request);
+    expect(calculationResultSchema.parse(result)).toEqual(result);
+  });
+
+  it("rejects public classification, unknown fields, and altered prerequisites", () => {
+    expect(calculationRequestSchema.safeParse({ ...request, inputClassification: "public" }).success).toBe(false);
+    expect(calculationRequestSchema.safeParse({ ...request, unexpected: true }).success).toBe(false);
+    expect(calculationResultSchema.safeParse({
+      ...result,
+      requiredPrerequisites: ["approved-windows-excel-worker", "approved-template-regression"],
+    }).success).toBe(false);
   });
 });
 

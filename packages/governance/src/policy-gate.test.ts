@@ -166,6 +166,21 @@ describe("policy gate", () => {
     });
   });
 
+  it("keeps F4 unavailable with its established calculation contracts", () => {
+    expect(getFeatureStatus("F4")).toEqual({
+      featureId: "F4",
+      title: "方法推荐与 Excel 一致性计算",
+      status: "unavailable",
+      dependsOn: ["calculation-worker-v1"],
+      inputContractId: "calculation-request-v1",
+      outputContractId: "calculation-result-v1",
+      maximumClassification: "confidential",
+      acceptanceChecks: ["approved-template-regression"],
+      externalPrerequisites: ["approved-windows-excel-worker"],
+      disableBehavior: "return feature_not_available",
+    });
+  });
+
   it.each(["F2", "F3", "F4", "F5", "F6", "F7"])(
     "keeps %s unavailable",
     (featureId) => {
