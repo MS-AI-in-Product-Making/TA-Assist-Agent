@@ -144,6 +144,18 @@ function sheetAssets(worksheet: OoxmlWorksheet, worksheetName: string, tolerance
   return { worksheetName, toleranceLoopDescription, factorTables, formulaCells, imageAssets };
 }
 
+function selectedAnalyses(request: { readonly workbookCatalog: { readonly analyses: readonly { readonly worksheetName: string; readonly toleranceLoopDescription: string }[] }; readonly worksheetSelection: { readonly mode: "all" } | { readonly mode: "selected"; readonly worksheetNames: readonly string[] } | undefined }) {
+  const analyses = request.workbookCatalog.analyses;
+  const selection = request.worksheetSelection;
+  if (!selection || selection.mode === "all") return analyses;
+  const available = new Set(analyses.map((analysis) => analysis.worksheetName));
+  if (selection.worksheetNames.some((name) => !available.has(name))) throw assetsError(REQUEST_SUMMARY, "workbook-catalog");
+  const selected = new Set(selection.worksheetNames);
+  const filtered = analyses.filter((analysis) => selected.has(analysis.worksheetName));
+  if (filtered.length === 0) throw assetsError(REQUEST_SUMMARY, "workbook-catalog");
+  return filtered;
+}
+
 export function createWorksheetAnalysisAssets(request: unknown): WorksheetAnalysisAssetsResult {
   let classification: unknown;
   try { classification = (request as { inputClassification?: unknown })?.inputClassification; } catch { throw assetsError(REQUEST_SUMMARY, "workbook-request"); }
@@ -153,8 +165,12 @@ export function createWorksheetAnalysisAssets(request: unknown): WorksheetAnalys
   try {
     const contentHash = createHash("sha256").update(parsed.data.workbookBytes).digest("hex");
     if (contentHash !== parsed.data.workbookCatalog.workbook.contentHash) throw assetsError(REQUEST_SUMMARY, "workbook-catalog");
-    const workbook = readOoxmlWorkbook(parsed.data.workbookBytes, parsed.data.workbookCatalog.analyses.map((analysis) => analysis.worksheetName));
-    const worksheets = parsed.data.workbookCatalog.analyses.map((analysis) => {
+    const analyses = selectedAnalyses({
+      workbookCatalog: parsed.data.workbookCatalog,
+      worksheetSelection: parsed.data.worksheetSelection,
+    });
+    const workbook = readOoxmlWorkbook(parsed.data.workbookBytes, analyses.map((analysis) => analysis.worksheetName));
+    const worksheets = analyses.map((analysis) => {
       const worksheet = workbook.worksheets.get(analysis.worksheetName);
       if (!worksheet) throw assetsError(REQUEST_SUMMARY, "workbook-catalog");
       return sheetAssets(worksheet, analysis.worksheetName, analysis.toleranceLoopDescription);

@@ -347,8 +347,25 @@ export const worksheetAnalysisAssetsRequestSchema = z
     inputClassification: z.literal("confidential"),
     workbookBytes: nonEmptyWorkbookBytesSchema,
     workbookCatalog: workbookCatalogResultSchema,
+    worksheetSelection: z
+      .discriminatedUnion("mode", [
+        z.object({ mode: z.literal("all") }).strict(),
+        z
+          .object({
+            mode: z.literal("selected"),
+            worksheetNames: z.array(z.string().min(1)).min(1),
+          })
+          .strict(),
+      ])
+      .optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((request, context) => {
+    if (request.worksheetSelection?.mode === "selected"
+      && new Set(request.worksheetSelection.worksheetNames).size !== request.worksheetSelection.worksheetNames.length) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheetNames must be unique", path: ["worksheetSelection", "worksheetNames"] });
+    }
+  });
 
 const worksheetFieldNameSchema = z.enum([
   "factorName",

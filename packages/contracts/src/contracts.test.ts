@@ -794,6 +794,8 @@ describe("worksheet analysis asset contracts", () => {
 
   it("accepts confidential v1 worksheet analysis asset contracts", () => {
     expect(worksheetAnalysisAssetsRequestSchema.parse(request)).toEqual(request);
+    expect(worksheetAnalysisAssetsRequestSchema.parse({ ...request, worksheetSelection: { mode: "all" } }).worksheetSelection).toEqual({ mode: "all" });
+    expect(worksheetAnalysisAssetsRequestSchema.parse({ ...request, worksheetSelection: { mode: "selected", worksheetNames: ["Analysis"] } }).worksheetSelection).toEqual({ mode: "selected", worksheetNames: ["Analysis"] });
     expect(worksheetAnalysisAssetsResultSchema.parse(result)).toEqual(result);
     expect(
       worksheetImageReadRequestSchema.parse({
@@ -821,6 +823,8 @@ describe("worksheet analysis asset contracts", () => {
     ["an uppercase hash", { ...result, workbook: { ...result.workbook, contentHash: "A".repeat(64) } }],
     ["an invalid hash", { ...result, workbook: { ...result.workbook, contentHash: "not-a-hash" } }],
     ["an extra field", { ...request, unexpected: true }],
+    ["an empty selected worksheet list", { ...request, worksheetSelection: { mode: "selected", worksheetNames: [] } }],
+    ["duplicate selected worksheet names", { ...request, worksheetSelection: { mode: "selected", worksheetNames: ["Analysis", "Analysis"] } }],
   ])("rejects worksheet assets with %s", (_description, value) => {
     const schema = "workbook" in value ? worksheetAnalysisAssetsResultSchema : worksheetAnalysisAssetsRequestSchema;
     expect(schema.safeParse(value).success).toBe(false);
