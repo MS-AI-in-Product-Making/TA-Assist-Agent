@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,7 +7,7 @@ import { createTypedError } from "@ai-assist/contracts";
 import { SkillRegistry, type RegisteredSkill } from "@ai-assist/skill-sdk";
 import { expect, it, vi } from "vitest";
 import { MockAdapter } from "@ai-assist/adapters";
-import { runSmokeWorkflow, runWorkflow } from "./index.js";
+import { runPublicWorkflow, runSmokeWorkflow, runWorkflow } from "./index.js";
 import { runWorkflowForTest } from "./run-orchestrator.test-support.js";
 
 interface SmokeRequest {
@@ -48,6 +49,67 @@ it("creates a verifiable public run with two Skills", async () => {
   } finally {
     await rm(rootDir, { recursive: true, force: true });
   }
+});
+
+it("returns a frozen public workflow result without exposing its run directory", async () => {
+  const rootDir = await mkdtemp(join(tmpdir(), "ai-assist-public-workflow-"));
+
+  try {
+    const result = await runPublicWorkflow({
+      rootDir,
+      request: {
+        contractVersion: "v1",
+        workflowId: "public-smoke",
+        inputClassification: "public",
+        message: "public contract smoke",
+      },
+    });
+
+    expect(result).toMatchObject({
+      contractVersion: "v1",
+      workflowId: "public-smoke",
+      outputClassification: "public",
+      manifestValid: true,
+      executedSkillIds: ["public-echo", "classification-check"],
+    });
+    expect(result.runId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(Object.isFrozen(result)).toBe(true);
+    expect(Object.isFrozen(result.executedSkillIds)).toBe(true);
+    expect("runDirectory" in result).toBe(false);
+    expect(() => { (result.executedSkillIds as string[]).push("changed"); }).toThrow();
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+it("denies a non-public public-workflow request", async () => {
+  const rootDir = await mkdtemp(join(tmpdir(), "ai-assist-public-workflow-"));
+
+  try {
+    const thrown = await runPublicWorkflow({
+      rootDir,
+      request: {
+        contractVersion: "v1",
+        workflowId: "public-smoke",
+        inputClassification: "confidential",
+        message: "denied",
+      },
+    }).catch((error: unknown) => error) as Error & { code: string };
+
+    expect(thrown.code).toBe("policy_denied");
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+it("exports runPublicWorkflow through the built ESM package entrypoint", () => {
+  const output = execFileSync(
+    process.execPath,
+    ["--input-type=module", "--eval", "import { runPublicWorkflow } from '@ai-assist/orchestrator'; console.log(typeof runPublicWorkflow);"],
+    { cwd: process.cwd(), encoding: "utf8" },
+  );
+
+  expect(output.trim()).toBe("function");
 });
 
 it("rejects an arbitrary runner in the public workflow options", async () => {
