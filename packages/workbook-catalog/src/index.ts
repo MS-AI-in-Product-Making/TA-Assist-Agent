@@ -11,6 +11,7 @@ export { createCalculationPlaceholder } from "./calculation-placeholder.js";
 export { createDrawingGovernancePlaceholder } from "./drawing-governance-placeholder.js";
 export { createInterpretationPlaceholder } from "./interpretation-placeholder.js";
 export { createComparisonPlaceholder } from "./comparison-placeholder.js";
+export { createCpkPlaceholder } from "./cpk-placeholder.js";
 export type {
 	CapabilityValidationRequest,
 	CapabilityValidationResult,
@@ -18,6 +19,8 @@ export type {
 	CalculationResult,
 	ComparisonRequest,
 	ComparisonResult,
+	CpkRequest,
+	CpkResult,
 	DrawingGovernanceRequest,
 	DrawingGovernanceResult,
 	InterpretationRequest,

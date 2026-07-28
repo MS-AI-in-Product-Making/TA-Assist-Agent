@@ -226,6 +226,21 @@ describe("policy gate", () => {
     });
   });
 
+  it("keeps F7 unavailable with its established Cpk contracts", () => {
+    expect(getFeatureStatus("F7")).toEqual({
+      featureId: "F7",
+      title: "实测 Cpk 闭环",
+      status: "unavailable",
+      dependsOn: ["measurement-store-v1", "dim-id-service-v1"],
+      inputContractId: "cpk-request-v1",
+      outputContractId: "cpk-result-v1",
+      maximumClassification: "confidential",
+      acceptanceChecks: ["anonymous-cpk-fixture"],
+      externalPrerequisites: ["approved-measurement-store", "canonical-dim-id-policy"],
+      disableBehavior: "return feature_not_available",
+    });
+  });
+
   it.each(["F2", "F3", "F4", "F5", "F6", "F7"])(
     "keeps %s unavailable",
     (featureId) => {

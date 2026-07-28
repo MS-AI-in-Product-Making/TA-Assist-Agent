@@ -1221,6 +1221,31 @@ export const comparisonResultSchema = z
   })
   .strict();
 
+const controlledCpkReferenceSchema = z.string().min(1);
+
+export const cpkRequestSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    inputClassification: z.literal("confidential"),
+    projectReference: controlledCpkReferenceSchema,
+    runReference: controlledCpkReferenceSchema,
+    worksheetReferences: z.array(controlledCpkReferenceSchema),
+  })
+  .strict();
+
+export const cpkResultSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    outputClassification: z.literal("confidential"),
+    featureId: z.literal("F7"),
+    status: z.literal("feature_not_available"),
+    projectReference: controlledCpkReferenceSchema,
+    runReference: controlledCpkReferenceSchema,
+    worksheetReferences: z.array(controlledCpkReferenceSchema),
+    requiredPrerequisites: z.tuple([z.literal("approved-measurement-store")]),
+  })
+  .strict();
+
 export const worksheetImageReadRequestSchema = z
   .object({
     contractVersion: contractVersionSchema,
@@ -1303,3 +1328,5 @@ export type InterpretationRequest = z.infer<typeof interpretationRequestSchema>;
 export type InterpretationResult = z.infer<typeof interpretationResultSchema>;
 export type ComparisonRequest = z.infer<typeof comparisonRequestSchema>;
 export type ComparisonResult = z.infer<typeof comparisonResultSchema>;
+export type CpkRequest = z.infer<typeof cpkRequestSchema>;
+export type CpkResult = z.infer<typeof cpkResultSchema>;
