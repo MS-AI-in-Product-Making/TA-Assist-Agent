@@ -41,6 +41,8 @@ import {
   worksheetAnalysisAssetsResultSchema,
   worksheetImageReadRequestSchema,
   worksheetImageReadResultSchema,
+  workflowRequestSchema,
+  workflowResultSchema,
 } from "./index.js";
 
 describe("Phase 0 contracts", () => {
@@ -280,6 +282,36 @@ describe("F7 Cpk placeholder contracts", () => {
     expect(cpkRequestSchema.safeParse({ ...request, inputClassification: "public" }).success).toBe(false);
     expect(cpkRequestSchema.safeParse({ ...request, unexpected: true }).success).toBe(false);
     expect(cpkResultSchema.safeParse({ ...result, requiredPrerequisites: [] }).success).toBe(false);
+  });
+});
+
+describe("F8 public workflow contracts", () => {
+  const request = {
+    contractVersion: "v1",
+    workflowId: "public-smoke",
+    inputClassification: "public",
+    message: "anonymous smoke message",
+  };
+
+  const result = {
+    contractVersion: "v1",
+    workflowId: "public-smoke",
+    outputClassification: "public",
+    runId: "00000000-0000-4000-8000-000000000001",
+    manifestValid: true,
+    executedSkillIds: ["public-echo", "classification-check"],
+  };
+
+  it("accepts the fixed public smoke request and result", () => {
+    expect(workflowRequestSchema.parse(request)).toEqual(request);
+    expect(workflowResultSchema.parse(result)).toEqual(result);
+  });
+
+  it("rejects non-public input, unknown fields, invalid messages, and altered skill order", () => {
+    expect(workflowRequestSchema.safeParse({ ...request, inputClassification: "confidential" }).success).toBe(false);
+    expect(workflowRequestSchema.safeParse({ ...request, unexpected: true }).success).toBe(false);
+    expect(workflowRequestSchema.safeParse({ ...request, message: " " }).success).toBe(false);
+    expect(workflowResultSchema.safeParse({ ...result, executedSkillIds: ["classification-check", "public-echo"] }).success).toBe(false);
   });
 });
 

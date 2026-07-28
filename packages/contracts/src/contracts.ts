@@ -1246,6 +1246,31 @@ export const cpkResultSchema = z
   })
   .strict();
 
+const workflowRunIdSchema = z.string().uuid();
+
+export const workflowRequestSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    workflowId: z.literal("public-smoke"),
+    inputClassification: z.literal("public"),
+    message: z.string().trim().min(1).max(4_096),
+  })
+  .strict();
+
+export const workflowResultSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    workflowId: z.literal("public-smoke"),
+    outputClassification: z.literal("public"),
+    runId: workflowRunIdSchema,
+    manifestValid: z.literal(true),
+    executedSkillIds: z.tuple([
+      z.literal("public-echo"),
+      z.literal("classification-check"),
+    ]),
+  })
+  .strict();
+
 export const worksheetImageReadRequestSchema = z
   .object({
     contractVersion: contractVersionSchema,
@@ -1330,3 +1355,5 @@ export type ComparisonRequest = z.infer<typeof comparisonRequestSchema>;
 export type ComparisonResult = z.infer<typeof comparisonResultSchema>;
 export type CpkRequest = z.infer<typeof cpkRequestSchema>;
 export type CpkResult = z.infer<typeof cpkResultSchema>;
+export type PublicWorkflowRequest = z.infer<typeof workflowRequestSchema>;
+export type PublicWorkflowResult = z.infer<typeof workflowResultSchema>;
