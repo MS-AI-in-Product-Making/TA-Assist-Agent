@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { typedErrorSchema } from "@ai-assist/contracts";
 import { createAnonymousWorkbookZip } from "./test-support.js";
-import { MAX_ARCHIVE_BYTES, MAX_SINGLE_UNCOMPRESSED_BYTES, MAX_ZIP_ENTRIES, readSafeZip } from "./zip-security.js";
+import { MAX_ARCHIVE_BYTES, MAX_SINGLE_UNCOMPRESSED_BYTES, MAX_XML_PART_BYTES, MAX_ZIP_ENTRIES, readSafeZip } from "./zip-security.js";
 
 const ARCHIVE_SUMMARY = "Workbook-catalog archive cannot be processed.";
 
@@ -87,6 +87,34 @@ describe("safe OOXML archive reader", () => {
     expect(parts.get("xl/workbook.xml")).toBeInstanceOf(Uint8Array);
   });
 
+  it("accepts a safe archive with many entries under the bounded limits", () => {
+    const extraEntries: Record<string, Uint8Array> = {};
+    for (let index = 0; index < 350; index += 1) {
+      extraEntries[`xl/media/anonymous-${index.toString().padStart(3, "0")}.bin`] = new Uint8Array([index % 251, (index + 1) % 251, (index + 2) % 251]);
+    }
+
+    const parts = readSafeZip(createAnonymousWorkbookZip({ binaryParts: extraEntries }));
+    expect(parts.size).toBeGreaterThan(350);
+    expect(parts.get("xl/workbook.xml")).toBeInstanceOf(Uint8Array);
+  });
+
+  it("accepts a multi-megabyte XML part under MAX_XML_PART_BYTES", () => {
+    const marker = "xml-size-private-marker";
+    const xml = `<?xml version="1.0"?><workbook>${marker}${variedText(2_000_000)}</workbook>`;
+
+    const parts = readSafeZip(createAnonymousWorkbookZip({ xmlParts: { "xl/calcChain.xml": xml } }));
+    expect(parts.get("xl/calcChain.xml")?.byteLength).toBeGreaterThan(2_000_000);
+  });
+
+  it("allows processing instructions in non-parsed customXml parts", () => {
+    const parts = readSafeZip(createAnonymousWorkbookZip({
+      xmlParts: {
+        "customXml/item3.xml": "<?xml version=\"1.0\"?><root><?mso-application progid=\"Excel.Sheet\"?></root>",
+      },
+    }));
+    expect(parts.get("customXml/item3.xml")).toBeInstanceOf(Uint8Array);
+  });
+
   it.each([
     ["unsafe traversal", createAnonymousWorkbookZip({ unsafeEntryName: "../anonymous-private-marker.xml" })],
     ["unsafe backslash", createAnonymousWorkbookZip({ unsafeEntryName: "xl\\anonymous-private-marker.xml" })],
@@ -103,9 +131,9 @@ describe("safe OOXML archive reader", () => {
     expectSafeArchiveError(() => readSafeZip(new Uint8Array(MAX_ARCHIVE_BYTES + 1)));
   });
 
-  it("rejects an XML part larger than one MiB before decoding its content", () => {
+  it("rejects an XML part larger than MAX_XML_PART_BYTES before decoding its content", () => {
     const marker = "xml-size-private-marker";
-    const xml = `<?xml version="1.0"?><workbook>${marker}${variedText(1_048_576)}</workbook>`;
+    const xml = `<?xml version="1.0"?><workbook>${marker}${variedText(MAX_XML_PART_BYTES + 1_024)}</workbook>`;
 
     try {
       readSafeZip(createAnonymousWorkbookZip({ xmlParts: { "xl/workbook.xml": xml } }));

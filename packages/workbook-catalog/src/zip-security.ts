@@ -2,11 +2,11 @@ import { Inflate } from "fflate";
 import { createTypedError } from "@ai-assist/contracts";
 
 export const MAX_ARCHIVE_BYTES = 16 * 1024 * 1024;
-export const MAX_ZIP_ENTRIES = 256;
-export const MAX_SINGLE_UNCOMPRESSED_BYTES = 4 * 1024 * 1024;
-export const MAX_TOTAL_UNCOMPRESSED_BYTES = 16 * 1024 * 1024;
+export const MAX_ZIP_ENTRIES = 512;
+export const MAX_SINGLE_UNCOMPRESSED_BYTES = 8 * 1024 * 1024;
+export const MAX_TOTAL_UNCOMPRESSED_BYTES = 64 * 1024 * 1024;
 export const MAX_COMPRESSION_RATIO = 100;
-export const MAX_XML_PART_BYTES = 1 * 1024 * 1024;
+export const MAX_XML_PART_BYTES = 8 * 1024 * 1024;
 
 const REQUIRED_PARTS = ["[Content_Types].xml", "_rels/.rels", "xl/workbook.xml", "xl/_rels/workbook.xml.rels"];
 const ARCHIVE_SUMMARY = "Workbook-catalog archive cannot be processed.";
@@ -46,8 +46,21 @@ function safeEntryName(name: string): boolean {
     && !name.split("/").some((part) => part === ".." || part.length === 0);
 }
 
+function requiresXmlValidation(name: string): boolean {
+  if (name === "[Content_Types].xml" || name === "_rels/.rels") return true;
+  if (!name.startsWith("xl/")) return false;
+  if (name === "xl/workbook.xml" || name === "xl/sharedStrings.xml") return true;
+  if (name === "xl/_rels/workbook.xml.rels") return true;
+  if (/^xl\/worksheets\/sheet\d+\.xml$/i.test(name)) return true;
+  if (/^xl\/worksheets\/_rels\/sheet\d+\.xml\.rels$/i.test(name)) return true;
+  if (/^xl\/drawings\/drawing\d+\.xml$/i.test(name)) return true;
+  if (/^xl\/drawings\/_rels\/drawing\d+\.xml\.rels$/i.test(name)) return true;
+  return false;
+}
+
 function validateXmlBytes(name: string, bytes: Uint8Array): void {
   if (!name.endsWith(".xml") && !name.endsWith(".rels")) return;
+  if (!requiresXmlValidation(name)) return;
   if (bytes.byteLength > MAX_XML_PART_BYTES) fail();
   let xml: string;
   try {
