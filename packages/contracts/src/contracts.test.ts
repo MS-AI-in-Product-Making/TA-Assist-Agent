@@ -7,6 +7,8 @@ import {
   capabilityTierSchema,
   calculationRequestSchema,
   calculationResultSchema,
+  cpkRequestSchema,
+  cpkResultSchema,
   comparisonRequestSchema,
   comparisonResultSchema,
   createTypedError,
@@ -246,6 +248,38 @@ describe("F6 comparison placeholder contracts", () => {
     expect(comparisonRequestSchema.safeParse({ ...request, inputClassification: "public" }).success).toBe(false);
     expect(comparisonRequestSchema.safeParse({ ...request, unexpected: true }).success).toBe(false);
     expect(comparisonResultSchema.safeParse({ ...result, requiredPrerequisites: [] }).success).toBe(false);
+  });
+});
+
+describe("F7 Cpk placeholder contracts", () => {
+  const request = {
+    contractVersion: "v1",
+    inputClassification: "confidential",
+    projectReference: "controlled-project-reference",
+    runReference: "controlled-run-reference",
+    worksheetReferences: ["controlled-worksheet-reference"],
+  };
+
+  const result = {
+    contractVersion: "v1",
+    outputClassification: "confidential",
+    featureId: "F7",
+    status: "feature_not_available",
+    projectReference: "controlled-project-reference",
+    runReference: "controlled-run-reference",
+    worksheetReferences: ["controlled-worksheet-reference"],
+    requiredPrerequisites: ["approved-measurement-store"],
+  };
+
+  it("accepts only confidential controlled references and a fixed unavailable result", () => {
+    expect(cpkRequestSchema.parse(request)).toEqual(request);
+    expect(cpkResultSchema.parse(result)).toEqual(result);
+  });
+
+  it("rejects public classification, unknown fields, and altered prerequisites", () => {
+    expect(cpkRequestSchema.safeParse({ ...request, inputClassification: "public" }).success).toBe(false);
+    expect(cpkRequestSchema.safeParse({ ...request, unexpected: true }).success).toBe(false);
+    expect(cpkResultSchema.safeParse({ ...result, requiredPrerequisites: [] }).success).toBe(false);
   });
 });
 
