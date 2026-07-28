@@ -166,6 +166,21 @@ describe("policy gate", () => {
     });
   });
 
+  it("reports F8 as the available anonymous public workflow fixture", () => {
+    expect(getFeatureStatus("F8")).toEqual({
+      featureId: "F8",
+      title: "TA 工作流编排",
+      status: "available",
+      dependsOn: ["orchestrator-v1", "skill-runtime-v1"],
+      inputContractId: "workflow-request-v1",
+      outputContractId: "workflow-result-v1",
+      maximumClassification: "public",
+      acceptanceChecks: ["anonymous-workflow-fixture", "anonymous-governed-skill"],
+      externalPrerequisites: ["approved-skill-manifests"],
+      disableBehavior: "return feature_not_available",
+    });
+  });
+
   it("keeps F4 unavailable with its established calculation contracts", () => {
     expect(getFeatureStatus("F4")).toEqual({
       featureId: "F4",

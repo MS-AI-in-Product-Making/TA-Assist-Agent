@@ -51,8 +51,11 @@ Feature Register 是 Phase 0 对 F0-F8 的唯一可查询能力清单。它提�
   in-library、out-of-library、mismatch 或 unable 信号。所有信号均为非阻断；它不换算单位、
   推断可行性、记录例外、重读 workbook、调用外部服务或写回数据。F2.3 仍不可用。
 - F8 的 `available` 仅允许匿名 `public` Skill fixture 在 runner 中通过输入分类、
-  Feature 状态和策略门检查后执行纯函数或显式注入的 mock adapter。`persist`、
-  `network` 和其他外部权限仍由策略门拒绝；不得将该状态解释为生产能力可用。
+  Feature 状态和策略门检查后执行纯函数或显式注入的 mock adapter。`workflow-request-v1`
+  入口只接受 `workflowId: "public-smoke"`，并固定执行 `public-echo` 与
+  `classification-check`；`workflow-result-v1` 不包含 `runDirectory` 或 Skill 输出。
+  既有 CLI `smoke` 保持为兼容 fixture。`persist`、`network` 和其他外部权限仍由策略门拒绝；
+  不得将该状态解释为生产能力可用。
 - 修改任一条目时，必须同步更新 `packages/governance` 的测试、此文档、相关契约
   和匿名验收 fixture。若涉及外部访问，还必须经过策略门审批。
 

@@ -464,7 +464,13 @@ function validatePublicWorkflowRequest(request: unknown) {
   try {
     const parsed = workflowRequestSchema.safeParse(request);
     if (parsed.success) return parsed.data;
-  } catch {}
+  } catch {
+    throw invalidPublicWorkflowRequest();
+  }
+  throw invalidPublicWorkflowRequest();
+}
+
+function invalidPublicWorkflowRequest(): Error {
   throw createTypedError({
     code: "validation_error",
     summary: "Public workflow input is invalid.",
