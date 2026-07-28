@@ -49,10 +49,19 @@ interface SelectedAnalysis {
   readonly toleranceLoopDescription: string;
 }
 
+type WorksheetProcessingReasonCode =
+  | "processed"
+  | "image_extraction_skipped"
+  | "workbook_archive"
+  | "invalid_request"
+  | "policy_denied"
+  | "unknown";
+
 export interface WorksheetProcessingPage {
   readonly worksheetName: string;
   readonly toleranceLoopDescription: string;
   readonly status: "processed" | "failed";
+  readonly reasonCode: WorksheetProcessingReasonCode;
   readonly durationMs: number;
   readonly factorTableCount?: number;
   readonly factorRowCount?: number;
@@ -208,6 +217,7 @@ async function processWorksheetPage(
         worksheetName: analysis.worksheetName,
         toleranceLoopDescription: analysis.toleranceLoopDescription,
         status: "processed",
+        reasonCode: imageFallback ? "image_extraction_skipped" : "processed",
         durationMs: Math.round((performance.now() - startedAt) * 1000) / 1000,
         factorTableCount: worksheetAsset.factorTables.length,
         factorRowCount,
@@ -217,6 +227,7 @@ async function processWorksheetPage(
       },
     };
   } catch (error) {
+    const errorSummary = error instanceof Error ? error.message : String(error);
     return {
       worksheetAsset: {
         worksheetName: analysis.worksheetName,
@@ -229,8 +240,9 @@ async function processWorksheetPage(
         worksheetName: analysis.worksheetName,
         toleranceLoopDescription: analysis.toleranceLoopDescription,
         status: "failed",
+        reasonCode: classifyWorksheetProcessingFailure(errorSummary),
         durationMs: Math.round((performance.now() - startedAt) * 1000) / 1000,
-        errorSummary: error instanceof Error ? error.message : String(error),
+        errorSummary,
       },
     };
   }
@@ -244,6 +256,19 @@ function assetResult(contentHash: string, catalogContractVersion: string, worksh
   });
   if (!result.success) throw assetsError(REQUEST_SUMMARY, "workbook-request");
   return deepFreeze(structuredClone(result.data));
+}
+
+function classifyWorksheetProcessingFailure(error: unknown): WorksheetProcessingReasonCode {
+  const text = typeof error === "string"
+    ? error
+    : error instanceof Error
+      ? error.message
+      : JSON.stringify(error);
+  const normalized = text.toLowerCase();
+  if (normalized.includes("archive cannot be processed")) return "workbook_archive";
+  if (normalized.includes("request is invalid")) return "invalid_request";
+  if (normalized.includes("input is not permitted")) return "policy_denied";
+  return "unknown";
 }
 
 export function createWorksheetAnalysisAssets(request: unknown): WorksheetAnalysisAssetsResult {

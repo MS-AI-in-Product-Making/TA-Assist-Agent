@@ -149,6 +149,69 @@ describe("worksheet analysis assets", () => {
     expect(parallelResult.assets).toEqual(syncResult);
   });
 
+  it("marks failed parallel pages with workbook_archive reasonCode", async () => {
+    const workbookBytes = createAnonymousWorkbookZip({ xmlParts: {
+      "xl/worksheets/sheet3.xml": '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Factor</t></is></c></row><row r="2"><c r="A2" t="b"><v>1</v></c></row></sheetData></worksheet>',
+    } });
+    const contentHash = createHash("sha256").update(workbookBytes).digest("hex");
+
+    const result = await createWorksheetAnalysisAssetsParallel({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbookBytes,
+      workbookCatalog: {
+        contractVersion: "v1",
+        workbook: { fileName: "anonymous.xlsx", classification: "confidential", contentHash, metadata: { documentNo: "DOC", revision: "R", date: { value: "2026-07-28", sourceCell: "Title Page!A1" } } },
+        analyses: [{ worksheetName: "Analysis-A", toleranceLoopDescription: "anonymous", source: { summarySheet: "Auto Summary", summaryRow: 1, worksheetAnchor: "Analysis-A!A1" } }],
+      },
+      worksheetSelection: { mode: "selected", worksheetNames: ["Analysis-A"] },
+    });
+
+    expect(result.pages).toHaveLength(1);
+    expect(result.pages[0]).toMatchObject({
+      worksheetName: "Analysis-A",
+      status: "failed",
+      reasonCode: "workbook_archive",
+    });
+    expect(result.assets.worksheets[0]).toMatchObject({
+      worksheetName: "Analysis-A",
+      factorTables: [],
+      formulaCells: [],
+      imageAssets: [],
+    });
+  });
+
+  it("marks image-fallback pages with image_extraction_skipped reasonCode", async () => {
+    const workbookBytes = createAnonymousWorkbookZip({ xmlParts: {
+      "xl/worksheets/sheet3.xml": '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Factor</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>anonymous-factor</t></is></c></row></sheetData><drawing r:id="rIdDrawing"/></worksheet>',
+      "xl/worksheets/_rels/sheet3.xml.rels": '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDrawing" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/></Relationships>',
+      "xl/drawings/drawing1.xml": '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><xdr:oneCellAnchor><xdr:from><xdr:col>0</xdr:col><xdr:row>0</xdr:row></xdr:from><xdr:pic><xdr:blipFill><a:blip r:embed="rIdImage"/></xdr:blipFill></xdr:pic><xdr:clientData/></xdr:oneCellAnchor></xdr:wsDr>',
+      "xl/drawings/_rels/drawing1.xml.rels": '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdImage" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="https://anonymous.invalid/image.png" TargetMode="External"/></Relationships>',
+    } });
+    const contentHash = createHash("sha256").update(workbookBytes).digest("hex");
+
+    const result = await createWorksheetAnalysisAssetsParallel({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbookBytes,
+      workbookCatalog: {
+        contractVersion: "v1",
+        workbook: { fileName: "anonymous.xlsx", classification: "confidential", contentHash, metadata: { documentNo: "DOC", revision: "R", date: { value: "2026-07-28", sourceCell: "Title Page!A1" } } },
+        analyses: [{ worksheetName: "Analysis-A", toleranceLoopDescription: "anonymous", source: { summarySheet: "Auto Summary", summaryRow: 1, worksheetAnchor: "Analysis-A!A1" } }],
+      },
+      worksheetSelection: { mode: "selected", worksheetNames: ["Analysis-A"] },
+    });
+
+    expect(result.pages).toHaveLength(1);
+    expect(result.pages[0]).toMatchObject({
+      worksheetName: "Analysis-A",
+      status: "processed",
+      reasonCode: "image_extraction_skipped",
+      imageAssetCount: 0,
+      errorSummary: "image extraction skipped for this worksheet",
+    });
+  });
+
   it("keeps table evidence bounded by blank rows and marks invalid formula evidence per field", () => {
     const workbookBytes = createAnonymousWorkbookZip({ xmlParts: {
       "xl/worksheets/sheet1.xml": '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="2"><c r="A2"><v>Document No.</v></c><c r="B2"><v>DOC-007</v></c></row><row r="4"><c r="A4"><v>Revision:</v></c><c r="B4"><v>R2</v></c></row><row r="6"><c r="A6"><v>Date:</v></c><c r="B6"><v>2026-07-23</v></c></row></sheetData></worksheet>',
