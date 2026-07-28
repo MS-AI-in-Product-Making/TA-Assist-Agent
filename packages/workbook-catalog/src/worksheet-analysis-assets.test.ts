@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
 import { createWorkbookCatalog } from "./workbook-catalog.js";
 import { createAnonymousWorkbookZip } from "./test-support.js";
-import { createWorksheetAnalysisAssets, readWorksheetImageAsset } from "./worksheet-analysis-assets.js";
+import { createWorksheetAnalysisAssets, createWorksheetAnalysisAssetsParallel, readWorksheetImageAsset } from "./worksheet-analysis-assets.js";
 
 function selectionWorkbook(): Uint8Array {
   return createAnonymousWorkbookZip({ xmlParts: {
@@ -101,6 +101,52 @@ describe("worksheet analysis assets", () => {
       workbookCatalog,
       worksheetSelection: { mode: "selected", worksheetNames: ["Unknown-Sheet"] },
     })).toThrow("Worksheet-analysis assets request is invalid.");
+  });
+
+  it("processes selected worksheets in parallel mode with independent review pages", async () => {
+    const workbookBytes = selectionWorkbook();
+    const workbookCatalog = createWorkbookCatalog({ contractVersion: "v1", inputClassification: "confidential", fileName: "anonymous.xlsx", workbookBytes });
+
+    const result = await createWorksheetAnalysisAssetsParallel({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbookBytes,
+      workbookCatalog,
+      worksheetSelection: { mode: "selected", worksheetNames: ["Analysis-B", "Analysis-A"] },
+    });
+
+    expect(result.processingMode).toBe("parallel");
+    expect(result.assets.worksheets.map((worksheet) => worksheet.worksheetName)).toEqual(["Analysis-A", "Analysis-B"]);
+    expect(result.pages).toHaveLength(2);
+    expect(result.pages).toEqual([
+      expect.objectContaining({ worksheetName: "Analysis-A", status: "processed" }),
+      expect.objectContaining({ worksheetName: "Analysis-B", status: "processed" }),
+    ]);
+    expect(result.pages.every((page) => page.durationMs >= 0)).toBe(true);
+    expect(Object.isFrozen(result.pages)).toBe(true);
+    expect(Object.isFrozen(result.pages[0]!)).toBe(true);
+  });
+
+  it("keeps sync and parallel extraction outputs equivalent for all-mode selection", async () => {
+    const workbookBytes = selectionWorkbook();
+    const workbookCatalog = createWorkbookCatalog({ contractVersion: "v1", inputClassification: "confidential", fileName: "anonymous.xlsx", workbookBytes });
+
+    const syncResult = createWorksheetAnalysisAssets({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbookBytes,
+      workbookCatalog,
+      worksheetSelection: { mode: "all" },
+    });
+    const parallelResult = await createWorksheetAnalysisAssetsParallel({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbookBytes,
+      workbookCatalog,
+      worksheetSelection: { mode: "all" },
+    });
+
+    expect(parallelResult.assets).toEqual(syncResult);
   });
 
   it("keeps table evidence bounded by blank rows and marks invalid formula evidence per field", () => {

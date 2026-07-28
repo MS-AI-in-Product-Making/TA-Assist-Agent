@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { performance } from "node:perf_hooks";
 import {
   createTypedError,
   worksheetAnalysisAssetsRequestSchema,
@@ -37,10 +38,34 @@ const HEADER_ALIASES = {
   cpk: ["cpk"],
   assemblyDirection: ["assembly direction"],
 } as const;
+const IMAGE_MEDIA_TYPE = /^(?:image\/[a-z0-9.+-]+|application\/octet-stream)$/;
 
 type FieldName = keyof typeof HEADER_ALIASES;
 type Column = { readonly semanticField: FieldName; readonly sourceColumn: string; readonly headerText: string };
 const NUMERIC_FIELDS = new Set<FieldName>(["nominalValue", "upperTolerance", "lowerTolerance", "longTermSafetyFactor", "upperSpecificationLimit", "lowerSpecificationLimit", "contribution", "sensitivity", "mean", "standardDeviation", "cpk"]);
+
+interface SelectedAnalysis {
+  readonly worksheetName: string;
+  readonly toleranceLoopDescription: string;
+}
+
+export interface WorksheetProcessingPage {
+  readonly worksheetName: string;
+  readonly toleranceLoopDescription: string;
+  readonly status: "processed" | "failed";
+  readonly durationMs: number;
+  readonly factorTableCount?: number;
+  readonly factorRowCount?: number;
+  readonly formulaCellCount?: number;
+  readonly imageAssetCount?: number;
+  readonly errorSummary?: string;
+}
+
+export interface ParallelWorksheetAnalysisAssetsResult {
+  readonly processingMode: "parallel";
+  readonly assets: WorksheetAnalysisAssetsResult;
+  readonly pages: readonly WorksheetProcessingPage[];
+}
 
 function assetsError(summary: string, reference: string, code: "validation_error" | "policy_denied" = "validation_error"): Error {
   return createTypedError({ code, summary, suggestedAction: "Provide a supported confidential worksheet-analysis assets request.", affectedInputReferences: [reference] });
@@ -133,18 +158,20 @@ function sheetAssets(worksheet: OoxmlWorksheet, worksheetName: string, tolerance
     formula: cell.formula!,
     cachedValue: !cell.cachedValue?.trim() ? { status: "unavailable" as const, reasonCode: "missing_cached_value" as const } : { status: "available" as const, rawText: cell.cachedValue },
   }));
-  const imageAssets = worksheet.images.map((image) => ({
-    contentHash: image.contentHash,
-    mediaType: image.mediaType,
-    byteLength: image.byteLength,
-    sourcePart: image.sourcePart,
-    drawingSourcePart: image.drawingSourcePart,
-    anchor: image.anchor ? { status: "available" as const, ...image.anchor } : { status: "unavailable" as const, reasonCode: "unparsed_anchor" as const },
-  }));
+  const imageAssets = worksheet.images
+    .map((image) => ({
+      contentHash: image.contentHash,
+      mediaType: image.mediaType.toLowerCase(),
+      byteLength: image.byteLength,
+      sourcePart: image.sourcePart,
+      drawingSourcePart: image.drawingSourcePart,
+      anchor: image.anchor ? { status: "available" as const, ...image.anchor } : { status: "unavailable" as const, reasonCode: "unparsed_anchor" as const },
+    }))
+    .filter((image) => image.byteLength > 0 && IMAGE_MEDIA_TYPE.test(image.mediaType));
   return { worksheetName, toleranceLoopDescription, factorTables, formulaCells, imageAssets };
 }
 
-function selectedAnalyses(request: { readonly workbookCatalog: { readonly analyses: readonly { readonly worksheetName: string; readonly toleranceLoopDescription: string }[] }; readonly worksheetSelection: { readonly mode: "all" } | { readonly mode: "selected"; readonly worksheetNames: readonly string[] } | undefined }) {
+function selectedAnalyses(request: { readonly workbookCatalog: { readonly analyses: readonly SelectedAnalysis[] }; readonly worksheetSelection: { readonly mode: "all" } | { readonly mode: "selected"; readonly worksheetNames: readonly string[] } | undefined }) {
   const analyses = request.workbookCatalog.analyses;
   const selection = request.worksheetSelection;
   if (!selection || selection.mode === "all") return analyses;
@@ -154,6 +181,69 @@ function selectedAnalyses(request: { readonly workbookCatalog: { readonly analys
   const filtered = analyses.filter((analysis) => selected.has(analysis.worksheetName));
   if (filtered.length === 0) throw assetsError(REQUEST_SUMMARY, "workbook-catalog");
   return filtered;
+}
+
+async function processWorksheetPage(
+  workbookBytes: Uint8Array,
+  analysis: SelectedAnalysis,
+): Promise<{ readonly page: WorksheetProcessingPage; readonly worksheetAsset?: ReturnType<typeof sheetAssets> }> {
+  const startedAt = performance.now();
+  try {
+    let worksheet: OoxmlWorksheet | undefined;
+    let imageFallback = false;
+    try {
+      worksheet = readOoxmlWorkbook(workbookBytes, [analysis.worksheetName]).worksheets.get(analysis.worksheetName);
+    } catch {
+      // Keep a worksheet independently reviewable even when embedded media is malformed.
+      worksheet = readOoxmlWorkbook(workbookBytes, [analysis.worksheetName], false).worksheets.get(analysis.worksheetName);
+      imageFallback = true;
+    }
+    if (!worksheet) throw assetsError(REQUEST_SUMMARY, "workbook-catalog");
+    const worksheetAsset = sheetAssets(worksheet, analysis.worksheetName, analysis.toleranceLoopDescription);
+    const factorTables = worksheetAsset.factorTables as readonly { readonly rows: readonly unknown[] }[];
+    const factorRowCount = factorTables.reduce((sum, table) => sum + table.rows.length, 0);
+    return {
+      worksheetAsset,
+      page: {
+        worksheetName: analysis.worksheetName,
+        toleranceLoopDescription: analysis.toleranceLoopDescription,
+        status: "processed",
+        durationMs: Math.round((performance.now() - startedAt) * 1000) / 1000,
+        factorTableCount: worksheetAsset.factorTables.length,
+        factorRowCount,
+        formulaCellCount: worksheetAsset.formulaCells.length,
+        imageAssetCount: worksheetAsset.imageAssets.length,
+        ...(imageFallback ? { errorSummary: "image extraction skipped for this worksheet" } : {}),
+      },
+    };
+  } catch (error) {
+    return {
+      worksheetAsset: {
+        worksheetName: analysis.worksheetName,
+        toleranceLoopDescription: analysis.toleranceLoopDescription,
+        factorTables: [],
+        formulaCells: [],
+        imageAssets: [],
+      },
+      page: {
+        worksheetName: analysis.worksheetName,
+        toleranceLoopDescription: analysis.toleranceLoopDescription,
+        status: "failed",
+        durationMs: Math.round((performance.now() - startedAt) * 1000) / 1000,
+        errorSummary: error instanceof Error ? error.message : String(error),
+      },
+    };
+  }
+}
+
+function assetResult(contentHash: string, catalogContractVersion: string, worksheets: readonly ReturnType<typeof sheetAssets>[]): WorksheetAnalysisAssetsResult {
+  const result = worksheetAnalysisAssetsResultSchema.safeParse({
+    contractVersion: "v1",
+    workbook: { classification: "confidential", contentHash, catalogContractVersion },
+    worksheets,
+  });
+  if (!result.success) throw assetsError(REQUEST_SUMMARY, "workbook-request");
+  return deepFreeze(structuredClone(result.data));
 }
 
 export function createWorksheetAnalysisAssets(request: unknown): WorksheetAnalysisAssetsResult {
@@ -175,9 +265,33 @@ export function createWorksheetAnalysisAssets(request: unknown): WorksheetAnalys
       if (!worksheet) throw assetsError(REQUEST_SUMMARY, "workbook-catalog");
       return sheetAssets(worksheet, analysis.worksheetName, analysis.toleranceLoopDescription);
     });
-    const result = worksheetAnalysisAssetsResultSchema.safeParse({ contractVersion: "v1", workbook: { classification: "confidential", contentHash, catalogContractVersion: parsed.data.workbookCatalog.contractVersion }, worksheets });
-    if (!result.success) throw assetsError(REQUEST_SUMMARY, "workbook-request");
-    return deepFreeze(structuredClone(result.data));
+    return assetResult(contentHash, parsed.data.workbookCatalog.contractVersion, worksheets);
+  } catch (error) {
+    if (error instanceof Error && (error as { summary?: string }).summary === REQUEST_SUMMARY) throw error;
+    throw assetsError(ARCHIVE_SUMMARY, "workbook-archive");
+  }
+}
+
+export async function createWorksheetAnalysisAssetsParallel(request: unknown): Promise<ParallelWorksheetAnalysisAssetsResult> {
+  let classification: unknown;
+  try { classification = (request as { inputClassification?: unknown })?.inputClassification; } catch { throw assetsError(REQUEST_SUMMARY, "workbook-request"); }
+  if (typeof classification === "string" && classification !== "confidential") throw assetsError(POLICY_SUMMARY, "workbook-request", "policy_denied");
+  const parsed = worksheetAnalysisAssetsRequestSchema.safeParse(request);
+  if (!parsed.success) throw assetsError(REQUEST_SUMMARY, "workbook-request");
+  try {
+    const contentHash = createHash("sha256").update(parsed.data.workbookBytes).digest("hex");
+    if (contentHash !== parsed.data.workbookCatalog.workbook.contentHash) throw assetsError(REQUEST_SUMMARY, "workbook-catalog");
+    const analyses = selectedAnalyses({
+      workbookCatalog: parsed.data.workbookCatalog,
+      worksheetSelection: parsed.data.worksheetSelection,
+    });
+    const processed = await Promise.all(analyses.map((analysis) => processWorksheetPage(parsed.data.workbookBytes, analysis)));
+    const worksheets = processed
+      .map((entry) => entry.worksheetAsset)
+      .filter((entry): entry is ReturnType<typeof sheetAssets> => entry !== undefined);
+    const assets = assetResult(contentHash, parsed.data.workbookCatalog.contractVersion, worksheets);
+    const pages = deepFreeze(structuredClone(processed.map((entry) => entry.page)));
+    return deepFreeze({ processingMode: "parallel", assets, pages });
   } catch (error) {
     if (error instanceof Error && (error as { summary?: string }).summary === REQUEST_SUMMARY) throw error;
     throw assetsError(ARCHIVE_SUMMARY, "workbook-archive");
