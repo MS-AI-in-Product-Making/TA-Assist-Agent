@@ -41,6 +41,8 @@ import {
   worksheetAnalysisAssetsResultSchema,
   worksheetImageReadRequestSchema,
   worksheetImageReadResultSchema,
+  worksheetSelectionViewRequestSchema,
+  worksheetSelectionViewResultSchema,
   workflowRequestSchema,
   workflowResultSchema,
 } from "./index.js";
@@ -1410,5 +1412,69 @@ describe("F2.3 v2 unified exception resolution contracts", () => {
         invalidCandidateCount: 0,
       },
     }).status).toBe("readyToContinue");
+  });
+});
+
+describe("worksheet selection view contracts", () => {
+  const workbookCatalog = {
+    contractVersion: "v1",
+    workbook: {
+      fileName: "anonymous-ta.xlsx",
+      classification: "confidential",
+      contentHash: "a".repeat(64),
+      metadata: {
+        documentNo: "TA-001",
+        revision: "A",
+        date: { value: "2026-07-24", sourceCell: "Title Page!B6" },
+      },
+    },
+    analyses: [
+      {
+        worksheetName: "Analysis-A",
+        toleranceLoopDescription: "First tolerance loop",
+        source: { summarySheet: "Auto Summary", summaryRow: 10, worksheetAnchor: "Analysis-A!A1" },
+      },
+    ],
+  };
+
+  const request = {
+    contractVersion: "v1",
+    inputClassification: "confidential",
+    workbookCatalog,
+  };
+
+  const result = {
+    contractVersion: "v1",
+    inputClassification: "confidential",
+    workbook: {
+      fileName: "anonymous-ta.xlsx",
+      classification: "confidential",
+      contentHash: "a".repeat(64),
+      revision: "A",
+      date: { value: "2026-07-24", sourceCell: "Title Page!B6" },
+    },
+    worksheets: [
+      {
+        selectionIndex: 1,
+        worksheetName: "Analysis-A",
+        toleranceLoopDescription: "First tolerance loop",
+        source: { summarySheet: "Auto Summary", summaryRow: 10, worksheetAnchor: "Analysis-A!A1" },
+      },
+    ],
+  };
+
+  it("accepts confidential worksheet selection view request/result", () => {
+    expect(worksheetSelectionViewRequestSchema.parse(request)).toEqual(request);
+    expect(worksheetSelectionViewResultSchema.parse(result)).toEqual(result);
+  });
+
+  it.each([
+    ["public input", { ...request, inputClassification: "public" }],
+    ["extra request field", { ...request, unexpected: true }],
+    ["zero selection index", { ...result, worksheets: [{ ...result.worksheets[0], selectionIndex: 0 }] }],
+    ["extra result field", { ...result, workbook: { ...result.workbook, metadata: {} } }],
+  ])("rejects worksheet selection view contract with %s", (_description, value) => {
+    const schema = "workbookCatalog" in value ? worksheetSelectionViewRequestSchema : worksheetSelectionViewResultSchema;
+    expect(schema.safeParse(value).success).toBe(false);
   });
 });

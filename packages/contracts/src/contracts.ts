@@ -292,6 +292,48 @@ export const workbookCatalogResultSchema = z
   })
   .strict();
 
+export const worksheetSelectionViewRequestSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    inputClassification: z.literal("confidential"),
+    workbookCatalog: workbookCatalogResultSchema,
+  })
+  .strict();
+
+export const worksheetSelectionViewResultSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    inputClassification: z.literal("confidential"),
+    workbook: z
+      .object({
+        fileName: workbookCatalogFileNameSchema,
+        classification: z.literal("confidential"),
+        contentHash: z.string().regex(/^[a-f0-9]{64}$/),
+        revision: z.string().min(1),
+        date: workbookCatalogDateSchema,
+      })
+      .strict(),
+    worksheets: z
+      .array(
+        z
+          .object({
+            selectionIndex: z.number().int().positive(),
+            worksheetName: z.string().min(1),
+            toleranceLoopDescription: z.string().min(1),
+            source: z
+              .object({
+                summarySheet: z.literal("Auto Summary"),
+                summaryRow: z.number().int().positive(),
+                worksheetAnchor: z.string().regex(/^[^!]+!A1$/),
+              })
+              .strict(),
+          })
+          .strict(),
+      )
+      .min(1),
+  })
+  .strict();
+
 const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 
 const nonEmptyWorkbookBytesSchema = z.instanceof(Uint8Array).refine(
@@ -1329,6 +1371,8 @@ export type KnowledgeBaseManifestResponse = z.infer<typeof knowledgeBaseManifest
 export type KnowledgeBaseQueryResult = z.infer<typeof knowledgeBaseQueryResultSchema>;
 export type WorkbookCatalogRequest = z.infer<typeof workbookCatalogRequestSchema>;
 export type WorkbookCatalogResult = z.infer<typeof workbookCatalogResultSchema>;
+export type WorksheetSelectionViewRequest = z.infer<typeof worksheetSelectionViewRequestSchema>;
+export type WorksheetSelectionViewResult = z.infer<typeof worksheetSelectionViewResultSchema>;
 export type WorksheetAnalysisAssetsRequest = z.infer<typeof worksheetAnalysisAssetsRequestSchema>;
 export type WorksheetAnalysisAssetsResult = z.infer<typeof worksheetAnalysisAssetsResultSchema>;
 export type WorksheetImageReadRequest = z.infer<typeof worksheetImageReadRequestSchema>;
