@@ -1,7 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { createAuditStore, hashUtf8, type AuditStore } from "@ai-assist/audit";
 import { MockAdapter } from "@ai-assist/adapters";
-import { createTypedError, type DataClassification, typedErrorSchema, type TypedError } from "@ai-assist/contracts";
+import {
+  createTypedError,
+  type DataClassification,
+  type PublicWorkflowResult,
+  typedErrorSchema,
+  workflowRequestSchema,
+  workflowResultSchema,
+  type TypedError,
+} from "@ai-assist/contracts";
 import { createRunStore } from "@ai-assist/memory";
 import {
   runRegisteredSkill,
@@ -36,6 +44,11 @@ export interface WorkflowResult {
 export interface RunSmokeWorkflowOptions {
   readonly rootDir: string;
   readonly request?: unknown;
+}
+
+export interface RunPublicWorkflowOptions {
+  readonly rootDir: string;
+  readonly request: unknown;
 }
 
 export interface SmokeWorkflowRequest {
@@ -93,6 +106,47 @@ export async function runSmokeWorkflow(options: RunSmokeWorkflowOptions): Promis
       { skillId: "classification-check", input: { classification: request.data.classification } },
     ],
   });
+}
+
+export async function runPublicWorkflow(options: RunPublicWorkflowOptions): Promise<PublicWorkflowResult> {
+  const request = validatePublicWorkflowRequest(options.request);
+  const workflow = await runSmokeWorkflow({
+    rootDir: options.rootDir,
+    request: {
+      version: 1,
+      kind: "public-smoke-request",
+      data: { message: request.message, classification: "public" },
+    },
+  });
+  const executedSkillIds = workflow.skillResults.map((result) => result.skillId);
+
+  if (executedSkillIds.length !== 2 || executedSkillIds[0] !== "public-echo" || executedSkillIds[1] !== "classification-check") {
+    throw createTypedError({
+      code: "internal_error",
+      summary: "Public workflow produced an unexpected Skill sequence.",
+      suggestedAction: "Inspect the governed public workflow registration.",
+      affectedInputReferences: [],
+    });
+  }
+
+  const parsed = workflowResultSchema.safeParse({
+    contractVersion: "v1",
+    workflowId: "public-smoke",
+    outputClassification: "public",
+    runId: workflow.runId,
+    manifestValid: workflow.manifestValid,
+    executedSkillIds,
+  });
+  if (!parsed.success) {
+    throw createTypedError({
+      code: "internal_error",
+      summary: "Public workflow result is invalid.",
+      suggestedAction: "Inspect the governed public workflow implementation.",
+      affectedInputReferences: [],
+    });
+  }
+
+  return deepFreeze(structuredClone(parsed.data));
 }
 
 export async function runWorkflow(options: RunWorkflowOptions): Promise<WorkflowResult> {
@@ -394,4 +448,42 @@ function safeAuditDiagnostic(error: TypedError): Pick<TypedError, "code" | "runI
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
+}
+
+function validatePublicWorkflowRequest(request: unknown) {
+  const classification = isRecord(request) ? readOwnDataProperty(request, "inputClassification") : undefined;
+  if (typeof classification === "string" && classification !== "public") {
+    throw createTypedError({
+      code: "policy_denied",
+      summary: "Public workflows only accept public input.",
+      suggestedAction: "Provide a public workflow request.",
+      affectedInputReferences: ["workflow-request-v1"],
+    });
+  }
+
+  try {
+    const parsed = workflowRequestSchema.safeParse(request);
+    if (parsed.success) return parsed.data;
+  } catch {
+    throw invalidPublicWorkflowRequest();
+  }
+  throw invalidPublicWorkflowRequest();
+}
+
+function invalidPublicWorkflowRequest(): Error {
+  throw createTypedError({
+    code: "validation_error",
+    summary: "Public workflow input is invalid.",
+    suggestedAction: "Provide a valid public workflow request.",
+    affectedInputReferences: ["workflow-request-v1"],
+  });
+}
+
+function deepFreeze<Value>(value: Value, seen = new WeakSet<object>()): Value {
+  if (value !== null && typeof value === "object" && !seen.has(value)) {
+    seen.add(value);
+    for (const nested of Object.values(value)) deepFreeze(nested, seen);
+    Object.freeze(value);
+  }
+  return value;
 }
