@@ -31,7 +31,7 @@ F8 在治理注册中继续保持 `available`，其含义仍严格限定为匿�
 公共入口为：
 
 ```ts
-runPublicWorkflow({ rootDir, request: unknown }): Promise<WorkflowResult>
+runPublicWorkflow({ rootDir, request: unknown }): Promise<PublicWorkflowResult>
 ```
 
 它先解析 `workflow-request-v1`，再将验证后的 `message` 映射为现有 `runSmokeWorkflow` 的私有输入。它验证内部运行只完成固定的 `public-echo` 和 `classification-check` 两项受治理 Skill，并以 `workflow-result-v1` 创建、克隆并递归冻结公开结果。
