@@ -9,6 +9,14 @@ export {
 	createInternalKnowledgeSnapshot,
 } from "./internal/validation.js";
 export {
+	createInterpretationKnowledgeSnapshot,
+} from "./interpretation/validation.js";
+export type {
+	DeepReadonly,
+	InterpretationKnowledgeSeedPackage,
+	InterpretationKnowledgeSnapshot,
+} from "./interpretation/types.js";
+export {
 	loadInternalToleranceGuidance,
 	type InternalToleranceGuidance,
 } from "./internal/query.js";
