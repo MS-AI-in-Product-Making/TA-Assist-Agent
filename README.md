@@ -44,8 +44,9 @@ worksheet catalog，并从 catalog 确认的 worksheet 提取因子表、公式�
 不执行 OCR、渲染、风险解释、行动建议或 workbook 写回，也不调用外部服务、不跟踪或导出原始
 `.xls`、`.xlsx` 或 `.xlsm`（除非另行批准受控白名单）。F2.1 只接受 F1.1 confidential 资产，对九项必填因子字段执行严格完整性阻断；
 Drawing Number 与 DIM/Characteristic ID 只形成非阻断提示。F2.2 仅在 F2.1 ready 且内容哈希绑定时，
-按类别、`mm` 公差范围和受控 distribution 别名与 F0 比对；所有差异均为非阻断信号。根 F2、
-F2.3-F2.4 和 F3-F7 保持不可用，F4 返回 `feature_not_available`，F8 仅限用于受治理 Skill 运行时验收的匿名 `public`
+按类别、`mm` 公差范围和受控 distribution 别名与 F0 比对；所有差异均为非阻断信号。F2.3
+提供受限的非阻断例外处理，F2.4 提供标识符质量检查；根 F2 和 F3-F7 保持不可用，F4 返回
+`feature_not_available`，F8 仅限用于受治理 Skill 运行时验收的匿名 `public`
 fixture。此阶段不包含真实工程知识、外部 Adapter、模型、ADO、SharePoint 或 UI 行为。
 
 - [Phase 0 设计](docs/superpowers/specs/2026-07-22-ai-assist-agent-foundation-design.md)
