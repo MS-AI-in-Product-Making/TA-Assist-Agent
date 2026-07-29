@@ -53,23 +53,42 @@ describe("policy gate", () => {
     });
   });
 
-  it("reports F0 as the available public read-only knowledge base", () => {
-    expect(getFeatureStatus("F0")).toEqual({
+  it("reports F0 as three independent available read-only knowledge modules", () => {
+    const feature = getFeatureStatus("F0");
+
+    expect(feature).toMatchObject({
       featureId: "F0",
       title: "知识库",
       status: "available",
-      dependsOn: ["knowledge-base-v1"],
       inputContractId: "knowledge-base-query-request-v1",
       outputContractId: "knowledge-base-query-result-v1",
-      maximumClassification: "public",
-      acceptanceChecks: [
+      maximumClassification: "internal",
+      disableBehavior: "return feature_not_available",
+    });
+    expect(feature?.dependsOn).toEqual(expect.arrayContaining([
+      "knowledge-base-v1",
+      "internal-tolerance-guidance-v1",
+      "interpretation-rules-v1",
+    ]));
+    expect(feature?.acceptanceChecks).toEqual(
+      expect.arrayContaining([
         "anonymous-knowledge-base-fixture",
         "unknown-capability-t0-fixture",
         "knowledge-base-integrity-check",
-      ],
-      externalPrerequisites: ["approved-public-knowledge-snapshot"],
-      disableBehavior: "return feature_not_available",
-    });
+        "internal-tolerance-guidance-integrity-check",
+        "guidance-only-result-fixture",
+        "internal-source-evidence-dto",
+        "interpretation-rules-integrity-check",
+        "internal-interpretation-source-evidence",
+      ]),
+    );
+    expect(feature?.externalPrerequisites).toEqual(
+      expect.arrayContaining([
+        "approved-public-knowledge-snapshot",
+        "approved-internal-knowledge-snapshot",
+        "approved-interpretation-rules-snapshot",
+      ]),
+    );
   });
 
   it("reports F1 as the available TA report parsing and asset preparation feature", () => {
@@ -212,11 +231,12 @@ describe("policy gate", () => {
   });
 
   it("keeps F5 unavailable with its established interpretation contracts", () => {
-    expect(getFeatureStatus("F5")).toEqual({
+    const feature = getFeatureStatus("F5");
+
+    expect(feature).toMatchObject({
       featureId: "F5",
       title: "客观结果解释",
       status: "unavailable",
-      dependsOn: ["calculation-worker-v1", "knowledge-base-v1"],
       inputContractId: "interpretation-request-v1",
       outputContractId: "interpretation-result-v1",
       maximumClassification: "confidential",
@@ -224,14 +244,20 @@ describe("policy gate", () => {
       externalPrerequisites: ["approved-knowledge-base"],
       disableBehavior: "return feature_not_available",
     });
+    expect(feature?.dependsOn).toEqual(expect.arrayContaining([
+      "calculation-worker-v1",
+      "knowledge-base-v1",
+      "interpretation-rules-v1",
+    ]));
   });
 
   it("keeps F6 unavailable with its established comparison contracts", () => {
-    expect(getFeatureStatus("F6")).toEqual({
+    const feature = getFeatureStatus("F6");
+
+    expect(feature).toMatchObject({
       featureId: "F6",
       title: "可比较的方案选项",
       status: "unavailable",
-      dependsOn: ["knowledge-base-v1", "comparison-engine-v1"],
       inputContractId: "comparison-request-v1",
       outputContractId: "comparison-result-v1",
       maximumClassification: "confidential",
@@ -239,6 +265,11 @@ describe("policy gate", () => {
       externalPrerequisites: ["approved-knowledge-base"],
       disableBehavior: "return feature_not_available",
     });
+    expect(feature?.dependsOn).toEqual(expect.arrayContaining([
+      "knowledge-base-v1",
+      "comparison-engine-v1",
+      "interpretation-rules-v1",
+    ]));
   });
 
   it("keeps F7 unavailable with its established Cpk contracts", () => {
