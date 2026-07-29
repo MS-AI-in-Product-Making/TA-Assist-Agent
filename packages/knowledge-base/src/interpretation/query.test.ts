@@ -108,20 +108,66 @@ describe("interpretation rule evaluation", () => {
     expect(result.matchedRules.map(({ entryId }) => entryId)).toContain("performance-sigma-meets-target");
   });
 
-  it("emits a contributor concentration signal and its related improvement option", () => {
-    const result = createRules().evaluateInterpretationRules(cpkRequest);
+  it("emits contributor guidance without exposing the controlled contributor reference", () => {
+    const marker = "sensitive-contributor-reference";
+    const result = createRules().evaluateInterpretationRules({
+      ...cpkRequest,
+      facts: {
+        ...cpkRequest.facts,
+        contributors: [{ reference: marker, contributionPercent: 62 }],
+      },
+    });
 
     expect(result.matchedRules).toEqual(expect.arrayContaining([
       expect.objectContaining({
         entryId: "root-cause-contributor-concentration",
         entryType: "root-cause-signal",
-        relatedFactReferences: ["contributors", "contributors:dimension-a"],
+        relatedFactReferences: ["contributors"],
       }),
       expect.objectContaining({
         entryId: "improvement-reduce-contributor",
         entryType: "improvement-option",
-        relatedFactReferences: ["contributors", "contributors:dimension-a"],
+        relatedFactReferences: ["contributors"],
       }),
+    ]));
+    expect(JSON.stringify(result)).not.toContain(marker);
+  });
+
+  it("requires all signal and option dependencies to match", () => {
+    const seed = createValidInterpretationKnowledgeSeedPackage();
+    const belowRule = seed.entries.find(({ entryId }) => entryId === "performance-cpk-below-target")!;
+    const secondPerformance = structuredClone(belowRule);
+    secondPerformance.entryId = "performance-cpk-below-target-secondary";
+    secondPerformance.comparison = "less-than";
+    const firstSignal = seed.entries.find(({ entryId }) => entryId === "root-cause-contributor-concentration")!;
+    firstSignal.relatedEntryIds = [belowRule.entryId, secondPerformance.entryId];
+    const secondSignal = structuredClone(firstSignal);
+    secondSignal.entryId = "root-cause-contributor-secondary";
+    secondSignal.activationCondition.thresholdPercent = 70;
+    const option = seed.entries.find(({ entryId }) => entryId === "improvement-reduce-contributor")!;
+    option.relatedEntryIds = [firstSignal.entryId, secondSignal.entryId];
+    seed.entries.push(secondPerformance, secondSignal);
+    refreshInterpretationKnowledgeManifest(seed);
+    const rules = createInterpretationRules(createInterpretationKnowledgeSnapshot(seed));
+
+    const oneSignal = rules.evaluateInterpretationRules(cpkRequest);
+    expect(oneSignal.matchedRules.map(({ entryId }) => entryId)).toContain(firstSignal.entryId);
+    expect(oneSignal.matchedRules.map(({ entryId }) => entryId)).not.toContain(secondSignal.entryId);
+    expect(oneSignal.matchedRules.map(({ entryId }) => entryId)).not.toContain(option.entryId);
+
+    const bothSignals = rules.evaluateInterpretationRules({
+      ...cpkRequest,
+      facts: {
+        ...cpkRequest.facts,
+        contributors: [{ reference: "dimension-a", contributionPercent: 70 }],
+      },
+    });
+    expect(bothSignals.matchedRules.map(({ entryId }) => entryId)).toEqual(expect.arrayContaining([
+      belowRule.entryId,
+      secondPerformance.entryId,
+      firstSignal.entryId,
+      secondSignal.entryId,
+      option.entryId,
     ]));
   });
 
@@ -282,7 +328,7 @@ describe("interpretation rule evaluation", () => {
       ({ entryId }) => entryId === "root-cause-contributor-concentration",
     )!);
     signal.entryId = "root-cause-secondary";
-    signal.relatedEntryIds = [performance.entryId, "metric-cpk"];
+    signal.relatedEntryIds = [performance.entryId];
     const option = structuredClone(seed.entries.find(
       ({ entryId }) => entryId === "improvement-reduce-contributor",
     )!);

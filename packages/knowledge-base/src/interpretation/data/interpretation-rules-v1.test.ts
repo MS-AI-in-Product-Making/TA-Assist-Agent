@@ -172,7 +172,7 @@ describe("reviewed interpretation-rules-v1 production snapshot", () => {
     expect(seed.entries.find(({ entryId }) => entryId === "performance-cpk-below-target")?.relatedEntryIds)
       .toEqual(["metric-cpk"]);
     expect(seed.entries.find(({ entryId }) => entryId === "root-cause-contributor-concentration")?.relatedEntryIds)
-      .toEqual(["performance-cpk-below-target", "metric-cpk"]);
+      .toEqual(["performance-cpk-below-target"]);
     expect(seed.entries.find(({ entryId }) => entryId === "improvement-reduce-contributor")?.relatedEntryIds)
       .toEqual(["root-cause-contributor-concentration"]);
     expect(seed.entries.flatMap(({ relatedEntryIds }) => relatedEntryIds).every((id) => ids.has(id))).toBe(true);
@@ -191,8 +191,8 @@ describe("reviewed interpretation-rules-v1 production snapshot", () => {
     }));
     expect(seed.manifest).toMatchObject({
       sourcesHash: "a32bd4cf0dc80a97a212b0419fa3a2a7c2ae3522e7567fba238414f0dc5ef3b9",
-      entriesHash: "de2b1cb2e4bee1b609c91edba891c1973982e7f41b6fa7eb00ab95eacfe46a52",
-      contentHash: "77346326e3015fbcc04485a2ccec916b4bdc0da73305cce80d4e93e1811f7351",
+      entriesHash: "51ef30b60057c90e78811c6518d0622899038a4f6392cb942ea8b0a5d54eda11",
+      contentHash: "5a4e355821b31718a2af34316a259c4cc736a1fad3a2c52575bfaf0a80368c71",
     });
   });
 });

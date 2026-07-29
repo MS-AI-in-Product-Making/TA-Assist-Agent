@@ -25,7 +25,7 @@ const ENTRY_TYPES = [
 const ALLOWED_RELATED_TYPES: Readonly<Record<InterpretationEntryType, readonly InterpretationEntryType[]>> = {
   "metric-definition": [],
   "performance-rule": ["metric-definition"],
-  "root-cause-signal": ["performance-rule", "metric-definition"],
+  "root-cause-signal": ["performance-rule"],
   "improvement-option": ["root-cause-signal"],
   "decision-policy": ENTRY_TYPES,
 };
@@ -44,6 +44,7 @@ function validateSeedPackage(value: unknown): InterpretationKnowledgeSeedPackage
   validateProvenance(parsed);
   validateManifest(parsed);
   validatePerformanceRequiredFacts(parsed.entries);
+  validatePerformanceOutcomes(parsed.entries);
   validateRootCauseRequiredFacts(parsed.entries);
   validateRelations(parsed.entries);
   return parsed;
@@ -110,6 +111,32 @@ function validateRootCauseRequiredFacts(entries: readonly InterpretationKnowledg
   }
 }
 
+const COMPARISON_STATES = {
+  "greater-than-or-equal": ["zero", "positive"],
+  "greater-than": ["positive"],
+  "less-than-or-equal": ["negative", "zero"],
+  "less-than": ["negative"],
+  equal: ["zero"],
+  "not-equal": ["negative", "positive"],
+} as const;
+
+function validatePerformanceOutcomes(entries: readonly InterpretationKnowledgeEntry[]): void {
+  const rules = entries.filter((entry) => entry.entryType === "performance-rule");
+  for (let firstIndex = 0; firstIndex < rules.length; firstIndex += 1) {
+    const first = rules[firstIndex]!;
+    for (const second of rules.slice(firstIndex + 1)) {
+      if (first.metric !== second.metric
+        || first.applicability.analysisDimension !== second.applicability.analysisDimension
+        || first.applicability.method !== second.applicability.method
+        || first.outcomeWhenMatched === second.outcomeWhenMatched) continue;
+      const firstStates = new Set<string>(COMPARISON_STATES[first.comparison]);
+      if (COMPARISON_STATES[second.comparison].some((state) => firstStates.has(state))) {
+        throw dependencyError([first.entryId, second.entryId]);
+      }
+    }
+  }
+}
+
 function validateRelations(entries: readonly InterpretationKnowledgeEntry[]): void {
   const entriesById = new Map(entries.map((entry) => [entry.entryId, entry]));
   for (const entry of entries) {
@@ -130,6 +157,10 @@ function validateRelations(entries: readonly InterpretationKnowledgeEntry[]): vo
         || relatedDefinition.metric !== entry.metric) {
         throw dependencyError([entry.entryId]);
       }
+    }
+    if ((entry.entryType === "root-cause-signal" || entry.entryType === "improvement-option")
+      && entry.relatedEntryIds.length === 0) {
+      throw dependencyError([entry.entryId]);
     }
   }
 

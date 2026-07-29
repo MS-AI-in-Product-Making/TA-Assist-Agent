@@ -219,6 +219,49 @@ describe("interpretation-rules-v1 knowledge snapshots", () => {
     expectDependencyError(seed);
   });
 
+  it("requires every root-cause relation to reference a performance rule", () => {
+    const seed = createValidInterpretationKnowledgeSeedPackage();
+    const signal = seed.entries.find((entry) => entry.entryType === "root-cause-signal")!;
+    signal.relatedEntryIds = ["performance-cpk-below-target", "metric-cpk"];
+    refreshInterpretationKnowledgeManifest(seed);
+    expectDependencyError(seed);
+  });
+
+  it("requires root-cause signals and improvement options to have executable dependencies", () => {
+    for (const entryType of ["root-cause-signal", "improvement-option"] as const) {
+      const seed = createValidInterpretationKnowledgeSeedPackage();
+      seed.entries.find((entry) => entry.entryType === entryType)!.relatedEntryIds = [];
+      refreshInterpretationKnowledgeManifest(seed);
+      expectDependencyError(seed);
+    }
+  });
+
+  it.each([
+    ["overlapping positive states", "greater-than-or-equal", "meets-target", "greater-than", "below-target", false],
+    ["disjoint states", "greater-than-or-equal", "meets-target", "less-than", "below-target", true],
+    ["overlapping zero boundary", "greater-than-or-equal", "meets-target", "less-than-or-equal", "below-target", false],
+    ["overlap with the same outcome", "greater-than-or-equal", "meets-target", "greater-than", "meets-target", true],
+  ] as const)("validates performance predicate outcomes for %s", (
+    _description,
+    firstComparison,
+    firstOutcome,
+    secondComparison,
+    secondOutcome,
+    accepted,
+  ) => {
+    const seed = createValidInterpretationKnowledgeSeedPackage();
+    const rules = seed.entries.filter((entry) => entry.entryType === "performance-rule" && entry.metric === "cpk");
+    rules[0]!.comparison = firstComparison;
+    rules[0]!.outcomeWhenMatched = firstOutcome;
+    rules[1]!.comparison = secondComparison;
+    rules[1]!.outcomeWhenMatched = secondOutcome;
+    refreshInterpretationKnowledgeManifest(seed);
+
+    const action = () => createInterpretationKnowledgeSnapshot(seed);
+    if (accepted) expect(action).not.toThrow();
+    else expectDependencyError(seed);
+  });
+
   it("rejects a relation cycle", () => {
     const seed = createValidInterpretationKnowledgeSeedPackage();
     const secondDecision = structuredClone(seed.entries[4]!);

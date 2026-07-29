@@ -2015,6 +2015,14 @@ describe("interpretation rules contracts", () => {
     }).resolvedTargets).toEqual({
       sigma: { value: 4.5, source: "controlled-default" },
     });
+    expect(interpretationRuleEvaluationRequestSchema.safeParse({
+      ...request,
+      facts: { ...request.facts, targetCpk: { value: 1.33, source: "controlled-default" } },
+    }).success).toBe(false);
+    expect(interpretationRuleEvaluationRequestSchema.safeParse({
+      ...request,
+      facts: { ...request.facts, targetSigma: { value: 4.5, source: "controlled-default" } },
+    }).success).toBe(false);
     expect(interpretationRuleEvaluationSchema.safeParse({
       ...evaluation,
       resolvedTargets: { cpk: 1.33 },
@@ -2133,6 +2141,15 @@ describe("interpretation rules contracts", () => {
     expect(interpretationKnowledgeEntrySchema.safeParse({ ...entries[1], target: 1 }).success).toBe(false);
     expect(interpretationKnowledgeEntrySchema.safeParse({ ...entries[3], rank: 1 }).success).toBe(false);
     expect(interpretationKnowledgeEntrySchema.safeParse({ ...entries[3], recommendation: "Do this first." }).success).toBe(false);
+  });
+
+  it("accepts only the controlled performance outcomes", () => {
+    expect(interpretationKnowledgeEntrySchema.safeParse({
+      ...entries[1], outcomeWhenMatched: "unexpected-outcome",
+    }).success).toBe(false);
+    expect(interpretationKnowledgeEntrySchema.safeParse({
+      ...entries[1], outcomeWhenMatched: "below-target",
+    }).success).toBe(true);
   });
 
   it.each([

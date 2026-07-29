@@ -90,7 +90,7 @@ function evaluate(
   const matchedPerformanceIds = new Set(matchedPerformanceRules.map((rule) => rule.entryId));
   const candidateSignals = sortByEntryId(applicableEntries.filter(
     (entry): entry is RootCauseSignal => entry.entryType === "root-cause-signal"
-      && entry.relatedEntryIds.some((entryId) => matchedPerformanceIds.has(entryId)),
+      && entry.relatedEntryIds.every((entryId) => matchedPerformanceIds.has(entryId)),
   ));
   const matchedSignals = sortByEntryId(candidateSignals.filter(
     (signal) => signal.requiredFacts.every((fact) => hasFact(query.facts, fact))
@@ -99,7 +99,7 @@ function evaluate(
   const matchedSignalIds = new Set(matchedSignals.map((signal) => signal.entryId));
   const matchedOptions = sortByEntryId(applicableEntries.filter(
     (entry): entry is ImprovementOption => entry.entryType === "improvement-option"
-      && entry.relatedEntryIds.some((entryId) => matchedSignalIds.has(entryId)),
+      && entry.relatedEntryIds.every((entryId) => matchedSignalIds.has(entryId)),
   ));
   const signalReferences = new Map(matchedSignals.map((signal) => [signal.entryId, factReferences(
     query.facts,
@@ -185,10 +185,7 @@ function factValue(facts: Facts, reference: string): unknown {
 }
 
 function factReferences(facts: Facts, requiredFacts: readonly string[]): string[] {
-  return uniqueSorted(requiredFacts.flatMap((fact) => {
-    if (fact !== "contributors" || facts.contributors === undefined) return [fact];
-    return [fact, ...facts.contributors.map((contributor) => `contributors:${contributor.reference}`)];
-  }));
+  return uniqueSorted(requiredFacts.filter((fact) => hasFact(facts, fact)));
 }
 
 function matchedRule(
@@ -252,9 +249,13 @@ function deepFreeze<Value>(value: Value): Value {
 }
 
 function uniqueSorted(values: readonly string[]): string[] {
-  return [...new Set(values)].sort((left, right) => left.localeCompare(right));
+  return [...new Set(values)].sort(compareAscii);
 }
 
 function sortByEntryId<Entry extends { entryId: string }>(entries: readonly Entry[]): Entry[] {
-  return [...entries].sort((left, right) => left.entryId.localeCompare(right.entryId));
+  return [...entries].sort((left, right) => compareAscii(left.entryId, right.entryId));
+}
+
+function compareAscii(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }

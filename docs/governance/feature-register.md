@@ -47,7 +47,8 @@ Feature Register 是 Phase 0 对 F0-F8 的唯一可查询能力清单。它提�
   不得将 F0 状态解释为 F2-F7 已启用。
 - F0 的 `interpretation-rules-v1` 是独立的只读审核子集，仅接受结构化事实并返回规则证据、
   待验证信号与未排序选项。它不读取 Excel、不包含具体案例或计算器、不生成最终解释文本，
-  也不改变 `public-v1` 或 `internal-v1`。F5/F6 虽登记该未来依赖，仍保持 `unavailable`。
+  也不改变 `public-v1` 或 `internal-v1`。新增 loader 使用 interpretation evaluation contract schema，
+  F0 主行继续保留兼容公共契约；F5/F6 虽登记该未来依赖，仍保持 `unavailable`。
 
 F0 内部指导范围与维护边界见 [F0 内部制程公差指导库设计](../superpowers/specs/2026-07-28-f0-internal-tolerance-guidance-design.md) 和 [实施计划](../superpowers/plans/2026-07-28-f0-internal-tolerance-guidance.md)。
 F0 解读规则范围与维护边界见 [F0 TA 结果解读规则库设计](../superpowers/specs/2026-07-29-f0-interpretation-rules-design.md) 和 [实施计划](../superpowers/plans/2026-07-29-f0-interpretation-rules.md)。

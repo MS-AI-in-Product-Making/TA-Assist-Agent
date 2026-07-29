@@ -1835,7 +1835,7 @@ const interpretationPerformanceRuleSchema = z
     ]),
     targetSource: z.literal("resolved-target"),
     requiredFacts: z.array(z.string().min(1)),
-    outcomeWhenMatched: z.string().min(1),
+    outcomeWhenMatched: z.enum(["meets-target", "below-target"]),
   })
   .strict();
 
@@ -1961,7 +1961,14 @@ export const interpretationRuleLoadRequestSchema = z
   })
   .strict();
 
-const interpretationTargetFactSchema = z
+const interpretationRequestTargetSchema = z
+  .object({
+    value: z.number().finite().positive(),
+    source: z.enum(["project", "template"]),
+  })
+  .strict();
+
+const interpretationResolvedTargetSchema = z
   .object({
     value: z.number().finite().positive(),
     source: z.enum(["project", "template", "controlled-default"]),
@@ -1978,9 +1985,9 @@ const interpretationContributorFactSchema = z
 const interpretationFactsSchema = z
   .object({
     cpk: z.number().finite().optional(),
-    targetCpk: interpretationTargetFactSchema.optional(),
+    targetCpk: interpretationRequestTargetSchema.optional(),
     achievedSigma: z.number().finite().optional(),
-    targetSigma: interpretationTargetFactSchema.optional(),
+    targetSigma: interpretationRequestTargetSchema.optional(),
     contributors: z.array(interpretationContributorFactSchema).optional(),
   })
   .strict();
@@ -1995,8 +2002,8 @@ export const interpretationRuleEvaluationRequestSchema = z
 
 const interpretationResolvedTargetsSchema = z
   .object({
-    cpk: interpretationTargetFactSchema.optional(),
-    sigma: interpretationTargetFactSchema.optional(),
+    cpk: interpretationResolvedTargetSchema.optional(),
+    sigma: interpretationResolvedTargetSchema.optional(),
   })
   .strict();
 
