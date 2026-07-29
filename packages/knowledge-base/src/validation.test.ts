@@ -101,6 +101,15 @@ describe("knowledge-base v1 seed package", () => {
         recommendedDistribution: "uniform",
         capabilityTier: "T3",
       }),
+      expect.objectContaining({
+        entryId: "cap-demo-t0-clip",
+        partCategory: "demo-t0-clip",
+        toleranceMin: 0.05,
+        toleranceMax: 0.15,
+        unit: "mm",
+        recommendedDistribution: "normal",
+        capabilityTier: "T0",
+      }),
     ]);
     expect(seed.rules.map(({ ruleId, ruleType, threshold }) => ({ ruleId, ruleType, threshold }))).toEqual([
       { ruleId: "cts-sigma", ruleType: "sigma", threshold: 6 },
@@ -123,7 +132,7 @@ describe("knowledge-base v1 seed package", () => {
       classification: "public",
       releasedAt: "2026-07-22",
     });
-    expect(snapshot.capabilities).toHaveLength(2);
+    expect(snapshot.capabilities).toHaveLength(3);
     expect(snapshot.rules).toHaveLength(3);
     expect(snapshot.terminology).toHaveLength(3);
   });

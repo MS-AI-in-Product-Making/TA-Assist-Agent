@@ -80,8 +80,6 @@ it("returns the mandatory T0 response without feasibility fields for unavailable
   for (const request of [
     { ...validCapabilityQuery, partCategory: "unknown-category" },
     { ...validCapabilityQuery, tolerance: 0.31 },
-    { ...validCapabilityQuery, subsystem: undefined },
-    { ...validCapabilityQuery, datum: undefined },
     { ...validCapabilityQuery, subsystem: "wrong-mechanical-demo" },
     { ...validCapabilityQuery, datum: "wrong-primary-demo-datum" },
   ]) {
@@ -92,6 +90,36 @@ it("returns the mandatory T0 response without feasibility fields for unavailable
     expect(result).not.toHaveProperty("fail");
     expect(result).not.toHaveProperty("recommendedCapacity");
   }
+});
+
+it("matches by category when optional subsystem and datum filters are absent", () => {
+  const knowledgeBase = loadKnowledgeBase({ version: "v1" });
+
+  expect(knowledgeBase.findCapability({
+    partCategory: "demo-bracket",
+    tolerance: 0.2,
+    unit: "mm",
+  })).toMatchObject({
+    status: "matched",
+    entry: { entryId: "cap-demo-bracket", capabilityTier: "T3" },
+  });
+});
+
+it("returns a matched public T0 entry without a feasibility conclusion", () => {
+  const knowledgeBase = loadKnowledgeBase({ version: "v1" });
+  const result = knowledgeBase.findCapability({
+    partCategory: "demo-t0-clip",
+    tolerance: 0.1,
+    unit: "mm",
+  });
+
+  expect(result).toMatchObject({
+    status: "matched",
+    entry: { entryId: "cap-demo-t0-clip", capabilityTier: "T0" },
+  });
+  expect(result).not.toHaveProperty("feasible");
+  expect(result).not.toHaveProperty("pass");
+  expect(result).not.toHaveProperty("fail");
 });
 
 it("returns an output-schema-valid unknown DTO for unavailable rules and terminology without fuzzy terminology matching", () => {

@@ -4,19 +4,24 @@
 
 Feature Register 是 Phase 0 对 F0-F8 的唯一可查询能力清单。它提供规则和查询接口，
 用于区分已完成的工程基座与尚未交付的业务能力，避免调用方、测试或文档将规划能力
-误认为可用。F0 为本地、只读的 `knowledge-base-v1` 查询与经审查的 `internal` 指导元数据而标记为
-`available`；F1 为受控 `confidential` 工作簿字节的只读 worksheet catalog 而标记为
-`available`；F2-F7 均为 `unavailable`。F8 仅为 Phase 0 的匿名、`public`、受治理 Skill
-验收 fixture 而标记为 `available`。这些状态不表示已交付 TA 产品工作流、生产编排器、
-真实工程知识或任何外部写入能力；调用方和后续编排器仍必须在执行前查询该清单。
+误认为可用。F0 为本地、匿名、`public`、只读的 `knowledge-base-v1` 查询与经审查的 `internal`
+指导元数据而标记为 `available`；F1 为受控 `confidential` 工作簿字节的只读 catalog 与 F1.1 资产准备而标记为
+`available`；F2.1 为严格必填字段校验而标记为 `available`；F2.2 为非阻断能力库与 distribution
+一致性校验而标记为 `available`；根 F2、F2.3-F2.4 和 F3-F7 均为 `unavailable`。F8 仅为 Phase 0 的匿名、`public`、受治理 Skill 验收 fixture 而标记为
+`available`。这些状态不表示已交付 TA 产品工作流、生产编排器、真实工程知识或任何外部写入
+能力；调用方和后续编排器仍必须在执行前查询该清单。
 
 ## 当前条目
 
 | Feature | 标题 | 当前状态 | 依赖与外部前置条件 | 输入/输出契约 | 最大分类 | 验收检查 | 禁用行为 |
 |---|---|---|---|---|---|---|---|
 | F0 | 知识库 | `available` | `knowledge-base-v1`, `internal-tolerance-guidance-v1`; `approved-public-knowledge-snapshot`, `approved-internal-knowledge-snapshot` | `knowledge-base-query-request-v1` / `knowledge-base-query-result-v1` | `internal` | `anonymous-knowledge-base-fixture`, `unknown-capability-t0-fixture`, `knowledge-base-integrity-check`, `internal-tolerance-guidance-integrity-check`, `guidance-only-result-fixture`, `internal-source-evidence-dto` | `return feature_not_available` |
-| F1 | TA 报告解析与资产准备 | `available` | `workbook-catalog-v1`; `approved-ooxml-parser` | `workbook-catalog-request-v1` / `workbook-catalog-result-v1` | `confidential` | `anonymous-workbook-catalog-fixture`, `dynamic-date-cache-fixture`, `workbook-catalog-privacy-check` | `return feature_not_available` |
+| F1 | TA 报告解析与资产准备 | `available` | `workbook-catalog-v1`, `worksheet-analysis-assets-v1`; `approved-ooxml-parser` | `worksheet-analysis-assets-request-v1` / `worksheet-analysis-assets-result-v1` | `confidential` | `anonymous-workbook-catalog-fixture`, `dynamic-date-cache-fixture`, `workbook-catalog-privacy-check`, `anonymous-worksheet-analysis-assets-fixture`, `worksheet-image-read-privacy-check` | `return feature_not_available` |
 | F2 | TA 风险与行动建议 | `unavailable` | `quality-rules-v1`, `recommendation-engine-v1`; `approved-recommendation-rules` | `recommendation-request-v1` / `recommendation-result-v1` | `confidential` | `anonymous-recommendation-fixture` | `return feature_not_available` |
+| F2.1 | TA 必填字段严格校验 | `available` | `worksheet-analysis-assets-v1`, `required-field-check-v1`; `approved-ooxml-parser` | `required-field-check-request-v1` / `required-field-check-result-v1` | `confidential` | `anonymous-required-field-check-fixture`, `required-field-blocking-check`, `required-field-privacy-check` | `return feature_not_available` |
+| F2.2 | 能力库与分布一致性校验 | `available` | `worksheet-analysis-assets-v1`, `required-field-check-v1`, `knowledge-base-v1`, `capability-validation-v1`; `approved-public-knowledge-snapshot` | `capability-validation-request-v1` / `capability-validation-result-v1` | `confidential` | `anonymous-capability-validation-fixture`, `capability-validation-gate-check`, `capability-validation-nonblocking-check`, `capability-validation-privacy-check` | `return feature_not_available` |
+| F2.3 | 非阻断差异例外处理 | `available` | `capability-validation-v1`, `exception-resolution-v1`; `approved-exception-policy` | `exception-resolution-request-v1` / `exception-resolution-result-v1` | `confidential` | `anonymous-exception-resolution-fixture`, `exception-resolution-coverage-check`, `exception-resolution-privacy-check` | `return feature_not_available` |
+| F2.4 | DIM ID 与 Part Number 质量检查 | `unavailable` | `identifier-quality-check-v1`; `approved-canonical-dim-id-policy` | `identifier-quality-check-request-v1` / `identifier-quality-check-result-v1` | `confidential` | `anonymous-identifier-quality-fixture` | `return feature_not_available` |
 | F3 | DIM ID 与图纸治理 | `unavailable` | `dim-id-service-v1`; `approved-ado-access`, `canonical-dim-id-policy` | `drawing-governance-request-v1` / `drawing-governance-result-v1` | `confidential` | `anonymous-dim-id-fixture` | `return feature_not_available` |
 | F4 | 方法推荐与 Excel 一致性计算 | `unavailable` | `calculation-worker-v1`; `approved-windows-excel-worker` | `calculation-request-v1` / `calculation-result-v1` | `confidential` | `approved-template-regression` | `return feature_not_available` |
 | F5 | 客观结果解释 | `unavailable` | `calculation-worker-v1`, `knowledge-base-v1`; `approved-knowledge-base` | `interpretation-request-v1` / `interpretation-result-v1` | `confidential` | `anonymous-interpretation-fixture` | `return feature_not_available` |
@@ -41,11 +46,22 @@ Feature Register 是 Phase 0 对 F0-F8 的唯一可查询能力清单。它提�
 
 F0 内部指导范围与维护边界见 [F0 内部制程公差指导库设计](../superpowers/specs/2026-07-28-f0-internal-tolerance-guidance-design.md) 和 [实施计划](../superpowers/plans/2026-07-28-f0-internal-tolerance-guidance.md)。
 - F1 的 `available` 仅接受受控的 `confidential` `.xlsx` 字节，并只在受控内存中创建
-  worksheet catalog。它不读取或校验因子表、不执行计算、不提取图片、不调用外部服务，
-  也不跟踪或导出原始 `.xlsx`；不得将该状态解释为 F2-F7 或完整 TA 工作流可用。
+  worksheet catalog、因子表/公式 cached value/图片元数据证据。它不计算、不换算单位、不 OCR、
+  不渲染、不解释风险、不写回、不调用外部服务，也不跟踪或导出原始 `.xlsx`；不得将该状态
+  解释为完整 TA 工作流可用。
+- F2.1 的 `available` 只接受已验证的 F1.1 confidential 资产，严格阻断缺失或不可用的九项
+  因子字段。Drawing Number 与 DIM/Characteristic ID 仅为非阻断提示；F2.1 不查询能力库、
+  不记录例外、不治理 DIM ID、不计算、不解释风险、不写回或调用外部服务。
+- F2.2 的 `available` 只接受 ready、内容哈希绑定的 F2.1 结果与同一份 F1.1 confidential
+  资产。它仅按类别、`mm` 公差范围和受控 distribution 别名查询批准的公共 F0 快照，输出
+  in-library、out-of-library、mismatch 或 unable 信号。所有信号均为非阻断；它不换算单位、
+  推断可行性、记录例外、重读 workbook、调用外部服务或写回数据。F2.3 仍不可用。
 - F8 的 `available` 仅允许匿名 `public` Skill fixture 在 runner 中通过输入分类、
-  Feature 状态和策略门检查后执行纯函数或显式注入的 mock adapter。`persist`、
-  `network` 和其他外部权限仍由策略门拒绝；不得将该状态解释为生产能力可用。
+  Feature 状态和策略门检查后执行纯函数或显式注入的 mock adapter。`workflow-request-v1`
+  入口只接受 `workflowId: "public-smoke"`，并固定执行 `public-echo` 与
+  `classification-check`；`workflow-result-v1` 不包含 `runDirectory` 或 Skill 输出。
+  既有 CLI `smoke` 保持为兼容 fixture。`persist`、`network` 和其他外部权限仍由策略门拒绝；
+  不得将该状态解释为生产能力可用。
 - 修改任一条目时，必须同步更新 `packages/governance` 的测试、此文档、相关契约
   和匿名验收 fixture。若涉及外部访问，还必须经过策略门审批。
 

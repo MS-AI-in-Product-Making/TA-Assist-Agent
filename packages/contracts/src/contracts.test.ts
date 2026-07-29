@@ -2,8 +2,26 @@ import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import {
   capabilityEntrySchema,
+  capabilityValidationRequestSchema,
+  capabilityValidationResultSchema,
   capabilityTierSchema,
+  calculationRequestSchema,
+  calculationResultSchema,
+  cpkRequestSchema,
+  cpkResultSchema,
+  comparisonRequestSchema,
+  comparisonResultSchema,
   createTypedError,
+  drawingGovernanceRequestSchema,
+  drawingGovernanceResultSchema,
+  exceptionResolutionRequestSchema,
+  exceptionResolutionResultSchema,
+  identifierQualityCheckRequestSchema,
+  identifierQualityCheckResultSchema,
+  interpretationRequestSchema,
+  interpretationResultSchema,
+  unifiedExceptionResolutionV2RequestSchema,
+  unifiedExceptionResolutionV2ResultSchema,
   engineeringRuleEntrySchema,
   engineeringRuleQuerySchema,
   internalToleranceGuidanceEntrySchema,
@@ -19,6 +37,8 @@ import {
   dataClassificationSchema,
   errorCodeSchema,
   runRequestSchema,
+  requiredFieldCheckRequestSchema,
+  requiredFieldCheckResultSchema,
   skillResultSchema,
   terminologyEntrySchema,
   typedErrorSchema,
@@ -26,6 +46,8 @@ import {
   worksheetAnalysisAssetsResultSchema,
   worksheetImageReadRequestSchema,
   worksheetImageReadResultSchema,
+  workflowRequestSchema,
+  workflowResultSchema,
 } from "./index.js";
 
 describe("Phase 0 contracts", () => {
@@ -119,6 +141,202 @@ describe("internal tolerance guidance contracts", () => {
         },
       }).success,
     ).toBe(true);
+  });
+});
+
+describe("F4 calculation placeholder contracts", () => {
+  const request = {
+    contractVersion: "v1",
+    inputClassification: "confidential",
+    projectReference: "controlled-project-reference",
+    runReference: "controlled-run-reference",
+    worksheetReferences: ["controlled-worksheet-reference"],
+  };
+
+  const result = {
+    contractVersion: "v1",
+    outputClassification: "confidential",
+    featureId: "F4",
+    status: "feature_not_available",
+    projectReference: "controlled-project-reference",
+    runReference: "controlled-run-reference",
+    worksheetReferences: ["controlled-worksheet-reference"],
+    requiredPrerequisites: ["approved-template-regression", "approved-windows-excel-worker"],
+  };
+
+  it("accepts only confidential controlled references and a fixed unavailable result", () => {
+    expect(calculationRequestSchema.parse(request)).toEqual(request);
+    expect(calculationResultSchema.parse(result)).toEqual(result);
+  });
+
+  it("rejects public classification, unknown fields, and altered prerequisites", () => {
+    expect(calculationRequestSchema.safeParse({ ...request, inputClassification: "public" }).success).toBe(false);
+    expect(calculationRequestSchema.safeParse({ ...request, unexpected: true }).success).toBe(false);
+    expect(calculationResultSchema.safeParse({
+      ...result,
+      requiredPrerequisites: ["approved-windows-excel-worker", "approved-template-regression"],
+    }).success).toBe(false);
+  });
+});
+
+describe("F3 drawing governance placeholder contracts", () => {
+  const request = {
+    contractVersion: "v1",
+    inputClassification: "confidential",
+    projectReference: "controlled-project-reference",
+    runReference: "controlled-run-reference",
+    worksheetReferences: ["controlled-worksheet-reference"],
+  };
+
+  const result = {
+    contractVersion: "v1",
+    outputClassification: "confidential",
+    featureId: "F3",
+    status: "feature_not_available",
+    projectReference: "controlled-project-reference",
+    runReference: "controlled-run-reference",
+    worksheetReferences: ["controlled-worksheet-reference"],
+    requiredPrerequisites: ["approved-ado-access", "canonical-dim-id-policy"],
+  };
+
+  it("accepts only confidential controlled references and a fixed unavailable result", () => {
+    expect(drawingGovernanceRequestSchema.parse(request)).toEqual(request);
+    expect(drawingGovernanceResultSchema.parse(result)).toEqual(result);
+  });
+
+  it("rejects public classification, unknown fields, and altered prerequisites", () => {
+    expect(drawingGovernanceRequestSchema.safeParse({ ...request, inputClassification: "public" }).success).toBe(false);
+    expect(drawingGovernanceRequestSchema.safeParse({ ...request, unexpected: true }).success).toBe(false);
+    expect(drawingGovernanceResultSchema.safeParse({
+      ...result,
+      requiredPrerequisites: ["canonical-dim-id-policy", "approved-ado-access"],
+    }).success).toBe(false);
+  });
+});
+
+describe("F5 interpretation placeholder contracts", () => {
+  const request = {
+    contractVersion: "v1",
+    inputClassification: "confidential",
+    projectReference: "controlled-project-reference",
+    runReference: "controlled-run-reference",
+    worksheetReferences: ["controlled-worksheet-reference"],
+  };
+
+  const result = {
+    contractVersion: "v1",
+    outputClassification: "confidential",
+    featureId: "F5",
+    status: "feature_not_available",
+    projectReference: "controlled-project-reference",
+    runReference: "controlled-run-reference",
+    worksheetReferences: ["controlled-worksheet-reference"],
+    requiredPrerequisites: ["approved-knowledge-base"],
+  };
+
+  it("accepts only confidential controlled references and a fixed unavailable result", () => {
+    expect(interpretationRequestSchema.parse(request)).toEqual(request);
+    expect(interpretationResultSchema.parse(result)).toEqual(result);
+  });
+
+  it("rejects public classification, unknown fields, and altered prerequisites", () => {
+    expect(interpretationRequestSchema.safeParse({ ...request, inputClassification: "public" }).success).toBe(false);
+    expect(interpretationRequestSchema.safeParse({ ...request, unexpected: true }).success).toBe(false);
+    expect(interpretationResultSchema.safeParse({ ...result, requiredPrerequisites: [] }).success).toBe(false);
+  });
+});
+
+describe("F6 comparison placeholder contracts", () => {
+  const request = {
+    contractVersion: "v1",
+    inputClassification: "confidential",
+    projectReference: "controlled-project-reference",
+    runReference: "controlled-run-reference",
+    worksheetReferences: ["controlled-worksheet-reference"],
+  };
+
+  const result = {
+    contractVersion: "v1",
+    outputClassification: "confidential",
+    featureId: "F6",
+    status: "feature_not_available",
+    projectReference: "controlled-project-reference",
+    runReference: "controlled-run-reference",
+    worksheetReferences: ["controlled-worksheet-reference"],
+    requiredPrerequisites: ["approved-knowledge-base"],
+  };
+
+  it("accepts only confidential controlled references and a fixed unavailable result", () => {
+    expect(comparisonRequestSchema.parse(request)).toEqual(request);
+    expect(comparisonResultSchema.parse(result)).toEqual(result);
+  });
+
+  it("rejects public classification, unknown fields, and altered prerequisites", () => {
+    expect(comparisonRequestSchema.safeParse({ ...request, inputClassification: "public" }).success).toBe(false);
+    expect(comparisonRequestSchema.safeParse({ ...request, unexpected: true }).success).toBe(false);
+    expect(comparisonResultSchema.safeParse({ ...result, requiredPrerequisites: [] }).success).toBe(false);
+  });
+});
+
+describe("F7 Cpk placeholder contracts", () => {
+  const request = {
+    contractVersion: "v1",
+    inputClassification: "confidential",
+    projectReference: "controlled-project-reference",
+    runReference: "controlled-run-reference",
+    worksheetReferences: ["controlled-worksheet-reference"],
+  };
+
+  const result = {
+    contractVersion: "v1",
+    outputClassification: "confidential",
+    featureId: "F7",
+    status: "feature_not_available",
+    projectReference: "controlled-project-reference",
+    runReference: "controlled-run-reference",
+    worksheetReferences: ["controlled-worksheet-reference"],
+    requiredPrerequisites: ["approved-measurement-store"],
+  };
+
+  it("accepts only confidential controlled references and a fixed unavailable result", () => {
+    expect(cpkRequestSchema.parse(request)).toEqual(request);
+    expect(cpkResultSchema.parse(result)).toEqual(result);
+  });
+
+  it("rejects public classification, unknown fields, and altered prerequisites", () => {
+    expect(cpkRequestSchema.safeParse({ ...request, inputClassification: "public" }).success).toBe(false);
+    expect(cpkRequestSchema.safeParse({ ...request, unexpected: true }).success).toBe(false);
+    expect(cpkResultSchema.safeParse({ ...result, requiredPrerequisites: [] }).success).toBe(false);
+  });
+});
+
+describe("F8 public workflow contracts", () => {
+  const request = {
+    contractVersion: "v1",
+    workflowId: "public-smoke",
+    inputClassification: "public",
+    message: "anonymous smoke message",
+  };
+
+  const result = {
+    contractVersion: "v1",
+    workflowId: "public-smoke",
+    outputClassification: "public",
+    runId: "00000000-0000-4000-8000-000000000001",
+    manifestValid: true,
+    executedSkillIds: ["public-echo", "classification-check"],
+  };
+
+  it("accepts the fixed public smoke request and result", () => {
+    expect(workflowRequestSchema.parse(request)).toEqual(request);
+    expect(workflowResultSchema.parse(result)).toEqual(result);
+  });
+
+  it("rejects non-public input, unknown fields, invalid messages, and altered skill order", () => {
+    expect(workflowRequestSchema.safeParse({ ...request, inputClassification: "confidential" }).success).toBe(false);
+    expect(workflowRequestSchema.safeParse({ ...request, unexpected: true }).success).toBe(false);
+    expect(workflowRequestSchema.safeParse({ ...request, message: " " }).success).toBe(false);
+    expect(workflowResultSchema.safeParse({ ...result, executedSkillIds: ["classification-check", "public-echo"] }).success).toBe(false);
   });
 });
 
@@ -964,5 +1182,480 @@ describe("worksheet analysis asset contracts", () => {
         bytes: new Uint8Array([1]),
       }).success,
     ).toBe(true);
+  });
+
+  it("accepts the F2.1 semantic fields and strict required-field check contracts", () => {
+    const assets = {
+      ...result,
+      worksheets: [{
+        ...result.worksheets[0],
+        factorTables: [{
+          ...result.worksheets[0]!.factorTables[0],
+          columns: [
+            { semanticField: "partName", headerText: "Part Name", sourceColumn: "C" },
+            { semanticField: "partCategory", headerText: "Part Category", sourceColumn: "D" },
+            { semanticField: "longTermSafetyFactor", headerText: "Safety Factor", sourceColumn: "E" },
+            { semanticField: "drawingNumber", headerText: "Drawing Number", sourceColumn: "F" },
+            { semanticField: "dimCharacteristicId", headerText: "DIM ID", sourceColumn: "G" },
+          ],
+          rows: [],
+          dataRange: { startRow: 13, endRow: 13 },
+        }],
+      }],
+    };
+
+    expect(requiredFieldCheckRequestSchema.parse({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      worksheetAnalysisAssets: assets,
+    }).worksheetAnalysisAssets).toEqual(assets);
+    expect(requiredFieldCheckResultSchema.parse({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbookContentHash: contentHash,
+      status: "blocked",
+      blockingIssues: [{
+        issueCode: "required_field_unavailable",
+        worksheetName: "Analysis",
+        tableId: "table-a",
+        sourceRow: 13,
+        field: "longTermSafetyFactor",
+        reasonCode: "missing",
+      }],
+      advisoryIssues: [{
+        issueCode: "optional_identifier_unavailable",
+        worksheetName: "Analysis",
+        tableId: "table-a",
+        sourceRow: 13,
+        field: "dimCharacteristicId",
+        reasonCode: "missing",
+      }],
+      summary: {
+        worksheetsChecked: 1,
+        factorTablesChecked: 1,
+        factorRowsChecked: 1,
+        blockingIssueCount: 1,
+        advisoryIssueCount: 1,
+      },
+    }).status).toBe("blocked");
+  });
+
+  it("rejects F2.1 state and count inconsistencies", () => {
+    const result = {
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbookContentHash: contentHash,
+      status: "readyForNextCheck",
+      blockingIssues: [{ issueCode: "factor_table_has_no_rows", worksheetName: "Analysis", tableId: "table-a" }],
+      advisoryIssues: [],
+      summary: { worksheetsChecked: 1, factorTablesChecked: 1, factorRowsChecked: 0, blockingIssueCount: 1, advisoryIssueCount: 0 },
+    };
+
+    expect(requiredFieldCheckResultSchema.safeParse(result).success).toBe(false);
+    expect(requiredFieldCheckResultSchema.safeParse({
+      ...result,
+      status: "blocked",
+      summary: { ...result.summary, blockingIssueCount: 0 },
+    }).success).toBe(false);
+    expect(requiredFieldCheckResultSchema.safeParse({ ...result, unexpected: true }).success).toBe(false);
+  });
+
+  it("accepts strict F2.2 gates while rejecting gate rows", () => {
+    const requiredFieldCheck = requiredFieldCheckResultSchema.parse({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbookContentHash: contentHash,
+      status: "readyForNextCheck",
+      blockingIssues: [],
+      advisoryIssues: [],
+      summary: {
+        worksheetsChecked: 1,
+        factorTablesChecked: 1,
+        factorRowsChecked: 1,
+        blockingIssueCount: 0,
+        advisoryIssueCount: 0,
+      },
+    });
+
+    expect(capabilityValidationRequestSchema.parse({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      knowledgeBaseVersion: "v1",
+      worksheetAnalysisAssets: result,
+      requiredFieldCheck,
+    }).knowledgeBaseVersion).toBe("v1");
+
+    const gateResult = {
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      knowledgeBaseVersion: "v1",
+      workbookContentHash: contentHash,
+      status: "required_fields_not_ready",
+      rows: [],
+      summary: {
+        factorRowsChecked: 0,
+        inLibraryCount: 0,
+        outOfLibraryCount: 0,
+        toleranceUnableToValidateCount: 0,
+        distributionMatchCount: 0,
+        distributionMismatchCount: 0,
+        distributionUnableToValidateCount: 0,
+        distributionNotApplicableCount: 0,
+      },
+    };
+
+    expect(capabilityValidationResultSchema.parse(gateResult).status).toBe("required_fields_not_ready");
+    expect(capabilityValidationResultSchema.safeParse({
+      ...gateResult,
+      rows: [{ worksheetName: "Analysis" }],
+    }).success).toBe(false);
+  });
+
+  it("permits the canonical zero-row table range but rejects an inverted range", () => {
+    const zeroRowTable = {
+      ...result.worksheets[0]!.factorTables[0],
+      dataRange: { startRow: 13, endRow: 13 },
+      rows: [],
+    };
+    const zeroRowAssets = {
+      ...result,
+      worksheets: [{ ...result.worksheets[0], factorTables: [zeroRowTable] }],
+    };
+
+    expect(worksheetAnalysisAssetsResultSchema.safeParse(zeroRowAssets).success).toBe(true);
+    expect(worksheetAnalysisAssetsResultSchema.safeParse({
+      ...zeroRowAssets,
+      worksheets: [{
+        ...zeroRowAssets.worksheets[0],
+        factorTables: [{ ...zeroRowTable, dataRange: { startRow: 13, endRow: 12 } }],
+      }],
+    }).success).toBe(false);
+  });
+
+  it("accepts completed F2.2 evidence for F2.3 while enforcing resolution status invariants", () => {
+    const completedCapabilityValidation = {
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      knowledgeBaseVersion: "v1",
+      workbookContentHash: contentHash,
+      status: "completed",
+      rows: [{
+        worksheetName: "Analysis-A",
+        tableId: "table-a",
+        sourceRow: 2,
+        factorName: "anonymous-factor",
+        tolerance: { status: "out_of_library", totalTolerance: 0.2, unit: "mm" },
+        distribution: { status: "not_applicable" },
+      }],
+      summary: {
+        factorRowsChecked: 1,
+        inLibraryCount: 0,
+        outOfLibraryCount: 1,
+        toleranceUnableToValidateCount: 0,
+        distributionMatchCount: 0,
+        distributionMismatchCount: 0,
+        distributionUnableToValidateCount: 0,
+        distributionNotApplicableCount: 1,
+      },
+    };
+    const signalRef = `${contentHash}|Analysis-A|table-a|2|tolerance_out_of_library`;
+
+    expect(exceptionResolutionRequestSchema.parse({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      capabilityValidation: completedCapabilityValidation,
+      candidates: [{
+        signalRef,
+        recordedBy: "anonymous-engineer",
+        recordedAt: "2026-07-27T10:15:30.000Z",
+        rationale: "Anonymous evidence reviewed.",
+      }],
+    }).candidates).toHaveLength(1);
+
+    expect(exceptionResolutionRequestSchema.safeParse({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      capabilityValidation: { ...completedCapabilityValidation, status: "required_fields_not_ready", rows: [], summary: {
+        ...completedCapabilityValidation.summary,
+        factorRowsChecked: 0,
+        outOfLibraryCount: 0,
+        distributionNotApplicableCount: 0,
+      } },
+      candidates: [],
+    }).success).toBe(false);
+
+    const result = {
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      status: "readyToContinue",
+      readyToContinue: true,
+      workbookContentHash: contentHash,
+      knowledgeBaseVersion: "v1",
+      acceptedExceptions: [{
+        signalRef,
+        recordedBy: "anonymous-engineer",
+        recordedAt: "2026-07-27T10:15:30.000Z",
+        rationale: "Anonymous evidence reviewed.",
+        snapshot: {
+          signalKind: "tolerance_out_of_library",
+          worksheetName: "Analysis-A",
+          tableId: "table-a",
+          sourceRow: 2,
+          factorName: "anonymous-factor",
+          signal: { status: "out_of_library", totalTolerance: 0.2, unit: "mm" },
+        },
+      }],
+      pendingExceptions: [],
+      summary: {
+        actionableSignalCount: 1,
+        acceptedExceptionCount: 1,
+        pendingExceptionCount: 0,
+        invalidCandidateCount: 0,
+      },
+    };
+
+    expect(exceptionResolutionResultSchema.parse(result).status).toBe("readyToContinue");
+    expect(exceptionResolutionResultSchema.safeParse({ ...result, readyToContinue: false }).success).toBe(false);
+  });
+});
+
+describe("F2.4 identifier quality contracts", () => {
+  const contentHash = "a".repeat(64);
+  const worksheetAnalysisAssets = {
+    contractVersion: "v1" as const,
+    workbook: { classification: "confidential" as const, contentHash, catalogContractVersion: "v1" as const },
+    worksheets: [{
+      worksheetName: "Analysis-A",
+      toleranceLoopDescription: "Anonymous analysis.",
+      factorTables: [{
+        tableId: "table-a",
+        headerRow: 1,
+        dataRange: { startRow: 2, endRow: 3 },
+        columns: [{ semanticField: "factorName" as const, headerText: "Factor", sourceColumn: "A" }],
+        rows: [],
+      }],
+      formulaCells: [],
+      imageAssets: [],
+    }],
+  };
+  const requiredFieldCheck = {
+    contractVersion: "v1" as const,
+    inputClassification: "confidential" as const,
+    workbookContentHash: contentHash,
+    status: "readyForNextCheck" as const,
+    blockingIssues: [],
+    advisoryIssues: [],
+    summary: {
+      worksheetsChecked: 1,
+      factorTablesChecked: 1,
+      factorRowsChecked: 2,
+      blockingIssueCount: 0,
+      advisoryIssueCount: 0,
+    },
+  };
+
+  it("accepts strict confidential F2.4 evidence and aggregated unavailable signals", () => {
+    expect(identifierQualityCheckRequestSchema.parse({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      worksheetAnalysisAssets,
+      requiredFieldCheck,
+    }).requiredFieldCheck.status).toBe("readyForNextCheck");
+
+    expect(identifierQualityCheckResultSchema.parse({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbookContentHash: contentHash,
+      status: "completed",
+      signals: [{
+        signalKind: "identifier_evidence_unavailable",
+        worksheetName: "Analysis-A",
+        tableId: "table-a",
+        field: "dimCharacteristicId",
+        reasonCode: "missing",
+        sourceRows: [2, 3],
+      }],
+      summary: {
+        factorRowsChecked: 2,
+        actionableSignalCount: 1,
+        identifierMissingCount: 0,
+        identifierEvidenceUnavailableCount: 1,
+        identifierTextInvalidCount: 0,
+        dimIdDuplicateCount: 0,
+      },
+    }).status).toBe("completed");
+  });
+
+  it("rejects incompatible evidence, invalid signal shapes, and nonempty gate summaries", () => {
+    const request = {
+      contractVersion: "v1" as const,
+      inputClassification: "confidential" as const,
+      worksheetAnalysisAssets,
+      requiredFieldCheck,
+    };
+    const gateResult = {
+      contractVersion: "v1" as const,
+      inputClassification: "confidential" as const,
+      workbookContentHash: contentHash,
+      status: "required_fields_not_ready" as const,
+      signals: [],
+      summary: {
+        factorRowsChecked: 0,
+        actionableSignalCount: 0,
+        identifierMissingCount: 0,
+        identifierEvidenceUnavailableCount: 0,
+        identifierTextInvalidCount: 0,
+        dimIdDuplicateCount: 0,
+      },
+    };
+
+    expect(identifierQualityCheckRequestSchema.safeParse({
+      ...request,
+      requiredFieldCheck: { ...requiredFieldCheck, workbookContentHash: "b".repeat(64) },
+    }).success).toBe(false);
+    expect(identifierQualityCheckRequestSchema.safeParse({ ...request, inputClassification: "public" }).success).toBe(false);
+    expect(identifierQualityCheckResultSchema.safeParse({
+      ...gateResult,
+      summary: { ...gateResult.summary, factorRowsChecked: 1 },
+    }).success).toBe(false);
+    expect(identifierQualityCheckResultSchema.safeParse({
+      ...gateResult,
+      status: "completed",
+      signals: [{
+        signalKind: "identifier_evidence_unavailable",
+        worksheetName: "Analysis-A",
+        tableId: "table-a",
+        field: "drawingNumber",
+        sourceRows: [3, 2, 2],
+      }],
+      summary: {
+        factorRowsChecked: 2,
+        actionableSignalCount: 1,
+        identifierMissingCount: 0,
+        identifierEvidenceUnavailableCount: 1,
+        identifierTextInvalidCount: 0,
+        dimIdDuplicateCount: 0,
+      },
+    }).success).toBe(false);
+  });
+});
+
+describe("F2.3 v2 unified exception resolution contracts", () => {
+  const contentHash = "a".repeat(64);
+  const capabilityValidation = {
+    contractVersion: "v1" as const,
+    inputClassification: "confidential" as const,
+    knowledgeBaseVersion: "v1" as const,
+    workbookContentHash: contentHash,
+    status: "completed" as const,
+    rows: [{
+      worksheetName: "Analysis-A",
+      tableId: "table-a",
+      sourceRow: 2,
+      factorName: "anonymous-factor",
+      tolerance: { status: "out_of_library" as const, totalTolerance: 0.2, unit: "mm" as const },
+      distribution: { status: "not_applicable" as const },
+    }],
+    summary: {
+      factorRowsChecked: 1,
+      inLibraryCount: 0,
+      outOfLibraryCount: 1,
+      toleranceUnableToValidateCount: 0,
+      distributionMatchCount: 0,
+      distributionMismatchCount: 0,
+      distributionUnableToValidateCount: 0,
+      distributionNotApplicableCount: 1,
+    },
+  };
+  const identifierQualityCheck = {
+    contractVersion: "v1" as const,
+    inputClassification: "confidential" as const,
+    workbookContentHash: contentHash,
+    status: "completed" as const,
+    signals: [{
+      signalKind: "identifier_missing" as const,
+      worksheetName: "Analysis-A",
+      tableId: "table-a",
+      field: "drawingNumber" as const,
+      sourceRows: [2],
+    }],
+    summary: {
+      factorRowsChecked: 1,
+      actionableSignalCount: 1,
+      identifierMissingCount: 1,
+      identifierEvidenceUnavailableCount: 0,
+      identifierTextInvalidCount: 0,
+      dimIdDuplicateCount: 0,
+    },
+  };
+  const capabilitySignalRef = `${contentHash}|capability_validation|Analysis-A|table-a|2|tolerance_out_of_library`;
+  const identifierSignalRef = `${contentHash}|identifier_quality|Analysis-A|table-a|drawingNumber|identifier_missing|`;
+
+  it("accepts complete F2.2 and F2.4 evidence and source-attributed unified results", () => {
+    expect(unifiedExceptionResolutionV2RequestSchema.parse({
+      contractVersion: "v2",
+      inputClassification: "confidential",
+      capabilityValidation,
+      identifierQualityCheck,
+      candidates: [{
+        signalRef: capabilitySignalRef,
+        recordedBy: "anonymous-engineer",
+        recordedAt: "2026-07-27T10:15:30.000Z",
+        rationale: "Anonymous evidence reviewed.",
+      }],
+    }).contractVersion).toBe("v2");
+
+    expect(unifiedExceptionResolutionV2ResultSchema.parse({
+      contractVersion: "v2",
+      inputClassification: "confidential",
+      status: "readyToContinue",
+      readyToContinue: true,
+      workbookContentHash: contentHash,
+      knowledgeBaseVersion: "v1",
+      acceptedExceptions: [
+        {
+          signalRef: capabilitySignalRef,
+          recordedBy: "anonymous-engineer",
+          recordedAt: "2026-07-27T10:15:30.000Z",
+          rationale: "Anonymous evidence reviewed.",
+          snapshot: {
+            source: "capability_validation",
+            signalKind: "tolerance_out_of_library",
+            worksheetName: "Analysis-A",
+            tableId: "table-a",
+            sourceRow: 2,
+            factorName: "anonymous-factor",
+            signal: { status: "out_of_library", totalTolerance: 0.2, unit: "mm" },
+          },
+        },
+        {
+          signalRef: identifierSignalRef,
+          recordedBy: "anonymous-engineer",
+          recordedAt: "2026-07-27T10:15:30.000Z",
+          rationale: "Anonymous evidence reviewed.",
+          snapshot: {
+            source: "identifier_quality",
+            signalKind: "identifier_missing",
+            worksheetName: "Analysis-A",
+            tableId: "table-a",
+            field: "drawingNumber",
+            sourceRows: [2],
+          },
+        },
+      ],
+      pendingExceptions: [],
+      summary: {
+        actionableSignalCount: 2,
+        capabilitySignalCount: 1,
+        identifierSignalCount: 1,
+        acceptedExceptionCount: 2,
+        acceptedCapabilityExceptionCount: 1,
+        acceptedIdentifierExceptionCount: 1,
+        pendingExceptionCount: 0,
+        pendingCapabilityExceptionCount: 0,
+        pendingIdentifierExceptionCount: 0,
+        invalidCandidateCount: 0,
+      },
+    }).status).toBe("readyToContinue");
   });
 });
