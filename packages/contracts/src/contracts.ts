@@ -504,6 +504,204 @@ export const knowledgeBaseQueryResultSchema = z.union([
   terminologyUnknownResultSchema,
 ]);
 
+export const internalToleranceGuidanceVersionSchema = z.literal("internal-v1");
+
+export const internalToleranceGuidanceSourceMetadataSchema = z
+  .object({
+    sourceId: z.string().min(1),
+    sourceFile: z.string().min(1),
+    sourceFileHash: sha256Schema,
+    sourceVersion: z.string().min(1),
+    sheetName: z.string().min(1),
+    sourceRange: z.string().regex(/^[A-Z]+[1-9]\d*:[A-Z]+[1-9]\d*$/),
+    classification: z.literal("internal"),
+  })
+  .strict();
+
+export const internalToleranceGuidanceManifestSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    knowledgeBaseVersion: internalToleranceGuidanceVersionSchema,
+    classification: z.literal("internal"),
+    releasedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    changeSummary: z.string().min(1),
+    sourceCount: z.number().int().nonnegative(),
+    entryCount: z.number().int().nonnegative(),
+    sourcesContentHash: sha256Schema,
+    entriesContentHash: sha256Schema,
+  })
+  .strict();
+
+export const internalToleranceProcessFamilySchema = z.enum([
+  "cnc-machining",
+  "die-casting",
+  "die-cutting",
+  "pcb-fpc",
+  "plastic-injection-molding",
+  "sheet-metal",
+]);
+
+export const toleranceRepresentationSchema = z.enum([
+  "bilateral",
+  "unilateral",
+  "total-band",
+]);
+
+const internalToleranceBandSchema = z
+  .object({
+    value: z.number().finite().positive(),
+    unit: z.literal("mm"),
+  })
+  .strict();
+
+const internalNominalRangeSchema = z
+  .object({
+    min: z.number().finite(),
+    minInclusive: z.boolean().optional(),
+    max: z.number().finite(),
+    maxInclusive: z.boolean().optional(),
+    unit: z.literal("mm"),
+  })
+  .strict()
+  .refine((range) => range.min < range.max
+    || range.min === range.max && range.minInclusive !== false && range.maxInclusive !== false, {
+    message: "nominal range must contain at least one value",
+    path: ["min"],
+  });
+
+export const internalEvidenceSchema = z
+  .object({
+    sourceFile: z.string().min(1),
+    sourceFileHash: sha256Schema,
+    sheetName: z.string().min(1),
+    sourceRange: z.string().regex(/^[A-Z]+[1-9]\d*:[A-Z]+[1-9]\d*$/),
+  })
+  .strict();
+
+export const internalToleranceGuidanceProvenanceSchema = internalToleranceGuidanceSourceMetadataSchema
+  .extend({
+    owner: z.string().min(1),
+    confidence: z.number().finite().min(0).max(1),
+    effectiveVersion: internalToleranceGuidanceVersionSchema,
+    changeSummary: z.string().min(1),
+  })
+  .strict();
+
+const internalToleranceConditionStringSchema = z.string().trim().min(1);
+
+export const internalToleranceGuidanceEntryConditionsSchema = z
+  .object({
+    processMethod: internalToleranceConditionStringSchema.optional(),
+    materialFamily: internalToleranceConditionStringSchema.optional(),
+    thicknessMm: z
+      .object({
+        min: z.number().finite(),
+        minInclusive: z.boolean().optional(),
+        max: z.number().finite(),
+        maxInclusive: z.boolean().optional(),
+      })
+      .strict()
+      .refine((range) => range.min < range.max
+        || range.min === range.max && range.minInclusive !== false && range.maxInclusive !== false, {
+        message: "thickness range must contain at least one value",
+        path: ["min"],
+      })
+      .optional(),
+    toleranceGrade: internalToleranceConditionStringSchema.optional(),
+    dimensionType: z.enum(["W", "NW"]).optional(),
+  })
+  .strict();
+
+export const internalToleranceGuidanceRequestConditionsSchema = z
+  .object({
+    processMethod: internalToleranceConditionStringSchema.optional(),
+    materialFamily: internalToleranceConditionStringSchema.optional(),
+    thicknessMm: z.number().finite().optional(),
+    toleranceGrade: internalToleranceConditionStringSchema.optional(),
+    dimensionType: z.enum(["W", "NW"]).optional(),
+  })
+  .strict();
+
+export const internalToleranceGuidanceEntrySchema = z
+  .object({
+    entryId: z.string().min(1),
+    processFamily: internalToleranceProcessFamilySchema,
+    featureType: z.string().min(1),
+    material: z.string().min(1).optional(),
+    nominalRange: internalNominalRangeSchema.optional(),
+    maximumRecommendedTotalBand: internalToleranceBandSchema,
+    fallbackPriority: z.number().int().nonnegative(),
+    fallbackEntryId: z.string().min(1).optional(),
+    conditions: internalToleranceGuidanceEntryConditionsSchema.optional(),
+    capabilityTier: z.enum(["T1", "T2", "T3"]),
+    provenance: internalToleranceGuidanceProvenanceSchema,
+  })
+  .strict();
+
+const bilateralOrTotalBandToleranceSchema = z
+  .object({
+    representation: z.enum(["bilateral", "total-band"]),
+    value: z.number().finite().positive(),
+    unit: z.literal("mm"),
+  })
+  .strict();
+
+const unilateralToleranceSchema = z
+  .object({
+    representation: z.literal("unilateral"),
+    value: z.number().finite().positive(),
+    unit: z.literal("mm"),
+    upperValue: z.number().finite(),
+    lowerValue: z.number().finite(),
+  })
+  .strict()
+  .refine((tolerance) => tolerance.upperValue > tolerance.lowerValue, {
+    message: "upperValue must be greater than lowerValue",
+    path: ["upperValue"],
+  })
+  .refine((tolerance) => tolerance.value === tolerance.upperValue - tolerance.lowerValue, {
+    message: "value must equal upperValue minus lowerValue",
+    path: ["value"],
+  });
+
+export const internalToleranceGuidanceRequestSchema = z
+  .object({
+    processFamily: internalToleranceProcessFamilySchema,
+    featureType: z.string().min(1),
+    nominalValue: z.number().finite(),
+    nominalUnit: z.literal("mm"),
+    material: z.string().min(1).optional(),
+    conditions: internalToleranceGuidanceRequestConditionsSchema.optional(),
+    tolerance: z.union([bilateralOrTotalBandToleranceSchema, unilateralToleranceSchema]),
+  })
+  .strict();
+
+const internalToleranceGuidanceMatchResultSchema = z
+  .object({
+    status: z.enum(["within-guidance", "guidance-exceeded"]),
+    knowledgeBaseVersion: internalToleranceGuidanceVersionSchema,
+    matchedEntryId: z.string().min(1),
+    assessedTotalBand: internalToleranceBandSchema,
+    maximumRecommendedTotalBand: internalToleranceBandSchema,
+    fallbackApplied: z.boolean(),
+    evidence: internalEvidenceSchema,
+  })
+  .strict();
+
+const internalToleranceGuidanceUnknownResultSchema = z
+  .object({
+    status: z.literal("unknown"),
+    knowledgeBaseVersion: internalToleranceGuidanceVersionSchema,
+    capabilityTier: z.literal("T0"),
+    message: z.literal("制程能力未知，请与供应商确认"),
+  })
+  .strict();
+
+export const internalToleranceGuidanceResultSchema = z.union([
+  internalToleranceGuidanceMatchResultSchema,
+  internalToleranceGuidanceUnknownResultSchema,
+]);
+
 export type DataClassification = z.infer<typeof dataClassificationSchema>;
 export type RunRequest = z.infer<typeof runRequestSchema>;
 export type CapabilityTier = z.infer<typeof capabilityTierSchema>;
@@ -526,6 +724,18 @@ export type TerminologyMatchResult = z.infer<typeof terminologyMatchResultSchema
 export type TerminologyUnknownResult = z.infer<typeof terminologyUnknownResultSchema>;
 export type KnowledgeBaseManifestResponse = z.infer<typeof knowledgeBaseManifestResponseSchema>;
 export type KnowledgeBaseQueryResult = z.infer<typeof knowledgeBaseQueryResultSchema>;
+export type InternalToleranceGuidanceVersion = z.infer<typeof internalToleranceGuidanceVersionSchema>;
+export type InternalToleranceGuidanceSourceMetadata = z.infer<typeof internalToleranceGuidanceSourceMetadataSchema>;
+export type InternalToleranceGuidanceManifest = z.infer<typeof internalToleranceGuidanceManifestSchema>;
+export type InternalToleranceProcessFamily = z.infer<typeof internalToleranceProcessFamilySchema>;
+export type ToleranceRepresentation = z.infer<typeof toleranceRepresentationSchema>;
+export type InternalEvidence = z.infer<typeof internalEvidenceSchema>;
+export type InternalToleranceGuidanceProvenance = z.infer<typeof internalToleranceGuidanceProvenanceSchema>;
+export type InternalToleranceGuidanceEntryConditions = z.infer<typeof internalToleranceGuidanceEntryConditionsSchema>;
+export type InternalToleranceGuidanceRequestConditions = z.infer<typeof internalToleranceGuidanceRequestConditionsSchema>;
+export type InternalToleranceGuidanceEntry = z.infer<typeof internalToleranceGuidanceEntrySchema>;
+export type InternalToleranceGuidanceRequest = z.infer<typeof internalToleranceGuidanceRequestSchema>;
+export type InternalToleranceGuidanceResult = z.infer<typeof internalToleranceGuidanceResultSchema>;
 export type WorkbookCatalogRequest = z.infer<typeof workbookCatalogRequestSchema>;
 export type WorkbookCatalogResult = z.infer<typeof workbookCatalogResultSchema>;
 export type WorksheetAnalysisAssetsRequest = z.infer<typeof worksheetAnalysisAssetsRequestSchema>;
