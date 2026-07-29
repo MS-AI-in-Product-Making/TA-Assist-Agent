@@ -49,6 +49,8 @@ fixture。此阶段不包含真实工程知识、外部 Adapter、模型、ADO�
 - [F1 工作簿目录实施计划](docs/superpowers/plans/2026-07-23-f1-workbook-catalog.md)
 - [F1.1 工作表资产提取设计](docs/superpowers/specs/2026-07-24-f1-1-worksheet-analysis-assets-design.md)
 - [F1.1 工作表资产提取实施计划](docs/superpowers/plans/2026-07-24-f1-1-worksheet-analysis-assets.md)
+- [F1.7 因子表语义识别与人工确认设计](docs/superpowers/specs/2026-07-29-f1-7-semantic-table-detection-design.md)
+- [F1.7 因子表语义识别与人工确认实施计划](docs/superpowers/plans/2026-07-29-f1-7-semantic-table-detection-implementation.md)
 - [F2.1 必填字段严格校验设计](docs/superpowers/specs/2026-07-27-f2-1-required-field-validation-design.md)
 - [F2.1 必填字段严格校验实施计划](docs/superpowers/plans/2026-07-27-f2-1-required-field-validation.md)
 - [F2.2 能力库与分布一致性校验设计](docs/superpowers/specs/2026-07-27-f2-2-capability-distribution-validation-design.md)
@@ -167,6 +169,32 @@ Deferred until there is a proven need; each can be merged into the product later
 ---
 
 ## Repository Notes
+
+## Dual Markdown Export (A=Actual, D=Display)
+
+For worksheet evidence review, use the reusable dual-track exporter:
+
+- `npm run export:dual-md` writes to `test/demo-output/full-tables-md-dual/`
+- `npm run export:dual-md:lite` writes to `test/demo-output/full-tables-md-lite/`
+
+Output markdown preserves worksheet grid structure and shows:
+
+- single value when actual and display values are identical
+- `A:... / D:...` when actual (`Value2`) and display (`Text`) differ
+
+## Feature 1 Reusable Workflow
+
+Feature 1 parsing and asset-prep can be invoked as a reusable workflow over uploaded TA workbooks.
+
+1. Terminal workflow command:
+	- `npm run workflow:f1`
+	- Output: `test/demo-output/feature1-validation/latest.md` and `test/demo-output/feature1-validation/latest.json`
+2. CLI command:
+	- `node apps/cli/dist/index.js feature1 --root .`
+3. Phrase alias (agent trigger):
+	- `用feature 1来解析报告`
+
+The workflow executes Task 1.1-1.7 with real workbook inputs and emits a final review report including scan, selection, parallel page status, Task 1.5/1.6/1.7 outputs, and real system signals.
 
 - `test/` and all `*.xlsx` (confidential templates / sample data) are **git-ignored**.
 - Internal `*.html` design reports are **git-ignored** and not committed.

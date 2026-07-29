@@ -9,6 +9,7 @@ import {
   type WorksheetAnalysisAssetsResult,
   type WorksheetImageReadResult,
 } from "@ai-assist/contracts";
+import { unzipSync } from "fflate";
 import { readOoxmlWorkbook, type OoxmlCell, type OoxmlWorksheet } from "./ooxml-reader.js";
 
 const REQUEST_SUMMARY = "Worksheet-analysis assets request is invalid.";
@@ -17,7 +18,7 @@ const ARCHIVE_SUMMARY = "Worksheet-analysis assets archive cannot be processed."
 const CELL_REFERENCE = /^([A-Z]+)([1-9]\d*)$/;
 
 const HEADER_ALIASES = {
-  factorName: ["factor", "factor name", "factor description"],
+  factorName: ["factor", "factor name", "factor description", "factor description (ta loop)"],
   partName: ["part name"],
   partCategory: ["part category"],
   nominalValue: ["nominal", "nominal value", "design nominal"],
@@ -39,6 +40,7 @@ const HEADER_ALIASES = {
   assemblyDirection: ["assembly direction"],
 } as const;
 const IMAGE_MEDIA_TYPE = /^(?:image\/[a-z0-9.+-]+|application\/octet-stream)$/;
+const F1_ANALYSIS_CELL_WINDOW = { maxRow: 260, maxColumn: "Z" } as const;
 
 type FieldName = keyof typeof HEADER_ALIASES;
 type Column = { readonly semanticField: FieldName; readonly sourceColumn: string; readonly headerText: string };
@@ -80,7 +82,14 @@ function assetsError(summary: string, reference: string, code: "validation_error
   return createTypedError({ code, summary, suggestedAction: "Provide a supported confidential worksheet-analysis assets request.", affectedInputReferences: [reference] });
 }
 
-function normalize(value: string): string { return value.trim().replace(/\s+/g, " ").toLowerCase(); }
+function normalize(value: string): string {
+  return value
+    .replace(/[▼►]/g, " ")
+    .replace(/\s*\/\s*/g, "/")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
 function address(reference: string): { readonly column: string; readonly row: number } | undefined {
   const match = CELL_REFERENCE.exec(reference);
   return match ? { column: match[1]!, row: Number(match[2]) } : undefined;
@@ -96,6 +105,16 @@ function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
 }
 
 function cellValue(cell: OoxmlCell | undefined): string { return cell?.formula ? cell.cachedValue ?? "" : cell?.value ?? ""; }
+function mediaTypeFromPath(partName: string): string {
+  const lower = partName.toLowerCase();
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  if (lower.endsWith(".gif")) return "image/gif";
+  if (lower.endsWith(".bmp")) return "image/bmp";
+  if (lower.endsWith(".tif") || lower.endsWith(".tiff")) return "image/tiff";
+  if (lower.endsWith(".webp")) return "image/webp";
+  return "application/octet-stream";
+}
 function field(cell: OoxmlCell | undefined, worksheetName: string, semanticField: FieldName) {
   const sourceCell = cell ? `${worksheetName}!${cell.reference}` : undefined;
   if (!cell) return { status: "unavailable" as const, reasonCode: "missing" as const };
@@ -201,10 +220,10 @@ async function processWorksheetPage(
     let worksheet: OoxmlWorksheet | undefined;
     let imageFallback = false;
     try {
-      worksheet = readOoxmlWorkbook(workbookBytes, [analysis.worksheetName]).worksheets.get(analysis.worksheetName);
+      worksheet = readOoxmlWorkbook(workbookBytes, [analysis.worksheetName], true, F1_ANALYSIS_CELL_WINDOW).worksheets.get(analysis.worksheetName);
     } catch {
       // Keep a worksheet independently reviewable even when embedded media is malformed.
-      worksheet = readOoxmlWorkbook(workbookBytes, [analysis.worksheetName], false).worksheets.get(analysis.worksheetName);
+      worksheet = readOoxmlWorkbook(workbookBytes, [analysis.worksheetName], false, F1_ANALYSIS_CELL_WINDOW).worksheets.get(analysis.worksheetName);
       imageFallback = true;
     }
     if (!worksheet) throw assetsError(REQUEST_SUMMARY, "workbook-catalog");
@@ -284,7 +303,7 @@ export function createWorksheetAnalysisAssets(request: unknown): WorksheetAnalys
       workbookCatalog: parsed.data.workbookCatalog,
       worksheetSelection: parsed.data.worksheetSelection,
     });
-    const workbook = readOoxmlWorkbook(parsed.data.workbookBytes, analyses.map((analysis) => analysis.worksheetName));
+    const workbook = readOoxmlWorkbook(parsed.data.workbookBytes, analyses.map((analysis) => analysis.worksheetName), true, F1_ANALYSIS_CELL_WINDOW);
     const worksheets = analyses.map((analysis) => {
       const worksheet = workbook.worksheets.get(analysis.worksheetName);
       if (!worksheet) throw assetsError(REQUEST_SUMMARY, "workbook-catalog");
@@ -332,18 +351,24 @@ export function readWorksheetImageAsset(request: unknown): WorksheetImageReadRes
   try {
     const actualWorkbookHash = createHash("sha256").update(parsed.data.workbookBytes).digest("hex");
     if (actualWorkbookHash !== parsed.data.workbookContentHash) throw assetsError(REQUEST_SUMMARY, "workbook-content-hash");
-    const matches = [...readOoxmlWorkbook(parsed.data.workbookBytes).worksheets.values()]
-      .flatMap((worksheet) => worksheet.images)
-      .filter((image) => image.contentHash === parsed.data.imageContentHash);
-    if (matches.length !== 1) throw assetsError(REQUEST_SUMMARY, "image-content-hash");
-    const image = matches[0]!;
+    const parts = unzipSync(parsed.data.workbookBytes);
+    let imageBytes: Uint8Array | undefined;
+    let imageMediaType = "application/octet-stream";
+    for (const [partName, bytes] of Object.entries(parts)) {
+      if (!partName.startsWith("xl/media/")) continue;
+      if (createHash("sha256").update(bytes).digest("hex") !== parsed.data.imageContentHash) continue;
+      imageBytes = bytes;
+      imageMediaType = mediaTypeFromPath(partName);
+      break;
+    }
+    if (!imageBytes) throw assetsError(REQUEST_SUMMARY, "image-content-hash");
     const result = worksheetImageReadResultSchema.safeParse({
       contractVersion: "v1",
       classification: "confidential",
       workbookContentHash: actualWorkbookHash,
-      imageContentHash: image.contentHash,
-      mediaType: image.mediaType,
-      bytes: image.bytes.slice(),
+      imageContentHash: parsed.data.imageContentHash,
+      mediaType: imageMediaType,
+      bytes: imageBytes.slice(),
     });
     if (!result.success) throw assetsError(REQUEST_SUMMARY, "image-content-hash");
     return result.data;

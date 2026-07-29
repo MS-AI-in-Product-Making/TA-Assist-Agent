@@ -341,23 +341,23 @@ const nonEmptyWorkbookBytesSchema = z.instanceof(Uint8Array).refine(
   { message: "workbookBytes must not be empty" },
 );
 
+const worksheetSelectionSchema = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("all") }).strict(),
+  z
+    .object({
+      mode: z.literal("selected"),
+      worksheetNames: z.array(z.string().min(1)).min(1),
+    })
+    .strict(),
+]);
+
 export const worksheetAnalysisAssetsRequestSchema = z
   .object({
     contractVersion: contractVersionSchema,
     inputClassification: z.literal("confidential"),
     workbookBytes: nonEmptyWorkbookBytesSchema,
     workbookCatalog: workbookCatalogResultSchema,
-    worksheetSelection: z
-      .discriminatedUnion("mode", [
-        z.object({ mode: z.literal("all") }).strict(),
-        z
-          .object({
-            mode: z.literal("selected"),
-            worksheetNames: z.array(z.string().min(1)).min(1),
-          })
-          .strict(),
-      ])
-      .optional(),
+    worksheetSelection: worksheetSelectionSchema.optional(),
   })
   .strict()
   .superRefine((request, context) => {
@@ -533,6 +533,212 @@ export const worksheetAnalysisAssetsResultSchema = z
     ).min(1),
   })
   .strict();
+
+const semanticDetectionReasonCodeSchema = z.enum([
+  "missing_required_field",
+  "duplicate_mapping",
+  "ambiguous_mapping",
+  "invalid_format",
+  "invalid_manual_confirmation",
+  "no_candidate_detected",
+]);
+
+const semanticDetectionRecommendedActionSchema = z.enum([
+  "confirm_as_is",
+  "remap_fields",
+  "select_another_candidate",
+  "skip_sheet",
+]);
+
+const semanticDetectionFieldNameSchema = z.enum([
+  "factorName",
+  "partName",
+  "partCategory",
+  "nominalValue",
+  "upperTolerance",
+  "lowerTolerance",
+  "longTermSafetyFactor",
+  "distribution",
+  "drawingNumber",
+  "dimCharacteristicId",
+]);
+
+const semanticDetectionFieldMappingSchema = z
+  .object({
+    field: semanticDetectionFieldNameSchema,
+    sourceColumn: z.string().regex(/^[A-Z]+$/).optional(),
+    headerText: z.string().min(1).optional(),
+    status: z.enum(["mapped", "missing", "duplicate", "ambiguous"]),
+  })
+  .strict();
+
+const semanticDetectionConfidenceBreakdownSchema = z
+  .object({
+    headerScore: z.number().int().min(0).max(45),
+    typeScore: z.number().int().min(0).max(25),
+    completenessScore: z.number().int().min(0).max(20),
+    penalty: z.number().int().min(0).max(30),
+  })
+  .strict();
+
+const semanticDetectionDataRangeSchema = z
+  .object({
+    startRow: z.number().int().positive(),
+    endRow: z.number().int().positive(),
+  })
+  .strict()
+  .refine((range) => range.startRow <= range.endRow, {
+    message: "dataRange startRow must not exceed endRow",
+    path: ["startRow"],
+  });
+
+const semanticDetectionConfirmationPayloadSchema = z
+  .object({
+    candidateId: z.string().min(1),
+    headerRow: z.number().int().positive(),
+    dataRange: semanticDetectionDataRangeSchema,
+    mappedFields: z.array(semanticDetectionFieldMappingSchema),
+    recommendedAction: semanticDetectionRecommendedActionSchema,
+    reasonCodes: z.array(semanticDetectionReasonCodeSchema),
+  })
+  .strict();
+
+const semanticDetectionWorksheetResultSchema = z
+  .object({
+    worksheetName: z.string().min(1),
+    recognitionStatus: z.enum([
+      "auto_confirmed",
+      "pending_confirmation",
+      "manual_confirmed",
+      "blocked",
+    ]),
+    confidenceScore: z.number().int().min(0).max(100),
+    confidenceBreakdown: semanticDetectionConfidenceBreakdownSchema,
+    uncertaintyReasons: z.array(semanticDetectionReasonCodeSchema),
+    requiresUserConfirmation: z.boolean(),
+    confirmationPayload: semanticDetectionConfirmationPayloadSchema.optional(),
+  })
+  .strict();
+
+const semanticDetectionManualConfirmationSchema = z
+  .object({
+    worksheetName: z.string().min(1),
+    candidateId: z.string().min(1),
+    action: semanticDetectionRecommendedActionSchema,
+  })
+  .strict();
+
+export const semanticTableDetectionRequestSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    inputClassification: z.literal("confidential"),
+    workbookBytes: nonEmptyWorkbookBytesSchema,
+    workbookCatalog: workbookCatalogResultSchema,
+    worksheetSelection: worksheetSelectionSchema.optional(),
+    manualConfirmations: z.array(semanticDetectionManualConfirmationSchema).optional(),
+  })
+  .strict()
+  .superRefine((request, context) => {
+    if (
+      request.worksheetSelection?.mode === "selected"
+      && new Set(request.worksheetSelection.worksheetNames).size !== request.worksheetSelection.worksheetNames.length
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "worksheetNames must be unique",
+        path: ["worksheetSelection", "worksheetNames"],
+      });
+    }
+  });
+
+export const semanticTableDetectionResultSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    inputClassification: z.literal("confidential"),
+    workbook: z
+      .object({
+        contentHash: sha256Schema,
+        catalogContractVersion: contractVersionSchema,
+      })
+      .strict(),
+    worksheets: z.array(semanticDetectionWorksheetResultSchema).min(1),
+    summary: z
+      .object({
+        worksheetCount: z.number().int().nonnegative(),
+        autoConfirmedCount: z.number().int().nonnegative(),
+        manualConfirmedCount: z.number().int().nonnegative(),
+        pendingConfirmationCount: z.number().int().nonnegative(),
+        blockedCount: z.number().int().nonnegative(),
+      })
+      .strict(),
+  })
+  .strict()
+  .superRefine((result, context) => {
+    const autoConfirmedCount = result.worksheets.filter((worksheet) => worksheet.recognitionStatus === "auto_confirmed").length;
+    const manualConfirmedCount = result.worksheets.filter((worksheet) => worksheet.recognitionStatus === "manual_confirmed").length;
+    const pendingConfirmationCount = result.worksheets.filter((worksheet) => worksheet.recognitionStatus === "pending_confirmation").length;
+    const blockedCount = result.worksheets.filter((worksheet) => worksheet.recognitionStatus === "blocked").length;
+
+    if (result.summary.worksheetCount !== result.worksheets.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "worksheetCount must match worksheets length",
+        path: ["summary", "worksheetCount"],
+      });
+    }
+    if (result.summary.autoConfirmedCount !== autoConfirmedCount) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "autoConfirmedCount must match worksheets",
+        path: ["summary", "autoConfirmedCount"],
+      });
+    }
+    if (result.summary.manualConfirmedCount !== manualConfirmedCount) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "manualConfirmedCount must match worksheets",
+        path: ["summary", "manualConfirmedCount"],
+      });
+    }
+    if (result.summary.pendingConfirmationCount !== pendingConfirmationCount) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "pendingConfirmationCount must match worksheets",
+        path: ["summary", "pendingConfirmationCount"],
+      });
+    }
+    if (result.summary.blockedCount !== blockedCount) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "blockedCount must match worksheets",
+        path: ["summary", "blockedCount"],
+      });
+    }
+
+    for (const [index, worksheet] of result.worksheets.entries()) {
+      if ((worksheet.recognitionStatus === "pending_confirmation" || worksheet.recognitionStatus === "blocked") && !worksheet.requiresUserConfirmation) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "requiresUserConfirmation must be true for pending_confirmation or blocked",
+          path: ["worksheets", index, "requiresUserConfirmation"],
+        });
+      }
+      if ((worksheet.recognitionStatus === "pending_confirmation" || worksheet.recognitionStatus === "blocked") && worksheet.confirmationPayload === undefined) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "confirmationPayload is required for pending_confirmation or blocked",
+          path: ["worksheets", index, "confirmationPayload"],
+        });
+      }
+      if ((worksheet.recognitionStatus === "auto_confirmed" || worksheet.recognitionStatus === "manual_confirmed") && worksheet.requiresUserConfirmation) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "requiresUserConfirmation must be false for confirmed status",
+          path: ["worksheets", index, "requiresUserConfirmation"],
+        });
+      }
+    }
+  });
 
 const requiredFieldNameSchema = z.enum([
   "factorName",
@@ -1392,6 +1598,8 @@ export type WorksheetSelectionViewRequest = z.infer<typeof worksheetSelectionVie
 export type WorksheetSelectionViewResult = z.infer<typeof worksheetSelectionViewResultSchema>;
 export type WorksheetAnalysisAssetsRequest = z.infer<typeof worksheetAnalysisAssetsRequestSchema>;
 export type WorksheetAnalysisAssetsResult = z.infer<typeof worksheetAnalysisAssetsResultSchema>;
+export type SemanticTableDetectionRequest = z.infer<typeof semanticTableDetectionRequestSchema>;
+export type SemanticTableDetectionResult = z.infer<typeof semanticTableDetectionResultSchema>;
 export type WorksheetImageReadRequest = z.infer<typeof worksheetImageReadRequestSchema>;
 export type WorksheetImageReadResult = z.infer<typeof worksheetImageReadResultSchema>;
 export type RequiredFieldCheckRequest = z.infer<typeof requiredFieldCheckRequestSchema>;
