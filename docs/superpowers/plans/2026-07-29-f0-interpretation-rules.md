@@ -200,16 +200,17 @@ expect(JSON.stringify(snapshot)).not.toMatch(/worked example|project name|part n
 
 - [ ] **Step 3: Add approved generalized entries.** Convert approved content from metric definitions, performance rules, root-cause library, improvement options, F5/F6 decision logic, and source register. Use the actual source SHA-256 and reviewed ranges. Exclude `06_Worked_Examples`, `07_Dynamic_Calculator`, `09_Fallback_Calculator`, and `10_Example_TA_Interpretation`.
 
-Include these semantic chains without case-specific prose:
+Include these reviewed semantic chains without case-specific prose:
 
 ```text
-metric.cpk -> performance.cpk.resolved-target
-  -> signal.cpk.below-target -> option.reduce-dominant-variation
-metric.contribution-percent -> performance.contribution.concentration
-  -> signal.dominant-contributor -> option.review-dominant-contributor
+metric.cpk -> performance.cpk.below-resolved-target
+  -> signal.dominant-contributor (max contribution >=30%)
+  -> option.review-dominant-contributor
+metric.cpk -> performance.cpk.meets-resolved-target
+  -> terminate without triggering a root-cause signal
 ```
 
-Use `sourceAlias`, never the confidential file name. Derive manifest counts and hashes using canonical metadata.
+The contributor threshold comes directly from the RC03 root-cause signal activation condition. Do not create a contribution performance rule: performance entries compare an actual metric with a resolved target, and RC03 has no contribution target. Use `sourceAlias`, never the confidential file name. Derive manifest counts and hashes using canonical metadata.
 
 - [ ] **Step 4: Verify and commit.** Run snapshot, validation, and query tests, and verify `git ls-files` contains no workbook. Commit:
 
@@ -272,8 +273,8 @@ Expected: all validations PASS and the final command returns no tracked workbook
 
 ## Plan Self-Review
 
-- Tasks 1-4 cover every knowledge type, source evidence, immutable snapshot, deterministic query, target precedence, insufficient facts, hypotheses, and unranked options.
+- Tasks 1-4 cover the v1 release-review subset across every required knowledge type, source evidence, immutable snapshot, deterministic query, target precedence, insufficient facts, hypotheses, and unranked options.
 - Tasks 3, 5, and 6 preserve `public/v1`, `internal-v1`, the 110-entry baseline, and F5/F6 unavailable states.
-- Task 4 excludes worked examples and calculators from production while retaining source-register evidence.
+- Task 4 excludes worked examples and calculators from production while retaining source-register evidence; it does not promise or fabricate a contribution performance rule.
 - Tasks 5-6 enforce the `internal`/`confidential` boundary and verify no workbook is tracked.
 - Function names, version literals, statuses, and DTO fields are consistent across tasks; no implementation placeholder remains.

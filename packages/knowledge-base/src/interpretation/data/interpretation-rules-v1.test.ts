@@ -30,6 +30,19 @@ const EXCLUDED_SHEETS = [
   "09_Fallback_Calculator",
   "10_Example_TA_Interpretation",
 ];
+const FORBIDDEN_SNAPSHOT_PATTERNS = [
+  /worked example/i,
+  /workbook example/i,
+  /project/i,
+  /part number/i,
+  /example_ta|m1160113/i,
+  /TA_Agent_Knowledge_Base|\.xlsx?\b/i,
+  /https?:\/\//i,
+  /\brank(?:ed|ing)?\b/i,
+  /\bP[1-5]\b/i,
+  /\b(?:0\.135|0\.185)\b/,
+  /"1\.00"/,
+] as const;
 
 describe("reviewed interpretation-rules-v1 production snapshot", () => {
   it("publishes the fixed reviewed subset with all five entry types", () => {
@@ -73,11 +86,10 @@ describe("reviewed interpretation-rules-v1 production snapshot", () => {
     const seed = createReviewedInterpretationRulesV1SeedPackage();
     const serialized = JSON.stringify(seed);
 
-    expect(serialized).not.toMatch(/project|part|worked example|workbook example|Example_TA|M1160113|0\.135|0\.185|shim group|https?:\/\//i);
-    expect(serialized).not.toMatch(/\.xlsx?|TA_Agent_Knowledge_Base/i);
-    expect(serialized).not.toMatch(/"(?:rank|recommendation|priority)"\s*:/i);
-    expect(serialized).not.toMatch(/\bP1\b/);
-    expect(serialized).not.toMatch(/(?:target|threshold)[^\n]{0,40}1\.00|1\.00[^\n]{0,40}(?:target|threshold)/i);
+    for (const pattern of FORBIDDEN_SNAPSHOT_PATTERNS) {
+      expect(serialized).not.toMatch(pattern);
+    }
+    expect(serialized).not.toMatch(/shim group/i);
 
     const performanceRules = seed.entries.filter((entry) => entry.entryType === "performance-rule");
     expect(performanceRules).toHaveLength(2);
