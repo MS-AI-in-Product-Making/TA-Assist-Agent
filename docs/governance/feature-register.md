@@ -7,8 +7,7 @@ Feature Register 是 Phase 0 对 F0-F8 的唯一可查询能力清单。它提�
 误认为可用。F0 为本地、匿名、`public`、只读的 `knowledge-base-v1` 查询，以及经审查的
 `internal-v1` 制程指导和 `interpretation-rules-v1` 解读规则而标记为 `available`；F1 为受控 `confidential` 工作簿字节的只读 catalog 与 F1.1 资产准备而标记为
 `available`；F1.7 为因子表语义识别与人工确认闸门而标记为 `available`；F2.1 为严格必填字段校验而标记为 `available`；F2.2 为非阻断能力库与 distribution
-一致性校验而标记为 `available`；F2.3-F2.4 也作为各自受限校验能力标记为 `available`；
-根 F2 和 F3-F7 均为 `unavailable`。F8 仅为 Phase 0 的匿名、`public`、受治理 Skill 验收 fixture 而标记为
+一致性校验而标记为 `available`；根 F2、F2.3-F2.4 和 F3-F7 均为 `unavailable`。F8 仅为 Phase 0 的匿名、`public`、受治理 Skill 验收 fixture 而标记为
 `available`。这些状态不表示已交付 TA 产品工作流、生产编排器、真实工程知识或任何外部写入
 能力；调用方和后续编排器仍必须在执行前查询该清单。
 
@@ -16,7 +15,7 @@ Feature Register 是 Phase 0 对 F0-F8 的唯一可查询能力清单。它提�
 
 | Feature | 标题 | 当前状态 | 依赖与外部前置条件 | 输入/输出契约 | 最大分类 | 验收检查 | 禁用行为 |
 |---|---|---|---|---|---|---|---|
-| F0 | 知识库 | `available` | `knowledge-base-v1`, `internal-tolerance-guidance-v1`, `interpretation-rules-v1`; `approved-public-knowledge-snapshot`, `approved-internal-knowledge-snapshot`, `approved-interpretation-rules-snapshot` | `knowledge-base-query-request-v1` / `knowledge-base-query-result-v1` | `internal` | `anonymous-knowledge-base-fixture`, `knowledge-base-integrity-check`, `internal-tolerance-guidance-integrity-check`, `interpretation-rules-integrity-check`, `internal-interpretation-source-evidence` | `return feature_not_available` |
+| F0 | 知识库 | `available` | `knowledge-base-v1`, `internal-tolerance-guidance-v1`, `interpretation-rules-v1`; `approved-public-knowledge-snapshot`, `approved-internal-knowledge-snapshot`, `approved-interpretation-rules-snapshot` | `knowledge-base-query-request-v1` / `knowledge-base-query-result-v1` | `internal` | `anonymous-knowledge-base-fixture`, `unknown-capability-t0-fixture`, `knowledge-base-integrity-check`, `internal-tolerance-guidance-integrity-check`, `guidance-only-result-fixture`, `internal-source-evidence-dto`, `interpretation-rules-integrity-check`, `internal-interpretation-source-evidence` | `return feature_not_available` |
 | F1 | TA 报告解析与资产准备 | `available` | `workbook-catalog-v1`, `worksheet-analysis-assets-v1`; `approved-ooxml-parser` | `worksheet-analysis-assets-request-v1` / `worksheet-analysis-assets-result-v1` | `confidential` | `anonymous-workbook-catalog-fixture`, `dynamic-date-cache-fixture`, `workbook-catalog-privacy-check`, `anonymous-worksheet-analysis-assets-fixture`, `worksheet-image-read-privacy-check` | `return feature_not_available` |
 | F1.7 | TA 因子表语义识别与人工确认 | `available` | `workbook-catalog-v1`, `semantic-table-detection-v1`; `approved-ooxml-parser` | `semantic-table-detection-request-v1` / `semantic-table-detection-result-v1` | `confidential` | `anonymous-semantic-table-detection-fixture`, `semantic-detection-failfast-check`, `semantic-detection-privacy-check` | `return feature_not_available` |
 | F2 | TA 风险与行动建议 | `unavailable` | `quality-rules-v1`, `recommendation-engine-v1`; `approved-recommendation-rules` | `recommendation-request-v1` / `recommendation-result-v1` | `confidential` | `anonymous-recommendation-fixture` | `return feature_not_available` |
