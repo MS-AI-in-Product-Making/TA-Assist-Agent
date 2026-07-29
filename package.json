@@ -10,7 +10,13 @@
     "build": "tsc -b",
     "lint": "eslint .",
     "test": "npm run build -- --force && vitest run --workspace vitest.workspace.ts",
-    "check:repository": "node scripts/verify-repository.mjs"
+    "check:repository": "node scripts/verify-repository.mjs",
+    "export:dual-md": "pwsh -NoProfile -File scripts/export-excel-dual-grid.ps1",
+    "export:dual-md:lite": "pwsh -NoProfile -File scripts/export-excel-dual-grid.ps1 -OutputDir test/demo-output/full-tables-md-lite",
+    "demo:task1.5": "node scripts/run-f1-task1-5-demo.mjs",
+    "demo:task1.6": "node scripts/run-f1-task1-6-demo.mjs",
+    "demo:task1.7": "node scripts/run-f1-task1-7-demo.mjs",
+    "workflow:f1": "node scripts/run-f1-full-validation.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",

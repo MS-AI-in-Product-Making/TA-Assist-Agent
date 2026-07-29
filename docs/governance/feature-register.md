@@ -6,7 +6,7 @@ Feature Register 是 Phase 0 对 F0-F8 的唯一可查询能力清单。它提�
 用于区分已完成的工程基座与尚未交付的业务能力，避免调用方、测试或文档将规划能力
 误认为可用。F0 为本地、匿名、`public`、只读的 `knowledge-base-v1` 查询与经审查的 `internal`
 指导元数据而标记为 `available`；F1 为受控 `confidential` 工作簿字节的只读 catalog 与 F1.1 资产准备而标记为
-`available`；F2.1 为严格必填字段校验而标记为 `available`；F2.2 为非阻断能力库与 distribution
+`available`；F1.7 为因子表语义识别与人工确认闸门而标记为 `available`；F2.1 为严格必填字段校验而标记为 `available`；F2.2 为非阻断能力库与 distribution
 一致性校验而标记为 `available`；根 F2、F2.3-F2.4 和 F3-F7 均为 `unavailable`。F8 仅为 Phase 0 的匿名、`public`、受治理 Skill 验收 fixture 而标记为
 `available`。这些状态不表示已交付 TA 产品工作流、生产编排器、真实工程知识或任何外部写入
 能力；调用方和后续编排器仍必须在执行前查询该清单。
@@ -17,6 +17,7 @@ Feature Register 是 Phase 0 对 F0-F8 的唯一可查询能力清单。它提�
 |---|---|---|---|---|---|---|---|
 | F0 | 知识库 | `available` | `knowledge-base-v1`, `internal-tolerance-guidance-v1`; `approved-public-knowledge-snapshot`, `approved-internal-knowledge-snapshot` | `knowledge-base-query-request-v1` / `knowledge-base-query-result-v1` | `internal` | `anonymous-knowledge-base-fixture`, `unknown-capability-t0-fixture`, `knowledge-base-integrity-check`, `internal-tolerance-guidance-integrity-check`, `guidance-only-result-fixture`, `internal-source-evidence-dto` | `return feature_not_available` |
 | F1 | TA 报告解析与资产准备 | `available` | `workbook-catalog-v1`, `worksheet-analysis-assets-v1`; `approved-ooxml-parser` | `worksheet-analysis-assets-request-v1` / `worksheet-analysis-assets-result-v1` | `confidential` | `anonymous-workbook-catalog-fixture`, `dynamic-date-cache-fixture`, `workbook-catalog-privacy-check`, `anonymous-worksheet-analysis-assets-fixture`, `worksheet-image-read-privacy-check` | `return feature_not_available` |
+| F1.7 | TA 因子表语义识别与人工确认 | `available` | `workbook-catalog-v1`, `semantic-table-detection-v1`; `approved-ooxml-parser` | `semantic-table-detection-request-v1` / `semantic-table-detection-result-v1` | `confidential` | `anonymous-semantic-table-detection-fixture`, `semantic-detection-failfast-check`, `semantic-detection-privacy-check` | `return feature_not_available` |
 | F2 | TA 风险与行动建议 | `unavailable` | `quality-rules-v1`, `recommendation-engine-v1`; `approved-recommendation-rules` | `recommendation-request-v1` / `recommendation-result-v1` | `confidential` | `anonymous-recommendation-fixture` | `return feature_not_available` |
 | F2.1 | TA 必填字段严格校验 | `available` | `worksheet-analysis-assets-v1`, `required-field-check-v1`; `approved-ooxml-parser` | `required-field-check-request-v1` / `required-field-check-result-v1` | `confidential` | `anonymous-required-field-check-fixture`, `required-field-blocking-check`, `required-field-privacy-check` | `return feature_not_available` |
 | F2.2 | 能力库与分布一致性校验 | `available` | `worksheet-analysis-assets-v1`, `required-field-check-v1`, `knowledge-base-v1`, `capability-validation-v1`; `approved-public-knowledge-snapshot` | `capability-validation-request-v1` / `capability-validation-result-v1` | `confidential` | `anonymous-capability-validation-fixture`, `capability-validation-gate-check`, `capability-validation-nonblocking-check`, `capability-validation-privacy-check` | `return feature_not_available` |
@@ -49,6 +50,9 @@ F0 内部指导范围与维护边界见 [F0 内部制程公差指导库设计](.
   worksheet catalog、因子表/公式 cached value/图片元数据证据。它不计算、不换算单位、不 OCR、
   不渲染、不解释风险、不写回、不调用外部服务，也不跟踪或导出原始 `.xlsx`；不得将该状态
   解释为完整 TA 工作流可用。
+- F1.7 的 `available` 仅在 F1 输入边界内完成候选因子表识别、字段映射评分与人工确认闸门。
+  当关键字段缺失、映射冲突或低置信度时，结果必须进入 `pending_confirmation` 或 `blocked`，
+  未确认 worksheet 不得继续下游流程。F1.7 不做工程计算、风险结论、外部调用或 workbook 写回。
 - F2.1 的 `available` 只接受已验证的 F1.1 confidential 资产，严格阻断缺失或不可用的九项
   因子字段。Drawing Number 与 DIM/Characteristic ID 仅为非阻断提示；F2.1 不查询能力库、
   不记录例外、不治理 DIM ID、不计算、不解释风险、不写回或调用外部服务。

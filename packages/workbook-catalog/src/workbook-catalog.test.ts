@@ -145,6 +145,19 @@ describe("workbook catalog", () => {
     expect(workbookCatalogResultSchema.safeParse(result).success).toBe(true);
   });
 
+  it("accepts Title Page metadata labels with optional trailing colons", () => {
+    const workbookBytes = catalogWorkbook({
+      titleRows: `<row r="2">${cell("A2", "Document No.:")}${cell("B2", "DOC-007")}</row><row r="4">${cell("A4", "Revision")}${cell("B4", "R2")}</row><row r="6">${cell("A6", "Date")}${cell("B6", "2026-07-23")}</row>`,
+    });
+    const result = createWorkbookCatalog(request(workbookBytes));
+
+    expect(result.workbook.metadata).toEqual({
+      documentNo: "DOC-007",
+      revision: "R2",
+      date: { value: "2026-07-23", sourceCell: "Title Page!B6" },
+    });
+  });
+
   it.each([
     ["ISO", "2026-07-23"],
     ["Excel serial", "46226"],

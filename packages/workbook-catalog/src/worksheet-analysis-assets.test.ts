@@ -2,7 +2,27 @@ import { describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
 import { createWorkbookCatalog } from "./workbook-catalog.js";
 import { createAnonymousWorkbookZip } from "./test-support.js";
-import { createWorksheetAnalysisAssets, readWorksheetImageAsset } from "./worksheet-analysis-assets.js";
+import { createWorksheetAnalysisAssets, createWorksheetAnalysisAssetsParallel, readWorksheetImageAsset } from "./worksheet-analysis-assets.js";
+
+function selectionWorkbook(): Uint8Array {
+  return createAnonymousWorkbookZip({ xmlParts: {
+    "xl/worksheets/sheet1.xml": '<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="2"><c r="A2"><v>Document No.</v></c><c r="B2"><v>DOC-007</v></c></row><row r="4"><c r="A4"><v>Revision:</v></c><c r="B4"><v>R2</v></c></row><row r="6"><c r="A6"><v>Date:</v></c><c r="B6"><v>2026-07-23</v></c></row></sheetData></worksheet>',
+    "xl/worksheets/sheet2.xml": '<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="9"><c r="A9"><v>Device Level Dim</v></c><c r="C9"><v>Tolerance Loop Description</v></c></row><row r="10"><c r="A10"><v>Analysis-A</v></c><c r="C10"><v>First tolerance loop</v></c></row><row r="11"><c r="A11"><v>Analysis-B</v></c><c r="C11"><v>Second tolerance loop</v></c></row></sheetData></worksheet>',
+    "xl/worksheets/sheet3.xml": '<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Factor</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>only-a</t></is></c></row></sheetData></worksheet>',
+    "xl/worksheets/sheet4.xml": '<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Factor</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>only-b</t></is></c></row></sheetData></worksheet>',
+  } });
+}
+
+function largeWorksheetWorkbook(): Uint8Array {
+  const header = '<row r="5"><c r="A5" t="inlineStr"><is><t>Factor</t></is></c><c r="B5" t="inlineStr"><is><t>Nominal Value</t></is></c><c r="C5" t="inlineStr"><is><t>Unit</t></is></c></row>';
+  const firstDataRow = '<row r="6"><c r="A6" t="inlineStr"><is><t>region-factor</t></is></c><c r="B6"><v>1.25</v></c><c r="C6" t="inlineStr"><is><t>mm</t></is></c></row>';
+  let fillerRows = "";
+  for (let row = 300; row <= 999; row += 1) {
+    fillerRows += `<row r="${row}"><c r="A${row}"><v>1</v></c><c r="B${row}"><v>2</v></c><c r="C${row}"><v>3</v></c><c r="D${row}"><v>4</v></c><c r="E${row}"><v>5</v></c><c r="F${row}"><v>6</v></c><c r="G${row}"><v>7</v></c><c r="H${row}"><v>8</v></c><c r="I${row}"><v>9</v></c><c r="J${row}"><v>10</v></c><c r="K${row}"><v>11</v></c><c r="L${row}"><v>12</v></c><c r="M${row}"><v>13</v></c><c r="N${row}"><v>14</v></c><c r="O${row}"><v>15</v></c></row>`;
+  }
+  const analysisSheet = `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${header}${firstDataRow}${fillerRows}</sheetData></worksheet>`;
+  return createAnonymousWorkbookZip({ xmlParts: { "xl/worksheets/sheet3.xml": analysisSheet } });
+}
 
 describe("worksheet analysis assets", () => {
   it("extracts assets only for worksheets confirmed by the matching catalog", () => {
@@ -33,6 +53,205 @@ describe("worksheet analysis assets", () => {
       rows: [{ sourceRow: 2, fields: { factorName: { status: "available", rawText: "anonymous-factor", sourceCell: "Analysis-A!A2" }, nominalValue: { status: "available", rawText: "1.25", numericValue: 1.25, sourceCell: "Analysis-A!B2" } } }],
     });
     expect(Object.isFrozen(result)).toBe(true);
+  });
+
+  it("supports selecting a single worksheet before asset extraction", () => {
+    const workbookBytes = selectionWorkbook();
+    const workbookCatalog = createWorkbookCatalog({ contractVersion: "v1", inputClassification: "confidential", fileName: "anonymous.xlsx", workbookBytes });
+
+    const result = createWorksheetAnalysisAssets({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbookBytes,
+      workbookCatalog,
+      worksheetSelection: { mode: "selected", worksheetNames: ["Analysis-B"] },
+    });
+
+    expect(result.worksheets).toHaveLength(1);
+    expect(result.worksheets[0]?.worksheetName).toBe("Analysis-B");
+  });
+
+  it("supports selecting multiple worksheets in catalog order", () => {
+    const workbookBytes = selectionWorkbook();
+    const workbookCatalog = createWorkbookCatalog({ contractVersion: "v1", inputClassification: "confidential", fileName: "anonymous.xlsx", workbookBytes });
+
+    const result = createWorksheetAnalysisAssets({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbookBytes,
+      workbookCatalog,
+      worksheetSelection: { mode: "selected", worksheetNames: ["Analysis-B", "Analysis-A"] },
+    });
+
+    expect(result.worksheets.map((worksheet) => worksheet.worksheetName)).toEqual(["Analysis-A", "Analysis-B"]);
+  });
+
+  it("supports explicit all mode selection", () => {
+    const workbookBytes = selectionWorkbook();
+    const workbookCatalog = createWorkbookCatalog({ contractVersion: "v1", inputClassification: "confidential", fileName: "anonymous.xlsx", workbookBytes });
+
+    const result = createWorksheetAnalysisAssets({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbookBytes,
+      workbookCatalog,
+      worksheetSelection: { mode: "all" },
+    });
+
+    expect(result.worksheets).toHaveLength(workbookCatalog.analyses.length);
+  });
+
+  it("rejects selecting worksheets outside the detected catalog", () => {
+    const workbookBytes = selectionWorkbook();
+    const workbookCatalog = createWorkbookCatalog({ contractVersion: "v1", inputClassification: "confidential", fileName: "anonymous.xlsx", workbookBytes });
+
+    expect(() => createWorksheetAnalysisAssets({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbookBytes,
+      workbookCatalog,
+      worksheetSelection: { mode: "selected", worksheetNames: ["Unknown-Sheet"] },
+    })).toThrow("Worksheet-analysis assets request is invalid.");
+  });
+
+  it("processes selected worksheets in parallel mode with independent review pages", async () => {
+    const workbookBytes = selectionWorkbook();
+    const workbookCatalog = createWorkbookCatalog({ contractVersion: "v1", inputClassification: "confidential", fileName: "anonymous.xlsx", workbookBytes });
+
+    const result = await createWorksheetAnalysisAssetsParallel({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbookBytes,
+      workbookCatalog,
+      worksheetSelection: { mode: "selected", worksheetNames: ["Analysis-B", "Analysis-A"] },
+    });
+
+    expect(result.processingMode).toBe("parallel");
+    expect(result.assets.worksheets.map((worksheet) => worksheet.worksheetName)).toEqual(["Analysis-A", "Analysis-B"]);
+    expect(result.pages).toHaveLength(2);
+    expect(result.pages).toEqual([
+      expect.objectContaining({ worksheetName: "Analysis-A", status: "processed" }),
+      expect.objectContaining({ worksheetName: "Analysis-B", status: "processed" }),
+    ]);
+    expect(result.pages.every((page) => page.durationMs >= 0)).toBe(true);
+    expect(Object.isFrozen(result.pages)).toBe(true);
+    expect(Object.isFrozen(result.pages[0]!)).toBe(true);
+  });
+
+  it("keeps sync and parallel extraction outputs equivalent for all-mode selection", async () => {
+    const workbookBytes = selectionWorkbook();
+    const workbookCatalog = createWorkbookCatalog({ contractVersion: "v1", inputClassification: "confidential", fileName: "anonymous.xlsx", workbookBytes });
+
+    const syncResult = createWorksheetAnalysisAssets({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbookBytes,
+      workbookCatalog,
+      worksheetSelection: { mode: "all" },
+    });
+    const parallelResult = await createWorksheetAnalysisAssetsParallel({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbookBytes,
+      workbookCatalog,
+      worksheetSelection: { mode: "all" },
+    });
+
+    expect(parallelResult.assets).toEqual(syncResult);
+  });
+
+  it("extracts factor tables from large worksheets by reading only the analysis window", async () => {
+    const workbookBytes = largeWorksheetWorkbook();
+    const contentHash = createHash("sha256").update(workbookBytes).digest("hex");
+    const request = {
+      contractVersion: "v1" as const,
+      inputClassification: "confidential" as const,
+      workbookBytes,
+      workbookCatalog: {
+        contractVersion: "v1" as const,
+        workbook: { fileName: "anonymous.xlsx", classification: "confidential" as const, contentHash, metadata: { documentNo: "DOC", revision: "R", date: { value: "2026-07-28", sourceCell: "Title Page!A1" } } },
+        analyses: [{ worksheetName: "Analysis-A", toleranceLoopDescription: "window-target", source: { summarySheet: "Auto Summary" as const, summaryRow: 1, worksheetAnchor: "Analysis-A!A1" } }],
+      },
+      worksheetSelection: { mode: "selected" as const, worksheetNames: ["Analysis-A"] },
+    };
+
+    const sync = createWorksheetAnalysisAssets(request);
+    const parallel = await createWorksheetAnalysisAssetsParallel(request);
+
+    expect(sync.worksheets[0]?.factorTables[0]?.rows[0]).toMatchObject({
+      sourceRow: 6,
+      fields: {
+        factorName: { status: "available", rawText: "region-factor" },
+        nominalValue: { status: "available", numericValue: 1.25 },
+      },
+    });
+    expect(parallel.pages[0]).toMatchObject({
+      worksheetName: "Analysis-A",
+      status: "processed",
+    });
+  });
+
+  it("marks failed parallel pages with workbook_archive reasonCode", async () => {
+    const workbookBytes = createAnonymousWorkbookZip({ xmlParts: {
+      "xl/worksheets/sheet3.xml": '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Factor</t></is></c></row><row r="2"><c r="A2" t="b"><v>1</v></c></row></sheetData></worksheet>',
+    } });
+    const contentHash = createHash("sha256").update(workbookBytes).digest("hex");
+
+    const result = await createWorksheetAnalysisAssetsParallel({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbookBytes,
+      workbookCatalog: {
+        contractVersion: "v1",
+        workbook: { fileName: "anonymous.xlsx", classification: "confidential", contentHash, metadata: { documentNo: "DOC", revision: "R", date: { value: "2026-07-28", sourceCell: "Title Page!A1" } } },
+        analyses: [{ worksheetName: "Analysis-A", toleranceLoopDescription: "anonymous", source: { summarySheet: "Auto Summary", summaryRow: 1, worksheetAnchor: "Analysis-A!A1" } }],
+      },
+      worksheetSelection: { mode: "selected", worksheetNames: ["Analysis-A"] },
+    });
+
+    expect(result.pages).toHaveLength(1);
+    expect(result.pages[0]).toMatchObject({
+      worksheetName: "Analysis-A",
+      status: "failed",
+      reasonCode: "workbook_archive",
+    });
+    expect(result.assets.worksheets[0]).toMatchObject({
+      worksheetName: "Analysis-A",
+      factorTables: [],
+      formulaCells: [],
+      imageAssets: [],
+    });
+  });
+
+  it("marks image-fallback pages with image_extraction_skipped reasonCode", async () => {
+    const workbookBytes = createAnonymousWorkbookZip({ xmlParts: {
+      "xl/worksheets/sheet3.xml": '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Factor</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>anonymous-factor</t></is></c></row></sheetData><drawing r:id="rIdDrawing"/></worksheet>',
+      "xl/worksheets/_rels/sheet3.xml.rels": '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDrawing" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/></Relationships>',
+      "xl/drawings/drawing1.xml": '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><xdr:oneCellAnchor><xdr:from><xdr:col>0</xdr:col><xdr:row>0</xdr:row></xdr:from><xdr:pic><xdr:blipFill><a:blip r:embed="rIdImage"/></xdr:blipFill></xdr:pic><xdr:clientData/></xdr:oneCellAnchor></xdr:wsDr>',
+      "xl/drawings/_rels/drawing1.xml.rels": '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdImage" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="https://anonymous.invalid/image.png" TargetMode="External"/></Relationships>',
+    } });
+    const contentHash = createHash("sha256").update(workbookBytes).digest("hex");
+
+    const result = await createWorksheetAnalysisAssetsParallel({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbookBytes,
+      workbookCatalog: {
+        contractVersion: "v1",
+        workbook: { fileName: "anonymous.xlsx", classification: "confidential", contentHash, metadata: { documentNo: "DOC", revision: "R", date: { value: "2026-07-28", sourceCell: "Title Page!A1" } } },
+        analyses: [{ worksheetName: "Analysis-A", toleranceLoopDescription: "anonymous", source: { summarySheet: "Auto Summary", summaryRow: 1, worksheetAnchor: "Analysis-A!A1" } }],
+      },
+      worksheetSelection: { mode: "selected", worksheetNames: ["Analysis-A"] },
+    });
+
+    expect(result.pages).toHaveLength(1);
+    expect(result.pages[0]).toMatchObject({
+      worksheetName: "Analysis-A",
+      status: "processed",
+      reasonCode: "image_extraction_skipped",
+      imageAssetCount: 0,
+      errorSummary: "image extraction skipped for this worksheet",
+    });
   });
 
   it("keeps table evidence bounded by blank rows and marks invalid formula evidence per field", () => {
@@ -203,6 +422,19 @@ describe("worksheet analysis assets", () => {
     });
 
     expect(result.worksheets[0]!.factorTables[0]!.rows[0]!.fields.longTermSafetyFactor).toMatchObject({ status: "available", numericValue: 1.5 });
+  });
+
+  it("maps Factor Description (TA Loop) to factorName", () => {
+    const workbookBytes = createAnonymousWorkbookZip({ xmlParts: {
+      "xl/worksheets/sheet3.xml": '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Factor Description (TA Loop)</t></is></c><c r="B1" t="inlineStr"><is><t>Nominal Value</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>tp-loop-factor</t></is></c><c r="B2"><v>2.5</v></c></row></sheetData></worksheet>',
+    } });
+    const contentHash = createHash("sha256").update(workbookBytes).digest("hex");
+    const result = createWorksheetAnalysisAssets({
+      contractVersion: "v1", inputClassification: "confidential", workbookBytes,
+      workbookCatalog: { contractVersion: "v1", workbook: { fileName: "anonymous.xlsx", classification: "confidential", contentHash, metadata: { documentNo: "DOC", revision: "R", date: { value: "2026-07-28", sourceCell: "Title Page!A1" } } }, analyses: [{ worksheetName: "Analysis-A", toleranceLoopDescription: "anonymous", source: { summarySheet: "Auto Summary", summaryRow: 1, worksheetAnchor: "Analysis-A!A1" } }] },
+    });
+
+    expect(result.worksheets[0]!.factorTables[0]!.rows[0]!.fields.factorName).toMatchObject({ status: "available", rawText: "tp-loop-factor" });
   });
 
   it("marks duplicate long-term/safety factor columns unavailable and retains zero-row tables", () => {

@@ -42,6 +42,8 @@ distribution 产生非阻断一致性信号；根 F2、F2.3-F2.4 和 F3-F7 均�
 | [F1 工作簿目录实施计划](superpowers/plans/2026-07-23-f1-workbook-catalog.md) | F1 实施任务、TDD 步骤和质量门 |
 | [F1.1 工作表资产提取设计](superpowers/specs/2026-07-24-f1-1-worksheet-analysis-assets-design.md) | catalog 绑定的因子表、公式缓存和图片证据边界 |
 | [F1.1 工作表资产提取实施计划](superpowers/plans/2026-07-24-f1-1-worksheet-analysis-assets.md) | F1.1 实施任务、TDD 步骤和质量门 |
+| [F1.7 因子表语义识别与人工确认设计](superpowers/specs/2026-07-29-f1-7-semantic-table-detection-design.md) | 不依赖固定区域的候选识别、置信度评分、确认闸门 |
+| [F1.7 因子表语义识别与人工确认实施计划](superpowers/plans/2026-07-29-f1-7-semantic-table-detection-implementation.md) | F1.7 契约、服务、治理与演示任务分解 |
 | [F2.1 必填字段严格校验设计](superpowers/specs/2026-07-27-f2-1-required-field-validation-design.md) | 基于 F1.1 证据的九项严格阻断与两项 ID 提示 |
 | [F2.1 必填字段严格校验实施计划](superpowers/plans/2026-07-27-f2-1-required-field-validation.md) | F2.1 实施任务、TDD 步骤和质量门 |
 | [F2.2 能力库与分布一致性校验设计](superpowers/specs/2026-07-27-f2-2-capability-distribution-validation-design.md) | 基于 ready F2.1 证据的非阻断能力库与 distribution 比对 |

@@ -99,6 +99,25 @@ describe("policy gate", () => {
     });
   });
 
+  it("reports F1.7 as the available semantic table detection and confirmation gate", () => {
+    expect(getFeatureStatus("F1.7")).toEqual({
+      featureId: "F1.7",
+      title: "TA 因子表语义识别与人工确认",
+      status: "available",
+      dependsOn: ["workbook-catalog-v1", "semantic-table-detection-v1"],
+      inputContractId: "semantic-table-detection-request-v1",
+      outputContractId: "semantic-table-detection-result-v1",
+      maximumClassification: "confidential",
+      acceptanceChecks: [
+        "anonymous-semantic-table-detection-fixture",
+        "semantic-detection-failfast-check",
+        "semantic-detection-privacy-check",
+      ],
+      externalPrerequisites: ["approved-ooxml-parser"],
+      disableBehavior: "return feature_not_available",
+    });
+  });
+
   it("reports F2.1 as the available strict required-field check only", () => {
     expect(getFeatureStatus("F2.1")).toEqual({
       featureId: "F2.1",

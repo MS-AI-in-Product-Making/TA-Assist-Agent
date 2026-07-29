@@ -214,6 +214,20 @@ describe("OOXML workbook reader", () => {
     expect(workbook.worksheets.get("Analysis-A")?.cells).toContainEqual({ reference: "C2", value: "3", formula: "=SUM(B2:B2)", cachedValue: "3" });
   });
 
+  it("accepts workbook compatibility children used by modern Excel files", () => {
+    const workbook = readOoxmlWorkbook(createAnonymousWorkbookZip({ xmlParts: {
+      "xl/workbook.xml": '<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:xr="http://schemas.microsoft.com/office/spreadsheetml/2014/revision"><fileVersion/><workbookPr/><mc:AlternateContent/><xr:revisionPtr/><bookViews/><sheets><sheet name="Title Page" sheetId="1" r:id="rId1"/><sheet name="Auto Summary" sheetId="2" r:id="rId2"/><sheet name="Analysis-A" sheetId="3" r:id="rId3"/><sheet name="Analysis-B" sheetId="4" r:id="rId4"/></sheets><definedNames/><calcPr/><extLst/></workbook>',
+    } }));
+    expect(workbook.worksheets.get("Title Page")?.cells).toContainEqual({ reference: "A1", value: "anonymous-title-marker" });
+  });
+
+  it("ignores non-worksheet workbook relationships that target customXml parts", () => {
+    const workbook = readOoxmlWorkbook(createAnonymousWorkbookZip({ xmlParts: {
+      "xl/_rels/workbook.xml.rels": '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet3.xml"/><Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet4.xml"/><Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml" Target="../customXml/item1.xml"/></Relationships>',
+    }, binaryParts: { "customXml/item1.xml": new TextEncoder().encode("<root/>") } }));
+    expect(workbook.worksheets.get("Auto Summary")?.cells).toContainEqual({ reference: "A1", value: "anonymous-summary-marker" });
+  });
+
   it.each([
     ["workbook", {
       "xl/workbook.xml": '<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><unexpected/><sheets><sheet name="Title Page" sheetId="1" r:id="rId1"/></sheets></workbook>',
@@ -238,10 +252,20 @@ describe("OOXML workbook reader", () => {
     expect(workbook.worksheets.get("Title Page")?.cells).toContainEqual({ reference: "B1", value: "anonymous-rich-inline-marker" });
   });
 
+  it("accepts phonetic rich-text metadata in shared strings", () => {
+    const workbook = readOoxmlWorkbook(createAnonymousWorkbookZip({ xmlParts: {
+      "xl/sharedStrings.xml": '<?xml version="1.0"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><si><t>anonymous-title-marker</t><rPh sb="0" eb="5"><t>phonetic</t></rPh><phoneticPr fontId="1"/></si><si><t>anonymous-summary-marker</t></si><si><t>Analysis-A</t></si><si><t>Analysis-B</t></si></sst>',
+    } }));
+
+    expect(workbook.worksheets.get("Title Page")?.cells).toContainEqual({ reference: "A1", value: "anonymous-title-marker" });
+  });
+
   it.each([
     ["mixed text and runs", '<t>anonymous-private-marker</t><r><t>more</t></r>'],
     ["phonetic run", '<rPh><t>anonymous-private-marker</t></rPh>'],
-    ["phonetic properties", '<phoneticPr/>'],
+    ["duplicate phonetic properties", '<t>anonymous-private-marker</t><phoneticPr/><phoneticPr/>'],
+    ["phonetic run without text", '<t>anonymous-private-marker</t><rPh/>'],
+    ["phonetic run with unknown child", '<t>anonymous-private-marker</t><rPh><unexpected/></rPh>'],
     ["extension list", '<extLst/>'],
     ["unknown direct child", '<unexpected/>'],
     ["foreign direct child", '<foreign xmlns="urn:anonymous-private-marker"/>'],

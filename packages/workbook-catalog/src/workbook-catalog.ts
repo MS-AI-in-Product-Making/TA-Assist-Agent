@@ -25,6 +25,10 @@ function normalizeLabel(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
+function normalizeTitleLabel(value: string): string {
+  return normalizeLabel(value).replace(/:+$/, "");
+}
+
 function nonempty(value: string | undefined): string | undefined {
   const normalized = value?.trim();
   return normalized ? normalized : undefined;
@@ -40,7 +44,8 @@ function columnNumber(column: string): number {
 }
 
 function titleValue(worksheet: OoxmlWorksheet, label: string): OoxmlCell {
-  const labels = worksheet.cells.filter((cell) => normalizeLabel(cell.value) === label);
+  const expected = normalizeTitleLabel(label);
+  const labels = worksheet.cells.filter((cell) => normalizeTitleLabel(cell.value) === expected);
   if (labels.length !== 1) throw catalogError(REQUEST_SUMMARY, "title-page");
   const labelAddress = address(labels[0]!.reference);
   if (!labelAddress) throw catalogError(REQUEST_SUMMARY, "title-page");
@@ -103,7 +108,7 @@ function catalogAnalyses(worksheet: OoxmlWorksheet, workbook: ReturnType<typeof 
     const worksheetName = nonempty(cellAt(worksheet.cells, row, dimAddress.column)?.value);
     if (!worksheetName) continue;
     const description = nonempty(cellAt(worksheet.cells, row, descriptionAddress.column)?.value);
-    if (!description || names.has(worksheetName) || !workbook.worksheets.has(worksheetName)) throw catalogError(REQUEST_SUMMARY, "auto-summary");
+    if (!description || names.has(worksheetName) || !workbook.worksheetNames.has(worksheetName)) throw catalogError(REQUEST_SUMMARY, "auto-summary");
     names.add(worksheetName);
     analyses.push({ worksheetName, toleranceLoopDescription: description, source: { summarySheet: "Auto Summary", summaryRow: row, worksheetAnchor: `${worksheetName}!A1` } });
   }
@@ -149,7 +154,7 @@ export function createWorkbookCatalog(request: unknown): WorkbookCatalogResult {
 
   try {
     const contentHash = createHash("sha256").update(parsed.data.workbookBytes).digest("hex");
-    const workbook = readOoxmlWorkbook(parsed.data.workbookBytes);
+    const workbook = readOoxmlWorkbook(parsed.data.workbookBytes, ["Title Page", "Auto Summary"], false);
     const titlePage = workbook.worksheets.get("Title Page");
     const autoSummary = workbook.worksheets.get("Auto Summary");
     if (!titlePage) throw catalogError(REQUEST_SUMMARY, "title-page");
@@ -162,8 +167,8 @@ export function createWorkbookCatalog(request: unknown): WorkbookCatalogResult {
         contentHash,
         metadata: {
           documentNo: nonempty(titleValue(titlePage, "document no.").value)!,
-          revision: nonempty(titleValue(titlePage, "revision:").value)!,
-          date: catalogDate(titleValue(titlePage, "date:")),
+          revision: nonempty(titleValue(titlePage, "revision").value)!,
+          date: catalogDate(titleValue(titlePage, "date")),
         },
       },
       analyses: catalogAnalyses(autoSummary, workbook),

@@ -1,7 +1,9 @@
 export { readOoxmlWorkbook } from "./ooxml-reader.js";
 export { readSafeZip } from "./zip-security.js";
 export { createWorkbookCatalog } from "./workbook-catalog.js";
-export { createWorksheetAnalysisAssets, readWorksheetImageAsset } from "./worksheet-analysis-assets.js";
+export { createWorksheetSelectionView } from "./worksheet-selection.js";
+export { createWorksheetAnalysisAssets, createWorksheetAnalysisAssetsParallel, readWorksheetImageAsset } from "./worksheet-analysis-assets.js";
+export { createSemanticTableDetection } from "./semantic-table-detection.js";
 export { createRequiredFieldCheck } from "./required-field-check.js";
 export { createCapabilityValidation } from "./capability-validation.js";
 export { createExceptionResolution } from "./exception-resolution.js";
@@ -34,8 +36,13 @@ export type {
 	UnifiedExceptionResolutionRequest,
 	UnifiedExceptionResolutionResult,
 	WorkbookCatalogResult,
+	WorksheetSelectionViewRequest,
+	WorksheetSelectionViewResult,
 	WorksheetAnalysisAssetsRequest,
 	WorksheetAnalysisAssetsResult,
+	SemanticTableDetectionRequest,
+	SemanticTableDetectionResult,
 	WorksheetImageReadRequest,
 	WorksheetImageReadResult,
 } from "@ai-assist/contracts";
+export type { ParallelWorksheetAnalysisAssetsResult, WorksheetProcessingPage } from "./worksheet-analysis-assets.js";

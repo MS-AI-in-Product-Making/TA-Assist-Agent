@@ -39,6 +39,8 @@ import {
   runRequestSchema,
   requiredFieldCheckRequestSchema,
   requiredFieldCheckResultSchema,
+  semanticTableDetectionRequestSchema,
+  semanticTableDetectionResultSchema,
   skillResultSchema,
   terminologyEntrySchema,
   typedErrorSchema,
@@ -46,6 +48,8 @@ import {
   worksheetAnalysisAssetsResultSchema,
   worksheetImageReadRequestSchema,
   worksheetImageReadResultSchema,
+  worksheetSelectionViewRequestSchema,
+  worksheetSelectionViewResultSchema,
   workflowRequestSchema,
   workflowResultSchema,
 } from "./index.js";
@@ -1039,6 +1043,8 @@ describe("worksheet analysis asset contracts", () => {
 
   it("accepts confidential v1 worksheet analysis asset contracts", () => {
     expect(worksheetAnalysisAssetsRequestSchema.parse(request)).toEqual(request);
+    expect(worksheetAnalysisAssetsRequestSchema.parse({ ...request, worksheetSelection: { mode: "all" } }).worksheetSelection).toEqual({ mode: "all" });
+    expect(worksheetAnalysisAssetsRequestSchema.parse({ ...request, worksheetSelection: { mode: "selected", worksheetNames: ["Analysis"] } }).worksheetSelection).toEqual({ mode: "selected", worksheetNames: ["Analysis"] });
     expect(worksheetAnalysisAssetsResultSchema.parse(result)).toEqual(result);
     expect(
       worksheetImageReadRequestSchema.parse({
@@ -1066,6 +1072,8 @@ describe("worksheet analysis asset contracts", () => {
     ["an uppercase hash", { ...result, workbook: { ...result.workbook, contentHash: "A".repeat(64) } }],
     ["an invalid hash", { ...result, workbook: { ...result.workbook, contentHash: "not-a-hash" } }],
     ["an extra field", { ...request, unexpected: true }],
+    ["an empty selected worksheet list", { ...request, worksheetSelection: { mode: "selected", worksheetNames: [] } }],
+    ["duplicate selected worksheet names", { ...request, worksheetSelection: { mode: "selected", worksheetNames: ["Analysis", "Analysis"] } }],
   ])("rejects worksheet assets with %s", (_description, value) => {
     const schema = "workbook" in value ? worksheetAnalysisAssetsResultSchema : worksheetAnalysisAssetsRequestSchema;
     expect(schema.safeParse(value).success).toBe(false);
@@ -1417,6 +1425,94 @@ describe("worksheet analysis asset contracts", () => {
     expect(exceptionResolutionResultSchema.parse(result).status).toBe("readyToContinue");
     expect(exceptionResolutionResultSchema.safeParse({ ...result, readyToContinue: false }).success).toBe(false);
   });
+
+  it("accepts strict F1.7 semantic table detection contracts", () => {
+    const detectionRequest = {
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbookBytes: new Uint8Array([0x50, 0x4b, 3, 4]),
+      workbookCatalog,
+      worksheetSelection: { mode: "selected", worksheetNames: ["Analysis"] },
+      manualConfirmations: [{
+        worksheetName: "Analysis",
+        candidateId: "cand-a",
+        action: "confirm_as_is",
+      }],
+    };
+
+    expect(semanticTableDetectionRequestSchema.parse(detectionRequest)).toEqual(detectionRequest);
+
+    const pendingResult = {
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbook: { contentHash, catalogContractVersion: "v1" },
+      worksheets: [{
+        worksheetName: "Analysis",
+        recognitionStatus: "pending_confirmation",
+        confidenceScore: 71,
+        confidenceBreakdown: {
+          headerScore: 36,
+          typeScore: 20,
+          completenessScore: 15,
+          penalty: 0,
+        },
+        uncertaintyReasons: ["ambiguous_mapping"],
+        requiresUserConfirmation: true,
+        confirmationPayload: {
+          candidateId: "cand-a",
+          headerRow: 12,
+          dataRange: { startRow: 13, endRow: 26 },
+          mappedFields: [{
+            field: "factorName",
+            sourceColumn: "B",
+            headerText: "Factor",
+            status: "mapped",
+          }],
+          recommendedAction: "confirm_as_is",
+          reasonCodes: ["ambiguous_mapping"],
+        },
+      }],
+      summary: {
+        worksheetCount: 1,
+        autoConfirmedCount: 0,
+        manualConfirmedCount: 0,
+        pendingConfirmationCount: 1,
+        blockedCount: 0,
+      },
+    };
+
+    expect(semanticTableDetectionResultSchema.parse(pendingResult)).toEqual(pendingResult);
+    expect(semanticTableDetectionResultSchema.safeParse({
+      ...pendingResult,
+      worksheets: [{
+        ...pendingResult.worksheets[0],
+        recognitionStatus: "auto_confirmed",
+        requiresUserConfirmation: false,
+        confirmationPayload: undefined,
+      }],
+      summary: {
+        worksheetCount: 1,
+        autoConfirmedCount: 1,
+        manualConfirmedCount: 0,
+        pendingConfirmationCount: 0,
+        blockedCount: 0,
+      },
+    }).success).toBe(true);
+    expect(semanticTableDetectionResultSchema.safeParse({
+      ...pendingResult,
+      worksheets: [{
+        ...pendingResult.worksheets[0],
+        requiresUserConfirmation: false,
+      }],
+    }).success).toBe(false);
+    expect(semanticTableDetectionResultSchema.safeParse({
+      ...pendingResult,
+      summary: {
+        ...pendingResult.summary,
+        pendingConfirmationCount: 0,
+      },
+    }).success).toBe(false);
+  });
 });
 
 describe("F2.4 identifier quality contracts", () => {
@@ -1657,5 +1753,69 @@ describe("F2.3 v2 unified exception resolution contracts", () => {
         invalidCandidateCount: 0,
       },
     }).status).toBe("readyToContinue");
+  });
+});
+
+describe("worksheet selection view contracts", () => {
+  const workbookCatalog = {
+    contractVersion: "v1",
+    workbook: {
+      fileName: "anonymous-ta.xlsx",
+      classification: "confidential",
+      contentHash: "a".repeat(64),
+      metadata: {
+        documentNo: "TA-001",
+        revision: "A",
+        date: { value: "2026-07-24", sourceCell: "Title Page!B6" },
+      },
+    },
+    analyses: [
+      {
+        worksheetName: "Analysis-A",
+        toleranceLoopDescription: "First tolerance loop",
+        source: { summarySheet: "Auto Summary", summaryRow: 10, worksheetAnchor: "Analysis-A!A1" },
+      },
+    ],
+  };
+
+  const request = {
+    contractVersion: "v1",
+    inputClassification: "confidential",
+    workbookCatalog,
+  };
+
+  const result = {
+    contractVersion: "v1",
+    inputClassification: "confidential",
+    workbook: {
+      fileName: "anonymous-ta.xlsx",
+      classification: "confidential",
+      contentHash: "a".repeat(64),
+      revision: "A",
+      date: { value: "2026-07-24", sourceCell: "Title Page!B6" },
+    },
+    worksheets: [
+      {
+        selectionIndex: 1,
+        worksheetName: "Analysis-A",
+        toleranceLoopDescription: "First tolerance loop",
+        source: { summarySheet: "Auto Summary", summaryRow: 10, worksheetAnchor: "Analysis-A!A1" },
+      },
+    ],
+  };
+
+  it("accepts confidential worksheet selection view request/result", () => {
+    expect(worksheetSelectionViewRequestSchema.parse(request)).toEqual(request);
+    expect(worksheetSelectionViewResultSchema.parse(result)).toEqual(result);
+  });
+
+  it.each([
+    ["public input", { ...request, inputClassification: "public" }],
+    ["extra request field", { ...request, unexpected: true }],
+    ["zero selection index", { ...result, worksheets: [{ ...result.worksheets[0], selectionIndex: 0 }] }],
+    ["extra result field", { ...result, workbook: { ...result.workbook, metadata: {} } }],
+  ])("rejects worksheet selection view contract with %s", (_description, value) => {
+    const schema = "workbookCatalog" in value ? worksheetSelectionViewRequestSchema : worksheetSelectionViewResultSchema;
+    expect(schema.safeParse(value).success).toBe(false);
   });
 });
