@@ -3,6 +3,7 @@ import { typedErrorSchema } from "@ai-assist/contracts";
 import * as knowledgeBase from "../index.js";
 import {
   createInterpretationKnowledgeSnapshot,
+  createInterpretationRules,
   type DeepReadonly,
   type InterpretationKnowledgeSeedPackage,
   type InterpretationKnowledgeSnapshot,
@@ -126,6 +127,46 @@ describe("interpretation-rules-v1 knowledge snapshots", () => {
   ])("rejects an incorrect manifest %s", (_description, mutate) => {
     const seed = createValidInterpretationKnowledgeSeedPackage();
     mutate(seed);
+    expectDependencyError(seed);
+  });
+
+  it.each([
+    ["missing Cpk fact", "cpk", ["cpk"]],
+    ["extra Cpk fact", "cpk", ["cpk", "targetCpk", "contributors"]],
+    ["duplicate Cpk fact", "cpk", ["cpk", "targetCpk", "cpk"]],
+    ["missing sigma fact", "sigma", ["achievedSigma"]],
+    ["extra sigma fact", "sigma", ["targetSigma", "achievedSigma", "contributors"]],
+    ["duplicate sigma fact", "sigma", ["targetSigma", "achievedSigma", "targetSigma"]],
+  ])("rejects performance requiredFacts with %s", (_description, metric, requiredFacts) => {
+    const seed = createValidInterpretationKnowledgeSeedPackage();
+    const rule = seed.entries.find((entry) => entry.entryType === "performance-rule" && entry.metric === metric)!;
+    rule.requiredFacts = requiredFacts;
+    refreshInterpretationKnowledgeManifest(seed);
+    expectDependencyError(seed);
+  });
+
+  it("accepts performance requiredFacts in either order", () => {
+    const seed = createValidInterpretationKnowledgeSeedPackage();
+    for (const entry of seed.entries) {
+      if (entry.entryType === "performance-rule") entry.requiredFacts.reverse();
+    }
+    refreshInterpretationKnowledgeManifest(seed);
+    expect(() => createInterpretationKnowledgeSnapshot(seed)).not.toThrow();
+  });
+
+  it("rejects a bad manifest passed directly to the rules factory", () => {
+    const seed = createValidInterpretationKnowledgeSeedPackage();
+    seed.manifest.entriesHash = "b".repeat(64);
+
+    expect(getValidationError(() => createInterpretationRules(seed))).toMatchObject({
+      code: "dependency_error",
+      summary: "Interpretation-rules package is invalid.",
+    });
+  });
+
+  it("rejects modified production entries when the released manifest is retained", () => {
+    const seed = createValidInterpretationKnowledgeSeedPackage();
+    seed.entries[0]!.title = "tampered production entry";
     expectDependencyError(seed);
   });
 

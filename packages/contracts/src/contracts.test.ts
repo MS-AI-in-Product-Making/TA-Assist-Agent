@@ -1878,6 +1878,10 @@ describe("interpretation rules contracts", () => {
       signalStatus: "hypothesis" as const,
       requiredFacts: ["contributors"],
       validationFacts: ["contributor-evidence"],
+      activationCondition: {
+        kind: "maximum-contribution-at-least" as const,
+        thresholdPercent: 30,
+      },
     },
     {
       ...commonEntry,
@@ -2087,6 +2091,29 @@ describe("interpretation rules contracts", () => {
   it("rejects confidential provenance and non-hypothesis root-cause signals", () => {
     expect(interpretationProvenanceSchema.safeParse({ ...provenance, classification: "confidential" }).success).toBe(false);
     expect(interpretationKnowledgeEntrySchema.safeParse({ ...entries[2], signalStatus: "confirmed" }).success).toBe(false);
+  });
+
+  it.each([
+    ["missing activation condition", (({ activationCondition: _activationCondition, ...entry }) => entry)(entries[2])],
+    ["unknown activation kind", {
+      ...entries[2], activationCondition: { kind: "average-contribution-at-least", thresholdPercent: 30 },
+    }],
+    ["negative threshold", {
+      ...entries[2], activationCondition: { kind: "maximum-contribution-at-least", thresholdPercent: -0.01 },
+    }],
+    ["threshold above 100", {
+      ...entries[2], activationCondition: { kind: "maximum-contribution-at-least", thresholdPercent: 100.01 },
+    }],
+    ["non-finite threshold", {
+      ...entries[2], activationCondition: { kind: "maximum-contribution-at-least", thresholdPercent: Number.NaN },
+    }],
+    ["activation condition unknown field", {
+      ...entries[2], activationCondition: {
+        kind: "maximum-contribution-at-least", thresholdPercent: 30, unexpected: true,
+      },
+    }],
+  ])("rejects a root-cause signal with %s", (_description, entry) => {
+    expect(interpretationKnowledgeEntrySchema.safeParse(entry).success).toBe(false);
   });
 
   it("does not permit an inline global Cpk target or ranked improvement advice", () => {

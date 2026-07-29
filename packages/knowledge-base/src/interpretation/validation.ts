@@ -43,6 +43,7 @@ function validateSeedPackage(value: unknown): InterpretationKnowledgeSeedPackage
   validateUniqueValues(parsed.entries, (entry) => entry.entryId);
   validateProvenance(parsed);
   validateManifest(parsed);
+  validatePerformanceRequiredFacts(parsed.entries);
   validateRelations(parsed.entries);
   return parsed;
 }
@@ -78,6 +79,23 @@ function validateManifest(seed: InterpretationKnowledgeSeedPackage): void {
     || seed.manifest.entriesHash !== entriesHash
     || seed.manifest.contentHash !== packageHash) {
     throw dependencyError([PACKAGE_REFERENCE]);
+  }
+}
+
+function validatePerformanceRequiredFacts(entries: readonly InterpretationKnowledgeEntry[]): void {
+  const requiredFactsByMetric: Readonly<Record<string, readonly string[]>> = {
+    cpk: ["cpk", "targetCpk"],
+    sigma: ["achievedSigma", "targetSigma"],
+  };
+  for (const entry of entries) {
+    if (entry.entryType !== "performance-rule") continue;
+    const expected = requiredFactsByMetric[entry.metric];
+    if (expected === undefined
+      || entry.requiredFacts.length !== expected.length
+      || new Set(entry.requiredFacts).size !== expected.length
+      || expected.some((fact) => !entry.requiredFacts.includes(fact))) {
+      throw dependencyError([entry.entryId]);
+    }
   }
 }
 

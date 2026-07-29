@@ -2,7 +2,6 @@ import type {
   InterpretationKnowledgeEntry,
   InterpretationKnowledgeSeedPackage,
 } from "@ai-assist/contracts";
-import { contentHash } from "../../validation.js";
 
 export function createReviewedInterpretationRulesV1SeedPackage(): InterpretationKnowledgeSeedPackage {
   const source = {
@@ -61,10 +60,14 @@ export function createReviewedInterpretationRulesV1SeedPackage(): Interpretation
         "performance-sigma-below-target",
         "metric-sigma",
       ],
-      provenance: provenance("03_Root_Cause_Library", "A1:H12"),
+      provenance: provenance("03_Root_Cause_Library", "A4:H4"),
       signalStatus: "hypothesis",
       requiredFacts: ["contributors"],
       validationFacts: ["contributor-evidence"],
+      activationCondition: {
+        kind: "maximum-contribution-at-least",
+        thresholdPercent: 30,
+      },
     },
     {
       ...common,
@@ -164,19 +167,12 @@ export function createReviewedInterpretationRulesV1SeedPackage(): Interpretation
         "improvement-option": 1,
         "decision-policy": 1,
       },
-      sourcesHash: "0".repeat(64),
-      entriesHash: "0".repeat(64),
-      contentHash: "0".repeat(64),
+      sourcesHash: "a32bd4cf0dc80a97a212b0419fa3a2a7c2ae3522e7567fba238414f0dc5ef3b9",
+      entriesHash: "029c2bdb637aad89c3b121c88e721baf1c4c327f9a605225ad8f55407fd99cdd",
+      contentHash: "3161b3ed89c96417dc1e2240dcb5c9053b05fd02aff7fe5ccaa147f64c4b2ba0",
     },
     sources: [source],
     entries,
   };
-  seed.manifest.sourcesHash = contentHash(seed.sources);
-  seed.manifest.entriesHash = contentHash(seed.entries);
-  seed.manifest.contentHash = contentHash({
-    version: seed.manifest.version,
-    sourcesHash: seed.manifest.sourcesHash,
-    entriesHash: seed.manifest.entriesHash,
-  });
   return seed;
 }

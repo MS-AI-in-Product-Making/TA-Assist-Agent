@@ -125,6 +125,40 @@ describe("interpretation rule evaluation", () => {
     ]));
   });
 
+  it.each([
+    ["empty contributors", []],
+    ["zero contribution", [{ reference: "dimension-a", contributionPercent: 0 }]],
+    ["below threshold", [{ reference: "dimension-a", contributionPercent: 29.99 }]],
+  ])("does not activate contributor guidance for %s", (_description, contributors) => {
+    const result = createRules().evaluateInterpretationRules({
+      ...cpkRequest,
+      facts: { ...cpkRequest.facts, contributors },
+    });
+
+    expect(result).toMatchObject({
+      status: "matched",
+      matchedRules: [expect.objectContaining({ entryId: "performance-cpk-below-target" })],
+      missingFacts: [],
+    });
+    expect(result.matchedRules.map(({ entryType }) => entryType)).toEqual(["performance-rule"]);
+  });
+
+  it("activates contributor guidance at the threshold", () => {
+    const result = createRules().evaluateInterpretationRules({
+      ...cpkRequest,
+      facts: {
+        ...cpkRequest.facts,
+        contributors: [{ reference: "dimension-a", contributionPercent: 30 }],
+      },
+    });
+
+    expect(result.matchedRules.map(({ entryId }) => entryId)).toEqual([
+      "performance-cpk-below-target",
+      "root-cause-contributor-concentration",
+      "improvement-reduce-contributor",
+    ]);
+  });
+
   it("returns insufficient facts and suppresses matches when a target is missing", () => {
     const result = createRules().evaluateInterpretationRules({
       ...cpkRequest,
@@ -141,7 +175,7 @@ describe("interpretation rule evaluation", () => {
     });
   });
 
-  it("returns insufficient facts when a related signal lacks contributor facts", () => {
+  it("keeps the performance match and skips optional signal guidance when contributor facts are absent", () => {
     const result = createRules().evaluateInterpretationRules({
       ...cpkRequest,
       facts: {
@@ -151,9 +185,43 @@ describe("interpretation rule evaluation", () => {
     });
 
     expect(result).toMatchObject({
+      status: "matched",
+      matchedRules: [expect.objectContaining({ entryId: "performance-cpk-below-target" })],
+      missingFacts: [],
+    });
+    expect(result.matchedRules.map(({ entryType }) => entryType)).toEqual(["performance-rule"]);
+  });
+
+  it("returns insufficient facts when a present sigma metric lacks its target", () => {
+    const result = createRules().evaluateInterpretationRules({
+      ...cpkRequest,
+      facts: {
+        cpk: 1.21,
+        targetCpk: cpkRequest.facts.targetCpk,
+        achievedSigma: 4.2,
+      },
+    });
+
+    expect(result).toMatchObject({
       status: "insufficient-facts",
       matchedRules: [],
-      missingFacts: ["contributors"],
+      missingFacts: ["targetSigma"],
+    });
+  });
+
+  it("matches a complete Cpk metric when sigma facts are entirely absent", () => {
+    const result = createRules().evaluateInterpretationRules({
+      ...cpkRequest,
+      facts: {
+        cpk: 1.21,
+        targetCpk: cpkRequest.facts.targetCpk,
+      },
+    });
+
+    expect(result).toMatchObject({
+      status: "matched",
+      matchedRules: [expect.objectContaining({ entryId: "performance-cpk-below-target" })],
+      missingFacts: [],
     });
   });
 
@@ -266,7 +334,7 @@ describe("interpretation rule loading", () => {
           sourceAlias: "ta-interpretation-rules-v4-2",
           sourceFileHash: "e3e1954233e94c058088c5084b9a27a7847efc74fbf8a26f51584c40ca4f9fa5",
           sheetName: "03_Root_Cause_Library",
-          sourceRange: "A1:H12",
+          sourceRange: "A4:H4",
         },
       },
       {

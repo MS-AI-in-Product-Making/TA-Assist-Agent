@@ -30,12 +30,16 @@ export function loadInterpretationRules(request: unknown): InterpretationRules {
     "Interpretation rule load request is invalid.",
     "interpretation-rule-load-request",
   );
-  return createInterpretationRules(
+  return createValidatedInterpretationRules(
     createInterpretationKnowledgeSnapshot(createReviewedInterpretationRulesV1SeedPackage()),
   );
 }
 
-export function createInterpretationRules(snapshot: InterpretationKnowledgeSnapshot): InterpretationRules {
+export function createInterpretationRules(snapshot: unknown): InterpretationRules {
+  return createValidatedInterpretationRules(createInterpretationKnowledgeSnapshot(snapshot));
+}
+
+function createValidatedInterpretationRules(snapshot: InterpretationKnowledgeSnapshot): InterpretationRules {
   const entries = structuredClone(snapshot.entries) as InterpretationKnowledgeEntry[];
   return {
     evaluateInterpretationRules: (request) => evaluate(entries, request),
@@ -88,22 +92,9 @@ function evaluate(
     (entry): entry is RootCauseSignal => entry.entryType === "root-cause-signal"
       && entry.relatedEntryIds.some((entryId) => matchedPerformanceIds.has(entryId)),
   ));
-  const missingSignalFacts = uniqueSorted(candidateSignals.flatMap(
-    (signal) => signal.requiredFacts.filter((fact) => !hasFact(query.facts, fact)),
-  ));
-  if (missingSignalFacts.length > 0) {
-    return immutableEvaluation({
-      knowledgeBaseVersion: VERSION,
-      status: "insufficient-facts",
-      resolvedTargets,
-      factsUsed: availablePerformanceFacts,
-      matchedRules: [],
-      missingFacts: missingSignalFacts,
-    });
-  }
-
   const matchedSignals = sortByEntryId(candidateSignals.filter(
-    (signal) => signal.requiredFacts.every((fact) => hasFact(query.facts, fact)),
+    (signal) => signal.requiredFacts.every((fact) => hasFact(query.facts, fact))
+      && signalConditionMatches(signal, query.facts),
   ));
   const matchedSignalIds = new Set(matchedSignals.map((signal) => signal.entryId));
   const matchedOptions = sortByEntryId(applicableEntries.filter(
@@ -168,6 +159,14 @@ function compareRule(rule: PerformanceRule, facts: Facts): boolean {
     case "equal": return value === targetValue;
     case "not-equal": return value !== targetValue;
   }
+}
+
+function signalConditionMatches(signal: RootCauseSignal, facts: Facts): boolean {
+  const contributors = facts.contributors;
+  return contributors !== undefined
+    && contributors.length > 0
+    && Math.max(...contributors.map(({ contributionPercent }) => contributionPercent))
+      >= signal.activationCondition.thresholdPercent;
 }
 
 function resolveTargets(facts: Facts): NonNullable<InterpretationRuleEvaluation["resolvedTargets"]> {

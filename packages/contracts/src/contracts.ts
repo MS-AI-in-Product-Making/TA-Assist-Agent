@@ -1846,6 +1846,12 @@ const interpretationRootCauseSignalSchema = z
     signalStatus: z.literal("hypothesis"),
     requiredFacts: z.array(z.string().min(1)),
     validationFacts: z.array(z.string().min(1)),
+    activationCondition: z
+      .object({
+        kind: z.literal("maximum-contribution-at-least"),
+        thresholdPercent: z.number().finite().min(0).max(100),
+      })
+      .strict(),
   })
   .strict();
 
