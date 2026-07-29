@@ -89,12 +89,12 @@ describe("safe OOXML archive reader", () => {
 
   it("accepts a safe archive with many entries under the bounded limits", () => {
     const extraEntries: Record<string, Uint8Array> = {};
-    for (let index = 0; index < 350; index += 1) {
+    for (let index = 0; index < 600; index += 1) {
       extraEntries[`xl/media/anonymous-${index.toString().padStart(3, "0")}.bin`] = new Uint8Array([index % 251, (index + 1) % 251, (index + 2) % 251]);
     }
 
     const parts = readSafeZip(createAnonymousWorkbookZip({ binaryParts: extraEntries }));
-    expect(parts.size).toBeGreaterThan(350);
+    expect(parts.size).toBeGreaterThan(600);
     expect(parts.get("xl/workbook.xml")).toBeInstanceOf(Uint8Array);
   });
 

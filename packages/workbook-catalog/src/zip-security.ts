@@ -2,7 +2,7 @@ import { Inflate } from "fflate";
 import { createTypedError } from "@ai-assist/contracts";
 
 export const MAX_ARCHIVE_BYTES = 16 * 1024 * 1024;
-export const MAX_ZIP_ENTRIES = 512;
+export const MAX_ZIP_ENTRIES = 1024;
 export const MAX_SINGLE_UNCOMPRESSED_BYTES = 8 * 1024 * 1024;
 export const MAX_TOTAL_UNCOMPRESSED_BYTES = 64 * 1024 * 1024;
 export const MAX_COMPRESSION_RATIO = 100;
