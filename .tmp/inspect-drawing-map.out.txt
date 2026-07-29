@@ -1,0 +1,24 @@
+--- TP_Gap_X
+sheetPath: xl/worksheets/sheet11.xml
+drawingRid: rId1
+relPath exists: true
+drawingPart: none
+pic/sp/cxn/grp/text/ln: 0 0 0 0 0 0
+--- Feet_gap
+sheetPath: xl/worksheets/sheet37.xml
+drawingRid: rId1
+relPath exists: true
+drawingPart: none
+pic/sp/cxn/grp/text/ln: 0 0 0 0 0 0
+--- Feet_positioning
+sheetPath: xl/worksheets/sheet38.xml
+drawingRid: rId1
+relPath exists: true
+drawingPart: none
+pic/sp/cxn/grp/text/ln: 0 0 0 0 0 0
+--- gap w rubber_TPoverload500g
+sheetPath: xl/worksheets/sheet10.xml
+drawingRid: rId1
+relPath exists: true
+drawingPart: none
+pic/sp/cxn/grp/text/ln: 0 0 0 0 0 0
