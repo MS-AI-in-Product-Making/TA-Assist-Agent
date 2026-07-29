@@ -1768,6 +1768,233 @@ export const internalToleranceGuidanceResultSchema = z.union([
   internalToleranceGuidanceUnknownResultSchema,
 ]);
 
+export const interpretationRuleVersionSchema = z.literal("interpretation-rules-v1");
+
+export const interpretationEntryTypeSchema = z.enum([
+  "metric-definition",
+  "performance-rule",
+  "root-cause-signal",
+  "improvement-option",
+  "decision-policy",
+]);
+
+const interpretationSourceRangeSchema = z.string().regex(/^[A-Z]+[1-9]\d*:[A-Z]+[1-9]\d*$/);
+
+export const interpretationProvenanceSchema = z
+  .object({
+    classification: z.literal("internal"),
+    sourceAlias: z.string().min(1),
+    sourceFileHash: sha256Schema,
+    sourceVersion: z.string().min(1),
+    sheetName: z.string().min(1),
+    sourceRange: interpretationSourceRangeSchema,
+    owner: z.string().min(1),
+    confidence: z.number().finite().min(0).max(1),
+    effectiveVersion: interpretationRuleVersionSchema,
+    changeSummary: z.string().min(1),
+  })
+  .strict();
+
+const interpretationApplicabilitySchema = z
+  .object({
+    analysisDimension: z.literal("one-dimensional"),
+    method: z.enum(["rss", "worst-case"]).optional(),
+  })
+  .strict();
+
+const interpretationEntryFields = {
+  entryId: z.string().min(1),
+  title: z.string().min(1),
+  description: z.string().min(1),
+  applicability: interpretationApplicabilitySchema,
+  relatedEntryIds: z.array(z.string().min(1)),
+  provenance: interpretationProvenanceSchema,
+};
+
+const interpretationMetricDefinitionSchema = z
+  .object({
+    ...interpretationEntryFields,
+    entryType: z.literal("metric-definition"),
+    metric: z.string().min(1),
+    unit: z.string().min(1),
+  })
+  .strict();
+
+const interpretationPerformanceRuleSchema = z
+  .object({
+    ...interpretationEntryFields,
+    entryType: z.literal("performance-rule"),
+    metric: z.string().min(1),
+    comparison: z.enum([
+      "greater-than-or-equal",
+      "greater-than",
+      "less-than-or-equal",
+      "less-than",
+      "equal",
+      "not-equal",
+    ]),
+    targetSource: z.literal("resolved-target"),
+    requiredFacts: z.array(z.string().min(1)),
+    outcomeWhenMatched: z.string().min(1),
+  })
+  .strict();
+
+const interpretationRootCauseSignalSchema = z
+  .object({
+    ...interpretationEntryFields,
+    entryType: z.literal("root-cause-signal"),
+    signalStatus: z.literal("hypothesis"),
+    requiredFacts: z.array(z.string().min(1)),
+    validationFacts: z.array(z.string().min(1)),
+  })
+  .strict();
+
+const interpretationImprovementOptionSchema = z
+  .object({
+    ...interpretationEntryFields,
+    entryType: z.literal("improvement-option"),
+    expectedImpact: z.string().min(1),
+    tradeoffs: z.array(z.string().min(1)),
+    validationSteps: z.array(z.string().min(1)),
+  })
+  .strict();
+
+const interpretationDecisionPolicySchema = z
+  .object({
+    ...interpretationEntryFields,
+    entryType: z.literal("decision-policy"),
+    policyKind: z.enum([
+      "applicability",
+      "engineering-review",
+      "evidence-sufficiency",
+      "target-resolution",
+    ]),
+  })
+  .strict();
+
+export const interpretationKnowledgeEntrySchema = z.discriminatedUnion("entryType", [
+  interpretationMetricDefinitionSchema,
+  interpretationPerformanceRuleSchema,
+  interpretationRootCauseSignalSchema,
+  interpretationImprovementOptionSchema,
+  interpretationDecisionPolicySchema,
+]);
+
+export const interpretationKnowledgeSourceMetadataSchema = z
+  .object({
+    sourceAlias: z.string().min(1),
+    sourceFileHash: sha256Schema,
+    sourceVersion: z.string().min(1),
+    classification: z.literal("internal"),
+    owner: z.string().min(1),
+  })
+  .strict();
+
+const interpretationEntryTypeCountsSchema = z
+  .object({
+    "metric-definition": z.number().int().nonnegative(),
+    "performance-rule": z.number().int().nonnegative(),
+    "root-cause-signal": z.number().int().nonnegative(),
+    "improvement-option": z.number().int().nonnegative(),
+    "decision-policy": z.number().int().nonnegative(),
+  })
+  .strict();
+
+export const interpretationKnowledgeManifestSchema = z
+  .object({
+    version: interpretationRuleVersionSchema,
+    classification: z.literal("internal"),
+    sourceCount: z.number().int().nonnegative(),
+    entryCount: z.number().int().nonnegative(),
+    entryTypeCounts: interpretationEntryTypeCountsSchema,
+    sourcesHash: sha256Schema,
+    entriesHash: sha256Schema,
+    contentHash: sha256Schema,
+  })
+  .strict();
+
+export const interpretationKnowledgeSeedPackageSchema = z
+  .object({
+    manifest: interpretationKnowledgeManifestSchema,
+    sources: z.array(interpretationKnowledgeSourceMetadataSchema),
+    entries: z.array(interpretationKnowledgeEntrySchema),
+  })
+  .strict();
+
+export const interpretationRuleLoadRequestSchema = z
+  .object({
+    seedPackage: interpretationKnowledgeSeedPackageSchema,
+  })
+  .strict();
+
+const interpretationTargetFactSchema = z
+  .object({
+    value: z.number().finite().positive(),
+    source: z.enum(["project", "template", "controlled-default"]),
+  })
+  .strict();
+
+const interpretationContributorFactSchema = z
+  .object({
+    reference: z.string().min(1),
+    contributionPercent: z.number().finite().min(0).max(100),
+  })
+  .strict();
+
+const interpretationFactsSchema = z
+  .object({
+    cpk: z.number().finite().optional(),
+    targetCpk: interpretationTargetFactSchema.optional(),
+    achievedSigma: z.number().finite().optional(),
+    targetSigma: interpretationTargetFactSchema.optional(),
+    contributors: z.array(interpretationContributorFactSchema).optional(),
+  })
+  .strict();
+
+export const interpretationRuleEvaluationRequestSchema = z
+  .object({
+    analysisDimension: z.literal("one-dimensional"),
+    method: z.enum(["rss", "worst-case"]),
+    facts: interpretationFactsSchema,
+  })
+  .strict();
+
+const interpretationResolvedTargetsSchema = z
+  .object({
+    cpk: z.number().finite().optional(),
+    sigma: z.number().finite().optional(),
+  })
+  .strict();
+
+const interpretationRuleEvidenceSchema = z
+  .object({
+    sourceAlias: z.string().min(1),
+    sheetName: z.string().min(1),
+    sourceRange: interpretationSourceRangeSchema,
+    sourceFileHash: sha256Schema,
+  })
+  .strict();
+
+const interpretationMatchedRuleSchema = z
+  .object({
+    entryId: z.string().min(1),
+    entryType: z.enum(["performance-rule", "root-cause-signal", "improvement-option"]),
+    relatedFactReferences: z.array(z.string().min(1)),
+    evidence: interpretationRuleEvidenceSchema,
+  })
+  .strict();
+
+export const interpretationRuleEvaluationSchema = z
+  .object({
+    knowledgeBaseVersion: interpretationRuleVersionSchema,
+    status: z.enum(["matched", "insufficient-facts", "not-applicable"]),
+    resolvedTargets: interpretationResolvedTargetsSchema.optional(),
+    factsUsed: z.array(z.string().min(1)),
+    matchedRules: z.array(interpretationMatchedRuleSchema),
+    missingFacts: z.array(z.string().min(1)),
+  })
+  .strict();
+
 export type DataClassification = z.infer<typeof dataClassificationSchema>;
 export type RunRequest = z.infer<typeof runRequestSchema>;
 export type CapabilityTier = z.infer<typeof capabilityTierSchema>;
@@ -1802,6 +2029,16 @@ export type InternalToleranceGuidanceRequestConditions = z.infer<typeof internal
 export type InternalToleranceGuidanceEntry = z.infer<typeof internalToleranceGuidanceEntrySchema>;
 export type InternalToleranceGuidanceRequest = z.infer<typeof internalToleranceGuidanceRequestSchema>;
 export type InternalToleranceGuidanceResult = z.infer<typeof internalToleranceGuidanceResultSchema>;
+export type InterpretationRuleVersion = z.infer<typeof interpretationRuleVersionSchema>;
+export type InterpretationEntryType = z.infer<typeof interpretationEntryTypeSchema>;
+export type InterpretationProvenance = z.infer<typeof interpretationProvenanceSchema>;
+export type InterpretationKnowledgeEntry = z.infer<typeof interpretationKnowledgeEntrySchema>;
+export type InterpretationKnowledgeSourceMetadata = z.infer<typeof interpretationKnowledgeSourceMetadataSchema>;
+export type InterpretationKnowledgeManifest = z.infer<typeof interpretationKnowledgeManifestSchema>;
+export type InterpretationKnowledgeSeedPackage = z.infer<typeof interpretationKnowledgeSeedPackageSchema>;
+export type InterpretationRuleLoadRequest = z.infer<typeof interpretationRuleLoadRequestSchema>;
+export type InterpretationRuleEvaluationRequest = z.infer<typeof interpretationRuleEvaluationRequestSchema>;
+export type InterpretationRuleEvaluation = z.infer<typeof interpretationRuleEvaluationSchema>;
 export type WorkbookCatalogRequest = z.infer<typeof workbookCatalogRequestSchema>;
 export type WorkbookCatalogResult = z.infer<typeof workbookCatalogResultSchema>;
 export type WorksheetSelectionViewRequest = z.infer<typeof worksheetSelectionViewRequestSchema>;

@@ -29,6 +29,16 @@ import {
   internalToleranceGuidanceRequestSchema,
   internalToleranceGuidanceResultSchema,
   internalToleranceGuidanceSourceMetadataSchema,
+  interpretationEntryTypeSchema,
+  interpretationKnowledgeEntrySchema,
+  interpretationKnowledgeManifestSchema,
+  interpretationKnowledgeSeedPackageSchema,
+  interpretationKnowledgeSourceMetadataSchema,
+  interpretationProvenanceSchema,
+  interpretationRuleEvaluationRequestSchema,
+  interpretationRuleEvaluationSchema,
+  interpretationRuleLoadRequestSchema,
+  interpretationRuleVersionSchema,
   knowledgeBaseQueryResultSchema,
   knowledgeBaseManifestSchema,
   knowledgeBaseQueryRequestSchema,
@@ -1817,5 +1827,195 @@ describe("worksheet selection view contracts", () => {
   ])("rejects worksheet selection view contract with %s", (_description, value) => {
     const schema = "workbookCatalog" in value ? worksheetSelectionViewRequestSchema : worksheetSelectionViewResultSchema;
     expect(schema.safeParse(value).success).toBe(false);
+  });
+});
+
+describe("interpretation rules contracts", () => {
+  const provenance = {
+    classification: "internal" as const,
+    sourceAlias: "capability-handbook",
+    sourceFileHash: "a".repeat(64),
+    sourceVersion: "2026-Q3",
+    sheetName: "Rules",
+    sourceRange: "A2:H20",
+    owner: "knowledge-steward",
+    confidence: 0.9,
+    effectiveVersion: "interpretation-rules-v1" as const,
+    changeSummary: "Initial reviewed interpretation rules.",
+  };
+
+  const commonEntry = {
+    entryId: "entry-1",
+    title: "Capability interpretation",
+    description: "Interprets one-dimensional capability facts.",
+    applicability: { analysisDimension: "one-dimensional" as const, method: "rss" as const },
+    relatedEntryIds: [],
+    provenance,
+  };
+
+  const entries = [
+    {
+      ...commonEntry,
+      entryId: "metric-cpk",
+      entryType: "metric-definition" as const,
+      metric: "cpk",
+      unit: "ratio",
+    },
+    {
+      ...commonEntry,
+      entryId: "performance-cpk",
+      entryType: "performance-rule" as const,
+      metric: "cpk",
+      comparison: "greater-than-or-equal" as const,
+      targetSource: "resolved-target" as const,
+      requiredFacts: ["cpk", "targetCpk"],
+      outcomeWhenMatched: "meets-target",
+    },
+    {
+      ...commonEntry,
+      entryId: "root-cause-contributor",
+      entryType: "root-cause-signal" as const,
+      signalStatus: "hypothesis" as const,
+      requiredFacts: ["contributors"],
+      validationFacts: ["contributor-evidence"],
+    },
+    {
+      ...commonEntry,
+      entryId: "improvement-review",
+      entryType: "improvement-option" as const,
+      expectedImpact: "Reduce the largest contributor.",
+      tradeoffs: ["May increase manufacturing cost."],
+      validationSteps: ["Recalculate the tolerance stack."],
+    },
+    {
+      ...commonEntry,
+      entryId: "decision-escalate",
+      entryType: "decision-policy" as const,
+      policyKind: "engineering-review" as const,
+    },
+  ];
+
+  const source = {
+    sourceAlias: "capability-handbook",
+    sourceFileHash: "a".repeat(64),
+    sourceVersion: "2026-Q3",
+    classification: "internal" as const,
+    owner: "knowledge-steward",
+  };
+
+  const manifest = {
+    version: "interpretation-rules-v1" as const,
+    classification: "internal" as const,
+    sourceCount: 1,
+    entryCount: 5,
+    entryTypeCounts: {
+      "metric-definition": 1,
+      "performance-rule": 1,
+      "root-cause-signal": 1,
+      "improvement-option": 1,
+      "decision-policy": 1,
+    },
+    sourcesHash: "b".repeat(64),
+    entriesHash: "c".repeat(64),
+    contentHash: "d".repeat(64),
+  };
+
+  const seedPackage = { manifest, sources: [source], entries };
+
+  it("accepts the version, every entry discriminant, and a strict seed package", () => {
+    expect(interpretationRuleVersionSchema.parse("interpretation-rules-v1")).toBe("interpretation-rules-v1");
+    expect(entries.map((entry) => interpretationEntryTypeSchema.parse(entry.entryType))).toEqual(
+      entries.map((entry) => entry.entryType),
+    );
+    expect(entries.map((entry) => interpretationKnowledgeEntrySchema.parse(entry).entryType)).toEqual(
+      entries.map((entry) => entry.entryType),
+    );
+    expect(interpretationKnowledgeSourceMetadataSchema.parse(source)).toEqual(source);
+    expect(interpretationKnowledgeManifestSchema.parse(manifest)).toEqual(manifest);
+    expect(interpretationKnowledgeSeedPackageSchema.parse(seedPackage)).toEqual(seedPackage);
+    expect(interpretationRuleLoadRequestSchema.parse({ seedPackage })).toEqual({ seedPackage });
+  });
+
+  it("accepts cpk, sigma, contributor facts, and a structured evaluation", () => {
+    const request = {
+      analysisDimension: "one-dimensional" as const,
+      method: "worst-case" as const,
+      facts: {
+        cpk: 1.33,
+        targetCpk: { value: 1.33, source: "project" as const },
+        achievedSigma: 4,
+        targetSigma: { value: 4.5, source: "template" as const },
+        contributors: [{ reference: "dimension-A", contributionPercent: 62.5 }],
+      },
+    };
+    const evaluation = {
+      knowledgeBaseVersion: "interpretation-rules-v1" as const,
+      status: "matched" as const,
+      resolvedTargets: { cpk: 1.33, sigma: 4.5 },
+      factsUsed: ["cpk", "targetCpk"],
+      matchedRules: [{
+        entryId: "performance-cpk",
+        entryType: "performance-rule" as const,
+        relatedFactReferences: ["cpk", "targetCpk"],
+        evidence: {
+          sourceAlias: "capability-handbook",
+          sheetName: "Rules",
+          sourceRange: "A2:H20",
+          sourceFileHash: "a".repeat(64),
+        },
+      }],
+      missingFacts: [],
+    };
+
+    expect(interpretationRuleEvaluationRequestSchema.parse(request)).toEqual(request);
+    expect(interpretationRuleEvaluationSchema.parse(evaluation)).toEqual(evaluation);
+  });
+
+  it("rejects confidential provenance and non-hypothesis root-cause signals", () => {
+    expect(interpretationProvenanceSchema.safeParse({ ...provenance, classification: "confidential" }).success).toBe(false);
+    expect(interpretationKnowledgeEntrySchema.safeParse({ ...entries[2], signalStatus: "confirmed" }).success).toBe(false);
+  });
+
+  it("does not permit an inline global Cpk target or ranked improvement advice", () => {
+    expect(interpretationKnowledgeEntrySchema.safeParse({ ...entries[1], target: 1 }).success).toBe(false);
+    expect(interpretationKnowledgeEntrySchema.safeParse({ ...entries[3], rank: 1 }).success).toBe(false);
+    expect(interpretationKnowledgeEntrySchema.safeParse({ ...entries[3], recommendation: "Do this first." }).success).toBe(false);
+  });
+
+  it.each([
+    ["entry unknown field", interpretationKnowledgeEntrySchema, { ...entries[0], unexpected: true }],
+    ["nested applicability unknown field", interpretationKnowledgeEntrySchema, {
+      ...entries[0], applicability: { ...entries[0].applicability, unexpected: true },
+    }],
+    ["source unknown field", interpretationKnowledgeSourceMetadataSchema, { ...source, unexpected: true }],
+    ["manifest unknown field", interpretationKnowledgeManifestSchema, { ...manifest, unexpected: true }],
+    ["seed package unknown field", interpretationKnowledgeSeedPackageSchema, { ...seedPackage, unexpected: true }],
+    ["load request unknown field", interpretationRuleLoadRequestSchema, { seedPackage, unexpected: true }],
+    ["evaluation request unknown field", interpretationRuleEvaluationRequestSchema, {
+      analysisDimension: "one-dimensional", method: "rss", facts: {}, unexpected: true,
+    }],
+    ["facts unknown field", interpretationRuleEvaluationRequestSchema, {
+      analysisDimension: "one-dimensional", method: "rss", facts: { unexpected: true },
+    }],
+    ["evaluation unknown field", interpretationRuleEvaluationSchema, {
+      knowledgeBaseVersion: "interpretation-rules-v1", status: "not-applicable",
+      factsUsed: [], matchedRules: [], missingFacts: [], unexpected: true,
+    }],
+  ])("rejects %s", (_description, schema, value) => {
+    expect(schema.safeParse(value).success).toBe(false);
+  });
+
+  it.each([
+    ["non-finite cpk", { cpk: Number.POSITIVE_INFINITY }],
+    ["non-finite target Cpk", { targetCpk: { value: Number.NaN, source: "project" } }],
+    ["non-finite sigma", { achievedSigma: Number.NEGATIVE_INFINITY }],
+    ["negative contribution", { contributors: [{ reference: "A", contributionPercent: -0.1 }] }],
+    ["contribution over 100", { contributors: [{ reference: "A", contributionPercent: 100.1 }] }],
+  ])("rejects %s", (_description, facts) => {
+    expect(interpretationRuleEvaluationRequestSchema.safeParse({
+      analysisDimension: "one-dimensional",
+      method: "rss",
+      facts,
+    }).success).toBe(false);
   });
 });
