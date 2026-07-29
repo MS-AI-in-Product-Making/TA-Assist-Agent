@@ -24,6 +24,11 @@ import {
   unifiedExceptionResolutionV2ResultSchema,
   engineeringRuleEntrySchema,
   engineeringRuleQuerySchema,
+  internalToleranceGuidanceEntrySchema,
+  internalToleranceGuidanceManifestSchema,
+  internalToleranceGuidanceRequestSchema,
+  internalToleranceGuidanceResultSchema,
+  internalToleranceGuidanceSourceMetadataSchema,
   knowledgeBaseQueryResultSchema,
   knowledgeBaseManifestSchema,
   knowledgeBaseQueryRequestSchema,
@@ -34,6 +39,8 @@ import {
   runRequestSchema,
   requiredFieldCheckRequestSchema,
   requiredFieldCheckResultSchema,
+  semanticTableDetectionRequestSchema,
+  semanticTableDetectionResultSchema,
   skillResultSchema,
   terminologyEntrySchema,
   typedErrorSchema,
@@ -118,6 +125,26 @@ describe("Phase 0 contracts", () => {
     );
 
     expect(output.trim()).toBe("loaded");
+  });
+});
+
+describe("internal tolerance guidance contracts", () => {
+  it("accepts a unilateral request with exactly representable values", () => {
+    expect(
+      internalToleranceGuidanceRequestSchema.safeParse({
+        processFamily: "cnc-machining",
+        featureType: "diameter",
+        nominalValue: 10,
+        nominalUnit: "mm",
+        tolerance: {
+          representation: "unilateral",
+          upperValue: 0.25,
+          lowerValue: 0.125,
+          value: 0.125,
+          unit: "mm",
+        },
+      }).success,
+    ).toBe(true);
   });
 });
 
@@ -591,6 +618,228 @@ describe("knowledge-base contracts", () => {
     expect(matchedCapability.queryType).toBe("capability");
     expect(knowledgeBaseQueryResultSchema.parse(unknownCapability)).toEqual(unknownCapability);
     expect(() => knowledgeBaseQueryResultSchema.parse({ ...unknownCapability, feasible: true })).toThrow();
+  });
+});
+
+describe("internal tolerance guidance contracts", () => {
+  const sourceMetadata = {
+    sourceId: "cnc-capability-matrix-2026-q3",
+    sourceFile: "cnc-capability-matrix.xlsx",
+    sourceFileHash: "a".repeat(64),
+    sourceVersion: "2026-Q3",
+    sheetName: "CNC",
+    sourceRange: "A1:B2",
+    classification: "internal" as const,
+  };
+
+  const manifest = {
+    contractVersion: "v1" as const,
+    knowledgeBaseVersion: "internal-v1" as const,
+    classification: "internal" as const,
+    releasedAt: "2026-07-28",
+    changeSummary: "Initial internal tolerance guidance snapshot.",
+    sourceCount: 1,
+    entryCount: 6,
+    sourcesContentHash: "b".repeat(64),
+    entriesContentHash: "c".repeat(64),
+  };
+
+  const evidence = {
+    sourceFile: "cnc-capability-matrix.xlsx",
+    sourceFileHash: "a".repeat(64),
+    sheetName: "CNC",
+    sourceRange: "A2:H2",
+  };
+
+  const entry = {
+    entryId: "cnc-hole-diameter",
+    processFamily: "cnc-machining",
+    featureType: "hole-diameter",
+    material: "aluminum",
+    nominalRange: { min: 1, max: 25, unit: "mm" },
+    maximumRecommendedTotalBand: { value: 0.1, unit: "mm" },
+    fallbackPriority: 10,
+    capabilityTier: "T1",
+    provenance: {
+      classification: "internal",
+      sourceId: "cnc-capability-matrix-2026-q3",
+      ...evidence,
+      sourceVersion: "2026-Q3",
+      owner: "knowledge-steward",
+      confidence: 1,
+      effectiveVersion: "internal-v1",
+      changeSummary: "Reviewed CNC hole-diameter guidance.",
+    },
+  };
+
+  const request = {
+    processFamily: "cnc-machining",
+    featureType: "hole-diameter",
+    nominalValue: 12,
+    nominalUnit: "mm",
+    material: "aluminum",
+    tolerance: { representation: "bilateral", value: 0.08, unit: "mm" },
+  };
+
+  const exceededResult = {
+    status: "guidance-exceeded",
+    knowledgeBaseVersion: "internal-v1",
+    matchedEntryId: entry.entryId,
+    assessedTotalBand: { value: 0.16, unit: "mm" },
+    maximumRecommendedTotalBand: entry.maximumRecommendedTotalBand,
+    fallbackApplied: false,
+    evidence,
+  };
+
+  it("accepts a CNC bilateral request and guidance-exceeded DTO", () => {
+    expect(internalToleranceGuidanceRequestSchema.parse(request)).toEqual(request);
+    expect(internalToleranceGuidanceEntrySchema.parse(entry)).toEqual(entry);
+    expect(internalToleranceGuidanceResultSchema.parse(exceededResult)).toEqual(exceededResult);
+  });
+
+  it("accepts strict nested entry and request conditions", () => {
+    const conditions = {
+      processMethod: "formed",
+      materialFamily: "steel",
+      thicknessMm: { min: 0.8, max: 1.2 },
+      toleranceGrade: "TG6",
+      dimensionType: "W" as const,
+    };
+
+    expect(internalToleranceGuidanceEntrySchema.parse({ ...entry, conditions }).conditions).toEqual(conditions);
+    expect(internalToleranceGuidanceRequestSchema.parse({
+      ...request,
+      conditions: {
+        processMethod: "formed",
+        materialFamily: "steel",
+        thicknessMm: 1,
+        toleranceGrade: "TG6",
+        dimensionType: "W",
+      },
+    }).conditions).toEqual({
+      processMethod: "formed",
+      materialFamily: "steel",
+      thicknessMm: 1,
+      toleranceGrade: "TG6",
+      dimensionType: "W",
+    });
+
+    expect(internalToleranceGuidanceEntrySchema.safeParse({
+      ...entry,
+      conditions: { dimensionType: "X" },
+    }).success).toBe(false);
+    expect(internalToleranceGuidanceRequestSchema.safeParse({
+      ...request,
+      conditions: { thicknessMm: Number.NaN },
+    }).success).toBe(false);
+    expect(internalToleranceGuidanceEntrySchema.safeParse({
+      ...entry,
+      conditions: { thicknessMm: { min: 0.8, max: Infinity } },
+    }).success).toBe(false);
+    expect(internalToleranceGuidanceRequestSchema.safeParse({
+      ...request,
+      conditions: { dimensionType: "NW", unexpected: true },
+    }).success).toBe(false);
+  });
+
+  it("accepts explicit range endpoint inclusion flags and rejects empty ranges", () => {
+    expect(internalToleranceGuidanceEntrySchema.parse({
+      ...entry,
+      nominalRange: { min: 3, minInclusive: false, max: 6, maxInclusive: true, unit: "mm" },
+      conditions: { thicknessMm: { min: 1, minInclusive: false, max: 3, maxInclusive: true } },
+    })).toMatchObject({
+      nominalRange: { min: 3, minInclusive: false, max: 6, maxInclusive: true, unit: "mm" },
+      conditions: { thicknessMm: { min: 1, minInclusive: false, max: 3, maxInclusive: true } },
+    });
+    expect(internalToleranceGuidanceEntrySchema.safeParse({
+      ...entry,
+      nominalRange: { min: 6, minInclusive: false, max: 6, maxInclusive: true, unit: "mm" },
+    }).success).toBe(false);
+    expect(internalToleranceGuidanceEntrySchema.safeParse({
+      ...entry,
+      conditions: { thicknessMm: { min: 3, minInclusive: false, max: 3, maxInclusive: true } },
+    }).success).toBe(false);
+    expect(internalToleranceGuidanceEntrySchema.safeParse({
+      ...entry,
+      nominalRange: { min: 3, minInclusive: "false", max: 6, unit: "mm" },
+    }).success).toBe(false);
+  });
+
+  it("accepts strict internal-v1 source metadata and manifest", () => {
+    expect(internalToleranceGuidanceSourceMetadataSchema.parse(sourceMetadata)).toEqual(sourceMetadata);
+    expect(internalToleranceGuidanceManifestSchema.parse(manifest)).toEqual(manifest);
+  });
+
+  it.each([
+    ["source metadata", internalToleranceGuidanceSourceMetadataSchema, sourceMetadata],
+    ["manifest", internalToleranceGuidanceManifestSchema, manifest],
+  ])("rejects an extra field in internal-v1 %s", (_description, schema, value) => {
+    expect(schema.safeParse({ ...value, unexpected: true }).success).toBe(false);
+  });
+
+  it.each([
+    ["source metadata", internalToleranceGuidanceSourceMetadataSchema, sourceMetadata],
+    ["manifest", internalToleranceGuidanceManifestSchema, manifest],
+  ])("rejects public classification in internal-v1 %s", (_description, schema, value) => {
+    expect(schema.safeParse({ ...value, classification: "public" }).success).toBe(false);
+  });
+
+  it.each([
+    ["source metadata hash", internalToleranceGuidanceSourceMetadataSchema, { ...sourceMetadata, sourceFileHash: "A".repeat(64) }],
+    ["source metadata range", internalToleranceGuidanceSourceMetadataSchema, { ...sourceMetadata, sourceRange: "A0:B2" }],
+    ["manifest sources count", internalToleranceGuidanceManifestSchema, { ...manifest, sourceCount: -1 }],
+    ["manifest entries count", internalToleranceGuidanceManifestSchema, { ...manifest, entryCount: 1.5 }],
+    ["manifest sources hash", internalToleranceGuidanceManifestSchema, { ...manifest, sourcesContentHash: "B".repeat(64) }],
+    ["manifest entries hash", internalToleranceGuidanceManifestSchema, { ...manifest, entriesContentHash: "C".repeat(64) }],
+  ])("rejects invalid internal-v1 %s", (_description, schema, value) => {
+    expect(schema.safeParse(value).success).toBe(false);
+  });
+
+  it.each([
+    ["public provenance", { ...entry, provenance: { ...entry.provenance, classification: "public" } }],
+    ["an unsupported process", { ...entry, processFamily: "laser-cutting" }],
+    ["a zero maximum threshold", { ...entry, maximumRecommendedTotalBand: { value: 0, unit: "mm" } }],
+    ["absent evidence range", { ...entry, provenance: { ...entry.provenance, sourceRange: undefined } }],
+    ["a malformed evidence range", { ...entry, provenance: { ...entry.provenance, sourceRange: "A0:B2" } }],
+    ["an extra field", { ...entry, unexpected: true }],
+  ])("rejects an entry with %s", (_description, invalidEntry) => {
+    expect(internalToleranceGuidanceEntrySchema.safeParse(invalidEntry).success).toBe(false);
+  });
+
+  it("requires upper and lower values for unilateral tolerance", () => {
+    expect(
+      internalToleranceGuidanceRequestSchema.safeParse({
+        ...request,
+        tolerance: { representation: "unilateral", value: 0.1, unit: "mm", upperValue: 0.1 },
+      }).success,
+    ).toBe(false);
+  });
+
+  it.each([
+    ["equal", 0.1, 0.1],
+    ["reversed", 0.05, 0.1],
+  ])("rejects %s unilateral tolerance values", (_description, upperValue, lowerValue) => {
+    expect(
+      internalToleranceGuidanceRequestSchema.safeParse({
+        ...request,
+        tolerance: { representation: "unilateral", value: 0.1, unit: "mm", upperValue, lowerValue },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects a unilateral tolerance whose value does not equal the total band", () => {
+    expect(
+      internalToleranceGuidanceRequestSchema.safeParse({
+        ...request,
+        tolerance: { representation: "unilateral", value: 0.1, unit: "mm", upperValue: 0.2, lowerValue: 0.05 },
+      }).success,
+    ).toBe(false);
+  });
+
+  it.each(["pass", "fail", "feasible", "tooTight"])("rejects unsupported output field %s", (field) => {
+    expect(
+      internalToleranceGuidanceResultSchema.safeParse({ ...exceededResult, [field]: true }).success,
+    ).toBe(false);
   });
 });
 
@@ -1175,6 +1424,94 @@ describe("worksheet analysis asset contracts", () => {
 
     expect(exceptionResolutionResultSchema.parse(result).status).toBe("readyToContinue");
     expect(exceptionResolutionResultSchema.safeParse({ ...result, readyToContinue: false }).success).toBe(false);
+  });
+
+  it("accepts strict F1.7 semantic table detection contracts", () => {
+    const detectionRequest = {
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbookBytes: new Uint8Array([0x50, 0x4b, 3, 4]),
+      workbookCatalog,
+      worksheetSelection: { mode: "selected", worksheetNames: ["Analysis"] },
+      manualConfirmations: [{
+        worksheetName: "Analysis",
+        candidateId: "cand-a",
+        action: "confirm_as_is",
+      }],
+    };
+
+    expect(semanticTableDetectionRequestSchema.parse(detectionRequest)).toEqual(detectionRequest);
+
+    const pendingResult = {
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbook: { contentHash, catalogContractVersion: "v1" },
+      worksheets: [{
+        worksheetName: "Analysis",
+        recognitionStatus: "pending_confirmation",
+        confidenceScore: 71,
+        confidenceBreakdown: {
+          headerScore: 36,
+          typeScore: 20,
+          completenessScore: 15,
+          penalty: 0,
+        },
+        uncertaintyReasons: ["ambiguous_mapping"],
+        requiresUserConfirmation: true,
+        confirmationPayload: {
+          candidateId: "cand-a",
+          headerRow: 12,
+          dataRange: { startRow: 13, endRow: 26 },
+          mappedFields: [{
+            field: "factorName",
+            sourceColumn: "B",
+            headerText: "Factor",
+            status: "mapped",
+          }],
+          recommendedAction: "confirm_as_is",
+          reasonCodes: ["ambiguous_mapping"],
+        },
+      }],
+      summary: {
+        worksheetCount: 1,
+        autoConfirmedCount: 0,
+        manualConfirmedCount: 0,
+        pendingConfirmationCount: 1,
+        blockedCount: 0,
+      },
+    };
+
+    expect(semanticTableDetectionResultSchema.parse(pendingResult)).toEqual(pendingResult);
+    expect(semanticTableDetectionResultSchema.safeParse({
+      ...pendingResult,
+      worksheets: [{
+        ...pendingResult.worksheets[0],
+        recognitionStatus: "auto_confirmed",
+        requiresUserConfirmation: false,
+        confirmationPayload: undefined,
+      }],
+      summary: {
+        worksheetCount: 1,
+        autoConfirmedCount: 1,
+        manualConfirmedCount: 0,
+        pendingConfirmationCount: 0,
+        blockedCount: 0,
+      },
+    }).success).toBe(true);
+    expect(semanticTableDetectionResultSchema.safeParse({
+      ...pendingResult,
+      worksheets: [{
+        ...pendingResult.worksheets[0],
+        requiresUserConfirmation: false,
+      }],
+    }).success).toBe(false);
+    expect(semanticTableDetectionResultSchema.safeParse({
+      ...pendingResult,
+      summary: {
+        ...pendingResult.summary,
+        pendingConfirmationCount: 0,
+      },
+    }).success).toBe(false);
   });
 });
 
