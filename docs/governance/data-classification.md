@@ -42,6 +42,11 @@ hash 或必要元数据；`secret` 始终以 `policy_denied` 拒绝且不得持�
 
 - Git 只接受匿名 `public` fixture。真实 TA 数据、供应商信息、DIM ID、测量数据、
   ADO 内容、`.env` 与 runtime 记录均不得提交。
+- `public-v1` 知识库始终只包含匿名 `public` 内容。经审查的 F0 内部规则与快照元数据
+  可以作为 `internal` 治理工件维护；原始 `.xls`、`.xlsx`、`.xlsm` 一律不得提交，直到
+  另行批准受控白名单。
+- F0 的 T0 仅表示 `guidance-exceeded`、`within-guidance` 或 `unknown` 三种指导结果语义；
+  不得由此推断能力紧度或可制造性。
 - 审计和日志只能记录分类、别名、哈希、事件代码与必要元数据。它们不得包含
   `secret`，也不得泄露 `confidential` 原文、DIM ID、供应商名称或环境变量值。
 - **Phase 0 审计根目录部署契约：**每个 run 必须使用独立、私有的本地目录；只有

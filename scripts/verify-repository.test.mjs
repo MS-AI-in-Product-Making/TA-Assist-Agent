@@ -36,7 +36,7 @@ describe("isForbiddenRepositoryPath", () => {
     expect(existsSync(resolve(process.cwd(), ".github/workflows/ci.example.yml"))).toBe(false);
   });
 
-  it.each([".env", ".ENV", "runtime/projects/a/run.json", "RUNTIME/run.json", "sample.xlsx", "sample.xlsm"])(
+  it.each([".env", ".ENV", "runtime/projects/a/run.json", "RUNTIME/run.json", "sample.xls", "sample.xlsx", "sample.xlsm"])(
     "rejects %s",
     (path) => expect(isForbiddenRepositoryPath(path)).toBe(true),
   );
@@ -45,6 +45,7 @@ describe("isForbiddenRepositoryPath", () => {
     "exports/release/manifest.json",
     "EXPORTS/bundle.json",
     "sample.XLSX",
+    "sample.XlS",
     "sample.XlsM",
     "a/runtime",
     "a/exports",
@@ -105,6 +106,7 @@ describe("isForbiddenRepositoryPath", () => {
       ["RUNTIME/run.json", "{}\n"],
       ["EXPORTS/bundle.json", "{}\n"],
       ["fixtures/Confidential/sample.json", "{}\n"],
+      ["sample.XLS", "anonymous workbook placeholder\n"],
       ["sample.XLSX", "anonymous workbook placeholder\n"],
       [".ENV.EXAMPLE", "EXAMPLE=value\n"],
       ["fixtures/public/smoke-request.json", "{}\n"],
@@ -143,6 +145,7 @@ describe("isForbiddenRepositoryPath", () => {
       expect(result.stderr).toContain("RUNTIME/run.json");
       expect(result.stderr).toContain("EXPORTS/bundle.json");
       expect(result.stderr).toContain("fixtures/Confidential/sample.json");
+      expect(result.stderr).toContain("sample.XLS");
       expect(result.stderr).toContain("sample.XLSX");
       expect(result.stderr).not.toContain(".ENV.EXAMPLE");
       expect(result.stderr).not.toContain("fixtures/public/smoke-request.json");

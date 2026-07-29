@@ -4,8 +4,8 @@
 
 Feature Register 是 Phase 0 对 F0-F8 的唯一可查询能力清单。它提供规则和查询接口，
 用于区分已完成的工程基座与尚未交付的业务能力，避免调用方、测试或文档将规划能力
-误认为可用。F0 为本地、匿名、`public`、只读的 `knowledge-base-v1` 查询而标记为
-`available`；F1 为受控 `confidential` 工作簿字节的只读 catalog 与 F1.1 资产准备而标记为
+误认为可用。F0 为本地、匿名、`public`、只读的 `knowledge-base-v1` 查询与经审查的 `internal`
+指导元数据而标记为 `available`；F1 为受控 `confidential` 工作簿字节的只读 catalog 与 F1.1 资产准备而标记为
 `available`；F2.1 为严格必填字段校验而标记为 `available`；F2.2 为非阻断能力库与 distribution
 一致性校验而标记为 `available`；根 F2、F2.3-F2.4 和 F3-F7 均为 `unavailable`。F8 仅为 Phase 0 的匿名、`public`、受治理 Skill 验收 fixture 而标记为
 `available`。这些状态不表示已交付 TA 产品工作流、生产编排器、真实工程知识或任何外部写入
@@ -15,7 +15,7 @@ Feature Register 是 Phase 0 对 F0-F8 的唯一可查询能力清单。它提�
 
 | Feature | 标题 | 当前状态 | 依赖与外部前置条件 | 输入/输出契约 | 最大分类 | 验收检查 | 禁用行为 |
 |---|---|---|---|---|---|---|---|
-| F0 | 知识库 | `available` | `knowledge-base-v1`; `approved-public-knowledge-snapshot` | `knowledge-base-query-request-v1` / `knowledge-base-query-result-v1` | `public` | `anonymous-knowledge-base-fixture`, `unknown-capability-t0-fixture`, `knowledge-base-integrity-check` | `return feature_not_available` |
+| F0 | 知识库 | `available` | `knowledge-base-v1`, `internal-tolerance-guidance-v1`; `approved-public-knowledge-snapshot`, `approved-internal-knowledge-snapshot` | `knowledge-base-query-request-v1` / `knowledge-base-query-result-v1` | `internal` | `anonymous-knowledge-base-fixture`, `unknown-capability-t0-fixture`, `knowledge-base-integrity-check`, `internal-tolerance-guidance-integrity-check`, `guidance-only-result-fixture`, `internal-source-evidence-dto` | `return feature_not_available` |
 | F1 | TA 报告解析与资产准备 | `available` | `workbook-catalog-v1`, `worksheet-analysis-assets-v1`; `approved-ooxml-parser` | `worksheet-analysis-assets-request-v1` / `worksheet-analysis-assets-result-v1` | `confidential` | `anonymous-workbook-catalog-fixture`, `dynamic-date-cache-fixture`, `workbook-catalog-privacy-check`, `anonymous-worksheet-analysis-assets-fixture`, `worksheet-image-read-privacy-check` | `return feature_not_available` |
 | F2 | TA 风险与行动建议 | `unavailable` | `quality-rules-v1`, `recommendation-engine-v1`; `approved-recommendation-rules` | `recommendation-request-v1` / `recommendation-result-v1` | `confidential` | `anonymous-recommendation-fixture` | `return feature_not_available` |
 | F2.1 | TA 必填字段严格校验 | `available` | `worksheet-analysis-assets-v1`, `required-field-check-v1`; `approved-ooxml-parser` | `required-field-check-request-v1` / `required-field-check-result-v1` | `confidential` | `anonymous-required-field-check-fixture`, `required-field-blocking-check`, `required-field-privacy-check` | `return feature_not_available` |
@@ -36,9 +36,15 @@ Feature Register 是 Phase 0 对 F0-F8 的唯一可查询能力清单。它提�
 - 条目状态为 `unavailable` 时，调用方和后续生产编排器不得执行相应业务逻辑。后续
   运行时必须返回 `feature_not_available`，并说明未满足的依赖或外部前置条件；这是
   后续实现义务，不代表 Phase 0 已完成端到端拦截。
-- F0 的 `available` 仅允许本地、匿名 `public` 请求对 `knowledge-base-v1` 执行只读
-  查询，并以已审批的公共知识快照为内容来源。知识条目通过 Git/PR 维护；不得将该状态
-  解释为可使用真实工程知识，也不得据此启用 F2-F7。
+- F0 的 `available` 保留本地、匿名 `public-v1` 对 `knowledge-base-v1` 的只读查询，且
+  允许使用已审批的 `internal-v1` 指导规则与快照元数据。内部指导结果只可为
+  `guidance-exceeded`、`within-guidance` 或 `unknown`，不得声称能力紧度或可制造性。当前
+  `internal-v1` 已发布 110 条经审核规则，覆盖 CNC、压铸、模切、PCB/FPC、注塑与钣金；每条
+  规则保留来源 hash、工作表及范围证据。原始 `.xls`、`.xlsx`、`.xlsm` 始终禁止提交，除非另行批准受控白名单。F2 仍为
+  `unavailable` 并返回 `feature_not_available`；启用后才会使用文件、工作表和范围证据。
+  不得将 F0 状态解释为 F2-F7 已启用。
+
+F0 内部指导范围与维护边界见 [F0 内部制程公差指导库设计](../superpowers/specs/2026-07-28-f0-internal-tolerance-guidance-design.md) 和 [实施计划](../superpowers/plans/2026-07-28-f0-internal-tolerance-guidance.md)。
 - F1 的 `available` 仅接受受控的 `confidential` `.xlsx` 字节，并只在受控内存中创建
   worksheet catalog、因子表/公式 cached value/图片元数据证据。它不计算、不换算单位、不 OCR、
   不渲染、不解释风险、不写回、不调用外部服务，也不跟踪或导出原始 `.xlsx`；不得将该状态

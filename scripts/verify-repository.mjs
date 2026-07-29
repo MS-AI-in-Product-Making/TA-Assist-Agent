@@ -5,7 +5,7 @@ const forbiddenPatterns = [
   /(^|\/)\.env(?:\.(?!example$).+)?$/,
   /(^|\/)(?:runtime|exports)(?:\/|$)/,
   /(^|\/)fixtures\/confidential(?:\/|$)/i,
-  /\.(xlsx|xlsm)$/i,
+  /\.(xls|xlsx|xlsm)$/i,
 ];
 
 export function isForbiddenRepositoryPath(path) {
