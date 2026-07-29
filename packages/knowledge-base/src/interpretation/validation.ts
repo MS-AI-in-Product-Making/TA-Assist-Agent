@@ -44,6 +44,7 @@ function validateSeedPackage(value: unknown): InterpretationKnowledgeSeedPackage
   validateProvenance(parsed);
   validateManifest(parsed);
   validatePerformanceRequiredFacts(parsed.entries);
+  validateRootCauseRequiredFacts(parsed.entries);
   validateRelations(parsed.entries);
   return parsed;
 }
@@ -99,6 +100,16 @@ function validatePerformanceRequiredFacts(entries: readonly InterpretationKnowle
   }
 }
 
+function validateRootCauseRequiredFacts(entries: readonly InterpretationKnowledgeEntry[]): void {
+  for (const entry of entries) {
+    if (entry.entryType !== "root-cause-signal"
+      || entry.activationCondition.kind !== "maximum-contribution-at-least") continue;
+    if (entry.requiredFacts.length !== 1 || entry.requiredFacts[0] !== "contributors") {
+      throw dependencyError([entry.entryId]);
+    }
+  }
+}
+
 function validateRelations(entries: readonly InterpretationKnowledgeEntry[]): void {
   const entriesById = new Map(entries.map((entry) => [entry.entryId, entry]));
   for (const entry of entries) {
@@ -107,6 +118,16 @@ function validateRelations(entries: readonly InterpretationKnowledgeEntry[]): vo
       if (related === undefined
         || relatedId === entry.entryId
         || !ALLOWED_RELATED_TYPES[entry.entryType].includes(related.entryType)) {
+        throw dependencyError([entry.entryId]);
+      }
+    }
+    if (entry.entryType === "performance-rule") {
+      const relatedDefinitions = entry.relatedEntryIds.map((relatedId) => entriesById.get(relatedId)!);
+      const relatedDefinition = relatedDefinitions[0];
+      if (relatedDefinitions.length !== 1
+        || relatedDefinition === undefined
+        || relatedDefinition.entryType !== "metric-definition"
+        || relatedDefinition.metric !== entry.metric) {
         throw dependencyError([entry.entryId]);
       }
     }

@@ -2093,8 +2093,21 @@ describe("interpretation rules contracts", () => {
     expect(interpretationKnowledgeEntrySchema.safeParse({ ...entries[2], signalStatus: "confirmed" }).success).toBe(false);
   });
 
+  const rootCauseSignalWithoutActivationCondition = {
+    entryId: entries[2].entryId,
+    entryType: entries[2].entryType,
+    title: entries[2].title,
+    description: entries[2].description,
+    applicability: entries[2].applicability,
+    relatedEntryIds: entries[2].relatedEntryIds,
+    provenance: entries[2].provenance,
+    signalStatus: entries[2].signalStatus,
+    requiredFacts: entries[2].requiredFacts,
+    validationFacts: entries[2].validationFacts,
+  };
+
   it.each([
-    ["missing activation condition", (({ activationCondition: _activationCondition, ...entry }) => entry)(entries[2])],
+    ["missing activation condition", rootCauseSignalWithoutActivationCondition],
     ["unknown activation kind", {
       ...entries[2], activationCondition: { kind: "average-contribution-at-least", thresholdPercent: 30 },
     }],

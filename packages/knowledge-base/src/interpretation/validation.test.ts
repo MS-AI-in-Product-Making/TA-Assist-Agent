@@ -154,6 +154,17 @@ describe("interpretation-rules-v1 knowledge snapshots", () => {
     expect(() => createInterpretationKnowledgeSnapshot(seed)).not.toThrow();
   });
 
+  it.each([
+    ["missing contributors", ["cpk"]],
+    ["extra fact", ["contributors", "cpk"]],
+  ])("rejects root-cause requiredFacts with %s", (_description, requiredFacts) => {
+    const seed = createValidInterpretationKnowledgeSeedPackage();
+    const signal = seed.entries.find((entry) => entry.entryType === "root-cause-signal")!;
+    signal.requiredFacts = requiredFacts;
+    refreshInterpretationKnowledgeManifest(seed);
+    expectDependencyError(seed);
+  });
+
   it("rejects a bad manifest passed directly to the rules factory", () => {
     const seed = createValidInterpretationKnowledgeSeedPackage();
     seed.manifest.entriesHash = "b".repeat(64);
@@ -180,6 +191,30 @@ describe("interpretation-rules-v1 knowledge snapshots", () => {
   it("rejects a self-reference", () => {
     const seed = createValidInterpretationKnowledgeSeedPackage();
     seed.entries[1]!.relatedEntryIds = [seed.entries[1]!.entryId];
+    refreshInterpretationKnowledgeManifest(seed);
+    expectDependencyError(seed);
+  });
+
+  it("rejects a performance rule without a metric definition relation", () => {
+    const seed = createValidInterpretationKnowledgeSeedPackage();
+    seed.entries[1]!.relatedEntryIds = [];
+    refreshInterpretationKnowledgeManifest(seed);
+    expectDependencyError(seed);
+  });
+
+  it("rejects a performance rule related to a metric definition for another metric", () => {
+    const seed = createValidInterpretationKnowledgeSeedPackage();
+    seed.entries[1]!.relatedEntryIds = ["metric-sigma"];
+    refreshInterpretationKnowledgeManifest(seed);
+    expectDependencyError(seed);
+  });
+
+  it("rejects a performance rule related to two metric definitions", () => {
+    const seed = createValidInterpretationKnowledgeSeedPackage();
+    const duplicateMetric = structuredClone(seed.entries[0]!);
+    duplicateMetric.entryId = "metric-cpk-secondary";
+    seed.entries.push(duplicateMetric);
+    seed.entries[1]!.relatedEntryIds = ["metric-cpk", duplicateMetric.entryId];
     refreshInterpretationKnowledgeManifest(seed);
     expectDependencyError(seed);
   });
