@@ -11,6 +11,11 @@ export {
 export {
 	createInterpretationKnowledgeSnapshot,
 } from "./interpretation/validation.js";
+export {
+	createInterpretationRules,
+	loadInterpretationRules,
+	type InterpretationRules,
+} from "./interpretation/query.js";
 export type {
 	DeepReadonly,
 	InterpretationKnowledgeSeedPackage,
