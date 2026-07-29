@@ -1922,6 +1922,28 @@ describe("interpretation rules contracts", () => {
 
   const seedPackage = { manifest, sources: [source], entries };
 
+  const evaluation = {
+    knowledgeBaseVersion: "interpretation-rules-v1" as const,
+    status: "matched" as const,
+    resolvedTargets: {
+      cpk: { value: 1.33, source: "project" as const },
+      sigma: { value: 4.5, source: "template" as const },
+    },
+    factsUsed: ["cpk", "targetCpk"],
+    matchedRules: [{
+      entryId: "performance-cpk",
+      entryType: "performance-rule" as const,
+      relatedFactReferences: ["cpk", "targetCpk"],
+      evidence: {
+        sourceAlias: "capability-handbook",
+        sheetName: "Rules",
+        sourceRange: "A2:H20",
+        sourceFileHash: "a".repeat(64),
+      },
+    }],
+    missingFacts: [],
+  };
+
   it("accepts the version, every entry discriminant, a strict seed package, and a version-only load request", () => {
     expect(interpretationRuleVersionSchema.parse("interpretation-rules-v1")).toBe("interpretation-rules-v1");
     expect(entries.map((entry) => interpretationEntryTypeSchema.parse(entry.entryType))).toEqual(
@@ -1942,6 +1964,27 @@ describe("interpretation rules contracts", () => {
     }).success).toBe(false);
   });
 
+  it.each([
+    ["sourceCount", { ...manifest, sourceCount: 0 }, ["manifest", "sourceCount"]],
+    ["entryCount", { ...manifest, entryCount: 4 }, ["manifest", "entryCount"]],
+    [
+      "entryTypeCounts",
+      { ...manifest, entryTypeCounts: { ...manifest.entryTypeCounts, "performance-rule": 0 } },
+      ["manifest", "entryTypeCounts", "performance-rule"],
+    ],
+  ])("rejects an inconsistent manifest %s at the manifest field", (_field, inconsistentManifest, expectedPath) => {
+    const result = interpretationKnowledgeSeedPackageSchema.safeParse({
+      ...seedPackage,
+      manifest: inconsistentManifest,
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((issue) =>
+        JSON.stringify(issue.path) === JSON.stringify(expectedPath))).toBe(true);
+    }
+  });
+
   it("accepts cpk, sigma, contributor facts, and preserves resolved target sources", () => {
     const request = {
       analysisDimension: "one-dimensional" as const,
@@ -1954,28 +1997,6 @@ describe("interpretation rules contracts", () => {
         contributors: [{ reference: "dimension-A", contributionPercent: 62.5 }],
       },
     };
-    const evaluation = {
-      knowledgeBaseVersion: "interpretation-rules-v1" as const,
-      status: "matched" as const,
-      resolvedTargets: {
-        cpk: { value: 1.33, source: "project" as const },
-        sigma: { value: 4.5, source: "template" as const },
-      },
-      factsUsed: ["cpk", "targetCpk"],
-      matchedRules: [{
-        entryId: "performance-cpk",
-        entryType: "performance-rule" as const,
-        relatedFactReferences: ["cpk", "targetCpk"],
-        evidence: {
-          sourceAlias: "capability-handbook",
-          sheetName: "Rules",
-          sourceRange: "A2:H20",
-          sourceFileHash: "a".repeat(64),
-        },
-      }],
-      missingFacts: [],
-    };
-
     expect(interpretationRuleEvaluationRequestSchema.parse(request)).toEqual(request);
     expect(interpretationRuleEvaluationSchema.parse(evaluation)).toEqual(evaluation);
     expect(interpretationRuleEvaluationSchema.parse({
@@ -2006,6 +2027,61 @@ describe("interpretation rules contracts", () => {
       ...evaluation,
       resolvedTargets: { ...evaluation.resolvedTargets, unexpected: true },
     }).success).toBe(false);
+  });
+
+  it.each([
+    ["matched", evaluation],
+    ["insufficient-facts", {
+      ...evaluation,
+      status: "insufficient-facts",
+      resolvedTargets: { cpk: evaluation.resolvedTargets.cpk },
+      matchedRules: [],
+      missingFacts: ["achievedSigma"],
+    }],
+    ["not-applicable", {
+      ...evaluation,
+      status: "not-applicable",
+      resolvedTargets: {},
+      matchedRules: [],
+      missingFacts: [],
+    }],
+  ])("accepts a consistent %s evaluation", (_status, value) => {
+    expect(interpretationRuleEvaluationSchema.safeParse(value).success).toBe(true);
+  });
+
+  it.each([
+    ["matched without a matched rule", { ...evaluation, matchedRules: [] }, ["matchedRules"]],
+    ["matched with missing facts", { ...evaluation, missingFacts: ["cpk"] }, ["missingFacts"]],
+    ["insufficient-facts with a matched rule", {
+      ...evaluation, status: "insufficient-facts", missingFacts: ["cpk"],
+    }, ["matchedRules"]],
+    ["insufficient-facts without missing facts", {
+      ...evaluation, status: "insufficient-facts", matchedRules: [],
+    }, ["missingFacts"]],
+    ["not-applicable with a matched rule", {
+      ...evaluation, status: "not-applicable", resolvedTargets: {},
+    }, ["matchedRules"]],
+    ["not-applicable with missing facts", {
+      ...evaluation, status: "not-applicable", resolvedTargets: {}, matchedRules: [], missingFacts: ["cpk"],
+    }, ["missingFacts"]],
+    ["not-applicable with a resolved target", {
+      ...evaluation, status: "not-applicable", matchedRules: [],
+    }, ["resolvedTargets"]],
+    ["not-applicable without resolvedTargets", {
+      knowledgeBaseVersion: evaluation.knowledgeBaseVersion,
+      status: "not-applicable",
+      factsUsed: evaluation.factsUsed,
+      matchedRules: [],
+      missingFacts: [],
+    }, ["resolvedTargets"]],
+  ])("rejects %s at the conflicting field", (_description, value, expectedPath) => {
+    const result = interpretationRuleEvaluationSchema.safeParse(value);
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((issue) =>
+        JSON.stringify(issue.path) === JSON.stringify(expectedPath))).toBe(true);
+    }
   });
 
   it("rejects confidential provenance and non-hypothesis root-cause signals", () => {

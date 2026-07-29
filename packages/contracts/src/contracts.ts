@@ -1919,7 +1919,35 @@ export const interpretationKnowledgeSeedPackageSchema = z
     sources: z.array(interpretationKnowledgeSourceMetadataSchema),
     entries: z.array(interpretationKnowledgeEntrySchema),
   })
-  .strict();
+  .strict()
+  .superRefine((seedPackage, context) => {
+    if (seedPackage.manifest.sourceCount !== seedPackage.sources.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "sourceCount must equal sources length",
+        path: ["manifest", "sourceCount"],
+      });
+    }
+
+    if (seedPackage.manifest.entryCount !== seedPackage.entries.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "entryCount must equal entries length",
+        path: ["manifest", "entryCount"],
+      });
+    }
+
+    for (const entryType of interpretationEntryTypeSchema.options) {
+      const actualCount = seedPackage.entries.filter((entry) => entry.entryType === entryType).length;
+      if (seedPackage.manifest.entryTypeCounts[entryType] !== actualCount) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `${entryType} count must equal the number of matching entries`,
+          path: ["manifest", "entryTypeCounts", entryType],
+        });
+      }
+    }
+  });
 
 export const interpretationRuleLoadRequestSchema = z
   .object({
@@ -1993,7 +2021,66 @@ export const interpretationRuleEvaluationSchema = z
     matchedRules: z.array(interpretationMatchedRuleSchema),
     missingFacts: z.array(z.string().min(1)),
   })
-  .strict();
+  .strict()
+  .superRefine((evaluation, context) => {
+    if (evaluation.status === "matched") {
+      if (evaluation.matchedRules.length === 0) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "matched evaluations must include at least one matched rule",
+          path: ["matchedRules"],
+        });
+      }
+      if (evaluation.missingFacts.length > 0) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "matched evaluations must not include missing facts",
+          path: ["missingFacts"],
+        });
+      }
+    }
+
+    if (evaluation.status === "insufficient-facts") {
+      if (evaluation.matchedRules.length > 0) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "insufficient-facts evaluations must not include matched rules",
+          path: ["matchedRules"],
+        });
+      }
+      if (evaluation.missingFacts.length === 0) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "insufficient-facts evaluations must include at least one missing fact",
+          path: ["missingFacts"],
+        });
+      }
+    }
+
+    if (evaluation.status === "not-applicable") {
+      if (evaluation.matchedRules.length > 0) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "not-applicable evaluations must not include matched rules",
+          path: ["matchedRules"],
+        });
+      }
+      if (evaluation.missingFacts.length > 0) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "not-applicable evaluations must not include missing facts",
+          path: ["missingFacts"],
+        });
+      }
+      if (evaluation.resolvedTargets === undefined || Object.keys(evaluation.resolvedTargets).length > 0) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "not-applicable evaluations must include an empty resolvedTargets object",
+          path: ["resolvedTargets"],
+        });
+      }
+    }
+  });
 
 export type DataClassification = z.infer<typeof dataClassificationSchema>;
 export type RunRequest = z.infer<typeof runRequestSchema>;
