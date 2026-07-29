@@ -30,12 +30,14 @@ Full design docs live in [`docs/`](docs/README.md) (Mermaid diagrams render nati
 
 ## Phase 0 工程基座
 
-Phase 0 建立面向产品路线图的本地优先、可审计 TypeScript 工程基础。F0 仅提供匿名
-`public` 的本地只读知识库查询；F1 仅接受受控 `confidential` `.xlsx` 字节，创建只读
+Phase 0 建立面向产品路线图的本地优先、可审计 TypeScript 工程基础。F0 保留匿名
+`public-v1` 的本地只读知识库查询，并已发布经审查的 `internal-v1` 公差指导快照；其指导结果
+仅为 `guidance-exceeded`、`within-guidance` 或 `unknown`，不声明能力紧度或可制造性。该快照
+保留来源文件 hash、工作表和单元格范围，但原始能力矩阵仍不进入 Git。F1 仅接受受控 `confidential` `.xlsx` 字节，创建只读
 worksheet catalog，并从 catalog 确认的 worksheet 提取因子表、公式及缓存值、嵌入图片元数据，
 图片字节只可由 workbook hash 与唯一 image hash 共同验证后读取。F1 不计算公式、不换算单位、
 不执行 OCR、渲染、风险解释、行动建议或 workbook 写回，也不调用外部服务、不跟踪或导出原始
-`.xlsx`。F2.1 只接受 F1.1 confidential 资产，对九项必填因子字段执行严格完整性阻断；
+`.xls`、`.xlsx` 或 `.xlsm`（除非另行批准受控白名单）。F2.1 只接受 F1.1 confidential 资产，对九项必填因子字段执行严格完整性阻断；
 Drawing Number 与 DIM/Characteristic ID 只形成非阻断提示。F2.2 仅在 F2.1 ready 且内容哈希绑定时，
 按类别、`mm` 公差范围和受控 distribution 别名与 F0 比对；所有差异均为非阻断信号。根 F2、
 F2.3-F2.4 和 F3-F7 保持不可用，F4 返回 `feature_not_available`，F8 仅限用于受治理 Skill 运行时验收的匿名 `public`
@@ -45,6 +47,8 @@ fixture。此阶段不包含真实工程知识、外部 Adapter、模型、ADO�
 - [Phase 0 实施计划](docs/superpowers/plans/2026-07-22-ai-assist-agent-foundation.md)
 - [F0 知识库设计](docs/superpowers/specs/2026-07-22-f0-knowledge-base-design.md)
 - [F0 知识库实施计划](docs/superpowers/plans/2026-07-22-f0-knowledge-base.md)
+- [F0 内部制程公差指导库设计](docs/superpowers/specs/2026-07-28-f0-internal-tolerance-guidance-design.md)
+- [F0 内部制程公差指导库实施计划](docs/superpowers/plans/2026-07-28-f0-internal-tolerance-guidance.md)
 - [F1 工作簿目录设计](docs/superpowers/specs/2026-07-23-f1-workbook-catalog-design.md)
 - [F1 工作簿目录实施计划](docs/superpowers/plans/2026-07-23-f1-workbook-catalog.md)
 - [F1.1 工作表资产提取设计](docs/superpowers/specs/2026-07-24-f1-1-worksheet-analysis-assets-design.md)
