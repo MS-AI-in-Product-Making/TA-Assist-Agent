@@ -66,7 +66,7 @@ describe("interpretation-rules-v1 knowledge snapshots", () => {
     seed.entries[0]!.title = "changed after snapshot";
     seed.entries[1]!.relatedEntryIds.push("changed-after-snapshot");
 
-    expect(snapshot.entries[0]!.title).toBe("Reviewed interpretation");
+    expect(snapshot.entries[0]!.title).toBe("Process capability index (Cpk)");
     expect(snapshot.entries[1]!.relatedEntryIds).toEqual(["metric-cpk"]);
     expect(Object.isFrozen(snapshot)).toBe(true);
     expect(Object.isFrozen(snapshot.manifest.entryTypeCounts)).toBe(true);

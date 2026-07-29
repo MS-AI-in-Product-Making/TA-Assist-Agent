@@ -80,13 +80,14 @@ function evaluate(
     });
   }
 
-  const matchedPerformanceRules = relevantPerformanceRules.filter((rule) => compareRule(rule, query.facts));
-  const matchedPerformanceIds = new Set(matchedPerformanceRules.map((rule) => rule.entryId));
-  const hitEntryIds = new Set(matchedPerformanceRules.flatMap((rule) => [rule.entryId, ...rule.relatedEntryIds]));
-  const candidateSignals = applicableEntries.filter(
-    (entry): entry is RootCauseSignal => entry.entryType === "root-cause-signal"
-      && entry.relatedEntryIds.some((entryId) => hitEntryIds.has(entryId)),
+  const matchedPerformanceRules = sortByEntryId(
+    relevantPerformanceRules.filter((rule) => compareRule(rule, query.facts)),
   );
+  const matchedPerformanceIds = new Set(matchedPerformanceRules.map((rule) => rule.entryId));
+  const candidateSignals = sortByEntryId(applicableEntries.filter(
+    (entry): entry is RootCauseSignal => entry.entryType === "root-cause-signal"
+      && entry.relatedEntryIds.some((entryId) => matchedPerformanceIds.has(entryId)),
+  ));
   const missingSignalFacts = uniqueSorted(candidateSignals.flatMap(
     (signal) => signal.requiredFacts.filter((fact) => !hasFact(query.facts, fact)),
   ));
@@ -101,14 +102,14 @@ function evaluate(
     });
   }
 
-  const matchedSignals = candidateSignals.filter((signal) => signal.requiredFacts.every(
-    (fact) => hasFact(query.facts, fact),
+  const matchedSignals = sortByEntryId(candidateSignals.filter(
+    (signal) => signal.requiredFacts.every((fact) => hasFact(query.facts, fact)),
   ));
   const matchedSignalIds = new Set(matchedSignals.map((signal) => signal.entryId));
-  const matchedOptions = applicableEntries.filter(
+  const matchedOptions = sortByEntryId(applicableEntries.filter(
     (entry): entry is ImprovementOption => entry.entryType === "improvement-option"
       && entry.relatedEntryIds.some((entryId) => matchedSignalIds.has(entryId)),
-  );
+  ));
   const signalReferences = new Map(matchedSignals.map((signal) => [signal.entryId, factReferences(
     query.facts,
     signal.requiredFacts,
@@ -120,7 +121,7 @@ function evaluate(
       option,
       uniqueSorted(option.relatedEntryIds.flatMap((entryId) => signalReferences.get(entryId) ?? [])),
     )),
-  ].sort((left, right) => left.entryId.localeCompare(right.entryId));
+  ];
 
   if (matchedPerformanceIds.size === 0) return immutableEvaluation(notApplicable());
   return immutableEvaluation({
@@ -253,4 +254,8 @@ function deepFreeze<Value>(value: Value): Value {
 
 function uniqueSorted(values: readonly string[]): string[] {
   return [...new Set(values)].sort((left, right) => left.localeCompare(right));
+}
+
+function sortByEntryId<Entry extends { entryId: string }>(entries: readonly Entry[]): Entry[] {
+  return [...entries].sort((left, right) => left.entryId.localeCompare(right.entryId));
 }
