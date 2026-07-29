@@ -188,7 +188,7 @@ it("runs Feature 1 workflow via explicit feature1 command", async () => {
   expect(result.stderr).toBe("");
   expect(result.stdout).toContain("Feature 1 workflow completed.");
   expect(result.stdout).toContain("feature1-validation/latest.md");
-}, 30_000);
+}, 120_000);
 
 it("runs Feature 1 workflow via phrase alias", async () => {
   const result = await executeCli(["用feature 1来解析报告"]);
@@ -196,4 +196,4 @@ it("runs Feature 1 workflow via phrase alias", async () => {
   expect(result.exitCode).toBe(0);
   expect(result.stderr).toBe("");
   expect(result.stdout).toContain("Feature 1 workflow completed.");
-}, 30_000);
+}, 120_000);

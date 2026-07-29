@@ -40,8 +40,6 @@ export type {
 	WorksheetSelectionViewResult,
 	WorksheetAnalysisAssetsRequest,
 	WorksheetAnalysisAssetsResult,
-	SemanticTableDetectionRequest,
-	SemanticTableDetectionResult,
 	WorksheetImageReadRequest,
 	WorksheetImageReadResult,
 } from "@ai-assist/contracts";

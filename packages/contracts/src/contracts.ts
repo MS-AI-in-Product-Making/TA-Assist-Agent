@@ -341,23 +341,23 @@ const nonEmptyWorkbookBytesSchema = z.instanceof(Uint8Array).refine(
   { message: "workbookBytes must not be empty" },
 );
 
-const worksheetSelectionSchema = z.discriminatedUnion("mode", [
-  z.object({ mode: z.literal("all") }).strict(),
-  z
-    .object({
-      mode: z.literal("selected"),
-      worksheetNames: z.array(z.string().min(1)).min(1),
-    })
-    .strict(),
-]);
-
 export const worksheetAnalysisAssetsRequestSchema = z
   .object({
     contractVersion: contractVersionSchema,
     inputClassification: z.literal("confidential"),
     workbookBytes: nonEmptyWorkbookBytesSchema,
     workbookCatalog: workbookCatalogResultSchema,
-    worksheetSelection: worksheetSelectionSchema.optional(),
+    worksheetSelection: z
+      .discriminatedUnion("mode", [
+        z.object({ mode: z.literal("all") }).strict(),
+        z
+          .object({
+            mode: z.literal("selected"),
+            worksheetNames: z.array(z.string().min(1)).min(1),
+          })
+          .strict(),
+      ])
+      .optional(),
   })
   .strict()
   .superRefine((request, context) => {
@@ -533,212 +533,6 @@ export const worksheetAnalysisAssetsResultSchema = z
     ).min(1),
   })
   .strict();
-
-const semanticDetectionReasonCodeSchema = z.enum([
-  "missing_required_field",
-  "duplicate_mapping",
-  "ambiguous_mapping",
-  "invalid_format",
-  "invalid_manual_confirmation",
-  "no_candidate_detected",
-]);
-
-const semanticDetectionRecommendedActionSchema = z.enum([
-  "confirm_as_is",
-  "remap_fields",
-  "select_another_candidate",
-  "skip_sheet",
-]);
-
-const semanticDetectionFieldNameSchema = z.enum([
-  "factorName",
-  "partName",
-  "partCategory",
-  "nominalValue",
-  "upperTolerance",
-  "lowerTolerance",
-  "longTermSafetyFactor",
-  "distribution",
-  "drawingNumber",
-  "dimCharacteristicId",
-]);
-
-const semanticDetectionFieldMappingSchema = z
-  .object({
-    field: semanticDetectionFieldNameSchema,
-    sourceColumn: z.string().regex(/^[A-Z]+$/).optional(),
-    headerText: z.string().min(1).optional(),
-    status: z.enum(["mapped", "missing", "duplicate", "ambiguous"]),
-  })
-  .strict();
-
-const semanticDetectionConfidenceBreakdownSchema = z
-  .object({
-    headerScore: z.number().int().min(0).max(45),
-    typeScore: z.number().int().min(0).max(25),
-    completenessScore: z.number().int().min(0).max(20),
-    penalty: z.number().int().min(0).max(30),
-  })
-  .strict();
-
-const semanticDetectionDataRangeSchema = z
-  .object({
-    startRow: z.number().int().positive(),
-    endRow: z.number().int().positive(),
-  })
-  .strict()
-  .refine((range) => range.startRow <= range.endRow, {
-    message: "dataRange startRow must not exceed endRow",
-    path: ["startRow"],
-  });
-
-const semanticDetectionConfirmationPayloadSchema = z
-  .object({
-    candidateId: z.string().min(1),
-    headerRow: z.number().int().positive(),
-    dataRange: semanticDetectionDataRangeSchema,
-    mappedFields: z.array(semanticDetectionFieldMappingSchema),
-    recommendedAction: semanticDetectionRecommendedActionSchema,
-    reasonCodes: z.array(semanticDetectionReasonCodeSchema),
-  })
-  .strict();
-
-const semanticDetectionWorksheetResultSchema = z
-  .object({
-    worksheetName: z.string().min(1),
-    recognitionStatus: z.enum([
-      "auto_confirmed",
-      "pending_confirmation",
-      "manual_confirmed",
-      "blocked",
-    ]),
-    confidenceScore: z.number().int().min(0).max(100),
-    confidenceBreakdown: semanticDetectionConfidenceBreakdownSchema,
-    uncertaintyReasons: z.array(semanticDetectionReasonCodeSchema),
-    requiresUserConfirmation: z.boolean(),
-    confirmationPayload: semanticDetectionConfirmationPayloadSchema.optional(),
-  })
-  .strict();
-
-const semanticDetectionManualConfirmationSchema = z
-  .object({
-    worksheetName: z.string().min(1),
-    candidateId: z.string().min(1),
-    action: semanticDetectionRecommendedActionSchema,
-  })
-  .strict();
-
-export const semanticTableDetectionRequestSchema = z
-  .object({
-    contractVersion: contractVersionSchema,
-    inputClassification: z.literal("confidential"),
-    workbookBytes: nonEmptyWorkbookBytesSchema,
-    workbookCatalog: workbookCatalogResultSchema,
-    worksheetSelection: worksheetSelectionSchema.optional(),
-    manualConfirmations: z.array(semanticDetectionManualConfirmationSchema).optional(),
-  })
-  .strict()
-  .superRefine((request, context) => {
-    if (
-      request.worksheetSelection?.mode === "selected"
-      && new Set(request.worksheetSelection.worksheetNames).size !== request.worksheetSelection.worksheetNames.length
-    ) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "worksheetNames must be unique",
-        path: ["worksheetSelection", "worksheetNames"],
-      });
-    }
-  });
-
-export const semanticTableDetectionResultSchema = z
-  .object({
-    contractVersion: contractVersionSchema,
-    inputClassification: z.literal("confidential"),
-    workbook: z
-      .object({
-        contentHash: sha256Schema,
-        catalogContractVersion: contractVersionSchema,
-      })
-      .strict(),
-    worksheets: z.array(semanticDetectionWorksheetResultSchema).min(1),
-    summary: z
-      .object({
-        worksheetCount: z.number().int().nonnegative(),
-        autoConfirmedCount: z.number().int().nonnegative(),
-        manualConfirmedCount: z.number().int().nonnegative(),
-        pendingConfirmationCount: z.number().int().nonnegative(),
-        blockedCount: z.number().int().nonnegative(),
-      })
-      .strict(),
-  })
-  .strict()
-  .superRefine((result, context) => {
-    const autoConfirmedCount = result.worksheets.filter((worksheet) => worksheet.recognitionStatus === "auto_confirmed").length;
-    const manualConfirmedCount = result.worksheets.filter((worksheet) => worksheet.recognitionStatus === "manual_confirmed").length;
-    const pendingConfirmationCount = result.worksheets.filter((worksheet) => worksheet.recognitionStatus === "pending_confirmation").length;
-    const blockedCount = result.worksheets.filter((worksheet) => worksheet.recognitionStatus === "blocked").length;
-
-    if (result.summary.worksheetCount !== result.worksheets.length) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "worksheetCount must match worksheets length",
-        path: ["summary", "worksheetCount"],
-      });
-    }
-    if (result.summary.autoConfirmedCount !== autoConfirmedCount) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "autoConfirmedCount must match worksheets",
-        path: ["summary", "autoConfirmedCount"],
-      });
-    }
-    if (result.summary.manualConfirmedCount !== manualConfirmedCount) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "manualConfirmedCount must match worksheets",
-        path: ["summary", "manualConfirmedCount"],
-      });
-    }
-    if (result.summary.pendingConfirmationCount !== pendingConfirmationCount) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "pendingConfirmationCount must match worksheets",
-        path: ["summary", "pendingConfirmationCount"],
-      });
-    }
-    if (result.summary.blockedCount !== blockedCount) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "blockedCount must match worksheets",
-        path: ["summary", "blockedCount"],
-      });
-    }
-
-    for (const [index, worksheet] of result.worksheets.entries()) {
-      if ((worksheet.recognitionStatus === "pending_confirmation" || worksheet.recognitionStatus === "blocked") && !worksheet.requiresUserConfirmation) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "requiresUserConfirmation must be true for pending_confirmation or blocked",
-          path: ["worksheets", index, "requiresUserConfirmation"],
-        });
-      }
-      if ((worksheet.recognitionStatus === "pending_confirmation" || worksheet.recognitionStatus === "blocked") && worksheet.confirmationPayload === undefined) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "confirmationPayload is required for pending_confirmation or blocked",
-          path: ["worksheets", index, "confirmationPayload"],
-        });
-      }
-      if ((worksheet.recognitionStatus === "auto_confirmed" || worksheet.recognitionStatus === "manual_confirmed") && worksheet.requiresUserConfirmation) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "requiresUserConfirmation must be false for confirmed status",
-          path: ["worksheets", index, "requiresUserConfirmation"],
-        });
-      }
-    }
-  });
 
 const requiredFieldNameSchema = z.enum([
   "factorName",
@@ -1570,204 +1364,6 @@ export const knowledgeBaseQueryResultSchema = z.union([
   terminologyUnknownResultSchema,
 ]);
 
-export const internalToleranceGuidanceVersionSchema = z.literal("internal-v1");
-
-export const internalToleranceGuidanceSourceMetadataSchema = z
-  .object({
-    sourceId: z.string().min(1),
-    sourceFile: z.string().min(1),
-    sourceFileHash: sha256Schema,
-    sourceVersion: z.string().min(1),
-    sheetName: z.string().min(1),
-    sourceRange: z.string().regex(/^[A-Z]+[1-9]\d*:[A-Z]+[1-9]\d*$/),
-    classification: z.literal("internal"),
-  })
-  .strict();
-
-export const internalToleranceGuidanceManifestSchema = z
-  .object({
-    contractVersion: contractVersionSchema,
-    knowledgeBaseVersion: internalToleranceGuidanceVersionSchema,
-    classification: z.literal("internal"),
-    releasedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    changeSummary: z.string().min(1),
-    sourceCount: z.number().int().nonnegative(),
-    entryCount: z.number().int().nonnegative(),
-    sourcesContentHash: sha256Schema,
-    entriesContentHash: sha256Schema,
-  })
-  .strict();
-
-export const internalToleranceProcessFamilySchema = z.enum([
-  "cnc-machining",
-  "die-casting",
-  "die-cutting",
-  "pcb-fpc",
-  "plastic-injection-molding",
-  "sheet-metal",
-]);
-
-export const toleranceRepresentationSchema = z.enum([
-  "bilateral",
-  "unilateral",
-  "total-band",
-]);
-
-const internalToleranceBandSchema = z
-  .object({
-    value: z.number().finite().positive(),
-    unit: z.literal("mm"),
-  })
-  .strict();
-
-const internalNominalRangeSchema = z
-  .object({
-    min: z.number().finite(),
-    minInclusive: z.boolean().optional(),
-    max: z.number().finite(),
-    maxInclusive: z.boolean().optional(),
-    unit: z.literal("mm"),
-  })
-  .strict()
-  .refine((range) => range.min < range.max
-    || range.min === range.max && range.minInclusive !== false && range.maxInclusive !== false, {
-    message: "nominal range must contain at least one value",
-    path: ["min"],
-  });
-
-export const internalEvidenceSchema = z
-  .object({
-    sourceFile: z.string().min(1),
-    sourceFileHash: sha256Schema,
-    sheetName: z.string().min(1),
-    sourceRange: z.string().regex(/^[A-Z]+[1-9]\d*:[A-Z]+[1-9]\d*$/),
-  })
-  .strict();
-
-export const internalToleranceGuidanceProvenanceSchema = internalToleranceGuidanceSourceMetadataSchema
-  .extend({
-    owner: z.string().min(1),
-    confidence: z.number().finite().min(0).max(1),
-    effectiveVersion: internalToleranceGuidanceVersionSchema,
-    changeSummary: z.string().min(1),
-  })
-  .strict();
-
-const internalToleranceConditionStringSchema = z.string().trim().min(1);
-
-export const internalToleranceGuidanceEntryConditionsSchema = z
-  .object({
-    processMethod: internalToleranceConditionStringSchema.optional(),
-    materialFamily: internalToleranceConditionStringSchema.optional(),
-    thicknessMm: z
-      .object({
-        min: z.number().finite(),
-        minInclusive: z.boolean().optional(),
-        max: z.number().finite(),
-        maxInclusive: z.boolean().optional(),
-      })
-      .strict()
-      .refine((range) => range.min < range.max
-        || range.min === range.max && range.minInclusive !== false && range.maxInclusive !== false, {
-        message: "thickness range must contain at least one value",
-        path: ["min"],
-      })
-      .optional(),
-    toleranceGrade: internalToleranceConditionStringSchema.optional(),
-    dimensionType: z.enum(["W", "NW"]).optional(),
-  })
-  .strict();
-
-export const internalToleranceGuidanceRequestConditionsSchema = z
-  .object({
-    processMethod: internalToleranceConditionStringSchema.optional(),
-    materialFamily: internalToleranceConditionStringSchema.optional(),
-    thicknessMm: z.number().finite().optional(),
-    toleranceGrade: internalToleranceConditionStringSchema.optional(),
-    dimensionType: z.enum(["W", "NW"]).optional(),
-  })
-  .strict();
-
-export const internalToleranceGuidanceEntrySchema = z
-  .object({
-    entryId: z.string().min(1),
-    processFamily: internalToleranceProcessFamilySchema,
-    featureType: z.string().min(1),
-    material: z.string().min(1).optional(),
-    nominalRange: internalNominalRangeSchema.optional(),
-    maximumRecommendedTotalBand: internalToleranceBandSchema,
-    fallbackPriority: z.number().int().nonnegative(),
-    fallbackEntryId: z.string().min(1).optional(),
-    conditions: internalToleranceGuidanceEntryConditionsSchema.optional(),
-    capabilityTier: z.enum(["T1", "T2", "T3"]),
-    provenance: internalToleranceGuidanceProvenanceSchema,
-  })
-  .strict();
-
-const bilateralOrTotalBandToleranceSchema = z
-  .object({
-    representation: z.enum(["bilateral", "total-band"]),
-    value: z.number().finite().positive(),
-    unit: z.literal("mm"),
-  })
-  .strict();
-
-const unilateralToleranceSchema = z
-  .object({
-    representation: z.literal("unilateral"),
-    value: z.number().finite().positive(),
-    unit: z.literal("mm"),
-    upperValue: z.number().finite(),
-    lowerValue: z.number().finite(),
-  })
-  .strict()
-  .refine((tolerance) => tolerance.upperValue > tolerance.lowerValue, {
-    message: "upperValue must be greater than lowerValue",
-    path: ["upperValue"],
-  })
-  .refine((tolerance) => tolerance.value === tolerance.upperValue - tolerance.lowerValue, {
-    message: "value must equal upperValue minus lowerValue",
-    path: ["value"],
-  });
-
-export const internalToleranceGuidanceRequestSchema = z
-  .object({
-    processFamily: internalToleranceProcessFamilySchema,
-    featureType: z.string().min(1),
-    nominalValue: z.number().finite(),
-    nominalUnit: z.literal("mm"),
-    material: z.string().min(1).optional(),
-    conditions: internalToleranceGuidanceRequestConditionsSchema.optional(),
-    tolerance: z.union([bilateralOrTotalBandToleranceSchema, unilateralToleranceSchema]),
-  })
-  .strict();
-
-const internalToleranceGuidanceMatchResultSchema = z
-  .object({
-    status: z.enum(["within-guidance", "guidance-exceeded"]),
-    knowledgeBaseVersion: internalToleranceGuidanceVersionSchema,
-    matchedEntryId: z.string().min(1),
-    assessedTotalBand: internalToleranceBandSchema,
-    maximumRecommendedTotalBand: internalToleranceBandSchema,
-    fallbackApplied: z.boolean(),
-    evidence: internalEvidenceSchema,
-  })
-  .strict();
-
-const internalToleranceGuidanceUnknownResultSchema = z
-  .object({
-    status: z.literal("unknown"),
-    knowledgeBaseVersion: internalToleranceGuidanceVersionSchema,
-    capabilityTier: z.literal("T0"),
-    message: z.literal("制程能力未知，请与供应商确认"),
-  })
-  .strict();
-
-export const internalToleranceGuidanceResultSchema = z.union([
-  internalToleranceGuidanceMatchResultSchema,
-  internalToleranceGuidanceUnknownResultSchema,
-]);
-
 export type DataClassification = z.infer<typeof dataClassificationSchema>;
 export type RunRequest = z.infer<typeof runRequestSchema>;
 export type CapabilityTier = z.infer<typeof capabilityTierSchema>;
@@ -1790,26 +1386,12 @@ export type TerminologyMatchResult = z.infer<typeof terminologyMatchResultSchema
 export type TerminologyUnknownResult = z.infer<typeof terminologyUnknownResultSchema>;
 export type KnowledgeBaseManifestResponse = z.infer<typeof knowledgeBaseManifestResponseSchema>;
 export type KnowledgeBaseQueryResult = z.infer<typeof knowledgeBaseQueryResultSchema>;
-export type InternalToleranceGuidanceVersion = z.infer<typeof internalToleranceGuidanceVersionSchema>;
-export type InternalToleranceGuidanceSourceMetadata = z.infer<typeof internalToleranceGuidanceSourceMetadataSchema>;
-export type InternalToleranceGuidanceManifest = z.infer<typeof internalToleranceGuidanceManifestSchema>;
-export type InternalToleranceProcessFamily = z.infer<typeof internalToleranceProcessFamilySchema>;
-export type ToleranceRepresentation = z.infer<typeof toleranceRepresentationSchema>;
-export type InternalEvidence = z.infer<typeof internalEvidenceSchema>;
-export type InternalToleranceGuidanceProvenance = z.infer<typeof internalToleranceGuidanceProvenanceSchema>;
-export type InternalToleranceGuidanceEntryConditions = z.infer<typeof internalToleranceGuidanceEntryConditionsSchema>;
-export type InternalToleranceGuidanceRequestConditions = z.infer<typeof internalToleranceGuidanceRequestConditionsSchema>;
-export type InternalToleranceGuidanceEntry = z.infer<typeof internalToleranceGuidanceEntrySchema>;
-export type InternalToleranceGuidanceRequest = z.infer<typeof internalToleranceGuidanceRequestSchema>;
-export type InternalToleranceGuidanceResult = z.infer<typeof internalToleranceGuidanceResultSchema>;
 export type WorkbookCatalogRequest = z.infer<typeof workbookCatalogRequestSchema>;
 export type WorkbookCatalogResult = z.infer<typeof workbookCatalogResultSchema>;
 export type WorksheetSelectionViewRequest = z.infer<typeof worksheetSelectionViewRequestSchema>;
 export type WorksheetSelectionViewResult = z.infer<typeof worksheetSelectionViewResultSchema>;
 export type WorksheetAnalysisAssetsRequest = z.infer<typeof worksheetAnalysisAssetsRequestSchema>;
 export type WorksheetAnalysisAssetsResult = z.infer<typeof worksheetAnalysisAssetsResultSchema>;
-export type SemanticTableDetectionRequest = z.infer<typeof semanticTableDetectionRequestSchema>;
-export type SemanticTableDetectionResult = z.infer<typeof semanticTableDetectionResultSchema>;
 export type WorksheetImageReadRequest = z.infer<typeof worksheetImageReadRequestSchema>;
 export type WorksheetImageReadResult = z.infer<typeof worksheetImageReadResultSchema>;
 export type RequiredFieldCheckRequest = z.infer<typeof requiredFieldCheckRequestSchema>;

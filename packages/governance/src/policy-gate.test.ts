@@ -53,27 +53,21 @@ describe("policy gate", () => {
     });
   });
 
-  it("reports F0 as the available read-only knowledge base with approved internal guidance", () => {
+  it("reports F0 as the available public read-only knowledge base", () => {
     expect(getFeatureStatus("F0")).toEqual({
       featureId: "F0",
       title: "知识库",
       status: "available",
-      dependsOn: ["knowledge-base-v1", "internal-tolerance-guidance-v1"],
+      dependsOn: ["knowledge-base-v1"],
       inputContractId: "knowledge-base-query-request-v1",
       outputContractId: "knowledge-base-query-result-v1",
-      maximumClassification: "internal",
+      maximumClassification: "public",
       acceptanceChecks: [
         "anonymous-knowledge-base-fixture",
         "unknown-capability-t0-fixture",
         "knowledge-base-integrity-check",
-        "internal-tolerance-guidance-integrity-check",
-        "guidance-only-result-fixture",
-        "internal-source-evidence-dto",
       ],
-      externalPrerequisites: [
-        "approved-public-knowledge-snapshot",
-        "approved-internal-knowledge-snapshot",
-      ],
+      externalPrerequisites: ["approved-public-knowledge-snapshot"],
       disableBehavior: "return feature_not_available",
     });
   });
@@ -93,25 +87,6 @@ describe("policy gate", () => {
         "workbook-catalog-privacy-check",
         "anonymous-worksheet-analysis-assets-fixture",
         "worksheet-image-read-privacy-check",
-      ],
-      externalPrerequisites: ["approved-ooxml-parser"],
-      disableBehavior: "return feature_not_available",
-    });
-  });
-
-  it("reports F1.7 as the available semantic table detection and confirmation gate", () => {
-    expect(getFeatureStatus("F1.7")).toEqual({
-      featureId: "F1.7",
-      title: "TA 因子表语义识别与人工确认",
-      status: "available",
-      dependsOn: ["workbook-catalog-v1", "semantic-table-detection-v1"],
-      inputContractId: "semantic-table-detection-request-v1",
-      outputContractId: "semantic-table-detection-result-v1",
-      maximumClassification: "confidential",
-      acceptanceChecks: [
-        "anonymous-semantic-table-detection-fixture",
-        "semantic-detection-failfast-check",
-        "semantic-detection-privacy-check",
       ],
       externalPrerequisites: ["approved-ooxml-parser"],
       disableBehavior: "return feature_not_available",
