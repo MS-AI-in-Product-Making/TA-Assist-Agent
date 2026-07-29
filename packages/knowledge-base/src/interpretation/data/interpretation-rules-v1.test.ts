@@ -73,15 +73,7 @@ describe("reviewed interpretation-rules-v1 production snapshot", () => {
     const seed = createReviewedInterpretationRulesV1SeedPackage();
     const serialized = JSON.stringify(seed);
 
-    for (const forbidden of [
-      "Example_TA",
-      "M1160113",
-      "0.135",
-      "0.185",
-      "shim group",
-      "http://",
-      "https://",
-    ]) expect(serialized.toLowerCase()).not.toContain(forbidden.toLowerCase());
+    expect(serialized).not.toMatch(/project|part|worked example|workbook example|Example_TA|M1160113|0\.135|0\.185|shim group|https?:\/\//i);
     expect(serialized).not.toMatch(/\.xlsx?|TA_Agent_Knowledge_Base/i);
     expect(serialized).not.toMatch(/"(?:rank|recommendation|priority)"\s*:/i);
     expect(serialized).not.toMatch(/\bP1\b/);
@@ -90,7 +82,6 @@ describe("reviewed interpretation-rules-v1 production snapshot", () => {
     const performanceRules = seed.entries.filter((entry) => entry.entryType === "performance-rule");
     expect(performanceRules).toHaveLength(2);
     expect(performanceRules.every((entry) => entry.metric === "cpk" && entry.targetSource === "resolved-target")).toBe(true);
-    expect(performanceRules.every((entry) => /project\/template target overrides workbook example threshold/i.test(entry.description))).toBe(true);
     expect(seed.entries.some((entry) => entry.entryId.includes("sigma"))).toBe(false);
 
     const root = seed.entries.find(({ entryId }) => entryId === "root-cause-contributor-concentration")!;
@@ -128,8 +119,8 @@ describe("reviewed interpretation-rules-v1 production snapshot", () => {
     }));
     expect(seed.manifest).toMatchObject({
       sourcesHash: "a32bd4cf0dc80a97a212b0419fa3a2a7c2ae3522e7567fba238414f0dc5ef3b9",
-      entriesHash: "e159298cd0fe256a42a9515fd2c745d7a51d248552583e5b6ae50227b77ca648",
-      contentHash: "c9278142b4114552dd0cd4666d1756a3769ae8d9bbe99e41c48050a9e6b6e890",
+      entriesHash: "de2b1cb2e4bee1b609c91edba891c1973982e7f41b6fa7eb00ab95eacfe46a52",
+      contentHash: "77346326e3015fbcc04485a2ccec916b4bdc0da73305cce80d4e93e1811f7351",
     });
   });
 });
