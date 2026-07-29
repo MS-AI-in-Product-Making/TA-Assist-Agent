@@ -1922,7 +1922,7 @@ describe("interpretation rules contracts", () => {
 
   const seedPackage = { manifest, sources: [source], entries };
 
-  it("accepts the version, every entry discriminant, and a strict seed package", () => {
+  it("accepts the version, every entry discriminant, a strict seed package, and a version-only load request", () => {
     expect(interpretationRuleVersionSchema.parse("interpretation-rules-v1")).toBe("interpretation-rules-v1");
     expect(entries.map((entry) => interpretationEntryTypeSchema.parse(entry.entryType))).toEqual(
       entries.map((entry) => entry.entryType),
@@ -1933,10 +1933,16 @@ describe("interpretation rules contracts", () => {
     expect(interpretationKnowledgeSourceMetadataSchema.parse(source)).toEqual(source);
     expect(interpretationKnowledgeManifestSchema.parse(manifest)).toEqual(manifest);
     expect(interpretationKnowledgeSeedPackageSchema.parse(seedPackage)).toEqual(seedPackage);
-    expect(interpretationRuleLoadRequestSchema.parse({ seedPackage })).toEqual({ seedPackage });
+    expect(interpretationRuleLoadRequestSchema.parse({ version: "interpretation-rules-v1" })).toEqual({
+      version: "interpretation-rules-v1",
+    });
+    expect(interpretationRuleLoadRequestSchema.safeParse({
+      version: "interpretation-rules-v1",
+      seedPackage,
+    }).success).toBe(false);
   });
 
-  it("accepts cpk, sigma, contributor facts, and a structured evaluation", () => {
+  it("accepts cpk, sigma, contributor facts, and preserves resolved target sources", () => {
     const request = {
       analysisDimension: "one-dimensional" as const,
       method: "worst-case" as const,
@@ -1951,7 +1957,10 @@ describe("interpretation rules contracts", () => {
     const evaluation = {
       knowledgeBaseVersion: "interpretation-rules-v1" as const,
       status: "matched" as const,
-      resolvedTargets: { cpk: 1.33, sigma: 4.5 },
+      resolvedTargets: {
+        cpk: { value: 1.33, source: "project" as const },
+        sigma: { value: 4.5, source: "template" as const },
+      },
       factsUsed: ["cpk", "targetCpk"],
       matchedRules: [{
         entryId: "performance-cpk",
@@ -1969,6 +1978,34 @@ describe("interpretation rules contracts", () => {
 
     expect(interpretationRuleEvaluationRequestSchema.parse(request)).toEqual(request);
     expect(interpretationRuleEvaluationSchema.parse(evaluation)).toEqual(evaluation);
+    expect(interpretationRuleEvaluationSchema.parse({
+      ...evaluation,
+      resolvedTargets: { cpk: { value: 1.33, source: "project" } },
+    }).resolvedTargets).toEqual({
+      cpk: { value: 1.33, source: "project" },
+    });
+    expect(interpretationRuleEvaluationSchema.parse({
+      ...evaluation,
+      resolvedTargets: { sigma: { value: 4.5, source: "controlled-default" } },
+    }).resolvedTargets).toEqual({
+      sigma: { value: 4.5, source: "controlled-default" },
+    });
+    expect(interpretationRuleEvaluationSchema.safeParse({
+      ...evaluation,
+      resolvedTargets: { cpk: 1.33 },
+    }).success).toBe(false);
+    expect(interpretationRuleEvaluationSchema.safeParse({
+      ...evaluation,
+      resolvedTargets: { sigma: 4.5 },
+    }).success).toBe(false);
+    expect(interpretationRuleEvaluationSchema.safeParse({
+      ...evaluation,
+      resolvedTargets: { cpk: { value: 1.33, source: "project", unexpected: true } },
+    }).success).toBe(false);
+    expect(interpretationRuleEvaluationSchema.safeParse({
+      ...evaluation,
+      resolvedTargets: { ...evaluation.resolvedTargets, unexpected: true },
+    }).success).toBe(false);
   });
 
   it("rejects confidential provenance and non-hypothesis root-cause signals", () => {
@@ -1990,7 +2027,9 @@ describe("interpretation rules contracts", () => {
     ["source unknown field", interpretationKnowledgeSourceMetadataSchema, { ...source, unexpected: true }],
     ["manifest unknown field", interpretationKnowledgeManifestSchema, { ...manifest, unexpected: true }],
     ["seed package unknown field", interpretationKnowledgeSeedPackageSchema, { ...seedPackage, unexpected: true }],
-    ["load request unknown field", interpretationRuleLoadRequestSchema, { seedPackage, unexpected: true }],
+    ["load request unknown field", interpretationRuleLoadRequestSchema, {
+      version: "interpretation-rules-v1", unexpected: true,
+    }],
     ["evaluation request unknown field", interpretationRuleEvaluationRequestSchema, {
       analysisDimension: "one-dimensional", method: "rss", facts: {}, unexpected: true,
     }],

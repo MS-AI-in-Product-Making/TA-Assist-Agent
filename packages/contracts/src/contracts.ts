@@ -1923,7 +1923,7 @@ export const interpretationKnowledgeSeedPackageSchema = z
 
 export const interpretationRuleLoadRequestSchema = z
   .object({
-    seedPackage: interpretationKnowledgeSeedPackageSchema,
+    version: interpretationRuleVersionSchema,
   })
   .strict();
 
@@ -1961,8 +1961,8 @@ export const interpretationRuleEvaluationRequestSchema = z
 
 const interpretationResolvedTargetsSchema = z
   .object({
-    cpk: z.number().finite().optional(),
-    sigma: z.number().finite().optional(),
+    cpk: interpretationTargetFactSchema.optional(),
+    sigma: interpretationTargetFactSchema.optional(),
   })
   .strict();
 
