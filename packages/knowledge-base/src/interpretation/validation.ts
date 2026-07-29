@@ -120,6 +120,13 @@ const COMPARISON_STATES = {
   "not-equal": ["negative", "positive"],
 } as const;
 
+function methodsOverlap(
+  first: "rss" | "worst-case" | undefined,
+  second: "rss" | "worst-case" | undefined,
+): boolean {
+  return first === undefined || second === undefined || first === second;
+}
+
 function validatePerformanceOutcomes(entries: readonly InterpretationKnowledgeEntry[]): void {
   const rules = entries.filter((entry) => entry.entryType === "performance-rule");
   for (let firstIndex = 0; firstIndex < rules.length; firstIndex += 1) {
@@ -127,7 +134,7 @@ function validatePerformanceOutcomes(entries: readonly InterpretationKnowledgeEn
     for (const second of rules.slice(firstIndex + 1)) {
       if (first.metric !== second.metric
         || first.applicability.analysisDimension !== second.applicability.analysisDimension
-        || first.applicability.method !== second.applicability.method
+        || !methodsOverlap(first.applicability.method, second.applicability.method)
         || first.outcomeWhenMatched === second.outcomeWhenMatched) continue;
       const firstStates = new Set<string>(COMPARISON_STATES[first.comparison]);
       if (COMPARISON_STATES[second.comparison].some((state) => firstStates.has(state))) {

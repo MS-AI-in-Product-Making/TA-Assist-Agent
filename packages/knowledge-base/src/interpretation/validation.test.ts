@@ -262,6 +262,38 @@ describe("interpretation-rules-v1 knowledge snapshots", () => {
     else expectDependencyError(seed);
   });
 
+  it.each([
+    ["generic and rss", undefined, "rss", "greater-than", false],
+    ["generic and worst-case", undefined, "worst-case", "greater-than", false],
+    ["generic and generic", undefined, undefined, "greater-than", false],
+    ["rss and worst-case", "rss", "worst-case", "greater-than", true],
+    ["generic and rss with disjoint predicates", undefined, "rss", "less-than", true],
+  ] as const)("validates performance method overlap for %s", (
+    _description,
+    firstMethod,
+    secondMethod,
+    secondComparison,
+    accepted,
+  ) => {
+    const seed = createValidInterpretationKnowledgeSeedPackage();
+    const rules = seed.entries.filter((entry) => entry.entryType === "performance-rule" && entry.metric === "cpk");
+    rules[0]!.applicability = firstMethod === undefined
+      ? { analysisDimension: "one-dimensional" }
+      : { analysisDimension: "one-dimensional", method: firstMethod };
+    rules[0]!.comparison = "greater-than-or-equal";
+    rules[0]!.outcomeWhenMatched = "meets-target";
+    rules[1]!.applicability = secondMethod === undefined
+      ? { analysisDimension: "one-dimensional" }
+      : { analysisDimension: "one-dimensional", method: secondMethod };
+    rules[1]!.comparison = secondComparison;
+    rules[1]!.outcomeWhenMatched = "below-target";
+    refreshInterpretationKnowledgeManifest(seed);
+
+    const action = () => createInterpretationKnowledgeSnapshot(seed);
+    if (accepted) expect(action).not.toThrow();
+    else expectDependencyError(seed);
+  });
+
   it("rejects a relation cycle", () => {
     const seed = createValidInterpretationKnowledgeSeedPackage();
     const secondDecision = structuredClone(seed.entries[4]!);
