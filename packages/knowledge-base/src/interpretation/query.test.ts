@@ -325,7 +325,7 @@ describe("interpretation rule loading", () => {
           sourceAlias: "ta-interpretation-rules-v4-2",
           sourceFileHash: "e3e1954233e94c058088c5084b9a27a7847efc74fbf8a26f51584c40ca4f9fa5",
           sheetName: "02_Performance_Rules",
-          sourceRange: "A1:H6",
+          sourceRange: "A2:H4",
         },
       },
       {
@@ -343,7 +343,7 @@ describe("interpretation rule loading", () => {
           sourceAlias: "ta-interpretation-rules-v4-2",
           sourceFileHash: "e3e1954233e94c058088c5084b9a27a7847efc74fbf8a26f51584c40ca4f9fa5",
           sheetName: "04_Improvement_Proposals",
-          sourceRange: "A1:M9",
+          sourceRange: "A4:M4",
         },
       },
     ]);

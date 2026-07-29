@@ -3,7 +3,51 @@ import { createReviewedInterpretationRulesV1SeedPackage } from "./data/interpret
 import type { InterpretationKnowledgeSeedPackage } from "./types.js";
 
 export function createValidInterpretationKnowledgeSeedPackage(): InterpretationKnowledgeSeedPackage {
-  return createReviewedInterpretationRulesV1SeedPackage();
+  const seed = createReviewedInterpretationRulesV1SeedPackage();
+  const provenance = structuredClone(seed.entries[0]!.provenance);
+  seed.entries.push(
+    {
+      applicability: { analysisDimension: "one-dimensional", method: "rss" },
+      entryId: "metric-sigma",
+      entryType: "metric-definition",
+      title: "Test sigma metric",
+      description: "Test-only sigma metric definition.",
+      relatedEntryIds: [],
+      provenance,
+      metric: "sigma",
+      unit: "sigma",
+    },
+    {
+      applicability: { analysisDimension: "one-dimensional", method: "rss" },
+      entryId: "performance-sigma-below-target",
+      entryType: "performance-rule",
+      title: "Test sigma below target",
+      description: "Test-only sigma comparison.",
+      relatedEntryIds: ["metric-sigma"],
+      provenance,
+      metric: "sigma",
+      comparison: "less-than",
+      targetSource: "resolved-target",
+      requiredFacts: ["achievedSigma", "targetSigma"],
+      outcomeWhenMatched: "below-target",
+    },
+    {
+      applicability: { analysisDimension: "one-dimensional", method: "rss" },
+      entryId: "performance-sigma-meets-target",
+      entryType: "performance-rule",
+      title: "Test sigma meets target",
+      description: "Test-only sigma comparison.",
+      relatedEntryIds: ["metric-sigma"],
+      provenance,
+      metric: "sigma",
+      comparison: "greater-than-or-equal",
+      targetSource: "resolved-target",
+      requiredFacts: ["achievedSigma", "targetSigma"],
+      outcomeWhenMatched: "meets-target",
+    },
+  );
+  refreshInterpretationKnowledgeManifest(seed);
+  return seed;
 }
 
 export function refreshInterpretationKnowledgeManifest(seed: InterpretationKnowledgeSeedPackage): void {
