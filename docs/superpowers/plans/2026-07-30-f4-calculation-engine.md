@@ -32,7 +32,7 @@
 - Modify: `packages/contracts/src/contracts.ts`
 - Modify: `packages/contracts/src/contracts.test.ts`
 
-- [ ] **Step 1: Write failing contract tests.**
+- [x] **Step 1: Write failing contract tests.**
 
 Add a `describe("F4 completed calculation contracts", ...)` block that constructs one confidential request with existing `worksheetAnalysisAssetsResultSchema`, `requiredFieldCheckResultSchema` and `exceptionResolutionResultSchema` fixtures. Assert acceptance of:
 
@@ -63,13 +63,13 @@ Assert that F2.1 must be `readyForNextCheck` and F2.3 must be `readyToContinue`.
 
 Define the expected completed result fixture with `calculationVersion: "excel-ta-v1"`, method recommendation, factor/system/capability values, trace records and scenarios. Keep the legacy `feature_not_available` result fixture accepted as a separate union member.
 
-- [ ] **Step 2: Run the focused contract test and verify RED.**
+- [x] **Step 2: Run the focused contract test and verify RED.**
 
 Run: `npm exec -- vitest run --workspace vitest.workspace.ts packages/contracts/src/contracts.test.ts`
 
 Expected: FAIL because the current schemas do not accept F1/F2 evidence or completed results.
 
-- [ ] **Step 3: Implement strict schemas and invariants.**
+- [x] **Step 3: Implement strict schemas and invariants.**
 
 In `contracts.ts`, define and export reusable F4 schemas for:
 
@@ -101,13 +101,13 @@ const calculationScenarioOverrideSchema = z.object({
 
 Use `.superRefine` to enforce evidence hash equality, ready statuses, unique scenario IDs, unique factor override keys and valid specification ranges. Define `calculationResultSchema` as a union of a strict completed result and the existing strict unavailable result. Export all inferred public types needed by the service.
 
-- [ ] **Step 4: Run the focused contract test and verify GREEN.**
+- [x] **Step 4: Run the focused contract test and verify GREEN.**
 
 Run: `npm exec -- vitest run --workspace vitest.workspace.ts packages/contracts/src/contracts.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit the contract slice.**
+- [x] **Step 5: Commit the contract slice.**
 
 Run: `git add packages/contracts/src/contracts.ts packages/contracts/src/contracts.test.ts && git commit -m "feat(f4): define calculation contracts"`
 
@@ -119,13 +119,13 @@ Run: `git add packages/contracts/src/contracts.ts packages/contracts/src/contrac
 - Modify: `packages/workbook-catalog/package.json`
 - Modify: `package-lock.json`
 
-- [ ] **Step 1: Install the normal CDF dependency.**
+- [x] **Step 1: Install the normal CDF dependency.**
 
 Run: `npm install @stdlib/stats-base-dists-normal-cdf -w @ai-assist/workbook-catalog`
 
 Expected: dependency appears in the workspace package and lock file.
 
-- [ ] **Step 2: Write failing kernel tests.**
+- [x] **Step 2: Write failing kernel tests.**
 
 Define normalized factors with source references and test:
 
@@ -148,13 +148,13 @@ expect(result.capability.status).toBe("FAIL");
 
 Add focused cases for all six distribution multipliers, negative nominal/asymmetric tolerance, zero RSS rejection, negative Cpk and contribution sum near one.
 
-- [ ] **Step 3: Run kernel tests and verify RED.**
+- [x] **Step 3: Run kernel tests and verify RED.**
 
 Run: `npm exec -- vitest run --workspace vitest.workspace.ts packages/workbook-catalog/src/calculation-kernel.test.ts`
 
 Expected: FAIL because the kernel module does not exist.
 
-- [ ] **Step 4: Implement the minimal pure kernel.**
+- [x] **Step 4: Implement the minimal pure kernel.**
 
 Export:
 
@@ -166,13 +166,13 @@ export function calculateToleranceAnalysis(input: NormalizedCalculationInput): K
 
 Use the approved distribution constants exactly. Compute factor mean with the template's sign-dependent formula, factor half-tolerance, factor sigma, WC sums, RSS, contributions, Cp/Cpk/Z, side and total DPM, out-of-spec ratio, yield and template-compatible status comparisons. Reject non-finite outputs, zero RSS and invalid specifications before division.
 
-- [ ] **Step 5: Run kernel tests and verify GREEN.**
+- [x] **Step 5: Run kernel tests and verify GREEN.**
 
 Run: `npm exec -- vitest run --workspace vitest.workspace.ts packages/workbook-catalog/src/calculation-kernel.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit the kernel slice.**
+- [x] **Step 6: Commit the kernel slice.**
 
 Run: `git add packages/workbook-catalog/src/calculation-kernel.ts packages/workbook-catalog/src/calculation-kernel.test.ts packages/workbook-catalog/package.json package-lock.json && git commit -m "feat(f4): add Excel-consistent calculation kernel"`
 
@@ -183,7 +183,7 @@ Run: `git add packages/workbook-catalog/src/calculation-kernel.ts packages/workb
 - Create: `packages/workbook-catalog/src/calculation.test.ts`
 - Modify: `packages/workbook-catalog/src/index.ts`
 
-- [ ] **Step 1: Write failing service tests.**
+- [x] **Step 1: Write failing service tests.**
 
 Create a request fixture with available F1 fields. Assert that `createCalculation(request)`:
 
@@ -197,25 +197,25 @@ Create a request fixture with available F1 fields. Assert that `createCalculatio
 - does not expose workbook bytes or arbitrary raw fields in errors/results;
 - exports `createCalculation` from the built ESM package.
 
-- [ ] **Step 2: Run service tests and verify RED.**
+- [x] **Step 2: Run service tests and verify RED.**
 
 Run: `npm exec -- vitest run --workspace vitest.workspace.ts packages/workbook-catalog/src/calculation.test.ts`
 
 Expected: FAIL because `createCalculation` does not exist.
 
-- [ ] **Step 3: Implement normalization, gates and trace building.**
+- [x] **Step 3: Implement normalization, gates and trace building.**
 
 Follow existing guarded classification and `createTypedError` patterns. Parse the request with `calculationRequestSchema`, locate one exact table, normalize fields, call the kernel, build `formulaId` values from a fixed allowlist, validate with `calculationResultSchema`, then `structuredClone` and recursively freeze the result.
 
 Do not call the placeholder, open a workbook or infer headers. Keep `createCalculationPlaceholder` unchanged and export both functions.
 
-- [ ] **Step 4: Run service and existing placeholder tests.**
+- [x] **Step 4: Run service and existing placeholder tests.**
 
 Run: `npm exec -- vitest run --workspace vitest.workspace.ts packages/workbook-catalog/src/calculation.test.ts packages/workbook-catalog/src/calculation-placeholder.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit the service slice.**
+- [x] **Step 5: Commit the service slice.**
 
 Run: `git add packages/workbook-catalog/src/calculation.ts packages/workbook-catalog/src/calculation.test.ts packages/workbook-catalog/src/index.ts && git commit -m "feat(f4): calculate validated worksheet selections"`
 
@@ -226,27 +226,27 @@ Run: `git add packages/workbook-catalog/src/calculation.ts packages/workbook-cat
 - Modify: `packages/workbook-catalog/src/calculation.test.ts`
 - Modify: `packages/workbook-catalog/src/calculation-kernel.test.ts`
 
-- [ ] **Step 1: Write failing What-if tests.**
+- [x] **Step 1: Write failing What-if tests.**
 
 Assert that one tolerance override changes RSS/Cpk, reports deltas, retains a baseline reference and leaves the baseline deeply equal to a request without scenarios. Assert unknown row references, duplicate row overrides, invalid post-override specifications and more than 100 scenarios are rejected.
 
-- [ ] **Step 2: Run the focused What-if tests and verify RED.**
+- [x] **Step 2: Run the focused What-if tests and verify RED.**
 
 Run: `npm exec -- vitest run --workspace vitest.workspace.ts packages/workbook-catalog/src/calculation.test.ts -t "What-if"`
 
 Expected: FAIL because scenarios are not yet evaluated.
 
-- [ ] **Step 3: Apply immutable overrides and call the same kernel.**
+- [x] **Step 3: Apply immutable overrides and call the same kernel.**
 
 Index factors by `worksheetName|tableId|sourceRow`, clone only the normalized model, apply allowlisted overrides, validate the changed model and specification, execute `calculateToleranceAnalysis`, then return ordered scenario results with `baselineRunReference` and numeric deltas.
 
-- [ ] **Step 4: Run all F4 service/kernel tests and verify GREEN.**
+- [x] **Step 4: Run all F4 service/kernel tests and verify GREEN.**
 
 Run: `npm exec -- vitest run --workspace vitest.workspace.ts packages/workbook-catalog/src/calculation.test.ts packages/workbook-catalog/src/calculation-kernel.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit the What-if slice.**
+- [x] **Step 5: Commit the What-if slice.**
 
 Run: `git add packages/workbook-catalog/src/calculation.ts packages/workbook-catalog/src/calculation.test.ts packages/workbook-catalog/src/calculation-kernel.test.ts && git commit -m "feat(f4): add deterministic what-if recalculation"`
 
@@ -257,17 +257,17 @@ Run: `git add packages/workbook-catalog/src/calculation.ts packages/workbook-cat
 - Create: `scripts/f4-excel-regression.test.mjs`
 - Modify: `package.json`
 
-- [ ] **Step 1: Write failing harness tests.**
+- [x] **Step 1: Write failing harness tests.**
 
 Test that the script requires `-WorkbookPath`, `-ExpectedSha256`, `-WorksheetName` and a JSON mapping; rejects hash mismatch before Excel startup; rejects output cells outside the mapping; and supports `-ValidateOnly` for CI without COM.
 
-- [ ] **Step 2: Run harness tests and verify RED.**
+- [x] **Step 2: Run harness tests and verify RED.**
 
 Run: `node --test scripts/f4-excel-regression.test.mjs`
 
 Expected: FAIL because the script does not exist.
 
-- [ ] **Step 3: Implement the read-only regression harness.**
+- [x] **Step 3: Implement the read-only regression harness.**
 
 The script must:
 
@@ -286,7 +286,7 @@ Add root script:
 "verify:f4-excel-regression": "pwsh -NoProfile -File scripts/verify-f4-excel-regression.ps1"
 ```
 
-- [ ] **Step 4: Run harness unit tests and approved workbook checks.**
+- [x] **Step 4: Run harness unit tests and approved workbook checks.**
 
 Run: `node --test scripts/f4-excel-regression.test.mjs`
 
@@ -294,7 +294,7 @@ Run the script against the approved template `Example_TA` and `test/feature1-inp
 
 Expected: unit tests PASS; approved core outputs stay within `1e-12`, formatted Cpk/status match exactly, and source workbook hashes remain unchanged.
 
-- [ ] **Step 5: Commit the regression slice.**
+- [x] **Step 5: Commit the regression slice.**
 
 Run: `git add scripts/verify-f4-excel-regression.ps1 scripts/f4-excel-regression.test.mjs package.json && git commit -m "test(f4): add Excel golden regression harness"`
 

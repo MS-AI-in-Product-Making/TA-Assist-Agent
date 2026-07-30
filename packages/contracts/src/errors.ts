@@ -3,6 +3,9 @@ import { z } from "zod";
 export const errorCodeSchema = z.enum([
   "validation_error",
   "policy_denied",
+  "evidence_mismatch",
+  "prerequisite_not_ready",
+  "calculation_not_possible",
   "feature_not_available",
   "dependency_error",
   "transient_error",

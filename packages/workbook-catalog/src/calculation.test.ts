@@ -1,0 +1,1583 @@
+import { execFileSync } from "node:child_process";
+import { describe, expect, it } from "vitest";
+import { createCalculation } from "./calculation.js";
+
+const CONTENT_HASH = "a".repeat(64);
+
+function deepClone<T>(value: T): T {
+  return structuredClone(value);
+}
+
+function availableText(rawText: string, sourceCell: string) {
+  return {
+    status: "available" as const,
+    rawText,
+    sourceCell,
+  };
+}
+
+function availableNumber(rawText: string, sourceCell: string, numericValue: number, unit = "mm") {
+  return {
+    status: "available" as const,
+    rawText,
+    sourceCell,
+    numericValue,
+    unit,
+  };
+}
+
+function factorFields(index: number) {
+  const row = index + 2;
+  return {
+    factorName: availableText(`factor-${index + 1}`, `Analysis-A!A${row}`),
+    nominalValue: availableNumber("0", `Analysis-A!B${row}`, 0),
+    upperTolerance: availableNumber("1", `Analysis-A!C${row}`, 1),
+    lowerTolerance: availableNumber("-1", `Analysis-A!D${row}`, -1),
+    longTermSafetyFactor: availableNumber("1", `Analysis-A!E${row}`, 1),
+    standardDeviation: availableNumber("1", `Analysis-A!F${row}`, 1),
+    distribution: availableText(" normal ", `Analysis-A!G${row}`),
+    unit: availableText("mm", `Analysis-A!H${row}`),
+  };
+}
+
+function factorRow(index: number) {
+  return {
+    sourceRow: index + 2,
+    fields: factorFields(index),
+  };
+}
+
+function baseRequest(factorCount = 1) {
+  const rows = Array.from({ length: factorCount }, (_, index) => factorRow(index));
+  return {
+    contractVersion: "v1" as const,
+    inputClassification: "confidential" as const,
+    projectReference: "controlled-project-reference",
+    runReference: "controlled-run-reference",
+    worksheetAnalysisAssets: {
+      contractVersion: "v1" as const,
+      workbook: {
+        classification: "confidential" as const,
+        contentHash: CONTENT_HASH,
+        catalogContractVersion: "v1" as const,
+      },
+      worksheets: [{
+        worksheetName: "Analysis-A",
+        toleranceLoopDescription: "anonymous-analysis",
+        factorTables: [{
+          tableId: "table-a",
+          headerRow: 1,
+          dataRange: { startRow: 2, endRow: 1 + factorCount },
+          columns: [
+            { semanticField: "factorName" as const, headerText: "Factor", sourceColumn: "A" },
+            { semanticField: "nominalValue" as const, headerText: "Nominal", sourceColumn: "B" },
+            { semanticField: "upperTolerance" as const, headerText: "Upper", sourceColumn: "C" },
+            { semanticField: "lowerTolerance" as const, headerText: "Lower", sourceColumn: "D" },
+            { semanticField: "longTermSafetyFactor" as const, headerText: "LTSF", sourceColumn: "E" },
+            { semanticField: "standardDeviation" as const, headerText: "Sigma", sourceColumn: "F" },
+            { semanticField: "distribution" as const, headerText: "Distribution", sourceColumn: "G" },
+            { semanticField: "unit" as const, headerText: "Unit", sourceColumn: "H" },
+          ],
+          rows,
+        }],
+        formulaCells: [],
+        imageAssets: [],
+      }],
+    },
+    requiredFieldCheck: {
+      contractVersion: "v1" as const,
+      inputClassification: "confidential" as const,
+      workbookContentHash: CONTENT_HASH,
+      status: "readyForNextCheck" as const,
+      blockingIssues: [],
+      advisoryIssues: [],
+      summary: {
+        worksheetsChecked: 1,
+        factorTablesChecked: 1,
+        factorRowsChecked: factorCount,
+        blockingIssueCount: 0,
+        advisoryIssueCount: 0,
+      },
+    },
+    exceptionResolution: {
+      contractVersion: "v1" as const,
+      inputClassification: "confidential" as const,
+      workbookContentHash: CONTENT_HASH,
+      knowledgeBaseVersion: "v1" as const,
+      status: "readyToContinue" as const,
+      readyToContinue: true as const,
+      acceptedExceptions: [],
+      pendingExceptions: [],
+      summary: {
+        actionableSignalCount: 0,
+        acceptedExceptionCount: 0,
+        pendingExceptionCount: 0,
+        invalidCandidateCount: 0,
+      },
+    },
+    worksheetSelection: {
+      worksheetName: "Analysis-A",
+      tableId: "table-a",
+    },
+    systemSpecification: {
+      designNominal: 0,
+      lowerSpecLimit: -3,
+      upperSpecLimit: 3,
+      targetSigmaLevel: 3,
+      targetCpk: 1,
+      additionalMeanShift: -1,
+    },
+    criticality: "none" as const,
+    scenarioOverrides: [],
+  };
+}
+
+function expectValidationError(action: () => unknown): void {
+  expectTypedErrorCode(action, "validation_error");
+}
+
+function expectTypedErrorCode(
+  action: () => unknown,
+  code: "validation_error" | "policy_denied" | "evidence_mismatch" | "prerequisite_not_ready" | "calculation_not_possible",
+): void {
+  let error: unknown;
+  try {
+    action();
+  } catch (caught) {
+    error = caught;
+  }
+
+  expect(error).toMatchObject({
+    code,
+    affectedInputReferences: ["calculation-request-v1"],
+  });
+}
+
+function captureThrown(action: () => unknown): unknown {
+  try {
+    action();
+    return undefined;
+  } catch (error) {
+    return error;
+  }
+}
+
+function expectNoMarkerLeak(error: unknown, marker: string): void {
+  const candidate = error as {
+    readonly summary?: unknown;
+    readonly message?: unknown;
+    readonly suggestedAction?: unknown;
+    readonly details?: unknown;
+  };
+  const message = typeof candidate.message === "string" ? candidate.message : "";
+  const summary = typeof candidate.summary === "string" ? candidate.summary : "";
+  const suggestedAction = typeof candidate.suggestedAction === "string" ? candidate.suggestedAction : "";
+  const serializedError = JSON.stringify(error);
+  const serializedDetails = JSON.stringify(candidate.details);
+  const leakSurface = [message, summary, suggestedAction, serializedError, serializedDetails].join(" ");
+  expect(leakSurface).not.toContain(marker);
+}
+
+describe("createCalculation", () => {
+  it("returns a deeply frozen completed result for selected worksheet/table and maps standardDeviation to sigmaLevel", () => {
+    const result = createCalculation(baseRequest(1));
+
+    expect(result.status).toBe("completed");
+    if (result.status !== "completed") return;
+
+    expect(result.worksheetSelection).toEqual({ worksheetName: "Analysis-A", tableId: "table-a" });
+    expect(result.factorCount).toBe(1);
+    expect(result.recommendation).toEqual({
+      method: "worst_case",
+      reason: "factor_count_1_to_3",
+      refer3d: false,
+      criticality: "none",
+      criticalityRisk: false,
+    });
+    expect(result.factors[0]).toMatchObject({
+      factorName: "factor-1",
+      unit: "mm",
+      source: { worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 2 },
+      input: {
+        nominalValue: 0,
+        upperTolerance: 1,
+        lowerTolerance: -1,
+        longTermSafetyFactor: 1,
+        sigmaLevel: 1,
+        distribution: "normal",
+      },
+    });
+    expect(result.system.additionalMeanShift).toBe(-1);
+    expect(result.traceRecords.length).toBeGreaterThan(0);
+    expect(result.traceRecords.some((record) => record.outputField === "factors[0].sigma" && record.formulaId === "factor-sigma-v1")).toBe(true);
+    expect(result.traceRecords.some((record) => record.outputField === "capability.cpk" && record.formulaId === "cpk-v1")).toBe(true);
+
+    expect(Object.isFrozen(result)).toBe(true);
+    expect(Object.isFrozen(result.factors)).toBe(true);
+    expect(Object.isFrozen(result.factors[0]!)).toBe(true);
+    expect(Object.isFrozen(result.traceRecords)).toBe(true);
+    expect(() => {
+      (result.factors as Array<{ factorName: string }>).push({ factorName: "changed" } as { factorName: string });
+    }).toThrow();
+  });
+
+  it("returns referral recommendation for 11 factors while still computing WC/RSS", () => {
+    const result = createCalculation(baseRequest(11));
+
+    expect(result.status).toBe("completed");
+    if (result.status !== "completed") return;
+
+    expect(result.factorCount).toBe(11);
+    expect(result.recommendation.method).toBe("refer_3d_variation_analysis");
+    expect(result.recommendation.refer3d).toBe(true);
+    expect(Number.isFinite(result.system.worstCaseUpper)).toBe(true);
+    expect(Number.isFinite(result.system.worstCaseLower)).toBe(true);
+    expect(Number.isFinite(result.system.rssSigma)).toBe(true);
+  });
+
+  it("sets criticalityRisk for CTS/CTF without changing recommendation boundary", () => {
+    const ctsResult = createCalculation({ ...baseRequest(1), criticality: "CTS" as const });
+    const ctfResult = createCalculation({ ...baseRequest(1), criticality: "CTF" as const });
+
+    expect(ctsResult.status).toBe("completed");
+    expect(ctfResult.status).toBe("completed");
+    if (ctsResult.status !== "completed" || ctfResult.status !== "completed") return;
+
+    expect(ctsResult.recommendation).toMatchObject({ method: "worst_case", criticality: "CTS", criticalityRisk: true });
+    expect(ctfResult.recommendation).toMatchObject({ method: "worst_case", criticality: "CTF", criticalityRisk: true });
+  });
+
+  it("denies public classification before schema parsing nested payload", () => {
+    expectTypedErrorCode(() => createCalculation({
+      ...baseRequest(1),
+      inputClassification: "public",
+      worksheetAnalysisAssets: "not-a-valid-object",
+    }), "policy_denied");
+  });
+
+  it("prioritizes policy_denied for non-confidential classification even when other getters throw", () => {
+    const marker = "policy-should-short-circuit-before-marker";
+    const request = {
+      inputClassification: "public",
+      get worksheetAnalysisAssets() {
+        throw new Error(marker);
+      },
+    };
+
+    const error = captureThrown(() => createCalculation(request));
+
+    expect(error).toMatchObject({
+      code: "policy_denied",
+      summary: "Calculation input is not permitted.",
+      affectedInputReferences: ["calculation-request-v1"],
+    });
+    expectNoMarkerLeak(error, marker);
+  });
+
+  it("maps root proxy inputClassification getter throw to fixed validation_error without leaking marker", () => {
+    const marker = "root-input-classification-throws-sensitive";
+    const request = new Proxy({}, {
+      get(_target, property) {
+        if (property === "inputClassification") {
+          throw new Error(marker);
+        }
+        return undefined;
+      },
+    });
+
+    const error = captureThrown(() => createCalculation(request));
+
+    expect(error).toMatchObject({
+      code: "validation_error",
+      summary: "Calculation request is invalid.",
+      affectedInputReferences: ["calculation-request-v1"],
+    });
+    expectNoMarkerLeak(error, marker);
+  });
+
+  it("maps worksheetAnalysisAssets getter throw during parsing to fixed validation_error without leaking marker", () => {
+    const marker = "worksheet-assets-getter-sensitive";
+    const request = {
+      inputClassification: "confidential",
+      get worksheetAnalysisAssets() {
+        throw new Error(marker);
+      },
+    };
+
+    const error = captureThrown(() => createCalculation(request));
+
+    expect(error).toMatchObject({
+      code: "validation_error",
+      summary: "Calculation request is invalid.",
+      affectedInputReferences: ["calculation-request-v1"],
+    });
+    expectNoMarkerLeak(error, marker);
+  });
+
+  it("rejects forged root getter object with valid code but missing typed fields", () => {
+    const marker = "SENSITIVE-root-forged-marker";
+    const forged = { code: "policy_denied", marker };
+    const request = {
+      get inputClassification() {
+        throw forged;
+      },
+    };
+
+    const error = captureThrown(() => createCalculation(request));
+
+    expect(error).toMatchObject({
+      code: "validation_error",
+      summary: "Calculation request is invalid.",
+      affectedInputReferences: ["calculation-request-v1"],
+    });
+    expect(error).not.toBe(forged);
+    expectNoMarkerLeak(error, marker);
+  });
+
+  it("maps nested proxy getter throw during safeParse to fixed validation_error without leaking marker", () => {
+    const marker = "nested-safe-parse-sensitive";
+    const request = deepClone(baseRequest(1));
+    request.worksheetAnalysisAssets = new Proxy(request.worksheetAnalysisAssets, {
+      get(target, property, receiver) {
+        if (property === "workbook") {
+          const workbook = Reflect.get(target, property, receiver) as Record<string, unknown>;
+          return new Proxy(workbook, {
+            get(workbookTarget, workbookProperty, workbookReceiver) {
+              if (workbookProperty === "contentHash") {
+                throw new Error(marker);
+              }
+              return Reflect.get(workbookTarget, workbookProperty, workbookReceiver);
+            },
+          });
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+
+    const error = captureThrown(() => createCalculation(request));
+
+    expect(error).toMatchObject({
+      code: "validation_error",
+      summary: "Calculation request is invalid.",
+      affectedInputReferences: ["calculation-request-v1"],
+    });
+    expectNoMarkerLeak(error, marker);
+  });
+
+  it("rejects forged nested getter object with valid code but missing typed fields", () => {
+    const marker = "SENSITIVE-nested-forged-marker";
+    const forged = { code: "policy_denied", marker };
+    const request = deepClone(baseRequest(1));
+    request.worksheetAnalysisAssets = new Proxy(request.worksheetAnalysisAssets, {
+      get(target, property, receiver) {
+        if (property === "workbook") {
+          const workbook = Reflect.get(target, property, receiver) as Record<string, unknown>;
+          return new Proxy(workbook, {
+            get(workbookTarget, workbookProperty, workbookReceiver) {
+              if (workbookProperty === "contentHash") {
+                throw forged;
+              }
+              return Reflect.get(workbookTarget, workbookProperty, workbookReceiver);
+            },
+          });
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+
+    const error = captureThrown(() => createCalculation(request));
+
+    expect(error).toMatchObject({
+      code: "validation_error",
+      summary: "Calculation request is invalid.",
+      affectedInputReferences: ["calculation-request-v1"],
+    });
+    expect(error).not.toBe(forged);
+    expectNoMarkerLeak(error, marker);
+  });
+
+  it("does not trust or leak a schema-valid typed error thrown by input getters", () => {
+    const marker = "SENSITIVE-complete-forged-error-marker";
+    const forged = Object.assign(new Error(marker), {
+      code: "policy_denied",
+      runId: "00000000-0000-4000-8000-000000000000",
+      summary: marker,
+      retryable: false,
+      suggestedAction: marker,
+      affectedInputReferences: [marker],
+    });
+    const request = deepClone(baseRequest(1));
+    Object.defineProperty(request.worksheetAnalysisAssets, "workbook", {
+      enumerable: true,
+      configurable: true,
+      get() {
+        throw forged;
+      },
+    });
+
+    const error = captureThrown(() => createCalculation(request));
+
+    expect(error).toMatchObject({ code: "validation_error", summary: "Calculation request is invalid." });
+    expect(error).not.toBe(forged);
+    expectNoMarkerLeak(error, marker);
+  });
+
+  it("does not trust a controlled error replayed from an earlier invocation", () => {
+    const priorError = captureThrown(() => createCalculation({ broken: true }));
+    const request = baseRequest(1);
+    Object.defineProperty(request.worksheetAnalysisAssets, "workbook", {
+      enumerable: true,
+      configurable: true,
+      get() {
+        throw priorError;
+      },
+    });
+
+    const replayResult = captureThrown(() => createCalculation(request));
+
+    expect(replayResult).toMatchObject({ code: "validation_error", summary: "Calculation request is invalid." });
+    expect(replayResult).not.toBe(priorError);
+  });
+
+  it("classifies malformed payload and selection misses as validation_error", () => {
+    expectValidationError(() => createCalculation({ ...baseRequest(1), worksheetSelection: { worksheetName: "Analysis-A", tableId: "missing-table" } }));
+    expectValidationError(() => createCalculation({
+      ...baseRequest(1),
+      requiredFieldCheck: "not-a-schema-valid-result",
+      exceptionResolution: { ...baseRequest(1).exceptionResolution, workbookContentHash: "b".repeat(64) },
+    }));
+    expectValidationError(() => createCalculation({ broken: true }));
+  });
+
+  it("classifies constituent hash mismatch as evidence_mismatch", () => {
+    expectTypedErrorCode(() => createCalculation({
+      ...baseRequest(1),
+      requiredFieldCheck: { ...baseRequest(1).requiredFieldCheck, workbookContentHash: "b".repeat(64) },
+    }), "evidence_mismatch");
+
+    expectTypedErrorCode(() => createCalculation({
+      ...baseRequest(1),
+      exceptionResolution: { ...baseRequest(1).exceptionResolution, workbookContentHash: "c".repeat(64) },
+    }), "evidence_mismatch");
+  });
+
+  it("classifies ready-state blockers as prerequisite_not_ready", () => {
+    expectTypedErrorCode(() => createCalculation({
+      ...baseRequest(1),
+      requiredFieldCheck: {
+        ...baseRequest(1).requiredFieldCheck,
+        status: "blocked",
+        blockingIssues: [{ issueCode: "factor_table_has_no_rows", worksheetName: "Analysis-A", tableId: "table-a" }],
+        summary: { ...baseRequest(1).requiredFieldCheck.summary, blockingIssueCount: 1 },
+      },
+    }), "prerequisite_not_ready");
+
+    expectTypedErrorCode(() => createCalculation({
+      ...baseRequest(1),
+      exceptionResolution: {
+        ...baseRequest(1).exceptionResolution,
+        status: "pendingExceptions",
+        readyToContinue: false,
+        pendingExceptions: [{
+          signalRef: "sig-1",
+          reasonCode: "missing_candidate",
+          snapshot: {
+            signalKind: "tolerance_out_of_library",
+            worksheetName: "Analysis-A",
+            tableId: "table-a",
+            sourceRow: 2,
+            factorName: "factor-1",
+            signal: { status: "out_of_library", totalTolerance: 1, unit: "mm" },
+          },
+        }],
+        summary: {
+          actionableSignalCount: 1,
+          acceptedExceptionCount: 0,
+          pendingExceptionCount: 1,
+          invalidCandidateCount: 0,
+        },
+      },
+    }), "prerequisite_not_ready");
+  });
+
+  it("applies classification priority: policy > malformed constituent > evidence mismatch > prerequisite > generic validation", () => {
+    const blockedRequest = {
+      ...baseRequest(1),
+      requiredFieldCheck: {
+        ...baseRequest(1).requiredFieldCheck,
+        status: "blocked" as const,
+        blockingIssues: [{ issueCode: "factor_table_has_no_rows" as const, worksheetName: "Analysis-A", tableId: "table-a" }],
+        summary: { ...baseRequest(1).requiredFieldCheck.summary, blockingIssueCount: 1 },
+      },
+      exceptionResolution: { ...baseRequest(1).exceptionResolution, workbookContentHash: "d".repeat(64) },
+    };
+
+    expectTypedErrorCode(() => createCalculation({ ...blockedRequest, inputClassification: "public" }), "policy_denied");
+    expectTypedErrorCode(() => createCalculation({ ...blockedRequest, requiredFieldCheck: "malformed" }), "validation_error");
+    expectTypedErrorCode(() => createCalculation(blockedRequest), "evidence_mismatch");
+    expectTypedErrorCode(() => createCalculation({
+      ...blockedRequest,
+      exceptionResolution: baseRequest(1).exceptionResolution,
+    }), "prerequisite_not_ready");
+    expectTypedErrorCode(() => createCalculation({
+      ...baseRequest(1),
+      systemSpecification: {
+        ...baseRequest(1).systemSpecification,
+        upperSpecLimit: -3,
+        lowerSpecLimit: -3,
+      },
+    }), "calculation_not_possible");
+    expectTypedErrorCode(() => createCalculation({ ...baseRequest(1), worksheetSelection: { worksheetName: "Analysis-A", tableId: "missing-table" } }), "validation_error");
+  });
+
+  it("classifies finite invalid system specification ranges as calculation_not_possible", () => {
+    const request = baseRequest(1);
+
+    expectTypedErrorCode(() => createCalculation({
+      ...request,
+      systemSpecification: {
+        ...request.systemSpecification,
+        upperSpecLimit: -3,
+        lowerSpecLimit: -3,
+      },
+    }), "calculation_not_possible");
+
+    expectTypedErrorCode(() => createCalculation({
+      ...request,
+      systemSpecification: {
+        ...request.systemSpecification,
+        targetSigmaLevel: 0,
+      },
+    }), "calculation_not_possible");
+
+    expectTypedErrorCode(() => createCalculation({
+      ...request,
+      systemSpecification: {
+        ...request.systemSpecification,
+        targetCpk: 0,
+      },
+    }), "calculation_not_possible");
+  });
+
+  it("keeps unknown, missing, and wrong-type system specification fields as validation_error", () => {
+    const request = baseRequest(1);
+
+    expectTypedErrorCode(() => createCalculation({
+      ...request,
+      systemSpecification: {
+        ...request.systemSpecification,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        targetCpk: "1" as any,
+      },
+    }), "validation_error");
+
+    const missingTargetSigmaLevel = deepClone(request);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    delete (missingTargetSigmaLevel.systemSpecification as any).targetSigmaLevel;
+    expectTypedErrorCode(() => createCalculation(missingTargetSigmaLevel), "validation_error");
+
+    const missingDesignNominalWithInvalidRange = deepClone(request);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    delete (missingDesignNominalWithInvalidRange.systemSpecification as any).designNominal;
+    missingDesignNominalWithInvalidRange.systemSpecification.upperSpecLimit = -3;
+    expectTypedErrorCode(() => createCalculation(missingDesignNominalWithInvalidRange), "validation_error");
+
+    expectTypedErrorCode(() => createCalculation({
+      ...request,
+      systemSpecification: {
+        ...request.systemSpecification,
+        upperSpecLimit: -3,
+        unknownField: 1,
+      },
+    }), "validation_error");
+
+    expectTypedErrorCode(() => createCalculation({
+      ...request,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      systemSpecification: "invalid" as any,
+    }), "validation_error");
+  });
+
+  it("prioritizes evidence mismatch and prerequisite blockers ahead of calculability range classification", () => {
+    const request = baseRequest(1);
+
+    expectTypedErrorCode(() => createCalculation({
+      ...request,
+      systemSpecification: {
+        ...request.systemSpecification,
+        targetSigmaLevel: 0,
+      },
+      requiredFieldCheck: {
+        ...request.requiredFieldCheck,
+        workbookContentHash: "b".repeat(64),
+      },
+    }), "evidence_mismatch");
+
+    expectTypedErrorCode(() => createCalculation({
+      ...request,
+      systemSpecification: {
+        ...request.systemSpecification,
+        targetSigmaLevel: 0,
+      },
+      requiredFieldCheck: {
+        ...request.requiredFieldCheck,
+        status: "blocked",
+        blockingIssues: [{ issueCode: "factor_table_has_no_rows", worksheetName: "Analysis-A", tableId: "table-a" }],
+        summary: { ...request.requiredFieldCheck.summary, blockingIssueCount: 1 },
+      },
+    }), "prerequisite_not_ready");
+  });
+
+  describe("What-if", () => {
+    it("applies single-factor tighten/loosen overrides and preserves deterministic delta direction", () => {
+      const request = baseRequest(1);
+      const result = createCalculation({
+        ...request,
+        scenarioOverrides: [
+          {
+            scenarioId: "tighten",
+            factorOverrides: [{
+              worksheetName: "Analysis-A",
+              tableId: "table-a",
+              sourceRow: 2,
+              upperTolerance: 0.5,
+              lowerTolerance: -0.5,
+            }],
+          },
+          {
+            scenarioId: "loosen",
+            factorOverrides: [{
+              worksheetName: "Analysis-A",
+              tableId: "table-a",
+              sourceRow: 2,
+              upperTolerance: 1.5,
+              lowerTolerance: -1.5,
+            }],
+          },
+        ],
+      });
+
+      expect(result.status).toBe("completed");
+      if (result.status !== "completed") return;
+
+      expect(result.scenarios.map((scenario) => scenario.scenarioId)).toEqual(["tighten", "loosen"]);
+      const tighten = result.scenarios[0]!;
+      const loosen = result.scenarios[1]!;
+
+      expect(tighten.baselineRunReference).toBe(result.runReference);
+      expect(loosen.baselineRunReference).toBe(result.runReference);
+
+      expect(tighten.calculation.system.rssSigma).toBeLessThan(result.system.rssSigma);
+      expect(tighten.calculation.capability.cpk).toBeGreaterThan(result.capability.cpk);
+      expect(tighten.deltas.rssSigma).toBeLessThan(0);
+      expect(tighten.deltas.cpk).toBeGreaterThan(0);
+
+      expect(loosen.calculation.system.rssSigma).toBeGreaterThan(result.system.rssSigma);
+      expect(loosen.calculation.capability.cpk).toBeLessThan(result.capability.cpk);
+      expect(loosen.deltas.rssSigma).toBeGreaterThan(0);
+      expect(loosen.deltas.cpk).toBeLessThan(0);
+    });
+
+    it("applies system additionalMeanShift override and reports deltas as scenario-baseline", () => {
+      const request = baseRequest(1);
+      const result = createCalculation({
+        ...request,
+        scenarioOverrides: [{
+          scenarioId: "system-shift",
+          factorOverrides: [],
+          systemSpecification: {
+            additionalMeanShift: 1,
+          },
+        }],
+      });
+
+      expect(result.status).toBe("completed");
+      if (result.status !== "completed") return;
+
+      const scenario = result.scenarios[0]!;
+      expect(scenario.calculation.system.additionalMeanShift).toBe(1);
+      expect(scenario.deltas.mean).toBeCloseTo(
+        scenario.calculation.system.mean - result.system.mean,
+        12,
+      );
+      expect(scenario.deltas.rssSigma).toBeCloseTo(
+        scenario.calculation.system.rssSigma - result.system.rssSigma,
+        12,
+      );
+    });
+
+    it("applies distribution override and changes rssSigma/cpk", () => {
+      const request = baseRequest(1);
+      const result = createCalculation({
+        ...request,
+        scenarioOverrides: [{
+          scenarioId: "uniform-distribution",
+          factorOverrides: [{
+            worksheetName: "Analysis-A",
+            tableId: "table-a",
+            sourceRow: 2,
+            distribution: "uniform",
+          }],
+        }],
+      });
+
+      expect(result.status).toBe("completed");
+      if (result.status !== "completed") return;
+
+      const scenario = result.scenarios[0]!;
+      expect(scenario.calculation.factors[0]!.input.distribution).toBe("uniform");
+      expect(scenario.calculation.system.rssSigma).toBeGreaterThan(result.system.rssSigma);
+      expect(scenario.calculation.capability.cpk).toBeLessThan(result.capability.cpk);
+    });
+
+    it("keeps baseline payload equal to a no-scenario run and does not mutate request", () => {
+      const request = baseRequest(2);
+      const frozenRequestClone = deepClone(request);
+      const baseline = createCalculation(request);
+      const withScenario = createCalculation({
+        ...request,
+        scenarioOverrides: [{
+          scenarioId: "shift-only",
+          factorOverrides: [],
+          systemSpecification: {
+            additionalMeanShift: -0.5,
+          },
+        }],
+      });
+
+      expect(withScenario.status).toBe("completed");
+      expect(baseline.status).toBe("completed");
+      if (withScenario.status !== "completed" || baseline.status !== "completed") return;
+
+      expect(withScenario).toMatchObject({
+        ...baseline,
+        scenarios: withScenario.scenarios,
+      });
+      expect(request).toEqual(frozenRequestClone);
+    });
+
+    it("returns scenario overrides details exactly as provided without filling defaults", () => {
+      const request = baseRequest(1);
+      const result = createCalculation({
+        ...request,
+        scenarioOverrides: [{
+          scenarioId: "details-shape",
+          factorOverrides: [{
+            worksheetName: "Analysis-A",
+            tableId: "table-a",
+            sourceRow: 2,
+            nominalValue: 0.2,
+            sigmaLevel: 2,
+          }],
+          systemSpecification: {
+            targetCpk: 1.2,
+          },
+        }],
+      });
+
+      expect(result.status).toBe("completed");
+      if (result.status !== "completed") return;
+
+      const scenario = result.scenarios[0]!;
+      expect(scenario.overrides).toEqual({
+        factors: [{
+          source: {
+            worksheetName: "Analysis-A",
+            tableId: "table-a",
+            sourceRow: 2,
+          },
+          fields: ["nominalValue", "sigmaLevel"],
+        }],
+        systemSpecification: {
+          targetCpk: 1.2,
+        },
+      });
+      expect(scenario.calculation.traceRecords.length).toBeGreaterThan(0);
+      expect(scenario.calculation.recommendation.criticality).toBe(result.recommendation.criticality);
+      expect(scenario.calculation.factorCount).toBe(result.factorCount);
+    });
+
+    it("rejects unknown scenario override source rows as validation_error", () => {
+      const request = baseRequest(1);
+      expectValidationError(() => createCalculation({
+        ...request,
+        scenarioOverrides: [{
+          scenarioId: "unknown-row",
+          factorOverrides: [{
+            worksheetName: "Analysis-A",
+            tableId: "table-a",
+            sourceRow: 999,
+            nominalValue: 0.1,
+          }],
+        }],
+      }));
+    });
+
+    it("maps post-override factor invalidity and system specification invalidity to controlled errors", () => {
+      const request = baseRequest(1);
+
+      expectTypedErrorCode(() => createCalculation({
+        ...request,
+        scenarioOverrides: [{
+          scenarioId: "upper-lower-invalid",
+          factorOverrides: [{
+            worksheetName: "Analysis-A",
+            tableId: "table-a",
+            sourceRow: 2,
+            upperTolerance: 0,
+            lowerTolerance: 0,
+          }],
+        }],
+      }), "calculation_not_possible");
+
+      expectTypedErrorCode(() => createCalculation({
+        ...request,
+        scenarioOverrides: [{
+          scenarioId: "system-invalid",
+          factorOverrides: [],
+          systemSpecification: {
+            upperSpecLimit: -3,
+            lowerSpecLimit: -3,
+          },
+        }],
+      }), "calculation_not_possible");
+
+      for (const systemSpecification of [{ targetSigmaLevel: 0 }, { targetCpk: 0 }]) {
+        expectTypedErrorCode(() => createCalculation({
+          ...request,
+          scenarioOverrides: [{
+            scenarioId: "system-invalid-target",
+            factorOverrides: [],
+            systemSpecification,
+          }],
+        }), "calculation_not_possible");
+      }
+
+      expectTypedErrorCode(() => createCalculation({
+        ...request,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        scenarioOverrides: [{ scenarioId: "system-malformed", factorOverrides: [], systemSpecification: "invalid" as any }],
+      }), "validation_error");
+
+      expectTypedErrorCode(() => createCalculation({
+        ...request,
+        scenarioOverrides: [{
+          scenarioId: "system-unknown-field",
+          factorOverrides: [],
+          systemSpecification: {
+            upperSpecLimit: -3,
+            unknownField: 1,
+          },
+        }],
+      }), "validation_error");
+
+      expectTypedErrorCode(() => createCalculation({
+        ...request,
+        scenarioOverrides: [{
+          factorOverrides: [],
+          systemSpecification: {
+            upperSpecLimit: -3,
+          },
+        }],
+      }), "validation_error");
+    });
+
+    it("builds scenario trace dependency closure from override request refs using safe indexes", () => {
+      const request = baseRequest(1);
+      const result = createCalculation({
+        ...request,
+        scenarioOverrides: [{
+          scenarioId: "sensitive-user-text-should-not-appear",
+          factorOverrides: [{
+            worksheetName: "Analysis-A",
+            tableId: "table-a",
+            sourceRow: 2,
+            upperTolerance: 0.8,
+            lowerTolerance: -0.6,
+            distribution: "uniform",
+            sigmaLevel: 2,
+          }],
+          systemSpecification: {
+            lowerSpecLimit: -2.5,
+            upperSpecLimit: 2.5,
+            additionalMeanShift: -0.3,
+          },
+        }],
+      });
+
+      expect(result.status).toBe("completed");
+      if (result.status !== "completed") return;
+
+      const scenario = result.scenarios[0]!;
+      const trace = new Map(scenario.calculation.traceRecords.map((record) => [record.outputField, record]));
+      const upperOverrideRef = "request:scenarioOverrides[0].factorOverrides[0].upperTolerance";
+      const lowerOverrideRef = "request:scenarioOverrides[0].factorOverrides[0].lowerTolerance";
+      const distributionOverrideRef = "request:scenarioOverrides[0].factorOverrides[0].distribution";
+      const sigmaOverrideRef = "request:scenarioOverrides[0].factorOverrides[0].sigmaLevel";
+      const shiftOverrideRef = "request:scenarioOverrides[0].systemSpecification.additionalMeanShift";
+      const lslOverrideRef = "request:scenarioOverrides[0].systemSpecification.lowerSpecLimit";
+      const uslOverrideRef = "request:scenarioOverrides[0].systemSpecification.upperSpecLimit";
+
+      const serializedTrace = JSON.stringify(scenario.calculation.traceRecords);
+      expect(serializedTrace).not.toContain("sensitive-user-text-should-not-appear");
+
+      expect(trace.get("factors[0].mean")?.sourceCells).toContain(upperOverrideRef);
+      expect(trace.get("factors[0].halfTolerance")?.sourceCells).toContain(upperOverrideRef);
+      expect(trace.get("factors[0].sigma")?.sourceCells).toContain(upperOverrideRef);
+      expect(trace.get("factors[0].contribution")?.sourceCells).toContain(upperOverrideRef);
+      expect(trace.get("system.worstCaseUpper")?.sourceCells).toContain(upperOverrideRef);
+      expect(trace.get("system.rssSigma")?.sourceCells).toContain(upperOverrideRef);
+      expect(trace.get("system.worstCaseLower")?.sourceCells).not.toContain(upperOverrideRef);
+      expect(trace.get("system.worstCaseLower")?.sourceCells).toContain(lowerOverrideRef);
+      expect(trace.get("capability.upperCpk")?.sourceCells).toContain(upperOverrideRef);
+      expect(trace.get("capability.cpk")?.sourceCells).toContain(upperOverrideRef);
+      expect(trace.get("capability.lowerDpm")?.sourceCells).toContain(upperOverrideRef);
+      expect(trace.get("capability.upperDpm")?.sourceCells).toContain(upperOverrideRef);
+      expect(trace.get("capability.totalDpm")?.sourceCells).toContain(upperOverrideRef);
+      expect(trace.get("capability.yield")?.sourceCells).toContain(upperOverrideRef);
+      expect(trace.get("capability.status")?.sourceCells).toContain(upperOverrideRef);
+
+      expect(trace.get("capability.cp")?.sourceCells).toContain(lslOverrideRef);
+      expect(trace.get("capability.lowerCpk")?.sourceCells).toContain(lslOverrideRef);
+      expect(trace.get("capability.cpk")?.sourceCells).toContain(lslOverrideRef);
+      expect(trace.get("capability.lowerZ")?.sourceCells).toContain(lslOverrideRef);
+      expect(trace.get("capability.lowerDpm")?.sourceCells).toContain(lslOverrideRef);
+      expect(trace.get("capability.totalDpm")?.sourceCells).toContain(lslOverrideRef);
+      expect(trace.get("capability.yield")?.sourceCells).toContain(lslOverrideRef);
+      expect(trace.get("capability.status")?.sourceCells).toContain(lslOverrideRef);
+      expect(trace.get("capability.upperZ")?.sourceCells).not.toContain(lslOverrideRef);
+      expect(trace.get("capability.upperDpm")?.sourceCells).not.toContain(lslOverrideRef);
+
+      expect(trace.get("system.mean")?.sourceCells).toContain(shiftOverrideRef);
+      expect(trace.get("capability.lowerCpk")?.sourceCells).toContain(shiftOverrideRef);
+      expect(trace.get("capability.upperCpk")?.sourceCells).toContain(shiftOverrideRef);
+      expect(trace.get("capability.cpk")?.sourceCells).toContain(shiftOverrideRef);
+      expect(trace.get("capability.lowerZ")?.sourceCells).toContain(shiftOverrideRef);
+      expect(trace.get("capability.upperZ")?.sourceCells).toContain(shiftOverrideRef);
+      expect(trace.get("capability.lowerDpm")?.sourceCells).toContain(shiftOverrideRef);
+      expect(trace.get("capability.upperDpm")?.sourceCells).toContain(shiftOverrideRef);
+      expect(trace.get("capability.totalDpm")?.sourceCells).toContain(shiftOverrideRef);
+      expect(trace.get("capability.yield")?.sourceCells).toContain(shiftOverrideRef);
+      expect(trace.get("capability.status")?.sourceCells).toContain(shiftOverrideRef);
+
+      expect(trace.get("factors[0].sigma")?.sourceCells).toContain(distributionOverrideRef);
+      expect(trace.get("system.rssSigma")?.sourceCells).toContain(distributionOverrideRef);
+      expect(trace.get("capability.cp")?.sourceCells).toContain(distributionOverrideRef);
+      expect(trace.get("capability.lowerCpk")?.sourceCells).toContain(distributionOverrideRef);
+      expect(trace.get("capability.cpk")?.sourceCells).toContain(distributionOverrideRef);
+      expect(trace.get("capability.lowerDpm")?.sourceCells).toContain(distributionOverrideRef);
+      expect(trace.get("capability.upperDpm")?.sourceCells).toContain(distributionOverrideRef);
+      expect(trace.get("capability.yield")?.sourceCells).toContain(distributionOverrideRef);
+      expect(trace.get("capability.status")?.sourceCells).toContain(distributionOverrideRef);
+
+      expect(trace.get("factors[0].sigma")?.sourceCells).toContain(sigmaOverrideRef);
+      expect(trace.get("system.rssSigma")?.sourceCells).toContain(sigmaOverrideRef);
+      expect(trace.get("capability.lowerCpk")?.sourceCells).toContain(sigmaOverrideRef);
+
+      expect(trace.get("capability.cp")?.sourceCells).toContain(uslOverrideRef);
+      expect(trace.get("capability.upperCpk")?.sourceCells).toContain(uslOverrideRef);
+      expect(trace.get("capability.cpk")?.sourceCells).toContain(uslOverrideRef);
+      expect(trace.get("capability.upperZ")?.sourceCells).toContain(uslOverrideRef);
+      expect(trace.get("capability.upperDpm")?.sourceCells).toContain(uslOverrideRef);
+      expect(trace.get("capability.totalDpm")?.sourceCells).toContain(uslOverrideRef);
+      expect(trace.get("capability.yield")?.sourceCells).toContain(uslOverrideRef);
+      expect(trace.get("capability.status")?.sourceCells).toContain(uslOverrideRef);
+      expect(trace.get("capability.lowerZ")?.sourceCells).not.toContain(uslOverrideRef);
+      expect(trace.get("capability.lowerDpm")?.sourceCells).not.toContain(uslOverrideRef);
+
+      for (const record of scenario.calculation.traceRecords) {
+        for (const sourceCell of record.sourceCells) {
+          expect(sourceCell.includes("request:scenarioOverrides.")).toBe(false);
+          expect(sourceCell.includes("request:scenarioOverrides.sensitive-user-text-should-not-appear")).toBe(false);
+        }
+      }
+    });
+
+    it("accepts 100 scenarios and rejects 101 scenarios", () => {
+      const request = baseRequest(1);
+      const validScenarioOverrides = Array.from({ length: 100 }, (_, index) => ({
+        scenarioId: `scenario-${index + 1}`,
+        factorOverrides: [{
+          worksheetName: "Analysis-A",
+          tableId: "table-a",
+          sourceRow: 2,
+          nominalValue: index / 100,
+        }],
+      }));
+
+      const completed = createCalculation({
+        ...request,
+        scenarioOverrides: validScenarioOverrides,
+      });
+
+      expect(completed.status).toBe("completed");
+      if (completed.status !== "completed") return;
+      expect(completed.scenarios).toHaveLength(100);
+
+      expectValidationError(() => createCalculation({
+        ...request,
+        scenarioOverrides: [
+          ...validScenarioOverrides,
+          {
+            scenarioId: "scenario-101",
+            factorOverrides: [{
+              worksheetName: "Analysis-A",
+              tableId: "table-a",
+              sourceRow: 2,
+              nominalValue: 2,
+            }],
+          },
+        ],
+      }));
+    });
+
+    it("accepts 100 factors with 10 scenarios at the workload limit", () => {
+      const request = baseRequest(100);
+      const scenarioOverrides = Array.from({ length: 10 }, (_, index) => ({
+        scenarioId: `scenario-${index + 1}`,
+        factorOverrides: [{
+          worksheetName: "Analysis-A",
+          tableId: "table-a",
+          sourceRow: 2,
+          nominalValue: index / 100,
+        }],
+      }));
+
+      const completed = createCalculation({
+        ...request,
+        scenarioOverrides,
+      });
+
+      expect(completed.status).toBe("completed");
+      if (completed.status !== "completed") return;
+      expect(completed.factorCount).toBe(100);
+      expect(completed.scenarios).toHaveLength(10);
+    });
+
+    it("rejects 100 factors with 11 scenarios before reading row fields and without marker leakage", () => {
+      const marker = "workload-row-fields-getter-should-not-run";
+      let fieldsReadCount = 0;
+      const request = baseRequest(100);
+      const selectedTable = request.worksheetAnalysisAssets.worksheets[0]!.factorTables[0]!;
+      const firstRow = selectedTable.rows[0]!;
+      Object.defineProperty(firstRow, "fields", {
+        enumerable: true,
+        configurable: true,
+        get() {
+          fieldsReadCount += 1;
+          throw new Error(marker);
+        },
+      });
+
+      const error = captureThrown(() => createCalculation({
+        ...request,
+        scenarioOverrides: Array.from({ length: 11 }, (_, index) => ({
+          scenarioId: `scenario-${index + 1}`,
+          factorOverrides: [],
+        })),
+      }));
+
+      expect(error).toMatchObject({
+        code: "validation_error",
+        summary: "Calculation request is invalid.",
+        affectedInputReferences: ["calculation-request-v1"],
+      });
+      expect(fieldsReadCount).toBe(0);
+      expectNoMarkerLeak(error, marker);
+    });
+
+    it("is deterministic for successful repeated runs with identical input", () => {
+      const request = {
+        ...baseRequest(2),
+        scenarioOverrides: [{
+          scenarioId: "deterministic",
+          factorOverrides: [{
+            worksheetName: "Analysis-A",
+            tableId: "table-a",
+            sourceRow: 2,
+            longTermSafetyFactor: 0.9,
+          }],
+          systemSpecification: {
+            additionalMeanShift: -0.25,
+          },
+        }],
+      };
+
+      const first = createCalculation(request);
+      const second = createCalculation(request);
+      expect(first).toEqual(second);
+    });
+  });
+
+  it("rejects unavailable, non-finite and unknown distribution rows", () => {
+    const request = baseRequest(1);
+
+    expectValidationError(() => createCalculation({
+      ...request,
+      worksheetAnalysisAssets: {
+        ...request.worksheetAnalysisAssets,
+        worksheets: [{
+          ...request.worksheetAnalysisAssets.worksheets[0],
+          factorTables: [{
+            ...request.worksheetAnalysisAssets.worksheets[0]!.factorTables[0],
+            rows: [{
+              sourceRow: 2,
+              fields: {
+                ...factorFields(0),
+                nominalValue: { status: "unavailable", reasonCode: "missing" },
+              },
+            }],
+          }],
+        }],
+      },
+    }));
+
+    expectValidationError(() => createCalculation({
+      ...request,
+      worksheetAnalysisAssets: {
+        ...request.worksheetAnalysisAssets,
+        worksheets: [{
+          ...request.worksheetAnalysisAssets.worksheets[0],
+          factorTables: [{
+            ...request.worksheetAnalysisAssets.worksheets[0]!.factorTables[0],
+            rows: [{
+              sourceRow: 2,
+              fields: {
+                ...factorFields(0),
+                standardDeviation: availableNumber("NaN", "Analysis-A!F2", Number.NaN),
+              },
+            }],
+          }],
+        }],
+      },
+    }));
+
+    expectValidationError(() => createCalculation({
+      ...request,
+      worksheetAnalysisAssets: {
+        ...request.worksheetAnalysisAssets,
+        worksheets: [{
+          ...request.worksheetAnalysisAssets.worksheets[0],
+          factorTables: [{
+            ...request.worksheetAnalysisAssets.worksheets[0]!.factorTables[0],
+            rows: [{
+              sourceRow: 2,
+              fields: {
+                ...factorFields(0),
+                distribution: availableText("mystery", "Analysis-A!G2"),
+              },
+            }],
+          }],
+        }],
+      },
+    }));
+
+  });
+
+  it("rejects rows when no non-empty unit declaration exists", () => {
+    const request = baseRequest(1);
+
+    expectValidationError(() => createCalculation({
+      ...request,
+      worksheetAnalysisAssets: {
+        ...request.worksheetAnalysisAssets,
+        worksheets: [{
+          ...request.worksheetAnalysisAssets.worksheets[0],
+          factorTables: [{
+            ...request.worksheetAnalysisAssets.worksheets[0]!.factorTables[0],
+            rows: [{
+              sourceRow: 2,
+              fields: {
+                ...factorFields(0),
+                unit: availableText("", "Analysis-A!H2"),
+                nominalValue: { ...availableNumber("0", "Analysis-A!B2", 0), unit: "   " },
+                upperTolerance: { ...availableNumber("1", "Analysis-A!C2", 1), unit: undefined },
+                lowerTolerance: { ...availableNumber("-1", "Analysis-A!D2", -1), unit: undefined },
+                longTermSafetyFactor: { ...availableNumber("1", "Analysis-A!E2", 1), unit: "" },
+                standardDeviation: { ...availableNumber("1", "Analysis-A!F2", 1), unit: undefined },
+              },
+            }],
+          }],
+        }],
+      },
+    }));
+  });
+
+  it("rejects rows when explicit unit conflicts with numeric-unit declarations after trim", () => {
+    const request = baseRequest(1);
+
+    expectValidationError(() => createCalculation({
+      ...request,
+      worksheetAnalysisAssets: {
+        ...request.worksheetAnalysisAssets,
+        worksheets: [{
+          ...request.worksheetAnalysisAssets.worksheets[0],
+          factorTables: [{
+            ...request.worksheetAnalysisAssets.worksheets[0]!.factorTables[0],
+            rows: [{
+              sourceRow: 2,
+              fields: {
+                ...factorFields(0),
+                unit: availableText(" inch ", "Analysis-A!H2"),
+                nominalValue: availableNumber("0", "Analysis-A!B2", 0, " mm "),
+                upperTolerance: availableNumber("1", "Analysis-A!C2", 1, "mm"),
+                lowerTolerance: availableNumber("-1", "Analysis-A!D2", -1, " mm"),
+              },
+            }],
+          }],
+        }],
+      },
+    }));
+  });
+
+  it("rejects mixed units across factors after normalization", () => {
+    const request = baseRequest(2);
+
+    expectValidationError(() => createCalculation({
+      ...request,
+      worksheetAnalysisAssets: {
+        ...request.worksheetAnalysisAssets,
+        worksheets: [{
+          ...request.worksheetAnalysisAssets.worksheets[0],
+          factorTables: [{
+            ...request.worksheetAnalysisAssets.worksheets[0]!.factorTables[0],
+            rows: [
+              {
+                sourceRow: 2,
+                fields: {
+                  ...factorFields(0),
+                  unit: availableText("mm", "Analysis-A!H2"),
+                },
+              },
+              {
+                sourceRow: 3,
+                fields: {
+                  ...factorFields(1),
+                  unit: availableText("in", "Analysis-A!H3"),
+                  nominalValue: availableNumber("0", "Analysis-A!B3", 0, "in"),
+                  upperTolerance: availableNumber("1", "Analysis-A!C3", 1, "in"),
+                  lowerTolerance: availableNumber("-1", "Analysis-A!D3", -1, "in"),
+                  longTermSafetyFactor: availableNumber("1", "Analysis-A!E3", 1, "in"),
+                  standardDeviation: availableNumber("1", "Analysis-A!F3", 1, "in"),
+                },
+              },
+            ],
+          }],
+        }],
+      },
+    }));
+  });
+
+  it("accepts factors when all normalized units are consistent", () => {
+    const request = baseRequest(2);
+    const result = createCalculation(request);
+
+    expect(result.status).toBe("completed");
+    if (result.status !== "completed") return;
+
+    expect(result.factors.map((factor) => factor.unit)).toEqual(["mm", "mm"]);
+  });
+
+  it("rejects selected table with more than 100 rows before reading row fields and without marker leakage", () => {
+    const marker = "row-field-getter-should-not-run";
+    const request = baseRequest(101);
+    const selectedTable = request.worksheetAnalysisAssets.worksheets[0]!.factorTables[0]!;
+    const firstRow = selectedTable.rows[0]!;
+    const fieldsWithThrowingGetter = { ...firstRow.fields };
+    Object.defineProperty(fieldsWithThrowingGetter, "nominalValue", {
+      enumerable: true,
+      configurable: true,
+      get() {
+        throw new Error(marker);
+      },
+    });
+    selectedTable.rows[0] = {
+      ...firstRow,
+      fields: fieldsWithThrowingGetter,
+    };
+
+    const error = captureThrown(() => createCalculation(request));
+
+    expect(error).toMatchObject({
+      code: "validation_error",
+      summary: "Calculation request is invalid.",
+      affectedInputReferences: ["calculation-request-v1"],
+    });
+    expectNoMarkerLeak(error, marker);
+  });
+
+  it("rejects excessive unselected assets before parsing their entries", () => {
+    const marker = "unselected-formula-getter-should-not-run";
+    let entryAccessed = false;
+    const request = baseRequest(1);
+    const unselectedWorksheet = deepClone(request.worksheetAnalysisAssets.worksheets[0]!);
+    unselectedWorksheet.worksheetName = "Analysis-B";
+    (unselectedWorksheet as { formulaCells: unknown[] }).formulaCells = Array.from(
+      { length: 1001 },
+      () => new Proxy({}, {
+        get() {
+          entryAccessed = true;
+          throw new Error(marker);
+        },
+      }),
+    );
+    (request.worksheetAnalysisAssets.worksheets as unknown[]).push(unselectedWorksheet);
+
+    const error = captureThrown(() => createCalculation(request));
+
+    expect(error).toMatchObject({ code: "validation_error", summary: "Calculation request is invalid." });
+    expectNoMarkerLeak(error, marker);
+    expect(entryAccessed).toBe(false);
+  });
+
+  it("allows an unselected table above the selected-table row limit within the global limit", () => {
+    const request = baseRequest(1);
+    const unselectedWorksheet = deepClone(request.worksheetAnalysisAssets.worksheets[0]!);
+    unselectedWorksheet.worksheetName = "Analysis-B";
+    unselectedWorksheet.factorTables[0]!.tableId = "table-b";
+    unselectedWorksheet.factorTables[0]!.rows = Array.from({ length: 101 }, (_, index) => ({
+      sourceRow: index + 2,
+      fields: factorFields(index),
+    }));
+    request.worksheetAnalysisAssets.worksheets.push(unselectedWorksheet);
+
+    expect(createCalculation(request).status).toBe("completed");
+  });
+
+  it("rejects an oversized string before schema parsing", () => {
+    const request = baseRequest(1);
+    request.projectReference = "x".repeat(65_537);
+
+    expectValidationError(() => createCalculation(request));
+  });
+
+  it("reads stateful asset collections once so validation cannot observe a different payload", () => {
+    const request = baseRequest(1);
+    const worksheet = request.worksheetAnalysisAssets.worksheets[0]!;
+    const formulaCells = worksheet.formulaCells;
+    let reads = 0;
+    Object.defineProperty(worksheet, "formulaCells", {
+      enumerable: true,
+      configurable: true,
+      get() {
+        reads += 1;
+        return reads === 1 ? formulaCells : Array.from({ length: 1001 }, () => ({}));
+      },
+    });
+
+    expect(createCalculation(request).status).toBe("completed");
+    expect(reads).toBe(1);
+  });
+
+  it("caches a proxied array length before bounded snapshot iteration", () => {
+    const request = baseRequest(1);
+    const worksheet = request.worksheetAnalysisAssets.worksheets[0]!;
+    let lengthReads = 0;
+    worksheet.formulaCells = new Proxy([], {
+      get(target, property, receiver) {
+        if (property === "length") {
+          lengthReads += 1;
+          return lengthReads === 1 ? 1 : 10_000;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+
+    expectValidationError(() => createCalculation(request));
+    expect(lengthReads).toBe(1);
+  });
+
+  it("rejects an oversized proxied worksheet collection before indexed traversal", () => {
+    const request = baseRequest(1);
+    let indexedReads = 0;
+    request.worksheetAnalysisAssets.worksheets = new Proxy([], {
+      get(target, property, receiver) {
+        if (property === "length") return 1_000_000;
+        if (typeof property === "string" && /^\d+$/.test(property)) indexedReads += 1;
+        return Reflect.get(target, property, receiver);
+      },
+    });
+
+    expectValidationError(() => createCalculation(request));
+    expect(indexedReads).toBe(0);
+  });
+
+  it("rejects duplicate worksheet, table, and source-row locator keys", () => {
+    const duplicateWorksheet = baseRequest(1);
+    duplicateWorksheet.worksheetAnalysisAssets.worksheets.push(
+      deepClone(duplicateWorksheet.worksheetAnalysisAssets.worksheets[0]!),
+    );
+
+    const duplicateTable = baseRequest(1);
+    duplicateTable.worksheetAnalysisAssets.worksheets[0]!.factorTables.push(
+      deepClone(duplicateTable.worksheetAnalysisAssets.worksheets[0]!.factorTables[0]!),
+    );
+
+    const duplicateSourceRow = baseRequest(1);
+    duplicateSourceRow.worksheetAnalysisAssets.worksheets[0]!.factorTables[0]!.rows.push(
+      deepClone(duplicateSourceRow.worksheetAnalysisAssets.worksheets[0]!.factorTables[0]!.rows[0]!),
+    );
+
+    for (const request of [duplicateWorksheet, duplicateTable, duplicateSourceRow]) {
+      expectValidationError(() => createCalculation(request));
+    }
+  });
+
+  it("maps kernel zero RSS failure to calculation_not_possible without leaking sensitive text", () => {
+    const marker = "sensitive-factor-name-raw-marker";
+    const request = baseRequest(1);
+    const mutated = deepClone(request);
+    mutated.worksheetAnalysisAssets.worksheets[0]!.factorTables[0]!.rows[0]!.fields.factorName = availableText(marker, "Analysis-A!A2");
+    mutated.worksheetAnalysisAssets.worksheets[0]!.factorTables[0]!.rows[0]!.fields.upperTolerance = availableNumber("0", "Analysis-A!C2", 0);
+    mutated.worksheetAnalysisAssets.worksheets[0]!.factorTables[0]!.rows[0]!.fields.lowerTolerance = availableNumber("0", "Analysis-A!D2", 0);
+
+    let error: unknown;
+    try {
+      createCalculation(mutated);
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toMatchObject({
+      code: "calculation_not_possible",
+      summary: "Calculation cannot be completed.",
+      affectedInputReferences: ["calculation-request-v1"],
+    });
+    const typed = error as Error & { summary?: string; message?: string; suggestedAction?: string; affectedInputReferences?: string[] };
+    expect(typed.summary ?? "").not.toContain(marker);
+    expect(typed.message ?? "").not.toContain(marker);
+    expect(typed.suggestedAction ?? "").not.toContain(marker);
+    expect((typed.affectedInputReferences ?? []).join(" ")).not.toContain(marker);
+  });
+
+  it("emits complete trace coverage and formula-accurate dependency source cells for computed outputs", () => {
+    const result = createCalculation(baseRequest(2));
+
+    expect(result.status).toBe("completed");
+    if (result.status !== "completed") return;
+
+    const outputFields = new Set(result.traceRecords.map((record) => record.outputField));
+    const expectedOutputFields = new Set([
+      "factors[0].mean",
+      "factors[0].halfTolerance",
+      "factors[0].sigma",
+      "factors[0].contribution",
+      "factors[1].mean",
+      "factors[1].halfTolerance",
+      "factors[1].sigma",
+      "factors[1].contribution",
+      "system.mean",
+      "system.worstCaseUpper",
+      "system.worstCaseLower",
+      "system.rssSigma",
+      "capability.cp",
+      "capability.lowerCpk",
+      "capability.upperCpk",
+      "capability.cpk",
+      "capability.lowerZ",
+      "capability.upperZ",
+      "capability.lowerDpm",
+      "capability.upperDpm",
+      "capability.totalDpm",
+      "capability.outOfSpecRatio",
+      "capability.yield",
+      "capability.status",
+    ]);
+
+    expect(outputFields).toEqual(expectedOutputFields);
+
+    const expectedSigmaInputCells = [
+      "Analysis-A!C2",
+      "Analysis-A!D2",
+      "Analysis-A!E2",
+      "Analysis-A!F2",
+      "Analysis-A!G2",
+      "Analysis-A!C3",
+      "Analysis-A!D3",
+      "Analysis-A!E3",
+      "Analysis-A!F3",
+      "Analysis-A!G3",
+    ];
+    const expectedSigmaInputs = new Set(expectedSigmaInputCells);
+    const expectedSystemMeanInputs = [
+      "Analysis-A!B2",
+      "Analysis-A!C2",
+      "Analysis-A!D2",
+      "Analysis-A!B3",
+      "Analysis-A!C3",
+      "Analysis-A!D3",
+      "request:systemSpecification.additionalMeanShift",
+    ];
+
+    const trace = new Map(result.traceRecords.map((record) => [record.outputField, record]));
+
+    const factor0Mean = trace.get("factors[0].mean");
+    const factor1Mean = trace.get("factors[1].mean");
+    const factor0Contribution = trace.get("factors[0].contribution");
+    const systemMean = trace.get("system.mean");
+    const cp = trace.get("capability.cp");
+    const lowerDpm = trace.get("capability.lowerDpm");
+    const status = trace.get("capability.status");
+
+    expect(factor0Mean).toBeDefined();
+    expect(factor1Mean).toBeDefined();
+    expect(factor0Contribution).toBeDefined();
+    expect(systemMean).toBeDefined();
+    expect(cp).toBeDefined();
+    expect(lowerDpm).toBeDefined();
+    expect(status).toBeDefined();
+
+    expect(new Set(factor0Mean?.sourceCells ?? [])).toEqual(new Set(["Analysis-A!B2", "Analysis-A!C2", "Analysis-A!D2"]));
+    expect(new Set(factor1Mean?.sourceCells ?? [])).toEqual(new Set(["Analysis-A!B3", "Analysis-A!C3", "Analysis-A!D3"]));
+    expect(new Set(factor0Contribution?.sourceCells ?? [])).toEqual(expectedSigmaInputs);
+
+    expect(new Set(systemMean?.sourceCells ?? [])).toEqual(new Set(expectedSystemMeanInputs));
+
+    expect(new Set(cp?.sourceCells ?? [])).toEqual(new Set([
+      ...expectedSigmaInputCells,
+      "request:systemSpecification.lowerSpecLimit",
+      "request:systemSpecification.upperSpecLimit",
+    ]));
+    expect(cp?.sourceCells).not.toContain("system.mean");
+    expect(cp?.sourceCells).not.toContain("request:systemSpecification.targetSigmaLevel");
+    expect(cp?.sourceCells).not.toContain("request:systemSpecification.targetCpk");
+
+    expect(new Set(lowerDpm?.sourceCells ?? [])).toEqual(new Set([
+      ...expectedSigmaInputCells,
+      ...expectedSystemMeanInputs,
+      "request:systemSpecification.lowerSpecLimit",
+    ]));
+    expect(lowerDpm?.sourceCells).not.toContain("request:systemSpecification.upperSpecLimit");
+
+    expect(new Set(status?.sourceCells ?? [])).toEqual(new Set([
+      ...expectedSigmaInputCells,
+      ...expectedSystemMeanInputs,
+      "request:systemSpecification.lowerSpecLimit",
+      "request:systemSpecification.upperSpecLimit",
+      "request:systemSpecification.targetCpk",
+    ]));
+  });
+
+  it("does not expose workbook bytes or exception rationale in completed output", () => {
+    const request = baseRequest(1);
+    const result = createCalculation(request);
+
+    expect(result.status).toBe("completed");
+    if (result.status !== "completed") return;
+
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain("workbookBytes");
+    expect(serialized).not.toContain("rawText");
+    expect(serialized).not.toContain("rationale");
+  });
+
+  it("exports createCalculation through the built ESM package entrypoint", () => {
+    const output = execFileSync(
+      process.execPath,
+      ["--input-type=module", "--eval", "import { createCalculation } from '@ai-assist/workbook-catalog'; console.log(typeof createCalculation);"],
+      { cwd: process.cwd(), encoding: "utf8" },
+    );
+
+    expect(output.trim()).toBe("function");
+  });
+});

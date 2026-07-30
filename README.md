@@ -45,8 +45,12 @@ worksheet catalog，并从 catalog 确认的 worksheet 提取因子表、公式�
 `.xls`、`.xlsx` 或 `.xlsm`（除非另行批准受控白名单）。F2.1 只接受 F1.1 confidential 资产，对九项必填因子字段执行严格完整性阻断；
 Drawing Number 与 DIM/Characteristic ID 只形成非阻断提示。F2.2 仅在 F2.1 ready 且内容哈希绑定时，
 按类别、`mm` 公差范围和受控 distribution 别名与 F0 比对；所有差异均为非阻断信号。F2.3
-提供受限的非阻断例外处理，F2.4 提供标识符质量检查；根 F2 和 F3-F7 保持不可用，F4 返回
-`feature_not_available`，F8 仅限用于受治理 Skill 运行时验收的匿名 `public`
+提供受限的非阻断例外处理，F2.4 提供标识符质量检查。F4 已启用受治理的 `excel-ta-v1` 纯计算
+核心：少于 4 个因子推荐 WC，4 至 10 个推荐 RSS，多于 10 个转介 DM 团队进行 3D 分析，同时
+始终计算 WC/RSS；支持六种受控分布、同单位输入、绝对或相对误差 `1e-12` 的批准模板回归，
+以及复用同一 kernel 且工作量不超过 1000 的 What-if。错误不得泄露机密输入；Windows Excel
+Worker 仅用于发布黄金回归，不在生产热路径中。根 F2、F3 和 F5-F7 保持不可用，F4 不启用
+F5/F6；F8 仅限用于受治理 Skill 运行时验收的匿名 `public`
 fixture。此阶段不包含真实工程知识、外部 Adapter、模型、ADO、SharePoint 或 UI 行为。
 
 - [Phase 0 设计](docs/superpowers/specs/2026-07-22-ai-assist-agent-foundation-design.md)
@@ -69,6 +73,8 @@ fixture。此阶段不包含真实工程知识、外部 Adapter、模型、ADO�
 - [F2.2 能力库与分布一致性校验实施计划](docs/superpowers/plans/2026-07-27-f2-2-capability-distribution-validation.md)
 - [F2.3 非阻断差异例外处理设计](docs/superpowers/specs/2026-07-27-f2-3-exception-resolution-design.md)
 - [F2.3 非阻断差异例外处理实施计划](docs/superpowers/plans/2026-07-27-f2-3-exception-resolution.md)
+- [F4 计算引擎设计](docs/superpowers/specs/2026-07-30-f4-calculation-engine-design.md)
+- [F4 计算引擎实施计划](docs/superpowers/plans/2026-07-30-f4-calculation-engine.md)
 - [系统架构](docs/01-architecture.md) 与 [Feature Register](docs/governance/feature-register.md)
 - [数据分类](docs/governance/data-classification.md) 与 [开发协作标准](docs/governance/development-standard.md)
 - [Phase 0 验收](docs/governance/phase-0-acceptance.md)

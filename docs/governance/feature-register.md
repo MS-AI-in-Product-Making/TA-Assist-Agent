@@ -8,7 +8,7 @@ Feature Register 是 Phase 0 对 F0-F8 的唯一可查询能力清单。它提�
 `internal-v1` 制程指导和 `interpretation-rules-v1` 解读规则而标记为 `available`；F1 为受控 `confidential` 工作簿字节的只读 catalog 与 F1.1 资产准备而标记为
 `available`；F1.7 为因子表语义识别与人工确认闸门而标记为 `available`；F2.1 为严格必填字段校验而标记为 `available`；F2.2 为非阻断能力库与 distribution
 一致性校验而标记为 `available`；F2.3 的受限例外处理与 F2.4 的标识符质量检查也标记为
-`available`；根 F2 和 F3-F7 均为 `unavailable`。F8 仅为 Phase 0 的匿名、`public`、受治理 Skill 验收 fixture 而标记为
+`available`；F4 为受 F1/F2 证据门禁的 `excel-ta-v1` 计算服务而标记为 `available`；根 F2、F3、F5-F7 仍为 `unavailable`。F8 仅为 Phase 0 的匿名、`public`、受治理 Skill 验收 fixture 而标记为
 `available`。这些状态不表示已交付 TA 产品工作流、生产编排器、真实工程知识或任何外部写入
 能力；调用方和后续编排器仍必须在执行前查询该清单。
 
@@ -25,7 +25,7 @@ Feature Register 是 Phase 0 对 F0-F8 的唯一可查询能力清单。它提�
 | F2.3 | 非阻断差异例外处理 | `available` | `capability-validation-v1`, `identifier-quality-check-v1`, `unified-exception-resolution-v2`; `approved-exception-policy` | `unified-exception-resolution-request-v2` / `unified-exception-resolution-result-v2` | `confidential` | `anonymous-unified-exception-resolution-fixture`, `unified-exception-resolution-coverage-check`, `unified-exception-resolution-privacy-check` | `return feature_not_available` |
 | F2.4 | DIM ID 与 Drawing Number 质量检查 | `available` | `worksheet-analysis-assets-v1`, `required-field-check-v1`, `identifier-quality-check-v1`; `approved-ooxml-parser` | `identifier-quality-check-request-v1` / `identifier-quality-check-result-v1` | `confidential` | `anonymous-identifier-quality-fixture`, `identifier-quality-gate-check`, `identifier-quality-privacy-check` | `return feature_not_available` |
 | F3 | DIM ID 与图纸治理 | `unavailable` | `dim-id-service-v1`; `approved-ado-access`, `canonical-dim-id-policy` | `drawing-governance-request-v1` / `drawing-governance-result-v1` | `confidential` | `anonymous-dim-id-fixture` | `return feature_not_available` |
-| F4 | 方法推荐与 Excel 一致性计算 | `unavailable` | `calculation-worker-v1`; `approved-windows-excel-worker` | `calculation-request-v1` / `calculation-result-v1` | `confidential` | `approved-template-regression` | `return feature_not_available` |
+| F4 | 方法推荐与 Excel 一致性计算 | `available` | `worksheet-analysis-assets-v1`, `required-field-check-v1`, `exception-resolution-v1`, `calculation-service-v1`; `approved-windows-excel-worker` | `calculation-request-v1` / `calculation-result-v1` | `confidential` | `anonymous-calculation-kernel-fixture`, `approved-template-regression`, `calculation-privacy-check` | `return feature_not_available` |
 | F5 | 客观结果解释 | `unavailable` | `calculation-worker-v1`, `knowledge-base-v1`, `interpretation-rules-v1`; `approved-knowledge-base` | `interpretation-request-v1` / `interpretation-result-v1` | `confidential` | `anonymous-interpretation-fixture` | `return feature_not_available` |
 | F6 | 可比较的方案选项 | `unavailable` | `knowledge-base-v1`, `comparison-engine-v1`, `interpretation-rules-v1`; `approved-knowledge-base` | `comparison-request-v1` / `comparison-result-v1` | `confidential` | `anonymous-comparison-fixture` | `return feature_not_available` |
 | F7 | 实测 Cpk 闭环 | `unavailable` | `measurement-store-v1`, `dim-id-service-v1`; `approved-measurement-store`, `canonical-dim-id-policy` | `cpk-request-v1` / `cpk-result-v1` | `confidential` | `anonymous-cpk-fixture` | `return feature_not_available` |
@@ -67,6 +67,15 @@ F0 解读规则范围与维护边界见 [F0 TA 结果解读规则库设计](../s
   in-library、out-of-library、mismatch 或 unable 信号。所有信号均为非阻断；它不换算单位、
   推断可行性、记录例外、重读 workbook、调用外部服务或写回数据。例外处理由独立的 F2.3
   受限契约承接，不能由 F2.2 自动执行。
+- F4 的 `available` 只接受 F1/F2 已验证且内容哈希绑定的 `confidential` 结构化证据。计算版本为
+  `excel-ta-v1`：少于 4 个有效因子推荐 WC，4 至 10 个推荐一维 RSS，多于 10 个转介 DM 团队
+  跟进 3D Variation Analysis，但三种区间均继续计算 WC 和 RSS。核心支持 Normal、Uniform、
+  Triangular、Trapezoidal、Elliptical 和 Beta 六种分布；同一请求中的因子必须使用同一单位。
+  TypeScript 结果与批准模板按绝对或相对误差 `1e-12` 验收。What-if 复用同一 calculation kernel，
+  工作量 `scenario count × factor count` 不得超过 1000。错误、日志和审计仅返回受控引用与错误码，
+  不得泄露原始机密输入值。`approved-windows-excel-worker` 仅用于批准模板的黄金回归、发布门禁和
+  差异诊断，不在生产请求热路径中；文档和配置不得记录真实 workbook 路径或 hash。F4 可用不启用
+  F5/F6，两者仍为 `unavailable`。
 - F8 的 `available` 仅允许匿名 `public` Skill fixture 在 runner 中通过输入分类、
   Feature 状态和策略门检查后执行纯函数或显式注入的 mock adapter。`workflow-request-v1`
   入口只接受 `workflowId: "public-smoke"`，并固定执行 `public-echo` 与

@@ -1382,7 +1382,98 @@ export const unifiedExceptionResolutionV2ResultSchema = z
 
 const controlledCalculationReferenceSchema = z.string().min(1);
 
-export const calculationRequestSchema = z
+const calculationWorksheetSelectionSchema = z
+  .object({
+    worksheetName: z.string().min(1),
+    tableId: z.string().min(1),
+  })
+  .strict();
+
+const calculationSystemSpecificationSchema = z
+  .object({
+    designNominal: z.number().finite(),
+    lowerSpecLimit: z.number().finite(),
+    upperSpecLimit: z.number().finite(),
+    targetSigmaLevel: z.number().finite().positive(),
+    targetCpk: z.number().finite().positive(),
+    additionalMeanShift: z.number().finite(),
+  })
+  .strict()
+  .refine((value) => value.upperSpecLimit > value.lowerSpecLimit, {
+    message: "upperSpecLimit must be greater than lowerSpecLimit",
+    path: ["upperSpecLimit"],
+  });
+
+export const calculationCriticalitySchema = z.enum(["none", "CTS", "CTF"]);
+
+const calculationFactorOverrideSchema = z
+  .object({
+    worksheetName: z.string().min(1),
+    tableId: z.string().min(1),
+    sourceRow: z.number().int().positive(),
+    nominalValue: z.number().finite().optional(),
+    upperTolerance: z.number().finite().optional(),
+    lowerTolerance: z.number().finite().optional(),
+    longTermSafetyFactor: z.number().finite().positive().optional(),
+    sigmaLevel: z.number().finite().positive().optional(),
+    distribution: distributionSchema.optional(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const hasOverride = value.nominalValue !== undefined
+      || value.upperTolerance !== undefined
+      || value.lowerTolerance !== undefined
+      || value.longTermSafetyFactor !== undefined
+      || value.sigmaLevel !== undefined
+      || value.distribution !== undefined;
+    if (!hasOverride) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "factor override must include at least one override value",
+      });
+    }
+  });
+
+const calculationScenarioSystemSpecificationSchema = z
+  .object({
+    lowerSpecLimit: z.number().finite().optional(),
+    upperSpecLimit: z.number().finite().optional(),
+    targetSigmaLevel: z.number().finite().positive().optional(),
+    targetCpk: z.number().finite().positive().optional(),
+    additionalMeanShift: z.number().finite().optional(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const hasOverride = value.lowerSpecLimit !== undefined
+      || value.upperSpecLimit !== undefined
+      || value.targetSigmaLevel !== undefined
+      || value.targetCpk !== undefined
+      || value.additionalMeanShift !== undefined;
+    if (!hasOverride) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "systemSpecification must include at least one override value",
+      });
+    }
+  });
+
+export const calculationScenarioOverrideSchema = z
+  .object({
+    scenarioId: z.string().min(1),
+    factorOverrides: z.array(calculationFactorOverrideSchema).max(100),
+    systemSpecification: calculationScenarioSystemSpecificationSchema.optional(),
+  })
+  .strict()
+  .superRefine((scenario, context) => {
+    if (scenario.factorOverrides.length === 0 && scenario.systemSpecification === undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "scenario override must include at least one factor override or systemSpecification override",
+      });
+    }
+  });
+
+export const calculationUnavailableRequestSchema = z
   .object({
     contractVersion: contractVersionSchema,
     inputClassification: z.literal("confidential"),
@@ -1392,7 +1483,415 @@ export const calculationRequestSchema = z
   })
   .strict();
 
-export const calculationResultSchema = z
+export const calculationRequestSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    inputClassification: z.literal("confidential"),
+    projectReference: controlledCalculationReferenceSchema,
+    runReference: controlledCalculationReferenceSchema,
+    worksheetAnalysisAssets: worksheetAnalysisAssetsResultSchema,
+    requiredFieldCheck: requiredFieldCheckResultSchema,
+    exceptionResolution: exceptionResolutionResultSchema,
+    worksheetSelection: calculationWorksheetSelectionSchema,
+    systemSpecification: calculationSystemSpecificationSchema,
+    criticality: calculationCriticalitySchema,
+    scenarioOverrides: z.array(calculationScenarioOverrideSchema).max(100),
+  })
+  .strict()
+  .superRefine((request, context) => {
+    const workbookHash = request.worksheetAnalysisAssets.workbook.contentHash;
+    if (request.requiredFieldCheck.workbookContentHash !== workbookHash) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "worksheet-analysis assets and required-field check must share a workbook hash",
+        path: ["requiredFieldCheck", "workbookContentHash"],
+      });
+    }
+    if (request.exceptionResolution.workbookContentHash !== workbookHash) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "worksheet-analysis assets and exception resolution must share a workbook hash",
+        path: ["exceptionResolution", "workbookContentHash"],
+      });
+    }
+    if (request.requiredFieldCheck.status !== "readyForNextCheck") {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "requiredFieldCheck must be readyForNextCheck",
+        path: ["requiredFieldCheck", "status"],
+      });
+    }
+    if (request.exceptionResolution.status !== "readyToContinue") {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "exceptionResolution must be readyToContinue",
+        path: ["exceptionResolution", "status"],
+      });
+    }
+
+    const scenarioIds = request.scenarioOverrides.map((scenario) => scenario.scenarioId);
+    if (new Set(scenarioIds).size !== scenarioIds.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "scenarioId must be unique",
+        path: ["scenarioOverrides"],
+      });
+    }
+
+    for (const [scenarioIndex, scenario] of request.scenarioOverrides.entries()) {
+      const overrideKeys = scenario.factorOverrides.map((override) => JSON.stringify([
+        override.worksheetName,
+        override.tableId,
+        override.sourceRow,
+      ]));
+      if (new Set(overrideKeys).size !== overrideKeys.length) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "factor override keys must be unique within a scenario",
+          path: ["scenarioOverrides", scenarioIndex, "factorOverrides"],
+        });
+      }
+
+      const effectiveLowerSpecLimit = scenario.systemSpecification?.lowerSpecLimit ?? request.systemSpecification.lowerSpecLimit;
+      const effectiveUpperSpecLimit = scenario.systemSpecification?.upperSpecLimit ?? request.systemSpecification.upperSpecLimit;
+      if (effectiveUpperSpecLimit <= effectiveLowerSpecLimit) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "effective upperSpecLimit must be greater than lowerSpecLimit",
+          path: ["scenarioOverrides", scenarioIndex, "systemSpecification", "upperSpecLimit"],
+        });
+      }
+    }
+  });
+
+export const calculationMethodSchema = z.enum([
+  "worst_case",
+  "rss_1d",
+  "refer_3d_variation_analysis",
+]);
+
+const calculationRecommendationReasonSchema = z.enum([
+  "factor_count_1_to_3",
+  "factor_count_4_to_10",
+  "factor_count_over_10",
+]);
+
+const calculationRecommendationSchema = z
+  .object({
+    method: calculationMethodSchema,
+    reason: calculationRecommendationReasonSchema,
+    refer3d: z.boolean(),
+    criticality: calculationCriticalitySchema,
+    criticalityRisk: z.boolean(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.criticalityRisk !== (value.criticality !== "none")) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "criticalityRisk must equal (criticality !== none)",
+        path: ["criticalityRisk"],
+      });
+    }
+  });
+
+const calculationFactorSourceSchema = z
+  .object({
+    worksheetName: z.string().min(1),
+    tableId: z.string().min(1),
+    sourceRow: z.number().int().positive(),
+  })
+  .strict();
+
+const calculationFactorInputSchema = z
+  .object({
+    nominalValue: z.number().finite(),
+    upperTolerance: z.number().finite(),
+    lowerTolerance: z.number().finite(),
+    longTermSafetyFactor: z.number().finite().positive(),
+    sigmaLevel: z.number().finite().positive(),
+    distribution: distributionSchema,
+  })
+  .strict();
+
+const calculationFactorTraceSchema = z
+  .object({
+    formulaIds: z.array(z.string().min(1)).min(1),
+    sourceCells: z.array(z.string().min(1)).min(1),
+  })
+  .strict();
+
+const calculationFactorResultSchema = z
+  .object({
+    factorName: z.string().min(1),
+    unit: z.string().min(1),
+    source: calculationFactorSourceSchema,
+    input: calculationFactorInputSchema,
+    mean: z.number().finite(),
+    halfTolerance: z.number().finite(),
+    sigma: z.number().finite(),
+    contribution: z.number().finite().min(0).max(1),
+    trace: calculationFactorTraceSchema,
+  })
+  .strict();
+
+const calculationSystemResultSchema = z
+  .object({
+    designNominal: z.number().finite(),
+    mean: z.number().finite(),
+    additionalMeanShift: z.number().finite(),
+    worstCaseUpper: z.number().finite(),
+    worstCaseLower: z.number().finite(),
+    rssSigma: z.number().finite(),
+  })
+  .strict();
+
+const capabilityStatusSchema = z.enum(["PASS", "FAIL"]);
+
+const calculationCapabilityResultSchema = z
+  .object({
+    lowerSpecLimit: z.number().finite(),
+    upperSpecLimit: z.number().finite(),
+    targetSigmaLevel: z.number().finite(),
+    targetCpk: z.number().finite(),
+    cp: z.number().finite(),
+    lowerCpk: z.number().finite(),
+    upperCpk: z.number().finite(),
+    cpk: z.number().finite(),
+    lowerZ: z.number().finite(),
+    upperZ: z.number().finite(),
+    lowerDpm: z.number().finite(),
+    upperDpm: z.number().finite(),
+    totalDpm: z.number().finite(),
+    outOfSpecRatio: z.number().finite().min(0).max(1),
+    yield: z.number().finite().min(0).max(1),
+    status: capabilityStatusSchema,
+  })
+  .strict()
+  .refine((value) => value.upperSpecLimit > value.lowerSpecLimit, {
+    message: "upperSpecLimit must be greater than lowerSpecLimit",
+    path: ["upperSpecLimit"],
+  });
+
+const calculationTraceRecordSchema = z
+  .object({
+    outputField: z.string().min(1),
+    formulaVersion: z.literal("excel-ta-v1"),
+    formulaId: z.enum([
+      "factor-mean-v1",
+      "factor-half-tolerance-v1",
+      "factor-sigma-v1",
+      "system-mean-v1",
+      "worst-case-v1",
+      "rss-v1",
+      "contribution-v1",
+      "cp-v1",
+      "cpk-lower-v1",
+      "cpk-upper-v1",
+      "cpk-v1",
+      "z-lower-v1",
+      "z-upper-v1",
+      "dpm-lower-v1",
+      "dpm-upper-v1",
+      "dpm-total-v1",
+      "yield-v1",
+      "status-v1",
+    ]),
+    sourceCells: z.array(z.string().min(1)).min(1),
+  })
+  .strict();
+
+const calculationPayloadShape = {
+  factorCount: z.number().int().positive(),
+  recommendation: calculationRecommendationSchema,
+  factors: z.array(calculationFactorResultSchema).min(1).max(100),
+  system: calculationSystemResultSchema,
+  capability: calculationCapabilityResultSchema,
+  traceRecords: z.array(calculationTraceRecordSchema).min(1).max(500),
+} as const;
+
+const nearlyEqual = (left: number, right: number, tolerance = 1e-12): boolean => (
+  Math.abs(left - right) <= tolerance * Math.max(1, Math.abs(left), Math.abs(right))
+);
+
+const validateCalculationPayload = (
+  payload: z.infer<z.ZodObject<typeof calculationPayloadShape>>,
+  context: z.RefinementCtx,
+  pathPrefix: (string | number)[] = [],
+): void => {
+  const path = (segment: string | number): (string | number)[] => [...pathPrefix, segment];
+  if (payload.factorCount !== payload.factors.length) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "factorCount must match factors length",
+      path: path("factorCount"),
+    });
+  }
+
+  if (payload.factorCount <= 3
+    && (payload.recommendation.method !== "worst_case"
+      || payload.recommendation.reason !== "factor_count_1_to_3"
+      || payload.recommendation.refer3d)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "recommendation must match factor-count boundary for 1-3 factors",
+      path: path("recommendation"),
+    });
+  }
+  if (payload.factorCount >= 4 && payload.factorCount <= 10
+    && (payload.recommendation.method !== "rss_1d"
+      || payload.recommendation.reason !== "factor_count_4_to_10"
+      || payload.recommendation.refer3d)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "recommendation must match factor-count boundary for 4-10 factors",
+      path: path("recommendation"),
+    });
+  }
+  if (payload.factorCount > 10
+    && (payload.recommendation.method !== "refer_3d_variation_analysis"
+      || payload.recommendation.reason !== "factor_count_over_10"
+      || !payload.recommendation.refer3d)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "recommendation must match factor-count boundary for more than 10 factors",
+      path: path("recommendation"),
+    });
+  }
+
+  const expectedCpk = Math.min(payload.capability.lowerCpk, payload.capability.upperCpk);
+  if (!nearlyEqual(payload.capability.cpk, expectedCpk)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "capability.cpk must equal min(lowerCpk, upperCpk)",
+      path: path("capability").concat("cpk"),
+    });
+  }
+
+  const expectedTotalDpm = payload.capability.lowerDpm + payload.capability.upperDpm;
+  if (!nearlyEqual(payload.capability.totalDpm, expectedTotalDpm)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "capability.totalDpm must equal lowerDpm + upperDpm",
+      path: path("capability").concat("totalDpm"),
+    });
+  }
+
+  const expectedOutOfSpecRatio = payload.capability.totalDpm / 1_000_000;
+  if (!nearlyEqual(payload.capability.outOfSpecRatio, expectedOutOfSpecRatio)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "capability.outOfSpecRatio must equal totalDpm / 1000000",
+      path: path("capability").concat("outOfSpecRatio"),
+    });
+  }
+
+  const expectedYield = 1 - expectedOutOfSpecRatio;
+  if (!nearlyEqual(payload.capability.yield, expectedYield)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "capability.yield must equal 1 - outOfSpecRatio",
+      path: path("capability").concat("yield"),
+    });
+  }
+};
+
+const calculationPayloadSchema = z
+  .object(calculationPayloadShape)
+  .strict()
+  .superRefine((payload, context) => {
+    validateCalculationPayload(payload, context);
+  });
+
+const calculationScenarioFactorOverrideDetailsSchema = z
+  .object({
+    source: calculationFactorSourceSchema,
+    fields: z.array(z.enum([
+      "nominalValue",
+      "upperTolerance",
+      "lowerTolerance",
+      "longTermSafetyFactor",
+      "sigmaLevel",
+      "distribution",
+    ])).min(1),
+  })
+  .strict();
+
+const calculationScenarioOverridesSchema = z
+  .object({
+    factors: z.array(calculationScenarioFactorOverrideDetailsSchema).max(100),
+    systemSpecification: calculationScenarioSystemSpecificationSchema.optional(),
+  })
+  .strict()
+  .superRefine((overrides, context) => {
+    for (const [factorIndex, factor] of overrides.factors.entries()) {
+      if (factor.fields.length === 0) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "factor override fields must include at least one overridden field",
+          path: ["factors", factorIndex, "fields"],
+        });
+      }
+    }
+    if (overrides.factors.length === 0 && overrides.systemSpecification === undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "scenario override must include at least one factor override or systemSpecification override",
+      });
+    }
+  });
+
+const calculationScenarioDeltasSchema = z
+  .object({
+    mean: z.number().finite(),
+    rssSigma: z.number().finite(),
+    worstCaseUpper: z.number().finite(),
+    worstCaseLower: z.number().finite(),
+    cpk: z.number().finite(),
+    totalDpm: z.number().finite(),
+    yield: z.number().finite(),
+  })
+  .strict();
+
+const calculationScenarioResultEntrySchema = z
+  .object({
+    scenarioId: z.string().min(1),
+    baselineRunReference: controlledCalculationReferenceSchema,
+    calculation: calculationPayloadSchema,
+    overrides: calculationScenarioOverridesSchema,
+    deltas: calculationScenarioDeltasSchema,
+  })
+  .strict();
+
+export const calculationCompletedResultSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    outputClassification: z.literal("confidential"),
+    featureId: z.literal("F4"),
+    status: z.literal("completed"),
+    calculationVersion: z.literal("excel-ta-v1"),
+    projectReference: controlledCalculationReferenceSchema,
+    runReference: controlledCalculationReferenceSchema,
+    workbookContentHash: sha256Schema,
+    worksheetSelection: calculationWorksheetSelectionSchema,
+    ...calculationPayloadShape,
+    scenarios: z.array(calculationScenarioResultEntrySchema).max(100),
+  })
+  .strict()
+  .superRefine((result, context) => {
+    validateCalculationPayload(result, context);
+
+    const scenarioIds = result.scenarios.map((scenario) => scenario.scenarioId);
+    if (new Set(scenarioIds).size !== scenarioIds.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "scenarioId must be unique",
+        path: ["scenarios"],
+      });
+    }
+  });
+
+export const calculationLegacyUnavailableResultSchema = z
   .object({
     contractVersion: contractVersionSchema,
     outputClassification: z.literal("confidential"),
@@ -1407,6 +1906,11 @@ export const calculationResultSchema = z
     ]),
   })
   .strict();
+
+export const calculationResultSchema = z.union([
+  calculationCompletedResultSchema,
+  calculationLegacyUnavailableResultSchema,
+]);
 
 const controlledReferenceSchema = z.string().min(1);
 
@@ -2161,8 +2665,22 @@ export type UnifiedExceptionResolutionV2Request = z.infer<typeof unifiedExceptio
 export type UnifiedExceptionResolutionV2Result = z.infer<typeof unifiedExceptionResolutionV2ResultSchema>;
 export type UnifiedExceptionResolutionRequest = UnifiedExceptionResolutionV2Request;
 export type UnifiedExceptionResolutionResult = UnifiedExceptionResolutionV2Result;
+export type CalculationUnavailableRequest = z.infer<typeof calculationUnavailableRequestSchema>;
 export type CalculationRequest = z.infer<typeof calculationRequestSchema>;
 export type CalculationResult = z.infer<typeof calculationResultSchema>;
+export type CalculationMethod = z.infer<typeof calculationMethodSchema>;
+export type CalculationCriticality = z.infer<typeof calculationCriticalitySchema>;
+export type CalculationScenarioOverride = z.infer<typeof calculationScenarioOverrideSchema>;
+export type CalculationRecommendation = z.infer<typeof calculationRecommendationSchema>;
+export type CalculationFactorSource = z.infer<typeof calculationFactorSourceSchema>;
+export type CalculationFactorInput = z.infer<typeof calculationFactorInputSchema>;
+export type CalculationFactorResult = z.infer<typeof calculationFactorResultSchema>;
+export type CalculationSystemResult = z.infer<typeof calculationSystemResultSchema>;
+export type CalculationCapabilityResult = z.infer<typeof calculationCapabilityResultSchema>;
+export type CalculationTraceRecord = z.infer<typeof calculationTraceRecordSchema>;
+export type CalculationCompletedPayload = z.infer<typeof calculationPayloadSchema>;
+export type CalculationCompletedResult = z.infer<typeof calculationCompletedResultSchema>;
+export type CalculationLegacyUnavailableResult = z.infer<typeof calculationLegacyUnavailableResultSchema>;
 export type DrawingGovernanceRequest = z.infer<typeof drawingGovernanceRequestSchema>;
 export type DrawingGovernanceResult = z.infer<typeof drawingGovernanceResultSchema>;
 export type InterpretationRequest = z.infer<typeof interpretationRequestSchema>;
