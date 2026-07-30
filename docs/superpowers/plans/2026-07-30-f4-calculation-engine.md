@@ -119,13 +119,13 @@ Run: `git add packages/contracts/src/contracts.ts packages/contracts/src/contrac
 - Modify: `packages/workbook-catalog/package.json`
 - Modify: `package-lock.json`
 
-- [ ] **Step 1: Install the normal CDF dependency.**
+- [x] **Step 1: Install the normal CDF dependency.**
 
 Run: `npm install @stdlib/stats-base-dists-normal-cdf -w @ai-assist/workbook-catalog`
 
 Expected: dependency appears in the workspace package and lock file.
 
-- [ ] **Step 2: Write failing kernel tests.**
+- [x] **Step 2: Write failing kernel tests.**
 
 Define normalized factors with source references and test:
 
@@ -148,13 +148,13 @@ expect(result.capability.status).toBe("FAIL");
 
 Add focused cases for all six distribution multipliers, negative nominal/asymmetric tolerance, zero RSS rejection, negative Cpk and contribution sum near one.
 
-- [ ] **Step 3: Run kernel tests and verify RED.**
+- [x] **Step 3: Run kernel tests and verify RED.**
 
 Run: `npm exec -- vitest run --workspace vitest.workspace.ts packages/workbook-catalog/src/calculation-kernel.test.ts`
 
 Expected: FAIL because the kernel module does not exist.
 
-- [ ] **Step 4: Implement the minimal pure kernel.**
+- [x] **Step 4: Implement the minimal pure kernel.**
 
 Export:
 
@@ -166,13 +166,13 @@ export function calculateToleranceAnalysis(input: NormalizedCalculationInput): K
 
 Use the approved distribution constants exactly. Compute factor mean with the template's sign-dependent formula, factor half-tolerance, factor sigma, WC sums, RSS, contributions, Cp/Cpk/Z, side and total DPM, out-of-spec ratio, yield and template-compatible status comparisons. Reject non-finite outputs, zero RSS and invalid specifications before division.
 
-- [ ] **Step 5: Run kernel tests and verify GREEN.**
+- [x] **Step 5: Run kernel tests and verify GREEN.**
 
 Run: `npm exec -- vitest run --workspace vitest.workspace.ts packages/workbook-catalog/src/calculation-kernel.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit the kernel slice.**
+- [x] **Step 6: Commit the kernel slice.**
 
 Run: `git add packages/workbook-catalog/src/calculation-kernel.ts packages/workbook-catalog/src/calculation-kernel.test.ts packages/workbook-catalog/package.json package-lock.json && git commit -m "feat(f4): add Excel-consistent calculation kernel"`
 
