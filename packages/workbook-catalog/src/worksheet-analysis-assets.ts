@@ -162,6 +162,8 @@ function sheetAssets(worksheet: OoxmlWorksheet, worksheetName: string, tolerance
       const rowCellsForTable = mappedColumns.map((column) => cells.get(cellKey(column.sourceColumn, sourceRow)));
       if (!rowExists && sourceRow > Math.max(...rows.keys())) break;
       if (rowCellsForTable.every((cell) => !cellValue(cell).trim())) break;
+      const factorCell = cells.get(cellKey(factorColumns[0]!.sourceColumn, sourceRow));
+      if (!cellValue(factorCell).trim()) continue;
       const fields: Record<string, unknown> = {};
       for (const [name, candidates] of mapped.entries()) {
         if (candidates.length !== 1) fields[name] = { status: "unavailable", reasonCode: "duplicate_mapping" };
@@ -176,7 +178,10 @@ function sheetAssets(worksheet: OoxmlWorksheet, worksheetName: string, tolerance
     factorTables.push({
       tableId: createHash("sha256").update(`${worksheetName}:${headerRow}`).digest("hex").slice(0, 16),
       headerRow,
-      dataRange: { startRow: headerRow + 1, endRow: headerRow + Math.max(dataRows.length, 1) },
+      dataRange: {
+        startRow: headerRow + 1,
+        endRow: (dataRows.at(-1) as { readonly sourceRow: number } | undefined)?.sourceRow ?? headerRow + 1,
+      },
       columns,
       rows: dataRows,
     });

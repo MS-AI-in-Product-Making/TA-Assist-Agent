@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import XLSX from "xlsx";
@@ -17,6 +17,13 @@ import {
   parseWorkbookSheetPathMap,
   worksheetNeedsComposedSnapshot,
 } from "./f1-composed-snapshot-detection.mjs";
+import {
+  cellActualText,
+  cellDisplayText,
+  injectLinksIntoFactorTableMarkdown,
+  maskBlankFactorTemplateRows,
+} from "./f1-dual-grid.mjs";
+import { resolveFeature1OutputLayout, safeName } from "./f1-output-layout.mjs";
 import { resolveFeature1Jobs } from "./f1-workbook-jobs.mjs";
 
 const configuredJobs = [
@@ -33,15 +40,7 @@ const configuredJobs = [
   },
 ];
 
-const outRoot = "test/demo-output/feature1-validation";
-const outSheetsRoot = path.join(outRoot, "sheets");
-mkdirSync(outRoot, { recursive: true });
-mkdirSync(outSheetsRoot, { recursive: true });
 const composedMode = (process.env.F1_COMPOSED_MODE ?? "auto").toLowerCase();
-
-function safeName(value) {
-  return value.replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, "-");
-}
 
 function toPosix(value) {
   return value.replace(/\\/g, "/");
@@ -51,11 +50,6 @@ function mdEscape(value) {
   return String(value ?? "")
     .replace(/\|/g, "\\|")
     .replace(/\r?\n/g, "<br>");
-}
-
-function mdLinkText(text, href) {
-  const safeText = String(text ?? "").replace(/\]/g, "\\]");
-  return `[${safeText}](${href})`;
 }
 
 function readJsonIfExists(jsonPath) {
@@ -134,14 +128,14 @@ function buildCaptureRange(worksheet) {
   return `${indexToCol(left)}${top}:${indexToCol(right)}${bottom}`;
 }
 
-function exportComposedSnapshots(workbookPath, workbookImageDir, captures) {
+function exportComposedSnapshots(workbookPath, workbookImageDir, captures, outputRoot) {
   if (!Array.isArray(captures) || captures.length === 0) {
     return new Map();
   }
 
   const scriptPath = path.resolve("scripts/export-worksheet-composed-snapshots.ps1");
   const composedDir = path.join(workbookImageDir, "composed");
-  const tmpDir = path.join(outRoot, "_tmp");
+  const tmpDir = path.join(outputRoot, "_tmp");
   mkdirSync(composedDir, { recursive: true });
   mkdirSync(tmpDir, { recursive: true });
 
@@ -224,21 +218,6 @@ function cellAddress(row, col) {
   return `${indexToCol(col)}${row}`;
 }
 
-function cellActualText(cell) {
-  if (!cell) return "";
-  if (cell.t === "e") {
-    return typeof cell.w === "string" ? cell.w.trim() : "";
-  }
-  if (cell.v === undefined || cell.v === null) return "";
-  return String(cell.v).trim();
-}
-
-function cellDisplayText(cell) {
-  if (!cell) return "";
-  if (typeof cell.w === "string" && cell.w.trim().length > 0) return cell.w.trim();
-  return cellActualText(cell);
-}
-
 function buildDualGrids(worksheetSheet, maxRow = 260) {
   const actualGrid = Array.from({ length: maxRow + 1 }, () => Array.from({ length: 27 }, () => ""));
   const displayGrid = Array.from({ length: maxRow + 1 }, () => Array.from({ length: 27 }, () => ""));
@@ -316,12 +295,12 @@ function isZeroPlaceholderRow(actualGrid, row, cols) {
   return hasAny && !hasText && !hasNonZero;
 }
 
-function chooseRows(actualGrid, fromRow, toRow, cols, filterZeroPlaceholder) {
+function chooseRows(actualGrid, fromRow, toRow, cols, filterZeroPlaceholder, includedBlankRows = new Set()) {
   const rows = [];
   for (let row = fromRow; row <= toRow; row += 1) {
     const hasAny = cols.some((col) => String(actualGrid[row][col] ?? "").trim().length > 0);
-    if (!hasAny) continue;
-    if (filterZeroPlaceholder && isZeroPlaceholderRow(actualGrid, row, cols)) continue;
+    if (!hasAny && !includedBlankRows.has(row)) continue;
+    if (filterZeroPlaceholder && !includedBlankRows.has(row) && isZeroPlaceholderRow(actualGrid, row, cols)) continue;
     rows.push(row);
   }
   return rows;
@@ -376,7 +355,14 @@ function buildDualWorksheetMarkdown(workbookFileName, worksheetName, worksheetSh
 
     const factorCols = getRangeColsByHeader(actualGrid, factorHeaderRow);
     const factorEnd = responseHeaderRow !== undefined ? responseHeaderRow - 1 : maxRow;
-    const factorRows = chooseRows(actualGrid, factorHeaderRow, factorEnd, factorCols, true);
+    const blankFactorRows = maskBlankFactorTemplateRows(
+      actualGrid,
+      displayGrid,
+      factorHeaderRow,
+      factorEnd,
+      factorCols,
+    );
+    const factorRows = chooseRows(actualGrid, factorHeaderRow, factorEnd, factorCols, true, blankFactorRows);
     renderDualGrid(lines, `Factor Table (Rows ${factorHeaderRow}-${factorEnd})`, factorCols, factorRows, actualGrid, displayGrid);
   }
 
@@ -392,43 +378,6 @@ function buildDualWorksheetMarkdown(workbookFileName, worksheetName, worksheetSh
     const suggestedCols = getRangeColsByRows(actualGrid, suggestedHeaderRow, suggestedEnd);
     const suggestedRows = chooseRows(actualGrid, suggestedHeaderRow, suggestedEnd, suggestedCols, false);
     renderDualGrid(lines, `Suggested Spec (Rows ${suggestedHeaderRow}-${suggestedEnd})`, suggestedCols, suggestedRows, actualGrid, displayGrid);
-  }
-
-  return lines.join("\n");
-}
-
-function injectLinksIntoFactorTableMarkdown(markdown, traceabilityRows) {
-  const byRow = new Map(traceabilityRows.map((item) => [Number(item.sourceRow), item]));
-  const lines = markdown.split(/\r?\n/);
-  let inFactorTable = false;
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index];
-    if (line.startsWith("## Factor Table")) {
-      inFactorTable = true;
-      continue;
-    }
-    if (inFactorTable && line.startsWith("## ") && !line.startsWith("## Factor Table")) {
-      inFactorTable = false;
-    }
-    if (!inFactorTable || !line.startsWith("|") || line.includes("|---")) continue;
-
-    const parts = line.split("|");
-    if (parts.length < 4) continue;
-    const rowNumber = Number(parts[1]?.trim());
-    if (!Number.isFinite(rowNumber)) continue;
-
-    const trace = byRow.get(rowNumber);
-    if (!trace) continue;
-
-    const link = trace.factorDescription?.imageLinkForMd ?? trace.target?.imageLinkForMd;
-    if (trace.factorDescription?.text && link) {
-      parts[2] = ` ${mdLinkText(trace.factorDescription.text, link)} `;
-    }
-    if (trace.partName?.text && link) {
-      parts[3] = ` ${mdLinkText(trace.partName.text, link)} `;
-    }
-    lines[index] = parts.join("|");
   }
 
   return lines.join("\n");
@@ -501,7 +450,8 @@ function summarizePages(pages) {
   }));
 }
 
-const jobs = resolveFeature1Jobs(process.argv.slice(2), configuredJobs)
+const cliArgs = process.argv.slice(2);
+const jobs = resolveFeature1Jobs(cliArgs, configuredJobs)
   .filter((job) => existsSync(job.workbookPath));
 if (jobs.length === 0) {
   throw new Error("No configured workbook exists for Feature 1 workflow.");
@@ -509,6 +459,13 @@ if (jobs.length === 0) {
 
 const generatedAt = new Date().toISOString();
 const runId = generatedAt.replace(/[:.]/g, "-");
+const outputLayout = resolveFeature1OutputLayout(cliArgs, runId);
+const outRoot = outputLayout.outRoot;
+const outSheetsRoot = path.join(outRoot, "sheets");
+if (outputLayout.resetOutputRoot) {
+  rmSync(outRoot, { recursive: true, force: true });
+}
+mkdirSync(outSheetsRoot, { recursive: true });
 const report = {
   contractVersion: "v1",
   feature: "F1",
@@ -578,7 +535,7 @@ for (const job of jobs) {
       captureRange: buildCaptureRange(worksheet),
       fileName: `${safeName(worksheet.worksheetName)}__composed.png`,
     }));
-  const composedByWorksheet = exportComposedSnapshots(job.workbookPath, workbookImageDir, capturePlan);
+  const composedByWorksheet = exportComposedSnapshots(job.workbookPath, workbookImageDir, capturePlan, outRoot);
 
   const worksheetOutputs = [];
   for (const worksheet of parallelAssets.assets.worksheets) {
@@ -800,19 +757,22 @@ for (const workbook of report.workbooks) {
   finalMd.push("");
 }
 
-const jsonPath = path.join(outRoot, `f1-strict-workflow-${runId}.json`);
-const mdPath = path.join(outRoot, `f1-strict-workflow-${runId}.md`);
-const latestJsonPath = path.join(outRoot, "latest.json");
-const latestMdPath = path.join(outRoot, "latest.md");
+const jsonPath = path.join(outRoot, outputLayout.reportJsonName);
+const mdPath = path.join(outRoot, outputLayout.reportMdName);
 
 writeFileSync(jsonPath, JSON.stringify(report, null, 2));
 writeFileSync(mdPath, finalMd.join("\n"));
-writeFileSync(latestJsonPath, JSON.stringify(report, null, 2));
-writeFileSync(latestMdPath, finalMd.join("\n"));
 
 console.log("Feature 1 strict workflow report generated:");
 console.log(toPosix(mdPath));
 console.log(toPosix(jsonPath));
-console.log("Latest:");
-console.log(toPosix(latestMdPath));
-console.log(toPosix(latestJsonPath));
+
+if (outputLayout.mode === "batch") {
+  const latestJsonPath = path.join(outRoot, outputLayout.latestJsonName);
+  const latestMdPath = path.join(outRoot, outputLayout.latestMdName);
+  writeFileSync(latestJsonPath, JSON.stringify(report, null, 2));
+  writeFileSync(latestMdPath, finalMd.join("\n"));
+  console.log("Latest:");
+  console.log(toPosix(latestMdPath));
+  console.log(toPosix(latestJsonPath));
+}

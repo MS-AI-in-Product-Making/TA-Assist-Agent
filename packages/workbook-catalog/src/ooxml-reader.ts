@@ -8,6 +8,7 @@ export interface OoxmlImage { readonly contentHash: string; readonly mediaType: 
 export interface OoxmlWorksheet { readonly name: string; readonly partName: string; readonly cells: readonly OoxmlCell[]; readonly images: readonly OoxmlImage[]; }
 export interface OoxmlWorkbook { readonly worksheets: ReadonlyMap<string, OoxmlWorksheet>; readonly worksheetNames: ReadonlySet<string>; }
 export interface OoxmlCellWindow { readonly maxRow: number; readonly maxColumn: string; }
+export interface OoxmlReadOptions { readonly skipInvalidWorksheets?: boolean; }
 
 const ARCHIVE_SUMMARY = "Workbook-catalog archive cannot be processed.";
 export const MAX_DOM_NODES_PER_PART = 50_000;
@@ -343,6 +344,7 @@ function readImages(document: Document, worksheetPart: string, parts: ReadonlyMa
   if (!drawingRels) throw archiveError();
   const drawingRelationships = relationships(parseXml(drawingRels), drawing.target);
   const images: OoxmlImage[] = [];
+  const imageTargets = new Set<string>();
   const anchors = Array.from(drawingDocument.documentElement.childNodes)
     .filter((node): node is Element => node.nodeType === 1)
     .filter((node) => node.namespaceURI === SPREADSHEET_DRAWING_NAMESPACE)
@@ -353,7 +355,8 @@ function readImages(document: Document, worksheetPart: string, parts: ReadonlyMa
     const coordinates = from && to ? { from, to } : undefined;
     for (const id of imageIds(anchor)) {
       const relationship = drawingRelationships.get(id);
-      if (!relationship || relationship.type !== `${family.officeRelationships}/image` || !parts.has(relationship.target) || images.length >= MAX_IMAGES_PER_WORKSHEET || total.value >= MAX_IMAGES_PER_WORKBOOK) throw archiveError();
+      if (!relationship || relationship.type !== `${family.officeRelationships}/image` || !parts.has(relationship.target) || imageTargets.has(relationship.target) || images.length >= MAX_IMAGES_PER_WORKSHEET || total.value >= MAX_IMAGES_PER_WORKBOOK) throw archiveError();
+      imageTargets.add(relationship.target);
       const bytes = parts.get(relationship.target)!;
       images.push({ contentHash: createHash("sha256").update(bytes).digest("hex"), mediaType: imageMediaType(relationship.target), byteLength: bytes.byteLength, sourcePart: relationship.target, drawingSourcePart: drawing.target, ...(coordinates ? { anchor: coordinates } : {}), bytes: bytes.slice() });
       total.value += 1;
@@ -362,7 +365,7 @@ function readImages(document: Document, worksheetPart: string, parts: ReadonlyMa
   return images;
 }
 
-export function readOoxmlWorkbook(bytes: Uint8Array, worksheetNames?: readonly string[], includeImages = true, cellWindow?: OoxmlCellWindow): OoxmlWorkbook {
+export function readOoxmlWorkbook(bytes: Uint8Array, worksheetNames?: readonly string[], includeImages = true, cellWindow?: OoxmlCellWindow, options?: OoxmlReadOptions): OoxmlWorkbook {
   try {
     const parts = readSafeZip(bytes);
     const workbook = parseXml(parts.get("xl/workbook.xml")!);
@@ -400,13 +403,17 @@ export function readOoxmlWorkbook(bytes: Uint8Array, worksheetNames?: readonly s
       if (!name || worksheets.has(name) || !partName || !parts.has(partName)) throw archiveError();
       workbookWorksheetNames.add(name);
       if (requestedWorksheets && !requestedWorksheets.has(name)) continue;
-      const worksheet = parseXml(parts.get(partName)!, worksheetDomBudget);
-      worksheets.set(name, {
-        name,
-        partName,
-        cells: readCells(worksheet, strings, family, cellBudget, cellWindow),
-        images: includeImages ? readImages(worksheet, partName, parts, family, imageBudget) : [],
-      });
+      try {
+        const worksheet = parseXml(parts.get(partName)!, worksheetDomBudget);
+        worksheets.set(name, {
+          name,
+          partName,
+          cells: readCells(worksheet, strings, family, cellBudget, cellWindow),
+          images: includeImages ? readImages(worksheet, partName, parts, family, imageBudget) : [],
+        });
+      } catch (error) {
+        if (!options?.skipInvalidWorksheets) throw error;
+      }
     }
     return { worksheets, worksheetNames: workbookWorksheetNames };
   } catch (error) {
