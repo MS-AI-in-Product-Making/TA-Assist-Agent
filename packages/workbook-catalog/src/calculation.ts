@@ -3,8 +3,11 @@ import {
   calculationResultSchema,
   createTypedError,
   distributionSchema,
+  exceptionResolutionResultSchema,
+  requiredFieldCheckResultSchema,
   type CalculationRequest,
   type CalculationResult,
+  worksheetAnalysisAssetsResultSchema,
 } from "@ai-assist/contracts";
 import {
   CALCULATION_VERSION,
@@ -28,10 +31,17 @@ type AvailableWorksheetField = Extract<WorksheetField, { readonly status: "avail
 interface NormalizedFactorEntry {
   readonly factor: NormalizedFactor;
   readonly sourceCells: readonly string[];
-  readonly sourceCellsByField: Readonly<Record<"factorName" | "nominalValue" | "upperTolerance" | "lowerTolerance" | "longTermSafetyFactor" | "standardDeviation" | "distribution" | "unit", string>>;
+  readonly sourceCellsByField: Readonly<Record<"nominalValue" | "upperTolerance" | "lowerTolerance" | "longTermSafetyFactor" | "standardDeviation" | "distribution", string>>;
 }
 
-function requestError(summary: string, code: "validation_error" | "policy_denied" = "validation_error"): Error {
+type CalculationRequestErrorCode =
+  | "validation_error"
+  | "policy_denied"
+  | "evidence_mismatch"
+  | "prerequisite_not_ready"
+  | "calculation_not_possible";
+
+function requestError(summary: string, code: CalculationRequestErrorCode = "validation_error"): Error {
   return createTypedError({
     code,
     summary,
@@ -42,7 +52,7 @@ function requestError(summary: string, code: "validation_error" | "policy_denied
 
 function completionError(): Error {
   return createTypedError({
-    code: "validation_error",
+    code: "calculation_not_possible",
     summary: COMPLETION_SUMMARY,
     suggestedAction: COMPLETION_ACTION,
     affectedInputReferences: [CALCULATION_REFERENCE],
@@ -86,6 +96,40 @@ function unique(sourceCells: readonly string[]): string[] {
   return [...new Set(sourceCells)];
 }
 
+function trimNonBlank(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function classifyInvalidRequestError(request: unknown): CalculationRequestErrorCode {
+  if (!request || typeof request !== "object" || Array.isArray(request)) {
+    return "validation_error";
+  }
+
+  const topLevel = request as Record<string, unknown>;
+  const worksheetAnalysisAssets = worksheetAnalysisAssetsResultSchema.safeParse(topLevel.worksheetAnalysisAssets);
+  const requiredFieldCheck = requiredFieldCheckResultSchema.safeParse(topLevel.requiredFieldCheck);
+  const exceptionResolution = exceptionResolutionResultSchema.safeParse(topLevel.exceptionResolution);
+
+  if (!worksheetAnalysisAssets.success || !requiredFieldCheck.success || !exceptionResolution.success) {
+    return "validation_error";
+  }
+
+  const workbookHash = worksheetAnalysisAssets.data.workbook.contentHash;
+  if (requiredFieldCheck.data.workbookContentHash !== workbookHash
+    || exceptionResolution.data.workbookContentHash !== workbookHash) {
+    return "evidence_mismatch";
+  }
+
+  if (requiredFieldCheck.data.status === "blocked"
+    || exceptionResolution.data.status === "pendingExceptions") {
+    return "prerequisite_not_ready";
+  }
+
+  return "validation_error";
+}
+
 function normalizeFactorRow(
   row: WorksheetRow,
   worksheetName: string,
@@ -98,7 +142,7 @@ function normalizeFactorRow(
   const longTermSafetyFactorField = asAvailableField(row.fields.longTermSafetyFactor);
   const standardDeviationField = asAvailableField(row.fields.standardDeviation);
   const distributionField = asAvailableField(row.fields.distribution);
-  const unitField = asAvailableField(row.fields.unit);
+  const unitField = row.fields.unit;
 
   const factorName = asNonBlankText(factorNameField);
   const nominalValue = asFiniteNumber(nominalValueField);
@@ -112,33 +156,35 @@ function normalizeFactorRow(
     throw requestError(REQUEST_SUMMARY);
   }
 
-  const numericUnits = [
-    nominalValueField.unit?.trim(),
-    upperToleranceField.unit?.trim(),
-    lowerToleranceField.unit?.trim(),
-    longTermSafetyFactorField.unit?.trim(),
-    standardDeviationField.unit?.trim(),
-  ].filter((value): value is string => typeof value === "string" && value.length > 0);
+  const numericDeclarations = [
+    trimNonBlank(nominalValueField.unit),
+    trimNonBlank(upperToleranceField.unit),
+    trimNonBlank(lowerToleranceField.unit),
+    trimNonBlank(longTermSafetyFactorField.unit),
+    trimNonBlank(standardDeviationField.unit),
+  ].filter((value): value is string => value !== undefined);
+  const explicitDeclarations = unitField && unitField.status === "available"
+    ? [trimNonBlank(unitField.rawText), trimNonBlank(unitField.unit)].filter((value): value is string => value !== undefined)
+    : [];
+  const allUnitDeclarations = [...numericDeclarations, ...explicitDeclarations];
+  const distinctUnits = [...new Set(allUnitDeclarations)];
 
-  const distinctNumericUnits = [...new Set(numericUnits)];
-  if (distinctNumericUnits.length > 1) {
+  if (distinctUnits.length > 1) {
     throw requestError(REQUEST_SUMMARY);
   }
 
-  const unit = (distinctNumericUnits[0] ?? asNonBlankText(unitField)).trim();
+  const unit = distinctUnits[0];
   if (!unit) {
     throw requestError(REQUEST_SUMMARY);
   }
 
   const sourceCellsByField = {
-    factorName: factorNameField.sourceCell,
     nominalValue: nominalValueField.sourceCell,
     upperTolerance: upperToleranceField.sourceCell,
     lowerTolerance: lowerToleranceField.sourceCell,
     longTermSafetyFactor: longTermSafetyFactorField.sourceCell,
     standardDeviation: standardDeviationField.sourceCell,
     distribution: distributionField.sourceCell,
-    unit: unitField.sourceCell,
   } as const;
 
   return {
@@ -160,7 +206,7 @@ function normalizeFactorRow(
       },
     },
     sourceCellsByField,
-    sourceCells: unique(Object.values(sourceCellsByField)),
+    sourceCells: unique(Object.values(sourceCellsByField).filter((cell): cell is string => typeof cell === "string" && cell.length > 0)),
   };
 }
 
@@ -168,6 +214,27 @@ function buildTraceRecords(
   factors: readonly NormalizedFactorEntry[],
 ): CalculationCompletedResult["traceRecords"] {
   const records: CalculationCompletedResult["traceRecords"] = [];
+  const sigmaDependencyCells = unique(factors.flatMap((factor) => [
+    factor.sourceCellsByField.upperTolerance,
+    factor.sourceCellsByField.lowerTolerance,
+    factor.sourceCellsByField.longTermSafetyFactor,
+    factor.sourceCellsByField.standardDeviation,
+    factor.sourceCellsByField.distribution,
+  ]));
+  const factorMeanInputCells = unique(factors.map((factor) => factor.sourceCellsByField.nominalValue));
+  const upperToleranceCells = factors.map((factor) => factor.sourceCellsByField.upperTolerance);
+  const lowerToleranceCells = factors.map((factor) => factor.sourceCellsByField.lowerTolerance);
+  const requestSpecIdentifiers = [
+    "request:systemSpecification.lowerSpecLimit",
+    "request:systemSpecification.upperSpecLimit",
+    "request:systemSpecification.targetSigmaLevel",
+    "request:systemSpecification.targetCpk",
+  ];
+  const capabilityBaseDependencies = unique([
+    ...requestSpecIdentifiers,
+    "system.mean",
+    "system.rssSigma",
+  ]);
 
   for (const [index, factor] of factors.entries()) {
     records.push(
@@ -175,7 +242,7 @@ function buildTraceRecords(
         outputField: `factors[${index}].mean`,
         formulaVersion: CALCULATION_VERSION,
         formulaId: "factor-mean-v1",
-        sourceCells: [...factor.sourceCells],
+        sourceCells: [factor.sourceCellsByField.nominalValue],
       },
       {
         outputField: `factors[${index}].halfTolerance`,
@@ -199,111 +266,107 @@ function buildTraceRecords(
         outputField: `factors[${index}].contribution`,
         formulaVersion: CALCULATION_VERSION,
         formulaId: "contribution-v1",
-        sourceCells: [factor.sourceCellsByField.standardDeviation],
+        sourceCells: sigmaDependencyCells,
       },
     );
   }
-
-  const aggregateSourceCells = unique(factors.flatMap((factor) => factor.sourceCells));
-  const capabilitySourceCells = [
-    ...aggregateSourceCells,
-    "systemSpecification.lowerSpecLimit",
-    "systemSpecification.upperSpecLimit",
-    "systemSpecification.targetSigmaLevel",
-    "systemSpecification.targetCpk",
-    "systemSpecification.additionalMeanShift",
-  ];
 
   records.push(
     {
       outputField: "system.mean",
       formulaVersion: CALCULATION_VERSION,
       formulaId: "system-mean-v1",
-      sourceCells: capabilitySourceCells,
+      sourceCells: [...factorMeanInputCells, "request:systemSpecification.additionalMeanShift"],
     },
     {
       outputField: "system.worstCaseUpper",
       formulaVersion: CALCULATION_VERSION,
       formulaId: "worst-case-v1",
-      sourceCells: factors.map((factor) => factor.sourceCellsByField.upperTolerance),
+      sourceCells: upperToleranceCells,
     },
     {
       outputField: "system.worstCaseLower",
       formulaVersion: CALCULATION_VERSION,
       formulaId: "worst-case-v1",
-      sourceCells: factors.map((factor) => factor.sourceCellsByField.lowerTolerance),
+      sourceCells: lowerToleranceCells,
     },
     {
       outputField: "system.rssSigma",
       formulaVersion: CALCULATION_VERSION,
       formulaId: "rss-v1",
-      sourceCells: factors.map((factor) => factor.sourceCellsByField.standardDeviation),
+      sourceCells: sigmaDependencyCells,
     },
     {
       outputField: "capability.cp",
       formulaVersion: CALCULATION_VERSION,
       formulaId: "cp-v1",
-      sourceCells: capabilitySourceCells,
+      sourceCells: capabilityBaseDependencies,
     },
     {
       outputField: "capability.lowerCpk",
       formulaVersion: CALCULATION_VERSION,
       formulaId: "cpk-lower-v1",
-      sourceCells: capabilitySourceCells,
+      sourceCells: capabilityBaseDependencies,
     },
     {
       outputField: "capability.upperCpk",
       formulaVersion: CALCULATION_VERSION,
       formulaId: "cpk-upper-v1",
-      sourceCells: capabilitySourceCells,
+      sourceCells: capabilityBaseDependencies,
     },
     {
       outputField: "capability.cpk",
       formulaVersion: CALCULATION_VERSION,
       formulaId: "cpk-v1",
-      sourceCells: ["capability.lowerCpk", "capability.upperCpk"],
+      sourceCells: unique([...capabilityBaseDependencies, "capability.lowerCpk", "capability.upperCpk"]),
     },
     {
       outputField: "capability.lowerZ",
       formulaVersion: CALCULATION_VERSION,
       formulaId: "z-lower-v1",
-      sourceCells: ["capability.lowerCpk"],
+      sourceCells: unique([...capabilityBaseDependencies, "capability.lowerCpk"]),
     },
     {
       outputField: "capability.upperZ",
       formulaVersion: CALCULATION_VERSION,
       formulaId: "z-upper-v1",
-      sourceCells: ["capability.upperCpk"],
+      sourceCells: unique([...capabilityBaseDependencies, "capability.upperCpk"]),
     },
     {
       outputField: "capability.lowerDpm",
       formulaVersion: CALCULATION_VERSION,
       formulaId: "dpm-lower-v1",
-      sourceCells: ["capability.lowerZ"],
+      sourceCells: unique([...capabilityBaseDependencies, "capability.lowerZ"]),
     },
     {
       outputField: "capability.upperDpm",
       formulaVersion: CALCULATION_VERSION,
       formulaId: "dpm-upper-v1",
-      sourceCells: ["capability.upperZ"],
+      sourceCells: unique([...capabilityBaseDependencies, "capability.upperZ"]),
     },
     {
       outputField: "capability.totalDpm",
       formulaVersion: CALCULATION_VERSION,
       formulaId: "dpm-total-v1",
-      sourceCells: ["capability.lowerDpm", "capability.upperDpm"],
+      sourceCells: unique([...capabilityBaseDependencies, "capability.lowerDpm", "capability.upperDpm"]),
+    },
+    {
+      outputField: "capability.outOfSpecRatio",
+      formulaVersion: CALCULATION_VERSION,
+      formulaId: "dpm-total-v1",
+      sourceCells: unique([...capabilityBaseDependencies, "capability.totalDpm"]),
     },
     {
       outputField: "capability.yield",
       formulaVersion: CALCULATION_VERSION,
       formulaId: "yield-v1",
-      sourceCells: ["capability.totalDpm"],
+      sourceCells: unique([...capabilityBaseDependencies, "capability.outOfSpecRatio"]),
     },
     {
       outputField: "capability.status",
       formulaVersion: CALCULATION_VERSION,
       formulaId: "status-v1",
-      sourceCells: ["capability.cpk", "systemSpecification.targetCpk"],
+      sourceCells: unique([...capabilityBaseDependencies, "capability.cpk"]),
     },
   );
 
@@ -430,7 +493,7 @@ export function createCalculation(request: unknown): CalculationResult {
 
   const parsedRequest = calculationRequestSchema.safeParse(request);
   if (!parsedRequest.success) {
-    throw requestError(REQUEST_SUMMARY);
+    throw requestError(REQUEST_SUMMARY, classifyInvalidRequestError(request));
   }
 
   if (parsedRequest.data.scenarioOverrides.length > 0) {

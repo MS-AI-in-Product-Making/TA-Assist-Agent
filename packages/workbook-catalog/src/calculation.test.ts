@@ -133,6 +133,13 @@ function baseRequest(factorCount = 1) {
 }
 
 function expectValidationError(action: () => unknown): void {
+  expectTypedErrorCode(action, "validation_error");
+}
+
+function expectTypedErrorCode(
+  action: () => unknown,
+  code: "validation_error" | "policy_denied" | "evidence_mismatch" | "prerequisite_not_ready" | "calculation_not_possible",
+): void {
   let error: unknown;
   try {
     action();
@@ -141,7 +148,7 @@ function expectValidationError(action: () => unknown): void {
   }
 
   expect(error).toMatchObject({
-    code: "validation_error",
+    code,
     affectedInputReferences: ["calculation-request-v1"],
   });
 }
@@ -216,27 +223,94 @@ describe("createCalculation", () => {
   });
 
   it("denies public classification before schema parsing nested payload", () => {
-    let error: unknown;
-
-    try {
-      createCalculation({
-        ...baseRequest(1),
-        inputClassification: "public",
-        worksheetAnalysisAssets: "not-a-valid-object",
-      });
-    } catch (caught) {
-      error = caught;
-    }
-
-    expect(error).toMatchObject({ code: "policy_denied", affectedInputReferences: ["calculation-request-v1"] });
+    expectTypedErrorCode(() => createCalculation({
+      ...baseRequest(1),
+      inputClassification: "public",
+      worksheetAnalysisAssets: "not-a-valid-object",
+    }), "policy_denied");
   });
 
-  it("returns fixed validation errors for malformed payload, hash mismatch, blocked/pending prerequisites and missing selection", () => {
+  it("classifies malformed payload and selection misses as validation_error", () => {
     expectValidationError(() => createCalculation({ ...baseRequest(1), worksheetSelection: { worksheetName: "Analysis-A", tableId: "missing-table" } }));
-    expectValidationError(() => createCalculation({ ...baseRequest(1), requiredFieldCheck: { ...baseRequest(1).requiredFieldCheck, workbookContentHash: "b".repeat(64) } }));
-    expectValidationError(() => createCalculation({ ...baseRequest(1), requiredFieldCheck: { ...baseRequest(1).requiredFieldCheck, status: "blocked", blockingIssues: [{ issueCode: "factor_table_has_no_rows", worksheetName: "Analysis-A", tableId: "table-a" }], summary: { ...baseRequest(1).requiredFieldCheck.summary, blockingIssueCount: 1 } } }));
-    expectValidationError(() => createCalculation({ ...baseRequest(1), exceptionResolution: { ...baseRequest(1).exceptionResolution, status: "pendingExceptions", readyToContinue: false, pendingExceptions: [{ signalRef: "sig-1", reasonCode: "missing_candidate", snapshot: { signalKind: "tolerance_out_of_library", worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 2, factorName: "factor-1", signal: { status: "out_of_library", totalTolerance: 1, unit: "mm" } } }], summary: { actionableSignalCount: 1, acceptedExceptionCount: 0, pendingExceptionCount: 1, invalidCandidateCount: 0 } } }));
+    expectValidationError(() => createCalculation({
+      ...baseRequest(1),
+      requiredFieldCheck: "not-a-schema-valid-result",
+      exceptionResolution: { ...baseRequest(1).exceptionResolution, workbookContentHash: "b".repeat(64) },
+    }));
     expectValidationError(() => createCalculation({ broken: true }));
+  });
+
+  it("classifies constituent hash mismatch as evidence_mismatch", () => {
+    expectTypedErrorCode(() => createCalculation({
+      ...baseRequest(1),
+      requiredFieldCheck: { ...baseRequest(1).requiredFieldCheck, workbookContentHash: "b".repeat(64) },
+    }), "evidence_mismatch");
+
+    expectTypedErrorCode(() => createCalculation({
+      ...baseRequest(1),
+      exceptionResolution: { ...baseRequest(1).exceptionResolution, workbookContentHash: "c".repeat(64) },
+    }), "evidence_mismatch");
+  });
+
+  it("classifies ready-state blockers as prerequisite_not_ready", () => {
+    expectTypedErrorCode(() => createCalculation({
+      ...baseRequest(1),
+      requiredFieldCheck: {
+        ...baseRequest(1).requiredFieldCheck,
+        status: "blocked",
+        blockingIssues: [{ issueCode: "factor_table_has_no_rows", worksheetName: "Analysis-A", tableId: "table-a" }],
+        summary: { ...baseRequest(1).requiredFieldCheck.summary, blockingIssueCount: 1 },
+      },
+    }), "prerequisite_not_ready");
+
+    expectTypedErrorCode(() => createCalculation({
+      ...baseRequest(1),
+      exceptionResolution: {
+        ...baseRequest(1).exceptionResolution,
+        status: "pendingExceptions",
+        readyToContinue: false,
+        pendingExceptions: [{
+          signalRef: "sig-1",
+          reasonCode: "missing_candidate",
+          snapshot: {
+            signalKind: "tolerance_out_of_library",
+            worksheetName: "Analysis-A",
+            tableId: "table-a",
+            sourceRow: 2,
+            factorName: "factor-1",
+            signal: { status: "out_of_library", totalTolerance: 1, unit: "mm" },
+          },
+        }],
+        summary: {
+          actionableSignalCount: 1,
+          acceptedExceptionCount: 0,
+          pendingExceptionCount: 1,
+          invalidCandidateCount: 0,
+        },
+      },
+    }), "prerequisite_not_ready");
+  });
+
+  it("applies classification priority: policy > malformed constituent > evidence mismatch > prerequisite > generic validation", () => {
+    const blockedRequest = {
+      ...baseRequest(1),
+      requiredFieldCheck: {
+        ...baseRequest(1).requiredFieldCheck,
+        status: "blocked" as const,
+        blockingIssues: [{ issueCode: "factor_table_has_no_rows" as const, worksheetName: "Analysis-A", tableId: "table-a" }],
+        summary: { ...baseRequest(1).requiredFieldCheck.summary, blockingIssueCount: 1 },
+      },
+      exceptionResolution: { ...baseRequest(1).exceptionResolution, workbookContentHash: "d".repeat(64) },
+    };
+
+    expectTypedErrorCode(() => createCalculation({ ...blockedRequest, inputClassification: "public" }), "policy_denied");
+    expectTypedErrorCode(() => createCalculation({ ...blockedRequest, requiredFieldCheck: "malformed" }), "validation_error");
+    expectTypedErrorCode(() => createCalculation(blockedRequest), "evidence_mismatch");
+    expectTypedErrorCode(() => createCalculation({
+      ...blockedRequest,
+      exceptionResolution: baseRequest(1).exceptionResolution,
+    }), "prerequisite_not_ready");
+    expectTypedErrorCode(() => createCalculation({ ...baseRequest(1), worksheetSelection: { worksheetName: "Analysis-A", tableId: "missing-table" } }), "validation_error");
   });
 
   it("rejects non-empty scenarios with validation_error until Task4", () => {
@@ -255,7 +329,7 @@ describe("createCalculation", () => {
     }));
   });
 
-  it("rejects unavailable, non-finite, unknown distribution, missing unit and unit mismatch rows", () => {
+  it("rejects unavailable, non-finite and unknown distribution rows", () => {
     const request = baseRequest(1);
 
     expectValidationError(() => createCalculation({
@@ -318,6 +392,11 @@ describe("createCalculation", () => {
       },
     }));
 
+  });
+
+  it("rejects rows when no non-empty unit declaration exists", () => {
+    const request = baseRequest(1);
+
     expectValidationError(() => createCalculation({
       ...request,
       worksheetAnalysisAssets: {
@@ -331,10 +410,10 @@ describe("createCalculation", () => {
               fields: {
                 ...factorFields(0),
                 unit: availableText("", "Analysis-A!H2"),
-                nominalValue: { ...availableNumber("0", "Analysis-A!B2", 0), unit: undefined },
+                nominalValue: { ...availableNumber("0", "Analysis-A!B2", 0), unit: "   " },
                 upperTolerance: { ...availableNumber("1", "Analysis-A!C2", 1), unit: undefined },
                 lowerTolerance: { ...availableNumber("-1", "Analysis-A!D2", -1), unit: undefined },
-                longTermSafetyFactor: { ...availableNumber("1", "Analysis-A!E2", 1), unit: undefined },
+                longTermSafetyFactor: { ...availableNumber("1", "Analysis-A!E2", 1), unit: "" },
                 standardDeviation: { ...availableNumber("1", "Analysis-A!F2", 1), unit: undefined },
               },
             }],
@@ -342,6 +421,10 @@ describe("createCalculation", () => {
         }],
       },
     }));
+  });
+
+  it("rejects rows when explicit unit conflicts with numeric-unit declarations after trim", () => {
+    const request = baseRequest(1);
 
     expectValidationError(() => createCalculation({
       ...request,
@@ -355,8 +438,10 @@ describe("createCalculation", () => {
               sourceRow: 2,
               fields: {
                 ...factorFields(0),
-                nominalValue: availableNumber("0", "Analysis-A!B2", 0, "mm"),
-                upperTolerance: availableNumber("1", "Analysis-A!C2", 1, "inch"),
+                unit: availableText(" inch ", "Analysis-A!H2"),
+                nominalValue: availableNumber("0", "Analysis-A!B2", 0, " mm "),
+                upperTolerance: availableNumber("1", "Analysis-A!C2", 1, "mm"),
+                lowerTolerance: availableNumber("-1", "Analysis-A!D2", -1, " mm"),
               },
             }],
           }],
@@ -365,7 +450,7 @@ describe("createCalculation", () => {
     }));
   });
 
-  it("maps kernel zero RSS failure to fixed validation_error without leaking sensitive text", () => {
+  it("maps kernel zero RSS failure to calculation_not_possible without leaking sensitive text", () => {
     const marker = "sensitive-factor-name-raw-marker";
     const request = baseRequest(1);
     const mutated = deepClone(request);
@@ -381,7 +466,7 @@ describe("createCalculation", () => {
     }
 
     expect(error).toMatchObject({
-      code: "validation_error",
+      code: "calculation_not_possible",
       summary: "Calculation cannot be completed.",
       affectedInputReferences: ["calculation-request-v1"],
     });
@@ -390,6 +475,66 @@ describe("createCalculation", () => {
     expect(typed.message ?? "").not.toContain(marker);
     expect(typed.suggestedAction ?? "").not.toContain(marker);
     expect((typed.affectedInputReferences ?? []).join(" ")).not.toContain(marker);
+  });
+
+  it("emits complete trace coverage and expected dependency source cells for computed outputs", () => {
+    const result = createCalculation(baseRequest(2));
+
+    expect(result.status).toBe("completed");
+    if (result.status !== "completed") return;
+
+    const outputFields = new Set(result.traceRecords.map((record) => record.outputField));
+    const expectedOutputFields = new Set([
+      "factors[0].mean",
+      "factors[0].halfTolerance",
+      "factors[0].sigma",
+      "factors[0].contribution",
+      "factors[1].mean",
+      "factors[1].halfTolerance",
+      "factors[1].sigma",
+      "factors[1].contribution",
+      "system.mean",
+      "system.worstCaseUpper",
+      "system.worstCaseLower",
+      "system.rssSigma",
+      "capability.cp",
+      "capability.lowerCpk",
+      "capability.upperCpk",
+      "capability.cpk",
+      "capability.lowerZ",
+      "capability.upperZ",
+      "capability.lowerDpm",
+      "capability.upperDpm",
+      "capability.totalDpm",
+      "capability.outOfSpecRatio",
+      "capability.yield",
+      "capability.status",
+    ]);
+
+    expect(outputFields).toEqual(expectedOutputFields);
+
+    const expectedSigmaInputs = new Set([
+      "Analysis-A!C2",
+      "Analysis-A!D2",
+      "Analysis-A!E2",
+      "Analysis-A!F2",
+      "Analysis-A!G2",
+      "Analysis-A!C3",
+      "Analysis-A!D3",
+      "Analysis-A!E3",
+      "Analysis-A!F3",
+      "Analysis-A!G3",
+    ]);
+
+    const contribution0 = result.traceRecords.find((record) => record.outputField === "factors[0].contribution");
+    const rss = result.traceRecords.find((record) => record.outputField === "system.rssSigma");
+    const outOfSpecRatio = result.traceRecords.find((record) => record.outputField === "capability.outOfSpecRatio");
+    expect(contribution0).toBeDefined();
+    expect(rss).toBeDefined();
+    expect(outOfSpecRatio).toBeDefined();
+    expect(new Set(contribution0?.sourceCells ?? [])).toEqual(expectedSigmaInputs);
+    expect(new Set(rss?.sourceCells ?? [])).toEqual(expectedSigmaInputs);
+    expect(outOfSpecRatio?.sourceCells).toContain("capability.totalDpm");
   });
 
   it("does not expose workbook bytes or exception rationale in completed output", () => {

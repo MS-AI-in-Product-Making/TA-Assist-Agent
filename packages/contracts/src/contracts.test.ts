@@ -118,6 +118,9 @@ describe("Phase 0 contracts", () => {
 
   it("allows only the supported error codes", () => {
     expect(errorCodeSchema.parse("transient_error")).toBe("transient_error");
+    expect(errorCodeSchema.parse("evidence_mismatch")).toBe("evidence_mismatch");
+    expect(errorCodeSchema.parse("prerequisite_not_ready")).toBe("prerequisite_not_ready");
+    expect(errorCodeSchema.parse("calculation_not_possible")).toBe("calculation_not_possible");
     expect(() => errorCodeSchema.parse("unknown_error")).toThrow();
   });
 
