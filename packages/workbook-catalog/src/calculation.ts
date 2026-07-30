@@ -127,6 +127,33 @@ function classifyInvalidRequestError(request: unknown): CalculationRequestErrorC
     return "prerequisite_not_ready";
   }
 
+  const systemSpecification = topLevel.systemSpecification;
+  if (systemSpecification && typeof systemSpecification === "object" && !Array.isArray(systemSpecification)) {
+    const system = systemSpecification as Record<string, unknown>;
+    const designNominal = system.designNominal;
+    const lowerSpecLimit = system.lowerSpecLimit;
+    const upperSpecLimit = system.upperSpecLimit;
+    const targetSigmaLevel = system.targetSigmaLevel;
+    const targetCpk = system.targetCpk;
+    const additionalMeanShift = system.additionalMeanShift;
+
+    const allFinite = [
+      designNominal,
+      lowerSpecLimit,
+      upperSpecLimit,
+      targetSigmaLevel,
+      targetCpk,
+      additionalMeanShift,
+    ].every((value) => typeof value === "number" && Number.isFinite(value));
+
+    if (allFinite
+      && ((upperSpecLimit as number) <= (lowerSpecLimit as number)
+        || (targetSigmaLevel as number) <= 0
+        || (targetCpk as number) <= 0)) {
+      return "calculation_not_possible";
+    }
+  }
+
   return "validation_error";
 }
 
@@ -214,6 +241,9 @@ function buildTraceRecords(
   factors: readonly NormalizedFactorEntry[],
 ): CalculationCompletedResult["traceRecords"] {
   const records: CalculationCompletedResult["traceRecords"] = [];
+  const nominalCells = factors.map((factor) => factor.sourceCellsByField.nominalValue);
+  const upperToleranceCells = factors.map((factor) => factor.sourceCellsByField.upperTolerance);
+  const lowerToleranceCells = factors.map((factor) => factor.sourceCellsByField.lowerTolerance);
   const sigmaDependencyCells = unique(factors.flatMap((factor) => [
     factor.sourceCellsByField.upperTolerance,
     factor.sourceCellsByField.lowerTolerance,
@@ -221,28 +251,43 @@ function buildTraceRecords(
     factor.sourceCellsByField.standardDeviation,
     factor.sourceCellsByField.distribution,
   ]));
-  const factorMeanInputCells = unique(factors.map((factor) => factor.sourceCellsByField.nominalValue));
-  const upperToleranceCells = factors.map((factor) => factor.sourceCellsByField.upperTolerance);
-  const lowerToleranceCells = factors.map((factor) => factor.sourceCellsByField.lowerTolerance);
-  const requestSpecIdentifiers = [
+  const cpDependencies = [
     "request:systemSpecification.lowerSpecLimit",
     "request:systemSpecification.upperSpecLimit",
-    "request:systemSpecification.targetSigmaLevel",
-    "request:systemSpecification.targetCpk",
+    "system.rssSigma",
   ];
-  const capabilityBaseDependencies = unique([
-    ...requestSpecIdentifiers,
+  const lowerCpkDependencies = [
+    "system.mean",
+    "request:systemSpecification.lowerSpecLimit",
+    "system.rssSigma",
+  ];
+  const upperCpkDependencies = [
+    "request:systemSpecification.upperSpecLimit",
     "system.mean",
     "system.rssSigma",
-  ]);
+  ];
+  const cpkDependencies = unique([...lowerCpkDependencies, ...upperCpkDependencies]);
+  const totalDpmDependencies = unique([...lowerCpkDependencies, ...upperCpkDependencies]);
 
   for (const [index, factor] of factors.entries()) {
+    const factorSigmaDependencies = [
+      factor.sourceCellsByField.upperTolerance,
+      factor.sourceCellsByField.lowerTolerance,
+      factor.sourceCellsByField.longTermSafetyFactor,
+      factor.sourceCellsByField.standardDeviation,
+      factor.sourceCellsByField.distribution,
+    ];
+
     records.push(
       {
         outputField: `factors[${index}].mean`,
         formulaVersion: CALCULATION_VERSION,
         formulaId: "factor-mean-v1",
-        sourceCells: [factor.sourceCellsByField.nominalValue],
+        sourceCells: [
+          factor.sourceCellsByField.nominalValue,
+          factor.sourceCellsByField.upperTolerance,
+          factor.sourceCellsByField.lowerTolerance,
+        ],
       },
       {
         outputField: `factors[${index}].halfTolerance`,
@@ -266,7 +311,7 @@ function buildTraceRecords(
         outputField: `factors[${index}].contribution`,
         formulaVersion: CALCULATION_VERSION,
         formulaId: "contribution-v1",
-        sourceCells: sigmaDependencyCells,
+        sourceCells: unique([...factorSigmaDependencies, ...sigmaDependencyCells]),
       },
     );
   }
@@ -276,7 +321,12 @@ function buildTraceRecords(
       outputField: "system.mean",
       formulaVersion: CALCULATION_VERSION,
       formulaId: "system-mean-v1",
-      sourceCells: [...factorMeanInputCells, "request:systemSpecification.additionalMeanShift"],
+      sourceCells: [
+        ...nominalCells,
+        ...upperToleranceCells,
+        ...lowerToleranceCells,
+        "request:systemSpecification.additionalMeanShift",
+      ],
     },
     {
       outputField: "system.worstCaseUpper",
@@ -300,73 +350,73 @@ function buildTraceRecords(
       outputField: "capability.cp",
       formulaVersion: CALCULATION_VERSION,
       formulaId: "cp-v1",
-      sourceCells: capabilityBaseDependencies,
+      sourceCells: cpDependencies,
     },
     {
       outputField: "capability.lowerCpk",
       formulaVersion: CALCULATION_VERSION,
       formulaId: "cpk-lower-v1",
-      sourceCells: capabilityBaseDependencies,
+      sourceCells: lowerCpkDependencies,
     },
     {
       outputField: "capability.upperCpk",
       formulaVersion: CALCULATION_VERSION,
       formulaId: "cpk-upper-v1",
-      sourceCells: capabilityBaseDependencies,
+      sourceCells: upperCpkDependencies,
     },
     {
       outputField: "capability.cpk",
       formulaVersion: CALCULATION_VERSION,
       formulaId: "cpk-v1",
-      sourceCells: unique([...capabilityBaseDependencies, "capability.lowerCpk", "capability.upperCpk"]),
+      sourceCells: cpkDependencies,
     },
     {
       outputField: "capability.lowerZ",
       formulaVersion: CALCULATION_VERSION,
       formulaId: "z-lower-v1",
-      sourceCells: unique([...capabilityBaseDependencies, "capability.lowerCpk"]),
+      sourceCells: lowerCpkDependencies,
     },
     {
       outputField: "capability.upperZ",
       formulaVersion: CALCULATION_VERSION,
       formulaId: "z-upper-v1",
-      sourceCells: unique([...capabilityBaseDependencies, "capability.upperCpk"]),
+      sourceCells: upperCpkDependencies,
     },
     {
       outputField: "capability.lowerDpm",
       formulaVersion: CALCULATION_VERSION,
       formulaId: "dpm-lower-v1",
-      sourceCells: unique([...capabilityBaseDependencies, "capability.lowerZ"]),
+      sourceCells: lowerCpkDependencies,
     },
     {
       outputField: "capability.upperDpm",
       formulaVersion: CALCULATION_VERSION,
       formulaId: "dpm-upper-v1",
-      sourceCells: unique([...capabilityBaseDependencies, "capability.upperZ"]),
+      sourceCells: upperCpkDependencies,
     },
     {
       outputField: "capability.totalDpm",
       formulaVersion: CALCULATION_VERSION,
       formulaId: "dpm-total-v1",
-      sourceCells: unique([...capabilityBaseDependencies, "capability.lowerDpm", "capability.upperDpm"]),
+      sourceCells: totalDpmDependencies,
     },
     {
       outputField: "capability.outOfSpecRatio",
       formulaVersion: CALCULATION_VERSION,
       formulaId: "dpm-total-v1",
-      sourceCells: unique([...capabilityBaseDependencies, "capability.totalDpm"]),
+      sourceCells: totalDpmDependencies,
     },
     {
       outputField: "capability.yield",
       formulaVersion: CALCULATION_VERSION,
       formulaId: "yield-v1",
-      sourceCells: unique([...capabilityBaseDependencies, "capability.outOfSpecRatio"]),
+      sourceCells: totalDpmDependencies,
     },
     {
       outputField: "capability.status",
       formulaVersion: CALCULATION_VERSION,
       formulaId: "status-v1",
-      sourceCells: unique([...capabilityBaseDependencies, "capability.cpk"]),
+      sourceCells: unique([...cpkDependencies, "request:systemSpecification.targetCpk"]),
     },
   );
 

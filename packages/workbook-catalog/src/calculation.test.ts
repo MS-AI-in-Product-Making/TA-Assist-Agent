@@ -310,7 +310,98 @@ describe("createCalculation", () => {
       ...blockedRequest,
       exceptionResolution: baseRequest(1).exceptionResolution,
     }), "prerequisite_not_ready");
+    expectTypedErrorCode(() => createCalculation({
+      ...baseRequest(1),
+      systemSpecification: {
+        ...baseRequest(1).systemSpecification,
+        upperSpecLimit: -3,
+        lowerSpecLimit: -3,
+      },
+    }), "calculation_not_possible");
     expectTypedErrorCode(() => createCalculation({ ...baseRequest(1), worksheetSelection: { worksheetName: "Analysis-A", tableId: "missing-table" } }), "validation_error");
+  });
+
+  it("classifies finite invalid system specification ranges as calculation_not_possible", () => {
+    const request = baseRequest(1);
+
+    expectTypedErrorCode(() => createCalculation({
+      ...request,
+      systemSpecification: {
+        ...request.systemSpecification,
+        upperSpecLimit: -3,
+        lowerSpecLimit: -3,
+      },
+    }), "calculation_not_possible");
+
+    expectTypedErrorCode(() => createCalculation({
+      ...request,
+      systemSpecification: {
+        ...request.systemSpecification,
+        targetSigmaLevel: 0,
+      },
+    }), "calculation_not_possible");
+
+    expectTypedErrorCode(() => createCalculation({
+      ...request,
+      systemSpecification: {
+        ...request.systemSpecification,
+        targetCpk: 0,
+      },
+    }), "calculation_not_possible");
+  });
+
+  it("keeps unknown, missing, and wrong-type system specification fields as validation_error", () => {
+    const request = baseRequest(1);
+
+    expectTypedErrorCode(() => createCalculation({
+      ...request,
+      systemSpecification: {
+        ...request.systemSpecification,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        targetCpk: "1" as any,
+      },
+    }), "validation_error");
+
+    const missingTargetSigmaLevel = deepClone(request);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    delete (missingTargetSigmaLevel.systemSpecification as any).targetSigmaLevel;
+    expectTypedErrorCode(() => createCalculation(missingTargetSigmaLevel), "validation_error");
+
+    expectTypedErrorCode(() => createCalculation({
+      ...request,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      systemSpecification: "invalid" as any,
+    }), "validation_error");
+  });
+
+  it("prioritizes evidence mismatch and prerequisite blockers ahead of calculability range classification", () => {
+    const request = baseRequest(1);
+
+    expectTypedErrorCode(() => createCalculation({
+      ...request,
+      systemSpecification: {
+        ...request.systemSpecification,
+        targetSigmaLevel: 0,
+      },
+      requiredFieldCheck: {
+        ...request.requiredFieldCheck,
+        workbookContentHash: "b".repeat(64),
+      },
+    }), "evidence_mismatch");
+
+    expectTypedErrorCode(() => createCalculation({
+      ...request,
+      systemSpecification: {
+        ...request.systemSpecification,
+        targetSigmaLevel: 0,
+      },
+      requiredFieldCheck: {
+        ...request.requiredFieldCheck,
+        status: "blocked",
+        blockingIssues: [{ issueCode: "factor_table_has_no_rows", worksheetName: "Analysis-A", tableId: "table-a" }],
+        summary: { ...request.requiredFieldCheck.summary, blockingIssueCount: 1 },
+      },
+    }), "prerequisite_not_ready");
   });
 
   it("rejects non-empty scenarios with validation_error until Task4", () => {
@@ -477,7 +568,7 @@ describe("createCalculation", () => {
     expect((typed.affectedInputReferences ?? []).join(" ")).not.toContain(marker);
   });
 
-  it("emits complete trace coverage and expected dependency source cells for computed outputs", () => {
+  it("emits complete trace coverage and formula-accurate dependency source cells for computed outputs", () => {
     const result = createCalculation(baseRequest(2));
 
     expect(result.status).toBe("completed");
@@ -526,15 +617,61 @@ describe("createCalculation", () => {
       "Analysis-A!G3",
     ]);
 
-    const contribution0 = result.traceRecords.find((record) => record.outputField === "factors[0].contribution");
-    const rss = result.traceRecords.find((record) => record.outputField === "system.rssSigma");
-    const outOfSpecRatio = result.traceRecords.find((record) => record.outputField === "capability.outOfSpecRatio");
-    expect(contribution0).toBeDefined();
-    expect(rss).toBeDefined();
-    expect(outOfSpecRatio).toBeDefined();
-    expect(new Set(contribution0?.sourceCells ?? [])).toEqual(expectedSigmaInputs);
-    expect(new Set(rss?.sourceCells ?? [])).toEqual(expectedSigmaInputs);
-    expect(outOfSpecRatio?.sourceCells).toContain("capability.totalDpm");
+    const trace = new Map(result.traceRecords.map((record) => [record.outputField, record]));
+
+    const factor0Mean = trace.get("factors[0].mean");
+    const factor1Mean = trace.get("factors[1].mean");
+    const factor0Contribution = trace.get("factors[0].contribution");
+    const systemMean = trace.get("system.mean");
+    const cp = trace.get("capability.cp");
+    const lowerDpm = trace.get("capability.lowerDpm");
+    const status = trace.get("capability.status");
+
+    expect(factor0Mean).toBeDefined();
+    expect(factor1Mean).toBeDefined();
+    expect(factor0Contribution).toBeDefined();
+    expect(systemMean).toBeDefined();
+    expect(cp).toBeDefined();
+    expect(lowerDpm).toBeDefined();
+    expect(status).toBeDefined();
+
+    expect(new Set(factor0Mean?.sourceCells ?? [])).toEqual(new Set(["Analysis-A!B2", "Analysis-A!C2", "Analysis-A!D2"]));
+    expect(new Set(factor1Mean?.sourceCells ?? [])).toEqual(new Set(["Analysis-A!B3", "Analysis-A!C3", "Analysis-A!D3"]));
+    expect(new Set(factor0Contribution?.sourceCells ?? [])).toEqual(expectedSigmaInputs);
+
+    expect(new Set(systemMean?.sourceCells ?? [])).toEqual(new Set([
+      "Analysis-A!B2",
+      "Analysis-A!C2",
+      "Analysis-A!D2",
+      "Analysis-A!B3",
+      "Analysis-A!C3",
+      "Analysis-A!D3",
+      "request:systemSpecification.additionalMeanShift",
+    ]));
+
+    expect(new Set(cp?.sourceCells ?? [])).toEqual(new Set([
+      "request:systemSpecification.lowerSpecLimit",
+      "request:systemSpecification.upperSpecLimit",
+      "system.rssSigma",
+    ]));
+    expect(cp?.sourceCells).not.toContain("system.mean");
+    expect(cp?.sourceCells).not.toContain("request:systemSpecification.targetSigmaLevel");
+    expect(cp?.sourceCells).not.toContain("request:systemSpecification.targetCpk");
+
+    expect(new Set(lowerDpm?.sourceCells ?? [])).toEqual(new Set([
+      "request:systemSpecification.lowerSpecLimit",
+      "system.mean",
+      "system.rssSigma",
+    ]));
+    expect(lowerDpm?.sourceCells).not.toContain("request:systemSpecification.upperSpecLimit");
+
+    expect(new Set(status?.sourceCells ?? [])).toEqual(new Set([
+      "request:systemSpecification.lowerSpecLimit",
+      "request:systemSpecification.upperSpecLimit",
+      "system.mean",
+      "system.rssSigma",
+      "request:systemSpecification.targetCpk",
+    ]));
   });
 
   it("does not expose workbook bytes or exception rationale in completed output", () => {
