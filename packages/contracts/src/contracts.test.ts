@@ -1,6 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import {
+  calculationCriticalitySchema,
+  calculationMethodSchema,
   capabilityEntrySchema,
   capabilityValidationRequestSchema,
   capabilityValidationResultSchema,
@@ -63,6 +65,13 @@ import {
   worksheetSelectionViewResultSchema,
   workflowRequestSchema,
   workflowResultSchema,
+} from "./index.js";
+import type {
+  CalculationCapabilityResult,
+  CalculationCompletedPayload,
+  CalculationCriticality,
+  CalculationFactorResult,
+  CalculationMethod,
 } from "./index.js";
 
 describe("Phase 0 contracts", () => {
@@ -564,6 +573,57 @@ describe("F4 calculation contracts", () => {
         ],
       }],
     }).success).toBe(false);
+
+    expect(calculationRequestSchema.safeParse({
+      ...request,
+      scenarioOverrides: [{
+        ...request.scenarioOverrides[0],
+        factorOverrides: [
+          {
+            worksheetName: "Sheet::A",
+            tableId: "Table",
+            sourceRow: 2,
+            nominalValue: 12.45,
+          },
+          {
+            worksheetName: "Sheet",
+            tableId: "A::Table",
+            sourceRow: 2,
+            upperTolerance: 0.3,
+          },
+        ],
+      }],
+    }).success).toBe(true);
+  });
+
+  it("rejects no-op scenarios and no-op scenario system specifications", () => {
+    expect(calculationRequestSchema.safeParse({
+      ...request,
+      scenarioOverrides: [{
+        scenarioId: "scenario-empty",
+        factorOverrides: [],
+      }],
+    }).success).toBe(false);
+
+    expect(calculationRequestSchema.safeParse({
+      ...request,
+      scenarioOverrides: [{
+        scenarioId: "scenario-empty-system-spec",
+        factorOverrides: [],
+        systemSpecification: {},
+      }],
+    }).success).toBe(false);
+
+    expect(calculationRequestSchema.safeParse({
+      ...request,
+      scenarioOverrides: [{
+        scenarioId: "scenario-system-spec-only",
+        factorOverrides: [],
+        systemSpecification: {
+          additionalMeanShift: 0.01,
+        },
+      }],
+    }).success).toBe(true);
   });
 
   it("rejects non-positive request and override sigma/cpk/safety values", () => {
@@ -687,7 +747,139 @@ describe("F4 calculation contracts", () => {
         criticality: "none",
         criticalityRisk: true,
       },
+    }).success).toBe(false);
+
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      recommendation: {
+        ...completedResult.recommendation,
+        criticality: "CTS",
+        criticalityRisk: true,
+      },
     }).success).toBe(true);
+
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      recommendation: {
+        ...completedResult.recommendation,
+        criticality: "none",
+        criticalityRisk: false,
+      },
+    }).success).toBe(true);
+  });
+
+  it("enforces nearly-equal boundaries for completed derived invariants", () => {
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      capability: {
+        ...completedResult.capability,
+        lowerCpk: 1_000_000_000_000,
+        upperCpk: 1_000_000_000_001,
+        cpk: 1_000_000_000_000 + 0.9,
+      },
+    }).success).toBe(true);
+
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      capability: {
+        ...completedResult.capability,
+        lowerCpk: 1_000_000_000_000,
+        upperCpk: 1_000_000_000_001,
+        cpk: 1_000_000_000_000 + 1.1,
+      },
+    }).success).toBe(false);
+
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      capability: {
+        ...completedResult.capability,
+        lowerCpk: 2e-13,
+        upperCpk: 1,
+        cpk: 7e-13,
+      },
+    }).success).toBe(true);
+
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      capability: {
+        ...completedResult.capability,
+        lowerCpk: 2e-13,
+        upperCpk: 1,
+        cpk: 2.3e-12,
+      },
+    }).success).toBe(false);
+  });
+
+  it("rejects completed payload arrays above bounds", () => {
+    const factor = completedResult.factors[0];
+    const factors = Array.from({ length: 101 }, (_, index) => ({
+      ...factor,
+      factorName: `Feature-${index + 1}`,
+      source: {
+        ...factor.source,
+        sourceRow: index + 1,
+      },
+      trace: {
+        ...factor.trace,
+        sourceCells: [`Analysis-A!A${index + 1}`],
+      },
+    }));
+
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      factorCount: 101,
+      recommendation: {
+        ...completedResult.recommendation,
+        method: "refer_3d_variation_analysis",
+        reason: "factor_count_over_10",
+        refer3d: true,
+      },
+      factors,
+    }).success).toBe(false);
+
+    const trace = completedResult.traceRecords[0];
+    const traceRecords = Array.from({ length: 501 }, (_, index) => ({
+      ...trace,
+      outputField: `trace-${index + 1}`,
+    }));
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      traceRecords,
+    }).success).toBe(false);
+
+    const scenario = completedResult.scenarios[0];
+    const scenarios = Array.from({ length: 101 }, (_, index) => ({
+      ...scenario,
+      scenarioId: `scenario-${index + 1}`,
+    }));
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      scenarios,
+    }).success).toBe(false);
+  });
+
+  it("exports calculation method and criticality schemas and reusable types", () => {
+    expect(calculationMethodSchema.parse("worst_case")).toBe("worst_case");
+    expect(calculationCriticalitySchema.parse("CTS")).toBe("CTS");
+
+    const method: CalculationMethod = calculationMethodSchema.parse("rss_1d");
+    const criticality: CalculationCriticality = calculationCriticalitySchema.parse("CTF");
+    const factor: CalculationFactorResult = completedResult.factors[0];
+    const capability: CalculationCapabilityResult = completedResult.capability;
+    const payload: CalculationCompletedPayload = {
+      factorCount: completedResult.factorCount,
+      recommendation: completedResult.recommendation,
+      factors: completedResult.factors,
+      system: completedResult.system,
+      capability: completedResult.capability,
+      traceRecords: completedResult.traceRecords,
+    };
+
+    expect(method).toBe("rss_1d");
+    expect(criticality).toBe("CTF");
+    expect(factor.factorName).toBe("Feature-A");
+    expect(capability.status).toBe("PASS");
+    expect(payload.factorCount).toBe(1);
   });
 
   it("enforces formulaVersion and formulaId enums in trace records", () => {

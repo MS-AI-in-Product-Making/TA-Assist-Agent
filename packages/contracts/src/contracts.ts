@@ -1404,7 +1404,7 @@ const calculationSystemSpecificationSchema = z
     path: ["upperSpecLimit"],
   });
 
-const calculationCriticalitySchema = z.enum(["none", "CTS", "CTF"]);
+export const calculationCriticalitySchema = z.enum(["none", "CTS", "CTF"]);
 
 const calculationFactorOverrideSchema = z
   .object({
@@ -1442,7 +1442,20 @@ const calculationScenarioSystemSpecificationSchema = z
     targetCpk: z.number().finite().positive().optional(),
     additionalMeanShift: z.number().finite().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    const hasOverride = value.lowerSpecLimit !== undefined
+      || value.upperSpecLimit !== undefined
+      || value.targetSigmaLevel !== undefined
+      || value.targetCpk !== undefined
+      || value.additionalMeanShift !== undefined;
+    if (!hasOverride) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "systemSpecification must include at least one override value",
+      });
+    }
+  });
 
 export const calculationScenarioOverrideSchema = z
   .object({
@@ -1450,7 +1463,15 @@ export const calculationScenarioOverrideSchema = z
     factorOverrides: z.array(calculationFactorOverrideSchema).max(100),
     systemSpecification: calculationScenarioSystemSpecificationSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((scenario, context) => {
+    if (scenario.factorOverrides.length === 0 && scenario.systemSpecification === undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "scenario override must include at least one factor override or systemSpecification override",
+      });
+    }
+  });
 
 export const calculationUnavailableRequestSchema = z
   .object({
@@ -1518,9 +1539,11 @@ export const calculationRequestSchema = z
     }
 
     for (const [scenarioIndex, scenario] of request.scenarioOverrides.entries()) {
-      const overrideKeys = scenario.factorOverrides.map(
-        (override) => `${override.worksheetName}::${override.tableId}::${override.sourceRow}`,
-      );
+      const overrideKeys = scenario.factorOverrides.map((override) => JSON.stringify([
+        override.worksheetName,
+        override.tableId,
+        override.sourceRow,
+      ]));
       if (new Set(overrideKeys).size !== overrideKeys.length) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
@@ -1541,7 +1564,7 @@ export const calculationRequestSchema = z
     }
   });
 
-const calculationRecommendationMethodSchema = z.enum([
+export const calculationMethodSchema = z.enum([
   "worst_case",
   "rss_1d",
   "refer_3d_variation_analysis",
@@ -1555,13 +1578,22 @@ const calculationRecommendationReasonSchema = z.enum([
 
 const calculationRecommendationSchema = z
   .object({
-    method: calculationRecommendationMethodSchema,
+    method: calculationMethodSchema,
     reason: calculationRecommendationReasonSchema,
     refer3d: z.boolean(),
     criticality: calculationCriticalitySchema,
     criticalityRisk: z.boolean(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    if (value.criticalityRisk !== (value.criticality !== "none")) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "criticalityRisk must equal (criticality !== none)",
+        path: ["criticalityRisk"],
+      });
+    }
+  });
 
 const calculationFactorSourceSchema = z
   .object({
@@ -1672,11 +1704,15 @@ const calculationTraceRecordSchema = z
 const calculationPayloadShape = {
   factorCount: z.number().int().positive(),
   recommendation: calculationRecommendationSchema,
-  factors: z.array(calculationFactorResultSchema).min(1),
+  factors: z.array(calculationFactorResultSchema).min(1).max(100),
   system: calculationSystemResultSchema,
   capability: calculationCapabilityResultSchema,
-  traceRecords: z.array(calculationTraceRecordSchema).min(1),
+  traceRecords: z.array(calculationTraceRecordSchema).min(1).max(500),
 } as const;
+
+const nearlyEqual = (left: number, right: number, tolerance = 1e-12): boolean => (
+  Math.abs(left - right) <= tolerance * Math.max(1, Math.abs(left), Math.abs(right))
+);
 
 const validateCalculationPayload = (
   payload: z.infer<z.ZodObject<typeof calculationPayloadShape>>,
@@ -1724,7 +1760,7 @@ const validateCalculationPayload = (
   }
 
   const expectedCpk = Math.min(payload.capability.lowerCpk, payload.capability.upperCpk);
-  if (Math.abs(payload.capability.cpk - expectedCpk) > 1e-12) {
+  if (!nearlyEqual(payload.capability.cpk, expectedCpk)) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       message: "capability.cpk must equal min(lowerCpk, upperCpk)",
@@ -1733,7 +1769,7 @@ const validateCalculationPayload = (
   }
 
   const expectedTotalDpm = payload.capability.lowerDpm + payload.capability.upperDpm;
-  if (Math.abs(payload.capability.totalDpm - expectedTotalDpm) > 1e-9) {
+  if (!nearlyEqual(payload.capability.totalDpm, expectedTotalDpm)) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       message: "capability.totalDpm must equal lowerDpm + upperDpm",
@@ -1742,7 +1778,7 @@ const validateCalculationPayload = (
   }
 
   const expectedOutOfSpecRatio = payload.capability.totalDpm / 1_000_000;
-  if (Math.abs(payload.capability.outOfSpecRatio - expectedOutOfSpecRatio) > 1e-12) {
+  if (!nearlyEqual(payload.capability.outOfSpecRatio, expectedOutOfSpecRatio)) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       message: "capability.outOfSpecRatio must equal totalDpm / 1000000",
@@ -1751,7 +1787,7 @@ const validateCalculationPayload = (
   }
 
   const expectedYield = 1 - expectedOutOfSpecRatio;
-  if (Math.abs(payload.capability.yield - expectedYield) > 1e-12) {
+  if (!nearlyEqual(payload.capability.yield, expectedYield)) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       message: "capability.yield must equal 1 - outOfSpecRatio",
@@ -1822,7 +1858,7 @@ export const calculationCompletedResultSchema = z
     workbookContentHash: sha256Schema,
     worksheetSelection: calculationWorksheetSelectionSchema,
     ...calculationPayloadShape,
-    scenarios: z.array(calculationScenarioResultEntrySchema),
+    scenarios: z.array(calculationScenarioResultEntrySchema).max(100),
   })
   .strict()
   .superRefine((result, context) => {
@@ -2615,7 +2651,17 @@ export type UnifiedExceptionResolutionResult = UnifiedExceptionResolutionV2Resul
 export type CalculationUnavailableRequest = z.infer<typeof calculationUnavailableRequestSchema>;
 export type CalculationRequest = z.infer<typeof calculationRequestSchema>;
 export type CalculationResult = z.infer<typeof calculationResultSchema>;
+export type CalculationMethod = z.infer<typeof calculationMethodSchema>;
+export type CalculationCriticality = z.infer<typeof calculationCriticalitySchema>;
 export type CalculationScenarioOverride = z.infer<typeof calculationScenarioOverrideSchema>;
+export type CalculationRecommendation = z.infer<typeof calculationRecommendationSchema>;
+export type CalculationFactorSource = z.infer<typeof calculationFactorSourceSchema>;
+export type CalculationFactorInput = z.infer<typeof calculationFactorInputSchema>;
+export type CalculationFactorResult = z.infer<typeof calculationFactorResultSchema>;
+export type CalculationSystemResult = z.infer<typeof calculationSystemResultSchema>;
+export type CalculationCapabilityResult = z.infer<typeof calculationCapabilityResultSchema>;
+export type CalculationTraceRecord = z.infer<typeof calculationTraceRecordSchema>;
+export type CalculationCompletedPayload = z.infer<typeof calculationPayloadSchema>;
 export type CalculationCompletedResult = z.infer<typeof calculationCompletedResultSchema>;
 export type CalculationLegacyUnavailableResult = z.infer<typeof calculationLegacyUnavailableResultSchema>;
 export type DrawingGovernanceRequest = z.infer<typeof drawingGovernanceRequestSchema>;
