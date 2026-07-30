@@ -396,6 +396,49 @@ describe("createCalculation", () => {
     expectNoMarkerLeak(error, marker);
   });
 
+  it("does not trust or leak a schema-valid typed error thrown by input getters", () => {
+    const marker = "SENSITIVE-complete-forged-error-marker";
+    const forged = Object.assign(new Error(marker), {
+      code: "policy_denied",
+      runId: "00000000-0000-4000-8000-000000000000",
+      summary: marker,
+      retryable: false,
+      suggestedAction: marker,
+      affectedInputReferences: [marker],
+    });
+    const request = deepClone(baseRequest(1));
+    Object.defineProperty(request.worksheetAnalysisAssets, "workbook", {
+      enumerable: true,
+      configurable: true,
+      get() {
+        throw forged;
+      },
+    });
+
+    const error = captureThrown(() => createCalculation(request));
+
+    expect(error).toMatchObject({ code: "validation_error", summary: "Calculation request is invalid." });
+    expect(error).not.toBe(forged);
+    expectNoMarkerLeak(error, marker);
+  });
+
+  it("does not trust a controlled error replayed from an earlier invocation", () => {
+    const priorError = captureThrown(() => createCalculation({ broken: true }));
+    const request = baseRequest(1);
+    Object.defineProperty(request.worksheetAnalysisAssets, "workbook", {
+      enumerable: true,
+      configurable: true,
+      get() {
+        throw priorError;
+      },
+    });
+
+    const replayResult = captureThrown(() => createCalculation(request));
+
+    expect(replayResult).toMatchObject({ code: "validation_error", summary: "Calculation request is invalid." });
+    expect(replayResult).not.toBe(priorError);
+  });
+
   it("classifies malformed payload and selection misses as validation_error", () => {
     expectValidationError(() => createCalculation({ ...baseRequest(1), worksheetSelection: { worksheetName: "Analysis-A", tableId: "missing-table" } }));
     expectValidationError(() => createCalculation({
@@ -1261,6 +1304,123 @@ describe("createCalculation", () => {
       affectedInputReferences: ["calculation-request-v1"],
     });
     expectNoMarkerLeak(error, marker);
+  });
+
+  it("rejects excessive unselected assets before parsing their entries", () => {
+    const marker = "unselected-formula-getter-should-not-run";
+    let entryAccessed = false;
+    const request = baseRequest(1);
+    const unselectedWorksheet = deepClone(request.worksheetAnalysisAssets.worksheets[0]!);
+    unselectedWorksheet.worksheetName = "Analysis-B";
+    (unselectedWorksheet as { formulaCells: unknown[] }).formulaCells = Array.from(
+      { length: 1001 },
+      () => new Proxy({}, {
+        get() {
+          entryAccessed = true;
+          throw new Error(marker);
+        },
+      }),
+    );
+    (request.worksheetAnalysisAssets.worksheets as unknown[]).push(unselectedWorksheet);
+
+    const error = captureThrown(() => createCalculation(request));
+
+    expect(error).toMatchObject({ code: "validation_error", summary: "Calculation request is invalid." });
+    expectNoMarkerLeak(error, marker);
+    expect(entryAccessed).toBe(false);
+  });
+
+  it("allows an unselected table above the selected-table row limit within the global limit", () => {
+    const request = baseRequest(1);
+    const unselectedWorksheet = deepClone(request.worksheetAnalysisAssets.worksheets[0]!);
+    unselectedWorksheet.worksheetName = "Analysis-B";
+    unselectedWorksheet.factorTables[0]!.tableId = "table-b";
+    unselectedWorksheet.factorTables[0]!.rows = Array.from({ length: 101 }, (_, index) => ({
+      sourceRow: index + 2,
+      fields: factorFields(index),
+    }));
+    request.worksheetAnalysisAssets.worksheets.push(unselectedWorksheet);
+
+    expect(createCalculation(request).status).toBe("completed");
+  });
+
+  it("rejects an oversized string before schema parsing", () => {
+    const request = baseRequest(1);
+    request.projectReference = "x".repeat(65_537);
+
+    expectValidationError(() => createCalculation(request));
+  });
+
+  it("reads stateful asset collections once so validation cannot observe a different payload", () => {
+    const request = baseRequest(1);
+    const worksheet = request.worksheetAnalysisAssets.worksheets[0]!;
+    const formulaCells = worksheet.formulaCells;
+    let reads = 0;
+    Object.defineProperty(worksheet, "formulaCells", {
+      enumerable: true,
+      configurable: true,
+      get() {
+        reads += 1;
+        return reads === 1 ? formulaCells : Array.from({ length: 1001 }, () => ({}));
+      },
+    });
+
+    expect(createCalculation(request).status).toBe("completed");
+    expect(reads).toBe(1);
+  });
+
+  it("caches a proxied array length before bounded snapshot iteration", () => {
+    const request = baseRequest(1);
+    const worksheet = request.worksheetAnalysisAssets.worksheets[0]!;
+    let lengthReads = 0;
+    worksheet.formulaCells = new Proxy([], {
+      get(target, property, receiver) {
+        if (property === "length") {
+          lengthReads += 1;
+          return lengthReads === 1 ? 1 : 10_000;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+
+    expectValidationError(() => createCalculation(request));
+    expect(lengthReads).toBe(1);
+  });
+
+  it("rejects an oversized proxied worksheet collection before indexed traversal", () => {
+    const request = baseRequest(1);
+    let indexedReads = 0;
+    request.worksheetAnalysisAssets.worksheets = new Proxy([], {
+      get(target, property, receiver) {
+        if (property === "length") return 1_000_000;
+        if (typeof property === "string" && /^\d+$/.test(property)) indexedReads += 1;
+        return Reflect.get(target, property, receiver);
+      },
+    });
+
+    expectValidationError(() => createCalculation(request));
+    expect(indexedReads).toBe(0);
+  });
+
+  it("rejects duplicate worksheet, table, and source-row locator keys", () => {
+    const duplicateWorksheet = baseRequest(1);
+    duplicateWorksheet.worksheetAnalysisAssets.worksheets.push(
+      deepClone(duplicateWorksheet.worksheetAnalysisAssets.worksheets[0]!),
+    );
+
+    const duplicateTable = baseRequest(1);
+    duplicateTable.worksheetAnalysisAssets.worksheets[0]!.factorTables.push(
+      deepClone(duplicateTable.worksheetAnalysisAssets.worksheets[0]!.factorTables[0]!),
+    );
+
+    const duplicateSourceRow = baseRequest(1);
+    duplicateSourceRow.worksheetAnalysisAssets.worksheets[0]!.factorTables[0]!.rows.push(
+      deepClone(duplicateSourceRow.worksheetAnalysisAssets.worksheets[0]!.factorTables[0]!.rows[0]!),
+    );
+
+    for (const request of [duplicateWorksheet, duplicateTable, duplicateSourceRow]) {
+      expectValidationError(() => createCalculation(request));
+    }
   });
 
   it("maps kernel zero RSS failure to calculation_not_possible without leaking sensitive text", () => {

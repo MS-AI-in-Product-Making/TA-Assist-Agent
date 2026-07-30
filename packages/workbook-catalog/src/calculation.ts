@@ -8,7 +8,6 @@ import {
   requiredFieldCheckResultSchema,
   type CalculationRequest,
   type CalculationResult,
-  typedErrorSchema,
   worksheetAnalysisAssetsResultSchema,
 } from "@ai-assist/contracts";
 import {
@@ -26,6 +25,17 @@ const COMPLETION_ACTION = "Provide a valid worksheet selection with calculable f
 const CALCULATION_REFERENCE = "calculation-request-v1";
 const MAX_FACTOR_ROWS = 100;
 const MAX_SCENARIO_FACTOR_EVALUATIONS = 1000;
+const MAX_WORKSHEETS = 100;
+const MAX_FACTOR_TABLES = 100;
+const MAX_TOTAL_FACTOR_ROWS = 1000;
+const MAX_FORMULA_CELLS = 1000;
+const MAX_IMAGE_ASSETS = 1000;
+const MAX_SNAPSHOT_DEPTH = 32;
+const MAX_SNAPSHOT_OBJECTS = 50_000;
+const MAX_SNAPSHOT_OBJECT_KEYS = 100;
+const MAX_SNAPSHOT_ARRAY_LENGTH = 1000;
+const MAX_SNAPSHOT_STRING_LENGTH = 65_536;
+const MAX_SNAPSHOT_TOTAL_STRING_LENGTH = 5_242_880;
 
 type CalculationCompletedResult = Extract<CalculationResult, { readonly status: "completed" }>;
 type WorksheetRow = CalculationRequest["worksheetAnalysisAssets"]["worksheets"][number]["factorTables"][number]["rows"][number];
@@ -87,30 +97,33 @@ type CalculationRequestErrorCode =
   | "prerequisite_not_ready"
   | "calculation_not_possible";
 
+const trustedErrorScopes: WeakSet<object>[] = [];
+
+function trustError(error: Error): Error {
+  trustedErrorScopes.at(-1)?.add(error);
+  return error;
+}
+
 function requestError(summary: string, code: CalculationRequestErrorCode = "validation_error"): Error {
-  return createTypedError({
+  return trustError(createTypedError({
     code,
     summary,
     suggestedAction: REQUEST_ACTION,
     affectedInputReferences: [CALCULATION_REFERENCE],
-  });
+  }));
 }
 
 function completionError(): Error {
-  return createTypedError({
+  return trustError(createTypedError({
     code: "calculation_not_possible",
     summary: COMPLETION_SUMMARY,
     suggestedAction: COMPLETION_ACTION,
     affectedInputReferences: [CALCULATION_REFERENCE],
-  });
+  }));
 }
 
-function isTypedError(error: unknown): boolean {
-  try {
-    return typedErrorSchema.safeParse(error).success;
-  } catch {
-    return false;
-  }
+function isTypedError(error: unknown, trustedErrors: WeakSet<object>): boolean {
+  return typeof error === "object" && error !== null && trustedErrors.has(error);
 }
 
 function deepFreeze<Value>(value: Value, seen = new WeakSet<object>()): Value {
@@ -160,6 +173,179 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function snapshotArrayLimit(propertyName: string | undefined): number {
+  switch (propertyName) {
+    case "worksheets":
+      return MAX_WORKSHEETS;
+    case "factorTables":
+      return MAX_FACTOR_TABLES;
+    case "rows":
+      return MAX_TOTAL_FACTOR_ROWS;
+    default:
+      return MAX_SNAPSHOT_ARRAY_LENGTH;
+  }
+}
+
+function createBoundedRequestSnapshot(request: unknown, inputClassification: unknown): unknown {
+  const snapshots = new WeakMap<object, unknown>();
+  const active = new WeakSet<object>();
+  let objectCount = 0;
+  let totalStringLength = 0;
+
+  const snapshot = (value: unknown, depth: number, propertyName?: string): unknown => {
+    if (typeof value === "string") {
+      totalStringLength += value.length;
+      if (value.length > MAX_SNAPSHOT_STRING_LENGTH
+        || totalStringLength > MAX_SNAPSHOT_TOTAL_STRING_LENGTH) {
+        throw requestError(REQUEST_SUMMARY);
+      }
+      return value;
+    }
+    if (value === null || typeof value !== "object") {
+      return value;
+    }
+    if (depth > MAX_SNAPSHOT_DEPTH || ++objectCount > MAX_SNAPSHOT_OBJECTS || active.has(value)) {
+      throw requestError(REQUEST_SUMMARY);
+    }
+
+    const existing = snapshots.get(value);
+    if (existing !== undefined) {
+      return existing;
+    }
+    active.add(value);
+
+    if (Array.isArray(value)) {
+      const length = value.length;
+      if (length > snapshotArrayLimit(propertyName)) {
+        throw requestError(REQUEST_SUMMARY);
+      }
+      const copy: unknown[] = [];
+      snapshots.set(value, copy);
+      for (let index = 0; index < length; index += 1) {
+        copy.push(snapshot(value[index], depth + 1));
+      }
+      active.delete(value);
+      return copy;
+    }
+
+    const copy: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
+    snapshots.set(value, copy);
+    let keyCount = 0;
+    for (const key in value) {
+      if (!Object.prototype.hasOwnProperty.call(value, key)) {
+        continue;
+      }
+      keyCount += 1;
+      if (keyCount > MAX_SNAPSHOT_OBJECT_KEYS) {
+        throw requestError(REQUEST_SUMMARY);
+      }
+      const nested = value === request && key === "inputClassification"
+        ? inputClassification
+        : (value as Record<string, unknown>)[key];
+      Object.defineProperty(copy, key, {
+        enumerable: true,
+        configurable: true,
+        writable: true,
+        value: snapshot(nested, depth + 1, key),
+      });
+    }
+    active.delete(value);
+    return copy;
+  };
+
+  return snapshot(request, 0);
+}
+
+function rejectExcessiveOrAmbiguousWorksheetAssets(request: unknown): void {
+  if (!isPlainRecord(request) || !isPlainRecord(request.worksheetAnalysisAssets)) {
+    return;
+  }
+
+  const worksheets = request.worksheetAnalysisAssets.worksheets;
+  if (!Array.isArray(worksheets)) {
+    return;
+  }
+  if (worksheets.length > MAX_WORKSHEETS) {
+    throw requestError(REQUEST_SUMMARY);
+  }
+
+  const worksheetNames = new Set<string>();
+  let factorTableCount = 0;
+  let factorRowCount = 0;
+  let formulaCellCount = 0;
+  let imageAssetCount = 0;
+
+  for (const worksheet of worksheets) {
+    if (!isPlainRecord(worksheet)) {
+      continue;
+    }
+
+    if (typeof worksheet.worksheetName === "string") {
+      if (worksheetNames.has(worksheet.worksheetName)) {
+        throw requestError(REQUEST_SUMMARY);
+      }
+      worksheetNames.add(worksheet.worksheetName);
+    }
+
+    const factorTables = worksheet.factorTables;
+    const formulaCells = worksheet.formulaCells;
+    const imageAssets = worksheet.imageAssets;
+    if (Array.isArray(formulaCells)) {
+      formulaCellCount += formulaCells.length;
+      if (formulaCellCount > MAX_FORMULA_CELLS) {
+        throw requestError(REQUEST_SUMMARY);
+      }
+    }
+    if (Array.isArray(imageAssets)) {
+      imageAssetCount += imageAssets.length;
+      if (imageAssetCount > MAX_IMAGE_ASSETS) {
+        throw requestError(REQUEST_SUMMARY);
+      }
+    }
+    if (!Array.isArray(factorTables)) {
+      continue;
+    }
+
+    factorTableCount += factorTables.length;
+    if (factorTableCount > MAX_FACTOR_TABLES) {
+      throw requestError(REQUEST_SUMMARY);
+    }
+
+    const tableIds = new Set<string>();
+    for (const table of factorTables) {
+      if (!isPlainRecord(table)) {
+        continue;
+      }
+      if (typeof table.tableId === "string") {
+        if (tableIds.has(table.tableId)) {
+          throw requestError(REQUEST_SUMMARY);
+        }
+        tableIds.add(table.tableId);
+      }
+
+      const rows = table.rows;
+      if (!Array.isArray(rows)) {
+        continue;
+      }
+      factorRowCount += rows.length;
+      if (factorRowCount > MAX_TOTAL_FACTOR_ROWS) {
+        throw requestError(REQUEST_SUMMARY);
+      }
+
+      const sourceRows = new Set<number>();
+      for (const row of rows) {
+        if (!isPlainRecord(row) || typeof row.sourceRow !== "number") {
+          continue;
+        }
+        if (sourceRows.has(row.sourceRow)) {
+          throw requestError(REQUEST_SUMMARY);
+        }
+        sourceRows.add(row.sourceRow);
+      }
+    }
+  }
+}
+
 function rejectExcessiveScenarioFactorWorkload(request: unknown): void {
   if (!isPlainRecord(request)) {
     return;
@@ -175,23 +361,43 @@ function rejectExcessiveScenarioFactorWorkload(request: unknown): void {
     return;
   }
 
-  const selectedWorksheet = worksheetAnalysisAssets.worksheets.find((worksheet: unknown) => (
-    isPlainRecord(worksheet)
-    && worksheet.worksheetName === worksheetSelection.worksheetName
-  ));
+  const worksheetCount = worksheetAnalysisAssets.worksheets.length;
+  const scenarioCount = scenarioOverrides.length;
+  if (worksheetCount > MAX_WORKSHEETS || scenarioCount > MAX_SNAPSHOT_ARRAY_LENGTH) {
+    throw requestError(REQUEST_SUMMARY);
+  }
+
+  let selectedWorksheet: Record<string, unknown> | undefined;
+  for (let index = 0; index < worksheetCount; index += 1) {
+    const worksheet = worksheetAnalysisAssets.worksheets[index];
+    if (isPlainRecord(worksheet) && worksheet.worksheetName === worksheetSelection.worksheetName) {
+      selectedWorksheet = worksheet;
+      break;
+    }
+  }
   if (!isPlainRecord(selectedWorksheet) || !Array.isArray(selectedWorksheet.factorTables)) {
     return;
   }
 
-  const selectedTable = selectedWorksheet.factorTables.find((table: unknown) => (
-    isPlainRecord(table)
-    && table.tableId === worksheetSelection.tableId
-  ));
+  const tableCount = selectedWorksheet.factorTables.length;
+  if (tableCount > MAX_FACTOR_TABLES) {
+    throw requestError(REQUEST_SUMMARY);
+  }
+
+  let selectedTable: Record<string, unknown> | undefined;
+  for (let index = 0; index < tableCount; index += 1) {
+    const table = selectedWorksheet.factorTables[index];
+    if (isPlainRecord(table) && table.tableId === worksheetSelection.tableId) {
+      selectedTable = table;
+      break;
+    }
+  }
   if (!isPlainRecord(selectedTable) || !Array.isArray(selectedTable.rows)) {
     return;
   }
 
-  const workload = selectedTable.rows.length * Math.max(1, scenarioOverrides.length);
+  const selectedRowCount = selectedTable.rows.length;
+  const workload = selectedRowCount * Math.max(1, scenarioCount);
   if (workload > MAX_SCENARIO_FACTOR_EVALUATIONS) {
     throw requestError(REQUEST_SUMMARY);
   }
@@ -942,6 +1148,8 @@ function createCompletedResult(input: CalculationRequest): CalculationCompletedR
 }
 
 export function createCalculation(request: unknown): CalculationResult {
+  const trustedErrors = new WeakSet<object>();
+  trustedErrorScopes.push(trustedErrors);
   let parsedRequest: ReturnType<typeof calculationRequestSchema.safeParse>;
   try {
     const classification = (request as { inputClassification?: unknown })?.inputClassification;
@@ -950,15 +1158,20 @@ export function createCalculation(request: unknown): CalculationResult {
     }
 
     rejectExcessiveScenarioFactorWorkload(request);
-    parsedRequest = calculationRequestSchema.safeParse(request);
+    const requestSnapshot = createBoundedRequestSnapshot(request, classification);
+    rejectExcessiveOrAmbiguousWorksheetAssets(requestSnapshot);
+    rejectExcessiveScenarioFactorWorkload(requestSnapshot);
+    parsedRequest = calculationRequestSchema.safeParse(requestSnapshot);
     if (!parsedRequest.success) {
-      throw requestError(REQUEST_SUMMARY, classifyInvalidRequestError(request));
+      throw requestError(REQUEST_SUMMARY, classifyInvalidRequestError(requestSnapshot));
     }
   } catch (error) {
-    if (isTypedError(error)) {
+    if (isTypedError(error, trustedErrors)) {
       throw error;
     }
     throw requestError(REQUEST_SUMMARY);
+  } finally {
+    trustedErrorScopes.pop();
   }
 
   return createCompletedResult(parsedRequest.data);
