@@ -257,17 +257,28 @@ export const workbookCatalogDateSchema = z
   })
   .strict();
 
+export const workbookCatalogAnalysisSourceSchema = z.union([
+  z
+    .object({
+      summarySheet: z.literal("Auto Summary"),
+      summaryRow: z.number().int().positive(),
+      worksheetAnchor: z.string().regex(/^[^!]+!A1$/),
+    })
+    .strict(),
+  z
+    .object({
+      discoveryMethod: z.literal("worksheet_scan"),
+      descriptionCell: z.string().regex(/^[^!]+![A-Z]+[1-9]\d*$/),
+      worksheetAnchor: z.string().regex(/^[^!]+!A1$/),
+    })
+    .strict(),
+]);
+
 export const workbookCatalogAnalysisSchema = z
   .object({
     worksheetName: z.string().min(1),
     toleranceLoopDescription: z.string().min(1),
-    source: z
-      .object({
-        summarySheet: z.literal("Auto Summary"),
-        summaryRow: z.number().int().positive(),
-        worksheetAnchor: z.string().regex(/^[^!]+!A1$/),
-      })
-      .strict(),
+    source: workbookCatalogAnalysisSourceSchema,
   })
   .strict();
 
@@ -320,13 +331,7 @@ export const worksheetSelectionViewResultSchema = z
             selectionIndex: z.number().int().positive(),
             worksheetName: z.string().min(1),
             toleranceLoopDescription: z.string().min(1),
-            source: z
-              .object({
-                summarySheet: z.literal("Auto Summary"),
-                summaryRow: z.number().int().positive(),
-                worksheetAnchor: z.string().regex(/^[^!]+!A1$/),
-              })
-              .strict(),
+            source: workbookCatalogAnalysisSourceSchema,
           })
           .strict(),
       )

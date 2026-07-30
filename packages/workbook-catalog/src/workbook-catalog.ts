@@ -29,6 +29,10 @@ function normalizeTitleLabel(value: string): string {
   return normalizeLabel(value).replace(/:+$/, "");
 }
 
+function normalizeTemplateLabel(value: string): string {
+  return normalizeLabel(value).replace(/[▼►]/g, "").trim();
+}
+
 function nonempty(value: string | undefined): string | undefined {
   const normalized = value?.trim();
   return normalized ? normalized : undefined;
@@ -112,8 +116,54 @@ function catalogAnalyses(worksheet: OoxmlWorksheet, workbook: ReturnType<typeof 
     names.add(worksheetName);
     analyses.push({ worksheetName, toleranceLoopDescription: description, source: { summarySheet: "Auto Summary", summaryRow: row, worksheetAnchor: `${worksheetName}!A1` } });
   }
-  if (analyses.length === 0) throw catalogError(REQUEST_SUMMARY, "auto-summary");
   return analyses;
+}
+
+function scannedAnalyses(workbook: ReturnType<typeof readOoxmlWorkbook>): WorkbookCatalogResult["analyses"] {
+  const analyses: WorkbookCatalogResult["analyses"] = [];
+  for (const [worksheetName, worksheet] of workbook.worksheets) {
+    const factorHeaders = worksheet.cells.filter((cell) => {
+      const label = normalizeTemplateLabel(cell.value);
+      return label === "factor description" || label === "factor description (ta loop)";
+    });
+    const descriptionLabels = worksheet.cells.filter((cell) => normalizeTemplateLabel(cell.value) === "tolerance loop description");
+    if (factorHeaders.length !== 1 || descriptionLabels.length !== 1) continue;
+
+    const labelAddress = address(descriptionLabels[0]!.reference);
+    if (!labelAddress) continue;
+    const descriptionCell = worksheet.cells
+      .filter((cell) => {
+        const candidate = address(cell.reference);
+        return candidate?.row === labelAddress.row
+          && columnNumber(candidate.column) > columnNumber(labelAddress.column)
+          && Boolean(nonempty(cell.value));
+      })
+      .sort((left, right) => columnNumber(address(left.reference)!.column) - columnNumber(address(right.reference)!.column))[0];
+    const toleranceLoopDescription = nonempty(descriptionCell?.value);
+    if (!descriptionCell || !toleranceLoopDescription) continue;
+
+    analyses.push({
+      worksheetName,
+      toleranceLoopDescription,
+      source: {
+        discoveryMethod: "worksheet_scan",
+        descriptionCell: `${worksheetName}!${descriptionCell.reference}`,
+        worksheetAnchor: `${worksheetName}!A1`,
+      },
+    });
+  }
+  return analyses;
+}
+
+function discoverWorksheetAnalyses(workbookBytes: Uint8Array): WorkbookCatalogResult["analyses"] {
+  const workbook = readOoxmlWorkbook(
+    workbookBytes,
+    undefined,
+    false,
+    { maxRow: 260, maxColumn: "Z" },
+    { skipInvalidWorksheets: true },
+  );
+  return scannedAnalyses(workbook);
 }
 
 function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
@@ -159,6 +209,14 @@ export function createWorkbookCatalog(request: unknown): WorkbookCatalogResult {
     const autoSummary = workbook.worksheets.get("Auto Summary");
     if (!titlePage) throw catalogError(REQUEST_SUMMARY, "title-page");
     if (!autoSummary) throw catalogError(REQUEST_SUMMARY, "auto-summary");
+    const summaryAnalyses = catalogAnalyses(autoSummary, workbook);
+    const summaryWorksheetNames = new Set(summaryAnalyses.map((analysis) => analysis.worksheetName));
+    const scanAnalyses = discoverWorksheetAnalyses(parsed.data.workbookBytes);
+    const analyses = [
+      ...summaryAnalyses,
+      ...scanAnalyses.filter((analysis) => !summaryWorksheetNames.has(analysis.worksheetName)),
+    ];
+    if (analyses.length === 0) throw catalogError(REQUEST_SUMMARY, "auto-summary");
     const result = workbookCatalogResultSchema.safeParse({
       contractVersion: "v1",
       workbook: {
@@ -171,7 +229,7 @@ export function createWorkbookCatalog(request: unknown): WorkbookCatalogResult {
           date: catalogDate(titleValue(titlePage, "date")),
         },
       },
-      analyses: catalogAnalyses(autoSummary, workbook),
+      analyses,
     });
     if (!result.success) throw catalogError(REQUEST_SUMMARY, "auto-summary");
     return deepFreeze(structuredClone(result.data));
