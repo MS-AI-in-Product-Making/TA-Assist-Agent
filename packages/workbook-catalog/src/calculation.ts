@@ -3,7 +3,6 @@ import {
   calculationResultSchema,
   createTypedError,
   distributionSchema,
-  errorCodeSchema,
   exceptionResolutionResultSchema,
   requiredFieldCheckResultSchema,
   type CalculationRequest,
@@ -64,20 +63,7 @@ function completionError(): Error {
 
 function isTypedError(error: unknown): boolean {
   try {
-    if (typedErrorSchema.safeParse(error).success) {
-      return true;
-    }
-  } catch {
-    return false;
-  }
-
-  if (!error || typeof error !== "object") {
-    return false;
-  }
-
-  try {
-    const code = (error as { code?: unknown }).code;
-    return typeof code === "string" && errorCodeSchema.safeParse(code).success;
+    return typedErrorSchema.safeParse(error).success;
   } catch {
     return false;
   }

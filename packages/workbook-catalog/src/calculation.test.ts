@@ -314,6 +314,26 @@ describe("createCalculation", () => {
     expectNoMarkerLeak(error, marker);
   });
 
+  it("rejects forged root getter object with valid code but missing typed fields", () => {
+    const marker = "SENSITIVE-root-forged-marker";
+    const forged = { code: "policy_denied", marker };
+    const request = {
+      get inputClassification() {
+        throw forged;
+      },
+    };
+
+    const error = captureThrown(() => createCalculation(request));
+
+    expect(error).toMatchObject({
+      code: "validation_error",
+      summary: "Calculation request is invalid.",
+      affectedInputReferences: ["calculation-request-v1"],
+    });
+    expect(error).not.toBe(forged);
+    expectNoMarkerLeak(error, marker);
+  });
+
   it("maps nested proxy getter throw during safeParse to fixed validation_error without leaking marker", () => {
     const marker = "nested-safe-parse-sensitive";
     const request = deepClone(baseRequest(1));
@@ -341,6 +361,38 @@ describe("createCalculation", () => {
       summary: "Calculation request is invalid.",
       affectedInputReferences: ["calculation-request-v1"],
     });
+    expectNoMarkerLeak(error, marker);
+  });
+
+  it("rejects forged nested getter object with valid code but missing typed fields", () => {
+    const marker = "SENSITIVE-nested-forged-marker";
+    const forged = { code: "policy_denied", marker };
+    const request = deepClone(baseRequest(1));
+    request.worksheetAnalysisAssets = new Proxy(request.worksheetAnalysisAssets, {
+      get(target, property, receiver) {
+        if (property === "workbook") {
+          const workbook = Reflect.get(target, property, receiver) as Record<string, unknown>;
+          return new Proxy(workbook, {
+            get(workbookTarget, workbookProperty, workbookReceiver) {
+              if (workbookProperty === "contentHash") {
+                throw forged;
+              }
+              return Reflect.get(workbookTarget, workbookProperty, workbookReceiver);
+            },
+          });
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+
+    const error = captureThrown(() => createCalculation(request));
+
+    expect(error).toMatchObject({
+      code: "validation_error",
+      summary: "Calculation request is invalid.",
+      affectedInputReferences: ["calculation-request-v1"],
+    });
+    expect(error).not.toBe(forged);
     expectNoMarkerLeak(error, marker);
   });
 
