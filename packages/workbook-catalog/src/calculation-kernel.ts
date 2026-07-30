@@ -6,6 +6,27 @@ export const CALCULATION_VERSION = "excel-ta-v1" as const;
 const STATUS_PASS = "PASS" as const;
 const STATUS_FAIL = "FAIL" as const;
 
+export class CalculationKernelError extends Error {
+  readonly code = "calculation_not_possible" as const;
+  readonly summary: string;
+
+  constructor(summary: string) {
+    super(`calculation_not_possible: ${summary}`);
+    this.name = "CalculationKernelError";
+    this.summary = summary;
+  }
+}
+
+export function isCalculationKernelError(error: unknown): error is CalculationKernelError {
+  return error instanceof CalculationKernelError
+    || (
+      typeof error === "object"
+      && error !== null
+      && (error as { code?: unknown }).code === "calculation_not_possible"
+      && typeof (error as { summary?: unknown }).summary === "string"
+    );
+}
+
 const DISTRIBUTION_MULTIPLIER: Readonly<Record<Distribution, number>> = {
   normal: 1,
   uniform: 1.732,
@@ -96,13 +117,7 @@ export interface KernelCalculationResult {
 }
 
 function throwCalculationNotPossible(summary: string): never {
-  const error = new Error(`calculation_not_possible: ${summary}`) as Error & {
-    code: "calculation_not_possible";
-    summary: string;
-  };
-  error.code = "calculation_not_possible";
-  error.summary = summary;
-  throw error;
+  throw new CalculationKernelError(summary);
 }
 
 function assertFinite(value: number, label: string): void {

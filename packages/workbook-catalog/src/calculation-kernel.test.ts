@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import normalCdf from "@stdlib/stats-base-dists-normal-cdf";
+import * as packageRoot from "./index.js";
 import {
   CALCULATION_VERSION,
+  CalculationKernelError,
   calculateToleranceAnalysis,
+  isCalculationKernelError,
   recommendCalculationMethod,
   type NormalizedCalculationInput,
   type NormalizedFactor,
@@ -61,6 +64,12 @@ function buildInput(factors: readonly NormalizedFactor[]): NormalizedCalculation
 }
 
 describe("calculation kernel", () => {
+  it("is internal-only and not exported from package root", () => {
+    expect(packageRoot).not.toHaveProperty("CALCULATION_VERSION");
+    expect(packageRoot).not.toHaveProperty("calculateToleranceAnalysis");
+    expect(packageRoot).not.toHaveProperty("recommendCalculationMethod");
+  });
+
   it("exports version constant", () => {
     expect(CALCULATION_VERSION).toBe("excel-ta-v1");
   });
@@ -73,10 +82,35 @@ describe("calculation kernel", () => {
     expect(recommendCalculationMethod(11)).toBe("refer_3d_variation_analysis");
   });
 
-  it("throws fixed behavior for non-positive or non-integer factor count", () => {
-    expect(() => recommendCalculationMethod(0)).toThrowError(/calculation_not_possible/i);
-    expect(() => recommendCalculationMethod(-1)).toThrowError(/calculation_not_possible/i);
-    expect(() => recommendCalculationMethod(2.5)).toThrowError(/calculation_not_possible/i);
+  it("throws deterministic kernel error object for invalid factor count", () => {
+    let first: unknown;
+    let second: unknown;
+
+    try {
+      recommendCalculationMethod(0);
+    } catch (error) {
+      first = error;
+    }
+
+    try {
+      recommendCalculationMethod(0);
+    } catch (error) {
+      second = error;
+    }
+
+    expect(first).toBeInstanceOf(CalculationKernelError);
+    expect(second).toBeInstanceOf(CalculationKernelError);
+    expect(isCalculationKernelError(first)).toBe(true);
+    expect(isCalculationKernelError(second)).toBe(true);
+    expect(first).toMatchObject({
+      code: "calculation_not_possible",
+      summary: "factorCount must be a positive integer",
+    });
+    expect(second).toMatchObject({
+      code: "calculation_not_possible",
+      summary: "factorCount must be a positive integer",
+    });
+    expect((first as CalculationKernelError).summary).toBe((second as CalculationKernelError).summary);
   });
 
   it("matches approved Example_TA seven-factor reference values", () => {
@@ -186,6 +220,43 @@ describe("calculation kernel", () => {
     expectClose(result.factors[0].mean, -10.1);
     expectClose(result.factors[0].halfTolerance, 0.30000000000000004);
     expectClose(result.factors[0].sigma, 0.15000000000000002);
+  });
+
+  it("applies positive nominal asymmetric formula for single-sided tolerance with explicit 3-sigma factor", () => {
+    const result = calculateToleranceAnalysis({
+      factors: [
+        {
+          name: "pos-one-sided",
+          unit: "mm",
+          source: {
+            worksheetName: "Sheet1",
+            tableId: "table-1",
+            sourceRow: 2,
+          },
+          input: {
+            nominalValue: 10,
+            upperTolerance: 0.1,
+            lowerTolerance: 0,
+            longTermSafetyFactor: 1,
+            sigmaLevel: 3,
+            distribution: "normal",
+          },
+        },
+      ],
+      system: {
+        designNominal: 10,
+        lowerSpecLimit: 9,
+        upperSpecLimit: 11,
+        targetSigmaLevel: 3,
+        targetCpk: 1,
+        shift: 0,
+      },
+    });
+
+    expectClose(result.factors[0].halfTolerance, 0.05);
+    expectClose(result.factors[0].mean, 10.05);
+    expectClose(result.factors[0].sigma, 0.05 / 3);
+    expect(result.factors[0].contribution).toBe(1);
   });
 
   it("supports twenty factors with mixed normal/uniform and keeps contribution sum near one", () => {
@@ -338,24 +409,55 @@ describe("calculation kernel", () => {
     })).toThrowError(/finite|calculation_not_possible/i);
   });
 
-  it("enforces PASS/FAIL boundary operators exactly", () => {
+  it("marks cp as FAIL when cp equals target", () => {
     const result = calculateToleranceAnalysis({
       factors: [buildFactor(0)],
       system: {
         designNominal: 0,
-        lowerSpecLimit: -9,
+        lowerSpecLimit: -3,
         upperSpecLimit: 3,
         targetSigmaLevel: 3,
         targetCpk: 1,
-        shift: -1,
+        shift: 0,
       },
     });
 
-    expectClose(result.capability.cp, 2);
-    expectClose(result.capability.lowerCpk, 3);
+    expectClose(result.capability.cp, 1);
+    expect(result.capability.cpStatus).toBe("FAIL");
+  });
+
+  it("marks lowerCpk as FAIL when lowerCpk equals target", () => {
+    const result = calculateToleranceAnalysis({
+      factors: [buildFactor(0)],
+      system: {
+        designNominal: 0,
+        lowerSpecLimit: -2,
+        upperSpecLimit: 8,
+        targetSigmaLevel: 3,
+        targetCpk: 1,
+        shift: 0,
+      },
+    });
+
+    expectClose(result.capability.lowerCpk, 1);
+    expect(result.capability.lowerCpkStatus).toBe("FAIL");
+  });
+
+  it("keeps upperCpk equals target as PASS and final cpk equals target as FAIL", () => {
+    const result = calculateToleranceAnalysis({
+      factors: [buildFactor(0)],
+      system: {
+        designNominal: 0,
+        lowerSpecLimit: -2,
+        upperSpecLimit: 4,
+        targetSigmaLevel: 3,
+        targetCpk: 1,
+        shift: 0,
+      },
+    });
+
+    expectClose(result.capability.lowerCpk, 1);
     expectClose(result.capability.upperCpk, 1);
-    expect(result.capability.cpStatus).toBe("PASS");
-    expect(result.capability.lowerCpkStatus).toBe("PASS");
     expect(result.capability.upperCpkStatus).toBe("PASS");
     expect(result.capability.status).toBe("FAIL");
   });

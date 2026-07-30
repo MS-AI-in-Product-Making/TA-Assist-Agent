@@ -14,11 +14,6 @@ export { createDrawingGovernancePlaceholder } from "./drawing-governance-placeho
 export { createInterpretationPlaceholder } from "./interpretation-placeholder.js";
 export { createComparisonPlaceholder } from "./comparison-placeholder.js";
 export { createCpkPlaceholder } from "./cpk-placeholder.js";
-export {
-	CALCULATION_VERSION,
-	calculateToleranceAnalysis,
-	recommendCalculationMethod,
-} from "./calculation-kernel.js";
 export type {
 	CapabilityValidationRequest,
 	CapabilityValidationResult,
@@ -48,9 +43,4 @@ export type {
 	WorksheetImageReadRequest,
 	WorksheetImageReadResult,
 } from "@ai-assist/contracts";
-export type {
-	KernelCalculationResult,
-	NormalizedCalculationInput,
-	NormalizedFactor,
-} from "./calculation-kernel.js";
 export type { ParallelWorksheetAnalysisAssetsResult, WorksheetProcessingPage } from "./worksheet-analysis-assets.js";
