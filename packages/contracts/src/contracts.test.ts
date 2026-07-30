@@ -904,6 +904,18 @@ describe("F4 calculation contracts", () => {
     expect(calculationResultSchema.safeParse(completedResult).success).toBe(true);
   });
 
+  it("rejects completed scenario no-op overrides", () => {
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      scenarios: [{
+        ...completedResult.scenarios[0],
+        overrides: {
+          factors: [],
+        },
+      }],
+    }).success).toBe(false);
+  });
+
   it("rejects completed derived invariant violations", () => {
     expect(calculationResultSchema.safeParse({
       ...completedResult,

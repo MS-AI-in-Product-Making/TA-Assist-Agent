@@ -1822,7 +1822,24 @@ const calculationScenarioOverridesSchema = z
     factors: z.array(calculationScenarioFactorOverrideDetailsSchema).max(100),
     systemSpecification: calculationScenarioSystemSpecificationSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((overrides, context) => {
+    for (const [factorIndex, factor] of overrides.factors.entries()) {
+      if (factor.fields.length === 0) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "factor override fields must include at least one overridden field",
+          path: ["factors", factorIndex, "fields"],
+        });
+      }
+    }
+    if (overrides.factors.length === 0 && overrides.systemSpecification === undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "scenario override must include at least one factor override or systemSpecification override",
+      });
+    }
+  });
 
 const calculationScenarioDeltasSchema = z
   .object({
