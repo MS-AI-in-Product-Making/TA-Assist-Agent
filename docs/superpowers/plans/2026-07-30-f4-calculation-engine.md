@@ -257,17 +257,17 @@ Run: `git add packages/workbook-catalog/src/calculation.ts packages/workbook-cat
 - Create: `scripts/f4-excel-regression.test.mjs`
 - Modify: `package.json`
 
-- [ ] **Step 1: Write failing harness tests.**
+- [x] **Step 1: Write failing harness tests.**
 
 Test that the script requires `-WorkbookPath`, `-ExpectedSha256`, `-WorksheetName` and a JSON mapping; rejects hash mismatch before Excel startup; rejects output cells outside the mapping; and supports `-ValidateOnly` for CI without COM.
 
-- [ ] **Step 2: Run harness tests and verify RED.**
+- [x] **Step 2: Run harness tests and verify RED.**
 
 Run: `node --test scripts/f4-excel-regression.test.mjs`
 
 Expected: FAIL because the script does not exist.
 
-- [ ] **Step 3: Implement the read-only regression harness.**
+- [x] **Step 3: Implement the read-only regression harness.**
 
 The script must:
 
@@ -286,7 +286,7 @@ Add root script:
 "verify:f4-excel-regression": "pwsh -NoProfile -File scripts/verify-f4-excel-regression.ps1"
 ```
 
-- [ ] **Step 4: Run harness unit tests and approved workbook checks.**
+- [x] **Step 4: Run harness unit tests and approved workbook checks.**
 
 Run: `node --test scripts/f4-excel-regression.test.mjs`
 
@@ -294,7 +294,7 @@ Run the script against the approved template `Example_TA` and `test/feature1-inp
 
 Expected: unit tests PASS; approved core outputs stay within `1e-12`, formatted Cpk/status match exactly, and source workbook hashes remain unchanged.
 
-- [ ] **Step 5: Commit the regression slice.**
+- [x] **Step 5: Commit the regression slice.**
 
 Run: `git add scripts/verify-f4-excel-regression.ps1 scripts/f4-excel-regression.test.mjs package.json && git commit -m "test(f4): add Excel golden regression harness"`
 
