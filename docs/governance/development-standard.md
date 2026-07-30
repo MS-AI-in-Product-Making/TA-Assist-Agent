@@ -26,3 +26,17 @@
 ## 文档与验收
 
 计划说明范围、依赖和风险；实现记录设计与契约；执行记录操作和结果；验收记录检查项、证据和结论。除非交付对象另有语言要求，这四类文档默认使用中文，并与对应 Issue 和 PR 保持可追溯关系。
+
+## F4 计算发布门禁
+
+- F4 生产计算固定使用 `excel-ta-v1` 纯 calculation kernel。少于 4 个有效因子推荐 WC，4 至
+  10 个推荐一维 RSS，多于 10 个转介 DM 团队跟进 3D Variation Analysis；所有区间仍同时输出
+  WC 和 RSS。
+- 计算只接受同单位因子，并覆盖 Normal、Uniform、Triangular、Trapezoidal、Elliptical、Beta
+  六种分布。TypeScript 与批准模板的数值差异必须满足绝对或相对误差 `1e-12`。
+- What-if 必须复用生产 calculation kernel，且 `scenario count × factor count <= 1000`；不得维护
+  第二套公式或复用受覆盖影响的中间结果。
+- 计算错误只记录错误码、公式 ID 和受控引用，不得包含原始 `confidential` 输入值、真实 workbook
+  路径或 hash。
+- 发布前运行 `npm run verify:f4-excel-regression`。批准的 Windows Excel Worker 仅发布黄金回归，
+  不在生产请求热路径中。F4 发布不得同时启用 F5 或 F6。

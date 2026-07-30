@@ -20,7 +20,7 @@ it("runs a public smoke workflow and prints safe result metadata", async () => {
     expect(result.stdout).toMatch(/runId: [0-9a-f-]{36}/i);
     expect(result.stdout).toContain("skillResults: 2");
     expect(result.stdout).toContain("manifestValid: true");
-    expect(result.stdout).toContain("F4: feature_not_available");
+    expect(result.stdout).toContain("F4: available");
   } finally {
     await rm(rootDir, { recursive: true, force: true });
   }
