@@ -183,7 +183,7 @@ Run: `git add packages/workbook-catalog/src/calculation-kernel.ts packages/workb
 - Create: `packages/workbook-catalog/src/calculation.test.ts`
 - Modify: `packages/workbook-catalog/src/index.ts`
 
-- [ ] **Step 1: Write failing service tests.**
+- [x] **Step 1: Write failing service tests.**
 
 Create a request fixture with available F1 fields. Assert that `createCalculation(request)`:
 
@@ -197,25 +197,25 @@ Create a request fixture with available F1 fields. Assert that `createCalculatio
 - does not expose workbook bytes or arbitrary raw fields in errors/results;
 - exports `createCalculation` from the built ESM package.
 
-- [ ] **Step 2: Run service tests and verify RED.**
+- [x] **Step 2: Run service tests and verify RED.**
 
 Run: `npm exec -- vitest run --workspace vitest.workspace.ts packages/workbook-catalog/src/calculation.test.ts`
 
 Expected: FAIL because `createCalculation` does not exist.
 
-- [ ] **Step 3: Implement normalization, gates and trace building.**
+- [x] **Step 3: Implement normalization, gates and trace building.**
 
 Follow existing guarded classification and `createTypedError` patterns. Parse the request with `calculationRequestSchema`, locate one exact table, normalize fields, call the kernel, build `formulaId` values from a fixed allowlist, validate with `calculationResultSchema`, then `structuredClone` and recursively freeze the result.
 
 Do not call the placeholder, open a workbook or infer headers. Keep `createCalculationPlaceholder` unchanged and export both functions.
 
-- [ ] **Step 4: Run service and existing placeholder tests.**
+- [x] **Step 4: Run service and existing placeholder tests.**
 
 Run: `npm exec -- vitest run --workspace vitest.workspace.ts packages/workbook-catalog/src/calculation.test.ts packages/workbook-catalog/src/calculation-placeholder.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit the service slice.**
+- [x] **Step 5: Commit the service slice.**
 
 Run: `git add packages/workbook-catalog/src/calculation.ts packages/workbook-catalog/src/calculation.test.ts packages/workbook-catalog/src/index.ts && git commit -m "feat(f4): calculate validated worksheet selections"`
 
