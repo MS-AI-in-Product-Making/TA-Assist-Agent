@@ -24,6 +24,21 @@ import {
   unifiedExceptionResolutionV2ResultSchema,
   engineeringRuleEntrySchema,
   engineeringRuleQuerySchema,
+  internalToleranceGuidanceEntrySchema,
+  internalToleranceGuidanceManifestSchema,
+  internalToleranceGuidanceRequestSchema,
+  internalToleranceGuidanceResultSchema,
+  internalToleranceGuidanceSourceMetadataSchema,
+  interpretationEntryTypeSchema,
+  interpretationKnowledgeEntrySchema,
+  interpretationKnowledgeManifestSchema,
+  interpretationKnowledgeSeedPackageSchema,
+  interpretationKnowledgeSourceMetadataSchema,
+  interpretationProvenanceSchema,
+  interpretationRuleEvaluationRequestSchema,
+  interpretationRuleEvaluationSchema,
+  interpretationRuleLoadRequestSchema,
+  interpretationRuleVersionSchema,
   knowledgeBaseQueryResultSchema,
   knowledgeBaseManifestSchema,
   knowledgeBaseQueryRequestSchema,
@@ -34,6 +49,8 @@ import {
   runRequestSchema,
   requiredFieldCheckRequestSchema,
   requiredFieldCheckResultSchema,
+  semanticTableDetectionRequestSchema,
+  semanticTableDetectionResultSchema,
   skillResultSchema,
   terminologyEntrySchema,
   typedErrorSchema,
@@ -118,6 +135,26 @@ describe("Phase 0 contracts", () => {
     );
 
     expect(output.trim()).toBe("loaded");
+  });
+});
+
+describe("internal tolerance guidance contracts", () => {
+  it("accepts a unilateral request with exactly representable values", () => {
+    expect(
+      internalToleranceGuidanceRequestSchema.safeParse({
+        processFamily: "cnc-machining",
+        featureType: "diameter",
+        nominalValue: 10,
+        nominalUnit: "mm",
+        tolerance: {
+          representation: "unilateral",
+          upperValue: 0.25,
+          lowerValue: 0.125,
+          value: 0.125,
+          unit: "mm",
+        },
+      }).success,
+    ).toBe(true);
   });
 });
 
@@ -591,6 +628,228 @@ describe("knowledge-base contracts", () => {
     expect(matchedCapability.queryType).toBe("capability");
     expect(knowledgeBaseQueryResultSchema.parse(unknownCapability)).toEqual(unknownCapability);
     expect(() => knowledgeBaseQueryResultSchema.parse({ ...unknownCapability, feasible: true })).toThrow();
+  });
+});
+
+describe("internal tolerance guidance contracts", () => {
+  const sourceMetadata = {
+    sourceId: "cnc-capability-matrix-2026-q3",
+    sourceFile: "cnc-capability-matrix.xlsx",
+    sourceFileHash: "a".repeat(64),
+    sourceVersion: "2026-Q3",
+    sheetName: "CNC",
+    sourceRange: "A1:B2",
+    classification: "internal" as const,
+  };
+
+  const manifest = {
+    contractVersion: "v1" as const,
+    knowledgeBaseVersion: "internal-v1" as const,
+    classification: "internal" as const,
+    releasedAt: "2026-07-28",
+    changeSummary: "Initial internal tolerance guidance snapshot.",
+    sourceCount: 1,
+    entryCount: 6,
+    sourcesContentHash: "b".repeat(64),
+    entriesContentHash: "c".repeat(64),
+  };
+
+  const evidence = {
+    sourceFile: "cnc-capability-matrix.xlsx",
+    sourceFileHash: "a".repeat(64),
+    sheetName: "CNC",
+    sourceRange: "A2:H2",
+  };
+
+  const entry = {
+    entryId: "cnc-hole-diameter",
+    processFamily: "cnc-machining",
+    featureType: "hole-diameter",
+    material: "aluminum",
+    nominalRange: { min: 1, max: 25, unit: "mm" },
+    maximumRecommendedTotalBand: { value: 0.1, unit: "mm" },
+    fallbackPriority: 10,
+    capabilityTier: "T1",
+    provenance: {
+      classification: "internal",
+      sourceId: "cnc-capability-matrix-2026-q3",
+      ...evidence,
+      sourceVersion: "2026-Q3",
+      owner: "knowledge-steward",
+      confidence: 1,
+      effectiveVersion: "internal-v1",
+      changeSummary: "Reviewed CNC hole-diameter guidance.",
+    },
+  };
+
+  const request = {
+    processFamily: "cnc-machining",
+    featureType: "hole-diameter",
+    nominalValue: 12,
+    nominalUnit: "mm",
+    material: "aluminum",
+    tolerance: { representation: "bilateral", value: 0.08, unit: "mm" },
+  };
+
+  const exceededResult = {
+    status: "guidance-exceeded",
+    knowledgeBaseVersion: "internal-v1",
+    matchedEntryId: entry.entryId,
+    assessedTotalBand: { value: 0.16, unit: "mm" },
+    maximumRecommendedTotalBand: entry.maximumRecommendedTotalBand,
+    fallbackApplied: false,
+    evidence,
+  };
+
+  it("accepts a CNC bilateral request and guidance-exceeded DTO", () => {
+    expect(internalToleranceGuidanceRequestSchema.parse(request)).toEqual(request);
+    expect(internalToleranceGuidanceEntrySchema.parse(entry)).toEqual(entry);
+    expect(internalToleranceGuidanceResultSchema.parse(exceededResult)).toEqual(exceededResult);
+  });
+
+  it("accepts strict nested entry and request conditions", () => {
+    const conditions = {
+      processMethod: "formed",
+      materialFamily: "steel",
+      thicknessMm: { min: 0.8, max: 1.2 },
+      toleranceGrade: "TG6",
+      dimensionType: "W" as const,
+    };
+
+    expect(internalToleranceGuidanceEntrySchema.parse({ ...entry, conditions }).conditions).toEqual(conditions);
+    expect(internalToleranceGuidanceRequestSchema.parse({
+      ...request,
+      conditions: {
+        processMethod: "formed",
+        materialFamily: "steel",
+        thicknessMm: 1,
+        toleranceGrade: "TG6",
+        dimensionType: "W",
+      },
+    }).conditions).toEqual({
+      processMethod: "formed",
+      materialFamily: "steel",
+      thicknessMm: 1,
+      toleranceGrade: "TG6",
+      dimensionType: "W",
+    });
+
+    expect(internalToleranceGuidanceEntrySchema.safeParse({
+      ...entry,
+      conditions: { dimensionType: "X" },
+    }).success).toBe(false);
+    expect(internalToleranceGuidanceRequestSchema.safeParse({
+      ...request,
+      conditions: { thicknessMm: Number.NaN },
+    }).success).toBe(false);
+    expect(internalToleranceGuidanceEntrySchema.safeParse({
+      ...entry,
+      conditions: { thicknessMm: { min: 0.8, max: Infinity } },
+    }).success).toBe(false);
+    expect(internalToleranceGuidanceRequestSchema.safeParse({
+      ...request,
+      conditions: { dimensionType: "NW", unexpected: true },
+    }).success).toBe(false);
+  });
+
+  it("accepts explicit range endpoint inclusion flags and rejects empty ranges", () => {
+    expect(internalToleranceGuidanceEntrySchema.parse({
+      ...entry,
+      nominalRange: { min: 3, minInclusive: false, max: 6, maxInclusive: true, unit: "mm" },
+      conditions: { thicknessMm: { min: 1, minInclusive: false, max: 3, maxInclusive: true } },
+    })).toMatchObject({
+      nominalRange: { min: 3, minInclusive: false, max: 6, maxInclusive: true, unit: "mm" },
+      conditions: { thicknessMm: { min: 1, minInclusive: false, max: 3, maxInclusive: true } },
+    });
+    expect(internalToleranceGuidanceEntrySchema.safeParse({
+      ...entry,
+      nominalRange: { min: 6, minInclusive: false, max: 6, maxInclusive: true, unit: "mm" },
+    }).success).toBe(false);
+    expect(internalToleranceGuidanceEntrySchema.safeParse({
+      ...entry,
+      conditions: { thicknessMm: { min: 3, minInclusive: false, max: 3, maxInclusive: true } },
+    }).success).toBe(false);
+    expect(internalToleranceGuidanceEntrySchema.safeParse({
+      ...entry,
+      nominalRange: { min: 3, minInclusive: "false", max: 6, unit: "mm" },
+    }).success).toBe(false);
+  });
+
+  it("accepts strict internal-v1 source metadata and manifest", () => {
+    expect(internalToleranceGuidanceSourceMetadataSchema.parse(sourceMetadata)).toEqual(sourceMetadata);
+    expect(internalToleranceGuidanceManifestSchema.parse(manifest)).toEqual(manifest);
+  });
+
+  it.each([
+    ["source metadata", internalToleranceGuidanceSourceMetadataSchema, sourceMetadata],
+    ["manifest", internalToleranceGuidanceManifestSchema, manifest],
+  ])("rejects an extra field in internal-v1 %s", (_description, schema, value) => {
+    expect(schema.safeParse({ ...value, unexpected: true }).success).toBe(false);
+  });
+
+  it.each([
+    ["source metadata", internalToleranceGuidanceSourceMetadataSchema, sourceMetadata],
+    ["manifest", internalToleranceGuidanceManifestSchema, manifest],
+  ])("rejects public classification in internal-v1 %s", (_description, schema, value) => {
+    expect(schema.safeParse({ ...value, classification: "public" }).success).toBe(false);
+  });
+
+  it.each([
+    ["source metadata hash", internalToleranceGuidanceSourceMetadataSchema, { ...sourceMetadata, sourceFileHash: "A".repeat(64) }],
+    ["source metadata range", internalToleranceGuidanceSourceMetadataSchema, { ...sourceMetadata, sourceRange: "A0:B2" }],
+    ["manifest sources count", internalToleranceGuidanceManifestSchema, { ...manifest, sourceCount: -1 }],
+    ["manifest entries count", internalToleranceGuidanceManifestSchema, { ...manifest, entryCount: 1.5 }],
+    ["manifest sources hash", internalToleranceGuidanceManifestSchema, { ...manifest, sourcesContentHash: "B".repeat(64) }],
+    ["manifest entries hash", internalToleranceGuidanceManifestSchema, { ...manifest, entriesContentHash: "C".repeat(64) }],
+  ])("rejects invalid internal-v1 %s", (_description, schema, value) => {
+    expect(schema.safeParse(value).success).toBe(false);
+  });
+
+  it.each([
+    ["public provenance", { ...entry, provenance: { ...entry.provenance, classification: "public" } }],
+    ["an unsupported process", { ...entry, processFamily: "laser-cutting" }],
+    ["a zero maximum threshold", { ...entry, maximumRecommendedTotalBand: { value: 0, unit: "mm" } }],
+    ["absent evidence range", { ...entry, provenance: { ...entry.provenance, sourceRange: undefined } }],
+    ["a malformed evidence range", { ...entry, provenance: { ...entry.provenance, sourceRange: "A0:B2" } }],
+    ["an extra field", { ...entry, unexpected: true }],
+  ])("rejects an entry with %s", (_description, invalidEntry) => {
+    expect(internalToleranceGuidanceEntrySchema.safeParse(invalidEntry).success).toBe(false);
+  });
+
+  it("requires upper and lower values for unilateral tolerance", () => {
+    expect(
+      internalToleranceGuidanceRequestSchema.safeParse({
+        ...request,
+        tolerance: { representation: "unilateral", value: 0.1, unit: "mm", upperValue: 0.1 },
+      }).success,
+    ).toBe(false);
+  });
+
+  it.each([
+    ["equal", 0.1, 0.1],
+    ["reversed", 0.05, 0.1],
+  ])("rejects %s unilateral tolerance values", (_description, upperValue, lowerValue) => {
+    expect(
+      internalToleranceGuidanceRequestSchema.safeParse({
+        ...request,
+        tolerance: { representation: "unilateral", value: 0.1, unit: "mm", upperValue, lowerValue },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects a unilateral tolerance whose value does not equal the total band", () => {
+    expect(
+      internalToleranceGuidanceRequestSchema.safeParse({
+        ...request,
+        tolerance: { representation: "unilateral", value: 0.1, unit: "mm", upperValue: 0.2, lowerValue: 0.05 },
+      }).success,
+    ).toBe(false);
+  });
+
+  it.each(["pass", "fail", "feasible", "tooTight"])("rejects unsupported output field %s", (field) => {
+    expect(
+      internalToleranceGuidanceResultSchema.safeParse({ ...exceededResult, [field]: true }).success,
+    ).toBe(false);
   });
 });
 
@@ -1176,6 +1435,94 @@ describe("worksheet analysis asset contracts", () => {
     expect(exceptionResolutionResultSchema.parse(result).status).toBe("readyToContinue");
     expect(exceptionResolutionResultSchema.safeParse({ ...result, readyToContinue: false }).success).toBe(false);
   });
+
+  it("accepts strict F1.7 semantic table detection contracts", () => {
+    const detectionRequest = {
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbookBytes: new Uint8Array([0x50, 0x4b, 3, 4]),
+      workbookCatalog,
+      worksheetSelection: { mode: "selected", worksheetNames: ["Analysis"] },
+      manualConfirmations: [{
+        worksheetName: "Analysis",
+        candidateId: "cand-a",
+        action: "confirm_as_is",
+      }],
+    };
+
+    expect(semanticTableDetectionRequestSchema.parse(detectionRequest)).toEqual(detectionRequest);
+
+    const pendingResult = {
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbook: { contentHash, catalogContractVersion: "v1" },
+      worksheets: [{
+        worksheetName: "Analysis",
+        recognitionStatus: "pending_confirmation",
+        confidenceScore: 71,
+        confidenceBreakdown: {
+          headerScore: 36,
+          typeScore: 20,
+          completenessScore: 15,
+          penalty: 0,
+        },
+        uncertaintyReasons: ["ambiguous_mapping"],
+        requiresUserConfirmation: true,
+        confirmationPayload: {
+          candidateId: "cand-a",
+          headerRow: 12,
+          dataRange: { startRow: 13, endRow: 26 },
+          mappedFields: [{
+            field: "factorName",
+            sourceColumn: "B",
+            headerText: "Factor",
+            status: "mapped",
+          }],
+          recommendedAction: "confirm_as_is",
+          reasonCodes: ["ambiguous_mapping"],
+        },
+      }],
+      summary: {
+        worksheetCount: 1,
+        autoConfirmedCount: 0,
+        manualConfirmedCount: 0,
+        pendingConfirmationCount: 1,
+        blockedCount: 0,
+      },
+    };
+
+    expect(semanticTableDetectionResultSchema.parse(pendingResult)).toEqual(pendingResult);
+    expect(semanticTableDetectionResultSchema.safeParse({
+      ...pendingResult,
+      worksheets: [{
+        ...pendingResult.worksheets[0],
+        recognitionStatus: "auto_confirmed",
+        requiresUserConfirmation: false,
+        confirmationPayload: undefined,
+      }],
+      summary: {
+        worksheetCount: 1,
+        autoConfirmedCount: 1,
+        manualConfirmedCount: 0,
+        pendingConfirmationCount: 0,
+        blockedCount: 0,
+      },
+    }).success).toBe(true);
+    expect(semanticTableDetectionResultSchema.safeParse({
+      ...pendingResult,
+      worksheets: [{
+        ...pendingResult.worksheets[0],
+        requiresUserConfirmation: false,
+      }],
+    }).success).toBe(false);
+    expect(semanticTableDetectionResultSchema.safeParse({
+      ...pendingResult,
+      summary: {
+        ...pendingResult.summary,
+        pendingConfirmationCount: 0,
+      },
+    }).success).toBe(false);
+  });
 });
 
 describe("F2.4 identifier quality contracts", () => {
@@ -1480,5 +1827,367 @@ describe("worksheet selection view contracts", () => {
   ])("rejects worksheet selection view contract with %s", (_description, value) => {
     const schema = "workbookCatalog" in value ? worksheetSelectionViewRequestSchema : worksheetSelectionViewResultSchema;
     expect(schema.safeParse(value).success).toBe(false);
+  });
+});
+
+describe("interpretation rules contracts", () => {
+  const provenance = {
+    classification: "internal" as const,
+    sourceAlias: "capability-handbook",
+    sourceFileHash: "a".repeat(64),
+    sourceVersion: "2026-Q3",
+    sheetName: "Rules",
+    sourceRange: "A2:H20",
+    owner: "knowledge-steward",
+    confidence: 0.9,
+    effectiveVersion: "interpretation-rules-v1" as const,
+    changeSummary: "Initial reviewed interpretation rules.",
+  };
+
+  const commonEntry = {
+    entryId: "entry-1",
+    title: "Capability interpretation",
+    description: "Interprets one-dimensional capability facts.",
+    applicability: { analysisDimension: "one-dimensional" as const, method: "rss" as const },
+    relatedEntryIds: [],
+    provenance,
+  };
+
+  const entries = [
+    {
+      ...commonEntry,
+      entryId: "metric-cpk",
+      entryType: "metric-definition" as const,
+      metric: "cpk",
+      unit: "ratio",
+    },
+    {
+      ...commonEntry,
+      entryId: "performance-cpk",
+      entryType: "performance-rule" as const,
+      metric: "cpk",
+      comparison: "greater-than-or-equal" as const,
+      targetSource: "resolved-target" as const,
+      requiredFacts: ["cpk", "targetCpk"],
+      outcomeWhenMatched: "meets-target",
+    },
+    {
+      ...commonEntry,
+      entryId: "root-cause-contributor",
+      entryType: "root-cause-signal" as const,
+      signalStatus: "hypothesis" as const,
+      requiredFacts: ["contributors"],
+      validationFacts: ["contributor-evidence"],
+      activationCondition: {
+        kind: "maximum-contribution-at-least" as const,
+        thresholdPercent: 30,
+      },
+    },
+    {
+      ...commonEntry,
+      entryId: "improvement-review",
+      entryType: "improvement-option" as const,
+      expectedImpact: "Reduce the largest contributor.",
+      tradeoffs: ["May increase manufacturing cost."],
+      validationSteps: ["Recalculate the tolerance stack."],
+    },
+    {
+      ...commonEntry,
+      entryId: "decision-escalate",
+      entryType: "decision-policy" as const,
+      policyKind: "engineering-review" as const,
+    },
+  ];
+
+  const source = {
+    sourceAlias: "capability-handbook",
+    sourceFileHash: "a".repeat(64),
+    sourceVersion: "2026-Q3",
+    classification: "internal" as const,
+    owner: "knowledge-steward",
+  };
+
+  const manifest = {
+    version: "interpretation-rules-v1" as const,
+    classification: "internal" as const,
+    sourceCount: 1,
+    entryCount: 5,
+    entryTypeCounts: {
+      "metric-definition": 1,
+      "performance-rule": 1,
+      "root-cause-signal": 1,
+      "improvement-option": 1,
+      "decision-policy": 1,
+    },
+    sourcesHash: "b".repeat(64),
+    entriesHash: "c".repeat(64),
+    contentHash: "d".repeat(64),
+  };
+
+  const seedPackage = { manifest, sources: [source], entries };
+
+  const evaluation = {
+    knowledgeBaseVersion: "interpretation-rules-v1" as const,
+    status: "matched" as const,
+    resolvedTargets: {
+      cpk: { value: 1.33, source: "project" as const },
+      sigma: { value: 4.5, source: "template" as const },
+    },
+    factsUsed: ["cpk", "targetCpk"],
+    matchedRules: [{
+      entryId: "performance-cpk",
+      entryType: "performance-rule" as const,
+      relatedFactReferences: ["cpk", "targetCpk"],
+      evidence: {
+        sourceAlias: "capability-handbook",
+        sheetName: "Rules",
+        sourceRange: "A2:H20",
+        sourceFileHash: "a".repeat(64),
+      },
+    }],
+    missingFacts: [],
+  };
+
+  it("accepts the version, every entry discriminant, a strict seed package, and a version-only load request", () => {
+    expect(interpretationRuleVersionSchema.parse("interpretation-rules-v1")).toBe("interpretation-rules-v1");
+    expect(entries.map((entry) => interpretationEntryTypeSchema.parse(entry.entryType))).toEqual(
+      entries.map((entry) => entry.entryType),
+    );
+    expect(entries.map((entry) => interpretationKnowledgeEntrySchema.parse(entry).entryType)).toEqual(
+      entries.map((entry) => entry.entryType),
+    );
+    expect(interpretationKnowledgeSourceMetadataSchema.parse(source)).toEqual(source);
+    expect(interpretationKnowledgeManifestSchema.parse(manifest)).toEqual(manifest);
+    expect(interpretationKnowledgeSeedPackageSchema.parse(seedPackage)).toEqual(seedPackage);
+    expect(interpretationRuleLoadRequestSchema.parse({ version: "interpretation-rules-v1" })).toEqual({
+      version: "interpretation-rules-v1",
+    });
+    expect(interpretationRuleLoadRequestSchema.safeParse({
+      version: "interpretation-rules-v1",
+      seedPackage,
+    }).success).toBe(false);
+  });
+
+  it.each([
+    ["sourceCount", { ...manifest, sourceCount: 0 }, ["manifest", "sourceCount"]],
+    ["entryCount", { ...manifest, entryCount: 4 }, ["manifest", "entryCount"]],
+    [
+      "entryTypeCounts",
+      { ...manifest, entryTypeCounts: { ...manifest.entryTypeCounts, "performance-rule": 0 } },
+      ["manifest", "entryTypeCounts", "performance-rule"],
+    ],
+  ])("rejects an inconsistent manifest %s at the manifest field", (_field, inconsistentManifest, expectedPath) => {
+    const result = interpretationKnowledgeSeedPackageSchema.safeParse({
+      ...seedPackage,
+      manifest: inconsistentManifest,
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((issue) =>
+        JSON.stringify(issue.path) === JSON.stringify(expectedPath))).toBe(true);
+    }
+  });
+
+  it("accepts cpk, sigma, contributor facts, and preserves resolved target sources", () => {
+    const request = {
+      analysisDimension: "one-dimensional" as const,
+      method: "worst-case" as const,
+      facts: {
+        cpk: 1.33,
+        targetCpk: { value: 1.33, source: "project" as const },
+        achievedSigma: 4,
+        targetSigma: { value: 4.5, source: "template" as const },
+        contributors: [{ reference: "dimension-A", contributionPercent: 62.5 }],
+      },
+    };
+    expect(interpretationRuleEvaluationRequestSchema.parse(request)).toEqual(request);
+    expect(interpretationRuleEvaluationSchema.parse(evaluation)).toEqual(evaluation);
+    expect(interpretationRuleEvaluationSchema.parse({
+      ...evaluation,
+      resolvedTargets: { cpk: { value: 1.33, source: "project" } },
+    }).resolvedTargets).toEqual({
+      cpk: { value: 1.33, source: "project" },
+    });
+    expect(interpretationRuleEvaluationSchema.parse({
+      ...evaluation,
+      resolvedTargets: { sigma: { value: 4.5, source: "controlled-default" } },
+    }).resolvedTargets).toEqual({
+      sigma: { value: 4.5, source: "controlled-default" },
+    });
+    expect(interpretationRuleEvaluationRequestSchema.safeParse({
+      ...request,
+      facts: { ...request.facts, targetCpk: { value: 1.33, source: "controlled-default" } },
+    }).success).toBe(false);
+    expect(interpretationRuleEvaluationRequestSchema.safeParse({
+      ...request,
+      facts: { ...request.facts, targetSigma: { value: 4.5, source: "controlled-default" } },
+    }).success).toBe(false);
+    expect(interpretationRuleEvaluationSchema.safeParse({
+      ...evaluation,
+      resolvedTargets: { cpk: 1.33 },
+    }).success).toBe(false);
+    expect(interpretationRuleEvaluationSchema.safeParse({
+      ...evaluation,
+      resolvedTargets: { sigma: 4.5 },
+    }).success).toBe(false);
+    expect(interpretationRuleEvaluationSchema.safeParse({
+      ...evaluation,
+      resolvedTargets: { cpk: { value: 1.33, source: "project", unexpected: true } },
+    }).success).toBe(false);
+    expect(interpretationRuleEvaluationSchema.safeParse({
+      ...evaluation,
+      resolvedTargets: { ...evaluation.resolvedTargets, unexpected: true },
+    }).success).toBe(false);
+  });
+
+  it.each([
+    ["matched", evaluation],
+    ["insufficient-facts", {
+      ...evaluation,
+      status: "insufficient-facts",
+      resolvedTargets: { cpk: evaluation.resolvedTargets.cpk },
+      matchedRules: [],
+      missingFacts: ["achievedSigma"],
+    }],
+    ["not-applicable", {
+      ...evaluation,
+      status: "not-applicable",
+      resolvedTargets: {},
+      matchedRules: [],
+      missingFacts: [],
+    }],
+  ])("accepts a consistent %s evaluation", (_status, value) => {
+    expect(interpretationRuleEvaluationSchema.safeParse(value).success).toBe(true);
+  });
+
+  it.each([
+    ["matched without a matched rule", { ...evaluation, matchedRules: [] }, ["matchedRules"]],
+    ["matched with missing facts", { ...evaluation, missingFacts: ["cpk"] }, ["missingFacts"]],
+    ["insufficient-facts with a matched rule", {
+      ...evaluation, status: "insufficient-facts", missingFacts: ["cpk"],
+    }, ["matchedRules"]],
+    ["insufficient-facts without missing facts", {
+      ...evaluation, status: "insufficient-facts", matchedRules: [],
+    }, ["missingFacts"]],
+    ["not-applicable with a matched rule", {
+      ...evaluation, status: "not-applicable", resolvedTargets: {},
+    }, ["matchedRules"]],
+    ["not-applicable with missing facts", {
+      ...evaluation, status: "not-applicable", resolvedTargets: {}, matchedRules: [], missingFacts: ["cpk"],
+    }, ["missingFacts"]],
+    ["not-applicable with a resolved target", {
+      ...evaluation, status: "not-applicable", matchedRules: [],
+    }, ["resolvedTargets"]],
+    ["not-applicable without resolvedTargets", {
+      knowledgeBaseVersion: evaluation.knowledgeBaseVersion,
+      status: "not-applicable",
+      factsUsed: evaluation.factsUsed,
+      matchedRules: [],
+      missingFacts: [],
+    }, ["resolvedTargets"]],
+  ])("rejects %s at the conflicting field", (_description, value, expectedPath) => {
+    const result = interpretationRuleEvaluationSchema.safeParse(value);
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((issue) =>
+        JSON.stringify(issue.path) === JSON.stringify(expectedPath))).toBe(true);
+    }
+  });
+
+  it("rejects confidential provenance and non-hypothesis root-cause signals", () => {
+    expect(interpretationProvenanceSchema.safeParse({ ...provenance, classification: "confidential" }).success).toBe(false);
+    expect(interpretationKnowledgeEntrySchema.safeParse({ ...entries[2], signalStatus: "confirmed" }).success).toBe(false);
+  });
+
+  const rootCauseSignalWithoutActivationCondition = {
+    entryId: entries[2].entryId,
+    entryType: entries[2].entryType,
+    title: entries[2].title,
+    description: entries[2].description,
+    applicability: entries[2].applicability,
+    relatedEntryIds: entries[2].relatedEntryIds,
+    provenance: entries[2].provenance,
+    signalStatus: entries[2].signalStatus,
+    requiredFacts: entries[2].requiredFacts,
+    validationFacts: entries[2].validationFacts,
+  };
+
+  it.each([
+    ["missing activation condition", rootCauseSignalWithoutActivationCondition],
+    ["unknown activation kind", {
+      ...entries[2], activationCondition: { kind: "average-contribution-at-least", thresholdPercent: 30 },
+    }],
+    ["negative threshold", {
+      ...entries[2], activationCondition: { kind: "maximum-contribution-at-least", thresholdPercent: -0.01 },
+    }],
+    ["threshold above 100", {
+      ...entries[2], activationCondition: { kind: "maximum-contribution-at-least", thresholdPercent: 100.01 },
+    }],
+    ["non-finite threshold", {
+      ...entries[2], activationCondition: { kind: "maximum-contribution-at-least", thresholdPercent: Number.NaN },
+    }],
+    ["activation condition unknown field", {
+      ...entries[2], activationCondition: {
+        kind: "maximum-contribution-at-least", thresholdPercent: 30, unexpected: true,
+      },
+    }],
+  ])("rejects a root-cause signal with %s", (_description, entry) => {
+    expect(interpretationKnowledgeEntrySchema.safeParse(entry).success).toBe(false);
+  });
+
+  it("does not permit an inline global Cpk target or ranked improvement advice", () => {
+    expect(interpretationKnowledgeEntrySchema.safeParse({ ...entries[1], target: 1 }).success).toBe(false);
+    expect(interpretationKnowledgeEntrySchema.safeParse({ ...entries[3], rank: 1 }).success).toBe(false);
+    expect(interpretationKnowledgeEntrySchema.safeParse({ ...entries[3], recommendation: "Do this first." }).success).toBe(false);
+  });
+
+  it("accepts only the controlled performance outcomes", () => {
+    expect(interpretationKnowledgeEntrySchema.safeParse({
+      ...entries[1], outcomeWhenMatched: "unexpected-outcome",
+    }).success).toBe(false);
+    expect(interpretationKnowledgeEntrySchema.safeParse({
+      ...entries[1], outcomeWhenMatched: "below-target",
+    }).success).toBe(true);
+  });
+
+  it.each([
+    ["entry unknown field", interpretationKnowledgeEntrySchema, { ...entries[0], unexpected: true }],
+    ["nested applicability unknown field", interpretationKnowledgeEntrySchema, {
+      ...entries[0], applicability: { ...entries[0].applicability, unexpected: true },
+    }],
+    ["source unknown field", interpretationKnowledgeSourceMetadataSchema, { ...source, unexpected: true }],
+    ["manifest unknown field", interpretationKnowledgeManifestSchema, { ...manifest, unexpected: true }],
+    ["seed package unknown field", interpretationKnowledgeSeedPackageSchema, { ...seedPackage, unexpected: true }],
+    ["load request unknown field", interpretationRuleLoadRequestSchema, {
+      version: "interpretation-rules-v1", unexpected: true,
+    }],
+    ["evaluation request unknown field", interpretationRuleEvaluationRequestSchema, {
+      analysisDimension: "one-dimensional", method: "rss", facts: {}, unexpected: true,
+    }],
+    ["facts unknown field", interpretationRuleEvaluationRequestSchema, {
+      analysisDimension: "one-dimensional", method: "rss", facts: { unexpected: true },
+    }],
+    ["evaluation unknown field", interpretationRuleEvaluationSchema, {
+      knowledgeBaseVersion: "interpretation-rules-v1", status: "not-applicable",
+      factsUsed: [], matchedRules: [], missingFacts: [], unexpected: true,
+    }],
+  ])("rejects %s", (_description, schema, value) => {
+    expect(schema.safeParse(value).success).toBe(false);
+  });
+
+  it.each([
+    ["non-finite cpk", { cpk: Number.POSITIVE_INFINITY }],
+    ["non-finite target Cpk", { targetCpk: { value: Number.NaN, source: "project" } }],
+    ["non-finite sigma", { achievedSigma: Number.NEGATIVE_INFINITY }],
+    ["negative contribution", { contributors: [{ reference: "A", contributionPercent: -0.1 }] }],
+    ["contribution over 100", { contributors: [{ reference: "A", contributionPercent: 100.1 }] }],
+  ])("rejects %s", (_description, facts) => {
+    expect(interpretationRuleEvaluationRequestSchema.safeParse({
+      analysisDimension: "one-dimensional",
+      method: "rss",
+      facts,
+    }).success).toBe(false);
   });
 });

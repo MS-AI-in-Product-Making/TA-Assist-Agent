@@ -45,10 +45,17 @@ hash 或必要元数据；`secret` 始终以 `policy_denied` 拒绝且不得持�
 - `public-v1` 知识库始终只包含匿名 `public` 内容。经审查的 F0 内部规则与快照元数据
   可以作为 `internal` 治理工件维护；原始 `.xls`、`.xlsx`、`.xlsm` 一律不得提交，直到
   另行批准受控白名单。
+- `interpretation-rules-v1` 只保存去除具体案例后的通用解读规则、来源别名、hash、版本、
+  工作表和范围，分类为 `internal`。原始 TA 模板、规则工作簿、worked examples 与计算器
+  均为 `confidential`，不得提交到 Git，也不得在运行时由 F0 读取。
+- `public-v1`、`internal-v1` 与 `interpretation-rules-v1` 是三个独立只读模块，版本和 API
+  不可互换。未来 F5 将解读规则与 TA 事实组合时，结果保持 `confidential`；F5/F6 当前仍为
+  `unavailable`。
 - F0 的 T0 仅表示 `guidance-exceeded`、`within-guidance` 或 `unknown` 三种指导结果语义；
   不得由此推断能力紧度或可制造性。
 - 审计和日志只能记录分类、别名、哈希、事件代码与必要元数据。它们不得包含
-  `secret`，也不得泄露 `confidential` 原文、DIM ID、供应商名称或环境变量值。
+  `secret`，也不得泄露 `confidential` 原文、DIM ID、供应商名称或环境变量值。解读规则
+  查询最多记录规则 ID、版本、hash 与受控引用，不记录 TA 事实或最终解释文本。
 - **Phase 0 审计根目录部署契约：**每个 run 必须使用独立、私有的本地目录；只有
   受控的进程身份可以写入该目录。`append` 与 `seal` 通过根目录内的排他锁协调，
   因此多个受控实例或进程可共享同一 run 根目录，但不得将其部署在共享、非受信任或
