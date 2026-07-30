@@ -153,6 +153,31 @@ function expectTypedErrorCode(
   });
 }
 
+function captureThrown(action: () => unknown): unknown {
+  try {
+    action();
+    return undefined;
+  } catch (error) {
+    return error;
+  }
+}
+
+function expectNoMarkerLeak(error: unknown, marker: string): void {
+  const candidate = error as {
+    readonly summary?: unknown;
+    readonly message?: unknown;
+    readonly suggestedAction?: unknown;
+    readonly details?: unknown;
+  };
+  const message = typeof candidate.message === "string" ? candidate.message : "";
+  const summary = typeof candidate.summary === "string" ? candidate.summary : "";
+  const suggestedAction = typeof candidate.suggestedAction === "string" ? candidate.suggestedAction : "";
+  const serializedError = JSON.stringify(error);
+  const serializedDetails = JSON.stringify(candidate.details);
+  const leakSurface = [message, summary, suggestedAction, serializedError, serializedDetails].join(" ");
+  expect(leakSurface).not.toContain(marker);
+}
+
 describe("createCalculation", () => {
   it("returns a deeply frozen completed result for selected worksheet/table and maps standardDeviation to sigmaLevel", () => {
     const result = createCalculation(baseRequest(1));
@@ -228,6 +253,95 @@ describe("createCalculation", () => {
       inputClassification: "public",
       worksheetAnalysisAssets: "not-a-valid-object",
     }), "policy_denied");
+  });
+
+  it("prioritizes policy_denied for non-confidential classification even when other getters throw", () => {
+    const marker = "policy-should-short-circuit-before-marker";
+    const request = {
+      inputClassification: "public",
+      get worksheetAnalysisAssets() {
+        throw new Error(marker);
+      },
+    };
+
+    const error = captureThrown(() => createCalculation(request));
+
+    expect(error).toMatchObject({
+      code: "policy_denied",
+      summary: "Calculation input is not permitted.",
+      affectedInputReferences: ["calculation-request-v1"],
+    });
+    expectNoMarkerLeak(error, marker);
+  });
+
+  it("maps root proxy inputClassification getter throw to fixed validation_error without leaking marker", () => {
+    const marker = "root-input-classification-throws-sensitive";
+    const request = new Proxy({}, {
+      get(_target, property) {
+        if (property === "inputClassification") {
+          throw new Error(marker);
+        }
+        return undefined;
+      },
+    });
+
+    const error = captureThrown(() => createCalculation(request));
+
+    expect(error).toMatchObject({
+      code: "validation_error",
+      summary: "Calculation request is invalid.",
+      affectedInputReferences: ["calculation-request-v1"],
+    });
+    expectNoMarkerLeak(error, marker);
+  });
+
+  it("maps worksheetAnalysisAssets getter throw during parsing to fixed validation_error without leaking marker", () => {
+    const marker = "worksheet-assets-getter-sensitive";
+    const request = {
+      inputClassification: "confidential",
+      get worksheetAnalysisAssets() {
+        throw new Error(marker);
+      },
+    };
+
+    const error = captureThrown(() => createCalculation(request));
+
+    expect(error).toMatchObject({
+      code: "validation_error",
+      summary: "Calculation request is invalid.",
+      affectedInputReferences: ["calculation-request-v1"],
+    });
+    expectNoMarkerLeak(error, marker);
+  });
+
+  it("maps nested proxy getter throw during safeParse to fixed validation_error without leaking marker", () => {
+    const marker = "nested-safe-parse-sensitive";
+    const request = deepClone(baseRequest(1));
+    request.worksheetAnalysisAssets = new Proxy(request.worksheetAnalysisAssets, {
+      get(target, property, receiver) {
+        if (property === "workbook") {
+          const workbook = Reflect.get(target, property, receiver) as Record<string, unknown>;
+          return new Proxy(workbook, {
+            get(workbookTarget, workbookProperty, workbookReceiver) {
+              if (workbookProperty === "contentHash") {
+                throw new Error(marker);
+              }
+              return Reflect.get(workbookTarget, workbookProperty, workbookReceiver);
+            },
+          });
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+
+    const error = captureThrown(() => createCalculation(request));
+
+    expect(error).toMatchObject({
+      code: "validation_error",
+      summary: "Calculation request is invalid.",
+      affectedInputReferences: ["calculation-request-v1"],
+    });
+    expectNoMarkerLeak(error, marker);
   });
 
   it("classifies malformed payload and selection misses as validation_error", () => {
@@ -539,6 +653,82 @@ describe("createCalculation", () => {
         }],
       },
     }));
+  });
+
+  it("rejects mixed units across factors after normalization", () => {
+    const request = baseRequest(2);
+
+    expectValidationError(() => createCalculation({
+      ...request,
+      worksheetAnalysisAssets: {
+        ...request.worksheetAnalysisAssets,
+        worksheets: [{
+          ...request.worksheetAnalysisAssets.worksheets[0],
+          factorTables: [{
+            ...request.worksheetAnalysisAssets.worksheets[0]!.factorTables[0],
+            rows: [
+              {
+                sourceRow: 2,
+                fields: {
+                  ...factorFields(0),
+                  unit: availableText("mm", "Analysis-A!H2"),
+                },
+              },
+              {
+                sourceRow: 3,
+                fields: {
+                  ...factorFields(1),
+                  unit: availableText("in", "Analysis-A!H3"),
+                  nominalValue: availableNumber("0", "Analysis-A!B3", 0, "in"),
+                  upperTolerance: availableNumber("1", "Analysis-A!C3", 1, "in"),
+                  lowerTolerance: availableNumber("-1", "Analysis-A!D3", -1, "in"),
+                  longTermSafetyFactor: availableNumber("1", "Analysis-A!E3", 1, "in"),
+                  standardDeviation: availableNumber("1", "Analysis-A!F3", 1, "in"),
+                },
+              },
+            ],
+          }],
+        }],
+      },
+    }));
+  });
+
+  it("accepts factors when all normalized units are consistent", () => {
+    const request = baseRequest(2);
+    const result = createCalculation(request);
+
+    expect(result.status).toBe("completed");
+    if (result.status !== "completed") return;
+
+    expect(result.factors.map((factor) => factor.unit)).toEqual(["mm", "mm"]);
+  });
+
+  it("rejects selected table with more than 100 rows before reading row fields and without marker leakage", () => {
+    const marker = "row-field-getter-should-not-run";
+    const request = baseRequest(101);
+    const selectedTable = request.worksheetAnalysisAssets.worksheets[0]!.factorTables[0]!;
+    const firstRow = selectedTable.rows[0]!;
+    const fieldsWithThrowingGetter = { ...firstRow.fields };
+    Object.defineProperty(fieldsWithThrowingGetter, "nominalValue", {
+      enumerable: true,
+      configurable: true,
+      get() {
+        throw new Error(marker);
+      },
+    });
+    selectedTable.rows[0] = {
+      ...firstRow,
+      fields: fieldsWithThrowingGetter,
+    };
+
+    const error = captureThrown(() => createCalculation(request));
+
+    expect(error).toMatchObject({
+      code: "validation_error",
+      summary: "Calculation request is invalid.",
+      affectedInputReferences: ["calculation-request-v1"],
+    });
+    expectNoMarkerLeak(error, marker);
   });
 
   it("maps kernel zero RSS failure to calculation_not_possible without leaking sensitive text", () => {

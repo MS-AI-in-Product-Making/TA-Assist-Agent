@@ -3,10 +3,12 @@ import {
   calculationResultSchema,
   createTypedError,
   distributionSchema,
+  errorCodeSchema,
   exceptionResolutionResultSchema,
   requiredFieldCheckResultSchema,
   type CalculationRequest,
   type CalculationResult,
+  typedErrorSchema,
   worksheetAnalysisAssetsResultSchema,
 } from "@ai-assist/contracts";
 import {
@@ -22,6 +24,7 @@ const COMPLETION_SUMMARY = "Calculation cannot be completed.";
 const REQUEST_ACTION = "Provide valid confidential controlled references.";
 const COMPLETION_ACTION = "Provide a valid worksheet selection with calculable factors.";
 const CALCULATION_REFERENCE = "calculation-request-v1";
+const MAX_FACTOR_ROWS = 100;
 
 type CalculationCompletedResult = Extract<CalculationResult, { readonly status: "completed" }>;
 type WorksheetRow = CalculationRequest["worksheetAnalysisAssets"]["worksheets"][number]["factorTables"][number]["rows"][number];
@@ -57,6 +60,27 @@ function completionError(): Error {
     suggestedAction: COMPLETION_ACTION,
     affectedInputReferences: [CALCULATION_REFERENCE],
   });
+}
+
+function isTypedError(error: unknown): boolean {
+  try {
+    if (typedErrorSchema.safeParse(error).success) {
+      return true;
+    }
+  } catch {
+    return false;
+  }
+
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  try {
+    const code = (error as { code?: unknown }).code;
+    return typeof code === "string" && errorCodeSchema.safeParse(code).success;
+  } catch {
+    return false;
+  }
 }
 
 function deepFreeze<Value>(value: Value, seen = new WeakSet<object>()): Value {
@@ -434,7 +458,15 @@ function createCompletedResult(input: CalculationRequest): CalculationCompletedR
     throw requestError(REQUEST_SUMMARY);
   }
 
+  if (table.rows.length > MAX_FACTOR_ROWS) {
+    throw requestError(REQUEST_SUMMARY);
+  }
+
   const normalizedFactors = table.rows.map((row) => normalizeFactorRow(row, worksheet.worksheetName, table.tableId));
+  const distinctFactorUnits = [...new Set(normalizedFactors.map((entry) => entry.factor.unit))];
+  if (distinctFactorUnits.length > 1) {
+    throw requestError(REQUEST_SUMMARY);
+  }
 
   let kernelResult;
   try {
@@ -530,23 +562,25 @@ function createCompletedResult(input: CalculationRequest): CalculationCompletedR
 }
 
 export function createCalculation(request: unknown): CalculationResult {
-  let classification: unknown;
+  let parsedRequest: ReturnType<typeof calculationRequestSchema.safeParse>;
   try {
-    classification = (request as { inputClassification?: unknown })?.inputClassification;
-  } catch {
-    throw requestError(REQUEST_SUMMARY);
-  }
+    const classification = (request as { inputClassification?: unknown })?.inputClassification;
+    if (typeof classification === "string" && classification !== "confidential") {
+      throw requestError(POLICY_SUMMARY, "policy_denied");
+    }
 
-  if (typeof classification === "string" && classification !== "confidential") {
-    throw requestError(POLICY_SUMMARY, "policy_denied");
-  }
+    parsedRequest = calculationRequestSchema.safeParse(request);
+    if (!parsedRequest.success) {
+      throw requestError(REQUEST_SUMMARY, classifyInvalidRequestError(request));
+    }
 
-  const parsedRequest = calculationRequestSchema.safeParse(request);
-  if (!parsedRequest.success) {
-    throw requestError(REQUEST_SUMMARY, classifyInvalidRequestError(request));
-  }
-
-  if (parsedRequest.data.scenarioOverrides.length > 0) {
+    if (parsedRequest.data.scenarioOverrides.length > 0) {
+      throw requestError(REQUEST_SUMMARY);
+    }
+  } catch (error) {
+    if (isTypedError(error)) {
+      throw error;
+    }
     throw requestError(REQUEST_SUMMARY);
   }
 
