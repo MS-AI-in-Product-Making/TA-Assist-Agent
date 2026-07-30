@@ -32,7 +32,7 @@
 - Modify: `packages/contracts/src/contracts.ts`
 - Modify: `packages/contracts/src/contracts.test.ts`
 
-- [ ] **Step 1: Write failing contract tests.**
+- [x] **Step 1: Write failing contract tests.**
 
 Add a `describe("F4 completed calculation contracts", ...)` block that constructs one confidential request with existing `worksheetAnalysisAssetsResultSchema`, `requiredFieldCheckResultSchema` and `exceptionResolutionResultSchema` fixtures. Assert acceptance of:
 
@@ -63,13 +63,13 @@ Assert that F2.1 must be `readyForNextCheck` and F2.3 must be `readyToContinue`.
 
 Define the expected completed result fixture with `calculationVersion: "excel-ta-v1"`, method recommendation, factor/system/capability values, trace records and scenarios. Keep the legacy `feature_not_available` result fixture accepted as a separate union member.
 
-- [ ] **Step 2: Run the focused contract test and verify RED.**
+- [x] **Step 2: Run the focused contract test and verify RED.**
 
 Run: `npm exec -- vitest run --workspace vitest.workspace.ts packages/contracts/src/contracts.test.ts`
 
 Expected: FAIL because the current schemas do not accept F1/F2 evidence or completed results.
 
-- [ ] **Step 3: Implement strict schemas and invariants.**
+- [x] **Step 3: Implement strict schemas and invariants.**
 
 In `contracts.ts`, define and export reusable F4 schemas for:
 
@@ -101,13 +101,13 @@ const calculationScenarioOverrideSchema = z.object({
 
 Use `.superRefine` to enforce evidence hash equality, ready statuses, unique scenario IDs, unique factor override keys and valid specification ranges. Define `calculationResultSchema` as a union of a strict completed result and the existing strict unavailable result. Export all inferred public types needed by the service.
 
-- [ ] **Step 4: Run the focused contract test and verify GREEN.**
+- [x] **Step 4: Run the focused contract test and verify GREEN.**
 
 Run: `npm exec -- vitest run --workspace vitest.workspace.ts packages/contracts/src/contracts.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit the contract slice.**
+- [x] **Step 5: Commit the contract slice.**
 
 Run: `git add packages/contracts/src/contracts.ts packages/contracts/src/contracts.test.ts && git commit -m "feat(f4): define calculation contracts"`
 
