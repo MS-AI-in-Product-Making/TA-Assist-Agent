@@ -27,6 +27,7 @@ function New-StatusException {
     [object]$Payload
   )
   $exception = [System.InvalidOperationException]::new($Message)
+  $exception.Data["IsStatusException"] = $true
   $exception.Data["Status"] = $Status
   if ($null -ne $Payload) {
     $exception.Data["Payload"] = $Payload
@@ -198,6 +199,9 @@ try {
   }
   $resolvedWorkbookPath = (Resolve-Path -LiteralPath $WorkbookPath).Path
   $resolvedMappingPath = (Resolve-Path -LiteralPath $MappingPath).Path
+  if ($env:F4_EXCEL_REGRESSION_FAIL_ON_WORKBOOK_READ -eq "1") {
+    throw [System.IO.IOException]::new("Unable to read $resolvedWorkbookPath")
+  }
   $sourceSha256 = (Get-FileHash -LiteralPath $resolvedWorkbookPath -Algorithm SHA256).Hash.ToUpperInvariant()
   if ($sourceSha256 -cne $ExpectedSha256.ToUpperInvariant()) {
     throw (New-StatusException -Status "hash_mismatch" -Message "Workbook SHA-256 does not match ExpectedSha256.")
@@ -206,14 +210,24 @@ try {
     throw (New-StatusException -Status "invalid_mapping" -Message "Mapping file exceeds the size limit.")
   }
   try {
+    if ($env:F4_EXCEL_REGRESSION_FAIL_ON_MAPPING_READ -eq "1") {
+      throw [System.IO.IOException]::new("Unable to read $resolvedMappingPath")
+    }
     $mapping = Get-Content -LiteralPath $resolvedMappingPath -Raw | ConvertFrom-Json -Depth 20
   } catch {
     throw (New-StatusException -Status "invalid_mapping" -Message "MappingPath must contain valid JSON.")
   }
   Assert-Mapping -Mapping $mapping
 } catch {
-  $status = if ($_.Exception.Data.Contains("Status")) { [string]$_.Exception.Data["Status"] } else { "invalid_arguments" }
-  $message = if ($status -in @("invalid_arguments", "hash_mismatch", "invalid_mapping")) { $_.Exception.Message } else { "Validation failed." }
+  $isStatusException = $_.Exception.Data.Contains("IsStatusException") -and $_.Exception.Data["IsStatusException"] -eq $true
+  $exceptionStatus = if ($isStatusException -and $_.Exception.Data.Contains("Status")) { [string]$_.Exception.Data["Status"] } else { $null }
+  $status = if ($exceptionStatus -in @("invalid_arguments", "hash_mismatch", "invalid_mapping")) { $exceptionStatus } else { "invalid_arguments" }
+  $message = switch ($exceptionStatus) {
+    "invalid_arguments" { "Invalid arguments." }
+    "hash_mismatch" { "Workbook hash validation failed." }
+    "invalid_mapping" { "Mapping validation failed." }
+    default { "Validation failed." }
+  }
   Write-Json -Payload ([ordered]@{ status = $status; error = $message })
   exit 1
 }
@@ -240,6 +254,9 @@ $failureMessage = $null
 try {
   [void][System.IO.Directory]::CreateDirectory($temporaryDirectory)
   $temporaryWorkbookPath = Join-Path $temporaryDirectory ([System.IO.Path]::GetFileName($resolvedWorkbookPath))
+  if ($env:F4_EXCEL_REGRESSION_FAIL_ON_COPY -eq "1") {
+    throw [System.IO.IOException]::new("Unable to copy $resolvedWorkbookPath")
+  }
   Copy-Item -LiteralPath $resolvedWorkbookPath -Destination $temporaryWorkbookPath
   if ($env:F4_EXCEL_REGRESSION_TAMPER_TEMP_COPY -eq "1") {
     [System.IO.File]::AppendAllText($temporaryWorkbookPath, "x")
@@ -323,9 +340,15 @@ try {
     throw (New-StatusException -Status "regression_mismatch" -Message "One or more regression outputs did not match." -Payload $resultPayload)
   }
 } catch {
-  $failureStatus = if ($_.Exception.Data.Contains("Status")) { [string]$_.Exception.Data["Status"] } else { "excel_error" }
-  $failureMessage = if ($failureStatus -eq "regression_mismatch") { "One or more regression outputs did not match." } else { "Excel regression execution failed." }
-  if ($_.Exception.Data.Contains("Payload")) {
+  $isStatusException = $_.Exception.Data.Contains("IsStatusException") -and $_.Exception.Data["IsStatusException"] -eq $true
+  $exceptionStatus = if ($isStatusException -and $_.Exception.Data.Contains("Status")) { [string]$_.Exception.Data["Status"] } else { $null }
+  $failureStatus = if ($exceptionStatus -in @("hash_mismatch", "excel_error", "regression_mismatch")) { $exceptionStatus } else { "excel_error" }
+  $failureMessage = switch ($failureStatus) {
+    "hash_mismatch" { "Workbook hash validation failed." }
+    "regression_mismatch" { "One or more regression outputs did not match." }
+    default { "Excel regression execution failed." }
+  }
+  if ($failureStatus -eq "regression_mismatch" -and $_.Exception.Data.Contains("Payload")) {
     $resultPayload = $_.Exception.Data["Payload"]
   }
 } finally {

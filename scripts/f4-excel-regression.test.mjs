@@ -290,9 +290,60 @@ test("uses a fixed error for missing sensitive paths", () => {
   assert.notEqual(result.status, 0);
   assert.deepEqual(parseLastJson(result.stdout), {
     status: "invalid_arguments",
-    error: "WorkbookPath or MappingPath is unavailable.",
+    error: "Invalid arguments.",
   });
   assert.doesNotMatch(output, /SENSITIVE_/);
+});
+
+test("redacts a sensitive workbook path from underlying validation failures", () => {
+  withFixture(validMapping(), (fixture) => {
+    const result = runHarness(validArgs(fixture), {
+      env: { F4_EXCEL_REGRESSION_FAIL_ON_WORKBOOK_READ: "1" },
+    });
+    const output = `${result.stdout}\n${result.stderr}`;
+
+    assert.notEqual(result.status, 0);
+    assert.deepEqual(parseLastJson(result.stdout), {
+      status: "invalid_arguments",
+      error: "Validation failed.",
+    });
+    assert.doesNotMatch(output, new RegExp(fixture.workbookPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"));
+  });
+});
+
+test("redacts a sensitive mapping path from underlying read failures", () => {
+  withFixture(validMapping(), (fixture) => {
+    const result = runHarness(validArgs(fixture), {
+      env: { F4_EXCEL_REGRESSION_FAIL_ON_MAPPING_READ: "1" },
+    });
+    const output = `${result.stdout}\n${result.stderr}`;
+
+    assert.notEqual(result.status, 0);
+    assert.deepEqual(parseLastJson(result.stdout), {
+      status: "invalid_mapping",
+      error: "Mapping validation failed.",
+    });
+    assert.doesNotMatch(output, new RegExp(fixture.mappingPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"));
+  });
+});
+
+test("redacts a sensitive workbook path from underlying copy failures", () => {
+  withFixture(validMapping(), (fixture) => {
+    const result = runHarness(validArgs(fixture, { validateOnly: false }), {
+      env: {
+        F4_EXCEL_REGRESSION_FAIL_ON_COPY: "1",
+        F4_EXCEL_REGRESSION_TAMPER_TEMP_COPY: "1",
+      },
+    });
+    const output = `${result.stdout}\n${result.stderr}`;
+
+    assert.notEqual(result.status, 0);
+    assert.deepEqual(parseLastJson(result.stdout), {
+      status: "excel_error",
+      error: "Excel regression execution failed.",
+    });
+    assert.doesNotMatch(output, new RegExp(fixture.workbookPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"));
+  });
 });
 
 test("script declares the required isolated Excel execution controls", () => {
