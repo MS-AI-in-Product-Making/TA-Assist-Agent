@@ -570,20 +570,280 @@ describe("createCalculation", () => {
     }), "prerequisite_not_ready");
   });
 
-  it("rejects non-empty scenarios with validation_error until Task4", () => {
-    const request = baseRequest(1);
-    expectValidationError(() => createCalculation({
-      ...request,
-      scenarioOverrides: [{
-        scenarioId: "scenario-1",
+  describe("What-if", () => {
+    it("applies single-factor tighten/loosen overrides and preserves deterministic delta direction", () => {
+      const request = baseRequest(1);
+      const result = createCalculation({
+        ...request,
+        scenarioOverrides: [
+          {
+            scenarioId: "tighten",
+            factorOverrides: [{
+              worksheetName: "Analysis-A",
+              tableId: "table-a",
+              sourceRow: 2,
+              upperTolerance: 0.5,
+              lowerTolerance: -0.5,
+            }],
+          },
+          {
+            scenarioId: "loosen",
+            factorOverrides: [{
+              worksheetName: "Analysis-A",
+              tableId: "table-a",
+              sourceRow: 2,
+              upperTolerance: 1.5,
+              lowerTolerance: -1.5,
+            }],
+          },
+        ],
+      });
+
+      expect(result.status).toBe("completed");
+      if (result.status !== "completed") return;
+
+      expect(result.scenarios.map((scenario) => scenario.scenarioId)).toEqual(["tighten", "loosen"]);
+      const tighten = result.scenarios[0]!;
+      const loosen = result.scenarios[1]!;
+
+      expect(tighten.baselineRunReference).toBe(result.runReference);
+      expect(loosen.baselineRunReference).toBe(result.runReference);
+
+      expect(tighten.calculation.system.rssSigma).toBeLessThan(result.system.rssSigma);
+      expect(tighten.calculation.capability.cpk).toBeGreaterThan(result.capability.cpk);
+      expect(tighten.deltas.rssSigma).toBeLessThan(0);
+      expect(tighten.deltas.cpk).toBeGreaterThan(0);
+
+      expect(loosen.calculation.system.rssSigma).toBeGreaterThan(result.system.rssSigma);
+      expect(loosen.calculation.capability.cpk).toBeLessThan(result.capability.cpk);
+      expect(loosen.deltas.rssSigma).toBeGreaterThan(0);
+      expect(loosen.deltas.cpk).toBeLessThan(0);
+    });
+
+    it("applies system additionalMeanShift override and reports deltas as scenario-baseline", () => {
+      const request = baseRequest(1);
+      const result = createCalculation({
+        ...request,
+        scenarioOverrides: [{
+          scenarioId: "system-shift",
+          factorOverrides: [],
+          systemSpecification: {
+            additionalMeanShift: 1,
+          },
+        }],
+      });
+
+      expect(result.status).toBe("completed");
+      if (result.status !== "completed") return;
+
+      const scenario = result.scenarios[0]!;
+      expect(scenario.calculation.system.additionalMeanShift).toBe(1);
+      expect(scenario.deltas.mean).toBeCloseTo(
+        scenario.calculation.system.mean - result.system.mean,
+        12,
+      );
+      expect(scenario.deltas.rssSigma).toBeCloseTo(
+        scenario.calculation.system.rssSigma - result.system.rssSigma,
+        12,
+      );
+    });
+
+    it("applies distribution override and changes rssSigma/cpk", () => {
+      const request = baseRequest(1);
+      const result = createCalculation({
+        ...request,
+        scenarioOverrides: [{
+          scenarioId: "uniform-distribution",
+          factorOverrides: [{
+            worksheetName: "Analysis-A",
+            tableId: "table-a",
+            sourceRow: 2,
+            distribution: "uniform",
+          }],
+        }],
+      });
+
+      expect(result.status).toBe("completed");
+      if (result.status !== "completed") return;
+
+      const scenario = result.scenarios[0]!;
+      expect(scenario.calculation.factors[0]!.input.distribution).toBe("uniform");
+      expect(scenario.calculation.system.rssSigma).toBeGreaterThan(result.system.rssSigma);
+      expect(scenario.calculation.capability.cpk).toBeLessThan(result.capability.cpk);
+    });
+
+    it("keeps baseline payload equal to a no-scenario run and does not mutate request", () => {
+      const request = baseRequest(2);
+      const frozenRequestClone = deepClone(request);
+      const baseline = createCalculation(request);
+      const withScenario = createCalculation({
+        ...request,
+        scenarioOverrides: [{
+          scenarioId: "shift-only",
+          factorOverrides: [],
+          systemSpecification: {
+            additionalMeanShift: -0.5,
+          },
+        }],
+      });
+
+      expect(withScenario.status).toBe("completed");
+      expect(baseline.status).toBe("completed");
+      if (withScenario.status !== "completed" || baseline.status !== "completed") return;
+
+      expect(withScenario).toMatchObject({
+        ...baseline,
+        scenarios: withScenario.scenarios,
+      });
+      expect(request).toEqual(frozenRequestClone);
+    });
+
+    it("returns scenario overrides details exactly as provided without filling defaults", () => {
+      const request = baseRequest(1);
+      const result = createCalculation({
+        ...request,
+        scenarioOverrides: [{
+          scenarioId: "details-shape",
+          factorOverrides: [{
+            worksheetName: "Analysis-A",
+            tableId: "table-a",
+            sourceRow: 2,
+            nominalValue: 0.2,
+            sigmaLevel: 2,
+          }],
+          systemSpecification: {
+            targetCpk: 1.2,
+          },
+        }],
+      });
+
+      expect(result.status).toBe("completed");
+      if (result.status !== "completed") return;
+
+      const scenario = result.scenarios[0]!;
+      expect(scenario.overrides).toEqual({
+        factors: [{
+          source: {
+            worksheetName: "Analysis-A",
+            tableId: "table-a",
+            sourceRow: 2,
+          },
+          fields: ["nominalValue", "sigmaLevel"],
+        }],
+        systemSpecification: {
+          targetCpk: 1.2,
+        },
+      });
+      expect(scenario.calculation.traceRecords.length).toBeGreaterThan(0);
+      expect(scenario.calculation.recommendation.criticality).toBe(result.recommendation.criticality);
+      expect(scenario.calculation.factorCount).toBe(result.factorCount);
+    });
+
+    it("rejects unknown scenario override source rows as validation_error", () => {
+      const request = baseRequest(1);
+      expectValidationError(() => createCalculation({
+        ...request,
+        scenarioOverrides: [{
+          scenarioId: "unknown-row",
+          factorOverrides: [{
+            worksheetName: "Analysis-A",
+            tableId: "table-a",
+            sourceRow: 999,
+            nominalValue: 0.1,
+          }],
+        }],
+      }));
+    });
+
+    it("maps post-override factor invalidity and system specification invalidity to controlled errors", () => {
+      const request = baseRequest(1);
+
+      expectTypedErrorCode(() => createCalculation({
+        ...request,
+        scenarioOverrides: [{
+          scenarioId: "upper-lower-invalid",
+          factorOverrides: [{
+            worksheetName: "Analysis-A",
+            tableId: "table-a",
+            sourceRow: 2,
+            upperTolerance: 0,
+            lowerTolerance: 0,
+          }],
+        }],
+      }), "calculation_not_possible");
+
+      expectTypedErrorCode(() => createCalculation({
+        ...request,
+        scenarioOverrides: [{
+          scenarioId: "system-invalid",
+          factorOverrides: [],
+          systemSpecification: {
+            upperSpecLimit: -3,
+            lowerSpecLimit: -3,
+          },
+        }],
+      }), "validation_error");
+    });
+
+    it("accepts 100 scenarios and rejects 101 scenarios", () => {
+      const request = baseRequest(1);
+      const validScenarioOverrides = Array.from({ length: 100 }, (_, index) => ({
+        scenarioId: `scenario-${index + 1}`,
         factorOverrides: [{
           worksheetName: "Analysis-A",
           tableId: "table-a",
           sourceRow: 2,
-          nominalValue: 1,
+          nominalValue: index / 100,
         }],
-      }],
-    }));
+      }));
+
+      const completed = createCalculation({
+        ...request,
+        scenarioOverrides: validScenarioOverrides,
+      });
+
+      expect(completed.status).toBe("completed");
+      if (completed.status !== "completed") return;
+      expect(completed.scenarios).toHaveLength(100);
+
+      expectValidationError(() => createCalculation({
+        ...request,
+        scenarioOverrides: [
+          ...validScenarioOverrides,
+          {
+            scenarioId: "scenario-101",
+            factorOverrides: [{
+              worksheetName: "Analysis-A",
+              tableId: "table-a",
+              sourceRow: 2,
+              nominalValue: 2,
+            }],
+          },
+        ],
+      }));
+    });
+
+    it("is deterministic for successful repeated runs with identical input", () => {
+      const request = {
+        ...baseRequest(2),
+        scenarioOverrides: [{
+          scenarioId: "deterministic",
+          factorOverrides: [{
+            worksheetName: "Analysis-A",
+            tableId: "table-a",
+            sourceRow: 2,
+            longTermSafetyFactor: 0.9,
+          }],
+          systemSpecification: {
+            additionalMeanShift: -0.25,
+          },
+        }],
+      };
+
+      const first = createCalculation(request);
+      const second = createCalculation(request);
+      expect(first).toEqual(second);
+    });
   });
 
   it("rejects unavailable, non-finite and unknown distribution rows", () => {

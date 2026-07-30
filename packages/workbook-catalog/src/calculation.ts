@@ -29,12 +29,39 @@ type CalculationCompletedResult = Extract<CalculationResult, { readonly status: 
 type WorksheetRow = CalculationRequest["worksheetAnalysisAssets"]["worksheets"][number]["factorTables"][number]["rows"][number];
 type WorksheetField = WorksheetRow["fields"][keyof WorksheetRow["fields"]];
 type AvailableWorksheetField = Extract<WorksheetField, { readonly status: "available" }>;
+type ScenarioOverride = CalculationRequest["scenarioOverrides"][number];
+type ScenarioFactorOverride = ScenarioOverride["factorOverrides"][number];
+type ScenarioFactorOverrideField = "nominalValue" | "upperTolerance" | "lowerTolerance" | "longTermSafetyFactor" | "sigmaLevel" | "distribution";
+type ScenarioSystemOverrideField = "lowerSpecLimit" | "upperSpecLimit" | "targetSigmaLevel" | "targetCpk" | "additionalMeanShift";
 
 interface NormalizedFactorEntry {
   readonly factor: NormalizedFactor;
   readonly sourceCells: readonly string[];
   readonly sourceCellsByField: Readonly<Record<"nominalValue" | "upperTolerance" | "lowerTolerance" | "longTermSafetyFactor" | "standardDeviation" | "distribution", string>>;
 }
+
+interface ScenarioFactorApplication {
+  readonly factorIndex: number;
+  readonly overrideIndex: number;
+  readonly fields: readonly ScenarioFactorOverrideField[];
+}
+
+const FACTOR_OVERRIDE_FIELDS: readonly ScenarioFactorOverrideField[] = [
+  "nominalValue",
+  "upperTolerance",
+  "lowerTolerance",
+  "longTermSafetyFactor",
+  "sigmaLevel",
+  "distribution",
+];
+
+const SYSTEM_OVERRIDE_FIELDS: readonly ScenarioSystemOverrideField[] = [
+  "lowerSpecLimit",
+  "upperSpecLimit",
+  "targetSigmaLevel",
+  "targetCpk",
+  "additionalMeanShift",
+];
 
 type CalculationRequestErrorCode =
   | "validation_error"
@@ -433,62 +460,55 @@ function buildTraceRecords(
   return records;
 }
 
-function createCompletedResult(input: CalculationRequest): CalculationCompletedResult {
-  const worksheet = input.worksheetAnalysisAssets.worksheets.find((entry) => entry.worksheetName === input.worksheetSelection.worksheetName);
-  if (!worksheet) {
-    throw requestError(REQUEST_SUMMARY);
-  }
+function factorKey(source: { worksheetName: string; tableId: string; sourceRow: number }): string {
+  return JSON.stringify([source.worksheetName, source.tableId, source.sourceRow]);
+}
 
-  const table = worksheet.factorTables.find((entry) => entry.tableId === input.worksheetSelection.tableId);
-  if (!table) {
-    throw requestError(REQUEST_SUMMARY);
-  }
-
-  if (table.rows.length > MAX_FACTOR_ROWS) {
-    throw requestError(REQUEST_SUMMARY);
-  }
-
-  const normalizedFactors = table.rows.map((row) => normalizeFactorRow(row, worksheet.worksheetName, table.tableId));
-  const distinctFactorUnits = [...new Set(normalizedFactors.map((entry) => entry.factor.unit))];
-  if (distinctFactorUnits.length > 1) {
-    throw requestError(REQUEST_SUMMARY);
-  }
-
-  let kernelResult;
+function runKernel(
+  factors: readonly NormalizedFactor[],
+  system: {
+    designNominal: number;
+    lowerSpecLimit: number;
+    upperSpecLimit: number;
+    targetSigmaLevel: number;
+    targetCpk: number;
+    shift: number;
+  },
+) {
   try {
-    kernelResult = calculateToleranceAnalysis({
-      factors: normalizedFactors.map((entry) => entry.factor),
-      system: {
-        designNominal: input.systemSpecification.designNominal,
-        lowerSpecLimit: input.systemSpecification.lowerSpecLimit,
-        upperSpecLimit: input.systemSpecification.upperSpecLimit,
-        targetSigmaLevel: input.systemSpecification.targetSigmaLevel,
-        targetCpk: input.systemSpecification.targetCpk,
-        shift: input.systemSpecification.additionalMeanShift,
-      },
-    });
+    return calculateToleranceAnalysis({ factors, system });
   } catch (error) {
     if (isCalculationKernelError(error)) {
       throw completionError();
     }
     throw error;
   }
+}
 
-  const result = {
-    contractVersion: "v1" as const,
-    outputClassification: "confidential" as const,
-    featureId: "F4" as const,
-    status: "completed" as const,
-    calculationVersion: CALCULATION_VERSION,
-    projectReference: input.projectReference,
-    runReference: input.runReference,
-    workbookContentHash: input.worksheetAnalysisAssets.workbook.contentHash,
-    worksheetSelection: input.worksheetSelection,
+function buildCalculationPayload(
+  kernelResult: ReturnType<typeof calculateToleranceAnalysis>,
+  normalizedFactors: readonly NormalizedFactorEntry[],
+  criticality: CalculationRequest["criticality"],
+  scenarioTraceReferences?: ReadonlyMap<string, readonly string[]>,
+): Pick<CalculationCompletedResult, "factorCount" | "recommendation" | "factors" | "system" | "capability" | "traceRecords"> {
+  const traceRecords = buildTraceRecords(normalizedFactors).map((record) => {
+    const scenarioRefs = scenarioTraceReferences?.get(record.outputField) ?? [];
+    if (scenarioRefs.length === 0) {
+      return record;
+    }
+
+    return {
+      ...record,
+      sourceCells: unique([...record.sourceCells, ...scenarioRefs]),
+    };
+  });
+
+  return {
     factorCount: kernelResult.factorCount,
     recommendation: {
       ...kernelResult.recommendation,
-      criticality: input.criticality,
-      criticalityRisk: input.criticality !== "none",
+      criticality,
+      criticalityRisk: criticality !== "none",
     },
     factors: kernelResult.factors.map((factor, index) => ({
       factorName: factor.name,
@@ -506,7 +526,7 @@ function createCompletedResult(input: CalculationRequest): CalculationCompletedR
           "factor-sigma-v1",
           "contribution-v1",
         ] as const,
-        sourceCells: normalizedFactors[index]!.sourceCells,
+        sourceCells: [...normalizedFactors[index]!.sourceCells],
       },
     })),
     system: {
@@ -535,8 +555,242 @@ function createCompletedResult(input: CalculationRequest): CalculationCompletedR
       yield: kernelResult.capability.yield,
       status: kernelResult.capability.status,
     },
-    traceRecords: buildTraceRecords(normalizedFactors),
-    scenarios: [],
+    traceRecords,
+  };
+}
+
+function collectScenarioFactorFields(override: ScenarioFactorOverride): ScenarioFactorOverrideField[] {
+  return FACTOR_OVERRIDE_FIELDS.filter((field) => override[field] !== undefined);
+}
+
+function applyScenarioFactorOverride(
+  factor: NormalizedFactor,
+  override: ScenarioFactorOverride,
+): NormalizedFactor {
+  return {
+    ...factor,
+    input: {
+      ...factor.input,
+      ...(override.nominalValue !== undefined ? { nominalValue: override.nominalValue } : {}),
+      ...(override.upperTolerance !== undefined ? { upperTolerance: override.upperTolerance } : {}),
+      ...(override.lowerTolerance !== undefined ? { lowerTolerance: override.lowerTolerance } : {}),
+      ...(override.longTermSafetyFactor !== undefined ? { longTermSafetyFactor: override.longTermSafetyFactor } : {}),
+      ...(override.sigmaLevel !== undefined ? { sigmaLevel: override.sigmaLevel } : {}),
+      ...(override.distribution !== undefined ? { distribution: override.distribution } : {}),
+    },
+  };
+}
+
+function buildScenarioTraceReferenceMap(
+  scenarioId: string,
+  appliedFactors: readonly ScenarioFactorApplication[],
+  scenario: ScenarioOverride,
+): ReadonlyMap<string, readonly string[]> {
+  const references = new Map<string, string[]>();
+
+  const addReference = (outputField: string, reference: string): void => {
+    const entries = references.get(outputField) ?? [];
+    entries.push(reference);
+    references.set(outputField, entries);
+  };
+
+  for (const applied of appliedFactors) {
+    const baseReference = `request:scenarioOverrides.${scenarioId}.factorOverrides[${applied.overrideIndex}]`;
+    for (const field of applied.fields) {
+      const fieldReference = `${baseReference}.${field}`;
+      if (field === "nominalValue") {
+        addReference(`factors[${applied.factorIndex}].mean`, fieldReference);
+      }
+      if (field === "upperTolerance" || field === "lowerTolerance") {
+        addReference(`factors[${applied.factorIndex}].mean`, fieldReference);
+        addReference(`factors[${applied.factorIndex}].halfTolerance`, fieldReference);
+      }
+      if (field === "upperTolerance"
+        || field === "lowerTolerance"
+        || field === "longTermSafetyFactor"
+        || field === "sigmaLevel"
+        || field === "distribution") {
+        addReference(`factors[${applied.factorIndex}].sigma`, fieldReference);
+      }
+    }
+  }
+
+  if (scenario.systemSpecification !== undefined) {
+    for (const field of SYSTEM_OVERRIDE_FIELDS) {
+      if (scenario.systemSpecification[field] === undefined) {
+        continue;
+      }
+
+      const reference = `request:scenarioOverrides.${scenarioId}.systemSpecification.${field}`;
+      if (field === "additionalMeanShift") {
+        addReference("system.mean", reference);
+      }
+      if (field === "lowerSpecLimit" || field === "upperSpecLimit") {
+        addReference("capability.cp", reference);
+        addReference("capability.lowerCpk", reference);
+        addReference("capability.upperCpk", reference);
+        addReference("capability.cpk", reference);
+        addReference("capability.status", reference);
+      }
+      if (field === "targetCpk") {
+        addReference("capability.status", reference);
+      }
+    }
+  }
+
+  return references;
+}
+
+function createScenarioEntry(
+  scenario: ScenarioOverride,
+  baseline: Pick<CalculationCompletedResult, "runReference" | "factorCount" | "recommendation" | "factors" | "system" | "capability">,
+  normalizedFactors: readonly NormalizedFactorEntry[],
+  factorIndexByKey: ReadonlyMap<string, number>,
+  baselineSystem: {
+    designNominal: number;
+    lowerSpecLimit: number;
+    upperSpecLimit: number;
+    targetSigmaLevel: number;
+    targetCpk: number;
+    shift: number;
+  },
+  criticality: CalculationRequest["criticality"],
+): CalculationCompletedResult["scenarios"][number] {
+  const scenarioFactors = structuredClone(normalizedFactors.map((entry) => entry.factor));
+  const appliedFactors: ScenarioFactorApplication[] = [];
+
+  for (const [overrideIndex, factorOverride] of scenario.factorOverrides.entries()) {
+    const key = factorKey(factorOverride);
+    const factorIndex = factorIndexByKey.get(key);
+    if (factorIndex === undefined) {
+      throw requestError(REQUEST_SUMMARY);
+    }
+
+    scenarioFactors[factorIndex] = applyScenarioFactorOverride(scenarioFactors[factorIndex]!, factorOverride);
+    appliedFactors.push({
+      factorIndex,
+      overrideIndex,
+      fields: collectScenarioFactorFields(factorOverride),
+    });
+  }
+
+  const scenarioSystem = {
+    ...baselineSystem,
+    ...(scenario.systemSpecification?.lowerSpecLimit !== undefined ? { lowerSpecLimit: scenario.systemSpecification.lowerSpecLimit } : {}),
+    ...(scenario.systemSpecification?.upperSpecLimit !== undefined ? { upperSpecLimit: scenario.systemSpecification.upperSpecLimit } : {}),
+    ...(scenario.systemSpecification?.targetSigmaLevel !== undefined ? { targetSigmaLevel: scenario.systemSpecification.targetSigmaLevel } : {}),
+    ...(scenario.systemSpecification?.targetCpk !== undefined ? { targetCpk: scenario.systemSpecification.targetCpk } : {}),
+    ...(scenario.systemSpecification?.additionalMeanShift !== undefined ? { shift: scenario.systemSpecification.additionalMeanShift } : {}),
+  };
+
+  const kernelResult = runKernel(scenarioFactors, scenarioSystem);
+  const calculation = buildCalculationPayload(
+    kernelResult,
+    normalizedFactors,
+    criticality,
+    buildScenarioTraceReferenceMap(scenario.scenarioId, appliedFactors, scenario),
+  );
+
+  return {
+    scenarioId: scenario.scenarioId,
+    baselineRunReference: baseline.runReference,
+    calculation,
+    overrides: {
+      factors: scenario.factorOverrides.map((override) => ({
+        source: {
+          worksheetName: override.worksheetName,
+          tableId: override.tableId,
+          sourceRow: override.sourceRow,
+        },
+        fields: collectScenarioFactorFields(override),
+      })),
+      ...(scenario.systemSpecification ? { systemSpecification: { ...scenario.systemSpecification } } : {}),
+    },
+    deltas: {
+      mean: calculation.system.mean - baseline.system.mean,
+      rssSigma: calculation.system.rssSigma - baseline.system.rssSigma,
+      worstCaseUpper: calculation.system.worstCaseUpper - baseline.system.worstCaseUpper,
+      worstCaseLower: calculation.system.worstCaseLower - baseline.system.worstCaseLower,
+      cpk: calculation.capability.cpk - baseline.capability.cpk,
+      totalDpm: calculation.capability.totalDpm - baseline.capability.totalDpm,
+      yield: calculation.capability.yield - baseline.capability.yield,
+    },
+  };
+}
+
+function createCompletedResult(input: CalculationRequest): CalculationCompletedResult {
+  const worksheet = input.worksheetAnalysisAssets.worksheets.find((entry) => entry.worksheetName === input.worksheetSelection.worksheetName);
+  if (!worksheet) {
+    throw requestError(REQUEST_SUMMARY);
+  }
+
+  const table = worksheet.factorTables.find((entry) => entry.tableId === input.worksheetSelection.tableId);
+  if (!table) {
+    throw requestError(REQUEST_SUMMARY);
+  }
+
+  if (table.rows.length > MAX_FACTOR_ROWS) {
+    throw requestError(REQUEST_SUMMARY);
+  }
+
+  const normalizedFactors = table.rows.map((row) => normalizeFactorRow(row, worksheet.worksheetName, table.tableId));
+  const distinctFactorUnits = [...new Set(normalizedFactors.map((entry) => entry.factor.unit))];
+  if (distinctFactorUnits.length > 1) {
+    throw requestError(REQUEST_SUMMARY);
+  }
+
+  const baselineSystem = {
+    designNominal: input.systemSpecification.designNominal,
+    lowerSpecLimit: input.systemSpecification.lowerSpecLimit,
+    upperSpecLimit: input.systemSpecification.upperSpecLimit,
+    targetSigmaLevel: input.systemSpecification.targetSigmaLevel,
+    targetCpk: input.systemSpecification.targetCpk,
+    shift: input.systemSpecification.additionalMeanShift,
+  };
+
+  const kernelResult = runKernel(normalizedFactors.map((entry) => entry.factor), baselineSystem);
+  const payload = buildCalculationPayload(kernelResult, normalizedFactors, input.criticality);
+
+  const factorIndexByKey = new Map<string, number>();
+  for (const [factorIndex, factor] of normalizedFactors.entries()) {
+    factorIndexByKey.set(factorKey(factor.factor.source), factorIndex);
+  }
+
+  const baseline = {
+    runReference: input.runReference,
+    factorCount: payload.factorCount,
+    recommendation: payload.recommendation,
+    factors: payload.factors,
+    system: payload.system,
+    capability: payload.capability,
+  };
+
+  const scenarios = input.scenarioOverrides.map((scenario) => createScenarioEntry(
+    scenario,
+    baseline,
+    normalizedFactors,
+    factorIndexByKey,
+    baselineSystem,
+    input.criticality,
+  ));
+
+  const result = {
+    contractVersion: "v1" as const,
+    outputClassification: "confidential" as const,
+    featureId: "F4" as const,
+    status: "completed" as const,
+    calculationVersion: CALCULATION_VERSION,
+    projectReference: input.projectReference,
+    runReference: input.runReference,
+    workbookContentHash: input.worksheetAnalysisAssets.workbook.contentHash,
+    worksheetSelection: input.worksheetSelection,
+    factorCount: payload.factorCount,
+    recommendation: payload.recommendation,
+    factors: payload.factors,
+    system: payload.system,
+    capability: payload.capability,
+    traceRecords: payload.traceRecords,
+    scenarios,
   };
 
   const parsed = calculationResultSchema.safeParse(result);
@@ -558,10 +812,6 @@ export function createCalculation(request: unknown): CalculationResult {
     parsedRequest = calculationRequestSchema.safeParse(request);
     if (!parsedRequest.success) {
       throw requestError(REQUEST_SUMMARY, classifyInvalidRequestError(request));
-    }
-
-    if (parsedRequest.data.scenarioOverrides.length > 0) {
-      throw requestError(REQUEST_SUMMARY);
     }
   } catch (error) {
     if (isTypedError(error)) {
