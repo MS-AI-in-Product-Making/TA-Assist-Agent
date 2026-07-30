@@ -249,7 +249,7 @@ describe("F4 calculation contracts", () => {
         sourceRow: 2,
         nominalValue: 12.45,
       }],
-      systemOverride: {
+      systemSpecification: {
         additionalMeanShift: 0.02,
       },
     }],
@@ -273,9 +273,12 @@ describe("F4 calculation contracts", () => {
       method: "worst_case" as const,
       reason: "factor_count_1_to_3",
       refer3d: false,
-      criticalityRisk: "none" as const,
+      criticality: "none" as const,
+      criticalityRisk: false,
     },
     factors: [{
+      factorName: "Feature-A",
+      unit: "mm",
       source: { worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 2 },
       input: {
         nominalValue: 12.45,
@@ -322,30 +325,93 @@ describe("F4 calculation contracts", () => {
     },
     traceRecords: [{
       outputField: "capability.cpk",
-      formulaId: "cpk-min-v1",
+      formulaVersion: "excel-ta-v1" as const,
+      formulaId: "cpk-v1" as const,
       sourceCells: ["capability.lowerCpk", "capability.upperCpk"],
     }],
     scenarios: [{
       scenarioId: "scenario-1",
       baselineRunReference: "controlled-run-reference",
-      result: {
+      calculation: {
         factorCount: 1,
-        recommendationMethod: "worst_case" as const,
-        cpk: 2.3,
-        totalDpm: 0.4,
-        outOfSpecRatio: 4e-7,
-        yield: 0.9999996,
-        status: "PASS" as const,
+        recommendation: {
+          method: "worst_case" as const,
+          reason: "factor_count_1_to_3",
+          refer3d: false,
+          criticality: "none" as const,
+          criticalityRisk: false,
+        },
+        factors: [{
+          factorName: "Feature-A",
+          unit: "mm",
+          source: { worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 2 },
+          input: {
+            nominalValue: 12.45,
+            upperTolerance: 0.2,
+            lowerTolerance: -0.2,
+            longTermSafetyFactor: 1,
+            sigmaLevel: 4,
+            distribution: "normal" as const,
+          },
+          mean: 12.48,
+          halfTolerance: 0.2,
+          sigma: 0.05,
+          contribution: 1,
+          trace: {
+            formulaIds: ["factor-mean-v1", "factor-sigma-v1"],
+            sourceCells: ["Analysis-A!A2", "Analysis-A!B2"],
+          },
+        }],
+        system: {
+          designNominal: 12.5,
+          mean: 12.48,
+          additionalMeanShift: 0.02,
+          worstCaseUpper: 0.22,
+          worstCaseLower: -0.2,
+          rssSigma: 0.05,
+        },
+        capability: {
+          lowerSpecLimit: 12.1,
+          upperSpecLimit: 12.9,
+          targetSigmaLevel: 4,
+          targetCpk: 1.33,
+          cp: 2.6666666666666665,
+          lowerCpk: 2.3,
+          upperCpk: 2.8,
+          cpk: 2.3,
+          lowerZ: 6.9,
+          upperZ: 8.4,
+          lowerDpm: 0.2,
+          upperDpm: 0.2,
+          totalDpm: 0.4,
+          outOfSpecRatio: 4e-7,
+          yield: 0.9999996,
+          status: "PASS" as const,
+        },
+        traceRecords: [{
+          outputField: "capability.cpk",
+          formulaVersion: "excel-ta-v1" as const,
+          formulaId: "cpk-v1" as const,
+          sourceCells: ["capability.lowerCpk", "capability.upperCpk"],
+        }],
       },
-      delta: {
+      deltas: {
+        mean: 0.02,
+        rssSigma: 0,
+        worstCaseUpper: 0.02,
+        worstCaseLower: 0,
         cpk: -0.1,
         totalDpm: 0.09999999999999998,
-        outOfSpecRatio: 9.999999999999997e-8,
         yield: -1.0000000000287557e-7,
       },
-      overridesSummary: {
-        factorOverrideCount: 1,
-        systemOverrideFields: ["additionalMeanShift"],
+      overrides: {
+        factors: [{
+          source: { worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 2 },
+          fields: ["nominalValue"],
+        }],
+        systemSpecification: {
+          additionalMeanShift: 0.02,
+        },
       },
     }],
   };
@@ -371,6 +437,16 @@ describe("F4 calculation contracts", () => {
       ...request,
       requiredFieldCheck: {
         ...request.requiredFieldCheck,
+        workbookContentHash: "b".repeat(64),
+      },
+    }).success).toBe(false);
+  });
+
+  it("rejects F2.3 workbook hash mismatch", () => {
+    expect(calculationRequestSchema.safeParse({
+      ...request,
+      exceptionResolution: {
+        ...request.exceptionResolution,
         workbookContentHash: "b".repeat(64),
       },
     }).success).toBe(false);
@@ -473,6 +549,191 @@ describe("F4 calculation contracts", () => {
           },
         ],
       }],
+    }).success).toBe(false);
+  });
+
+  it("rejects non-positive request and override sigma/cpk/safety values", () => {
+    expect(calculationRequestSchema.safeParse({
+      ...request,
+      systemSpecification: {
+        ...request.systemSpecification,
+        targetSigmaLevel: 0,
+      },
+    }).success).toBe(false);
+    expect(calculationRequestSchema.safeParse({
+      ...request,
+      systemSpecification: {
+        ...request.systemSpecification,
+        targetCpk: -1,
+      },
+    }).success).toBe(false);
+    expect(calculationRequestSchema.safeParse({
+      ...request,
+      scenarioOverrides: [{
+        ...request.scenarioOverrides[0],
+        factorOverrides: [{
+          ...request.scenarioOverrides[0].factorOverrides[0],
+          longTermSafetyFactor: 0,
+        }],
+      }],
+    }).success).toBe(false);
+    expect(calculationRequestSchema.safeParse({
+      ...request,
+      scenarioOverrides: [{
+        ...request.scenarioOverrides[0],
+        factorOverrides: [{
+          ...request.scenarioOverrides[0].factorOverrides[0],
+          sigmaLevel: -3,
+        }],
+      }],
+    }).success).toBe(false);
+  });
+
+  it("rejects more than 100 scenarios", () => {
+    const scenarioOverrides = Array.from({ length: 101 }, (_, index) => ({
+      scenarioId: `scenario-${index + 1}`,
+      factorOverrides: [{
+        worksheetName: "Analysis-A",
+        tableId: "table-a",
+        sourceRow: 2,
+        nominalValue: 12.45 + index * 0.001,
+      }],
+      systemSpecification: {
+        additionalMeanShift: 0,
+      },
+    }));
+    expect(calculationRequestSchema.safeParse({ ...request, scenarioOverrides }).success).toBe(false);
+  });
+
+  it("rejects merged scenario system specification when effective bounds are invalid", () => {
+    expect(calculationRequestSchema.safeParse({
+      ...request,
+      scenarioOverrides: [{
+        ...request.scenarioOverrides[0],
+        systemSpecification: {
+          lowerSpecLimit: 13,
+        },
+      }],
+    }).success).toBe(false);
+  });
+
+  it("rejects non-positive completed factor input values", () => {
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      factors: [{
+        ...completedResult.factors[0],
+        input: {
+          ...completedResult.factors[0].input,
+          longTermSafetyFactor: 0,
+        },
+      }],
+    }).success).toBe(false);
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      factors: [{
+        ...completedResult.factors[0],
+        input: {
+          ...completedResult.factors[0].input,
+          sigmaLevel: -2,
+        },
+      }],
+    }).success).toBe(false);
+  });
+
+  it("requires factorName and unit in completed factor outputs", () => {
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      factors: [{
+        ...completedResult.factors[0],
+        factorName: "",
+      }],
+    }).success).toBe(false);
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      factors: [{
+        ...completedResult.factors[0],
+        unit: "",
+      }],
+    }).success).toBe(false);
+  });
+
+  it("requires boolean criticalityRisk while preserving criticality enum", () => {
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      recommendation: {
+        ...completedResult.recommendation,
+        criticalityRisk: "CTS",
+      },
+    }).success).toBe(false);
+
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      recommendation: {
+        ...completedResult.recommendation,
+        criticality: "none",
+        criticalityRisk: true,
+      },
+    }).success).toBe(true);
+  });
+
+  it("enforces formulaVersion and formulaId enums in trace records", () => {
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      traceRecords: [{
+        ...completedResult.traceRecords[0],
+        formulaVersion: "excel-ta-v2",
+      }],
+    }).success).toBe(false);
+
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      traceRecords: [{
+        ...completedResult.traceRecords[0],
+        formulaId: "cpk-min-v1",
+      }],
+    }).success).toBe(false);
+  });
+
+  it("accepts complete scenario payload with override details", () => {
+    expect(calculationResultSchema.safeParse(completedResult).success).toBe(true);
+  });
+
+  it("rejects completed derived invariant violations", () => {
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      factorCount: 2,
+    }).success).toBe(false);
+
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      recommendation: {
+        ...completedResult.recommendation,
+        method: "rss_1d",
+      },
+    }).success).toBe(false);
+
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      capability: {
+        ...completedResult.capability,
+        cpk: 1.5,
+      },
+    }).success).toBe(false);
+
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      capability: {
+        ...completedResult.capability,
+        totalDpm: completedResult.capability.totalDpm + 1,
+      },
+    }).success).toBe(false);
+
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      capability: {
+        ...completedResult.capability,
+        yield: 0.5,
+      },
     }).success).toBe(false);
   });
 

@@ -1394,8 +1394,8 @@ const calculationSystemSpecificationSchema = z
     designNominal: z.number().finite(),
     lowerSpecLimit: z.number().finite(),
     upperSpecLimit: z.number().finite(),
-    targetSigmaLevel: z.number().finite(),
-    targetCpk: z.number().finite(),
+    targetSigmaLevel: z.number().finite().positive(),
+    targetCpk: z.number().finite().positive(),
     additionalMeanShift: z.number().finite(),
   })
   .strict()
@@ -1414,8 +1414,8 @@ const calculationFactorOverrideSchema = z
     nominalValue: z.number().finite().optional(),
     upperTolerance: z.number().finite().optional(),
     lowerTolerance: z.number().finite().optional(),
-    longTermSafetyFactor: z.number().finite().optional(),
-    sigmaLevel: z.number().finite().optional(),
+    longTermSafetyFactor: z.number().finite().positive().optional(),
+    sigmaLevel: z.number().finite().positive().optional(),
     distribution: distributionSchema.optional(),
   })
   .strict()
@@ -1434,12 +1434,12 @@ const calculationFactorOverrideSchema = z
     }
   });
 
-const calculationScenarioSystemOverrideSchema = z
+const calculationScenarioSystemSpecificationSchema = z
   .object({
     lowerSpecLimit: z.number().finite().optional(),
     upperSpecLimit: z.number().finite().optional(),
-    targetSigmaLevel: z.number().finite().optional(),
-    targetCpk: z.number().finite().optional(),
+    targetSigmaLevel: z.number().finite().positive().optional(),
+    targetCpk: z.number().finite().positive().optional(),
     additionalMeanShift: z.number().finite().optional(),
   })
   .strict();
@@ -1448,7 +1448,7 @@ export const calculationScenarioOverrideSchema = z
   .object({
     scenarioId: z.string().min(1),
     factorOverrides: z.array(calculationFactorOverrideSchema).max(100),
-    systemOverride: calculationScenarioSystemOverrideSchema.optional(),
+    systemSpecification: calculationScenarioSystemSpecificationSchema.optional(),
   })
   .strict();
 
@@ -1464,7 +1464,7 @@ export const calculationRequestSchema = z
     worksheetSelection: calculationWorksheetSelectionSchema,
     systemSpecification: calculationSystemSpecificationSchema,
     criticality: calculationCriticalitySchema,
-    scenarioOverrides: z.array(calculationScenarioOverrideSchema),
+    scenarioOverrides: z.array(calculationScenarioOverrideSchema).max(100),
   })
   .strict()
   .superRefine((request, context) => {
@@ -1519,13 +1519,13 @@ export const calculationRequestSchema = z
         });
       }
 
-      const effectiveLowerSpecLimit = scenario.systemOverride?.lowerSpecLimit ?? request.systemSpecification.lowerSpecLimit;
-      const effectiveUpperSpecLimit = scenario.systemOverride?.upperSpecLimit ?? request.systemSpecification.upperSpecLimit;
+      const effectiveLowerSpecLimit = scenario.systemSpecification?.lowerSpecLimit ?? request.systemSpecification.lowerSpecLimit;
+      const effectiveUpperSpecLimit = scenario.systemSpecification?.upperSpecLimit ?? request.systemSpecification.upperSpecLimit;
       if (effectiveUpperSpecLimit <= effectiveLowerSpecLimit) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
           message: "effective upperSpecLimit must be greater than lowerSpecLimit",
-          path: ["scenarioOverrides", scenarioIndex, "systemOverride", "upperSpecLimit"],
+          path: ["scenarioOverrides", scenarioIndex, "systemSpecification", "upperSpecLimit"],
         });
       }
     }
@@ -1548,7 +1548,8 @@ const calculationRecommendationSchema = z
     method: calculationRecommendationMethodSchema,
     reason: calculationRecommendationReasonSchema,
     refer3d: z.boolean(),
-    criticalityRisk: calculationCriticalitySchema,
+    criticality: calculationCriticalitySchema,
+    criticalityRisk: z.boolean(),
   })
   .strict();
 
@@ -1565,8 +1566,8 @@ const calculationFactorInputSchema = z
     nominalValue: z.number().finite(),
     upperTolerance: z.number().finite(),
     lowerTolerance: z.number().finite(),
-    longTermSafetyFactor: z.number().finite(),
-    sigmaLevel: z.number().finite(),
+    longTermSafetyFactor: z.number().finite().positive(),
+    sigmaLevel: z.number().finite().positive(),
     distribution: distributionSchema,
   })
   .strict();
@@ -1580,6 +1581,8 @@ const calculationFactorTraceSchema = z
 
 const calculationFactorResultSchema = z
   .object({
+    factorName: z.string().min(1),
+    unit: z.string().min(1),
     source: calculationFactorSourceSchema,
     input: calculationFactorInputSchema,
     mean: z.number().finite(),
@@ -1631,42 +1634,159 @@ const calculationCapabilityResultSchema = z
 const calculationTraceRecordSchema = z
   .object({
     outputField: z.string().min(1),
-    formulaId: z.string().min(1),
+    formulaVersion: z.literal("excel-ta-v1"),
+    formulaId: z.enum([
+      "factor-mean-v1",
+      "factor-half-tolerance-v1",
+      "factor-sigma-v1",
+      "system-mean-v1",
+      "worst-case-v1",
+      "rss-v1",
+      "contribution-v1",
+      "cp-v1",
+      "cpk-lower-v1",
+      "cpk-upper-v1",
+      "cpk-v1",
+      "z-lower-v1",
+      "z-upper-v1",
+      "dpm-lower-v1",
+      "dpm-upper-v1",
+      "dpm-total-v1",
+      "yield-v1",
+      "status-v1",
+    ]),
     sourceCells: z.array(z.string().min(1)).min(1),
   })
   .strict();
 
-const calculationScenarioResultSchema = z
+const calculationPayloadShape = {
+  factorCount: z.number().int().positive(),
+  recommendation: calculationRecommendationSchema,
+  factors: z.array(calculationFactorResultSchema).min(1),
+  system: calculationSystemResultSchema,
+  capability: calculationCapabilityResultSchema,
+  traceRecords: z.array(calculationTraceRecordSchema).min(1),
+} as const;
+
+const validateCalculationPayload = (
+  payload: z.infer<z.ZodObject<typeof calculationPayloadShape>>,
+  context: z.RefinementCtx,
+  pathPrefix: (string | number)[] = [],
+): void => {
+  const path = (segment: string | number): (string | number)[] => [...pathPrefix, segment];
+  if (payload.factorCount !== payload.factors.length) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "factorCount must match factors length",
+      path: path("factorCount"),
+    });
+  }
+
+  if (payload.factorCount <= 3
+    && (payload.recommendation.method !== "worst_case"
+      || payload.recommendation.reason !== "factor_count_1_to_3"
+      || payload.recommendation.refer3d)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "recommendation must match factor-count boundary for 1-3 factors",
+      path: path("recommendation"),
+    });
+  }
+  if (payload.factorCount >= 4 && payload.factorCount <= 10
+    && (payload.recommendation.method !== "rss_1d"
+      || payload.recommendation.reason !== "factor_count_4_to_10"
+      || payload.recommendation.refer3d)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "recommendation must match factor-count boundary for 4-10 factors",
+      path: path("recommendation"),
+    });
+  }
+  if (payload.factorCount > 10
+    && (payload.recommendation.method !== "refer_3d_variation_analysis"
+      || payload.recommendation.reason !== "factor_count_over_10"
+      || !payload.recommendation.refer3d)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "recommendation must match factor-count boundary for more than 10 factors",
+      path: path("recommendation"),
+    });
+  }
+
+  const expectedCpk = Math.min(payload.capability.lowerCpk, payload.capability.upperCpk);
+  if (Math.abs(payload.capability.cpk - expectedCpk) > 1e-12) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "capability.cpk must equal min(lowerCpk, upperCpk)",
+      path: path("capability").concat("cpk"),
+    });
+  }
+
+  const expectedTotalDpm = payload.capability.lowerDpm + payload.capability.upperDpm;
+  if (Math.abs(payload.capability.totalDpm - expectedTotalDpm) > 1e-9) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "capability.totalDpm must equal lowerDpm + upperDpm",
+      path: path("capability").concat("totalDpm"),
+    });
+  }
+
+  const expectedOutOfSpecRatio = payload.capability.totalDpm / 1_000_000;
+  if (Math.abs(payload.capability.outOfSpecRatio - expectedOutOfSpecRatio) > 1e-12) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "capability.outOfSpecRatio must equal totalDpm / 1000000",
+      path: path("capability").concat("outOfSpecRatio"),
+    });
+  }
+
+  const expectedYield = 1 - expectedOutOfSpecRatio;
+  if (Math.abs(payload.capability.yield - expectedYield) > 1e-12) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "capability.yield must equal 1 - outOfSpecRatio",
+      path: path("capability").concat("yield"),
+    });
+  }
+};
+
+const calculationPayloadSchema = z
+  .object(calculationPayloadShape)
+  .strict()
+  .superRefine((payload, context) => {
+    validateCalculationPayload(payload, context);
+  });
+
+const calculationScenarioFactorOverrideDetailsSchema = z
   .object({
-    factorCount: z.number().int().positive(),
-    recommendationMethod: calculationRecommendationMethodSchema,
-    cpk: z.number().finite(),
-    totalDpm: z.number().finite(),
-    outOfSpecRatio: z.number().finite().min(0).max(1),
-    yield: z.number().finite().min(0).max(1),
-    status: capabilityStatusSchema,
+    source: calculationFactorSourceSchema,
+    fields: z.array(z.enum([
+      "nominalValue",
+      "upperTolerance",
+      "lowerTolerance",
+      "longTermSafetyFactor",
+      "sigmaLevel",
+      "distribution",
+    ])).min(1),
   })
   .strict();
 
-const calculationScenarioDeltaSchema = z
+const calculationScenarioOverridesSchema = z
   .object({
+    factors: z.array(calculationScenarioFactorOverrideDetailsSchema).max(100),
+    systemSpecification: calculationScenarioSystemSpecificationSchema.optional(),
+  })
+  .strict();
+
+const calculationScenarioDeltasSchema = z
+  .object({
+    mean: z.number().finite(),
+    rssSigma: z.number().finite(),
+    worstCaseUpper: z.number().finite(),
+    worstCaseLower: z.number().finite(),
     cpk: z.number().finite(),
     totalDpm: z.number().finite(),
-    outOfSpecRatio: z.number().finite(),
     yield: z.number().finite(),
-  })
-  .strict();
-
-const calculationScenarioOverrideSummarySchema = z
-  .object({
-    factorOverrideCount: z.number().int().nonnegative(),
-    systemOverrideFields: z.array(z.enum([
-      "lowerSpecLimit",
-      "upperSpecLimit",
-      "targetSigmaLevel",
-      "targetCpk",
-      "additionalMeanShift",
-    ])),
   })
   .strict();
 
@@ -1674,9 +1794,9 @@ const calculationScenarioResultEntrySchema = z
   .object({
     scenarioId: z.string().min(1),
     baselineRunReference: controlledCalculationReferenceSchema,
-    result: calculationScenarioResultSchema,
-    delta: calculationScenarioDeltaSchema,
-    overridesSummary: calculationScenarioOverrideSummarySchema,
+    calculation: calculationPayloadSchema,
+    overrides: calculationScenarioOverridesSchema,
+    deltas: calculationScenarioDeltasSchema,
   })
   .strict();
 
@@ -1691,90 +1811,12 @@ export const calculationCompletedResultSchema = z
     runReference: controlledCalculationReferenceSchema,
     workbookContentHash: sha256Schema,
     worksheetSelection: calculationWorksheetSelectionSchema,
-    factorCount: z.number().int().positive(),
-    recommendation: calculationRecommendationSchema,
-    factors: z.array(calculationFactorResultSchema).min(1),
-    system: calculationSystemResultSchema,
-    capability: calculationCapabilityResultSchema,
-    traceRecords: z.array(calculationTraceRecordSchema).min(1),
+    ...calculationPayloadShape,
     scenarios: z.array(calculationScenarioResultEntrySchema),
   })
   .strict()
   .superRefine((result, context) => {
-    if (result.factorCount !== result.factors.length) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "factorCount must match factors length",
-        path: ["factorCount"],
-      });
-    }
-
-    if (result.factorCount <= 3
-      && (result.recommendation.method !== "worst_case"
-        || result.recommendation.reason !== "factor_count_1_to_3"
-        || result.recommendation.refer3d)) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "recommendation must match factor-count boundary for 1-3 factors",
-        path: ["recommendation"],
-      });
-    }
-    if (result.factorCount >= 4 && result.factorCount <= 10
-      && (result.recommendation.method !== "rss_1d"
-        || result.recommendation.reason !== "factor_count_4_to_10"
-        || result.recommendation.refer3d)) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "recommendation must match factor-count boundary for 4-10 factors",
-        path: ["recommendation"],
-      });
-    }
-    if (result.factorCount > 10
-      && (result.recommendation.method !== "refer_3d_variation_analysis"
-        || result.recommendation.reason !== "factor_count_over_10"
-        || !result.recommendation.refer3d)) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "recommendation must match factor-count boundary for more than 10 factors",
-        path: ["recommendation"],
-      });
-    }
-
-    const expectedCpk = Math.min(result.capability.lowerCpk, result.capability.upperCpk);
-    if (Math.abs(result.capability.cpk - expectedCpk) > 1e-12) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "capability.cpk must equal min(lowerCpk, upperCpk)",
-        path: ["capability", "cpk"],
-      });
-    }
-
-    const expectedTotalDpm = result.capability.lowerDpm + result.capability.upperDpm;
-    if (Math.abs(result.capability.totalDpm - expectedTotalDpm) > 1e-9) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "capability.totalDpm must equal lowerDpm + upperDpm",
-        path: ["capability", "totalDpm"],
-      });
-    }
-
-    const expectedOutOfSpecRatio = result.capability.totalDpm / 1_000_000;
-    if (Math.abs(result.capability.outOfSpecRatio - expectedOutOfSpecRatio) > 1e-12) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "capability.outOfSpecRatio must equal totalDpm / 1000000",
-        path: ["capability", "outOfSpecRatio"],
-      });
-    }
-
-    const expectedYield = 1 - expectedOutOfSpecRatio;
-    if (Math.abs(result.capability.yield - expectedYield) > 1e-12) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "capability.yield must equal 1 - outOfSpecRatio",
-        path: ["capability", "yield"],
-      });
-    }
+    validateCalculationPayload(result, context);
 
     const scenarioIds = result.scenarios.map((scenario) => scenario.scenarioId);
     if (new Set(scenarioIds).size !== scenarioIds.length) {
