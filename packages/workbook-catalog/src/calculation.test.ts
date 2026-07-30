@@ -885,6 +885,7 @@ describe("createCalculation", () => {
       expect(trace.get("system.worstCaseUpper")?.sourceCells).toContain(upperOverrideRef);
       expect(trace.get("system.rssSigma")?.sourceCells).toContain(upperOverrideRef);
       expect(trace.get("system.worstCaseLower")?.sourceCells).not.toContain(upperOverrideRef);
+      expect(trace.get("system.worstCaseLower")?.sourceCells).toContain(lowerOverrideRef);
       expect(trace.get("capability.upperCpk")?.sourceCells).toContain(upperOverrideRef);
       expect(trace.get("capability.cpk")?.sourceCells).toContain(upperOverrideRef);
       expect(trace.get("capability.lowerDpm")?.sourceCells).toContain(upperOverrideRef);
