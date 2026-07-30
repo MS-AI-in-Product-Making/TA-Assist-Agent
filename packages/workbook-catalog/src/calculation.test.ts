@@ -987,6 +987,61 @@ describe("createCalculation", () => {
       }));
     });
 
+    it("accepts 100 factors with 10 scenarios at the workload limit", () => {
+      const request = baseRequest(100);
+      const scenarioOverrides = Array.from({ length: 10 }, (_, index) => ({
+        scenarioId: `scenario-${index + 1}`,
+        factorOverrides: [{
+          worksheetName: "Analysis-A",
+          tableId: "table-a",
+          sourceRow: 2,
+          nominalValue: index / 100,
+        }],
+      }));
+
+      const completed = createCalculation({
+        ...request,
+        scenarioOverrides,
+      });
+
+      expect(completed.status).toBe("completed");
+      if (completed.status !== "completed") return;
+      expect(completed.factorCount).toBe(100);
+      expect(completed.scenarios).toHaveLength(10);
+    });
+
+    it("rejects 100 factors with 11 scenarios before reading row fields and without marker leakage", () => {
+      const marker = "workload-row-fields-getter-should-not-run";
+      let fieldsReadCount = 0;
+      const request = baseRequest(100);
+      const selectedTable = request.worksheetAnalysisAssets.worksheets[0]!.factorTables[0]!;
+      const firstRow = selectedTable.rows[0]!;
+      Object.defineProperty(firstRow, "fields", {
+        enumerable: true,
+        configurable: true,
+        get() {
+          fieldsReadCount += 1;
+          throw new Error(marker);
+        },
+      });
+
+      const error = captureThrown(() => createCalculation({
+        ...request,
+        scenarioOverrides: Array.from({ length: 11 }, (_, index) => ({
+          scenarioId: `scenario-${index + 1}`,
+          factorOverrides: [],
+        })),
+      }));
+
+      expect(error).toMatchObject({
+        code: "validation_error",
+        summary: "Calculation request is invalid.",
+        affectedInputReferences: ["calculation-request-v1"],
+      });
+      expect(fieldsReadCount).toBe(0);
+      expectNoMarkerLeak(error, marker);
+    });
+
     it("is deterministic for successful repeated runs with identical input", () => {
       const request = {
         ...baseRequest(2),

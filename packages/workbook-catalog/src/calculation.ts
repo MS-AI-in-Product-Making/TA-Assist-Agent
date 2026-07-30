@@ -25,6 +25,7 @@ const REQUEST_ACTION = "Provide valid confidential controlled references.";
 const COMPLETION_ACTION = "Provide a valid worksheet selection with calculable factors.";
 const CALCULATION_REFERENCE = "calculation-request-v1";
 const MAX_FACTOR_ROWS = 100;
+const MAX_SCENARIO_FACTOR_EVALUATIONS = 1000;
 
 type CalculationCompletedResult = Extract<CalculationResult, { readonly status: "completed" }>;
 type WorksheetRow = CalculationRequest["worksheetAnalysisAssets"]["worksheets"][number]["factorTables"][number]["rows"][number];
@@ -157,6 +158,43 @@ function trimNonBlank(value: unknown): string | undefined {
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function rejectExcessiveScenarioFactorWorkload(request: unknown): void {
+  if (!isPlainRecord(request)) {
+    return;
+  }
+
+  const worksheetSelection = request.worksheetSelection;
+  const worksheetAnalysisAssets = request.worksheetAnalysisAssets;
+  const scenarioOverrides = request.scenarioOverrides;
+  if (!isPlainRecord(worksheetSelection)
+    || !isPlainRecord(worksheetAnalysisAssets)
+    || !Array.isArray(worksheetAnalysisAssets.worksheets)
+    || !Array.isArray(scenarioOverrides)) {
+    return;
+  }
+
+  const selectedWorksheet = worksheetAnalysisAssets.worksheets.find((worksheet: unknown) => (
+    isPlainRecord(worksheet)
+    && worksheet.worksheetName === worksheetSelection.worksheetName
+  ));
+  if (!isPlainRecord(selectedWorksheet) || !Array.isArray(selectedWorksheet.factorTables)) {
+    return;
+  }
+
+  const selectedTable = selectedWorksheet.factorTables.find((table: unknown) => (
+    isPlainRecord(table)
+    && table.tableId === worksheetSelection.tableId
+  ));
+  if (!isPlainRecord(selectedTable) || !Array.isArray(selectedTable.rows)) {
+    return;
+  }
+
+  const workload = selectedTable.rows.length * Math.max(1, scenarioOverrides.length);
+  if (workload > MAX_SCENARIO_FACTOR_EVALUATIONS) {
+    throw requestError(REQUEST_SUMMARY);
+  }
 }
 
 function asFiniteNumberOrUndefined(value: unknown): number | undefined {
@@ -911,6 +949,7 @@ export function createCalculation(request: unknown): CalculationResult {
       throw requestError(POLICY_SUMMARY, "policy_denied");
     }
 
+    rejectExcessiveScenarioFactorWorkload(request);
     parsedRequest = calculationRequestSchema.safeParse(request);
     if (!parsedRequest.success) {
       throw requestError(REQUEST_SUMMARY, classifyInvalidRequestError(request));
