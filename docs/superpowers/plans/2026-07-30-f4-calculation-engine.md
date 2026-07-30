@@ -226,27 +226,27 @@ Run: `git add packages/workbook-catalog/src/calculation.ts packages/workbook-cat
 - Modify: `packages/workbook-catalog/src/calculation.test.ts`
 - Modify: `packages/workbook-catalog/src/calculation-kernel.test.ts`
 
-- [ ] **Step 1: Write failing What-if tests.**
+- [x] **Step 1: Write failing What-if tests.**
 
 Assert that one tolerance override changes RSS/Cpk, reports deltas, retains a baseline reference and leaves the baseline deeply equal to a request without scenarios. Assert unknown row references, duplicate row overrides, invalid post-override specifications and more than 100 scenarios are rejected.
 
-- [ ] **Step 2: Run the focused What-if tests and verify RED.**
+- [x] **Step 2: Run the focused What-if tests and verify RED.**
 
 Run: `npm exec -- vitest run --workspace vitest.workspace.ts packages/workbook-catalog/src/calculation.test.ts -t "What-if"`
 
 Expected: FAIL because scenarios are not yet evaluated.
 
-- [ ] **Step 3: Apply immutable overrides and call the same kernel.**
+- [x] **Step 3: Apply immutable overrides and call the same kernel.**
 
 Index factors by `worksheetName|tableId|sourceRow`, clone only the normalized model, apply allowlisted overrides, validate the changed model and specification, execute `calculateToleranceAnalysis`, then return ordered scenario results with `baselineRunReference` and numeric deltas.
 
-- [ ] **Step 4: Run all F4 service/kernel tests and verify GREEN.**
+- [x] **Step 4: Run all F4 service/kernel tests and verify GREEN.**
 
 Run: `npm exec -- vitest run --workspace vitest.workspace.ts packages/workbook-catalog/src/calculation.test.ts packages/workbook-catalog/src/calculation-kernel.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit the What-if slice.**
+- [x] **Step 5: Commit the What-if slice.**
 
 Run: `git add packages/workbook-catalog/src/calculation.ts packages/workbook-catalog/src/calculation.test.ts packages/workbook-catalog/src/calculation-kernel.test.ts && git commit -m "feat(f4): add deterministic what-if recalculation"`
 
