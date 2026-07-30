@@ -10,6 +10,10 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 Set-Variable -Name DefaultTolerance -Value 1e-12 -Option Constant -Scope Script
 Set-Variable -Name MaximumTolerance -Value 1e-12 -Option Constant -Scope Script
+Set-Variable -Name MaximumMappingBytes -Value 1MB -Option Constant -Scope Script
+Set-Variable -Name MaximumMappingItems -Value 100 -Option Constant -Scope Script
+Set-Variable -Name MaximumNameLength -Value 128 -Option Constant -Scope Script
+Set-Variable -Name MaximumStringLength -Value 1024 -Option Constant -Scope Script
 
 function Write-Json {
   param([Parameter(Mandatory = $true)] [object]$Payload)
@@ -84,9 +88,19 @@ function Test-A1Address {
 function Assert-ScalarValue {
   param(
     [object]$Value,
-    [string]$Location
+    [string]$Location,
+    [switch]$RejectFormulaPrefix
   )
-  if ($Value -is [string] -or (Test-JsonNumber -Value $Value)) { return }
+  if ($Value -is [string]) {
+    if ($Value.Length -gt $script:MaximumStringLength -or $Value -match '[\x00\r\n]') {
+      throw (New-StatusException -Status "invalid_mapping" -Message "$Location contains invalid text.")
+    }
+    if ($RejectFormulaPrefix -and $Value.TrimStart() -match '^[=+\-@]') {
+      throw (New-StatusException -Status "invalid_mapping" -Message "$Location contains invalid text.")
+    }
+    return
+  }
+  if (Test-JsonNumber -Value $Value) { return }
   throw (New-StatusException -Status "invalid_mapping" -Message "$Location must be a number or string.")
 }
 
@@ -100,8 +114,14 @@ function Assert-Mapping {
   if ($Mapping.inputs -isnot [array]) {
     throw (New-StatusException -Status "invalid_mapping" -Message "mapping inputs must be an array.")
   }
+  if ($Mapping.inputs.Count -gt $script:MaximumMappingItems) {
+    throw (New-StatusException -Status "invalid_mapping" -Message "mapping inputs exceeds the item limit.")
+  }
   if ($Mapping.outputs -isnot [array] -or $Mapping.outputs.Count -eq 0) {
     throw (New-StatusException -Status "invalid_mapping" -Message "mapping outputs must be a non-empty array.")
+  }
+  if ($Mapping.outputs.Count -gt $script:MaximumMappingItems) {
+    throw (New-StatusException -Status "invalid_mapping" -Message "mapping outputs exceeds the item limit.")
   }
 
   $cells = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
@@ -110,7 +130,7 @@ function Assert-Mapping {
     if (-not (Test-A1Address -Value $inputItem.cell)) {
       throw (New-StatusException -Status "invalid_mapping" -Message "mapping input contains an invalid A1 cell.")
     }
-    Assert-ScalarValue -Value $inputItem.value -Location "mapping input value"
+    Assert-ScalarValue -Value $inputItem.value -Location "mapping input value" -RejectFormulaPrefix
     if (-not $cells.Add([string]$inputItem.cell)) {
       throw (New-StatusException -Status "invalid_mapping" -Message "mapping contains a duplicate cell.")
     }
@@ -119,7 +139,8 @@ function Assert-Mapping {
   $names = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
   foreach ($outputItem in $Mapping.outputs) {
     Assert-ExactProperties -Value $outputItem -Allowed @("name", "cell", "expected", "tolerance") -Location "mapping output"
-    if ($outputItem.name -isnot [string] -or [string]::IsNullOrWhiteSpace($outputItem.name)) {
+    if ($outputItem.name -isnot [string] -or [string]::IsNullOrWhiteSpace($outputItem.name) -or
+      $outputItem.name.Length -gt $script:MaximumNameLength -or $outputItem.name -match '[\x00\r\n]') {
       throw (New-StatusException -Status "invalid_mapping" -Message "mapping output name must be a non-empty string.")
     }
     if (-not $names.Add([string]$outputItem.name)) {
@@ -168,11 +189,21 @@ try {
   if ($ExpectedSha256 -cnotmatch '^[0-9A-Fa-f]{64}$') {
     throw (New-StatusException -Status "invalid_arguments" -Message "ExpectedSha256 must contain 64 hexadecimal characters.")
   }
-  $resolvedWorkbookPath = (Resolve-Path -LiteralPath $WorkbookPath -ErrorAction Stop).Path
-  $resolvedMappingPath = (Resolve-Path -LiteralPath $MappingPath -ErrorAction Stop).Path
+  if ($WorksheetName.Length -gt 31 -or $WorksheetName -match '[\x00-\x1F\x7F]') {
+    throw (New-StatusException -Status "invalid_arguments" -Message "WorksheetName is invalid.")
+  }
+  if (-not (Test-Path -LiteralPath $WorkbookPath -PathType Leaf) -or
+      -not (Test-Path -LiteralPath $MappingPath -PathType Leaf)) {
+    throw (New-StatusException -Status "invalid_arguments" -Message "WorkbookPath or MappingPath is unavailable.")
+  }
+  $resolvedWorkbookPath = (Resolve-Path -LiteralPath $WorkbookPath).Path
+  $resolvedMappingPath = (Resolve-Path -LiteralPath $MappingPath).Path
   $sourceSha256 = (Get-FileHash -LiteralPath $resolvedWorkbookPath -Algorithm SHA256).Hash.ToUpperInvariant()
   if ($sourceSha256 -cne $ExpectedSha256.ToUpperInvariant()) {
     throw (New-StatusException -Status "hash_mismatch" -Message "Workbook SHA-256 does not match ExpectedSha256.")
+  }
+  if ((Get-Item -LiteralPath $resolvedMappingPath).Length -gt $script:MaximumMappingBytes) {
+    throw (New-StatusException -Status "invalid_mapping" -Message "Mapping file exceeds the size limit.")
   }
   try {
     $mapping = Get-Content -LiteralPath $resolvedMappingPath -Raw | ConvertFrom-Json -Depth 20
@@ -190,11 +221,10 @@ try {
 if ($ValidateOnly) {
   Write-Json -Payload ([ordered]@{
       status = "validated"
-      workbookPath = $resolvedWorkbookPath
-      worksheetName = $WorksheetName
       inputCount = $mapping.inputs.Count
       outputCount = $mapping.outputs.Count
       sourceSha256 = $sourceSha256
+        version = [string]$mapping.version
     })
   exit 0
 }
@@ -211,6 +241,13 @@ try {
   [void][System.IO.Directory]::CreateDirectory($temporaryDirectory)
   $temporaryWorkbookPath = Join-Path $temporaryDirectory ([System.IO.Path]::GetFileName($resolvedWorkbookPath))
   Copy-Item -LiteralPath $resolvedWorkbookPath -Destination $temporaryWorkbookPath
+  if ($env:F4_EXCEL_REGRESSION_TAMPER_TEMP_COPY -eq "1") {
+    [System.IO.File]::AppendAllText($temporaryWorkbookPath, "x")
+  }
+  $temporarySha256 = (Get-FileHash -LiteralPath $temporaryWorkbookPath -Algorithm SHA256).Hash.ToUpperInvariant()
+  if ($temporarySha256 -cne $sourceSha256 -or $temporarySha256 -cne $ExpectedSha256.ToUpperInvariant()) {
+    throw (New-StatusException -Status "hash_mismatch" -Message "Temporary workbook SHA-256 does not match the approved source.")
+  }
 
   if ($env:F4_EXCEL_REGRESSION_FAIL_ON_COM_START -eq "1") {
     throw (New-StatusException -Status "excel_error" -Message "Excel startup disabled by test hook.")
@@ -232,6 +269,9 @@ try {
     $range = $null
     try {
       $range = $worksheet.Range([string]$inputItem.cell)
+      if ($inputItem.value -is [string]) {
+        $range.NumberFormat = '@'
+      }
       $range.Value2 = $inputItem.value
     } finally {
       Release-ComObject -Value $range
@@ -268,7 +308,6 @@ try {
           name = [string]$outputItem.name
           cell = [string]$outputItem.cell
           pass = [bool]$passed
-          difference = $difference
         })
     } finally {
       Release-ComObject -Value $range
@@ -277,7 +316,6 @@ try {
 
   $resultPayload = [ordered]@{
     status = if ($hasMismatch) { "regression_mismatch" } else { "regression_passed" }
-    worksheetName = $WorksheetName
     sourceSha256 = $sourceSha256
     outputs = $outputResults
   }
@@ -302,13 +340,25 @@ try {
   Release-ComObject -Value $excel
   [GC]::Collect()
   [GC]::WaitForPendingFinalizers()
-  if (Test-Path -LiteralPath $temporaryDirectory) {
-    Remove-Item -LiteralPath $temporaryDirectory -Recurse -Force
+  try {
+    if (Test-Path -LiteralPath $temporaryDirectory) {
+      Remove-Item -LiteralPath $temporaryDirectory -Recurse -Force
+    }
+  } catch {
+    $failureStatus = "excel_error"
+    $failureMessage = "Excel regression cleanup failed."
+    $resultPayload = $null
   }
-  $finalSourceSha256 = (Get-FileHash -LiteralPath $resolvedWorkbookPath -Algorithm SHA256).Hash.ToUpperInvariant()
-  if ($finalSourceSha256 -cne $sourceSha256) {
-    $failureStatus = "source_modified"
-    $failureMessage = "Source workbook changed during regression execution."
+  try {
+    $finalSourceSha256 = (Get-FileHash -LiteralPath $resolvedWorkbookPath -Algorithm SHA256).Hash.ToUpperInvariant()
+    if ($finalSourceSha256 -cne $sourceSha256) {
+      $failureStatus = "source_modified"
+      $failureMessage = "Source workbook changed during regression execution."
+      $resultPayload = $null
+    }
+  } catch {
+    $failureStatus = "excel_error"
+    $failureMessage = "Source workbook verification failed."
     $resultPayload = $null
   }
 }
