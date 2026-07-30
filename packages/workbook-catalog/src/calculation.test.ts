@@ -533,6 +533,21 @@ describe("createCalculation", () => {
     delete (missingTargetSigmaLevel.systemSpecification as any).targetSigmaLevel;
     expectTypedErrorCode(() => createCalculation(missingTargetSigmaLevel), "validation_error");
 
+    const missingDesignNominalWithInvalidRange = deepClone(request);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    delete (missingDesignNominalWithInvalidRange.systemSpecification as any).designNominal;
+    missingDesignNominalWithInvalidRange.systemSpecification.upperSpecLimit = -3;
+    expectTypedErrorCode(() => createCalculation(missingDesignNominalWithInvalidRange), "validation_error");
+
+    expectTypedErrorCode(() => createCalculation({
+      ...request,
+      systemSpecification: {
+        ...request.systemSpecification,
+        upperSpecLimit: -3,
+        unknownField: 1,
+      },
+    }), "validation_error");
+
     expectTypedErrorCode(() => createCalculation({
       ...request,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -782,7 +797,156 @@ describe("createCalculation", () => {
             lowerSpecLimit: -3,
           },
         }],
+      }), "calculation_not_possible");
+
+      for (const systemSpecification of [{ targetSigmaLevel: 0 }, { targetCpk: 0 }]) {
+        expectTypedErrorCode(() => createCalculation({
+          ...request,
+          scenarioOverrides: [{
+            scenarioId: "system-invalid-target",
+            factorOverrides: [],
+            systemSpecification,
+          }],
+        }), "calculation_not_possible");
+      }
+
+      expectTypedErrorCode(() => createCalculation({
+        ...request,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        scenarioOverrides: [{ scenarioId: "system-malformed", factorOverrides: [], systemSpecification: "invalid" as any }],
       }), "validation_error");
+
+      expectTypedErrorCode(() => createCalculation({
+        ...request,
+        scenarioOverrides: [{
+          scenarioId: "system-unknown-field",
+          factorOverrides: [],
+          systemSpecification: {
+            upperSpecLimit: -3,
+            unknownField: 1,
+          },
+        }],
+      }), "validation_error");
+
+      expectTypedErrorCode(() => createCalculation({
+        ...request,
+        scenarioOverrides: [{
+          factorOverrides: [],
+          systemSpecification: {
+            upperSpecLimit: -3,
+          },
+        }],
+      }), "validation_error");
+    });
+
+    it("builds scenario trace dependency closure from override request refs using safe indexes", () => {
+      const request = baseRequest(1);
+      const result = createCalculation({
+        ...request,
+        scenarioOverrides: [{
+          scenarioId: "sensitive-user-text-should-not-appear",
+          factorOverrides: [{
+            worksheetName: "Analysis-A",
+            tableId: "table-a",
+            sourceRow: 2,
+            upperTolerance: 0.8,
+            lowerTolerance: -0.6,
+            distribution: "uniform",
+            sigmaLevel: 2,
+          }],
+          systemSpecification: {
+            lowerSpecLimit: -2.5,
+            upperSpecLimit: 2.5,
+            additionalMeanShift: -0.3,
+          },
+        }],
+      });
+
+      expect(result.status).toBe("completed");
+      if (result.status !== "completed") return;
+
+      const scenario = result.scenarios[0]!;
+      const trace = new Map(scenario.calculation.traceRecords.map((record) => [record.outputField, record]));
+      const upperOverrideRef = "request:scenarioOverrides[0].factorOverrides[0].upperTolerance";
+      const lowerOverrideRef = "request:scenarioOverrides[0].factorOverrides[0].lowerTolerance";
+      const distributionOverrideRef = "request:scenarioOverrides[0].factorOverrides[0].distribution";
+      const sigmaOverrideRef = "request:scenarioOverrides[0].factorOverrides[0].sigmaLevel";
+      const shiftOverrideRef = "request:scenarioOverrides[0].systemSpecification.additionalMeanShift";
+      const lslOverrideRef = "request:scenarioOverrides[0].systemSpecification.lowerSpecLimit";
+      const uslOverrideRef = "request:scenarioOverrides[0].systemSpecification.upperSpecLimit";
+
+      const serializedTrace = JSON.stringify(scenario.calculation.traceRecords);
+      expect(serializedTrace).not.toContain("sensitive-user-text-should-not-appear");
+
+      expect(trace.get("factors[0].mean")?.sourceCells).toContain(upperOverrideRef);
+      expect(trace.get("factors[0].halfTolerance")?.sourceCells).toContain(upperOverrideRef);
+      expect(trace.get("factors[0].sigma")?.sourceCells).toContain(upperOverrideRef);
+      expect(trace.get("factors[0].contribution")?.sourceCells).toContain(upperOverrideRef);
+      expect(trace.get("system.worstCaseUpper")?.sourceCells).toContain(upperOverrideRef);
+      expect(trace.get("system.rssSigma")?.sourceCells).toContain(upperOverrideRef);
+      expect(trace.get("system.worstCaseLower")?.sourceCells).not.toContain(upperOverrideRef);
+      expect(trace.get("capability.upperCpk")?.sourceCells).toContain(upperOverrideRef);
+      expect(trace.get("capability.cpk")?.sourceCells).toContain(upperOverrideRef);
+      expect(trace.get("capability.lowerDpm")?.sourceCells).toContain(upperOverrideRef);
+      expect(trace.get("capability.upperDpm")?.sourceCells).toContain(upperOverrideRef);
+      expect(trace.get("capability.totalDpm")?.sourceCells).toContain(upperOverrideRef);
+      expect(trace.get("capability.yield")?.sourceCells).toContain(upperOverrideRef);
+      expect(trace.get("capability.status")?.sourceCells).toContain(upperOverrideRef);
+
+      expect(trace.get("capability.cp")?.sourceCells).toContain(lslOverrideRef);
+      expect(trace.get("capability.lowerCpk")?.sourceCells).toContain(lslOverrideRef);
+      expect(trace.get("capability.cpk")?.sourceCells).toContain(lslOverrideRef);
+      expect(trace.get("capability.lowerZ")?.sourceCells).toContain(lslOverrideRef);
+      expect(trace.get("capability.lowerDpm")?.sourceCells).toContain(lslOverrideRef);
+      expect(trace.get("capability.totalDpm")?.sourceCells).toContain(lslOverrideRef);
+      expect(trace.get("capability.yield")?.sourceCells).toContain(lslOverrideRef);
+      expect(trace.get("capability.status")?.sourceCells).toContain(lslOverrideRef);
+      expect(trace.get("capability.upperZ")?.sourceCells).not.toContain(lslOverrideRef);
+      expect(trace.get("capability.upperDpm")?.sourceCells).not.toContain(lslOverrideRef);
+
+      expect(trace.get("system.mean")?.sourceCells).toContain(shiftOverrideRef);
+      expect(trace.get("capability.lowerCpk")?.sourceCells).toContain(shiftOverrideRef);
+      expect(trace.get("capability.upperCpk")?.sourceCells).toContain(shiftOverrideRef);
+      expect(trace.get("capability.cpk")?.sourceCells).toContain(shiftOverrideRef);
+      expect(trace.get("capability.lowerZ")?.sourceCells).toContain(shiftOverrideRef);
+      expect(trace.get("capability.upperZ")?.sourceCells).toContain(shiftOverrideRef);
+      expect(trace.get("capability.lowerDpm")?.sourceCells).toContain(shiftOverrideRef);
+      expect(trace.get("capability.upperDpm")?.sourceCells).toContain(shiftOverrideRef);
+      expect(trace.get("capability.totalDpm")?.sourceCells).toContain(shiftOverrideRef);
+      expect(trace.get("capability.yield")?.sourceCells).toContain(shiftOverrideRef);
+      expect(trace.get("capability.status")?.sourceCells).toContain(shiftOverrideRef);
+
+      expect(trace.get("factors[0].sigma")?.sourceCells).toContain(distributionOverrideRef);
+      expect(trace.get("system.rssSigma")?.sourceCells).toContain(distributionOverrideRef);
+      expect(trace.get("capability.cp")?.sourceCells).toContain(distributionOverrideRef);
+      expect(trace.get("capability.lowerCpk")?.sourceCells).toContain(distributionOverrideRef);
+      expect(trace.get("capability.cpk")?.sourceCells).toContain(distributionOverrideRef);
+      expect(trace.get("capability.lowerDpm")?.sourceCells).toContain(distributionOverrideRef);
+      expect(trace.get("capability.upperDpm")?.sourceCells).toContain(distributionOverrideRef);
+      expect(trace.get("capability.yield")?.sourceCells).toContain(distributionOverrideRef);
+      expect(trace.get("capability.status")?.sourceCells).toContain(distributionOverrideRef);
+
+      expect(trace.get("factors[0].sigma")?.sourceCells).toContain(sigmaOverrideRef);
+      expect(trace.get("system.rssSigma")?.sourceCells).toContain(sigmaOverrideRef);
+      expect(trace.get("capability.lowerCpk")?.sourceCells).toContain(sigmaOverrideRef);
+
+      expect(trace.get("capability.cp")?.sourceCells).toContain(uslOverrideRef);
+      expect(trace.get("capability.upperCpk")?.sourceCells).toContain(uslOverrideRef);
+      expect(trace.get("capability.cpk")?.sourceCells).toContain(uslOverrideRef);
+      expect(trace.get("capability.upperZ")?.sourceCells).toContain(uslOverrideRef);
+      expect(trace.get("capability.upperDpm")?.sourceCells).toContain(uslOverrideRef);
+      expect(trace.get("capability.totalDpm")?.sourceCells).toContain(uslOverrideRef);
+      expect(trace.get("capability.yield")?.sourceCells).toContain(uslOverrideRef);
+      expect(trace.get("capability.status")?.sourceCells).toContain(uslOverrideRef);
+      expect(trace.get("capability.lowerZ")?.sourceCells).not.toContain(uslOverrideRef);
+      expect(trace.get("capability.lowerDpm")?.sourceCells).not.toContain(uslOverrideRef);
+
+      for (const record of scenario.calculation.traceRecords) {
+        for (const sourceCell of record.sourceCells) {
+          expect(sourceCell.includes("request:scenarioOverrides.")).toBe(false);
+          expect(sourceCell.includes("request:scenarioOverrides.sensitive-user-text-should-not-appear")).toBe(false);
+        }
+      }
     });
 
     it("accepts 100 scenarios and rejects 101 scenarios", () => {
@@ -1106,7 +1270,7 @@ describe("createCalculation", () => {
 
     expect(outputFields).toEqual(expectedOutputFields);
 
-    const expectedSigmaInputs = new Set([
+    const expectedSigmaInputCells = [
       "Analysis-A!C2",
       "Analysis-A!D2",
       "Analysis-A!E2",
@@ -1117,7 +1281,17 @@ describe("createCalculation", () => {
       "Analysis-A!E3",
       "Analysis-A!F3",
       "Analysis-A!G3",
-    ]);
+    ];
+    const expectedSigmaInputs = new Set(expectedSigmaInputCells);
+    const expectedSystemMeanInputs = [
+      "Analysis-A!B2",
+      "Analysis-A!C2",
+      "Analysis-A!D2",
+      "Analysis-A!B3",
+      "Analysis-A!C3",
+      "Analysis-A!D3",
+      "request:systemSpecification.additionalMeanShift",
+    ];
 
     const trace = new Map(result.traceRecords.map((record) => [record.outputField, record]));
 
@@ -1141,37 +1315,29 @@ describe("createCalculation", () => {
     expect(new Set(factor1Mean?.sourceCells ?? [])).toEqual(new Set(["Analysis-A!B3", "Analysis-A!C3", "Analysis-A!D3"]));
     expect(new Set(factor0Contribution?.sourceCells ?? [])).toEqual(expectedSigmaInputs);
 
-    expect(new Set(systemMean?.sourceCells ?? [])).toEqual(new Set([
-      "Analysis-A!B2",
-      "Analysis-A!C2",
-      "Analysis-A!D2",
-      "Analysis-A!B3",
-      "Analysis-A!C3",
-      "Analysis-A!D3",
-      "request:systemSpecification.additionalMeanShift",
-    ]));
+    expect(new Set(systemMean?.sourceCells ?? [])).toEqual(new Set(expectedSystemMeanInputs));
 
     expect(new Set(cp?.sourceCells ?? [])).toEqual(new Set([
+      ...expectedSigmaInputCells,
       "request:systemSpecification.lowerSpecLimit",
       "request:systemSpecification.upperSpecLimit",
-      "system.rssSigma",
     ]));
     expect(cp?.sourceCells).not.toContain("system.mean");
     expect(cp?.sourceCells).not.toContain("request:systemSpecification.targetSigmaLevel");
     expect(cp?.sourceCells).not.toContain("request:systemSpecification.targetCpk");
 
     expect(new Set(lowerDpm?.sourceCells ?? [])).toEqual(new Set([
+      ...expectedSigmaInputCells,
+      ...expectedSystemMeanInputs,
       "request:systemSpecification.lowerSpecLimit",
-      "system.mean",
-      "system.rssSigma",
     ]));
     expect(lowerDpm?.sourceCells).not.toContain("request:systemSpecification.upperSpecLimit");
 
     expect(new Set(status?.sourceCells ?? [])).toEqual(new Set([
+      ...expectedSigmaInputCells,
+      ...expectedSystemMeanInputs,
       "request:systemSpecification.lowerSpecLimit",
       "request:systemSpecification.upperSpecLimit",
-      "system.mean",
-      "system.rssSigma",
       "request:systemSpecification.targetCpk",
     ]));
   });

@@ -1,6 +1,7 @@
 import {
   calculationRequestSchema,
   calculationResultSchema,
+  calculationScenarioOverrideSchema,
   createTypedError,
   distributionSchema,
   exceptionResolutionResultSchema,
@@ -33,6 +34,7 @@ type ScenarioOverride = CalculationRequest["scenarioOverrides"][number];
 type ScenarioFactorOverride = ScenarioOverride["factorOverrides"][number];
 type ScenarioFactorOverrideField = "nominalValue" | "upperTolerance" | "lowerTolerance" | "longTermSafetyFactor" | "sigmaLevel" | "distribution";
 type ScenarioSystemOverrideField = "lowerSpecLimit" | "upperSpecLimit" | "targetSigmaLevel" | "targetCpk" | "additionalMeanShift";
+type BaselineSystemField = "lowerSpecLimit" | "upperSpecLimit" | "targetSigmaLevel" | "targetCpk" | "additionalMeanShift";
 
 interface NormalizedFactorEntry {
   readonly factor: NormalizedFactor;
@@ -46,6 +48,12 @@ interface ScenarioFactorApplication {
   readonly fields: readonly ScenarioFactorOverrideField[];
 }
 
+interface BaselineTraceBlueprint {
+  readonly outputField: string;
+  readonly formulaId: CalculationCompletedResult["traceRecords"][number]["formulaId"];
+  readonly dependencies: readonly string[];
+}
+
 const FACTOR_OVERRIDE_FIELDS: readonly ScenarioFactorOverrideField[] = [
   "nominalValue",
   "upperTolerance",
@@ -56,6 +64,14 @@ const FACTOR_OVERRIDE_FIELDS: readonly ScenarioFactorOverrideField[] = [
 ];
 
 const SYSTEM_OVERRIDE_FIELDS: readonly ScenarioSystemOverrideField[] = [
+  "lowerSpecLimit",
+  "upperSpecLimit",
+  "targetSigmaLevel",
+  "targetCpk",
+  "additionalMeanShift",
+];
+
+const BASELINE_SYSTEM_FIELDS: readonly BaselineSystemField[] = [
   "lowerSpecLimit",
   "upperSpecLimit",
   "targetSigmaLevel",
@@ -139,6 +155,50 @@ function trimNonBlank(value: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function asFiniteNumberOrUndefined(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function mergeFiniteSystemSpecification(
+  baseline: Record<"lowerSpecLimit" | "upperSpecLimit" | "targetSigmaLevel" | "targetCpk", number>,
+  override: Record<string, unknown>,
+): Record<"lowerSpecLimit" | "upperSpecLimit" | "targetSigmaLevel" | "targetCpk", number> | undefined {
+  const overrideFields = Object.keys(override);
+  if (overrideFields.length === 0
+    || overrideFields.some((field) => !SYSTEM_OVERRIDE_FIELDS.includes(field as ScenarioSystemOverrideField))) {
+    return undefined;
+  }
+
+  const merged = { ...baseline };
+  for (const field of SYSTEM_OVERRIDE_FIELDS) {
+    const value = override[field];
+    if (value === undefined) {
+      continue;
+    }
+
+    const finite = asFiniteNumberOrUndefined(value);
+    if (finite === undefined) {
+      return undefined;
+    }
+
+    if (field !== "additionalMeanShift") {
+      merged[field] = finite;
+    }
+  }
+
+  return merged;
+}
+
+function isSystemSpecificationNotPossible(system: Record<"lowerSpecLimit" | "upperSpecLimit" | "targetSigmaLevel" | "targetCpk", number>): boolean {
+  return system.upperSpecLimit <= system.lowerSpecLimit
+    || system.targetSigmaLevel <= 0
+    || system.targetCpk <= 0;
+}
+
 function classifyInvalidRequestError(request: unknown): CalculationRequestErrorCode {
   if (!request || typeof request !== "object" || Array.isArray(request)) {
     return "validation_error";
@@ -165,29 +225,76 @@ function classifyInvalidRequestError(request: unknown): CalculationRequestErrorC
   }
 
   const systemSpecification = topLevel.systemSpecification;
-  if (systemSpecification && typeof systemSpecification === "object" && !Array.isArray(systemSpecification)) {
-    const system = systemSpecification as Record<string, unknown>;
-    const designNominal = system.designNominal;
-    const lowerSpecLimit = system.lowerSpecLimit;
-    const upperSpecLimit = system.upperSpecLimit;
-    const targetSigmaLevel = system.targetSigmaLevel;
-    const targetCpk = system.targetCpk;
-    const additionalMeanShift = system.additionalMeanShift;
+  if (isPlainRecord(systemSpecification)) {
+    const baselineKeys = Object.keys(systemSpecification);
+    const baselineFields = [
+      systemSpecification.designNominal,
+      systemSpecification.lowerSpecLimit,
+      systemSpecification.upperSpecLimit,
+      systemSpecification.targetSigmaLevel,
+      systemSpecification.targetCpk,
+      systemSpecification.additionalMeanShift,
+    ];
+    const baselineSystem = {
+      lowerSpecLimit: asFiniteNumberOrUndefined(systemSpecification.lowerSpecLimit),
+      upperSpecLimit: asFiniteNumberOrUndefined(systemSpecification.upperSpecLimit),
+      targetSigmaLevel: asFiniteNumberOrUndefined(systemSpecification.targetSigmaLevel),
+      targetCpk: asFiniteNumberOrUndefined(systemSpecification.targetCpk),
+    };
 
-    const allFinite = [
-      designNominal,
-      lowerSpecLimit,
-      upperSpecLimit,
-      targetSigmaLevel,
-      targetCpk,
-      additionalMeanShift,
-    ].every((value) => typeof value === "number" && Number.isFinite(value));
+    const baselineReady = baselineKeys.length === BASELINE_SYSTEM_FIELDS.length + 1
+      && baselineKeys.every((field) => field === "designNominal" || BASELINE_SYSTEM_FIELDS.includes(field as BaselineSystemField))
+      && baselineFields.every((value) => asFiniteNumberOrUndefined(value) !== undefined)
+      && baselineSystem.lowerSpecLimit !== undefined
+      && baselineSystem.upperSpecLimit !== undefined
+      && baselineSystem.targetSigmaLevel !== undefined
+      && baselineSystem.targetCpk !== undefined;
 
-    if (allFinite
-      && ((upperSpecLimit as number) <= (lowerSpecLimit as number)
-        || (targetSigmaLevel as number) <= 0
-        || (targetCpk as number) <= 0)) {
-      return "calculation_not_possible";
+    if (baselineReady) {
+      const finiteBaseline = baselineSystem as Record<"lowerSpecLimit" | "upperSpecLimit" | "targetSigmaLevel" | "targetCpk", number>;
+      if (isSystemSpecificationNotPossible(finiteBaseline)) {
+        return "calculation_not_possible";
+      }
+
+      const scenarioOverrides = topLevel.scenarioOverrides;
+      if (Array.isArray(scenarioOverrides)) {
+        for (const scenarioOverride of scenarioOverrides) {
+          if (!isPlainRecord(scenarioOverride)) {
+            continue;
+          }
+
+          const scenarioSystem = scenarioOverride.systemSpecification;
+          if (!isPlainRecord(scenarioSystem)) {
+            continue;
+          }
+
+
+          const structurallyValidScenario = calculationScenarioOverrideSchema.safeParse({
+            ...scenarioOverride,
+            systemSpecification: {
+              ...scenarioSystem,
+              ...(typeof scenarioSystem.targetSigmaLevel === "number"
+                && Number.isFinite(scenarioSystem.targetSigmaLevel)
+                && scenarioSystem.targetSigmaLevel <= 0
+                ? { targetSigmaLevel: 1 }
+                : {}),
+              ...(typeof scenarioSystem.targetCpk === "number"
+                && Number.isFinite(scenarioSystem.targetCpk)
+                && scenarioSystem.targetCpk <= 0
+                ? { targetCpk: 1 }
+                : {}),
+            },
+          });
+          if (!structurallyValidScenario.success) {
+            continue;
+          }
+
+          const merged = mergeFiniteSystemSpecification(finiteBaseline, scenarioSystem);
+          if (merged && isSystemSpecificationNotPossible(merged)) {
+            return "calculation_not_possible";
+          }
+        }
+      }
     }
   }
 
@@ -274,53 +381,15 @@ function normalizeFactorRow(
   };
 }
 
-function buildTraceRecords(
-  factors: readonly NormalizedFactorEntry[],
-): CalculationCompletedResult["traceRecords"] {
-  const records: CalculationCompletedResult["traceRecords"] = [];
-  const nominalCells = factors.map((factor) => factor.sourceCellsByField.nominalValue);
-  const upperToleranceCells = factors.map((factor) => factor.sourceCellsByField.upperTolerance);
-  const lowerToleranceCells = factors.map((factor) => factor.sourceCellsByField.lowerTolerance);
-  const sigmaDependencyCells = unique(factors.flatMap((factor) => [
-    factor.sourceCellsByField.upperTolerance,
-    factor.sourceCellsByField.lowerTolerance,
-    factor.sourceCellsByField.longTermSafetyFactor,
-    factor.sourceCellsByField.standardDeviation,
-    factor.sourceCellsByField.distribution,
-  ]));
-  const cpDependencies = [
-    "request:systemSpecification.lowerSpecLimit",
-    "request:systemSpecification.upperSpecLimit",
-    "system.rssSigma",
-  ];
-  const lowerCpkDependencies = [
-    "system.mean",
-    "request:systemSpecification.lowerSpecLimit",
-    "system.rssSigma",
-  ];
-  const upperCpkDependencies = [
-    "request:systemSpecification.upperSpecLimit",
-    "system.mean",
-    "system.rssSigma",
-  ];
-  const cpkDependencies = unique([...lowerCpkDependencies, ...upperCpkDependencies]);
-  const totalDpmDependencies = unique([...lowerCpkDependencies, ...upperCpkDependencies]);
+function createTraceBlueprints(factors: readonly NormalizedFactorEntry[]): readonly BaselineTraceBlueprint[] {
+  const blueprints: BaselineTraceBlueprint[] = [];
 
   for (const [index, factor] of factors.entries()) {
-    const factorSigmaDependencies = [
-      factor.sourceCellsByField.upperTolerance,
-      factor.sourceCellsByField.lowerTolerance,
-      factor.sourceCellsByField.longTermSafetyFactor,
-      factor.sourceCellsByField.standardDeviation,
-      factor.sourceCellsByField.distribution,
-    ];
-
-    records.push(
+    blueprints.push(
       {
         outputField: `factors[${index}].mean`,
-        formulaVersion: CALCULATION_VERSION,
         formulaId: "factor-mean-v1",
-        sourceCells: [
+        dependencies: [
           factor.sourceCellsByField.nominalValue,
           factor.sourceCellsByField.upperTolerance,
           factor.sourceCellsByField.lowerTolerance,
@@ -328,15 +397,13 @@ function buildTraceRecords(
       },
       {
         outputField: `factors[${index}].halfTolerance`,
-        formulaVersion: CALCULATION_VERSION,
         formulaId: "factor-half-tolerance-v1",
-        sourceCells: [factor.sourceCellsByField.upperTolerance, factor.sourceCellsByField.lowerTolerance],
+        dependencies: [factor.sourceCellsByField.upperTolerance, factor.sourceCellsByField.lowerTolerance],
       },
       {
         outputField: `factors[${index}].sigma`,
-        formulaVersion: CALCULATION_VERSION,
         formulaId: "factor-sigma-v1",
-        sourceCells: [
+        dependencies: [
           factor.sourceCellsByField.upperTolerance,
           factor.sourceCellsByField.lowerTolerance,
           factor.sourceCellsByField.longTermSafetyFactor,
@@ -344,120 +411,164 @@ function buildTraceRecords(
           factor.sourceCellsByField.distribution,
         ],
       },
-      {
-        outputField: `factors[${index}].contribution`,
-        formulaVersion: CALCULATION_VERSION,
-        formulaId: "contribution-v1",
-        sourceCells: unique([...factorSigmaDependencies, ...sigmaDependencyCells]),
-      },
     );
   }
 
-  records.push(
+  for (const [index] of factors.entries()) {
+    blueprints.push({
+      outputField: `factors[${index}].contribution`,
+      formulaId: "contribution-v1",
+      dependencies: factors.map((_factor, sigmaIndex) => `factors[${sigmaIndex}].sigma`),
+    });
+  }
+
+  blueprints.push(
     {
       outputField: "system.mean",
-      formulaVersion: CALCULATION_VERSION,
       formulaId: "system-mean-v1",
-      sourceCells: [
-        ...nominalCells,
-        ...upperToleranceCells,
-        ...lowerToleranceCells,
+      dependencies: [
+        ...factors.map((_factor, index) => `factors[${index}].mean`),
         "request:systemSpecification.additionalMeanShift",
       ],
     },
     {
       outputField: "system.worstCaseUpper",
-      formulaVersion: CALCULATION_VERSION,
       formulaId: "worst-case-v1",
-      sourceCells: upperToleranceCells,
+      dependencies: factors.map((factor) => factor.sourceCellsByField.upperTolerance),
     },
     {
       outputField: "system.worstCaseLower",
-      formulaVersion: CALCULATION_VERSION,
       formulaId: "worst-case-v1",
-      sourceCells: lowerToleranceCells,
+      dependencies: factors.map((factor) => factor.sourceCellsByField.lowerTolerance),
     },
     {
       outputField: "system.rssSigma",
-      formulaVersion: CALCULATION_VERSION,
       formulaId: "rss-v1",
-      sourceCells: sigmaDependencyCells,
+      dependencies: factors.map((_factor, index) => `factors[${index}].sigma`),
     },
     {
       outputField: "capability.cp",
-      formulaVersion: CALCULATION_VERSION,
       formulaId: "cp-v1",
-      sourceCells: cpDependencies,
+      dependencies: [
+        "request:systemSpecification.lowerSpecLimit",
+        "request:systemSpecification.upperSpecLimit",
+        "system.rssSigma",
+      ],
     },
     {
       outputField: "capability.lowerCpk",
-      formulaVersion: CALCULATION_VERSION,
       formulaId: "cpk-lower-v1",
-      sourceCells: lowerCpkDependencies,
+      dependencies: [
+        "system.mean",
+        "request:systemSpecification.lowerSpecLimit",
+        "system.rssSigma",
+      ],
     },
     {
       outputField: "capability.upperCpk",
-      formulaVersion: CALCULATION_VERSION,
       formulaId: "cpk-upper-v1",
-      sourceCells: upperCpkDependencies,
+      dependencies: [
+        "request:systemSpecification.upperSpecLimit",
+        "system.mean",
+        "system.rssSigma",
+      ],
     },
     {
       outputField: "capability.cpk",
-      formulaVersion: CALCULATION_VERSION,
       formulaId: "cpk-v1",
-      sourceCells: cpkDependencies,
+      dependencies: ["capability.lowerCpk", "capability.upperCpk"],
     },
     {
       outputField: "capability.lowerZ",
-      formulaVersion: CALCULATION_VERSION,
       formulaId: "z-lower-v1",
-      sourceCells: lowerCpkDependencies,
+      dependencies: ["capability.lowerCpk"],
     },
     {
       outputField: "capability.upperZ",
-      formulaVersion: CALCULATION_VERSION,
       formulaId: "z-upper-v1",
-      sourceCells: upperCpkDependencies,
+      dependencies: ["capability.upperCpk"],
     },
     {
       outputField: "capability.lowerDpm",
-      formulaVersion: CALCULATION_VERSION,
       formulaId: "dpm-lower-v1",
-      sourceCells: lowerCpkDependencies,
+      dependencies: ["capability.lowerZ"],
     },
     {
       outputField: "capability.upperDpm",
-      formulaVersion: CALCULATION_VERSION,
       formulaId: "dpm-upper-v1",
-      sourceCells: upperCpkDependencies,
+      dependencies: ["capability.upperZ"],
     },
     {
       outputField: "capability.totalDpm",
-      formulaVersion: CALCULATION_VERSION,
       formulaId: "dpm-total-v1",
-      sourceCells: totalDpmDependencies,
+      dependencies: ["capability.lowerDpm", "capability.upperDpm"],
     },
     {
       outputField: "capability.outOfSpecRatio",
-      formulaVersion: CALCULATION_VERSION,
       formulaId: "dpm-total-v1",
-      sourceCells: totalDpmDependencies,
+      dependencies: ["capability.totalDpm"],
     },
     {
       outputField: "capability.yield",
-      formulaVersion: CALCULATION_VERSION,
       formulaId: "yield-v1",
-      sourceCells: totalDpmDependencies,
+      dependencies: ["capability.totalDpm"],
     },
     {
       outputField: "capability.status",
-      formulaVersion: CALCULATION_VERSION,
       formulaId: "status-v1",
-      sourceCells: unique([...cpkDependencies, "request:systemSpecification.targetCpk"]),
+      dependencies: ["capability.cpk", "request:systemSpecification.targetCpk"],
     },
   );
 
-  return records;
+  return blueprints;
+}
+
+function buildTraceRecords(
+  factors: readonly NormalizedFactorEntry[],
+  terminalAugmentations?: ReadonlyMap<string, readonly string[]>,
+): CalculationCompletedResult["traceRecords"] {
+  const blueprints = createTraceBlueprints(factors);
+  const blueprintByOutput = new Map(blueprints.map((blueprint) => [blueprint.outputField, blueprint]));
+  const memo = new Map<string, readonly string[]>();
+
+  const resolveSources = (outputField: string, visiting: ReadonlySet<string>): readonly string[] => {
+    const memoized = memo.get(outputField);
+    if (memoized) {
+      return memoized;
+    }
+
+    if (visiting.has(outputField)) {
+      return [];
+    }
+
+    const blueprint = blueprintByOutput.get(outputField);
+    if (!blueprint) {
+      const augmented = terminalAugmentations?.get(outputField) ?? [];
+      return unique([outputField, ...augmented]);
+    }
+
+    const nextVisiting = new Set(visiting);
+    nextVisiting.add(outputField);
+
+    const resolved: string[] = [];
+    for (const dependency of blueprint.dependencies) {
+      const nested = blueprintByOutput.has(dependency)
+        ? resolveSources(dependency, nextVisiting)
+        : unique([dependency, ...(terminalAugmentations?.get(dependency) ?? [])]);
+      resolved.push(...nested);
+    }
+
+    const deduped = unique(resolved);
+    memo.set(outputField, deduped);
+    return deduped;
+  };
+
+  return blueprints.map((blueprint) => ({
+    outputField: blueprint.outputField,
+    formulaVersion: CALCULATION_VERSION,
+    formulaId: blueprint.formulaId,
+    sourceCells: [...resolveSources(blueprint.outputField, new Set())],
+  }));
 }
 
 function factorKey(source: { worksheetName: string; tableId: string; sourceRow: number }): string {
@@ -489,19 +600,9 @@ function buildCalculationPayload(
   kernelResult: ReturnType<typeof calculateToleranceAnalysis>,
   normalizedFactors: readonly NormalizedFactorEntry[],
   criticality: CalculationRequest["criticality"],
-  scenarioTraceReferences?: ReadonlyMap<string, readonly string[]>,
+  terminalAugmentations?: ReadonlyMap<string, readonly string[]>,
 ): Pick<CalculationCompletedResult, "factorCount" | "recommendation" | "factors" | "system" | "capability" | "traceRecords"> {
-  const traceRecords = buildTraceRecords(normalizedFactors).map((record) => {
-    const scenarioRefs = scenarioTraceReferences?.get(record.outputField) ?? [];
-    if (scenarioRefs.length === 0) {
-      return record;
-    }
-
-    return {
-      ...record,
-      sourceCells: unique([...record.sourceCells, ...scenarioRefs]),
-    };
-  });
+  const traceRecords = buildTraceRecords(normalizedFactors, terminalAugmentations);
 
   return {
     factorCount: kernelResult.factorCount,
@@ -581,37 +682,48 @@ function applyScenarioFactorOverride(
   };
 }
 
-function buildScenarioTraceReferenceMap(
-  scenarioId: string,
+function buildScenarioTerminalAugmentationMap(
+  scenarioIndex: number,
   appliedFactors: readonly ScenarioFactorApplication[],
   scenario: ScenarioOverride,
+  normalizedFactors: readonly NormalizedFactorEntry[],
 ): ReadonlyMap<string, readonly string[]> {
   const references = new Map<string, string[]>();
 
-  const addReference = (outputField: string, reference: string): void => {
-    const entries = references.get(outputField) ?? [];
+  const addReference = (terminalSource: string, reference: string): void => {
+    const entries = references.get(terminalSource) ?? [];
     entries.push(reference);
-    references.set(outputField, entries);
+    references.set(terminalSource, entries);
+  };
+
+  const factorFieldTerminalMap: Readonly<Record<ScenarioFactorOverrideField, keyof NormalizedFactorEntry["sourceCellsByField"]>> = {
+    nominalValue: "nominalValue",
+    upperTolerance: "upperTolerance",
+    lowerTolerance: "lowerTolerance",
+    longTermSafetyFactor: "longTermSafetyFactor",
+    sigmaLevel: "standardDeviation",
+    distribution: "distribution",
+  };
+
+  const baselineSystemTerminals: Readonly<Record<BaselineSystemField, string>> = {
+    lowerSpecLimit: "request:systemSpecification.lowerSpecLimit",
+    upperSpecLimit: "request:systemSpecification.upperSpecLimit",
+    targetSigmaLevel: "request:systemSpecification.targetSigmaLevel",
+    targetCpk: "request:systemSpecification.targetCpk",
+    additionalMeanShift: "request:systemSpecification.additionalMeanShift",
   };
 
   for (const applied of appliedFactors) {
-    const baseReference = `request:scenarioOverrides.${scenarioId}.factorOverrides[${applied.overrideIndex}]`;
+    const factorEntry = normalizedFactors[applied.factorIndex];
+    if (!factorEntry) {
+      continue;
+    }
+
+    const baseReference = `request:scenarioOverrides[${scenarioIndex}].factorOverrides[${applied.overrideIndex}]`;
     for (const field of applied.fields) {
       const fieldReference = `${baseReference}.${field}`;
-      if (field === "nominalValue") {
-        addReference(`factors[${applied.factorIndex}].mean`, fieldReference);
-      }
-      if (field === "upperTolerance" || field === "lowerTolerance") {
-        addReference(`factors[${applied.factorIndex}].mean`, fieldReference);
-        addReference(`factors[${applied.factorIndex}].halfTolerance`, fieldReference);
-      }
-      if (field === "upperTolerance"
-        || field === "lowerTolerance"
-        || field === "longTermSafetyFactor"
-        || field === "sigmaLevel"
-        || field === "distribution") {
-        addReference(`factors[${applied.factorIndex}].sigma`, fieldReference);
-      }
+      const terminalField = factorFieldTerminalMap[field];
+      addReference(factorEntry.sourceCellsByField[terminalField], fieldReference);
     }
   }
 
@@ -621,20 +733,8 @@ function buildScenarioTraceReferenceMap(
         continue;
       }
 
-      const reference = `request:scenarioOverrides.${scenarioId}.systemSpecification.${field}`;
-      if (field === "additionalMeanShift") {
-        addReference("system.mean", reference);
-      }
-      if (field === "lowerSpecLimit" || field === "upperSpecLimit") {
-        addReference("capability.cp", reference);
-        addReference("capability.lowerCpk", reference);
-        addReference("capability.upperCpk", reference);
-        addReference("capability.cpk", reference);
-        addReference("capability.status", reference);
-      }
-      if (field === "targetCpk") {
-        addReference("capability.status", reference);
-      }
+      const reference = `request:scenarioOverrides[${scenarioIndex}].systemSpecification.${field}`;
+      addReference(baselineSystemTerminals[field], reference);
     }
   }
 
@@ -642,6 +742,7 @@ function buildScenarioTraceReferenceMap(
 }
 
 function createScenarioEntry(
+  scenarioIndex: number,
   scenario: ScenarioOverride,
   baseline: Pick<CalculationCompletedResult, "runReference" | "factorCount" | "recommendation" | "factors" | "system" | "capability">,
   normalizedFactors: readonly NormalizedFactorEntry[],
@@ -688,7 +789,7 @@ function createScenarioEntry(
     kernelResult,
     normalizedFactors,
     criticality,
-    buildScenarioTraceReferenceMap(scenario.scenarioId, appliedFactors, scenario),
+    buildScenarioTerminalAugmentationMap(scenarioIndex, appliedFactors, scenario, normalizedFactors),
   );
 
   return {
@@ -765,7 +866,8 @@ function createCompletedResult(input: CalculationRequest): CalculationCompletedR
     capability: payload.capability,
   };
 
-  const scenarios = input.scenarioOverrides.map((scenario) => createScenarioEntry(
+  const scenarios = input.scenarioOverrides.map((scenario, scenarioIndex) => createScenarioEntry(
+    scenarioIndex,
     scenario,
     baseline,
     normalizedFactors,
