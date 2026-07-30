@@ -8,6 +8,8 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+Set-Variable -Name DefaultTolerance -Value 1e-12 -Option Constant -Scope Script
+Set-Variable -Name MaximumTolerance -Value 1e-12 -Option Constant -Scope Script
 
 function Write-Json {
   param([Parameter(Mandatory = $true)] [object]$Payload)
@@ -131,8 +133,10 @@ function Assert-Mapping {
     }
     Assert-ScalarValue -Value $outputItem.expected -Location "mapping output expected value"
     if ("tolerance" -in $outputItem.PSObject.Properties.Name) {
-      if (-not (Test-JsonNumber -Value $outputItem.tolerance) -or [double]$outputItem.tolerance -lt 0) {
-        throw (New-StatusException -Status "invalid_mapping" -Message "mapping output tolerance must be a non-negative number.")
+      if (-not (Test-JsonNumber -Value $outputItem.tolerance) -or
+          [double]$outputItem.tolerance -lt 0 -or
+          [double]$outputItem.tolerance -gt $script:MaximumTolerance) {
+        throw (New-StatusException -Status "invalid_mapping" -Message "mapping output tolerance must be between 0 and 1e-12.")
       }
     }
   }
@@ -248,7 +252,7 @@ try {
           $actualNumber = [double]$actualValue
           $expectedNumber = [double]$outputItem.expected
           $difference = [Math]::Abs($actualNumber - $expectedNumber)
-          $tolerance = if ("tolerance" -in $outputItem.PSObject.Properties.Name) { [double]$outputItem.tolerance } else { 1e-12 }
+          $tolerance = if ("tolerance" -in $outputItem.PSObject.Properties.Name) { [double]$outputItem.tolerance } else { $script:DefaultTolerance }
           $scale = [Math]::Max(1.0, [Math]::Max([Math]::Abs($actualNumber), [Math]::Abs($expectedNumber)))
           $passed = $difference -le ($tolerance * $scale)
         } else {

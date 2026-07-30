@@ -122,6 +122,36 @@ for (const [name, mapping] of invalidMappings) {
   });
 }
 
+for (const tolerance of [0, 1e-12]) {
+  test(`ValidateOnly accepts mapping output tolerance ${tolerance}`, () => {
+    const mapping = validMapping({
+      outputs: [{ name: "result", cell: "B2", expected: 1, tolerance }],
+    });
+
+    withFixture(mapping, (fixture) => {
+      const result = runHarness(validArgs(fixture));
+
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(parseLastJson(result.stdout).status, "validated");
+    });
+  });
+}
+
+for (const tolerance of [1.0000001e-12, 1]) {
+  test(`ValidateOnly rejects mapping output tolerance ${tolerance}`, () => {
+    const mapping = validMapping({
+      outputs: [{ name: "result", cell: "B2", expected: 1, tolerance }],
+    });
+
+    withFixture(mapping, (fixture) => {
+      const result = runHarness(validArgs(fixture));
+
+      assert.notEqual(result.status, 0);
+      assert.equal(parseLastJson(result.stdout).status, "invalid_mapping");
+    });
+  });
+}
+
 test("ValidateOnly accepts normalized hash casing without starting Excel", () => {
   withFixture(validMapping(), (fixture) => {
     const args = validArgs(fixture);
