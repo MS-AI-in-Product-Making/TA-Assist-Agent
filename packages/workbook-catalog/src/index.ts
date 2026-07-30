@@ -9,6 +9,7 @@ export { createCapabilityValidation } from "./capability-validation.js";
 export { createExceptionResolution } from "./exception-resolution.js";
 export { createIdentifierQualityCheck } from "./identifier-quality-check.js";
 export { createUnifiedExceptionResolution } from "./unified-exception-resolution.js";
+export { createCalculation } from "./calculation.js";
 export { createCalculationPlaceholder } from "./calculation-placeholder.js";
 export { createDrawingGovernancePlaceholder } from "./drawing-governance-placeholder.js";
 export { createInterpretationPlaceholder } from "./interpretation-placeholder.js";
