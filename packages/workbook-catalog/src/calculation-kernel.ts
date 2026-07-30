@@ -126,6 +126,34 @@ function assertFinite(value: number, label: string): void {
   }
 }
 
+function factorLabel(index: number): string {
+  return `factor[${index}]`;
+}
+
+function stableL2Norm(values: readonly number[]): number {
+  let scale = 0;
+  let sumSquares = 1;
+
+  for (const value of values) {
+    const absValue = Math.abs(value);
+    if (absValue === 0) {
+      continue;
+    }
+
+    if (scale < absValue) {
+      const ratio = scale / absValue;
+      sumSquares = 1 + sumSquares * ratio * ratio;
+      scale = absValue;
+      continue;
+    }
+
+    const ratio = absValue / scale;
+    sumSquares += ratio * ratio;
+  }
+
+  return scale === 0 ? 0 : scale * Math.sqrt(sumSquares);
+}
+
 export function recommendCalculationMethod(factorCount: number): CalculationMethod {
   if (!Number.isInteger(factorCount) || factorCount <= 0) {
     throwCalculationNotPossible("factorCount must be a positive integer");
@@ -160,31 +188,33 @@ export function calculateToleranceAnalysis(input: NormalizedCalculationInput): K
     throwCalculationNotPossible("upperSpecLimit must be greater than lowerSpecLimit");
   }
 
-  const computedFactors = factors.map((factor) => {
-    assertFinite(factor.input.nominalValue, `${factor.name}.nominalValue`);
-    assertFinite(factor.input.upperTolerance, `${factor.name}.upperTolerance`);
-    assertFinite(factor.input.lowerTolerance, `${factor.name}.lowerTolerance`);
-    assertFinite(factor.input.longTermSafetyFactor, `${factor.name}.longTermSafetyFactor`);
-    assertFinite(factor.input.sigmaLevel, `${factor.name}.sigmaLevel`);
+  const computedFactors = factors.map((factor, index) => {
+    const label = factorLabel(index);
+
+    assertFinite(factor.input.nominalValue, `${label}.nominalValue`);
+    assertFinite(factor.input.upperTolerance, `${label}.upperTolerance`);
+    assertFinite(factor.input.lowerTolerance, `${label}.lowerTolerance`);
+    assertFinite(factor.input.longTermSafetyFactor, `${label}.longTermSafetyFactor`);
+    assertFinite(factor.input.sigmaLevel, `${label}.sigmaLevel`);
 
     const upperTolerance = factor.input.upperTolerance;
     const lowerTolerance = factor.input.lowerTolerance;
 
     if (!(upperTolerance > lowerTolerance)) {
-      throwCalculationNotPossible(`${factor.name} requires upperTolerance > lowerTolerance`);
+      throwCalculationNotPossible(`${label}.upperTolerance must be greater than ${label}.lowerTolerance`);
     }
 
     if (!(factor.input.longTermSafetyFactor > 0)) {
-      throwCalculationNotPossible(`${factor.name} requires longTermSafetyFactor > 0`);
+      throwCalculationNotPossible(`${label}.longTermSafetyFactor must be greater than zero`);
     }
 
     if (!(factor.input.sigmaLevel > 0)) {
-      throwCalculationNotPossible(`${factor.name} requires sigmaLevel > 0`);
+      throwCalculationNotPossible(`${label}.sigmaLevel must be greater than zero`);
     }
 
     const distributionMultiplier = DISTRIBUTION_MULTIPLIER[factor.input.distribution];
     if (distributionMultiplier === undefined) {
-      throwCalculationNotPossible(`${factor.name} distribution is unsupported`);
+      throwCalculationNotPossible(`${label}.distribution is unsupported`);
     }
 
     const halfTolerance = (upperTolerance - lowerTolerance) / 2;
@@ -196,12 +226,12 @@ export function calculateToleranceAnalysis(input: NormalizedCalculationInput): K
       * (factor.input.longTermSafetyFactor / factor.input.sigmaLevel)
       * distributionMultiplier;
 
-    assertFinite(halfTolerance, `${factor.name}.halfTolerance`);
-    assertFinite(mean, `${factor.name}.mean`);
-    assertFinite(sigma, `${factor.name}.sigma`);
+    assertFinite(halfTolerance, `${label}.halfTolerance`);
+    assertFinite(mean, `${label}.mean`);
+    assertFinite(sigma, `${label}.sigma`);
 
     if (sigma < 0) {
-      throwCalculationNotPossible(`${factor.name} sigma must be non-negative`);
+      throwCalculationNotPossible(`${label}.sigma must be non-negative`);
     }
 
     return {
@@ -224,15 +254,13 @@ export function calculateToleranceAnalysis(input: NormalizedCalculationInput): K
       halfTolerance,
       sigma,
       contribution: 0,
-      sigmaSquare: sigma * sigma,
     };
   });
 
   const worstCaseUpper = computedFactors.reduce((sum, factor) => sum + factor.input.upperTolerance, 0);
   const worstCaseLower = computedFactors.reduce((sum, factor) => sum + factor.input.lowerTolerance, 0);
   const mean = computedFactors.reduce((sum, factor) => sum + factor.mean, 0) + input.system.shift;
-  const sigmaSquares = computedFactors.reduce((sum, factor) => sum + factor.sigmaSquare, 0);
-  const rssSigma = Math.sqrt(sigmaSquares);
+  const rssSigma = stableL2Norm(computedFactors.map((factor) => factor.sigma));
 
   assertFinite(worstCaseUpper, "system.worstCaseUpper");
   assertFinite(worstCaseLower, "system.worstCaseLower");
@@ -243,16 +271,27 @@ export function calculateToleranceAnalysis(input: NormalizedCalculationInput): K
     throwCalculationNotPossible("rssSigma must be greater than zero");
   }
 
-  const completedFactors = computedFactors.map((factor) => ({
-    source: factor.source,
-    name: factor.name,
-    unit: factor.unit,
-    input: factor.input,
-    mean: factor.mean,
-    halfTolerance: factor.halfTolerance,
-    sigma: factor.sigma,
-    contribution: factor.sigmaSquare / sigmaSquares,
-  }));
+  const completedFactors = computedFactors.map((factor, index) => {
+    const contribution = (factor.sigma / rssSigma) ** 2;
+    assertFinite(contribution, `${factorLabel(index)}.contribution`);
+
+    return {
+      source: factor.source,
+      name: factor.name,
+      unit: factor.unit,
+      input: factor.input,
+      mean: factor.mean,
+      halfTolerance: factor.halfTolerance,
+      sigma: factor.sigma,
+      contribution,
+    };
+  });
+
+  const contributionSum = completedFactors.reduce((sum, factor) => sum + factor.contribution, 0);
+  assertFinite(contributionSum, "system.contributionSum");
+  if (Math.abs(contributionSum - 1) > 1e-12) {
+    throwCalculationNotPossible("system.contributionSum must be approximately one");
+  }
 
   const cp = (input.system.upperSpecLimit - input.system.lowerSpecLimit) / (6 * rssSigma);
   const lowerCpk = (mean - input.system.lowerSpecLimit) / (3 * rssSigma);

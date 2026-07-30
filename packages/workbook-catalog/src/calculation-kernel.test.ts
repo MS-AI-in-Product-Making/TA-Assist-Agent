@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import normalCdf from "@stdlib/stats-base-dists-normal-cdf";
 import * as packageRoot from "./index.js";
 import {
   CALCULATION_VERSION,
@@ -16,6 +15,13 @@ const EPS = 1e-12;
 function expectClose(actual: number, expected: number, epsilon = EPS): void {
   const scale = Math.max(1, Math.abs(actual), Math.abs(expected));
   expect(Math.abs(actual - expected)).toBeLessThanOrEqual(epsilon * scale);
+}
+
+function expectErrorTextNotLeaking(error: CalculationKernelError, forbidden: readonly string[]): void {
+  for (const token of forbidden) {
+    expect(error.summary).not.toContain(token);
+    expect(error.message).not.toContain(token);
+  }
 }
 
 function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
@@ -157,13 +163,47 @@ describe("calculation kernel", () => {
     expectClose(result.capability.cpk, 0.739600261633636);
     expectClose(result.capability.z, 2.2188007849009);
 
-    const expectedSideDpm = (1 - normalCdf(2.2188007849009, 0, 1)) * 1_000_000;
-    expectClose(result.capability.lowerDpm, expectedSideDpm);
-    expectClose(result.capability.upperDpm, expectedSideDpm);
-    expectClose(result.capability.totalDpm, expectedSideDpm * 2);
-    expectClose(result.capability.outOfSpecRatio, result.capability.totalDpm / 1_000_000);
-    expectClose(result.capability.yield, 1 - result.capability.outOfSpecRatio);
+    expectClose(result.capability.lowerDpm, 13250.1403012456);
+    expectClose(result.capability.upperDpm, 13250.1403012463);
+    expectClose(result.capability.totalDpm, 26500.2806024919);
+    expectClose(result.capability.yield, 0.973499719397508);
     expect(result.capability.status).toBe("FAIL");
+  });
+
+  it("matches Excel cached one-sided DPM constant at Z=1", () => {
+    const result = calculateToleranceAnalysis({
+      factors: [
+        {
+          name: "z-one",
+          unit: "mm",
+          source: {
+            worksheetName: "Example_TA",
+            tableId: "dm-table",
+            sourceRow: 1,
+          },
+          input: {
+            nominalValue: 0,
+            upperTolerance: 1,
+            lowerTolerance: -1,
+            longTermSafetyFactor: 1,
+            sigmaLevel: 1,
+            distribution: "normal",
+          },
+        },
+      ],
+      system: {
+        designNominal: 0,
+        lowerSpecLimit: -1,
+        upperSpecLimit: 1,
+        targetSigmaLevel: 3,
+        targetCpk: 1,
+        shift: 0,
+      },
+    });
+
+    expectClose(result.capability.z, 1);
+    expectClose(result.capability.lowerDpm, 158655.253931457);
+    expectClose(result.capability.upperDpm, 158655.253931457);
   });
 
   it("computes sigma by all six distributions", () => {
@@ -287,6 +327,84 @@ describe("calculation kernel", () => {
     expectClose(contributionSum, 1);
   });
 
+  it("keeps RSS and capability finite for large-scale sigma around 1e200", () => {
+    const result = calculateToleranceAnalysis({
+      factors: [
+        {
+          name: "large-scale",
+          unit: "mm",
+          source: {
+            worksheetName: "Sheet1",
+            tableId: "table-1",
+            sourceRow: 2,
+          },
+          input: {
+            nominalValue: 1e200,
+            upperTolerance: 1e200,
+            lowerTolerance: -1e200,
+            longTermSafetyFactor: 1,
+            sigmaLevel: 1,
+            distribution: "normal",
+          },
+        },
+      ],
+      system: {
+        designNominal: 1e200,
+        lowerSpecLimit: -2e200,
+        upperSpecLimit: 4e200,
+        targetSigmaLevel: 3,
+        targetCpk: 1,
+        shift: 0,
+      },
+    });
+
+    expect(Number.isFinite(result.system.rssSigma)).toBe(true);
+    expectClose(result.system.rssSigma, 1e200);
+    expect(Number.isFinite(result.capability.cp)).toBe(true);
+    expectClose(result.capability.cp, 1);
+    expectClose(result.capability.lowerCpk, 1);
+    expectClose(result.capability.upperCpk, 1);
+  });
+
+  it("keeps RSS and capability finite for small-scale sigma around 1e-200", () => {
+    const result = calculateToleranceAnalysis({
+      factors: [
+        {
+          name: "small-scale",
+          unit: "mm",
+          source: {
+            worksheetName: "Sheet1",
+            tableId: "table-1",
+            sourceRow: 2,
+          },
+          input: {
+            nominalValue: 0,
+            upperTolerance: 1e-200,
+            lowerTolerance: -1e-200,
+            longTermSafetyFactor: 1,
+            sigmaLevel: 1,
+            distribution: "normal",
+          },
+        },
+      ],
+      system: {
+        designNominal: 0,
+        lowerSpecLimit: -3e-200,
+        upperSpecLimit: 3e-200,
+        targetSigmaLevel: 3,
+        targetCpk: 1,
+        shift: 0,
+      },
+    });
+
+    expect(Number.isFinite(result.system.rssSigma)).toBe(true);
+    expectClose(result.system.rssSigma, 1e-200);
+    expect(Number.isFinite(result.capability.cp)).toBe(true);
+    expectClose(result.capability.cp, 1);
+    expectClose(result.capability.lowerCpk, 1);
+    expectClose(result.capability.upperCpk, 1);
+  });
+
   it("can produce negative Cpk when mean is outside specification", () => {
     const result = calculateToleranceAnalysis({
       factors: [
@@ -407,6 +525,58 @@ describe("calculation kernel", () => {
         shift: 0,
       },
     })).toThrowError(/finite|calculation_not_possible/i);
+  });
+
+  it("uses index-based finite error labels and never leaks sensitive factor names", () => {
+    const sensitiveName = "TOPSECRET worksheet table source 123456";
+
+    let captured: unknown;
+    try {
+      calculateToleranceAnalysis({
+        factors: [
+          {
+            name: sensitiveName,
+            unit: "mm",
+            source: {
+              worksheetName: "SensitiveWorksheet",
+              tableId: "sensitive-table",
+              sourceRow: 2,
+            },
+            input: {
+              nominalValue: Number.POSITIVE_INFINITY,
+              upperTolerance: 1,
+              lowerTolerance: -1,
+              longTermSafetyFactor: 1,
+              sigmaLevel: 1,
+              distribution: "normal",
+            },
+          },
+        ],
+        system: {
+          designNominal: 0,
+          lowerSpecLimit: -3,
+          upperSpecLimit: 3,
+          targetSigmaLevel: 3,
+          targetCpk: 1,
+          shift: 0,
+        },
+      });
+    } catch (error) {
+      captured = error;
+    }
+
+    expect(captured).toBeInstanceOf(CalculationKernelError);
+    const kernelError = captured as CalculationKernelError;
+    expect(kernelError.summary).toBe("factor[0].nominalValue must be finite");
+    expectErrorTextNotLeaking(kernelError, [
+      sensitiveName,
+      "SensitiveWorksheet",
+      "sensitive-table",
+      "worksheet",
+      "table",
+      "source",
+      "123456",
+    ]);
   });
 
   it("marks cp as FAIL when cp equals target", () => {
