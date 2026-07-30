@@ -1452,6 +1452,16 @@ export const calculationScenarioOverrideSchema = z
   })
   .strict();
 
+export const calculationUnavailableRequestSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    inputClassification: z.literal("confidential"),
+    projectReference: controlledCalculationReferenceSchema,
+    runReference: controlledCalculationReferenceSchema,
+    worksheetReferences: z.array(controlledCalculationReferenceSchema),
+  })
+  .strict();
+
 export const calculationRequestSchema = z
   .object({
     contractVersion: contractVersionSchema,
@@ -2602,6 +2612,7 @@ export type UnifiedExceptionResolutionV2Request = z.infer<typeof unifiedExceptio
 export type UnifiedExceptionResolutionV2Result = z.infer<typeof unifiedExceptionResolutionV2ResultSchema>;
 export type UnifiedExceptionResolutionRequest = UnifiedExceptionResolutionV2Request;
 export type UnifiedExceptionResolutionResult = UnifiedExceptionResolutionV2Result;
+export type CalculationUnavailableRequest = z.infer<typeof calculationUnavailableRequestSchema>;
 export type CalculationRequest = z.infer<typeof calculationRequestSchema>;
 export type CalculationResult = z.infer<typeof calculationResultSchema>;
 export type CalculationScenarioOverride = z.infer<typeof calculationScenarioOverrideSchema>;

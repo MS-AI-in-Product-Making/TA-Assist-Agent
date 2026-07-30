@@ -1,5 +1,5 @@
 import {
-  calculationRequestSchema,
+  calculationUnavailableRequestSchema,
   calculationResultSchema,
   createTypedError,
   type CalculationResult,
@@ -43,7 +43,7 @@ export function createCalculationPlaceholder(request: unknown): CalculationResul
     throw requestError(POLICY_SUMMARY, "policy_denied");
   }
 
-  const parsed = calculationRequestSchema.safeParse(request);
+  const parsed = calculationUnavailableRequestSchema.safeParse(request);
   if (!parsed.success) throw requestError(REQUEST_SUMMARY);
   const input = parsed.data;
 

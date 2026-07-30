@@ -6,6 +6,7 @@ import {
   capabilityValidationResultSchema,
   capabilityTierSchema,
   calculationRequestSchema,
+  calculationUnavailableRequestSchema,
   calculationResultSchema,
   cpkRequestSchema,
   cpkResultSchema,
@@ -255,6 +256,14 @@ describe("F4 calculation contracts", () => {
     }],
   };
 
+  const legacyUnavailableRequest = {
+    contractVersion: "v1" as const,
+    inputClassification: "confidential" as const,
+    projectReference: "controlled-project-reference",
+    runReference: "controlled-run-reference",
+    worksheetReferences: ["controlled-worksheet-reference"],
+  };
+
   const completedResult = {
     contractVersion: "v1" as const,
     outputClassification: "confidential" as const,
@@ -430,6 +439,11 @@ describe("F4 calculation contracts", () => {
   it("accepts a valid completed request and a completed result", () => {
     expect(calculationRequestSchema.parse(request)).toEqual(request);
     expect(calculationResultSchema.parse(completedResult)).toEqual(completedResult);
+  });
+
+  it("accepts legacy unavailable requests only via dedicated schema", () => {
+    expect(calculationUnavailableRequestSchema.parse(legacyUnavailableRequest)).toEqual(legacyUnavailableRequest);
+    expect(calculationRequestSchema.safeParse(legacyUnavailableRequest).success).toBe(false);
   });
 
   it("rejects workbook hash mismatch across evidence", () => {
