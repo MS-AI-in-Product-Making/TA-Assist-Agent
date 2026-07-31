@@ -40,12 +40,12 @@ vi.mock("./ooxml-reader.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./ooxml-reader.js")>();
   return {
     ...actual,
-    readOoxmlWorkbook(bytes: Uint8Array) {
+    readOoxmlWorkbook(...arguments_: Parameters<typeof actual.readOoxmlWorkbook>) {
       readerInstrumentation.readerCalled = true;
       if (readerInstrumentation.assertHashBeforeRead && !readerInstrumentation.hashComputed) {
         throw new Error("hash was not computed before the reader");
       }
-      return actual.readOoxmlWorkbook(bytes);
+      return actual.readOoxmlWorkbook(...arguments_);
     },
   };
 });
@@ -74,6 +74,9 @@ function catalogWorkbook(options: {
   readonly secondAnalysisName?: string;
   readonly summaryAnalysisName?: string;
   readonly summarySecondAnalysisName?: string;
+  readonly emptySummary?: boolean;
+  readonly partialSummary?: boolean;
+  readonly malformedSecondWorksheet?: boolean;
 } = {}): Uint8Array {
   const dateFormula = options.dateFormula;
   const dateCache = options.dateCache === false ? "" : `<v>${options.dateValue ?? "2026-07-23"}</v>`;
@@ -90,12 +93,23 @@ function catalogWorkbook(options: {
   const summaryAnalysisName = options.summaryAnalysisName ?? analysisName;
   const summarySecondAnalysisName = options.summarySecondAnalysisName ?? secondAnalysisName;
   const titleRows = options.titleRows ?? `<row r="2">${cell("A2", " Document   No. ")}${cell("B2", "DOC-007")}</row><row r="4">${cell("A4", "Revision:")}${cell("B4", "R2")}</row><row r="6">${cell("A6", "Date:")}<c r="B6">${dateFormula ? `<f>${dateFormula}</f>` : ""}${dateCache}</c></row>`;
-  const summaryRows = `<row r="9">${headerCells}</row><row r="10">${cell("A10", summaryAnalysisName)}${cell("C10", options.description ?? "First tolerance loop")}${cell("D10", "0.1")}${cell("E10", "Fail")}${cell("F10", "anonymous-status-marker")}</row><row r="11">${cell("A11", summarySecondAnalysisName)}${cell("C11", "Second tolerance loop")}${cell("D11", "9.9")}${cell("E11", "Pass")}${cell("F11", "anonymous-milestone-marker")}</row>`;
+  const summaryRows = options.emptySummary
+    ? `<row r="9">${headerCells}</row>`
+    : `<row r="9">${headerCells}</row><row r="10">${cell("A10", summaryAnalysisName)}${cell("C10", options.description ?? "First tolerance loop")}${cell("D10", "0.1")}${cell("E10", "Fail")}${cell("F10", "anonymous-status-marker")}</row>${options.partialSummary ? "" : `<row r="11">${cell("A11", summarySecondAnalysisName)}${cell("C11", "Second tolerance loop")}${cell("D11", "9.9")}${cell("E11", "Pass")}${cell("F11", "anonymous-milestone-marker")}</row>`}`;
   const workbookXml = `<?xml version="1.0"?><workbook xmlns="${NS}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${title}" sheetId="1" r:id="rId1"/><sheet name="${summary}" sheetId="2" r:id="rId2"/><sheet name="${analysisName}" sheetId="3" r:id="rId3"/><sheet name="${secondAnalysisName}" sheetId="4" r:id="rId4"/></sheets></workbook>`;
   return createAnonymousWorkbookZip({ xmlParts: {
     "xl/workbook.xml": workbookXml,
     "xl/worksheets/sheet1.xml": worksheet(titleRows),
     "xl/worksheets/sheet2.xml": worksheet(summaryRows),
+    ...(options.emptySummary ? {
+      "xl/worksheets/sheet3.xml": worksheet(`<row r="11">${cell("G11", "Tolerance Loop Description")}${cell("H11", "Scanned tolerance loop")}</row><row r="13">${cell("G13", "Factor Description (TA Loop)")}${cell("L13", "Design Nominal")}</row><row r="14">${cell("G14", "Scanned factor")}${cell("L14", "1")}</row>`),
+    } : {}),
+    ...(options.partialSummary ? {
+      "xl/worksheets/sheet4.xml": worksheet(`<row r="11">${cell("G11", "Tolerance Loop Description")}${cell("H11", "Second scanned tolerance loop")}</row><row r="13">${cell("G13", "Factor Description (TA Loop)")}${cell("L13", "Design Nominal")}</row><row r="14">${cell("G14", "Scanned factor")}${cell("L14", "1")}</row>`),
+    } : {}),
+    ...(options.malformedSecondWorksheet ? {
+      "xl/worksheets/sheet4.xml": worksheet('<row r="3"><c><v>unrelated</v></c></row>'),
+    } : {}),
   } });
 }
 
@@ -143,6 +157,52 @@ describe("workbook catalog", () => {
       { worksheetName: "Analysis-B", toleranceLoopDescription: "Second tolerance loop", source: { summarySheet: "Auto Summary", summaryRow: 11, worksheetAnchor: "Analysis-B!A1" } },
     ]);
     expect(workbookCatalogResultSchema.safeParse(result).success).toBe(true);
+  });
+
+  it("scans supported TA worksheets when Auto Summary has no analysis rows", () => {
+    const result = createWorkbookCatalog(request(catalogWorkbook({ emptySummary: true })));
+
+    expect(result.analyses).toEqual([
+      {
+        worksheetName: "Analysis-A",
+        toleranceLoopDescription: "Scanned tolerance loop",
+        source: {
+          discoveryMethod: "worksheet_scan",
+          descriptionCell: "Analysis-A!H11",
+          worksheetAnchor: "Analysis-A!A1",
+        },
+      },
+    ]);
+  });
+
+  it("skips malformed unrelated worksheets while scanning for TA worksheets", () => {
+    const result = createWorkbookCatalog(request(catalogWorkbook({
+      emptySummary: true,
+      malformedSecondWorksheet: true,
+    })));
+
+    expect(result.analyses.map((analysis) => analysis.worksheetName)).toEqual(["Analysis-A"]);
+  });
+
+  it("adds supported TA worksheets omitted from a partially populated Auto Summary", () => {
+    const result = createWorkbookCatalog(request(catalogWorkbook({ partialSummary: true })));
+
+    expect(result.analyses).toEqual([
+      {
+        worksheetName: "Analysis-A",
+        toleranceLoopDescription: "First tolerance loop",
+        source: { summarySheet: "Auto Summary", summaryRow: 10, worksheetAnchor: "Analysis-A!A1" },
+      },
+      {
+        worksheetName: "Analysis-B",
+        toleranceLoopDescription: "Second scanned tolerance loop",
+        source: {
+          discoveryMethod: "worksheet_scan",
+          descriptionCell: "Analysis-B!H11",
+          worksheetAnchor: "Analysis-B!A1",
+        },
+      },
+    ]);
   });
 
   it("accepts Title Page metadata labels with optional trailing colons", () => {
