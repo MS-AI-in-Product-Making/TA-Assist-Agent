@@ -112,7 +112,26 @@ flowchart LR
 - `SIGNAL`：结构与 `RULE` 相同，但明确 `requiresEngineeringReview: true`。
 - `OPTION`：结构与 `RULE` 相同，并明确 `rank: null`，禁止排序和推荐字段。
 
-V1 `section` 使用：`calculation-summary`、`capability-vs-specification`、`major-contributors`、`structural-evidence`、`parallel-options`。
+V1 `section` 只使用：`calculation-summary`、`capability-vs-specification`、`major-contributors`、`parallel-options`。本轮不得生成 `structural-evidence` statement；未评估的结构范围只由 drawing evidence clarification 表达。
+
+陈述类型与 section 严格对应：
+
+| 类型/FACT metric | section |
+| --- | --- |
+| FACT `cp`、`rss_sigma`、`total_dpm`、`yield`、`recommended_method`、`achieved_sigma`、`target_sigma` | `calculation-summary` |
+| FACT `cpk`、`target_cpk`、`lower_spec_limit`、`upper_spec_limit` | `capability-vs-specification` |
+| FACT `factor_contribution` | `major-contributors` |
+| RULE | `capability-vs-specification` |
+| SIGNAL | `major-contributors` |
+| OPTION | `parallel-options` |
+
+F5.1 消费或输出的公式 trace 必须同时验证 `outputField` 与 `formulaId`：`capability.cpk` → `cpk-v1`、`capability.cp` → `cp-v1`、`system.rssSigma` → `rss-v1`、`capability.totalDpm` → `dpm-total-v1`、`capability.yield` → `yield-v1`、`capability.lowerZ` → `z-lower-v1`、`capability.upperZ` → `z-upper-v1`、`factors[N].contribution` → `contribution-v1`。contract 和服务 trace index 均执行该约束。
+
+FACT provenance 中每个 `sourceCells` 项只允许以下引用，不允许任意原始文本：
+
+- 复用 worksheet source cell 格式 `Sheet!A1`，工作表名可包含空格。
+- 白名单内的 `request:systemSpecification.<field>`。
+- 严格的 F4 中间输出引用，包括 `factors[N].mean/halfTolerance/sigma/contribution`、`system.*` 和 `capability.*` 的已定义字段。
 
 ## F4 到 F0 的事实映射
 
@@ -142,7 +161,7 @@ V1 `section` 使用：`calculation-summary`、`capability-vs-specification`、`m
 
 ## 澄清策略
 
-V1 始终添加一个 `drawing_evidence_not_evaluated` 澄清项，范围明确为公差链闭合、基准链、装配基准面、堆叠起点、方向和跨子系统判断。该项不阻塞能力与规格、主要贡献因子等已有数值证据的陈述。
+V1 始终且恰好添加一个 `drawing_evidence_not_evaluated` 澄清项，范围无重复地完整包含公差链闭合、基准链、装配基准面、堆叠起点、方向和跨子系统判断。该项不阻塞能力与规格、主要贡献因子等已有数值证据的陈述。
 
 额外澄清原因：
 

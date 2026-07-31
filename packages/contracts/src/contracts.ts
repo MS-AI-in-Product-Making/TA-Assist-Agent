@@ -1951,7 +1951,6 @@ const interpretationSectionSchema = z.enum([
   "calculation-summary",
   "capability-vs-specification",
   "major-contributors",
-  "structural-evidence",
   "parallel-options",
 ]);
 
@@ -1963,10 +1962,33 @@ export const interpretationFactReferenceSchema = z.enum([
   "contributors",
 ]);
 
+const interpretationRequestSourceCellSchema = z.enum([
+  "request:systemSpecification.designNominal",
+  "request:systemSpecification.lowerSpecLimit",
+  "request:systemSpecification.upperSpecLimit",
+  "request:systemSpecification.targetSigmaLevel",
+  "request:systemSpecification.targetCpk",
+  "request:systemSpecification.additionalMeanShift",
+]);
+
+const interpretationOutputSourceCellSchema = z.string().regex(
+  /^(?:factors\[(?:0|[1-9]\d*)\]\.(?:mean|halfTolerance|sigma|contribution)|system\.(?:designNominal|mean|additionalMeanShift|worstCaseUpper|worstCaseLower|rssSigma)|capability\.(?:lowerSpecLimit|upperSpecLimit|targetSigmaLevel|targetCpk|cp|lowerCpk|upperCpk|cpk|lowerZ|upperZ|lowerDpm|upperDpm|totalDpm|outOfSpecRatio|yield|status))$/,
+);
+
+const interpretationSourceCellSchema = z.union([
+  worksheetSourceCellSchema,
+  interpretationRequestSourceCellSchema,
+  interpretationOutputSourceCellSchema,
+]);
+
+const interpretationTraceRecordSchema = calculationTraceRecordSchema.extend({
+  sourceCells: z.array(interpretationSourceCellSchema).min(1),
+});
+
 const interpretationFormulaOutputProvenanceFields = {
   provenanceKind: z.literal("formula_output"),
   outputField: z.string().min(1),
-  traceRecords: z.array(calculationTraceRecordSchema).min(1).max(500),
+  traceRecords: z.array(interpretationTraceRecordSchema).min(1).max(500),
 } as const;
 
 const interpretationCalculationInputFieldSchema = z.enum([
@@ -2045,7 +2067,7 @@ const interpretationDerivedAchievedSigmaFactContentSchema = z
       z.literal("capability.lowerZ"),
       z.literal("capability.upperZ"),
     ]),
-    traceRecords: z.array(calculationTraceRecordSchema).min(1).max(500),
+    traceRecords: z.array(interpretationTraceRecordSchema).min(1).max(500),
   })
   .strict();
 
@@ -2109,7 +2131,7 @@ const interpretationRuleStatementSchema = z
   .object({
     statementId: z.string().min(1),
     type: z.literal("RULE"),
-    section: interpretationSectionSchema,
+    section: z.literal("capability-vs-specification"),
     content: interpretationRuleStatementContentSchema,
   })
   .strict();
@@ -2118,7 +2140,7 @@ const interpretationSignalStatementSchema = z
   .object({
     statementId: z.string().min(1),
     type: z.literal("SIGNAL"),
-    section: interpretationSectionSchema,
+    section: z.literal("major-contributors"),
     content: interpretationSignalStatementContentSchema,
   })
   .strict();
@@ -2127,7 +2149,7 @@ const interpretationOptionStatementSchema = z
   .object({
     statementId: z.string().min(1),
     type: z.literal("OPTION"),
-    section: interpretationSectionSchema,
+    section: z.literal("parallel-options"),
     content: interpretationOptionStatementContentSchema,
   })
   .strict();
@@ -2210,6 +2232,17 @@ const interpretationCompletedResultSchema = z
   })
   .strict()
   .superRefine((result, context) => {
+    const drawingClarificationCount = result.clarifications.filter(
+      ({ reasonCode }) => reasonCode === "drawing_evidence_not_evaluated",
+    ).length;
+    if (drawingClarificationCount !== 1) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "completed interpretation requires exactly one drawing evidence clarification",
+        path: ["clarifications"],
+      });
+    }
+
     const statementIds = result.statements.map((statement) => statement.statementId);
     if (new Set(statementIds).size !== statementIds.length) {
       context.addIssue({
@@ -2221,6 +2254,15 @@ const interpretationCompletedResultSchema = z
 
     result.statements.forEach((statement, statementIndex) => {
       if (statement.type === "FACT") {
+        const expectedSection = interpretationFactSectionByMetric[statement.content.metric];
+        if (statement.section !== expectedSection) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `${statement.content.metric} FACT must use section ${expectedSection}`,
+            path: ["statements", statementIndex, "section"],
+          });
+        }
+
         if (statement.content.provenanceKind === "formula_output") {
           const { outputField } = statement.content;
           statement.content.traceRecords.forEach((traceRecord, traceIndex) => {
@@ -2343,6 +2385,32 @@ function validateInterpretationFactProvenance(
     });
   }
 
+  if (content.provenanceKind === "formula_output") {
+    const expectedFormulaId = interpretationFormulaIdForOutputField(content.outputField);
+    content.traceRecords.forEach((traceRecord, traceIndex) => {
+      if (expectedFormulaId !== undefined && traceRecord.formulaId !== expectedFormulaId) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `${content.outputField} must use formula ${expectedFormulaId}`,
+          path: ["statements", statementIndex, "content", "traceRecords", traceIndex, "formulaId"],
+        });
+      }
+    });
+  }
+
+  if (content.provenanceKind === "derived_from_formula_outputs") {
+    content.traceRecords.forEach((traceRecord, traceIndex) => {
+      const expectedFormulaId = interpretationFormulaIdForOutputField(traceRecord.outputField);
+      if (expectedFormulaId !== undefined && traceRecord.formulaId !== expectedFormulaId) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `${traceRecord.outputField} must use formula ${expectedFormulaId}`,
+          path: ["statements", statementIndex, "content", "traceRecords", traceIndex, "formulaId"],
+        });
+      }
+    });
+  }
+
   const expectedInputFields: Partial<Record<typeof content.metric, string>> = {
     target_cpk: "capability.targetCpk",
     target_sigma: "capability.targetSigmaLevel",
@@ -2374,6 +2442,39 @@ function validateInterpretationFactProvenance(
       path: ["statements", statementIndex, "content", "provenanceKind"],
     });
   }
+}
+
+const interpretationFactSectionByMetric: Record<
+  z.infer<typeof interpretationFactContentSchema>["metric"],
+  z.infer<typeof interpretationSectionSchema>
+> = {
+  cpk: "capability-vs-specification",
+  cp: "calculation-summary",
+  rss_sigma: "calculation-summary",
+  total_dpm: "calculation-summary",
+  yield: "calculation-summary",
+  lower_spec_limit: "capability-vs-specification",
+  upper_spec_limit: "capability-vs-specification",
+  target_cpk: "capability-vs-specification",
+  target_sigma: "calculation-summary",
+  recommended_method: "calculation-summary",
+  factor_contribution: "major-contributors",
+  achieved_sigma: "calculation-summary",
+};
+
+function interpretationFormulaIdForOutputField(outputField: string): string | undefined {
+  const formulaIds: Readonly<Record<string, string>> = {
+    "capability.cpk": "cpk-v1",
+    "capability.cp": "cp-v1",
+    "system.rssSigma": "rss-v1",
+    "capability.totalDpm": "dpm-total-v1",
+    "capability.yield": "yield-v1",
+    "capability.lowerZ": "z-lower-v1",
+    "capability.upperZ": "z-upper-v1",
+  };
+  return /^factors\[(?:0|[1-9]\d*)\]\.contribution$/.test(outputField)
+    ? "contribution-v1"
+    : formulaIds[outputField];
 }
 
 function hasInterpretationFact(

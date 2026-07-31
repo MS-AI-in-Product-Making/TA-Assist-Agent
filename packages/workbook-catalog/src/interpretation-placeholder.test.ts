@@ -179,6 +179,23 @@ describe("createInterpretation", () => {
       "factor_contribution",
     ]));
     expect(facts.filter(({ content }) => content.metric === "factor_contribution")).toHaveLength(4);
+    const expectedFactSections = {
+      cpk: "capability-vs-specification",
+      cp: "calculation-summary",
+      rss_sigma: "calculation-summary",
+      total_dpm: "calculation-summary",
+      yield: "calculation-summary",
+      lower_spec_limit: "capability-vs-specification",
+      upper_spec_limit: "capability-vs-specification",
+      recommended_method: "calculation-summary",
+      achieved_sigma: "calculation-summary",
+      target_cpk: "capability-vs-specification",
+      target_sigma: "calculation-summary",
+      factor_contribution: "major-contributors",
+    } as const;
+    for (const fact of facts) {
+      expect(fact.section).toBe(expectedFactSections[fact.content.metric]);
+    }
     expect(result.statements).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: "RULE", content: expect.objectContaining({ entryId: "performance-cpk-below-target" }) }),
       expect.objectContaining({ type: "SIGNAL", content: expect.objectContaining({ entryId: "root-cause-contributor-concentration", requiresEngineeringReview: true }) }),
@@ -340,6 +357,28 @@ describe("createInterpretation", () => {
       });
       expect(error).not.toBeInstanceOf(TypeError);
     }
+  });
+
+  it("rejects a required trace whose formulaId does not match its outputField", () => {
+    const calculationResult = completedCalculation();
+    const forgedCalculation = structuredClone(calculationResult);
+    const cpkTrace = forgedCalculation.traceRecords.find(
+      ({ outputField }) => outputField === "capability.cpk",
+    );
+    if (cpkTrace === undefined) throw new Error("expected capability.cpk trace fixture");
+    cpkTrace.formulaId = "yield-v1";
+    expect(calculationCompletedResultSchema.safeParse(forgedCalculation).success).toBe(true);
+
+    const error = captureThrown(() => createInterpretation({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      calculationResult: forgedCalculation,
+    }));
+
+    expect(error).toMatchObject({
+      code: "prerequisite_not_ready",
+      affectedInputReferences: ["interpretation-request-v1"],
+    });
   });
 
   it("rejects duplicate required traces without leaking trace markers", () => {

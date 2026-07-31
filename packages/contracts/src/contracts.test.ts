@@ -1119,7 +1119,7 @@ describe("F5.1 objective interpretation contracts", () => {
       {
         statementId: "fact-cp",
         type: "FACT" as const,
-        section: "capability-vs-specification" as const,
+        section: "calculation-summary" as const,
         content: {
           metric: "cp" as const,
           value: 2.6666666666666665,
@@ -1155,7 +1155,7 @@ describe("F5.1 objective interpretation contracts", () => {
       {
         statementId: "fact-total-dpm",
         type: "FACT" as const,
-        section: "capability-vs-specification" as const,
+        section: "calculation-summary" as const,
         content: {
           metric: "total_dpm" as const,
           value: 0.30000000000000004,
@@ -1173,7 +1173,7 @@ describe("F5.1 objective interpretation contracts", () => {
       {
         statementId: "fact-yield",
         type: "FACT" as const,
-        section: "capability-vs-specification" as const,
+        section: "calculation-summary" as const,
         content: {
           metric: "yield" as const,
           value: 0.9999997,
@@ -1259,9 +1259,21 @@ describe("F5.1 objective interpretation contracts", () => {
         },
       },
       {
+        statementId: "fact-target-sigma",
+        type: "FACT" as const,
+        section: "calculation-summary" as const,
+        content: {
+          metric: "target_sigma" as const,
+          value: 4,
+          unit: "sigma",
+          provenanceKind: "calculation_input" as const,
+          inputField: "capability.targetSigmaLevel" as const,
+        },
+      },
+      {
         statementId: "fact-achieved-sigma",
         type: "FACT" as const,
-        section: "capability-vs-specification" as const,
+        section: "calculation-summary" as const,
         content: {
           metric: "achieved_sigma" as const,
           value: 7.2,
@@ -1272,12 +1284,12 @@ describe("F5.1 objective interpretation contracts", () => {
             outputField: "capability.lowerZ",
             formulaVersion: "excel-ta-v1" as const,
             formulaId: "z-lower-v1" as const,
-            sourceCells: ["capability.mean", "capability.lowerSpecLimit", "system.rssSigma"],
+            sourceCells: ["system.mean", "capability.lowerSpecLimit", "system.rssSigma"],
           }, {
             outputField: "capability.upperZ",
             formulaVersion: "excel-ta-v1" as const,
             formulaId: "z-upper-v1" as const,
-            sourceCells: ["capability.upperSpecLimit", "capability.mean", "system.rssSigma"],
+            sourceCells: ["capability.upperSpecLimit", "system.mean", "system.rssSigma"],
           }],
         },
       },
@@ -1299,7 +1311,7 @@ describe("F5.1 objective interpretation contracts", () => {
       {
         statementId: "signal-contribution",
         type: "SIGNAL" as const,
-        section: "structural-evidence" as const,
+        section: "major-contributors" as const,
         content: {
           entryId: "signal-major-contribution",
           relatedFactReferences: ["contributors"],
@@ -1465,6 +1477,28 @@ describe("F5.1 objective interpretation contracts", () => {
     expect(interpretationResultSchema.safeParse(resultWithoutScopes).success).toBe(false);
   });
 
+  it("requires exactly one drawing evidence clarification", () => {
+    const missing = structuredClone(completedResult);
+    missing.clarifications = [];
+    expect(interpretationResultSchema.safeParse(missing).success).toBe(false);
+
+    const duplicate = structuredClone(completedResult);
+    duplicate.clarifications.push(structuredClone(duplicate.clarifications[0]!));
+    duplicate.clarifications[1]!.clarificationId = "clarify-drawing-evidence-duplicate";
+    expect(interpretationResultSchema.safeParse(duplicate).success).toBe(false);
+
+    const repeatedScope = structuredClone(completedResult);
+    repeatedScope.clarifications[0]!.scopes = [
+      "tolerance_loop_closure",
+      "datum_chain",
+      "assembly_datum_face",
+      "stack_start",
+      "direction",
+      "direction",
+    ];
+    expect(interpretationResultSchema.safeParse(repeatedScope).success).toBe(false);
+  });
+
   it("requires insufficient-facts clarifications to carry the missing rule facts", () => {
     const result = structuredClone(completedResult);
     result.ruleEvaluationStatus = "insufficient-facts";
@@ -1536,6 +1570,100 @@ describe("F5.1 objective interpretation contracts", () => {
       content: { traceRecords: Array<{ outputField: string }> };
     };
     fact.content.traceRecords[0]!.outputField = "capability.cp";
+
+    expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+  });
+
+  it.each([
+    ["cpk", "yield-v1"],
+    ["cp", "yield-v1"],
+    ["rss_sigma", "yield-v1"],
+    ["total_dpm", "yield-v1"],
+    ["yield", "cpk-v1"],
+    ["factor_contribution", "yield-v1"],
+  ] as const)("rejects %s FACT trace with formulaId %s", (metric, formulaId) => {
+    const result = structuredClone(completedResult);
+    const fact = result.statements.find(
+      (statement) => statement.type === "FACT" && statement.content.metric === metric,
+    ) as { content: { traceRecords: Array<{ formulaId: string }> } };
+    fact.content.traceRecords[0]!.formulaId = formulaId;
+
+    expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+  });
+
+  it.each([
+    ["capability.lowerZ", "z-upper-v1"],
+    ["capability.upperZ", "z-lower-v1"],
+  ] as const)("rejects achieved_sigma trace %s with formulaId %s", (outputField, formulaId) => {
+    const result = structuredClone(completedResult);
+    const achievedSigma = result.statements.find(
+      (statement) => statement.type === "FACT" && statement.content.metric === "achieved_sigma",
+    ) as { content: { traceRecords: Array<{ outputField: string; formulaId: string }> } };
+    const trace = achievedSigma.content.traceRecords.find((candidate) => candidate.outputField === outputField)!;
+    trace.formulaId = formulaId;
+
+    expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+  });
+
+  it("accepts worksheet, request, and F4 output source references", () => {
+    const result = structuredClone(completedResult);
+    const cpk = result.statements.find(
+      (statement) => statement.type === "FACT" && statement.content.metric === "cpk",
+    ) as { content: { traceRecords: Array<{ sourceCells: string[] }> } };
+    cpk.content.traceRecords[0]!.sourceCells = [
+      "Analysis Sheet!A1",
+      "request:systemSpecification.targetCpk",
+      "factors[0].sigma",
+      "system.designNominal",
+      "system.additionalMeanShift",
+      "system.rssSigma",
+      "capability.lowerCpk",
+    ];
+
+    expect(interpretationResultSchema.safeParse(result).success).toBe(true);
+  });
+
+  it("rejects arbitrary sensitive raw text as a FACT trace source", () => {
+    const result = structuredClone(completedResult);
+    const cpk = result.statements.find(
+      (statement) => statement.type === "FACT" && statement.content.metric === "cpk",
+    ) as { content: { traceRecords: Array<{ sourceCells: string[] }> } };
+    cpk.content.traceRecords[0]!.sourceCells = ["sensitive raw text"];
+
+    expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+  });
+
+  it.each([
+    ["cpk", "calculation-summary"],
+    ["cp", "capability-vs-specification"],
+    ["rss_sigma", "capability-vs-specification"],
+    ["total_dpm", "capability-vs-specification"],
+    ["yield", "capability-vs-specification"],
+    ["recommended_method", "capability-vs-specification"],
+    ["achieved_sigma", "capability-vs-specification"],
+    ["target_sigma", "capability-vs-specification"],
+    ["target_cpk", "calculation-summary"],
+    ["lower_spec_limit", "calculation-summary"],
+    ["upper_spec_limit", "calculation-summary"],
+    ["factor_contribution", "calculation-summary"],
+  ] as const)("rejects FACT metric %s in section %s", (metric, section) => {
+    const result = structuredClone(completedResult);
+    const fact = result.statements.find(
+      (statement) => statement.type === "FACT" && statement.content.metric === metric,
+    )!;
+    fact.section = section;
+
+    expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+  });
+
+  it.each([
+    ["RULE", "calculation-summary"],
+    ["SIGNAL", "structural-evidence"],
+    ["OPTION", "major-contributors"],
+  ] as const)("rejects %s in section %s", (type, section) => {
+    const result = structuredClone(completedResult);
+    const statement = result.statements.find((candidate) => candidate.type === type)!;
+    statement.section = section;
 
     expect(interpretationResultSchema.safeParse(result).success).toBe(false);
   });

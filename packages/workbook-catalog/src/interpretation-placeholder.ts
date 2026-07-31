@@ -10,6 +10,22 @@ const REQUEST_SUMMARY = "Interpretation request is invalid.";
 const POLICY_SUMMARY = "Interpretation input is not permitted.";
 const PREREQUISITE_SUMMARY = "Interpretation calculation evidence is not ready.";
 
+const REQUIRED_FORMULA_IDS: Readonly<Record<string, string>> = {
+  "capability.cpk": "cpk-v1",
+  "capability.cp": "cp-v1",
+  "system.rssSigma": "rss-v1",
+  "capability.totalDpm": "dpm-total-v1",
+  "capability.yield": "yield-v1",
+  "capability.lowerZ": "z-lower-v1",
+  "capability.upperZ": "z-upper-v1",
+};
+
+function requiredFormulaId(outputField: string): string | undefined {
+  return /^factors\[(?:0|[1-9]\d*)\]\.contribution$/.test(outputField)
+    ? "contribution-v1"
+    : REQUIRED_FORMULA_IDS[outputField];
+}
+
 function requestError(
   summary: string,
   code: "validation_error" | "policy_denied" | "prerequisite_not_ready" = "validation_error",
@@ -76,7 +92,10 @@ function createInterpretationWithRules(
     "capability.upperZ",
     ...calculation.factors.map((_, index) => `factors[${index}].contribution`),
   ];
-  if (requiredOutputFields.some((outputField) => tracesByOutputField.get(outputField)?.length !== 1)) {
+  if (requiredOutputFields.some((outputField) => {
+    const traces = tracesByOutputField.get(outputField);
+    return traces?.length !== 1 || traces[0]?.formulaId !== requiredFormulaId(outputField);
+  })) {
     throw requestError(PREREQUISITE_SUMMARY, "prerequisite_not_ready");
   }
   const traceFor = (outputField: string) => tracesByOutputField.get(outputField) ?? [];
@@ -106,7 +125,7 @@ function createInterpretationWithRules(
   ) => ({
     statementId,
     type: "FACT",
-    section: "capability-vs-specification",
+    section: metric === "target_sigma" ? "calculation-summary" : "capability-vs-specification",
     content: { metric, value, provenanceKind: "calculation_input", inputField },
   });
   const factorFacts = calculation.factors.map((factor, index) => {
@@ -127,7 +146,7 @@ function createInterpretationWithRules(
   });
   const facts = [
     formulaFact("fact-cpk", "capability-vs-specification", "cpk", calculation.capability.cpk, "capability.cpk"),
-    formulaFact("fact-cp", "capability-vs-specification", "cp", calculation.capability.cp, "capability.cp"),
+    formulaFact("fact-cp", "calculation-summary", "cp", calculation.capability.cp, "capability.cp"),
     formulaFact("fact-rss-sigma", "calculation-summary", "rss_sigma", calculation.system.rssSigma, "system.rssSigma"),
     formulaFact("fact-total-dpm", "calculation-summary", "total_dpm", calculation.capability.totalDpm, "capability.totalDpm"),
     formulaFact("fact-yield", "calculation-summary", "yield", calculation.capability.yield, "capability.yield"),
@@ -149,7 +168,7 @@ function createInterpretationWithRules(
     {
       statementId: "fact-achieved-sigma",
       type: "FACT",
-      section: "capability-vs-specification",
+      section: "calculation-summary",
       content: {
         metric: "achieved_sigma",
         value: Math.min(calculation.capability.lowerZ, calculation.capability.upperZ),
