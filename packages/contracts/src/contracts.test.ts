@@ -3232,6 +3232,21 @@ describe("interpretation rules contracts", () => {
   });
 
   it.each([
+    ["RULE", "performance-rule"],
+    ["SIGNAL", "root-cause-signal"],
+    ["OPTION", "improvement-option"],
+  ] as const)("rejects arbitrary %s related fact references", (_statementType, entryType) => {
+    expect(interpretationRuleEvaluationSchema.safeParse({
+      ...evaluation,
+      matchedRules: [{
+        ...evaluation.matchedRules[0],
+        entryType,
+        relatedFactReferences: ["fact-cpk"],
+      }],
+    }).success).toBe(false);
+  });
+
+  it.each([
     ["matched without a matched rule", { ...evaluation, matchedRules: [] }, ["matchedRules"]],
     ["matched with missing facts", { ...evaluation, missingFacts: ["cpk"] }, ["missingFacts"]],
     ["insufficient-facts with a matched rule", {

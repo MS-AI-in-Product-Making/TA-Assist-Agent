@@ -2700,6 +2700,14 @@ const interpretationContributorFactSchema = z
   })
   .strict();
 
+const interpretationFactReferenceSchema = z.enum([
+  "cpk",
+  "targetCpk",
+  "achievedSigma",
+  "targetSigma",
+  "contributors",
+]);
+
 const interpretationFactsSchema = z
   .object({
     cpk: z.number().finite().optional(),
@@ -2738,7 +2746,7 @@ const interpretationMatchedRuleSchema = z
   .object({
     entryId: z.string().min(1),
     entryType: z.enum(["performance-rule", "root-cause-signal", "improvement-option"]),
-    relatedFactReferences: z.array(z.string().min(1)),
+    relatedFactReferences: z.array(interpretationFactReferenceSchema),
     evidence: interpretationRuleEvidenceSchema,
   })
   .strict();
