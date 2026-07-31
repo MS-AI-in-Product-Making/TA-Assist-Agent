@@ -1955,32 +1955,10 @@ const interpretationSectionSchema = z.enum([
   "parallel-options",
 ]);
 
-const interpretationFactTraceSchema = z
-  .object({
-    formulaVersion: z.literal("excel-ta-v1"),
-    formulaId: z.enum([
-      "factor-mean-v1",
-      "factor-half-tolerance-v1",
-      "factor-sigma-v1",
-      "system-mean-v1",
-      "worst-case-v1",
-      "rss-v1",
-      "contribution-v1",
-      "cp-v1",
-      "cpk-lower-v1",
-      "cpk-upper-v1",
-      "cpk-v1",
-      "z-lower-v1",
-      "z-upper-v1",
-      "dpm-lower-v1",
-      "dpm-upper-v1",
-      "dpm-total-v1",
-      "yield-v1",
-      "status-v1",
-    ]),
-    sourceCells: z.array(z.string().min(1)).min(1),
-  })
-  .strict();
+const interpretationFactTraceFields = {
+  outputField: z.string().min(1),
+  traceRecords: z.array(calculationTraceRecordSchema).min(1).max(500),
+} as const;
 
 const interpretationNumericFactContentSchema = z
   .object({
@@ -1995,6 +1973,7 @@ const interpretationNumericFactContentSchema = z
     ]),
     value: z.number().finite(),
     unit: z.string().min(1).optional(),
+    ...interpretationFactTraceFields,
   })
   .strict();
 
@@ -2011,6 +1990,7 @@ const interpretationRecommendedMethodFactContentSchema = z
     refer3d: z.boolean(),
     criticality: calculationCriticalitySchema,
     criticalityRisk: z.boolean(),
+    ...interpretationFactTraceFields,
   })
   .strict();
 
@@ -2020,6 +2000,7 @@ const interpretationFactorContributionFactContentSchema = z
     factorReference: z.string().min(1),
     contributionPercent: z.number().finite().min(0).max(100),
     unit: z.string().min(1).optional(),
+    ...interpretationFactTraceFields,
   })
   .strict();
 
@@ -2066,8 +2047,6 @@ const interpretationFactStatementSchema = z
     type: z.literal("FACT"),
     section: interpretationSectionSchema,
     content: interpretationFactContentSchema,
-    outputField: z.string().min(1),
-    trace: interpretationFactTraceSchema,
   })
   .strict();
 
@@ -2144,7 +2123,43 @@ const interpretationCompletedResultSchema = z
     statements: z.array(interpretationStatementSchema),
     clarifications: z.array(interpretationClarificationSchema),
   })
-  .strict();
+  .strict()
+  .superRefine((result, context) => {
+    const statementIds = result.statements.map((statement) => statement.statementId);
+    if (new Set(statementIds).size !== statementIds.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "statementId must be unique",
+        path: ["statements"],
+      });
+    }
+
+    if (result.ruleEvaluationStatus === "matched") {
+      return;
+    }
+
+    const derivedStatementIndex = result.statements.findIndex(
+      (statement) => statement.type !== "FACT",
+    );
+    if (derivedStatementIndex >= 0) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "rule-derived statements require matched rule evaluation",
+        path: ["statements", derivedStatementIndex],
+      });
+    }
+
+    const requiredReasonCode = result.ruleEvaluationStatus === "insufficient-facts"
+      ? "rule_facts_insufficient"
+      : "rule_method_not_applicable";
+    if (!result.clarifications.some((clarification) => clarification.reasonCode === requiredReasonCode)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `${result.ruleEvaluationStatus} requires ${requiredReasonCode} clarification`,
+        path: ["clarifications"],
+      });
+    }
+  });
 
 const interpretationLegacyUnavailableResultSchema = z
   .object({

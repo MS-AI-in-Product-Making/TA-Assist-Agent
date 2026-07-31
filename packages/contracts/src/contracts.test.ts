@@ -1106,12 +1106,13 @@ describe("F5.1 objective interpretation contracts", () => {
           metric: "cpk" as const,
           value: 2.4,
           unit: "ratio",
-        },
-        outputField: "capability.cpk",
-        trace: {
-          formulaVersion: "excel-ta-v1" as const,
-          formulaId: "cpk-v1" as const,
-          sourceCells: ["capability.lowerCpk", "capability.upperCpk"],
+          outputField: "capability.cpk",
+          traceRecords: [{
+            outputField: "capability.cpk",
+            formulaVersion: "excel-ta-v1" as const,
+            formulaId: "cpk-v1" as const,
+            sourceCells: ["capability.lowerCpk", "capability.upperCpk"],
+          }],
         },
       },
       {
@@ -1122,12 +1123,13 @@ describe("F5.1 objective interpretation contracts", () => {
           metric: "cp" as const,
           value: 2.6666666666666665,
           unit: "ratio",
-        },
-        outputField: "capability.cp",
-        trace: {
-          formulaVersion: "excel-ta-v1" as const,
-          formulaId: "cp-v1" as const,
-          sourceCells: ["capability.upperSpecLimit", "capability.lowerSpecLimit", "system.rssSigma"],
+          outputField: "capability.cp",
+          traceRecords: [{
+            outputField: "capability.cp",
+            formulaVersion: "excel-ta-v1" as const,
+            formulaId: "cp-v1" as const,
+            sourceCells: ["capability.upperSpecLimit", "capability.lowerSpecLimit", "system.rssSigma"],
+          }],
         },
       },
       {
@@ -1138,12 +1140,13 @@ describe("F5.1 objective interpretation contracts", () => {
           metric: "rss_sigma" as const,
           value: 0.05,
           unit: "mm",
-        },
-        outputField: "system.rssSigma",
-        trace: {
-          formulaVersion: "excel-ta-v1" as const,
-          formulaId: "rss-v1" as const,
-          sourceCells: ["factors[0].sigma"],
+          outputField: "system.rssSigma",
+          traceRecords: [{
+            outputField: "system.rssSigma",
+            formulaVersion: "excel-ta-v1" as const,
+            formulaId: "rss-v1" as const,
+            sourceCells: ["factors[0].sigma"],
+          }],
         },
       },
       {
@@ -1154,12 +1157,13 @@ describe("F5.1 objective interpretation contracts", () => {
           metric: "total_dpm" as const,
           value: 0.30000000000000004,
           unit: "dpm",
-        },
-        outputField: "capability.totalDpm",
-        trace: {
-          formulaVersion: "excel-ta-v1" as const,
-          formulaId: "dpm-total-v1" as const,
-          sourceCells: ["capability.lowerDpm", "capability.upperDpm"],
+          outputField: "capability.totalDpm",
+          traceRecords: [{
+            outputField: "capability.totalDpm",
+            formulaVersion: "excel-ta-v1" as const,
+            formulaId: "dpm-total-v1" as const,
+            sourceCells: ["capability.lowerDpm", "capability.upperDpm"],
+          }],
         },
       },
       {
@@ -1170,12 +1174,13 @@ describe("F5.1 objective interpretation contracts", () => {
           metric: "yield" as const,
           value: 0.9999997,
           unit: "ratio",
-        },
-        outputField: "capability.yield",
-        trace: {
-          formulaVersion: "excel-ta-v1" as const,
-          formulaId: "yield-v1" as const,
-          sourceCells: ["capability.outOfSpecRatio"],
+          outputField: "capability.yield",
+          traceRecords: [{
+            outputField: "capability.yield",
+            formulaVersion: "excel-ta-v1" as const,
+            formulaId: "yield-v1" as const,
+            sourceCells: ["capability.outOfSpecRatio"],
+          }],
         },
       },
       {
@@ -1186,12 +1191,13 @@ describe("F5.1 objective interpretation contracts", () => {
           metric: "lower_spec_limit" as const,
           value: 12.1,
           unit: "mm",
-        },
-        outputField: "capability.lowerSpecLimit",
-        trace: {
-          formulaVersion: "excel-ta-v1" as const,
-          formulaId: "status-v1" as const,
-          sourceCells: ["capability.lowerSpecLimit"],
+          outputField: "capability.lowerSpecLimit",
+          traceRecords: [{
+            outputField: "capability.lowerSpecLimit",
+            formulaVersion: "excel-ta-v1" as const,
+            formulaId: "status-v1" as const,
+            sourceCells: ["capability.lowerSpecLimit"],
+          }],
         },
       },
       {
@@ -1202,12 +1208,13 @@ describe("F5.1 objective interpretation contracts", () => {
           metric: "upper_spec_limit" as const,
           value: 12.9,
           unit: "mm",
-        },
-        outputField: "capability.upperSpecLimit",
-        trace: {
-          formulaVersion: "excel-ta-v1" as const,
-          formulaId: "status-v1" as const,
-          sourceCells: ["capability.upperSpecLimit"],
+          outputField: "capability.upperSpecLimit",
+          traceRecords: [{
+            outputField: "capability.upperSpecLimit",
+            formulaVersion: "excel-ta-v1" as const,
+            formulaId: "status-v1" as const,
+            sourceCells: ["capability.upperSpecLimit"],
+          }],
         },
       },
       {
@@ -1221,12 +1228,13 @@ describe("F5.1 objective interpretation contracts", () => {
           refer3d: false,
           criticality: "none" as const,
           criticalityRisk: false,
-        },
-        outputField: "recommendation.method",
-        trace: {
-          formulaVersion: "excel-ta-v1" as const,
-          formulaId: "status-v1" as const,
-          sourceCells: ["recommendation.method"],
+          outputField: "recommendation.method",
+          traceRecords: [{
+            outputField: "recommendation.method",
+            formulaVersion: "excel-ta-v1" as const,
+            formulaId: "status-v1" as const,
+            sourceCells: ["recommendation.method"],
+          }],
         },
       },
       {
@@ -1238,12 +1246,13 @@ describe("F5.1 objective interpretation contracts", () => {
           factorReference: "Analysis-A/table-a/2",
           contributionPercent: 100,
           unit: "%",
-        },
-        outputField: "factors[0].contribution",
-        trace: {
-          formulaVersion: "excel-ta-v1" as const,
-          formulaId: "contribution-v1" as const,
-          sourceCells: ["factors[0].sigma", "system.rssSigma"],
+          outputField: "factors[0].contribution",
+          traceRecords: [{
+            outputField: "factors[0].contribution",
+            formulaVersion: "excel-ta-v1" as const,
+            formulaId: "contribution-v1" as const,
+            sourceCells: ["factors[0].sigma", "system.rssSigma"],
+          }],
         },
       },
       {
@@ -1362,6 +1371,62 @@ describe("F5.1 objective interpretation contracts", () => {
       rank: 1,
     };
     expect(interpretationResultSchema.safeParse(optionWithNumericRank).success).toBe(false);
+  });
+
+  it("rejects rule-derived statements when rule evaluation is not applicable or lacks facts", () => {
+    for (const ruleEvaluationStatus of ["not-applicable", "insufficient-facts"] as const) {
+      const result = structuredClone(completedResult);
+      (result as { ruleEvaluationStatus: string }).ruleEvaluationStatus = ruleEvaluationStatus;
+      result.statements = [result.statements[9]!];
+      result.clarifications = [{
+        clarificationId: `clarify-${ruleEvaluationStatus}`,
+        reasonCode: ruleEvaluationStatus === "not-applicable"
+          ? "rule_method_not_applicable"
+          : "rule_facts_insufficient",
+        message: "Rule evaluation did not produce derived statements.",
+      }];
+
+      expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+    }
+  });
+
+  it("requires the status-specific clarification when rule evaluation does not produce statements", () => {
+    for (const ruleEvaluationStatus of ["not-applicable", "insufficient-facts"] as const) {
+      const result = structuredClone(completedResult);
+      (result as { ruleEvaluationStatus: string }).ruleEvaluationStatus = ruleEvaluationStatus;
+      result.statements = [];
+      result.clarifications = [];
+
+      expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+    }
+  });
+
+  it("rejects legacy FACT trace placement outside content", () => {
+    const result = structuredClone(completedResult);
+    const statement = result.statements[0] as unknown as {
+      content: Record<string, unknown>;
+      outputField?: unknown;
+      trace?: unknown;
+    };
+    statement.outputField = statement.content.outputField;
+    const legacyTrace = {
+      ...((statement.content.traceRecords as Record<string, unknown>[])[0]!),
+    };
+    delete legacyTrace.outputField;
+    statement.trace = legacyTrace;
+    delete statement.content.outputField;
+    delete statement.content.traceRecords;
+    result.statements = [result.statements[0]!];
+
+    expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+  });
+
+  it("rejects duplicate statementId values", () => {
+    const result = structuredClone(completedResult);
+    const statement = result.statements[9]!;
+    result.statements = [statement, structuredClone(statement)];
+
+    expect(interpretationResultSchema.safeParse(result).success).toBe(false);
   });
 });
 
