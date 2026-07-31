@@ -200,16 +200,25 @@ describe("policy gate", () => {
     });
   });
 
-  it("keeps F4 unavailable with its established calculation contracts", () => {
+  it("reports F4 as the available governed calculation engine", () => {
     expect(getFeatureStatus("F4")).toEqual({
       featureId: "F4",
       title: "方法推荐与 Excel 一致性计算",
-      status: "unavailable",
-      dependsOn: ["calculation-worker-v1"],
+      status: "available",
+      dependsOn: [
+        "worksheet-analysis-assets-v1",
+        "required-field-check-v1",
+        "exception-resolution-v1",
+        "calculation-service-v1",
+      ],
       inputContractId: "calculation-request-v1",
       outputContractId: "calculation-result-v1",
       maximumClassification: "confidential",
-      acceptanceChecks: ["approved-template-regression"],
+      acceptanceChecks: [
+        "anonymous-calculation-kernel-fixture",
+        "approved-template-regression",
+        "calculation-privacy-check",
+      ],
       externalPrerequisites: ["approved-windows-excel-worker"],
       disableBehavior: "return feature_not_available",
     });
@@ -287,7 +296,7 @@ describe("policy gate", () => {
     });
   });
 
-  it.each(["F2", "F3", "F4", "F5", "F6", "F7"])(
+  it.each(["F2", "F3", "F5", "F6", "F7"])(
     "keeps %s unavailable",
     (featureId) => {
       expect(getFeatureStatus(featureId)).toMatchObject({
@@ -297,21 +306,6 @@ describe("policy gate", () => {
     },
   );
 
-  it("reports F4 as unavailable", () => {
-    expect(getFeatureStatus("F4")).toEqual({
-      featureId: "F4",
-      title: "方法推荐与 Excel 一致性计算",
-      status: "unavailable",
-      dependsOn: ["calculation-worker-v1"],
-      inputContractId: "calculation-request-v1",
-      outputContractId: "calculation-result-v1",
-      maximumClassification: "confidential",
-      acceptanceChecks: ["approved-template-regression"],
-      externalPrerequisites: ["approved-windows-excel-worker"],
-      disableBehavior: "return feature_not_available",
-    });
-  });
-
   it("does not expose mutable F4 register state", () => {
     const firstResult = getFeatureStatus("F4");
     const mutableResult = firstResult as unknown as {
@@ -320,14 +314,19 @@ describe("policy gate", () => {
       dependsOn: string[];
     };
 
-    mutableResult.status = "available";
+    mutableResult.status = "unavailable";
     mutableResult.maximumClassification = "public";
     mutableResult.dependsOn.push("attacker-controlled-dependency");
 
     expect(getFeatureStatus("F4")).toMatchObject({
-      status: "unavailable",
+      status: "available",
       maximumClassification: "confidential",
-      dependsOn: ["calculation-worker-v1"],
+      dependsOn: [
+        "worksheet-analysis-assets-v1",
+        "required-field-check-v1",
+        "exception-resolution-v1",
+        "calculation-service-v1",
+      ],
     });
   });
 

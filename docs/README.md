@@ -30,8 +30,12 @@ image hash 共同验证后读取。F1 不计算公式、不换算单位、不 OC
 行动建议，也不写回 workbook、不调用外部服务、不跟踪或导出原始 `.xlsx`；F2.1 仅对 F1.1
 资产中的九项必填因子字段执行严格阻断，并将 Drawing Number、DIM/Characteristic ID 保留为
 非阻断提示。F2.2 在 ready、内容哈希绑定的 F2.1 之后，以 F0 的类别、`mm` 公差范围和推荐
-distribution 产生非阻断一致性信号；F2.3 提供受限例外处理，F2.4 提供标识符质量检查；
-根 F2 和 F3-F7 均不可用，F4 仅返回 `feature_not_available`。F0 解读规则不会启用 F5/F6，
+distribution 产生非阻断一致性信号；F2.3 提供受限例外处理，F2.4 提供标识符质量检查。F4 已启用
+受治理的 `excel-ta-v1` 纯计算核心：少于 4 个因子推荐 WC，4 至 10 个推荐 RSS，多于 10 个转介
+DM 团队进行 3D 分析，同时始终计算 WC/RSS；支持六种受控分布、同单位输入、绝对或相对误差
+`1e-12` 的批准模板回归，以及复用同一 kernel 且工作量不超过 1000 的 What-if。错误不得泄露
+机密输入。Windows Excel Worker 仅用于发布黄金回归，不在生产热路径中。根 F2、F3 和 F5-F7
+仍不可用；F0 解读规则和 F4 可用状态均不会启用 F5/F6，
 两者仍返回 `feature_not_available`；F8 仅提供匿名
 `public` fixture 的受治理 Skill 运行时验收，不包含外部 Adapter、模型、ADO、SharePoint 或 UI 行为。
 
@@ -56,6 +60,8 @@ distribution 产生非阻断一致性信号；F2.3 提供受限例外处理，F2
 | [F2.2 能力库与分布一致性校验实施计划](superpowers/plans/2026-07-27-f2-2-capability-distribution-validation.md) | F2.2 契约、F0 查询、治理和质量门 |
 | [F2.3 非阻断差异例外处理设计](superpowers/specs/2026-07-27-f2-3-exception-resolution-design.md) | 基于 completed F2.2 信号的纯例外覆盖解析 |
 | [F2.3 非阻断差异例外处理实施计划](superpowers/plans/2026-07-27-f2-3-exception-resolution.md) | F2.3 契约、纯服务、治理和质量门 |
+| [F4 计算引擎设计](superpowers/specs/2026-07-30-f4-calculation-engine-design.md) | 方法推荐、Excel 一致计算、What-if、隐私与黄金回归边界 |
+| [F4 计算引擎实施计划](superpowers/plans/2026-07-30-f4-calculation-engine.md) | F4 契约、kernel、服务、回归、治理和质量门 |
 | [系统架构](01-architecture.md) | 产品架构与后续业务能力边界 |
 | [Feature Register](governance/feature-register.md) | F0-F8 可用性、依赖、契约和禁用行为 |
 | [数据分类](governance/data-classification.md) | `public`、`internal`、`confidential`、`secret` 处理规则 |

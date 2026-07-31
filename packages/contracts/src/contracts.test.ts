@@ -1,11 +1,14 @@
 import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import {
+  calculationCriticalitySchema,
+  calculationMethodSchema,
   capabilityEntrySchema,
   capabilityValidationRequestSchema,
   capabilityValidationResultSchema,
   capabilityTierSchema,
   calculationRequestSchema,
+  calculationUnavailableRequestSchema,
   calculationResultSchema,
   cpkRequestSchema,
   cpkResultSchema,
@@ -63,6 +66,13 @@ import {
   workflowRequestSchema,
   workflowResultSchema,
 } from "./index.js";
+import type {
+  CalculationCapabilityResult,
+  CalculationCompletedPayload,
+  CalculationCriticality,
+  CalculationFactorResult,
+  CalculationMethod,
+} from "./index.js";
 
 describe("Phase 0 contracts", () => {
   it("accepts a classified run request", () => {
@@ -108,6 +118,9 @@ describe("Phase 0 contracts", () => {
 
   it("allows only the supported error codes", () => {
     expect(errorCodeSchema.parse("transient_error")).toBe("transient_error");
+    expect(errorCodeSchema.parse("evidence_mismatch")).toBe("evidence_mismatch");
+    expect(errorCodeSchema.parse("prerequisite_not_ready")).toBe("prerequisite_not_ready");
+    expect(errorCodeSchema.parse("calculation_not_possible")).toBe("calculation_not_possible");
     expect(() => errorCodeSchema.parse("unknown_error")).toThrow();
   });
 
@@ -158,38 +171,795 @@ describe("internal tolerance guidance contracts", () => {
   });
 });
 
-describe("F4 calculation placeholder contracts", () => {
+describe("F4 calculation contracts", () => {
+  const contentHash = "a".repeat(64);
+  const baseWorksheetAnalysisAssets = {
+    contractVersion: "v1" as const,
+    workbook: {
+      classification: "confidential" as const,
+      contentHash,
+      catalogContractVersion: "v1" as const,
+    },
+    worksheets: [{
+      worksheetName: "Analysis-A",
+      toleranceLoopDescription: "Anonymous analysis",
+      factorTables: [{
+        tableId: "table-a",
+        headerRow: 1,
+        dataRange: { startRow: 2, endRow: 2 },
+        columns: [{ semanticField: "factorName" as const, headerText: "Factor", sourceColumn: "A" }],
+        rows: [{
+          sourceRow: 2,
+          fields: {
+            factorName: { status: "available" as const, rawText: "Feature-A", sourceCell: "Analysis-A!A2" },
+          },
+        }],
+      }],
+      formulaCells: [],
+      imageAssets: [],
+    }],
+  };
+
+  const baseRequiredFieldCheck = {
+    contractVersion: "v1" as const,
+    inputClassification: "confidential" as const,
+    workbookContentHash: contentHash,
+    status: "readyForNextCheck" as const,
+    blockingIssues: [],
+    advisoryIssues: [],
+    summary: {
+      worksheetsChecked: 1,
+      factorTablesChecked: 1,
+      factorRowsChecked: 1,
+      blockingIssueCount: 0,
+      advisoryIssueCount: 0,
+    },
+  };
+
+  const baseExceptionResolution = {
+    contractVersion: "v1" as const,
+    inputClassification: "confidential" as const,
+    workbookContentHash: contentHash,
+    knowledgeBaseVersion: "v1" as const,
+    status: "readyToContinue" as const,
+    readyToContinue: true as const,
+    acceptedExceptions: [],
+    pendingExceptions: [],
+    summary: {
+      actionableSignalCount: 0,
+      acceptedExceptionCount: 0,
+      pendingExceptionCount: 0,
+      invalidCandidateCount: 0,
+    },
+  };
+
   const request = {
-    contractVersion: "v1",
-    inputClassification: "confidential",
+    contractVersion: "v1" as const,
+    inputClassification: "confidential" as const,
+    projectReference: "controlled-project-reference",
+    runReference: "controlled-run-reference",
+    worksheetAnalysisAssets: baseWorksheetAnalysisAssets,
+    requiredFieldCheck: baseRequiredFieldCheck,
+    exceptionResolution: baseExceptionResolution,
+    worksheetSelection: {
+      worksheetName: "Analysis-A",
+      tableId: "table-a",
+    },
+    systemSpecification: {
+      designNominal: 12.5,
+      lowerSpecLimit: 12.1,
+      upperSpecLimit: 12.9,
+      targetSigmaLevel: 4,
+      targetCpk: 1.33,
+      additionalMeanShift: 0,
+    },
+    criticality: "none" as const,
+    scenarioOverrides: [{
+      scenarioId: "scenario-1",
+      factorOverrides: [{
+        worksheetName: "Analysis-A",
+        tableId: "table-a",
+        sourceRow: 2,
+        nominalValue: 12.45,
+      }],
+      systemSpecification: {
+        additionalMeanShift: 0.02,
+      },
+    }],
+  };
+
+  const legacyUnavailableRequest = {
+    contractVersion: "v1" as const,
+    inputClassification: "confidential" as const,
     projectReference: "controlled-project-reference",
     runReference: "controlled-run-reference",
     worksheetReferences: ["controlled-worksheet-reference"],
   };
 
-  const result = {
-    contractVersion: "v1",
-    outputClassification: "confidential",
-    featureId: "F4",
-    status: "feature_not_available",
+  const completedResult = {
+    contractVersion: "v1" as const,
+    outputClassification: "confidential" as const,
+    featureId: "F4" as const,
+    status: "completed" as const,
+    calculationVersion: "excel-ta-v1" as const,
+    projectReference: "controlled-project-reference",
+    runReference: "controlled-run-reference",
+    workbookContentHash: contentHash,
+    worksheetSelection: {
+      worksheetName: "Analysis-A",
+      tableId: "table-a",
+    },
+    factorCount: 1,
+    recommendation: {
+      method: "worst_case" as const,
+      reason: "factor_count_1_to_3",
+      refer3d: false,
+      criticality: "none" as const,
+      criticalityRisk: false,
+    },
+    factors: [{
+      factorName: "Feature-A",
+      unit: "mm",
+      source: { worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 2 },
+      input: {
+        nominalValue: 12.45,
+        upperTolerance: 0.2,
+        lowerTolerance: -0.2,
+        longTermSafetyFactor: 1,
+        sigmaLevel: 4,
+        distribution: "normal" as const,
+      },
+      mean: 12.46,
+      halfTolerance: 0.2,
+      sigma: 0.05,
+      contribution: 1,
+      trace: {
+        formulaIds: ["factor-mean-v1", "factor-sigma-v1"],
+        sourceCells: ["Analysis-A!A2", "Analysis-A!B2"],
+      },
+    }],
+    system: {
+      designNominal: 12.5,
+      mean: 12.46,
+      additionalMeanShift: 0,
+      worstCaseUpper: 0.2,
+      worstCaseLower: -0.2,
+      rssSigma: 0.05,
+    },
+    capability: {
+      lowerSpecLimit: 12.1,
+      upperSpecLimit: 12.9,
+      targetSigmaLevel: 4,
+      targetCpk: 1.33,
+      cp: 2.6666666666666665,
+      lowerCpk: 2.4,
+      upperCpk: 2.933333333333333,
+      cpk: 2.4,
+      lowerZ: 7.2,
+      upperZ: 8.8,
+      lowerDpm: 0.1,
+      upperDpm: 0.2,
+      totalDpm: 0.30000000000000004,
+      outOfSpecRatio: 3.0000000000000004e-7,
+      yield: 0.9999997,
+      status: "PASS" as const,
+    },
+    traceRecords: [{
+      outputField: "capability.cpk",
+      formulaVersion: "excel-ta-v1" as const,
+      formulaId: "cpk-v1" as const,
+      sourceCells: ["capability.lowerCpk", "capability.upperCpk"],
+    }],
+    scenarios: [{
+      scenarioId: "scenario-1",
+      baselineRunReference: "controlled-run-reference",
+      calculation: {
+        factorCount: 1,
+        recommendation: {
+          method: "worst_case" as const,
+          reason: "factor_count_1_to_3",
+          refer3d: false,
+          criticality: "none" as const,
+          criticalityRisk: false,
+        },
+        factors: [{
+          factorName: "Feature-A",
+          unit: "mm",
+          source: { worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 2 },
+          input: {
+            nominalValue: 12.45,
+            upperTolerance: 0.2,
+            lowerTolerance: -0.2,
+            longTermSafetyFactor: 1,
+            sigmaLevel: 4,
+            distribution: "normal" as const,
+          },
+          mean: 12.48,
+          halfTolerance: 0.2,
+          sigma: 0.05,
+          contribution: 1,
+          trace: {
+            formulaIds: ["factor-mean-v1", "factor-sigma-v1"],
+            sourceCells: ["Analysis-A!A2", "Analysis-A!B2"],
+          },
+        }],
+        system: {
+          designNominal: 12.5,
+          mean: 12.48,
+          additionalMeanShift: 0.02,
+          worstCaseUpper: 0.22,
+          worstCaseLower: -0.2,
+          rssSigma: 0.05,
+        },
+        capability: {
+          lowerSpecLimit: 12.1,
+          upperSpecLimit: 12.9,
+          targetSigmaLevel: 4,
+          targetCpk: 1.33,
+          cp: 2.6666666666666665,
+          lowerCpk: 2.3,
+          upperCpk: 2.8,
+          cpk: 2.3,
+          lowerZ: 6.9,
+          upperZ: 8.4,
+          lowerDpm: 0.2,
+          upperDpm: 0.2,
+          totalDpm: 0.4,
+          outOfSpecRatio: 4e-7,
+          yield: 0.9999996,
+          status: "PASS" as const,
+        },
+        traceRecords: [{
+          outputField: "capability.cpk",
+          formulaVersion: "excel-ta-v1" as const,
+          formulaId: "cpk-v1" as const,
+          sourceCells: ["capability.lowerCpk", "capability.upperCpk"],
+        }],
+      },
+      deltas: {
+        mean: 0.02,
+        rssSigma: 0,
+        worstCaseUpper: 0.02,
+        worstCaseLower: 0,
+        cpk: -0.1,
+        totalDpm: 0.09999999999999998,
+        yield: -1.0000000000287557e-7,
+      },
+      overrides: {
+        factors: [{
+          source: { worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 2 },
+          fields: ["nominalValue"],
+        }],
+        systemSpecification: {
+          additionalMeanShift: 0.02,
+        },
+      },
+    }],
+  };
+
+  const legacyUnavailableResult = {
+    contractVersion: "v1" as const,
+    outputClassification: "confidential" as const,
+    featureId: "F4" as const,
+    status: "feature_not_available" as const,
     projectReference: "controlled-project-reference",
     runReference: "controlled-run-reference",
     worksheetReferences: ["controlled-worksheet-reference"],
-    requiredPrerequisites: ["approved-template-regression", "approved-windows-excel-worker"],
+    requiredPrerequisites: ["approved-template-regression", "approved-windows-excel-worker"] as const,
   };
 
-  it("accepts only confidential controlled references and a fixed unavailable result", () => {
+  it("accepts a valid completed request and a completed result", () => {
     expect(calculationRequestSchema.parse(request)).toEqual(request);
-    expect(calculationResultSchema.parse(result)).toEqual(result);
+    expect(calculationResultSchema.parse(completedResult)).toEqual(completedResult);
   });
 
-  it("rejects public classification, unknown fields, and altered prerequisites", () => {
-    expect(calculationRequestSchema.safeParse({ ...request, inputClassification: "public" }).success).toBe(false);
-    expect(calculationRequestSchema.safeParse({ ...request, unexpected: true }).success).toBe(false);
-    expect(calculationResultSchema.safeParse({
-      ...result,
-      requiredPrerequisites: ["approved-windows-excel-worker", "approved-template-regression"],
+  it("accepts legacy unavailable requests only via dedicated schema", () => {
+    expect(calculationUnavailableRequestSchema.parse(legacyUnavailableRequest)).toEqual(legacyUnavailableRequest);
+    expect(calculationRequestSchema.safeParse(legacyUnavailableRequest).success).toBe(false);
+  });
+
+  it("rejects workbook hash mismatch across evidence", () => {
+    expect(calculationRequestSchema.safeParse({
+      ...request,
+      requiredFieldCheck: {
+        ...request.requiredFieldCheck,
+        workbookContentHash: "b".repeat(64),
+      },
     }).success).toBe(false);
+  });
+
+  it("rejects F2.3 workbook hash mismatch", () => {
+    expect(calculationRequestSchema.safeParse({
+      ...request,
+      exceptionResolution: {
+        ...request.exceptionResolution,
+        workbookContentHash: "b".repeat(64),
+      },
+    }).success).toBe(false);
+  });
+
+  it("rejects blocked F2.1 and pending F2.3 statuses", () => {
+    expect(calculationRequestSchema.safeParse({
+      ...request,
+      requiredFieldCheck: {
+        ...request.requiredFieldCheck,
+        status: "blocked",
+        blockingIssues: [{
+          issueCode: "factor_table_has_no_rows",
+          worksheetName: "Analysis-A",
+          tableId: "table-a",
+        }],
+        summary: {
+          ...request.requiredFieldCheck.summary,
+          blockingIssueCount: 1,
+        },
+      },
+    }).success).toBe(false);
+
+    expect(calculationRequestSchema.safeParse({
+      ...request,
+      exceptionResolution: {
+        ...request.exceptionResolution,
+        status: "pendingExceptions",
+        readyToContinue: false,
+        pendingExceptions: [{
+          signalRef: "signal-1",
+          reasonCode: "missing_candidate",
+          snapshot: {
+            signalKind: "distribution_mismatch",
+            worksheetName: "Analysis-A",
+            tableId: "table-a",
+            sourceRow: 2,
+            factorName: "Feature-A",
+            signal: {
+              status: "distribution_mismatch",
+              actual: "normal",
+              recommended: "uniform",
+            },
+          },
+        }],
+        summary: {
+          actionableSignalCount: 1,
+          acceptedExceptionCount: 0,
+          pendingExceptionCount: 1,
+          invalidCandidateCount: 0,
+        },
+      },
+    }).success).toBe(false);
+  });
+
+  it("rejects upper spec less than or equal to lower spec", () => {
+    expect(calculationRequestSchema.safeParse({
+      ...request,
+      systemSpecification: {
+        ...request.systemSpecification,
+        lowerSpecLimit: 12.5,
+        upperSpecLimit: 12.5,
+      },
+    }).success).toBe(false);
+  });
+
+  it("rejects unknown fields and public classification", () => {
+    expect(calculationRequestSchema.safeParse({ ...request, inputClassification: "public" }).success).toBe(false);
+    expect(calculationRequestSchema.safeParse({ ...request, unexpectedField: true }).success).toBe(false);
+  });
+
+  it("rejects duplicate scenario ids and duplicate factor override keys", () => {
+    expect(calculationRequestSchema.safeParse({
+      ...request,
+      scenarioOverrides: [
+        request.scenarioOverrides[0],
+        {
+          ...request.scenarioOverrides[0],
+          factorOverrides: [{
+            worksheetName: "Analysis-A",
+            tableId: "table-a",
+            sourceRow: 2,
+            upperTolerance: 0.3,
+          }],
+        },
+      ],
+    }).success).toBe(false);
+
+    expect(calculationRequestSchema.safeParse({
+      ...request,
+      scenarioOverrides: [{
+        ...request.scenarioOverrides[0],
+        factorOverrides: [
+          request.scenarioOverrides[0].factorOverrides[0],
+          {
+            worksheetName: "Analysis-A",
+            tableId: "table-a",
+            sourceRow: 2,
+            lowerTolerance: -0.3,
+          },
+        ],
+      }],
+    }).success).toBe(false);
+
+    expect(calculationRequestSchema.safeParse({
+      ...request,
+      scenarioOverrides: [{
+        ...request.scenarioOverrides[0],
+        factorOverrides: [
+          {
+            worksheetName: "Sheet::A",
+            tableId: "Table",
+            sourceRow: 2,
+            nominalValue: 12.45,
+          },
+          {
+            worksheetName: "Sheet",
+            tableId: "A::Table",
+            sourceRow: 2,
+            upperTolerance: 0.3,
+          },
+        ],
+      }],
+    }).success).toBe(true);
+  });
+
+  it("rejects no-op scenarios and no-op scenario system specifications", () => {
+    expect(calculationRequestSchema.safeParse({
+      ...request,
+      scenarioOverrides: [{
+        scenarioId: "scenario-empty",
+        factorOverrides: [],
+      }],
+    }).success).toBe(false);
+
+    expect(calculationRequestSchema.safeParse({
+      ...request,
+      scenarioOverrides: [{
+        scenarioId: "scenario-empty-system-spec",
+        factorOverrides: [],
+        systemSpecification: {},
+      }],
+    }).success).toBe(false);
+
+    expect(calculationRequestSchema.safeParse({
+      ...request,
+      scenarioOverrides: [{
+        scenarioId: "scenario-system-spec-only",
+        factorOverrides: [],
+        systemSpecification: {
+          additionalMeanShift: 0.01,
+        },
+      }],
+    }).success).toBe(true);
+  });
+
+  it("rejects non-positive request and override sigma/cpk/safety values", () => {
+    expect(calculationRequestSchema.safeParse({
+      ...request,
+      systemSpecification: {
+        ...request.systemSpecification,
+        targetSigmaLevel: 0,
+      },
+    }).success).toBe(false);
+    expect(calculationRequestSchema.safeParse({
+      ...request,
+      systemSpecification: {
+        ...request.systemSpecification,
+        targetCpk: -1,
+      },
+    }).success).toBe(false);
+    expect(calculationRequestSchema.safeParse({
+      ...request,
+      scenarioOverrides: [{
+        ...request.scenarioOverrides[0],
+        factorOverrides: [{
+          ...request.scenarioOverrides[0].factorOverrides[0],
+          longTermSafetyFactor: 0,
+        }],
+      }],
+    }).success).toBe(false);
+    expect(calculationRequestSchema.safeParse({
+      ...request,
+      scenarioOverrides: [{
+        ...request.scenarioOverrides[0],
+        factorOverrides: [{
+          ...request.scenarioOverrides[0].factorOverrides[0],
+          sigmaLevel: -3,
+        }],
+      }],
+    }).success).toBe(false);
+  });
+
+  it("rejects more than 100 scenarios", () => {
+    const scenarioOverrides = Array.from({ length: 101 }, (_, index) => ({
+      scenarioId: `scenario-${index + 1}`,
+      factorOverrides: [{
+        worksheetName: "Analysis-A",
+        tableId: "table-a",
+        sourceRow: 2,
+        nominalValue: 12.45 + index * 0.001,
+      }],
+      systemSpecification: {
+        additionalMeanShift: 0,
+      },
+    }));
+    expect(calculationRequestSchema.safeParse({ ...request, scenarioOverrides }).success).toBe(false);
+  });
+
+  it("rejects merged scenario system specification when effective bounds are invalid", () => {
+    expect(calculationRequestSchema.safeParse({
+      ...request,
+      scenarioOverrides: [{
+        ...request.scenarioOverrides[0],
+        systemSpecification: {
+          lowerSpecLimit: 13,
+        },
+      }],
+    }).success).toBe(false);
+  });
+
+  it("rejects non-positive completed factor input values", () => {
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      factors: [{
+        ...completedResult.factors[0],
+        input: {
+          ...completedResult.factors[0].input,
+          longTermSafetyFactor: 0,
+        },
+      }],
+    }).success).toBe(false);
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      factors: [{
+        ...completedResult.factors[0],
+        input: {
+          ...completedResult.factors[0].input,
+          sigmaLevel: -2,
+        },
+      }],
+    }).success).toBe(false);
+  });
+
+  it("requires factorName and unit in completed factor outputs", () => {
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      factors: [{
+        ...completedResult.factors[0],
+        factorName: "",
+      }],
+    }).success).toBe(false);
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      factors: [{
+        ...completedResult.factors[0],
+        unit: "",
+      }],
+    }).success).toBe(false);
+  });
+
+  it("requires boolean criticalityRisk while preserving criticality enum", () => {
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      recommendation: {
+        ...completedResult.recommendation,
+        criticalityRisk: "CTS",
+      },
+    }).success).toBe(false);
+
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      recommendation: {
+        ...completedResult.recommendation,
+        criticality: "none",
+        criticalityRisk: true,
+      },
+    }).success).toBe(false);
+
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      recommendation: {
+        ...completedResult.recommendation,
+        criticality: "CTS",
+        criticalityRisk: true,
+      },
+    }).success).toBe(true);
+
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      recommendation: {
+        ...completedResult.recommendation,
+        criticality: "none",
+        criticalityRisk: false,
+      },
+    }).success).toBe(true);
+  });
+
+  it("enforces nearly-equal boundaries for completed derived invariants", () => {
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      capability: {
+        ...completedResult.capability,
+        lowerCpk: 1_000_000_000_000,
+        upperCpk: 1_000_000_000_001,
+        cpk: 1_000_000_000_000 + 0.9,
+      },
+    }).success).toBe(true);
+
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      capability: {
+        ...completedResult.capability,
+        lowerCpk: 1_000_000_000_000,
+        upperCpk: 1_000_000_000_001,
+        cpk: 1_000_000_000_000 + 1.1,
+      },
+    }).success).toBe(false);
+
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      capability: {
+        ...completedResult.capability,
+        lowerCpk: 2e-13,
+        upperCpk: 1,
+        cpk: 7e-13,
+      },
+    }).success).toBe(true);
+
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      capability: {
+        ...completedResult.capability,
+        lowerCpk: 2e-13,
+        upperCpk: 1,
+        cpk: 2.3e-12,
+      },
+    }).success).toBe(false);
+  });
+
+  it("rejects completed payload arrays above bounds", () => {
+    const factor = completedResult.factors[0];
+    const factors = Array.from({ length: 101 }, (_, index) => ({
+      ...factor,
+      factorName: `Feature-${index + 1}`,
+      source: {
+        ...factor.source,
+        sourceRow: index + 1,
+      },
+      trace: {
+        ...factor.trace,
+        sourceCells: [`Analysis-A!A${index + 1}`],
+      },
+    }));
+
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      factorCount: 101,
+      recommendation: {
+        ...completedResult.recommendation,
+        method: "refer_3d_variation_analysis",
+        reason: "factor_count_over_10",
+        refer3d: true,
+      },
+      factors,
+    }).success).toBe(false);
+
+    const trace = completedResult.traceRecords[0];
+    const traceRecords = Array.from({ length: 501 }, (_, index) => ({
+      ...trace,
+      outputField: `trace-${index + 1}`,
+    }));
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      traceRecords,
+    }).success).toBe(false);
+
+    const scenario = completedResult.scenarios[0];
+    const scenarios = Array.from({ length: 101 }, (_, index) => ({
+      ...scenario,
+      scenarioId: `scenario-${index + 1}`,
+    }));
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      scenarios,
+    }).success).toBe(false);
+  });
+
+  it("exports calculation method and criticality schemas and reusable types", () => {
+    expect(calculationMethodSchema.parse("worst_case")).toBe("worst_case");
+    expect(calculationCriticalitySchema.parse("CTS")).toBe("CTS");
+
+    const method: CalculationMethod = calculationMethodSchema.parse("rss_1d");
+    const criticality: CalculationCriticality = calculationCriticalitySchema.parse("CTF");
+    const factor: CalculationFactorResult = completedResult.factors[0];
+    const capability: CalculationCapabilityResult = completedResult.capability;
+    const payload: CalculationCompletedPayload = {
+      factorCount: completedResult.factorCount,
+      recommendation: completedResult.recommendation,
+      factors: completedResult.factors,
+      system: completedResult.system,
+      capability: completedResult.capability,
+      traceRecords: completedResult.traceRecords,
+    };
+
+    expect(method).toBe("rss_1d");
+    expect(criticality).toBe("CTF");
+    expect(factor.factorName).toBe("Feature-A");
+    expect(capability.status).toBe("PASS");
+    expect(payload.factorCount).toBe(1);
+  });
+
+  it("enforces formulaVersion and formulaId enums in trace records", () => {
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      traceRecords: [{
+        ...completedResult.traceRecords[0],
+        formulaVersion: "excel-ta-v2",
+      }],
+    }).success).toBe(false);
+
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      traceRecords: [{
+        ...completedResult.traceRecords[0],
+        formulaId: "cpk-min-v1",
+      }],
+    }).success).toBe(false);
+  });
+
+  it("accepts complete scenario payload with override details", () => {
+    expect(calculationResultSchema.safeParse(completedResult).success).toBe(true);
+  });
+
+  it("rejects completed scenario no-op overrides", () => {
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      scenarios: [{
+        ...completedResult.scenarios[0],
+        overrides: {
+          factors: [],
+        },
+      }],
+    }).success).toBe(false);
+  });
+
+  it("rejects completed derived invariant violations", () => {
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      factorCount: 2,
+    }).success).toBe(false);
+
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      recommendation: {
+        ...completedResult.recommendation,
+        method: "rss_1d",
+      },
+    }).success).toBe(false);
+
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      capability: {
+        ...completedResult.capability,
+        cpk: 1.5,
+      },
+    }).success).toBe(false);
+
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      capability: {
+        ...completedResult.capability,
+        totalDpm: completedResult.capability.totalDpm + 1,
+      },
+    }).success).toBe(false);
+
+    expect(calculationResultSchema.safeParse({
+      ...completedResult,
+      capability: {
+        ...completedResult.capability,
+        yield: 0.5,
+      },
+    }).success).toBe(false);
+  });
+
+  it("accepts legacy unavailable results for backward compatibility", () => {
+    expect(calculationResultSchema.parse(legacyUnavailableResult)).toEqual(legacyUnavailableResult);
   });
 });
 
