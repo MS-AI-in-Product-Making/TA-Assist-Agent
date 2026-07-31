@@ -3,6 +3,7 @@ import {
   interpretationRuleEvaluationRequestSchema,
   interpretationRuleEvaluationSchema,
   interpretationRuleLoadRequestSchema,
+  type InterpretationFactReference,
   type InterpretationKnowledgeEntry,
   type InterpretationRuleEvaluation,
   type InterpretationRuleEvaluationRequest,
@@ -133,7 +134,7 @@ function selectRelevantPerformanceRules(
   return relevant.length > 0 ? relevant : rules;
 }
 
-function metricFactReferences(metric: string): readonly string[] {
+function metricFactReferences(metric: string): readonly InterpretationFactReference[] {
   switch (metric) {
     case "cpk": return ["cpk", "targetCpk"];
     case "sigma": return ["achievedSigma", "targetSigma"];
@@ -184,13 +185,26 @@ function factValue(facts: Facts, reference: string): unknown {
   return (facts as Record<string, unknown>)[reference];
 }
 
-function factReferences(facts: Facts, requiredFacts: readonly string[]): string[] {
-  return uniqueSorted(requiredFacts.filter((fact) => hasFact(facts, fact)));
+function factReferences(
+  facts: Facts,
+  requiredFacts: readonly string[],
+): InterpretationFactReference[] {
+  return uniqueSorted(requiredFacts.filter(
+    (fact): fact is InterpretationFactReference => isInterpretationFactReference(fact) && hasFact(facts, fact),
+  ));
+}
+
+function isInterpretationFactReference(value: string): value is InterpretationFactReference {
+  return value === "cpk"
+    || value === "targetCpk"
+    || value === "achievedSigma"
+    || value === "targetSigma"
+    || value === "contributors";
 }
 
 function matchedRule(
   entry: PerformanceRule | RootCauseSignal | ImprovementOption,
-  relatedFactReferences: readonly string[],
+  relatedFactReferences: readonly InterpretationFactReference[],
 ): MatchedRule {
   return {
     entryId: entry.entryId,
@@ -248,7 +262,7 @@ function deepFreeze<Value>(value: Value): Value {
   return value;
 }
 
-function uniqueSorted(values: readonly string[]): string[] {
+function uniqueSorted<Value extends string>(values: readonly Value[]): Value[] {
   return [...new Set(values)].sort(compareAscii);
 }
 

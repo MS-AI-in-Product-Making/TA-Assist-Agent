@@ -1955,6 +1955,14 @@ const interpretationSectionSchema = z.enum([
   "parallel-options",
 ]);
 
+const interpretationFactReferenceSchema = z.enum([
+  "cpk",
+  "targetCpk",
+  "achievedSigma",
+  "targetSigma",
+  "contributors",
+]);
+
 const interpretationFactTraceFields = {
   outputField: z.string().min(1),
   traceRecords: z.array(calculationTraceRecordSchema).min(1).max(500),
@@ -1970,6 +1978,9 @@ const interpretationNumericFactContentSchema = z
       "yield",
       "lower_spec_limit",
       "upper_spec_limit",
+      "target_cpk",
+      "achieved_sigma",
+      "target_sigma",
     ]),
     value: z.number().finite(),
     unit: z.string().min(1).optional(),
@@ -2022,7 +2033,7 @@ const interpretationRuleStatementEvidenceSchema = z
 const interpretationRuleStatementContentSchema = z
   .object({
     entryId: z.string().min(1),
-    relatedFactReferences: z.array(z.string().min(1)).min(1),
+    relatedFactReferences: z.array(interpretationFactReferenceSchema).min(1),
     evidence: interpretationRuleStatementEvidenceSchema,
   })
   .strict();
@@ -2134,7 +2145,39 @@ const interpretationCompletedResultSchema = z
       });
     }
 
+    result.statements.forEach((statement, statementIndex) => {
+      if (statement.type === "FACT") {
+        statement.content.traceRecords.forEach((traceRecord, traceIndex) => {
+          if (traceRecord.outputField !== statement.content.outputField) {
+            context.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: "FACT trace outputField must match FACT outputField",
+              path: ["statements", statementIndex, "content", "traceRecords", traceIndex, "outputField"],
+            });
+          }
+        });
+        return;
+      }
+
+      statement.content.relatedFactReferences.forEach((reference, referenceIndex) => {
+        if (!hasInterpretationFact(result.statements, reference)) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `${reference} must be represented by a FACT statement`,
+            path: ["statements", statementIndex, "content", "relatedFactReferences", referenceIndex],
+          });
+        }
+      });
+    });
+
     if (result.ruleEvaluationStatus === "matched") {
+      if (!result.statements.some((statement) => statement.type !== "FACT")) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "matched rule evaluation requires at least one rule-derived statement",
+          path: ["statements"],
+        });
+      }
       return;
     }
 
@@ -2160,6 +2203,22 @@ const interpretationCompletedResultSchema = z
       });
     }
   });
+
+function hasInterpretationFact(
+  statements: readonly z.infer<typeof interpretationStatementSchema>[],
+  reference: z.infer<typeof interpretationFactReferenceSchema>,
+): boolean {
+  const metric = reference === "cpk"
+    ? "cpk"
+    : reference === "targetCpk"
+      ? "target_cpk"
+      : reference === "achievedSigma"
+        ? "achieved_sigma"
+        : reference === "targetSigma"
+          ? "target_sigma"
+          : "factor_contribution";
+  return statements.some((statement) => statement.type === "FACT" && statement.content.metric === metric);
+}
 
 const interpretationLegacyUnavailableResultSchema = z
   .object({
@@ -2700,14 +2759,6 @@ const interpretationContributorFactSchema = z
   })
   .strict();
 
-const interpretationFactReferenceSchema = z.enum([
-  "cpk",
-  "targetCpk",
-  "achievedSigma",
-  "targetSigma",
-  "contributors",
-]);
-
 const interpretationFactsSchema = z
   .object({
     cpk: z.number().finite().optional(),
@@ -2863,6 +2914,7 @@ export type InterpretationKnowledgeSourceMetadata = z.infer<typeof interpretatio
 export type InterpretationKnowledgeManifest = z.infer<typeof interpretationKnowledgeManifestSchema>;
 export type InterpretationKnowledgeSeedPackage = z.infer<typeof interpretationKnowledgeSeedPackageSchema>;
 export type InterpretationRuleLoadRequest = z.infer<typeof interpretationRuleLoadRequestSchema>;
+export type InterpretationFactReference = z.infer<typeof interpretationFactReferenceSchema>;
 export type InterpretationRuleEvaluationRequest = z.infer<typeof interpretationRuleEvaluationRequestSchema>;
 export type InterpretationRuleEvaluation = z.infer<typeof interpretationRuleEvaluationSchema>;
 export type WorkbookCatalogRequest = z.infer<typeof workbookCatalogRequestSchema>;

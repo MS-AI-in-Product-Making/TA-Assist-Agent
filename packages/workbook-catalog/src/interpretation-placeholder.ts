@@ -52,9 +52,9 @@ export function createInterpretationPlaceholder(request: unknown): Interpretatio
     outputClassification: "confidential",
     featureId: "F5",
     status: "feature_not_available",
-    projectReference: input.projectReference,
-    runReference: input.runReference,
-    worksheetReferences: input.worksheetReferences,
+    projectReference: input.calculationResult.projectReference,
+    runReference: input.calculationResult.runReference,
+    worksheetReferences: [input.calculationResult.worksheetSelection.tableId],
     requiredPrerequisites: ["approved-knowledge-base"],
   });
 }

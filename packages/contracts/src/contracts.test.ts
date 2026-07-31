@@ -1256,12 +1256,29 @@ describe("F5.1 objective interpretation contracts", () => {
         },
       },
       {
+        statementId: "fact-target-cpk",
+        type: "FACT" as const,
+        section: "capability-vs-specification" as const,
+        content: {
+          metric: "target_cpk" as const,
+          value: 1.33,
+          unit: "ratio",
+          outputField: "capability.targetCpk",
+          traceRecords: [{
+            outputField: "capability.targetCpk",
+            formulaVersion: "excel-ta-v1" as const,
+            formulaId: "status-v1" as const,
+            sourceCells: ["capability.targetCpk"],
+          }],
+        },
+      },
+      {
         statementId: "rule-performance",
         type: "RULE" as const,
         section: "capability-vs-specification" as const,
         content: {
           entryId: "rule-cpk-target",
-          relatedFactReferences: ["fact-cpk"],
+          relatedFactReferences: ["cpk", "targetCpk"],
           evidence: {
             sourceAlias: "kb-performance",
             sheetName: "Rules",
@@ -1276,7 +1293,7 @@ describe("F5.1 objective interpretation contracts", () => {
         section: "structural-evidence" as const,
         content: {
           entryId: "signal-major-contribution",
-          relatedFactReferences: ["fact-factor-contribution"],
+          relatedFactReferences: ["contributors"],
           evidence: {
             sourceAlias: "kb-signal",
             sheetName: "Rules",
@@ -1292,7 +1309,7 @@ describe("F5.1 objective interpretation contracts", () => {
         section: "parallel-options" as const,
         content: {
           entryId: "option-tighten-process",
-          relatedFactReferences: ["fact-cpk", "fact-factor-contribution"],
+          relatedFactReferences: ["cpk", "contributors"],
           evidence: {
             sourceAlias: "kb-option",
             sheetName: "Rules",
@@ -1352,22 +1369,22 @@ describe("F5.1 objective interpretation contracts", () => {
 
   it("rejects RULE without evidence, SIGNAL with invalid review flag, and OPTION with numeric rank", () => {
     const ruleWithoutEvidence = structuredClone(completedResult);
-    (ruleWithoutEvidence.statements[9] as { content: Record<string, unknown> }).content = {
+    (ruleWithoutEvidence.statements[10] as { content: Record<string, unknown> }).content = {
       entryId: "rule-cpk-target",
-      relatedFactReferences: ["fact-cpk"],
+      relatedFactReferences: ["cpk", "targetCpk"],
     };
     expect(interpretationResultSchema.safeParse(ruleWithoutEvidence).success).toBe(false);
 
     const signalWithWrongFlag = structuredClone(completedResult);
-    (signalWithWrongFlag.statements[10] as { content: Record<string, unknown> }).content = {
-      ...(signalWithWrongFlag.statements[10] as { content: Record<string, unknown> }).content,
+    (signalWithWrongFlag.statements[11] as { content: Record<string, unknown> }).content = {
+      ...(signalWithWrongFlag.statements[11] as { content: Record<string, unknown> }).content,
       requiresEngineeringReview: false,
     };
     expect(interpretationResultSchema.safeParse(signalWithWrongFlag).success).toBe(false);
 
     const optionWithNumericRank = structuredClone(completedResult);
-    (optionWithNumericRank.statements[11] as { content: Record<string, unknown> }).content = {
-      ...(optionWithNumericRank.statements[11] as { content: Record<string, unknown> }).content,
+    (optionWithNumericRank.statements[12] as { content: Record<string, unknown> }).content = {
+      ...(optionWithNumericRank.statements[12] as { content: Record<string, unknown> }).content,
       rank: 1,
     };
     expect(interpretationResultSchema.safeParse(optionWithNumericRank).success).toBe(false);
@@ -1377,7 +1394,7 @@ describe("F5.1 objective interpretation contracts", () => {
     for (const ruleEvaluationStatus of ["not-applicable", "insufficient-facts"] as const) {
       const result = structuredClone(completedResult);
       (result as { ruleEvaluationStatus: string }).ruleEvaluationStatus = ruleEvaluationStatus;
-      result.statements = [result.statements[9]!];
+      result.statements = [result.statements[10]!];
       result.clarifications = [{
         clarificationId: `clarify-${ruleEvaluationStatus}`,
         reasonCode: ruleEvaluationStatus === "not-applicable"
@@ -1423,8 +1440,38 @@ describe("F5.1 objective interpretation contracts", () => {
 
   it("rejects duplicate statementId values", () => {
     const result = structuredClone(completedResult);
-    const statement = result.statements[9]!;
+    const statement = result.statements[10]!;
     result.statements = [statement, structuredClone(statement)];
+
+    expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+  });
+
+  it("requires matched rule evaluation to produce a rule-derived statement", () => {
+    const result = structuredClone(completedResult);
+    result.statements = result.statements.filter((statement) => statement.type === "FACT");
+
+    expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+  });
+
+  it("requires every FACT trace outputField to match its FACT outputField", () => {
+    const result = structuredClone(completedResult);
+    const fact = result.statements[0] as {
+      content: { traceRecords: Array<{ outputField: string }> };
+    };
+    fact.content.traceRecords[0]!.outputField = "capability.cp";
+
+    expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+  });
+
+  it("rejects a targetCpk reference without a target_cpk FACT", () => {
+    const result = structuredClone(completedResult);
+    result.statements = result.statements.filter(
+      (statement) => statement.type !== "FACT" || statement.content.metric !== "target_cpk",
+    );
+    const rule = result.statements.find((statement) => statement.type === "RULE") as {
+      content: { relatedFactReferences: string[] };
+    };
+    rule.content.relatedFactReferences = ["targetCpk"];
 
     expect(interpretationResultSchema.safeParse(result).success).toBe(false);
   });
