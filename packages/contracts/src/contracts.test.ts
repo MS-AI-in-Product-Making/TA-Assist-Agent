@@ -1497,6 +1497,28 @@ describe("F5.1 objective interpretation contracts", () => {
     expect(interpretationResultSchema.safeParse(result).success).toBe(false);
   });
 
+  it("rejects achieved_sigma with formula output provenance and a fabricated trace", () => {
+    const result = structuredClone(completedResult);
+    const achievedSigma = result.statements.find(
+      (statement) => statement.type === "FACT" && statement.content.metric === "achieved_sigma",
+    ) as unknown as { content: Record<string, unknown> };
+    achievedSigma.content = {
+      metric: "achieved_sigma",
+      value: 7.2,
+      unit: "sigma",
+      provenanceKind: "formula_output",
+      outputField: "capability.achievedSigma",
+      traceRecords: [{
+        outputField: "capability.achievedSigma",
+        formulaVersion: "excel-ta-v1",
+        formulaId: "cpk-v1",
+        sourceCells: ["capability.lowerZ", "capability.upperZ"],
+      }],
+    };
+
+    expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+  });
+
   it("requires derived FACT traces to cover exactly their source output fields", () => {
     const result = structuredClone(completedResult);
     const achievedSigma = result.statements.find(

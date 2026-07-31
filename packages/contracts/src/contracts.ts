@@ -1985,7 +1985,6 @@ const interpretationFormulaNumericFactContentSchema = z
       "rss_sigma",
       "total_dpm",
       "yield",
-      "achieved_sigma",
     ]),
     value: z.number().finite(),
     unit: z.string().min(1).optional(),
