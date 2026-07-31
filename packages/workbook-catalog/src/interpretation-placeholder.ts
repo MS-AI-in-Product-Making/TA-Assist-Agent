@@ -8,8 +8,12 @@ import { loadInterpretationRules } from "@ai-assist/knowledge-base";
 
 const REQUEST_SUMMARY = "Interpretation request is invalid.";
 const POLICY_SUMMARY = "Interpretation input is not permitted.";
+const PREREQUISITE_SUMMARY = "Interpretation calculation evidence is not ready.";
 
-function requestError(summary: string, code: "validation_error" | "policy_denied" = "validation_error"): Error {
+function requestError(
+  summary: string,
+  code: "validation_error" | "policy_denied" | "prerequisite_not_ready" = "validation_error",
+): Error {
   return createTypedError({
     code,
     summary,
@@ -39,22 +43,43 @@ function createInterpretationWithRules(
   request: unknown,
   loadRules: InterpretationRuleLoader,
 ): InterpretationResult {
-  let classification: unknown;
+  let parsed: ReturnType<typeof interpretationRequestSchema.safeParse> | undefined;
+  let policyDenied = false;
   try {
-    classification = (request as { inputClassification?: unknown })?.inputClassification;
+    const classification = (request as { inputClassification?: unknown })?.inputClassification;
+    policyDenied = typeof classification === "string" && classification !== "confidential";
+    if (!policyDenied) parsed = interpretationRequestSchema.safeParse(request);
   } catch {
     throw requestError(REQUEST_SUMMARY);
   }
-  if (typeof classification === "string" && classification !== "confidential") {
+  if (policyDenied) {
     throw requestError(POLICY_SUMMARY, "policy_denied");
   }
-
-  const parsed = interpretationRequestSchema.safeParse(request);
-  if (!parsed.success) throw requestError(REQUEST_SUMMARY);
+  if (parsed === undefined || !parsed.success) throw requestError(REQUEST_SUMMARY);
   const calculation = parsed.data.calculationResult;
-  const traceFor = (outputField: string) => calculation.traceRecords.filter(
-    (record) => record.outputField === outputField,
-  );
+  const tracesByOutputField = new Map<string, typeof calculation.traceRecords>();
+  for (const traceRecord of calculation.traceRecords) {
+    const traces = tracesByOutputField.get(traceRecord.outputField);
+    if (traces === undefined) {
+      tracesByOutputField.set(traceRecord.outputField, [traceRecord]);
+    } else {
+      traces.push(traceRecord);
+    }
+  }
+  const requiredOutputFields = [
+    "capability.cpk",
+    "capability.cp",
+    "system.rssSigma",
+    "capability.totalDpm",
+    "capability.yield",
+    "capability.lowerZ",
+    "capability.upperZ",
+    ...calculation.factors.map((_, index) => `factors[${index}].contribution`),
+  ];
+  if (requiredOutputFields.some((outputField) => tracesByOutputField.get(outputField)?.length !== 1)) {
+    throw requestError(PREREQUISITE_SUMMARY, "prerequisite_not_ready");
+  }
+  const traceFor = (outputField: string) => tracesByOutputField.get(outputField) ?? [];
   const formulaFact = (
     statementId: string,
     section: string,

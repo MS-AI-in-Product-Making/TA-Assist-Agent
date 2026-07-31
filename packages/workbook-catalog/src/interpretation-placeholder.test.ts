@@ -1,6 +1,9 @@
 import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
-import { interpretationResultSchema } from "@ai-assist/contracts";
+import {
+  calculationCompletedResultSchema,
+  interpretationResultSchema,
+} from "@ai-assist/contracts";
 import { createCalculation } from "./calculation.js";
 import {
   createInterpretation,
@@ -303,6 +306,105 @@ describe("createInterpretation", () => {
     }));
 
     expect(error).toMatchObject({ code: "policy_denied" });
+  });
+
+  it("requires exactly one trace for every F5 formula output", () => {
+    const calculationResult = completedCalculation();
+    const requiredOutputFields = [
+      "capability.cpk",
+      "capability.cp",
+      "system.rssSigma",
+      "capability.totalDpm",
+      "capability.yield",
+      "capability.lowerZ",
+      "capability.upperZ",
+      ...calculationResult.factors.map((_, index) => `factors[${index}].contribution`),
+    ];
+
+    for (const outputField of requiredOutputFields) {
+      const incompleteCalculation = {
+        ...calculationResult,
+        traceRecords: calculationResult.traceRecords.filter((record) => record.outputField !== outputField),
+      };
+      expect(calculationCompletedResultSchema.safeParse(incompleteCalculation).success).toBe(true);
+
+      const error = captureThrown(() => createInterpretation({
+        contractVersion: "v1",
+        inputClassification: "confidential",
+        calculationResult: incompleteCalculation,
+      }));
+
+      expect(error).toMatchObject({
+        code: "prerequisite_not_ready",
+        affectedInputReferences: ["interpretation-request-v1"],
+      });
+      expect(error).not.toBeInstanceOf(TypeError);
+    }
+  });
+
+  it("rejects duplicate required traces without leaking trace markers", () => {
+    const calculationResult = completedCalculation();
+    const marker = "sensitive-duplicate-trace-marker";
+    const cpkTrace = calculationResult.traceRecords.find(({ outputField }) => outputField === "capability.cpk");
+    if (cpkTrace === undefined) throw new Error("expected capability.cpk trace fixture");
+    const ambiguousCalculation = {
+      ...calculationResult,
+      traceRecords: [
+        ...calculationResult.traceRecords,
+        { ...cpkTrace, sourceCells: [marker] },
+      ],
+    };
+    expect(calculationCompletedResultSchema.safeParse(ambiguousCalculation).success).toBe(true);
+
+    const error = captureThrown(() => createInterpretation({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      calculationResult: ambiguousCalculation,
+    }));
+
+    expect(error).toMatchObject({
+      code: "prerequisite_not_ready",
+      affectedInputReferences: ["interpretation-request-v1"],
+    });
+    expect(JSON.stringify(error)).not.toContain(marker);
+  });
+
+  it("converts an inputClassification getter failure to a safe typed validation error", () => {
+    const marker = "sensitive-getter-marker";
+    const request = Object.defineProperty({}, "inputClassification", {
+      get() {
+        throw new Error(marker);
+      },
+    });
+
+    const error = captureThrown(() => createInterpretation(request));
+
+    expect(error).toMatchObject({
+      code: "validation_error",
+      affectedInputReferences: ["interpretation-request-v1"],
+    });
+    expect(JSON.stringify(error)).not.toContain(marker);
+  });
+
+  it("converts a calculationResult getter failure to a safe typed validation error", () => {
+    const marker = "sensitive-calculation-getter-marker";
+    const request = Object.defineProperty({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+    }, "calculationResult", {
+      enumerable: true,
+      get() {
+        throw new Error(marker);
+      },
+    });
+
+    const error = captureThrown(() => createInterpretation(request));
+
+    expect(error).toMatchObject({
+      code: "validation_error",
+      affectedInputReferences: ["interpretation-request-v1"],
+    });
+    expect(JSON.stringify(error)).not.toContain(marker);
   });
 
   it("does not leak invalid input markers through typed validation errors", () => {
