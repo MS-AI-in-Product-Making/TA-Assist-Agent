@@ -998,16 +998,312 @@ describe("F3 drawing governance placeholder contracts", () => {
   });
 });
 
-describe("F5 interpretation placeholder contracts", () => {
-  const request = {
-    contractVersion: "v1",
-    inputClassification: "confidential",
+describe("F5.1 objective interpretation contracts", () => {
+  const contentHash = "c".repeat(64);
+
+  const calculationCompletedResult = {
+    contractVersion: "v1" as const,
+    outputClassification: "confidential" as const,
+    featureId: "F4" as const,
+    status: "completed" as const,
+    calculationVersion: "excel-ta-v1" as const,
     projectReference: "controlled-project-reference",
     runReference: "controlled-run-reference",
-    worksheetReferences: ["controlled-worksheet-reference"],
+    workbookContentHash: contentHash,
+    worksheetSelection: {
+      worksheetName: "Analysis-A",
+      tableId: "table-a",
+    },
+    factorCount: 1,
+    recommendation: {
+      method: "worst_case" as const,
+      reason: "factor_count_1_to_3" as const,
+      refer3d: false,
+      criticality: "none" as const,
+      criticalityRisk: false,
+    },
+    factors: [{
+      factorName: "Feature-A",
+      unit: "mm",
+      source: { worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 2 },
+      input: {
+        nominalValue: 12.45,
+        upperTolerance: 0.2,
+        lowerTolerance: -0.2,
+        longTermSafetyFactor: 1,
+        sigmaLevel: 4,
+        distribution: "normal" as const,
+      },
+      mean: 12.46,
+      halfTolerance: 0.2,
+      sigma: 0.05,
+      contribution: 1,
+      trace: {
+        formulaIds: ["factor-mean-v1", "factor-sigma-v1"],
+        sourceCells: ["Analysis-A!A2", "Analysis-A!B2"],
+      },
+    }],
+    system: {
+      designNominal: 12.5,
+      mean: 12.46,
+      additionalMeanShift: 0,
+      worstCaseUpper: 0.2,
+      worstCaseLower: -0.2,
+      rssSigma: 0.05,
+    },
+    capability: {
+      lowerSpecLimit: 12.1,
+      upperSpecLimit: 12.9,
+      targetSigmaLevel: 4,
+      targetCpk: 1.33,
+      cp: 2.6666666666666665,
+      lowerCpk: 2.4,
+      upperCpk: 2.933333333333333,
+      cpk: 2.4,
+      lowerZ: 7.2,
+      upperZ: 8.8,
+      lowerDpm: 0.1,
+      upperDpm: 0.2,
+      totalDpm: 0.30000000000000004,
+      outOfSpecRatio: 3.0000000000000004e-7,
+      yield: 0.9999997,
+      status: "PASS" as const,
+    },
+    traceRecords: [{
+      outputField: "capability.cpk",
+      formulaVersion: "excel-ta-v1" as const,
+      formulaId: "cpk-v1" as const,
+      sourceCells: ["capability.lowerCpk", "capability.upperCpk"],
+    }],
+    scenarios: [],
   };
 
-  const result = {
+  const request = {
+    contractVersion: "v1" as const,
+    inputClassification: "confidential" as const,
+    calculationResult: calculationCompletedResult,
+  };
+
+  const completedResult = {
+    contractVersion: "v1" as const,
+    outputClassification: "confidential" as const,
+    featureId: "F5.1" as const,
+    status: "completed" as const,
+    interpretationVersion: "objective-interpretation-v1" as const,
+    projectReference: calculationCompletedResult.projectReference,
+    runReference: calculationCompletedResult.runReference,
+    workbookContentHash: calculationCompletedResult.workbookContentHash,
+    worksheetSelection: calculationCompletedResult.worksheetSelection,
+    calculationVersion: calculationCompletedResult.calculationVersion,
+    knowledgeBaseVersion: "interpretation-rules-v1" as const,
+    ruleEvaluationStatus: "matched" as const,
+    statements: [
+      {
+        statementId: "fact-cpk",
+        type: "FACT" as const,
+        section: "capability-vs-specification" as const,
+        content: {
+          metric: "cpk" as const,
+          value: 2.4,
+          unit: "ratio",
+        },
+        outputField: "capability.cpk",
+        trace: {
+          formulaVersion: "excel-ta-v1" as const,
+          formulaId: "cpk-v1" as const,
+          sourceCells: ["capability.lowerCpk", "capability.upperCpk"],
+        },
+      },
+      {
+        statementId: "fact-cp",
+        type: "FACT" as const,
+        section: "capability-vs-specification" as const,
+        content: {
+          metric: "cp" as const,
+          value: 2.6666666666666665,
+          unit: "ratio",
+        },
+        outputField: "capability.cp",
+        trace: {
+          formulaVersion: "excel-ta-v1" as const,
+          formulaId: "cp-v1" as const,
+          sourceCells: ["capability.upperSpecLimit", "capability.lowerSpecLimit", "system.rssSigma"],
+        },
+      },
+      {
+        statementId: "fact-rss-sigma",
+        type: "FACT" as const,
+        section: "calculation-summary" as const,
+        content: {
+          metric: "rss_sigma" as const,
+          value: 0.05,
+          unit: "mm",
+        },
+        outputField: "system.rssSigma",
+        trace: {
+          formulaVersion: "excel-ta-v1" as const,
+          formulaId: "rss-v1" as const,
+          sourceCells: ["factors[0].sigma"],
+        },
+      },
+      {
+        statementId: "fact-total-dpm",
+        type: "FACT" as const,
+        section: "capability-vs-specification" as const,
+        content: {
+          metric: "total_dpm" as const,
+          value: 0.30000000000000004,
+          unit: "dpm",
+        },
+        outputField: "capability.totalDpm",
+        trace: {
+          formulaVersion: "excel-ta-v1" as const,
+          formulaId: "dpm-total-v1" as const,
+          sourceCells: ["capability.lowerDpm", "capability.upperDpm"],
+        },
+      },
+      {
+        statementId: "fact-yield",
+        type: "FACT" as const,
+        section: "capability-vs-specification" as const,
+        content: {
+          metric: "yield" as const,
+          value: 0.9999997,
+          unit: "ratio",
+        },
+        outputField: "capability.yield",
+        trace: {
+          formulaVersion: "excel-ta-v1" as const,
+          formulaId: "yield-v1" as const,
+          sourceCells: ["capability.outOfSpecRatio"],
+        },
+      },
+      {
+        statementId: "fact-lsl",
+        type: "FACT" as const,
+        section: "capability-vs-specification" as const,
+        content: {
+          metric: "lower_spec_limit" as const,
+          value: 12.1,
+          unit: "mm",
+        },
+        outputField: "capability.lowerSpecLimit",
+        trace: {
+          formulaVersion: "excel-ta-v1" as const,
+          formulaId: "status-v1" as const,
+          sourceCells: ["capability.lowerSpecLimit"],
+        },
+      },
+      {
+        statementId: "fact-usl",
+        type: "FACT" as const,
+        section: "capability-vs-specification" as const,
+        content: {
+          metric: "upper_spec_limit" as const,
+          value: 12.9,
+          unit: "mm",
+        },
+        outputField: "capability.upperSpecLimit",
+        trace: {
+          formulaVersion: "excel-ta-v1" as const,
+          formulaId: "status-v1" as const,
+          sourceCells: ["capability.upperSpecLimit"],
+        },
+      },
+      {
+        statementId: "fact-recommended-method",
+        type: "FACT" as const,
+        section: "calculation-summary" as const,
+        content: {
+          metric: "recommended_method" as const,
+          method: "worst_case" as const,
+          reason: "factor_count_1_to_3" as const,
+          refer3d: false,
+          criticality: "none" as const,
+          criticalityRisk: false,
+        },
+        outputField: "recommendation.method",
+        trace: {
+          formulaVersion: "excel-ta-v1" as const,
+          formulaId: "status-v1" as const,
+          sourceCells: ["recommendation.method"],
+        },
+      },
+      {
+        statementId: "fact-factor-contribution",
+        type: "FACT" as const,
+        section: "major-contributors" as const,
+        content: {
+          metric: "factor_contribution" as const,
+          factorReference: "Analysis-A/table-a/2",
+          contributionPercent: 100,
+          unit: "%",
+        },
+        outputField: "factors[0].contribution",
+        trace: {
+          formulaVersion: "excel-ta-v1" as const,
+          formulaId: "contribution-v1" as const,
+          sourceCells: ["factors[0].sigma", "system.rssSigma"],
+        },
+      },
+      {
+        statementId: "rule-performance",
+        type: "RULE" as const,
+        section: "capability-vs-specification" as const,
+        content: {
+          entryId: "rule-cpk-target",
+          relatedFactReferences: ["fact-cpk"],
+          evidence: {
+            sourceAlias: "kb-performance",
+            sheetName: "Rules",
+            sourceRange: "A2:B2",
+            sourceFileHash: contentHash,
+          },
+        },
+      },
+      {
+        statementId: "signal-contribution",
+        type: "SIGNAL" as const,
+        section: "structural-evidence" as const,
+        content: {
+          entryId: "signal-major-contribution",
+          relatedFactReferences: ["fact-factor-contribution"],
+          evidence: {
+            sourceAlias: "kb-signal",
+            sheetName: "Rules",
+            sourceRange: "C3:D3",
+            sourceFileHash: contentHash,
+          },
+          requiresEngineeringReview: true,
+        },
+      },
+      {
+        statementId: "option-follow-up",
+        type: "OPTION" as const,
+        section: "parallel-options" as const,
+        content: {
+          entryId: "option-tighten-process",
+          relatedFactReferences: ["fact-cpk", "fact-factor-contribution"],
+          evidence: {
+            sourceAlias: "kb-option",
+            sheetName: "Rules",
+            sourceRange: "E4:F4",
+            sourceFileHash: contentHash,
+          },
+          rank: null,
+        },
+      },
+    ],
+    clarifications: [
+      {
+        clarificationId: "clarify-drawing-evidence",
+        reasonCode: "drawing_evidence_not_evaluated",
+        message: "Drawing chain evidence is outside F5.1 scope.",
+      },
+    ],
+  };
+
+  const legacyUnavailableResult = {
     contractVersion: "v1",
     outputClassification: "confidential",
     featureId: "F5",
@@ -1018,15 +1314,54 @@ describe("F5 interpretation placeholder contracts", () => {
     requiredPrerequisites: ["approved-knowledge-base"],
   };
 
-  it("accepts only confidential controlled references and a fixed unavailable result", () => {
+  it("accepts strict confidential request with completed F4 result and completed F5.1 result", () => {
     expect(interpretationRequestSchema.parse(request)).toEqual(request);
-    expect(interpretationResultSchema.parse(result)).toEqual(result);
+    expect(interpretationResultSchema.parse(completedResult)).toEqual(completedResult);
   });
 
-  it("rejects public classification, unknown fields, and altered prerequisites", () => {
+  it("keeps backward compatibility for legacy unavailable interpretation result", () => {
+    expect(interpretationResultSchema.parse(legacyUnavailableResult)).toEqual(legacyUnavailableResult);
+  });
+
+  it("rejects public input, unknown fields, and legacy unavailable calculation input", () => {
     expect(interpretationRequestSchema.safeParse({ ...request, inputClassification: "public" }).success).toBe(false);
     expect(interpretationRequestSchema.safeParse({ ...request, unexpected: true }).success).toBe(false);
-    expect(interpretationResultSchema.safeParse({ ...result, requiredPrerequisites: [] }).success).toBe(false);
+    expect(interpretationRequestSchema.safeParse({
+      ...request,
+      calculationResult: {
+        contractVersion: "v1",
+        outputClassification: "confidential",
+        featureId: "F4",
+        status: "feature_not_available",
+        projectReference: "controlled-project-reference",
+        runReference: "controlled-run-reference",
+        worksheetReferences: ["controlled-worksheet-reference"],
+        requiredPrerequisites: ["approved-template-regression", "approved-windows-excel-worker"],
+      },
+    }).success).toBe(false);
+  });
+
+  it("rejects RULE without evidence, SIGNAL with invalid review flag, and OPTION with numeric rank", () => {
+    const ruleWithoutEvidence = structuredClone(completedResult);
+    (ruleWithoutEvidence.statements[9] as { content: Record<string, unknown> }).content = {
+      entryId: "rule-cpk-target",
+      relatedFactReferences: ["fact-cpk"],
+    };
+    expect(interpretationResultSchema.safeParse(ruleWithoutEvidence).success).toBe(false);
+
+    const signalWithWrongFlag = structuredClone(completedResult);
+    (signalWithWrongFlag.statements[10] as { content: Record<string, unknown> }).content = {
+      ...(signalWithWrongFlag.statements[10] as { content: Record<string, unknown> }).content,
+      requiresEngineeringReview: false,
+    };
+    expect(interpretationResultSchema.safeParse(signalWithWrongFlag).success).toBe(false);
+
+    const optionWithNumericRank = structuredClone(completedResult);
+    (optionWithNumericRank.statements[11] as { content: Record<string, unknown> }).content = {
+      ...(optionWithNumericRank.statements[11] as { content: Record<string, unknown> }).content,
+      rank: 1,
+    };
+    expect(interpretationResultSchema.safeParse(optionWithNumericRank).success).toBe(false);
   });
 });
 

@@ -1947,17 +1947,206 @@ export const drawingGovernanceResultSchema = z
 
 const controlledInterpretationReferenceSchema = z.string().min(1);
 
+const interpretationSectionSchema = z.enum([
+  "calculation-summary",
+  "capability-vs-specification",
+  "major-contributors",
+  "structural-evidence",
+  "parallel-options",
+]);
+
+const interpretationFactTraceSchema = z
+  .object({
+    formulaVersion: z.literal("excel-ta-v1"),
+    formulaId: z.enum([
+      "factor-mean-v1",
+      "factor-half-tolerance-v1",
+      "factor-sigma-v1",
+      "system-mean-v1",
+      "worst-case-v1",
+      "rss-v1",
+      "contribution-v1",
+      "cp-v1",
+      "cpk-lower-v1",
+      "cpk-upper-v1",
+      "cpk-v1",
+      "z-lower-v1",
+      "z-upper-v1",
+      "dpm-lower-v1",
+      "dpm-upper-v1",
+      "dpm-total-v1",
+      "yield-v1",
+      "status-v1",
+    ]),
+    sourceCells: z.array(z.string().min(1)).min(1),
+  })
+  .strict();
+
+const interpretationNumericFactContentSchema = z
+  .object({
+    metric: z.enum([
+      "cpk",
+      "cp",
+      "rss_sigma",
+      "total_dpm",
+      "yield",
+      "lower_spec_limit",
+      "upper_spec_limit",
+    ]),
+    value: z.number().finite(),
+    unit: z.string().min(1).optional(),
+  })
+  .strict();
+
+const interpretationRecommendedMethodFactContentSchema = z
+  .object({
+    metric: z.literal("recommended_method"),
+    method: calculationMethodSchema,
+    reason: z.enum([
+      "factor_count_1_to_3",
+      "factor_count_4_to_10",
+      "factor_count_over_10",
+      "criticality_override",
+    ]),
+    refer3d: z.boolean(),
+    criticality: calculationCriticalitySchema,
+    criticalityRisk: z.boolean(),
+  })
+  .strict();
+
+const interpretationFactorContributionFactContentSchema = z
+  .object({
+    metric: z.literal("factor_contribution"),
+    factorReference: z.string().min(1),
+    contributionPercent: z.number().finite().min(0).max(100),
+    unit: z.string().min(1).optional(),
+  })
+  .strict();
+
+const interpretationFactContentSchema = z.union([
+  interpretationNumericFactContentSchema,
+  interpretationRecommendedMethodFactContentSchema,
+  interpretationFactorContributionFactContentSchema,
+]);
+
+const interpretationRuleStatementEvidenceSchema = z
+  .object({
+    sourceAlias: z.string().min(1),
+    sheetName: z.string().min(1),
+    sourceRange: z.string().regex(/^[A-Z]+[1-9]\d*:[A-Z]+[1-9]\d*$/),
+    sourceFileHash: sha256Schema,
+  })
+  .strict();
+
+const interpretationRuleStatementContentSchema = z
+  .object({
+    entryId: z.string().min(1),
+    relatedFactReferences: z.array(z.string().min(1)).min(1),
+    evidence: interpretationRuleStatementEvidenceSchema,
+  })
+  .strict();
+
+const interpretationSignalStatementContentSchema = z
+  .object({
+    ...interpretationRuleStatementContentSchema.shape,
+    requiresEngineeringReview: z.literal(true),
+  })
+  .strict();
+
+const interpretationOptionStatementContentSchema = z
+  .object({
+    ...interpretationRuleStatementContentSchema.shape,
+    rank: z.null(),
+  })
+  .strict();
+
+const interpretationFactStatementSchema = z
+  .object({
+    statementId: z.string().min(1),
+    type: z.literal("FACT"),
+    section: interpretationSectionSchema,
+    content: interpretationFactContentSchema,
+    outputField: z.string().min(1),
+    trace: interpretationFactTraceSchema,
+  })
+  .strict();
+
+const interpretationRuleStatementSchema = z
+  .object({
+    statementId: z.string().min(1),
+    type: z.literal("RULE"),
+    section: interpretationSectionSchema,
+    content: interpretationRuleStatementContentSchema,
+  })
+  .strict();
+
+const interpretationSignalStatementSchema = z
+  .object({
+    statementId: z.string().min(1),
+    type: z.literal("SIGNAL"),
+    section: interpretationSectionSchema,
+    content: interpretationSignalStatementContentSchema,
+  })
+  .strict();
+
+const interpretationOptionStatementSchema = z
+  .object({
+    statementId: z.string().min(1),
+    type: z.literal("OPTION"),
+    section: interpretationSectionSchema,
+    content: interpretationOptionStatementContentSchema,
+  })
+  .strict();
+
+const interpretationStatementSchema = z.discriminatedUnion("type", [
+  interpretationFactStatementSchema,
+  interpretationRuleStatementSchema,
+  interpretationSignalStatementSchema,
+  interpretationOptionStatementSchema,
+]);
+
+const interpretationClarificationSchema = z
+  .object({
+    clarificationId: z.string().min(1),
+    reasonCode: z.enum([
+      "drawing_evidence_not_evaluated",
+      "rule_method_not_applicable",
+      "rule_facts_insufficient",
+      "three_dimensional_follow_up_required",
+    ]),
+    message: z.string().min(1),
+    relatedFactReferences: z.array(z.string().min(1)).optional(),
+  })
+  .strict();
+
 export const interpretationRequestSchema = z
   .object({
     contractVersion: contractVersionSchema,
     inputClassification: z.literal("confidential"),
-    projectReference: controlledInterpretationReferenceSchema,
-    runReference: controlledInterpretationReferenceSchema,
-    worksheetReferences: z.array(controlledInterpretationReferenceSchema),
+    calculationResult: calculationCompletedResultSchema,
   })
   .strict();
 
-export const interpretationResultSchema = z
+const interpretationCompletedResultSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    outputClassification: z.literal("confidential"),
+    featureId: z.literal("F5.1"),
+    status: z.literal("completed"),
+    interpretationVersion: z.literal("objective-interpretation-v1"),
+    projectReference: controlledInterpretationReferenceSchema,
+    runReference: controlledInterpretationReferenceSchema,
+    workbookContentHash: sha256Schema,
+    worksheetSelection: calculationWorksheetSelectionSchema,
+    calculationVersion: z.literal("excel-ta-v1"),
+    knowledgeBaseVersion: z.literal("interpretation-rules-v1"),
+    ruleEvaluationStatus: z.enum(["matched", "insufficient-facts", "not-applicable"]),
+    statements: z.array(interpretationStatementSchema),
+    clarifications: z.array(interpretationClarificationSchema),
+  })
+  .strict();
+
+const interpretationLegacyUnavailableResultSchema = z
   .object({
     contractVersion: contractVersionSchema,
     outputClassification: z.literal("confidential"),
@@ -1969,6 +2158,11 @@ export const interpretationResultSchema = z
     requiredPrerequisites: z.tuple([z.literal("approved-knowledge-base")]),
   })
   .strict();
+
+export const interpretationResultSchema = z.union([
+  interpretationCompletedResultSchema,
+  interpretationLegacyUnavailableResultSchema,
+]);
 
 const controlledComparisonReferenceSchema = z.string().min(1);
 
