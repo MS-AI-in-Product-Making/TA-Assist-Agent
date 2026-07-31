@@ -1334,6 +1334,14 @@ describe("F5.1 objective interpretation contracts", () => {
         clarificationId: "clarify-drawing-evidence",
         reasonCode: "drawing_evidence_not_evaluated",
         message: "Drawing chain evidence is outside F5.1 scope.",
+        scopes: [
+          "tolerance_loop_closure",
+          "datum_chain",
+          "assembly_datum_face",
+          "stack_start",
+          "direction",
+          "cross_subsystem",
+        ],
       },
     ],
   };
@@ -1428,6 +1436,51 @@ describe("F5.1 objective interpretation contracts", () => {
 
       expect(interpretationResultSchema.safeParse(result).success).toBe(false);
     }
+  });
+
+  it("requires drawing evidence scopes as the complete stable enum sequence", () => {
+    const scopes = [
+      "tolerance_loop_closure",
+      "datum_chain",
+      "assembly_datum_face",
+      "stack_start",
+      "direction",
+      "cross_subsystem",
+    ] as const;
+    const drawingClarification = completedResult.clarifications[0]!;
+    expect(drawingClarification.scopes).toEqual(scopes);
+
+    for (const invalidScopes of [
+      scopes.slice(1),
+      [...scopes].reverse(),
+      [...scopes.slice(0, -1), "unsupported_scope"],
+    ]) {
+      const result = structuredClone(completedResult);
+      (result.clarifications[0] as { scopes: unknown }).scopes = invalidScopes;
+      expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+    }
+
+    const resultWithoutScopes = structuredClone(completedResult);
+    delete (resultWithoutScopes.clarifications[0] as { scopes?: unknown }).scopes;
+    expect(interpretationResultSchema.safeParse(resultWithoutScopes).success).toBe(false);
+  });
+
+  it("requires insufficient-facts clarifications to carry the missing rule facts", () => {
+    const result = structuredClone(completedResult);
+    result.ruleEvaluationStatus = "insufficient-facts";
+    result.statements = result.statements.filter((statement) => statement.type === "FACT");
+    result.clarifications.push({
+      clarificationId: "clarify-insufficient-facts",
+      reasonCode: "rule_facts_insufficient",
+      message: "Rule evaluation requires additional facts.",
+      missingFacts: ["targetCpk", "targetSigma"],
+    });
+
+    expect(interpretationResultSchema.parse(result)).toEqual(result);
+
+    const withoutMissingFacts = structuredClone(result);
+    delete (withoutMissingFacts.clarifications[1] as { missingFacts?: unknown }).missingFacts;
+    expect(interpretationResultSchema.safeParse(withoutMissingFacts).success).toBe(false);
   });
 
   it("rejects legacy FACT trace placement outside content", () => {

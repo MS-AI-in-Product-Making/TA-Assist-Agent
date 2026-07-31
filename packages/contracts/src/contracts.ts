@@ -2139,19 +2139,49 @@ const interpretationStatementSchema = z.discriminatedUnion("type", [
   interpretationOptionStatementSchema,
 ]);
 
-const interpretationClarificationSchema = z
-  .object({
-    clarificationId: z.string().min(1),
-    reasonCode: z.enum([
-      "drawing_evidence_not_evaluated",
-      "rule_method_not_applicable",
-      "rule_facts_insufficient",
-      "three_dimensional_follow_up_required",
-    ]),
-    message: z.string().min(1),
-    relatedFactReferences: z.array(z.string().min(1)).optional(),
-  })
-  .strict();
+const interpretationClarificationFields = {
+  clarificationId: z.string().min(1),
+  message: z.string().min(1),
+  relatedFactReferences: z.array(z.string().min(1)).optional(),
+};
+
+const drawingEvidenceScopes = [
+  "tolerance_loop_closure",
+  "datum_chain",
+  "assembly_datum_face",
+  "stack_start",
+  "direction",
+  "cross_subsystem",
+] as const;
+
+const drawingEvidenceScopesSchema = z
+  .array(z.enum(drawingEvidenceScopes))
+  .length(drawingEvidenceScopes.length)
+  .refine(
+    (scopes) => scopes.every((scope, index) => scope === drawingEvidenceScopes[index]),
+    "drawing evidence scopes must use the complete stable sequence",
+  );
+
+const interpretationClarificationSchema = z.discriminatedUnion("reasonCode", [
+  z.object({
+    ...interpretationClarificationFields,
+    reasonCode: z.literal("drawing_evidence_not_evaluated"),
+    scopes: drawingEvidenceScopesSchema,
+  }).strict(),
+  z.object({
+    ...interpretationClarificationFields,
+    reasonCode: z.literal("rule_method_not_applicable"),
+  }).strict(),
+  z.object({
+    ...interpretationClarificationFields,
+    reasonCode: z.literal("rule_facts_insufficient"),
+    missingFacts: z.array(interpretationFactReferenceSchema).min(1),
+  }).strict(),
+  z.object({
+    ...interpretationClarificationFields,
+    reasonCode: z.literal("three_dimensional_follow_up_required"),
+  }).strict(),
+]);
 
 export const interpretationRequestSchema = z
   .object({

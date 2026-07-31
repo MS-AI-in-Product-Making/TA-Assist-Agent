@@ -33,7 +33,12 @@ function createResult(value: unknown): InterpretationResult {
   return deepFreeze(structuredClone(parsed.data));
 }
 
-export function createInterpretation(request: unknown): InterpretationResult {
+type InterpretationRuleLoader = typeof loadInterpretationRules;
+
+function createInterpretationWithRules(
+  request: unknown,
+  loadRules: InterpretationRuleLoader,
+): InterpretationResult {
   let classification: unknown;
   try {
     classification = (request as { inputClassification?: unknown })?.inputClassification;
@@ -135,7 +140,7 @@ export function createInterpretation(request: unknown): InterpretationResult {
   ];
 
   const evaluation = calculation.recommendation.method === "rss_1d"
-    ? loadInterpretationRules({ version: "interpretation-rules-v1" })
+    ? loadRules({ version: "interpretation-rules-v1" })
       .evaluateInterpretationRules({
         analysisDimension: "one-dimensional",
         method: "rss",
@@ -205,11 +210,25 @@ export function createInterpretation(request: unknown): InterpretationResult {
         clarificationId: "clarification-drawing-evidence-not-evaluated",
         reasonCode: "drawing_evidence_not_evaluated",
         message: "Drawing and structural evidence were not evaluated.",
+        scopes: [
+          "tolerance_loop_closure",
+          "datum_chain",
+          "assembly_datum_face",
+          "stack_start",
+          "direction",
+          "cross_subsystem",
+        ],
       },
       ...(evaluation.status === "not-applicable" ? [{
         clarificationId: "clarification-rule-method-not-applicable",
         reasonCode: "rule_method_not_applicable",
         message: "The recommended calculation method is outside the RSS interpretation rule scope.",
+      }] : []),
+      ...(evaluation.status === "insufficient-facts" ? [{
+        clarificationId: "clarification-rule-facts-insufficient",
+        reasonCode: "rule_facts_insufficient",
+        message: "The interpretation rules require additional calculation facts.",
+        missingFacts: evaluation.missingFacts,
       }] : []),
       ...(calculation.recommendation.method === "refer_3d_variation_analysis" ? [{
         clarificationId: "clarification-three-dimensional-follow-up-required",
@@ -218,6 +237,18 @@ export function createInterpretation(request: unknown): InterpretationResult {
       }] : []),
     ],
   });
+}
+
+export function createInterpretationService({
+  loadRules = loadInterpretationRules,
+}: { loadRules?: InterpretationRuleLoader } = {}): (request: unknown) => InterpretationResult {
+  return (request) => createInterpretationWithRules(request, loadRules);
+}
+
+const defaultInterpretationService = createInterpretationService();
+
+export function createInterpretation(request: unknown): InterpretationResult {
+  return defaultInterpretationService(request);
 }
 
 export const createInterpretationPlaceholder = createInterpretation;

@@ -2,7 +2,11 @@ import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { interpretationResultSchema } from "@ai-assist/contracts";
 import { createCalculation } from "./calculation.js";
-import { createInterpretation, createInterpretationPlaceholder } from "./interpretation-placeholder.js";
+import {
+  createInterpretation,
+  createInterpretationPlaceholder,
+  createInterpretationService,
+} from "./interpretation-placeholder.js";
 
 const CONTENT_HASH = "a".repeat(64);
 
@@ -187,7 +191,17 @@ describe("createInterpretation", () => {
     }
     expect(new Set(result.statements.map(({ statementId }) => statementId)).size).toBe(result.statements.length);
     expect(result.clarifications).toEqual(expect.arrayContaining([
-      expect.objectContaining({ reasonCode: "drawing_evidence_not_evaluated" }),
+      expect.objectContaining({
+        reasonCode: "drawing_evidence_not_evaluated",
+        scopes: [
+          "tolerance_loop_closure",
+          "datum_chain",
+          "assembly_datum_face",
+          "stack_start",
+          "direction",
+          "cross_subsystem",
+        ],
+      }),
     ]));
     expect(interpretationResultSchema.parse(result)).toEqual(result);
     expectDeeplyFrozen(result);
@@ -211,6 +225,36 @@ describe("createInterpretation", () => {
     expect(result.ruleEvaluationStatus).toBe("matched");
     expect(result.statements.some(({ type }) => type === "RULE")).toBe(true);
     expect(result.statements.some(({ type }) => type === "SIGNAL" || type === "OPTION")).toBe(false);
+  });
+
+  it("maps insufficient rule facts to a clarification without derived statements", () => {
+    const interpret = createInterpretationService({
+      loadRules: () => ({
+        evaluateInterpretationRules: () => ({
+          knowledgeBaseVersion: "interpretation-rules-v1" as const,
+          status: "insufficient-facts" as const,
+          resolvedTargets: {},
+          factsUsed: ["cpk" as const],
+          matchedRules: [],
+          missingFacts: ["targetCpk" as const, "targetSigma" as const],
+        }),
+      }),
+    });
+
+    const result = interpret({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      calculationResult: completedCalculation(),
+    });
+    if (result.status !== "completed") throw new Error("expected completed interpretation");
+
+    expect(result.ruleEvaluationStatus).toBe("insufficient-facts");
+    expect(result.statements.every(({ type }) => type === "FACT")).toBe(true);
+    expect(result.clarifications).toEqual(expect.arrayContaining([expect.objectContaining({
+      reasonCode: "rule_facts_insufficient",
+      missingFacts: ["targetCpk", "targetSigma"],
+    })]));
+    expect(interpretationResultSchema.parse(result)).toEqual(result);
   });
 
   it("keeps WC facts without applying RSS rules", () => {
