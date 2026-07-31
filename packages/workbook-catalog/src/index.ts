@@ -11,7 +11,7 @@ export { createIdentifierQualityCheck } from "./identifier-quality-check.js";
 export { createUnifiedExceptionResolution } from "./unified-exception-resolution.js";
 export { createCalculation } from "./calculation.js";
 export { createDrawingGovernancePlaceholder } from "./drawing-governance-placeholder.js";
-export { createInterpretationPlaceholder } from "./interpretation-placeholder.js";
+export { createInterpretation, createInterpretationPlaceholder } from "./interpretation-placeholder.js";
 export { createComparisonPlaceholder } from "./comparison-placeholder.js";
 export { createCpkPlaceholder } from "./cpk-placeholder.js";
 export type {
