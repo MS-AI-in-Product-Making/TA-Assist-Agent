@@ -998,16 +998,367 @@ describe("F3 drawing governance placeholder contracts", () => {
   });
 });
 
-describe("F5 interpretation placeholder contracts", () => {
-  const request = {
-    contractVersion: "v1",
-    inputClassification: "confidential",
+describe("F5.1 objective interpretation contracts", () => {
+  const contentHash = "c".repeat(64);
+
+  const calculationCompletedResult = {
+    contractVersion: "v1" as const,
+    outputClassification: "confidential" as const,
+    featureId: "F4" as const,
+    status: "completed" as const,
+    calculationVersion: "excel-ta-v1" as const,
     projectReference: "controlled-project-reference",
     runReference: "controlled-run-reference",
-    worksheetReferences: ["controlled-worksheet-reference"],
+    workbookContentHash: contentHash,
+    worksheetSelection: {
+      worksheetName: "Analysis-A",
+      tableId: "table-a",
+    },
+    factorCount: 1,
+    recommendation: {
+      method: "worst_case" as const,
+      reason: "factor_count_1_to_3" as const,
+      refer3d: false,
+      criticality: "none" as const,
+      criticalityRisk: false,
+    },
+    factors: [{
+      factorName: "Feature-A",
+      unit: "mm",
+      source: { worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 2 },
+      input: {
+        nominalValue: 12.45,
+        upperTolerance: 0.2,
+        lowerTolerance: -0.2,
+        longTermSafetyFactor: 1,
+        sigmaLevel: 4,
+        distribution: "normal" as const,
+      },
+      mean: 12.46,
+      halfTolerance: 0.2,
+      sigma: 0.05,
+      contribution: 1,
+      trace: {
+        formulaIds: ["factor-mean-v1", "factor-sigma-v1"],
+        sourceCells: ["Analysis-A!A2", "Analysis-A!B2"],
+      },
+    }],
+    system: {
+      designNominal: 12.5,
+      mean: 12.46,
+      additionalMeanShift: 0,
+      worstCaseUpper: 0.2,
+      worstCaseLower: -0.2,
+      rssSigma: 0.05,
+    },
+    capability: {
+      lowerSpecLimit: 12.1,
+      upperSpecLimit: 12.9,
+      targetSigmaLevel: 4,
+      targetCpk: 1.33,
+      cp: 2.6666666666666665,
+      lowerCpk: 2.4,
+      upperCpk: 2.933333333333333,
+      cpk: 2.4,
+      lowerZ: 7.2,
+      upperZ: 8.8,
+      lowerDpm: 0.1,
+      upperDpm: 0.2,
+      totalDpm: 0.30000000000000004,
+      outOfSpecRatio: 3.0000000000000004e-7,
+      yield: 0.9999997,
+      status: "PASS" as const,
+    },
+    traceRecords: [{
+      outputField: "capability.cpk",
+      formulaVersion: "excel-ta-v1" as const,
+      formulaId: "cpk-v1" as const,
+      sourceCells: ["capability.lowerCpk", "capability.upperCpk"],
+    }],
+    scenarios: [],
   };
 
-  const result = {
+  const request = {
+    contractVersion: "v1" as const,
+    inputClassification: "confidential" as const,
+    calculationResult: calculationCompletedResult,
+  };
+
+  const completedResult = {
+    contractVersion: "v1" as const,
+    outputClassification: "confidential" as const,
+    featureId: "F5.1" as const,
+    status: "completed" as const,
+    interpretationVersion: "objective-interpretation-v1" as const,
+    projectReference: calculationCompletedResult.projectReference,
+    runReference: calculationCompletedResult.runReference,
+    workbookContentHash: calculationCompletedResult.workbookContentHash,
+    worksheetSelection: calculationCompletedResult.worksheetSelection,
+    calculationVersion: calculationCompletedResult.calculationVersion,
+    knowledgeBaseVersion: "interpretation-rules-v1" as const,
+    ruleEvaluationStatus: "matched" as const,
+    statements: [
+      {
+        statementId: "fact-cpk",
+        type: "FACT" as const,
+        section: "capability-vs-specification" as const,
+        content: {
+          metric: "cpk" as const,
+          value: 2.4,
+          unit: "ratio",
+          provenanceKind: "formula_output" as const,
+          outputField: "capability.cpk",
+          traceRecords: [{
+            outputField: "capability.cpk",
+            formulaVersion: "excel-ta-v1" as const,
+            formulaId: "cpk-v1" as const,
+            sourceCells: ["capability.lowerCpk", "capability.upperCpk"],
+          }],
+        },
+      },
+      {
+        statementId: "fact-cp",
+        type: "FACT" as const,
+        section: "calculation-summary" as const,
+        content: {
+          metric: "cp" as const,
+          value: 2.6666666666666665,
+          unit: "ratio",
+          provenanceKind: "formula_output" as const,
+          outputField: "capability.cp",
+          traceRecords: [{
+            outputField: "capability.cp",
+            formulaVersion: "excel-ta-v1" as const,
+            formulaId: "cp-v1" as const,
+            sourceCells: ["capability.upperSpecLimit", "capability.lowerSpecLimit", "system.rssSigma"],
+          }],
+        },
+      },
+      {
+        statementId: "fact-rss-sigma",
+        type: "FACT" as const,
+        section: "calculation-summary" as const,
+        content: {
+          metric: "rss_sigma" as const,
+          value: 0.05,
+          unit: "mm",
+          provenanceKind: "formula_output" as const,
+          outputField: "system.rssSigma",
+          traceRecords: [{
+            outputField: "system.rssSigma",
+            formulaVersion: "excel-ta-v1" as const,
+            formulaId: "rss-v1" as const,
+            sourceCells: ["factors[0].sigma"],
+          }],
+        },
+      },
+      {
+        statementId: "fact-total-dpm",
+        type: "FACT" as const,
+        section: "calculation-summary" as const,
+        content: {
+          metric: "total_dpm" as const,
+          value: 0.30000000000000004,
+          unit: "dpm",
+          provenanceKind: "formula_output" as const,
+          outputField: "capability.totalDpm",
+          traceRecords: [{
+            outputField: "capability.totalDpm",
+            formulaVersion: "excel-ta-v1" as const,
+            formulaId: "dpm-total-v1" as const,
+            sourceCells: ["capability.lowerDpm", "capability.upperDpm"],
+          }],
+        },
+      },
+      {
+        statementId: "fact-yield",
+        type: "FACT" as const,
+        section: "calculation-summary" as const,
+        content: {
+          metric: "yield" as const,
+          value: 0.9999997,
+          unit: "ratio",
+          provenanceKind: "formula_output" as const,
+          outputField: "capability.yield",
+          traceRecords: [{
+            outputField: "capability.yield",
+            formulaVersion: "excel-ta-v1" as const,
+            formulaId: "yield-v1" as const,
+            sourceCells: ["capability.outOfSpecRatio"],
+          }],
+        },
+      },
+      {
+        statementId: "fact-lsl",
+        type: "FACT" as const,
+        section: "capability-vs-specification" as const,
+        content: {
+          metric: "lower_spec_limit" as const,
+          value: 12.1,
+          unit: "mm",
+          provenanceKind: "calculation_input" as const,
+          inputField: "capability.lowerSpecLimit" as const,
+        },
+      },
+      {
+        statementId: "fact-usl",
+        type: "FACT" as const,
+        section: "capability-vs-specification" as const,
+        content: {
+          metric: "upper_spec_limit" as const,
+          value: 12.9,
+          unit: "mm",
+          provenanceKind: "calculation_input" as const,
+          inputField: "capability.upperSpecLimit" as const,
+        },
+      },
+      {
+        statementId: "fact-recommended-method",
+        type: "FACT" as const,
+        section: "calculation-summary" as const,
+        content: {
+          metric: "recommended_method" as const,
+          method: "worst_case" as const,
+          reason: "factor_count_1_to_3" as const,
+          refer3d: false,
+          criticality: "none" as const,
+          criticalityRisk: false,
+          provenanceKind: "calculation_input" as const,
+          inputField: "recommendation.method" as const,
+        },
+      },
+      {
+        statementId: "fact-factor-contribution",
+        type: "FACT" as const,
+        section: "major-contributors" as const,
+        content: {
+          metric: "factor_contribution" as const,
+          factorReference: "Analysis-A/table-a/2",
+          contributionPercent: 100,
+          unit: "%",
+          provenanceKind: "formula_output" as const,
+          outputField: "factors[0].contribution",
+          traceRecords: [{
+            outputField: "factors[0].contribution",
+            formulaVersion: "excel-ta-v1" as const,
+            formulaId: "contribution-v1" as const,
+            sourceCells: ["factors[0].sigma", "system.rssSigma"],
+          }],
+        },
+      },
+      {
+        statementId: "fact-target-cpk",
+        type: "FACT" as const,
+        section: "capability-vs-specification" as const,
+        content: {
+          metric: "target_cpk" as const,
+          value: 1.33,
+          unit: "ratio",
+          provenanceKind: "calculation_input" as const,
+          inputField: "capability.targetCpk" as const,
+        },
+      },
+      {
+        statementId: "fact-target-sigma",
+        type: "FACT" as const,
+        section: "calculation-summary" as const,
+        content: {
+          metric: "target_sigma" as const,
+          value: 4,
+          unit: "sigma",
+          provenanceKind: "calculation_input" as const,
+          inputField: "capability.targetSigmaLevel" as const,
+        },
+      },
+      {
+        statementId: "fact-achieved-sigma",
+        type: "FACT" as const,
+        section: "calculation-summary" as const,
+        content: {
+          metric: "achieved_sigma" as const,
+          value: 7.2,
+          unit: "sigma",
+          provenanceKind: "derived_from_formula_outputs" as const,
+          sourceOutputFields: ["capability.lowerZ", "capability.upperZ"] as const,
+          traceRecords: [{
+            outputField: "capability.lowerZ",
+            formulaVersion: "excel-ta-v1" as const,
+            formulaId: "z-lower-v1" as const,
+            sourceCells: ["system.mean", "capability.lowerSpecLimit", "system.rssSigma"],
+          }, {
+            outputField: "capability.upperZ",
+            formulaVersion: "excel-ta-v1" as const,
+            formulaId: "z-upper-v1" as const,
+            sourceCells: ["capability.upperSpecLimit", "system.mean", "system.rssSigma"],
+          }],
+        },
+      },
+      {
+        statementId: "rule-performance",
+        type: "RULE" as const,
+        section: "capability-vs-specification" as const,
+        content: {
+          entryId: "rule-cpk-target",
+          relatedFactReferences: ["cpk", "targetCpk"],
+          evidence: {
+            sourceAlias: "kb-performance",
+            sheetName: "Rules",
+            sourceRange: "A2:B2",
+            sourceFileHash: contentHash,
+          },
+        },
+      },
+      {
+        statementId: "signal-contribution",
+        type: "SIGNAL" as const,
+        section: "major-contributors" as const,
+        content: {
+          entryId: "signal-major-contribution",
+          relatedFactReferences: ["contributors"],
+          evidence: {
+            sourceAlias: "kb-signal",
+            sheetName: "Rules",
+            sourceRange: "C3:D3",
+            sourceFileHash: contentHash,
+          },
+          requiresEngineeringReview: true,
+        },
+      },
+      {
+        statementId: "option-follow-up",
+        type: "OPTION" as const,
+        section: "parallel-options" as const,
+        content: {
+          entryId: "option-tighten-process",
+          relatedFactReferences: ["cpk", "contributors"],
+          evidence: {
+            sourceAlias: "kb-option",
+            sheetName: "Rules",
+            sourceRange: "E4:F4",
+            sourceFileHash: contentHash,
+          },
+          rank: null,
+        },
+      },
+    ],
+    clarifications: [
+      {
+        clarificationId: "clarify-drawing-evidence",
+        reasonCode: "drawing_evidence_not_evaluated",
+        message: "Drawing chain evidence is outside F5.1 scope.",
+        scopes: [
+          "tolerance_loop_closure",
+          "datum_chain",
+          "assembly_datum_face",
+          "stack_start",
+          "direction",
+          "cross_subsystem",
+        ],
+      },
+    ],
+  };
+
+  const legacyUnavailableResult = {
     contractVersion: "v1",
     outputClassification: "confidential",
     featureId: "F5",
@@ -1018,15 +1369,406 @@ describe("F5 interpretation placeholder contracts", () => {
     requiredPrerequisites: ["approved-knowledge-base"],
   };
 
-  it("accepts only confidential controlled references and a fixed unavailable result", () => {
+  it("accepts strict confidential request with completed F4 result and completed F5.1 result", () => {
     expect(interpretationRequestSchema.parse(request)).toEqual(request);
-    expect(interpretationResultSchema.parse(result)).toEqual(result);
+    expect(interpretationResultSchema.parse(completedResult)).toEqual(completedResult);
   });
 
-  it("rejects public classification, unknown fields, and altered prerequisites", () => {
+  it("keeps backward compatibility for legacy unavailable interpretation result", () => {
+    expect(interpretationResultSchema.parse(legacyUnavailableResult)).toEqual(legacyUnavailableResult);
+  });
+
+  it("rejects public input, unknown fields, and legacy unavailable calculation input", () => {
     expect(interpretationRequestSchema.safeParse({ ...request, inputClassification: "public" }).success).toBe(false);
     expect(interpretationRequestSchema.safeParse({ ...request, unexpected: true }).success).toBe(false);
-    expect(interpretationResultSchema.safeParse({ ...result, requiredPrerequisites: [] }).success).toBe(false);
+    expect(interpretationRequestSchema.safeParse({
+      ...request,
+      calculationResult: {
+        contractVersion: "v1",
+        outputClassification: "confidential",
+        featureId: "F4",
+        status: "feature_not_available",
+        projectReference: "controlled-project-reference",
+        runReference: "controlled-run-reference",
+        worksheetReferences: ["controlled-worksheet-reference"],
+        requiredPrerequisites: ["approved-template-regression", "approved-windows-excel-worker"],
+      },
+    }).success).toBe(false);
+  });
+
+  it("rejects RULE without evidence, SIGNAL with invalid review flag, and OPTION with numeric rank", () => {
+    const ruleWithoutEvidence = structuredClone(completedResult);
+    const rule = ruleWithoutEvidence.statements.find((statement) => statement.type === "RULE")!;
+    (rule as { content: Record<string, unknown> }).content = {
+      entryId: "rule-cpk-target",
+      relatedFactReferences: ["cpk", "targetCpk"],
+    };
+    expect(interpretationResultSchema.safeParse(ruleWithoutEvidence).success).toBe(false);
+
+    const signalWithWrongFlag = structuredClone(completedResult);
+    const signal = signalWithWrongFlag.statements.find((statement) => statement.type === "SIGNAL")!;
+    (signal as { content: Record<string, unknown> }).content = {
+      ...(signal as { content: Record<string, unknown> }).content,
+      requiresEngineeringReview: false,
+    };
+    expect(interpretationResultSchema.safeParse(signalWithWrongFlag).success).toBe(false);
+
+    const optionWithNumericRank = structuredClone(completedResult);
+    const option = optionWithNumericRank.statements.find((statement) => statement.type === "OPTION")!;
+    (option as { content: Record<string, unknown> }).content = {
+      ...(option as { content: Record<string, unknown> }).content,
+      rank: 1,
+    };
+    expect(interpretationResultSchema.safeParse(optionWithNumericRank).success).toBe(false);
+  });
+
+  it("rejects rule-derived statements when rule evaluation is not applicable or lacks facts", () => {
+    for (const ruleEvaluationStatus of ["not-applicable", "insufficient-facts"] as const) {
+      const result = structuredClone(completedResult);
+      (result as { ruleEvaluationStatus: string }).ruleEvaluationStatus = ruleEvaluationStatus;
+      result.statements = [result.statements.find((statement) => statement.type === "RULE")!];
+      result.clarifications = [{
+        clarificationId: `clarify-${ruleEvaluationStatus}`,
+        reasonCode: ruleEvaluationStatus === "not-applicable"
+          ? "rule_method_not_applicable"
+          : "rule_facts_insufficient",
+        message: "Rule evaluation did not produce derived statements.",
+      }];
+
+      expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+    }
+  });
+
+  it("requires the status-specific clarification when rule evaluation does not produce statements", () => {
+    for (const ruleEvaluationStatus of ["not-applicable", "insufficient-facts"] as const) {
+      const result = structuredClone(completedResult);
+      (result as { ruleEvaluationStatus: string }).ruleEvaluationStatus = ruleEvaluationStatus;
+      result.statements = [];
+      result.clarifications = [];
+
+      expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+    }
+  });
+
+  it("requires drawing evidence scopes as the complete stable enum sequence", () => {
+    const scopes = [
+      "tolerance_loop_closure",
+      "datum_chain",
+      "assembly_datum_face",
+      "stack_start",
+      "direction",
+      "cross_subsystem",
+    ] as const;
+    const drawingClarification = completedResult.clarifications[0]!;
+    expect(drawingClarification.scopes).toEqual(scopes);
+
+    for (const invalidScopes of [
+      scopes.slice(1),
+      [...scopes].reverse(),
+      [...scopes.slice(0, -1), "unsupported_scope"],
+    ]) {
+      const result = structuredClone(completedResult);
+      (result.clarifications[0] as { scopes: unknown }).scopes = invalidScopes;
+      expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+    }
+
+    const resultWithoutScopes = structuredClone(completedResult);
+    delete (resultWithoutScopes.clarifications[0] as { scopes?: unknown }).scopes;
+    expect(interpretationResultSchema.safeParse(resultWithoutScopes).success).toBe(false);
+  });
+
+  it("requires exactly one drawing evidence clarification", () => {
+    const missing = structuredClone(completedResult);
+    missing.clarifications = [];
+    expect(interpretationResultSchema.safeParse(missing).success).toBe(false);
+
+    const duplicate = structuredClone(completedResult);
+    duplicate.clarifications.push(structuredClone(duplicate.clarifications[0]!));
+    duplicate.clarifications[1]!.clarificationId = "clarify-drawing-evidence-duplicate";
+    expect(interpretationResultSchema.safeParse(duplicate).success).toBe(false);
+
+    const repeatedScope = structuredClone(completedResult);
+    repeatedScope.clarifications[0]!.scopes = [
+      "tolerance_loop_closure",
+      "datum_chain",
+      "assembly_datum_face",
+      "stack_start",
+      "direction",
+      "direction",
+    ];
+    expect(interpretationResultSchema.safeParse(repeatedScope).success).toBe(false);
+  });
+
+  it("requires insufficient-facts clarifications to carry the missing rule facts", () => {
+    const result = structuredClone(completedResult);
+    result.ruleEvaluationStatus = "insufficient-facts";
+    result.statements = result.statements.filter((statement) => statement.type === "FACT");
+    result.clarifications.push({
+      clarificationId: "clarify-insufficient-facts",
+      reasonCode: "rule_facts_insufficient",
+      message: "Rule evaluation requires additional facts.",
+      missingFacts: ["targetCpk", "targetSigma"],
+    });
+
+    expect(interpretationResultSchema.parse(result)).toEqual(result);
+
+    const withoutMissingFacts = structuredClone(result);
+    delete (withoutMissingFacts.clarifications[1] as { missingFacts?: unknown }).missingFacts;
+    expect(interpretationResultSchema.safeParse(withoutMissingFacts).success).toBe(false);
+  });
+
+  it("rejects legacy FACT trace placement outside content", () => {
+    const result = structuredClone(completedResult);
+    const statement = result.statements[0] as unknown as {
+      content: Record<string, unknown>;
+      outputField?: unknown;
+      trace?: unknown;
+    };
+    statement.outputField = statement.content.outputField;
+    const legacyTrace = {
+      ...((statement.content.traceRecords as Record<string, unknown>[])[0]!),
+    };
+    delete legacyTrace.outputField;
+    statement.trace = legacyTrace;
+    delete statement.content.outputField;
+    delete statement.content.traceRecords;
+    result.statements = [result.statements[0]!];
+
+    expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+  });
+
+  it("rejects duplicate statementId values", () => {
+    const result = structuredClone(completedResult);
+    const statement = result.statements.find((candidate) => candidate.type === "RULE")!;
+    result.statements = [statement, structuredClone(statement)];
+
+    expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+  });
+
+  it("requires matched rule evaluation to produce a rule-derived statement", () => {
+    const result = structuredClone(completedResult);
+    result.statements = result.statements.filter((statement) => statement.type === "FACT");
+
+    expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+  });
+
+  it.each(["SIGNAL", "OPTION"] as const)(
+    "rejects matched rule evaluation with only a %s statement",
+    (statementType) => {
+      const result = structuredClone(completedResult);
+      result.statements = result.statements.filter((statement) => (
+        statement.type === "FACT" || statement.type === statementType
+      ));
+
+      expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+    },
+  );
+
+  it("requires every FACT trace outputField to match its FACT outputField", () => {
+    const result = structuredClone(completedResult);
+    const fact = result.statements[0] as {
+      content: { traceRecords: Array<{ outputField: string }> };
+    };
+    fact.content.traceRecords[0]!.outputField = "capability.cp";
+
+    expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+  });
+
+  it.each([
+    ["cpk", "yield-v1"],
+    ["cp", "yield-v1"],
+    ["rss_sigma", "yield-v1"],
+    ["total_dpm", "yield-v1"],
+    ["yield", "cpk-v1"],
+    ["factor_contribution", "yield-v1"],
+  ] as const)("rejects %s FACT trace with formulaId %s", (metric, formulaId) => {
+    const result = structuredClone(completedResult);
+    const fact = result.statements.find(
+      (statement) => statement.type === "FACT" && statement.content.metric === metric,
+    ) as { content: { traceRecords: Array<{ formulaId: string }> } };
+    fact.content.traceRecords[0]!.formulaId = formulaId;
+
+    expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+  });
+
+  it.each([
+    ["capability.lowerZ", "z-upper-v1"],
+    ["capability.upperZ", "z-lower-v1"],
+  ] as const)("rejects achieved_sigma trace %s with formulaId %s", (outputField, formulaId) => {
+    const result = structuredClone(completedResult);
+    const achievedSigma = result.statements.find(
+      (statement) => statement.type === "FACT" && statement.content.metric === "achieved_sigma",
+    ) as { content: { traceRecords: Array<{ outputField: string; formulaId: string }> } };
+    const trace = achievedSigma.content.traceRecords.find((candidate) => candidate.outputField === outputField)!;
+    trace.formulaId = formulaId;
+
+    expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+  });
+
+  it("accepts worksheet, request, and F4 output source references", () => {
+    const result = structuredClone(completedResult);
+    const cpk = result.statements.find(
+      (statement) => statement.type === "FACT" && statement.content.metric === "cpk",
+    ) as { content: { traceRecords: Array<{ sourceCells: string[] }> } };
+    cpk.content.traceRecords[0]!.sourceCells = [
+      "Analysis Sheet!A1",
+      "request:systemSpecification.targetCpk",
+      "factors[0].sigma",
+      "system.designNominal",
+      "system.additionalMeanShift",
+      "system.rssSigma",
+      "capability.lowerCpk",
+    ];
+
+    expect(interpretationResultSchema.safeParse(result).success).toBe(true);
+  });
+
+  it("rejects arbitrary sensitive raw text as a FACT trace source", () => {
+    const result = structuredClone(completedResult);
+    const cpk = result.statements.find(
+      (statement) => statement.type === "FACT" && statement.content.metric === "cpk",
+    ) as { content: { traceRecords: Array<{ sourceCells: string[] }> } };
+    cpk.content.traceRecords[0]!.sourceCells = ["sensitive raw text"];
+
+    expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+  });
+
+  it.each([
+    ["cpk", "calculation-summary"],
+    ["cp", "capability-vs-specification"],
+    ["rss_sigma", "capability-vs-specification"],
+    ["total_dpm", "capability-vs-specification"],
+    ["yield", "capability-vs-specification"],
+    ["recommended_method", "capability-vs-specification"],
+    ["achieved_sigma", "capability-vs-specification"],
+    ["target_sigma", "capability-vs-specification"],
+    ["target_cpk", "calculation-summary"],
+    ["lower_spec_limit", "calculation-summary"],
+    ["upper_spec_limit", "calculation-summary"],
+    ["factor_contribution", "calculation-summary"],
+  ] as const)("rejects FACT metric %s in section %s", (metric, section) => {
+    const result = structuredClone(completedResult);
+    const fact = result.statements.find(
+      (statement) => statement.type === "FACT" && statement.content.metric === metric,
+    )!;
+    fact.section = section;
+
+    expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+  });
+
+  it.each([
+    ["RULE", "calculation-summary"],
+    ["SIGNAL", "structural-evidence"],
+    ["OPTION", "major-contributors"],
+  ] as const)("rejects %s in section %s", (type, section) => {
+    const result = structuredClone(completedResult);
+    const statement = result.statements.find((candidate) => candidate.type === type)!;
+    statement.section = section;
+
+    expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+  });
+
+  it.each([
+    ["cpk", "capability.cp"],
+    ["cp", "capability.cpk"],
+    ["rss_sigma", "capability.cpk"],
+    ["total_dpm", "capability.yield"],
+    ["yield", "capability.totalDpm"],
+    ["factor_contribution", "factors[-1].contribution"],
+  ] as const)("rejects formula output metric %s with outputField %s", (metric, outputField) => {
+    const result = structuredClone(completedResult);
+    const fact = result.statements.find(
+      (statement) => statement.type === "FACT" && statement.content.metric === metric,
+    ) as {
+      content: {
+        factorReference?: string;
+        outputField: string;
+        traceRecords: Array<{ outputField: string }>;
+      };
+    };
+    expect(fact).toBeDefined();
+    if (metric === "factor_contribution") expect(fact.content.factorReference).toBeTruthy();
+    fact.content.outputField = outputField;
+    fact.content.traceRecords.forEach((traceRecord) => {
+      traceRecord.outputField = outputField;
+    });
+
+    expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+  });
+
+  it("requires FACT metric and provenance fields to agree", () => {
+    const result = structuredClone(completedResult);
+    const targetCpk = result.statements.find(
+      (statement) => statement.type === "FACT" && statement.content.metric === "target_cpk",
+    ) as { content: Record<string, unknown> };
+    targetCpk.content.inputField = "capability.targetSigmaLevel";
+
+    expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+  });
+
+  it("rejects achieved_sigma with formula output provenance and a fabricated trace", () => {
+    const result = structuredClone(completedResult);
+    const achievedSigma = result.statements.find(
+      (statement) => statement.type === "FACT" && statement.content.metric === "achieved_sigma",
+    ) as unknown as { content: Record<string, unknown> };
+    achievedSigma.content = {
+      metric: "achieved_sigma",
+      value: 7.2,
+      unit: "sigma",
+      provenanceKind: "formula_output",
+      outputField: "capability.achievedSigma",
+      traceRecords: [{
+        outputField: "capability.achievedSigma",
+        formulaVersion: "excel-ta-v1",
+        formulaId: "cpk-v1",
+        sourceCells: ["capability.lowerZ", "capability.upperZ"],
+      }],
+    };
+
+    expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+  });
+
+  it("requires derived FACT traces to cover exactly their source output fields", () => {
+    const result = structuredClone(completedResult);
+    const achievedSigma = result.statements.find(
+      (statement) => statement.type === "FACT" && statement.content.metric === "achieved_sigma",
+    ) as { content: { traceRecords: Array<{ outputField: string }> } };
+    achievedSigma.content.traceRecords[1]!.outputField = "capability.lowerZ";
+
+    expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+  });
+
+  it("rejects duplicate scalar FACT metrics", () => {
+    const result = structuredClone(completedResult);
+    const cpk = structuredClone(result.statements[0]!);
+    cpk.statementId = "fact-cpk-duplicate";
+    result.statements.push(cpk);
+
+    expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+  });
+
+  it("rejects duplicate factor contribution references", () => {
+    const result = structuredClone(completedResult);
+    const contribution = structuredClone(result.statements.find(
+      (statement) => statement.type === "FACT" && statement.content.metric === "factor_contribution",
+    )!);
+    contribution.statementId = "fact-factor-contribution-duplicate";
+    result.statements.push(contribution);
+
+    expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+  });
+
+  it("rejects a targetCpk reference without a target_cpk FACT", () => {
+    const result = structuredClone(completedResult);
+    result.statements = result.statements.filter(
+      (statement) => statement.type !== "FACT" || statement.content.metric !== "target_cpk",
+    );
+    const rule = result.statements.find((statement) => statement.type === "RULE") as {
+      content: { relatedFactReferences: string[] };
+    };
+    rule.content.relatedFactReferences = ["targetCpk"];
+
+    expect(interpretationResultSchema.safeParse(result).success).toBe(false);
   });
 });
 
@@ -2829,6 +3571,21 @@ describe("interpretation rules contracts", () => {
     }],
   ])("accepts a consistent %s evaluation", (_status, value) => {
     expect(interpretationRuleEvaluationSchema.safeParse(value).success).toBe(true);
+  });
+
+  it.each([
+    ["RULE", "performance-rule"],
+    ["SIGNAL", "root-cause-signal"],
+    ["OPTION", "improvement-option"],
+  ] as const)("rejects arbitrary %s related fact references", (_statementType, entryType) => {
+    expect(interpretationRuleEvaluationSchema.safeParse({
+      ...evaluation,
+      matchedRules: [{
+        ...evaluation.matchedRules[0],
+        entryType,
+        relatedFactReferences: ["fact-cpk"],
+      }],
+    }).success).toBe(false);
   });
 
   it.each([

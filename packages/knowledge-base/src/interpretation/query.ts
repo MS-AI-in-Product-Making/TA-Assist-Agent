@@ -1,8 +1,10 @@
 import {
   createTypedError,
+  interpretationFactReferenceSchema,
   interpretationRuleEvaluationRequestSchema,
   interpretationRuleEvaluationSchema,
   interpretationRuleLoadRequestSchema,
+  type InterpretationFactReference,
   type InterpretationKnowledgeEntry,
   type InterpretationRuleEvaluation,
   type InterpretationRuleEvaluationRequest,
@@ -133,7 +135,7 @@ function selectRelevantPerformanceRules(
   return relevant.length > 0 ? relevant : rules;
 }
 
-function metricFactReferences(metric: string): readonly string[] {
+function metricFactReferences(metric: string): readonly InterpretationFactReference[] {
   switch (metric) {
     case "cpk": return ["cpk", "targetCpk"];
     case "sigma": return ["achievedSigma", "targetSigma"];
@@ -184,13 +186,19 @@ function factValue(facts: Facts, reference: string): unknown {
   return (facts as Record<string, unknown>)[reference];
 }
 
-function factReferences(facts: Facts, requiredFacts: readonly string[]): string[] {
-  return uniqueSorted(requiredFacts.filter((fact) => hasFact(facts, fact)));
+function factReferences(
+  facts: Facts,
+  requiredFacts: readonly string[],
+): InterpretationFactReference[] {
+  return uniqueSorted(requiredFacts.flatMap((fact) => {
+    const parsed = interpretationFactReferenceSchema.safeParse(fact);
+    return parsed.success && hasFact(facts, parsed.data) ? [parsed.data] : [];
+  }));
 }
 
 function matchedRule(
   entry: PerformanceRule | RootCauseSignal | ImprovementOption,
-  relatedFactReferences: readonly string[],
+  relatedFactReferences: readonly InterpretationFactReference[],
 ): MatchedRule {
   return {
     entryId: entry.entryId,
@@ -248,7 +256,7 @@ function deepFreeze<Value>(value: Value): Value {
   return value;
 }
 
-function uniqueSorted(values: readonly string[]): string[] {
+function uniqueSorted<Value extends string>(values: readonly Value[]): Value[] {
   return [...new Set(values)].sort(compareAscii);
 }
 

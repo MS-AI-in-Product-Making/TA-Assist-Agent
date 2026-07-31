@@ -251,6 +251,30 @@ const featureRegister: ReadonlyMap<string, FeatureRegistration> = new Map([
     ),
   ],
   [
+    "F5.1",
+    {
+      featureId: "F5.1",
+      title: "客观结果解读",
+      status: "available",
+      dependsOn: [
+        "calculation-service-v1",
+        "knowledge-base-v1",
+        "interpretation-rules-v1",
+        "objective-interpretation-v1",
+      ],
+      inputContractId: "interpretation-request-v1",
+      outputContractId: "interpretation-result-v1",
+      maximumClassification: "confidential",
+      acceptanceChecks: [
+        "anonymous-interpretation-fixture",
+        "interpretation-rule-traceability-check",
+        "interpretation-privacy-check",
+      ],
+      externalPrerequisites: ["approved-knowledge-base"],
+      disableBehavior: "return feature_not_available",
+    },
+  ],
+  [
     "F6",
     unavailableFeature(
       "F6",

@@ -260,6 +260,30 @@ describe("policy gate", () => {
     ]));
   });
 
+  it("reports F5.1 as the available objective interpretation capability", () => {
+    expect(getFeatureStatus("F5.1")).toEqual({
+      featureId: "F5.1",
+      title: "客观结果解读",
+      status: "available",
+      dependsOn: [
+        "calculation-service-v1",
+        "knowledge-base-v1",
+        "interpretation-rules-v1",
+        "objective-interpretation-v1",
+      ],
+      inputContractId: "interpretation-request-v1",
+      outputContractId: "interpretation-result-v1",
+      maximumClassification: "confidential",
+      acceptanceChecks: [
+        "anonymous-interpretation-fixture",
+        "interpretation-rule-traceability-check",
+        "interpretation-privacy-check",
+      ],
+      externalPrerequisites: ["approved-knowledge-base"],
+      disableBehavior: "return feature_not_available",
+    });
+  });
+
   it("keeps F6 unavailable with its established comparison contracts", () => {
     const feature = getFeatureStatus("F6");
 
@@ -331,7 +355,7 @@ describe("policy gate", () => {
   });
 
   it("provides a register entry for every planned feature", () => {
-    for (const featureId of ["F0", "F1", "F2", "F2.1", "F2.2", "F2.3", "F2.4", "F3", "F4", "F5", "F6", "F7", "F8"]) {
+    for (const featureId of ["F0", "F1", "F2", "F2.1", "F2.2", "F2.3", "F2.4", "F3", "F4", "F5", "F5.1", "F6", "F7", "F8"]) {
       expect(getFeatureStatus(featureId)).toMatchObject({ featureId });
     }
   });
