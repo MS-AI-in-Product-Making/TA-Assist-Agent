@@ -2292,6 +2292,27 @@ function validateInterpretationFactProvenance(
   statementIndex: number,
   context: z.RefinementCtx,
 ): void {
+  const expectedFormulaOutputFields: Record<string, string | RegExp> = {
+    cpk: "capability.cpk",
+    cp: "capability.cp",
+    rss_sigma: "system.rssSigma",
+    total_dpm: "capability.totalDpm",
+    yield: "capability.yield",
+    factor_contribution: /^factors\[(?:0|[1-9]\d*)\]\.contribution$/,
+  };
+  const expectedFormulaOutputField = expectedFormulaOutputFields[content.metric];
+  if (content.provenanceKind === "formula_output"
+    && expectedFormulaOutputField !== undefined
+    && (typeof expectedFormulaOutputField === "string"
+      ? content.outputField !== expectedFormulaOutputField
+      : !expectedFormulaOutputField.test(content.outputField))) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `${content.metric} must use its calculation output field`,
+      path: ["statements", statementIndex, "content", "outputField"],
+    });
+  }
+
   const expectedInputFields: Partial<Record<typeof content.metric, string>> = {
     target_cpk: "capability.targetCpk",
     target_sigma: "capability.targetSigmaLevel",

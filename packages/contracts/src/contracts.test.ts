@@ -1487,6 +1487,34 @@ describe("F5.1 objective interpretation contracts", () => {
     expect(interpretationResultSchema.safeParse(result).success).toBe(false);
   });
 
+  it.each([
+    ["cpk", "capability.cp"],
+    ["cp", "capability.cpk"],
+    ["rss_sigma", "capability.cpk"],
+    ["total_dpm", "capability.yield"],
+    ["yield", "capability.totalDpm"],
+    ["factor_contribution", "factors[-1].contribution"],
+  ] as const)("rejects formula output metric %s with outputField %s", (metric, outputField) => {
+    const result = structuredClone(completedResult);
+    const fact = result.statements.find(
+      (statement) => statement.type === "FACT" && statement.content.metric === metric,
+    ) as {
+      content: {
+        factorReference?: string;
+        outputField: string;
+        traceRecords: Array<{ outputField: string }>;
+      };
+    };
+    expect(fact).toBeDefined();
+    if (metric === "factor_contribution") expect(fact.content.factorReference).toBeTruthy();
+    fact.content.outputField = outputField;
+    fact.content.traceRecords.forEach((traceRecord) => {
+      traceRecord.outputField = outputField;
+    });
+
+    expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+  });
+
   it("requires FACT metric and provenance fields to agree", () => {
     const result = structuredClone(completedResult);
     const targetCpk = result.statements.find(
