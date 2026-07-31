@@ -1106,6 +1106,7 @@ describe("F5.1 objective interpretation contracts", () => {
           metric: "cpk" as const,
           value: 2.4,
           unit: "ratio",
+          provenanceKind: "formula_output" as const,
           outputField: "capability.cpk",
           traceRecords: [{
             outputField: "capability.cpk",
@@ -1123,6 +1124,7 @@ describe("F5.1 objective interpretation contracts", () => {
           metric: "cp" as const,
           value: 2.6666666666666665,
           unit: "ratio",
+          provenanceKind: "formula_output" as const,
           outputField: "capability.cp",
           traceRecords: [{
             outputField: "capability.cp",
@@ -1140,6 +1142,7 @@ describe("F5.1 objective interpretation contracts", () => {
           metric: "rss_sigma" as const,
           value: 0.05,
           unit: "mm",
+          provenanceKind: "formula_output" as const,
           outputField: "system.rssSigma",
           traceRecords: [{
             outputField: "system.rssSigma",
@@ -1157,6 +1160,7 @@ describe("F5.1 objective interpretation contracts", () => {
           metric: "total_dpm" as const,
           value: 0.30000000000000004,
           unit: "dpm",
+          provenanceKind: "formula_output" as const,
           outputField: "capability.totalDpm",
           traceRecords: [{
             outputField: "capability.totalDpm",
@@ -1174,6 +1178,7 @@ describe("F5.1 objective interpretation contracts", () => {
           metric: "yield" as const,
           value: 0.9999997,
           unit: "ratio",
+          provenanceKind: "formula_output" as const,
           outputField: "capability.yield",
           traceRecords: [{
             outputField: "capability.yield",
@@ -1191,13 +1196,8 @@ describe("F5.1 objective interpretation contracts", () => {
           metric: "lower_spec_limit" as const,
           value: 12.1,
           unit: "mm",
-          outputField: "capability.lowerSpecLimit",
-          traceRecords: [{
-            outputField: "capability.lowerSpecLimit",
-            formulaVersion: "excel-ta-v1" as const,
-            formulaId: "status-v1" as const,
-            sourceCells: ["capability.lowerSpecLimit"],
-          }],
+          provenanceKind: "calculation_input" as const,
+          inputField: "capability.lowerSpecLimit" as const,
         },
       },
       {
@@ -1208,13 +1208,8 @@ describe("F5.1 objective interpretation contracts", () => {
           metric: "upper_spec_limit" as const,
           value: 12.9,
           unit: "mm",
-          outputField: "capability.upperSpecLimit",
-          traceRecords: [{
-            outputField: "capability.upperSpecLimit",
-            formulaVersion: "excel-ta-v1" as const,
-            formulaId: "status-v1" as const,
-            sourceCells: ["capability.upperSpecLimit"],
-          }],
+          provenanceKind: "calculation_input" as const,
+          inputField: "capability.upperSpecLimit" as const,
         },
       },
       {
@@ -1228,13 +1223,8 @@ describe("F5.1 objective interpretation contracts", () => {
           refer3d: false,
           criticality: "none" as const,
           criticalityRisk: false,
-          outputField: "recommendation.method",
-          traceRecords: [{
-            outputField: "recommendation.method",
-            formulaVersion: "excel-ta-v1" as const,
-            formulaId: "status-v1" as const,
-            sourceCells: ["recommendation.method"],
-          }],
+          provenanceKind: "calculation_input" as const,
+          inputField: "recommendation.method" as const,
         },
       },
       {
@@ -1246,6 +1236,7 @@ describe("F5.1 objective interpretation contracts", () => {
           factorReference: "Analysis-A/table-a/2",
           contributionPercent: 100,
           unit: "%",
+          provenanceKind: "formula_output" as const,
           outputField: "factors[0].contribution",
           traceRecords: [{
             outputField: "factors[0].contribution",
@@ -1263,12 +1254,30 @@ describe("F5.1 objective interpretation contracts", () => {
           metric: "target_cpk" as const,
           value: 1.33,
           unit: "ratio",
-          outputField: "capability.targetCpk",
+          provenanceKind: "calculation_input" as const,
+          inputField: "capability.targetCpk" as const,
+        },
+      },
+      {
+        statementId: "fact-achieved-sigma",
+        type: "FACT" as const,
+        section: "capability-vs-specification" as const,
+        content: {
+          metric: "achieved_sigma" as const,
+          value: 7.2,
+          unit: "sigma",
+          provenanceKind: "derived_from_formula_outputs" as const,
+          sourceOutputFields: ["capability.lowerZ", "capability.upperZ"] as const,
           traceRecords: [{
-            outputField: "capability.targetCpk",
+            outputField: "capability.lowerZ",
             formulaVersion: "excel-ta-v1" as const,
-            formulaId: "status-v1" as const,
-            sourceCells: ["capability.targetCpk"],
+            formulaId: "z-lower-v1" as const,
+            sourceCells: ["capability.mean", "capability.lowerSpecLimit", "system.rssSigma"],
+          }, {
+            outputField: "capability.upperZ",
+            formulaVersion: "excel-ta-v1" as const,
+            formulaId: "z-upper-v1" as const,
+            sourceCells: ["capability.upperSpecLimit", "capability.mean", "system.rssSigma"],
           }],
         },
       },
@@ -1369,22 +1378,25 @@ describe("F5.1 objective interpretation contracts", () => {
 
   it("rejects RULE without evidence, SIGNAL with invalid review flag, and OPTION with numeric rank", () => {
     const ruleWithoutEvidence = structuredClone(completedResult);
-    (ruleWithoutEvidence.statements[10] as { content: Record<string, unknown> }).content = {
+    const rule = ruleWithoutEvidence.statements.find((statement) => statement.type === "RULE")!;
+    (rule as { content: Record<string, unknown> }).content = {
       entryId: "rule-cpk-target",
       relatedFactReferences: ["cpk", "targetCpk"],
     };
     expect(interpretationResultSchema.safeParse(ruleWithoutEvidence).success).toBe(false);
 
     const signalWithWrongFlag = structuredClone(completedResult);
-    (signalWithWrongFlag.statements[11] as { content: Record<string, unknown> }).content = {
-      ...(signalWithWrongFlag.statements[11] as { content: Record<string, unknown> }).content,
+    const signal = signalWithWrongFlag.statements.find((statement) => statement.type === "SIGNAL")!;
+    (signal as { content: Record<string, unknown> }).content = {
+      ...(signal as { content: Record<string, unknown> }).content,
       requiresEngineeringReview: false,
     };
     expect(interpretationResultSchema.safeParse(signalWithWrongFlag).success).toBe(false);
 
     const optionWithNumericRank = structuredClone(completedResult);
-    (optionWithNumericRank.statements[12] as { content: Record<string, unknown> }).content = {
-      ...(optionWithNumericRank.statements[12] as { content: Record<string, unknown> }).content,
+    const option = optionWithNumericRank.statements.find((statement) => statement.type === "OPTION")!;
+    (option as { content: Record<string, unknown> }).content = {
+      ...(option as { content: Record<string, unknown> }).content,
       rank: 1,
     };
     expect(interpretationResultSchema.safeParse(optionWithNumericRank).success).toBe(false);
@@ -1394,7 +1406,7 @@ describe("F5.1 objective interpretation contracts", () => {
     for (const ruleEvaluationStatus of ["not-applicable", "insufficient-facts"] as const) {
       const result = structuredClone(completedResult);
       (result as { ruleEvaluationStatus: string }).ruleEvaluationStatus = ruleEvaluationStatus;
-      result.statements = [result.statements[10]!];
+      result.statements = [result.statements.find((statement) => statement.type === "RULE")!];
       result.clarifications = [{
         clarificationId: `clarify-${ruleEvaluationStatus}`,
         reasonCode: ruleEvaluationStatus === "not-applicable"
@@ -1440,7 +1452,7 @@ describe("F5.1 objective interpretation contracts", () => {
 
   it("rejects duplicate statementId values", () => {
     const result = structuredClone(completedResult);
-    const statement = result.statements[10]!;
+    const statement = result.statements.find((candidate) => candidate.type === "RULE")!;
     result.statements = [statement, structuredClone(statement)];
 
     expect(interpretationResultSchema.safeParse(result).success).toBe(false);
@@ -1453,12 +1465,64 @@ describe("F5.1 objective interpretation contracts", () => {
     expect(interpretationResultSchema.safeParse(result).success).toBe(false);
   });
 
+  it.each(["SIGNAL", "OPTION"] as const)(
+    "rejects matched rule evaluation with only a %s statement",
+    (statementType) => {
+      const result = structuredClone(completedResult);
+      result.statements = result.statements.filter((statement) => (
+        statement.type === "FACT" || statement.type === statementType
+      ));
+
+      expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+    },
+  );
+
   it("requires every FACT trace outputField to match its FACT outputField", () => {
     const result = structuredClone(completedResult);
     const fact = result.statements[0] as {
       content: { traceRecords: Array<{ outputField: string }> };
     };
     fact.content.traceRecords[0]!.outputField = "capability.cp";
+
+    expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+  });
+
+  it("requires FACT metric and provenance fields to agree", () => {
+    const result = structuredClone(completedResult);
+    const targetCpk = result.statements.find(
+      (statement) => statement.type === "FACT" && statement.content.metric === "target_cpk",
+    ) as { content: Record<string, unknown> };
+    targetCpk.content.inputField = "capability.targetSigmaLevel";
+
+    expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+  });
+
+  it("requires derived FACT traces to cover exactly their source output fields", () => {
+    const result = structuredClone(completedResult);
+    const achievedSigma = result.statements.find(
+      (statement) => statement.type === "FACT" && statement.content.metric === "achieved_sigma",
+    ) as { content: { traceRecords: Array<{ outputField: string }> } };
+    achievedSigma.content.traceRecords[1]!.outputField = "capability.lowerZ";
+
+    expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+  });
+
+  it("rejects duplicate scalar FACT metrics", () => {
+    const result = structuredClone(completedResult);
+    const cpk = structuredClone(result.statements[0]!);
+    cpk.statementId = "fact-cpk-duplicate";
+    result.statements.push(cpk);
+
+    expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+  });
+
+  it("rejects duplicate factor contribution references", () => {
+    const result = structuredClone(completedResult);
+    const contribution = structuredClone(result.statements.find(
+      (statement) => statement.type === "FACT" && statement.content.metric === "factor_contribution",
+    )!);
+    contribution.statementId = "fact-factor-contribution-duplicate";
+    result.statements.push(contribution);
 
     expect(interpretationResultSchema.safeParse(result).success).toBe(false);
   });

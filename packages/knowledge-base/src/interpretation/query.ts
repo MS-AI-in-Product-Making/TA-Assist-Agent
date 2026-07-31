@@ -1,5 +1,6 @@
 import {
   createTypedError,
+  interpretationFactReferenceSchema,
   interpretationRuleEvaluationRequestSchema,
   interpretationRuleEvaluationSchema,
   interpretationRuleLoadRequestSchema,
@@ -189,17 +190,10 @@ function factReferences(
   facts: Facts,
   requiredFacts: readonly string[],
 ): InterpretationFactReference[] {
-  return uniqueSorted(requiredFacts.filter(
-    (fact): fact is InterpretationFactReference => isInterpretationFactReference(fact) && hasFact(facts, fact),
-  ));
-}
-
-function isInterpretationFactReference(value: string): value is InterpretationFactReference {
-  return value === "cpk"
-    || value === "targetCpk"
-    || value === "achievedSigma"
-    || value === "targetSigma"
-    || value === "contributors";
+  return uniqueSorted(requiredFacts.flatMap((fact) => {
+    const parsed = interpretationFactReferenceSchema.safeParse(fact);
+    return parsed.success && hasFact(facts, parsed.data) ? [parsed.data] : [];
+  }));
 }
 
 function matchedRule(

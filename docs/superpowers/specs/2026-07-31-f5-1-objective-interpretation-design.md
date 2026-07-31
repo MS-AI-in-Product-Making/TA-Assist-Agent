@@ -107,7 +107,7 @@ flowchart LR
 
 `InterpretationStatement` 的公共字段为稳定 `statementId`、`type`、`section` 和结构化 `content`。V1 不生成自由文本工程结论。
 
-- `FACT`：包含 `metric`、数值、可选单位、F4 `outputField` 与对应公式追踪。
+- `FACT`：公式输出保留 F4 `outputField` 与对应公式追踪；输入配置只记录受控 `inputField`，不得伪造公式 trace；派生值记录全部源公式输出字段及其真实 trace（例如 `achievedSigma` 保留 `capability.lowerZ` 和 `capability.upperZ`）。
 - `RULE`：包含 F0 `entryId`、相关事实引用和完整知识库来源证据。
 - `SIGNAL`：结构与 `RULE` 相同，但明确 `requiresEngineeringReview: true`。
 - `OPTION`：结构与 `RULE` 相同，并明确 `rank: null`，禁止排序和推荐字段。

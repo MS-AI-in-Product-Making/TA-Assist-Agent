@@ -1955,7 +1955,7 @@ const interpretationSectionSchema = z.enum([
   "parallel-options",
 ]);
 
-const interpretationFactReferenceSchema = z.enum([
+export const interpretationFactReferenceSchema = z.enum([
   "cpk",
   "targetCpk",
   "achievedSigma",
@@ -1963,12 +1963,21 @@ const interpretationFactReferenceSchema = z.enum([
   "contributors",
 ]);
 
-const interpretationFactTraceFields = {
+const interpretationFormulaOutputProvenanceFields = {
+  provenanceKind: z.literal("formula_output"),
   outputField: z.string().min(1),
   traceRecords: z.array(calculationTraceRecordSchema).min(1).max(500),
 } as const;
 
-const interpretationNumericFactContentSchema = z
+const interpretationCalculationInputFieldSchema = z.enum([
+  "capability.targetCpk",
+  "capability.targetSigmaLevel",
+  "capability.lowerSpecLimit",
+  "capability.upperSpecLimit",
+  "recommendation.method",
+]);
+
+const interpretationFormulaNumericFactContentSchema = z
   .object({
     metric: z.enum([
       "cpk",
@@ -1976,19 +1985,30 @@ const interpretationNumericFactContentSchema = z
       "rss_sigma",
       "total_dpm",
       "yield",
+      "achieved_sigma",
+    ]),
+    value: z.number().finite(),
+    unit: z.string().min(1).optional(),
+    ...interpretationFormulaOutputProvenanceFields,
+  })
+  .strict();
+
+const interpretationCalculationInputNumericFactContentSchema = z
+  .object({
+    metric: z.enum([
       "lower_spec_limit",
       "upper_spec_limit",
       "target_cpk",
-      "achieved_sigma",
       "target_sigma",
     ]),
     value: z.number().finite(),
     unit: z.string().min(1).optional(),
-    ...interpretationFactTraceFields,
+    provenanceKind: z.literal("calculation_input"),
+    inputField: interpretationCalculationInputFieldSchema,
   })
   .strict();
 
-const interpretationRecommendedMethodFactContentSchema = z
+const interpretationRecommendedMethodCalculationInputFactContentSchema = z
   .object({
     metric: z.literal("recommended_method"),
     method: calculationMethodSchema,
@@ -2001,7 +2021,8 @@ const interpretationRecommendedMethodFactContentSchema = z
     refer3d: z.boolean(),
     criticality: calculationCriticalitySchema,
     criticalityRisk: z.boolean(),
-    ...interpretationFactTraceFields,
+    provenanceKind: z.literal("calculation_input"),
+    inputField: interpretationCalculationInputFieldSchema,
   })
   .strict();
 
@@ -2011,15 +2032,39 @@ const interpretationFactorContributionFactContentSchema = z
     factorReference: z.string().min(1),
     contributionPercent: z.number().finite().min(0).max(100),
     unit: z.string().min(1).optional(),
-    ...interpretationFactTraceFields,
+    ...interpretationFormulaOutputProvenanceFields,
   })
   .strict();
 
-const interpretationFactContentSchema = z.union([
-  interpretationNumericFactContentSchema,
-  interpretationRecommendedMethodFactContentSchema,
+const interpretationDerivedAchievedSigmaFactContentSchema = z
+  .object({
+    metric: z.literal("achieved_sigma"),
+    value: z.number().finite(),
+    unit: z.string().min(1).optional(),
+    provenanceKind: z.literal("derived_from_formula_outputs"),
+    sourceOutputFields: z.tuple([
+      z.literal("capability.lowerZ"),
+      z.literal("capability.upperZ"),
+    ]),
+    traceRecords: z.array(calculationTraceRecordSchema).min(1).max(500),
+  })
+  .strict();
+
+const interpretationFactContentByMetricSchema = z.union([
+  interpretationFormulaNumericFactContentSchema,
+  interpretationCalculationInputNumericFactContentSchema,
+  interpretationRecommendedMethodCalculationInputFactContentSchema,
   interpretationFactorContributionFactContentSchema,
+  interpretationDerivedAchievedSigmaFactContentSchema,
 ]);
+
+const interpretationFactContentSchema = z
+  .discriminatedUnion("provenanceKind", [
+    z.object({ provenanceKind: z.literal("formula_output") }).passthrough(),
+    z.object({ provenanceKind: z.literal("calculation_input") }).passthrough(),
+    z.object({ provenanceKind: z.literal("derived_from_formula_outputs") }).passthrough(),
+  ])
+  .pipe(interpretationFactContentByMetricSchema);
 
 const interpretationRuleStatementEvidenceSchema = z
   .object({
@@ -2147,15 +2192,32 @@ const interpretationCompletedResultSchema = z
 
     result.statements.forEach((statement, statementIndex) => {
       if (statement.type === "FACT") {
-        statement.content.traceRecords.forEach((traceRecord, traceIndex) => {
-          if (traceRecord.outputField !== statement.content.outputField) {
+        if (statement.content.provenanceKind === "formula_output") {
+          const { outputField } = statement.content;
+          statement.content.traceRecords.forEach((traceRecord, traceIndex) => {
+            if (traceRecord.outputField !== outputField) {
+              context.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: "FACT trace outputField must match FACT outputField",
+                path: ["statements", statementIndex, "content", "traceRecords", traceIndex, "outputField"],
+              });
+            }
+          });
+        } else if (statement.content.provenanceKind === "derived_from_formula_outputs") {
+          const sourceOutputFields = new Set<string>(statement.content.sourceOutputFields);
+          const traceOutputFields = statement.content.traceRecords.map(({ outputField }) => outputField);
+          if (traceOutputFields.some((outputField) => !sourceOutputFields.has(outputField))
+            || new Set(traceOutputFields).size !== traceOutputFields.length
+            || statement.content.sourceOutputFields.some((outputField) => !traceOutputFields.includes(outputField))) {
             context.addIssue({
               code: z.ZodIssueCode.custom,
-              message: "FACT trace outputField must match FACT outputField",
-              path: ["statements", statementIndex, "content", "traceRecords", traceIndex, "outputField"],
+              message: "derived FACT traces must correspond to and cover sourceOutputFields",
+              path: ["statements", statementIndex, "content", "traceRecords"],
             });
           }
-        });
+        }
+
+        validateInterpretationFactProvenance(statement.content, statementIndex, context);
         return;
       }
 
@@ -2171,38 +2233,98 @@ const interpretationCompletedResultSchema = z
     });
 
     if (result.ruleEvaluationStatus === "matched") {
-      if (!result.statements.some((statement) => statement.type !== "FACT")) {
+      if (!result.statements.some((statement) => statement.type === "RULE")) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
-          message: "matched rule evaluation requires at least one rule-derived statement",
+          message: "matched rule evaluation requires at least one RULE statement",
           path: ["statements"],
         });
       }
-      return;
+    } else {
+      const derivedStatementIndex = result.statements.findIndex(
+        (statement) => statement.type !== "FACT",
+      );
+      if (derivedStatementIndex >= 0) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "rule-derived statements require matched rule evaluation",
+          path: ["statements", derivedStatementIndex],
+        });
+      }
+
+      const requiredReasonCode = result.ruleEvaluationStatus === "insufficient-facts"
+        ? "rule_facts_insufficient"
+        : "rule_method_not_applicable";
+      if (!result.clarifications.some((clarification) => clarification.reasonCode === requiredReasonCode)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `${result.ruleEvaluationStatus} requires ${requiredReasonCode} clarification`,
+          path: ["clarifications"],
+        });
+      }
     }
 
-    const derivedStatementIndex = result.statements.findIndex(
-      (statement) => statement.type !== "FACT",
-    );
-    if (derivedStatementIndex >= 0) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "rule-derived statements require matched rule evaluation",
-        path: ["statements", derivedStatementIndex],
-      });
-    }
-
-    const requiredReasonCode = result.ruleEvaluationStatus === "insufficient-facts"
-      ? "rule_facts_insufficient"
-      : "rule_method_not_applicable";
-    if (!result.clarifications.some((clarification) => clarification.reasonCode === requiredReasonCode)) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: `${result.ruleEvaluationStatus} requires ${requiredReasonCode} clarification`,
-        path: ["clarifications"],
-      });
-    }
+    const scalarMetricIndexes = new Map<string, number>();
+    const factorReferenceIndexes = new Map<string, number>();
+    result.statements.forEach((statement, statementIndex) => {
+      if (statement.type !== "FACT") return;
+      const key = statement.content.metric === "factor_contribution"
+        ? statement.content.factorReference
+        : statement.content.metric;
+      const indexes = statement.content.metric === "factor_contribution"
+        ? factorReferenceIndexes
+        : scalarMetricIndexes;
+      if (indexes.has(key)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: statement.content.metric === "factor_contribution"
+            ? "factor_contribution factorReference must be unique"
+            : `scalar FACT metric ${statement.content.metric} must be unique`,
+          path: ["statements", statementIndex, "content"],
+        });
+      } else {
+        indexes.set(key, statementIndex);
+      }
+    });
   });
+
+function validateInterpretationFactProvenance(
+  content: z.infer<typeof interpretationFactContentSchema>,
+  statementIndex: number,
+  context: z.RefinementCtx,
+): void {
+  const expectedInputFields: Partial<Record<typeof content.metric, string>> = {
+    target_cpk: "capability.targetCpk",
+    target_sigma: "capability.targetSigmaLevel",
+    lower_spec_limit: "capability.lowerSpecLimit",
+    upper_spec_limit: "capability.upperSpecLimit",
+    recommended_method: "recommendation.method",
+  };
+  const expectedInputField = expectedInputFields[content.metric];
+  if (content.provenanceKind === "calculation_input" && content.inputField !== expectedInputField) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `${content.metric} must use calculation input ${expectedInputField}`,
+      path: ["statements", statementIndex, "content", "inputField"],
+    });
+  }
+
+  if (content.provenanceKind === "formula_output" && expectedInputField !== undefined) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `${content.metric} must use calculation_input provenance`,
+      path: ["statements", statementIndex, "content", "provenanceKind"],
+    });
+  }
+
+  if (content.provenanceKind === "derived_from_formula_outputs" && content.metric !== "achieved_sigma") {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "only achieved_sigma may derive from formula outputs",
+      path: ["statements", statementIndex, "content", "provenanceKind"],
+    });
+  }
+}
 
 function hasInterpretationFact(
   statements: readonly z.infer<typeof interpretationStatementSchema>[],
