@@ -467,3 +467,196 @@ git diff --check
 git add docs/superpowers/specs/2026-08-03-f2-artifact-report-redesign.md docs/superpowers/plans/2026-08-03-f2-artifact-report-redesign.md packages/workbook-catalog/src/worksheet-analysis-assets.ts packages/workbook-catalog/src/worksheet-analysis-assets.test.ts scripts/f1-dual-grid.mjs scripts/f1-dual-grid.test.mjs scripts/run-f1-full-validation.mjs
 git commit -m "fix: preserve F1 worksheet field fidelity"
 ```
+
+### Task 8: Route F2 Capability Decisions Through F0
+
+**Files:**
+- Modify: `packages/contracts/src/contracts.ts`
+- Modify: `packages/contracts/src/contracts.test.ts`
+- Create: `packages/workbook-catalog/src/f0-capability-router.ts`
+- Create: `packages/workbook-catalog/src/f0-capability-router.test.ts`
+- Modify: `packages/workbook-catalog/src/f2-user-report.ts`
+- Modify: `packages/workbook-catalog/src/f2-user-report.test.ts`
+- Modify: `scripts/f2-report.mjs`
+- Modify: `scripts/f2-report.test.mjs`
+- Modify: `scripts/run-f2-full-validation.mjs`
+- Modify: `scripts/f2-artifact-flow.test.mjs`
+
+- [ ] **Step 1: Write failing strict contract tests for dual F0 results.**
+
+Change the accepted report fixture to carry:
+
+```ts
+knowledgeBaseVersions: ["v1", "internal-v1"],
+```
+
+Add accepted enhanced-row fixtures for these internal results:
+
+```ts
+{
+  capabilityStatus: "internal_within_guidance",
+  f0KnowledgeBaseVersion: "internal-v1",
+  recommendation: {
+    kind: "internal-guidance",
+    assessedTotalBand: 0.2,
+    maximumRecommendedTotalBand: 0.2,
+    unit: "mm",
+    matchedEntryId: "cnc-linear-6",
+    fallbackApplied: false,
+    evidence: {
+      sourceFileHash: "a".repeat(64),
+      sheetName: "ISO 2768-1 Class m",
+      sourceRange: "A6:F6",
+    },
+  },
+}
+```
+
+Also cover `internal_guidance_exceeded`, `f0_information_insufficient`,
+`non_f0_process_category`, existing public recommendation states, and `unable_to_check`.
+Require internal matched states to have `internal-v1` plus an internal recommendation; public matched
+states to have `v1` plus a public recommendation; information-insufficient to have `internal-v1` and no
+recommendation; non-F0 and unable states to have no recommendation. Replace ambiguous summary fields with:
+
+```ts
+internalWithinGuidanceCount: number;
+internalGuidanceExceededCount: number;
+f0InformationInsufficientCount: number;
+publicLibraryMatchCount: number;
+nonF0ProcessCategoryCount: number;
+unableToCheckCount: number;
+publicToleranceDifferenceCount: number;
+publicDistributionDifferenceCount: number;
+```
+
+- [ ] **Step 2: Run contract tests and verify RED.**
+
+```powershell
+npm exec -- vitest run --workspace vitest.workspace.ts packages/contracts/src/contracts.test.ts
+```
+
+Expected: FAIL because internal capability states, dual versions, recommendation union and new summaries do
+not exist.
+
+- [ ] **Step 3: Implement the strict F2 report contract migration.**
+
+Define `f2CapabilityStatusSchema` with existing public states plus:
+
+```ts
+"internal_within_guidance"
+"internal_guidance_exceeded"
+"f0_information_insufficient"
+"non_f0_process_category"
+"unable_to_check"
+```
+
+Make `recommendation` a strict discriminated union on `kind`:
+
+```ts
+{ kind: "public", toleranceMin, toleranceMax, unit: "mm", distribution, capabilityEntryId }
+{ kind: "internal-guidance", assessedTotalBand, maximumRecommendedTotalBand, unit: "mm", matchedEntryId, fallbackApplied, evidence }
+```
+
+Add `f0KnowledgeBaseVersion?: "v1" | "internal-v1"` and
+`f0InformationReason?: "missing_process_context" | "invalid_total_band" | "guidance_unknown"` with
+super-refinement matching the row status. Replace top-level `knowledgeBaseVersion` with the exact tuple
+`knowledgeBaseVersions: ["v1", "internal-v1"]` and recompute every new summary count from rows.
+
+- [ ] **Step 4: Re-run contract tests and verify GREEN.**
+
+Run the Step 2 command. Expected: PASS.
+
+- [ ] **Step 5: Write failing tests for a pure F0 capability router.**
+
+Create tests for `createF0CapabilityRouter` using injected fake F0 APIs. Assert:
+
+1. `CNC`, nominal `3.145`, upper `0.1`, lower `-0.1` calls internal F0 exactly once with
+   `cnc-machining`, `linear-dimension`, nominal `3.145` and total band `0.2`, then returns
+   `internal_within_guidance` with the unchanged F0 evidence.
+2. Negative TA nominal is normalized with `Math.abs`.
+3. F0 `guidance-exceeded` becomes `internal_guidance_exceeded`.
+4. `Sheetmetal`, die cast, die cut, PCB/FPC and plastic aliases return
+   `f0_information_insufficient` with `missing_process_context` and do not fabricate an internal query.
+5. A public demo category still uses the injected public API and returns the existing public result.
+6. `Assembly` and `Other` return `non_f0_process_category` rather than an internal result.
+7. Missing required business fields are handled by the composer and never call either router dependency.
+
+- [ ] **Step 6: Run router tests and verify RED.**
+
+```powershell
+npm run build -- --force
+npm exec -- vitest run --workspace vitest.workspace.ts packages/workbook-catalog/src/f0-capability-router.test.ts
+```
+
+Expected: FAIL because the router module does not exist.
+
+- [ ] **Step 7: Implement the router exclusively through F0 APIs.**
+
+Export:
+
+```ts
+export function createF0CapabilityRouter(dependencies = {
+  publicKnowledgeBase: loadKnowledgeBase({ version: "v1" }),
+  internalGuidance: loadInternalToleranceGuidance({ version: "internal-v1" }),
+}) {
+  return { assess(row: F0CapabilityRow): F0CapabilityAssessment { /* routing only */ } };
+}
+```
+
+Keep exact normalized alias sets in the router. Do not import seed files or copy any tolerance threshold.
+For CNC, call `internalGuidance.assessToleranceGuidance`; preserve its status, entry ID, maximum band,
+fallback flag and evidence. For the five process families whose required conditions are not present in F1,
+return information-insufficient before query. For non-process categories, call public
+`matchCapabilityItem`; only explicit public matches may produce public recommendation results.
+
+- [ ] **Step 8: Re-run router tests and verify GREEN.**
+
+Run the Step 6 command. Expected: PASS.
+
+- [ ] **Step 9: Write failing composer and renderer integration tests.**
+
+Update `f2-user-report.test.ts` to inject the router and prove incomplete rows make no F0 call, while CNC,
+Sheetmetal and Other produce the three distinct statuses without changing worksheet blocking. Update renderer
+fixtures and assert the Chinese labels `F0 内部指导-符合`, `F0 内部指导-超出`, `F0 信息不足`,
+`非 F0 制程分类`, and recommendation text
+`最大总公差带 0.2 mm · internal-v1 · cnc-linear-6`. Assert Markdown contains no internal source filename
+or SHA-256 evidence.
+
+- [ ] **Step 10: Run integration tests and verify RED.**
+
+```powershell
+npm exec -- vitest run --workspace vitest.workspace.ts packages/workbook-catalog/src/f2-user-report.test.ts scripts/f2-report.test.mjs scripts/f2-artifact-flow.test.mjs
+```
+
+Expected: FAIL because composer and renderer still use the public-only states.
+
+- [ ] **Step 11: Connect the router to composer, CLI and Markdown.**
+
+Change `createF2UserReport(request, dependencies?)` so complete rows call the router and incomplete rows stay
+`unable_to_check`. Pass `knowledgeBaseVersions: ["v1", "internal-v1"]` from the CLI request. Render the new
+summary counts and labels, internal maximum band/version/entry ID, public range/distribution, and `—` for all
+no-recommendation states. Technical traceability must list both F0 versions.
+
+- [ ] **Step 12: Run focused tests and real F0-to-F2 acceptance.**
+
+```powershell
+npm run build -- --force
+npm exec -- vitest run --workspace vitest.workspace.ts packages/contracts/src/contracts.test.ts packages/knowledge-base/src/internal/query.test.ts packages/workbook-catalog/src/f0-capability-router.test.ts packages/workbook-catalog/src/f2-user-report.test.ts scripts/f2-report.test.mjs scripts/f2-artifact-loader.test.mjs scripts/f2-artifact-flow.test.mjs
+npm run workflow:f2 -- "test/demo-output/feature1-output/Maera_gap_TP_brkt_and-_battery_20260305V1"
+```
+
+Parse the real JSON with `f2UserReportSchema`. Assert every CNC row has an internal status and
+`f0KnowledgeBaseVersion: "internal-v1"`, Sheetmetal rows are information-insufficient, Assembly/Other rows
+are non-F0 categories, `unableToCheckCount` remains zero, and Markdown contains no CNC row labelled `库外`.
+
+- [ ] **Step 13: Validate and commit.**
+
+```powershell
+npm exec -- eslint packages/contracts/src/contracts.ts packages/contracts/src/contracts.test.ts packages/workbook-catalog/src/f0-capability-router.ts packages/workbook-catalog/src/f0-capability-router.test.ts packages/workbook-catalog/src/f2-user-report.ts packages/workbook-catalog/src/f2-user-report.test.ts scripts/f2-report.mjs scripts/f2-report.test.mjs scripts/run-f2-full-validation.mjs scripts/f2-artifact-flow.test.mjs
+npm run check:repository
+git diff --check
+git add docs/superpowers/plans/2026-08-03-f2-artifact-report-redesign.md packages/contracts/src/contracts.ts packages/contracts/src/contracts.test.ts packages/workbook-catalog/src/f0-capability-router.ts packages/workbook-catalog/src/f0-capability-router.test.ts packages/workbook-catalog/src/f2-user-report.ts packages/workbook-catalog/src/f2-user-report.test.ts scripts/f2-report.mjs scripts/f2-report.test.mjs scripts/run-f2-full-validation.mjs scripts/f2-artifact-flow.test.mjs
+git commit -m "feat: route F2 capability checks through F0"
+```
+
+Do not stage generated reports, confidential workbooks or F0 source workbooks.
