@@ -1,0 +1,102 @@
+import { afterEach, describe, expect, it } from "vitest";
+import { Buffer } from "node:buffer";
+import { createHash } from "node:crypto";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { loadF1ArtifactBundle } from "./f2-artifact-loader.mjs";
+
+const roots = [];
+
+afterEach(() => {
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
+
+function createBundle() {
+  const root = mkdtempSync(path.join(tmpdir(), "f2-artifacts-"));
+  roots.push(root);
+  const workbookName = "anonymous.xlsx";
+  const workbookHash = "a".repeat(64);
+  const imageBytes = Buffer.from([1, 2, 3]);
+  const imageHash = createHash("sha256").update(imageBytes).digest("hex");
+  const sheetRoot = path.join(root, "sheets", workbookName);
+  mkdirSync(path.join(sheetRoot, "json"), { recursive: true });
+  mkdirSync(path.join(sheetRoot, "md"), { recursive: true });
+  mkdirSync(path.join(sheetRoot, "images"), { recursive: true });
+  const jsonRelative = `sheets/${workbookName}/json/Analysis-A.json`;
+  const mdRelative = `sheets/${workbookName}/md/Analysis-A.md`;
+  const imageRelative = `sheets/${workbookName}/images/Analysis-A.png`;
+  writeFileSync(path.join(root, imageRelative), imageBytes);
+  writeFileSync(path.join(root, mdRelative), "# Analysis-A\n");
+  writeFileSync(path.join(sheetRoot, "README.md"), "# Manifest\n");
+  writeFileSync(path.join(root, jsonRelative), JSON.stringify({
+    taskId: "1.5-1.6",
+    generatedAt: "2026-08-03T00:00:00.000Z",
+    workbook: { fileName: workbookName, contentHash: workbookHash },
+    worksheetName: "Analysis-A",
+    factorTables: [],
+    imageAssets: [{ contentHash: imageHash, mediaType: "image/png", byteLength: imageBytes.length, outputFile: imageRelative }],
+    tolerancePathImage: { status: "available", labelSourceCell: "Analysis-A!A55", imageContentHash: imageHash, imageAnchor: { from: "A56", to: "K71" } },
+  }));
+  writeFileSync(path.join(root, "Feature1-Report.md"), "# Feature 1\n");
+  writeFileSync(path.join(root, "Feature1-Report.json"), JSON.stringify({
+    contractVersion: "v1",
+    feature: "F1",
+    generatedAt: "2026-08-03T00:00:00.000Z",
+    workbooks: [{
+      workbook: { fileName: workbookName, contentHash: workbookHash },
+      task15_factor_table_and_debug_json: { sheets: [{ worksheetName: "Analysis-A", jsonPath: jsonRelative }] },
+      task16_loop_screenshot_and_run_record: { sheets: [{ worksheetName: "Analysis-A", mdPath: mdRelative }] },
+      sheetReadmePath: `sheets/${workbookName}/README.md`,
+    }],
+  }));
+  return { root, imageHash };
+}
+
+describe("loadF1ArtifactBundle", () => {
+  it("loads JSON, Markdown and image artifacts without a workbook", () => {
+    const { root, imageHash } = createBundle();
+
+    const loaded = loadF1ArtifactBundle(root);
+
+    expect(loaded.status).toBe("accepted");
+    expect(loaded.input.workbook.fileName).toBe("anonymous.xlsx");
+    expect(loaded.input.worksheets[0].tolerancePathImage).toEqual({
+      status: "available",
+      imagePath: "sheets/anonymous.xlsx/images/Analysis-A.png",
+      contentHash: imageHash,
+    });
+    expect(Object.hasOwn(loaded.input, "workbookBytes")).toBe(false);
+    expect(Object.hasOwn(loaded.input, "workbookPath")).toBe(false);
+  });
+
+  it("returns an actionable report when the root Markdown is missing", () => {
+    const { root } = createBundle();
+    rmSync(path.join(root, "Feature1-Report.md"));
+
+    expect(loadF1ArtifactBundle(root)).toEqual({
+      status: "inputRejected",
+      report: expect.objectContaining({
+        status: "inputRejected",
+        artifactIssues: [{ reasonCode: "root_md_missing", artifactPath: "Feature1-Report.md" }],
+      }),
+    });
+  });
+
+  it("rejects worksheet paths outside the artifact root", () => {
+    const { root } = createBundle();
+    const reportPath = path.join(root, "Feature1-Report.json");
+    const report = JSON.parse(readFileSync(reportPath, "utf8"));
+    report.workbooks[0].task15_factor_table_and_debug_json.sheets[0].jsonPath = "../outside.json";
+    writeFileSync(reportPath, JSON.stringify(report));
+
+    expect(loadF1ArtifactBundle(root).report.artifactIssues).toContainEqual({ reasonCode: "path_outside_root", artifactPath: "../outside.json" });
+  });
+
+  it("rejects empty image artifacts", () => {
+    const { root } = createBundle();
+    writeFileSync(path.join(root, "sheets/anonymous.xlsx/images/Analysis-A.png"), Buffer.alloc(0));
+
+    expect(loadF1ArtifactBundle(root).report.artifactIssues).toContainEqual({ reasonCode: "image_empty", artifactPath: "sheets/anonymous.xlsx/images/Analysis-A.png" });
+  });
+});
