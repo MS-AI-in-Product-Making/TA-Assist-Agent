@@ -79,6 +79,82 @@ describe("worksheet analysis assets", () => {
     });
   });
 
+  it("retains a partially populated input row when the factor name is blank", () => {
+    const workbookBytes = createAnonymousWorkbookZip({ xmlParts: {
+      "xl/worksheets/sheet3.xml": '<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1"><v>Factor</v></c><c r="B1"><v>Part Name</v></c><c r="C1"><v>Mean</v></c></row><row r="2"><c r="B2"><v>Bracket</v></c><c r="C2"><f>0</f><v>0</v></c></row><row r="3"><c r="C3"><f>0</f><v>0</v></c></row></sheetData></worksheet>',
+    } });
+    const contentHash = createHash("sha256").update(workbookBytes).digest("hex");
+    const result = createWorksheetAnalysisAssets({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbookBytes,
+      workbookCatalog: {
+        contractVersion: "v1",
+        workbook: { fileName: "anonymous.xlsx", classification: "confidential", contentHash, metadata: { documentNo: "DOC", revision: "R", date: { value: "2026-08-03", sourceCell: "Title Page!A1" } } },
+        analyses: [{ worksheetName: "Analysis-A", toleranceLoopDescription: "anonymous", source: { summarySheet: "Auto Summary", summaryRow: 1, worksheetAnchor: "Analysis-A!A1" } }],
+      },
+    });
+
+    expect(result.worksheets[0]?.factorTables[0]?.rows).toEqual([
+      expect.objectContaining({
+        sourceRow: 2,
+        fields: expect.objectContaining({
+          factorName: expect.objectContaining({ status: "unavailable", reasonCode: "missing" }),
+          partName: expect.objectContaining({ status: "available", rawText: "Bracket" }),
+        }),
+      }),
+    ]);
+  });
+
+  it("reports missing tolerance-path labels as semantic image evidence", () => {
+    const workbookBytes = selectionWorkbook();
+    const workbookCatalog = createWorkbookCatalog({ contractVersion: "v1", inputClassification: "confidential", fileName: "anonymous.xlsx", workbookBytes });
+
+    const result = createWorksheetAnalysisAssets({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbookBytes,
+      workbookCatalog,
+      worksheetSelection: { mode: "selected", worksheetNames: ["Analysis-A"] },
+    });
+
+    expect(result.worksheets[0]).toMatchObject({
+      tolerancePathImage: { status: "unavailable", reasonCode: "label_missing" },
+    });
+  });
+
+  it("binds the nearest supported image below the tolerance-path label", () => {
+    const imageBytes = new Uint8Array([1, 2, 3]);
+    const workbookBytes = createAnonymousWorkbookZip({
+      xmlParts: {
+        "xl/worksheets/sheet3.xml": '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData><row r="1"><c r="A1"><v>Factor</v></c></row><row r="2"><c r="A2"><v>anonymous-factor</v></c></row><row r="55"><c r="A55"><v>Include the tolerance path (screen shot) below:</v></c></row></sheetData><drawing r:id="rIdDrawing"/></worksheet>',
+        "xl/worksheets/_rels/sheet3.xml.rels": '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDrawing" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/></Relationships>',
+        "xl/drawings/drawing1.xml": '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><xdr:twoCellAnchor><xdr:from><xdr:col>0</xdr:col><xdr:row>55</xdr:row></xdr:from><xdr:to><xdr:col>10</xdr:col><xdr:row>70</xdr:row></xdr:to><xdr:pic><xdr:blipFill><a:blip r:embed="rIdImage"/></xdr:blipFill></xdr:pic><xdr:clientData/></xdr:twoCellAnchor></xdr:wsDr>',
+        "xl/drawings/_rels/drawing1.xml.rels": '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdImage" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"/></Relationships>',
+      },
+      binaryParts: { "xl/media/image1.png": imageBytes },
+    });
+    const contentHash = createHash("sha256").update(workbookBytes).digest("hex");
+    const imageContentHash = createHash("sha256").update(imageBytes).digest("hex");
+    const result = createWorksheetAnalysisAssets({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbookBytes,
+      workbookCatalog: {
+        contractVersion: "v1",
+        workbook: { fileName: "anonymous.xlsx", classification: "confidential", contentHash, metadata: { documentNo: "DOC", revision: "R", date: { value: "2026-08-03", sourceCell: "Title Page!A1" } } },
+        analyses: [{ worksheetName: "Analysis-A", toleranceLoopDescription: "anonymous", source: { summarySheet: "Auto Summary", summaryRow: 1, worksheetAnchor: "Analysis-A!A1" } }],
+      },
+    });
+
+    expect(result.worksheets[0]?.tolerancePathImage).toEqual({
+      status: "available",
+      labelSourceCell: "Analysis-A!A55",
+      imageContentHash,
+      imageAnchor: { from: "A56", to: "K71" },
+    });
+  });
+
   it("supports selecting a single worksheet before asset extraction", () => {
     const workbookBytes = selectionWorkbook();
     const workbookCatalog = createWorkbookCatalog({ contractVersion: "v1", inputClassification: "confidential", fileName: "anonymous.xlsx", workbookBytes });

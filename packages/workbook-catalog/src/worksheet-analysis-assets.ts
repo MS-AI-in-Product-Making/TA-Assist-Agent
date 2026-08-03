@@ -40,11 +40,24 @@ const HEADER_ALIASES = {
   assemblyDirection: ["assembly direction"],
 } as const;
 const IMAGE_MEDIA_TYPE = /^(?:image\/[a-z0-9.+-]+|application\/octet-stream)$/;
+const TOLERANCE_PATH_LABELS = new Set([
+  "include the tolerance path (screen shot) below",
+  "include the tolerance path (screenshot) below",
+]);
+const TOLERANCE_PATH_MEDIA_TYPES = new Set(["image/png", "image/jpeg"]);
 const F1_ANALYSIS_CELL_WINDOW = { maxRow: 260, maxColumn: "Z" } as const;
 
 type FieldName = keyof typeof HEADER_ALIASES;
 type Column = { readonly semanticField: FieldName; readonly sourceColumn: string; readonly headerText: string };
+type TolerancePathImageEvidence =
+  | { readonly status: "available"; readonly labelSourceCell: string; readonly imageContentHash: string; readonly imageAnchor: { readonly from: string; readonly to: string } }
+  | { readonly status: "unavailable"; readonly reasonCode: "label_missing" | "label_ambiguous" | "image_missing" | "unsupported_media_type" | "unparsed_anchor" | "worksheet_unavailable"; readonly labelSourceCell?: string };
 const NUMERIC_FIELDS = new Set<FieldName>(["nominalValue", "upperTolerance", "lowerTolerance", "longTermSafetyFactor", "upperSpecificationLimit", "lowerSpecificationLimit", "contribution", "sensitivity", "mean", "standardDeviation", "cpk"]);
+const USER_INPUT_FIELDS = new Set<FieldName>([
+  "factorName", "partName", "drawingNumber", "dimCharacteristicId", "partCategory",
+  "nominalValue", "upperTolerance", "lowerTolerance", "longTermSafetyFactor",
+  "standardDeviation", "distribution",
+]);
 
 interface SelectedAnalysis {
   readonly worksheetName: string;
@@ -115,6 +128,26 @@ function mediaTypeFromPath(partName: string): string {
   if (lower.endsWith(".webp")) return "image/webp";
   return "application/octet-stream";
 }
+function tolerancePathImage(
+  worksheetName: string,
+  worksheetCells: readonly OoxmlCell[],
+  imageAssets: readonly { readonly contentHash: string; readonly mediaType: string; readonly anchor: { readonly status: "available"; readonly from: string; readonly to: string } | { readonly status: "unavailable" } }[],
+): TolerancePathImageEvidence {
+  const labels = worksheetCells.filter((cell) => TOLERANCE_PATH_LABELS.has(normalize(cellValue(cell)).replace(/:$/, "")));
+  if (labels.length === 0) return { status: "unavailable" as const, reasonCode: "label_missing" as const };
+  if (labels.length !== 1) return { status: "unavailable" as const, reasonCode: "label_ambiguous" as const };
+  const label = labels[0]!;
+  const labelRow = address(label.reference)!.row;
+  const labelSourceCell = `${worksheetName}!${label.reference}`;
+  const anchoredBelow = imageAssets
+    .filter((image): image is typeof image & { readonly anchor: { readonly status: "available"; readonly from: string; readonly to: string } } => image.anchor.status === "available" && address(image.anchor.from)!.row > labelRow)
+    .sort((left, right) => address(left.anchor.from)!.row - address(right.anchor.from)!.row);
+  const supported = anchoredBelow.find((image) => TOLERANCE_PATH_MEDIA_TYPES.has(image.mediaType));
+  if (supported) return { status: "available" as const, labelSourceCell, imageContentHash: supported.contentHash, imageAnchor: { from: supported.anchor.from, to: supported.anchor.to } };
+  if (anchoredBelow.length > 0) return { status: "unavailable" as const, reasonCode: "unsupported_media_type" as const, labelSourceCell };
+  if (imageAssets.some((image) => image.anchor.status === "unavailable")) return { status: "unavailable" as const, reasonCode: "unparsed_anchor" as const, labelSourceCell };
+  return { status: "unavailable" as const, reasonCode: "image_missing" as const, labelSourceCell };
+}
 function field(cell: OoxmlCell | undefined, worksheetName: string, semanticField: FieldName) {
   const sourceCell = cell ? `${worksheetName}!${cell.reference}` : undefined;
   if (!cell) return { status: "unavailable" as const, reasonCode: "missing" as const };
@@ -156,14 +189,13 @@ function sheetAssets(worksheet: OoxmlWorksheet, worksheetName: string, tolerance
     if (!factorColumns || factorColumns.length !== 1) continue;
     const columns = [...mapped.values()].flatMap((candidates) => candidates.length === 1 ? candidates : []);
     const mappedColumns = [...mapped.values()].flat();
+    const inputColumns = columns.filter((column) => USER_INPUT_FIELDS.has(column.semanticField));
     const dataRows: unknown[] = [];
     for (let sourceRow = headerRow + 1; ; sourceRow += 1) {
       const rowExists = rows.has(sourceRow);
-      const rowCellsForTable = mappedColumns.map((column) => cells.get(cellKey(column.sourceColumn, sourceRow)));
       if (!rowExists && sourceRow > Math.max(...rows.keys())) break;
-      if (rowCellsForTable.every((cell) => !cellValue(cell).trim())) break;
-      const factorCell = cells.get(cellKey(factorColumns[0]!.sourceColumn, sourceRow));
-      if (!cellValue(factorCell).trim()) continue;
+      const inputCells = inputColumns.map((column) => cells.get(cellKey(column.sourceColumn, sourceRow)));
+      if (inputCells.every((cell) => !cellValue(cell).trim())) continue;
       const fields: Record<string, unknown> = {};
       for (const [name, candidates] of mapped.entries()) {
         if (candidates.length !== 1) fields[name] = { status: "unavailable", reasonCode: "duplicate_mapping" };
@@ -201,7 +233,14 @@ function sheetAssets(worksheet: OoxmlWorksheet, worksheetName: string, tolerance
       anchor: image.anchor ? { status: "available" as const, ...image.anchor } : { status: "unavailable" as const, reasonCode: "unparsed_anchor" as const },
     }))
     .filter((image) => image.byteLength > 0 && IMAGE_MEDIA_TYPE.test(image.mediaType));
-  return { worksheetName, toleranceLoopDescription, factorTables, formulaCells, imageAssets };
+  return {
+    worksheetName,
+    toleranceLoopDescription,
+    factorTables,
+    formulaCells,
+    imageAssets,
+    tolerancePathImage: tolerancePathImage(worksheetName, worksheet.cells, imageAssets),
+  };
 }
 
 function selectedAnalyses(request: { readonly workbookCatalog: { readonly analyses: readonly SelectedAnalysis[] }; readonly worksheetSelection: { readonly mode: "all" } | { readonly mode: "selected"; readonly worksheetNames: readonly string[] } | undefined }) {
@@ -259,6 +298,7 @@ async function processWorksheetPage(
         factorTables: [],
         formulaCells: [],
         imageAssets: [],
+        tolerancePathImage: { status: "unavailable", reasonCode: "worksheet_unavailable" },
       },
       page: {
         worksheetName: analysis.worksheetName,

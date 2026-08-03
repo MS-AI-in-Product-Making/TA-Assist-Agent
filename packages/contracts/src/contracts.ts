@@ -458,6 +458,30 @@ const imageAnchorSchema = z.discriminatedUnion("status", [
     .strict(),
 ]);
 
+const tolerancePathImageSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("available"),
+    labelSourceCell: worksheetSourceCellSchema,
+    imageContentHash: sha256Schema,
+    imageAnchor: z.object({
+      from: z.string().regex(/^[A-Z]+[1-9]\d*$/),
+      to: z.string().regex(/^[A-Z]+[1-9]\d*$/),
+    }).strict(),
+  }).strict(),
+  z.object({
+    status: z.literal("unavailable"),
+    reasonCode: z.enum([
+      "label_missing",
+      "label_ambiguous",
+      "image_missing",
+      "unsupported_media_type",
+      "unparsed_anchor",
+      "worksheet_unavailable",
+    ]),
+    labelSourceCell: worksheetSourceCellSchema.optional(),
+  }).strict(),
+]);
+
   const worksheetImageMediaTypeSchema = z.string().regex(/^(?:image\/[a-z0-9.+-]+|application\/octet-stream)$/);
 
 const factorTableSchema = z
@@ -533,6 +557,7 @@ export const worksheetAnalysisAssetsResultSchema = z
               })
               .strict(),
           ),
+          tolerancePathImage: tolerancePathImageSchema.optional(),
         })
         .strict(),
     ).min(1),
