@@ -239,7 +239,9 @@ flowchart TD
 3. 九个业务字段逐项缺失均在原 factor 行显示 `（缺失）` 并阻塞该 worksheet。
 4. 截面图缺失在 worksheet 统计中显示一次并阻塞，不为每个 factor 重复。
 5. DIM ID 或 Part Number 缺失不阻塞，并生成按 category 聚合的 ADO 事件。
-6. 唯一能力库匹配显示推荐范围/分布；未匹配显示 `库外 / —`；缺字段显示 `无法检查 / —`。
+6. 能力判断按“F0 能力路由修正”执行；F0 命中显示对应版本的指导值，缺少 F0 上下文显示
+  `F0 信息不足 / —`，非 F0 制程分类显示 `非 F0 制程分类 / —`，业务必填缺失显示
+  `无法检查 / —`。
 7. 能力库超范围和分布不同作为非阻塞差异显示。
 
 ### 报告测试
@@ -267,7 +269,7 @@ test/demo-output/feature2-output/Maera_gap_TP_brkt_and-_battery_20260305V1/
 ```
 
 验收时必须证明 F2 未读取原始 Excel、两份报告来自同一个 `F2UserReport`、所有缺失项在行级表格
-显示、能力库未匹配明确显示 `库外 / —`、标识符事件仅为 `待触发`，且生成物不进入 Git。
+显示、F0 版本和能力状态明确可追溯、标识符事件仅为 `待触发`，且生成物不进入 Git。
 
 ## 真实 Workbook 修正规则
 
@@ -280,4 +282,104 @@ test/demo-output/feature2-output/Maera_gap_TP_brkt_and-_battery_20260305V1/
 3. 默认 worksheet 选择必须排除名称精确等于 `Example_TA` 的模板示例页。显式 manifest 也不得
   将该示例页重新加入正式分析范围。
 4. F2 仅在九个业务必填字段真实缺失时显示 `无法检查`。修复 `σ Level` 映射后，完整 factor
-  必须进入确定性能力库匹配，并显示库内推荐或 `库外 / —`。
+  必须进入下述确定性 F0 路由，不得因 public-v1 category 缺口直接停止判断。
+
+## F0 能力路由修正
+
+本节替代前文“能力库比较”中仅使用 public-v1 category/item 的实现约束；必填字段、截面图、
+标识符和非阻塞规则保持不变。
+
+F2 的能力判断必须通过 `@ai-assist/knowledge-base` 已发布的 F0 API，不得读取 F0 seed、复制
+规则或在 F2 中维护第二份公差阈值。F0 当前包含两个互不替代的能力接口：
+
+- `loadInternalToleranceGuidance({ version: "internal-v1" })`：经审核的 CNC、压铸、模切、
+  PCB/FPC、注塑和钣金最大总公差带指导；
+- `loadKnowledgeBase({ version: "v1" })`：匿名 public category/item 演示库，保留用于显式命中
+  public category 的兼容场景。
+
+### 受控制程路由
+
+F2 使用精确、大小写不敏感的 category aliases 路由六类内部制程，不对 Factor Description 或
+Part Name 做模糊推断：
+
+| F1 Part Category | F0 `processFamily` | F0 所需上下文 | 当前可判定性 |
+|---|---|---|---|
+| `CNC` | `cnc-machining` | `linear-dimension`、名义尺寸、总公差带 | 可判定 |
+| `Die Cast` / `Diecast` | `die-casting` | `linear-dimension`、`pressure-die-casting`、`DCTG6` | 信息不足，除非 F1 明确提供条件 |
+| `Die Cut` / `Diecut` | `die-cutting` | feature type、material family | 信息不足，除非 F1 明确提供条件 |
+| `PCB` / `FPC` | `pcb-fpc` | feature type、process method | 信息不足，除非 F1 明确提供条件 |
+| `Plastic` / `Injection Molding` | `plastic-injection-molding` | `linear-dimension`、`injection-molding`、`TG6`、`NW` | 信息不足，除非 F1 明确提供条件 |
+| `Sheetmetal` / `Sheet Metal` | `sheet-metal` | `linear-dimension`、`formed-stamping`、class `m`、thickness | 信息不足，除非 F1 明确提供条件 |
+
+`Assembly`、`Other` 等不属于 F0 六类制程且未命中 public-v1 category 的值标记为
+`非 F0 制程分类`，不得表述为 F0 已判断不合格。显式命中 public-v1 category 时继续使用
+public category/item API，但报告必须显示实际版本 `v1`。
+
+### CNC 请求归一化
+
+当前 F1 字段足以为 CNC 构造唯一、确定性的 F0 请求：
+
+```ts
+loadInternalToleranceGuidance({ version: "internal-v1" }).assessToleranceGuidance({
+  processFamily: "cnc-machining",
+  featureType: "linear-dimension",
+  nominalValue: Math.abs(nominalValue),
+  nominalUnit: "mm",
+  tolerance: {
+    representation: "total-band",
+    value: upperTolerance - lowerTolerance,
+    unit: "mm",
+  },
+});
+```
+
+TA nominal 的正负号表示 tolerance loop 方向，F0 尺寸区间使用其绝对值。总公差带必须有限且
+大于零；否则返回 `F0 信息不足`，不得发送无效请求或改用最近规则。
+
+### F0 行级结果
+
+每个完整 factor 行的能力状态改为以下用户语义：
+
+- `F0 内部指导-符合`：`internal-v1` 返回 `within-guidance`；
+- `F0 内部指导-超出`：`internal-v1` 返回 `guidance-exceeded`；
+- `F0 信息不足`：category 属于六类制程，但 F1 缺少该 F0 规则要求的 feature、材料、厚度或
+  工艺条件，或者 F0 返回 `unknown`；
+- `F0 公共库-符合推荐` / `F0 公共库-存在差异`：显式命中 public-v1 category/item；
+- `非 F0 制程分类`：既不属于内部制程 aliases，也未命中 public-v1 category；
+- `无法检查`：九个业务必填字段缺失，尚未形成任何 F0 请求。
+
+这些状态均不阻塞 worksheet。`F0 信息不足` 与 `非 F0 制程分类` 不是通过，也不是超出指导。
+
+### 推荐值与证据
+
+内部 F0 命中时，报告显示：
+
+```text
+最大总公差带 <value> mm · internal-v1 · <matchedEntryId>
+```
+
+JSON 同时保留 `assessedTotalBand`、`maximumRecommendedTotalBand`、`fallbackApplied`，以及 F0
+返回的来源文件 hash、sheet 和 source range。Markdown 不显示内部源文件名或 hash，只显示版本
+和稳定 entry ID。internal-v1 不包含推荐 distribution，因此报告显示 `分布：未提供`，不得从
+public-v1 或经验值拼接一个分布建议。
+
+public-v1 命中时继续显示公差范围与推荐 distribution，并记录 `v1` 和 capability entry ID。
+信息不足、非 F0 制程分类或无法检查时推荐列显示 `—`。
+
+### 汇总与追溯
+
+执行摘要分别统计：内部指导符合、内部指导超出、F0 信息不足、public-v1 命中、非 F0 制程
+分类和无法检查。顶层技术追溯必须同时列出本次实际加载的 `v1` 与 `internal-v1`；每行 JSON
+记录真正产生该判断的 F0 版本，禁止只写固定 `v1`。
+
+### F0 路由验收
+
+1. 测试必须证明 F2 通过 mockable F0 API boundary 调用 `loadInternalToleranceGuidance`，而不是
+   复制 internal-v1 阈值。
+2. CNC 名义尺寸 3.145 mm、总公差带 0.2 mm 必须命中 `cnc-linear-6`，结果为内部指导符合，
+   最大推荐总公差带为 0.2 mm。
+3. CNC 总公差带超过命中条目上限时必须显示内部指导超出，但不阻塞 worksheet。
+4. 钣金缺少 thickness 时必须显示 F0 信息不足，且不得调用带猜测 thickness 的 F0 请求。
+5. Assembly/Other 不得显示为内部指导符合或超出。
+6. 真实 Maera F2 报告中 CNC 行不得再显示 `库外`；JSON 必须通过严格 runtime schema，且
+   Markdown 与 JSON 的 F0 汇总一致。
