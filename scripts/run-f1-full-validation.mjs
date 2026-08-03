@@ -24,21 +24,7 @@ import {
   maskBlankFactorTemplateRows,
 } from "./f1-dual-grid.mjs";
 import { resolveFeature1OutputLayout, safeName } from "./f1-output-layout.mjs";
-import { resolveFeature1Jobs } from "./f1-workbook-jobs.mjs";
-
-const configuredJobs = [
-  {
-    workbookPath: "test/Maera_gap_TP_brkt_and _battery_20260305V1.xlsx",
-  },
-  {
-    workbookPath: "test/Maera_cosmetic_critical_TA - Rev E.xlsx",
-    selectedManifestPath: "test/demo-output/maera-selected-worksheets-factor-tables.full.json",
-  },
-  {
-    workbookPath: "test/Meara TP TA_20241030-v0.xlsx",
-    selectedManifestPath: "test/demo-output/meara-selected-worksheets-factor-tables.full.json",
-  },
-];
+import { configuredFeature1Jobs, resolveFeature1Jobs } from "./f1-workbook-jobs.mjs";
 
 const composedMode = (process.env.F1_COMPOSED_MODE ?? "auto").toLowerCase();
 
@@ -451,7 +437,7 @@ function summarizePages(pages) {
 }
 
 const cliArgs = process.argv.slice(2);
-const jobs = resolveFeature1Jobs(cliArgs, configuredJobs)
+const jobs = resolveFeature1Jobs(cliArgs, configuredFeature1Jobs)
   .filter((job) => existsSync(job.workbookPath));
 if (jobs.length === 0) {
   throw new Error("No configured workbook exists for Feature 1 workflow.");
