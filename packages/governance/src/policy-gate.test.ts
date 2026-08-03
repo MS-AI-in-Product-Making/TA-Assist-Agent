@@ -131,6 +131,34 @@ describe("policy gate", () => {
     });
   });
 
+  it("reports root F2 as the available worksheet-isolated Initial workflow", () => {
+    expect(getFeatureStatus("F2")).toEqual({
+      featureId: "F2",
+      title: "TA 数据清洗与能力一致性门禁",
+      status: "available",
+      dependsOn: [
+        "knowledge-base-v1",
+        "capability-item-mapping-v1",
+        "worksheet-analysis-assets-v1",
+        "required-field-check-v1",
+        "identifier-quality-check-v1",
+        "f2-initial-workflow-v1",
+      ],
+      inputContractId: "f2-initial-workflow-request-v1",
+      outputContractId: "f2-initial-workflow-result-v1",
+      maximumClassification: "confidential",
+      acceptanceChecks: [
+        "f0-f1-f2-real-workbook-flow",
+        "f2-worksheet-isolation-check",
+        "f2-blocking-policy-check",
+        "f2-mapping-gap-nonblocking-check",
+        "f2-privacy-check",
+      ],
+      externalPrerequisites: ["approved-public-knowledge-snapshot", "approved-ooxml-parser"],
+      disableBehavior: "return feature_not_available",
+    });
+  });
+
   it("reports F2.2 as the available non-blocking capability validation", () => {
     expect(getFeatureStatus("F2.2")).toEqual({
       featureId: "F2.2",
@@ -287,7 +315,7 @@ describe("policy gate", () => {
     });
   });
 
-  it.each(["F2", "F3", "F4", "F5", "F6", "F7"])(
+  it.each(["F3", "F4", "F5", "F6", "F7"])(
     "keeps %s unavailable",
     (featureId) => {
       expect(getFeatureStatus(featureId)).toMatchObject({

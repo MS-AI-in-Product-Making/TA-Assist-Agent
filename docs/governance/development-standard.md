@@ -26,3 +26,11 @@
 ## 文档与验收
 
 计划说明范围、依赖和风险；实现记录设计与契约；执行记录操作和结果；验收记录检查项、证据和结论。除非交付对象另有语言要求，这四类文档默认使用中文，并与对应 Issue 和 PR 保持可追溯关系。
+
+## F2 Initial 验收
+
+- F2 任一模块的验收必须执行完整 `F0 -> F1 -> F2` 链路，不能以孤立单元测试替代端到端证据。
+- 使用 `npm run workflow:f2 -- "test/<workbook.xlsx>"` 运行真实 workbook；报告仅写入 `test/demo-output/feature2-output/<workbook-base-name>/`。
+- 验收必须覆盖九项必填字段、公差路径截面图、默认 `mm` 假设、worksheet 隔离、Mapping 缺口非阻断、唯一匹配差异阻断和标识符非阻断语义。
+- F2 Initial 不调用 F2.3，不接受例外覆盖必填、截面图、公差或 distribution 阻断。
+- 设计与执行依据见 [F2 Initial 工作流设计](../superpowers/specs/2026-08-03-f2-initial-workflow-design.md) 和 [F2 Initial 实施计划](../superpowers/plans/2026-08-03-f2-initial-workflow.md)。

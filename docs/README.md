@@ -27,11 +27,11 @@ Phase 0 是本地优先、可审计、契约驱动的工程基础，不是 F0-F8
 仅接受受控 `confidential` `.xlsx` 字节，创建只读 worksheet catalog，并从 catalog 确认的
 worksheet 提取因子表、公式及缓存值、嵌入图片元数据；图片字节必须由 workbook hash 与唯一
 image hash 共同验证后读取。F1 不计算公式、不换算单位、不 OCR、不渲染、不输出风险解释或
-行动建议，也不写回 workbook、不调用外部服务、不跟踪或导出原始 `.xlsx`；F2.1 仅对 F1.1
-资产中的九项必填因子字段执行严格阻断，并将 Drawing Number、DIM/Characteristic ID 保留为
-非阻断提示。F2.2 在 ready、内容哈希绑定的 F2.1 之后，以 F0 的类别、`mm` 公差范围和推荐
-distribution 产生非阻断一致性信号；F2.3 提供受限例外处理，F2.4 提供标识符质量检查；
-根 F2 和 F3-F7 均不可用，F4 仅返回 `feature_not_available`。F0 解读规则不会启用 F5/F6，
+行动建议，也不写回 workbook、不调用外部服务、不跟踪或导出原始 `.xlsx`。根 F2 Initial 已可用：
+它按 worksheet 隔离检查九项必填字段与公差路径截面图，默认单位假设为 `mm`；F0 Mapping 缺口
+非阻断，唯一 Item 匹配后的公差或 distribution 差异阻断对应 worksheet。Drawing Number 与
+DIM/Characteristic ID 仅形成非阻断治理信号；F2 Initial 不调用 F2.3，不能用例外覆盖阻断。
+F3-F7 均不可用，F4 仅返回 `feature_not_available`。F0 解读规则不会启用 F5/F6，
 两者仍返回 `feature_not_available`；F8 仅提供匿名
 `public` fixture 的受治理 Skill 运行时验收，不包含外部 Adapter、模型、ADO、SharePoint 或 UI 行为。
 
@@ -56,11 +56,17 @@ distribution 产生非阻断一致性信号；F2.3 提供受限例外处理，F2
 | [F2.2 能力库与分布一致性校验实施计划](superpowers/plans/2026-07-27-f2-2-capability-distribution-validation.md) | F2.2 契约、F0 查询、治理和质量门 |
 | [F2.3 非阻断差异例外处理设计](superpowers/specs/2026-07-27-f2-3-exception-resolution-design.md) | 基于 completed F2.2 信号的纯例外覆盖解析 |
 | [F2.3 非阻断差异例外处理实施计划](superpowers/plans/2026-07-27-f2-3-exception-resolution.md) | F2.3 契约、纯服务、治理和质量门 |
+| [F2 Initial 工作流设计](superpowers/specs/2026-08-03-f2-initial-workflow-design.md) | F0/F1/F2 worksheet 隔离、Mapping 与阻断语义 |
+| [F2 Initial 实施计划](superpowers/plans/2026-08-03-f2-initial-workflow.md) | F2 Initial TDD、CLI、报告与完整链路验收 |
 | [系统架构](01-architecture.md) | 产品架构与后续业务能力边界 |
 | [Feature Register](governance/feature-register.md) | F0-F8 可用性、依赖、契约和禁用行为 |
 | [数据分类](governance/data-classification.md) | `public`、`internal`、`confidential`、`secret` 处理规则 |
 | [开发协作标准](governance/development-standard.md) | 分支、PR、文档和验收要求 |
 | [Phase 0 验收](governance/phase-0-acceptance.md) | Definition of Done、命令、预期结果和安全边界 |
+
+执行 `npm run workflow:f2 -- "test/<workbook.xlsx>"`，报告写入
+`test/demo-output/feature2-output/<workbook-base-name>/Feature2-Report.json` 与 `Feature2-Report.md`。
+F2 任一模块验收必须运行完整 `F0 -> F1 -> F2` 链路。
 
 ## Shared Conventions
 
