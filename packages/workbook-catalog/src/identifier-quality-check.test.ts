@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
-import { createIdentifierQualityCheck } from "./identifier-quality-check.js";
+import { createIdentifierQualityCheck, scanIdentifierQuality } from "./identifier-quality-check.js";
 import { createRequiredFieldCheck } from "./required-field-check.js";
 
 const CONTENT_HASH = "a".repeat(64);
@@ -27,8 +27,8 @@ function available(field: string, column: string, sourceRow: number, rawText?: s
   };
 }
 
-function unavailable() {
-  return { status: "unavailable" as const, reasonCode: "missing" as const };
+function unavailable(sourceCell?: string) {
+  return { status: "unavailable" as const, reasonCode: "missing" as const, ...(sourceCell === undefined ? {} : { sourceCell }) };
 }
 
 function fieldsFor(sourceRow: number, overrides: Record<string, unknown> = {}) {
@@ -86,6 +86,58 @@ function qualityCheckFor(rows: readonly { readonly sourceRow: number; readonly f
 }
 
 describe("identifier quality check", () => {
+  it("scans identifiers independently when required fields are blocked", () => {
+    const { drawingNumber: _drawingNumber, ...missingDrawingFields } = fieldsFor(15, {
+      partCategory: unavailable("Analysis-A!C15"),
+      dimCharacteristicId: available("dimCharacteristicId", "L", 15, "DIM-DUP"),
+    });
+    const blockedWorksheetAssets = assetsFor([
+      {
+        sourceRow: 13,
+        fields: fieldsFor(13, {
+        partCategory: unavailable("Analysis-A!C13"),
+        drawingNumber: unavailable("Analysis-A!K13"),
+        dimCharacteristicId: available("dimCharacteristicId", "L", 13, "   "),
+        }),
+      },
+      {
+        sourceRow: 14,
+        fields: fieldsFor(14, {
+          partCategory: unavailable("Analysis-A!C14"),
+          drawingNumber: available("drawingNumber", "K", 14, "DRAW\u0000-01"),
+          dimCharacteristicId: available("dimCharacteristicId", "L", 14, "DIM-DUP"),
+        }),
+      },
+      { sourceRow: 15, fields: missingDrawingFields },
+    ]);
+    const signals = scanIdentifierQuality(blockedWorksheetAssets);
+
+    expect(signals).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        signalKind: "identifier_evidence_unavailable",
+        field: "drawingNumber",
+        sources: [{ sourceRow: 13, sourceCell: "Analysis-A!K13" }],
+      }),
+      expect.objectContaining({
+        signalKind: "identifier_missing",
+        field: "dimCharacteristicId",
+        sources: [{ sourceRow: 13, sourceCell: "Analysis-A!L13" }],
+      }),
+      expect.objectContaining({ signalKind: "identifier_text_invalid", field: "drawingNumber", sources: [{ sourceRow: 14, sourceCell: "Analysis-A!K14" }] }),
+      expect.objectContaining({ signalKind: "identifier_missing", field: "drawingNumber", sources: [{ sourceRow: 15 }] }),
+      expect.objectContaining({
+        signalKind: "dim_id_duplicate",
+        field: "dimCharacteristicId",
+        sources: [
+          { sourceRow: 14, sourceCell: "Analysis-A!L14" },
+          { sourceRow: 15, sourceCell: "Analysis-A!L15" },
+        ],
+      }),
+    ]));
+    expect(Object.isFrozen(signals)).toBe(true);
+    expect(Object.isFrozen(signals[0]!.sources)).toBe(true);
+  });
+
   it("aggregates missing, unavailable, invalid, and duplicate identifier evidence", () => {
     const result = qualityCheckFor([
       { sourceRow: 2, fields: Object.fromEntries(Object.entries(fieldsFor(2)).filter(([field]) => field !== "drawingNumber")) },
