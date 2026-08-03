@@ -22,7 +22,8 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}
 const lockFileName = "audit.lock";
 const maximumLockRetryDelayMs = 50;
 const maximumLockAttempts = 10;
-const maximumSameProcessLockAttempts = 100;
+const maximumSameProcessLockAttempts = 220;
+const activeSameProcessRootLocks = new Map<string, string>();
 
 export type AuditEventType = (typeof eventTypes)[number];
 export type AuditClassification = (typeof classifications)[number];
@@ -268,8 +269,12 @@ async function acquireRootLock(lockPath: string): Promise<string> {
   for (let attempt = 0; attempt < maximumSameProcessLockAttempts; attempt += 1) {
     try {
       const lockFile = await open(lockPath, "wx");
+      activeSameProcessRootLocks.set(lockPath, lockId);
       try {
         await lockFile.writeFile(JSON.stringify({ lockId, processId: process.pid, createdAt: new Date().toISOString() }));
+      } catch (error: unknown) {
+        activeSameProcessRootLocks.delete(lockPath);
+        throw error;
       } finally {
         await lockFile.close();
       }
@@ -292,6 +297,7 @@ async function acquireRootLock(lockPath: string): Promise<string> {
 }
 
 async function isSameProcessRootLock(lockPath: string): Promise<boolean> {
+  if (activeSameProcessRootLocks.has(lockPath)) return true;
   try {
     const lock = JSON.parse(await readFile(lockPath, "utf8")) as { processId?: unknown };
     return lock.processId === process.pid;
@@ -309,6 +315,10 @@ async function releaseRootLock(lockPath: string, lockId: string): Promise<void> 
   } catch (error: unknown) {
     if (!isErrorCode(error, "ENOENT")) {
       throw error;
+    }
+  } finally {
+    if (activeSameProcessRootLocks.get(lockPath) === lockId) {
+      activeSameProcessRootLocks.delete(lockPath);
     }
   }
 }
