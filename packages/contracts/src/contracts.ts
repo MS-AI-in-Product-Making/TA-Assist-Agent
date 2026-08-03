@@ -2167,6 +2167,189 @@ export const interpretationRuleEvaluationSchema = z
     }
   });
 
+export const f2InitialWorkflowRequestSchema = z.object({
+  contractVersion: contractVersionSchema,
+  inputClassification: z.literal("confidential"),
+  knowledgeBaseVersion: knowledgeBaseVersionSchema,
+  mappingRuleVersion: z.literal("v1"),
+  toleranceUnitAssumption: z.literal("mm"),
+  worksheetAnalysisAssets: worksheetAnalysisAssetsResultSchema,
+}).strict().superRefine((request, context) => {
+  const worksheetNames = request.worksheetAnalysisAssets.worksheets.map((worksheet) => worksheet.worksheetName);
+  if (new Set(worksheetNames).size !== worksheetNames.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet names must be unique", path: ["worksheetAnalysisAssets", "worksheets"] });
+  }
+});
+
+const f2SourceReferenceSchema = z.object({
+  worksheetName: z.string().min(1),
+  tableId: z.string().min(1).optional(),
+  sourceRow: z.number().int().positive().optional(),
+  sourceCell: worksheetSourceCellSchema.optional(),
+}).strict();
+
+const f2RowSourceReferenceSchema = f2SourceReferenceSchema.extend({
+  tableId: z.string().min(1),
+  sourceRow: z.number().int().positive(),
+}).strict();
+
+const f2CapabilityEvidenceSchema = f2RowSourceReferenceSchema.extend({
+  knowledgeBaseVersion: knowledgeBaseVersionSchema,
+  mappingRuleVersion: z.literal("v1"),
+  itemId: z.string().min(1),
+  capabilityEntryId: z.string().min(1),
+  totalTolerance: z.number().finite().nonnegative(),
+  unit: z.literal("mm"),
+  actualDistribution: distributionSchema,
+  recommendedDistribution: distributionSchema,
+  hitKeywords: z.array(z.string().min(1)).min(1),
+  sourceCells: z.object({
+    upperTolerance: worksheetSourceCellSchema,
+    lowerTolerance: worksheetSourceCellSchema,
+    distribution: worksheetSourceCellSchema,
+  }).strict(),
+}).strict();
+
+const f2BlockingIssueSchema = z.discriminatedUnion("issueCode", [
+  f2RowSourceReferenceSchema.extend({
+    issueCode: z.literal("required_field_unavailable"),
+    field: requiredFieldNameSchema,
+    reasonCode: worksheetUnavailableReasonCodeSchema,
+  }).strict(),
+  f2SourceReferenceSchema.extend({ issueCode: z.literal("factor_table_has_no_rows") }).strict(),
+  f2SourceReferenceSchema.extend({
+    issueCode: z.literal("cross_section_image_unavailable"),
+    reasonCode: z.enum(["evidence_not_produced", "label_missing", "label_ambiguous", "image_missing", "unsupported_media_type", "unparsed_anchor"]),
+  }).strict(),
+  f2CapabilityEvidenceSchema.extend({ issueCode: z.literal("tolerance_out_of_range") }).strict(),
+  f2CapabilityEvidenceSchema.extend({ issueCode: z.literal("distribution_mismatch") }).strict(),
+]);
+
+const f2MappingRecordBaseSchema = f2RowSourceReferenceSchema.extend({
+  knowledgeBaseVersion: knowledgeBaseVersionSchema,
+  mappingRuleVersion: z.literal("v1"),
+  partCategory: z.string().min(1),
+  factorName: z.string(),
+  partName: z.string(),
+  sourceCells: z.object({
+    partCategory: worksheetSourceCellSchema,
+    factorName: worksheetSourceCellSchema,
+    partName: worksheetSourceCellSchema,
+  }).strict(),
+});
+
+const f2MappingCandidateSchema = z.object({
+  itemId: z.string().min(1),
+  itemName: z.string().min(1),
+  capabilityEntryId: z.string().min(1),
+  hitKeywords: z.array(z.string().min(1)).min(1),
+  hitSources: z.array(z.enum(["factorName", "partName"])).min(1),
+}).strict();
+
+const f2MappingRecordSchema = z.discriminatedUnion("status", [
+  f2MappingRecordBaseSchema.extend({ status: z.literal("category_not_defined") }).strict(),
+  f2MappingRecordBaseSchema.extend({ status: z.literal("item_unmatched"), canonicalPartCategory: z.string().min(1) }).strict(),
+  f2MappingRecordBaseSchema.extend({
+    status: z.literal("item_ambiguous"),
+    canonicalPartCategory: z.string().min(1),
+    candidates: z.array(f2MappingCandidateSchema).min(2),
+  }).strict(),
+]);
+
+const f2CapabilityCheckSchema = z.discriminatedUnion("status", [
+  f2CapabilityEvidenceSchema.extend({ status: z.literal("tolerance_and_distribution_match") }).strict(),
+  f2CapabilityEvidenceSchema.extend({ status: z.literal("tolerance_out_of_range") }).strict(),
+  f2CapabilityEvidenceSchema.extend({ status: z.literal("distribution_mismatch") }).strict(),
+  f2CapabilityEvidenceSchema.extend({ status: z.literal("tolerance_and_distribution_mismatch") }).strict(),
+]);
+
+const f2GovernanceSignalBaseSchema = f2RowSourceReferenceSchema.extend({
+  field: optionalIdentifierFieldNameSchema,
+});
+
+const f2GovernanceSignalSchema = z.discriminatedUnion("signalKind", [
+  f2GovernanceSignalBaseSchema.extend({ signalKind: z.literal("identifier_missing") }).strict(),
+  f2GovernanceSignalBaseSchema.extend({ signalKind: z.literal("identifier_evidence_unavailable"), reasonCode: worksheetUnavailableReasonCodeSchema }).strict(),
+  f2GovernanceSignalBaseSchema.extend({ signalKind: z.literal("identifier_text_invalid") }).strict(),
+  f2GovernanceSignalBaseSchema.extend({ signalKind: z.literal("dim_id_duplicate"), field: z.literal("dimCharacteristicId"), normalizedDimId: z.string().min(1) }).strict(),
+]);
+
+const f2InitialWorksheetResultSchema = z.object({
+  worksheetName: z.string().min(1),
+  status: z.enum(["blocked", "readyForNextFeature"]),
+  blockingIssues: z.array(f2BlockingIssueSchema),
+  mappingRecords: z.array(f2MappingRecordSchema),
+  capabilityChecks: z.array(f2CapabilityCheckSchema),
+  governanceSignals: z.array(f2GovernanceSignalSchema),
+}).strict().superRefine((worksheet, context) => {
+  if ((worksheet.status === "blocked") !== (worksheet.blockingIssues.length > 0)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet status must match blocking issues", path: ["status"] });
+  }
+  for (const collectionName of ["blockingIssues", "mappingRecords", "capabilityChecks", "governanceSignals"] as const) {
+    worksheet[collectionName].forEach((record, index) => {
+      if (record.worksheetName !== worksheet.worksheetName) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "record worksheetName must match its worksheet", path: [collectionName, index, "worksheetName"] });
+      }
+    });
+  }
+});
+
+const f2InitialSummarySchema = z.object({
+  worksheetsChecked: z.number().int().positive(),
+  readyForNextFeatureCount: z.number().int().nonnegative(),
+  blockedWorksheetCount: z.number().int().nonnegative(),
+  blockingIssueCount: z.number().int().nonnegative(),
+  mappingRecordCount: z.number().int().nonnegative(),
+  capabilityCheckCount: z.number().int().nonnegative(),
+  governanceSignalCount: z.number().int().nonnegative(),
+}).strict();
+
+export const f2InitialWorkflowResultSchema = z.object({
+  contractVersion: contractVersionSchema,
+  inputClassification: z.literal("confidential"),
+  knowledgeBaseVersion: knowledgeBaseVersionSchema,
+  mappingRuleVersion: z.literal("v1"),
+  workbookContentHash: sha256Schema,
+  toleranceUnitAssumption: z.literal("mm"),
+  status: z.enum(["completed", "partiallyBlocked", "blocked"]),
+  worksheets: z.array(f2InitialWorksheetResultSchema).min(1),
+  summary: f2InitialSummarySchema,
+}).strict().superRefine((result, context) => {
+  const worksheetNames = result.worksheets.map((worksheet) => worksheet.worksheetName);
+  if (new Set(worksheetNames).size !== worksheetNames.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet names must be unique", path: ["worksheets"] });
+  }
+  const blockedWorksheetCount = result.worksheets.filter((worksheet) => worksheet.status === "blocked").length;
+  const readyForNextFeatureCount = result.worksheets.length - blockedWorksheetCount;
+  const expectedStatus = blockedWorksheetCount === 0 ? "completed" : readyForNextFeatureCount === 0 ? "blocked" : "partiallyBlocked";
+  if (result.status !== expectedStatus) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "workflow status must match worksheet statuses", path: ["status"] });
+  }
+  const expectedSummary = {
+    worksheetsChecked: result.worksheets.length,
+    readyForNextFeatureCount,
+    blockedWorksheetCount,
+    blockingIssueCount: result.worksheets.reduce((count, worksheet) => count + worksheet.blockingIssues.length, 0),
+    mappingRecordCount: result.worksheets.reduce((count, worksheet) => count + worksheet.mappingRecords.length, 0),
+    capabilityCheckCount: result.worksheets.reduce((count, worksheet) => count + worksheet.capabilityChecks.length, 0),
+    governanceSignalCount: result.worksheets.reduce((count, worksheet) => count + worksheet.governanceSignals.length, 0),
+  };
+  for (const [field, expected] of Object.entries(expectedSummary)) {
+    if (result.summary[field as keyof typeof expectedSummary] !== expected) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: `${field} must match worksheet records`, path: ["summary", field] });
+    }
+  }
+  result.worksheets.forEach((worksheet, worksheetIndex) => {
+    for (const collectionName of ["mappingRecords", "capabilityChecks"] as const) {
+      worksheet[collectionName].forEach((record, recordIndex) => {
+        if (record.knowledgeBaseVersion !== result.knowledgeBaseVersion || record.mappingRuleVersion !== result.mappingRuleVersion) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "record versions must match workflow versions", path: ["worksheets", worksheetIndex, collectionName, recordIndex] });
+        }
+      });
+    }
+  });
+});
+
 export type DataClassification = z.infer<typeof dataClassificationSchema>;
 export type RunRequest = z.infer<typeof runRequestSchema>;
 export type CapabilityTier = z.infer<typeof capabilityTierSchema>;
@@ -2219,6 +2402,8 @@ export type WorksheetSelectionViewRequest = z.infer<typeof worksheetSelectionVie
 export type WorksheetSelectionViewResult = z.infer<typeof worksheetSelectionViewResultSchema>;
 export type WorksheetAnalysisAssetsRequest = z.infer<typeof worksheetAnalysisAssetsRequestSchema>;
 export type WorksheetAnalysisAssetsResult = z.infer<typeof worksheetAnalysisAssetsResultSchema>;
+export type F2InitialWorkflowRequest = z.infer<typeof f2InitialWorkflowRequestSchema>;
+export type F2InitialWorkflowResult = z.infer<typeof f2InitialWorkflowResultSchema>;
 export type SemanticTableDetectionRequest = z.infer<typeof semanticTableDetectionRequestSchema>;
 export type SemanticTableDetectionResult = z.infer<typeof semanticTableDetectionResultSchema>;
 export type WorksheetImageReadRequest = z.infer<typeof worksheetImageReadRequestSchema>;

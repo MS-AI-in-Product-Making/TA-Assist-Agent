@@ -16,6 +16,8 @@ import {
   drawingGovernanceResultSchema,
   exceptionResolutionRequestSchema,
   exceptionResolutionResultSchema,
+  f2InitialWorkflowRequestSchema,
+  f2InitialWorkflowResultSchema,
   identifierQualityCheckRequestSchema,
   identifierQualityCheckResultSchema,
   interpretationRequestSchema,
@@ -63,6 +65,173 @@ import {
   workflowRequestSchema,
   workflowResultSchema,
 } from "./index.js";
+
+describe("F2 Initial workflow contracts", () => {
+  const workbookContentHash = "f".repeat(64);
+  const worksheetAnalysisAssets = {
+    contractVersion: "v1",
+    workbook: { classification: "confidential", contentHash: workbookContentHash, catalogContractVersion: "v1" },
+    worksheets: [{
+      worksheetName: "Analysis",
+      toleranceLoopDescription: "public demo loop",
+      factorTables: [],
+      formulaCells: [],
+      imageAssets: [],
+    }],
+  };
+  const request = {
+    contractVersion: "v1",
+    inputClassification: "confidential",
+    knowledgeBaseVersion: "v1",
+    mappingRuleVersion: "v1",
+    toleranceUnitAssumption: "mm",
+    worksheetAnalysisAssets,
+  };
+  const readyWorksheet = {
+    worksheetName: "Analysis",
+    status: "readyForNextFeature",
+    blockingIssues: [],
+    mappingRecords: [],
+    capabilityChecks: [],
+    governanceSignals: [],
+  };
+  const result = {
+    contractVersion: "v1",
+    inputClassification: "confidential",
+    knowledgeBaseVersion: "v1",
+    mappingRuleVersion: "v1",
+    workbookContentHash,
+    toleranceUnitAssumption: "mm",
+    status: "completed",
+    worksheets: [readyWorksheet],
+    summary: {
+      worksheetsChecked: 1,
+      readyForNextFeatureCount: 1,
+      blockedWorksheetCount: 0,
+      blockingIssueCount: 0,
+      mappingRecordCount: 0,
+      capabilityCheckCount: 0,
+      governanceSignalCount: 0,
+    },
+  };
+  const rowSource = { worksheetName: "Blocked", tableId: "factor-table-1", sourceRow: 2 };
+  const capabilityEvidence = {
+    ...rowSource,
+    knowledgeBaseVersion: "v1",
+    mappingRuleVersion: "v1",
+    itemId: "item-demo-bracket-arm",
+    capabilityEntryId: "cap-demo-bracket",
+    totalTolerance: 0.4,
+    unit: "mm",
+    actualDistribution: "uniform",
+    recommendedDistribution: "normal",
+    hitKeywords: ["bracket arm"],
+    sourceCells: { upperTolerance: "Blocked!D2", lowerTolerance: "Blocked!E2", distribution: "Blocked!F2" },
+  };
+  const mappingSource = {
+    ...rowSource,
+    knowledgeBaseVersion: "v1",
+    mappingRuleVersion: "v1",
+    partCategory: "demo-bracket",
+    factorName: "bracket arm length",
+    partName: "mount",
+    sourceCells: { partCategory: "Blocked!C2", factorName: "Blocked!A2", partName: "Blocked!B2" },
+  };
+  const candidate = {
+    itemId: "item-demo-bracket-arm",
+    itemName: "demo bracket arm",
+    capabilityEntryId: "cap-demo-bracket",
+    hitKeywords: ["bracket arm"],
+    hitSources: ["factorName"],
+  };
+  const blockedWorksheet = {
+    worksheetName: "Blocked",
+    status: "blocked",
+    blockingIssues: [
+      { ...rowSource, issueCode: "required_field_unavailable", field: "partName", reasonCode: "missing" },
+      { worksheetName: "Blocked", tableId: "empty-table", issueCode: "factor_table_has_no_rows" },
+      { worksheetName: "Blocked", issueCode: "cross_section_image_unavailable", reasonCode: "image_missing" },
+      { ...capabilityEvidence, issueCode: "tolerance_out_of_range" },
+      { ...capabilityEvidence, issueCode: "distribution_mismatch" },
+    ],
+    mappingRecords: [
+      { ...mappingSource, status: "category_not_defined" },
+      { ...mappingSource, status: "item_unmatched", canonicalPartCategory: "demo-bracket" },
+      { ...mappingSource, status: "item_ambiguous", canonicalPartCategory: "demo-bracket", candidates: [candidate, { ...candidate, itemId: "item-demo-bracket-mount" }] },
+    ],
+    capabilityChecks: [
+      { ...capabilityEvidence, status: "tolerance_and_distribution_match" },
+      { ...capabilityEvidence, status: "tolerance_out_of_range" },
+      { ...capabilityEvidence, status: "distribution_mismatch" },
+      { ...capabilityEvidence, status: "tolerance_and_distribution_mismatch" },
+    ],
+    governanceSignals: [
+      { ...rowSource, field: "drawingNumber", signalKind: "identifier_missing" },
+      { ...rowSource, field: "drawingNumber", signalKind: "identifier_evidence_unavailable", reasonCode: "missing_cached_value" },
+      { ...rowSource, field: "drawingNumber", signalKind: "identifier_text_invalid" },
+      { ...rowSource, field: "dimCharacteristicId", signalKind: "dim_id_duplicate", normalizedDimId: "dim-1" },
+    ],
+  };
+  const blockedResult = {
+    ...result,
+    status: "blocked",
+    worksheets: [blockedWorksheet],
+    summary: {
+      worksheetsChecked: 1,
+      readyForNextFeatureCount: 0,
+      blockedWorksheetCount: 1,
+      blockingIssueCount: 5,
+      mappingRecordCount: 3,
+      capabilityCheckCount: 4,
+      governanceSignalCount: 4,
+    },
+  };
+
+  it("accepts strict trusted F1 requests and derived completed results", () => {
+    expect(f2InitialWorkflowRequestSchema.parse(request)).toEqual(request);
+    expect(f2InitialWorkflowResultSchema.parse(result)).toEqual(result);
+    expect(f2InitialWorkflowRequestSchema.safeParse({ ...request, workbookPath: "not-allowed" }).success).toBe(false);
+  });
+
+  it("rejects duplicate worksheets and mismatched statuses or summaries", () => {
+    expect(f2InitialWorkflowRequestSchema.safeParse({
+      ...request,
+      worksheetAnalysisAssets: { ...worksheetAnalysisAssets, worksheets: [worksheetAnalysisAssets.worksheets[0], worksheetAnalysisAssets.worksheets[0]] },
+    }).success).toBe(false);
+    expect(f2InitialWorkflowResultSchema.safeParse({ ...result, worksheets: [readyWorksheet, readyWorksheet] }).success).toBe(false);
+    expect(f2InitialWorkflowResultSchema.safeParse({ ...result, status: "blocked" }).success).toBe(false);
+    expect(f2InitialWorkflowResultSchema.safeParse({ ...result, summary: { ...result.summary, blockingIssueCount: 1 } }).success).toBe(false);
+    expect(f2InitialWorkflowResultSchema.safeParse({ ...result, worksheets: [{ ...readyWorksheet, status: "blocked" }] }).success).toBe(false);
+    expect(f2InitialWorkflowResultSchema.safeParse({ ...blockedResult, worksheets: [{ ...blockedWorksheet, status: "readyForNextFeature" }] }).success).toBe(false);
+  });
+
+  it("accepts every controlled record branch and all overall statuses", () => {
+    expect(f2InitialWorkflowResultSchema.safeParse(blockedResult).success).toBe(true);
+    expect(f2InitialWorkflowResultSchema.safeParse({
+      ...blockedResult,
+      status: "partiallyBlocked",
+      worksheets: [blockedWorksheet, readyWorksheet],
+      summary: { ...blockedResult.summary, worksheetsChecked: 2, readyForNextFeatureCount: 1 },
+    }).success).toBe(true);
+  });
+
+  it("rejects unknown nested record keys and incomplete row provenance", () => {
+    expect(f2InitialWorkflowResultSchema.safeParse({
+      ...blockedResult,
+      worksheets: [{ ...blockedWorksheet, mappingRecords: [{ ...blockedWorksheet.mappingRecords[0], unexpected: true }] }],
+    }).success).toBe(false);
+    const { sourceRow: _sourceRow, ...incompleteMapping } = blockedWorksheet.mappingRecords[0];
+    expect(f2InitialWorkflowResultSchema.safeParse({
+      ...blockedResult,
+      worksheets: [{ ...blockedWorksheet, mappingRecords: [incompleteMapping] }],
+      summary: { ...blockedResult.summary, mappingRecordCount: 1 },
+    }).success).toBe(false);
+    expect(f2InitialWorkflowResultSchema.safeParse({
+      ...blockedResult,
+      knowledgeBaseVersion: "v2",
+    }).success).toBe(false);
+  });
+});
 
 describe("Phase 0 contracts", () => {
   it("accepts a classified run request", () => {
