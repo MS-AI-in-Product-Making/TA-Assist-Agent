@@ -2,11 +2,13 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
   capabilityEntrySchema,
+  capabilityItemMappingSchema,
   createTypedError,
   engineeringRuleEntrySchema,
   knowledgeBaseManifestSchema,
   terminologyEntrySchema,
   type CapabilityEntry,
+  type CapabilityItemMapping,
   type EngineeringRuleEntry,
   type KnowledgeBaseManifest,
   type TerminologyEntry,
@@ -18,6 +20,7 @@ import {
 const BANNED_STRING_PATTERN = /(\.xlsx|\.xlsm|\bdim[\s_-]*id\b|\bsupplier\b|\binternal\b|\bconfidential\b|\bsecret\b|\bproject[-_ ]?code\b)/i;
 const LIBRARY_IDS = [
   "capability-library",
+  "capability-item-mapping",
   "engineering-rules",
   "terminology-ontology",
 ] as const;
@@ -30,6 +33,7 @@ const seedPackageSchema = z
   .object({
     manifest: z.unknown(),
     capabilities: z.array(z.unknown()),
+    itemMappings: z.array(z.unknown()),
     rules: z.array(z.unknown()),
     terminology: z.array(z.unknown()),
   })
@@ -38,6 +42,7 @@ const seedPackageSchema = z
 export interface KnowledgeBaseSeedPackage {
   manifest: KnowledgeBaseManifest;
   capabilities: CapabilityEntry[];
+  itemMappings: CapabilityItemMapping[];
   rules: EngineeringRuleEntry[];
   terminology: TerminologyEntry[];
 }
@@ -55,6 +60,7 @@ export function contentHash(value: unknown): string {
 export function createSeedPackage(): KnowledgeBaseSeedPackage {
   const canonical = createCanonicalSeedData();
   const capabilities = structuredClone(canonical.capabilities);
+  const itemMappings = structuredClone(canonical.itemMappings);
   const rules = structuredClone(canonical.rules);
   const terminology = structuredClone(canonical.terminology);
 
@@ -74,6 +80,13 @@ export function createSeedPackage(): KnowledgeBaseSeedPackage {
           contentHash: contentHash(capabilities),
         },
         {
+          libraryId: "capability-item-mapping",
+          contractId: "capability-item-mapping-v1",
+          entryCount: itemMappings.length,
+          coverage: ["public demo coverage"],
+          contentHash: contentHash(itemMappings),
+        },
+        {
           libraryId: "engineering-rules",
           contractId: "engineering-rules-v1",
           entryCount: rules.length,
@@ -90,6 +103,7 @@ export function createSeedPackage(): KnowledgeBaseSeedPackage {
       ],
     },
     capabilities,
+    itemMappings,
     rules,
     terminology,
   };
@@ -110,26 +124,30 @@ function validateSeedPackage(value: unknown): KnowledgeBaseSeedPackage {
 
   const manifest = safeParse(knowledgeBaseManifestSchema, root.data.manifest);
   const capabilities = root.data.capabilities.map((entry) => safeParse(capabilityEntrySchema, entry));
+  const itemMappings = root.data.itemMappings.map((entry) => safeParse(capabilityItemMappingSchema, entry));
   const rules = root.data.rules.map((entry) => safeParse(engineeringRuleEntrySchema, entry));
   const terminology = root.data.terminology.map((entry) => safeParse(terminologyEntrySchema, entry));
-  if (!manifest.success || capabilities.some((entry) => !entry.success) || rules.some((entry) => !entry.success) || terminology.some((entry) => !entry.success)) {
+  if (!manifest.success || capabilities.some((entry) => !entry.success) || itemMappings.some((entry) => !entry.success) || rules.some((entry) => !entry.success) || terminology.some((entry) => !entry.success)) {
     throw validationError([]);
   }
 
   const parsed: KnowledgeBaseSeedPackage = {
     manifest: manifest.data,
     capabilities: capabilities.map((entry) => (entry as { data: CapabilityEntry }).data),
+    itemMappings: itemMappings.map((entry) => (entry as { data: CapabilityItemMapping }).data),
     rules: rules.map((entry) => (entry as { data: EngineeringRuleEntry }).data),
     terminology: terminology.map((entry) => (entry as { data: TerminologyEntry }).data),
   };
 
   validateUniqueIds(parsed.capabilities, (entry) => entry.entryId, "capability-library");
+  validateUniqueIds(parsed.itemMappings, (entry) => entry.itemId, "capability-item-mapping");
   validateUniqueIds(parsed.rules, (entry) => entry.ruleId, "engineering-rules");
   validateUniqueIds(parsed.terminology, (entry) => entry.entryId, "terminology-ontology");
   validateProvenanceVersions(parsed);
   validateManifest(parsed);
   validateTerminologyGraph(parsed.terminology);
   validateTerminologyNames(parsed.terminology);
+  validateItemMappings(parsed);
   return parsed;
 }
 
@@ -147,10 +165,10 @@ function validateUniqueIds<Entry>(
 }
 
 function validateProvenanceVersions(seed: KnowledgeBaseSeedPackage): void {
-  const entries = [...seed.capabilities, ...seed.rules, ...seed.terminology];
+  const entries = [...seed.capabilities, ...seed.itemMappings, ...seed.rules, ...seed.terminology];
   for (const entry of entries) {
     if (entry.provenance.effectiveVersion !== seed.manifest.knowledgeBaseVersion) {
-      throw validationError(["capability-library", "engineering-rules", "terminology-ontology"]);
+      throw validationError(["capability-library", "capability-item-mapping", "engineering-rules", "terminology-ontology"]);
     }
   }
 }
@@ -158,6 +176,7 @@ function validateProvenanceVersions(seed: KnowledgeBaseSeedPackage): void {
 function validateManifest(seed: KnowledgeBaseSeedPackage): void {
   const expected = new Map([
     ["capability-library", { contractId: "capability-library-v1", entries: seed.capabilities }],
+    ["capability-item-mapping", { contractId: "capability-item-mapping-v1", entries: seed.itemMappings }],
     ["engineering-rules", { contractId: "engineering-rules-v1", entries: seed.rules }],
     ["terminology-ontology", { contractId: "terminology-ontology-v1", entries: seed.terminology }],
   ]);
@@ -288,4 +307,26 @@ function isSafeValidationError(error: unknown): error is Error {
   } catch {
     return false;
   }
+}
+
+function validateItemMappings(seed: KnowledgeBaseSeedPackage): void {
+  const capabilities = new Map(seed.capabilities.map((entry) => [entry.entryId, entry]));
+  const categories = new Set(seed.terminology.filter((entry) => entry.termType === "part-category").map((entry) => entry.canonicalName));
+  for (const capability of seed.capabilities) {
+    if (!categories.has(capability.partCategory)) throw validationError(["terminology-ontology"]);
+  }
+  for (const mapping of seed.itemMappings) {
+    const normalizedKeywords = mapping.keywords.map(normalizeKeyword);
+    if (new Set(normalizedKeywords).size !== normalizedKeywords.length) {
+      throw validationError(["capability-item-mapping"]);
+    }
+    const capability = capabilities.get(mapping.capabilityEntryId);
+    if (!capability || capability.partCategory !== mapping.partCategory) {
+      throw validationError(["capability-item-mapping"]);
+    }
+  }
+}
+
+function normalizeKeyword(value: string): string {
+  return value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim().replace(/\s+/g, " ");
 }

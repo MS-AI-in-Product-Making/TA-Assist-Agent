@@ -370,6 +370,13 @@ describe("knowledge-base contracts", () => {
         contentHash: "a".repeat(64),
       },
       {
+        libraryId: "capability-item-mapping",
+        contractId: "capability-item-mapping-v1",
+        entryCount: 2,
+        coverage: ["public demo coverage"],
+        contentHash: "d".repeat(64),
+      },
+      {
         libraryId: "engineering-rules",
         contractId: "engineering-rules-v1",
         entryCount: 3,
@@ -398,6 +405,7 @@ describe("knowledge-base contracts", () => {
           publicManifest.libraries[0],
           publicManifest.libraries[0],
           publicManifest.libraries[2],
+          publicManifest.libraries[3],
         ],
       }),
     ).toThrow();
@@ -411,6 +419,7 @@ describe("knowledge-base contracts", () => {
           { ...publicManifest.libraries[0], contractId: "engineering-rules-v1" },
           publicManifest.libraries[1],
           publicManifest.libraries[2],
+          publicManifest.libraries[3],
         ],
       }),
     ).toThrow();

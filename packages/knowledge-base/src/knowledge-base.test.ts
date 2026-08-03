@@ -105,6 +105,60 @@ it("matches by category when optional subsystem and datum filters are absent", (
   });
 });
 
+it("matches capability items by category and controlled keywords without guessing", () => {
+  const knowledgeBase = loadKnowledgeBase({ version: "v1" });
+
+  expect(knowledgeBase.matchCapabilityItem({
+    partCategory: "unknown-category",
+    factorName: "bracket arm gap",
+    partName: "mount arm",
+  })).toEqual({
+    queryType: "capability-item",
+    status: "category_not_defined",
+    contractVersion: "v1",
+    knowledgeBaseVersion: "v1",
+  });
+  expect(knowledgeBase.matchCapabilityItem({
+    partCategory: "demo-bracket",
+    factorName: "unrelated feature",
+    partName: "unrelated component",
+  })).toEqual({
+    queryType: "capability-item",
+    status: "item_unmatched",
+    contractVersion: "v1",
+    knowledgeBaseVersion: "v1",
+    canonicalPartCategory: "demo-bracket",
+  });
+  expect(knowledgeBase.matchCapabilityItem({
+    partCategory: "demonstration bracket",
+    factorName: "bracket arm gap",
+    partName: "component",
+  })).toMatchObject({
+    queryType: "capability-item",
+    status: "matched",
+    canonicalPartCategory: "demo-bracket",
+    candidate: {
+      itemId: "item-demo-bracket-arm",
+      capabilityEntryId: "cap-demo-bracket",
+      hitKeywords: ["bracket arm"],
+      hitSources: ["factorName"],
+    },
+    capabilityEntry: { entryId: "cap-demo-bracket" },
+  });
+  expect(knowledgeBase.matchCapabilityItem({
+    partCategory: "demo-bracket",
+    factorName: "mount support gap",
+    partName: "mount arm",
+  })).toMatchObject({
+    queryType: "capability-item",
+    status: "item_ambiguous",
+    candidates: [
+      expect.objectContaining({ itemId: "item-demo-bracket-arm" }),
+      expect.objectContaining({ itemId: "item-demo-bracket-mount" }),
+    ],
+  });
+});
+
 it("returns a matched public T0 entry without a feasibility conclusion", () => {
   const knowledgeBase = loadKnowledgeBase({ version: "v1" });
   const result = knowledgeBase.findCapability({

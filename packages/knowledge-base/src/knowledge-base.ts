@@ -1,10 +1,14 @@
 import { z } from "zod";
 import {
   createTypedError,
+  capabilityItemMatchResultSchema,
+  capabilityItemQuerySchema,
   engineeringRuleQuerySchema,
   knowledgeBaseQueryRequestSchema,
   terminologyQuerySchema,
   type CapabilityEntry,
+  type CapabilityItemMapping,
+  type CapabilityItemMatchResult,
   type EngineeringRuleEntry,
   type KnowledgeBaseManifest,
   type TerminologyEntry,
@@ -66,6 +70,7 @@ export interface KnowledgeBase {
   findCapability(request: unknown): CapabilityMatch | CapabilityUnknown;
   getEngineeringRule(request: unknown): RuleMatch | RuleUnknown;
   resolveTerminology(request: unknown): TerminologyMatch | TerminologyUnknown;
+  matchCapabilityItem(request: unknown): CapabilityItemMatchResult;
 }
 
 export function loadKnowledgeBase(request: unknown): KnowledgeBase {
@@ -78,7 +83,54 @@ export function loadKnowledgeBase(request: unknown): KnowledgeBase {
     findCapability: (query) => findCapability(snapshot.capabilities, query),
     getEngineeringRule: (query) => getEngineeringRule(snapshot.rules, query),
     resolveTerminology: (query) => resolveTerminology(snapshot.terminology, query),
+    matchCapabilityItem: (query) => matchCapabilityItem(snapshot.capabilities, snapshot.itemMappings, snapshot.terminology, query),
   };
+}
+
+function matchCapabilityItem(
+  capabilities: readonly CapabilityEntry[],
+  mappings: readonly CapabilityItemMapping[],
+  terminology: readonly TerminologyEntry[],
+  request: unknown,
+): CapabilityItemMatchResult {
+  const query = parseOrThrow(capabilityItemQuerySchema, request, "capability item query");
+  const category = resolveTerminology(terminology, { termType: "part-category", value: query.partCategory });
+  if (category.status === "unknown") return itemResult({ queryType: "capability-item", status: "category_not_defined", contractVersion: "v1", knowledgeBaseVersion: "v1" });
+  const canonicalPartCategory = category.entry.canonicalName;
+  const inputs = { factorName: normalizeKeywordText(query.factorName), partName: normalizeKeywordText(query.partName) };
+  const candidates = mappings
+    .filter((mapping) => mapping.partCategory === canonicalPartCategory)
+    .flatMap((mapping) => {
+      const hits = mapping.keywords.flatMap((keyword) => {
+        const normalizedKeyword = normalizeKeywordText(keyword);
+        const hitSources = (Object.entries(inputs) as ["factorName" | "partName", string][])
+          .filter(([, value]) => ` ${value} `.includes(` ${normalizedKeyword} `))
+          .map(([source]) => source);
+        return hitSources.length === 0 ? [] : [{ keyword, hitSources }];
+      });
+      if (hits.length === 0) return [];
+      return [{
+        itemId: mapping.itemId,
+        itemName: mapping.itemName,
+        capabilityEntryId: mapping.capabilityEntryId,
+        hitKeywords: [...new Set(hits.map((hit) => hit.keyword))],
+        hitSources: [...new Set(hits.flatMap((hit) => hit.hitSources))],
+      }];
+    });
+  if (candidates.length === 0) return itemResult({ queryType: "capability-item", status: "item_unmatched", contractVersion: "v1", knowledgeBaseVersion: "v1", canonicalPartCategory });
+  if (candidates.length > 1) return itemResult({ queryType: "capability-item", status: "item_ambiguous", contractVersion: "v1", knowledgeBaseVersion: "v1", canonicalPartCategory, candidates });
+  const candidate = candidates[0]!;
+  const capabilityEntry = capabilities.find((entry) => entry.entryId === candidate.capabilityEntryId);
+  if (!capabilityEntry) throw validationError("capability item mapping");
+  return itemResult({ queryType: "capability-item", status: "matched", contractVersion: "v1", knowledgeBaseVersion: "v1", canonicalPartCategory, candidate, capabilityEntry });
+}
+
+function normalizeKeywordText(value: string): string {
+  return value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim().replace(/\s+/g, " ");
+}
+
+function itemResult(value: unknown): CapabilityItemMatchResult {
+  return immutableDto(capabilityItemMatchResultSchema.parse(value));
 }
 
 function findCapability(

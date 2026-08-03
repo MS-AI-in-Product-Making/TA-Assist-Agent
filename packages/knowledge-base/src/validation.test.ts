@@ -11,6 +11,7 @@ import {
 
 const SAFE_INPUT_REFERENCES = new Set([
   "capability-library",
+  "capability-item-mapping",
   "engineering-rules",
   "terminology-ontology",
   "knowledge-base-manifest",
@@ -18,6 +19,12 @@ const SAFE_INPUT_REFERENCES = new Set([
 
 function validPackage(): KnowledgeBaseSeedPackage {
   return createSeedPackage();
+}
+
+function refreshItemMappingManifest(seed: KnowledgeBaseSeedPackage): void {
+  const manifest = seed.manifest.libraries.find((library) => library.libraryId === "capability-item-mapping")!;
+  manifest.entryCount = seed.itemMappings.length;
+  manifest.contentHash = contentHash(seed.itemMappings);
 }
 
 function expectValidationError(action: () => unknown): void {
@@ -116,8 +123,14 @@ describe("knowledge-base v1 seed package", () => {
       { ruleId: "ctf-sigma", ruleType: "sigma", threshold: 4 },
       { ruleId: "default-cpk-target", ruleType: "cpk", threshold: 1.33 },
     ]);
+    expect(seed.itemMappings.map(({ itemId, capabilityEntryId }) => ({ itemId, capabilityEntryId }))).toEqual([
+      { itemId: "item-demo-bracket-arm", capabilityEntryId: "cap-demo-bracket" },
+      { itemId: "item-demo-bracket-mount", capabilityEntryId: "cap-demo-bracket" },
+    ]);
     expect(seed.terminology.map(({ entryId, parentEntryId }) => ({ entryId, parentEntryId }))).toEqual([
       { entryId: "demo-bracket", parentEntryId: undefined },
+      { entryId: "demo-spacer", parentEntryId: undefined },
+      { entryId: "demo-t0-clip", parentEntryId: undefined },
       { entryId: "mechanical-demo", parentEntryId: undefined },
       { entryId: "primary-demo-datum", parentEntryId: "mechanical-demo" },
     ]);
@@ -133,8 +146,9 @@ describe("knowledge-base v1 seed package", () => {
       releasedAt: "2026-07-22",
     });
     expect(snapshot.capabilities).toHaveLength(3);
+    expect(snapshot.itemMappings).toHaveLength(2);
     expect(snapshot.rules).toHaveLength(3);
-    expect(snapshot.terminology).toHaveLength(3);
+    expect(snapshot.terminology).toHaveLength(5);
   });
 
   it("uses canonical object-key ordering and lower-case SHA-256 hashes", () => {
@@ -173,6 +187,45 @@ describe("knowledge-base v1 seed package", () => {
   it("rejects a duplicate capability stable ID", () => {
     const seed = validPackage();
     seed.capabilities.push(structuredClone(seed.capabilities[0]!));
+
+    expectValidationError(() => createKnowledgeSnapshot(seed));
+  });
+
+  it("rejects a duplicate capability item ID", () => {
+    const seed = validPackage();
+    seed.itemMappings.push(structuredClone(seed.itemMappings[0]!));
+
+    expectValidationError(() => createKnowledgeSnapshot(seed));
+  });
+
+  it("rejects a capability item with a missing capability reference", () => {
+    const seed = validPackage();
+    seed.itemMappings[0]!.capabilityEntryId = "missing-capability";
+    refreshItemMappingManifest(seed);
+
+    expectValidationError(() => createKnowledgeSnapshot(seed));
+  });
+
+  it("rejects a capability item whose category differs from its capability", () => {
+    const seed = validPackage();
+    seed.itemMappings[0]!.partCategory = "demo-spacer";
+    refreshItemMappingManifest(seed);
+
+    expectValidationError(() => createKnowledgeSnapshot(seed));
+  });
+
+  it("rejects duplicate normalized capability item keywords", () => {
+    const seed = validPackage();
+    seed.itemMappings[0]!.keywords = ["mount-arm", " MOUNT arm "];
+    refreshItemMappingManifest(seed);
+
+    expectValidationError(() => createKnowledgeSnapshot(seed));
+  });
+
+  it("rejects a capability item manifest hash mismatch", () => {
+    const seed = validPackage();
+    const manifest = seed.manifest.libraries.find((library) => library.libraryId === "capability-item-mapping")!;
+    manifest.contentHash = "0".repeat(64);
 
     expectValidationError(() => createKnowledgeSnapshot(seed));
   });

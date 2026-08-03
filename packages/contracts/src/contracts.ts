@@ -39,6 +39,7 @@ export const distributionSchema = z.enum([
 
 export const knowledgeLibraryIdSchema = z.enum([
   "capability-library",
+  "capability-item-mapping",
   "engineering-rules",
   "terminology-ontology",
 ]);
@@ -75,6 +76,18 @@ export const capabilityEntrySchema = z
     path: ["toleranceMin"],
   });
 
+export const capabilityItemMappingSchema = z.object({
+  itemId: z.string().min(1),
+  itemName: z.string().min(1),
+  partCategory: z.string().min(1),
+  capabilityEntryId: z.string().min(1),
+  keywords: z.array(z.string().min(1)).min(1).refine(
+    (keywords) => new Set(keywords.map((keyword) => keyword.trim().toLowerCase())).size === keywords.length,
+    { message: "keywords must be unique" },
+  ),
+  provenance: provenanceSchema,
+}).strict();
+
 export const engineeringRuleEntrySchema = z
   .object({
     ruleId: z.enum(["cts-sigma", "ctf-sigma", "default-cpk-target"]),
@@ -108,6 +121,13 @@ const knowledgeLibraryManifestSchema = z.discriminatedUnion("libraryId", [
       contentHash: z.string().regex(/^[a-f0-9]{64}$/),
     })
     .strict(),
+  z.object({
+    libraryId: z.literal("capability-item-mapping"),
+    contractId: z.literal("capability-item-mapping-v1"),
+    entryCount: z.number().int().min(0),
+    coverage: z.array(z.string().min(1)).min(1),
+    contentHash: z.string().regex(/^[a-f0-9]{64}$/),
+  }).strict(),
   z
     .object({
       libraryId: z.literal("engineering-rules"),
@@ -137,9 +157,9 @@ export const knowledgeBaseManifestSchema = z
     changeSummary: z.string().min(1),
     libraries: z
       .array(knowledgeLibraryManifestSchema)
-      .length(3)
+      .length(4)
       .refine(
-        (libraries) => new Set(libraries.map((library) => library.libraryId)).size === 3,
+        (libraries) => new Set(libraries.map((library) => library.libraryId)).size === 4,
         { message: "libraries must contain each library exactly once" },
       ),
   })
@@ -167,6 +187,27 @@ export const terminologyQuerySchema = z
     value: z.string().min(1),
   })
   .strict();
+
+export const capabilityItemQuerySchema = z.object({
+  partCategory: z.string().min(1),
+  factorName: z.string(),
+  partName: z.string(),
+}).strict();
+
+const capabilityItemCandidateSchema = z.object({
+  itemId: z.string().min(1),
+  itemName: z.string().min(1),
+  capabilityEntryId: z.string().min(1),
+  hitKeywords: z.array(z.string().min(1)).min(1),
+  hitSources: z.array(z.enum(["factorName", "partName"])).min(1),
+}).strict();
+
+export const capabilityItemMatchResultSchema = z.discriminatedUnion("status", [
+  z.object({ queryType: z.literal("capability-item"), status: z.literal("category_not_defined"), contractVersion: contractVersionSchema, knowledgeBaseVersion: knowledgeBaseVersionSchema }).strict(),
+  z.object({ queryType: z.literal("capability-item"), status: z.literal("item_unmatched"), contractVersion: contractVersionSchema, knowledgeBaseVersion: knowledgeBaseVersionSchema, canonicalPartCategory: z.string().min(1) }).strict(),
+  z.object({ queryType: z.literal("capability-item"), status: z.literal("item_ambiguous"), contractVersion: contractVersionSchema, knowledgeBaseVersion: knowledgeBaseVersionSchema, canonicalPartCategory: z.string().min(1), candidates: z.array(capabilityItemCandidateSchema).min(2) }).strict(),
+  z.object({ queryType: z.literal("capability-item"), status: z.literal("matched"), contractVersion: contractVersionSchema, knowledgeBaseVersion: knowledgeBaseVersionSchema, canonicalPartCategory: z.string().min(1), candidate: capabilityItemCandidateSchema, capabilityEntry: capabilityEntrySchema }).strict(),
+]);
 
 export const capabilityMatchResultSchema = z
   .object({
@@ -1598,6 +1639,7 @@ export const knowledgeBaseQueryResultSchema = z.union([
   engineeringRuleUnknownResultSchema,
   terminologyMatchResultSchema,
   terminologyUnknownResultSchema,
+  capabilityItemMatchResultSchema,
 ]);
 
 export const internalToleranceGuidanceVersionSchema = z.literal("internal-v1");
@@ -2133,6 +2175,8 @@ export type KnowledgeLibraryId = z.infer<typeof knowledgeLibraryIdSchema>;
 export type KnowledgeBaseVersion = z.infer<typeof knowledgeBaseVersionSchema>;
 export type Provenance = z.infer<typeof provenanceSchema>;
 export type CapabilityEntry = z.infer<typeof capabilityEntrySchema>;
+export type CapabilityItemMapping = z.infer<typeof capabilityItemMappingSchema>;
+export type CapabilityItemMatchResult = z.infer<typeof capabilityItemMatchResultSchema>;
 export type EngineeringRuleEntry = z.infer<typeof engineeringRuleEntrySchema>;
 export type TerminologyEntry = z.infer<typeof terminologyEntrySchema>;
 export type KnowledgeBaseManifest = z.infer<typeof knowledgeBaseManifestSchema>;

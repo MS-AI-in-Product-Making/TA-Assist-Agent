@@ -1,11 +1,13 @@
 import type {
   CapabilityEntry,
+  CapabilityItemMapping,
   EngineeringRuleEntry,
   TerminologyEntry,
 } from "@ai-assist/contracts";
 
 interface CanonicalSeedData {
   capabilities: CapabilityEntry[];
+  itemMappings: CapabilityItemMapping[];
   rules: EngineeringRuleEntry[];
   terminology: TerminologyEntry[];
 }
@@ -56,6 +58,24 @@ const canonicalSeedData: CanonicalSeedData = {
     provenance,
   },
   ],
+  itemMappings: [
+  {
+    itemId: "item-demo-bracket-arm",
+    itemName: "demo bracket arm",
+    partCategory: "demo-bracket",
+    capabilityEntryId: "cap-demo-bracket",
+    keywords: ["bracket arm", "mount arm"],
+    provenance,
+  },
+  {
+    itemId: "item-demo-bracket-mount",
+    itemName: "demo bracket mount",
+    partCategory: "demo-bracket",
+    capabilityEntryId: "cap-demo-bracket",
+    keywords: ["mount", "support"],
+    provenance,
+  },
+  ],
   rules: [
   {
     ruleId: "cts-sigma",
@@ -89,6 +109,22 @@ const canonicalSeedData: CanonicalSeedData = {
     canonicalName: "demo-bracket",
     aliases: ["demonstration bracket"],
     definition: "A public demonstration bracket part category.",
+    provenance,
+  },
+  {
+    entryId: "demo-spacer",
+    termType: "part-category",
+    canonicalName: "demo-spacer",
+    aliases: ["demonstration spacer"],
+    definition: "A public demonstration spacer part category.",
+    provenance,
+  },
+  {
+    entryId: "demo-t0-clip",
+    termType: "part-category",
+    canonicalName: "demo-t0-clip",
+    aliases: ["demonstration clip"],
+    definition: "A public demonstration clip part category.",
     provenance,
   },
   {
