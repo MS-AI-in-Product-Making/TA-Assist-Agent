@@ -5,17 +5,10 @@ import {
   type CapabilityValidationResult,
 } from "@ai-assist/contracts";
 import { loadKnowledgeBase } from "@ai-assist/knowledge-base";
+import { normalizeDistribution } from "./distribution-normalization.js";
 
 const REQUEST_SUMMARY = "Capability validation request is invalid.";
 const POLICY_SUMMARY = "Capability validation input is not permitted.";
-const DISTRIBUTION_ALIASES = new Map<string, string>([
-  ["normal", "normal"], ["gaussian", "normal"], ["正态分布", "normal"],
-  ["uniform", "uniform"], ["均匀分布", "uniform"],
-  ["triangular", "triangular"], ["三角分布", "triangular"],
-  ["trapezoidal", "trapezoidal"], ["梯形分布", "trapezoidal"],
-  ["elliptical", "elliptical"], ["椭圆分布", "elliptical"],
-  ["beta", "beta"], ["贝塔分布", "beta"],
-]);
 
 function requestError(summary: string, code: "validation_error" | "policy_denied" = "validation_error"): Error {
   return createTypedError({
@@ -51,10 +44,6 @@ function availableNumber(fields: Record<string, unknown>, field: string): number
   return value?.status === "available" && typeof value.numericValue === "number" && Number.isFinite(value.numericValue)
     ? value.numericValue
     : undefined;
-}
-
-function normalizeDistribution(value: string | undefined): string | undefined {
-  return value === undefined ? undefined : DISTRIBUTION_ALIASES.get(value.trim().toLowerCase());
 }
 
 function createResult(value: unknown): CapabilityValidationResult {
