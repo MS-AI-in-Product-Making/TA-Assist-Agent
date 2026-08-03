@@ -18,6 +18,8 @@ import {
   exceptionResolutionResultSchema,
   f2InitialWorkflowRequestSchema,
   f2InitialWorkflowResultSchema,
+  f2ArtifactInputSchema,
+  f2UserReportSchema,
   identifierQualityCheckRequestSchema,
   identifierQualityCheckResultSchema,
   interpretationRequestSchema,
@@ -65,6 +67,78 @@ import {
   workflowRequestSchema,
   workflowResultSchema,
 } from "./index.js";
+
+describe("F2 artifact user report contracts", () => {
+  const contentHash = "a".repeat(64);
+  const artifactInput = {
+    contractVersion: "v1",
+    inputClassification: "confidential",
+    artifactRoot: "test/demo-output/feature1-output/Demo",
+    workbook: { fileName: "Demo.xlsx", contentHash, f1GeneratedAt: "2026-08-03T00:00:00.000Z" },
+    worksheets: [{
+      worksheetName: "Analysis-A",
+      worksheetJsonPath: "sheets/Demo.xlsx/json/Analysis-A.json",
+      worksheetMdPath: "sheets/Demo.xlsx/md/Analysis-A.md",
+      tolerancePathImage: { status: "available", imagePath: "sheets/Demo.xlsx/images/a.png", contentHash: "b".repeat(64) },
+      factorTables: [],
+    }],
+  };
+  const row = {
+    worksheetName: "Analysis-A",
+    tableId: "table-a",
+    sourceRow: 2,
+    displayedFields: {
+      factorName: "Bracket arm",
+      partName: "Bracket",
+      partNumber: "（缺失）",
+      dimCharacteristicId: "（缺失）",
+      partCategory: "demo-bracket",
+      nominalValue: "1",
+      upperTolerance: "0.2",
+      lowerTolerance: "-0.2",
+      longTermSafetyFactor: "1",
+      standardDeviation: "0.01",
+      distribution: "Normal",
+    },
+    sourceCells: { factorName: "Analysis-A!A2" },
+    missingRequiredFields: [],
+    capabilityStatus: "in_library_tolerance_outside",
+    recommendation: { toleranceMin: 0.1, toleranceMax: 0.3, unit: "mm", distribution: "normal" },
+    adoReminderRequested: true,
+  };
+  const completedReport = {
+    contractVersion: "v1",
+    inputClassification: "confidential",
+    status: "completed",
+    workbook: { fileName: "Demo.xlsx", contentHash, f1GeneratedAt: "2026-08-03T00:00:00.000Z" },
+    knowledgeBaseVersion: "v1",
+    mappingRuleVersion: "v1",
+    artifactRoot: artifactInput.artifactRoot,
+    worksheets: [{ worksheetName: "Analysis-A", status: "ready", tolerancePathImageStatus: "available", rows: [row], missingFieldSummary: [] }],
+    adoEvents: [{ eventType: "adoReminderRequested", category: "demo-bracket", worksheetName: "Analysis-A", missingFields: ["dimCharacteristicId", "partNumber"], factorRows: [2], workbookContentHash: contentHash }],
+    summary: { worksheetsChecked: 1, blockedWorksheetCount: 0, readyWorksheetCount: 1, factorRowCount: 1, rowsWithRequiredMissing: 0, requiredMissingFieldCount: 0, missingImageWorksheetCount: 0, inLibraryCount: 1, outsideLibraryCount: 0, unableToCheckCount: 0, toleranceDifferenceCount: 1, distributionDifferenceCount: 0, missingDimIdCount: 1, missingPartNumberCount: 1 },
+  };
+
+  it("accepts artifact-only inputs and non-blocking capability differences", () => {
+    expect(f2ArtifactInputSchema.parse(artifactInput)).toEqual(artifactInput);
+    expect(f2UserReportSchema.parse(completedReport)).toEqual(completedReport);
+    expect(f2ArtifactInputSchema.safeParse({ ...artifactInput, workbookPath: "Demo.xlsx" }).success).toBe(false);
+    expect(f2ArtifactInputSchema.safeParse({ ...artifactInput, workbookBytes: new Uint8Array([1]) }).success).toBe(false);
+  });
+
+  it("accepts input rejection but rejects inconsistent business and ADO states", () => {
+    expect(f2UserReportSchema.safeParse({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      status: "inputRejected",
+      artifactRoot: artifactInput.artifactRoot,
+      artifactIssues: [{ reasonCode: "root_md_missing", artifactPath: "Feature1-Report.md" }],
+    }).success).toBe(true);
+    expect(f2UserReportSchema.safeParse({ ...completedReport, status: "blocked" }).success).toBe(false);
+    expect(f2UserReportSchema.safeParse({ ...completedReport, adoEvents: [{ ...completedReport.adoEvents[0], missingFields: [] }] }).success).toBe(false);
+    expect(f2ArtifactInputSchema.safeParse({ ...artifactInput, worksheets: [{ ...artifactInput.worksheets[0], worksheetJsonPath: "../outside.json" }] }).success).toBe(false);
+  });
+});
 
 describe("F2 Initial workflow contracts", () => {
   const workbookContentHash = "f".repeat(64);

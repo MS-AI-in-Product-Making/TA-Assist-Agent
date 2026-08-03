@@ -2351,6 +2351,210 @@ export const f2InitialWorkflowResultSchema = z.object({
   });
 });
 
+const relativeArtifactPathSchema = z.string().min(1).refine((value) => {
+  const normalized = value.replace(/\\/g, "/");
+  return !/^(?:[A-Za-z]:|\/)/.test(normalized) && !normalized.split("/").includes("..");
+}, "artifact path must stay relative to its root");
+
+const f1ArtifactFieldSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("available"),
+    sourceCell: worksheetSourceCellSchema,
+    displayValue: z.string(),
+    actualValue: z.union([z.string(), z.number().finite()]),
+    valueOrigin: z.enum(["text_literal", "numeric_literal", "formula_cached"]),
+    formula: z.string().optional(),
+    cachedValue: z.string().optional(),
+    numericValue: z.number().finite().optional(),
+    unit: z.string().min(1).optional(),
+  }).strict(),
+  z.object({
+    status: z.literal("unavailable"),
+    reasonCode: worksheetUnavailableReasonCodeSchema,
+    sourceCell: worksheetSourceCellSchema.optional(),
+    displayValue: z.literal(""),
+    actualValue: z.literal(""),
+    valueOrigin: z.literal("missing"),
+  }).strict(),
+]);
+
+const f1ArtifactFactorTableSchema = z.object({
+  tableId: z.string().min(1),
+  headerRow: z.number().int().positive(),
+  dataRange: z.object({ startRow: z.number().int().positive(), endRow: z.number().int().positive() }).strict(),
+  columns: z.array(z.object({ semanticField: worksheetFieldNameSchema, headerText: z.string(), sourceColumn: z.string().regex(/^[A-Z]+$/) }).strict()),
+  rows: z.array(z.object({
+    sourceRow: z.number().int().positive(),
+    fields: z.record(worksheetFieldNameSchema, f1ArtifactFieldSchema),
+  }).strict()),
+}).strict();
+
+const f2ArtifactTolerancePathImageSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("available"), imagePath: relativeArtifactPathSchema, contentHash: sha256Schema }).strict(),
+  z.object({
+    status: z.literal("unavailable"),
+    reasonCode: z.enum(["label_missing", "label_ambiguous", "image_missing", "image_empty", "image_unsupported", "unparsed_anchor", "worksheet_unavailable"]),
+  }).strict(),
+]);
+
+export const f2ArtifactInputSchema = z.object({
+  contractVersion: contractVersionSchema,
+  inputClassification: z.literal("confidential"),
+  artifactRoot: z.string().min(1),
+  workbook: z.object({ fileName: z.string().min(1), contentHash: sha256Schema, f1GeneratedAt: z.string().datetime() }).strict(),
+  worksheets: z.array(z.object({
+    worksheetName: z.string().min(1),
+    worksheetJsonPath: relativeArtifactPathSchema,
+    worksheetMdPath: relativeArtifactPathSchema,
+    tolerancePathImage: f2ArtifactTolerancePathImageSchema,
+    factorTables: z.array(f1ArtifactFactorTableSchema),
+  }).strict()).min(1),
+}).strict().superRefine((input, context) => {
+  const names = input.worksheets.map((worksheet) => worksheet.worksheetName);
+  if (new Set(names).size !== names.length) context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet names must be unique", path: ["worksheets"] });
+});
+
+const f2DisplayedFieldsSchema = z.object({
+  factorName: z.string(),
+  partName: z.string(),
+  partNumber: z.string(),
+  dimCharacteristicId: z.string(),
+  partCategory: z.string(),
+  nominalValue: z.string(),
+  upperTolerance: z.string(),
+  lowerTolerance: z.string(),
+  longTermSafetyFactor: z.string(),
+  standardDeviation: z.string(),
+  distribution: z.string(),
+}).strict();
+
+const f2CapabilityStatusSchema = z.enum([
+  "in_library_recommended",
+  "in_library_tolerance_outside",
+  "in_library_distribution_differs",
+  "in_library_tolerance_and_distribution_differ",
+  "outside_library",
+  "unable_to_check",
+]);
+
+const f2EnhancedRowSchema = z.object({
+  worksheetName: z.string().min(1),
+  tableId: z.string().min(1),
+  sourceRow: z.number().int().positive(),
+  displayedFields: f2DisplayedFieldsSchema,
+  sourceCells: z.record(worksheetFieldNameSchema, worksheetSourceCellSchema),
+  missingRequiredFields: z.array(requiredFieldNameSchema),
+  capabilityStatus: f2CapabilityStatusSchema,
+  recommendation: z.object({
+    toleranceMin: z.number().finite(),
+    toleranceMax: z.number().finite(),
+    unit: z.literal("mm"),
+    distribution: distributionSchema,
+  }).strict().optional(),
+  mappingReason: z.enum(["category_not_defined", "item_unmatched", "item_ambiguous"]).optional(),
+  adoReminderRequested: z.boolean(),
+}).strict().superRefine((row, context) => {
+  if (row.capabilityStatus.startsWith("in_library_") && row.recommendation === undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "in-library rows require a recommendation", path: ["recommendation"] });
+  }
+  if (!row.capabilityStatus.startsWith("in_library_") && row.recommendation !== undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "only in-library rows may include a recommendation", path: ["recommendation"] });
+  }
+});
+
+const f2MissingFieldSummarySchema = z.object({
+  field: z.union([requiredFieldNameSchema, z.literal("tolerancePathImage")]),
+  factorCount: z.number().int().nonnegative(),
+  sourceRows: z.array(z.number().int().positive()),
+}).strict();
+
+const f2AdoEventSchema = z.object({
+  eventType: z.literal("adoReminderRequested"),
+  category: z.string().min(1),
+  worksheetName: z.string().min(1),
+  missingFields: z.array(z.enum(["dimCharacteristicId", "partNumber"])).min(1),
+  factorRows: z.array(z.number().int().positive()).min(1),
+  workbookContentHash: sha256Schema,
+}).strict();
+
+const f2AcceptedReportSchema = z.object({
+  contractVersion: contractVersionSchema,
+  inputClassification: z.literal("confidential"),
+  status: z.enum(["blocked", "partiallyBlocked", "completed"]),
+  workbook: z.object({ fileName: z.string().min(1), contentHash: sha256Schema, f1GeneratedAt: z.string().datetime() }).strict(),
+  knowledgeBaseVersion: knowledgeBaseVersionSchema,
+  mappingRuleVersion: z.literal("v1"),
+  artifactRoot: z.string().min(1),
+  worksheets: z.array(z.object({
+    worksheetName: z.string().min(1),
+    status: z.enum(["blocked", "ready"]),
+    tolerancePathImageStatus: z.enum(["available", "unavailable"]),
+    rows: z.array(f2EnhancedRowSchema),
+    missingFieldSummary: z.array(f2MissingFieldSummarySchema),
+  }).strict()).min(1),
+  adoEvents: z.array(f2AdoEventSchema),
+  summary: z.object({
+    worksheetsChecked: z.number().int().positive(),
+    blockedWorksheetCount: z.number().int().nonnegative(),
+    readyWorksheetCount: z.number().int().nonnegative(),
+    factorRowCount: z.number().int().nonnegative(),
+    rowsWithRequiredMissing: z.number().int().nonnegative(),
+    requiredMissingFieldCount: z.number().int().nonnegative(),
+    missingImageWorksheetCount: z.number().int().nonnegative(),
+    inLibraryCount: z.number().int().nonnegative(),
+    outsideLibraryCount: z.number().int().nonnegative(),
+    unableToCheckCount: z.number().int().nonnegative(),
+    toleranceDifferenceCount: z.number().int().nonnegative(),
+    distributionDifferenceCount: z.number().int().nonnegative(),
+    missingDimIdCount: z.number().int().nonnegative(),
+    missingPartNumberCount: z.number().int().nonnegative(),
+  }).strict(),
+}).strict().superRefine((report, context) => {
+  const rows = report.worksheets.flatMap((worksheet) => worksheet.rows);
+  const blockedWorksheetCount = report.worksheets.filter((worksheet) => worksheet.status === "blocked").length;
+  const expectedStatus = blockedWorksheetCount === 0 ? "completed" : blockedWorksheetCount === report.worksheets.length ? "blocked" : "partiallyBlocked";
+  if (report.status !== expectedStatus) context.addIssue({ code: z.ZodIssueCode.custom, message: "report status must match worksheet blocking", path: ["status"] });
+  report.worksheets.forEach((worksheet, index) => {
+    const shouldBlock = worksheet.tolerancePathImageStatus === "unavailable" || worksheet.rows.some((row) => row.missingRequiredFields.length > 0);
+    if ((worksheet.status === "blocked") !== shouldBlock) context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet status must match required input gaps", path: ["worksheets", index, "status"] });
+  });
+  const expectedSummary = {
+    worksheetsChecked: report.worksheets.length,
+    blockedWorksheetCount,
+    readyWorksheetCount: report.worksheets.length - blockedWorksheetCount,
+    factorRowCount: rows.length,
+    rowsWithRequiredMissing: rows.filter((row) => row.missingRequiredFields.length > 0).length,
+    requiredMissingFieldCount: rows.reduce((count, row) => count + row.missingRequiredFields.length, 0),
+    missingImageWorksheetCount: report.worksheets.filter((worksheet) => worksheet.tolerancePathImageStatus === "unavailable").length,
+    inLibraryCount: rows.filter((row) => row.capabilityStatus.startsWith("in_library_")).length,
+    outsideLibraryCount: rows.filter((row) => row.capabilityStatus === "outside_library").length,
+    unableToCheckCount: rows.filter((row) => row.capabilityStatus === "unable_to_check").length,
+    toleranceDifferenceCount: rows.filter((row) => row.capabilityStatus === "in_library_tolerance_outside" || row.capabilityStatus === "in_library_tolerance_and_distribution_differ").length,
+    distributionDifferenceCount: rows.filter((row) => row.capabilityStatus === "in_library_distribution_differs" || row.capabilityStatus === "in_library_tolerance_and_distribution_differ").length,
+    missingDimIdCount: rows.filter((row) => row.displayedFields.dimCharacteristicId === "（缺失）").length,
+    missingPartNumberCount: rows.filter((row) => row.displayedFields.partNumber === "（缺失）").length,
+  };
+  for (const [field, value] of Object.entries(expectedSummary)) {
+    if (report.summary[field as keyof typeof expectedSummary] !== value) context.addIssue({ code: z.ZodIssueCode.custom, message: `${field} must match report records`, path: ["summary", field] });
+  }
+});
+
+const f2InputRejectedReportSchema = z.object({
+  contractVersion: contractVersionSchema,
+  inputClassification: z.literal("confidential"),
+  status: z.literal("inputRejected"),
+  artifactRoot: z.string().min(1),
+  artifactIssues: z.array(z.object({
+    reasonCode: z.enum(["root_json_missing", "root_md_missing", "manifest_missing", "worksheet_json_missing", "worksheet_md_missing", "workbook_identity_mismatch", "image_missing", "image_empty", "image_unsupported", "path_outside_root", "invalid_json", "invalid_contract"]),
+    artifactPath: z.string().min(1),
+  }).strict()).min(1),
+}).strict();
+
+export const f2UserReportSchema = z.union([
+  f2InputRejectedReportSchema,
+  f2AcceptedReportSchema,
+]);
+
 export type DataClassification = z.infer<typeof dataClassificationSchema>;
 export type RunRequest = z.infer<typeof runRequestSchema>;
 export type CapabilityTier = z.infer<typeof capabilityTierSchema>;
@@ -2405,6 +2609,8 @@ export type WorksheetAnalysisAssetsRequest = z.infer<typeof worksheetAnalysisAss
 export type WorksheetAnalysisAssetsResult = z.infer<typeof worksheetAnalysisAssetsResultSchema>;
 export type F2InitialWorkflowRequest = z.infer<typeof f2InitialWorkflowRequestSchema>;
 export type F2InitialWorkflowResult = z.infer<typeof f2InitialWorkflowResultSchema>;
+export type F2ArtifactInput = z.infer<typeof f2ArtifactInputSchema>;
+export type F2UserReport = z.infer<typeof f2UserReportSchema>;
 export type SemanticTableDetectionRequest = z.infer<typeof semanticTableDetectionRequestSchema>;
 export type SemanticTableDetectionResult = z.infer<typeof semanticTableDetectionResultSchema>;
 export type WorksheetImageReadRequest = z.infer<typeof worksheetImageReadRequestSchema>;
