@@ -22,6 +22,7 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}
 const lockFileName = "audit.lock";
 const maximumLockRetryDelayMs = 50;
 const maximumLockAttempts = 10;
+const maximumSameProcessLockAttempts = 100;
 
 export type AuditEventType = (typeof eventTypes)[number];
 export type AuditClassification = (typeof classifications)[number];
@@ -264,7 +265,7 @@ async function acquireRootLock(lockPath: string): Promise<string> {
   const lockId = randomUUID();
   let retryDelayMs = 1;
 
-  for (let attempt = 0; attempt < maximumLockAttempts; attempt += 1) {
+  for (let attempt = 0; attempt < maximumSameProcessLockAttempts; attempt += 1) {
     try {
       const lockFile = await open(lockPath, "wx");
       try {
@@ -277,7 +278,10 @@ async function acquireRootLock(lockPath: string): Promise<string> {
       if (!isErrorCode(error, "EEXIST") && !isErrorCode(error, "EPERM")) {
         throw error;
       }
-      if (attempt === maximumLockAttempts - 1) {
+      const maximumAttempts = await isSameProcessRootLock(lockPath)
+        ? maximumSameProcessLockAttempts
+        : maximumLockAttempts;
+      if (attempt >= maximumAttempts - 1) {
         throw new Error("dependency_error: audit root is locked; controlled maintenance must verify and remove stale lock");
       }
       await delay(retryDelayMs);
@@ -285,6 +289,15 @@ async function acquireRootLock(lockPath: string): Promise<string> {
     }
   }
   throw new Error("dependency_error: audit root is locked; controlled maintenance must verify and remove stale lock");
+}
+
+async function isSameProcessRootLock(lockPath: string): Promise<boolean> {
+  try {
+    const lock = JSON.parse(await readFile(lockPath, "utf8")) as { processId?: unknown };
+    return lock.processId === process.pid;
+  } catch {
+    return false;
+  }
 }
 
 async function releaseRootLock(lockPath: string, lockId: string): Promise<void> {

@@ -313,6 +313,52 @@ it("holds an unsealed transaction against concurrent sealing", async () => {
   }
 });
 
+it("waits beyond the stale-lock retry budget for an active same-process owner", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ai-assist-audit-"));
+  let releaseTransaction!: () => void;
+  const transactionBlocked = new Promise<void>((resolve) => {
+    releaseTransaction = resolve;
+  });
+  let transactionStarted!: () => void;
+  const transactionReady = new Promise<void>((resolve) => {
+    transactionStarted = resolve;
+  });
+
+  try {
+    const transactionStore = await createAuditStore(directory);
+    const sealingStore = await createAuditStore(directory);
+    const transaction = transactionStore.runUnsealedTransaction(async () => {
+      transactionStarted();
+      await transactionBlocked;
+    });
+
+    await transactionReady;
+    let sealingSettled = false;
+    const sealing = sealingStore.writeManifest({
+      runId: "00000000-0000-4000-8000-000000000008",
+      artifacts: [],
+    }).then(
+      () => "fulfilled" as const,
+      (error: unknown) => error,
+    ).finally(() => {
+      sealingSettled = true;
+    });
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(sealingSettled).toBe(false);
+    } finally {
+      releaseTransaction();
+    }
+
+    await transaction;
+    await expect(sealing).resolves.toBe("fulfilled");
+  } finally {
+    releaseTransaction?.();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 it("detects altered artifacts and rejects manifest path traversal", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ai-assist-audit-"));
   const missingArtifactDirectory = await mkdtemp(join(tmpdir(), "ai-assist-audit-"));
