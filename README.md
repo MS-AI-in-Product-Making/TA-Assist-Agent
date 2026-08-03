@@ -42,10 +42,10 @@ Phase 0 建立面向产品路线图的本地优先、可审计 TypeScript 工程
 worksheet catalog，并从 catalog 确认的 worksheet 提取因子表、公式及缓存值、嵌入图片元数据，
 图片字节只可由 workbook hash 与唯一 image hash 共同验证后读取。F1 不计算公式、不换算单位、
 不执行 OCR、渲染、风险解释、行动建议或 workbook 写回，也不调用外部服务、不跟踪或导出原始
-`.xls`、`.xlsx` 或 `.xlsm`（除非另行批准受控白名单）。根 F2 Initial 已可用：它只接受 F1 confidential 资产，
-按 worksheet 隔离检查九项必填因子字段和公差路径截面图，默认公差单位假设为 `mm`。F0 Category/Item
-Mapping 缺口仅形成非阻断优化记录；唯一 Item 匹配后的公差超范围或 distribution 不一致会阻断对应 worksheet。
-Drawing Number 与 DIM/Characteristic ID 只形成非阻断治理信号。F2 Initial 不调用 F2.3，也不允许例外覆盖阻断；F3-F7 保持不可用，F4 返回
+`.xls`、`.xlsx` 或 `.xlsm`（除非另行批准受控白名单）。根 F2 已可用：它只接受 F1 落盘的 JSON、MD 和 images artifact bundle，
+不读取或重新解析 Excel；按 worksheet 隔离检查九项必填因子字段和公差路径截面图。F0 Category/Item
+Mapping 缺口及唯一匹配后的公差/distribution 差异均以增强 raw-data 表中的非阻断差异展示。
+独立 Part Number 与 DIM/Characteristic ID 缺失生成按 category 汇总的 `adoReminderRequested` 待触发事件，不执行 ADO 网络调用。F2 不调用 F2.3；F3-F7 保持不可用，F4 返回
 `feature_not_available`，F8 仅限用于受治理 Skill 运行时验收的匿名 `public`
 fixture。此阶段不包含真实工程知识、外部 Adapter、模型、ADO、SharePoint 或 UI 行为。
 
@@ -71,6 +71,8 @@ fixture。此阶段不包含真实工程知识、外部 Adapter、模型、ADO�
 - [F2.3 非阻断差异例外处理实施计划](docs/superpowers/plans/2026-07-27-f2-3-exception-resolution.md)
 - [F2 Initial 工作流设计](docs/superpowers/specs/2026-08-03-f2-initial-workflow-design.md)
 - [F2 Initial 实施计划](docs/superpowers/plans/2026-08-03-f2-initial-workflow.md)
+- [F2 Artifact 报告优化设计](docs/superpowers/specs/2026-08-03-f2-artifact-report-redesign.md)
+- [F2 Artifact 报告实施计划](docs/superpowers/plans/2026-08-03-f2-artifact-report-redesign.md)
 - [系统架构](docs/01-architecture.md) 与 [Feature Register](docs/governance/feature-register.md)
 - [数据分类](docs/governance/data-classification.md) 与 [开发协作标准](docs/governance/development-standard.md)
 - [Phase 0 验收](docs/governance/phase-0-acceptance.md)
@@ -212,9 +214,12 @@ The workflow executes Task 1.1-1.7 with real workbook inputs and emits a final r
 
 ## Feature 2 Initial Workflow
 
-- 运行：`npm run workflow:f2 -- "test/<workbook.xlsx>"`
+- 先运行 F1：`npm run workflow:f1 -- "test/<workbook.xlsx>"`
+- 再运行 F2：`npm run workflow:f2 -- "test/demo-output/feature1-output/<workbook-safe-name>"`
 - 输出：`test/demo-output/feature2-output/<workbook-base-name>/Feature2-Report.json` 和 `Feature2-Report.md`
-- 验收：F2 任一模块必须执行完整 `F0 -> F1 -> F2` 链路，不得用孤立模块通过替代端到端证据。
+- 报告：保留一行一个 factor 的 F1 raw-data 列，并追加 `能力库结果` 与 `知识库推荐`；缺失字段显示 `（缺失）`。
+- 阻塞：九项业务必填字段或截面图缺失；能力库差异、库外、DIM ID/Part Number 缺失均非阻塞。
+- 验收：F2 任一模块必须执行完整 `F0 -> F1 artifacts -> F2` 链路，不得用孤立模块通过替代端到端证据。
 
 - `test/` and all `*.xlsx` (confidential templates / sample data) are **git-ignored**.
 - Internal `*.html` design reports are **git-ignored** and not committed.

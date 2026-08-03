@@ -19,7 +19,7 @@ Feature Register 是 Phase 0 对 F0-F8 的唯一可查询能力清单。它提�
 | F0 | 知识库 | `available` | `knowledge-base-v1`, `internal-tolerance-guidance-v1`, `interpretation-rules-v1`; `approved-public-knowledge-snapshot`, `approved-internal-knowledge-snapshot`, `approved-interpretation-rules-snapshot` | `knowledge-base-query-request-v1` / `knowledge-base-query-result-v1` | `internal` | `anonymous-knowledge-base-fixture`, `unknown-capability-t0-fixture`, `knowledge-base-integrity-check`, `internal-tolerance-guidance-integrity-check`, `guidance-only-result-fixture`, `internal-source-evidence-dto`, `interpretation-rules-integrity-check`, `internal-interpretation-source-evidence` | `return feature_not_available` |
 | F1 | TA 报告解析与资产准备 | `available` | `workbook-catalog-v1`, `worksheet-analysis-assets-v1`; `approved-ooxml-parser` | `worksheet-analysis-assets-request-v1` / `worksheet-analysis-assets-result-v1` | `confidential` | `anonymous-workbook-catalog-fixture`, `dynamic-date-cache-fixture`, `workbook-catalog-privacy-check`, `anonymous-worksheet-analysis-assets-fixture`, `worksheet-image-read-privacy-check` | `return feature_not_available` |
 | F1.7 | TA 因子表语义识别与人工确认 | `available` | `workbook-catalog-v1`, `semantic-table-detection-v1`; `approved-ooxml-parser` | `semantic-table-detection-request-v1` / `semantic-table-detection-result-v1` | `confidential` | `anonymous-semantic-table-detection-fixture`, `semantic-detection-failfast-check`, `semantic-detection-privacy-check` | `return feature_not_available` |
-| F2 | TA 数据清洗与能力一致性门禁 | `available` | `knowledge-base-v1`, `capability-item-mapping-v1`, `worksheet-analysis-assets-v1`, `required-field-check-v1`, `identifier-quality-check-v1`, `f2-initial-workflow-v1`; `approved-public-knowledge-snapshot`, `approved-ooxml-parser` | `f2-initial-workflow-request-v1` / `f2-initial-workflow-result-v1` | `confidential` | `f0-f1-f2-real-workbook-flow`, `f2-worksheet-isolation-check`, `f2-blocking-policy-check`, `f2-mapping-gap-nonblocking-check`, `f2-privacy-check` | `return feature_not_available` |
+| F2 | TA 数据清洗与能力一致性门禁 | `available` | `knowledge-base-v1`, `capability-item-mapping-v1`, `worksheet-analysis-assets-v1`, `f2-artifact-input-v1`, `f2-user-report-v1`; `approved-public-knowledge-snapshot`, `approved-ooxml-parser` | `f2-artifact-input-v1` / `f2-user-report-v1` | `confidential` | `f0-f1-artifact-f2-real-workbook-flow`, `f2-artifact-only-check`, `f2-blocking-policy-check`, `f2-capability-difference-nonblocking-check`, `f2-privacy-check` | `return feature_not_available` |
 | F2.1 | TA 必填字段严格校验 | `available` | `worksheet-analysis-assets-v1`, `required-field-check-v1`; `approved-ooxml-parser` | `required-field-check-request-v1` / `required-field-check-result-v1` | `confidential` | `anonymous-required-field-check-fixture`, `required-field-blocking-check`, `required-field-privacy-check` | `return feature_not_available` |
 | F2.2 | 能力库与分布一致性校验 | `available` | `worksheet-analysis-assets-v1`, `required-field-check-v1`, `knowledge-base-v1`, `capability-validation-v1`; `approved-public-knowledge-snapshot` | `capability-validation-request-v1` / `capability-validation-result-v1` | `confidential` | `anonymous-capability-validation-fixture`, `capability-validation-gate-check`, `capability-validation-nonblocking-check`, `capability-validation-privacy-check` | `return feature_not_available` |
 | F2.3 | 非阻断差异例外处理 | `available` | `capability-validation-v1`, `identifier-quality-check-v1`, `unified-exception-resolution-v2`; `approved-exception-policy` | `unified-exception-resolution-request-v2` / `unified-exception-resolution-result-v2` | `confidential` | `anonymous-unified-exception-resolution-fixture`, `unified-exception-resolution-coverage-check`, `unified-exception-resolution-privacy-check` | `return feature_not_available` |
@@ -66,15 +66,15 @@ F0 解读规则范围与维护边界见 [F0 TA 结果解读规则库设计](../s
   in-library、out-of-library、mismatch 或 unable 信号。所有信号均为非阻断；它不换算单位、
   推断可行性、记录例外、重读 workbook、调用外部服务或写回数据。例外处理由独立的 F2.3
   受限契约承接，不能由 F2.2 自动执行。
-- 根 F2 Initial 接受 F1 confidential 资产，按 worksheet 隔离检查九项必填字段与公差路径截面图，
-  默认公差单位假设为 `mm`。Category/Item Mapping 缺口非阻断；唯一 Item 匹配后的公差超范围或
-  distribution 不一致阻断对应 worksheet。Drawing Number 与 DIM ID 仅生成非阻断治理信号。
-  F2 Initial 不调用 F2.3，也不允许例外覆盖。执行命令为
-  `npm run workflow:f2 -- "test/<workbook.xlsx>"`，输出位于
+- 根 F2 只接受 F1 confidential JSON、MD 和 images artifact bundle，不读取或重跑 workbook。
+  九项必填字段与公差路径截面图缺失阻断对应 worksheet；Category/Item Mapping 缺口、唯一 Item
+  匹配后的公差/distribution 差异均非阻断。独立 Part Number 与 DIM ID 缺失生成按 category
+  汇总的 `adoReminderRequested` 待触发事件，不执行 ADO 调用。执行命令为
+  `npm run workflow:f2 -- "test/demo-output/feature1-output/<workbook-safe-name>"`，输出位于
   `test/demo-output/feature2-output/<workbook-base-name>/`。任何 F2 模块验收必须运行完整
-  `F0 -> F1 -> F2` 链路。设计与实施依据见
-  [F2 Initial 工作流设计](../superpowers/specs/2026-08-03-f2-initial-workflow-design.md) 和
-  [实施计划](../superpowers/plans/2026-08-03-f2-initial-workflow.md)。
+  `F0 -> F1 artifacts -> F2` 链路。现行依据见
+  [F2 Artifact 报告优化设计](../superpowers/specs/2026-08-03-f2-artifact-report-redesign.md) 和
+  [实施计划](../superpowers/plans/2026-08-03-f2-artifact-report-redesign.md)。
 - F8 的 `available` 仅允许匿名 `public` Skill fixture 在 runner 中通过输入分类、
   Feature 状态和策略门检查后执行纯函数或显式注入的 mock adapter。`workflow-request-v1`
   入口只接受 `workflowId: "public-smoke"`，并固定执行 `public-echo` 与

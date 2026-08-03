@@ -55,7 +55,7 @@ describe("worksheet analysis assets", () => {
     expect(Object.isFrozen(result)).toBe(true);
   });
 
-  it("excludes formula-populated template rows without a factor name", () => {
+  it("stops the factor table at the first blank user-input row", () => {
     const workbookBytes = createAnonymousWorkbookZip({ xmlParts: {
       "xl/worksheets/sheet1.xml": '<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="2"><c r="A2"><v>Document No.</v></c><c r="B2"><v>DOC-007</v></c></row><row r="4"><c r="A4"><v>Revision:</v></c><c r="B4"><v>R2</v></c></row><row r="6"><c r="A6"><v>Date:</v></c><c r="B6"><v>2026-07-23</v></c></row></sheetData></worksheet>',
       "xl/worksheets/sheet2.xml": '<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="9"><c r="A9"><v>Device Level Dim</v></c><c r="C9"><v>Tolerance Loop Description</v></c></row><row r="10"><c r="A10"><v>Analysis-A</v></c><c r="C10"><v>First tolerance loop</v></c></row></sheetData></worksheet>',
@@ -71,10 +71,9 @@ describe("worksheet analysis assets", () => {
     });
 
     expect(result.worksheets[0]?.factorTables[0]).toMatchObject({
-      dataRange: { startRow: 2, endRow: 4 },
+      dataRange: { startRow: 2, endRow: 2 },
       rows: [
         { sourceRow: 2, fields: { factorName: { status: "available", rawText: "first-factor" } } },
-        { sourceRow: 4, fields: { factorName: { status: "available", rawText: "second-factor" } } },
       ],
     });
   });

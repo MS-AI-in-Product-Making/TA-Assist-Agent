@@ -195,7 +195,7 @@ function sheetAssets(worksheet: OoxmlWorksheet, worksheetName: string, tolerance
       const rowExists = rows.has(sourceRow);
       if (!rowExists && sourceRow > Math.max(...rows.keys())) break;
       const inputCells = inputColumns.map((column) => cells.get(cellKey(column.sourceColumn, sourceRow)));
-      if (inputCells.every((cell) => !cellValue(cell).trim())) continue;
+      if (inputCells.every((cell) => !cellValue(cell).trim())) break;
       const fields: Record<string, unknown> = {};
       for (const [name, candidates] of mapped.entries()) {
         if (candidates.length !== 1) fields[name] = { status: "unavailable", reasonCode: "duplicate_mapping" };

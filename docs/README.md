@@ -27,10 +27,10 @@ Phase 0 是本地优先、可审计、契约驱动的工程基础，不是 F0-F8
 仅接受受控 `confidential` `.xlsx` 字节，创建只读 worksheet catalog，并从 catalog 确认的
 worksheet 提取因子表、公式及缓存值、嵌入图片元数据；图片字节必须由 workbook hash 与唯一
 image hash 共同验证后读取。F1 不计算公式、不换算单位、不 OCR、不渲染、不输出风险解释或
-行动建议，也不写回 workbook、不调用外部服务、不跟踪或导出原始 `.xlsx`。根 F2 Initial 已可用：
-它按 worksheet 隔离检查九项必填字段与公差路径截面图，默认单位假设为 `mm`；F0 Mapping 缺口
-非阻断，唯一 Item 匹配后的公差或 distribution 差异阻断对应 worksheet。Drawing Number 与
-DIM/Characteristic ID 仅形成非阻断治理信号；F2 Initial 不调用 F2.3，不能用例外覆盖阻断。
+行动建议，也不写回 workbook、不调用外部服务、不跟踪或导出原始 `.xlsx`。根 F2 已可用：
+它只消费 F1 的 JSON、MD 和 images artifact bundle，按 worksheet 隔离检查九项必填字段与公差路径截面图；
+F0 Mapping 缺口、公差推荐差异和 distribution 差异均非阻断。独立 Part Number 与
+DIM/Characteristic ID 缺失形成 `adoReminderRequested` 待触发事件；本阶段不调用 ADO。
 F3-F7 均不可用，F4 仅返回 `feature_not_available`。F0 解读规则不会启用 F5/F6，
 两者仍返回 `feature_not_available`；F8 仅提供匿名
 `public` fixture 的受治理 Skill 运行时验收，不包含外部 Adapter、模型、ADO、SharePoint 或 UI 行为。
@@ -58,15 +58,18 @@ F3-F7 均不可用，F4 仅返回 `feature_not_available`。F0 解读规则不�
 | [F2.3 非阻断差异例外处理实施计划](superpowers/plans/2026-07-27-f2-3-exception-resolution.md) | F2.3 契约、纯服务、治理和质量门 |
 | [F2 Initial 工作流设计](superpowers/specs/2026-08-03-f2-initial-workflow-design.md) | F0/F1/F2 worksheet 隔离、Mapping 与阻断语义 |
 | [F2 Initial 实施计划](superpowers/plans/2026-08-03-f2-initial-workflow.md) | F2 Initial TDD、CLI、报告与完整链路验收 |
+| [F2 Artifact 报告优化设计](superpowers/specs/2026-08-03-f2-artifact-report-redesign.md) | F1 artifact 输入、增强 raw-data 报告与 ADO 事件边界 |
+| [F2 Artifact 报告实施计划](superpowers/plans/2026-08-03-f2-artifact-report-redesign.md) | Artifact loader、用户报告契约、CLI 与真实 demo |
 | [系统架构](01-architecture.md) | 产品架构与后续业务能力边界 |
 | [Feature Register](governance/feature-register.md) | F0-F8 可用性、依赖、契约和禁用行为 |
 | [数据分类](governance/data-classification.md) | `public`、`internal`、`confidential`、`secret` 处理规则 |
 | [开发协作标准](governance/development-standard.md) | 分支、PR、文档和验收要求 |
 | [Phase 0 验收](governance/phase-0-acceptance.md) | Definition of Done、命令、预期结果和安全边界 |
 
-执行 `npm run workflow:f2 -- "test/<workbook.xlsx>"`，报告写入
+先执行 `npm run workflow:f1 -- "test/<workbook.xlsx>"`，再执行
+`npm run workflow:f2 -- "test/demo-output/feature1-output/<workbook-safe-name>"`。报告写入
 `test/demo-output/feature2-output/<workbook-base-name>/Feature2-Report.json` 与 `Feature2-Report.md`。
-F2 任一模块验收必须运行完整 `F0 -> F1 -> F2` 链路。
+F2 任一模块验收必须运行完整 `F0 -> F1 artifacts -> F2` 链路。
 
 ## Shared Conventions
 
