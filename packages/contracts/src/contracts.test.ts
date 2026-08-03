@@ -220,7 +220,8 @@ describe("F2 Initial workflow contracts", () => {
       ...blockedResult,
       worksheets: [{ ...blockedWorksheet, mappingRecords: [{ ...blockedWorksheet.mappingRecords[0], unexpected: true }] }],
     }).success).toBe(false);
-    const { sourceRow: _sourceRow, ...incompleteMapping } = blockedWorksheet.mappingRecords[0];
+    const incompleteMapping = structuredClone(blockedWorksheet.mappingRecords[0]);
+    Reflect.deleteProperty(incompleteMapping, "sourceRow");
     expect(f2InitialWorkflowResultSchema.safeParse({
       ...blockedResult,
       worksheets: [{ ...blockedWorksheet, mappingRecords: [incompleteMapping] }],

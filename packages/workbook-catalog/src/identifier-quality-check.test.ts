@@ -87,10 +87,10 @@ function qualityCheckFor(rows: readonly { readonly sourceRow: number; readonly f
 
 describe("identifier quality check", () => {
   it("scans identifiers independently when required fields are blocked", () => {
-    const { drawingNumber: _drawingNumber, ...missingDrawingFields } = fieldsFor(15, {
+    const missingDrawingFields = Object.fromEntries(Object.entries(fieldsFor(15, {
       partCategory: unavailable("Analysis-A!C15"),
       dimCharacteristicId: available("dimCharacteristicId", "L", 15, "DIM-DUP"),
-    });
+    })).filter(([field]) => field !== "drawingNumber"));
     const blockedWorksheetAssets = assetsFor([
       {
         sourceRow: 13,

@@ -188,7 +188,6 @@ function sheetAssets(worksheet: OoxmlWorksheet, worksheetName: string, tolerance
     const factorColumns = mapped.get("factorName");
     if (!factorColumns || factorColumns.length !== 1) continue;
     const columns = [...mapped.values()].flatMap((candidates) => candidates.length === 1 ? candidates : []);
-    const mappedColumns = [...mapped.values()].flat();
     const inputColumns = columns.filter((column) => USER_INPUT_FIELDS.has(column.semanticField));
     const dataRows: unknown[] = [];
     for (let sourceRow = headerRow + 1; ; sourceRow += 1) {
