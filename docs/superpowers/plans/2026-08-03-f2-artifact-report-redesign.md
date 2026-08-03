@@ -412,3 +412,58 @@ git commit -m "feat: run F2 from F1 artifacts"
 ```
 
 Do not stage `test/demo-output/**`, real workbooks or temporary inspection files.
+
+### Task 7: Correct Real Workbook Field Fidelity
+
+**Files:**
+- Modify: `packages/workbook-catalog/src/worksheet-analysis-assets.ts`
+- Modify: `packages/workbook-catalog/src/worksheet-analysis-assets.test.ts`
+- Modify: `scripts/f1-dual-grid.mjs`
+- Modify: `scripts/f1-dual-grid.test.mjs`
+- Modify: `scripts/run-f1-full-validation.mjs`
+
+- [ ] **Step 1: Write failing regressions for the real template vocabulary and artifact fidelity.**
+
+Add a worksheet extraction test whose header is exactly `σ Level` and assert it produces an available
+`standardDeviation` field with numeric value `4`. Add dual-grid helper tests that assert an annotated numeric
+field uses XLSX display text `0.280` while retaining numeric `actualValue: 0.28`, and that worksheet selection
+removes `Example_TA` from both detected defaults and manifest-provided names.
+
+- [ ] **Step 2: Run the focused tests and verify RED.**
+
+```powershell
+npm exec -- vitest run --workspace vitest.workspace.ts packages/workbook-catalog/src/worksheet-analysis-assets.test.ts scripts/f1-dual-grid.test.mjs
+```
+
+Expected: the `σ Level` assertion fails because the alias is absent; artifact annotation and example-page
+selection assertions fail because the helpers do not yet exist.
+
+- [ ] **Step 3: Implement the minimal source fixes.**
+
+Add `"σ level"` to the controlled `standardDeviation` aliases. Export small pure helpers from
+`scripts/f1-dual-grid.mjs` to annotate an extracted field with a supplied XLSX display value and to filter
+worksheet names whose normalized value is exactly `example_ta`. In `run-f1-full-validation.mjs`, derive each
+field's display text from its `sourceCell` in `dualWorksheetSheet`; retain numeric actual/numeric values and use
+the filtered selection for both default and manifest paths.
+
+- [ ] **Step 4: Verify focused behavior and regenerate the real reports.**
+
+```powershell
+npm run build -- --force
+npm exec -- vitest run --workspace vitest.workspace.ts packages/workbook-catalog/src/worksheet-analysis-assets.test.ts scripts/f1-dual-grid.test.mjs packages/workbook-catalog/src/f2-user-report.test.ts scripts/f2-artifact-flow.test.mjs
+npm run workflow:f1 -- "test/Maera_gap_TP_brkt_and _battery_20260305V1.xlsx"
+npm run workflow:f2 -- "test/demo-output/feature1-output/Maera_gap_TP_brkt_and-_battery_20260305V1"
+```
+
+Expected: `Example_TA` is absent; `gap wo rubber_TPoverload500g` row 20 shows Sigma Level `4.0`, tolerance
+`0.280`, and a deterministic capability result other than `无法检查`.
+
+- [ ] **Step 5: Run repository checks and commit.**
+
+```powershell
+npm exec -- eslint packages/workbook-catalog/src/worksheet-analysis-assets.ts packages/workbook-catalog/src/worksheet-analysis-assets.test.ts scripts/f1-dual-grid.mjs scripts/f1-dual-grid.test.mjs scripts/run-f1-full-validation.mjs
+npm run check:repository
+git diff --check
+git add docs/superpowers/specs/2026-08-03-f2-artifact-report-redesign.md docs/superpowers/plans/2026-08-03-f2-artifact-report-redesign.md packages/workbook-catalog/src/worksheet-analysis-assets.ts packages/workbook-catalog/src/worksheet-analysis-assets.test.ts scripts/f1-dual-grid.mjs scripts/f1-dual-grid.test.mjs scripts/run-f1-full-validation.mjs
+git commit -m "fix: preserve F1 worksheet field fidelity"
+```

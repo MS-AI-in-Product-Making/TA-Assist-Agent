@@ -36,7 +36,7 @@ const HEADER_ALIASES = {
   contribution: ["contribution"],
   sensitivity: ["sensitivity"],
   mean: ["mean"],
-  standardDeviation: ["standard deviation", "sigma", "sigma level"],
+  standardDeviation: ["standard deviation", "sigma", "sigma level", "σ level"],
   cpk: ["cpk"],
   assemblyDirection: ["assembly direction"],
 } as const;

@@ -16,6 +16,37 @@ export function cellDisplayText(cell) {
   return cellActualText(cell);
 }
 
+export function annotateArtifactField(field, excelDisplayValue = "") {
+  if (!field || field.status !== "available") {
+    return {
+      status: field?.status ?? "unavailable",
+      reasonCode: field?.reasonCode,
+      sourceCell: field?.sourceCell,
+      displayValue: "",
+      actualValue: "",
+      valueOrigin: "missing",
+    };
+  }
+
+  const isFormula = typeof field.formula === "string";
+  const hasNumeric = typeof field.numericValue === "number";
+  return {
+    status: "available",
+    sourceCell: field.sourceCell,
+    displayValue: excelDisplayValue || field.rawText,
+    actualValue: hasNumeric ? field.numericValue : (field.cachedValue ?? field.rawText),
+    valueOrigin: isFormula ? "formula_cached" : (hasNumeric ? "numeric_literal" : "text_literal"),
+    formula: field.formula,
+    cachedValue: field.cachedValue,
+    numericValue: field.numericValue,
+    unit: field.unit,
+  };
+}
+
+export function filterFeature1WorksheetNames(worksheetNames) {
+  return worksheetNames.filter((worksheetName) => worksheetName.trim().toLowerCase() !== "example_ta");
+}
+
 function headerColumn(actualGrid, headerRow, label) {
   const expected = label.toLowerCase();
   return actualGrid[headerRow].findIndex((value) => String(value).toLowerCase().includes(expected));

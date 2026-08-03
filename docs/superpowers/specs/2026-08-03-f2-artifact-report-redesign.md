@@ -193,7 +193,7 @@ F2 生成确定性事件数组，不执行网络调用：
 {
   "eventType": "adoReminderRequested",
   "category": "Display",
-  "worksheetName": "Example_TA",
+  "worksheetName": "Analysis-A",
   "missingFields": ["dimCharacteristicId", "partNumber"],
   "factorRows": [27, 28],
   "workbookContentHash": "..."
@@ -268,3 +268,16 @@ test/demo-output/feature2-output/Maera_gap_TP_brkt_and-_battery_20260305V1/
 
 验收时必须证明 F2 未读取原始 Excel、两份报告来自同一个 `F2UserReport`、所有缺失项在行级表格
 显示、能力库未匹配明确显示 `库外 / —`、标识符事件仅为 `待触发`，且生成物不进入 Git。
+
+## 真实 Workbook 修正规则
+
+真实 Maera workbook 验收补充以下源头规则：
+
+1. F1 必须把模板表头 `σ Level` 识别为现有语义字段 `standardDeviation`；不得因希腊字符
+  `σ` 与英文 `sigma` 的差异误报缺失。
+2. F1 worksheet JSON 的 `displayValue` 必须使用 Excel 格式化显示文本，例如将实际数值
+  `0.28000000000000003` 显示为 `0.280`；`actualValue` 和 `numericValue` 继续保留数值语义。
+3. 默认 worksheet 选择必须排除名称精确等于 `Example_TA` 的模板示例页。显式 manifest 也不得
+  将该示例页重新加入正式分析范围。
+4. F2 仅在九个业务必填字段真实缺失时显示 `无法检查`。修复 `σ Level` 映射后，完整 factor
+  必须进入确定性能力库匹配，并显示库内推荐或 `库外 / —`。

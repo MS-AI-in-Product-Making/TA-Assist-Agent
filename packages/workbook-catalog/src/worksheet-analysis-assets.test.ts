@@ -545,6 +545,19 @@ describe("worksheet analysis assets", () => {
     expect(result.worksheets[0]!.factorTables[0]!.rows[0]!.fields.longTermSafetyFactor).toMatchObject({ status: "available", numericValue: 1.5 });
   });
 
+  it("maps the template σ Level header to standardDeviation", () => {
+    const workbookBytes = createAnonymousWorkbookZip({ xmlParts: {
+      "xl/worksheets/sheet3.xml": '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Factor</t></is></c><c r="B1" t="inlineStr"><is><t>σ Level</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>anonymous-factor</t></is></c><c r="B2"><v>4</v></c></row></sheetData></worksheet>',
+    } });
+    const contentHash = createHash("sha256").update(workbookBytes).digest("hex");
+    const result = createWorksheetAnalysisAssets({
+      contractVersion: "v1", inputClassification: "confidential", workbookBytes,
+      workbookCatalog: { contractVersion: "v1", workbook: { fileName: "anonymous.xlsx", classification: "confidential", contentHash, metadata: { documentNo: "DOC", revision: "R", date: { value: "2026-08-03", sourceCell: "Title Page!A1" } } }, analyses: [{ worksheetName: "Analysis-A", toleranceLoopDescription: "anonymous", source: { summarySheet: "Auto Summary", summaryRow: 1, worksheetAnchor: "Analysis-A!A1" } }] },
+    });
+
+    expect(result.worksheets[0]!.factorTables[0]!.rows[0]!.fields.standardDeviation).toMatchObject({ status: "available", numericValue: 4 });
+  });
+
   it("maps Factor Description (TA Loop) to factorName", () => {
     const workbookBytes = createAnonymousWorkbookZip({ xmlParts: {
       "xl/worksheets/sheet3.xml": '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Factor Description (TA Loop)</t></is></c><c r="B1" t="inlineStr"><is><t>Nominal Value</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>tp-loop-factor</t></is></c><c r="B2"><v>2.5</v></c></row></sheetData></worksheet>',

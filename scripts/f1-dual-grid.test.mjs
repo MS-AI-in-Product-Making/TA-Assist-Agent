@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  annotateArtifactField,
   cellActualText,
+  filterFeature1WorksheetNames,
   injectLinksIntoFactorTableMarkdown,
   maskBlankFactorTemplateRows,
 } from "./f1-dual-grid.mjs";
@@ -9,6 +11,24 @@ describe("Feature 1 dual grid", () => {
   it("normalizes actual numeric values to Excel's 15 significant digits", () => {
     expect(cellActualText({ t: "n", v: 1.6500000000000001, w: "1.650" })).toBe("1.65");
     expect(cellActualText({ t: "n", v: 0.016666666666666666, w: "0.017" })).toBe("0.0166666666666667");
+  });
+
+  it("uses Excel display text while retaining numeric artifact values", () => {
+    expect(annotateArtifactField({
+      status: "available",
+      sourceCell: "Analysis-A!K20",
+      rawText: "0.28000000000000003",
+      numericValue: 0.28,
+    }, "0.280")).toEqual(expect.objectContaining({
+      displayValue: "0.280",
+      actualValue: 0.28,
+      numericValue: 0.28,
+    }));
+  });
+
+  it("excludes the Example_TA template worksheet from F1 selection", () => {
+    expect(filterFeature1WorksheetNames(["Analysis-A", "Example_TA", " example_ta "]))
+      .toEqual(["Analysis-A"]);
   });
 
   it("keeps an empty factor slot as an empty worksheet row", () => {

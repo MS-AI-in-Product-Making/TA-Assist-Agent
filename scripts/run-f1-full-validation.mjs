@@ -18,8 +18,10 @@ import {
   worksheetNeedsComposedSnapshot,
 } from "./f1-composed-snapshot-detection.mjs";
 import {
+  annotateArtifactField,
   cellActualText,
   cellDisplayText,
+  filterFeature1WorksheetNames,
   injectLinksIntoFactorTableMarkdown,
   maskBlankFactorTemplateRows,
 } from "./f1-dual-grid.mjs";
@@ -153,34 +155,14 @@ function exportComposedSnapshots(workbookPath, workbookImageDir, captures, outpu
   return byWorksheet;
 }
 
-function annotateField(field) {
-  if (!field || field.status !== "available") {
-    return {
-      status: field?.status ?? "unavailable",
-      reasonCode: field?.reasonCode,
-      sourceCell: field?.sourceCell,
-      displayValue: "",
-      actualValue: "",
-      valueOrigin: "missing",
-    };
-  }
-
-  const isFormula = typeof field.formula === "string";
-  const hasNumeric = typeof field.numericValue === "number";
-  return {
-    status: "available",
-    sourceCell: field.sourceCell,
-    displayValue: field.rawText,
-    actualValue: hasNumeric ? field.numericValue : (field.cachedValue ?? field.rawText),
-    valueOrigin: isFormula ? "formula_cached" : (hasNumeric ? "numeric_literal" : "text_literal"),
-    formula: field.formula,
-    cachedValue: field.cachedValue,
-    numericValue: field.numericValue,
-    unit: field.unit,
-  };
+function fieldDisplayValue(field, worksheetSheet) {
+  if (!worksheetSheet || field?.status !== "available" || typeof field.sourceCell !== "string") return "";
+  const separator = field.sourceCell.lastIndexOf("!");
+  const reference = separator < 0 ? field.sourceCell : field.sourceCell.slice(separator + 1);
+  return cellDisplayText(worksheetSheet[reference]);
 }
 
-function withDisplayActualFields(worksheet) {
+function withDisplayActualFields(worksheet, worksheetSheet) {
   return worksheet.factorTables.map((table) => ({
     tableId: table.tableId,
     headerRow: table.headerRow,
@@ -189,7 +171,7 @@ function withDisplayActualFields(worksheet) {
     rows: table.rows.map((row) => {
       const nextFields = {};
       for (const [name, value] of Object.entries(row.fields)) {
-        nextFields[name] = annotateField(value);
+        nextFields[name] = annotateArtifactField(value, fieldDisplayValue(value, worksheetSheet));
       }
       return { sourceRow: row.sourceRow, fields: nextFields };
     }),
@@ -479,10 +461,10 @@ for (const job of jobs) {
   });
 
   const detectedWorksheetNames = selectionView.worksheets.map((item) => item.worksheetName);
-  const selectedWorksheetNames = worksheetNamesFromManifest(
+  const selectedWorksheetNames = filterFeature1WorksheetNames(worksheetNamesFromManifest(
     job.selectedManifestPath,
     detectedWorksheetNames,
-  );
+  ));
 
   const parallelAssets = await createWorksheetAnalysisAssetsParallel({
     contractVersion: "v1",
@@ -567,7 +549,8 @@ for (const job of jobs) {
     const defaultImage = composedOutput ?? imageRecords[0]?.outputFile;
 
     const traceability = [];
-    const factorTablesAnnotated = withDisplayActualFields(worksheet);
+    const dualWorksheetSheet = dualWorkbook.Sheets[worksheet.worksheetName];
+    const factorTablesAnnotated = withDisplayActualFields(worksheet, dualWorksheetSheet);
     for (const table of factorTablesAnnotated) {
       for (const row of table.rows) {
         const factorText = availableFieldText(row.fields.factorName);
@@ -628,7 +611,6 @@ for (const job of jobs) {
     const worksheetJsonPath = path.join(workbookJsonDir, `${workbookSafe}__${worksheetSafe}.task1.5.sheet.full.json`);
     const worksheetMdPath = path.join(workbookMdDir, `${workbookSafe}__${worksheetSafe}.task1.5.sheet.md`);
 
-    const dualWorksheetSheet = dualWorkbook.Sheets[worksheet.worksheetName];
     const worksheetMarkdown = dualWorksheetSheet
       ? injectLinksIntoFactorTableMarkdown(
         buildDualWorksheetMarkdown(workbookCatalog.workbook.fileName, worksheet.worksheetName, dualWorksheetSheet),
