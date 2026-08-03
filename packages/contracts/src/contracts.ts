@@ -433,6 +433,7 @@ const worksheetFieldNameSchema = z.enum([
   "partCategory",
   "longTermSafetyFactor",
   "drawingNumber",
+  "partNumber",
   "dimCharacteristicId",
 ]);
 

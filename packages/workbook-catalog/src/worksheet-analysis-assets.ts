@@ -30,6 +30,7 @@ const HEADER_ALIASES = {
   unit: ["unit"],
   distribution: ["distribution"],
   drawingNumber: ["drawing number"],
+  partNumber: ["part number", "part no", "part no.", "pn"],
   dimCharacteristicId: ["dim id", "characteristic id", "dim/characteristic id"],
   assumption: ["assumption"],
   contribution: ["contribution"],
@@ -54,7 +55,7 @@ type TolerancePathImageEvidence =
   | { readonly status: "unavailable"; readonly reasonCode: "label_missing" | "label_ambiguous" | "image_missing" | "unsupported_media_type" | "unparsed_anchor" | "worksheet_unavailable"; readonly labelSourceCell?: string };
 const NUMERIC_FIELDS = new Set<FieldName>(["nominalValue", "upperTolerance", "lowerTolerance", "longTermSafetyFactor", "upperSpecificationLimit", "lowerSpecificationLimit", "contribution", "sensitivity", "mean", "standardDeviation", "cpk"]);
 const USER_INPUT_FIELDS = new Set<FieldName>([
-  "factorName", "partName", "drawingNumber", "dimCharacteristicId", "partCategory",
+  "factorName", "partName", "drawingNumber", "partNumber", "dimCharacteristicId", "partCategory",
   "nominalValue", "upperTolerance", "lowerTolerance", "longTermSafetyFactor",
   "standardDeviation", "distribution",
 ]);

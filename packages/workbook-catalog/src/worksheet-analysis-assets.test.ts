@@ -106,6 +106,28 @@ describe("worksheet analysis assets", () => {
     ]);
   });
 
+  it("extracts Part Number independently from Drawing Number", () => {
+    const workbookBytes = createAnonymousWorkbookZip({ xmlParts: {
+      "xl/worksheets/sheet3.xml": '<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1"><v>Factor</v></c><c r="B1"><v>Drawing Number</v></c><c r="C1"><v>Part Number</v></c></row><row r="2"><c r="A2"><v>anonymous-factor</v></c><c r="B2"><v>DWG-100</v></c><c r="C2"><v>PN-200</v></c></row></sheetData></worksheet>',
+    } });
+    const contentHash = createHash("sha256").update(workbookBytes).digest("hex");
+    const result = createWorksheetAnalysisAssets({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbookBytes,
+      workbookCatalog: {
+        contractVersion: "v1",
+        workbook: { fileName: "anonymous.xlsx", classification: "confidential", contentHash, metadata: { documentNo: "DOC", revision: "R", date: { value: "2026-08-03", sourceCell: "Title Page!A1" } } },
+        analyses: [{ worksheetName: "Analysis-A", toleranceLoopDescription: "anonymous", source: { summarySheet: "Auto Summary", summaryRow: 1, worksheetAnchor: "Analysis-A!A1" } }],
+      },
+    });
+
+    expect(result.worksheets[0]?.factorTables[0]?.rows[0]?.fields).toEqual(expect.objectContaining({
+      drawingNumber: expect.objectContaining({ status: "available", rawText: "DWG-100" }),
+      partNumber: expect.objectContaining({ status: "available", rawText: "PN-200" }),
+    }));
+  });
+
   it("reports missing tolerance-path labels as semantic image evidence", () => {
     const workbookBytes = selectionWorkbook();
     const workbookCatalog = createWorkbookCatalog({ contractVersion: "v1", inputClassification: "confidential", fileName: "anonymous.xlsx", workbookBytes });

@@ -620,6 +620,7 @@ for (const job of jobs) {
       factorTables: factorTablesAnnotated,
       formulaCells: worksheet.formulaCells,
       imageAssets: imageRecords,
+      tolerancePathImage: worksheet.tolerancePathImage,
       composedSnapshot,
       traceability,
     };
