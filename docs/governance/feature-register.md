@@ -8,7 +8,9 @@ Feature Register 是 Phase 0 对 F0-F8 的唯一可查询能力清单。它提�
 `internal-v1` 制程指导和 `interpretation-rules-v1` 解读规则而标记为 `available`；F1 为受控 `confidential` 工作簿字节的只读 catalog 与 F1.1 资产准备而标记为
 `available`；F1.7 为因子表语义识别与人工确认闸门而标记为 `available`；根 F2 Initial 为 worksheet 隔离的数据清洗与能力一致性门禁而标记为 `available`；F2.1 为严格必填字段校验而标记为 `available`；F2.2 为非阻断能力库与 distribution
 一致性校验而标记为 `available`；F2.3 的受限例外处理与 F2.4 的标识符质量检查也标记为
-`available`；F3-F7 均为 `unavailable`。F8 仅为 Phase 0 的匿名、`public`、受治理 Skill 验收 fixture 而标记为
+`available`；F4 为受 F1/F2 证据门禁的 `excel-ta-v1` 计算服务而标记为 `available`；F5.1 为
+F4/F0 支持的客观能力与贡献解读而标记为 `available`；F3、根 F5、F6 和 F7 仍为
+`unavailable`。F8 仅为 Phase 0 的匿名、`public`、受治理 Skill 验收 fixture 而标记为
 `available`。这些状态不表示已交付 TA 产品工作流、生产编排器、真实工程知识或任何外部写入
 能力；调用方和后续编排器仍必须在执行前查询该清单。
 
@@ -25,8 +27,9 @@ Feature Register 是 Phase 0 对 F0-F8 的唯一可查询能力清单。它提�
 | F2.3 | 非阻断差异例外处理 | `available` | `capability-validation-v1`, `identifier-quality-check-v1`, `unified-exception-resolution-v2`; `approved-exception-policy` | `unified-exception-resolution-request-v2` / `unified-exception-resolution-result-v2` | `confidential` | `anonymous-unified-exception-resolution-fixture`, `unified-exception-resolution-coverage-check`, `unified-exception-resolution-privacy-check` | `return feature_not_available` |
 | F2.4 | DIM ID 与 Drawing Number 质量检查 | `available` | `worksheet-analysis-assets-v1`, `required-field-check-v1`, `identifier-quality-check-v1`; `approved-ooxml-parser` | `identifier-quality-check-request-v1` / `identifier-quality-check-result-v1` | `confidential` | `anonymous-identifier-quality-fixture`, `identifier-quality-gate-check`, `identifier-quality-privacy-check` | `return feature_not_available` |
 | F3 | DIM ID 与图纸治理 | `unavailable` | `dim-id-service-v1`; `approved-ado-access`, `canonical-dim-id-policy` | `drawing-governance-request-v1` / `drawing-governance-result-v1` | `confidential` | `anonymous-dim-id-fixture` | `return feature_not_available` |
-| F4 | 方法推荐与 Excel 一致性计算 | `unavailable` | `calculation-worker-v1`; `approved-windows-excel-worker` | `calculation-request-v1` / `calculation-result-v1` | `confidential` | `approved-template-regression` | `return feature_not_available` |
+| F4 | 方法推荐与 Excel 一致性计算 | `available` | `worksheet-analysis-assets-v1`, `required-field-check-v1`, `exception-resolution-v1`, `calculation-service-v1`; `approved-windows-excel-worker` | `calculation-request-v1` / `calculation-result-v1` | `confidential` | `anonymous-calculation-kernel-fixture`, `approved-template-regression`, `calculation-privacy-check` | `return feature_not_available` |
 | F5 | 客观结果解释 | `unavailable` | `calculation-worker-v1`, `knowledge-base-v1`, `interpretation-rules-v1`; `approved-knowledge-base` | `interpretation-request-v1` / `interpretation-result-v1` | `confidential` | `anonymous-interpretation-fixture` | `return feature_not_available` |
+| F5.1 | 客观结果解读 | `available` | `calculation-service-v1`, `knowledge-base-v1`, `interpretation-rules-v1`, `objective-interpretation-v1`; `approved-knowledge-base` | `interpretation-request-v1` / `interpretation-result-v1` | `confidential` | `anonymous-interpretation-fixture`, `interpretation-rule-traceability-check`, `interpretation-privacy-check` | `return feature_not_available` |
 | F6 | 可比较的方案选项 | `unavailable` | `knowledge-base-v1`, `comparison-engine-v1`, `interpretation-rules-v1`; `approved-knowledge-base` | `comparison-request-v1` / `comparison-result-v1` | `confidential` | `anonymous-comparison-fixture` | `return feature_not_available` |
 | F7 | 实测 Cpk 闭环 | `unavailable` | `measurement-store-v1`, `dim-id-service-v1`; `approved-measurement-store`, `canonical-dim-id-policy` | `cpk-request-v1` / `cpk-result-v1` | `confidential` | `anonymous-cpk-fixture` | `return feature_not_available` |
 | F8 | TA 工作流编排 | `available` | `orchestrator-v1`, `skill-runtime-v1`; `approved-skill-manifests` | `workflow-request-v1` / `workflow-result-v1` | `public` | `anonymous-workflow-fixture`, `anonymous-governed-skill` | `return feature_not_available` |
@@ -43,11 +46,12 @@ Feature Register 是 Phase 0 对 F0-F8 的唯一可查询能力清单。它提�
   `guidance-exceeded`、`within-guidance` 或 `unknown`，不得声称能力紧度或可制造性。当前
   `internal-v1` 已发布 110 条经审核规则，覆盖 CNC、压铸、模切、PCB/FPC、注塑与钣金；每条
   规则保留来源 hash、工作表及范围证据。原始 `.xls`、`.xlsx`、`.xlsm` 始终禁止提交，除非另行批准受控白名单。
-  不得将 F0 状态解释为 F3-F7 已启用。
+  不得将 F0 状态解释为 F3、根 F5、F6 或 F7 已启用。
 - F0 的 `interpretation-rules-v1` 是独立的只读审核子集，仅接受结构化事实并返回规则证据、
   待验证信号与未排序选项。它不读取 Excel、不包含具体案例或计算器、不生成最终解释文本，
   也不改变 `public-v1` 或 `internal-v1`。新增 loader 使用 interpretation evaluation contract schema，
-  F0 主行继续保留兼容公共契约；F5/F6 虽登记该未来依赖，仍保持 `unavailable`。
+  F0 主行继续保留兼容公共契约；F5.1 仅通过该规则子集解读 F4 结构化结果，根 F5 与 F6 仍保持
+  `unavailable`。
 
 F0 内部指导范围与维护边界见 [F0 内部制程公差指导库设计](../superpowers/specs/2026-07-28-f0-internal-tolerance-guidance-design.md) 和 [实施计划](../superpowers/plans/2026-07-28-f0-internal-tolerance-guidance.md)。
 F0 解读规则范围与维护边界见 [F0 TA 结果解读规则库设计](../superpowers/specs/2026-07-29-f0-interpretation-rules-design.md) 和 [实施计划](../superpowers/plans/2026-07-29-f0-interpretation-rules.md)。
@@ -75,6 +79,21 @@ F0 解读规则范围与维护边界见 [F0 TA 结果解读规则库设计](../s
   `F0 -> F1 artifacts -> F2` 链路。现行依据见
   [F2 Artifact 报告优化设计](../superpowers/specs/2026-08-03-f2-artifact-report-redesign.md) 和
   [实施计划](../superpowers/plans/2026-08-03-f2-artifact-report-redesign.md)。
+- F4 的 `available` 只接受 F1/F2 已验证且内容哈希绑定的 `confidential` 结构化证据。计算版本为
+  `excel-ta-v1`：少于 4 个有效因子推荐 WC，4 至 10 个推荐一维 RSS，多于 10 个转介 DM 团队
+  跟进 3D Variation Analysis，但三种区间均继续计算 WC 和 RSS。核心支持 Normal、Uniform、
+  Triangular、Trapezoidal、Elliptical 和 Beta 六种分布；同一请求中的因子必须使用同一单位。
+  TypeScript 结果与批准模板按绝对或相对误差 `1e-12` 验收。What-if 复用同一 calculation kernel，
+  工作量 `scenario count × factor count` 不得超过 1000。错误、日志和审计仅返回受控引用与错误码，
+  不得泄露原始机密输入值。`approved-windows-excel-worker` 仅用于批准模板的黄金回归、发布门禁和
+  差异诊断，不在生产请求热路径中；文档和配置不得记录真实 workbook 路径或 hash。F4 可用不启用
+  根 F5 或 F6，两者仍为 `unavailable`。
+- F5.1 的 `available` 仅覆盖由 F4 `excel-ta-v1` 结果和 F0 `interpretation-rules-v1` 支持的能力与
+  规格、主要贡献因子解读。它保留可追溯 FACT，并仅在 F4 方法为一维 RSS 时生成带 F0 证据的
+  RULE、SIGNAL 和未排序 OPTION；WC 和 3D Variation Analysis 场景不得套用 RSS 规则，只能保留
+  确定性 FACT 并返回规则不适用或 3D 跟进澄清。F5.1 不判断图纸、公差链、基准链、装配基准面、
+  堆叠方向或跨子系统结构风险，也不提供完整澄清流程；这些图纸与结构能力以及完整根 F5 仍为
+  `unavailable`。
 - F8 的 `available` 仅允许匿名 `public` Skill fixture 在 runner 中通过输入分类、
   Feature 状态和策略门检查后执行纯函数或显式注入的 mock adapter。`workflow-request-v1`
   入口只接受 `workflowId: "public-smoke"`，并固定执行 `public-echo` 与

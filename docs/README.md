@@ -31,8 +31,13 @@ image hash 共同验证后读取。F1 不计算公式、不换算单位、不 OC
 它只消费 F1 的 JSON、MD 和 images artifact bundle，按 worksheet 隔离检查九项必填字段与公差路径截面图；
 F0 Mapping 缺口、公差推荐差异和 distribution 差异均非阻断。独立 Part Number 与
 DIM/Characteristic ID 缺失形成 `adoReminderRequested` 待触发事件；本阶段不调用 ADO。
-F3-F7 均不可用，F4 仅返回 `feature_not_available`。F0 解读规则不会启用 F5/F6，
-两者仍返回 `feature_not_available`；F8 仅提供匿名
+F2.1-F2.4 继续提供严格完整性阻断、非阻断一致性信号、受限例外处理与标识符质量检查。F4 已启用
+受治理的 `excel-ta-v1` 纯计算核心：少于 4 个因子推荐 WC，4 至 10 个推荐 RSS，多于 10 个转介
+DM 团队进行 3D 分析，同时始终计算 WC/RSS；支持六种受控分布、同单位输入、绝对或相对误差
+`1e-12` 的批准模板回归，以及复用同一 kernel 且工作量不超过 1000 的 What-if。错误不得泄露
+机密输入。Windows Excel Worker 仅用于发布黄金回归，不在生产热路径中。F5.1 提供受 F4/F0
+证据约束的客观解读；F3、根 F5、F6 和 F7 仍不可用。F0 解读规则、F4 和 F5.1 均不会启用根 F5/F6，
+根 F5/F6 仍返回 `feature_not_available`；F8 仅提供匿名
 `public` fixture 的受治理 Skill 运行时验收，不包含外部 Adapter、模型、ADO、SharePoint 或 UI 行为。
 
 | 文档 | 内容 |
@@ -60,6 +65,8 @@ F3-F7 均不可用，F4 仅返回 `feature_not_available`。F0 解读规则不�
 | [F2 Initial 实施计划](superpowers/plans/2026-08-03-f2-initial-workflow.md) | F2 Initial TDD、CLI、报告与完整链路验收 |
 | [F2 Artifact 报告优化设计](superpowers/specs/2026-08-03-f2-artifact-report-redesign.md) | F1 artifact 输入、增强 raw-data 报告与 ADO 事件边界 |
 | [F2 Artifact 报告实施计划](superpowers/plans/2026-08-03-f2-artifact-report-redesign.md) | Artifact loader、用户报告契约、CLI 与真实 demo |
+| [F4 计算引擎设计](superpowers/specs/2026-07-30-f4-calculation-engine-design.md) | 方法推荐、Excel 一致计算、What-if、隐私与黄金回归边界 |
+| [F4 计算引擎实施计划](superpowers/plans/2026-07-30-f4-calculation-engine.md) | F4 契约、kernel、服务、回归、治理和质量门 |
 | [系统架构](01-architecture.md) | 产品架构与后续业务能力边界 |
 | [Feature Register](governance/feature-register.md) | F0-F8 可用性、依赖、契约和禁用行为 |
 | [数据分类](governance/data-classification.md) | `public`、`internal`、`confidential`、`secret` 处理规则 |

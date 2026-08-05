@@ -177,7 +177,7 @@ it("preserves validated unavailable feature details while normalizing its foreig
   registry.register({
     trusted: true,
     manifest: {
-      skillId: "unavailable-f4-skill",
+      skillId: "unavailable-f5-skill",
       version: "v1",
       featureId: "F8",
       inputClassification: ["public"],
@@ -191,13 +191,13 @@ it("preserves validated unavailable feature details while normalizing its foreig
       throw createTypedError({
         code: "feature_not_available",
         runId: foreignRunId,
-        summary: "Feature 'F4' is not available.",
+        summary: "Feature 'F5' is not available.",
         suggestedAction: "Complete its enablement requirements.",
         affectedInputReferences: [],
         details: {
-          featureId: "F4",
-          dependencies: ["calculation-worker-v1"],
-          enablementRequirements: ["approved-windows-excel-worker"],
+          featureId: "F5",
+          dependencies: ["knowledge-base-v1"],
+          enablementRequirements: ["approved-knowledge-base"],
         },
       });
     },
@@ -207,7 +207,7 @@ it("preserves validated unavailable feature details while normalizing its foreig
     const thrown = await runWorkflow({
       rootDir,
       registry,
-      steps: [{ skillId: "unavailable-f4-skill" }],
+      steps: [{ skillId: "unavailable-f5-skill" }],
     }).catch((error: unknown) => error) as Error & {
       code: string;
       runId: string;
@@ -220,12 +220,12 @@ it("preserves validated unavailable feature details while normalizing its foreig
     expect(thrown.code).toBe("feature_not_available");
     expect(thrown.runId).toMatch(/^[0-9a-f-]{36}$/);
     expect(thrown.runId).not.toBe(foreignRunId);
-    expect(thrown.featureId).toBe("F4");
-    expect(thrown.dependencies).toEqual(["calculation-worker-v1"]);
-    expect(thrown.enablementRequirements).toEqual(["approved-windows-excel-worker"]);
+    expect(thrown.featureId).toBe("F5");
+    expect(thrown.dependencies).toEqual(["knowledge-base-v1"]);
+    expect(thrown.enablementRequirements).toEqual(["approved-knowledge-base"]);
     const auditContents = await readFile(join(thrown.runDirectory, "events.jsonl"), "utf8");
-    expect(auditContents).not.toContain("calculation-worker-v1");
-    expect(auditContents).not.toContain("approved-windows-excel-worker");
+    expect(auditContents).not.toContain("knowledge-base-v1");
+    expect(auditContents).not.toContain("approved-knowledge-base");
   } finally {
     await rm(rootDir, { recursive: true, force: true });
   }
@@ -239,13 +239,13 @@ it("normalizes malformed unavailable feature details to a current-run internal e
     throw createTypedError({
       code: "feature_not_available",
       runId: foreignRunId,
-      summary: "Feature 'F4' is not available.",
+      summary: "Feature 'F5' is not available.",
       suggestedAction: "Complete its enablement requirements.",
       affectedInputReferences: [],
       details: {
-        featureId: "F4",
+        featureId: "F5",
         dependencies: ["calculation-worker-v1", 1],
-        enablementRequirements: ["approved-windows-excel-worker"],
+        enablementRequirements: ["approved-knowledge-base"],
       },
     });
   }));
@@ -369,14 +369,14 @@ it("preserves frozen unavailable feature diagnostics when audit sealing also fai
     throw createTypedError({
       code: "feature_not_available",
       runId: foreignRunId,
-      summary: "Feature 'F4' is not available.",
+      summary: "Feature 'F5' is not available.",
       retryable: true,
       suggestedAction: "Complete its enablement requirements.",
       affectedInputReferences: ["input.workbook"],
       details: {
-        featureId: "F4",
-        dependencies: ["calculation-worker-v1"],
-        enablementRequirements: ["approved-windows-excel-worker"],
+        featureId: "F5",
+        dependencies: ["knowledge-base-v1"],
+        enablementRequirements: ["approved-knowledge-base"],
       },
     });
   }));
@@ -405,13 +405,13 @@ it("preserves frozen unavailable feature diagnostics when audit sealing also fai
     expect(thrown.code).toBe("feature_not_available");
     expect(thrown.runId).toMatch(/^[0-9a-f-]{36}$/);
     expect(thrown.runId).not.toBe(foreignRunId);
-    expect(thrown.summary).toBe("Feature 'F4' is not available.");
+    expect(thrown.summary).toBe("Feature 'F5' is not available.");
     expect(thrown.retryable).toBe(true);
     expect(thrown.suggestedAction).toBe("Complete its enablement requirements.");
     expect(thrown.affectedInputReferences).toEqual(["input.workbook"]);
-    expect(thrown.featureId).toBe("F4");
-    expect(thrown.dependencies).toEqual(["calculation-worker-v1"]);
-    expect(thrown.enablementRequirements).toEqual(["approved-windows-excel-worker"]);
+    expect(thrown.featureId).toBe("F5");
+    expect(thrown.dependencies).toEqual(["knowledge-base-v1"]);
+    expect(thrown.enablementRequirements).toEqual(["approved-knowledge-base"]);
     expect(thrown.auditError).toEqual({
       code: "dependency_error",
       runId: thrown.runId,

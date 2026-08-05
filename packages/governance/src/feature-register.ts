@@ -230,16 +230,27 @@ const featureRegister: ReadonlyMap<string, FeatureRegistration> = new Map([
   ],
   [
     "F4",
-    unavailableFeature(
-      "F4",
-      "方法推荐与 Excel 一致性计算",
-      ["calculation-worker-v1"],
-      "calculation-request-v1",
-      "calculation-result-v1",
-      "confidential",
-      ["approved-template-regression"],
-      ["approved-windows-excel-worker"],
-    ),
+    {
+      featureId: "F4",
+      title: "方法推荐与 Excel 一致性计算",
+      status: "available",
+      dependsOn: [
+        "worksheet-analysis-assets-v1",
+        "required-field-check-v1",
+        "exception-resolution-v1",
+        "calculation-service-v1",
+      ],
+      inputContractId: "calculation-request-v1",
+      outputContractId: "calculation-result-v1",
+      maximumClassification: "confidential",
+      acceptanceChecks: [
+        "anonymous-calculation-kernel-fixture",
+        "approved-template-regression",
+        "calculation-privacy-check",
+      ],
+      externalPrerequisites: ["approved-windows-excel-worker"],
+      disableBehavior: "return feature_not_available",
+    },
   ],
   [
     "F5",
@@ -253,6 +264,30 @@ const featureRegister: ReadonlyMap<string, FeatureRegistration> = new Map([
       ["anonymous-interpretation-fixture"],
       ["approved-knowledge-base"],
     ),
+  ],
+  [
+    "F5.1",
+    {
+      featureId: "F5.1",
+      title: "客观结果解读",
+      status: "available",
+      dependsOn: [
+        "calculation-service-v1",
+        "knowledge-base-v1",
+        "interpretation-rules-v1",
+        "objective-interpretation-v1",
+      ],
+      inputContractId: "interpretation-request-v1",
+      outputContractId: "interpretation-result-v1",
+      maximumClassification: "confidential",
+      acceptanceChecks: [
+        "anonymous-interpretation-fixture",
+        "interpretation-rule-traceability-check",
+        "interpretation-privacy-check",
+      ],
+      externalPrerequisites: ["approved-knowledge-base"],
+      disableBehavior: "return feature_not_available",
+    },
   ],
   [
     "F6",

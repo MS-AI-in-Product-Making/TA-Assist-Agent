@@ -45,8 +45,13 @@ worksheet catalog，并从 catalog 确认的 worksheet 提取因子表、公式�
 `.xls`、`.xlsx` 或 `.xlsm`（除非另行批准受控白名单）。根 F2 已可用：它只接受 F1 落盘的 JSON、MD 和 images artifact bundle，
 不读取或重新解析 Excel；按 worksheet 隔离检查九项必填因子字段和公差路径截面图。F0 Category/Item
 Mapping 缺口及唯一匹配后的公差/distribution 差异均以增强 raw-data 表中的非阻断差异展示。
-独立 Part Number 与 DIM/Characteristic ID 缺失生成按 category 汇总的 `adoReminderRequested` 待触发事件，不执行 ADO 网络调用。F2 不调用 F2.3；F3-F7 保持不可用，F4 返回
-`feature_not_available`，F8 仅限用于受治理 Skill 运行时验收的匿名 `public`
+独立 Part Number 与 DIM/Characteristic ID 缺失生成按 category 汇总的 `adoReminderRequested` 待触发事件，不执行 ADO 网络调用。
+F2.1-F2.4 继续提供严格完整性阻断、非阻断一致性信号、受限例外处理与标识符质量检查。F4 已启用受治理的 `excel-ta-v1` 纯计算
+核心：少于 4 个因子推荐 WC，4 至 10 个推荐 RSS，多于 10 个转介 DM 团队进行 3D 分析，同时
+始终计算 WC/RSS；支持六种受控分布、同单位输入、绝对或相对误差 `1e-12` 的批准模板回归，
+以及复用同一 kernel 且工作量不超过 1000 的 What-if。错误不得泄露机密输入；Windows Excel
+Worker 仅用于发布黄金回归，不在生产热路径中。F5.1 提供受 F4/F0 证据约束的客观解读；F3、根 F5、F6 和 F7 保持不可用。
+F4/F5.1 不启用根 F5/F6；F8 仅限用于受治理 Skill 运行时验收的匿名 `public`
 fixture。此阶段不包含真实工程知识、外部 Adapter、模型、ADO、SharePoint 或 UI 行为。
 
 - [Phase 0 设计](docs/superpowers/specs/2026-07-22-ai-assist-agent-foundation-design.md)
@@ -73,6 +78,8 @@ fixture。此阶段不包含真实工程知识、外部 Adapter、模型、ADO�
 - [F2 Initial 实施计划](docs/superpowers/plans/2026-08-03-f2-initial-workflow.md)
 - [F2 Artifact 报告优化设计](docs/superpowers/specs/2026-08-03-f2-artifact-report-redesign.md)
 - [F2 Artifact 报告实施计划](docs/superpowers/plans/2026-08-03-f2-artifact-report-redesign.md)
+- [F4 计算引擎设计](docs/superpowers/specs/2026-07-30-f4-calculation-engine-design.md)
+- [F4 计算引擎实施计划](docs/superpowers/plans/2026-07-30-f4-calculation-engine.md)
 - [系统架构](docs/01-architecture.md) 与 [Feature Register](docs/governance/feature-register.md)
 - [数据分类](docs/governance/data-classification.md) 与 [开发协作标准](docs/governance/development-standard.md)
 - [Phase 0 验收](docs/governance/phase-0-acceptance.md)

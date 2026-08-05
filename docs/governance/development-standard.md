@@ -34,3 +34,17 @@
 - 验收必须覆盖九项必填字段、公差路径截面图、默认 `mm` 假设、worksheet 隔离、Mapping 缺口非阻断、唯一匹配差异阻断和标识符非阻断语义。
 - F2 Initial 不调用 F2.3，不接受例外覆盖必填、截面图、公差或 distribution 阻断。
 - 设计与执行依据见 [F2 Initial 工作流设计](../superpowers/specs/2026-08-03-f2-initial-workflow-design.md) 和 [F2 Initial 实施计划](../superpowers/plans/2026-08-03-f2-initial-workflow.md)。
+
+## F4 计算发布门禁
+
+- F4 生产计算固定使用 `excel-ta-v1` 纯 calculation kernel。少于 4 个有效因子推荐 WC，4 至
+  10 个推荐一维 RSS，多于 10 个转介 DM 团队跟进 3D Variation Analysis；所有区间仍同时输出
+  WC 和 RSS。
+- 计算只接受同单位因子，并覆盖 Normal、Uniform、Triangular、Trapezoidal、Elliptical、Beta
+  六种分布。TypeScript 与批准模板的数值差异必须满足绝对或相对误差 `1e-12`。
+- What-if 必须复用生产 calculation kernel，且 `scenario count × factor count <= 1000`；不得维护
+  第二套公式或复用受覆盖影响的中间结果。
+- 计算错误只记录错误码、公式 ID 和受控引用，不得包含原始 `confidential` 输入值、真实 workbook
+  路径或 hash。
+- 发布前运行 `npm run verify:f4-excel-regression`。批准的 Windows Excel Worker 仅发布黄金回归，
+  不在生产请求热路径中。F4 发布不得同时启用 F5 或 F6。

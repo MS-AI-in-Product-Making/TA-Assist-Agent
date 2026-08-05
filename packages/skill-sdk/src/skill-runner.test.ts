@@ -171,8 +171,8 @@ it("does not execute a trusted Skill for an unavailable Feature", async () => {
     trusted: true,
     manifest: {
       ...publicEchoSkill.manifest,
-      skillId: "f4-skill",
-      featureId: "F4",
+      skillId: "f5-skill",
+      featureId: "F5",
       permissions: [],
     },
     async execute() {
@@ -182,7 +182,7 @@ it("does not execute a trusted Skill for an unavailable Feature", async () => {
   });
 
   await expect(
-    runRegisteredSkill({ skillId: "f4-skill" }, registry),
+    runRegisteredSkill({ skillId: "f5-skill" }, registry),
   ).rejects.toMatchObject({ code: "feature_not_available" });
   expect(executed).toBe(false);
 });

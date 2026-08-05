@@ -30,8 +30,8 @@ Windows 上一个符号链接测试可能因为创建 symlink 所需的权限而
 运行记录或影响其他测试。
 
 1. 执行 `smoke --root <temporary-root>`，从输出取得 UUID `runId`，并断言
-   `manifestValid: true` 与 `F4: feature_not_available`。这证明匿名 smoke workflow
-   生成了可验证 manifest，且未交付的 F4 没有被宣称为可用。
+  `manifestValid: true` 与 `F4: available`。这证明匿名 smoke workflow 生成了可验证 manifest，
+  且读取到现行 Feature Register；它不执行 F4 机密计算。
 2. 执行 `export --run-id <smoke-run-id> --root <temporary-root>` 并断言退出码为 2、
   `stderr` 包含 `dependency_error`，且 run 内不存在 `exports` 目录或文件。smoke 的
   manifest 已封存；导出会持久化新文件并要求 `export_created` 审计事件覆盖，因此必须
@@ -54,9 +54,9 @@ Windows 上一个符号链接测试可能因为创建 symlink 所需的权限而
 ## 安全与功能边界
 
 - F0 仅对本地匿名 `public` 的只读 `knowledge-base-v1` 查询可用，且内容由 Git/PR
-  维护。F1 仅接受受控 `confidential` `.xlsx` 字节并创建只读 worksheet catalog；不读取
-  因子表、不计算、不提取图片、不调用外部服务，也不跟踪或导出原始 `.xlsx`。F2-F7 仍为
-  `unavailable`；F4 只能返回 `feature_not_available`，不执行方法推荐或 Excel 一致性计算。
+  维护。F1 仅接受受控 `confidential` `.xlsx` 字节并创建只读 worksheet catalog。F4 在 Feature
+  Register 中为 `available`，但此 public smoke 只打印状态，不提交或执行任何 F4 计算请求；
+  根 F2 与 F4 为 `available`，F5.1 提供受限客观解读；F3、根 F5、F6 和 F7 仍为 `unavailable`。
 - F8 的 `available` 仅表示匿名 `public` fixture 的受治理 Skill runtime 可验收，绝不
   表示 TA 产品工作流、生产编排、网络访问或外部写入已实现。
 - 默认 Adapter 拒绝外部访问。除 F1 在受控内存处理的 `confidential` 字节外，Phase 0
@@ -84,5 +84,5 @@ git status --short
 ```
 
 随后可用已构建 CLI 对新临时目录手动执行 `smoke --root <temporary-root>`。预期输出包含
-UUID `runId`、`manifestValid: true` 和 `F4: feature_not_available`；命令结束后删除该临时
+UUID `runId`、`manifestValid: true` 和 `F4: available`；命令结束后删除该临时
 目录。该手动检查不接触真实外部系统或业务数据。

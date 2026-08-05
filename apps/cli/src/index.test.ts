@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRunStore, openRunStore } from "@ai-assist/memory";
 import { expect, it } from "vitest";
+import { formatF4Status } from "./commands/smoke.js";
 import { executeCli } from "./index.js";
 
 async function createTemporaryRoot(): Promise<string> {
@@ -20,10 +21,15 @@ it("runs a public smoke workflow and prints safe result metadata", async () => {
     expect(result.stdout).toMatch(/runId: [0-9a-f-]{36}/i);
     expect(result.stdout).toContain("skillResults: 2");
     expect(result.stdout).toContain("manifestValid: true");
-    expect(result.stdout).toContain("F4: feature_not_available");
+    expect(result.stdout).toContain("F4: available");
   } finally {
     await rm(rootDir, { recursive: true, force: true });
   }
+});
+
+it("reports a missing F4 registration as unavailable", () => {
+  expect(formatF4Status(undefined)).toBe("feature_not_available");
+  expect(formatF4Status("available")).toBe("available");
 });
 
 it("requires a purge confirmation token", async () => {

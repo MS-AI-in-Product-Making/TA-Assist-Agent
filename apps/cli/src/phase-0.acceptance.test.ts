@@ -16,7 +16,7 @@ it("accepts the sealed smoke workflow and safely purges a separate public run", 
 
     expect(runId).toBeDefined();
     expect(smoke.stdout).toContain("manifestValid: true");
-    expect(smoke.stdout).toContain("F4: feature_not_available");
+    expect(smoke.stdout).toContain("F4: available");
 
     const sealedExport = await executeCli(["export", "--run-id", runId ?? "", "--root", rootDir]);
     expect(sealedExport.exitCode).toBe(2);

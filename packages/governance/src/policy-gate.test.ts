@@ -228,16 +228,25 @@ describe("policy gate", () => {
     });
   });
 
-  it("keeps F4 unavailable with its established calculation contracts", () => {
+  it("reports F4 as the available governed calculation engine", () => {
     expect(getFeatureStatus("F4")).toEqual({
       featureId: "F4",
       title: "方法推荐与 Excel 一致性计算",
-      status: "unavailable",
-      dependsOn: ["calculation-worker-v1"],
+      status: "available",
+      dependsOn: [
+        "worksheet-analysis-assets-v1",
+        "required-field-check-v1",
+        "exception-resolution-v1",
+        "calculation-service-v1",
+      ],
       inputContractId: "calculation-request-v1",
       outputContractId: "calculation-result-v1",
       maximumClassification: "confidential",
-      acceptanceChecks: ["approved-template-regression"],
+      acceptanceChecks: [
+        "anonymous-calculation-kernel-fixture",
+        "approved-template-regression",
+        "calculation-privacy-check",
+      ],
       externalPrerequisites: ["approved-windows-excel-worker"],
       disableBehavior: "return feature_not_available",
     });
@@ -279,6 +288,30 @@ describe("policy gate", () => {
     ]));
   });
 
+  it("reports F5.1 as the available objective interpretation capability", () => {
+    expect(getFeatureStatus("F5.1")).toEqual({
+      featureId: "F5.1",
+      title: "客观结果解读",
+      status: "available",
+      dependsOn: [
+        "calculation-service-v1",
+        "knowledge-base-v1",
+        "interpretation-rules-v1",
+        "objective-interpretation-v1",
+      ],
+      inputContractId: "interpretation-request-v1",
+      outputContractId: "interpretation-result-v1",
+      maximumClassification: "confidential",
+      acceptanceChecks: [
+        "anonymous-interpretation-fixture",
+        "interpretation-rule-traceability-check",
+        "interpretation-privacy-check",
+      ],
+      externalPrerequisites: ["approved-knowledge-base"],
+      disableBehavior: "return feature_not_available",
+    });
+  });
+
   it("keeps F6 unavailable with its established comparison contracts", () => {
     const feature = getFeatureStatus("F6");
 
@@ -315,7 +348,7 @@ describe("policy gate", () => {
     });
   });
 
-  it.each(["F3", "F4", "F5", "F6", "F7"])(
+  it.each(["F3", "F5", "F6", "F7"])(
     "keeps %s unavailable",
     (featureId) => {
       expect(getFeatureStatus(featureId)).toMatchObject({
@@ -325,21 +358,6 @@ describe("policy gate", () => {
     },
   );
 
-  it("reports F4 as unavailable", () => {
-    expect(getFeatureStatus("F4")).toEqual({
-      featureId: "F4",
-      title: "方法推荐与 Excel 一致性计算",
-      status: "unavailable",
-      dependsOn: ["calculation-worker-v1"],
-      inputContractId: "calculation-request-v1",
-      outputContractId: "calculation-result-v1",
-      maximumClassification: "confidential",
-      acceptanceChecks: ["approved-template-regression"],
-      externalPrerequisites: ["approved-windows-excel-worker"],
-      disableBehavior: "return feature_not_available",
-    });
-  });
-
   it("does not expose mutable F4 register state", () => {
     const firstResult = getFeatureStatus("F4");
     const mutableResult = firstResult as unknown as {
@@ -348,19 +366,24 @@ describe("policy gate", () => {
       dependsOn: string[];
     };
 
-    mutableResult.status = "available";
+    mutableResult.status = "unavailable";
     mutableResult.maximumClassification = "public";
     mutableResult.dependsOn.push("attacker-controlled-dependency");
 
     expect(getFeatureStatus("F4")).toMatchObject({
-      status: "unavailable",
+      status: "available",
       maximumClassification: "confidential",
-      dependsOn: ["calculation-worker-v1"],
+      dependsOn: [
+        "worksheet-analysis-assets-v1",
+        "required-field-check-v1",
+        "exception-resolution-v1",
+        "calculation-service-v1",
+      ],
     });
   });
 
   it("provides a register entry for every planned feature", () => {
-    for (const featureId of ["F0", "F1", "F2", "F2.1", "F2.2", "F2.3", "F2.4", "F3", "F4", "F5", "F6", "F7", "F8"]) {
+    for (const featureId of ["F0", "F1", "F2", "F2.1", "F2.2", "F2.3", "F2.4", "F3", "F4", "F5", "F5.1", "F6", "F7", "F8"]) {
       expect(getFeatureStatus(featureId)).toMatchObject({ featureId });
     }
   });
