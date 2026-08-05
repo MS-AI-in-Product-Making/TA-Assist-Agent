@@ -69,8 +69,9 @@ describe("F2 artifact-only CLI flow", () => {
     const markdown = readFileSync(path.join(output, "Feature2-Report.md"), "utf8");
     expect(report.status).toBe("completed");
     expect(report.summary.factorRowCount).toBe(1);
-    expect(report.summary.outsideLibraryCount).toBe(1);
-    expect(markdown).toContain("库外");
+    expect(report.knowledgeBaseVersions).toEqual(["v1", "internal-v1"]);
+    expect(report.summary.nonF0ProcessCategoryCount).toBe(1);
+    expect(markdown).toContain("非 F0 制程分类");
     expect(markdown).toContain("（缺失）");
   });
 });

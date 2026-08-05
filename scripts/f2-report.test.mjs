@@ -6,10 +6,10 @@ describe("renderF2Report", () => {
     const markdown = renderF2Report({
       status: "blocked",
       workbook: { fileName: "Demo|Book.xlsx", contentHash: "a".repeat(64), f1GeneratedAt: "2026-08-03T00:00:00.000Z" },
-      knowledgeBaseVersion: "v1",
+      knowledgeBaseVersions: ["v1", "internal-v1"],
       mappingRuleVersion: "v1",
       artifactRoot: "test/demo-output/feature1-output/Demo",
-      summary: { worksheetsChecked: 1, blockedWorksheetCount: 1, readyWorksheetCount: 0, factorRowCount: 1, rowsWithRequiredMissing: 1, requiredMissingFieldCount: 2, missingImageWorksheetCount: 0, inLibraryCount: 0, outsideLibraryCount: 0, unableToCheckCount: 1, toleranceDifferenceCount: 0, distributionDifferenceCount: 0, missingDimIdCount: 1, missingPartNumberCount: 1 },
+      summary: { worksheetsChecked: 1, blockedWorksheetCount: 1, readyWorksheetCount: 0, factorRowCount: 1, rowsWithRequiredMissing: 1, requiredMissingFieldCount: 2, missingImageWorksheetCount: 0, internalWithinGuidanceCount: 0, internalGuidanceExceededCount: 0, f0InformationInsufficientCount: 0, publicLibraryMatchCount: 0, nonF0ProcessCategoryCount: 0, unableToCheckCount: 1, publicToleranceDifferenceCount: 0, publicDistributionDifferenceCount: 0, missingDimIdCount: 1, missingPartNumberCount: 1 },
       worksheets: [{
         worksheetName: "A|B",
         status: "blocked",
@@ -37,6 +37,22 @@ describe("renderF2Report", () => {
     for (const internalTerm of ["required_field_unavailable", "tableId", "reasonCode", "governanceSignals"]) {
       expect(markdown).not.toContain(internalTerm);
     }
+  });
+
+  it("renders internal F0 guidance without leaking source metadata", () => {
+    const report = {
+      status: "completed",
+      workbook: { fileName: "Demo.xlsx", contentHash: "a".repeat(64), f1GeneratedAt: "2026-08-03T00:00:00.000Z" },
+      knowledgeBaseVersions: ["v1", "internal-v1"], mappingRuleVersion: "v1", artifactRoot: "artifacts/Demo",
+      summary: { worksheetsChecked: 1, blockedWorksheetCount: 0, readyWorksheetCount: 1, factorRowCount: 1, rowsWithRequiredMissing: 0, requiredMissingFieldCount: 0, missingImageWorksheetCount: 0, internalWithinGuidanceCount: 1, internalGuidanceExceededCount: 0, f0InformationInsufficientCount: 0, publicLibraryMatchCount: 0, nonF0ProcessCategoryCount: 0, unableToCheckCount: 0, publicToleranceDifferenceCount: 0, publicDistributionDifferenceCount: 0, missingDimIdCount: 0, missingPartNumberCount: 0 },
+      worksheets: [{ worksheetName: "Analysis-A", status: "ready", tolerancePathImageStatus: "available", missingFieldSummary: [], rows: [{ sourceRow: 2, displayedFields: { factorName: "boss height", partName: "bucket", partNumber: "PN", dimCharacteristicId: "DIM", partCategory: "CNC", nominalValue: "3.145", upperTolerance: "0.100", lowerTolerance: "-0.100", longTermSafetyFactor: "1.0", standardDeviation: "4.0", distribution: "Normal" }, capabilityStatus: "internal_within_guidance", recommendation: { kind: "internal-guidance", assessedTotalBand: 0.2, maximumRecommendedTotalBand: 0.2, unit: "mm", matchedEntryId: "cnc-linear-6", fallbackApplied: false, evidence: { sourceFileHash: "c".repeat(64), sheetName: "ISO 2768-1 Class m", sourceRange: "A6:F6" } } }] }],
+      adoEvents: [],
+    };
+    const markdown = renderF2Report(report);
+    expect(markdown).toContain("F0 内部指导-符合");
+    expect(markdown).toContain("最大总公差带 0.2 mm · internal-v1 · cnc-linear-6");
+    expect(markdown).not.toContain("controlled-cnc.xlsx");
+    expect(markdown).not.toContain("c".repeat(64));
   });
 
   it("renders artifact rejection as an actionable input report", () => {

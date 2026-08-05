@@ -2434,8 +2434,35 @@ const f2CapabilityStatusSchema = z.enum([
   "in_library_distribution_differs",
   "in_library_tolerance_and_distribution_differ",
   "outside_library",
+  "internal_within_guidance",
+  "internal_guidance_exceeded",
+  "f0_information_insufficient",
+  "non_f0_process_category",
   "unable_to_check",
 ]);
+
+const f2PublicRecommendationSchema = z.object({
+  kind: z.literal("public"),
+  toleranceMin: z.number().finite(),
+  toleranceMax: z.number().finite(),
+  unit: z.literal("mm"),
+  distribution: distributionSchema,
+  capabilityEntryId: z.string().min(1),
+}).strict();
+
+const f2InternalRecommendationSchema = z.object({
+  kind: z.literal("internal-guidance"),
+  assessedTotalBand: z.number().finite().positive(),
+  maximumRecommendedTotalBand: z.number().finite().positive(),
+  unit: z.literal("mm"),
+  matchedEntryId: z.string().min(1),
+  fallbackApplied: z.boolean(),
+  evidence: z.object({
+    sourceFileHash: sha256Schema,
+    sheetName: z.string().min(1),
+    sourceRange: z.string().regex(/^[A-Z]+[1-9]\d*:[A-Z]+[1-9]\d*$/),
+  }).strict(),
+}).strict();
 
 const f2EnhancedRowSchema = z.object({
   worksheetName: z.string().min(1),
@@ -2445,20 +2472,32 @@ const f2EnhancedRowSchema = z.object({
   sourceCells: z.record(worksheetFieldNameSchema, worksheetSourceCellSchema),
   missingRequiredFields: z.array(requiredFieldNameSchema),
   capabilityStatus: f2CapabilityStatusSchema,
-  recommendation: z.object({
-    toleranceMin: z.number().finite(),
-    toleranceMax: z.number().finite(),
-    unit: z.literal("mm"),
-    distribution: distributionSchema,
-  }).strict().optional(),
+  f0KnowledgeBaseVersion: z.enum(["v1", "internal-v1"]).optional(),
+  recommendation: z.discriminatedUnion("kind", [f2PublicRecommendationSchema, f2InternalRecommendationSchema]).optional(),
   mappingReason: z.enum(["category_not_defined", "item_unmatched", "item_ambiguous"]).optional(),
+  f0InformationReason: z.enum(["missing_process_context", "invalid_total_band", "guidance_unknown"]).optional(),
   adoReminderRequested: z.boolean(),
 }).strict().superRefine((row, context) => {
-  if (row.capabilityStatus.startsWith("in_library_") && row.recommendation === undefined) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: "in-library rows require a recommendation", path: ["recommendation"] });
+  const publicMatch = row.capabilityStatus.startsWith("in_library_");
+  const internalMatch = row.capabilityStatus === "internal_within_guidance" || row.capabilityStatus === "internal_guidance_exceeded";
+  if (publicMatch && (row.f0KnowledgeBaseVersion !== "v1" || row.recommendation?.kind !== "public")) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "public F0 rows require a v1 public recommendation", path: ["recommendation"] });
   }
-  if (!row.capabilityStatus.startsWith("in_library_") && row.recommendation !== undefined) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: "only in-library rows may include a recommendation", path: ["recommendation"] });
+  if (internalMatch && (row.f0KnowledgeBaseVersion !== "internal-v1" || row.recommendation?.kind !== "internal-guidance")) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "internal F0 rows require an internal-v1 recommendation", path: ["recommendation"] });
+  }
+  if (!publicMatch && !internalMatch && row.recommendation !== undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "unmatched F0 rows must not include a recommendation", path: ["recommendation"] });
+  }
+  if (row.capabilityStatus === "f0_information_insufficient") {
+    if (row.f0KnowledgeBaseVersion !== "internal-v1" || row.f0InformationReason === undefined) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "insufficient F0 rows require an internal-v1 reason", path: ["f0InformationReason"] });
+    }
+  } else if (row.f0InformationReason !== undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "only insufficient F0 rows may include an information reason", path: ["f0InformationReason"] });
+  }
+  if ((row.capabilityStatus === "non_f0_process_category" || row.capabilityStatus === "unable_to_check") && row.f0KnowledgeBaseVersion !== undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "rows without an F0 decision must not claim an F0 version", path: ["f0KnowledgeBaseVersion"] });
   }
 });
 
@@ -2482,7 +2521,7 @@ const f2AcceptedReportSchema = z.object({
   inputClassification: z.literal("confidential"),
   status: z.enum(["blocked", "partiallyBlocked", "completed"]),
   workbook: z.object({ fileName: z.string().min(1), contentHash: sha256Schema, f1GeneratedAt: z.string().datetime() }).strict(),
-  knowledgeBaseVersion: knowledgeBaseVersionSchema,
+  knowledgeBaseVersions: z.tuple([knowledgeBaseVersionSchema, internalToleranceGuidanceVersionSchema]),
   mappingRuleVersion: z.literal("v1"),
   artifactRoot: z.string().min(1),
   worksheets: z.array(z.object({
@@ -2501,11 +2540,14 @@ const f2AcceptedReportSchema = z.object({
     rowsWithRequiredMissing: z.number().int().nonnegative(),
     requiredMissingFieldCount: z.number().int().nonnegative(),
     missingImageWorksheetCount: z.number().int().nonnegative(),
-    inLibraryCount: z.number().int().nonnegative(),
-    outsideLibraryCount: z.number().int().nonnegative(),
+    internalWithinGuidanceCount: z.number().int().nonnegative(),
+    internalGuidanceExceededCount: z.number().int().nonnegative(),
+    f0InformationInsufficientCount: z.number().int().nonnegative(),
+    publicLibraryMatchCount: z.number().int().nonnegative(),
+    nonF0ProcessCategoryCount: z.number().int().nonnegative(),
     unableToCheckCount: z.number().int().nonnegative(),
-    toleranceDifferenceCount: z.number().int().nonnegative(),
-    distributionDifferenceCount: z.number().int().nonnegative(),
+    publicToleranceDifferenceCount: z.number().int().nonnegative(),
+    publicDistributionDifferenceCount: z.number().int().nonnegative(),
     missingDimIdCount: z.number().int().nonnegative(),
     missingPartNumberCount: z.number().int().nonnegative(),
   }).strict(),
@@ -2526,11 +2568,14 @@ const f2AcceptedReportSchema = z.object({
     rowsWithRequiredMissing: rows.filter((row) => row.missingRequiredFields.length > 0).length,
     requiredMissingFieldCount: rows.reduce((count, row) => count + row.missingRequiredFields.length, 0),
     missingImageWorksheetCount: report.worksheets.filter((worksheet) => worksheet.tolerancePathImageStatus === "unavailable").length,
-    inLibraryCount: rows.filter((row) => row.capabilityStatus.startsWith("in_library_")).length,
-    outsideLibraryCount: rows.filter((row) => row.capabilityStatus === "outside_library").length,
+    internalWithinGuidanceCount: rows.filter((row) => row.capabilityStatus === "internal_within_guidance").length,
+    internalGuidanceExceededCount: rows.filter((row) => row.capabilityStatus === "internal_guidance_exceeded").length,
+    f0InformationInsufficientCount: rows.filter((row) => row.capabilityStatus === "f0_information_insufficient").length,
+    publicLibraryMatchCount: rows.filter((row) => row.capabilityStatus.startsWith("in_library_")).length,
+    nonF0ProcessCategoryCount: rows.filter((row) => row.capabilityStatus === "non_f0_process_category").length,
     unableToCheckCount: rows.filter((row) => row.capabilityStatus === "unable_to_check").length,
-    toleranceDifferenceCount: rows.filter((row) => row.capabilityStatus === "in_library_tolerance_outside" || row.capabilityStatus === "in_library_tolerance_and_distribution_differ").length,
-    distributionDifferenceCount: rows.filter((row) => row.capabilityStatus === "in_library_distribution_differs" || row.capabilityStatus === "in_library_tolerance_and_distribution_differ").length,
+    publicToleranceDifferenceCount: rows.filter((row) => row.capabilityStatus === "in_library_tolerance_outside" || row.capabilityStatus === "in_library_tolerance_and_distribution_differ").length,
+    publicDistributionDifferenceCount: rows.filter((row) => row.capabilityStatus === "in_library_distribution_differs" || row.capabilityStatus === "in_library_tolerance_and_distribution_differ").length,
     missingDimIdCount: rows.filter((row) => row.displayedFields.dimCharacteristicId === "（缺失）").length,
     missingPartNumberCount: rows.filter((row) => row.displayedFields.partNumber === "（缺失）").length,
   };

@@ -10,7 +10,7 @@ const outputLayout = resolveFeature2OutputLayout(cliArgs);
 const loaded = loadF1ArtifactBundle(cliArgs[0]);
 const f2Result = loaded.status === "inputRejected"
   ? loaded.report
-  : createF2UserReport({ ...loaded.input, knowledgeBaseVersion: "v1", mappingRuleVersion: "v1" });
+  : createF2UserReport({ ...loaded.input, knowledgeBaseVersions: ["v1", "internal-v1"], mappingRuleVersion: "v1" });
 
 rmSync(outputLayout.outRoot, { recursive: true, force: true });
 mkdirSync(outputLayout.outRoot, { recursive: true });

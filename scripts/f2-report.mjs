@@ -3,12 +3,14 @@ function mdEscape(value) {
 }
 
 const fieldLabels = { factorName: "Factor Description", partName: "Part Name", partCategory: "Part Category", nominalValue: "Design Nominal", upperTolerance: "+ Tolerance", lowerTolerance: "- Tolerance", longTermSafetyFactor: "Long Term/Safety Factor", standardDeviation: "Sigma Level", distribution: "Distribution", tolerancePathImage: "截面图" };
-const capabilityLabels = { in_library_recommended: "库内-符合推荐", in_library_tolerance_outside: "库内-公差超出推荐", in_library_distribution_differs: "库内-分布不同", in_library_tolerance_and_distribution_differ: "库内-公差及分布不同", outside_library: "库外", unable_to_check: "无法检查" };
+const capabilityLabels = { in_library_recommended: "F0 公共库-符合推荐", in_library_tolerance_outside: "F0 公共库-公差超出推荐", in_library_distribution_differs: "F0 公共库-分布不同", in_library_tolerance_and_distribution_differ: "F0 公共库-公差及分布不同", outside_library: "非 F0 制程分类", internal_within_guidance: "F0 内部指导-符合", internal_guidance_exceeded: "F0 内部指导-超出", f0_information_insufficient: "F0 信息不足", non_f0_process_category: "非 F0 制程分类", unable_to_check: "无法检查" };
 const artifactIssueLabels = { root_json_missing: "缺少 F1 根 JSON", root_md_missing: "缺少 F1 根 Markdown", manifest_missing: "缺少 worksheet manifest", worksheet_json_missing: "缺少 worksheet JSON", worksheet_md_missing: "缺少 worksheet Markdown", workbook_identity_mismatch: "artifact 身份或内容不一致", image_missing: "缺少截面图文件", image_empty: "截面图文件为空", image_unsupported: "截面图格式不支持", path_outside_root: "artifact 路径越界", invalid_json: "JSON 无法解析", invalid_contract: "F1 artifact 格式不受支持" };
 
 function recommendationText(row) {
   const value = row.recommendation;
-  return value ? `${value.toleranceMin}–${value.toleranceMax} ${value.unit} / ${value.distribution}` : "—";
+  if (value?.kind === "internal-guidance") return `最大总公差带 ${value.maximumRecommendedTotalBand} ${value.unit} · internal-v1 · ${value.matchedEntryId}`;
+  if (value?.kind === "public") return `${value.toleranceMin}–${value.toleranceMax} ${value.unit} / ${value.distribution} · v1 · ${value.capabilityEntryId}`;
+  return "—";
 }
 
 function renderRejected(report) {
@@ -28,8 +30,9 @@ export function renderF2Report(report) {
     `| 工作表 | 共 ${report.summary.worksheetsChecked}；阻塞 ${report.summary.blockedWorksheetCount}；可继续 ${report.summary.readyWorksheetCount} |`,
     `| 必填缺失 | ${report.summary.rowsWithRequiredMissing} 个 factor；${report.summary.requiredMissingFieldCount} 个字段 |`,
     `| 截面图缺失 | ${report.summary.missingImageWorksheetCount} 个工作表 |`,
-    `| 能力库 | 库内 ${report.summary.inLibraryCount}；库外 ${report.summary.outsideLibraryCount}；无法检查 ${report.summary.unableToCheckCount} |`,
-    `| 非阻塞差异 | 公差 ${report.summary.toleranceDifferenceCount}；分布 ${report.summary.distributionDifferenceCount} |`,
+    `| F0 内部指导 | 符合 ${report.summary.internalWithinGuidanceCount}；超出 ${report.summary.internalGuidanceExceededCount}；信息不足 ${report.summary.f0InformationInsufficientCount} |`,
+    `| F0 公共库 | 命中 ${report.summary.publicLibraryMatchCount}；公差差异 ${report.summary.publicToleranceDifferenceCount}；分布差异 ${report.summary.publicDistributionDifferenceCount} |`,
+    `| F0 未判断 | 非 F0 制程分类 ${report.summary.nonF0ProcessCategoryCount}；无法检查 ${report.summary.unableToCheckCount} |`,
     `| 标识符提醒 | DIM ID 缺失 ${report.summary.missingDimIdCount}；Part Number 缺失 ${report.summary.missingPartNumberCount} |`, "",
   ];
   if (needsCorrection) lines.push("请修正 TA Excel 源文件并重新运行 F1，再将新的 F1 输出目录提交给 F2。", "");
@@ -57,6 +60,6 @@ export function renderF2Report(report) {
   lines.push("## 标识符提醒清单", "", "| Category | Worksheet | DIM ID 缺失 | Part Number 缺失 | Factor 行 | ADO 状态 |", "|---|---|---|---|---|---|");
   for (const event of report.adoEvents) lines.push(`| ${mdEscape(event.category)} | ${mdEscape(event.worksheetName)} | ${event.missingFields.includes("dimCharacteristicId") ? "是" : "否"} | ${event.missingFields.includes("partNumber") ? "是" : "否"} | ${event.factorRows.join(", ")} | 待触发 |`);
   if (report.adoEvents.length === 0) lines.push("| — | — | 否 | 否 | — | 无需触发 |");
-  lines.push("", "## 技术追溯", "", `- Workbook hash：${report.workbook.contentHash}`, `- F1 generated at：${report.workbook.f1GeneratedAt}`, `- F0 version：${report.knowledgeBaseVersion}`, `- Mapping rule version：${report.mappingRuleVersion}`, `- F1 artifact 目录：${mdEscape(report.artifactRoot)}`, "");
+  lines.push("", "## 技术追溯", "", `- Workbook hash：${report.workbook.contentHash}`, `- F1 generated at：${report.workbook.f1GeneratedAt}`, `- F0 versions：${report.knowledgeBaseVersions.join(", ")}`, `- Mapping rule version：${report.mappingRuleVersion}`, `- F1 artifact 目录：${mdEscape(report.artifactRoot)}`, "");
   return lines.join("\n");
 }

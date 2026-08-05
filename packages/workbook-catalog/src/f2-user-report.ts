@@ -4,8 +4,7 @@ import {
   type F2ArtifactInput,
   type F2UserReport,
 } from "@ai-assist/contracts";
-import { loadKnowledgeBase } from "@ai-assist/knowledge-base";
-import { normalizeDistribution } from "./distribution-normalization.js";
+import { createF0CapabilityRouter, type F0CapabilityAssessment } from "./f0-capability-router.js";
 
 const MISSING = "（缺失）";
 const REQUIRED_FIELDS = [
@@ -61,10 +60,10 @@ function numeric(field: ArtifactField | undefined): number | undefined {
     : undefined;
 }
 
-function parseRequest(request: unknown): { artifact: F2ArtifactInput; knowledgeBaseVersion: "v1"; mappingRuleVersion: "v1" } {
+function parseRequest(request: unknown): { artifact: F2ArtifactInput; knowledgeBaseVersions: readonly ["v1", "internal-v1"]; mappingRuleVersion: "v1" } {
   if (request === null || typeof request !== "object") throw new Error("F2 user report request is invalid.");
   const record = request as Record<string, unknown>;
-  if (record.knowledgeBaseVersion !== "v1" || record.mappingRuleVersion !== "v1") throw new Error("F2 user report request is invalid.");
+  if (!Array.isArray(record.knowledgeBaseVersions) || record.knowledgeBaseVersions.length !== 2 || record.knowledgeBaseVersions[0] !== "v1" || record.knowledgeBaseVersions[1] !== "internal-v1" || record.mappingRuleVersion !== "v1") throw new Error("F2 user report request is invalid.");
   const artifact = f2ArtifactInputSchema.safeParse({
     contractVersion: record.contractVersion,
     inputClassification: record.inputClassification,
@@ -73,12 +72,14 @@ function parseRequest(request: unknown): { artifact: F2ArtifactInput; knowledgeB
     worksheets: record.worksheets,
   });
   if (!artifact.success) throw new Error("F2 user report request is invalid.");
-  return { artifact: artifact.data, knowledgeBaseVersion: "v1", mappingRuleVersion: "v1" };
+  return { artifact: artifact.data, knowledgeBaseVersions: ["v1", "internal-v1"], mappingRuleVersion: "v1" };
 }
 
-export function createF2UserReport(request: unknown): F2UserReport {
-  const { artifact, knowledgeBaseVersion, mappingRuleVersion } = parseRequest(request);
-  const knowledgeBase = loadKnowledgeBase({ version: knowledgeBaseVersion });
+export function createF2UserReport(
+  request: unknown,
+  dependencies: { readonly capabilityRouter: { assess(row: { readonly partCategory: string; readonly factorName: string; readonly partName: string; readonly nominalValue: number; readonly upperTolerance: number; readonly lowerTolerance: number; readonly distribution: string }): F0CapabilityAssessment } } = { capabilityRouter: createF0CapabilityRouter() },
+): F2UserReport {
+  const { artifact, knowledgeBaseVersions, mappingRuleVersion } = parseRequest(request);
   const eventGroups = new Map<string, { category: string; worksheetName: string; missingFields: Set<"dimCharacteristicId" | "partNumber">; factorRows: number[] }>();
 
   const worksheets = artifact.worksheets.map((worksheet) => {
@@ -96,36 +97,17 @@ export function createF2UserReport(request: unknown): F2UserReport {
         eventGroups.set(key, group);
       }
 
-      let capabilityStatus: "in_library_recommended" | "in_library_tolerance_outside" | "in_library_distribution_differs" | "in_library_tolerance_and_distribution_differ" | "outside_library" | "unable_to_check" = "unable_to_check";
-      let recommendation: { toleranceMin: number; toleranceMax: number; unit: "mm"; distribution: "normal" | "uniform" | "triangular" | "trapezoidal" | "elliptical" | "beta" } | undefined;
-      let mappingReason: "category_not_defined" | "item_unmatched" | "item_ambiguous" | undefined;
-      if (missingRequiredFields.length === 0) {
-        const mapping = knowledgeBase.matchCapabilityItem({
+      const capability = missingRequiredFields.length > 0
+        ? { capabilityStatus: "unable_to_check" as const }
+        : dependencies.capabilityRouter.assess({
           partCategory: displayedFields.partCategory,
           factorName: displayedFields.factorName,
           partName: displayedFields.partName,
+          nominalValue: numeric(row.fields.nominalValue)!,
+          upperTolerance: numeric(row.fields.upperTolerance)!,
+          lowerTolerance: numeric(row.fields.lowerTolerance)!,
+          distribution: displayedFields.distribution,
         });
-        if (mapping.status !== "matched") {
-          capabilityStatus = "outside_library";
-          mappingReason = mapping.status;
-        } else {
-          const upperTolerance = numeric(row.fields.upperTolerance)!;
-          const lowerTolerance = numeric(row.fields.lowerTolerance)!;
-          const totalTolerance = upperTolerance - lowerTolerance;
-          const actualDistribution = normalizeDistribution(displayedFields.distribution);
-          const toleranceMatches = totalTolerance >= mapping.capabilityEntry.toleranceMin && totalTolerance <= mapping.capabilityEntry.toleranceMax;
-          const distributionMatches = actualDistribution === mapping.capabilityEntry.recommendedDistribution;
-          recommendation = {
-            toleranceMin: mapping.capabilityEntry.toleranceMin,
-            toleranceMax: mapping.capabilityEntry.toleranceMax,
-            unit: "mm",
-            distribution: mapping.capabilityEntry.recommendedDistribution,
-          };
-          capabilityStatus = toleranceMatches
-            ? distributionMatches ? "in_library_recommended" : "in_library_distribution_differs"
-            : distributionMatches ? "in_library_tolerance_outside" : "in_library_tolerance_and_distribution_differ";
-        }
-      }
       return {
         worksheetName: worksheet.worksheetName,
         tableId: table.tableId,
@@ -133,9 +115,7 @@ export function createF2UserReport(request: unknown): F2UserReport {
         displayedFields,
         sourceCells,
         missingRequiredFields,
-        capabilityStatus,
-        ...(recommendation === undefined ? {} : { recommendation }),
-        ...(mappingReason === undefined ? {} : { mappingReason }),
+        ...capability,
         adoReminderRequested: missingIdentifiers.length > 0,
       };
     }));
@@ -172,7 +152,7 @@ export function createF2UserReport(request: unknown): F2UserReport {
     inputClassification: "confidential",
     status: blockedWorksheetCount === 0 ? "completed" : blockedWorksheetCount === worksheets.length ? "blocked" : "partiallyBlocked",
     workbook: artifact.workbook,
-    knowledgeBaseVersion,
+    knowledgeBaseVersions,
     mappingRuleVersion,
     artifactRoot: artifact.artifactRoot,
     worksheets,
@@ -185,11 +165,14 @@ export function createF2UserReport(request: unknown): F2UserReport {
       rowsWithRequiredMissing: allRows.filter((row) => row.missingRequiredFields.length > 0).length,
       requiredMissingFieldCount: allRows.reduce((count, row) => count + row.missingRequiredFields.length, 0),
       missingImageWorksheetCount: worksheets.filter((worksheet) => worksheet.tolerancePathImageStatus === "unavailable").length,
-      inLibraryCount: allRows.filter((row) => row.capabilityStatus.startsWith("in_library_")).length,
-      outsideLibraryCount: allRows.filter((row) => row.capabilityStatus === "outside_library").length,
+      internalWithinGuidanceCount: allRows.filter((row) => row.capabilityStatus === "internal_within_guidance").length,
+      internalGuidanceExceededCount: allRows.filter((row) => row.capabilityStatus === "internal_guidance_exceeded").length,
+      f0InformationInsufficientCount: allRows.filter((row) => row.capabilityStatus === "f0_information_insufficient").length,
+      publicLibraryMatchCount: allRows.filter((row) => row.capabilityStatus.startsWith("in_library_")).length,
+      nonF0ProcessCategoryCount: allRows.filter((row) => row.capabilityStatus === "non_f0_process_category").length,
       unableToCheckCount: allRows.filter((row) => row.capabilityStatus === "unable_to_check").length,
-      toleranceDifferenceCount: allRows.filter((row) => row.capabilityStatus === "in_library_tolerance_outside" || row.capabilityStatus === "in_library_tolerance_and_distribution_differ").length,
-      distributionDifferenceCount: allRows.filter((row) => row.capabilityStatus === "in_library_distribution_differs" || row.capabilityStatus === "in_library_tolerance_and_distribution_differ").length,
+      publicToleranceDifferenceCount: allRows.filter((row) => row.capabilityStatus === "in_library_tolerance_outside" || row.capabilityStatus === "in_library_tolerance_and_distribution_differ").length,
+      publicDistributionDifferenceCount: allRows.filter((row) => row.capabilityStatus === "in_library_distribution_differs" || row.capabilityStatus === "in_library_tolerance_and_distribution_differ").length,
       missingDimIdCount: allRows.filter((row) => row.displayedFields.dimCharacteristicId === MISSING).length,
       missingPartNumberCount: allRows.filter((row) => row.displayedFields.partNumber === MISSING).length,
     },

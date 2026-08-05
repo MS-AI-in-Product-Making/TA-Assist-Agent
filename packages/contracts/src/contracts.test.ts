@@ -92,18 +92,27 @@ describe("F2 artifact user report contracts", () => {
       partName: "Bracket",
       partNumber: "（缺失）",
       dimCharacteristicId: "（缺失）",
-      partCategory: "demo-bracket",
-      nominalValue: "1",
-      upperTolerance: "0.2",
-      lowerTolerance: "-0.2",
+      partCategory: "CNC",
+      nominalValue: "3.145",
+      upperTolerance: "0.1",
+      lowerTolerance: "-0.1",
       longTermSafetyFactor: "1",
       standardDeviation: "0.01",
       distribution: "Normal",
     },
     sourceCells: { factorName: "Analysis-A!A2" },
     missingRequiredFields: [],
-    capabilityStatus: "in_library_tolerance_outside",
-    recommendation: { toleranceMin: 0.1, toleranceMax: 0.3, unit: "mm", distribution: "normal" },
+    capabilityStatus: "internal_within_guidance",
+    f0KnowledgeBaseVersion: "internal-v1",
+    recommendation: {
+      kind: "internal-guidance",
+      assessedTotalBand: 0.2,
+      maximumRecommendedTotalBand: 0.2,
+      unit: "mm",
+      matchedEntryId: "cnc-linear-6",
+      fallbackApplied: false,
+      evidence: { sourceFileHash: "c".repeat(64), sheetName: "ISO 2768-1 Class m", sourceRange: "A6:F6" },
+    },
     adoReminderRequested: true,
   };
   const completedReport = {
@@ -111,12 +120,12 @@ describe("F2 artifact user report contracts", () => {
     inputClassification: "confidential",
     status: "completed",
     workbook: { fileName: "Demo.xlsx", contentHash, f1GeneratedAt: "2026-08-03T00:00:00.000Z" },
-    knowledgeBaseVersion: "v1",
+    knowledgeBaseVersions: ["v1", "internal-v1"],
     mappingRuleVersion: "v1",
     artifactRoot: artifactInput.artifactRoot,
     worksheets: [{ worksheetName: "Analysis-A", status: "ready", tolerancePathImageStatus: "available", rows: [row], missingFieldSummary: [] }],
-    adoEvents: [{ eventType: "adoReminderRequested", category: "demo-bracket", worksheetName: "Analysis-A", missingFields: ["dimCharacteristicId", "partNumber"], factorRows: [2], workbookContentHash: contentHash }],
-    summary: { worksheetsChecked: 1, blockedWorksheetCount: 0, readyWorksheetCount: 1, factorRowCount: 1, rowsWithRequiredMissing: 0, requiredMissingFieldCount: 0, missingImageWorksheetCount: 0, inLibraryCount: 1, outsideLibraryCount: 0, unableToCheckCount: 0, toleranceDifferenceCount: 1, distributionDifferenceCount: 0, missingDimIdCount: 1, missingPartNumberCount: 1 },
+    adoEvents: [{ eventType: "adoReminderRequested", category: "CNC", worksheetName: "Analysis-A", missingFields: ["dimCharacteristicId", "partNumber"], factorRows: [2], workbookContentHash: contentHash }],
+    summary: { worksheetsChecked: 1, blockedWorksheetCount: 0, readyWorksheetCount: 1, factorRowCount: 1, rowsWithRequiredMissing: 0, requiredMissingFieldCount: 0, missingImageWorksheetCount: 0, internalWithinGuidanceCount: 1, internalGuidanceExceededCount: 0, f0InformationInsufficientCount: 0, publicLibraryMatchCount: 0, nonF0ProcessCategoryCount: 0, unableToCheckCount: 0, publicToleranceDifferenceCount: 0, publicDistributionDifferenceCount: 0, missingDimIdCount: 1, missingPartNumberCount: 1 },
   };
 
   it("accepts artifact-only inputs and non-blocking capability differences", () => {
@@ -136,6 +145,9 @@ describe("F2 artifact user report contracts", () => {
     }).success).toBe(true);
     expect(f2UserReportSchema.safeParse({ ...completedReport, status: "blocked" }).success).toBe(false);
     expect(f2UserReportSchema.safeParse({ ...completedReport, adoEvents: [{ ...completedReport.adoEvents[0], missingFields: [] }] }).success).toBe(false);
+    expect(f2UserReportSchema.safeParse({ ...completedReport, knowledgeBaseVersions: ["v1"] }).success).toBe(false);
+    expect(f2UserReportSchema.safeParse({ ...completedReport, worksheets: [{ ...completedReport.worksheets[0], rows: [{ ...row, f0KnowledgeBaseVersion: "v1" }] }] }).success).toBe(false);
+    expect(f2UserReportSchema.safeParse({ ...completedReport, worksheets: [{ ...completedReport.worksheets[0], rows: [{ ...row, recommendation: undefined }] }] }).success).toBe(false);
     expect(f2ArtifactInputSchema.safeParse({ ...artifactInput, worksheets: [{ ...artifactInput.worksheets[0], worksheetJsonPath: "../outside.json" }] }).success).toBe(false);
   });
 });

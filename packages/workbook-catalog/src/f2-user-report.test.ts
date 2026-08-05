@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createF2UserReport } from "./f2-user-report.js";
 
 const contentHash = "a".repeat(64);
@@ -39,7 +39,7 @@ function input(fields: Record<string, unknown>, imageStatus: "available" | "unav
         rows: [{ sourceRow: 2, fields }],
       }],
     }],
-    knowledgeBaseVersion: "v1",
+    knowledgeBaseVersions: ["v1", "internal-v1"],
     mappingRuleVersion: "v1",
   };
 }
@@ -70,7 +70,8 @@ describe("createF2UserReport", () => {
       displayedFields: expect.objectContaining({ partNumber: "（缺失）", dimCharacteristicId: "（缺失）" }),
       missingRequiredFields: [],
       capabilityStatus: "in_library_tolerance_and_distribution_differ",
-      recommendation: { toleranceMin: 0.1, toleranceMax: 0.3, unit: "mm", distribution: "normal" },
+      f0KnowledgeBaseVersion: "v1",
+      recommendation: { kind: "public", toleranceMin: 0.1, toleranceMax: 0.3, unit: "mm", distribution: "normal", capabilityEntryId: "cap-demo-bracket" },
       adoReminderRequested: true,
     }));
     expect(result.adoEvents).toEqual([expect.objectContaining({
@@ -87,17 +88,54 @@ describe("createF2UserReport", () => {
     fields.nominalValue = unavailable("Analysis-A!F2");
     fields.upperTolerance = unavailable("Analysis-A!G2");
 
-    const result = createF2UserReport(input(fields, "unavailable"));
+    const capabilityRouter = { assess: vi.fn() };
+    const result = createF2UserReport(input(fields, "unavailable"), { capabilityRouter });
 
     expect(result.status).toBe("blocked");
     expect(result.worksheets[0]?.rows).toHaveLength(1);
     expect(result.worksheets[0]?.rows[0]?.missingRequiredFields).toEqual(["partName", "nominalValue", "upperTolerance"]);
     expect(result.worksheets[0]?.rows[0]?.capabilityStatus).toBe("unable_to_check");
+    expect(capabilityRouter.assess).not.toHaveBeenCalled();
     expect(result.worksheets[0]?.missingFieldSummary).toEqual(expect.arrayContaining([
       { field: "partName", factorCount: 1, sourceRows: [2] },
       { field: "nominalValue", factorCount: 1, sourceRows: [2] },
       { field: "upperTolerance", factorCount: 1, sourceRows: [2] },
       { field: "tolerancePathImage", factorCount: 0, sourceRows: [] },
     ]));
+  });
+
+  it("uses the injected F0 router for complete CNC rows", () => {
+    const fields = completeFields();
+    fields.partCategory = available("Analysis-A!E2", "CNC");
+    fields.nominalValue = available("Analysis-A!F2", "3.145", 3.145);
+    fields.upperTolerance = available("Analysis-A!G2", "0.100", 0.1);
+    fields.lowerTolerance = available("Analysis-A!H2", "-0.100", -0.1);
+    const capabilityRouter = { assess: vi.fn(() => ({
+      capabilityStatus: "internal_within_guidance" as const,
+      f0KnowledgeBaseVersion: "internal-v1" as const,
+      recommendation: {
+        kind: "internal-guidance" as const,
+        assessedTotalBand: 0.2,
+        maximumRecommendedTotalBand: 0.2,
+        unit: "mm" as const,
+        matchedEntryId: "cnc-linear-6",
+        fallbackApplied: false,
+        evidence: { sourceFileHash: "c".repeat(64), sheetName: "ISO 2768-1 Class m", sourceRange: "A6:F6" },
+      },
+    })) };
+
+    const result = createF2UserReport(input(fields), { capabilityRouter });
+
+    expect(capabilityRouter.assess).toHaveBeenCalledExactlyOnceWith({
+      partCategory: "CNC",
+      factorName: "bracket arm",
+      partName: "component",
+      nominalValue: 3.145,
+      upperTolerance: 0.1,
+      lowerTolerance: -0.1,
+      distribution: "Uniform",
+    });
+    expect(result.worksheets[0]?.rows[0]).toMatchObject({ capabilityStatus: "internal_within_guidance", f0KnowledgeBaseVersion: "internal-v1" });
+    expect(result.summary).toMatchObject({ internalWithinGuidanceCount: 1, unableToCheckCount: 0 });
   });
 });
