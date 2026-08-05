@@ -25,6 +25,7 @@ import {
   injectLinksIntoFactorTableMarkdown,
   maskBlankFactorTemplateRows,
 } from "./f1-dual-grid.mjs";
+import { extractFactorActualFields } from "./f1-factor-actuals.mjs";
 import { resolveFeature1OutputLayout, safeName } from "./f1-output-layout.mjs";
 import { configuredFeature1Jobs, resolveFeature1Jobs } from "./f1-workbook-jobs.mjs";
 
@@ -173,7 +174,11 @@ function withDisplayActualFields(worksheet, worksheetSheet) {
       for (const [name, value] of Object.entries(row.fields)) {
         nextFields[name] = annotateArtifactField(value, fieldDisplayValue(value, worksheetSheet));
       }
-      return { sourceRow: row.sourceRow, fields: nextFields };
+      return {
+        sourceRow: row.sourceRow,
+        fields: nextFields,
+        actualFields: extractFactorActualFields(worksheetSheet, row.sourceRow),
+      };
     }),
   }));
 }
