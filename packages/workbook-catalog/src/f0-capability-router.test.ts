@@ -59,6 +59,27 @@ describe("createF0CapabilityRouter", () => {
     expect(f0.publicKnowledgeBase.matchCapabilityItem).not.toHaveBeenCalled();
   });
 
+  it("preserves an explicit fallback selected by the internal F0 API", () => {
+    const f0 = dependencies({
+      ...internalMatch,
+      matchedEntryId: "explicit-fallback",
+      assessedTotalBand: { value: 0.18, unit: "mm" as const },
+      maximumRecommendedTotalBand: { value: 0.25, unit: "mm" as const },
+      fallbackApplied: true,
+    });
+
+    expect(createF0CapabilityRouter(f0).assess(row({ upperTolerance: 0.09, lowerTolerance: -0.09 }))).toMatchObject({
+      capabilityStatus: "internal_within_guidance",
+      recommendation: {
+        matchedEntryId: "explicit-fallback",
+        assessedTotalBand: 0.18,
+        maximumRecommendedTotalBand: 0.25,
+        fallbackApplied: true,
+      },
+    });
+    expect(f0.internalGuidance.assessToleranceGuidance).toHaveBeenCalledOnce();
+  });
+
   it("normalizes a negative TA nominal and preserves guidance-exceeded", () => {
     const exceeded = { ...internalMatch, status: "guidance-exceeded" as const, assessedTotalBand: { value: 0.4, unit: "mm" as const } };
     const f0 = dependencies(exceeded);
