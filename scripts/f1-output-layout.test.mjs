@@ -32,6 +32,14 @@ describe("resolveFeature1OutputLayout", () => {
     expect(layout.outRoot).toBe("test/demo-output/feature1-output/A-B-report");
   });
 
+  it("uses an explicit isolated output root", () => {
+    expect(resolveFeature1OutputLayout(["a.xlsx"], "run-id", "runs/x/f1").outRoot).toBe("runs/x/f1");
+  });
+
+  it.each(["", "runs/../shared"])("rejects unsafe output override %j", (outputRoot) => {
+    expect(() => resolveFeature1OutputLayout(["a.xlsx"], "run-id", outputRoot)).toThrow(/output root/i);
+  });
+
   it("rejects more than one workbook path", () => {
     expect(() => resolveFeature1OutputLayout(["test/a.xlsx", "test/b.xlsx"], "ignored"))
       .toThrow("Feature 1 output layout accepts at most one workbook path.");

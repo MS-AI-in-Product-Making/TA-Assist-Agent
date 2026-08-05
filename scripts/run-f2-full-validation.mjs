@@ -7,7 +7,7 @@ import { resolveFeature2OutputLayout } from "./f2-output-layout.mjs";
 import { renderF2Report } from "./f2-report.mjs";
 
 const cliArgs = process.argv.slice(2);
-const outputLayout = resolveFeature2OutputLayout(cliArgs);
+const outputLayout = resolveFeature2OutputLayout(cliArgs, process.env.AI_TVA_F2_OUTPUT_ROOT);
 const loaded = loadF1ArtifactBundle(cliArgs[0]);
 const f2Result = loaded.status === "inputRejected"
   ? loaded.report

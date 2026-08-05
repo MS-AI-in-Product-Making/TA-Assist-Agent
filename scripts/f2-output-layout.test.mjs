@@ -16,4 +16,12 @@ describe("resolveFeature2OutputLayout", () => {
     expect(() => resolveFeature2OutputLayout(["a", "b"])).toThrow("exactly one Feature 1 artifact directory");
     expect(() => resolveFeature2OutputLayout(["test/Demo.xlsx"])).toThrow("requires a Feature 1 artifact directory");
   });
+
+  it("uses an explicit isolated output root", () => {
+    expect(resolveFeature2OutputLayout(["artifact"], "runs/x/f2").outRoot).toBe("runs/x/f2");
+  });
+
+  it.each(["", "runs/../shared"])("rejects unsafe output override %j", (outputRoot) => {
+    expect(() => resolveFeature2OutputLayout(["artifact"], outputRoot)).toThrow(/output root/i);
+  });
 });

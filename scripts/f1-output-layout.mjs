@@ -4,11 +4,18 @@ export function safeName(value) {
   return value.replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, "-");
 }
 
-export function resolveFeature1OutputLayout(args, runId) {
+function outputRootOverride(value) {
+  if (value === undefined) return undefined;
+  if (!value.trim() || value.split(/[\\/]+/).includes("..")) throw new Error("Feature 1 output root override is unsafe.");
+  return value;
+}
+
+export function resolveFeature1OutputLayout(args, runId, outputRoot) {
+  const override = outputRootOverride(outputRoot);
   if (args.length === 0) {
     return {
       mode: "batch",
-      outRoot: "test/demo-output/feature1-validation",
+      outRoot: override ?? "test/demo-output/feature1-validation",
       reportMdName: `f1-strict-workflow-${runId}.md`,
       reportJsonName: `f1-strict-workflow-${runId}.json`,
       latestMdName: "latest.md",
@@ -29,7 +36,7 @@ export function resolveFeature1OutputLayout(args, runId) {
 
   return {
     mode: "single",
-    outRoot: path.posix.join("test", "demo-output", "feature1-output", workbookName),
+    outRoot: override ?? path.posix.join("test", "demo-output", "feature1-output", workbookName),
     reportMdName: "Feature1-Report.md",
     reportJsonName: "Feature1-Report.json",
     resetOutputRoot: true,

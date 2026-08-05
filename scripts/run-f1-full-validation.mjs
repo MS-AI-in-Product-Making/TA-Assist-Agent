@@ -432,7 +432,7 @@ if (jobs.length === 0) {
 
 const generatedAt = new Date().toISOString();
 const runId = generatedAt.replace(/[:.]/g, "-");
-const outputLayout = resolveFeature1OutputLayout(cliArgs, runId);
+const outputLayout = resolveFeature1OutputLayout(cliArgs, runId, process.env.AI_TVA_F1_OUTPUT_ROOT);
 const outRoot = outputLayout.outRoot;
 const outSheetsRoot = path.join(outRoot, "sheets");
 if (outputLayout.resetOutputRoot) {
