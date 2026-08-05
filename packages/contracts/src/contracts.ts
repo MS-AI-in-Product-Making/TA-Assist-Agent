@@ -2378,6 +2378,27 @@ const f1ArtifactFieldSchema = z.discriminatedUnion("status", [
   }).strict(),
 ]);
 
+const f2ActualScalarSchema = z.union([z.string(), z.number().finite(), z.null()]);
+
+const f2ActualFieldsSchema = z.object({
+  factorName: z.string().nullable(),
+  partName: z.string().nullable(),
+  drawingNumber: f2ActualScalarSchema,
+  dimCharacteristicId: f2ActualScalarSchema,
+  partCategory: z.string().nullable(),
+  nominalValue: f2ActualScalarSchema,
+  upperTolerance: f2ActualScalarSchema,
+  lowerTolerance: f2ActualScalarSchema,
+  longTermSafetyFactor: f2ActualScalarSchema,
+  sigmaLevel: f2ActualScalarSchema,
+  distribution: z.string().nullable(),
+  mean: f2ActualScalarSchema,
+  tolerance: f2ActualScalarSchema,
+  oneSigma: f2ActualScalarSchema,
+  percentContributionToSigma: f2ActualScalarSchema,
+  notes: f2ActualScalarSchema,
+}).strict();
+
 const f1ArtifactFactorTableSchema = z.object({
   tableId: z.string().min(1),
   headerRow: z.number().int().positive(),
@@ -2386,6 +2407,7 @@ const f1ArtifactFactorTableSchema = z.object({
   rows: z.array(z.object({
     sourceRow: z.number().int().positive(),
     fields: z.record(worksheetFieldNameSchema, f1ArtifactFieldSchema),
+    actualFields: f2ActualFieldsSchema,
   }).strict()),
 }).strict();
 
@@ -2413,20 +2435,6 @@ export const f2ArtifactInputSchema = z.object({
   const names = input.worksheets.map((worksheet) => worksheet.worksheetName);
   if (new Set(names).size !== names.length) context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet names must be unique", path: ["worksheets"] });
 });
-
-const f2DisplayedFieldsSchema = z.object({
-  factorName: z.string(),
-  partName: z.string(),
-  partNumber: z.string(),
-  dimCharacteristicId: z.string(),
-  partCategory: z.string(),
-  nominalValue: z.string(),
-  upperTolerance: z.string(),
-  lowerTolerance: z.string(),
-  longTermSafetyFactor: z.string(),
-  standardDeviation: z.string(),
-  distribution: z.string(),
-}).strict();
 
 const f2CapabilityStatusSchema = z.enum([
   "in_library_recommended",
@@ -2468,9 +2476,14 @@ const f2EnhancedRowSchema = z.object({
   worksheetName: z.string().min(1),
   tableId: z.string().min(1),
   sourceRow: z.number().int().positive(),
-  displayedFields: f2DisplayedFieldsSchema,
+  actualFields: f2ActualFieldsSchema,
   sourceCells: z.record(worksheetFieldNameSchema, worksheetSourceCellSchema),
+  imageTarget: z.object({
+    relativePath: relativeArtifactPathSchema,
+    contentHash: sha256Schema,
+  }).strict().optional(),
   missingRequiredFields: z.array(requiredFieldNameSchema),
+  missingIdentifiers: z.array(z.enum(["dimCharacteristicId", "partNumber"])),
   capabilityStatus: f2CapabilityStatusSchema,
   f0KnowledgeBaseVersion: z.enum(["v1", "internal-v1"]).optional(),
   recommendation: z.discriminatedUnion("kind", [f2PublicRecommendationSchema, f2InternalRecommendationSchema]).optional(),
@@ -2576,8 +2589,8 @@ const f2AcceptedReportSchema = z.object({
     unableToCheckCount: rows.filter((row) => row.capabilityStatus === "unable_to_check").length,
     publicToleranceDifferenceCount: rows.filter((row) => row.capabilityStatus === "in_library_tolerance_outside" || row.capabilityStatus === "in_library_tolerance_and_distribution_differ").length,
     publicDistributionDifferenceCount: rows.filter((row) => row.capabilityStatus === "in_library_distribution_differs" || row.capabilityStatus === "in_library_tolerance_and_distribution_differ").length,
-    missingDimIdCount: rows.filter((row) => row.displayedFields.dimCharacteristicId === "（缺失）").length,
-    missingPartNumberCount: rows.filter((row) => row.displayedFields.partNumber === "（缺失）").length,
+    missingDimIdCount: rows.filter((row) => row.missingIdentifiers.includes("dimCharacteristicId")).length,
+    missingPartNumberCount: rows.filter((row) => row.missingIdentifiers.includes("partNumber")).length,
   };
   for (const [field, value] of Object.entries(expectedSummary)) {
     if (report.summary[field as keyof typeof expectedSummary] !== value) context.addIssue({ code: z.ZodIssueCode.custom, message: `${field} must match report records`, path: ["summary", field] });

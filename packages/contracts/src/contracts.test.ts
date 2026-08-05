@@ -70,6 +70,24 @@ import {
 
 describe("F2 artifact user report contracts", () => {
   const contentHash = "a".repeat(64);
+  const actualFields = {
+    factorName: "Bracket arm",
+    partName: "Bracket",
+    drawingNumber: null,
+    dimCharacteristicId: null,
+    partCategory: "CNC",
+    nominalValue: 3.145,
+    upperTolerance: 0.1,
+    lowerTolerance: -0.1,
+    longTermSafetyFactor: 1,
+    sigmaLevel: 4,
+    distribution: "Normal",
+    mean: 3.145,
+    tolerance: 0.1,
+    oneSigma: 0.025,
+    percentContributionToSigma: 0.043,
+    notes: null,
+  };
   const artifactInput = {
     contractVersion: "v1",
     inputClassification: "confidential",
@@ -80,28 +98,24 @@ describe("F2 artifact user report contracts", () => {
       worksheetJsonPath: "sheets/Demo.xlsx/json/Analysis-A.json",
       worksheetMdPath: "sheets/Demo.xlsx/md/Analysis-A.md",
       tolerancePathImage: { status: "available", imagePath: "sheets/Demo.xlsx/images/a.png", contentHash: "b".repeat(64) },
-      factorTables: [],
+      factorTables: [{
+        tableId: "table-a",
+        headerRow: 1,
+        dataRange: { startRow: 2, endRow: 2 },
+        columns: [],
+        rows: [{ sourceRow: 2, fields: {}, actualFields }],
+      }],
     }],
   };
   const row = {
     worksheetName: "Analysis-A",
     tableId: "table-a",
     sourceRow: 2,
-    displayedFields: {
-      factorName: "Bracket arm",
-      partName: "Bracket",
-      partNumber: "（缺失）",
-      dimCharacteristicId: "（缺失）",
-      partCategory: "CNC",
-      nominalValue: "3.145",
-      upperTolerance: "0.1",
-      lowerTolerance: "-0.1",
-      longTermSafetyFactor: "1",
-      standardDeviation: "0.01",
-      distribution: "Normal",
-    },
+    actualFields,
     sourceCells: { factorName: "Analysis-A!A2" },
+    imageTarget: { relativePath: `images/${"b".repeat(64)}.png`, contentHash: "b".repeat(64) },
     missingRequiredFields: [],
+    missingIdentifiers: ["dimCharacteristicId", "partNumber"],
     capabilityStatus: "internal_within_guidance",
     f0KnowledgeBaseVersion: "internal-v1",
     recommendation: {
@@ -133,6 +147,19 @@ describe("F2 artifact user report contracts", () => {
     expect(f2UserReportSchema.parse(completedReport)).toEqual(completedReport);
     expect(f2ArtifactInputSchema.safeParse({ ...artifactInput, workbookPath: "Demo.xlsx" }).success).toBe(false);
     expect(f2ArtifactInputSchema.safeParse({ ...artifactInput, workbookBytes: new Uint8Array([1]) }).success).toBe(false);
+    const incompleteActualFields = { ...actualFields } as Partial<typeof actualFields>;
+    delete incompleteActualFields.notes;
+    expect(f2ArtifactInputSchema.safeParse({
+      ...artifactInput,
+      worksheets: [{
+        ...artifactInput.worksheets[0],
+        factorTables: [{ ...artifactInput.worksheets[0].factorTables[0], rows: [{ sourceRow: 2, fields: {}, actualFields: incompleteActualFields }] }],
+      }],
+    }).success).toBe(false);
+    expect(f2UserReportSchema.safeParse({
+      ...completedReport,
+      worksheets: [{ ...completedReport.worksheets[0], rows: [{ ...row, displayedFields: { factorName: "display" } }] }],
+    }).success).toBe(false);
   });
 
   it("accepts input rejection but rejects inconsistent business and ADO states", () => {
