@@ -110,7 +110,7 @@ export function loadF1ArtifactBundle(artifactRoot) {
         issues.push(issue("workbook_identity_mismatch", image.outputFile));
         continue;
       }
-      tolerancePathImage = { status: "available", imagePath: image.outputFile, contentHash: image.contentHash };
+      tolerancePathImage = { status: "available", imagePath: image.outputFile, contentHash: image.contentHash, mediaType: image.mediaType };
     } else {
       tolerancePathImage = {
         status: "unavailable",

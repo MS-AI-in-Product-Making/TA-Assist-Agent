@@ -97,7 +97,7 @@ describe("F2 artifact user report contracts", () => {
       worksheetName: "Analysis-A",
       worksheetJsonPath: "sheets/Demo.xlsx/json/Analysis-A.json",
       worksheetMdPath: "sheets/Demo.xlsx/md/Analysis-A.md",
-      tolerancePathImage: { status: "available", imagePath: "sheets/Demo.xlsx/images/a.png", contentHash: "b".repeat(64) },
+      tolerancePathImage: { status: "available", imagePath: "sheets/Demo.xlsx/images/a.png", contentHash: "b".repeat(64), mediaType: "image/png" },
       factorTables: [{
         tableId: "table-a",
         headerRow: 1,

@@ -18,23 +18,22 @@ const REQUIRED_FIELDS = [
   "standardDeviation",
   "distribution",
 ] as const;
-const DISPLAY_FIELDS = [
-  "factorName",
-  "partName",
-  "partNumber",
-  "dimCharacteristicId",
-  "partCategory",
-  "nominalValue",
-  "upperTolerance",
-  "lowerTolerance",
-  "longTermSafetyFactor",
-  "standardDeviation",
-  "distribution",
-] as const;
-const NUMERIC_FIELDS = new Set(["nominalValue", "upperTolerance", "lowerTolerance", "longTermSafetyFactor", "standardDeviation"]);
+const ACTUAL_FIELD_BY_REQUIRED = {
+  factorName: "factorName",
+  partName: "partName",
+  partCategory: "partCategory",
+  nominalValue: "nominalValue",
+  upperTolerance: "upperTolerance",
+  lowerTolerance: "lowerTolerance",
+  longTermSafetyFactor: "longTermSafetyFactor",
+  standardDeviation: "sigmaLevel",
+  distribution: "distribution",
+} as const;
+const NUMERIC_REQUIRED_FIELDS = new Set(["nominalValue", "upperTolerance", "lowerTolerance", "longTermSafetyFactor", "standardDeviation"]);
 
 type ArtifactFields = F2ArtifactInput["worksheets"][number]["factorTables"][number]["rows"][number]["fields"];
 type ArtifactField = NonNullable<ArtifactFields[keyof ArtifactFields]>;
+type ActualFields = F2ArtifactInput["worksheets"][number]["factorTables"][number]["rows"][number]["actualFields"];
 
 function deepFreeze<Value>(value: Value, seen = new WeakSet<object>()): Value {
   if (value !== null && typeof value === "object" && !seen.has(value)) {
@@ -45,19 +44,29 @@ function deepFreeze<Value>(value: Value, seen = new WeakSet<object>()): Value {
   return value;
 }
 
-function isMissing(fieldName: string, field: ArtifactField | undefined): boolean {
-  if (field?.status !== "available" || !field.displayValue.trim()) return true;
-  return NUMERIC_FIELDS.has(fieldName) && (typeof field.numericValue !== "number" || !Number.isFinite(field.numericValue));
+function isMissing(fieldName: (typeof REQUIRED_FIELDS)[number], actualFields: ActualFields): boolean {
+  const value = actualFields[ACTUAL_FIELD_BY_REQUIRED[fieldName]];
+  if (NUMERIC_REQUIRED_FIELDS.has(fieldName)) return typeof value !== "number" || !Number.isFinite(value);
+  return typeof value !== "string" || value.trim().length === 0;
 }
 
-function displayed(field: ArtifactField | undefined): string {
-  return field?.status === "available" && field.displayValue.trim() ? field.displayValue : MISSING;
+function text(value: string | number | null): string | undefined {
+  if (typeof value === "number") return String(value);
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
 
-function numeric(field: ArtifactField | undefined): number | undefined {
-  return field?.status === "available" && typeof field.numericValue === "number" && Number.isFinite(field.numericValue)
-    ? field.numericValue
-    : undefined;
+function hasAvailableValue(field: ArtifactField | undefined): boolean {
+  if (field?.status !== "available") return false;
+  return typeof field.actualValue === "number" || field.actualValue.trim().length > 0;
+}
+
+function imageTarget(worksheet: F2ArtifactInput["worksheets"][number]): { relativePath: string; contentHash: string } | undefined {
+  if (worksheet.tolerancePathImage.status !== "available") return undefined;
+  const extension = worksheet.tolerancePathImage.mediaType === "image/png" ? "png" : "jpg";
+  return {
+    relativePath: `images/${worksheet.tolerancePathImage.contentHash}.${extension}`,
+    contentHash: worksheet.tolerancePathImage.contentHash,
+  };
 }
 
 function parseRequest(request: unknown): { artifact: F2ArtifactInput; knowledgeBaseVersions: readonly ["v1", "internal-v1"]; mappingRuleVersion: "v1" } {
@@ -83,13 +92,15 @@ export function createF2UserReport(
   const eventGroups = new Map<string, { category: string; worksheetName: string; missingFields: Set<"dimCharacteristicId" | "partNumber">; factorRows: number[] }>();
 
   const worksheets = artifact.worksheets.map((worksheet) => {
+    const worksheetImageTarget = imageTarget(worksheet);
     const rows = worksheet.factorTables.flatMap((table) => table.rows.map((row) => {
-      const missingRequiredFields = REQUIRED_FIELDS.filter((fieldName) => isMissing(fieldName, row.fields[fieldName]));
-      const displayedFields = Object.fromEntries(DISPLAY_FIELDS.map((fieldName) => [fieldName, displayed(row.fields[fieldName])])) as Record<(typeof DISPLAY_FIELDS)[number], string>;
+      const missingRequiredFields = REQUIRED_FIELDS.filter((fieldName) => isMissing(fieldName, row.actualFields));
       const sourceCells = Object.fromEntries(Object.entries(row.fields).flatMap(([fieldName, field]) => field.sourceCell ? [[fieldName, field.sourceCell]] : []));
-      const missingIdentifiers = (["dimCharacteristicId", "partNumber"] as const).filter((fieldName) => displayedFields[fieldName] === MISSING);
+      const missingIdentifiers = (["dimCharacteristicId", "partNumber"] as const).filter((fieldName) => fieldName === "dimCharacteristicId"
+        ? text(row.actualFields.dimCharacteristicId) === undefined
+        : !hasAvailableValue(row.fields.partNumber));
       if (missingIdentifiers.length > 0) {
-        const category = displayedFields.partCategory;
+        const category = text(row.actualFields.partCategory) ?? MISSING;
         const key = `${category}\u0000${worksheet.worksheetName}`;
         const group = eventGroups.get(key) ?? { category, worksheetName: worksheet.worksheetName, missingFields: new Set(), factorRows: [] };
         for (const fieldName of missingIdentifiers) group.missingFields.add(fieldName);
@@ -100,21 +111,23 @@ export function createF2UserReport(
       const capability = missingRequiredFields.length > 0
         ? { capabilityStatus: "unable_to_check" as const }
         : dependencies.capabilityRouter.assess({
-          partCategory: displayedFields.partCategory,
-          factorName: displayedFields.factorName,
-          partName: displayedFields.partName,
-          nominalValue: numeric(row.fields.nominalValue)!,
-          upperTolerance: numeric(row.fields.upperTolerance)!,
-          lowerTolerance: numeric(row.fields.lowerTolerance)!,
-          distribution: displayedFields.distribution,
+          partCategory: row.actualFields.partCategory!,
+          factorName: row.actualFields.factorName!,
+          partName: row.actualFields.partName!,
+          nominalValue: row.actualFields.nominalValue as number,
+          upperTolerance: row.actualFields.upperTolerance as number,
+          lowerTolerance: row.actualFields.lowerTolerance as number,
+          distribution: row.actualFields.distribution!,
         });
       return {
         worksheetName: worksheet.worksheetName,
         tableId: table.tableId,
         sourceRow: row.sourceRow,
-        displayedFields,
+        actualFields: row.actualFields,
         sourceCells,
+          ...(worksheetImageTarget === undefined ? {} : { imageTarget: worksheetImageTarget }),
         missingRequiredFields,
+        missingIdentifiers,
         ...capability,
         adoReminderRequested: missingIdentifiers.length > 0,
       };
@@ -173,8 +186,8 @@ export function createF2UserReport(
       unableToCheckCount: allRows.filter((row) => row.capabilityStatus === "unable_to_check").length,
       publicToleranceDifferenceCount: allRows.filter((row) => row.capabilityStatus === "in_library_tolerance_outside" || row.capabilityStatus === "in_library_tolerance_and_distribution_differ").length,
       publicDistributionDifferenceCount: allRows.filter((row) => row.capabilityStatus === "in_library_distribution_differs" || row.capabilityStatus === "in_library_tolerance_and_distribution_differ").length,
-      missingDimIdCount: allRows.filter((row) => row.displayedFields.dimCharacteristicId === MISSING).length,
-      missingPartNumberCount: allRows.filter((row) => row.displayedFields.partNumber === MISSING).length,
+        missingDimIdCount: allRows.filter((row) => row.missingIdentifiers.includes("dimCharacteristicId")).length,
+        missingPartNumberCount: allRows.filter((row) => row.missingIdentifiers.includes("partNumber")).length,
     },
   });
   return deepFreeze(structuredClone(result));

@@ -2412,7 +2412,12 @@ const f1ArtifactFactorTableSchema = z.object({
 }).strict();
 
 const f2ArtifactTolerancePathImageSchema = z.discriminatedUnion("status", [
-  z.object({ status: z.literal("available"), imagePath: relativeArtifactPathSchema, contentHash: sha256Schema }).strict(),
+  z.object({
+    status: z.literal("available"),
+    imagePath: relativeArtifactPathSchema,
+    contentHash: sha256Schema,
+    mediaType: z.enum(["image/png", "image/jpeg"]),
+  }).strict(),
   z.object({
     status: z.literal("unavailable"),
     reasonCode: z.enum(["label_missing", "label_ambiguous", "image_missing", "image_empty", "image_unsupported", "unparsed_anchor", "worksheet_unavailable"]),

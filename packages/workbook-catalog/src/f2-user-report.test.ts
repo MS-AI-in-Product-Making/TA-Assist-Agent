@@ -18,7 +18,28 @@ function unavailable(sourceCell: string) {
   return { status: "unavailable" as const, reasonCode: "missing" as const, sourceCell, displayValue: "" as const, actualValue: "" as const, valueOrigin: "missing" as const };
 }
 
-function input(fields: Record<string, unknown>, imageStatus: "available" | "unavailable" = "available") {
+function completeActualFields() {
+  return {
+    factorName: "bracket arm",
+    partName: "component",
+    drawingNumber: null,
+    dimCharacteristicId: null,
+    partCategory: "demo-bracket",
+    nominalValue: 1,
+    upperTolerance: 0.4,
+    lowerTolerance: 0,
+    longTermSafetyFactor: 1,
+    sigmaLevel: 4,
+    distribution: "Uniform",
+    mean: 1,
+    tolerance: 0.4,
+    oneSigma: 0.1,
+    percentContributionToSigma: 1,
+    notes: null,
+  };
+}
+
+function input(fields: Record<string, unknown>, imageStatus: "available" | "unavailable" = "available", actualFields = completeActualFields()) {
   return {
     contractVersion: "v1",
     inputClassification: "confidential",
@@ -29,14 +50,14 @@ function input(fields: Record<string, unknown>, imageStatus: "available" | "unav
       worksheetJsonPath: "sheets/anonymous.xlsx/json/Analysis-A.json",
       worksheetMdPath: "sheets/anonymous.xlsx/md/Analysis-A.md",
       tolerancePathImage: imageStatus === "available"
-        ? { status: "available", imagePath: "sheets/anonymous.xlsx/images/a.png", contentHash: "b".repeat(64) }
+        ? { status: "available", imagePath: "sheets/anonymous.xlsx/images/a.png", contentHash: "b".repeat(64), mediaType: "image/png" }
         : { status: "unavailable", reasonCode: "image_missing" },
       factorTables: [{
         tableId: "table-a",
         headerRow: 1,
         dataRange: { startRow: 2, endRow: 2 },
         columns: [],
-        rows: [{ sourceRow: 2, fields }],
+        rows: [{ sourceRow: 2, fields, actualFields }],
       }],
     }],
     knowledgeBaseVersions: ["v1", "internal-v1"],
@@ -67,7 +88,9 @@ describe("createF2UserReport", () => {
     expect(result.status).toBe("completed");
     expect(result.worksheets[0]?.rows).toHaveLength(1);
     expect(result.worksheets[0]?.rows[0]).toEqual(expect.objectContaining({
-      displayedFields: expect.objectContaining({ partNumber: "（缺失）", dimCharacteristicId: "（缺失）" }),
+      actualFields: completeActualFields(),
+      imageTarget: { relativePath: `images/${"b".repeat(64)}.png`, contentHash: "b".repeat(64) },
+      missingIdentifiers: ["dimCharacteristicId", "partNumber"],
       missingRequiredFields: [],
       capabilityStatus: "in_library_tolerance_and_distribution_differ",
       f0KnowledgeBaseVersion: "v1",
@@ -87,9 +110,10 @@ describe("createF2UserReport", () => {
     fields.partName = unavailable("Analysis-A!B2");
     fields.nominalValue = unavailable("Analysis-A!F2");
     fields.upperTolerance = unavailable("Analysis-A!G2");
+    const actualFields = { ...completeActualFields(), partName: null, nominalValue: null, upperTolerance: null };
 
     const capabilityRouter = { assess: vi.fn() };
-    const result = createF2UserReport(input(fields, "unavailable"), { capabilityRouter });
+    const result = createF2UserReport(input(fields, "unavailable", actualFields), { capabilityRouter });
 
     expect(result.status).toBe("blocked");
     expect(result.worksheets[0]?.rows).toHaveLength(1);
@@ -110,6 +134,7 @@ describe("createF2UserReport", () => {
     fields.nominalValue = available("Analysis-A!F2", "3.145", 3.145);
     fields.upperTolerance = available("Analysis-A!G2", "0.100", 0.1);
     fields.lowerTolerance = available("Analysis-A!H2", "-0.100", -0.1);
+    const actualFields = { ...completeActualFields(), partCategory: "CNC", nominalValue: 3.145, upperTolerance: 0.1, lowerTolerance: -0.1 };
     const capabilityRouter = { assess: vi.fn(() => ({
       capabilityStatus: "internal_within_guidance" as const,
       f0KnowledgeBaseVersion: "internal-v1" as const,
@@ -124,7 +149,7 @@ describe("createF2UserReport", () => {
       },
     })) };
 
-    const result = createF2UserReport(input(fields), { capabilityRouter });
+    const result = createF2UserReport(input(fields, "available", actualFields), { capabilityRouter });
 
     expect(capabilityRouter.assess).toHaveBeenCalledExactlyOnceWith({
       partCategory: "CNC",

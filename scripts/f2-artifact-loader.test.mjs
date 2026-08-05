@@ -7,6 +7,24 @@ import path from "node:path";
 import { loadF1ArtifactBundle } from "./f2-artifact-loader.mjs";
 
 const roots = [];
+const actualFields = {
+  factorName: "factor",
+  partName: "part",
+  drawingNumber: null,
+  dimCharacteristicId: null,
+  partCategory: "CNC",
+  nominalValue: 3.145,
+  upperTolerance: 0.1,
+  lowerTolerance: -0.1,
+  longTermSafetyFactor: 1,
+  sigmaLevel: 4,
+  distribution: "Normal",
+  mean: 3.145,
+  tolerance: 0.1,
+  oneSigma: 0.025,
+  percentContributionToSigma: 0.043,
+  notes: null,
+};
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
@@ -34,7 +52,13 @@ function createBundle() {
     generatedAt: "2026-08-03T00:00:00.000Z",
     workbook: { fileName: workbookName, contentHash: workbookHash },
     worksheetName: "Analysis-A",
-    factorTables: [],
+    factorTables: [{
+      tableId: "table-a",
+      headerRow: 1,
+      dataRange: { startRow: 2, endRow: 2 },
+      columns: [],
+      rows: [{ sourceRow: 2, fields: {}, actualFields }],
+    }],
     imageAssets: [{ contentHash: imageHash, mediaType: "image/png", byteLength: imageBytes.length, outputFile: imageRelative }],
     tolerancePathImage: { status: "available", labelSourceCell: "Analysis-A!A55", imageContentHash: imageHash, imageAnchor: { from: "A56", to: "K71" } },
   }));
@@ -65,7 +89,9 @@ describe("loadF1ArtifactBundle", () => {
       status: "available",
       imagePath: "sheets/anonymous.xlsx/images/Analysis-A.png",
       contentHash: imageHash,
+      mediaType: "image/png",
     });
+    expect(loaded.input.worksheets[0].factorTables[0].rows[0].actualFields).toEqual(actualFields);
     expect(Object.hasOwn(loaded.input, "workbookBytes")).toBe(false);
     expect(Object.hasOwn(loaded.input, "workbookPath")).toBe(false);
   });
@@ -98,5 +124,18 @@ describe("loadF1ArtifactBundle", () => {
     writeFileSync(path.join(root, "sheets/anonymous.xlsx/images/Analysis-A.png"), Buffer.alloc(0));
 
     expect(loadF1ArtifactBundle(root).report.artifactIssues).toContainEqual({ reasonCode: "image_empty", artifactPath: "sheets/anonymous.xlsx/images/Analysis-A.png" });
+  });
+
+  it("rejects a factor row missing any E:T actual field", () => {
+    const { root } = createBundle();
+    const worksheetPath = path.join(root, "sheets/anonymous.xlsx/json/Analysis-A.json");
+    const worksheet = JSON.parse(readFileSync(worksheetPath, "utf8"));
+    delete worksheet.factorTables[0].rows[0].actualFields.notes;
+    writeFileSync(worksheetPath, JSON.stringify(worksheet));
+
+    expect(loadF1ArtifactBundle(root).report.artifactIssues).toContainEqual({
+      reasonCode: "invalid_contract",
+      artifactPath: "Feature1-Report.json",
+    });
   });
 });
