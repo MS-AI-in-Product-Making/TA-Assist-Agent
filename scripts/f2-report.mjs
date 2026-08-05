@@ -2,6 +2,15 @@ function mdEscape(value) {
   return String(value ?? "").replace(/\|/g, "\\|").replace(/\r?\n/g, "<br>");
 }
 
+function actualValue(value) {
+  return value === null || value === undefined ? "—" : mdEscape(value);
+}
+
+function imageLink(value, imageTarget) {
+  const label = actualValue(value);
+  return imageTarget ? `[${label}](${imageTarget.relativePath})` : label;
+}
+
 const fieldLabels = { factorName: "Factor Description", partName: "Part Name", partCategory: "Part Category", nominalValue: "Design Nominal", upperTolerance: "+ Tolerance", lowerTolerance: "- Tolerance", longTermSafetyFactor: "Long Term/Safety Factor", standardDeviation: "Sigma Level", distribution: "Distribution", tolerancePathImage: "截面图" };
 const capabilityLabels = { in_library_recommended: "F0 公共库-符合推荐", in_library_tolerance_outside: "F0 公共库-公差超出推荐", in_library_distribution_differs: "F0 公共库-分布不同", in_library_tolerance_and_distribution_differ: "F0 公共库-公差及分布不同", outside_library: "非 F0 制程分类", internal_within_guidance: "F0 内部指导-符合", internal_guidance_exceeded: "F0 内部指导-超出", f0_information_insufficient: "F0 信息不足", non_f0_process_category: "非 F0 制程分类", unable_to_check: "无法检查" };
 const artifactIssueLabels = { root_json_missing: "缺少 F1 根 JSON", root_md_missing: "缺少 F1 根 Markdown", manifest_missing: "缺少 worksheet manifest", worksheet_json_missing: "缺少 worksheet JSON", worksheet_md_missing: "缺少 worksheet Markdown", workbook_identity_mismatch: "artifact 身份或内容不一致", image_missing: "缺少截面图文件", image_empty: "截面图文件为空", image_unsupported: "截面图格式不支持", path_outside_root: "artifact 路径越界", invalid_json: "JSON 无法解析", invalid_contract: "F1 artifact 格式不受支持" };
@@ -48,12 +57,12 @@ export function renderF2Report(report) {
 
   for (const worksheet of report.worksheets) {
     lines.push(`### ${mdEscape(worksheet.worksheetName)}`, "", `状态：${worksheet.status === "blocked" ? "需要修改" : "可继续"}；截面图：${worksheet.tolerancePathImageStatus === "available" ? "已提供" : "（缺失）"}`, "");
-    lines.push("| Row | Factor Description | Part Name | Part Number | DIM ID | Part Category | Design Nominal | + Tolerance | - Tolerance | Long Term/Safety Factor | Sigma Level | Distribution | 能力库结果 | 知识库推荐 |", "|---:|---|---|---|---|---|---:|---:|---:|---:|---:|---|---|---|");
+    lines.push("| Row | Factor Description | Part Name | Drawing Number | DIM ID | Part Category | Design Nominal | + Tolerance | - Tolerance | Long Term/Safety Factor | Sigma Level | Distribution | Mean | Tolerance | One Sigma | % Contribution to Sigma | Notes | 能力库结果 | 知识库推荐 |", "|---:|---|---|---|---|---|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---|---|---|");
     for (const row of worksheet.rows) {
-      const fields = row.displayedFields;
-      lines.push(`| ${row.sourceRow} | ${mdEscape(fields.factorName)} | ${mdEscape(fields.partName)} | ${mdEscape(fields.partNumber)} | ${mdEscape(fields.dimCharacteristicId)} | ${mdEscape(fields.partCategory)} | ${mdEscape(fields.nominalValue)} | ${mdEscape(fields.upperTolerance)} | ${mdEscape(fields.lowerTolerance)} | ${mdEscape(fields.longTermSafetyFactor)} | ${mdEscape(fields.standardDeviation)} | ${mdEscape(fields.distribution)} | ${mdEscape(capabilityLabels[row.capabilityStatus] ?? row.capabilityStatus)} | ${mdEscape(recommendationText(row))} |`);
+      const fields = row.actualFields;
+      lines.push(`| ${row.sourceRow} | ${imageLink(fields.factorName, row.imageTarget)} | ${imageLink(fields.partName, row.imageTarget)} | ${actualValue(fields.drawingNumber)} | ${actualValue(fields.dimCharacteristicId)} | ${actualValue(fields.partCategory)} | ${actualValue(fields.nominalValue)} | ${actualValue(fields.upperTolerance)} | ${actualValue(fields.lowerTolerance)} | ${actualValue(fields.longTermSafetyFactor)} | ${actualValue(fields.sigmaLevel)} | ${actualValue(fields.distribution)} | ${actualValue(fields.mean)} | ${actualValue(fields.tolerance)} | ${actualValue(fields.oneSigma)} | ${actualValue(fields.percentContributionToSigma)} | ${actualValue(fields.notes)} | ${mdEscape(capabilityLabels[row.capabilityStatus] ?? row.capabilityStatus)} | ${mdEscape(recommendationText(row))} |`);
     }
-    if (worksheet.rows.length === 0) lines.push("| — | — | — | — | — | — | — | — | — | — | — | — | 无 factor | — |");
+    if (worksheet.rows.length === 0) lines.push(`| ${Array.from({ length: 19 }, (_, index) => index === 17 ? "无 factor" : "—").join(" | ")} |`);
     lines.push("");
   }
 

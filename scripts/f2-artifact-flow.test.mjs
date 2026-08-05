@@ -18,6 +18,14 @@ function field(sourceCell, displayValue, numericValue) {
   return { status: "available", sourceCell, displayValue, actualValue: numericValue ?? displayValue, valueOrigin: numericValue === undefined ? "text_literal" : "numeric_literal", ...(numericValue === undefined ? {} : { numericValue }) };
 }
 
+function actualFields() {
+  return {
+    factorName: "outside-library factor", partName: "component", drawingNumber: null, dimCharacteristicId: null, partCategory: "unknown-category",
+    nominalValue: 1, upperTolerance: 0.2, lowerTolerance: -0.2, longTermSafetyFactor: 1, sigmaLevel: 4, distribution: "Normal",
+    mean: 1, tolerance: 0.4, oneSigma: 0.1, percentContributionToSigma: 1, notes: null,
+  };
+}
+
 function createArtifactBundle() {
   const root = mkdtempSync(path.join(tmpdir(), "f2-flow-"));
   cleanup.push(root);
@@ -40,7 +48,7 @@ function createArtifactBundle() {
     worksheetName: "Analysis-A",
     factorTables: [{
       tableId: "table-a", headerRow: 1, dataRange: { startRow: 2, endRow: 2 }, columns: [],
-      rows: [{ sourceRow: 2, fields: {
+      rows: [{ sourceRow: 2, actualFields: actualFields(), fields: {
         factorName: field("Analysis-A!A2", "outside-library factor"), partName: field("Analysis-A!B2", "component"), partCategory: field("Analysis-A!C2", "unknown-category"),
         nominalValue: field("Analysis-A!D2", "1", 1), upperTolerance: field("Analysis-A!E2", "0.2", 0.2), lowerTolerance: field("Analysis-A!F2", "-0.2", -0.2),
         longTermSafetyFactor: field("Analysis-A!G2", "1", 1), standardDeviation: field("Analysis-A!H2", "0.01", 0.01), distribution: field("Analysis-A!I2", "Normal"),
@@ -72,6 +80,7 @@ describe("F2 artifact-only CLI flow", () => {
     expect(report.knowledgeBaseVersions).toEqual(["v1", "internal-v1"]);
     expect(report.summary.nonF0ProcessCategoryCount).toBe(1);
     expect(markdown).toContain("非 F0 制程分类");
-    expect(markdown).toContain("（缺失）");
+    expect(markdown).toContain(`[outside-library factor](images/${report.worksheets[0].rows[0].imageTarget.contentHash}.png)`);
+    expect(readFileSync(path.join(output, report.worksheets[0].rows[0].imageTarget.relativePath))).toEqual(Buffer.from([1, 2, 3]));
   });
 });
