@@ -214,10 +214,14 @@ The workflow executes Task 1.1-1.7 with real workbook inputs and emits a final r
 
 ## Feature 2 Initial Workflow
 
+- 一键运行：`npm run workflow:f2:excel -- "path/to/report.xlsx"`
+- CLI：`node apps/cli/dist/index.js feature2 --root . --workbook "path/to/report.xlsx"`
+- 短语别名：`帮我用F2分析下excel "path/to/report.xlsx"` 或 `use F2 to analyze Excel "path/to/report.xlsx"`
+- 每次运行输出：`test/demo-output/f2-runs/<workbook-safe-name>/<UTC-run-id>/{f1,f2,validation}`，根目录同时保留 `manifest.json`；失败时不删除已完成阶段和 debug logs。
 - 先运行 F1：`npm run workflow:f1 -- "test/<workbook.xlsx>"`
 - 再运行 F2：`npm run workflow:f2 -- "test/demo-output/feature1-output/<workbook-safe-name>"`
 - 输出：`test/demo-output/feature2-output/<workbook-base-name>/Feature2-Report.json` 和 `Feature2-Report.md`
-- 报告：保留一行一个 factor 的 F1 raw-data 列，并追加 `能力库结果` 与 `知识库推荐`；缺失字段显示 `（缺失）`。
+- 报告：每个 factor 保留完整 E:T actual values，并追加可移植截面图链接、`能力库结果` 与 `知识库推荐`；空值显示 `—`。
 - 阻塞：九项业务必填字段或截面图缺失；能力库差异、库外、DIM ID/Part Number 缺失均非阻塞。
 - 验收：F2 任一模块必须执行完整 `F0 -> F1 artifacts -> F2` 链路，不得用孤立模块通过替代端到端证据。
 

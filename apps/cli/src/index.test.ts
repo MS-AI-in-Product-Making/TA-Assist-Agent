@@ -197,3 +197,24 @@ it("runs Feature 1 workflow via phrase alias", async () => {
   expect(result.stderr).toBe("");
   expect(result.stdout).toContain("Feature 1 workflow completed.");
 }, 120_000);
+
+it("routes explicit Feature 2 command with one workbook", async () => {
+  const runFeature2 = async (rootDir: string, workbookPath: string) => `Feature 2 workflow completed.\nrunRoot: ${rootDir}/runs\nworkbook: ${workbookPath}`;
+  const result = await executeCli(["feature2", "--root", "repo", "--workbook", "Demo.xlsx"], { cwd: () => "ignored", runFeature2 });
+
+  expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+  expect(result.stdout).toContain("runRoot: repo/runs");
+  expect(result.stdout).toContain("workbook: Demo.xlsx");
+});
+
+it("routes the Feature 2 phrase alias without scanning for a workbook", async () => {
+  const runFeature2 = async (rootDir: string, workbookPath: string) => `root: ${rootDir}\nworkbook: ${workbookPath}`;
+  const dependencies = { cwd: () => "repo", runFeature2 };
+
+  await expect(executeCli(["帮我用F2分析下excel", "Demo.xlsx"], dependencies)).resolves.toMatchObject({ exitCode: 0, stderr: "" });
+  await expect(executeCli(["use F2 to analyze Excel"], dependencies)).resolves.toMatchObject({ exitCode: 2, stdout: "", stderr: expect.stringContaining("workbook is required") });
+});
+
+it("allows --workbook only for Feature 2", async () => {
+  await expect(executeCli(["smoke", "--root", "repo", "--workbook", "Demo.xlsx"])).resolves.toMatchObject({ exitCode: 2 });
+});
