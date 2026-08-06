@@ -192,11 +192,11 @@ describe("createCalculation", () => {
         toleranceLoopDescription: "anonymous-analysis",
         systemSpecification: {
           designNominal: -0.05,
-          lowerSpecLimit: { status: "available", actualValue: -0.15, displayValue: "-0.15", sourceCell: "Analysis-A!P54", valueOrigin: "numeric_literal" },
-          upperSpecLimit: { status: "available", actualValue: 0.05, displayValue: "0.05", sourceCell: "Analysis-A!P55", valueOrigin: "numeric_literal" },
-          targetSigmaLevel: { status: "available", actualValue: 3, displayValue: "3", sourceCell: "Analysis-A!P56", valueOrigin: "numeric_literal" },
+          lowerSpecLimit: { status: "available", actualValue: -0.15, displayValue: "-0.15", sourceLabel: "*Lower Spec Limit ►", sourceCell: "Analysis-A!P54", valueOrigin: "numeric_literal" },
+          upperSpecLimit: { status: "available", actualValue: 0.05, displayValue: "0.05", sourceLabel: "*Upper Spec Limit ►", sourceCell: "Analysis-A!P55", valueOrigin: "numeric_literal" },
+          targetSigmaLevel: { status: "available", actualValue: 3, displayValue: "3", sourceLabel: "*Target σ Level ►", sourceCell: "Analysis-A!P56", valueOrigin: "numeric_literal" },
           targetCpk: 1,
-          additionalMeanShift: { status: "available", actualValue: 0.01, displayValue: "0.01", sourceCell: "Analysis-A!P50", valueOrigin: "formula_cached" },
+          additionalMeanShift: { status: "available", actualValue: 0.01, displayValue: "0.01", sourceLabel: "Additional Mean Shift ►", sourceCell: "Analysis-A!P50", valueOrigin: "formula_cached" },
         },
         factors: [{
           tableId: "table-a",
