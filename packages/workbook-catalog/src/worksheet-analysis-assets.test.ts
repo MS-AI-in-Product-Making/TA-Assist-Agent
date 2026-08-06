@@ -395,6 +395,63 @@ describe("worksheet analysis assets", () => {
     expect(result.worksheets[0]?.formulaCells).toContainEqual({ sourceCell: "Analysis-A!H3", formula: "=SUM(A1:A1)", cachedValue: { status: "available", rawText: "1.25" } });
   });
 
+  it("parses scientific-notation cached values from factor formulas", () => {
+    const workbookBytes = createAnonymousWorkbookZip({ xmlParts: {
+      "xl/worksheets/sheet3.xml": '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="13"><c r="A13" t="inlineStr"><is><t>Factor</t></is></c><c r="T13" t="inlineStr"><is><t>1σ</t></is></c><c r="U13" t="inlineStr"><is><t>% Cont. to σ</t></is></c></row><row r="14"><c r="A14" t="inlineStr"><is><t>anonymous-factor</t></is></c><c r="T14"><f>1/80</f><v>1.2500000000000001E-2</v></c><c r="U14"><f>T14^2</f><v>7.6923076923076913E-2</v></c></row></sheetData></worksheet>',
+    } });
+    const contentHash = createHash("sha256").update(workbookBytes).digest("hex");
+    const result = createWorksheetAnalysisAssets({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbookBytes,
+      workbookCatalog: {
+        contractVersion: "v1",
+        workbook: { fileName: "anonymous.xlsx", classification: "confidential", contentHash, metadata: { documentNo: "DOC", revision: "R", date: { value: "2026-08-06", sourceCell: "Title Page!A1" } } },
+        analyses: [{ worksheetName: "Analysis-A", toleranceLoopDescription: "anonymous", source: { summarySheet: "Auto Summary", summaryRow: 1, worksheetAnchor: "Analysis-A!A1" } }],
+      },
+    });
+
+    expect(result.worksheets[0]?.factorTables[0]?.rows[0]?.fields).toMatchObject({
+      oneSigma: {
+        status: "available",
+        rawText: "1.2500000000000001E-2",
+        numericValue: 0.0125,
+        formula: "=1/80",
+        cachedValue: "1.2500000000000001E-2",
+      },
+      percentContributionToSigma: {
+        status: "available",
+        rawText: "7.6923076923076913E-2",
+        numericValue: 0.07692307692307691,
+        formula: "=T14^2",
+        cachedValue: "7.6923076923076913E-2",
+      },
+    });
+  });
+
+  it("marks non-finite scientific-notation cached values as invalid", () => {
+    const workbookBytes = createAnonymousWorkbookZip({ xmlParts: {
+      "xl/worksheets/sheet3.xml": '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="13"><c r="A13" t="inlineStr"><is><t>Factor</t></is></c><c r="T13" t="inlineStr"><is><t>1σ</t></is></c></row><row r="14"><c r="A14" t="inlineStr"><is><t>anonymous-factor</t></is></c><c r="T14"><f>1E309</f><v>1E309</v></c></row></sheetData></worksheet>',
+    } });
+    const contentHash = createHash("sha256").update(workbookBytes).digest("hex");
+    const result = createWorksheetAnalysisAssets({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbookBytes,
+      workbookCatalog: {
+        contractVersion: "v1",
+        workbook: { fileName: "anonymous.xlsx", classification: "confidential", contentHash, metadata: { documentNo: "DOC", revision: "R", date: { value: "2026-08-06", sourceCell: "Title Page!A1" } } },
+        analyses: [{ worksheetName: "Analysis-A", toleranceLoopDescription: "anonymous", source: { summarySheet: "Auto Summary", summaryRow: 1, worksheetAnchor: "Analysis-A!A1" } }],
+      },
+    });
+
+    expect(result.worksheets[0]?.factorTables[0]?.rows[0]?.fields.oneSigma).toEqual({
+      status: "unavailable",
+      reasonCode: "invalid_format",
+      sourceCell: "Analysis-A!T14",
+    });
+  });
+
   it("returns a defensive image byte copy only when both hashes match uniquely", () => {
     const imageBytes = new Uint8Array([9, 8, 7]);
     const workbookBytes = createAnonymousWorkbookZip({

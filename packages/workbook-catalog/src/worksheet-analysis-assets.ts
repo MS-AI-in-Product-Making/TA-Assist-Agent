@@ -145,13 +145,15 @@ function field(cell: OoxmlCell | undefined, worksheetName: string, semanticField
   if (cell.formula && !cell.cachedValue?.trim()) return { status: "unavailable" as const, reasonCode: "missing_cached_value" as const, sourceCell };
   const rawText = cellValue(cell);
   if (!rawText.trim()) return { status: "unavailable" as const, reasonCode: "missing" as const, sourceCell };
-  const parsed = /^([+-]?(?:\d+(?:\.\d+)?|\.\d+))(?:\s+([^\s]+))?$/.exec(rawText.trim());
-  if (NUMERIC_FIELDS.has(semanticField) && !parsed) return { status: "unavailable" as const, reasonCode: "invalid_format" as const, sourceCell };
+  const parsed = /^([+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?)(?:\s+([^\s]+))?$/.exec(rawText.trim());
+  const numericValue = parsed ? Number(parsed[1]) : undefined;
+  const hasFiniteNumericValue = numericValue !== undefined && Number.isFinite(numericValue);
+  if (NUMERIC_FIELDS.has(semanticField) && !hasFiniteNumericValue) return { status: "unavailable" as const, reasonCode: "invalid_format" as const, sourceCell };
   return {
     status: "available" as const,
     rawText,
     sourceCell: sourceCell!,
-    ...(parsed ? { numericValue: Number(parsed[1]), ...(parsed[2] ? { unit: parsed[2] } : {}) } : {}),
+    ...(hasFiniteNumericValue ? { numericValue, ...(parsed?.[2] ? { unit: parsed[2] } : {}) } : {}),
     ...(cell.formula ? { formula: cell.formula, cachedValue: cell.cachedValue! } : {}),
   };
 }
