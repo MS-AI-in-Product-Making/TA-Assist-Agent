@@ -252,17 +252,22 @@ describe("policy gate", () => {
     });
   });
 
-  it("keeps F3 unavailable with its established drawing governance contracts", () => {
+  it("registers the accepted F3 v2 governance capability", () => {
     expect(getFeatureStatus("F3")).toEqual({
       featureId: "F3",
       title: "DIM ID 与图纸治理",
-      status: "unavailable",
-      dependsOn: ["dim-id-service-v1"],
-      inputContractId: "drawing-governance-request-v1",
-      outputContractId: "drawing-governance-result-v1",
+      status: "available",
+      dependsOn: ["f2-user-report-v1", "drawing-governance-v2", "surface-mcp-adapter-v1"],
+      inputContractId: "drawing-governance-request-v2",
+      outputContractId: "drawing-governance-result-v2",
       maximumClassification: "confidential",
-      acceptanceChecks: ["anonymous-dim-id-fixture"],
-      externalPrerequisites: ["approved-ado-access", "canonical-dim-id-policy"],
+      acceptanceChecks: [
+        "anonymous-drawing-governance-fixture",
+        "drawing-governance-anchor-check",
+        "drawing-governance-privacy-check",
+        "surface-mcp-comment-zero-confirmation-check",
+      ],
+      externalPrerequisites: ["approved-surface-mcp-access", "approved-comment-zero-write-policy"],
       disableBehavior: "return feature_not_available",
     });
   });
@@ -348,7 +353,7 @@ describe("policy gate", () => {
     });
   });
 
-  it.each(["F3", "F5", "F6", "F7"])(
+  it.each(["F5", "F6", "F7"])(
     "keeps %s unavailable",
     (featureId) => {
       expect(getFeatureStatus(featureId)).toMatchObject({

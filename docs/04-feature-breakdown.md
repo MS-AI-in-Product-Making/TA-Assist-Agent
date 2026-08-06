@@ -103,18 +103,18 @@ The result must include a quick, easy-to-scan TA risk summary.
 
 ---
 
-## User Story 2 - DIM ID and Drawing Governance Before Key Milestones
+## User Story 2 - DIM ID and Drawing Governance
 
-**As an ME engineer, I want every factor tied to a unique DIM ID, with placeholder-first and mandatory DIM ID backfill before key milestones, plus automatic reminders to both Microsoft and supplier engineers, so critical dimensions do not break before the milestone review.**
+**As an ME engineer, I want every factor tied to a drawing-scoped DIM ID and an auditable governance list, so missing or conflicting identifiers remain visible without blocking TA.**
 
 ### Acceptance Criteria
 
-1. Build unique DIM ID-to-factor anchors, with a placeholder-then-backfill flow (F3).
+1. Build formal `(Drawing Number, DIM ID)` anchors for valid identifiers (F3).
 2. Allow the engineer to create or link an optional ADO work item after manually uploading the `.xlsx` file (F3).
 3. Automatically bind an owner when an ADO work item is linked; block the governed reminder workflow and prompt when no owner can be resolved (F3).
-4. Send server-side milestone reminders to complete critical-dimension definitions on drawings (F3, TBD).
+4. Update ADO Comment 0 through Surface MCP only after explicit confirmation of the prepared diff (F3).
 5. Generate per-part dimension-chain lists and package them by category for drawing markup (F3).
-6. Keep status and history in ADO for full traceability (F3).
+6. Save the same confidential list locally when ADO or required capabilities are unavailable; TA continues (F3).
 
 ### F3 - Dimension-to-Drawing Association (DIM ID)
 
@@ -122,17 +122,17 @@ The result must include a quick, easy-to-scan TA risk summary.
 
 **Tasks:**
 
-- Create a unique `DIM ID <-> factor <-> future measurement` anchor for every factor in a submission (PN number TBD).
-- Assign a placeholder when no DIM ID or drawing exists yet, while allowing the TA calculation to continue.
-- Require DIM ID backfill before EV1 or another configured key milestone; raise a clarification card when an ID is duplicated, conflicted, or cannot be mapped.
-- Maintain a versioned crosswalk from supplier ID plus revision to Microsoft canonical DIM ID (TBD).
+- Treat Part Number as Drawing Number in the current contract and create the formal key from `(Drawing Number, DIM ID)`.
+- Allow the same DIM ID on different drawings; flag duplicates within one normalized Drawing Number as `duplicate_conflict`.
+- Classify one-digit numeric DIM IDs as nonblocking `suspected_invalid`; classify 2-4 digit numeric values as `valid`.
+- Keep missing, suspicious, or conflicting identifiers in the local governance list while allowing TA to continue.
 - Let the engineer upload the workbook and create or link an ADO work item; automatic parsing of an ADO attachment remains a later goal.
 - Resolve the owner from the ADO owner or `Request By` field. When no owner is available, block the governed reminder workflow and prompt for one.
 - Generate a per-part dimension-chain list: part name, join number, DIM ID, and exact source location.
 - Group lists by part category and drawing so one drawing package can be sent to the responsible Microsoft and supplier engineers.
-- Run a server-side service independently of analysis. For linked ADO items, it checks milestones and open items weekly or monthly, then sends reminders before EV1 or another configured key milestone.
-- Send an immediate reminder when a linked ADO item has missing critical dimensions, and a packaged periodic reminder to the Microsoft and supplier owners for drawing markup.
-- Track `placeholder -> DIM ID filled -> marked on drawing` with history on the ADO work item.
+- Use only Surface MCP for ADO integration; Azure DevOps MCP is not required.
+- Apply `prepare -> confirm -> execute` to Comment 0 and fail closed on version changes; do not update Description or append a separate comment.
+- Do not read dates, evaluate deadline proximity, or run a scheduler.
 
 ---
 

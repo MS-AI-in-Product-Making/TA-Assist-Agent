@@ -217,16 +217,26 @@ const featureRegister: ReadonlyMap<string, FeatureRegistration> = new Map([
   ],
   [
     "F3",
-    unavailableFeature(
-      "F3",
-      "DIM ID 与图纸治理",
-      ["dim-id-service-v1"],
-      "drawing-governance-request-v1",
-      "drawing-governance-result-v1",
-      "confidential",
-      ["anonymous-dim-id-fixture"],
-      ["approved-ado-access", "canonical-dim-id-policy"],
-    ),
+    {
+      featureId: "F3",
+      title: "DIM ID 与图纸治理",
+      status: "available",
+      dependsOn: ["f2-user-report-v1", "drawing-governance-v2", "surface-mcp-adapter-v1"],
+      inputContractId: "drawing-governance-request-v2",
+      outputContractId: "drawing-governance-result-v2",
+      maximumClassification: "confidential",
+      acceptanceChecks: [
+        "anonymous-drawing-governance-fixture",
+        "drawing-governance-anchor-check",
+        "drawing-governance-privacy-check",
+        "surface-mcp-comment-zero-confirmation-check",
+      ],
+      externalPrerequisites: [
+        "approved-surface-mcp-access",
+        "approved-comment-zero-write-policy",
+      ],
+      disableBehavior: "return feature_not_available",
+    },
   ],
   [
     "F4",

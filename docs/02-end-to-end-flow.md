@@ -167,9 +167,8 @@ flowchart TB
     LINK -- No --> GROUP["Group by Lib 3 part category / drawing (F3)<br>Create per-part dimension-chain list<br>part name · join number · DIM ID · exact location"]
     LINK -- Yes --> PLACE["Create placeholder and track missing DIM ID / PN (F3)<br>Analysis may continue"]
     PLACE --> GROUP
-    PLACE -. ADO work item linked .-> NOW["Immediate ADO reminder<br>@mention owner to complete DIM IDs and drawing markup"]
-    NOW --> SCHED["Scheduled governance (F3)<br>weekly/monthly: surface-mcp milestones + workiq open items<br>Before EV1 or other key milestone, remind owner on ADO"]
-    SCHED --> STATE["Record state and history on ADO<br>placeholder → DIM ID filled → marked on drawing"]
+    PLACE -. ADO work item linked .-> NOW["Surface MCP Comment 0 update (F3)<br>prepare diff → explicit user confirmation → execute once"]
+    NOW --> STATE["Record the controlled Comment 0 version and content hash<br>without ADO/capability, keep the same confidential list locally"]
     STATE -. completed IDs .-> GROUP
 
     GROUP --> G{"Method recommendation (F4)<br>based on factor count"}
@@ -221,7 +220,6 @@ flowchart TB
     LINK:::dec
     PLACE:::warn
     NOW:::orch
-    SCHED:::orch
     STATE:::orch
     GROUP:::link
     G:::dec
@@ -265,13 +263,14 @@ flowchart TB
 | Required fields | Whether nominal and tolerance are present | Missing → block the run until the user corrects and re-uploads the workbook; present → continue |
 | Cleansing consistency | Whether the capability library, distribution, DIM ID, and PN align | Out-of-library or incomplete items are flagged; the user can edit the source or continue with a recorded exception |
 | DIM ID linking | Whether the factor is already linked to a drawing dimension | Linked → generate the dimension-chain list; missing → create a placeholder and continue analysis |
-| ADO governance | Whether a linked ADO item has missing identifiers near a milestone | Send an immediate owner reminder, then scheduled milestone-based reminders; track `placeholder → DIM ID filled → marked on drawing` |
+| ADO governance | Whether an ADO item is linked and Surface MCP has the required capabilities | Prepare a Comment 0 diff, require explicit user confirmation, then execute once. Without ADO/capability, save the same confidential list locally and continue TA. F3 does not read dates, evaluate deadline proximity, or run a scheduler. |
 | Method recommendation | Number of factors | `<4` use WC; `4–10` use RSS; `>10` refer to the DM team |
 | Uncertainty confirmation | Whether the assembly datum face or cross-subsystem is ambiguous | Raise a clarification card and stop to confirm first |
 | Measured feedback | When measured Cpk arrives later | Compare estimated vs. real gap and upgrade the capability-library entry |
 
 > Multiple worksheets can be processed in parallel for speed, but review is still done page by page and gated by a human.
 > Interpretation gives only `FACT` (computed result) and `RULE` (threshold check), citing knowledge-base entries; `SIGNAL` (a flag) and `OPTION` (alternatives) are presented in parallel and not ranked — the final judgment is left to the user.
+> F3 treats Part Number as Drawing Number for the current contract. Its formal identity is `(Drawing Number, DIM ID)`: reuse across drawings is valid, duplicates within one drawing conflict, and a one-digit numeric DIM ID is nonblocking `suspected_invalid`.
 
 ---
 **Related docs:** [Architecture](01-architecture.md) · [Differentiation](03-differentiation.md) · [Feature Breakdown](04-feature-breakdown.md) · [Design Decisions](05-design-decisions.md)

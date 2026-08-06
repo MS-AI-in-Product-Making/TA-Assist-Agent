@@ -36,7 +36,8 @@ F2.1-F2.4 继续提供严格完整性阻断、非阻断一致性信号、受限�
 DM 团队进行 3D 分析，同时始终计算 WC/RSS；支持六种受控分布、同单位输入、绝对或相对误差
 `1e-12` 的批准模板回归，以及复用同一 kernel 且工作量不超过 1000 的 What-if。错误不得泄露
 机密输入。Windows Excel Worker 仅用于发布黄金回归，不在生产热路径中。F5.1 提供受 F4/F0
-证据约束的客观解读；F3、根 F5、F6 和 F7 仍不可用。F0 解读规则、F4 和 F5.1 均不会启用根 F5/F6，
+证据约束的客观解读；F3 已启用 `drawing-governance-v2` 本地治理核心和受控 Surface MCP adapter，
+真实 Comment 0 写入仍需 capability、策略审批和逐次用户确认；根 F5、F6 和 F7 仍不可用。F0 解读规则、F4 和 F5.1 均不会启用根 F5/F6，
 根 F5/F6 仍返回 `feature_not_available`；F8 仅提供匿名
 `public` fixture 的受治理 Skill 运行时验收，不包含外部 Adapter、模型、ADO、SharePoint 或 UI 行为。
 

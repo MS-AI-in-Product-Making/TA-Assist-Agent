@@ -1,0 +1,84 @@
+import { describe, expect, it } from "vitest";
+import { renderF3Report } from "./f3-report.mjs";
+
+function governanceReport(factorDescription = "Anonymous display offset") {
+  return {
+    contractVersion: "v1",
+    modelVersion: "drawing-governance-v2",
+    outputClassification: "confidential",
+    featureId: "F3",
+    status: "completed",
+    workbook: { fileName: "Anonymous.xlsx", contentHash: "a".repeat(64) },
+    worksheets: [{
+      worksheetName: "TP_Gap_X",
+      toleranceLoopDescription: "Anonymous device gap",
+      rows: [{
+        factorInstanceId: "b".repeat(64),
+        drawingDimensionKey: "c".repeat(64),
+        deviceLevelDim: "TP_Gap_X",
+        dimensionDescription: "Anonymous device gap",
+        partCategory: "Display",
+        partSubsystem: "Anonymous bracket",
+        drawingNumber: "DRAW-A",
+        dimId: "307",
+        factorDescription,
+        nominal: 3.145,
+        upperTolerance: 0.1,
+        lowerTolerance: -0.1,
+        sigmaLevel: 4,
+        dimIdStatus: "valid",
+        qualitySignals: [],
+        governanceStatus: "complete",
+        source: {
+          worksheetName: "TP_Gap_X",
+          tableId: "factor-table-1",
+          sourceRow: 14,
+          sourceCells: { factorName: "TP_Gap_X!E14" },
+        },
+      }],
+    }],
+    ado: { status: "not_requested" },
+    summary: {
+      worksheetCount: 1,
+      factorCount: 1,
+      completeCount: 1,
+      governanceRequiredCount: 0,
+      duplicateConflictCount: 0,
+    },
+  };
+}
+
+describe("renderF3Report", () => {
+  it("renders grouped drawing governance tables", () => {
+    const markdown = renderF3Report(governanceReport());
+
+    expect(markdown).toContain("# Feature 3 DIM ID 与图纸治理报告");
+    expect(markdown).toContain("## Display / DRAW-A");
+    expect(markdown).toContain("| Device Level Dim | Dimension Description | Part / Subsystem | Drawing Number | Dim ID | Factor Description | Nominal | Upper Tolerance (+) | Lower Tolerance (-) | σ Level | Source Location |");
+    expect(markdown).toContain("TP_Gap_X!E14");
+    expect(markdown).toContain("ADO 状态：`not_requested`");
+  });
+
+  it("escapes table text and does not expose local or authorization data", () => {
+    const markdown = renderF3Report(governanceReport("A|B\nC"));
+
+    expect(markdown).toContain("A\\|B<br>C");
+    expect(markdown).not.toContain("C:\\Users\\");
+    expect(markdown).not.toContain("Authorization");
+  });
+
+  it("renders structured input rejection issues", () => {
+    const markdown = renderF3Report({
+      contractVersion: "v1",
+      modelVersion: "drawing-governance-v2",
+      outputClassification: "confidential",
+      featureId: "F3",
+      status: "input_rejected",
+      artifactIssues: [{ reasonCode: "description_missing", artifactReference: "worksheet:TP_Gap_X" }],
+    });
+
+    expect(markdown).toContain("状态：`input_rejected`");
+    expect(markdown).toContain("description_missing");
+    expect(markdown).toContain("worksheet:TP_Gap_X");
+  });
+});

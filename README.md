@@ -50,9 +50,10 @@ F2.1-F2.4 继续提供严格完整性阻断、非阻断一致性信号、受限�
 核心：少于 4 个因子推荐 WC，4 至 10 个推荐 RSS，多于 10 个转介 DM 团队进行 3D 分析，同时
 始终计算 WC/RSS；支持六种受控分布、同单位输入、绝对或相对误差 `1e-12` 的批准模板回归，
 以及复用同一 kernel 且工作量不超过 1000 的 What-if。错误不得泄露机密输入；Windows Excel
-Worker 仅用于发布黄金回归，不在生产热路径中。F5.1 提供受 F4/F0 证据约束的客观解读；F3、根 F5、F6 和 F7 保持不可用。
-F4/F5.1 不启用根 F5/F6；F8 仅限用于受治理 Skill 运行时验收的匿名 `public`
-fixture。此阶段不包含真实工程知识、外部 Adapter、模型、ADO、SharePoint 或 UI 行为。
+Worker 仅用于发布黄金回归，不在生产热路径中。F3 已启用 `drawing-governance-v2` 本地治理核心、
+JSON/Markdown workflow 和宿主注入的 Surface MCP adapter；真实 Comment 0 写入仍需 capability、
+策略审批及逐次用户确认。F5.1 提供受 F4/F0 证据约束的客观解读；根 F5、F6 和 F7 保持不可用。
+F4/F5.1 不启用根 F5/F6；F8 仅限用于受治理 Skill 运行时验收的匿名 `public` fixture。
 
 - [Phase 0 设计](docs/superpowers/specs/2026-07-22-ai-assist-agent-foundation-design.md)
 - [Phase 0 实施计划](docs/superpowers/plans/2026-07-22-ai-assist-agent-foundation.md)
@@ -106,7 +107,7 @@ In process-flow order. See [full table](docs/03-differentiation.md).
 | **F0 · Knowledge base** | Basis | Lives in the engineer's head | No grounding | 3 controlled libraries; every judgment traces to a library entry |
 | **F1 · Report parsing & asset prep** | Input prep | Manual worksheet review | No reliable extraction | Auto-detect TA worksheets, process selected sheets in parallel, and extract Loop screenshots |
 | **F2 · Data cleansing** | Data cleansing | Manual, error-prone | No basis | Missing-field + DIM ID check + per-category **Capability Library** validation |
-| **F3 · DIM-to-drawing linking** | Data-to-drawing | Manual, ambiguous | Cannot link | Anchor each factor to a drawing dimension by **DIM ID** (metadata, not image reading); missing IDs are grouped by category/drawing. ADO governance is optional: linked items receive owner reminders; otherwise the list is saved locally. |
+| **F3 · DIM-to-drawing linking** | Data-to-drawing | Manual, ambiguous | Cannot link | Use `(Drawing Number, DIM ID)` as the formal identity, flag same-drawing conflicts, and generate a traceable confidential list. Optional ADO updates use Surface MCP Comment 0 with `prepare -> confirm -> execute`; otherwise the same list stays local. |
 | **F4 · Method recommendation / calculation** | Calculation | Reliable formulas | Often wrong / non-reproducible | Reuses the **same Excel engine** and selects WC or RSS by factor count |
 | **F5 · Data interpretation** | Interpretation | Personal experience | No rules / knowledge base | Fixed **5-section** output, **objective, each RULE cites its F0 entry**, judgment left to user |
 | **F6 · Optimization** | Tolerance optimization | Manual re-runs | Cannot compute | Mean-shift centering + contribution economics + RSS apportionment + **spec reverse-solve** (over-capability warning) |
@@ -162,7 +163,7 @@ matches the template exactly.
 | **F0 Knowledge base** ⭐ | 3-class library: Classified Capability Library (source-tiered) / Engineering Rules / Terminology·Ontology — the soul |
 | **F1 Report parsing & asset prep** | Manual upload; auto-detect TA worksheets; parallel processing; factor-table parse (E14:T26); extract Loop screenshot |
 | **F2 Data cleansing** ⭐ | Missing required-field + DIM ID check; per-category Capability Library & distribution validation; source-Excel correction or recorded exception |
-| **F3 DIM-to-drawing linking (DIM ID)** ⭐ | Anchor each factor to a drawing dimension by DIM ID (metadata, not image reading); group missing DIM ID/PN items by part category and drawing, keeping each item traceable to its source location; for a linked ADO item, confirmation sends an owner reminder and writes the list to Comment 0; without ADO, save the list locally |
+| **F3 DIM-to-drawing linking (DIM ID)** ⭐ | Treat Part Number as Drawing Number in the current contract; use `(Drawing Number, DIM ID)` as the formal key; allow cross-drawing DIM ID reuse, flag same-drawing duplicates, and keep one-digit IDs as nonblocking `suspected_invalid`; optional Surface MCP writes update Comment 0 only after explicit confirmation, otherwise save the same confidential list locally |
 | **F4 Method recommendation / calculation** | Factor count + CTS/CTF; `<4`→WC, `4–10`→RSS, `>10`→notify DM for 3D VA follow-up; F4 continues to compute both WC and RSS |
 | **F5 Data interpretation** ⭐ | Fixed 5-section output — **objective (FACT/RULE/SIGNAL/OPTION)**, each RULE cites its F0 entry; clarification card when uncertain |
 | **F6 Tolerance / dimension-chain optimization** ⭐ | Mean-shift centering + contribution economics + RSS apportionment + spec reverse-solve (over-capability warning) |

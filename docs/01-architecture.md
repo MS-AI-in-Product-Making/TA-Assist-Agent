@@ -35,8 +35,8 @@ flowchart TB
     end
     subgraph ORCH["5b Optional ADO Governance (F3 · shared substrate)"]
         G1["Optional ADO work item<br/>manual .xlsx upload starts analysis<br/>when linked, resolve owner from ADO owner / Request By"]
-        G2["Server-side scheduled service (weekly / monthly)<br/>surface-mcp GetProgramMilestones + workiq"]
-        G3["For grouped missing DIM ID / PN items<br/>user confirms ADO reminder · write list to Comment 0<br/>without ADO, save the list locally"]
+        G2["Surface MCP capability gate<br/>read work item and Comment 0<br/>resolve Owner, then Request By"]
+        G3["For grouped governance items<br/>prepare diff · user confirms · update Comment 0<br/>without ADO/capability, save the same list locally"]
         G2 --> G3
     end
     subgraph ENG["6 Core Calculation Engine (F4 · 1D · strictly consistent with Excel)"]
@@ -114,8 +114,8 @@ flowchart TB
 | 2 Worksheet selection | F1 | Auto-detect worksheets with TA content and ask the user to confirm | Manual selection as a fallback |
 | 3 Parse & extract | F1 | Read factor tables, extract Loop screenshots, and load the knowledge base | Retain normalized JSON, source labels, version, and processing trace |
 | 4 Knowledge base | **F0** | Capability Library (Lib 1), Rules Library (Lib 2), Terminology Library (Lib 3) | Human-maintained; each entry carries source, confidence, and coverage; fed back by F7 |
-| 5 DIM ID linking | **F3** | Link each factor to a drawing dimension via DIM ID and produce a dimension-chain list for missing ID/PN items | Identifier-only linking, no image recognition; lists are grouped by Lib 3 category/drawing and locatable to the exact position |
-| 5b ADO governance | **F3** | Optional ADO link, owner assignment, missing-ID reminder, and local-list fallback | Manual upload starts analysis. With ADO, the user confirms a reminder and the list is saved in Comment 0; without ADO, the list is saved locally. Linked ADO items may also receive milestone-based reminders independently of analysis. |
+| 5 DIM ID linking | **F3** | Link each factor to a drawing dimension and produce a drawing-governance list | Part Number currently equals Drawing Number. The formal key is `(Drawing Number, DIM ID)`; the same DIM ID may occur on different drawings, while duplicates on one drawing are conflicts. A one-digit numeric DIM ID is `suspected_invalid` and does not block TA. |
+| 5b ADO governance | **F3** | Optional ADO link, owner assignment, Comment 0 update, and local-list fallback | F3 uses only Surface MCP. Every write follows `prepare -> confirm -> execute`; without ADO or required capabilities, the same confidential list is saved locally and TA continues. F3 does not read dates, evaluate deadline proximity, or run a scheduler. |
 | 6 Calculation engine | F4 | One-dimensional calculation, fully consistent with Excel formulas | Validates only user-filled fields |
 | 7 Output modes | F2/F4/F5/F6 | Cleansing, method recommendation, objective interpretation, and optimization | `<4` recommends WC; `4-10` recommends RSS; `>10` notifies DM for 3D VA while the engine still computes WC/RSS. Interpretation cites knowledge-base evidence; judgment remains with the user. |
 | 8 Closed loop | **F7** | Backfill measured Cpk by DIM ID, compare the real gap, and feed back into F0 | Manual import from a centralized store (SharePoint / platform) at first; auto-capture and write-back come later |

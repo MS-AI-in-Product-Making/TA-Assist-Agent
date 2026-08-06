@@ -47,6 +47,7 @@ function input(fields: Record<string, unknown>, imageStatus: "available" | "unav
     workbook: { fileName: "anonymous.xlsx", contentHash, f1GeneratedAt: "2026-08-03T00:00:00.000Z" },
     worksheets: [{
       worksheetName: "Analysis-A",
+      toleranceLoopDescription: "Anonymous device gap",
       worksheetJsonPath: "sheets/anonymous.xlsx/json/Analysis-A.json",
       worksheetMdPath: "sheets/anonymous.xlsx/md/Analysis-A.md",
       tolerancePathImage: imageStatus === "available"
@@ -86,6 +87,7 @@ describe("createF2UserReport", () => {
     const result = createF2UserReport(input(completeFields()));
 
     expect(result.status).toBe("completed");
+    expect(result.worksheets[0]?.toleranceLoopDescription).toBe("Anonymous device gap");
     expect(result.worksheets[0]?.rows).toHaveLength(1);
     expect(result.worksheets[0]?.rows[0]).toEqual(expect.objectContaining({
       actualFields: completeActualFields(),
