@@ -109,6 +109,7 @@ describe("F2 artifact user report contracts", () => {
     workbook: { fileName: "Demo.xlsx", contentHash, f1GeneratedAt: "2026-08-03T00:00:00.000Z" },
     worksheets: [{
       worksheetName: "Analysis-A",
+      systemSpecification: { status: "unavailable", reasonCode: "legacy_artifact_missing_system_specification" },
       worksheetJsonPath: "sheets/Demo.xlsx/json/Analysis-A.json",
       worksheetMdPath: "sheets/Demo.xlsx/md/Analysis-A.md",
       tolerancePathImage: { status: "available", imagePath: "sheets/Demo.xlsx/images/a.png", contentHash: "b".repeat(64), mediaType: "image/png" },

@@ -495,6 +495,7 @@ if (selectionArgs.selectionOnly) {
 }
 const report = {
   contractVersion: "v1",
+  artifactContractVersion: "f1-semantic-v2",
   feature: "F1",
   generatedAt,
   tasks: ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6"],
@@ -668,6 +669,7 @@ for (const job of jobs) {
       },
       worksheetName: worksheet.worksheetName,
       toleranceLoopDescription: worksheet.toleranceLoopDescription,
+      systemSpecification: worksheet.systemSpecification,
       page,
       factorTables: factorTablesAnnotated,
       formulaCells: worksheet.formulaCells,

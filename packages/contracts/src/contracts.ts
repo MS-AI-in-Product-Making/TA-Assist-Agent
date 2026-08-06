@@ -3586,6 +3586,7 @@ export const f2ArtifactInputSchema = z.object({
   worksheets: z.array(z.object({
     worksheetName: z.string().min(1),
     toleranceLoopDescription: z.string().min(1).optional(),
+    systemSpecification: worksheetSystemSpecificationSchema,
     worksheetJsonPath: relativeArtifactPathSchema,
     worksheetMdPath: relativeArtifactPathSchema,
     tolerancePathImage: f2ArtifactTolerancePathImageSchema,
@@ -3766,6 +3767,7 @@ const f2InputRejectedReportSchema = z.object({
   artifactIssues: z.array(z.object({
     reasonCode: z.enum(["root_json_missing", "root_md_missing", "manifest_missing", "worksheet_json_missing", "worksheet_md_missing", "workbook_identity_mismatch", "image_missing", "image_empty", "image_unsupported", "path_outside_root", "invalid_json", "invalid_contract"]),
     artifactPath: z.string().min(1),
+    issuePath: z.string().min(1).optional(),
   }).strict()).min(1),
 }).strict();
 
