@@ -5,7 +5,11 @@ import { createCalculationRequestFromF4Handoff, createF4Handoff } from "./f4-han
 const contentHash = "a".repeat(64);
 
 function evidence(actualValue: number, sourceCell: string, valueOrigin: "numeric_literal" | "formula_cached" | "defaulted" = "numeric_literal") {
-  return { status: "available" as const, actualValue, displayValue: String(actualValue), sourceCell, valueOrigin };
+  const sourceLabel = sourceCell.endsWith("P54") ? "*Lower Spec Limit ►"
+    : sourceCell.endsWith("P55") ? "*Upper Spec Limit ►"
+      : sourceCell.endsWith("P56") ? "*Target σ Level ►"
+        : "Additional Mean Shift ►";
+  return { status: "available" as const, actualValue, displayValue: String(actualValue), sourceLabel, sourceCell, valueOrigin };
 }
 
 describe("createF4Handoff", () => {

@@ -22,14 +22,19 @@ function setup() {
 
 function validF2Report(artifactRoot) {
   const evidence = (actualValue, sourceCell, displayValue = String(actualValue)) => ({
-    status: "available", actualValue, displayValue, sourceCell, valueOrigin: "numeric_literal",
+    status: "available",
+    actualValue,
+    displayValue,
+    sourceLabel: sourceCell.endsWith("P54") ? "*Lower Spec Limit ►" : sourceCell.endsWith("P55") ? "*Upper Spec Limit ►" : "*Target σ Level ►",
+    sourceCell,
+    valueOrigin: "numeric_literal",
   });
   const systemSpecification = {
     status: "available",
     lowerSpecLimit: evidence(-0.15, "Analysis-A!P54"),
     upperSpecLimit: evidence(0.05, "Analysis-A!P55"),
     targetSigmaLevel: evidence(3, "Analysis-A!P56", "3.0σ"),
-    additionalMeanShift: { status: "available", actualValue: 0, displayValue: "0", valueOrigin: "defaulted" },
+    additionalMeanShift: { status: "available", actualValue: 0, displayValue: "0", sourceLabel: "Additional Mean Shift", valueOrigin: "defaulted" },
   };
   return {
     contractVersion: "v1",

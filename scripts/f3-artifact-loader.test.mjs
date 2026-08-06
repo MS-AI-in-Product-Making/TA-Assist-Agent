@@ -44,10 +44,10 @@ function enhancedRow() {
 function systemSpecification() {
   return {
     status: "available",
-    lowerSpecLimit: { status: "available", actualValue: -0.15, displayValue: "-0.15", sourceCell: "Analysis-A!P54", valueOrigin: "numeric_literal" },
-    upperSpecLimit: { status: "available", actualValue: 0.05, displayValue: "0.05", sourceCell: "Analysis-A!P55", valueOrigin: "numeric_literal" },
-    targetSigmaLevel: { status: "available", actualValue: 3, displayValue: "3.0σ", sourceCell: "Analysis-A!P56", valueOrigin: "numeric_literal" },
-    additionalMeanShift: { status: "available", actualValue: 0, displayValue: "0", valueOrigin: "defaulted" },
+    lowerSpecLimit: { status: "available", actualValue: -0.15, displayValue: "-0.15", sourceLabel: "*Lower Spec Limit ►", sourceCell: "Analysis-A!P54", valueOrigin: "numeric_literal" },
+    upperSpecLimit: { status: "available", actualValue: 0.05, displayValue: "0.05", sourceLabel: "*Upper Spec Limit ►", sourceCell: "Analysis-A!P55", valueOrigin: "numeric_literal" },
+    targetSigmaLevel: { status: "available", actualValue: 3, displayValue: "3.0σ", sourceLabel: "*Target σ Level ►", sourceCell: "Analysis-A!P56", valueOrigin: "numeric_literal" },
+    additionalMeanShift: { status: "available", actualValue: 0, displayValue: "0", sourceLabel: "Additional Mean Shift", valueOrigin: "defaulted" },
   };
 }
 
