@@ -3,6 +3,10 @@
 > The complete runtime flow, from an engineer uploading `.xlsx` files to producing a structured interpretation report, including the closed loop that feeds measured Cpk back into the knowledge base.
 > The `(Fx)` labels in the diagram map to the Feature IDs in the [Feature Breakdown](04-feature-breakdown.md).
 
+## F1 to F2 Evidence Contract
+
+F1 is the sole producer and physical owner of worksheet image evidence. F2 stores the validated F1-relative path, worksheet identity, and content hash, then renders a relative Markdown link; it never copies or regenerates the image. System-specification display labels are preserved from F1 `sourceLabel` evidence. Calculated columns such as `1σ` and `% Cont. to σ` are projected from cached worksheet formula values and are not recalculated by F2.
+
 ## Flow Diagram
 
 ```mermaid

@@ -43,7 +43,7 @@ worksheet catalog，并从 catalog 确认的 worksheet 依据语义表头提取�
 图片字节只可由 workbook hash 与唯一 image hash 共同验证后读取。F1 不计算公式、不换算单位、
 不执行 OCR、渲染、风险解释、行动建议或 workbook 写回，也不调用外部服务、不跟踪或导出原始
 `.xls`、`.xlsx` 或 `.xlsm`（除非另行批准受控白名单）。根 F2 已可用：它只接受 F1 落盘的 JSON、MD 和 images artifact bundle，
-不读取或重新解析 Excel；按 worksheet 隔离检查因子必填字段、公差路径截面图，以及 Response Summary 中的 Lower Spec Limit、Upper Spec Limit 和 Target σ Level。F0 Category/Item
+不读取或重新解析 Excel；F1 是 worksheet 图片证据的唯一生产者和物理所有者，F2 只保存经 hash 校验的 F1 image reference 并在 Markdown 中生成相对链接，不复制或重新生成图片。F2 原样展示 F1 保存的 Response Summary `sourceLabel`，不自定义缩写或名称；`1σ` 与 `% Cont. to σ` 从 F1 semantic artifact 的公式 cached values 投影，不由 F2 重新计算。F2 按 worksheet 隔离检查因子必填字段、公差路径截面图，以及 Response Summary 中的 Lower Spec Limit、Upper Spec Limit 和 Target σ Level。F0 Category/Item
 Mapping 缺口及唯一匹配后的公差/distribution 差异均以增强 raw-data 表中的非阻断差异展示。
 独立 Part Number 与 DIM/Characteristic ID 缺失生成按 category 汇总的 `adoReminderRequested` 待触发事件，不执行 ADO 网络调用。
 F2.1-F2.4 继续提供严格完整性阻断、非阻断一致性信号、受限例外处理与标识符质量检查。F4 已启用受治理的 `excel-ta-v1` 纯计算

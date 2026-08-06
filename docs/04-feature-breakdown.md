@@ -24,6 +24,12 @@
 
 ---
 
+## F1 to F2 Evidence Ownership
+
+F1 owns the only physical worksheet image artifact. F2 carries a hash-bound `imageReference` to that F1 artifact and renders a relative link instead of creating an F2 copy. F1 also preserves the exact Response Summary `sourceLabel` and cached formula values for `1σ` and `% Cont. to σ`; F2 displays or projects those values without renaming or recalculating them.
+
+---
+
 ## User Story 1 - Reliable First-Pass TA Result and Summary
 
 **As an ME engineer, when I upload a TA file, I want the assistant to automatically identify all TA worksheets, clean the data first, and flag unreasonable tolerance inputs, so I can get a reliable first-pass result and a complete report quickly.**
