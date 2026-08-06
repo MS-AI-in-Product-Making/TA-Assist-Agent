@@ -56,10 +56,10 @@ function createBundle({ artifactContractVersion } = {}) {
     ...(artifactContractVersion === "f1-semantic-v2" ? {
       systemSpecification: {
         status: "available",
-        lowerSpecLimit: { status: "available", actualValue: -0.15, displayValue: "-0.15", sourceCell: "Analysis-A!P54", valueOrigin: "numeric_literal" },
-        upperSpecLimit: { status: "available", actualValue: 0.05, displayValue: "0.05", sourceCell: "Analysis-A!P55", valueOrigin: "numeric_literal" },
-        targetSigmaLevel: { status: "available", actualValue: 3, displayValue: "3", sourceCell: "Analysis-A!P56", valueOrigin: "numeric_literal" },
-        additionalMeanShift: { status: "available", actualValue: 0, displayValue: "0", valueOrigin: "defaulted" },
+        lowerSpecLimit: { status: "available", actualValue: -0.15, displayValue: "-0.15", sourceLabel: "*Lower Spec Limit ►", sourceCell: "Analysis-A!P54", valueOrigin: "numeric_literal" },
+        upperSpecLimit: { status: "available", actualValue: 0.05, displayValue: "0.05", sourceLabel: "*Upper Spec Limit ►", sourceCell: "Analysis-A!P55", valueOrigin: "numeric_literal" },
+        targetSigmaLevel: { status: "available", actualValue: 3, displayValue: "3", sourceLabel: "*Target σ Level ►", sourceCell: "Analysis-A!P56", valueOrigin: "numeric_literal" },
+        additionalMeanShift: { status: "available", actualValue: 0, displayValue: "0", sourceLabel: "Additional Mean Shift", valueOrigin: "defaulted" },
       },
     } : {}),
     factorTables: [{
@@ -127,6 +127,20 @@ describe("loadF1ArtifactBundle", () => {
           },
         }],
       },
+    });
+  });
+
+  it("rejects a v2 artifact without a system specification source label", () => {
+    const { root } = createBundle({ artifactContractVersion: "f1-semantic-v2" });
+    const worksheetPath = path.join(root, "sheets/anonymous.xlsx/json/Analysis-A.json");
+    const worksheet = JSON.parse(readFileSync(worksheetPath, "utf8"));
+    delete worksheet.systemSpecification.lowerSpecLimit.sourceLabel;
+    writeFileSync(worksheetPath, JSON.stringify(worksheet));
+
+    expect(loadF1ArtifactBundle(root).report.artifactIssues).toContainEqual({
+      reasonCode: "invalid_contract",
+      artifactPath: "Feature1-Report.json",
+      issuePath: "worksheets[0].systemSpecification.lowerSpecLimit.sourceLabel",
     });
   });
 
