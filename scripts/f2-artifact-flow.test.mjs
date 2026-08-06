@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { Buffer } from "node:buffer";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { f2UserReportSchema } from "../packages/contracts/dist/contracts.js";
@@ -47,6 +47,13 @@ function createArtifactBundle() {
     workbook: { fileName: workbookName, contentHash: workbookHash },
     worksheetName: "Analysis-A",
     toleranceLoopDescription: "Anonymous device gap",
+    systemSpecification: {
+      status: "available",
+      lowerSpecLimit: { status: "available", actualValue: -0.15, displayValue: "-0.15", sourceLabel: "*Lower Spec Limit ►", sourceCell: "Analysis-A!P54", valueOrigin: "numeric_literal" },
+      upperSpecLimit: { status: "available", actualValue: 0.05, displayValue: "0.05", sourceLabel: "*Upper Spec Limit ►", sourceCell: "Analysis-A!P55", valueOrigin: "numeric_literal" },
+      targetSigmaLevel: { status: "available", actualValue: 3, displayValue: "3.0σ", sourceLabel: "*Target σ Level ►", sourceCell: "Analysis-A!P56", valueOrigin: "numeric_literal" },
+      additionalMeanShift: { status: "available", actualValue: 0, displayValue: "0", sourceLabel: "Additional Mean Shift", valueOrigin: "defaulted" },
+    },
     factorTables: [{
       tableId: "table-a", headerRow: 1, dataRange: { startRow: 2, endRow: 2 }, columns: [],
       rows: [{ sourceRow: 2, actualFields: actualFields(), fields: {
@@ -60,7 +67,7 @@ function createArtifactBundle() {
   }));
   writeFileSync(path.join(root, "Feature1-Report.md"), "# Feature 1\n");
   writeFileSync(path.join(root, "Feature1-Report.json"), JSON.stringify({
-    contractVersion: "v1", feature: "F1", generatedAt: "2026-08-03T00:00:00.000Z",
+    contractVersion: "v1", artifactContractVersion: "f1-semantic-v2", feature: "F1", generatedAt: "2026-08-03T00:00:00.000Z",
     workbooks: [{ workbook: { fileName: workbookName, contentHash: workbookHash }, task15_factor_table_and_debug_json: { sheets: [{ worksheetName: "Analysis-A", jsonPath: jsonRelative }] }, task16_loop_screenshot_and_run_record: { sheets: [{ worksheetName: "Analysis-A", mdPath: mdRelative }] }, sheetReadmePath: `sheets/${workbookName}/README.md` }],
   }));
   return root;
@@ -81,7 +88,10 @@ describe("F2 artifact-only CLI flow", () => {
     expect(report.knowledgeBaseVersions).toEqual(["v1", "internal-v1"]);
     expect(report.summary.nonF0ProcessCategoryCount).toBe(1);
     expect(markdown).toContain("非 F0 制程分类");
-    expect(markdown).toContain(`[outside-library factor](images/${report.worksheets[0].rows[0].imageTarget.contentHash}.png)`);
-    expect(readFileSync(path.join(output, report.worksheets[0].rows[0].imageTarget.relativePath))).toEqual(Buffer.from([1, 2, 3]));
+    const reference = report.worksheets[0].rows[0].imageReference;
+    const expectedHref = path.relative(output, path.join(artifactRoot, reference.relativePath)).split(path.sep).join("/");
+    expect(markdown).toContain(`[outside-library factor](${expectedHref})`);
+    expect(existsSync(path.join(output, "images"))).toBe(false);
+    expect(readFileSync(path.join(artifactRoot, reference.relativePath))).toEqual(Buffer.from([1, 2, 3]));
   });
 });

@@ -4,7 +4,9 @@ import {
   createF2InitialWorkflow,
   createWorkbookCatalog,
   createWorksheetAnalysisAssetsParallel,
+  createWorksheetSelectionPrompt,
   createWorksheetSelectionView,
+  validateWorksheetSelectionConfirmation,
 } from "@ai-assist/workbook-catalog";
 import { createAnonymousWorkbookZip } from "../packages/workbook-catalog/src/test-support.ts";
 
@@ -43,12 +45,35 @@ describe("F0 F1 F2 full flow", () => {
     const workbookBytes = fullFlowWorkbook();
     const workbookCatalog = createWorkbookCatalog({ contractVersion: "v1", fileName: "anonymous.xlsx", inputClassification: "confidential", workbookBytes });
     const selectionView = createWorksheetSelectionView({ contractVersion: "v1", inputClassification: "confidential", workbookCatalog });
+    const selectionPrompt = createWorksheetSelectionPrompt({ contractVersion: "v1", inputClassification: "confidential", workbookCatalog });
+    expect(selectionPrompt).toMatchObject({
+      status: "selectionRequired",
+      workbook: { contentHash: workbookCatalog.workbook.contentHash },
+      options: [
+        expect.objectContaining({ worksheetName: "Analysis-A" }),
+        expect.objectContaining({ worksheetName: "Analysis-B" }),
+      ],
+    });
+    expect(validateWorksheetSelectionConfirmation({
+      prompt: selectionPrompt,
+      confirmation: { workbookContentHash: "f".repeat(64), selectedWorksheetNames: ["Analysis-A"], confirmed: true },
+    })).toEqual({ status: "rejected", reasonCode: "stale_worksheet_selection" });
+    const confirmation = validateWorksheetSelectionConfirmation({
+      prompt: selectionPrompt,
+      confirmation: {
+        workbookContentHash: workbookCatalog.workbook.contentHash,
+        selectedWorksheetNames: selectionView.worksheets.map((worksheet) => worksheet.worksheetName),
+        confirmed: true,
+      },
+    });
+    expect(confirmation.status).toBe("confirmed");
+    if (confirmation.status !== "confirmed") throw new Error("Expected worksheet confirmation.");
     const parallelAssets = await createWorksheetAnalysisAssetsParallel({
       contractVersion: "v1",
       inputClassification: "confidential",
       workbookBytes,
       workbookCatalog,
-      worksheetSelection: { mode: "selected", worksheetNames: selectionView.worksheets.map((worksheet) => worksheet.worksheetName) },
+      worksheetSelection: { mode: "selected", worksheetNames: confirmation.selectedWorksheetNames },
     });
     expect(parallelAssets.pages.every((page) => page.status === "processed")).toBe(true);
 

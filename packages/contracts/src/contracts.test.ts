@@ -23,6 +23,7 @@ import {
   f2InitialWorkflowRequestSchema,
   f2InitialWorkflowResultSchema,
   f2ArtifactInputSchema,
+  f4HandoffReadySchema,
   f2UserReportSchema,
   identifierQualityCheckRequestSchema,
   identifierQualityCheckResultSchema,
@@ -66,6 +67,9 @@ import {
   worksheetAnalysisAssetsResultSchema,
   worksheetImageReadRequestSchema,
   worksheetImageReadResultSchema,
+  worksheetSelectionConfirmationResultSchema,
+  worksheetSelectionConfirmationSchema,
+  worksheetSelectionPromptSchema,
   worksheetSelectionViewRequestSchema,
   worksheetSelectionViewResultSchema,
   workflowRequestSchema,
@@ -81,6 +85,13 @@ import type {
 
 describe("F2 artifact user report contracts", () => {
   const contentHash = "a".repeat(64);
+  const systemSpecification = {
+    status: "available" as const,
+    lowerSpecLimit: { status: "available" as const, actualValue: -0.15, displayValue: "-0.15", sourceLabel: "*Lower Spec Limit ►", sourceCell: "Analysis-A!P54", valueOrigin: "numeric_literal" as const },
+    upperSpecLimit: { status: "available" as const, actualValue: 0.05, displayValue: "0.05", sourceLabel: "*Upper Spec Limit ►", sourceCell: "Analysis-A!P55", valueOrigin: "numeric_literal" as const },
+    targetSigmaLevel: { status: "available" as const, actualValue: 3, displayValue: "3.0σ", sourceLabel: "*Target σ Level ►", sourceCell: "Analysis-A!P56", valueOrigin: "numeric_literal" as const },
+    additionalMeanShift: { status: "available" as const, actualValue: 0, displayValue: "0", sourceLabel: "Additional Mean Shift", valueOrigin: "defaulted" as const },
+  };
   const actualFields = {
     factorName: "Bracket arm",
     partName: "Bracket",
@@ -106,6 +117,7 @@ describe("F2 artifact user report contracts", () => {
     workbook: { fileName: "Demo.xlsx", contentHash, f1GeneratedAt: "2026-08-03T00:00:00.000Z" },
     worksheets: [{
       worksheetName: "Analysis-A",
+      systemSpecification,
       worksheetJsonPath: "sheets/Demo.xlsx/json/Analysis-A.json",
       worksheetMdPath: "sheets/Demo.xlsx/md/Analysis-A.md",
       tolerancePathImage: { status: "available", imagePath: "sheets/Demo.xlsx/images/a.png", contentHash: "b".repeat(64), mediaType: "image/png" },
@@ -124,7 +136,7 @@ describe("F2 artifact user report contracts", () => {
     sourceRow: 2,
     actualFields,
     sourceCells: { factorName: "Analysis-A!A2" },
-    imageTarget: { relativePath: `images/${"b".repeat(64)}.png`, contentHash: "b".repeat(64) },
+    imageReference: { artifact: "f1", relativePath: "sheets/Demo.xlsx/images/a.png", contentHash: "b".repeat(64), worksheetName: "Analysis-A" },
     missingRequiredFields: [],
     missingIdentifiers: ["dimCharacteristicId", "partNumber"],
     capabilityStatus: "internal_within_guidance",
@@ -140,6 +152,23 @@ describe("F2 artifact user report contracts", () => {
     },
     adoReminderRequested: true,
   };
+  const handoff = {
+    contractVersion: "v1",
+    handoffVersion: "f4-handoff-v1",
+    inputClassification: "confidential",
+    status: "ready",
+    workbookContentHash: contentHash,
+    worksheetName: "Analysis-A",
+    systemSpecification: {
+      designNominal: -0.05,
+      lowerSpecLimit: systemSpecification.lowerSpecLimit,
+      upperSpecLimit: systemSpecification.upperSpecLimit,
+      targetSigmaLevel: systemSpecification.targetSigmaLevel,
+      targetCpk: 1,
+      additionalMeanShift: systemSpecification.additionalMeanShift,
+    },
+    factors: [{ tableId: row.tableId, sourceRow: row.sourceRow, unit: "mm", actualFields: row.actualFields, sourceCells: row.sourceCells }],
+  };
   const completedReport = {
     contractVersion: "v1",
     inputClassification: "confidential",
@@ -148,7 +177,8 @@ describe("F2 artifact user report contracts", () => {
     knowledgeBaseVersions: ["v1", "internal-v1"],
     mappingRuleVersion: "v1",
     artifactRoot: artifactInput.artifactRoot,
-    worksheets: [{ worksheetName: "Analysis-A", status: "ready", tolerancePathImageStatus: "available", rows: [row], missingFieldSummary: [] }],
+    worksheets: [{ worksheetName: "Analysis-A", status: "ready", tolerancePathImageStatus: "available", systemSpecification, systemSpecificationIssues: [], rows: [row], missingFieldSummary: [] }],
+    f4Handoffs: [handoff],
     adoEvents: [{ eventType: "adoReminderRequested", category: "CNC", worksheetName: "Analysis-A", missingFields: ["dimCharacteristicId", "partNumber"], factorRows: [2], workbookContentHash: contentHash }],
     summary: { worksheetsChecked: 1, blockedWorksheetCount: 0, readyWorksheetCount: 1, factorRowCount: 1, rowsWithRequiredMissing: 0, requiredMissingFieldCount: 0, missingImageWorksheetCount: 0, internalWithinGuidanceCount: 1, internalGuidanceExceededCount: 0, f0InformationInsufficientCount: 0, publicLibraryMatchCount: 0, nonF0ProcessCategoryCount: 0, unableToCheckCount: 0, publicToleranceDifferenceCount: 0, publicDistributionDifferenceCount: 0, missingDimIdCount: 1, missingPartNumberCount: 1 },
   };
@@ -200,6 +230,24 @@ describe("F2 artifact user report contracts", () => {
     expect(f2UserReportSchema.safeParse({ ...completedReport, worksheets: [{ ...completedReport.worksheets[0], rows: [{ ...row, f0KnowledgeBaseVersion: "v1" }] }] }).success).toBe(false);
     expect(f2UserReportSchema.safeParse({ ...completedReport, worksheets: [{ ...completedReport.worksheets[0], rows: [{ ...row, recommendation: undefined }] }] }).success).toBe(false);
     expect(f2ArtifactInputSchema.safeParse({ ...artifactInput, worksheets: [{ ...artifactInput.worksheets[0], worksheetJsonPath: "../outside.json" }] }).success).toBe(false);
+  });
+
+  it("enforces ready and blocked worksheet F4 handoff invariants", () => {
+    expect(f4HandoffReadySchema.parse(handoff)).toEqual(handoff);
+    expect(f2UserReportSchema.safeParse({ ...completedReport, f4Handoffs: [] }).success).toBe(false);
+    expect(f2UserReportSchema.safeParse({
+      ...completedReport,
+      status: "blocked",
+      worksheets: [{
+        ...completedReport.worksheets[0],
+        status: "blocked",
+        systemSpecificationIssues: [{ field: "targetSigmaLevel", reasonCode: "response_summary_value_missing" }],
+      }],
+    }).success).toBe(false);
+    expect(f4HandoffReadySchema.safeParse({
+      ...handoff,
+      systemSpecification: { ...handoff.systemSpecification, targetCpk: 2 },
+    }).success).toBe(false);
   });
 });
 
@@ -3789,6 +3837,47 @@ describe("worksheet selection view contracts", () => {
   it("accepts confidential worksheet selection view request/result", () => {
     expect(worksheetSelectionViewRequestSchema.parse(request)).toEqual(request);
     expect(worksheetSelectionViewResultSchema.parse(result)).toEqual(result);
+  });
+
+  it("accepts worksheet selection prompt and confirmation contracts", () => {
+    const prompt = {
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      status: "selectionRequired",
+      workbook: { fileName: "anonymous-ta.xlsx", contentHash: "a".repeat(64) },
+      options: [{
+        selectionIndex: 1,
+        worksheetName: "Analysis-A",
+        toleranceLoopDescription: "First tolerance loop",
+        worksheetKind: "analysis",
+        source: { summarySheet: "Auto Summary", summaryRow: 10, worksheetAnchor: "Analysis-A!A1" },
+      }],
+    };
+    const confirmation = {
+      workbookContentHash: "a".repeat(64),
+      selectedWorksheetNames: ["Analysis-A"],
+      confirmed: true,
+    };
+
+    expect(worksheetSelectionPromptSchema.parse(prompt)).toEqual(prompt);
+    expect(worksheetSelectionConfirmationSchema.parse(confirmation)).toEqual(confirmation);
+    expect(worksheetSelectionConfirmationResultSchema.parse({
+      status: "confirmed",
+      workbookContentHash: "a".repeat(64),
+      selectedWorksheetNames: ["Analysis-A"],
+    }).status).toBe("confirmed");
+    expect(worksheetSelectionConfirmationResultSchema.parse({
+      status: "cancelled",
+      reasonCode: "worksheet_selection_empty",
+    }).status).toBe("cancelled");
+  });
+
+  it("rejects duplicate worksheet names in a confirmation", () => {
+    expect(worksheetSelectionConfirmationSchema.safeParse({
+      workbookContentHash: "a".repeat(64),
+      selectedWorksheetNames: ["Analysis-A", "Analysis-A"],
+      confirmed: true,
+    }).success).toBe(false);
   });
 
   it.each([

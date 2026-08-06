@@ -1,5 +1,8 @@
 export const configuredFeature1Jobs = Object.freeze([
-  Object.freeze({ workbookPath: "test/Maera_gap_TP_brkt_and _battery_20260305V1.xlsx" }),
+  Object.freeze({
+    workbookPath: "test/Maera_gap_TP_brkt_and _battery_20260305V1.xlsx",
+    selectedManifestPath: "test/demo-output/maera-gap-selected-worksheets.full.json",
+  }),
   Object.freeze({
     workbookPath: "test/Maera_cosmetic_critical_TA - Rev E.xlsx",
     selectedManifestPath: "test/demo-output/maera-selected-worksheets-factor-tables.full.json",

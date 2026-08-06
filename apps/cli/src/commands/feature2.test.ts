@@ -17,7 +17,12 @@ async function fixture(): Promise<{ rootDir: string; workbookPath: string }> {
   const scriptPath = join(rootDir, "scripts", "f2-excel-runner.mjs");
   await mkdir(join(rootDir, "scripts"), { recursive: true });
   await writeFile(workbookPath, "fixture", "utf8");
-  await writeFile(scriptPath, `console.log(JSON.stringify({runRoot:"runs/demo",f1Root:"runs/demo/f1",f2Root:"runs/demo/f2",validationRoot:"runs/demo/validation"}));\n`, "utf8");
+  await writeFile(scriptPath, `
+const confirmed = process.argv.includes("--confirm");
+console.log(JSON.stringify(confirmed
+  ? {status:"completed",runRoot:"runs/demo",f1Root:"runs/demo/f1",f2Root:"runs/demo/f2",validationRoot:"runs/demo/validation"}
+  : {status:"selectionRequired",runRoot:"runs/demo",promptPath:"runs/demo/f1/Feature1-Selection.json",prompt:{workbook:{contentHash:"${"a".repeat(64)}"},options:[{worksheetName:"Analysis-A"}]}}));
+`, "utf8");
   await chmod(scriptPath, 0o755);
   return { rootDir, workbookPath };
 }
@@ -29,11 +34,19 @@ describe("Feature 2 CLI command", () => {
     expect(isFeature2Phrase("analyze Excel")).toBe(false);
   });
 
-  it("executes the repository runner and returns all output roots", async () => {
+  it("returns a worksheet selection prompt before analysis", async () => {
     const setup = await fixture();
 
-    await expect(runFeature2WorkflowCommand(setup.rootDir, setup.workbookPath)).resolves.toContain("runRoot: runs/demo");
-    await expect(runFeature2WorkflowCommand(setup.rootDir, setup.workbookPath)).resolves.toContain("validation: runs/demo/validation");
+    await expect(runFeature2WorkflowCommand(setup.rootDir, setup.workbookPath, { mode: "prompt" })).resolves.toContain("Worksheet selection required.");
+    await expect(runFeature2WorkflowCommand(setup.rootDir, setup.workbookPath, { mode: "prompt" })).resolves.toContain("Analysis-A");
+  });
+
+  it("executes analysis after explicit worksheet confirmation", async () => {
+    const setup = await fixture();
+    const selection = { mode: "confirmed" as const, workbookContentHash: "a".repeat(64), selectedWorksheetNames: ["Analysis-A"] };
+
+    await expect(runFeature2WorkflowCommand(setup.rootDir, setup.workbookPath, selection)).resolves.toContain("runRoot: runs/demo");
+    await expect(runFeature2WorkflowCommand(setup.rootDir, setup.workbookPath, selection)).resolves.toContain("validation: runs/demo/validation");
   });
 
   it("maps missing inputs and runner dependencies to safe typed errors", async () => {

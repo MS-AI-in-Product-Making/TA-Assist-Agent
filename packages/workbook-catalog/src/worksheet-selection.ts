@@ -1,7 +1,12 @@
 import {
   createTypedError,
+  worksheetSelectionConfirmationSchema,
+  worksheetSelectionConfirmationResultSchema,
+  worksheetSelectionPromptSchema,
   worksheetSelectionViewRequestSchema,
   worksheetSelectionViewResultSchema,
+  type WorksheetSelectionConfirmationResult,
+  type WorksheetSelectionPrompt,
   type WorksheetSelectionViewResult,
 } from "@ai-assist/contracts";
 
@@ -60,4 +65,67 @@ export function createWorksheetSelectionView(request: unknown): WorksheetSelecti
   });
   if (!result.success) throw selectionError(REQUEST_SUMMARY);
   return deepFreeze(structuredClone(result.data));
+}
+
+function worksheetKind(worksheetName: string): "analysis" | "example_or_template" {
+  return /^(?:example(?:[_ -]?ta)?|ta[_ -]?template)$/i.test(worksheetName.trim())
+    ? "example_or_template"
+    : "analysis";
+}
+
+export function createWorksheetSelectionPrompt(request: unknown): WorksheetSelectionPrompt {
+  const view = createWorksheetSelectionView(request);
+  const result = worksheetSelectionPromptSchema.safeParse({
+    contractVersion: view.contractVersion,
+    inputClassification: view.inputClassification,
+    status: "selectionRequired",
+    workbook: {
+      fileName: view.workbook.fileName,
+      contentHash: view.workbook.contentHash,
+    },
+    options: view.worksheets.map((worksheet) => ({
+      ...worksheet,
+      worksheetKind: worksheetKind(worksheet.worksheetName),
+    })),
+  });
+  if (!result.success) throw selectionError(REQUEST_SUMMARY);
+  return deepFreeze(structuredClone(result.data));
+}
+
+export function validateWorksheetSelectionConfirmation(request: {
+  readonly prompt: WorksheetSelectionPrompt;
+  readonly confirmation: unknown;
+}): WorksheetSelectionConfirmationResult {
+  const prompt = worksheetSelectionPromptSchema.safeParse(request?.prompt);
+  const confirmation = worksheetSelectionConfirmationSchema.safeParse(request?.confirmation);
+  if (!prompt.success || !confirmation.success) {
+    return deepFreeze(worksheetSelectionConfirmationResultSchema.parse({
+      status: "rejected",
+      reasonCode: "invalid_worksheet_selection",
+    }));
+  }
+  if (confirmation.data.workbookContentHash !== prompt.data.workbook.contentHash) {
+    return deepFreeze(worksheetSelectionConfirmationResultSchema.parse({
+      status: "rejected",
+      reasonCode: "stale_worksheet_selection",
+    }));
+  }
+  if (confirmation.data.selectedWorksheetNames.length === 0) {
+    return deepFreeze(worksheetSelectionConfirmationResultSchema.parse({
+      status: "cancelled",
+      reasonCode: "worksheet_selection_empty",
+    }));
+  }
+  const options = new Set(prompt.data.options.map((option) => option.worksheetName));
+  if (confirmation.data.selectedWorksheetNames.some((worksheetName) => !options.has(worksheetName))) {
+    return deepFreeze(worksheetSelectionConfirmationResultSchema.parse({
+      status: "rejected",
+      reasonCode: "invalid_worksheet_selection",
+    }));
+  }
+  return deepFreeze(worksheetSelectionConfirmationResultSchema.parse({
+    status: "confirmed",
+    workbookContentHash: confirmation.data.workbookContentHash,
+    selectedWorksheetNames: confirmation.data.selectedWorksheetNames,
+  }));
 }

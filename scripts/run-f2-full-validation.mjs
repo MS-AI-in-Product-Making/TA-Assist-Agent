@@ -2,7 +2,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { createF2UserReport } from "../packages/workbook-catalog/dist/f2-user-report.js";
 import { loadF1ArtifactBundle } from "./f2-artifact-loader.mjs";
-import { materializeF2Images } from "./f2-image-materializer.mjs";
+import { safeName } from "./f1-output-layout.mjs";
 import { resolveFeature2OutputLayout } from "./f2-output-layout.mjs";
 import { renderF2Report } from "./f2-report.mjs";
 
@@ -16,10 +16,16 @@ const f2Result = loaded.status === "inputRejected"
 rmSync(outputLayout.outRoot, { recursive: true, force: true });
 mkdirSync(outputLayout.outRoot, { recursive: true });
 if (loaded.status === "accepted") {
-  materializeF2Images({ artifactRoot: loaded.input.artifactRoot, outputRoot: outputLayout.outRoot, input: loaded.input, report: f2Result });
+  if (f2Result.f4Handoffs.length > 0) {
+    const handoffRoot = path.join(outputLayout.outRoot, "f4-handoffs");
+    mkdirSync(handoffRoot, { recursive: true });
+    for (const handoff of f2Result.f4Handoffs) {
+      writeFileSync(path.join(handoffRoot, `${safeName(handoff.worksheetName)}.json`), `${JSON.stringify(handoff, null, 2)}\n`, "utf8");
+    }
+  }
 }
 writeFileSync(path.join(outputLayout.outRoot, outputLayout.reportJsonName), `${JSON.stringify(f2Result, null, 2)}\n`, "utf8");
-writeFileSync(path.join(outputLayout.outRoot, outputLayout.reportMdName), `${renderF2Report(f2Result)}\n`, "utf8");
+writeFileSync(path.join(outputLayout.outRoot, outputLayout.reportMdName), `${renderF2Report(f2Result, { outputRoot: outputLayout.outRoot })}\n`, "utf8");
 
 console.log(JSON.stringify({
   status: f2Result.status,

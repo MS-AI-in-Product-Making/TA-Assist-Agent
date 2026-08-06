@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createF2UserReport } from "./f2-user-report.js";
+import { createF2UserReport, validateWorksheetSystemSpecification } from "./f2-user-report.js";
 
 const contentHash = "a".repeat(64);
 
@@ -39,6 +39,16 @@ function completeActualFields() {
   };
 }
 
+function systemSpecification(worksheetName = "Analysis-A") {
+  return {
+    status: "available" as const,
+    lowerSpecLimit: { status: "available" as const, actualValue: -0.15, displayValue: "-0.15", sourceLabel: "*Lower Spec Limit ►", sourceCell: `${worksheetName}!P54`, valueOrigin: "numeric_literal" as const },
+    upperSpecLimit: { status: "available" as const, actualValue: 0.05, displayValue: "0.05", sourceLabel: "*Upper Spec Limit ►", sourceCell: `${worksheetName}!P55`, valueOrigin: "numeric_literal" as const },
+    targetSigmaLevel: { status: "available" as const, actualValue: 3, displayValue: "3.0σ", sourceLabel: "*Target σ Level ►", sourceCell: `${worksheetName}!P56`, valueOrigin: "numeric_literal" as const },
+    additionalMeanShift: { status: "available" as const, actualValue: 0.01, displayValue: "0.01", sourceLabel: "Additional Mean Shift ►", sourceCell: `${worksheetName}!P50`, valueOrigin: "formula_cached" as const },
+  };
+}
+
 function input(fields: Record<string, unknown>, imageStatus: "available" | "unavailable" = "available", actualFields = completeActualFields()) {
   return {
     contractVersion: "v1",
@@ -48,6 +58,7 @@ function input(fields: Record<string, unknown>, imageStatus: "available" | "unav
     worksheets: [{
       worksheetName: "Analysis-A",
       toleranceLoopDescription: "Anonymous device gap",
+      systemSpecification: systemSpecification(),
       worksheetJsonPath: "sheets/anonymous.xlsx/json/Analysis-A.json",
       worksheetMdPath: "sheets/anonymous.xlsx/md/Analysis-A.md",
       tolerancePathImage: imageStatus === "available"
@@ -83,6 +94,26 @@ function completeFields() {
 }
 
 describe("createF2UserReport", () => {
+  it.each([
+    ["lowerSpecLimit", "response_summary_value_missing"],
+    ["lowerSpecLimit", "response_summary_value_invalid"],
+    ["upperSpecLimit", "response_summary_value_missing"],
+    ["upperSpecLimit", "response_summary_value_invalid"],
+    ["targetSigmaLevel", "response_summary_value_missing"],
+    ["targetSigmaLevel", "response_summary_value_invalid"],
+  ] as const)("blocks %s when evidence is %s", (field, reasonCode) => {
+    const specification = {
+      ...systemSpecification(),
+      [field]: { status: "unavailable" as const, reasonCode, sourceCell: "Analysis-A!P56" },
+    };
+
+    expect(validateWorksheetSystemSpecification(specification)).toEqual([{
+      field,
+      reasonCode,
+      sourceCell: "Analysis-A!P56",
+    }]);
+  });
+
   it("keeps capability differences and identifier reminders non-blocking", () => {
     const result = createF2UserReport(input(completeFields()));
 
@@ -91,7 +122,7 @@ describe("createF2UserReport", () => {
     expect(result.worksheets[0]?.rows).toHaveLength(1);
     expect(result.worksheets[0]?.rows[0]).toEqual(expect.objectContaining({
       actualFields: completeActualFields(),
-      imageTarget: { relativePath: `images/${"b".repeat(64)}.png`, contentHash: "b".repeat(64) },
+      imageReference: { artifact: "f1", relativePath: "sheets/anonymous.xlsx/images/a.png", contentHash: "b".repeat(64), worksheetName: "Analysis-A" },
       missingIdentifiers: ["dimCharacteristicId", "partNumber"],
       missingRequiredFields: [],
       capabilityStatus: "in_library_tolerance_and_distribution_differ",
@@ -99,12 +130,42 @@ describe("createF2UserReport", () => {
       recommendation: { kind: "public", toleranceMin: 0.1, toleranceMax: 0.3, unit: "mm", distribution: "normal", capabilityEntryId: "cap-demo-bracket" },
       adoReminderRequested: true,
     }));
+    expect(result.worksheets[0]?.rows[0]).not.toHaveProperty("imageTarget");
     expect(result.adoEvents).toEqual([expect.objectContaining({
       eventType: "adoReminderRequested",
       category: "demo-bracket",
       missingFields: ["dimCharacteristicId", "partNumber"],
       factorRows: [2],
     })]);
+    expect(result.worksheets[0]?.rows[0]?.actualFields.drawingNumber).toBeNull();
+    expect(result.worksheets[0]?.rows[0]?.missingRequiredFields).not.toContain("drawingNumber");
+    expect(result.worksheets[0]?.rows[0]?.adoReminderRequested).toBe(true);
+    expect(result.f4Handoffs).toHaveLength(1);
+  });
+
+  it("blocks only the worksheet with an unavailable system specification and emits one ready handoff", () => {
+    const request = input(completeFields());
+    request.worksheets.push({
+      ...request.worksheets[0],
+      worksheetName: "Analysis-B",
+      systemSpecification: {
+        ...systemSpecification("Analysis-B"),
+        targetSigmaLevel: { status: "unavailable", reasonCode: "response_summary_value_missing", sourceCell: "Analysis-B!P56" },
+      },
+      worksheetJsonPath: "sheets/anonymous.xlsx/json/Analysis-B.json",
+      worksheetMdPath: "sheets/anonymous.xlsx/md/Analysis-B.md",
+    });
+
+    const result = createF2UserReport(request);
+
+    expect(result.status).toBe("partiallyBlocked");
+    expect(result.worksheets[0]?.status).toBe("ready");
+    expect(result.worksheets[1]).toMatchObject({
+      status: "blocked",
+      systemSpecificationIssues: [{ field: "targetSigmaLevel", reasonCode: "response_summary_value_missing" }],
+    });
+    expect(result.f4Handoffs).toHaveLength(1);
+    expect(result.f4Handoffs[0]).toMatchObject({ status: "ready", worksheetName: "Analysis-A" });
   });
 
   it("blocks once per row while summarizing every required field and image gap", () => {

@@ -242,7 +242,6 @@ function readCells(document: Document, strings: readonly string[], family: Ooxml
     if (!Number.isInteger(rowValue) || rowValue <= 0) throw archiveError();
     if (maxRow !== undefined && rowValue > maxRow) continue;
     for (const cell of onlyChildren(row, family.spreadsheetml, "c")) {
-      if (cells.length >= MAX_CELLS_PER_WORKSHEET || budget.total >= MAX_TOTAL_CELLS) throw archiveError();
       const reference = cell.getAttribute("r");
       if (!reference || references.has(reference)) throw archiveError();
       references.add(reference);
@@ -267,6 +266,8 @@ function readCells(document: Document, strings: readonly string[], family: Ooxml
       } else if (type === "n" || type === "str" || type === "s" || children.length !== 0) {
         throw archiveError();
       }
+      if (!type && children.length === 0 && cell.hasAttribute("s")) continue;
+      if (cells.length >= MAX_CELLS_PER_WORKSHEET || budget.total >= MAX_TOTAL_CELLS) throw archiveError();
       const cached = text(valueNode);
       const formula = formulaNode ? `=${text(formulaNode)}` : undefined;
       let value = cached;

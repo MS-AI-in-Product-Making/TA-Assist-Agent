@@ -39,6 +39,13 @@ function f2Report() {
     capabilityStatus: "non_f0_process_category",
     adoReminderRequested: false,
   };
+  const systemSpecification = {
+    status: "available",
+    lowerSpecLimit: { status: "available", actualValue: -0.15, displayValue: "-0.15", sourceLabel: "*Lower Spec Limit ►", sourceCell: "Analysis-A!P54", valueOrigin: "numeric_literal" },
+    upperSpecLimit: { status: "available", actualValue: 0.05, displayValue: "0.05", sourceLabel: "*Upper Spec Limit ►", sourceCell: "Analysis-A!P55", valueOrigin: "numeric_literal" },
+    targetSigmaLevel: { status: "available", actualValue: 3, displayValue: "3.0σ", sourceLabel: "*Target σ Level ►", sourceCell: "Analysis-A!P56", valueOrigin: "numeric_literal" },
+    additionalMeanShift: { status: "available", actualValue: 0, displayValue: "0", sourceLabel: "Additional Mean Shift", valueOrigin: "defaulted" },
+  };
   return {
     contractVersion: "v1",
     inputClassification: "confidential",
@@ -52,8 +59,19 @@ function f2Report() {
       toleranceLoopDescription: "Anonymous device gap",
       status: "ready",
       tolerancePathImageStatus: "available",
+      systemSpecification,
+      systemSpecificationIssues: [],
       rows: [row],
       missingFieldSummary: [],
+    }],
+    f4Handoffs: [{
+      contractVersion: "v1", handoffVersion: "f4-handoff-v1", inputClassification: "confidential", status: "ready",
+      workbookContentHash: "a".repeat(64), worksheetName: "Analysis-A", toleranceLoopDescription: "Anonymous device gap",
+      systemSpecification: {
+        designNominal: -0.05, lowerSpecLimit: systemSpecification.lowerSpecLimit, upperSpecLimit: systemSpecification.upperSpecLimit,
+        targetSigmaLevel: systemSpecification.targetSigmaLevel, targetCpk: 1, additionalMeanShift: systemSpecification.additionalMeanShift,
+      },
+      factors: [{ tableId: row.tableId, sourceRow: row.sourceRow, unit: "mm", actualFields: row.actualFields, sourceCells: row.sourceCells }],
     }],
     adoEvents: [],
     summary: {

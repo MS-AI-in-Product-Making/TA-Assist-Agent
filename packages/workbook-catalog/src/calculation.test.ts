@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { createCalculation } from "./calculation.js";
+import { createCalculationRequestFromF4Handoff } from "./f4-handoff.js";
 
 const CONTENT_HASH = "a".repeat(64);
 
@@ -179,6 +180,60 @@ function expectNoMarkerLeak(error: unknown, marker: string): void {
 }
 
 describe("createCalculation", () => {
+  it("completes calculation directly from a validated F4 handoff", () => {
+    const request = createCalculationRequestFromF4Handoff({
+      handoff: {
+        contractVersion: "v1",
+        handoffVersion: "f4-handoff-v1",
+        inputClassification: "confidential",
+        status: "ready",
+        workbookContentHash: CONTENT_HASH,
+        worksheetName: "Analysis-A",
+        toleranceLoopDescription: "anonymous-analysis",
+        systemSpecification: {
+          designNominal: -0.05,
+          lowerSpecLimit: { status: "available", actualValue: -0.15, displayValue: "-0.15", sourceLabel: "*Lower Spec Limit ►", sourceCell: "Analysis-A!P54", valueOrigin: "numeric_literal" },
+          upperSpecLimit: { status: "available", actualValue: 0.05, displayValue: "0.05", sourceLabel: "*Upper Spec Limit ►", sourceCell: "Analysis-A!P55", valueOrigin: "numeric_literal" },
+          targetSigmaLevel: { status: "available", actualValue: 3, displayValue: "3", sourceLabel: "*Target σ Level ►", sourceCell: "Analysis-A!P56", valueOrigin: "numeric_literal" },
+          targetCpk: 1,
+          additionalMeanShift: { status: "available", actualValue: 0.01, displayValue: "0.01", sourceLabel: "Additional Mean Shift ►", sourceCell: "Analysis-A!P50", valueOrigin: "formula_cached" },
+        },
+        factors: [{
+          tableId: "table-a",
+          sourceRow: 2,
+          unit: "mm",
+          actualFields: {
+            factorName: "bracket arm", partName: "component", drawingNumber: null, dimCharacteristicId: null,
+            partCategory: "CNC", nominalValue: 1, upperTolerance: 0.4, lowerTolerance: 0,
+            longTermSafetyFactor: 1, sigmaLevel: 4, distribution: "Normal", mean: 1, tolerance: 0.4,
+            oneSigma: 0.1, percentContributionToSigma: 1, notes: null,
+          },
+          sourceCells: {
+            factorName: "Analysis-A!A2",
+            partName: "Analysis-A!B2",
+            partCategory: "Analysis-A!E2",
+            nominalValue: "Analysis-A!F2",
+            upperTolerance: "Analysis-A!G2",
+            lowerTolerance: "Analysis-A!H2",
+            longTermSafetyFactor: "Analysis-A!I2",
+            standardDeviation: "Analysis-A!J2",
+            distribution: "Analysis-A!K2",
+          },
+        }],
+      },
+      projectReference: "project-1",
+      runReference: "run-1",
+      criticality: "none",
+    });
+
+    const result = createCalculation(request);
+
+    expect(result.status).toBe("completed");
+    if (result.status !== "completed") return;
+    expect(result.capability.targetSigmaLevel).toBe(3);
+    expect(result.system.additionalMeanShift).toBe(0.01);
+  });
+
   it("returns a deeply frozen completed result for selected worksheet/table and maps standardDeviation to sigmaLevel", () => {
     const result = createCalculation(baseRequest(1));
 

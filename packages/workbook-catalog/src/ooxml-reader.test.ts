@@ -84,6 +84,19 @@ describe("OOXML workbook reader", () => {
     expectArchiveError(() => readOoxmlWorkbook(createAnonymousWorkbookZip({ xmlParts: { "xl/worksheets/sheet1.xml": xml } })), marker);
   });
 
+  it("does not count style-only cells against the semantic cell budget", () => {
+    const styleOnlyCells = Array.from({ length: 10_001 }, (_, index) => `<c r="A${index + 1}" s="1"/>`).join("");
+    const xml = `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1">${styleOnlyCells}<c r="B1"><v>semantic-value</v></c></row></sheetData></worksheet>`;
+    const workbook = readOoxmlWorkbook(
+      createAnonymousWorkbookZip({ xmlParts: { "xl/worksheets/sheet1.xml": xml } }),
+      ["Title Page"],
+      false,
+      { maxRow: 20_000, maxColumn: "XFD" },
+    );
+
+    expect(workbook.worksheets.get("Title Page")?.cells).toEqual([{ reference: "B1", value: "semantic-value" }]);
+  });
+
   it("rejects more than 50,000 cells across worksheets before pushing the excess", () => {
     const marker = "total-cells-private-marker";
     const layout = multiSheetXml(6);

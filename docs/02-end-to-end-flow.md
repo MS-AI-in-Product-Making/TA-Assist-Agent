@@ -3,6 +3,10 @@
 > The complete runtime flow, from an engineer uploading `.xlsx` files to producing a structured interpretation report, including the closed loop that feeds measured Cpk back into the knowledge base.
 > The `(Fx)` labels in the diagram map to the Feature IDs in the [Feature Breakdown](04-feature-breakdown.md).
 
+## F1 to F2 Evidence Contract
+
+F1 is the sole producer and physical owner of worksheet image evidence. F2 stores the validated F1-relative path, worksheet identity, and content hash, then renders a relative Markdown link; it never copies or regenerates the image. System-specification display labels are preserved from F1 `sourceLabel` evidence. Calculated columns such as `1σ` and `% Cont. to σ` are projected from cached worksheet formula values and are not recalculated by F2.
+
 ## Flow Diagram
 
 ```mermaid
@@ -118,8 +122,8 @@ flowchart TB
 | Node | Decision | Branch handling |
 |---|---|---|
 | ADO orchestration | Whether an ADO task is created or linked | ADO is optional. When linked, resolve the owner, return its ID/link, and enable reminders; without ADO, analysis still runs. |
-| Worksheet confirmation | Which worksheets enter the analysis | The user can select one, many, or all detected TA worksheets; cancelling ends the run. |
-| Required fields | Whether nominal, tolerance, safety factor, sigma level, distribution, factor description, and part name are complete | Missing fields block the run until the workbook is corrected and re-uploaded. |
+| Worksheet confirmation | Which worksheets enter the analysis | The prompt returns options and a workbook content hash. The user explicitly confirms one or more worksheets against that hash; a changed workbook makes the confirmation stale and fails closed. |
+| Required fields | Whether factor inputs, cross-section evidence, Lower Spec Limit, Upper Spec Limit, and Target σ Level are complete | Missing evidence blocks only the affected worksheet. Ready worksheets continue and each emits exactly one F4 handoff. Drawing Number, DIM ID, and Part Number remain non-blocking governance signals. |
 | Cleansing consistency | Whether the capability library, distribution, DIM ID, and PN align | Out-of-library or incomplete items are flagged at once. The user can edit the source Excel or continue with a recorded exception. |
 | DIM ID association | Whether the factor is linked to a drawing dimension | Linked factors go directly to method recommendation; missing IDs are grouped by Lib 3 category/drawing before governance. |
 | ADO governance | Whether a grouped missing-item list has an ADO work item | Reuse the upload-stage ADO choice. With ADO, the user confirms a reminder and the list is added to Comment 0; otherwise, save the list locally. |
@@ -259,8 +263,8 @@ flowchart TB
 | Node | Decision | Branches |
 |---|---|---|
 | ADO orchestration | Whether an ADO task is created or linked | Optional ADO task → resolve owner, return its ID/link, and enable reminders; no task → run the analysis without ADO governance |
-| Worksheet confirmation | Which worksheets go into interpretation | User selects one, many, or all detected TA worksheets; cancelling ends the run |
-| Required fields | Whether nominal and tolerance are present | Missing → block the run until the user corrects and re-uploads the workbook; present → continue |
+| Worksheet confirmation | Which worksheets go into interpretation | The prompt returns options and a workbook content hash; explicit confirmation is hash-bound, and stale confirmation fails closed |
+| Required fields | Whether factor inputs, cross-section evidence, Lower Spec Limit, Upper Spec Limit, and Target σ Level are present | Missing evidence blocks only that worksheet; each ready worksheet emits exactly one F4 handoff. Drawing Number, DIM ID, and Part Number are non-blocking governance signals |
 | Cleansing consistency | Whether the capability library, distribution, DIM ID, and PN align | Out-of-library or incomplete items are flagged; the user can edit the source or continue with a recorded exception |
 | DIM ID linking | Whether the factor is already linked to a drawing dimension | Linked → generate the dimension-chain list; missing → create a placeholder and continue analysis |
 | ADO governance | Whether an ADO item is linked and Surface MCP has the required capabilities | Prepare a Comment 0 diff, require explicit user confirmation, then execute once. Without ADO/capability, save the same confidential list locally and continue TA. F3 does not read dates, evaluate deadline proximity, or run a scheduler. |

@@ -1,7 +1,11 @@
 export { readOoxmlWorkbook } from "./ooxml-reader.js";
 export { readSafeZip } from "./zip-security.js";
 export { createWorkbookCatalog } from "./workbook-catalog.js";
-export { createWorksheetSelectionView } from "./worksheet-selection.js";
+export { FACTOR_FIELD_ORDER, resolveFactorHeaderCluster } from "./factor-header-resolver.js";
+export type { FactorFieldName, FactorHeaderResolution, HeaderCell, ResolvedHeaderColumn } from "./factor-header-resolver.js";
+export { extractResponseSummarySystemSpecification } from "./response-summary.js";
+export type { WorksheetSystemSpecification } from "./response-summary.js";
+export { createWorksheetSelectionPrompt, createWorksheetSelectionView, validateWorksheetSelectionConfirmation } from "./worksheet-selection.js";
 export { createWorksheetAnalysisAssets, createWorksheetAnalysisAssetsParallel, readWorksheetImageAsset } from "./worksheet-analysis-assets.js";
 export { createSemanticTableDetection } from "./semantic-table-detection.js";
 export { createRequiredFieldCheck } from "./required-field-check.js";
@@ -9,7 +13,8 @@ export { createCapabilityValidation } from "./capability-validation.js";
 export { createExceptionResolution } from "./exception-resolution.js";
 export { createIdentifierQualityCheck } from "./identifier-quality-check.js";
 export { createF2InitialWorkflow } from "./f2-initial-workflow.js";
-export { createF2UserReport } from "./f2-user-report.js";
+export { createF2UserReport, validateWorksheetSystemSpecification } from "./f2-user-report.js";
+export { createCalculationRequestFromF4Handoff, createF4Handoff } from "./f4-handoff.js";
 export { createF3DrawingGovernance } from "./f3-drawing-governance.js";
 export { createUnifiedExceptionResolution } from "./unified-exception-resolution.js";
 export { createCalculation } from "./calculation.js";
@@ -38,6 +43,9 @@ export type {
 	F2InitialWorkflowResult,
 	F2ArtifactInput,
 	F2UserReport,
+	F2ReadyWorksheet,
+	F2SystemSpecificationIssue,
+	F4HandoffReady,
 	RequiredFieldCheckRequest,
 	RequiredFieldCheckResult,
 	UnifiedExceptionResolutionRequest,
@@ -45,6 +53,9 @@ export type {
 	WorkbookCatalogResult,
 	WorksheetSelectionViewRequest,
 	WorksheetSelectionViewResult,
+	WorksheetSelectionPrompt,
+	WorksheetSelectionConfirmation,
+	WorksheetSelectionConfirmationResult,
 	WorksheetAnalysisAssetsRequest,
 	WorksheetAnalysisAssetsResult,
 	WorksheetImageReadRequest,

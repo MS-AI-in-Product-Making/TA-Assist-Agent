@@ -28,8 +28,14 @@ function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, "utf8"));
 }
 
-function issue(reasonCode, artifactPath) {
-  return { reasonCode, artifactPath };
+function issue(reasonCode, artifactPath, issuePath) {
+  return { reasonCode, artifactPath, ...(issuePath ? { issuePath } : {}) };
+}
+
+function zodIssuePath(pathSegments) {
+  return pathSegments.map((segment, index) => typeof segment === "number"
+    ? `[${segment}]`
+    : `${index === 0 ? "" : "."}${segment}`).join("");
 }
 
 export function loadF1ArtifactBundle(artifactRoot) {
@@ -125,6 +131,9 @@ export function loadF1ArtifactBundle(artifactRoot) {
     worksheets.push({
       worksheetName: sheet.worksheetName,
       toleranceLoopDescription: worksheet.toleranceLoopDescription,
+      systemSpecification: rootReport.artifactContractVersion === "f1-semantic-v2"
+        ? worksheet.systemSpecification
+        : { status: "unavailable", reasonCode: "legacy_artifact_missing_system_specification" },
       worksheetJsonPath: sheet.jsonPath,
       worksheetMdPath: mdRelative,
       tolerancePathImage,
@@ -144,6 +153,12 @@ export function loadF1ArtifactBundle(artifactRoot) {
     },
     worksheets,
   });
-  if (!parsed.success) return rejected(artifactRoot, [issue("invalid_contract", "Feature1-Report.json")]);
+  if (!parsed.success) {
+    return rejected(artifactRoot, parsed.error.issues.map((zodIssue) => issue(
+      "invalid_contract",
+      "Feature1-Report.json",
+      zodIssuePath(zodIssue.path),
+    )));
+  }
   return { status: "accepted", input: parsed.data };
 }

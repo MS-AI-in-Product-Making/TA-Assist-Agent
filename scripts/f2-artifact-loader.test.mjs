@@ -30,7 +30,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-function createBundle() {
+function createBundle({ artifactContractVersion } = {}) {
   const root = mkdtempSync(path.join(tmpdir(), "f2-artifacts-"));
   roots.push(root);
   const workbookName = "anonymous.xlsx";
@@ -53,6 +53,15 @@ function createBundle() {
     workbook: { fileName: workbookName, contentHash: workbookHash },
     worksheetName: "Analysis-A",
     toleranceLoopDescription: "Anonymous device gap",
+    ...(artifactContractVersion === "f1-semantic-v2" ? {
+      systemSpecification: {
+        status: "available",
+        lowerSpecLimit: { status: "available", actualValue: -0.15, displayValue: "-0.15", sourceLabel: "*Lower Spec Limit ►", sourceCell: "Analysis-A!P54", valueOrigin: "numeric_literal" },
+        upperSpecLimit: { status: "available", actualValue: 0.05, displayValue: "0.05", sourceLabel: "*Upper Spec Limit ►", sourceCell: "Analysis-A!P55", valueOrigin: "numeric_literal" },
+        targetSigmaLevel: { status: "available", actualValue: 3, displayValue: "3", sourceLabel: "*Target σ Level ►", sourceCell: "Analysis-A!P56", valueOrigin: "numeric_literal" },
+        additionalMeanShift: { status: "available", actualValue: 0, displayValue: "0", sourceLabel: "Additional Mean Shift", valueOrigin: "defaulted" },
+      },
+    } : {}),
     factorTables: [{
       tableId: "table-a",
       headerRow: 1,
@@ -66,6 +75,7 @@ function createBundle() {
   writeFileSync(path.join(root, "Feature1-Report.md"), "# Feature 1\n");
   writeFileSync(path.join(root, "Feature1-Report.json"), JSON.stringify({
     contractVersion: "v1",
+    ...(artifactContractVersion ? { artifactContractVersion } : {}),
     feature: "F1",
     generatedAt: "2026-08-03T00:00:00.000Z",
     workbooks: [{
@@ -94,8 +104,44 @@ describe("loadF1ArtifactBundle", () => {
       mediaType: "image/png",
     });
     expect(loaded.input.worksheets[0].factorTables[0].rows[0].actualFields).toEqual(actualFields);
+    expect(loaded.input.worksheets[0].systemSpecification).toEqual({
+      status: "unavailable",
+      reasonCode: "legacy_artifact_missing_system_specification",
+    });
     expect(Object.hasOwn(loaded.input, "workbookBytes")).toBe(false);
     expect(Object.hasOwn(loaded.input, "workbookPath")).toBe(false);
+  });
+
+  it("loads v2 system specification into the canonical input", () => {
+    const { root } = createBundle({ artifactContractVersion: "f1-semantic-v2" });
+
+    expect(loadF1ArtifactBundle(root)).toMatchObject({
+      status: "accepted",
+      input: {
+        worksheets: [{
+          systemSpecification: {
+            status: "available",
+            lowerSpecLimit: { actualValue: -0.15 },
+            upperSpecLimit: { actualValue: 0.05 },
+            targetSigmaLevel: { actualValue: 3 },
+          },
+        }],
+      },
+    });
+  });
+
+  it("rejects a v2 artifact without a system specification source label", () => {
+    const { root } = createBundle({ artifactContractVersion: "f1-semantic-v2" });
+    const worksheetPath = path.join(root, "sheets/anonymous.xlsx/json/Analysis-A.json");
+    const worksheet = JSON.parse(readFileSync(worksheetPath, "utf8"));
+    delete worksheet.systemSpecification.lowerSpecLimit.sourceLabel;
+    writeFileSync(worksheetPath, JSON.stringify(worksheet));
+
+    expect(loadF1ArtifactBundle(root).report.artifactIssues).toContainEqual({
+      reasonCode: "invalid_contract",
+      artifactPath: "Feature1-Report.json",
+      issuePath: "worksheets[0].systemSpecification.lowerSpecLimit.sourceLabel",
+    });
   });
 
   it("returns an actionable report when the root Markdown is missing", () => {
@@ -151,6 +197,7 @@ describe("loadF1ArtifactBundle", () => {
     expect(loadF1ArtifactBundle(root).report.artifactIssues).toContainEqual({
       reasonCode: "invalid_contract",
       artifactPath: "Feature1-Report.json",
+      issuePath: "worksheets[0].factorTables[0].rows[0].actualFields.notes",
     });
   });
 });

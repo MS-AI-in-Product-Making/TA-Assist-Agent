@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { createWorkbookCatalog } from "./workbook-catalog.js";
 import { createAnonymousWorkbookZip } from "./test-support.js";
-import { createWorksheetSelectionView } from "./worksheet-selection.js";
+import {
+  createWorksheetSelectionPrompt,
+  createWorksheetSelectionView,
+  validateWorksheetSelectionConfirmation,
+} from "./worksheet-selection.js";
 
 describe("worksheet selection view", () => {
   it("builds a selection-ready worksheet view from a verified workbook catalog", () => {
@@ -47,6 +51,65 @@ describe("worksheet selection view", () => {
     expect(Object.isFrozen(result)).toBe(true);
     expect(Object.isFrozen(result.worksheets)).toBe(true);
     expect(Object.isFrozen(result.worksheets[0]!)).toBe(true);
+
+    const prompt = createWorksheetSelectionPrompt({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbookCatalog: {
+        ...workbookCatalog,
+        analyses: [
+          {
+            ...workbookCatalog.analyses[0]!,
+            worksheetName: "Example_TA",
+            source: { summarySheet: "Auto Summary", summaryRow: 10, worksheetAnchor: "Example_TA!A1" },
+          },
+          workbookCatalog.analyses[1]!,
+        ],
+      },
+    });
+    expect(prompt.status).toBe("selectionRequired");
+    expect(prompt.options.map((option) => ({ name: option.worksheetName, kind: option.worksheetKind }))).toEqual([
+      { name: "Example_TA", kind: "example_or_template" },
+      { name: "Analysis-B", kind: "analysis" },
+    ]);
+    expect(Object.isFrozen(prompt.options)).toBe(true);
+
+    expect(validateWorksheetSelectionConfirmation({
+      prompt,
+      confirmation: {
+        workbookContentHash: workbookCatalog.workbook.contentHash,
+        selectedWorksheetNames: ["Analysis-B"],
+        confirmed: true,
+      },
+    })).toEqual({
+      status: "confirmed",
+      workbookContentHash: workbookCatalog.workbook.contentHash,
+      selectedWorksheetNames: ["Analysis-B"],
+    });
+    expect(validateWorksheetSelectionConfirmation({
+      prompt,
+      confirmation: {
+        workbookContentHash: workbookCatalog.workbook.contentHash,
+        selectedWorksheetNames: [],
+        confirmed: true,
+      },
+    })).toEqual({ status: "cancelled", reasonCode: "worksheet_selection_empty" });
+    expect(validateWorksheetSelectionConfirmation({
+      prompt,
+      confirmation: {
+        workbookContentHash: "f".repeat(64),
+        selectedWorksheetNames: ["Analysis-B"],
+        confirmed: true,
+      },
+    })).toEqual({ status: "rejected", reasonCode: "stale_worksheet_selection" });
+    expect(validateWorksheetSelectionConfirmation({
+      prompt,
+      confirmation: {
+        workbookContentHash: workbookCatalog.workbook.contentHash,
+        selectedWorksheetNames: ["Unknown"],
+        confirmed: true,
+      },
+    })).toEqual({ status: "rejected", reasonCode: "invalid_worksheet_selection" });
   });
 
   it("denies non-confidential input before processing catalog content", () => {

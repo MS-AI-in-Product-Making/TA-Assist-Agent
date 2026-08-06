@@ -1,3 +1,5 @@
+import path from "node:path";
+
 function mdEscape(value) {
   return String(value ?? "").replace(/\|/g, "\\|").replace(/\r?\n/g, "<br>");
 }
@@ -6,9 +8,26 @@ function actualValue(value) {
   return value === null || value === undefined ? "—" : mdEscape(value);
 }
 
-function imageLink(value, imageTarget) {
+function imageHref(artifactRoot, outputRoot, imageReference) {
+  if (!imageReference) return undefined;
+  return path.relative(path.resolve(outputRoot), path.resolve(artifactRoot, imageReference.relativePath)).split(path.sep).join("/");
+}
+
+function imageLink(value, href) {
   const label = actualValue(value);
-  return imageTarget ? `[${label}](${imageTarget.relativePath})` : label;
+  return href ? `[${label}](${href})` : label;
+}
+
+function specificationValue(evidence) {
+  return evidence?.status === "available" ? mdEscape(evidence.displayValue) : "（缺失或无效）";
+}
+
+function specificationSource(evidence) {
+  return evidence?.sourceCell ? mdEscape(evidence.sourceCell) : "—";
+}
+
+function specificationLabel(evidence) {
+  return evidence?.status === "available" ? mdEscape(evidence.sourceLabel) : "（缺失或无效）";
 }
 
 const fieldLabels = { factorName: "Factor Description", partName: "Part Name", partCategory: "Part Category", nominalValue: "Design Nominal", upperTolerance: "+ Tolerance", lowerTolerance: "- Tolerance", longTermSafetyFactor: "Long Term/Safety Factor", standardDeviation: "Sigma Level", distribution: "Distribution", tolerancePathImage: "截面图" };
@@ -29,7 +48,8 @@ function renderRejected(report) {
   return lines.join("\n");
 }
 
-export function renderF2Report(report) {
+export function renderF2Report(report, { outputRoot } = {}) {
+  if (typeof outputRoot !== "string" || outputRoot.length === 0) throw new Error("F2 report outputRoot is required.");
   if (report.status === "inputRejected") return renderRejected(report);
   const needsCorrection = report.status !== "completed";
   const lines = [
@@ -57,10 +77,21 @@ export function renderF2Report(report) {
 
   for (const worksheet of report.worksheets) {
     lines.push(`### ${mdEscape(worksheet.worksheetName)}`, "", `状态：${worksheet.status === "blocked" ? "需要修改" : "可继续"}；截面图：${worksheet.tolerancePathImageStatus === "available" ? "已提供" : "（缺失）"}`, "");
+    const specification = worksheet.systemSpecification;
+    const handoff = report.f4Handoffs.find((candidate) => candidate.worksheetName === worksheet.worksheetName);
+    lines.push("#### 系统规格", "", "| 规格 | 值 | Source cell |", "|---|---:|---|",
+      `| ${specificationLabel(specification.lowerSpecLimit)} | ${specificationValue(specification.lowerSpecLimit)} | ${specificationSource(specification.lowerSpecLimit)} |`,
+      `| ${specificationLabel(specification.upperSpecLimit)} | ${specificationValue(specification.upperSpecLimit)} | ${specificationSource(specification.upperSpecLimit)} |`,
+      `| ${specificationLabel(specification.targetSigmaLevel)} | ${specificationValue(specification.targetSigmaLevel)} | ${specificationSource(specification.targetSigmaLevel)} |`,
+      `| ${specificationLabel(specification.additionalMeanShift)} | ${specificationValue(specification.additionalMeanShift)} | ${specificationSource(specification.additionalMeanShift)} |`,
+      "",
+      `规格校验：${worksheet.systemSpecificationIssues.length === 0 ? "通过" : "阻塞"}；${handoff ? `F4 handoff：${handoff.status}` : "未生成 F4 handoff"}`,
+      "");
     lines.push("| Row | Factor Description | Part Name | Drawing Number | DIM ID | Part Category | Design Nominal | + Tolerance | - Tolerance | Long Term/Safety Factor | Sigma Level | Distribution | Mean | Tolerance | One Sigma | % Contribution to Sigma | Notes | 能力库结果 | 知识库推荐 |", "|---:|---|---|---|---|---|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---|---|---|");
     for (const row of worksheet.rows) {
       const fields = row.actualFields;
-      lines.push(`| ${row.sourceRow} | ${imageLink(fields.factorName, row.imageTarget)} | ${imageLink(fields.partName, row.imageTarget)} | ${actualValue(fields.drawingNumber)} | ${actualValue(fields.dimCharacteristicId)} | ${actualValue(fields.partCategory)} | ${actualValue(fields.nominalValue)} | ${actualValue(fields.upperTolerance)} | ${actualValue(fields.lowerTolerance)} | ${actualValue(fields.longTermSafetyFactor)} | ${actualValue(fields.sigmaLevel)} | ${actualValue(fields.distribution)} | ${actualValue(fields.mean)} | ${actualValue(fields.tolerance)} | ${actualValue(fields.oneSigma)} | ${actualValue(fields.percentContributionToSigma)} | ${actualValue(fields.notes)} | ${mdEscape(capabilityLabels[row.capabilityStatus] ?? row.capabilityStatus)} | ${mdEscape(recommendationText(row))} |`);
+      const href = imageHref(report.artifactRoot, outputRoot, row.imageReference);
+      lines.push(`| ${row.sourceRow} | ${imageLink(fields.factorName, href)} | ${imageLink(fields.partName, href)} | ${actualValue(fields.drawingNumber)} | ${actualValue(fields.dimCharacteristicId)} | ${actualValue(fields.partCategory)} | ${actualValue(fields.nominalValue)} | ${actualValue(fields.upperTolerance)} | ${actualValue(fields.lowerTolerance)} | ${actualValue(fields.longTermSafetyFactor)} | ${actualValue(fields.sigmaLevel)} | ${actualValue(fields.distribution)} | ${actualValue(fields.mean)} | ${actualValue(fields.tolerance)} | ${actualValue(fields.oneSigma)} | ${actualValue(fields.percentContributionToSigma)} | ${actualValue(fields.notes)} | ${mdEscape(capabilityLabels[row.capabilityStatus] ?? row.capabilityStatus)} | ${mdEscape(recommendationText(row))} |`);
     }
     if (worksheet.rows.length === 0) lines.push(`| ${Array.from({ length: 19 }, (_, index) => index === 17 ? "无 factor" : "—").join(" | ")} |`);
     lines.push("");

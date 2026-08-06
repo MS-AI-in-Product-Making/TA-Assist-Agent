@@ -10,7 +10,9 @@ import {
   type WorksheetImageReadResult,
 } from "@ai-assist/contracts";
 import { unzipSync } from "fflate";
+import { resolveFactorHeaderCluster, type FactorFieldName } from "./factor-header-resolver.js";
 import { readOoxmlWorkbook, type OoxmlCell, type OoxmlWorksheet } from "./ooxml-reader.js";
+import { extractResponseSummarySystemSpecification } from "./response-summary.js";
 
 const REQUEST_SUMMARY = "Worksheet-analysis assets request is invalid.";
 const POLICY_SUMMARY = "Worksheet-analysis assets input is not permitted.";
@@ -18,25 +20,13 @@ const ARCHIVE_SUMMARY = "Worksheet-analysis assets archive cannot be processed."
 const CELL_REFERENCE = /^([A-Z]+)([1-9]\d*)$/;
 
 const HEADER_ALIASES = {
-  factorName: ["factor", "factor name", "factor description", "factor description (ta loop)"],
-  partName: ["part name"],
-  partCategory: ["part category"],
-  nominalValue: ["nominal", "nominal value", "design nominal"],
-  upperTolerance: ["upper tol", "upper tolerance", "+ tolerance", "+ tolerence"],
-  lowerTolerance: ["lower tol", "lower tolerance", "- tolerance", "- tolerence"],
-  longTermSafetyFactor: ["long term factor", "safety factor", "long term/safety factor"],
   upperSpecificationLimit: ["usl", "upper spec limit"],
   lowerSpecificationLimit: ["lsl", "lower spec limit"],
   unit: ["unit"],
-  distribution: ["distribution"],
-  drawingNumber: ["drawing number"],
   partNumber: ["part number", "part no", "part no.", "pn"],
-  dimCharacteristicId: ["dim id", "characteristic id", "dim/characteristic id"],
   assumption: ["assumption"],
   contribution: ["contribution"],
   sensitivity: ["sensitivity"],
-  mean: ["mean"],
-  standardDeviation: ["standard deviation", "sigma", "sigma level", "σ level"],
   cpk: ["cpk"],
   assemblyDirection: ["assembly direction"],
 } as const;
@@ -46,14 +36,14 @@ const TOLERANCE_PATH_LABELS = new Set([
   "include the tolerance path (screenshot) below",
 ]);
 const TOLERANCE_PATH_MEDIA_TYPES = new Set(["image/png", "image/jpeg"]);
-const F1_ANALYSIS_CELL_WINDOW = { maxRow: 260, maxColumn: "Z" } as const;
+const EXCEL_WORKSHEET_CELL_WINDOW = { maxRow: 10_000, maxColumn: "XFD" } as const;
 
-type FieldName = keyof typeof HEADER_ALIASES;
+type FieldName = FactorFieldName | keyof typeof HEADER_ALIASES;
 type Column = { readonly semanticField: FieldName; readonly sourceColumn: string; readonly headerText: string };
 type TolerancePathImageEvidence =
   | { readonly status: "available"; readonly labelSourceCell: string; readonly imageContentHash: string; readonly imageAnchor: { readonly from: string; readonly to: string } }
   | { readonly status: "unavailable"; readonly reasonCode: "label_missing" | "label_ambiguous" | "image_missing" | "unsupported_media_type" | "unparsed_anchor" | "worksheet_unavailable"; readonly labelSourceCell?: string };
-const NUMERIC_FIELDS = new Set<FieldName>(["nominalValue", "upperTolerance", "lowerTolerance", "longTermSafetyFactor", "upperSpecificationLimit", "lowerSpecificationLimit", "contribution", "sensitivity", "mean", "standardDeviation", "cpk"]);
+const NUMERIC_FIELDS = new Set<FieldName>(["nominalValue", "upperTolerance", "lowerTolerance", "longTermSafetyFactor", "upperSpecificationLimit", "lowerSpecificationLimit", "contribution", "sensitivity", "mean", "tolerance", "oneSigma", "percentContributionToSigma", "standardDeviation", "cpk"]);
 const USER_INPUT_FIELDS = new Set<FieldName>([
   "factorName", "partName", "drawingNumber", "partNumber", "dimCharacteristicId", "partCategory",
   "nominalValue", "upperTolerance", "lowerTolerance", "longTermSafetyFactor",
@@ -155,13 +145,15 @@ function field(cell: OoxmlCell | undefined, worksheetName: string, semanticField
   if (cell.formula && !cell.cachedValue?.trim()) return { status: "unavailable" as const, reasonCode: "missing_cached_value" as const, sourceCell };
   const rawText = cellValue(cell);
   if (!rawText.trim()) return { status: "unavailable" as const, reasonCode: "missing" as const, sourceCell };
-  const parsed = /^([+-]?(?:\d+(?:\.\d+)?|\.\d+))(?:\s+([^\s]+))?$/.exec(rawText.trim());
-  if (NUMERIC_FIELDS.has(semanticField) && !parsed) return { status: "unavailable" as const, reasonCode: "invalid_format" as const, sourceCell };
+  const parsed = /^([+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?)(?:\s+([^\s]+))?$/.exec(rawText.trim());
+  const numericValue = parsed ? Number(parsed[1]) : undefined;
+  const hasFiniteNumericValue = numericValue !== undefined && Number.isFinite(numericValue);
+  if (NUMERIC_FIELDS.has(semanticField) && !hasFiniteNumericValue) return { status: "unavailable" as const, reasonCode: "invalid_format" as const, sourceCell };
   return {
     status: "available" as const,
     rawText,
     sourceCell: sourceCell!,
-    ...(parsed ? { numericValue: Number(parsed[1]), ...(parsed[2] ? { unit: parsed[2] } : {}) } : {}),
+    ...(hasFiniteNumericValue ? { numericValue, ...(parsed?.[2] ? { unit: parsed[2] } : {}) } : {}),
     ...(cell.formula ? { formula: cell.formula, cachedValue: cell.cachedValue! } : {}),
   };
 }
@@ -181,13 +173,16 @@ function sheetAssets(worksheet: OoxmlWorksheet, worksheetName: string, tolerance
   const tableFormulaReferences = new Set<string>();
   for (const [headerRow, rowCells] of [...rows.entries()].sort(([left], [right]) => left - right)) {
     const mapped = new Map<FieldName, Column[]>();
+    const factorResolution = resolveFactorHeaderCluster(rowCells.map((cell) => ({ reference: cell.reference, value: cell.value })));
+    if (factorResolution.status !== "resolved") continue;
+    for (const column of Object.values(factorResolution.columns)) {
+      if (column) mapped.set(column.semanticField, [column]);
+    }
     for (const cell of rowCells) {
       const location = address(cell.reference)!;
-      const semanticField = (Object.keys(HEADER_ALIASES) as FieldName[]).find((name) => HEADER_ALIASES[name].includes(normalize(cell.value) as never));
+      const semanticField = (Object.keys(HEADER_ALIASES) as (keyof typeof HEADER_ALIASES)[]).find((name) => HEADER_ALIASES[name].includes(normalize(cell.value) as never));
       if (semanticField) mapped.set(semanticField, [...(mapped.get(semanticField) ?? []), { semanticField, sourceColumn: location.column, headerText: cell.value }]);
     }
-    const factorColumns = mapped.get("factorName");
-    if (!factorColumns || factorColumns.length !== 1) continue;
     const columns = [...mapped.values()].flatMap((candidates) => candidates.length === 1 ? candidates : []);
     const inputColumns = columns.filter((column) => USER_INPUT_FIELDS.has(column.semanticField));
     const dataRows: unknown[] = [];
@@ -236,6 +231,7 @@ function sheetAssets(worksheet: OoxmlWorksheet, worksheetName: string, tolerance
   return {
     worksheetName,
     toleranceLoopDescription,
+    systemSpecification: extractResponseSummarySystemSpecification(worksheetName, worksheet.cells),
     factorTables,
     formulaCells,
     imageAssets,
@@ -264,10 +260,10 @@ async function processWorksheetPage(
     let worksheet: OoxmlWorksheet | undefined;
     let imageFallback = false;
     try {
-      worksheet = readOoxmlWorkbook(workbookBytes, [analysis.worksheetName], true, F1_ANALYSIS_CELL_WINDOW).worksheets.get(analysis.worksheetName);
+      worksheet = readOoxmlWorkbook(workbookBytes, [analysis.worksheetName], true, EXCEL_WORKSHEET_CELL_WINDOW).worksheets.get(analysis.worksheetName);
     } catch {
       // Keep a worksheet independently reviewable even when embedded media is malformed.
-      worksheet = readOoxmlWorkbook(workbookBytes, [analysis.worksheetName], false, F1_ANALYSIS_CELL_WINDOW).worksheets.get(analysis.worksheetName);
+      worksheet = readOoxmlWorkbook(workbookBytes, [analysis.worksheetName], false, EXCEL_WORKSHEET_CELL_WINDOW).worksheets.get(analysis.worksheetName);
       imageFallback = true;
     }
     if (!worksheet) throw assetsError(REQUEST_SUMMARY, "workbook-catalog");
@@ -295,6 +291,7 @@ async function processWorksheetPage(
       worksheetAsset: {
         worksheetName: analysis.worksheetName,
         toleranceLoopDescription: analysis.toleranceLoopDescription,
+        systemSpecification: { status: "unavailable", reasonCode: "response_summary_label_missing" },
         factorTables: [],
         formulaCells: [],
         imageAssets: [],
@@ -348,7 +345,7 @@ export function createWorksheetAnalysisAssets(request: unknown): WorksheetAnalys
       workbookCatalog: parsed.data.workbookCatalog,
       worksheetSelection: parsed.data.worksheetSelection,
     });
-    const workbook = readOoxmlWorkbook(parsed.data.workbookBytes, analyses.map((analysis) => analysis.worksheetName), true, F1_ANALYSIS_CELL_WINDOW);
+    const workbook = readOoxmlWorkbook(parsed.data.workbookBytes, analyses.map((analysis) => analysis.worksheetName), true, EXCEL_WORKSHEET_CELL_WINDOW);
     const worksheets = analyses.map((analysis) => {
       const worksheet = workbook.worksheets.get(analysis.worksheetName);
       if (!worksheet) throw assetsError(REQUEST_SUMMARY, "workbook-catalog");
