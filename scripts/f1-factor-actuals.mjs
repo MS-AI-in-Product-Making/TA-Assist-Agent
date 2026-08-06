@@ -1,33 +1,25 @@
-const FACTOR_COLUMNS = Object.freeze({
-  factorName: "E",
-  partName: "F",
-  drawingNumber: "G",
-  dimCharacteristicId: "H",
-  partCategory: "I",
-  nominalValue: "J",
-  upperTolerance: "K",
-  lowerTolerance: "L",
-  longTermSafetyFactor: "M",
-  sigmaLevel: "N",
-  distribution: "O",
-  mean: "P",
-  tolerance: "Q",
-  oneSigma: "R",
-  percentContributionToSigma: "S",
-  notes: "T",
+const ACTUAL_FIELD_BY_SEMANTIC_FIELD = Object.freeze({
+  factorName: "factorName",
+  partName: "partName",
+  drawingNumber: "drawingNumber",
+  dimCharacteristicId: "dimCharacteristicId",
+  partCategory: "partCategory",
+  nominalValue: "nominalValue",
+  upperTolerance: "upperTolerance",
+  lowerTolerance: "lowerTolerance",
+  longTermSafetyFactor: "longTermSafetyFactor",
+  sigmaLevel: "standardDeviation",
+  distribution: "distribution",
+  mean: "mean",
+  tolerance: "tolerance",
+  oneSigma: "oneSigma",
+  percentContributionToSigma: "percentContributionToSigma",
+  notes: "notes",
 });
 
-function actualValue(cell) {
-  if (!cell || cell.t === "e" || cell.v === undefined || cell.v === null) return null;
-  if (typeof cell.v === "number") {
-    return Number.isFinite(cell.v) ? Number(cell.v.toPrecision(15)) : null;
-  }
-  const value = String(cell.v).trim();
-  return value.length === 0 ? null : value;
-}
-
-export function extractFactorActualFields(worksheet, sourceRow) {
-  return Object.fromEntries(Object.entries(FACTOR_COLUMNS).map(
-    ([fieldName, sourceColumn]) => [fieldName, actualValue(worksheet?.[`${sourceColumn}${sourceRow}`])],
-  ));
+export function projectFactorActualFields(fields) {
+  return Object.fromEntries(Object.entries(ACTUAL_FIELD_BY_SEMANTIC_FIELD).map(([targetField, semanticField]) => {
+    const field = fields?.[semanticField];
+    return [targetField, field?.status === "available" ? field.actualValue : null];
+  }));
 }

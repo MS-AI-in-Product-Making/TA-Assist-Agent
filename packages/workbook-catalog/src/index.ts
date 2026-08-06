@@ -1,6 +1,8 @@
 export { readOoxmlWorkbook } from "./ooxml-reader.js";
 export { readSafeZip } from "./zip-security.js";
 export { createWorkbookCatalog } from "./workbook-catalog.js";
+export { FACTOR_FIELD_ORDER, resolveFactorHeaderCluster } from "./factor-header-resolver.js";
+export type { FactorFieldName, FactorHeaderResolution, HeaderCell, ResolvedHeaderColumn } from "./factor-header-resolver.js";
 export { createWorksheetSelectionPrompt, createWorksheetSelectionView, validateWorksheetSelectionConfirmation } from "./worksheet-selection.js";
 export { createWorksheetAnalysisAssets, createWorksheetAnalysisAssetsParallel, readWorksheetImageAsset } from "./worksheet-analysis-assets.js";
 export { createSemanticTableDetection } from "./semantic-table-detection.js";

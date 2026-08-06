@@ -18,7 +18,7 @@ function largeWorksheetWorkbook(): Uint8Array {
   const firstDataRow = '<row r="6"><c r="A6" t="inlineStr"><is><t>region-factor</t></is></c><c r="B6"><v>1.25</v></c><c r="C6" t="inlineStr"><is><t>mm</t></is></c></row>';
   let fillerRows = "";
   for (let row = 300; row <= 999; row += 1) {
-    fillerRows += `<row r="${row}"><c r="A${row}"><v>1</v></c><c r="B${row}"><v>2</v></c><c r="C${row}"><v>3</v></c><c r="D${row}"><v>4</v></c><c r="E${row}"><v>5</v></c><c r="F${row}"><v>6</v></c><c r="G${row}"><v>7</v></c><c r="H${row}"><v>8</v></c><c r="I${row}"><v>9</v></c><c r="J${row}"><v>10</v></c><c r="K${row}"><v>11</v></c><c r="L${row}"><v>12</v></c><c r="M${row}"><v>13</v></c><c r="N${row}"><v>14</v></c><c r="O${row}"><v>15</v></c></row>`;
+    fillerRows += `<row r="${row}"><c r="AA${row}"><v>1</v></c></row>`;
   }
   const analysisSheet = `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${header}${firstDataRow}${fillerRows}</sheetData></worksheet>`;
   return createAnonymousWorkbookZip({ xmlParts: { "xl/worksheets/sheet3.xml": analysisSheet } });
@@ -281,7 +281,7 @@ describe("worksheet analysis assets", () => {
     expect(parallelResult.assets).toEqual(syncResult);
   });
 
-  it("extracts factor tables from large worksheets by reading only the analysis window", async () => {
+  it("extracts factor tables from sparse worksheets beyond the legacy analysis window", async () => {
     const workbookBytes = largeWorksheetWorkbook();
     const contentHash = createHash("sha256").update(workbookBytes).digest("hex");
     const request = {
@@ -571,7 +571,7 @@ describe("worksheet analysis assets", () => {
     expect(result.worksheets[0]!.factorTables[0]!.rows[0]!.fields.factorName).toMatchObject({ status: "available", rawText: "tp-loop-factor" });
   });
 
-  it("marks duplicate long-term/safety factor columns unavailable and retains zero-row tables", () => {
+  it("fails closed for duplicate factor headers and retains independent zero-row tables", () => {
     const workbookBytes = createAnonymousWorkbookZip({ xmlParts: {
       "xl/worksheets/sheet3.xml": '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Factor</t></is></c><c r="B1" t="inlineStr"><is><t>Safety Factor</t></is></c><c r="C1" t="inlineStr"><is><t>Long Term Factor</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>anonymous-factor</t></is></c><c r="B2"><v>1.5</v></c><c r="C2"><v>2</v></c></row><row r="5"><c r="D5" t="inlineStr"><is><t>Factor</t></is></c></row></sheetData></worksheet>',
     } });
@@ -581,8 +581,7 @@ describe("worksheet analysis assets", () => {
       workbookCatalog: { contractVersion: "v1", workbook: { fileName: "anonymous.xlsx", classification: "confidential", contentHash, metadata: { documentNo: "DOC", revision: "R", date: { value: "2026-07-27", sourceCell: "Title Page!A1" } } }, analyses: [{ worksheetName: "Analysis-A", toleranceLoopDescription: "anonymous", source: { summarySheet: "Auto Summary", summaryRow: 1, worksheetAnchor: "Analysis-A!A1" } }] },
     });
 
-    expect(result.worksheets[0]!.factorTables).toHaveLength(2);
-    expect(result.worksheets[0]!.factorTables[0]!.rows[0]!.fields.longTermSafetyFactor).toEqual({ status: "unavailable", reasonCode: "duplicate_mapping" });
-    expect(result.worksheets[0]!.factorTables[1]).toMatchObject({ headerRow: 5, dataRange: { startRow: 6, endRow: 6 }, rows: [] });
+    expect(result.worksheets[0]!.factorTables).toHaveLength(1);
+    expect(result.worksheets[0]!.factorTables[0]).toMatchObject({ headerRow: 5, dataRange: { startRow: 6, endRow: 6 }, rows: [] });
   });
 });
