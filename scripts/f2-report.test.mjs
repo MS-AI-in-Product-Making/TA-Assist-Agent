@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import path from "node:path";
 import { renderF2Report } from "./f2-report.mjs";
 
 function actualFields(overrides = {}) {
@@ -26,21 +27,23 @@ function actualFields(overrides = {}) {
 function systemSpecification(worksheetName = "Analysis-A") {
   return {
     status: "available",
-    lowerSpecLimit: { status: "available", actualValue: -0.15, displayValue: "-0.15", sourceCell: `${worksheetName}!P54`, valueOrigin: "numeric_literal" },
-    upperSpecLimit: { status: "available", actualValue: 0.05, displayValue: "0.05", sourceCell: `${worksheetName}!P55`, valueOrigin: "numeric_literal" },
-    targetSigmaLevel: { status: "available", actualValue: 3, displayValue: "3.0σ", sourceCell: `${worksheetName}!P56`, valueOrigin: "numeric_literal" },
-    additionalMeanShift: { status: "available", actualValue: 0, displayValue: "0", valueOrigin: "defaulted" },
+    lowerSpecLimit: { status: "available", actualValue: -0.15, displayValue: "-0.15", sourceLabel: "*Lower Spec Limit ►", sourceCell: `${worksheetName}!P54`, valueOrigin: "numeric_literal" },
+    upperSpecLimit: { status: "available", actualValue: 0.05, displayValue: "0.05", sourceLabel: "*Upper Spec Limit ►", sourceCell: `${worksheetName}!P55`, valueOrigin: "numeric_literal" },
+    targetSigmaLevel: { status: "available", actualValue: 3, displayValue: "3.0σ", sourceLabel: "*Target σ Level ►", sourceCell: `${worksheetName}!P56`, valueOrigin: "numeric_literal" },
+    additionalMeanShift: { status: "available", actualValue: 0, displayValue: "0", sourceLabel: "Additional Mean Shift", valueOrigin: "defaulted" },
   };
 }
 
 describe("renderF2Report", () => {
   it("renders one readable enhanced row without internal issue terminology", () => {
+    const artifactRoot = path.join("C:\\", "runs", "run-1", "f1");
+    const outputRoot = path.join("C:\\", "runs", "run-1", "f2");
     const markdown = renderF2Report({
       status: "blocked",
       workbook: { fileName: "Demo|Book.xlsx", contentHash: "a".repeat(64), f1GeneratedAt: "2026-08-03T00:00:00.000Z" },
       knowledgeBaseVersions: ["v1", "internal-v1"],
       mappingRuleVersion: "v1",
-      artifactRoot: "test/demo-output/feature1-output/Demo",
+      artifactRoot,
       summary: { worksheetsChecked: 1, blockedWorksheetCount: 1, readyWorksheetCount: 0, factorRowCount: 1, rowsWithRequiredMissing: 1, requiredMissingFieldCount: 2, missingImageWorksheetCount: 0, internalWithinGuidanceCount: 0, internalGuidanceExceededCount: 0, f0InformationInsufficientCount: 0, publicLibraryMatchCount: 0, nonF0ProcessCategoryCount: 0, unableToCheckCount: 1, publicToleranceDifferenceCount: 0, publicDistributionDifferenceCount: 0, missingDimIdCount: 1, missingPartNumberCount: 1 },
       worksheets: [{
         worksheetName: "A|B",
@@ -55,25 +58,25 @@ describe("renderF2Report", () => {
         rows: [{
           sourceRow: 2,
           actualFields: actualFields(),
-          imageTarget: { relativePath: `images/${"b".repeat(64)}.png`, contentHash: "b".repeat(64) },
+          imageReference: { artifact: "f1", relativePath: "sheets/Demo/images/Analysis-A.png", contentHash: "b".repeat(64), worksheetName: "A|B" },
           capabilityStatus: "unable_to_check",
         }],
       }],
       f4Handoffs: [],
       adoEvents: [{ eventType: "adoReminderRequested", category: "demo", worksheetName: "A|B", missingFields: ["dimCharacteristicId", "partNumber"], factorRows: [2] }],
-    });
+    }, { outputRoot });
 
     for (const heading of ["执行摘要", "缺失字段统计", "增强 Raw Data", "能力库结果", "知识库推荐", "标识符提醒清单", "待触发"]) {
       expect(markdown).toContain(heading);
     }
     expect(markdown).toContain("请修正 TA Excel 源文件并重新运行 F1");
     expect(markdown).toContain("系统规格");
-    expect(markdown).toContain("Target σ");
+    expect(markdown).toContain("*Target σ Level ►");
     expect(markdown).toContain("A\\|B!P56");
     expect(markdown).toContain("未生成 F4 handoff");
     expect(markdown).toContain("Demo\\|Book.xlsx");
-    expect(markdown).toContain(`[left\\|right](images/${"b".repeat(64)}.png)`);
-    expect(markdown).toContain(`[—](images/${"b".repeat(64)}.png)`);
+    expect(markdown).toContain("[left\\|right](../f1/sheets/Demo/images/Analysis-A.png)");
+    expect(markdown).toContain("[—](../f1/sheets/Demo/images/Analysis-A.png)");
     expect(markdown).toContain("| — | 0.2 | -0.2 | 1 | 4 | Normal | 3.145 | 0.2 | 0.05 | 12.5 | — |");
     expect(markdown.split("\n").filter((line) => line.includes("left\\|right"))).toHaveLength(1);
     expect(markdown).not.toContain("displayedFields");
@@ -92,12 +95,12 @@ describe("renderF2Report", () => {
       f4Handoffs: [{ status: "ready", worksheetName: "Analysis-A" }],
       adoEvents: [],
     };
-    const markdown = renderF2Report(report);
+    const markdown = renderF2Report(report, { outputRoot: "artifacts/f2" });
     expect(markdown).toContain("F0 内部指导-符合");
     expect(markdown).toContain("最大总公差带 0.2 mm · internal-v1 · cnc-linear-6");
-    expect(markdown).toContain("LSL");
+    expect(markdown).toContain("*Lower Spec Limit ►");
     expect(markdown).toContain("-0.15");
-    expect(markdown).toContain("USL");
+    expect(markdown).toContain("*Upper Spec Limit ►");
     expect(markdown).toContain("0.05");
     expect(markdown).toContain("3.0σ");
     expect(markdown).toContain("F4 handoff：ready");
@@ -110,7 +113,7 @@ describe("renderF2Report", () => {
       status: "inputRejected",
       artifactRoot: "test/demo-output/feature1-output/Demo",
       artifactIssues: [{ reasonCode: "root_md_missing", artifactPath: "Feature1-Report.md" }],
-    });
+    }, { outputRoot: "test/demo-output/feature2-output/Demo" });
 
     expect(markdown).toContain("F1 输出不完整");
     expect(markdown).toContain("Feature1-Report.md");
