@@ -64,12 +64,13 @@ function hasAvailableValue(field: ArtifactField | undefined): boolean {
   return typeof field.actualValue === "number" || field.actualValue.trim().length > 0;
 }
 
-function imageTarget(worksheet: F2ArtifactInput["worksheets"][number]): { relativePath: string; contentHash: string } | undefined {
+function imageReference(worksheet: F2ArtifactInput["worksheets"][number]): { artifact: "f1"; relativePath: string; contentHash: string; worksheetName: string } | undefined {
   if (worksheet.tolerancePathImage.status !== "available") return undefined;
-  const extension = worksheet.tolerancePathImage.mediaType === "image/png" ? "png" : "jpg";
   return {
-    relativePath: `images/${worksheet.tolerancePathImage.contentHash}.${extension}`,
+    artifact: "f1",
+    relativePath: worksheet.tolerancePathImage.imagePath,
     contentHash: worksheet.tolerancePathImage.contentHash,
+    worksheetName: worksheet.worksheetName,
   };
 }
 
@@ -126,7 +127,7 @@ export function createF2UserReport(
   const eventGroups = new Map<string, { category: string; worksheetName: string; missingFields: Set<"dimCharacteristicId" | "partNumber">; factorRows: number[] }>();
 
   const worksheets = artifact.worksheets.map((worksheet) => {
-    const worksheetImageTarget = imageTarget(worksheet);
+    const worksheetImageReference = imageReference(worksheet);
     const rows = worksheet.factorTables.flatMap((table) => table.rows.map((row) => {
       const missingRequiredFields = REQUIRED_FIELDS.filter((fieldName) => isMissing(fieldName, row.actualFields));
       const sourceCells = Object.fromEntries(Object.entries(row.fields).flatMap(([fieldName, field]) => field.sourceCell ? [[fieldName, field.sourceCell]] : []));
@@ -159,7 +160,7 @@ export function createF2UserReport(
         sourceRow: row.sourceRow,
         actualFields: row.actualFields,
         sourceCells,
-          ...(worksheetImageTarget === undefined ? {} : { imageTarget: worksheetImageTarget }),
+          ...(worksheetImageReference === undefined ? {} : { imageReference: worksheetImageReference }),
         missingRequiredFields,
         missingIdentifiers,
         ...capability,

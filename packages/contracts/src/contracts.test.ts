@@ -136,7 +136,7 @@ describe("F2 artifact user report contracts", () => {
     sourceRow: 2,
     actualFields,
     sourceCells: { factorName: "Analysis-A!A2" },
-    imageTarget: { relativePath: `images/${"b".repeat(64)}.png`, contentHash: "b".repeat(64) },
+    imageReference: { artifact: "f1", relativePath: "sheets/Demo.xlsx/images/a.png", contentHash: "b".repeat(64), worksheetName: "Analysis-A" },
     missingRequiredFields: [],
     missingIdentifiers: ["dimCharacteristicId", "partNumber"],
     capabilityStatus: "internal_within_guidance",

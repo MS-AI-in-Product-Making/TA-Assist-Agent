@@ -42,10 +42,10 @@ function completeActualFields() {
 function systemSpecification(worksheetName = "Analysis-A") {
   return {
     status: "available" as const,
-    lowerSpecLimit: { status: "available" as const, actualValue: -0.15, displayValue: "-0.15", sourceCell: `${worksheetName}!P54`, valueOrigin: "numeric_literal" as const },
-    upperSpecLimit: { status: "available" as const, actualValue: 0.05, displayValue: "0.05", sourceCell: `${worksheetName}!P55`, valueOrigin: "numeric_literal" as const },
-    targetSigmaLevel: { status: "available" as const, actualValue: 3, displayValue: "3.0σ", sourceCell: `${worksheetName}!P56`, valueOrigin: "numeric_literal" as const },
-    additionalMeanShift: { status: "available" as const, actualValue: 0.01, displayValue: "0.01", sourceCell: `${worksheetName}!P50`, valueOrigin: "formula_cached" as const },
+    lowerSpecLimit: { status: "available" as const, actualValue: -0.15, displayValue: "-0.15", sourceLabel: "*Lower Spec Limit ►", sourceCell: `${worksheetName}!P54`, valueOrigin: "numeric_literal" as const },
+    upperSpecLimit: { status: "available" as const, actualValue: 0.05, displayValue: "0.05", sourceLabel: "*Upper Spec Limit ►", sourceCell: `${worksheetName}!P55`, valueOrigin: "numeric_literal" as const },
+    targetSigmaLevel: { status: "available" as const, actualValue: 3, displayValue: "3.0σ", sourceLabel: "*Target σ Level ►", sourceCell: `${worksheetName}!P56`, valueOrigin: "numeric_literal" as const },
+    additionalMeanShift: { status: "available" as const, actualValue: 0.01, displayValue: "0.01", sourceLabel: "Additional Mean Shift ►", sourceCell: `${worksheetName}!P50`, valueOrigin: "formula_cached" as const },
   };
 }
 
@@ -122,7 +122,7 @@ describe("createF2UserReport", () => {
     expect(result.worksheets[0]?.rows).toHaveLength(1);
     expect(result.worksheets[0]?.rows[0]).toEqual(expect.objectContaining({
       actualFields: completeActualFields(),
-      imageTarget: { relativePath: `images/${"b".repeat(64)}.png`, contentHash: "b".repeat(64) },
+      imageReference: { artifact: "f1", relativePath: "sheets/anonymous.xlsx/images/a.png", contentHash: "b".repeat(64), worksheetName: "Analysis-A" },
       missingIdentifiers: ["dimCharacteristicId", "partNumber"],
       missingRequiredFields: [],
       capabilityStatus: "in_library_tolerance_and_distribution_differ",
@@ -130,6 +130,7 @@ describe("createF2UserReport", () => {
       recommendation: { kind: "public", toleranceMin: 0.1, toleranceMax: 0.3, unit: "mm", distribution: "normal", capabilityEntryId: "cap-demo-bracket" },
       adoReminderRequested: true,
     }));
+    expect(result.worksheets[0]?.rows[0]).not.toHaveProperty("imageTarget");
     expect(result.adoEvents).toEqual([expect.objectContaining({
       eventType: "adoReminderRequested",
       category: "demo-bracket",

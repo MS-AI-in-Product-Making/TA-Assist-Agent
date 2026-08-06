@@ -3642,9 +3642,11 @@ const f2EnhancedRowSchema = z.object({
   sourceRow: z.number().int().positive(),
   actualFields: f2ActualFieldsSchema,
   sourceCells: z.record(worksheetFieldNameSchema, worksheetSourceCellSchema),
-  imageTarget: z.object({
+  imageReference: z.object({
+    artifact: z.literal("f1"),
     relativePath: relativeArtifactPathSchema,
     contentHash: sha256Schema,
+    worksheetName: z.string().min(1),
   }).strict().optional(),
   missingRequiredFields: z.array(requiredFieldNameSchema),
   missingIdentifiers: z.array(z.enum(["dimCharacteristicId", "partNumber"])),
