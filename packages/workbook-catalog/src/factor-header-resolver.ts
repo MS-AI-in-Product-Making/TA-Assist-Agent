@@ -54,8 +54,8 @@ const HEADER_ALIASES: Readonly<Record<FactorFieldName, readonly string[]>> = {
   distribution: ["distribution"],
   mean: ["mean"],
   tolerance: ["tolerance"],
-  oneSigma: ["1 sigma", "one sigma"],
-  percentContributionToSigma: ["% contribution to sigma", "percent contribution to sigma"],
+  oneSigma: ["1 sigma", "one sigma", "1σ"],
+  percentContributionToSigma: ["% contribution to sigma", "percent contribution to sigma", "% cont. to σ"],
   notes: ["notes", "note"],
 };
 

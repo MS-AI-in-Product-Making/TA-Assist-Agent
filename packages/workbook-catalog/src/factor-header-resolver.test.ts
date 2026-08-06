@@ -47,6 +47,21 @@ describe("resolveFactorHeaderCluster", () => {
     if (result.status === "resolved") expect(result.columns.upperTolerance.sourceColumn).toBe("M");
   });
 
+  it("resolves the workbook's symbolic calculated headers", () => {
+    const cells = cluster(7).map((cell) => {
+      if (cell.value === "1 Sigma") return { ...cell, value: "1σ" };
+      if (cell.value === "% Contribution to Sigma") return { ...cell, value: "% Cont. to σ" };
+      return cell;
+    });
+
+    const result = resolveFactorHeaderCluster(cells);
+
+    expect(result.status).toBe("resolved");
+    if (result.status !== "resolved") return;
+    expect(result.columns.oneSigma).toMatchObject({ semanticField: "oneSigma", sourceColumn: "T", headerText: "1σ" });
+    expect(result.columns.percentContributionToSigma).toMatchObject({ semanticField: "percentContributionToSigma", sourceColumn: "U", headerText: "% Cont. to σ" });
+  });
+
   it("fails closed when the primary anchor is missing", () => {
     expect(resolveFactorHeaderCluster(cluster(7).slice(1))).toEqual({
       status: "unavailable",
