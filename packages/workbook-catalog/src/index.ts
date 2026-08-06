@@ -1,7 +1,7 @@
 export { readOoxmlWorkbook } from "./ooxml-reader.js";
 export { readSafeZip } from "./zip-security.js";
 export { createWorkbookCatalog } from "./workbook-catalog.js";
-export { createWorksheetSelectionView } from "./worksheet-selection.js";
+export { createWorksheetSelectionPrompt, createWorksheetSelectionView, validateWorksheetSelectionConfirmation } from "./worksheet-selection.js";
 export { createWorksheetAnalysisAssets, createWorksheetAnalysisAssetsParallel, readWorksheetImageAsset } from "./worksheet-analysis-assets.js";
 export { createSemanticTableDetection } from "./semantic-table-detection.js";
 export { createRequiredFieldCheck } from "./required-field-check.js";
@@ -45,6 +45,9 @@ export type {
 	WorkbookCatalogResult,
 	WorksheetSelectionViewRequest,
 	WorksheetSelectionViewResult,
+	WorksheetSelectionPrompt,
+	WorksheetSelectionConfirmation,
+	WorksheetSelectionConfirmationResult,
 	WorksheetAnalysisAssetsRequest,
 	WorksheetAnalysisAssetsResult,
 	WorksheetImageReadRequest,

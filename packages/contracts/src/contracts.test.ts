@@ -66,6 +66,9 @@ import {
   worksheetAnalysisAssetsResultSchema,
   worksheetImageReadRequestSchema,
   worksheetImageReadResultSchema,
+  worksheetSelectionConfirmationResultSchema,
+  worksheetSelectionConfirmationSchema,
+  worksheetSelectionPromptSchema,
   worksheetSelectionViewRequestSchema,
   worksheetSelectionViewResultSchema,
   workflowRequestSchema,
@@ -3789,6 +3792,47 @@ describe("worksheet selection view contracts", () => {
   it("accepts confidential worksheet selection view request/result", () => {
     expect(worksheetSelectionViewRequestSchema.parse(request)).toEqual(request);
     expect(worksheetSelectionViewResultSchema.parse(result)).toEqual(result);
+  });
+
+  it("accepts worksheet selection prompt and confirmation contracts", () => {
+    const prompt = {
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      status: "selectionRequired",
+      workbook: { fileName: "anonymous-ta.xlsx", contentHash: "a".repeat(64) },
+      options: [{
+        selectionIndex: 1,
+        worksheetName: "Analysis-A",
+        toleranceLoopDescription: "First tolerance loop",
+        worksheetKind: "analysis",
+        source: { summarySheet: "Auto Summary", summaryRow: 10, worksheetAnchor: "Analysis-A!A1" },
+      }],
+    };
+    const confirmation = {
+      workbookContentHash: "a".repeat(64),
+      selectedWorksheetNames: ["Analysis-A"],
+      confirmed: true,
+    };
+
+    expect(worksheetSelectionPromptSchema.parse(prompt)).toEqual(prompt);
+    expect(worksheetSelectionConfirmationSchema.parse(confirmation)).toEqual(confirmation);
+    expect(worksheetSelectionConfirmationResultSchema.parse({
+      status: "confirmed",
+      workbookContentHash: "a".repeat(64),
+      selectedWorksheetNames: ["Analysis-A"],
+    }).status).toBe("confirmed");
+    expect(worksheetSelectionConfirmationResultSchema.parse({
+      status: "cancelled",
+      reasonCode: "worksheet_selection_empty",
+    }).status).toBe("cancelled");
+  });
+
+  it("rejects duplicate worksheet names in a confirmation", () => {
+    expect(worksheetSelectionConfirmationSchema.safeParse({
+      workbookContentHash: "a".repeat(64),
+      selectedWorksheetNames: ["Analysis-A", "Analysis-A"],
+      confirmed: true,
+    }).success).toBe(false);
   });
 
   it.each([

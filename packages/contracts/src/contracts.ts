@@ -382,6 +382,76 @@ export const worksheetSelectionViewResultSchema = z
 
 const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 
+export const worksheetKindSchema = z.enum(["analysis", "example_or_template"]);
+
+export const worksheetSelectionPromptSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    inputClassification: z.literal("confidential"),
+    status: z.literal("selectionRequired"),
+    workbook: z
+      .object({
+        fileName: workbookCatalogFileNameSchema,
+        contentHash: sha256Schema,
+      })
+      .strict(),
+    options: z
+      .array(
+        z
+          .object({
+            selectionIndex: z.number().int().positive(),
+            worksheetName: z.string().min(1),
+            toleranceLoopDescription: z.string().min(1),
+            worksheetKind: worksheetKindSchema,
+            source: workbookCatalogAnalysisSourceSchema,
+          })
+          .strict(),
+      )
+      .min(1),
+  })
+  .strict()
+  .superRefine((prompt, context) => {
+    const names = prompt.options.map((option) => option.worksheetName);
+    if (new Set(names).size !== names.length) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet option names must be unique", path: ["options"] });
+    }
+  });
+
+export const worksheetSelectionConfirmationSchema = z
+  .object({
+    workbookContentHash: sha256Schema,
+    selectedWorksheetNames: z.array(z.string().min(1)),
+    confirmed: z.literal(true),
+  })
+  .strict()
+  .superRefine((confirmation, context) => {
+    if (new Set(confirmation.selectedWorksheetNames).size !== confirmation.selectedWorksheetNames.length) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet names must be unique", path: ["selectedWorksheetNames"] });
+    }
+  });
+
+export const worksheetSelectionConfirmationResultSchema = z.discriminatedUnion("status", [
+  z
+    .object({
+      status: z.literal("confirmed"),
+      workbookContentHash: sha256Schema,
+      selectedWorksheetNames: z.array(z.string().min(1)).min(1),
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("cancelled"),
+      reasonCode: z.literal("worksheet_selection_empty"),
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("rejected"),
+      reasonCode: z.enum(["stale_worksheet_selection", "invalid_worksheet_selection"]),
+    })
+    .strict(),
+]);
+
 const nonEmptyWorkbookBytesSchema = z.instanceof(Uint8Array).refine(
   (workbookBytes) => workbookBytes.length > 0,
   { message: "workbookBytes must not be empty" },
@@ -3876,6 +3946,9 @@ export type WorkbookCatalogRequest = z.infer<typeof workbookCatalogRequestSchema
 export type WorkbookCatalogResult = z.infer<typeof workbookCatalogResultSchema>;
 export type WorksheetSelectionViewRequest = z.infer<typeof worksheetSelectionViewRequestSchema>;
 export type WorksheetSelectionViewResult = z.infer<typeof worksheetSelectionViewResultSchema>;
+export type WorksheetSelectionPrompt = z.infer<typeof worksheetSelectionPromptSchema>;
+export type WorksheetSelectionConfirmation = z.infer<typeof worksheetSelectionConfirmationSchema>;
+export type WorksheetSelectionConfirmationResult = z.infer<typeof worksheetSelectionConfirmationResultSchema>;
 export type WorksheetAnalysisAssetsRequest = z.infer<typeof worksheetAnalysisAssetsRequestSchema>;
 export type WorksheetAnalysisAssetsResult = z.infer<typeof worksheetAnalysisAssetsResultSchema>;
 export type F2InitialWorkflowRequest = z.infer<typeof f2InitialWorkflowRequestSchema>;
