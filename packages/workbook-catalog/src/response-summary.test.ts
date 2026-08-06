@@ -9,7 +9,7 @@ function cell(reference: string, value: string, formula?: string): OoxmlCell {
 describe("extractResponseSummarySystemSpecification", () => {
   it("extracts only values inside Response Summary and defaults absent mean shift", () => {
     const result = extractResponseSummarySystemSpecification("TP_C_Step_TA", [
-      cell("N50", "Response Summary"),
+      cell("N50", "Response Summary Table"),
       cell("N54", "Lower Spec Limit"), cell("P54", "-0.15"),
       cell("N55", "Upper Spec Limit"), cell("P55", "0.05"),
       cell("N56", "Target σ Level"), cell("P56", "3", "3"),

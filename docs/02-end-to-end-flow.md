@@ -118,8 +118,8 @@ flowchart TB
 | Node | Decision | Branch handling |
 |---|---|---|
 | ADO orchestration | Whether an ADO task is created or linked | ADO is optional. When linked, resolve the owner, return its ID/link, and enable reminders; without ADO, analysis still runs. |
-| Worksheet confirmation | Which worksheets enter the analysis | The user can select one, many, or all detected TA worksheets; cancelling ends the run. |
-| Required fields | Whether nominal, tolerance, safety factor, sigma level, distribution, factor description, and part name are complete | Missing fields block the run until the workbook is corrected and re-uploaded. |
+| Worksheet confirmation | Which worksheets enter the analysis | The prompt returns options and a workbook content hash. The user explicitly confirms one or more worksheets against that hash; a changed workbook makes the confirmation stale and fails closed. |
+| Required fields | Whether factor inputs, cross-section evidence, Lower Spec Limit, Upper Spec Limit, and Target σ Level are complete | Missing evidence blocks only the affected worksheet. Ready worksheets continue and each emits exactly one F4 handoff. Drawing Number, DIM ID, and Part Number remain non-blocking governance signals. |
 | Cleansing consistency | Whether the capability library, distribution, DIM ID, and PN align | Out-of-library or incomplete items are flagged at once. The user can edit the source Excel or continue with a recorded exception. |
 | DIM ID association | Whether the factor is linked to a drawing dimension | Linked factors go directly to method recommendation; missing IDs are grouped by Lib 3 category/drawing before governance. |
 | ADO governance | Whether a grouped missing-item list has an ADO work item | Reuse the upload-stage ADO choice. With ADO, the user confirms a reminder and the list is added to Comment 0; otherwise, save the list locally. |
@@ -259,8 +259,8 @@ flowchart TB
 | Node | Decision | Branches |
 |---|---|---|
 | ADO orchestration | Whether an ADO task is created or linked | Optional ADO task → resolve owner, return its ID/link, and enable reminders; no task → run the analysis without ADO governance |
-| Worksheet confirmation | Which worksheets go into interpretation | User selects one, many, or all detected TA worksheets; cancelling ends the run |
-| Required fields | Whether nominal and tolerance are present | Missing → block the run until the user corrects and re-uploads the workbook; present → continue |
+| Worksheet confirmation | Which worksheets go into interpretation | The prompt returns options and a workbook content hash; explicit confirmation is hash-bound, and stale confirmation fails closed |
+| Required fields | Whether factor inputs, cross-section evidence, Lower Spec Limit, Upper Spec Limit, and Target σ Level are present | Missing evidence blocks only that worksheet; each ready worksheet emits exactly one F4 handoff. Drawing Number, DIM ID, and Part Number are non-blocking governance signals |
 | Cleansing consistency | Whether the capability library, distribution, DIM ID, and PN align | Out-of-library or incomplete items are flagged; the user can edit the source or continue with a recorded exception |
 | DIM ID linking | Whether the factor is already linked to a drawing dimension | Linked → generate the dimension-chain list; missing → create a placeholder and continue analysis |
 | ADO governance | Whether an ADO item is linked and Surface MCP has the required capabilities | Prepare a Comment 0 diff, require explicit user confirmation, then execute once. Without ADO/capability, save the same confidential list locally and continue TA. F3 does not read dates, evaluate deadline proximity, or run a scheduler. |

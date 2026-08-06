@@ -36,6 +36,7 @@ const TOLERANCE_PATH_LABELS = new Set([
   "include the tolerance path (screenshot) below",
 ]);
 const TOLERANCE_PATH_MEDIA_TYPES = new Set(["image/png", "image/jpeg"]);
+const EXCEL_WORKSHEET_CELL_WINDOW = { maxRow: 10_000, maxColumn: "XFD" } as const;
 
 type FieldName = FactorFieldName | keyof typeof HEADER_ALIASES;
 type Column = { readonly semanticField: FieldName; readonly sourceColumn: string; readonly headerText: string };
@@ -257,10 +258,10 @@ async function processWorksheetPage(
     let worksheet: OoxmlWorksheet | undefined;
     let imageFallback = false;
     try {
-      worksheet = readOoxmlWorkbook(workbookBytes, [analysis.worksheetName], true).worksheets.get(analysis.worksheetName);
+      worksheet = readOoxmlWorkbook(workbookBytes, [analysis.worksheetName], true, EXCEL_WORKSHEET_CELL_WINDOW).worksheets.get(analysis.worksheetName);
     } catch {
       // Keep a worksheet independently reviewable even when embedded media is malformed.
-      worksheet = readOoxmlWorkbook(workbookBytes, [analysis.worksheetName], false).worksheets.get(analysis.worksheetName);
+      worksheet = readOoxmlWorkbook(workbookBytes, [analysis.worksheetName], false, EXCEL_WORKSHEET_CELL_WINDOW).worksheets.get(analysis.worksheetName);
       imageFallback = true;
     }
     if (!worksheet) throw assetsError(REQUEST_SUMMARY, "workbook-catalog");
@@ -342,7 +343,7 @@ export function createWorksheetAnalysisAssets(request: unknown): WorksheetAnalys
       workbookCatalog: parsed.data.workbookCatalog,
       worksheetSelection: parsed.data.worksheetSelection,
     });
-    const workbook = readOoxmlWorkbook(parsed.data.workbookBytes, analyses.map((analysis) => analysis.worksheetName), true);
+    const workbook = readOoxmlWorkbook(parsed.data.workbookBytes, analyses.map((analysis) => analysis.worksheetName), true, EXCEL_WORKSHEET_CELL_WINDOW);
     const worksheets = analyses.map((analysis) => {
       const worksheet = workbook.worksheets.get(analysis.worksheetName);
       if (!worksheet) throw assetsError(REQUEST_SUMMARY, "workbook-catalog");

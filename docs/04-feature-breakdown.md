@@ -57,9 +57,9 @@ The result must include a quick, easy-to-scan TA risk summary.
 
 - Accept one or more uniquely named `.xlsx` files and scan every worksheet for the supported TA layout.
 - Show the detected workbook, worksheet, version/date, and tolerance-loop description for user selection.
-- Let the user select one sheet, multiple sheets, or all detected TA sheets before analysis begins.
+- Return worksheet options before analysis and require an explicit selection bound to the workbook content hash; reject stale confirmations after the file changes.
 - Process selected worksheets in parallel, while keeping each page independently reviewable.
-- Read the factor table, record processing time, and retain a local debug JSON record by file, sheet, version, and date.
+- Resolve the factor table from its semantic header cluster rather than fixed columns, record processing time, and retain a local debug JSON record by file, sheet, version, and date.
 - Extract the Loop screenshot in parallel, label it with its source worksheet and loop description, and retain it with the same run record.
 - Offer manual sheet selection when automatic detection cannot recognize an irregular layout.
 
@@ -70,8 +70,10 @@ The result must include a quick, easy-to-scan TA risk summary.
 **Tasks:**
 
 - Check required fields: factor description, part name, part category, design nominal, tolerance, long-term/safety factor, sigma level, distribution, and cross-section image.
+- Require Lower Spec Limit, Upper Spec Limit, and Target σ Level from the worksheet Response Summary; never substitute values from Suggested Spec.
 - Block the run when nominal or tolerance is missing; show the missing-field list and require the user to correct and re-upload the workbook.
-- Treat optional fields, such as drawing number and dimension ID, as prompts rather than calculation blockers.
+- Isolate blocking at worksheet level: ready worksheets continue and each emits one F4 handoff, while blocked worksheets emit none.
+- Treat optional fields, such as drawing number, part number, and dimension ID, as prompts rather than calculation blockers.
 - Compare each tolerance range and distribution with the matching Capability Library entry; flag in-library and out-of-library results.
 - Check DIM ID and Part Number completeness, duplicate IDs, malformed IDs, and supplier-to-Microsoft ID crosswalk conflicts.
 - Present all non-blocking differences clearly. The engineer can edit the source Excel or continue after recording an exception.

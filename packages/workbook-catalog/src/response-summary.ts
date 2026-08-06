@@ -1,6 +1,7 @@
 import type { OoxmlCell } from "./ooxml-reader.js";
 
 const CELL_REFERENCE = /^([A-Z]+)([1-9]\d*)$/;
+const RESPONSE_SUMMARY_ANCHORS = new Set(["response summary", "response summary table"]);
 const LABELS = {
   lowerSpecLimit: new Set(["lower spec limit", "lsl"]),
   upperSpecLimit: new Set(["upper spec limit", "usl"]),
@@ -47,7 +48,7 @@ function evidence(worksheetName: string, labelCells: readonly OoxmlCell[], rowCe
 
 export function extractResponseSummarySystemSpecification(worksheetName: string, cells: readonly OoxmlCell[]): WorksheetSystemSpecification {
   const located = cells.filter((cell) => location(cell.reference) !== undefined);
-  const anchors = located.filter((cell) => normalize(cell.value) === "response summary");
+  const anchors = located.filter((cell) => RESPONSE_SUMMARY_ANCHORS.has(normalize(cell.value)));
   if (anchors.length === 0) return { status: "unavailable", reasonCode: "response_summary_label_missing" };
   if (anchors.length !== 1) return { status: "unavailable", reasonCode: "response_summary_label_ambiguous" };
   const anchorRow = location(anchors[0]!.reference)!.row;

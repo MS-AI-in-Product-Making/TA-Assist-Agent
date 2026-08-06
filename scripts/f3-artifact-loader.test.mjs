@@ -41,6 +41,29 @@ function enhancedRow() {
   };
 }
 
+function systemSpecification() {
+  return {
+    status: "available",
+    lowerSpecLimit: { status: "available", actualValue: -0.15, displayValue: "-0.15", sourceCell: "Analysis-A!P54", valueOrigin: "numeric_literal" },
+    upperSpecLimit: { status: "available", actualValue: 0.05, displayValue: "0.05", sourceCell: "Analysis-A!P55", valueOrigin: "numeric_literal" },
+    targetSigmaLevel: { status: "available", actualValue: 3, displayValue: "3.0σ", sourceCell: "Analysis-A!P56", valueOrigin: "numeric_literal" },
+    additionalMeanShift: { status: "available", actualValue: 0, displayValue: "0", valueOrigin: "defaulted" },
+  };
+}
+
+function f4Handoff(row) {
+  const specification = systemSpecification();
+  return {
+    contractVersion: "v1", handoffVersion: "f4-handoff-v1", inputClassification: "confidential", status: "ready",
+    workbookContentHash: "a".repeat(64), worksheetName: "Analysis-A", toleranceLoopDescription: "Anonymous device gap",
+    systemSpecification: {
+      designNominal: -0.05, lowerSpecLimit: specification.lowerSpecLimit, upperSpecLimit: specification.upperSpecLimit,
+      targetSigmaLevel: specification.targetSigmaLevel, targetCpk: 1, additionalMeanShift: specification.additionalMeanShift,
+    },
+    factors: [{ tableId: row.tableId, sourceRow: row.sourceRow, unit: "mm", actualFields: row.actualFields, sourceCells: row.sourceCells }],
+  };
+}
+
 function f2Report(options = {}) {
   const description = Object.hasOwn(options, "description") ? options.description : "Anonymous device gap";
   const worksheetStatus = options.worksheetStatus ?? "ready";
@@ -59,9 +82,12 @@ function f2Report(options = {}) {
       ...(description === undefined ? {} : { toleranceLoopDescription: description }),
       status: worksheetStatus,
       tolerancePathImageStatus: blocked ? "unavailable" : "available",
+      systemSpecification: systemSpecification(),
+      systemSpecificationIssues: [],
       rows: [row],
       missingFieldSummary: blocked ? [{ field: "tolerancePathImage", factorCount: 0, sourceRows: [] }] : [],
     }],
+    f4Handoffs: blocked ? [] : [f4Handoff(row)],
     adoEvents: [],
     summary: {
       worksheetsChecked: 1,

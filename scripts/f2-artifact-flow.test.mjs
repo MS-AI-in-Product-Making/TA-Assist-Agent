@@ -47,6 +47,13 @@ function createArtifactBundle() {
     workbook: { fileName: workbookName, contentHash: workbookHash },
     worksheetName: "Analysis-A",
     toleranceLoopDescription: "Anonymous device gap",
+    systemSpecification: {
+      status: "available",
+      lowerSpecLimit: { status: "available", actualValue: -0.15, displayValue: "-0.15", sourceCell: "Analysis-A!P54", valueOrigin: "numeric_literal" },
+      upperSpecLimit: { status: "available", actualValue: 0.05, displayValue: "0.05", sourceCell: "Analysis-A!P55", valueOrigin: "numeric_literal" },
+      targetSigmaLevel: { status: "available", actualValue: 3, displayValue: "3.0σ", sourceCell: "Analysis-A!P56", valueOrigin: "numeric_literal" },
+      additionalMeanShift: { status: "available", actualValue: 0, displayValue: "0", valueOrigin: "defaulted" },
+    },
     factorTables: [{
       tableId: "table-a", headerRow: 1, dataRange: { startRow: 2, endRow: 2 }, columns: [],
       rows: [{ sourceRow: 2, actualFields: actualFields(), fields: {
@@ -60,7 +67,7 @@ function createArtifactBundle() {
   }));
   writeFileSync(path.join(root, "Feature1-Report.md"), "# Feature 1\n");
   writeFileSync(path.join(root, "Feature1-Report.json"), JSON.stringify({
-    contractVersion: "v1", feature: "F1", generatedAt: "2026-08-03T00:00:00.000Z",
+    contractVersion: "v1", artifactContractVersion: "f1-semantic-v2", feature: "F1", generatedAt: "2026-08-03T00:00:00.000Z",
     workbooks: [{ workbook: { fileName: workbookName, contentHash: workbookHash }, task15_factor_table_and_debug_json: { sheets: [{ worksheetName: "Analysis-A", jsonPath: jsonRelative }] }, task16_loop_screenshot_and_run_record: { sheets: [{ worksheetName: "Analysis-A", mdPath: mdRelative }] }, sheetReadmePath: `sheets/${workbookName}/README.md` }],
   }));
   return root;

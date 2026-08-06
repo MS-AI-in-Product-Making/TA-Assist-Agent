@@ -39,11 +39,11 @@ Phase 0 建立面向产品路线图的本地优先、可审计 TypeScript 工程
 保留来源文件 hash、工作表和单元格范围。解读规则快照只包含审核后的通用 `internal` 子集，
 不包含 worked examples 或计算器；原始能力矩阵、TA 模板与规则工作簿仍不进入 Git。F5/F6
 保持 `unavailable`，发布规则依赖不表示解释或推荐能力已经启用。F1 仅接受受控 `confidential` `.xlsx` 字节，创建只读
-worksheet catalog，并从 catalog 确认的 worksheet 提取因子表、公式及缓存值、嵌入图片元数据，
+worksheet catalog，并从 catalog 确认的 worksheet 依据语义表头提取因子表、公式及缓存值、嵌入图片元数据，
 图片字节只可由 workbook hash 与唯一 image hash 共同验证后读取。F1 不计算公式、不换算单位、
 不执行 OCR、渲染、风险解释、行动建议或 workbook 写回，也不调用外部服务、不跟踪或导出原始
 `.xls`、`.xlsx` 或 `.xlsm`（除非另行批准受控白名单）。根 F2 已可用：它只接受 F1 落盘的 JSON、MD 和 images artifact bundle，
-不读取或重新解析 Excel；按 worksheet 隔离检查九项必填因子字段和公差路径截面图。F0 Category/Item
+不读取或重新解析 Excel；按 worksheet 隔离检查因子必填字段、公差路径截面图，以及 Response Summary 中的 Lower Spec Limit、Upper Spec Limit 和 Target σ Level。F0 Category/Item
 Mapping 缺口及唯一匹配后的公差/distribution 差异均以增强 raw-data 表中的非阻断差异展示。
 独立 Part Number 与 DIM/Characteristic ID 缺失生成按 category 汇总的 `adoReminderRequested` 待触发事件，不执行 ADO 网络调用。
 F2.1-F2.4 继续提供严格完整性阻断、非阻断一致性信号、受限例外处理与标识符质量检查。F4 已启用受治理的 `excel-ta-v1` 纯计算
@@ -222,15 +222,17 @@ The workflow executes Task 1.1-1.7 with real workbook inputs and emits a final r
 
 ## Feature 2 Initial Workflow
 
-- 一键运行：`npm run workflow:f2:excel -- "path/to/report.xlsx"`
-- CLI：`node apps/cli/dist/index.js feature2 --root . --workbook "path/to/report.xlsx"`
+- Prompt phase：`npm run workflow:f2:excel -- "path/to/report.xlsx"`，只返回 worksheet options 和 workbook content hash，不创建 F2 report。
+- Confirm phase：`npm run workflow:f2:excel -- "path/to/report.xlsx" --worksheets "Analysis-A,Analysis-B" --workbook-hash "<sha256>" --confirm`。
+- CLI 使用同一两阶段协议：`node apps/cli/dist/index.js feature2 --root . --workbook "path/to/report.xlsx"`，确认时追加 `--worksheets`、`--workbook-hash` 和 `--confirm`。
 - 短语别名：`帮我用F2分析下excel "path/to/report.xlsx"` 或 `use F2 to analyze Excel "path/to/report.xlsx"`
+- 确认与 workbook hash 绑定；文件内容变化后，旧确认以 `stale_worksheet_selection` fail closed，必须重新获取 options。
 - 每次运行输出：`test/demo-output/f2-runs/<workbook-safe-name>/<UTC-run-id>/{f1,f2,validation}`，根目录同时保留 `manifest.json`；失败时不删除已完成阶段和 debug logs。
 - 先运行 F1：`npm run workflow:f1 -- "test/<workbook.xlsx>"`
 - 再运行 F2：`npm run workflow:f2 -- "test/demo-output/feature1-output/<workbook-safe-name>"`
 - 输出：`test/demo-output/feature2-output/<workbook-base-name>/Feature2-Report.json` 和 `Feature2-Report.md`
-- 报告：每个 factor 保留完整 E:T actual values，并追加可移植截面图链接、`能力库结果` 与 `知识库推荐`；空值显示 `—`。
-- 阻塞：九项业务必填字段或截面图缺失；能力库差异、库外、DIM ID/Part Number 缺失均非阻塞。
+- 报告：每个 factor 按语义表头投影 canonical actual values，不依赖固定 column；并追加可移植截面图链接、`能力库结果` 与 `知识库推荐`，空值显示 `—`。
+- 阻塞：因子必填字段、截面图或三项系统规格缺失时，只阻断对应 worksheet；能力库差异、库外、Drawing Number、DIM ID 或 Part Number 缺失均非阻塞。只有 `ready` worksheet 生成一个 F4 handoff。
 - 验收：F2 任一模块必须执行完整 `F0 -> F1 artifacts -> F2` 链路，不得用孤立模块通过替代端到端证据。
 
 - `test/` and all `*.xlsx` (confidential templates / sample data) are **git-ignored**.

@@ -21,6 +21,16 @@ function setup() {
 }
 
 function validF2Report(artifactRoot) {
+  const evidence = (actualValue, sourceCell, displayValue = String(actualValue)) => ({
+    status: "available", actualValue, displayValue, sourceCell, valueOrigin: "numeric_literal",
+  });
+  const systemSpecification = {
+    status: "available",
+    lowerSpecLimit: evidence(-0.15, "Analysis-A!P54"),
+    upperSpecLimit: evidence(0.05, "Analysis-A!P55"),
+    targetSigmaLevel: evidence(3, "Analysis-A!P56", "3.0σ"),
+    additionalMeanShift: { status: "available", actualValue: 0, displayValue: "0", valueOrigin: "defaulted" },
+  };
   return {
     contractVersion: "v1",
     inputClassification: "confidential",
@@ -29,7 +39,24 @@ function validF2Report(artifactRoot) {
     knowledgeBaseVersions: ["v1", "internal-v1"],
     mappingRuleVersion: "v1",
     artifactRoot,
-    worksheets: [{ worksheetName: "Analysis-A", status: "ready", tolerancePathImageStatus: "available", rows: [], missingFieldSummary: [] }],
+    worksheets: [{ worksheetName: "Analysis-A", status: "ready", tolerancePathImageStatus: "available", systemSpecification, systemSpecificationIssues: [], rows: [], missingFieldSummary: [] }],
+    f4Handoffs: [{
+      contractVersion: "v1",
+      handoffVersion: "f4-handoff-v1",
+      inputClassification: "confidential",
+      status: "ready",
+      workbookContentHash: HASH,
+      worksheetName: "Analysis-A",
+      systemSpecification: {
+        designNominal: -0.05,
+        lowerSpecLimit: systemSpecification.lowerSpecLimit,
+        upperSpecLimit: systemSpecification.upperSpecLimit,
+        targetSigmaLevel: systemSpecification.targetSigmaLevel,
+        targetCpk: 1,
+        additionalMeanShift: systemSpecification.additionalMeanShift,
+      },
+      factors: [],
+    }],
     adoEvents: [],
     summary: {
       worksheetsChecked: 1, blockedWorksheetCount: 0, readyWorksheetCount: 1, factorRowCount: 0,
