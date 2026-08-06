@@ -312,7 +312,7 @@ function imageReference(worksheet: F2ArtifactInput["worksheets"][number]): {
 }
 ```
 
-在 row 输出中使用 `imageReference: worksheetImageReference`，不构造 `images/<hash>.<ext>`。
+在 row 输出中使用 `imageReference: worksheetImageReference`，不再按 content hash 构造 F2 `images/` 目标文件名。
 
 - [ ] **Step 5: 运行测试确认 GREEN**
 
