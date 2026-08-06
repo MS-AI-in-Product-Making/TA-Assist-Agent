@@ -3699,6 +3699,7 @@ export const f2SystemSpecificationIssueSchema = z.object({
 const f4HandoffFactorSchema = z.object({
   tableId: z.string().min(1),
   sourceRow: z.number().int().positive(),
+  unit: z.literal("mm"),
   actualFields: f2ActualFieldsSchema,
   sourceCells: z.record(worksheetFieldNameSchema, worksheetSourceCellSchema),
 }).strict();

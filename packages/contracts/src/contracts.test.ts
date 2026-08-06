@@ -167,7 +167,7 @@ describe("F2 artifact user report contracts", () => {
       targetCpk: 1,
       additionalMeanShift: systemSpecification.additionalMeanShift,
     },
-    factors: [{ tableId: row.tableId, sourceRow: row.sourceRow, actualFields: row.actualFields, sourceCells: row.sourceCells }],
+    factors: [{ tableId: row.tableId, sourceRow: row.sourceRow, unit: "mm", actualFields: row.actualFields, sourceCells: row.sourceCells }],
   };
   const completedReport = {
     contractVersion: "v1",
