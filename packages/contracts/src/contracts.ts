@@ -600,6 +600,40 @@ const tolerancePathImageSchema = z.discriminatedUnion("status", [
 
   const worksheetImageMediaTypeSchema = z.string().regex(/^(?:image\/[a-z0-9.+-]+|application\/octet-stream)$/);
 
+  export const worksheetEvidenceNumberSchema = z.discriminatedUnion("status", [
+    z.object({
+      status: z.literal("available"),
+      actualValue: z.number().finite(),
+      displayValue: z.string(),
+      sourceCell: worksheetSourceCellSchema.optional(),
+      valueOrigin: z.enum(["numeric_literal", "formula_cached", "defaulted"]),
+    }).strict(),
+    z.object({
+      status: z.literal("unavailable"),
+      reasonCode: z.enum(["response_summary_label_missing", "response_summary_label_ambiguous", "response_summary_value_missing", "response_summary_value_invalid"]),
+      sourceCell: worksheetSourceCellSchema.optional(),
+    }).strict(),
+  ]);
+
+  const worksheetSystemSpecificationFields = {
+    lowerSpecLimit: worksheetEvidenceNumberSchema,
+    upperSpecLimit: worksheetEvidenceNumberSchema,
+    targetSigmaLevel: worksheetEvidenceNumberSchema,
+    additionalMeanShift: worksheetEvidenceNumberSchema,
+  };
+
+  export const worksheetSystemSpecificationSchema = z.discriminatedUnion("status", [
+    z.object({ status: z.literal("available"), ...worksheetSystemSpecificationFields }).strict(),
+    z.object({
+      status: z.literal("unavailable"),
+      reasonCode: z.enum(["response_summary_label_missing", "response_summary_label_ambiguous", "system_specification_range_invalid", "legacy_artifact_missing_system_specification"]),
+      lowerSpecLimit: worksheetEvidenceNumberSchema.optional(),
+      upperSpecLimit: worksheetEvidenceNumberSchema.optional(),
+      targetSigmaLevel: worksheetEvidenceNumberSchema.optional(),
+      additionalMeanShift: worksheetEvidenceNumberSchema.optional(),
+    }).strict(),
+  ]);
+
 const factorTableSchema = z
   .object({
     tableId: z.string().min(1),
@@ -651,6 +685,7 @@ export const worksheetAnalysisAssetsResultSchema = z
         .object({
           worksheetName: z.string().min(1),
           toleranceLoopDescription: z.string().min(1),
+          systemSpecification: worksheetSystemSpecificationSchema.optional(),
           factorTables: z.array(factorTableSchema),
           formulaCells: z.array(
             z
@@ -3953,6 +3988,7 @@ export type WorksheetSelectionViewResult = z.infer<typeof worksheetSelectionView
 export type WorksheetSelectionPrompt = z.infer<typeof worksheetSelectionPromptSchema>;
 export type WorksheetSelectionConfirmation = z.infer<typeof worksheetSelectionConfirmationSchema>;
 export type WorksheetSelectionConfirmationResult = z.infer<typeof worksheetSelectionConfirmationResultSchema>;
+export type WorksheetSystemSpecification = z.infer<typeof worksheetSystemSpecificationSchema>;
 export type WorksheetAnalysisAssetsRequest = z.infer<typeof worksheetAnalysisAssetsRequestSchema>;
 export type WorksheetAnalysisAssetsResult = z.infer<typeof worksheetAnalysisAssetsResultSchema>;
 export type F2InitialWorkflowRequest = z.infer<typeof f2InitialWorkflowRequestSchema>;

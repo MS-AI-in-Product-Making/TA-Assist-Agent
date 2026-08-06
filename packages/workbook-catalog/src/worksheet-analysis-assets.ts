@@ -12,6 +12,7 @@ import {
 import { unzipSync } from "fflate";
 import { resolveFactorHeaderCluster, type FactorFieldName } from "./factor-header-resolver.js";
 import { readOoxmlWorkbook, type OoxmlCell, type OoxmlWorksheet } from "./ooxml-reader.js";
+import { extractResponseSummarySystemSpecification } from "./response-summary.js";
 
 const REQUEST_SUMMARY = "Worksheet-analysis assets request is invalid.";
 const POLICY_SUMMARY = "Worksheet-analysis assets input is not permitted.";
@@ -227,6 +228,7 @@ function sheetAssets(worksheet: OoxmlWorksheet, worksheetName: string, tolerance
   return {
     worksheetName,
     toleranceLoopDescription,
+    systemSpecification: extractResponseSummarySystemSpecification(worksheetName, worksheet.cells),
     factorTables,
     formulaCells,
     imageAssets,
@@ -286,6 +288,7 @@ async function processWorksheetPage(
       worksheetAsset: {
         worksheetName: analysis.worksheetName,
         toleranceLoopDescription: analysis.toleranceLoopDescription,
+        systemSpecification: { status: "unavailable", reasonCode: "response_summary_label_missing" },
         factorTables: [],
         formulaCells: [],
         imageAssets: [],
