@@ -13,7 +13,8 @@ export { createCapabilityValidation } from "./capability-validation.js";
 export { createExceptionResolution } from "./exception-resolution.js";
 export { createIdentifierQualityCheck } from "./identifier-quality-check.js";
 export { createF2InitialWorkflow } from "./f2-initial-workflow.js";
-export { createF2UserReport } from "./f2-user-report.js";
+export { createF2UserReport, validateWorksheetSystemSpecification } from "./f2-user-report.js";
+export { createF4Handoff } from "./f4-handoff.js";
 export { createF3DrawingGovernance } from "./f3-drawing-governance.js";
 export { createUnifiedExceptionResolution } from "./unified-exception-resolution.js";
 export { createCalculation } from "./calculation.js";
@@ -42,6 +43,9 @@ export type {
 	F2InitialWorkflowResult,
 	F2ArtifactInput,
 	F2UserReport,
+	F2ReadyWorksheet,
+	F2SystemSpecificationIssue,
+	F4HandoffReady,
 	RequiredFieldCheckRequest,
 	RequiredFieldCheckResult,
 	UnifiedExceptionResolutionRequest,

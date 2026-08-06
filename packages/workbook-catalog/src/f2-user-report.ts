@@ -1,10 +1,14 @@
 import {
   f2ArtifactInputSchema,
+  f2ReadyWorksheetSchema,
   f2UserReportSchema,
   type F2ArtifactInput,
+  type F2SystemSpecificationIssue,
   type F2UserReport,
+  type WorksheetSystemSpecification,
 } from "@ai-assist/contracts";
 import { createF0CapabilityRouter, type F0CapabilityAssessment } from "./f0-capability-router.js";
+import { createF4Handoff } from "./f4-handoff.js";
 
 const MISSING = "（缺失）";
 const REQUIRED_FIELDS = [
@@ -84,6 +88,36 @@ function parseRequest(request: unknown): { artifact: F2ArtifactInput; knowledgeB
   return { artifact: artifact.data, knowledgeBaseVersions: ["v1", "internal-v1"], mappingRuleVersion: "v1" };
 }
 
+export function validateWorksheetSystemSpecification(
+  specification: WorksheetSystemSpecification,
+): readonly F2SystemSpecificationIssue[] {
+  const issues: F2SystemSpecificationIssue[] = [];
+  const requiredFields = ["lowerSpecLimit", "upperSpecLimit", "targetSigmaLevel"] as const;
+  for (const field of requiredFields) {
+    const evidence = specification[field];
+    if (evidence?.status === "unavailable") {
+      issues.push({ field, reasonCode: evidence.reasonCode, ...(evidence.sourceCell === undefined ? {} : { sourceCell: evidence.sourceCell }) });
+    } else if (evidence === undefined) {
+      issues.push({ field, reasonCode: specification.status === "unavailable" ? specification.reasonCode : "response_summary_value_missing" });
+    }
+  }
+  if (issues.length > 0) return issues;
+
+  const lowerSpecLimit = specification.lowerSpecLimit;
+  const upperSpecLimit = specification.upperSpecLimit;
+  const targetSigmaLevel = specification.targetSigmaLevel;
+  if (lowerSpecLimit?.status === "available" && upperSpecLimit?.status === "available" && lowerSpecLimit.actualValue >= upperSpecLimit.actualValue) {
+    issues.push({ field: "lowerSpecLimit", reasonCode: "system_specification_range_invalid", ...(lowerSpecLimit.sourceCell === undefined ? {} : { sourceCell: lowerSpecLimit.sourceCell }) });
+  }
+  if (targetSigmaLevel?.status === "available" && targetSigmaLevel.actualValue <= 0) {
+    issues.push({ field: "targetSigmaLevel", reasonCode: "response_summary_value_invalid", ...(targetSigmaLevel.sourceCell === undefined ? {} : { sourceCell: targetSigmaLevel.sourceCell }) });
+  }
+  if (specification.status === "unavailable" && issues.length === 0) {
+    issues.push({ field: "lowerSpecLimit", reasonCode: specification.reasonCode });
+  }
+  return issues;
+}
+
 export function createF2UserReport(
   request: unknown,
   dependencies: { readonly capabilityRouter: { assess(row: { readonly partCategory: string; readonly factorName: string; readonly partName: string; readonly nominalValue: number; readonly upperTolerance: number; readonly lowerTolerance: number; readonly distribution: string }): F0CapabilityAssessment } } = { capabilityRouter: createF0CapabilityRouter() },
@@ -138,12 +172,17 @@ export function createF2UserReport(
       return sourceRows.length === 0 ? [] : [{ field: fieldName, factorCount: sourceRows.length, sourceRows }];
     });
     if (worksheet.tolerancePathImage.status === "unavailable") missingFieldSummary.push({ field: "tolerancePathImage", factorCount: 0, sourceRows: [] });
-    const blocked = worksheet.tolerancePathImage.status === "unavailable" || rows.some((row) => row.missingRequiredFields.length > 0);
+    const systemSpecificationIssues = validateWorksheetSystemSpecification(worksheet.systemSpecification);
+    const blocked = worksheet.tolerancePathImage.status === "unavailable"
+      || rows.some((row) => row.missingRequiredFields.length > 0)
+      || systemSpecificationIssues.length > 0;
     return {
       worksheetName: worksheet.worksheetName,
       ...(worksheet.toleranceLoopDescription === undefined ? {} : { toleranceLoopDescription: worksheet.toleranceLoopDescription }),
       status: blocked ? "blocked" as const : "ready" as const,
       tolerancePathImageStatus: worksheet.tolerancePathImage.status,
+      systemSpecification: worksheet.systemSpecification,
+      systemSpecificationIssues,
       rows,
       missingFieldSummary,
     };
@@ -151,6 +190,12 @@ export function createF2UserReport(
 
   const allRows = worksheets.flatMap((worksheet) => worksheet.rows);
   const blockedWorksheetCount = worksheets.filter((worksheet) => worksheet.status === "blocked").length;
+  const f4Handoffs = worksheets
+    .filter((worksheet) => worksheet.status === "ready")
+    .map((worksheet) => createF4Handoff({
+      workbookContentHash: artifact.workbook.contentHash,
+      worksheet: f2ReadyWorksheetSchema.parse(worksheet),
+    }));
   const adoEvents = [...eventGroups.values()]
     .sort((left, right) => left.category.localeCompare(right.category) || left.worksheetName.localeCompare(right.worksheetName))
     .map((group) => ({
@@ -170,6 +215,7 @@ export function createF2UserReport(
     mappingRuleVersion,
     artifactRoot: artifact.artifactRoot,
     worksheets,
+    f4Handoffs,
     adoEvents,
     summary: {
       worksheetsChecked: worksheets.length,

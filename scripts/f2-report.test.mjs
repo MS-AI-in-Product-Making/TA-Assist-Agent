@@ -23,6 +23,16 @@ function actualFields(overrides = {}) {
   };
 }
 
+function systemSpecification(worksheetName = "Analysis-A") {
+  return {
+    status: "available",
+    lowerSpecLimit: { status: "available", actualValue: -0.15, displayValue: "-0.15", sourceCell: `${worksheetName}!P54`, valueOrigin: "numeric_literal" },
+    upperSpecLimit: { status: "available", actualValue: 0.05, displayValue: "0.05", sourceCell: `${worksheetName}!P55`, valueOrigin: "numeric_literal" },
+    targetSigmaLevel: { status: "available", actualValue: 3, displayValue: "3.0σ", sourceCell: `${worksheetName}!P56`, valueOrigin: "numeric_literal" },
+    additionalMeanShift: { status: "available", actualValue: 0, displayValue: "0", valueOrigin: "defaulted" },
+  };
+}
+
 describe("renderF2Report", () => {
   it("renders one readable enhanced row without internal issue terminology", () => {
     const markdown = renderF2Report({
@@ -36,6 +46,8 @@ describe("renderF2Report", () => {
         worksheetName: "A|B",
         status: "blocked",
         tolerancePathImageStatus: "available",
+        systemSpecification: systemSpecification("A|B"),
+        systemSpecificationIssues: [{ field: "targetSigmaLevel", reasonCode: "response_summary_value_missing", sourceCell: "A|B!P56" }],
         missingFieldSummary: [
           { field: "partName", factorCount: 1, sourceRows: [2] },
           { field: "nominalValue", factorCount: 1, sourceRows: [2] },
@@ -47,6 +59,7 @@ describe("renderF2Report", () => {
           capabilityStatus: "unable_to_check",
         }],
       }],
+      f4Handoffs: [],
       adoEvents: [{ eventType: "adoReminderRequested", category: "demo", worksheetName: "A|B", missingFields: ["dimCharacteristicId", "partNumber"], factorRows: [2] }],
     });
 
@@ -54,6 +67,10 @@ describe("renderF2Report", () => {
       expect(markdown).toContain(heading);
     }
     expect(markdown).toContain("请修正 TA Excel 源文件并重新运行 F1");
+    expect(markdown).toContain("系统规格");
+    expect(markdown).toContain("Target σ");
+    expect(markdown).toContain("A\\|B!P56");
+    expect(markdown).toContain("未生成 F4 handoff");
     expect(markdown).toContain("Demo\\|Book.xlsx");
     expect(markdown).toContain(`[left\\|right](images/${"b".repeat(64)}.png)`);
     expect(markdown).toContain(`[—](images/${"b".repeat(64)}.png)`);
@@ -71,12 +88,19 @@ describe("renderF2Report", () => {
       workbook: { fileName: "Demo.xlsx", contentHash: "a".repeat(64), f1GeneratedAt: "2026-08-03T00:00:00.000Z" },
       knowledgeBaseVersions: ["v1", "internal-v1"], mappingRuleVersion: "v1", artifactRoot: "artifacts/Demo",
       summary: { worksheetsChecked: 1, blockedWorksheetCount: 0, readyWorksheetCount: 1, factorRowCount: 1, rowsWithRequiredMissing: 0, requiredMissingFieldCount: 0, missingImageWorksheetCount: 0, internalWithinGuidanceCount: 1, internalGuidanceExceededCount: 0, f0InformationInsufficientCount: 0, publicLibraryMatchCount: 0, nonF0ProcessCategoryCount: 0, unableToCheckCount: 0, publicToleranceDifferenceCount: 0, publicDistributionDifferenceCount: 0, missingDimIdCount: 0, missingPartNumberCount: 0 },
-      worksheets: [{ worksheetName: "Analysis-A", status: "ready", tolerancePathImageStatus: "available", missingFieldSummary: [], rows: [{ sourceRow: 2, actualFields: actualFields({ factorName: "boss height", partName: "bucket", dimCharacteristicId: "DIM", partCategory: "CNC", nominalValue: 3.145, upperTolerance: 0.1, lowerTolerance: -0.1 }), capabilityStatus: "internal_within_guidance", recommendation: { kind: "internal-guidance", assessedTotalBand: 0.2, maximumRecommendedTotalBand: 0.2, unit: "mm", matchedEntryId: "cnc-linear-6", fallbackApplied: false, evidence: { sourceFileHash: "c".repeat(64), sheetName: "ISO 2768-1 Class m", sourceRange: "A6:F6" } } }] }],
+      worksheets: [{ worksheetName: "Analysis-A", status: "ready", tolerancePathImageStatus: "available", systemSpecification: systemSpecification(), systemSpecificationIssues: [], missingFieldSummary: [], rows: [{ sourceRow: 2, actualFields: actualFields({ factorName: "boss height", partName: "bucket", dimCharacteristicId: "DIM", partCategory: "CNC", nominalValue: 3.145, upperTolerance: 0.1, lowerTolerance: -0.1 }), capabilityStatus: "internal_within_guidance", recommendation: { kind: "internal-guidance", assessedTotalBand: 0.2, maximumRecommendedTotalBand: 0.2, unit: "mm", matchedEntryId: "cnc-linear-6", fallbackApplied: false, evidence: { sourceFileHash: "c".repeat(64), sheetName: "ISO 2768-1 Class m", sourceRange: "A6:F6" } } }] }],
+      f4Handoffs: [{ status: "ready", worksheetName: "Analysis-A" }],
       adoEvents: [],
     };
     const markdown = renderF2Report(report);
     expect(markdown).toContain("F0 内部指导-符合");
     expect(markdown).toContain("最大总公差带 0.2 mm · internal-v1 · cnc-linear-6");
+    expect(markdown).toContain("LSL");
+    expect(markdown).toContain("-0.15");
+    expect(markdown).toContain("USL");
+    expect(markdown).toContain("0.05");
+    expect(markdown).toContain("3.0σ");
+    expect(markdown).toContain("F4 handoff：ready");
     expect(markdown).not.toContain("controlled-cnc.xlsx");
     expect(markdown).not.toContain("c".repeat(64));
   });

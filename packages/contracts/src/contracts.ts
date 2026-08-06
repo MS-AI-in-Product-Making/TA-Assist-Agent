@@ -600,14 +600,16 @@ const tolerancePathImageSchema = z.discriminatedUnion("status", [
 
   const worksheetImageMediaTypeSchema = z.string().regex(/^(?:image\/[a-z0-9.+-]+|application\/octet-stream)$/);
 
-  export const worksheetEvidenceNumberSchema = z.discriminatedUnion("status", [
-    z.object({
+  const availableWorksheetEvidenceNumberSchema = z.object({
       status: z.literal("available"),
       actualValue: z.number().finite(),
       displayValue: z.string(),
       sourceCell: worksheetSourceCellSchema.optional(),
       valueOrigin: z.enum(["numeric_literal", "formula_cached", "defaulted"]),
-    }).strict(),
+    }).strict();
+
+  export const worksheetEvidenceNumberSchema = z.discriminatedUnion("status", [
+    availableWorksheetEvidenceNumberSchema,
     z.object({
       status: z.literal("unavailable"),
       reasonCode: z.enum(["response_summary_label_missing", "response_summary_label_ambiguous", "response_summary_value_missing", "response_summary_value_invalid"]),
@@ -3681,6 +3683,83 @@ const f2MissingFieldSummarySchema = z.object({
   sourceRows: z.array(z.number().int().positive()),
 }).strict();
 
+export const f2SystemSpecificationIssueSchema = z.object({
+  field: z.enum(["lowerSpecLimit", "upperSpecLimit", "targetSigmaLevel"]),
+  reasonCode: z.enum([
+    "response_summary_label_missing",
+    "response_summary_label_ambiguous",
+    "response_summary_value_missing",
+    "response_summary_value_invalid",
+    "system_specification_range_invalid",
+    "legacy_artifact_missing_system_specification",
+  ]),
+  sourceCell: worksheetSourceCellSchema.optional(),
+}).strict();
+
+const f4HandoffFactorSchema = z.object({
+  tableId: z.string().min(1),
+  sourceRow: z.number().int().positive(),
+  actualFields: f2ActualFieldsSchema,
+  sourceCells: z.record(worksheetFieldNameSchema, worksheetSourceCellSchema),
+}).strict();
+
+export const f4HandoffReadySchema = z.object({
+  contractVersion: contractVersionSchema,
+  handoffVersion: z.literal("f4-handoff-v1"),
+  inputClassification: z.literal("confidential"),
+  status: z.literal("ready"),
+  workbookContentHash: sha256Schema,
+  worksheetName: z.string().min(1),
+  toleranceLoopDescription: z.string().min(1).optional(),
+  systemSpecification: z.object({
+    designNominal: z.number().finite(),
+    lowerSpecLimit: availableWorksheetEvidenceNumberSchema,
+    upperSpecLimit: availableWorksheetEvidenceNumberSchema,
+    targetSigmaLevel: availableWorksheetEvidenceNumberSchema,
+    targetCpk: z.number().finite().positive(),
+    additionalMeanShift: availableWorksheetEvidenceNumberSchema,
+  }).strict(),
+  factors: z.array(f4HandoffFactorSchema),
+}).strict().superRefine((handoff, context) => {
+  const specification = handoff.systemSpecification;
+  const expectedNominal = (specification.lowerSpecLimit.actualValue + specification.upperSpecLimit.actualValue) / 2;
+  const expectedCpk = specification.targetSigmaLevel.actualValue / 3;
+  if (specification.lowerSpecLimit.actualValue >= specification.upperSpecLimit.actualValue) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "lowerSpecLimit must be less than upperSpecLimit", path: ["systemSpecification", "lowerSpecLimit"] });
+  }
+  if (specification.targetSigmaLevel.actualValue <= 0) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "targetSigmaLevel must be positive", path: ["systemSpecification", "targetSigmaLevel"] });
+  }
+  if (Math.abs(specification.designNominal - expectedNominal) > 1e-12) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "designNominal must be derived from specification limits", path: ["systemSpecification", "designNominal"] });
+  }
+  if (Math.abs(specification.targetCpk - expectedCpk) > 1e-12) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "targetCpk must be derived from targetSigmaLevel", path: ["systemSpecification", "targetCpk"] });
+  }
+});
+
+const f2ReportWorksheetBaseSchema = z.object({
+  worksheetName: z.string().min(1),
+  toleranceLoopDescription: z.string().min(1).optional(),
+  tolerancePathImageStatus: z.enum(["available", "unavailable"]),
+  systemSpecification: worksheetSystemSpecificationSchema,
+  systemSpecificationIssues: z.array(f2SystemSpecificationIssueSchema),
+  rows: z.array(f2EnhancedRowSchema),
+  missingFieldSummary: z.array(f2MissingFieldSummarySchema),
+});
+
+export const f2ReadyWorksheetSchema = f2ReportWorksheetBaseSchema.extend({
+  status: z.literal("ready"),
+  systemSpecification: z.object({ status: z.literal("available"), ...worksheetSystemSpecificationFields }).strict(),
+  systemSpecificationIssues: z.array(f2SystemSpecificationIssueSchema).length(0),
+}).strict();
+
+const f2BlockedWorksheetSchema = f2ReportWorksheetBaseSchema.extend({
+  status: z.literal("blocked"),
+}).strict();
+
+const f2ReportWorksheetSchema = z.union([f2ReadyWorksheetSchema, f2BlockedWorksheetSchema]);
+
 const f2AdoEventSchema = z.object({
   eventType: z.literal("adoReminderRequested"),
   category: z.string().min(1),
@@ -3698,14 +3777,8 @@ const f2AcceptedReportSchema = z.object({
   knowledgeBaseVersions: z.tuple([knowledgeBaseVersionSchema, internalToleranceGuidanceVersionSchema]),
   mappingRuleVersion: z.literal("v1"),
   artifactRoot: z.string().min(1),
-  worksheets: z.array(z.object({
-    worksheetName: z.string().min(1),
-    toleranceLoopDescription: z.string().min(1).optional(),
-    status: z.enum(["blocked", "ready"]),
-    tolerancePathImageStatus: z.enum(["available", "unavailable"]),
-    rows: z.array(f2EnhancedRowSchema),
-    missingFieldSummary: z.array(f2MissingFieldSummarySchema),
-  }).strict()).min(1),
+  worksheets: z.array(f2ReportWorksheetSchema).min(1),
+  f4Handoffs: z.array(f4HandoffReadySchema),
   adoEvents: z.array(f2AdoEventSchema),
   summary: z.object({
     worksheetsChecked: z.number().int().positive(),
@@ -3732,9 +3805,21 @@ const f2AcceptedReportSchema = z.object({
   const expectedStatus = blockedWorksheetCount === 0 ? "completed" : blockedWorksheetCount === report.worksheets.length ? "blocked" : "partiallyBlocked";
   if (report.status !== expectedStatus) context.addIssue({ code: z.ZodIssueCode.custom, message: "report status must match worksheet blocking", path: ["status"] });
   report.worksheets.forEach((worksheet, index) => {
-    const shouldBlock = worksheet.tolerancePathImageStatus === "unavailable" || worksheet.rows.some((row) => row.missingRequiredFields.length > 0);
+    const shouldBlock = worksheet.tolerancePathImageStatus === "unavailable"
+      || worksheet.rows.some((row) => row.missingRequiredFields.length > 0)
+      || worksheet.systemSpecificationIssues.length > 0;
     if ((worksheet.status === "blocked") !== shouldBlock) context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet status must match required input gaps", path: ["worksheets", index, "status"] });
+    const matchingHandoffs = report.f4Handoffs.filter((handoff) => handoff.worksheetName === worksheet.worksheetName);
+    if (worksheet.status === "ready" && matchingHandoffs.length !== 1) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "ready worksheets require exactly one F4 handoff", path: ["f4Handoffs"] });
+    }
+    if (worksheet.status === "blocked" && matchingHandoffs.length > 0) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "blocked worksheets must not have an F4 handoff", path: ["f4Handoffs"] });
+    }
   });
+  if (report.f4Handoffs.some((handoff) => handoff.workbookContentHash !== report.workbook.contentHash)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "F4 handoff workbook hash must match report", path: ["f4Handoffs"] });
+  }
   const expectedSummary = {
     worksheetsChecked: report.worksheets.length,
     blockedWorksheetCount,
@@ -3997,6 +4082,9 @@ export type F2InitialWorkflowRequest = z.infer<typeof f2InitialWorkflowRequestSc
 export type F2InitialWorkflowResult = z.infer<typeof f2InitialWorkflowResultSchema>;
 export type F2ArtifactInput = z.infer<typeof f2ArtifactInputSchema>;
 export type F2UserReport = z.infer<typeof f2UserReportSchema>;
+export type F2SystemSpecificationIssue = z.infer<typeof f2SystemSpecificationIssueSchema>;
+export type F2ReadyWorksheet = z.infer<typeof f2ReadyWorksheetSchema>;
+export type F4HandoffReady = z.infer<typeof f4HandoffReadySchema>;
 export type DrawingGovernanceRequestV2 = z.infer<typeof drawingGovernanceRequestV2Schema>;
 export type DrawingGovernanceResultV2 = z.infer<typeof drawingGovernanceResultV2Schema>;
 export type SemanticTableDetectionRequest = z.infer<typeof semanticTableDetectionRequestSchema>;
