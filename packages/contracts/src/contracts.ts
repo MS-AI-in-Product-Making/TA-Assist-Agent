@@ -604,6 +604,7 @@ const tolerancePathImageSchema = z.discriminatedUnion("status", [
       status: z.literal("available"),
       actualValue: z.number().finite(),
       displayValue: z.string(),
+      sourceLabel: z.string().min(1),
       sourceCell: worksheetSourceCellSchema.optional(),
       valueOrigin: z.enum(["numeric_literal", "formula_cached", "defaulted"]),
     }).strict();

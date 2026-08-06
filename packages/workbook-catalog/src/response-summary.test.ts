@@ -10,9 +10,9 @@ describe("extractResponseSummarySystemSpecification", () => {
   it("extracts only values inside Response Summary and defaults absent mean shift", () => {
     const result = extractResponseSummarySystemSpecification("TP_C_Step_TA", [
       cell("N50", "Response Summary Table"),
-      cell("N54", "Lower Spec Limit"), cell("P54", "-0.15"),
-      cell("N55", "Upper Spec Limit"), cell("P55", "0.05"),
-      cell("N56", "Target σ Level"), cell("P56", "3", "3"),
+      cell("N54", "*Lower Spec Limit ►"), cell("P54", "-0.15"),
+      cell("N55", "*Upper Spec Limit ►"), cell("P55", "0.05"),
+      cell("N56", "*Target σ Level ►"), cell("P56", "3", "3"),
       cell("N60", "Suggested Spec"),
       cell("N61", "Lower Spec Limit"), cell("P61", "-0.25"),
       cell("N62", "Upper Spec Limit"), cell("P62", "0.15"),
@@ -20,10 +20,10 @@ describe("extractResponseSummarySystemSpecification", () => {
 
     expect(result).toMatchObject({
       status: "available",
-      lowerSpecLimit: { status: "available", actualValue: -0.15, sourceCell: "TP_C_Step_TA!P54" },
-      upperSpecLimit: { status: "available", actualValue: 0.05, sourceCell: "TP_C_Step_TA!P55" },
-      targetSigmaLevel: { status: "available", actualValue: 3, sourceCell: "TP_C_Step_TA!P56", valueOrigin: "formula_cached" },
-      additionalMeanShift: { status: "available", actualValue: 0, valueOrigin: "defaulted" },
+      lowerSpecLimit: { status: "available", actualValue: -0.15, sourceLabel: "*Lower Spec Limit ►", sourceCell: "TP_C_Step_TA!P54" },
+      upperSpecLimit: { status: "available", actualValue: 0.05, sourceLabel: "*Upper Spec Limit ►", sourceCell: "TP_C_Step_TA!P55" },
+      targetSigmaLevel: { status: "available", actualValue: 3, sourceLabel: "*Target σ Level ►", sourceCell: "TP_C_Step_TA!P56", valueOrigin: "formula_cached" },
+      additionalMeanShift: { status: "available", actualValue: 0, sourceLabel: "Additional Mean Shift", valueOrigin: "defaulted" },
     });
   });
 
@@ -38,10 +38,10 @@ describe("extractResponseSummarySystemSpecification", () => {
 
     expect(result).toMatchObject({
       status: "available",
-      lowerSpecLimit: { actualValue: -1, sourceCell: "Analysis-A!AC321" },
-      upperSpecLimit: { actualValue: 2, sourceCell: "Analysis-A!AC322" },
-      targetSigmaLevel: { actualValue: 4, sourceCell: "Analysis-A!AC323" },
-      additionalMeanShift: { actualValue: 0.02, sourceCell: "Analysis-A!AC301" },
+      lowerSpecLimit: { actualValue: -1, sourceLabel: "Lower Spec Limit*", sourceCell: "Analysis-A!AC321" },
+      upperSpecLimit: { actualValue: 2, sourceLabel: "Upper Spec Limit*", sourceCell: "Analysis-A!AC322" },
+      targetSigmaLevel: { actualValue: 4, sourceLabel: "Target Sigma Level", sourceCell: "Analysis-A!AC323" },
+      additionalMeanShift: { actualValue: 0.02, sourceLabel: "Additional Mean Shift:", sourceCell: "Analysis-A!AC301" },
     });
   });
 

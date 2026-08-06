@@ -10,7 +10,7 @@ const LABELS = {
 } as const;
 
 type EvidenceNumber =
-  | { readonly status: "available"; readonly actualValue: number; readonly displayValue: string; readonly sourceCell?: string; readonly valueOrigin: "numeric_literal" | "formula_cached" | "defaulted" }
+  | { readonly status: "available"; readonly actualValue: number; readonly displayValue: string; readonly sourceLabel: string; readonly sourceCell?: string; readonly valueOrigin: "numeric_literal" | "formula_cached" | "defaulted" }
   | { readonly status: "unavailable"; readonly reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid"; readonly sourceCell?: string };
 
 export type WorksheetSystemSpecification =
@@ -43,7 +43,7 @@ function evidence(worksheetName: string, labelCells: readonly OoxmlCell[], rowCe
   const actualValue = Number(displayValue.replace(/σ$/i, "").trim());
   const sourceCell = `${worksheetName}!${valueCell.reference}`;
   if (!Number.isFinite(actualValue)) return { status: "unavailable", reasonCode: "response_summary_value_invalid", sourceCell };
-  return { status: "available", actualValue, displayValue, sourceCell, valueOrigin: valueCell.formula ? "formula_cached" : "numeric_literal" };
+  return { status: "available", actualValue, displayValue, sourceLabel: label.value, sourceCell, valueOrigin: valueCell.formula ? "formula_cached" : "numeric_literal" };
 }
 
 export function extractResponseSummarySystemSpecification(worksheetName: string, cells: readonly OoxmlCell[]): WorksheetSystemSpecification {
@@ -65,7 +65,7 @@ export function extractResponseSummarySystemSpecification(worksheetName: string,
 
   const meanShiftLabels = located.filter((cell) => location(cell.reference)!.row < anchorRow && LABELS.additionalMeanShift.has(normalize(cell.value)));
   const additionalMeanShift = meanShiftLabels.length === 0
-    ? { status: "available" as const, actualValue: 0, displayValue: "0", valueOrigin: "defaulted" as const }
+    ? { status: "available" as const, actualValue: 0, displayValue: "0", sourceLabel: "Additional Mean Shift", valueOrigin: "defaulted" as const }
     : evidence(worksheetName, meanShiftLabels, located);
   const values = { lowerSpecLimit, upperSpecLimit, targetSigmaLevel, additionalMeanShift };
   if (lowerSpecLimit.status === "available" && upperSpecLimit.status === "available" && lowerSpecLimit.actualValue >= upperSpecLimit.actualValue) {
