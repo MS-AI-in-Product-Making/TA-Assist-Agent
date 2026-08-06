@@ -6,7 +6,9 @@ import {
   createWorkbookCatalog,
 } from "../packages/workbook-catalog/dist/workbook-catalog.js";
 import {
+  createWorksheetSelectionPrompt,
   createWorksheetSelectionView,
+  validateWorksheetSelectionConfirmation,
 } from "../packages/workbook-catalog/dist/worksheet-selection.js";
 import {
   createWorksheetAnalysisAssetsParallel,
@@ -46,11 +48,47 @@ function readJsonIfExists(jsonPath) {
   return JSON.parse(readFileSync(jsonPath, "utf8"));
 }
 
-function worksheetNamesFromManifest(manifestPath, fallback) {
-  if (!manifestPath) return fallback;
+function worksheetNamesFromManifest(manifestPath) {
+  if (!manifestPath) return undefined;
   const manifest = readJsonIfExists(manifestPath);
   const selected = manifest?.selectedNames;
-  return Array.isArray(selected) && selected.length > 0 ? selected : fallback;
+  return Array.isArray(selected) && selected.length > 0 ? selected : undefined;
+}
+
+function parseSelectionArgs(args) {
+  const workbookArgs = [];
+  let selectionOnly = false;
+  let confirmed = false;
+  let workbookContentHash;
+  let selectedWorksheetNames;
+  for (let index = 0; index < args.length; index += 1) {
+    const value = args[index];
+    if (value === "--selection-only") {
+      selectionOnly = true;
+    } else if (value === "--confirm") {
+      confirmed = true;
+    } else if (value === "--workbook-hash" || value === "--worksheets") {
+      const optionValue = args[index + 1];
+      if (!optionValue || optionValue.startsWith("--")) throw new Error(`Feature 1 ${value} value is missing.`);
+      if (value === "--workbook-hash") workbookContentHash = optionValue;
+      else selectedWorksheetNames = optionValue.split(",").map((name) => name.trim()).filter(Boolean);
+      index += 1;
+    } else if (value.startsWith("--")) {
+      throw new Error(`Feature 1 option is unsupported: ${value}`);
+    } else {
+      workbookArgs.push(value);
+    }
+  }
+  const confirmationCount = Number(confirmed) + Number(workbookContentHash !== undefined) + Number(selectedWorksheetNames !== undefined);
+  if (selectionOnly && confirmationCount > 0) throw new Error("Feature 1 selection-only mode cannot include confirmation.");
+  if (confirmationCount !== 0 && confirmationCount !== 3) throw new Error("Feature 1 confirmation parameters must be provided together.");
+  return {
+    workbookArgs,
+    selectionOnly,
+    confirmation: confirmationCount === 3
+      ? { workbookContentHash, selectedWorksheetNames, confirmed: true }
+      : undefined,
+  };
 }
 
 function extensionFromMediaType(mediaType) {
@@ -424,7 +462,8 @@ function summarizePages(pages) {
 }
 
 const cliArgs = process.argv.slice(2);
-const jobs = resolveFeature1Jobs(cliArgs, configuredFeature1Jobs)
+const selectionArgs = parseSelectionArgs(cliArgs);
+const jobs = resolveFeature1Jobs(selectionArgs.workbookArgs, configuredFeature1Jobs)
   .filter((job) => existsSync(job.workbookPath));
 if (jobs.length === 0) {
   throw new Error("No configured workbook exists for Feature 1 workflow.");
@@ -432,13 +471,28 @@ if (jobs.length === 0) {
 
 const generatedAt = new Date().toISOString();
 const runId = generatedAt.replace(/[:.]/g, "-");
-const outputLayout = resolveFeature1OutputLayout(cliArgs, runId, process.env.AI_TVA_F1_OUTPUT_ROOT);
+const outputLayout = resolveFeature1OutputLayout(selectionArgs.workbookArgs, runId, process.env.AI_TVA_F1_OUTPUT_ROOT);
 const outRoot = outputLayout.outRoot;
 const outSheetsRoot = path.join(outRoot, "sheets");
 if (outputLayout.resetOutputRoot) {
   rmSync(outRoot, { recursive: true, force: true });
 }
 mkdirSync(outSheetsRoot, { recursive: true });
+
+if (selectionArgs.selectionOnly) {
+  if (jobs.length !== 1) throw new Error("Feature 1 selection-only mode requires exactly one workbook.");
+  const job = jobs[0];
+  const workbookBytes = new Uint8Array(readFileSync(job.workbookPath));
+  const workbookCatalog = createWorkbookCatalog({
+    contractVersion: "v1",
+    fileName: path.basename(job.workbookPath),
+    inputClassification: "confidential",
+    workbookBytes,
+  });
+  const prompt = createWorksheetSelectionPrompt({ contractVersion: "v1", inputClassification: "confidential", workbookCatalog });
+  writeFileSync(path.join(outRoot, "Feature1-Selection.json"), `${JSON.stringify(prompt, null, 2)}\n`, "utf8");
+  process.exit(0);
+}
 const report = {
   contractVersion: "v1",
   feature: "F1",
@@ -465,11 +519,21 @@ for (const job of jobs) {
     workbookCatalog,
   });
 
-  const detectedWorksheetNames = selectionView.worksheets.map((item) => item.worksheetName);
-  const selectedWorksheetNames = filterFeature1WorksheetNames(worksheetNamesFromManifest(
-    job.selectedManifestPath,
-    detectedWorksheetNames,
-  ));
+  const prompt = createWorksheetSelectionPrompt({
+    contractVersion: "v1",
+    inputClassification: "confidential",
+    workbookCatalog,
+  });
+  const manifestWorksheetNames = worksheetNamesFromManifest(job.selectedManifestPath);
+  const confirmation = selectionArgs.confirmation ?? (manifestWorksheetNames
+    ? { workbookContentHash: prompt.workbook.contentHash, selectedWorksheetNames: manifestWorksheetNames, confirmed: true }
+    : undefined);
+  if (!confirmation) throw new Error("Feature 1 worksheet confirmation is required.");
+  const confirmationResult = validateWorksheetSelectionConfirmation({ prompt, confirmation });
+  if (confirmationResult.status !== "confirmed") {
+    throw new Error(`Feature 1 worksheet selection was ${confirmationResult.status}: ${confirmationResult.reasonCode}`);
+  }
+  const selectedWorksheetNames = filterFeature1WorksheetNames(confirmationResult.selectedWorksheetNames);
 
   const parallelAssets = await createWorksheetAnalysisAssetsParallel({
     contractVersion: "v1",

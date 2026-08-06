@@ -205,16 +205,17 @@ it("runs Feature 1 workflow via phrase alias", async () => {
 }, 120_000);
 
 it("routes explicit Feature 2 command with one workbook", async () => {
-  const runFeature2 = async (rootDir: string, workbookPath: string) => `Feature 2 workflow completed.\nrunRoot: ${rootDir}/runs\nworkbook: ${workbookPath}`;
+  const runFeature2 = async (rootDir: string, workbookPath: string, selection: { mode: string }) => `selection: ${selection.mode}\nrunRoot: ${rootDir}/runs\nworkbook: ${workbookPath}`;
   const result = await executeCli(["feature2", "--root", "repo", "--workbook", "Demo.xlsx"], { cwd: () => "ignored", runFeature2 });
 
   expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+  expect(result.stdout).toContain("selection: prompt");
   expect(result.stdout).toContain("runRoot: repo/runs");
   expect(result.stdout).toContain("workbook: Demo.xlsx");
 });
 
 it("routes the Feature 2 phrase alias without scanning for a workbook", async () => {
-  const runFeature2 = async (rootDir: string, workbookPath: string) => `root: ${rootDir}\nworkbook: ${workbookPath}`;
+  const runFeature2 = async (rootDir: string, workbookPath: string, selection: { mode: string }) => `root: ${rootDir}\nworkbook: ${workbookPath}\nselection: ${selection.mode}`;
   const dependencies = { cwd: () => "repo", runFeature2 };
 
   await expect(executeCli(["帮我用F2分析下excel", "Demo.xlsx"], dependencies)).resolves.toMatchObject({ exitCode: 0, stderr: "" });
@@ -247,4 +248,27 @@ it("allows --workbook only for Feature 2", async () => {
 
 it("allows --f2-artifacts only for Feature 3", async () => {
   await expect(executeCli(["smoke", "--root", "repo", "--f2-artifacts", "runs/demo/f2"])).resolves.toMatchObject({ exitCode: 2 });
+});
+
+it("passes complete Feature 2 worksheet confirmation and rejects partial flags", async () => {
+  const calls: unknown[] = [];
+  const runFeature2 = async (...args: unknown[]) => {
+    calls.push(args);
+    return "confirmed";
+  };
+  const complete = [
+    "feature2", "--root", "repo", "--workbook", "Demo.xlsx",
+    "--worksheets", "Analysis-A,Analysis-B", "--workbook-hash", "a".repeat(64), "--confirm",
+  ];
+
+  await expect(executeCli(complete, { cwd: () => "ignored", runFeature2 })).resolves.toMatchObject({ exitCode: 0 });
+  expect(calls[0]).toEqual(["repo", "Demo.xlsx", {
+    mode: "confirmed",
+    workbookContentHash: "a".repeat(64),
+    selectedWorksheetNames: ["Analysis-A", "Analysis-B"],
+  }]);
+  await expect(executeCli([
+    "feature2", "--root", "repo", "--workbook", "Demo.xlsx", "--confirm",
+  ], { cwd: () => "ignored", runFeature2 })).resolves.toMatchObject({ exitCode: 2 });
+  expect(calls).toHaveLength(1);
 });

@@ -1,6 +1,6 @@
 import { runExportCommand } from "./commands/export.js";
 import { isFeature1Phrase, runFeature1WorkflowCommand } from "./commands/feature1.js";
-import { isFeature2Phrase, runFeature2WorkflowCommand } from "./commands/feature2.js";
+import { isFeature2Phrase, runFeature2WorkflowCommand, type Feature2WorksheetSelectionArgs } from "./commands/feature2.js";
 import { isFeature3Phrase, runFeature3WorkflowCommand } from "./commands/feature3.js";
 import { runInspectCommand } from "./commands/inspect.js";
 import { runPurgeCommand, runPurgePlanCommand } from "./commands/purge.js";
@@ -28,7 +28,7 @@ export async function executeCli(argv: readonly string[], dependencies: CliDepen
     }
     if (isFeature2Phrase(argv[0])) {
       if (argv.length !== 2 || !argv[1]) throw new Error("validation_error: Feature 2 workbook is required");
-      const stdout = await dependencies.runFeature2(dependencies.cwd(), argv[1]);
+      const stdout = await dependencies.runFeature2(dependencies.cwd(), argv[1], { mode: "prompt" });
       return { exitCode: 0, stdout: `${stdout}\n`, stderr: "" };
     }
     if (isFeature3Phrase(argv[0])) {
@@ -59,7 +59,7 @@ async function executeCommand(parsed: ReturnType<typeof parseArguments>, depende
     case "feature1":
       return runFeature1WorkflowCommand(parsed.rootDir);
     case "feature2":
-      return dependencies.runFeature2(parsed.rootDir, parsed.workbookPath);
+      return dependencies.runFeature2(parsed.rootDir, parsed.workbookPath, parsed.worksheetSelection);
     case "feature3":
       return (dependencies.runFeature3 ?? runFeature3WorkflowCommand)(parsed.rootDir, parsed.f2ArtifactRoot);
   }
@@ -72,7 +72,7 @@ function parseArguments(argv: readonly string[]):
   | { command: "purge-plan"; rootDir: string; runId: string }
   | { command: "purge"; rootDir: string; runId: string; confirmationToken: string }
   | { command: "feature1"; rootDir: string }
-  | { command: "feature2"; rootDir: string; workbookPath: string }
+  | { command: "feature2"; rootDir: string; workbookPath: string; worksheetSelection: Feature2WorksheetSelectionArgs }
   | { command: "feature3"; rootDir: string; f2ArtifactRoot: string } {
   const [command, ...flags] = argv;
   if (!isCommand(command)) {
@@ -81,11 +81,11 @@ function parseArguments(argv: readonly string[]):
   const values = new Map<string, string | boolean>();
   for (let index = 0; index < flags.length; index += 1) {
     const flag = flags[index];
-    if (flag === "--confirm-confidential") {
+    if (flag === "--confirm-confidential" || flag === "--confirm") {
       setOnce(values, flag, true);
       continue;
     }
-    if (flag !== "--root" && flag !== "--run-id" && flag !== "--confirmation-token" && flag !== "--workbook" && flag !== "--f2-artifacts") {
+    if (flag !== "--root" && flag !== "--run-id" && flag !== "--confirmation-token" && flag !== "--workbook" && flag !== "--f2-artifacts" && flag !== "--worksheets" && flag !== "--workbook-hash") {
       throw new Error("validation_error: unknown option");
     }
     const value = flags[index + 1];
@@ -108,10 +108,26 @@ function parseArguments(argv: readonly string[]):
     return { command, rootDir };
   }
   if (command === "feature2") {
-    rejectUnexpected(values, ["--root", "--workbook"]);
+    rejectUnexpected(values, ["--root", "--workbook", "--worksheets", "--workbook-hash", "--confirm"]);
     const workbookPath = values.get("--workbook");
     if (typeof workbookPath !== "string" || workbookPath.length === 0) throw new Error("validation_error: --workbook is required");
-    return { command, rootDir, workbookPath };
+    const worksheets = values.get("--worksheets");
+    const workbookContentHash = values.get("--workbook-hash");
+    const confirmed = values.get("--confirm") === true;
+    const providedCount = Number(typeof worksheets === "string") + Number(typeof workbookContentHash === "string") + Number(confirmed);
+    if (providedCount !== 0 && providedCount !== 3) throw new Error("validation_error: --worksheets, --workbook-hash, and --confirm must be provided together");
+    if (providedCount === 0) return { command, rootDir, workbookPath, worksheetSelection: { mode: "prompt" } };
+    if (!/^[a-f0-9]{64}$/i.test(workbookContentHash as string)) throw new Error("validation_error: --workbook-hash must be a SHA-256 hash");
+    const selectedWorksheetNames = (worksheets as string).split(",").map((name) => name.trim()).filter(Boolean);
+    if (selectedWorksheetNames.length === 0 || new Set(selectedWorksheetNames).size !== selectedWorksheetNames.length) {
+      throw new Error("validation_error: --worksheets must contain unique worksheet names");
+    }
+    return {
+      command,
+      rootDir,
+      workbookPath,
+      worksheetSelection: { mode: "confirmed", workbookContentHash: workbookContentHash as string, selectedWorksheetNames },
+    };
   }
   if (command === "feature3") {
     rejectUnexpected(values, ["--root", "--f2-artifacts"]);

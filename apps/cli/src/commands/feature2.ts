@@ -22,7 +22,15 @@ function outputPath(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-export async function runFeature2WorkflowCommand(rootDir: string, workbookPath: string): Promise<string> {
+export type Feature2WorksheetSelectionArgs =
+  | { readonly mode: "prompt" }
+  | { readonly mode: "confirmed"; readonly workbookContentHash: string; readonly selectedWorksheetNames: readonly string[] };
+
+export async function runFeature2WorkflowCommand(
+  rootDir: string,
+  workbookPath: string,
+  selection: Feature2WorksheetSelectionArgs = { mode: "prompt" },
+): Promise<string> {
   const scriptPath = join(rootDir, "scripts", "f2-excel-runner.mjs");
   if (!existsSync(scriptPath)) throw feature2Error("validation_error", "Feature 2 workflow script is missing.");
   if (extname(workbookPath).toLowerCase() !== ".xlsx" || !existsSync(workbookPath) || !statSync(workbookPath).isFile()) {
@@ -30,8 +38,29 @@ export async function runFeature2WorkflowCommand(rootDir: string, workbookPath: 
   }
 
   try {
-    const { stdout } = await execFileAsync(process.execPath, [scriptPath, workbookPath], { cwd: rootDir, maxBuffer: 4 * 1024 * 1024 });
+    const args = [scriptPath, workbookPath];
+    if (selection.mode === "confirmed") {
+      args.push(
+        "--workbook-hash",
+        selection.workbookContentHash,
+        "--worksheets",
+        selection.selectedWorksheetNames.join(","),
+        "--confirm",
+      );
+    }
+    const { stdout } = await execFileAsync(process.execPath, args, { cwd: rootDir, maxBuffer: 4 * 1024 * 1024 });
     const parsed = JSON.parse(stdout) as Record<string, unknown>;
+    if (parsed.status === "selectionRequired") {
+      const prompt = parsed.prompt as { workbook?: { contentHash?: unknown }; options?: Array<{ worksheetName?: unknown }> } | undefined;
+      const contentHash = outputPath(prompt?.workbook?.contentHash);
+      const worksheetNames = prompt?.options?.map((option) => outputPath(option.worksheetName)).filter((name): name is string => name !== undefined) ?? [];
+      if (!contentHash || worksheetNames.length === 0) throw new Error("invalid runner output");
+      return [
+        "Worksheet selection required.",
+        `workbookHash: ${contentHash}`,
+        ...worksheetNames.map((worksheetName) => `worksheet: ${worksheetName}`),
+      ].join("\n");
+    }
     const runRoot = outputPath(parsed.runRoot);
     const f1Root = outputPath(parsed.f1Root);
     const f2Root = outputPath(parsed.f2Root);
