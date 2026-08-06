@@ -8,8 +8,9 @@ Feature Register 是 Phase 0 对 F0-F8 的唯一可查询能力清单。它提�
 `internal-v1` 制程指导和 `interpretation-rules-v1` 解读规则而标记为 `available`；F1 为受控 `confidential` 工作簿字节的只读 catalog 与 F1.1 资产准备而标记为
 `available`；F1.7 为因子表语义识别与人工确认闸门而标记为 `available`；根 F2 Initial 为 worksheet 隔离的数据清洗与能力一致性门禁而标记为 `available`；F2.1 为严格必填字段校验而标记为 `available`；F2.2 为非阻断能力库与 distribution
 一致性校验而标记为 `available`；F2.3 的受限例外处理与 F2.4 的标识符质量检查也标记为
+`available`；F3 为 `drawing-governance-v2` 本地治理核心和受控 Surface MCP adapter 而标记为
 `available`；F4 为受 F1/F2 证据门禁的 `excel-ta-v1` 计算服务而标记为 `available`；F5.1 为
-F4/F0 支持的客观能力与贡献解读而标记为 `available`；F3、根 F5、F6 和 F7 仍为
+F4/F0 支持的客观能力与贡献解读而标记为 `available`；根 F5、F6 和 F7 仍为
 `unavailable`。F8 仅为 Phase 0 的匿名、`public`、受治理 Skill 验收 fixture 而标记为
 `available`。这些状态不表示已交付 TA 产品工作流、生产编排器、真实工程知识或任何外部写入
 能力；调用方和后续编排器仍必须在执行前查询该清单。
@@ -26,7 +27,7 @@ F4/F0 支持的客观能力与贡献解读而标记为 `available`；F3、根 F5
 | F2.2 | 能力库与分布一致性校验 | `available` | `worksheet-analysis-assets-v1`, `required-field-check-v1`, `knowledge-base-v1`, `capability-validation-v1`; `approved-public-knowledge-snapshot` | `capability-validation-request-v1` / `capability-validation-result-v1` | `confidential` | `anonymous-capability-validation-fixture`, `capability-validation-gate-check`, `capability-validation-nonblocking-check`, `capability-validation-privacy-check` | `return feature_not_available` |
 | F2.3 | 非阻断差异例外处理 | `available` | `capability-validation-v1`, `identifier-quality-check-v1`, `unified-exception-resolution-v2`; `approved-exception-policy` | `unified-exception-resolution-request-v2` / `unified-exception-resolution-result-v2` | `confidential` | `anonymous-unified-exception-resolution-fixture`, `unified-exception-resolution-coverage-check`, `unified-exception-resolution-privacy-check` | `return feature_not_available` |
 | F2.4 | DIM ID 与 Drawing Number 质量检查 | `available` | `worksheet-analysis-assets-v1`, `required-field-check-v1`, `identifier-quality-check-v1`; `approved-ooxml-parser` | `identifier-quality-check-request-v1` / `identifier-quality-check-result-v1` | `confidential` | `anonymous-identifier-quality-fixture`, `identifier-quality-gate-check`, `identifier-quality-privacy-check` | `return feature_not_available` |
-| F3 | DIM ID 与图纸治理 | `unavailable` | `dim-id-service-v1`; `approved-ado-access`, `canonical-dim-id-policy` | `drawing-governance-request-v1` / `drawing-governance-result-v1` | `confidential` | `anonymous-dim-id-fixture` | `return feature_not_available` |
+| F3 | DIM ID 与图纸治理 | `available` | `f2-user-report-v1`, `drawing-governance-v2`, `surface-mcp-adapter-v1`; `approved-surface-mcp-access`, `approved-comment-zero-write-policy` | `drawing-governance-request-v2` / `drawing-governance-result-v2` | `confidential` | `anonymous-drawing-governance-fixture`, `drawing-governance-anchor-check`, `drawing-governance-privacy-check`, `surface-mcp-comment-zero-confirmation-check` | `return feature_not_available` |
 | F4 | 方法推荐与 Excel 一致性计算 | `available` | `worksheet-analysis-assets-v1`, `required-field-check-v1`, `exception-resolution-v1`, `calculation-service-v1`; `approved-windows-excel-worker` | `calculation-request-v1` / `calculation-result-v1` | `confidential` | `anonymous-calculation-kernel-fixture`, `approved-template-regression`, `calculation-privacy-check` | `return feature_not_available` |
 | F5 | 客观结果解释 | `unavailable` | `calculation-worker-v1`, `knowledge-base-v1`, `interpretation-rules-v1`; `approved-knowledge-base` | `interpretation-request-v1` / `interpretation-result-v1` | `confidential` | `anonymous-interpretation-fixture` | `return feature_not_available` |
 | F5.1 | 客观结果解读 | `available` | `calculation-service-v1`, `knowledge-base-v1`, `interpretation-rules-v1`, `objective-interpretation-v1`; `approved-knowledge-base` | `interpretation-request-v1` / `interpretation-result-v1` | `confidential` | `anonymous-interpretation-fixture`, `interpretation-rule-traceability-check`, `interpretation-privacy-check` | `return feature_not_available` |
@@ -79,6 +80,14 @@ F0 解读规则范围与维护边界见 [F0 TA 结果解读规则库设计](../s
   `F0 -> F1 artifacts -> F2` 链路。现行依据见
   [F2 Artifact 报告优化设计](../superpowers/specs/2026-08-03-f2-artifact-report-redesign.md) 和
   [实施计划](../superpowers/plans/2026-08-03-f2-artifact-report-redesign.md)。
+- F3 的 `available` 只覆盖 `drawing-governance-v2` 确定性核心、本地 JSON/Markdown artifact workflow
+  以及宿主注入的 Surface MCP adapter。当前 Part Number 等同 Drawing Number；正式键为
+  `(Drawing Number, DIM ID)`，跨图纸相同 DIM ID 合法，同图纸重复产生 `duplicate_conflict`，
+  一位纯数字为不阻塞 TA 的 `suspected_invalid`。本地命令为
+  `npm run workflow:f3 -- "<feature2-artifact-directory>"`。ADO 写入仅更新 Comment 0，严格执行
+  `prepare -> confirm -> execute`；真实写入仍需 Surface MCP capability、策略审批和逐次用户确认。
+  无 ADO、负责人、能力、确认或写入失败时保存同一份 confidential 清单并继续 TA。F3 不依赖
+  Azure DevOps MCP，不读取日期、不做截止临近判断，也不运行 scheduler。
 - F4 的 `available` 只接受 F1/F2 已验证且内容哈希绑定的 `confidential` 结构化证据。计算版本为
   `excel-ta-v1`：少于 4 个有效因子推荐 WC，4 至 10 个推荐一维 RSS，多于 10 个转介 DM 团队
   跟进 3D Variation Analysis，但三种区间均继续计算 WC 和 RSS。核心支持 Normal、Uniform、

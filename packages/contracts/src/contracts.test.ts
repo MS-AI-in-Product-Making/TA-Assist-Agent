@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
+import * as contractExports from "./index.js";
 import {
   calculationCriticalitySchema,
   calculationMethodSchema,
@@ -170,6 +171,19 @@ describe("F2 artifact user report contracts", () => {
       ...completedReport,
       worksheets: [{ ...completedReport.worksheets[0], rows: [{ ...row, displayedFields: { factorName: "display" } }] }],
     }).success).toBe(false);
+  });
+
+  it("accepts an optional tolerance loop description during F2 migration", () => {
+    const withDescription = {
+      ...artifactInput,
+      worksheets: [{
+        ...artifactInput.worksheets[0],
+        toleranceLoopDescription: "Anonymous device gap",
+      }],
+    };
+
+    expect(f2ArtifactInputSchema.parse(withDescription)).toEqual(withDescription);
+    expect(() => f2ArtifactInputSchema.parse(artifactInput)).not.toThrow();
   });
 
   it("accepts input rejection but rejects inconsistent business and ADO states", () => {
@@ -1278,6 +1292,160 @@ describe("F3 drawing governance placeholder contracts", () => {
       ...result,
       requiredPrerequisites: ["canonical-dim-id-policy", "approved-ado-access"],
     }).success).toBe(false);
+  });
+});
+
+describe("F3 drawing governance v2 contracts", () => {
+  const contentHash = "d".repeat(64);
+  const factorInstanceId = "e".repeat(64);
+  const drawingDimensionKey = "f".repeat(64);
+  const actualFields = {
+    factorName: "Anonymous bracket offset",
+    partName: "Anonymous bracket",
+    drawingNumber: "DRAW-100",
+    dimCharacteristicId: "307",
+    partCategory: "CNC",
+    nominalValue: 3.145,
+    upperTolerance: 0.1,
+    lowerTolerance: -0.1,
+    longTermSafetyFactor: 1,
+    sigmaLevel: 4,
+    distribution: "Normal",
+    mean: 3.145,
+    tolerance: 0.1,
+    oneSigma: 0.025,
+    percentContributionToSigma: 1,
+    notes: null,
+  };
+  const sourceCells = {
+    factorName: "Analysis-A!E14",
+    partName: "Analysis-A!F14",
+    drawingNumber: "Analysis-A!G14",
+    dimCharacteristicId: "Analysis-A!H14",
+    partCategory: "Analysis-A!I14",
+    nominalValue: "Analysis-A!J14",
+    upperTolerance: "Analysis-A!K14",
+    lowerTolerance: "Analysis-A!L14",
+    standardDeviation: "Analysis-A!N14",
+  };
+  const enhancedRow = {
+    worksheetName: "Analysis-A",
+    tableId: "factor-table-1",
+    sourceRow: 14,
+    actualFields,
+    sourceCells,
+    missingRequiredFields: [],
+    missingIdentifiers: [],
+    capabilityStatus: "non_f0_process_category",
+    adoReminderRequested: false,
+  };
+  const request = {
+    contractVersion: "v1",
+    modelVersion: "drawing-governance-v2",
+    inputClassification: "confidential",
+    workbook: { fileName: "Anonymous.xlsx", contentHash },
+    worksheets: [{
+      worksheetName: "Analysis-A",
+      toleranceLoopDescription: "Anonymous device gap",
+      f2Status: "ready",
+      rows: [enhancedRow],
+    }],
+  };
+  const governanceRow = {
+    factorInstanceId,
+    drawingDimensionKey,
+    deviceLevelDim: "Analysis-A",
+    dimensionDescription: "Anonymous device gap",
+    partCategory: "CNC",
+    partSubsystem: "Anonymous bracket",
+    drawingNumber: "DRAW-100",
+    dimId: "307",
+    factorDescription: "Anonymous bracket offset",
+    nominal: 3.145,
+    upperTolerance: 0.1,
+    lowerTolerance: -0.1,
+    sigmaLevel: 4,
+    dimIdStatus: "valid",
+    qualitySignals: [],
+    governanceStatus: "complete",
+    source: {
+      worksheetName: "Analysis-A",
+      tableId: "factor-table-1",
+      sourceRow: 14,
+      sourceCells,
+    },
+  };
+  const result = {
+    contractVersion: "v1",
+    modelVersion: "drawing-governance-v2",
+    outputClassification: "confidential",
+    featureId: "F3",
+    status: "completed",
+    workbook: { fileName: "Anonymous.xlsx", contentHash },
+    worksheets: [{
+      worksheetName: "Analysis-A",
+      toleranceLoopDescription: "Anonymous device gap",
+      rows: [governanceRow],
+    }],
+    ado: { status: "not_requested" },
+    summary: {
+      worksheetCount: 1,
+      factorCount: 1,
+      completeCount: 1,
+      governanceRequiredCount: 0,
+      duplicateConflictCount: 0,
+    },
+  };
+
+  function schemas() {
+    const requestSchema = Reflect.get(contractExports, "drawingGovernanceRequestV2Schema") as { parse(value: unknown): unknown; safeParse(value: unknown): { success: boolean } } | undefined;
+    const resultSchema = Reflect.get(contractExports, "drawingGovernanceResultV2Schema") as { parse(value: unknown): unknown; safeParse(value: unknown): { success: boolean } } | undefined;
+    expect(requestSchema).toBeDefined();
+    expect(resultSchema).toBeDefined();
+    return { requestSchema: requestSchema!, resultSchema: resultSchema! };
+  }
+
+  it("parses strict confidential F3 v2 request and result contracts", () => {
+    const { requestSchema, resultSchema } = schemas();
+    expect(requestSchema.parse(request)).toEqual(request);
+    expect(resultSchema.parse(result)).toEqual(result);
+    expect(requestSchema.safeParse({ ...request, unexpected: true }).success).toBe(false);
+    expect(requestSchema.safeParse({ ...request, inputClassification: "public" }).success).toBe(false);
+  });
+
+  it("accepts a structured input rejection result", () => {
+    const { resultSchema } = schemas();
+    expect(resultSchema.safeParse({
+      contractVersion: "v1",
+      modelVersion: "drawing-governance-v2",
+      outputClassification: "confidential",
+      featureId: "F3",
+      status: "input_rejected",
+      artifactIssues: [{ reasonCode: "description_missing", artifactReference: "worksheet:Analysis-A" }],
+    }).success).toBe(true);
+  });
+
+  it("rejects formal keys for unresolved identifiers and inconsistent summaries", () => {
+    const { resultSchema } = schemas();
+    expect(resultSchema.safeParse({
+      ...result,
+      worksheets: [{
+        ...result.worksheets[0],
+        rows: [{ ...governanceRow, dimIdStatus: "suspected_invalid" }],
+      }],
+    }).success).toBe(false);
+    expect(resultSchema.safeParse({
+      ...result,
+      worksheets: [{
+        ...result.worksheets[0],
+        rows: [{ ...governanceRow, drawingNumber: null }],
+      }],
+    }).success).toBe(false);
+    expect(resultSchema.safeParse({
+      ...result,
+      summary: { ...result.summary, factorCount: 2 },
+    }).success).toBe(false);
+    expect(resultSchema.safeParse({ ...result, status: "governance_required" }).success).toBe(false);
   });
 });
 

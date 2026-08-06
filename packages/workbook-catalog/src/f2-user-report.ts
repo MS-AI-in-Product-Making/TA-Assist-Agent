@@ -141,6 +141,7 @@ export function createF2UserReport(
     const blocked = worksheet.tolerancePathImage.status === "unavailable" || rows.some((row) => row.missingRequiredFields.length > 0);
     return {
       worksheetName: worksheet.worksheetName,
+      ...(worksheet.toleranceLoopDescription === undefined ? {} : { toleranceLoopDescription: worksheet.toleranceLoopDescription }),
       status: blocked ? "blocked" as const : "ready" as const,
       tolerancePathImageStatus: worksheet.tolerancePathImage.status,
       rows,

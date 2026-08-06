@@ -221,6 +221,30 @@ it("routes the Feature 2 phrase alias without scanning for a workbook", async ()
   await expect(executeCli(["use F2 to analyze Excel"], dependencies)).resolves.toMatchObject({ exitCode: 2, stdout: "", stderr: expect.stringContaining("workbook is required") });
 });
 
+it("routes explicit Feature 3 command with one Feature 2 artifact directory", async () => {
+  const runFeature3 = async (rootDir: string, f2ArtifactRoot: string) => `Feature 3 workflow completed.\nf3: ${rootDir}/f3\ninput: ${f2ArtifactRoot}`;
+  const result = await executeCli(
+    ["feature3", "--root", "repo", "--f2-artifacts", "runs/demo/f2"],
+    { cwd: () => "ignored", runFeature2: async () => "unused", runFeature3 },
+  );
+
+  expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+  expect(result.stdout).toContain("f3: repo/f3");
+  expect(result.stdout).toContain("input: runs/demo/f2");
+});
+
+it("routes the Feature 3 phrase alias without scanning for artifacts", async () => {
+  const runFeature3 = async (rootDir: string, f2ArtifactRoot: string) => `root: ${rootDir}\nf2: ${f2ArtifactRoot}`;
+  const dependencies = { cwd: () => "repo", runFeature2: async () => "unused", runFeature3 };
+
+  await expect(executeCli(["帮我用F3治理DIM ID", "runs/demo/f2"], dependencies)).resolves.toMatchObject({ exitCode: 0, stderr: "" });
+  await expect(executeCli(["use F3 to govern DIM IDs"], dependencies)).resolves.toMatchObject({ exitCode: 2, stdout: "", stderr: expect.stringContaining("artifact directory is required") });
+});
+
 it("allows --workbook only for Feature 2", async () => {
   await expect(executeCli(["smoke", "--root", "repo", "--workbook", "Demo.xlsx"])).resolves.toMatchObject({ exitCode: 2 });
+});
+
+it("allows --f2-artifacts only for Feature 3", async () => {
+  await expect(executeCli(["smoke", "--root", "repo", "--f2-artifacts", "runs/demo/f2"])).resolves.toMatchObject({ exitCode: 2 });
 });

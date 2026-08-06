@@ -19,7 +19,8 @@
     "demo:task1.7": "node scripts/run-f1-task1-7-demo.mjs",
     "workflow:f1": "node scripts/run-f1-full-validation.mjs",
     "workflow:f2": "node scripts/run-f2-full-validation.mjs",
-    "workflow:f2:excel": "node scripts/f2-excel-runner.mjs"
+    "workflow:f2:excel": "node scripts/f2-excel-runner.mjs",
+    "workflow:f3": "node scripts/run-f3-full-validation.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",

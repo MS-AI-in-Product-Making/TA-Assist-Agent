@@ -86,6 +86,11 @@ export function loadF1ArtifactBundle(artifactRoot) {
       issues.push(issue("workbook_identity_mismatch", sheet.jsonPath));
       continue;
     }
+    if (typeof worksheet.toleranceLoopDescription !== "string"
+      || worksheet.toleranceLoopDescription.trim().length === 0) {
+      issues.push(issue("invalid_contract", sheet.jsonPath));
+      continue;
+    }
 
     let tolerancePathImage;
     const semanticImage = worksheet.tolerancePathImage;
@@ -119,6 +124,7 @@ export function loadF1ArtifactBundle(artifactRoot) {
     }
     worksheets.push({
       worksheetName: sheet.worksheetName,
+      toleranceLoopDescription: worksheet.toleranceLoopDescription,
       worksheetJsonPath: sheet.jsonPath,
       worksheetMdPath: mdRelative,
       tolerancePathImage,

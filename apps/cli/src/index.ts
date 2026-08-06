@@ -1,6 +1,7 @@
 import { runExportCommand } from "./commands/export.js";
 import { isFeature1Phrase, runFeature1WorkflowCommand } from "./commands/feature1.js";
 import { isFeature2Phrase, runFeature2WorkflowCommand } from "./commands/feature2.js";
+import { isFeature3Phrase, runFeature3WorkflowCommand } from "./commands/feature3.js";
 import { runInspectCommand } from "./commands/inspect.js";
 import { runPurgeCommand, runPurgePlanCommand } from "./commands/purge.js";
 import { runSmokeCommand } from "./commands/smoke.js";
@@ -11,11 +12,12 @@ export interface CliResult {
   stderr: string;
 }
 
-type Command = "smoke" | "inspect" | "export" | "purge-plan" | "purge" | "feature1" | "feature2";
+type Command = "smoke" | "inspect" | "export" | "purge-plan" | "purge" | "feature1" | "feature2" | "feature3";
 
 interface CliDependencies {
   readonly cwd: () => string;
   readonly runFeature2: typeof runFeature2WorkflowCommand;
+  readonly runFeature3?: typeof runFeature3WorkflowCommand;
 }
 
 export async function executeCli(argv: readonly string[], dependencies: CliDependencies = { cwd: () => process.cwd(), runFeature2: runFeature2WorkflowCommand }): Promise<CliResult> {
@@ -27,6 +29,11 @@ export async function executeCli(argv: readonly string[], dependencies: CliDepen
     if (isFeature2Phrase(argv[0])) {
       if (argv.length !== 2 || !argv[1]) throw new Error("validation_error: Feature 2 workbook is required");
       const stdout = await dependencies.runFeature2(dependencies.cwd(), argv[1]);
+      return { exitCode: 0, stdout: `${stdout}\n`, stderr: "" };
+    }
+    if (isFeature3Phrase(argv[0])) {
+      if (argv.length !== 2 || !argv[1]) throw new Error("validation_error: Feature 2 artifact directory is required");
+      const stdout = await (dependencies.runFeature3 ?? runFeature3WorkflowCommand)(dependencies.cwd(), argv[1]);
       return { exitCode: 0, stdout: `${stdout}\n`, stderr: "" };
     }
     const parsed = parseArguments(argv);
@@ -53,6 +60,8 @@ async function executeCommand(parsed: ReturnType<typeof parseArguments>, depende
       return runFeature1WorkflowCommand(parsed.rootDir);
     case "feature2":
       return dependencies.runFeature2(parsed.rootDir, parsed.workbookPath);
+    case "feature3":
+      return (dependencies.runFeature3 ?? runFeature3WorkflowCommand)(parsed.rootDir, parsed.f2ArtifactRoot);
   }
 }
 
@@ -63,7 +72,8 @@ function parseArguments(argv: readonly string[]):
   | { command: "purge-plan"; rootDir: string; runId: string }
   | { command: "purge"; rootDir: string; runId: string; confirmationToken: string }
   | { command: "feature1"; rootDir: string }
-  | { command: "feature2"; rootDir: string; workbookPath: string } {
+  | { command: "feature2"; rootDir: string; workbookPath: string }
+  | { command: "feature3"; rootDir: string; f2ArtifactRoot: string } {
   const [command, ...flags] = argv;
   if (!isCommand(command)) {
     throw new Error("validation_error: command is invalid");
@@ -75,7 +85,7 @@ function parseArguments(argv: readonly string[]):
       setOnce(values, flag, true);
       continue;
     }
-    if (flag !== "--root" && flag !== "--run-id" && flag !== "--confirmation-token" && flag !== "--workbook") {
+    if (flag !== "--root" && flag !== "--run-id" && flag !== "--confirmation-token" && flag !== "--workbook" && flag !== "--f2-artifacts") {
       throw new Error("validation_error: unknown option");
     }
     const value = flags[index + 1];
@@ -102,6 +112,12 @@ function parseArguments(argv: readonly string[]):
     const workbookPath = values.get("--workbook");
     if (typeof workbookPath !== "string" || workbookPath.length === 0) throw new Error("validation_error: --workbook is required");
     return { command, rootDir, workbookPath };
+  }
+  if (command === "feature3") {
+    rejectUnexpected(values, ["--root", "--f2-artifacts"]);
+    const f2ArtifactRoot = values.get("--f2-artifacts");
+    if (typeof f2ArtifactRoot !== "string" || f2ArtifactRoot.length === 0) throw new Error("validation_error: --f2-artifacts is required");
+    return { command, rootDir, f2ArtifactRoot };
   }
   const runId = values.get("--run-id");
   if (typeof runId !== "string" || !isUuid(runId)) {
@@ -130,7 +146,8 @@ function isCommand(value: string | undefined): value is Command {
     || value === "purge-plan"
     || value === "purge"
     || value === "feature1"
-    || value === "feature2";
+    || value === "feature2"
+    || value === "feature3";
 }
 
 function setOnce(values: Map<string, string | boolean>, key: string, value: string | boolean): void {

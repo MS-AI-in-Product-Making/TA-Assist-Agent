@@ -52,6 +52,7 @@ function createBundle() {
     generatedAt: "2026-08-03T00:00:00.000Z",
     workbook: { fileName: workbookName, contentHash: workbookHash },
     worksheetName: "Analysis-A",
+    toleranceLoopDescription: "Anonymous device gap",
     factorTables: [{
       tableId: "table-a",
       headerRow: 1,
@@ -85,6 +86,7 @@ describe("loadF1ArtifactBundle", () => {
 
     expect(loaded.status).toBe("accepted");
     expect(loaded.input.workbook.fileName).toBe("anonymous.xlsx");
+    expect(loaded.input.worksheets[0].toleranceLoopDescription).toBe("Anonymous device gap");
     expect(loaded.input.worksheets[0].tolerancePathImage).toEqual({
       status: "available",
       imagePath: "sheets/anonymous.xlsx/images/Analysis-A.png",
@@ -117,6 +119,19 @@ describe("loadF1ArtifactBundle", () => {
     writeFileSync(reportPath, JSON.stringify(report));
 
     expect(loadF1ArtifactBundle(root).report.artifactIssues).toContainEqual({ reasonCode: "path_outside_root", artifactPath: "../outside.json" });
+  });
+
+  it("rejects a worksheet JSON without a tolerance loop description", () => {
+    const { root } = createBundle();
+    const worksheetPath = path.join(root, "sheets/anonymous.xlsx/json/Analysis-A.json");
+    const worksheet = JSON.parse(readFileSync(worksheetPath, "utf8"));
+    delete worksheet.toleranceLoopDescription;
+    writeFileSync(worksheetPath, JSON.stringify(worksheet));
+
+    expect(loadF1ArtifactBundle(root).report.artifactIssues).toContainEqual({
+      reasonCode: "invalid_contract",
+      artifactPath: "sheets/anonymous.xlsx/json/Analysis-A.json",
+    });
   });
 
   it("rejects empty image artifacts", () => {

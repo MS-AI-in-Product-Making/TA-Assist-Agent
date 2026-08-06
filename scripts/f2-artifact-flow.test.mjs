@@ -46,6 +46,7 @@ function createArtifactBundle() {
     generatedAt: "2026-08-03T00:00:00.000Z",
     workbook: { fileName: workbookName, contentHash: workbookHash },
     worksheetName: "Analysis-A",
+    toleranceLoopDescription: "Anonymous device gap",
     factorTables: [{
       tableId: "table-a", headerRow: 1, dataRange: { startRow: 2, endRow: 2 }, columns: [],
       rows: [{ sourceRow: 2, actualFields: actualFields(), fields: {

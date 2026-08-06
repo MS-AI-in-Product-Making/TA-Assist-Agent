@@ -3476,6 +3476,7 @@ export const f2ArtifactInputSchema = z.object({
   workbook: z.object({ fileName: z.string().min(1), contentHash: sha256Schema, f1GeneratedAt: z.string().datetime() }).strict(),
   worksheets: z.array(z.object({
     worksheetName: z.string().min(1),
+    toleranceLoopDescription: z.string().min(1).optional(),
     worksheetJsonPath: relativeArtifactPathSchema,
     worksheetMdPath: relativeArtifactPathSchema,
     tolerancePathImage: f2ArtifactTolerancePathImageSchema,
@@ -3589,6 +3590,7 @@ const f2AcceptedReportSchema = z.object({
   artifactRoot: z.string().min(1),
   worksheets: z.array(z.object({
     worksheetName: z.string().min(1),
+    toleranceLoopDescription: z.string().min(1).optional(),
     status: z.enum(["blocked", "ready"]),
     tolerancePathImageStatus: z.enum(["available", "unavailable"]),
     rows: z.array(f2EnhancedRowSchema),
@@ -3663,6 +3665,166 @@ export const f2UserReportSchema = z.union([
   f2AcceptedReportSchema,
 ]);
 
+export const f3DimIdStatusSchema = z.enum([
+  "missing",
+  "suspected_invalid",
+  "valid",
+  "needs_confirmation",
+]);
+
+export const f3GovernanceStatusSchema = z.enum([
+  "complete",
+  "needs_governance",
+  "blocked_for_reminder",
+]);
+
+const f3SourceSchema = z.object({
+  worksheetName: z.string().min(1),
+  tableId: z.string().min(1),
+  sourceRow: z.number().int().positive(),
+  sourceCells: z.record(worksheetFieldNameSchema, worksheetSourceCellSchema),
+}).strict();
+
+export const drawingGovernanceRequestV2Schema = z.object({
+  contractVersion: contractVersionSchema,
+  modelVersion: z.literal("drawing-governance-v2"),
+  inputClassification: z.literal("confidential"),
+  workbook: z.object({
+    fileName: z.string().min(1),
+    contentHash: sha256Schema,
+  }).strict(),
+  worksheets: z.array(z.object({
+    worksheetName: z.string().min(1),
+    toleranceLoopDescription: z.string().min(1),
+    f2Status: z.literal("ready"),
+    rows: z.array(f2EnhancedRowSchema),
+  }).strict()).min(1),
+}).strict();
+
+const f3QualitySignalSchema = z.enum([
+  "drawing_number_missing",
+  "dim_id_missing",
+  "dim_id_suspected_invalid",
+  "dim_id_needs_confirmation",
+  "duplicate_conflict",
+]);
+
+const f3GovernanceRowSchema = z.object({
+  factorInstanceId: sha256Schema,
+  drawingDimensionKey: sha256Schema.optional(),
+  deviceLevelDim: z.string().min(1),
+  dimensionDescription: z.string().min(1),
+  partCategory: z.string().min(1),
+  partSubsystem: z.string().min(1),
+  drawingNumber: z.string().min(1).nullable(),
+  dimId: z.string().min(1).nullable(),
+  factorDescription: z.string().min(1),
+  nominal: z.number().finite(),
+  upperTolerance: z.number().finite(),
+  lowerTolerance: z.number().finite(),
+  sigmaLevel: z.number().finite(),
+  dimIdStatus: f3DimIdStatusSchema,
+  qualitySignals: z.array(f3QualitySignalSchema),
+  governanceStatus: f3GovernanceStatusSchema,
+  source: f3SourceSchema,
+}).strict().superRefine((row, context) => {
+  if (row.drawingDimensionKey !== undefined
+    && (row.dimIdStatus !== "valid" || row.drawingNumber === null || row.dimId === null)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "only valid drawing and DIM identifiers may have a formal drawing dimension key",
+      path: ["drawingDimensionKey"],
+    });
+  }
+});
+
+const drawingGovernanceAcceptedResultV2Schema = z.object({
+  contractVersion: contractVersionSchema,
+  modelVersion: z.literal("drawing-governance-v2"),
+  outputClassification: z.literal("confidential"),
+  featureId: z.literal("F3"),
+  status: z.enum(["completed", "governance_required"]),
+  workbook: z.object({ fileName: z.string().min(1), contentHash: sha256Schema }).strict(),
+  worksheets: z.array(z.object({
+    worksheetName: z.string().min(1),
+    toleranceLoopDescription: z.string().min(1),
+    rows: z.array(f3GovernanceRowSchema),
+  }).strict()),
+  ado: z.object({
+    status: z.enum([
+      "not_requested",
+      "draft_ready",
+      "confirmation_required",
+      "updated",
+      "blocked",
+      "failed",
+    ]),
+    workItemReference: z.string().min(1).optional(),
+    reasonCode: z.string().min(1).optional(),
+  }).strict(),
+  summary: z.object({
+    worksheetCount: z.number().int().nonnegative(),
+    factorCount: z.number().int().nonnegative(),
+    completeCount: z.number().int().nonnegative(),
+    governanceRequiredCount: z.number().int().nonnegative(),
+    duplicateConflictCount: z.number().int().nonnegative(),
+  }).strict(),
+}).strict().superRefine((result, context) => {
+  const rows = result.worksheets.flatMap((worksheet) => worksheet.rows);
+  const completeCount = rows.filter((row) => row.governanceStatus === "complete").length;
+  const expectedSummary = {
+    worksheetCount: result.worksheets.length,
+    factorCount: rows.length,
+    completeCount,
+    governanceRequiredCount: rows.length - completeCount,
+    duplicateConflictCount: rows.filter((row) => row.qualitySignals.includes("duplicate_conflict")).length,
+  };
+
+  for (const [field, value] of Object.entries(expectedSummary)) {
+    if (result.summary[field as keyof typeof expectedSummary] !== value) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `${field} must match governance records`,
+        path: ["summary", field],
+      });
+    }
+  }
+
+  const expectedStatus = expectedSummary.governanceRequiredCount === 0
+    ? "completed"
+    : "governance_required";
+  if (result.status !== expectedStatus) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "status must match governance records",
+      path: ["status"],
+    });
+  }
+});
+
+const drawingGovernanceInputRejectedResultV2Schema = z.object({
+  contractVersion: contractVersionSchema,
+  modelVersion: z.literal("drawing-governance-v2"),
+  outputClassification: z.literal("confidential"),
+  featureId: z.literal("F3"),
+  status: z.literal("input_rejected"),
+  artifactIssues: z.array(z.object({
+    reasonCode: z.enum([
+      "f2_report_missing",
+      "f2_report_invalid",
+      "workbook_identity_mismatch",
+      "description_missing",
+      "no_ready_worksheet",
+    ]),
+    artifactReference: z.string().min(1),
+  }).strict()).min(1),
+}).strict();
+
+export const drawingGovernanceResultV2Schema = z.union([
+  drawingGovernanceInputRejectedResultV2Schema,
+  drawingGovernanceAcceptedResultV2Schema,
+]);
+
 export type DataClassification = z.infer<typeof dataClassificationSchema>;
 export type RunRequest = z.infer<typeof runRequestSchema>;
 export type CapabilityTier = z.infer<typeof capabilityTierSchema>;
@@ -3720,6 +3882,8 @@ export type F2InitialWorkflowRequest = z.infer<typeof f2InitialWorkflowRequestSc
 export type F2InitialWorkflowResult = z.infer<typeof f2InitialWorkflowResultSchema>;
 export type F2ArtifactInput = z.infer<typeof f2ArtifactInputSchema>;
 export type F2UserReport = z.infer<typeof f2UserReportSchema>;
+export type DrawingGovernanceRequestV2 = z.infer<typeof drawingGovernanceRequestV2Schema>;
+export type DrawingGovernanceResultV2 = z.infer<typeof drawingGovernanceResultV2Schema>;
 export type SemanticTableDetectionRequest = z.infer<typeof semanticTableDetectionRequestSchema>;
 export type SemanticTableDetectionResult = z.infer<typeof semanticTableDetectionResultSchema>;
 export type WorksheetImageReadRequest = z.infer<typeof worksheetImageReadRequestSchema>;

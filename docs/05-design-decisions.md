@@ -150,26 +150,26 @@ For Tier 0 (no capability data), mark "feasibility unknown, confirm with supplie
 
 ## D7 · Data-to-Drawing Linking (DIM ID): Active Drawing Loop, No Image Recognition
 
-**The field's real need is to trace from the TA table to the drawing dimension — and to enforce it before it's too late.** The approach here is deliberately **lightweight**: reuse the `DIM ID` field (plus tags) already in the TA template to uniquely link each factor to a drawing dimension. This is **identifier linking, not OCR / image recognition** — reading drawing images is out of scope for now.
+**The field's real need is to trace from the TA table to the drawing dimension.** The approach is deliberately **lightweight**: reuse Drawing Number and `DIM ID` to link each factor to a drawing dimension. This is **identifier linking, not OCR / image recognition**.
 
 Mechanism — **Sub-loop A · linking:**
 
-1. Build a link table `DIM ID ↔ factor ↔ (future) measurement` and validate uniqueness.
-2. **Missing-ID handling**: when a DIM ID or PN is missing, keep the 1D TA path available but group the affected factors by Lib 3 part category/drawing and create a locatable dimension-chain list. The list carries part name, join number, DIM ID/PN state, and exact source location.
-3. **Uniqueness plus cross-source reconciliation**, so IDs stay unique and the link doesn't drift. Inside Microsoft a shared template already keeps IDs consistent, so a strict naming convention adds little value; the real drift risk is at the **Microsoft-to-supplier boundary** (their own numbering plus revisions). So the mechanism is a **crosswalk table** that maps external IDs onto the canonical ID, stopping to confirm on conflicts (see D4) — not an enforced naming scheme.
+1. In the current contract, Part Number equals Drawing Number. Build the formal identity from `(Drawing Number, DIM ID)`, not from DIM ID alone.
+2. Normalize Drawing Number only for comparison. The same DIM ID on different drawings is valid; duplicate DIM IDs within one normalized drawing produce `duplicate_conflict`.
+3. Classify one-digit numeric DIM IDs as nonblocking `suspected_invalid`, 2-4 digit numeric values as `valid`, and other nonempty values as `needs_confirmation`. Missing or unresolved identifiers stay in the governance list while TA continues.
 
-Mechanism — **Sub-loop B · ADO orchestration and scheduled governance** (from the factory meeting; this substrate is **shared with the D8 data loop**):
+Mechanism — **Sub-loop B · optional ADO orchestration**:
 
 4. **Run entry:** the user manually uploads the TA `.xlsx`; creating or linking an ADO work item is optional. The tool runs on the uploaded file; auto-parsing an ADO attachment is a later goal.
-5. **Owner assignment:** when an ADO item is linked, bind the governed reminder workflow to its owner or `Request By` field, with a clarification fallback when missing.
-6. **Scheduled reminders (server-side):** for a linked ADO item, a **server-side background service** runs weekly or monthly, **independent of whether the analysis is running**, reading Microsoft program milestones via `surface-mcp` (`GetProgramMilestones`) and open items via `workiq`; as a **key milestone (e.g. EV1)** approaches with DIM IDs still placeholder or missing, it **reminds the owner on ADO**. Reminding early avoids discovering missing information only at the key milestone.
-7. **ADO or local fallback:** reuse the ADO choice made at upload. If an ADO item is linked, ask the user to confirm the reminder, @mention the owner, and write the missing-ID list to `Comment 0`. If the user did not create or link ADO, save the list locally rather than blocking analysis.
-8. **Packaged drawing reminder (server-side):** using the same server-side scheduler, remind the design owner — **once per drawing or group**, not per factor — to mark the dimension chain **on the drawing**.
-9. **State and history on ADO:** for linked items, record missing-ID resolution and drawing-markup status for traceability.
+5. **Owner assignment:** when an ADO item is linked, resolve its Owner first and `Request By` second; without either, save locally and do not write.
+6. **Surface MCP only:** require the Work Item and Comment 0 read/update capabilities. Azure DevOps MCP is not a dependency.
+7. **Confirmed Comment 0 update:** prepare a line diff and version-bound confirmation hash, display it to the user, and execute exactly once after explicit confirmation. Re-read Comment 0 before writing and fail closed on concurrent changes.
+8. **Local fallback:** without ADO, owner, capability, confirmation, or a successful write, save the same confidential governance list locally and continue TA.
+9. **No time orchestration:** F3 does not read dates, evaluate deadline proximity, or run a scheduler.
 
 **Why it's in scope:** it needs no image understanding, reuses existing fields, and is a **hard prerequisite for the D8 loop** (without a stable identifier, measured data cannot be routed back). ADO governance is optional: it adds owner-based traceability and reminders, while the local-list path preserves analysis when no ADO work item is desired.
 
-**Difficulties:** missing or non-unique DIM IDs (handled by governance plus placeholders), reminders that are too frequent or sent to the wrong person (cadence tied to milestones plus an owner fallback), and the background service's ADO / MCP permission scope.
+**Difficulties:** missing or drawing-scoped duplicate DIM IDs, resolving the correct owner, Surface MCP permission scope, and preventing stale Comment 0 writes.
 
 ---
 

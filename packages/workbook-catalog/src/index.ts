@@ -10,6 +10,7 @@ export { createExceptionResolution } from "./exception-resolution.js";
 export { createIdentifierQualityCheck } from "./identifier-quality-check.js";
 export { createF2InitialWorkflow } from "./f2-initial-workflow.js";
 export { createF2UserReport } from "./f2-user-report.js";
+export { createF3DrawingGovernance } from "./f3-drawing-governance.js";
 export { createUnifiedExceptionResolution } from "./unified-exception-resolution.js";
 export { createCalculation } from "./calculation.js";
 export { createDrawingGovernancePlaceholder } from "./drawing-governance-placeholder.js";
