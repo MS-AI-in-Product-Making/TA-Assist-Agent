@@ -222,11 +222,12 @@ F2 和 F4 只能消费前者。
 - `Lower Spec Limit`
 - `Upper Spec Limit`
 - `Target σ Level`
-- `Additional Mean Shift`
 
 值取同一行标签右侧最近的非空有效单元格，不假设标签在 O 列、值在 P 列，也不假设行号为 37-39 或 54-56。
 
 三项必填规格保留 `sourceCell`、actual value、display value 和解析状态。`3.0σ` 的实际数值规范化为 `3`。`Additional Mean Shift` 为空时按模板语义取 `0`，但保留 defaulted evidence。
+
+`Additional Mean Shift` 不属于 Response Summary section：旧模板通常位于第 28 行，Rev G 位于第 45 行。extractor 在 factor table 结束行与 Response Summary anchor 之间按同样的标签和值规则查找；标签不存在或值为空时返回有 evidence 的默认 `0`。
 
 ### 系统规格模型
 
@@ -384,7 +385,8 @@ F4 adapter 只接受 `status: "ready"`。F2 不生成半完整 calculation reque
 - 第一行应为 `Fabric thickness`、`Fabric`、nominal `-0.57`、upper tolerance `0.05`、lower tolerance `-0.05`。
 - Response Summary 为 LSL `-0.15`、USL `0.05`、Target σ `3`。
 - F2 不再返回 `inputRejected` 或布局造成的类型错位。
-- 该 workbook 的 7 行 `Drawing Number` 真实为空，因此 F2 应仅因真实必填缺失而阻断，不生成 ready F4 handoff。
+- 该 workbook 的 7 行 `Drawing Number` 真实为空。按现有 F2/F3 治理边界，Drawing Number 缺失不属于九项因子必填，不阻断 F2 或 F4 handoff；F2 继续产生 `adoReminderRequested` 非阻断治理事件。
+- 在九项因子字段、tolerance path image 和三项系统规格均完整时，`TP_C_Step_TA` 应为 `ready` 并生成 F4 handoff。
 
 另使用完整 confidential fixture 验证 ready F4 handoff，避免通过放宽 Drawing Number 规则让真实样本虚假通过。
 
@@ -427,5 +429,5 @@ npm run check:repository
 5. Suggested Spec 的同名值不会进入 F2/F4。
 6. 未经用户显式确认，不分析任何 worksheet。
 7. 只有 F2 ready worksheet 可以生成 F4 handoff。
-8. 真实测试 workbook 不再 `inputRejected`，只报告其真实缺失字段。
+8. 真实测试 workbook 不再 `inputRejected`；Drawing Number 缺失继续作为非阻断治理事件，且不妨碍 ready F4 handoff。
 9. focused tests、真实 workbook regression、`npm test` 和 repository check 全部通过。
