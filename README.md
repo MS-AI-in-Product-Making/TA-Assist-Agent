@@ -235,6 +235,14 @@ The workflow executes Task 1.1-1.7 with real workbook inputs and emits a final r
 - 阻塞：因子必填字段、截面图或三项系统规格缺失时，只阻断对应 worksheet；能力库差异、库外、Drawing Number、DIM ID 或 Part Number 缺失均非阻塞。只有 `ready` worksheet 生成一个 F4 handoff。
 - 验收：F2 任一模块必须执行完整 `F0 -> F1 artifacts -> F2` 链路，不得用孤立模块通过替代端到端证据。
 
+## Feature 4 F2-driven Workflow
+
+- 计算命令：`npm run workflow:f4 -- --f2-report "path/to/Feature2-Report.json"`
+- 可选 Excel 黄金回归：在上述命令后追加 `--workbook "path/to/golden.xlsx"`。
+- F4 只计算 F2 报告中状态为 `ready` 且已由用户确认的 worksheet handoff。F2 JSON 是计算的唯一业务输入；可选 workbook 只验证 F4 输出，不提供或覆盖计算输入。
+- 每次运行输出到 `test/demo-output/f4-runs/<workbook-safe-name>/<UTC-run-id>/`。计算成功后依次原子写入 `Feature4-Calculation.json`、可选的 `Feature4-Comparison.json`、`Feature4-Report.md` 和最终 `manifest.json`。
+- JSON 计算结果供 F5 使用，Markdown 供人工查看；Excel 不可用时保留有效计算结果，并在 comparison 和 manifest 中记录受控状态。
+
 - `test/` and all `*.xlsx` (confidential templates / sample data) are **git-ignored**.
 - Internal `*.html` design reports are **git-ignored** and not committed.
 - Project planning is tracked via GitHub **Project #1** as four ME User Stories, Feature issues (F0-F8), and implementation tasks in each Feature checklist.

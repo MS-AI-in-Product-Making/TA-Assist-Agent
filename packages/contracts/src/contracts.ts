@@ -268,15 +268,86 @@ export const terminologyUnknownResultSchema = z
   })
   .strict();
 
-const filenameControlCharacters = new RegExp(`^[^/\\\\${String.fromCharCode(0)}-${String.fromCharCode(31)}${String.fromCharCode(127)}${String.fromCharCode(0x2028)}${String.fromCharCode(0x2029)}]+\\.xlsx$`, "i");
+const windowsWorkbookForbiddenCharacters = new RegExp(
+  `[<>:"/\\\\|?*${String.fromCharCode(0)}-${String.fromCharCode(31)}${String.fromCharCode(127)}\\u2028\\u2029]`,
+);
+const windowsReservedDeviceBasenames = new Set([
+  "CON",
+  "PRN",
+  "AUX",
+  "NUL",
+  "COM1",
+  "COM2",
+  "COM3",
+  "COM4",
+  "COM5",
+  "COM6",
+  "COM7",
+  "COM8",
+  "COM9",
+  "LPT1",
+  "LPT2",
+  "LPT3",
+  "LPT4",
+  "LPT5",
+  "LPT6",
+  "LPT7",
+  "LPT8",
+  "LPT9",
+]);
 
 const workbookCatalogFileNameSchema = z
   .string()
   .min(1)
   .max(240)
-  .regex(filenameControlCharacters)
-  .refine((fileName) => !fileName.includes(".."), {
-    message: "fileName must not contain traversal segments",
+  .refine((fileName) => /\.xlsx$/i.test(fileName), {
+    message: "fileName must end with .xlsx",
+  })
+  .superRefine((fileName, context) => {
+    if (windowsWorkbookForbiddenCharacters.test(fileName)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "fileName contains reserved Windows characters or control characters",
+      });
+      return;
+    }
+
+    if (fileName.includes("..")) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "fileName must not contain traversal segments",
+      });
+    }
+
+    if (/^[A-Za-z]:/.test(fileName)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "fileName must not be drive-relative",
+      });
+    }
+
+    if (fileName !== fileName.trimEnd() || fileName.endsWith(".")) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "fileName must not end with a trailing space or dot",
+      });
+    }
+
+    const fileNameWithoutExtension = fileName.slice(0, -5);
+    if (/[ .]$/.test(fileNameWithoutExtension)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "fileName root must not end with a trailing space or dot",
+      });
+    }
+
+    const windowsDeviceIdentity = fileNameWithoutExtension.split(".", 1)[0] ?? "";
+    if (windowsReservedDeviceBasenames.has(windowsDeviceIdentity.toUpperCase())) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "fileName root must not be a reserved Windows device name",
+      });
+    }
   });
 
 export const workbookCatalogRequestSchema = z
@@ -2690,6 +2761,323 @@ export const interpretationResultSchema = z.union([
   interpretationLegacyUnavailableResultSchema,
 ]);
 
+const f4WorkflowResultSummarySchema = z
+  .object({
+    selectedWorksheetCount: z.number().int().positive(),
+    completedWorksheetCount: z.number().int().positive(),
+  })
+  .strict();
+
+export const f4WorkflowCalculationResultSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    workflowVersion: z.literal("f4-f2-v1"),
+    outputClassification: z.literal("confidential"),
+    featureId: z.literal("F4"),
+    status: z.literal("completed"),
+    runId: controlledCalculationReferenceSchema,
+    generatedAt: z.string().datetime(),
+    source: z
+      .object({
+        artifactReference: z.literal("Feature2-Report.json"),
+        workbookFileName: workbookCatalogFileNameSchema,
+        workbookContentHash: sha256Schema,
+      })
+      .strict(),
+    calculations: z.array(calculationCompletedResultSchema).min(1).max(100),
+    summary: f4WorkflowResultSummarySchema,
+  })
+  .strict()
+  .superRefine((result, context) => {
+    const worksheetNames = result.calculations.map((calculation) => calculation.worksheetSelection.worksheetName);
+    if (new Set(worksheetNames).size !== worksheetNames.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "worksheet names must be unique",
+        path: ["calculations"],
+      });
+    }
+
+    if (result.calculations.some((calculation) => calculation.workbookContentHash !== result.source.workbookContentHash)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "all calculations must match source workbookContentHash",
+        path: ["calculations"],
+      });
+    }
+
+    const completedCalculationCount = result.calculations.length;
+
+    if (result.summary.selectedWorksheetCount !== completedCalculationCount) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "summary.selectedWorksheetCount must equal calculations length",
+        path: ["summary", "selectedWorksheetCount"],
+      });
+    }
+    if (result.summary.completedWorksheetCount !== completedCalculationCount) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "summary.completedWorksheetCount must equal calculations length",
+        path: ["summary", "completedWorksheetCount"],
+      });
+    }
+  });
+
+const f4ExcelComparisonMetricSchema = z
+  .object({
+    metric: z.string().min(1),
+    f4Value: z.number().finite(),
+    excelValue: z.number().finite(),
+    excelDisplayText: z.string().min(1),
+    absoluteDifference: z.number().finite().min(0),
+    relativeDifference: z.number().finite().min(0),
+    tolerance: z.number().finite().min(0).max(1e-12),
+    passed: z.boolean(),
+    sourceCell: worksheetSourceCellSchema,
+    excelFormula: z.string().trim().min(1),
+    f4FormulaId: z.string().trim().min(1),
+  })
+  .strict()
+  .superRefine((metric, context) => {
+    const nearEqual = (left: number, right: number): boolean => {
+      const epsilon = 1e-12;
+      const delta = Math.abs(left - right);
+      const scale = Math.max(1, Math.abs(left), Math.abs(right));
+      return delta <= epsilon * scale;
+    };
+
+    const denominator = Math.max(1, Math.abs(metric.f4Value), Math.abs(metric.excelValue));
+    const expectedAbsoluteDifference = Math.abs(metric.f4Value - metric.excelValue);
+    const expectedRelativeDifference = expectedAbsoluteDifference / denominator;
+
+    if (!Number.isFinite(expectedAbsoluteDifference)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "derived absoluteDifference must be finite",
+        path: ["absoluteDifference"],
+      });
+      return;
+    }
+
+    if (!Number.isFinite(expectedRelativeDifference)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "derived relativeDifference must be finite",
+        path: ["relativeDifference"],
+      });
+      return;
+    }
+
+    const expectedToleranceThreshold = metric.tolerance * denominator;
+    if (!Number.isFinite(expectedToleranceThreshold)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "derived tolerance threshold must be finite",
+        path: ["passed"],
+      });
+      return;
+    }
+
+    const expectedPassed = expectedAbsoluteDifference <= expectedToleranceThreshold;
+
+    if (!nearEqual(metric.absoluteDifference, expectedAbsoluteDifference)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "absoluteDifference must equal abs(f4Value - excelValue)",
+        path: ["absoluteDifference"],
+      });
+    }
+
+    if (!nearEqual(metric.relativeDifference, expectedRelativeDifference)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "relativeDifference must equal absoluteDifference / max(1, abs(f4Value), abs(excelValue))",
+        path: ["relativeDifference"],
+      });
+    }
+
+    if (metric.passed !== expectedPassed) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "passed must equal absoluteDifference <= tolerance * max(1, abs(f4Value), abs(excelValue))",
+        path: ["passed"],
+      });
+    }
+  });
+
+const f4ExcelComparisonWorksheetSchema = z
+  .object({
+    worksheetName: z.string().min(1),
+    metrics: z.array(f4ExcelComparisonMetricSchema).min(1),
+  })
+  .strict();
+
+const f4ExcelComparisonSummarySchema = z
+  .object({
+    worksheetCount: z.number().int().positive(),
+    metricCount: z.number().int().positive(),
+    passedMetricCount: z.number().int().min(0),
+    mismatchMetricCount: z.number().int().min(0),
+  })
+  .strict();
+
+const f4ExcelComparisonPassedSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    comparisonVersion: z.literal("f4-excel-comparison-v1"),
+    outputClassification: z.literal("confidential"),
+    featureId: z.literal("F4"),
+    status: z.literal("passed"),
+    runId: controlledCalculationReferenceSchema,
+    generatedAt: z.string().datetime(),
+    source: z
+      .object({
+        workbookContentHash: sha256Schema,
+      })
+      .strict(),
+    worksheets: z.array(f4ExcelComparisonWorksheetSchema).min(1),
+    summary: f4ExcelComparisonSummarySchema,
+  })
+  .strict();
+
+const f4ExcelComparisonMismatchSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    comparisonVersion: z.literal("f4-excel-comparison-v1"),
+    outputClassification: z.literal("confidential"),
+    featureId: z.literal("F4"),
+    status: z.literal("mismatch"),
+    runId: controlledCalculationReferenceSchema,
+    generatedAt: z.string().datetime(),
+    source: z
+      .object({
+        workbookContentHash: sha256Schema,
+      })
+      .strict(),
+    worksheets: z.array(f4ExcelComparisonWorksheetSchema).min(1),
+    summary: f4ExcelComparisonSummarySchema,
+  })
+  .strict();
+
+const f4ExcelComparisonExcelUnavailableSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    comparisonVersion: z.literal("f4-excel-comparison-v1"),
+    outputClassification: z.literal("confidential"),
+    featureId: z.literal("F4"),
+    status: z.literal("excel_unavailable"),
+    runId: controlledCalculationReferenceSchema,
+    generatedAt: z.string().datetime(),
+    reasonCode: z.enum([
+      "excel_runtime_unavailable",
+      "excel_execution_failed",
+      "excel_output_unavailable",
+    ]),
+  })
+  .strict();
+
+const f4ExcelComparisonMappingErrorSchema = z
+  .object({
+    contractVersion: contractVersionSchema,
+    comparisonVersion: z.literal("f4-excel-comparison-v1"),
+    outputClassification: z.literal("confidential"),
+    featureId: z.literal("F4"),
+    status: z.literal("mapping_error"),
+    runId: controlledCalculationReferenceSchema,
+    generatedAt: z.string().datetime(),
+    reasonCode: z.enum([
+      "worksheet_mapping_missing",
+      "metric_mapping_missing",
+      "formula_evidence_missing",
+    ]),
+  })
+  .strict();
+
+export const f4ExcelComparisonResultSchema = z
+  .discriminatedUnion("status", [
+    f4ExcelComparisonPassedSchema,
+    f4ExcelComparisonMismatchSchema,
+    f4ExcelComparisonExcelUnavailableSchema,
+    f4ExcelComparisonMappingErrorSchema,
+  ])
+  .superRefine((result, context) => {
+    if (result.status !== "passed" && result.status !== "mismatch") {
+      return;
+    }
+
+    const worksheetNames = result.worksheets.map((worksheet) => worksheet.worksheetName);
+    if (new Set(worksheetNames).size !== worksheetNames.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "worksheet names must be unique",
+        path: ["worksheets"],
+      });
+    }
+
+    for (const [worksheetIndex, worksheet] of result.worksheets.entries()) {
+      const metricIdentities = worksheet.metrics.map((metric) => `${metric.metric}::${metric.sourceCell}`);
+      if (new Set(metricIdentities).size !== metricIdentities.length) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "metric identities must be unique per worksheet",
+          path: ["worksheets", worksheetIndex, "metrics"],
+        });
+      }
+    }
+
+    const computedWorksheetCount = result.worksheets.length;
+    const allMetrics = result.worksheets.flatMap((worksheet) => worksheet.metrics);
+    const computedMetricCount = allMetrics.length;
+    const computedPassedMetricCount = allMetrics.filter((metric) => metric.passed).length;
+    const computedMismatchMetricCount = allMetrics.filter((metric) => !metric.passed).length;
+
+    if (result.summary.worksheetCount !== computedWorksheetCount) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "summary.worksheetCount must equal worksheets length",
+        path: ["summary", "worksheetCount"],
+      });
+    }
+    if (result.summary.metricCount !== computedMetricCount) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "summary.metricCount must equal metrics length",
+        path: ["summary", "metricCount"],
+      });
+    }
+    if (result.summary.passedMetricCount !== computedPassedMetricCount) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "summary.passedMetricCount must equal passed metrics",
+        path: ["summary", "passedMetricCount"],
+      });
+    }
+    if (result.summary.mismatchMetricCount !== computedMismatchMetricCount) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "summary.mismatchMetricCount must equal mismatched metrics",
+        path: ["summary", "mismatchMetricCount"],
+      });
+    }
+
+    if (result.status === "passed" && computedMismatchMetricCount !== 0) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "passed status requires zero mismatched metrics",
+        path: ["status"],
+      });
+    }
+
+    if (result.status === "mismatch" && computedMismatchMetricCount === 0) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "mismatch status requires at least one mismatched metric",
+        path: ["status"],
+      });
+    }
+  });
+
 const controlledComparisonReferenceSchema = z.string().min(1);
 
 export const comparisonRequestSchema = z
@@ -4142,6 +4530,8 @@ export type CalculationCapabilityResult = z.infer<typeof calculationCapabilityRe
 export type CalculationTraceRecord = z.infer<typeof calculationTraceRecordSchema>;
 export type CalculationCompletedPayload = z.infer<typeof calculationPayloadSchema>;
 export type CalculationCompletedResult = z.infer<typeof calculationCompletedResultSchema>;
+export type F4WorkflowCalculationResult = z.infer<typeof f4WorkflowCalculationResultSchema>;
+export type F4ExcelComparisonResult = z.infer<typeof f4ExcelComparisonResultSchema>;
 export type CalculationLegacyUnavailableResult = z.infer<typeof calculationLegacyUnavailableResultSchema>;
 export type DrawingGovernanceRequest = z.infer<typeof drawingGovernanceRequestSchema>;
 export type DrawingGovernanceResult = z.infer<typeof drawingGovernanceResultSchema>;
