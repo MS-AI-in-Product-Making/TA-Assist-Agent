@@ -20,6 +20,8 @@ import {
   drawingGovernanceResultSchema,
   exceptionResolutionRequestSchema,
   exceptionResolutionResultSchema,
+  f4ExcelComparisonResultSchema,
+  f4WorkflowCalculationResultSchema,
   f2InitialWorkflowRequestSchema,
   f2InitialWorkflowResultSchema,
   f2ArtifactInputSchema,
@@ -1327,6 +1329,88 @@ describe("F4 calculation contracts", () => {
   });
 });
 
+describe("F4 excel comparison contracts", () => {
+  const metric = {
+    metric: "cpk",
+    f4Value: 1.33,
+    excelValue: 1.33,
+    excelDisplayText: "1.33",
+    absoluteDifference: 0,
+    relativeDifference: 0,
+    tolerance: 1e-12,
+    passed: true,
+    sourceCell: "Analysis-A!P10",
+    excelFormula: "=P8/P9",
+    f4FormulaId: "cpk-v1",
+  };
+
+  const passedResult = {
+    contractVersion: "v1" as const,
+    comparisonVersion: "f4-excel-comparison-v1" as const,
+    outputClassification: "confidential" as const,
+    featureId: "F4" as const,
+    status: "passed" as const,
+    runId: "run-f4-1",
+    generatedAt: "2026-08-07T00:00:00.000Z",
+    source: {
+      workbookContentHash: "a".repeat(64),
+    },
+    worksheets: [{
+      worksheetName: "Analysis-A",
+      metrics: [metric],
+    }],
+    summary: {
+      worksheetCount: 1,
+      metricCount: 1,
+      passedMetricCount: 1,
+      mismatchMetricCount: 0,
+    },
+  };
+
+  it("rejects duplicate worksheet names in passed comparison payloads", () => {
+    const duplicateWorksheetPayload = {
+      ...passedResult,
+      worksheets: [
+        passedResult.worksheets[0],
+        {
+          worksheetName: "Analysis-A",
+          metrics: [{ ...metric, metric: "cp", sourceCell: "Analysis-A!P11" }],
+        },
+      ],
+      summary: {
+        worksheetCount: 2,
+        metricCount: 2,
+        passedMetricCount: 2,
+        mismatchMetricCount: 0,
+      },
+    };
+
+    expect(f4ExcelComparisonResultSchema.safeParse(duplicateWorksheetPayload).success).toBe(false);
+  });
+
+  it("rejects duplicate metric identity per worksheet in mismatch comparison payloads", () => {
+    const duplicateMetricIdentityPayload = {
+      ...passedResult,
+      status: "mismatch" as const,
+      worksheets: [{
+        worksheetName: "Analysis-A",
+        metrics: [
+          { ...metric, passed: false, absoluteDifference: 0.01, relativeDifference: 0.01 },
+          { ...metric, excelValue: 1.31, excelDisplayText: "1.31", passed: false, absoluteDifference: 0.02, relativeDifference: 0.02 },
+        ],
+      }],
+      summary: {
+        worksheetCount: 1,
+        metricCount: 2,
+        passedMetricCount: 0,
+        mismatchMetricCount: 2,
+      },
+    };
+
+    expect(f4ExcelComparisonResultSchema.safeParse(duplicateMetricIdentityPayload).success).toBe(false);
+  });
+});
+
 describe("F3 drawing governance placeholder contracts", () => {
   const request = {
     contractVersion: "v1",
@@ -2322,6 +2406,510 @@ describe("F6 comparison placeholder contracts", () => {
   });
 });
 
+describe("F4 workflow and excel comparison contracts", () => {
+  const contentHash = "d".repeat(64);
+
+  const calculationTemplate = {
+    contractVersion: "v1" as const,
+    outputClassification: "confidential" as const,
+    featureId: "F4" as const,
+    status: "completed" as const,
+    calculationVersion: "excel-ta-v1" as const,
+    projectReference: "controlled-project-reference",
+    runReference: "controlled-run-reference",
+    workbookContentHash: contentHash,
+    worksheetSelection: {
+      worksheetName: "Analysis-A",
+      tableId: "table-a",
+    },
+    factorCount: 1,
+    recommendation: {
+      method: "worst_case" as const,
+      reason: "factor_count_1_to_3" as const,
+      refer3d: false,
+      criticality: "none" as const,
+      criticalityRisk: false,
+    },
+    factors: [{
+      factorName: "Feature-A",
+      unit: "mm",
+      source: { worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 2 },
+      input: {
+        nominalValue: 12.45,
+        upperTolerance: 0.2,
+        lowerTolerance: -0.2,
+        longTermSafetyFactor: 1,
+        sigmaLevel: 4,
+        distribution: "normal" as const,
+      },
+      mean: 12.46,
+      halfTolerance: 0.2,
+      sigma: 0.05,
+      contribution: 1,
+      trace: {
+        formulaIds: ["factor-mean-v1", "factor-sigma-v1"],
+        sourceCells: ["Analysis-A!A2", "Analysis-A!B2"],
+      },
+    }],
+    system: {
+      designNominal: 12.5,
+      mean: 12.46,
+      additionalMeanShift: 0,
+      worstCaseUpper: 0.2,
+      worstCaseLower: -0.2,
+      rssSigma: 0.05,
+    },
+    capability: {
+      lowerSpecLimit: 12.1,
+      upperSpecLimit: 12.9,
+      targetSigmaLevel: 4,
+      targetCpk: 1.33,
+      cp: 2.6666666666666665,
+      lowerCpk: 2.4,
+      upperCpk: 2.933333333333333,
+      cpk: 2.4,
+      lowerZ: 7.2,
+      upperZ: 8.8,
+      lowerDpm: 0.1,
+      upperDpm: 0.2,
+      totalDpm: 0.30000000000000004,
+      outOfSpecRatio: 3.0000000000000004e-7,
+      yield: 0.9999997,
+      status: "PASS" as const,
+    },
+    traceRecords: [{
+      outputField: "capability.cpk",
+      formulaVersion: "excel-ta-v1" as const,
+      formulaId: "cpk-v1" as const,
+      sourceCells: ["capability.lowerCpk", "capability.upperCpk"],
+    }],
+    scenarios: [],
+  };
+
+  it("accepts a strict F4 workflow output based on F2 report source", () => {
+    const valid = {
+      contractVersion: "v1",
+      workflowVersion: "f4-f2-v1",
+      outputClassification: "confidential",
+      featureId: "F4",
+      status: "completed",
+      runId: "controlled-run-reference",
+      generatedAt: "2026-08-07T00:00:00.000Z",
+      source: {
+        artifactReference: "Feature2-Report.json",
+        workbookFileName: "Anonymous.xlsx",
+        workbookContentHash: contentHash,
+      },
+      calculations: [
+        calculationTemplate,
+        {
+          ...structuredClone(calculationTemplate),
+          worksheetSelection: { worksheetName: "Analysis-B", tableId: "table-b" },
+          factors: [{
+            ...calculationTemplate.factors[0],
+            source: { worksheetName: "Analysis-B", tableId: "table-b", sourceRow: 2 },
+          }],
+        },
+      ],
+      summary: {
+        selectedWorksheetCount: 2,
+        completedWorksheetCount: 2,
+      },
+    };
+
+    expect(f4WorkflowCalculationResultSchema.parse(valid)).toEqual(valid);
+  });
+
+  it("rejects duplicate worksheet names, workbook hash mismatch, and summary mismatch", () => {
+    const valid = {
+      contractVersion: "v1",
+      workflowVersion: "f4-f2-v1",
+      outputClassification: "confidential",
+      featureId: "F4",
+      status: "completed",
+      runId: "controlled-run-reference",
+      generatedAt: "2026-08-07T00:00:00.000Z",
+      source: {
+        artifactReference: "Feature2-Report.json",
+        workbookFileName: "Anonymous.xlsx",
+        workbookContentHash: contentHash,
+      },
+      calculations: [
+        calculationTemplate,
+        {
+          ...structuredClone(calculationTemplate),
+          worksheetSelection: { worksheetName: "Analysis-B", tableId: "table-b" },
+          factors: [{
+            ...calculationTemplate.factors[0],
+            source: { worksheetName: "Analysis-B", tableId: "table-b", sourceRow: 2 },
+          }],
+        },
+      ],
+      summary: {
+        selectedWorksheetCount: 2,
+        completedWorksheetCount: 2,
+      },
+    };
+
+    expect(f4WorkflowCalculationResultSchema.safeParse({
+      ...valid,
+      calculations: [
+        valid.calculations[0],
+        { ...valid.calculations[1], worksheetSelection: { worksheetName: "Analysis-A", tableId: "table-b" } },
+      ],
+    }).success).toBe(false);
+
+    expect(f4WorkflowCalculationResultSchema.safeParse({
+      ...valid,
+      calculations: [
+        valid.calculations[0],
+        { ...valid.calculations[1], workbookContentHash: "e".repeat(64) },
+      ],
+    }).success).toBe(false);
+
+    expect(f4WorkflowCalculationResultSchema.safeParse({ ...valid, summary: { ...valid.summary, selectedWorksheetCount: 3 } }).success).toBe(false);
+    expect(f4WorkflowCalculationResultSchema.safeParse({ ...valid, summary: { ...valid.summary, completedWorksheetCount: 1 } }).success).toBe(false);
+    expect(f4WorkflowCalculationResultSchema.safeParse({ ...valid, unexpected: true }).success).toBe(false);
+    expect(f4WorkflowCalculationResultSchema.safeParse({ ...valid, summary: { ...valid.summary, unexpected: 1 } }).success).toBe(false);
+    expect(f4WorkflowCalculationResultSchema.safeParse({
+      ...valid,
+      summary: {
+        ...valid.summary,
+        calculationCount: 2,
+        worksheetCount: 2,
+        factorCount: 2,
+      },
+    }).success).toBe(false);
+  });
+
+  it("rejects unsafe workbook filenames in workflow source", () => {
+    const valid = {
+      contractVersion: "v1",
+      workflowVersion: "f4-f2-v1",
+      outputClassification: "confidential",
+      featureId: "F4",
+      status: "completed",
+      runId: "controlled-run-reference",
+      generatedAt: "2026-08-07T00:00:00.000Z",
+      source: {
+        artifactReference: "Feature2-Report.json",
+        workbookFileName: "Anonymous.xlsx",
+        workbookContentHash: contentHash,
+      },
+      calculations: [calculationTemplate],
+      summary: {
+        selectedWorksheetCount: 1,
+        completedWorksheetCount: 1,
+      },
+    };
+
+    const rejectedFileNames = [
+      "C:\\temp\\Anonymous.xlsx",
+      "\\\\server\\share\\Anonymous.xlsx",
+      "..\\Anonymous.xlsx",
+      "Anonymous\u0001.xlsx",
+      "Anonymous.xls",
+      "C:Anonymous.xlsx",
+      "Anonymous.xlsx:payload.xlsx",
+      "CON.xlsx",
+      "com1.xlsx",
+      "name?.xlsx",
+      "Anonymous.xlsx ",
+      "Anonymous.xlsx.",
+      "Anonymous .xlsx",
+      "Anonymous..xlsx",
+      "CON.backup.xlsx",
+      "nul.anything.xlsx",
+      "COM1.log.xlsx",
+    ];
+
+    for (const workbookFileName of rejectedFileNames) {
+      expect(f4WorkflowCalculationResultSchema.safeParse({
+        ...valid,
+        source: { ...valid.source, workbookFileName },
+      }).success).toBe(false);
+    }
+  });
+
+  it("accepts passed and mismatch excel comparison results", () => {
+    const absoluteDifference = Math.abs(2.4 - 2.399);
+    const denominator = Math.max(1, Math.abs(2.4), Math.abs(2.399));
+    const relativeDifference = absoluteDifference / denominator;
+
+    const passed = {
+      contractVersion: "v1",
+      comparisonVersion: "f4-excel-comparison-v1",
+      outputClassification: "confidential",
+      featureId: "F4",
+      status: "passed",
+      runId: "controlled-run-reference",
+      generatedAt: "2026-08-07T00:00:00.000Z",
+      source: {
+        workbookContentHash: contentHash,
+      },
+      worksheets: [{
+        worksheetName: "Analysis-A",
+        metrics: [{
+          metric: "cpk",
+          f4Value: 2.4,
+          excelValue: 2.4,
+          excelDisplayText: "2.4",
+          absoluteDifference: 0,
+          relativeDifference: 0,
+          tolerance: 1e-12,
+          passed: true,
+          sourceCell: "Analysis-A!P10",
+          excelFormula: "=P8/P9",
+          f4FormulaId: "cpk-v1",
+        }],
+      }],
+      summary: {
+        worksheetCount: 1,
+        metricCount: 1,
+        passedMetricCount: 1,
+        mismatchMetricCount: 0,
+      },
+    };
+
+    const mismatch = {
+      ...passed,
+      status: "mismatch",
+      worksheets: [{
+        worksheetName: "Analysis-A",
+        metrics: [{
+          ...passed.worksheets[0].metrics[0],
+          excelValue: 2.399,
+          excelDisplayText: "2.399",
+          absoluteDifference,
+          relativeDifference,
+          passed: false,
+        }],
+      }],
+      summary: {
+        worksheetCount: 1,
+        metricCount: 1,
+        passedMetricCount: 0,
+        mismatchMetricCount: 1,
+      },
+    };
+
+    expect(f4ExcelComparisonResultSchema.parse(passed)).toEqual(passed);
+    expect(f4ExcelComparisonResultSchema.parse(mismatch)).toEqual(mismatch);
+  });
+
+  it("rejects inconsistent comparison metric invariants", () => {
+    const absoluteDifference = Math.abs(2.4 - 2.399);
+    const denominator = Math.max(1, Math.abs(2.4), Math.abs(2.399));
+    const relativeDifference = absoluteDifference / denominator;
+    const base = {
+      contractVersion: "v1",
+      comparisonVersion: "f4-excel-comparison-v1",
+      outputClassification: "confidential",
+      featureId: "F4",
+      status: "mismatch",
+      runId: "controlled-run-reference",
+      generatedAt: "2026-08-07T00:00:00.000Z",
+      source: {
+        workbookContentHash: contentHash,
+      },
+      worksheets: [{
+        worksheetName: "Analysis-A",
+        metrics: [{
+          metric: "cpk",
+          f4Value: 2.4,
+          excelValue: 2.399,
+          excelDisplayText: "2.399",
+          absoluteDifference,
+          relativeDifference,
+          tolerance: 1e-12,
+          passed: false,
+          sourceCell: "Analysis-A!P10",
+          excelFormula: "=P8/P9",
+          f4FormulaId: "cpk-v1",
+        }],
+      }],
+      summary: {
+        worksheetCount: 1,
+        metricCount: 1,
+        passedMetricCount: 0,
+        mismatchMetricCount: 1,
+      },
+    };
+
+    expect(f4ExcelComparisonResultSchema.parse(base)).toEqual(base);
+
+    expect(f4ExcelComparisonResultSchema.safeParse({
+      ...base,
+      worksheets: [{
+        ...base.worksheets[0],
+        metrics: [{ ...base.worksheets[0].metrics[0], absoluteDifference: -absoluteDifference }],
+      }],
+    }).success).toBe(false);
+
+    expect(f4ExcelComparisonResultSchema.safeParse({
+      ...base,
+      worksheets: [{
+        ...base.worksheets[0],
+        metrics: [{ ...base.worksheets[0].metrics[0], absoluteDifference: absoluteDifference + 1e-4 }],
+      }],
+    }).success).toBe(false);
+
+    expect(f4ExcelComparisonResultSchema.safeParse({
+      ...base,
+      worksheets: [{
+        ...base.worksheets[0],
+        metrics: [{ ...base.worksheets[0].metrics[0], relativeDifference: relativeDifference + 1e-4 }],
+      }],
+    }).success).toBe(false);
+
+    expect(f4ExcelComparisonResultSchema.safeParse({
+      ...base,
+      worksheets: [{
+        ...base.worksheets[0],
+        metrics: [{ ...base.worksheets[0].metrics[0], relativeDifference: -relativeDifference }],
+      }],
+    }).success).toBe(false);
+
+    expect(f4ExcelComparisonResultSchema.safeParse({
+      ...base,
+      worksheets: [{
+        ...base.worksheets[0],
+        metrics: [{ ...base.worksheets[0].metrics[0], passed: true }],
+      }],
+      summary: {
+        worksheetCount: 1,
+        metricCount: 1,
+        passedMetricCount: 1,
+        mismatchMetricCount: 0,
+      },
+      status: "passed",
+    }).success).toBe(false);
+  });
+  
+  it("rejects metrics whose derived differences overflow even when claimed differences are finite", () => {
+    const overflowPayload = {
+      contractVersion: "v1",
+      comparisonVersion: "f4-excel-comparison-v1",
+      outputClassification: "confidential",
+      featureId: "F4",
+      status: "mismatch",
+      runId: "controlled-run-reference",
+      generatedAt: "2026-08-07T00:00:00.000Z",
+      source: {
+        workbookContentHash: contentHash,
+      },
+      worksheets: [{
+        worksheetName: "Analysis-A",
+        metrics: [{
+          metric: "cpk",
+          f4Value: Number.MAX_VALUE,
+          excelValue: -Number.MAX_VALUE,
+          excelDisplayText: "overflow",
+          absoluteDifference: 0,
+          relativeDifference: 0,
+          tolerance: 1e-12,
+          passed: false,
+          sourceCell: "Analysis-A!P10",
+          excelFormula: "=P8/P9",
+          f4FormulaId: "cpk-v1",
+        }],
+      }],
+      summary: {
+        worksheetCount: 1,
+        metricCount: 1,
+        passedMetricCount: 0,
+        mismatchMetricCount: 1,
+      },
+    };
+
+    expect(f4ExcelComparisonResultSchema.safeParse(overflowPayload).success).toBe(false);
+  });
+
+  it("rejects unknown fields, missing formula evidence, non-finite differences, and invalid summary", () => {
+    const passed = {
+      contractVersion: "v1",
+      comparisonVersion: "f4-excel-comparison-v1",
+      outputClassification: "confidential",
+      featureId: "F4",
+      status: "passed",
+      runId: "controlled-run-reference",
+      generatedAt: "2026-08-07T00:00:00.000Z",
+      source: {
+        workbookContentHash: contentHash,
+      },
+      worksheets: [{
+        worksheetName: "Analysis-A",
+        metrics: [{
+          metric: "cpk",
+          f4Value: 2.4,
+          excelValue: 2.4,
+          excelDisplayText: "2.4",
+          absoluteDifference: 0,
+          relativeDifference: 0,
+          tolerance: 1e-12,
+          passed: true,
+          sourceCell: "Analysis-A!P10",
+          excelFormula: "=P8/P9",
+          f4FormulaId: "cpk-v1",
+        }],
+      }],
+      summary: {
+        worksheetCount: 1,
+        metricCount: 1,
+        passedMetricCount: 1,
+        mismatchMetricCount: 0,
+      },
+    };
+
+    expect(f4ExcelComparisonResultSchema.safeParse({
+      contractVersion: "v1",
+      comparisonVersion: "f4-excel-comparison-v1",
+      outputClassification: "confidential",
+      featureId: "F4",
+      status: "excel_unavailable",
+      runId: "controlled-run-reference",
+      generatedAt: "2026-08-07T00:00:00.000Z",
+      reasonCode: "excel_runtime_unavailable",
+      rawError: "must-not-leak",
+    }).success).toBe(false);
+
+    expect(f4ExcelComparisonResultSchema.safeParse({
+      ...passed,
+      worksheets: [{
+        ...passed.worksheets[0],
+        metrics: [{ ...passed.worksheets[0].metrics[0], excelFormula: " " }],
+      }],
+    }).success).toBe(false);
+
+    expect(f4ExcelComparisonResultSchema.safeParse({
+      ...passed,
+      worksheets: [{
+        ...passed.worksheets[0],
+        metrics: [{ ...passed.worksheets[0].metrics[0], f4FormulaId: "   " }],
+      }],
+    }).success).toBe(false);
+
+    expect(f4ExcelComparisonResultSchema.safeParse({
+      ...passed,
+      worksheets: [{
+        ...passed.worksheets[0],
+        metrics: [{ ...passed.worksheets[0].metrics[0], absoluteDifference: Number.POSITIVE_INFINITY }],
+      }],
+    }).success).toBe(false);
+
+    expect(f4ExcelComparisonResultSchema.safeParse({
+      ...passed,
+      status: "mismatch",
+      summary: {
+        worksheetCount: 1,
+        metricCount: 1,
+        passedMetricCount: 1,
+        mismatchMetricCount: 0,
+      },
+    }).success).toBe(false);
+  });
+});
+
 describe("F7 Cpk placeholder contracts", () => {
   const request = {
     contractVersion: "v1",
@@ -2939,6 +3527,15 @@ describe("workbook catalog contracts", () => {
 
   it.each([
     ["a Windows path", { ...confidentialRequest, fileName: "C:\\private\\anonymous-ta.xlsx" }],
+    ["a drive-relative path", { ...confidentialRequest, fileName: "C:Anonymous.xlsx" }],
+    ["an ADS path", { ...confidentialRequest, fileName: "Anonymous.xlsx:payload.xlsx" }],
+    ["a reserved device basename", { ...confidentialRequest, fileName: "CON.xlsx" }],
+    ["a reserved device basename in lowercase", { ...confidentialRequest, fileName: "com1.xlsx" }],
+    ["a filename with reserved wildcard punctuation", { ...confidentialRequest, fileName: "name?.xlsx" }],
+    ["a filename with trailing whitespace", { ...confidentialRequest, fileName: "anonymous-ta.xlsx " }],
+    ["a filename with a trailing dot", { ...confidentialRequest, fileName: "anonymous-ta.xlsx." }],
+    ["a filename whose root ends with whitespace", { ...confidentialRequest, fileName: "anonymous-ta .xlsx" }],
+    ["a filename whose root ends with dot", { ...confidentialRequest, fileName: "anonymous-ta..xlsx" }],
     ["a traversal path", { ...confidentialRequest, fileName: "../anonymous-ta.xlsx" }],
     ...["safe\u0000.xlsx", "safe\u000b.xlsx", "safe\u007f.xlsx", "safe\u2028.xlsx", "safe\u2029.xlsx"].map(
       (fileName) => ["a filename with a control character", { ...confidentialRequest, fileName }] as const,

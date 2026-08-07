@@ -14,6 +14,9 @@ Set-Variable -Name MaximumMappingBytes -Value 1MB -Option Constant -Scope Script
 Set-Variable -Name MaximumMappingItems -Value 100 -Option Constant -Scope Script
 Set-Variable -Name MaximumNameLength -Value 128 -Option Constant -Scope Script
 Set-Variable -Name MaximumStringLength -Value 1024 -Option Constant -Scope Script
+Set-Variable -Name MaximumFormulaIdLength -Value 128 -Option Constant -Scope Script
+Set-Variable -Name MaximumFormulaLength -Value 4096 -Option Constant -Scope Script
+Set-Variable -Name MaximumFormulaFallbackCells -Value 10000 -Option Constant -Scope Script
 
 function Write-Json {
   param([Parameter(Mandatory = $true)] [object]$Payload)
@@ -105,6 +108,25 @@ function Assert-ScalarValue {
   throw (New-StatusException -Status "invalid_mapping" -Message "$Location must be a number or string.")
 }
 
+function Assert-ControlledString {
+  param(
+    [object]$Value,
+    [string]$Location,
+    [int]$MaximumLength,
+    [string]$Status = "invalid_mapping",
+    [switch]$AllowEmpty
+  )
+  if ($Value -isnot [string]) {
+    throw (New-StatusException -Status $Status -Message "$Location must be a string.")
+  }
+  if ($Value.Length -gt $MaximumLength -or $Value -match '[\x00\r\n]') {
+    throw (New-StatusException -Status $Status -Message "$Location contains invalid text.")
+  }
+  if (-not $AllowEmpty -and [string]::IsNullOrWhiteSpace($Value)) {
+    throw (New-StatusException -Status $Status -Message "$Location must be a non-empty string.")
+  }
+}
+
 function Assert-Mapping {
   param([Parameter(Mandatory = $true)] [object]$Mapping)
 
@@ -139,7 +161,7 @@ function Assert-Mapping {
 
   $names = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
   foreach ($outputItem in $Mapping.outputs) {
-    Assert-ExactProperties -Value $outputItem -Allowed @("name", "cell", "expected", "tolerance") -Location "mapping output"
+    Assert-ExactProperties -Value $outputItem -Allowed @("name", "cell", "expected", "tolerance", "formulaId") -Location "mapping output"
     if ($outputItem.name -isnot [string] -or [string]::IsNullOrWhiteSpace($outputItem.name) -or
       $outputItem.name.Length -gt $script:MaximumNameLength -or $outputItem.name -match '[\x00\r\n]') {
       throw (New-StatusException -Status "invalid_mapping" -Message "mapping output name must be a non-empty string.")
@@ -154,6 +176,7 @@ function Assert-Mapping {
       throw (New-StatusException -Status "invalid_mapping" -Message "mapping contains a duplicate cell.")
     }
     Assert-ScalarValue -Value $outputItem.expected -Location "mapping output expected value"
+    Assert-ControlledString -Value $outputItem.formulaId -Location "mapping output formulaId" -MaximumLength $script:MaximumFormulaIdLength
     if ("tolerance" -in $outputItem.PSObject.Properties.Name) {
       if (-not (Test-JsonNumber -Value $outputItem.tolerance) -or
           [double]$outputItem.tolerance -lt 0 -or
@@ -168,6 +191,178 @@ function Release-ComObject {
   param([object]$Value)
   if ($null -ne $Value -and [Runtime.InteropServices.Marshal]::IsComObject($Value)) {
     [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($Value)
+  }
+}
+
+function Test-FormulaOptionalMetric {
+  param([string]$MetricName)
+  return $MetricName -ceq "system.additionalMeanShift"
+}
+
+function Test-FormulaEvidenceSafe {
+  param([string]$FormulaText)
+    return $FormulaText -cnotmatch '(?i)([A-Za-z]:[\\/]|\\\\|\.\.[\\/]|(https?|file)://|["''](?!(?:Note):)[A-Za-z][A-Za-z0-9+.-]*:|\[[^\]]+\][^!]*!|\b(WEBSERVICE|RTD)\s*\(|\|[^!]*!|(password|secret|token|api[_ -]?key)\s*[=:])'
+}
+
+function Assert-FormulaEvidenceSafe {
+  param([object]$FormulaValue)
+  Assert-ControlledString -Value $FormulaValue -Location "workbook formula" -MaximumLength $script:MaximumFormulaLength -Status "excel_error"
+  if ($FormulaValue -match '[\x00-\x1F\x7F]') {
+    throw (New-StatusException -Status "excel_error" -Message "Workbook formula evidence is indeterminate.")
+  }
+  if (-not (Test-FormulaEvidenceSafe -FormulaText $FormulaValue)) {
+    throw (New-StatusException -Status "excel_error" -Message "Workbook formula evidence is not safe to execute.")
+  }
+}
+
+function Assert-UsedRangeFormulasSafeByCell {
+  param([Parameter(Mandatory = $true)] [object]$UsedRange)
+
+  $cells = $null
+  $after = $null
+  $current = $null
+  try {
+    $cells = $UsedRange.Cells
+    $after = $cells.Item(1, 1)
+    $current = $UsedRange.Find("=*", $after, -4123, 2, 1, 1, $false, $false, $false)
+    Release-ComObject -Value $after
+    $after = $null
+    if ($null -eq $current) {
+      throw (New-StatusException -Status "excel_error" -Message "Workbook formula evidence is indeterminate.")
+    }
+
+    $firstAddress = [string]$current.Address()
+    $formulaCount = 0
+    while ($null -ne $current) {
+      $formulaCount++
+      if ($formulaCount -gt $script:MaximumFormulaFallbackCells) {
+        throw (New-StatusException -Status "excel_error" -Message "Workbook formula evidence could not be bounded.")
+      }
+      if ($current.HasFormula -ne $true) {
+        throw (New-StatusException -Status "excel_error" -Message "Workbook formula evidence is indeterminate.")
+      }
+      Assert-FormulaEvidenceSafe -FormulaValue $current.Formula
+
+      $next = $UsedRange.FindNext($current)
+      Release-ComObject -Value $current
+      $current = $next
+      if ($null -eq $current) {
+        throw (New-StatusException -Status "excel_error" -Message "Workbook formula evidence is indeterminate.")
+      }
+      if ([string]$current.Address() -ceq $firstAddress) {
+        break
+      }
+    }
+  } finally {
+    Release-ComObject -Value $current
+    Release-ComObject -Value $after
+    Release-ComObject -Value $cells
+  }
+}
+
+function Convert-OutputToDiagnostic {
+  param(
+    [Parameter(Mandatory = $true)] [object]$OutputItem,
+    [Parameter(Mandatory = $true)] [object]$ActualValue,
+    [Parameter(Mandatory = $true)] [AllowEmptyString()] [string]$DisplayText,
+    [Parameter(Mandatory = $true)] [AllowEmptyString()] [string]$FormulaText
+  )
+
+  $metricName = [string]$OutputItem.name
+  $formulaValue = if ($null -eq $FormulaText) { "" } else { [string]$FormulaText }
+  $formulaIsOptional = Test-FormulaOptionalMetric -MetricName $metricName
+  if ([string]::IsNullOrWhiteSpace($formulaValue)) {
+    if ($formulaIsOptional) {
+      $formulaValue = "[formula-empty-allowed]"
+    } else {
+      throw (New-StatusException -Status "excel_error" -Message "Output formula is missing for a required metric.")
+    }
+  } else {
+    Assert-FormulaEvidenceSafe -FormulaValue $formulaValue
+  }
+
+  $expectedValue = $OutputItem.expected
+  $displayValue = if ($null -eq $DisplayText) { "" } else { [string]$DisplayText }
+  Assert-ControlledString -Value $displayValue -Location "output displayText" -MaximumLength $script:MaximumStringLength -Status "excel_error" -AllowEmpty
+  $absoluteDifference = $null
+  $relativeDifference = $null
+  $tolerance = $null
+  $pass = $false
+  $actualOut = $null
+
+  if (Test-JsonNumber -Value $expectedValue) {
+    if (-not (Test-JsonNumber -Value $ActualValue)) {
+      throw (New-StatusException -Status "excel_error" -Message "Actual output is non-numeric for a numeric metric.")
+    }
+    $actualNumber = [double]$ActualValue
+    if ([double]::IsNaN($actualNumber) -or [double]::IsInfinity($actualNumber)) {
+      throw (New-StatusException -Status "excel_error" -Message "Actual output must be finite.")
+    }
+    $expectedNumber = [double]$expectedValue
+    $absoluteDifference = [Math]::Abs($actualNumber - $expectedNumber)
+    $tolerance = if ("tolerance" -in $OutputItem.PSObject.Properties.Name) { [double]$OutputItem.tolerance } else { $script:DefaultTolerance }
+    $scale = [Math]::Max(1.0, [Math]::Max([Math]::Abs($actualNumber), [Math]::Abs($expectedNumber)))
+    $relativeDifference = $absoluteDifference / $scale
+    $pass = $absoluteDifference -le ($tolerance * $scale)
+    $actualOut = $actualNumber
+  } else {
+    $actualText = if ($null -eq $ActualValue) { "" } else { [string]$ActualValue }
+    Assert-ControlledString -Value $actualText -Location "output actual value" -MaximumLength $script:MaximumStringLength -Status "excel_error" -AllowEmpty
+    $pass = $actualText -ceq [string]$expectedValue
+    $actualOut = $actualText
+  }
+
+  return [ordered]@{
+    name = [string]$OutputItem.name
+    cell = [string]$OutputItem.cell
+    expected = $OutputItem.expected
+    actual = $actualOut
+    displayText = $displayValue
+    absoluteDifference = $absoluteDifference
+    relativeDifference = $relativeDifference
+    tolerance = $tolerance
+    formula = $formulaValue
+    formulaId = [string]$OutputItem.formulaId
+    pass = [bool]$pass
+  }
+}
+
+function Assert-WorkbookFormulaEvidenceSafe {
+  param([Parameter(Mandatory = $true)] [object]$Workbook)
+
+  $sheetCollection = $null
+  $nameCollection = $null
+  try {
+    $sheetCollection = $Workbook.Worksheets
+    for ($sheetIndex = 1; $sheetIndex -le $sheetCollection.Count; $sheetIndex++) {
+      $sheet = $null
+      $usedRange = $null
+      try {
+        $sheet = $sheetCollection.Item($sheetIndex)
+        $usedRange = $sheet.UsedRange
+        if ($usedRange.HasFormula -ne $false) {
+          Assert-UsedRangeFormulasSafeByCell -UsedRange $usedRange
+        }
+      } finally {
+        Release-ComObject -Value $usedRange
+        Release-ComObject -Value $sheet
+      }
+    }
+
+    $nameCollection = $Workbook.Names
+    for ($nameIndex = 1; $nameIndex -le $nameCollection.Count; $nameIndex++) {
+      $definedName = $null
+      try {
+        $definedName = $nameCollection.Item($nameIndex)
+        $reference = [string]$definedName.RefersTo
+        Assert-FormulaEvidenceSafe -FormulaValue $reference
+      } finally {
+        Release-ComObject -Value $definedName
+      }
+    }
+  } finally {
+    Release-ComObject -Value $nameCollection
+    Release-ComObject -Value $sheetCollection
   }
 }
 
@@ -244,7 +439,10 @@ if ($ValidateOnly) {
 }
 
 $excel = $null
+$workbooks = $null
+$bootstrapWorkbook = $null
 $workbook = $null
+$worksheets = $null
 $worksheet = $null
 $temporaryDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("f4-excel-regression-" + [guid]::NewGuid().ToString("N"))
 $resultPayload = $null
@@ -266,6 +464,8 @@ try {
     throw (New-StatusException -Status "hash_mismatch" -Message "Temporary workbook SHA-256 does not match the approved source.")
   }
 
+  $outputResults = [System.Collections.Generic.List[object]]::new()
+  $hasMismatch = $false
   if ($env:F4_EXCEL_REGRESSION_FAIL_ON_COM_START -eq "1") {
     throw (New-StatusException -Status "excel_error" -Message "Excel startup disabled by test hook.")
   }
@@ -276,8 +476,16 @@ try {
   $excel.AutomationSecurity = 3
   $UpdateLinks = 0
   $ReadOnly = $false
-  $workbook = $excel.Workbooks.Open($temporaryWorkbookPath, $UpdateLinks, $ReadOnly)
-  $worksheet = $workbook.Worksheets.Item($WorksheetName)
+  $workbooks = $excel.Workbooks
+  $bootstrapWorkbook = $workbooks.Add()
+  $excel.Calculation = -4135
+  $bootstrapWorkbook.Close($false)
+  Release-ComObject -Value $bootstrapWorkbook
+  $bootstrapWorkbook = $null
+  $workbook = $workbooks.Open($temporaryWorkbookPath, $UpdateLinks, $ReadOnly)
+  Assert-WorkbookFormulaEvidenceSafe -Workbook $workbook
+  $worksheets = $workbook.Worksheets
+  $worksheet = $worksheets.Item($WorksheetName)
   if ([string]$worksheet.Name -cne $WorksheetName) {
     throw (New-StatusException -Status "excel_error" -Message "Worksheet name did not match exactly.")
   }
@@ -296,36 +504,14 @@ try {
   }
 
   $excel.CalculateFullRebuild()
-  $outputResults = [System.Collections.Generic.List[object]]::new()
-  $hasMismatch = $false
   foreach ($outputItem in $mapping.outputs) {
     $range = $null
     try {
       $range = $worksheet.Range([string]$outputItem.cell)
-      $difference = $null
-      if (Test-JsonNumber -Value $outputItem.expected) {
-        $actualValue = $range.Value2
-        if (Test-JsonNumber -Value $actualValue) {
-          $actualNumber = [double]$actualValue
-          $expectedNumber = [double]$outputItem.expected
-          $difference = [Math]::Abs($actualNumber - $expectedNumber)
-          $tolerance = if ("tolerance" -in $outputItem.PSObject.Properties.Name) { [double]$outputItem.tolerance } else { $script:DefaultTolerance }
-          $scale = [Math]::Max(1.0, [Math]::Max([Math]::Abs($actualNumber), [Math]::Abs($expectedNumber)))
-          $passed = $difference -le ($tolerance * $scale)
-        } else {
-          $passed = $false
-        }
-      } else {
-        $actualText = [string]$range.Text
-        if ($null -eq $range.Text) { $actualText = [string]$range.Value2 }
-        $passed = $actualText -ceq [string]$outputItem.expected
-      }
-      if (-not $passed) { $hasMismatch = $true }
-      $outputResults.Add([ordered]@{
-          name = [string]$outputItem.name
-          cell = [string]$outputItem.cell
-          pass = [bool]$passed
-        })
+      $displayText = if ($null -eq $range.Text) { "" } else { [string]$range.Text }
+      $diagnostic = Convert-OutputToDiagnostic -OutputItem $outputItem -ActualValue $range.Value2 -DisplayText $displayText -FormulaText ([string]$range.Formula)
+      if (-not $diagnostic.pass) { $hasMismatch = $true }
+      $outputResults.Add($diagnostic)
     } finally {
       Release-ComObject -Value $range
     }
@@ -355,11 +541,17 @@ try {
   if ($null -ne $workbook) {
     try { $workbook.Close($false) } catch { }
   }
+  if ($null -ne $bootstrapWorkbook) {
+    try { $bootstrapWorkbook.Close($false) } catch { }
+  }
   if ($null -ne $excel) {
     try { $excel.Quit() } catch { }
   }
   Release-ComObject -Value $worksheet
+  Release-ComObject -Value $worksheets
   Release-ComObject -Value $workbook
+  Release-ComObject -Value $bootstrapWorkbook
+  Release-ComObject -Value $workbooks
   Release-ComObject -Value $excel
   [GC]::Collect()
   [GC]::WaitForPendingFinalizers()
