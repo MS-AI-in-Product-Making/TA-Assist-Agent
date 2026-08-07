@@ -53,7 +53,7 @@ function workflowCalculationResult() {
         sigma: 0.05,
         contribution: 1,
         trace: {
-          formulaIds: ["factor-mean-v1", "factor-sigma-v1"],
+          formulaIds: ["factor-mean-v1", "factor-half-tolerance-v1", "factor-sigma-v1", "contribution-v1"],
           sourceCells: ["Analysis-A!A2", "Analysis-A!B2"],
         },
       }],
@@ -189,18 +189,36 @@ describe("renderF4Report", () => {
 
   it("redacts full authorization/token values and absolute path variants", () => {
     const input = workflowCalculationResult();
-    input.calculations[0].worksheetSelection.worksheetName = "Analysis-A C:\\Users\\ralfye\\My Secret\\secret.xlsx C:/Program Files/TA Agent/secret.xlsx //server/share/ta folder/secret.xlsx normal-note";
-    input.calculations[0].factors[0].factorName = "Authorization: Bearer abc123 token=xyz";
+    input.calculations[0].worksheetSelection.worksheetName = "Analysis-A C:\\Users\\ralfye\\.ssh\\id_rsa C:/Users/ralfye/private-folder /home/ralfye/private/secret.xlsx //server/share/private-folder token=abc def";
+    input.calculations[0].worksheetSelection.tableId = "Authorization: Bearer abc:def";
+    input.calculations[0].factors[0].factorName = "Bearer abc:def";
 
     const markdown = renderF4Report(input);
 
     expect(markdown).toContain("[redacted-local-path]");
     expect(markdown).toContain("Authorization: [redacted]");
-    expect(markdown).not.toContain("abc123");
-    expect(markdown).not.toContain("C:\\Users\\ralfye\\My Secret\\secret.xlsx");
-    expect(markdown).not.toContain("C:/Program Files/TA Agent/secret.xlsx");
-    expect(markdown).not.toContain("//server/share/ta folder/secret.xlsx");
-    expect(markdown).toContain("normal-note");
+    expect(markdown).toContain("Bearer [redacted]");
+    expect(markdown).toContain("token=[redacted]");
+    expect(markdown).not.toContain("abc:def");
+    expect(markdown).not.toContain("abc def");
+    expect(markdown).not.toContain("C:\\Users\\ralfye\\.ssh\\id_rsa");
+    expect(markdown).not.toContain("C:/Users/ralfye/private-folder");
+    expect(markdown).not.toContain("/home/ralfye/private/secret.xlsx");
+    expect(markdown).not.toContain("//server/share/private-folder");
+  });
+
+  it("redacts sensitive values per-cell without swallowing adjacent table columns", () => {
+    const input = workflowCalculationResult();
+    input.calculations[0].worksheetSelection.worksheetName = "safe-left";
+    input.calculations[0].worksheetSelection.tableId = "safe-right";
+    input.calculations[0].factors[0].factorName = "Authorization: Bearer abc:def";
+
+    const markdown = renderF4Report(input);
+
+    expect(markdown).toContain("| worksheetName | safe-left |");
+    expect(markdown).toContain("| tableId | safe-right |");
+    expect(markdown).toContain("Authorization: [redacted]");
+    expect(markdown).not.toContain("abc:def");
   });
 
   it("neutralizes html and markdown-active content in worksheet headings and table cells", () => {
@@ -256,19 +274,27 @@ describe("renderF4Report", () => {
   it("supports factor metric path mapping and rejects unknown metric paths", () => {
     const calculation = workflowCalculationResult();
 
-    const factorPathComparison = comparisonResult("passed");
-    factorPathComparison.worksheets[0].metrics[0] = {
-      ...factorPathComparison.worksheets[0].metrics[0],
-      metric: "factors[0].mean",
-      f4Value: calculation.calculations[0].factors[0].mean,
-      excelValue: calculation.calculations[0].factors[0].mean,
-      excelDisplayText: `${calculation.calculations[0].factors[0].mean}`,
-      absoluteDifference: 0,
-      relativeDifference: 0,
-      passed: true,
-      f4FormulaId: "factor-mean-v1",
-    };
-    expect(() => renderF4Report(calculation, { comparisonResult: factorPathComparison })).not.toThrow();
+    const metricBindings = [
+      ["factors[0].mean", "factor-mean-v1", calculation.calculations[0].factors[0].mean],
+      ["factors[0].halfTolerance", "factor-half-tolerance-v1", calculation.calculations[0].factors[0].halfTolerance],
+      ["factors[0].sigma", "factor-sigma-v1", calculation.calculations[0].factors[0].sigma],
+      ["factors[0].contribution", "contribution-v1", calculation.calculations[0].factors[0].contribution],
+    ];
+    for (const [metricPath, formulaId, value] of metricBindings) {
+      const factorPathComparison = comparisonResult("passed");
+      factorPathComparison.worksheets[0].metrics[0] = {
+        ...factorPathComparison.worksheets[0].metrics[0],
+        metric: metricPath,
+        f4Value: value,
+        excelValue: value,
+        excelDisplayText: `${value}`,
+        absoluteDifference: 0,
+        relativeDifference: 0,
+        passed: true,
+        f4FormulaId: formulaId,
+      };
+      expect(() => renderF4Report(calculation, { comparisonResult: factorPathComparison })).not.toThrow();
+    }
 
     const unknownPathComparison = comparisonResult("passed");
     unknownPathComparison.worksheets[0].metrics[0] = {
@@ -277,6 +303,43 @@ describe("renderF4Report", () => {
       f4FormulaId: "factor-mean-v1",
     };
     expect(() => renderF4Report(calculation, { comparisonResult: unknownPathComparison })).toThrow(/metric|path|unknown/i);
+  });
+
+  it("rejects swapped factor formula IDs even when all formulas exist in trace", () => {
+    const calculation = workflowCalculationResult();
+    const swapped = [
+      ["factors[0].mean", "factor-sigma-v1", calculation.calculations[0].factors[0].mean],
+      ["factors[0].halfTolerance", "contribution-v1", calculation.calculations[0].factors[0].halfTolerance],
+      ["factors[0].sigma", "factor-half-tolerance-v1", calculation.calculations[0].factors[0].sigma],
+      ["factors[0].contribution", "factor-mean-v1", calculation.calculations[0].factors[0].contribution],
+    ];
+
+    for (const [metricPath, wrongFormulaId, value] of swapped) {
+      const factorPathComparison = comparisonResult("passed");
+      factorPathComparison.worksheets[0].metrics[0] = {
+        ...factorPathComparison.worksheets[0].metrics[0],
+        metric: metricPath,
+        f4Value: value,
+        excelValue: value,
+        excelDisplayText: `${value}`,
+        absoluteDifference: 0,
+        relativeDifference: 0,
+        passed: true,
+        f4FormulaId: wrongFormulaId,
+      };
+      expect(() => renderF4Report(calculation, { comparisonResult: factorPathComparison })).toThrow(/formula/i);
+    }
+  });
+
+  it("encodes pipe characters as HTML entities and neutralizes backslashes", () => {
+    const input = workflowCalculationResult();
+    input.calculations[0].worksheetSelection.worksheetName = "safe\\|INJECTED";
+
+    const markdown = renderF4Report(input);
+
+    expect(markdown).toContain("safe&#92;&#124;INJECTED");
+    expect(markdown).not.toContain("safe\\|INJECTED");
+    expect(markdown).not.toContain("|INJECTED |");
   });
 
   it("rejects comparison when formula evidence does not match metric", () => {

@@ -8,11 +8,11 @@ const EPSILON = 1e-12;
 function redactSensitiveText(value) {
   return String(value)
     .replace(/(Authorization\s*[:=]\s*)([^\r\n|]+)/gi, "$1[redacted]")
-    .replace(/\b(Bearer)\s+[A-Za-z0-9._~+/=-]+/gi, "$1 [redacted]")
-    .replace(/\b(token|api[-_]?key|secret|password)\s*[:=]\s*[^\s|]+/gi, "$1=[redacted]")
-    .replace(/[A-Za-z]:\\(?:[^\\\r\n|]+\\)*[^\\\r\n|]+\.[A-Za-z0-9]{1,10}/g, "[redacted-local-path]")
-    .replace(/[A-Za-z]:\/(?:[^/\r\n|]+\/)*[^/\r\n|]+\.[A-Za-z0-9]{1,10}/g, "[redacted-local-path]")
-    .replace(/(?:\\\\|\/\/)[^\s/\\]+(?:[/\\][^/\\\r\n|]+)+\.[A-Za-z0-9]{1,10}/g, "[redacted-local-path]");
+    .replace(/\b(Bearer)\s+([^\r\n|]+)/gi, "$1 [redacted]")
+    .replace(/\b(token|api[-_]?key|secret|password)\s*[:=]\s*([^\r\n|]+)/gi, "$1=[redacted]")
+    .replace(/(^|[\s(])([A-Za-z]:[\\/](?:[^\\/\s\r\n|]+[\\/])*[^\\/\s\r\n|]+)(?=$|[\s),;])/g, "$1[redacted-local-path]")
+    .replace(/(^|[\s(])((?:\\\\|\/\/)[^\\/\s\r\n|]+(?:[\\/][^\\/\s\r\n|]+)+)(?=$|[\s),;])/g, "$1[redacted-local-path]")
+    .replace(/(^|[\s(])(\/(?:[^/\s\r\n|]+\/)+[^/\s\r\n|]+)(?=$|[\s),;])/g, "$1[redacted-local-path]");
 }
 
 function neutralizeMarkdownText(value) {
@@ -29,7 +29,8 @@ function neutralizeMarkdownText(value) {
     .replace(/\[([^\]]+)\]\(([^)]*)\)/g, "$1")
     .replace(/`/g, "\\`")
     .replace(/(^|\n)\s*#+\s*/g, "$1")
-    .replace(/\|/g, "\\|")
+    .replace(/\\/g, "&#92;")
+    .replace(/\|/g, "&#124;")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -125,13 +126,20 @@ function resolveMetricPath(calculation, metricPath) {
     }
     const factorIndex = Number(matched[1]);
     const field = matched[2];
+    const factorFormulaByField = {
+      mean: "factor-mean-v1",
+      halfTolerance: "factor-half-tolerance-v1",
+      sigma: "factor-sigma-v1",
+      contribution: "contribution-v1",
+    };
     const factor = calculation.factors[factorIndex];
     if (!factor) {
       throw new Error(`Feature 4 comparison factor index is out of range: ${metricPath}`);
     }
+    const expectedFormulaId = factorFormulaByField[field];
     return {
       value: factor[field],
-      formulaMatches: (formulaId) => factor.trace.formulaIds.includes(formulaId),
+      formulaMatches: (formulaId) => formulaId === expectedFormulaId && factor.trace.formulaIds.includes(expectedFormulaId),
     };
   }
 
