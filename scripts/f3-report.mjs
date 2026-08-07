@@ -14,6 +14,14 @@ function cell(value) {
   return redactSensitiveText(value).replaceAll("|", "\\|").replaceAll(/\r?\n/g, "<br>");
 }
 
+function inlineCode(value) {
+  if (value === null || value === undefined || value === "") return "（缺失）";
+  const sanitized = redactSensitiveText(value)
+    .replaceAll("`", "'")
+    .replaceAll(/\r?\n/g, " ");
+  return `\`${sanitized}\``;
+}
+
 function sourceLocation(row) {
   const cells = Object.values(row.source.sourceCells).filter(Boolean).sort();
   return cells.length > 0
@@ -54,6 +62,14 @@ function renderAccepted(report) {
     `- 需要治理：${report.summary.governanceRequiredCount}`,
     `- 同图纸重复冲突：${report.summary.duplicateConflictCount}`,
     `- ADO 状态：\`${report.ado.status}\``,
+  ];
+  if (report.ado.workItemReference !== undefined) {
+    lines.push(`- ADO Work Item：${inlineCode(report.ado.workItemReference)}`);
+  }
+  if (report.ado.reasonCode !== undefined) {
+    lines.push(`- ADO 原因：${cell(report.ado.reasonCode)}`);
+  }
+  lines.push(
     "",
     "## 质量状态计数",
     "",
@@ -63,7 +79,7 @@ function renderAccepted(report) {
     `| missing | ${statusCounts.get("missing") ?? 0} |`,
     `| suspected_invalid | ${statusCounts.get("suspected_invalid") ?? 0} |`,
     `| needs_confirmation | ${statusCounts.get("needs_confirmation") ?? 0} |`,
-  ];
+  );
 
   const groups = new Map();
   for (const row of rows) {

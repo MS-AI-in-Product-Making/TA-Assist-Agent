@@ -59,6 +59,37 @@ describe("renderF3Report", () => {
     expect(markdown).toContain("ADO 状态：`not_requested`");
   });
 
+  it("renders optional ADO work item reference and reason code without comment body", () => {
+    const report = governanceReport();
+    report.ado = {
+      status: "blocked",
+      workItemReference: "1102392",
+      reasonCode: "surface_mcp_comment_body_unsupported",
+    };
+
+    const markdown = renderF3Report(report);
+
+    expect(markdown).toContain("ADO 状态：`blocked`");
+    expect(markdown).toContain("ADO Work Item：`1102392`");
+    expect(markdown).toContain("ADO 原因：surface_mcp_comment_body_unsupported");
+    expect(markdown).not.toContain("comment body");
+  });
+
+  it("sanitizes ADO work item reference before inline-code rendering", () => {
+    const report = governanceReport();
+    report.ado = {
+      status: "blocked",
+      workItemReference: "ticket`42 Authorization=token C:\\Users\\secret\\file",
+      reasonCode: "surface_mcp_comment_body_unsupported",
+    };
+
+    const markdown = renderF3Report(report);
+
+    expect(markdown).toContain("ADO Work Item：`ticket'42 Authorization: [redacted] [redacted-local-path]`");
+    expect(markdown).not.toContain("Authorization=token");
+    expect(markdown).not.toContain("C:\\Users\\secret\\file");
+  });
+
   it("escapes table text and does not expose local or authorization data", () => {
     const markdown = renderF3Report(governanceReport("A|B\nC"));
 
