@@ -8,6 +8,9 @@ import { writeF3AdoReminder } from "./write-f3-ado-reminder.mjs";
 const root = process.cwd();
 const skillPath = path.join(root, ".github", "skills", "f3-analysis", "SKILL.md");
 const referencePath = path.join(root, ".github", "skills", "f3-analysis", "references", "ado-publishing.md");
+const englishFlowPath = path.join(root, "docs", "02-end-to-end-flow.md");
+const chineseFlowPath = path.join(root, "docs", "02-端到端流程.md");
+const featureRegisterPath = path.join(root, "docs", "governance", "feature-register.md");
 
 function readUtf8(filePath) {
   return readFileSync(filePath, "utf8");
@@ -146,6 +149,63 @@ function countOccurrences(text, needle) {
 function getPackageScripts() {
   const packageJson = JSON.parse(readUtf8(path.join(root, "package.json")));
   return packageJson.scripts ?? {};
+}
+
+function expectContainsAny(haystack, markers, message) {
+  const matched = markers.some((marker) => haystack.includes(marker));
+  expect(matched, `${message}: expected one of [${markers.join(" | ")}]`).toBe(true);
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function getHeadingLineMatches(markdown, headingLine) {
+  const pattern = new RegExp(`^${escapeRegExp(headingLine)}\\s*$`, "gm");
+  return [...markdown.matchAll(pattern)].map((match) => ({
+    start: match.index ?? -1,
+    text: match[0],
+  }));
+}
+
+function extractSectionByHeading(markdown, headingLine) {
+  const matches = getHeadingLineMatches(markdown, headingLine);
+  if (matches.length === 0) return "";
+  if (matches.length > 1) {
+    throw new Error(`Expected exactly one heading '${headingLine}', found ${matches.length}`);
+  }
+  const sectionStart = matches[0].start;
+  const bodyStart = markdown.indexOf("\n", sectionStart);
+  if (bodyStart === -1) return "";
+  const nextHeadingOffset = markdown.slice(bodyStart + 1).search(/\n##\s+/);
+  if (nextHeadingOffset === -1) return markdown.slice(bodyStart + 1);
+  return markdown.slice(bodyStart + 1, bodyStart + 1 + nextHeadingOffset + 1);
+}
+
+function getLevel2HeadingLines(markdown) {
+  return markdown
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .filter((line) => /^##\s+/.test(line));
+}
+
+function extractBlockBeforeMarker(section, startMarker, endMarker) {
+  const start = section.indexOf(startMarker);
+  if (start === -1) return "";
+  const end = section.indexOf(endMarker, start);
+  if (end === -1) return "";
+  return section.slice(start, end);
+}
+
+function getIndentedBulletOptionLines(markdownBlock) {
+  return markdownBlock
+    .split(/\r?\n/)
+    .filter((line) => /^(?:\s{2,}|\t+)-\s+/.test(line));
+}
+
+function extractFirstMermaidBlock(markdown) {
+  const match = markdown.match(/```mermaid\r?\n([\s\S]*?)\r?\n```/);
+  return match?.[1] ?? "";
 }
 
 describe("f3-analysis skill contract", () => {
@@ -510,5 +570,226 @@ describe("f3-analysis skill contract", () => {
     expect(q2Index).toBeGreaterThan(previewIndex);
     expect(confirmWriteIndex).toBeGreaterThan(q2Index);
     expect(q2Index).toBeLessThan(phase5Index);
+  });
+
+  it("rejects duplicate target headings instead of selecting the first section", () => {
+    const duplicated = [
+      "## Key Decision Points",
+      "alpha",
+      "## Another",
+      "x",
+      "## Key Decision Points",
+      "beta",
+    ].join("\n");
+
+    expect(() => extractSectionByHeading(duplicated, "## Key Decision Points")).toThrow(
+      "Expected exactly one heading '## Key Decision Points', found 2");
+  });
+
+  it("documents governed F3 ADO publishing flow in EN/CN flow docs and governance register", () => {
+    const englishFlow = readUtf8(englishFlowPath);
+    const chineseFlow = readUtf8(chineseFlowPath);
+    const featureRegister = readUtf8(featureRegisterPath);
+    const englishMermaid = extractFirstMermaidBlock(englishFlow);
+    const chineseMermaid = extractFirstMermaidBlock(chineseFlow);
+    const englishKeyHeading = "## Key Decision Points";
+    const chineseKeyHeading = "## 关键决策点";
+    const englishContractHeading = "## F3 Governed ADO Publishing Contract";
+    const chineseContractHeading = "## F3 受治理 ADO 发布契约";
+
+    expect(englishMermaid.length).toBeGreaterThan(0);
+    expect(chineseMermaid.length).toBeGreaterThan(0);
+    expect(englishMermaid).toContain("REQ -- Yes --> DIFF");
+    expect(englishMermaid).toContain("REQ -- No --> FIX");
+    expect(chineseMermaid).toContain("REQ -- 是 --> DIFF");
+    expect(chineseMermaid).toContain("REQ -- 否 --> FIX");
+
+    expect(getHeadingLineMatches(englishFlow, englishKeyHeading).length).toBe(1);
+    expect(getHeadingLineMatches(chineseFlow, chineseKeyHeading).length).toBe(1);
+    expect(getHeadingLineMatches(englishFlow, englishContractHeading).length).toBe(1);
+    expect(getHeadingLineMatches(chineseFlow, chineseContractHeading).length).toBe(1);
+
+    const englishHeadings = getLevel2HeadingLines(englishFlow);
+    const chineseHeadings = getLevel2HeadingLines(chineseFlow);
+
+    expect(englishHeadings).toEqual([
+      "## F1 to F2 Evidence Contract",
+      "## Flow Diagram",
+      "## Key Decision Points",
+      "## F3 Governed ADO Publishing Contract",
+    ]);
+    expect(chineseHeadings).toEqual([
+      "## F1 到 F2 证据契约",
+      "## 流程图",
+      "## 关键决策点",
+      "## F3 受治理 ADO 发布契约",
+    ]);
+
+    expect(englishHeadings.length).toBe(chineseHeadings.length);
+    expect(englishHeadings.indexOf(englishKeyHeading)).toBeLessThan(englishHeadings.indexOf(englishContractHeading));
+    expect(chineseHeadings.indexOf(chineseKeyHeading)).toBeLessThan(chineseHeadings.indexOf(chineseContractHeading));
+
+    const englishF3Section = extractSectionByHeading(englishFlow, englishContractHeading);
+    const chineseF3Section = extractSectionByHeading(chineseFlow, chineseContractHeading);
+    const englishKeySection = extractSectionByHeading(englishFlow, englishKeyHeading);
+    const chineseKeySection = extractSectionByHeading(chineseFlow, chineseKeyHeading);
+
+    expect(englishF3Section.length).toBeGreaterThan(0);
+    expect(chineseF3Section.length).toBeGreaterThan(0);
+    expect(englishKeySection.length).toBeGreaterThan(0);
+    expect(chineseKeySection.length).toBeGreaterThan(0);
+
+    expectContainsAny(englishFlow, [
+      "future roadmap",
+      "Future roadmap",
+    ], "EN must label milestone/date write intent as future roadmap");
+    expectContainsAny(chineseFlow, [
+      "未来路线图",
+      "未来规划",
+    ], "CN must label milestone/date write intent as future roadmap");
+    expectContainsAny(englishFlow, [
+      "out of current F3 scope",
+      "outside current F3 scope",
+    ], "EN must state current milestone/date write is out of scope");
+    expectContainsAny(chineseFlow, [
+      "不在当前 F3 范围",
+      "超出当前 F3 范围",
+    ], "CN must state current milestone/date write is out of scope");
+
+    const englishGovernanceBoundaryText = englishFlow;
+    const chineseGovernanceBoundaryText = chineseFlow;
+
+    expectContainsAny(englishGovernanceBoundaryText, ["scheduler"], "missing EN no-scheduler boundary");
+    expectContainsAny(englishGovernanceBoundaryText, ["milestone timer"], "missing EN no milestone timer boundary");
+    expectContainsAny(englishGovernanceBoundaryText, ["date-triggered reminder"], "missing EN no date-triggered reminder boundary");
+    expectContainsAny(englishGovernanceBoundaryText, ["F4 calculation/handoff mutation"], "missing EN no F4 mutation boundary");
+
+    expectContainsAny(chineseGovernanceBoundaryText, ["scheduler", "调度器"], "missing CN no-scheduler boundary");
+    expectContainsAny(chineseGovernanceBoundaryText, ["milestone timer", "里程碑计时器"], "missing CN no milestone timer boundary");
+    expectContainsAny(chineseGovernanceBoundaryText, ["date-triggered reminder", "日期触发提醒"], "missing CN no date-triggered reminder boundary");
+    expectContainsAny(chineseGovernanceBoundaryText, ["F4 calculation/handoff mutation", "F4 计算/交接变更"], "missing CN no F4 mutation boundary");
+
+    for (const flowSection of [englishF3Section, chineseF3Section]) {
+      expect(flowSection).toContain(".github/skills/f3-analysis/SKILL.md");
+
+      const question1Marker = "Question call 1 - publishing mode";
+      const boundaryMarker = "Surface MCP entity calls may start only after Question call 1 returns";
+      const validationMarker = "organization/project/type or ID";
+      const previewMarker = "complete preview";
+      const question2Marker = "Question call 2 - final write confirmation";
+      const writeMarker = "Feature3-ADO-Reminder.md";
+
+      const question1Index = flowSection.indexOf(question1Marker);
+      const boundaryIndex = flowSection.indexOf(boundaryMarker);
+      const validationIndex = flowSection.indexOf(validationMarker);
+      const previewIndex = flowSection.indexOf(previewMarker);
+      const question2Index = flowSection.indexOf(question2Marker);
+      const writeIndex = flowSection.indexOf(writeMarker);
+
+      expect(question1Index).toBeGreaterThan(-1);
+      expect(boundaryIndex).toBeGreaterThan(question1Index);
+      expect(validationIndex).toBeGreaterThan(boundaryIndex);
+      expect(previewIndex).toBeGreaterThan(validationIndex);
+      expect(question2Index).toBeGreaterThan(previewIndex);
+      expect(writeIndex).toBeGreaterThan(question2Index);
+
+      const publishingChoiceBlock = extractBlockBeforeMarker(flowSection, question1Marker, boundaryMarker);
+      const choiceOptionLines = getIndentedBulletOptionLines(publishingChoiceBlock);
+      const expectedChoices = [
+        "Create a new ADO work item",
+        "Use an existing ADO work item",
+        "Do not publish to ADO",
+      ];
+
+      expect(publishingChoiceBlock.length).toBeGreaterThan(0);
+      expect(choiceOptionLines.length).toBe(3);
+      expect(choiceOptionLines.map((line) => line.trim())).toEqual(expectedChoices.map((choice) => `- ${choice}`));
+      for (const choice of expectedChoices) {
+        expect(countOccurrences(publishingChoiceBlock, choice)).toBe(1);
+      }
+
+      expectContainsAny(flowSection, [
+        "Surface MCP-only",
+        "仅允许 Surface MCP",
+      ], "missing Surface MCP-only validation scope");
+      expectContainsAny(flowSection, [
+        "candidate correction",
+        "候选纠正",
+      ], "missing candidate correction");
+
+      expectContainsAny(flowSection, [
+        "Default: Task",
+        "默认类型：Task",
+      ], "missing default type Task");
+
+      expectContainsAny(flowSection, [
+        "comment template text is fixed English",
+        "评论模板文本固定为英文",
+      ], "missing fixed English comment/template rule");
+      expectContainsAny(flowSection, [
+        "Device Level Dim | Dimension Description | Part / Subsystem | Drawing Number | Dim ID | Factor Description | Nominal | Upper Tolerance (+) | Lower Tolerance (-) | σ Level | Governance issue",
+        "Device Level Dim｜Dimension Description｜Part / Subsystem｜Drawing Number｜Dim ID｜Factor Description｜Nominal｜Upper Tolerance (+)｜Lower Tolerance (-)｜σ Level｜Governance issue",
+      ], "missing exact fixed 11-column header");
+
+      const reasonCodeLine = flowSection
+        .split(/\r?\n/)
+        .find((line) => line.includes("Feature3-ADO-Reminder.md") && line.includes("user_declined_write"));
+      expect(Boolean(reasonCodeLine), "missing governed fallback reason-code statement").toBe(true);
+      for (const reasonCode of [
+        "user_declined_write",
+        "surface_mcp_comment_body_unsupported",
+        "write_verification_failed",
+      ]) {
+        expect(countOccurrences(reasonCodeLine ?? "", reasonCode), `missing explicit reason code: ${reasonCode}`).toBe(1);
+      }
+
+      expectContainsAny(flowSection, [
+        "bodyless Surface schema",
+        "Surface schema 无 body",
+      ], "missing bodyless schema blocked rule");
+      expectContainsAny(flowSection, [
+        "never empty comment",
+        "禁止空评论",
+      ], "missing never-empty-comment rule");
+
+      expectContainsAny(flowSection, [
+        "Never use Azure DevOps MCP/REST/browser/shell HTTP",
+        "不得使用 Azure DevOps MCP/REST/browser/shell HTTP",
+      ], "missing never-use-Azure-DevOps-fallback rule");
+
+      expectContainsAny(flowSection, [
+        "no scheduler/milestone timer",
+        "无 scheduler/milestone timer",
+        "no scheduler, no milestone timer",
+        "无 scheduler、无 milestone timer",
+      ], "missing no-scheduler-timer boundary");
+      expectContainsAny(flowSection, [
+        "no F4 calculation/handoff impact",
+        "不影响 F4 计算/交接",
+        "no F4 calculation/handoff mutation",
+        "不发生 F4 计算/交接变更",
+      ], "missing no F4 impact boundary");
+    }
+
+    // Governance register should stay concise but still lock key F3 contract points.
+    expect(featureRegister).toContain(".github/skills/f3-analysis/SKILL.md");
+    expect(featureRegister).toContain("F3");
+    expect(featureRegister).toContain("drawing-governance-v2");
+    expect(featureRegister).toContain("surface-mcp-adapter-v1");
+    expectContainsAny(featureRegister, [
+      "Create a new ADO work item",
+      "Use an existing ADO work item",
+      "Do not publish to ADO",
+    ], "feature register missing governed publish choices");
+    expect(featureRegister).toContain("Question call 1");
+    expect(featureRegister).toContain("Question call 2");
+    expect(featureRegister).toContain("Default: Task");
+    expect(featureRegister).toContain("Feature3-ADO-Reminder.md");
+    expect(featureRegister).toContain("surface_mcp_comment_body_unsupported");
+    expect(featureRegister).toContain("write_verification_failed");
+    expect(featureRegister).toContain("user_declined_write");
+    expect(featureRegister).toContain("Never use Azure DevOps MCP/REST/browser/shell HTTP");
+    expect(featureRegister).toContain("no scheduler/milestone timer");
+    expect(featureRegister).toContain("no F4 calculation/handoff impact");
   });
 });

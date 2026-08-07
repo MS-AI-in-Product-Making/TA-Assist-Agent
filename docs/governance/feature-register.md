@@ -88,6 +88,15 @@ F0 解读规则范围与维护边界见 [F0 TA 结果解读规则库设计](../s
   `prepare -> confirm -> execute`；真实写入仍需 Surface MCP capability、策略审批和逐次用户确认。
   无 ADO、负责人、能力、确认或写入失败时保存同一份 confidential 清单并继续 TA。F3 不依赖
   Azure DevOps MCP，不读取日期、不做截止临近判断，也不运行 scheduler。
+  F3 治理发布的固定摘要为：用户经 `.github/skills/f3-analysis/SKILL.md` 进入；Question call 1 在
+  `Create a new ADO work item` / `Use an existing ADO work item` / `Do not publish to ADO` 中三选一，且
+  Surface MCP entity calls may start only after Question call 1 returns；校验范围限定为
+  Surface MCP-only 的 `organization/project/type or ID` 并允许 candidate correction；新建类型默认
+  `Default: Task`；完整预览后再执行 Question call 2 终确认；Comment 与本地提醒模板均固定英文，
+  11 列固定表头为 `Device Level Dim | Dimension Description | Part / Subsystem | Drawing Number | Dim ID | Factor Description | Nominal | Upper Tolerance (+) | Lower Tolerance (-) | σ Level | Governance issue`；
+  用户拒绝/能力不足/写后校验失败分别使用 `user_declined_write`、`surface_mcp_comment_body_unsupported`、
+  `write_verification_failed` 并写本地 `Feature3-ADO-Reminder.md`；遇到 bodyless schema 必须阻断并拒绝空评论；
+  Never use Azure DevOps MCP/REST/browser/shell HTTP；no scheduler/milestone timer，且 no F4 calculation/handoff impact。
 - F4 的 `available` 只接受 F1/F2 已验证且内容哈希绑定的 `confidential` 结构化证据。计算版本为
   `excel-ta-v1`：少于 4 个有效因子推荐 WC，4 至 10 个推荐一维 RSS，多于 10 个转介 DM 团队
   跟进 3D Variation Analysis，但三种区间均继续计算 WC 和 RSS。核心支持 Normal、Uniform、
