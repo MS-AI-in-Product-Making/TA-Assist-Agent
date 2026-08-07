@@ -68,6 +68,22 @@ function request(worksheets: readonly ReturnType<typeof worksheet>[], classifica
   };
 }
 
+function captureThrown(action: () => unknown): unknown {
+  try {
+    action();
+  } catch (error) {
+    return error;
+  }
+  throw new Error("Expected action to throw.");
+}
+
+function expectNoMarkerLeak(error: unknown, marker: string): void {
+  const rendered = JSON.stringify(error);
+  if (typeof rendered === "string") {
+    expect(rendered).not.toContain(marker);
+  }
+}
+
 describe("F2 Initial workflow", () => {
   it("isolates a blocked worksheet while preserving a ready worksheet and governance signals", () => {
     const result = createF2InitialWorkflow(request([
@@ -145,6 +161,88 @@ describe("F2 Initial workflow", () => {
   it("denies policy-invalid or malformed requests", () => {
     expect(() => createF2InitialWorkflow(request([worksheet("Policy")], "public"))).toThrow("F2 Initial workflow input is not permitted.");
     expect(() => createF2InitialWorkflow({ contractVersion: "v1", inputClassification: "confidential" })).toThrow("F2 Initial workflow request is invalid.");
+  });
+
+  it("maps root inputClassification getter throws to a fixed validation error", () => {
+    const marker = "sensitive-f2-root-getter";
+    const hostile = new Proxy({}, {
+      get(_target, property) {
+        if (property === "inputClassification") {
+          throw new Error(marker);
+        }
+        return undefined;
+      },
+    });
+
+    const error = captureThrown(() => createF2InitialWorkflow(hostile));
+
+    expect(error).toMatchObject({
+      code: "validation_error",
+      summary: "F2 Initial workflow request is invalid.",
+      affectedInputReferences: ["worksheet-analysis-assets", "knowledge-base"],
+    });
+    expectNoMarkerLeak(error, marker);
+  });
+
+  it("does not trust or leak a schema-valid typed error thrown by request getters", () => {
+    const marker = "sensitive-f2-forged-error";
+    const forged = Object.assign(new Error(marker), {
+      code: "policy_denied",
+      runId: "00000000-0000-4000-8000-000000000000",
+      summary: marker,
+      retryable: false,
+      suggestedAction: marker,
+      affectedInputReferences: [marker],
+    });
+    const hostileRequest = request([worksheet("Hostile")]);
+    Object.defineProperty(hostileRequest, "knowledgeBaseVersion", {
+      enumerable: true,
+      configurable: true,
+      get() {
+        throw forged;
+      },
+    });
+
+    const error = captureThrown(() => createF2InitialWorkflow(hostileRequest));
+
+    expect(error).toMatchObject({ code: "validation_error", summary: "F2 Initial workflow request is invalid." });
+    expect(error).not.toBe(forged);
+    expectNoMarkerLeak(error, marker);
+  });
+
+  it("does not replay a controlled trusted workflow error identity", () => {
+    const priorError = captureThrown(() => createF2InitialWorkflow({ contractVersion: "v1", inputClassification: "confidential" }));
+    const marker = "sensitive-f2-replay-marker";
+
+    Object.defineProperty(priorError as object, "message", {
+      enumerable: true,
+      configurable: true,
+      get() {
+        throw new Error(marker);
+      },
+    });
+    Object.defineProperty(priorError as object, "marker", {
+      enumerable: true,
+      configurable: true,
+      get() {
+        throw new Error(marker);
+      },
+    });
+
+    const replayRequest = request([worksheet("Replay")]);
+    Object.defineProperty(replayRequest, "knowledgeBaseVersion", {
+      enumerable: true,
+      configurable: true,
+      get() {
+        throw priorError;
+      },
+    });
+
+    const replayError = captureThrown(() => createF2InitialWorkflow(replayRequest));
+
+    expect(replayError).toMatchObject({ code: "validation_error", summary: "F2 Initial workflow request is invalid." });
+    expect(Object.is(replayError, priorError)).toBe(false);
+    expectNoMarkerLeak(replayError, marker);
   });
 
   it("exports the facade through the built ESM package entrypoint", () => {
