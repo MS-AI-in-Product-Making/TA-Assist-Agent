@@ -268,7 +268,9 @@ export const terminologyUnknownResultSchema = z
   })
   .strict();
 
-const windowsWorkbookForbiddenCharacters = /[<>:"/\\|?*\u0000-\u001f\u007f\u2028\u2029]/;
+const windowsWorkbookForbiddenCharacters = new RegExp(
+  `[<>:"/\\\\|?*${String.fromCharCode(0)}-${String.fromCharCode(31)}${String.fromCharCode(127)}\\u2028\\u2029]`,
+);
 const windowsReservedDeviceBasenames = new Set([
   "CON",
   "PRN",
@@ -339,7 +341,8 @@ const workbookCatalogFileNameSchema = z
       });
     }
 
-    if (windowsReservedDeviceBasenames.has(fileNameWithoutExtension.toUpperCase())) {
+    const windowsDeviceIdentity = fileNameWithoutExtension.split(".", 1)[0] ?? "";
+    if (windowsReservedDeviceBasenames.has(windowsDeviceIdentity.toUpperCase())) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message: "fileName root must not be a reserved Windows device name",
@@ -2833,7 +2836,7 @@ const f4ExcelComparisonMetricSchema = z
     passed: z.boolean(),
     sourceCell: worksheetSourceCellSchema,
     excelFormula: z.string().trim().min(1),
-    f4FormulaId: z.string().min(1),
+    f4FormulaId: z.string().trim().min(1),
   })
   .strict()
   .superRefine((metric, context) => {

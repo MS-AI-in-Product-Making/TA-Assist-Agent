@@ -2618,6 +2618,9 @@ describe("F4 workflow and excel comparison contracts", () => {
       "Anonymous.xlsx.",
       "Anonymous .xlsx",
       "Anonymous..xlsx",
+      "CON.backup.xlsx",
+      "nul.anything.xlsx",
+      "COM1.log.xlsx",
     ];
 
     for (const workbookFileName of rejectedFileNames) {
@@ -2629,6 +2632,10 @@ describe("F4 workflow and excel comparison contracts", () => {
   });
 
   it("accepts passed and mismatch excel comparison results", () => {
+    const absoluteDifference = Math.abs(2.4 - 2.399);
+    const denominator = Math.max(1, Math.abs(2.4), Math.abs(2.399));
+    const relativeDifference = absoluteDifference / denominator;
+
     const passed = {
       contractVersion: "v1",
       comparisonVersion: "f4-excel-comparison-v1",
@@ -2673,8 +2680,8 @@ describe("F4 workflow and excel comparison contracts", () => {
           ...passed.worksheets[0].metrics[0],
           excelValue: 2.399,
           excelDisplayText: "2.399",
-          absoluteDifference: 0.001,
-          relativeDifference: 0.00041666666666675995,
+          absoluteDifference,
+          relativeDifference,
           passed: false,
         }],
       }],
@@ -2871,6 +2878,14 @@ describe("F4 workflow and excel comparison contracts", () => {
       worksheets: [{
         ...passed.worksheets[0],
         metrics: [{ ...passed.worksheets[0].metrics[0], excelFormula: " " }],
+      }],
+    }).success).toBe(false);
+
+    expect(f4ExcelComparisonResultSchema.safeParse({
+      ...passed,
+      worksheets: [{
+        ...passed.worksheets[0],
+        metrics: [{ ...passed.worksheets[0].metrics[0], f4FormulaId: "   " }],
       }],
     }).success).toBe(false);
 
