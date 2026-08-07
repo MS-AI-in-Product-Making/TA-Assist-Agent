@@ -64,6 +64,31 @@ function hasAvailableValue(field: ArtifactField | undefined): boolean {
   return typeof field.actualValue === "number" || field.actualValue.trim().length > 0;
 }
 
+function displayValue(field: ArtifactField | undefined): string | null {
+  return field?.status === "available" && field.displayValue.length > 0 ? field.displayValue : null;
+}
+
+function projectDisplayFields(fields: ArtifactFields) {
+  return {
+    factorName: displayValue(fields.factorName),
+    partName: displayValue(fields.partName),
+    drawingNumber: displayValue(fields.drawingNumber),
+    dimCharacteristicId: displayValue(fields.dimCharacteristicId),
+    partCategory: displayValue(fields.partCategory),
+    nominalValue: displayValue(fields.nominalValue),
+    upperTolerance: displayValue(fields.upperTolerance),
+    lowerTolerance: displayValue(fields.lowerTolerance),
+    longTermSafetyFactor: displayValue(fields.longTermSafetyFactor),
+    sigmaLevel: displayValue(fields.standardDeviation),
+    distribution: displayValue(fields.distribution),
+    mean: displayValue(fields.mean),
+    tolerance: displayValue(fields.tolerance),
+    oneSigma: displayValue(fields.oneSigma),
+    percentContributionToSigma: displayValue(fields.percentContributionToSigma),
+    notes: displayValue(fields.notes),
+  };
+}
+
 function imageReference(worksheet: F2ArtifactInput["worksheets"][number]): { artifact: "f1"; relativePath: string; contentHash: string; worksheetName: string } | undefined {
   if (worksheet.tolerancePathImage.status !== "available") return undefined;
   return {
@@ -159,6 +184,7 @@ export function createF2UserReport(
         tableId: table.tableId,
         sourceRow: row.sourceRow,
         actualFields: row.actualFields,
+        displayFields: projectDisplayFields(row.fields),
         sourceCells,
           ...(worksheetImageReference === undefined ? {} : { imageReference: worksheetImageReference }),
         missingRequiredFields,
