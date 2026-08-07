@@ -15,7 +15,7 @@ const RUN_ID_MAX_LENGTH = 96;
 const RUN_REFERENCE_MAX_LENGTH = 128;
 const WORKBOOK_FILE_NAME_MAX_LENGTH = 240;
 const CONTROLLED_REFERENCE_PATTERN = /^[A-Za-z0-9._:-]+$/;
-const TRUSTED_WORKFLOW_ERRORS = new WeakSet();
+const TRUSTED_WORKFLOW_ERRORS = new WeakMap();
 const SAFE_WORKBOOK_FILE_NAME_PATTERN = new RegExp(
   `^[^/\\\\${String.fromCharCode(0)}-${String.fromCharCode(31)}${String.fromCharCode(127)}${String.fromCharCode(0x2028)}${String.fromCharCode(0x2029)}]+\\.xlsx$`,
   "i",
@@ -24,12 +24,13 @@ const SAFE_WORKBOOK_FILE_NAME_PATTERN = new RegExp(
 function workflowError(code) {
   const error = new Error(SAFE_ERROR_MESSAGE);
   error.code = code;
-  TRUSTED_WORKFLOW_ERRORS.add(error);
+  TRUSTED_WORKFLOW_ERRORS.set(error, code);
   return error;
 }
 
-function isWorkflowError(error) {
-  return typeof error === "object" && error !== null && TRUSTED_WORKFLOW_ERRORS.has(error);
+function getWorkflowErrorCode(error) {
+  if (typeof error !== "object" || error === null) return undefined;
+  return TRUSTED_WORKFLOW_ERRORS.get(error);
 }
 
 function isPlainObject(value) {
@@ -205,7 +206,8 @@ export function calculateF4Workflow(loaded, options) {
 
     return deepFreeze(deepClone(parsedWorkflow.data));
   } catch (error) {
-    if (isWorkflowError(error)) throw error;
+    const code = getWorkflowErrorCode(error);
+    if (typeof code === "string") throw workflowError(code);
     throw workflowError("calculation_failed");
   }
 }

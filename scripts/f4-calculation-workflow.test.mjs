@@ -309,6 +309,53 @@ describe("calculateF4Workflow", () => {
     }
   });
 
+  it("recreates trusted workflow errors when replayed across invocations", () => {
+    const loaded = createLoaded([createHandoff("Analysis-B", 22)]);
+    let capturedTrustedError;
+
+    try {
+      calculateF4Workflow(loaded, {
+        runId: "f4-run-1",
+        createRequest: () => ({ request: true }),
+        calculate: () => ({ status: "completed", unexpected: true }),
+      });
+      throw new Error("expected throw");
+    } catch (error) {
+      capturedTrustedError = error;
+    }
+
+    const marker = "REPLAYED_TRUSTED_MARKER";
+    Object.defineProperty(capturedTrustedError, "marker", {
+      value: marker,
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(capturedTrustedError, "message", {
+      enumerable: true,
+      configurable: true,
+      get() {
+        return `tampered ${marker}`;
+      },
+    });
+
+    try {
+      calculateF4Workflow(loaded, {
+        runId: "f4-run-1",
+        createRequest: () => {
+          throw capturedTrustedError;
+        },
+      });
+      throw new Error("expected throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(Error);
+      expect(error).not.toBe(capturedTrustedError);
+      expect(String(error)).toBe("Error: F4 workflow calculation failed.");
+      expect("marker" in error).toBe(false);
+      expect(JSON.stringify(error)).not.toContain(marker);
+    }
+  });
+
   it("does not leak when thrown value has a message getter that throws", () => {
     const loaded = createLoaded([createHandoff("Analysis-B", 22)]);
     const marker = "SENSITIVE_GETTER_MARKER";
