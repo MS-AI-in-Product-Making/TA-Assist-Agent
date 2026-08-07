@@ -237,28 +237,47 @@ describe("renderF4Report", () => {
     expect(markdown).toContain("| tableId | safe-right |");
   });
 
-  it("redacts controlled credential keys with = or : and values containing spaces/punctuation", () => {
+  it("redacts ordinary token= values including spaces/punctuation", () => {
     const input = workflowCalculationResult();
     input.calculations[0].worksheetSelection.worksheetName = "safe-left";
     input.calculations[0].worksheetSelection.tableId = "safe-right";
-    input.calculations[0].factors[0].factorName = [
-      "access_token = abc-123:45 !",
-      "refresh_token: rrr.111 +++",
-      "CLIENT_SECRET = top secret value?!",
-    ].join(" ; ");
+    input.calculations[0].factors[0].factorName = "token=plain token secret?!";
 
     const markdown = renderF4Report(input);
 
-    expect(markdown).toContain("access_token = [redacted]");
-    expect(markdown).toContain("refresh_token: [redacted]");
-    expect(markdown).toContain("CLIENT_SECRET = [redacted]");
-    expect(markdown).not.toContain("abc-123:45 !");
-    expect(markdown).not.toContain("rrr.111 +++");
-    expect(markdown).not.toContain("top secret value?!");
+    expect(markdown).toContain("token=[redacted]");
+    expect(markdown).not.toContain("plain token secret?!");
 
     // Ensure neighboring ordinary cells survive redaction.
     expect(markdown).toContain("| worksheetName | safe-left |");
     expect(markdown).toContain("| tableId | safe-right |");
+  });
+
+  it("redacts controlled credential keys with = or : including legacy and newer keys", () => {
+    const cases = [
+      ["access_token = abc-123:45 !", "access_token = [redacted]", "abc-123:45 !"],
+      ["refresh_token: rrr.111 +++", "refresh_token: [redacted]", "rrr.111 +++"],
+      ["CLIENT_SECRET = top secret value?!", "CLIENT_SECRET = [redacted]", "top secret value?!"],
+      ["api-key: key-value-123", "api-key: [redacted]", "key-value-123"],
+      ["api_key = key_value_456", "api_key = [redacted]", "key_value_456"],
+      ["secret: this is a secret", "secret: [redacted]", "this is a secret"],
+      ["password = pass phrase #42", "password = [redacted]", "pass phrase #42"],
+    ];
+
+    for (const [cellInput, expectedRedacted, forbiddenRaw] of cases) {
+      const input = workflowCalculationResult();
+      input.calculations[0].worksheetSelection.worksheetName = "safe-left";
+      input.calculations[0].worksheetSelection.tableId = "safe-right";
+      input.calculations[0].factors[0].factorName = cellInput;
+
+      const markdown = renderF4Report(input);
+
+      expect(markdown).toContain(expectedRedacted);
+      expect(markdown).not.toContain(forbiddenRaw);
+      // Ensure neighboring ordinary cells survive redaction.
+      expect(markdown).toContain("| worksheetName | safe-left |");
+      expect(markdown).toContain("| tableId | safe-right |");
+    }
   });
 
   it("redacts sensitive values per-cell without swallowing adjacent table columns", () => {
