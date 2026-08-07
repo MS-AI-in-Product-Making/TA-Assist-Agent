@@ -9,13 +9,13 @@ import {
 } from "../packages/workbook-catalog/dist/index.js";
 import { calculateF4Workflow } from "./f4-calculation-workflow.mjs";
 
-function createHandoff(worksheetName, sourceRow) {
+function createHandoff(worksheetName, sourceRow, { workbookContentHash = "a".repeat(64), tableIds = ["factor-table-1"] } = {}) {
   return f4HandoffReadySchema.parse({
     contractVersion: "v1",
     handoffVersion: "f4-handoff-v1",
     inputClassification: "confidential",
     status: "ready",
-    workbookContentHash: "a".repeat(64),
+    workbookContentHash,
     worksheetName,
     toleranceLoopDescription: `Loop ${worksheetName}`,
     systemSpecification: {
@@ -53,8 +53,8 @@ function createHandoff(worksheetName, sourceRow) {
         valueOrigin: "defaulted",
       },
     },
-    factors: [{
-      tableId: "factor-table-1",
+    factors: tableIds.map((tableId) => ({
+      tableId,
       sourceRow,
       unit: "mm",
       actualFields: {
@@ -86,7 +86,7 @@ function createHandoff(worksheetName, sourceRow) {
         standardDeviation: `${worksheetName}!M${sourceRow}`,
         distribution: `${worksheetName}!N${sourceRow}`,
       },
-    }],
+    })),
   });
 }
 
@@ -116,6 +116,52 @@ function createCompletedFromHandoff(handoff, index, runId = "f4-run-1") {
 }
 
 describe("calculateF4Workflow", () => {
+  it("validates the entire batch before dependency calls", () => {
+    const createRequestCalls = [];
+    const calculateCalls = [];
+    const createRequest = (payload) => {
+      createRequestCalls.push(payload);
+      return payload;
+    };
+    const calculate = (payload) => {
+      calculateCalls.push(payload);
+      return createCompletedFromHandoff(payload.handoff, 0, "f4-run-1");
+    };
+
+    const oversized = createLoaded(
+      Array.from({ length: 101 }, (_, index) => createHandoff(`Analysis-${String(index + 1).padStart(3, "0")}`, index + 2)),
+    );
+    expect(() => calculateF4Workflow(oversized, { runId: "f4-run-1", createRequest, calculate })).toThrow("F4 workflow calculation failed.");
+
+    const duplicateWorksheet = createLoaded([
+      createHandoff("Analysis-A", 11),
+      createHandoff("Analysis-A", 12),
+    ]);
+    expect(() => calculateF4Workflow(duplicateWorksheet, { runId: "f4-run-1", createRequest, calculate })).toThrow("F4 workflow calculation failed.");
+
+    const unsafeWorkbookName = {
+      ...createLoaded([createHandoff("Analysis-A", 11)]),
+      workbook: {
+        ...createLoaded([createHandoff("Analysis-A", 11)]).workbook,
+        fileName: "../unsafe.xlsx",
+      },
+    };
+    expect(() => calculateF4Workflow(unsafeWorkbookName, { runId: "f4-run-1", createRequest, calculate })).toThrow("F4 workflow calculation failed.");
+
+    const hashMismatch = createLoaded([
+      createHandoff("Analysis-A", 11, { workbookContentHash: "b".repeat(64) }),
+    ]);
+    expect(() => calculateF4Workflow(hashMismatch, { runId: "f4-run-1", createRequest, calculate })).toThrow("F4 workflow calculation failed.");
+
+    const multipleTableIds = createLoaded([
+      createHandoff("Analysis-A", 11, { tableIds: ["factor-table-1", "factor-table-2"] }),
+    ]);
+    expect(() => calculateF4Workflow(multipleTableIds, { runId: "f4-run-1", createRequest, calculate })).toThrow("F4 workflow calculation failed.");
+
+    expect(createRequestCalls).toHaveLength(0);
+    expect(calculateCalls).toHaveLength(0);
+  });
+
   it("processes each handoff exactly once in order with controlled metadata", () => {
     const loaded = createLoaded();
     const callOrder = [];
@@ -264,5 +310,105 @@ describe("calculateF4Workflow", () => {
         worksheetSelection: { ...completed.worksheetSelection, worksheetName: "Wrong-Sheet" },
       }),
     })).toThrow("F4 workflow calculation failed.");
+  });
+
+  it("binds completed result references exactly to generated request and handoff evidence", () => {
+    const loaded = createLoaded([createHandoff("Analysis-B", 22)]);
+    const completed = createCompletedFromHandoff(loaded.handoffs[0], 0, "f4-run-1");
+
+    expect(() => calculateF4Workflow(loaded, {
+      runId: "f4-run-1",
+      createRequest: () => ({ request: true }),
+      calculate: () => ({ ...completed, projectReference: "f4-tampered-reference" }),
+    })).toThrow("F4 workflow calculation failed.");
+
+    expect(() => calculateF4Workflow(loaded, {
+      runId: "f4-run-1",
+      createRequest: () => ({ request: true }),
+      calculate: () => ({ ...completed, runReference: "f4-run-1-99" }),
+    })).toThrow("F4 workflow calculation failed.");
+
+    expect(() => calculateF4Workflow(loaded, {
+      runId: "f4-run-1",
+      createRequest: () => ({ request: true }),
+      calculate: () => ({
+        ...completed,
+        worksheetSelection: { ...completed.worksheetSelection, tableId: "factor-table-2" },
+      }),
+    })).toThrow("F4 workflow calculation failed.");
+  });
+
+  it("fails fast so a later handoff is not called when a prior binding check fails", () => {
+    const loaded = createLoaded([
+      createHandoff("Analysis-A", 11),
+      createHandoff("Analysis-B", 12),
+      createHandoff("Analysis-C", 13),
+    ]);
+    const createRequestCalls = [];
+    const calculateCalls = [];
+
+    expect(() => calculateF4Workflow(loaded, {
+      runId: "f4-run-1",
+      createRequest: (payload) => {
+        createRequestCalls.push(payload.handoff.worksheetName);
+        return payload;
+      },
+      calculate: (payload) => {
+        calculateCalls.push(payload.handoff.worksheetName);
+        const index = Number(payload.runReference.split("-").at(-1)) - 1;
+        const completed = createCompletedFromHandoff(payload.handoff, index, "f4-run-1");
+        if (payload.handoff.worksheetName === "Analysis-B") {
+          return { ...completed, runReference: "f4-run-1-TAMPERED" };
+        }
+        return completed;
+      },
+    })).toThrow("F4 workflow calculation failed.");
+
+    expect(createRequestCalls).toEqual(["Analysis-A", "Analysis-B"]);
+    expect(calculateCalls).toEqual(["Analysis-A", "Analysis-B"]);
+  });
+
+  it("keeps a safe generic error when loaded/options getters or dependency data throw", () => {
+    const marker = "SENSITIVE_PROXY_MARKER";
+    const loaded = new Proxy({}, {
+      get() {
+        throw new Error(`read failed ${marker}`);
+      },
+    });
+
+    const thrownFromLoaded = () => calculateF4Workflow(loaded, { runId: "f4-run-1" });
+    expect(thrownFromLoaded).toThrow("F4 workflow calculation failed.");
+    expect(() => {
+      try {
+        thrownFromLoaded();
+      } catch (error) {
+        expect(String(error)).not.toContain(marker);
+        expect(JSON.stringify(error)).not.toContain(marker);
+        throw error;
+      }
+    }).toThrow();
+
+    const safeLoaded = createLoaded([createHandoff("Analysis-A", 11)]);
+    const options = new Proxy({}, {
+      get(_target, prop) {
+        if (prop === "runId") throw new Error(`options exploded ${marker}`);
+        return undefined;
+      },
+      ownKeys() {
+        throw new Error(`keys exploded ${marker}`);
+      },
+    });
+
+    const thrownFromOptions = () => calculateF4Workflow(safeLoaded, options);
+    expect(thrownFromOptions).toThrow("F4 workflow calculation failed.");
+    expect(() => {
+      try {
+        thrownFromOptions();
+      } catch (error) {
+        expect(String(error)).not.toContain(marker);
+        expect(JSON.stringify(error)).not.toContain(marker);
+        throw error;
+      }
+    }).toThrow();
   });
 });

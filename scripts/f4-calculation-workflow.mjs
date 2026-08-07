@@ -13,12 +13,21 @@ const ARTIFACT_REFERENCE = "Feature2-Report.json";
 const SAFE_ERROR_MESSAGE = "F4 workflow calculation failed.";
 const RUN_ID_MAX_LENGTH = 96;
 const RUN_REFERENCE_MAX_LENGTH = 128;
+const WORKBOOK_FILE_NAME_MAX_LENGTH = 240;
 const CONTROLLED_REFERENCE_PATTERN = /^[A-Za-z0-9._:-]+$/;
+const SAFE_WORKBOOK_FILE_NAME_PATTERN = new RegExp(
+  `^[^/\\\\${String.fromCharCode(0)}-${String.fromCharCode(31)}${String.fromCharCode(127)}${String.fromCharCode(0x2028)}${String.fromCharCode(0x2029)}]+\\.xlsx$`,
+  "i",
+);
 
 function workflowError(code) {
   const error = new Error(SAFE_ERROR_MESSAGE);
   error.code = code;
   return error;
+}
+
+function isWorkflowError(error) {
+  return error instanceof Error && error.message === SAFE_ERROR_MESSAGE;
 }
 
 function isPlainObject(value) {
@@ -50,6 +59,18 @@ function normalizeGeneratedAt(value) {
   return value;
 }
 
+function normalizeWorkbookFileName(value) {
+  if (typeof value !== "string") throw workflowError("invalid_input");
+  const fileName = value.trim();
+  if (fileName.length === 0 || fileName.length > WORKBOOK_FILE_NAME_MAX_LENGTH) {
+    throw workflowError("invalid_input");
+  }
+  if (!SAFE_WORKBOOK_FILE_NAME_PATTERN.test(fileName) || fileName.includes("..")) {
+    throw workflowError("invalid_input");
+  }
+  return fileName;
+}
+
 function normalizeDependencies(options) {
   const source = options === undefined ? {} : options;
   if (!isPlainObject(source)) throw workflowError("invalid_arguments");
@@ -77,21 +98,35 @@ function parseLoadedInput(loaded) {
   if (loaded.reportPath !== ARTIFACT_REFERENCE) throw workflowError("invalid_input");
 
   if (!isPlainObject(loaded.workbook)) throw workflowError("invalid_input");
-  const workbookFileName = typeof loaded.workbook.fileName === "string" ? loaded.workbook.fileName : "";
+  const workbookFileName = normalizeWorkbookFileName(loaded.workbook.fileName);
   const workbookContentHash = typeof loaded.workbook.contentHash === "string" ? loaded.workbook.contentHash : "";
   const f1GeneratedAt = typeof loaded.workbook.f1GeneratedAt === "string" ? loaded.workbook.f1GeneratedAt : "";
-  if (workbookFileName.trim().length === 0) throw workflowError("invalid_input");
   if (!/^[a-f0-9]{64}$/i.test(workbookContentHash)) throw workflowError("invalid_input");
   if (Number.isNaN(Date.parse(f1GeneratedAt))) throw workflowError("invalid_input");
 
   if (!Array.isArray(loaded.handoffs) || loaded.handoffs.length === 0) throw workflowError("invalid_input");
+  if (loaded.handoffs.length > 100) throw workflowError("invalid_input");
 
   const handoffs = [];
+  const worksheetNames = new Set();
   for (const rawHandoff of loaded.handoffs) {
     const parsed = f4HandoffReadySchema.safeParse(rawHandoff);
     if (!parsed.success) throw workflowError("invalid_input");
-    if (parsed.data.workbookContentHash !== workbookContentHash) throw workflowError("evidence_mismatch");
-    handoffs.push(parsed.data);
+
+    const handoff = parsed.data;
+    if (worksheetNames.has(handoff.worksheetName)) throw workflowError("invalid_input");
+    worksheetNames.add(handoff.worksheetName);
+
+    if (handoff.workbookContentHash !== workbookContentHash) throw workflowError("evidence_mismatch");
+
+    const uniqueTableIds = new Set(handoff.factors.map((factor) => factor.tableId));
+    if (uniqueTableIds.size !== 1) throw workflowError("invalid_input");
+    const [tableId] = uniqueTableIds;
+
+    handoffs.push({
+      handoff,
+      tableId,
+    });
   }
 
   return {
@@ -105,70 +140,70 @@ function parseLoadedInput(loaded) {
 }
 
 export function calculateF4Workflow(loaded, options) {
-  const dependencies = normalizeDependencies(options);
-  const parsedLoaded = parseLoadedInput(loaded);
-  const projectReference = `f4-${parsedLoaded.workbook.contentHash.slice(0, 16)}`;
-  const calculations = [];
+  try {
+    const dependencies = normalizeDependencies(options);
+    const parsedLoaded = parseLoadedInput(loaded);
+    const projectReference = `f4-${parsedLoaded.workbook.contentHash.slice(0, 16)}`;
+    const calculations = [];
 
-  for (const [index, handoff] of parsedLoaded.handoffs.entries()) {
-    const runReference = normalizeControlledReference(
-      `${dependencies.runId}-${index + 1}`,
-      { maxLength: RUN_REFERENCE_MAX_LENGTH },
-    );
+    for (const [index, handoffItem] of parsedLoaded.handoffs.entries()) {
+      const runReference = normalizeControlledReference(
+        `${dependencies.runId}-${index + 1}`,
+        { maxLength: RUN_REFERENCE_MAX_LENGTH },
+      );
 
-    let request;
-    try {
-      request = dependencies.createRequest({
-        handoff,
+      const request = dependencies.createRequest({
+        handoff: handoffItem.handoff,
         projectReference,
         runReference,
         criticality: "none",
       });
-    } catch {
-      throw workflowError("calculation_failed");
+
+      const calculation = dependencies.calculate(request);
+      const parsedCalculation = calculationCompletedResultSchema.safeParse(calculation);
+      if (!parsedCalculation.success) throw workflowError("calculation_failed");
+
+      if (parsedCalculation.data.projectReference !== projectReference) throw workflowError("evidence_mismatch");
+      if (parsedCalculation.data.runReference !== runReference) throw workflowError("evidence_mismatch");
+      if (parsedCalculation.data.workbookContentHash !== parsedLoaded.workbook.contentHash) {
+        throw workflowError("evidence_mismatch");
+      }
+      if (parsedCalculation.data.worksheetSelection.worksheetName !== handoffItem.handoff.worksheetName) {
+        throw workflowError("evidence_mismatch");
+      }
+      if (parsedCalculation.data.worksheetSelection.tableId !== handoffItem.tableId) {
+        throw workflowError("evidence_mismatch");
+      }
+
+      calculations.push(parsedCalculation.data);
     }
 
-    let calculation;
-    try {
-      calculation = dependencies.calculate(request);
-    } catch {
-      throw workflowError("calculation_failed");
-    }
+    const assembled = {
+      contractVersion: "v1",
+      workflowVersion: "f4-f2-v1",
+      outputClassification: "confidential",
+      featureId: "F4",
+      status: "completed",
+      runId: dependencies.runId,
+      generatedAt: dependencies.generatedAt,
+      source: {
+        artifactReference: ARTIFACT_REFERENCE,
+        workbookFileName: parsedLoaded.workbook.fileName,
+        workbookContentHash: parsedLoaded.workbook.contentHash,
+      },
+      calculations,
+      summary: {
+        selectedWorksheetCount: calculations.length,
+        completedWorksheetCount: calculations.length,
+      },
+    };
 
-    const parsedCalculation = calculationCompletedResultSchema.safeParse(calculation);
-    if (!parsedCalculation.success) throw workflowError("calculation_failed");
-    if (parsedCalculation.data.workbookContentHash !== parsedLoaded.workbook.contentHash) {
-      throw workflowError("evidence_mismatch");
-    }
-    if (parsedCalculation.data.worksheetSelection.worksheetName !== handoff.worksheetName) {
-      throw workflowError("evidence_mismatch");
-    }
+    const parsedWorkflow = f4WorkflowCalculationResultSchema.safeParse(assembled);
+    if (!parsedWorkflow.success) throw workflowError("output_invalid");
 
-    calculations.push(parsedCalculation.data);
+    return deepFreeze(deepClone(parsedWorkflow.data));
+  } catch (error) {
+    if (isWorkflowError(error)) throw error;
+    throw workflowError("calculation_failed");
   }
-
-  const assembled = {
-    contractVersion: "v1",
-    workflowVersion: "f4-f2-v1",
-    outputClassification: "confidential",
-    featureId: "F4",
-    status: "completed",
-    runId: dependencies.runId,
-    generatedAt: dependencies.generatedAt,
-    source: {
-      artifactReference: ARTIFACT_REFERENCE,
-      workbookFileName: parsedLoaded.workbook.fileName,
-      workbookContentHash: parsedLoaded.workbook.contentHash,
-    },
-    calculations,
-    summary: {
-      selectedWorksheetCount: calculations.length,
-      completedWorksheetCount: calculations.length,
-    },
-  };
-
-  const parsedWorkflow = f4WorkflowCalculationResultSchema.safeParse(assembled);
-  if (!parsedWorkflow.success) throw workflowError("output_invalid");
-
-  return deepFreeze(deepClone(parsedWorkflow.data));
 }
