@@ -8,6 +8,17 @@ function actualValue(value) {
   return value === null || value === undefined ? "—" : mdEscape(value);
 }
 
+function fieldRawValue(row, fieldName) {
+  const displayValue = row.displayFields?.[fieldName];
+  return displayValue === null || displayValue === undefined || displayValue === ""
+    ? row.actualFields[fieldName]
+    : displayValue;
+}
+
+function fieldValue(row, fieldName) {
+  return actualValue(fieldRawValue(row, fieldName));
+}
+
 function imageHref(artifactRoot, outputRoot, imageReference) {
   if (!imageReference) return undefined;
   return path.relative(path.resolve(outputRoot), path.resolve(artifactRoot, imageReference.relativePath)).split(path.sep).join("/");
@@ -89,9 +100,8 @@ export function renderF2Report(report, { outputRoot } = {}) {
       "");
     lines.push("| Row | Factor Description | Part Name | Drawing Number | DIM ID | Part Category | Design Nominal | + Tolerance | - Tolerance | Long Term/Safety Factor | Sigma Level | Distribution | Mean | Tolerance | One Sigma | % Contribution to Sigma | Notes | 能力库结果 | 知识库推荐 |", "|---:|---|---|---|---|---|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---|---|---|");
     for (const row of worksheet.rows) {
-      const fields = row.actualFields;
       const href = imageHref(report.artifactRoot, outputRoot, row.imageReference);
-      lines.push(`| ${row.sourceRow} | ${imageLink(fields.factorName, href)} | ${imageLink(fields.partName, href)} | ${actualValue(fields.drawingNumber)} | ${actualValue(fields.dimCharacteristicId)} | ${actualValue(fields.partCategory)} | ${actualValue(fields.nominalValue)} | ${actualValue(fields.upperTolerance)} | ${actualValue(fields.lowerTolerance)} | ${actualValue(fields.longTermSafetyFactor)} | ${actualValue(fields.sigmaLevel)} | ${actualValue(fields.distribution)} | ${actualValue(fields.mean)} | ${actualValue(fields.tolerance)} | ${actualValue(fields.oneSigma)} | ${actualValue(fields.percentContributionToSigma)} | ${actualValue(fields.notes)} | ${mdEscape(capabilityLabels[row.capabilityStatus] ?? row.capabilityStatus)} | ${mdEscape(recommendationText(row))} |`);
+      lines.push(`| ${row.sourceRow} | ${imageLink(fieldRawValue(row, "factorName"), href)} | ${imageLink(fieldRawValue(row, "partName"), href)} | ${fieldValue(row, "drawingNumber")} | ${fieldValue(row, "dimCharacteristicId")} | ${fieldValue(row, "partCategory")} | ${fieldValue(row, "nominalValue")} | ${fieldValue(row, "upperTolerance")} | ${fieldValue(row, "lowerTolerance")} | ${fieldValue(row, "longTermSafetyFactor")} | ${fieldValue(row, "sigmaLevel")} | ${fieldValue(row, "distribution")} | ${fieldValue(row, "mean")} | ${fieldValue(row, "tolerance")} | ${fieldValue(row, "oneSigma")} | ${fieldValue(row, "percentContributionToSigma")} | ${fieldValue(row, "notes")} | ${mdEscape(capabilityLabels[row.capabilityStatus] ?? row.capabilityStatus)} | ${mdEscape(recommendationText(row))} |`);
     }
     if (worksheet.rows.length === 0) lines.push(`| ${Array.from({ length: 19 }, (_, index) => index === 17 ? "无 factor" : "—").join(" | ")} |`);
     lines.push("");

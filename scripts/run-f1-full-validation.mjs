@@ -29,6 +29,7 @@ import {
 } from "./f1-dual-grid.mjs";
 import { projectFactorActualFields } from "./f1-factor-actuals.mjs";
 import { resolveFeature1OutputLayout, safeName } from "./f1-output-layout.mjs";
+import { withSystemSpecificationDisplayValues } from "./f1-system-specification-display.mjs";
 import { configuredFeature1Jobs, resolveFeature1Jobs } from "./f1-workbook-jobs.mjs";
 
 const composedMode = (process.env.F1_COMPOSED_MODE ?? "auto").toLowerCase();
@@ -621,6 +622,7 @@ for (const job of jobs) {
     const traceability = [];
     const dualWorksheetSheet = dualWorkbook.Sheets[worksheet.worksheetName];
     const factorTablesAnnotated = withDisplayActualFields(worksheet, dualWorksheetSheet);
+    const systemSpecification = withSystemSpecificationDisplayValues(worksheet.systemSpecification, dualWorksheetSheet);
     for (const table of factorTablesAnnotated) {
       for (const row of table.rows) {
         const factorText = availableFieldText(row.fields.factorName);
@@ -669,7 +671,7 @@ for (const job of jobs) {
       },
       worksheetName: worksheet.worksheetName,
       toleranceLoopDescription: worksheet.toleranceLoopDescription,
-      systemSpecification: worksheet.systemSpecification,
+      systemSpecification,
       page,
       factorTables: factorTablesAnnotated,
       formulaCells: worksheet.formulaCells,

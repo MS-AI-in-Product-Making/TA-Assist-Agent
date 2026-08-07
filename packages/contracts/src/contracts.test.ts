@@ -110,6 +110,24 @@ describe("F2 artifact user report contracts", () => {
     percentContributionToSigma: 0.043,
     notes: null,
   };
+  const displayFields = {
+    factorName: "Bracket arm",
+    partName: "Bracket",
+    drawingNumber: null,
+    dimCharacteristicId: null,
+    partCategory: "CNC",
+    nominalValue: "3.145",
+    upperTolerance: "0.100",
+    lowerTolerance: "-0.100",
+    longTermSafetyFactor: "1",
+    sigmaLevel: "4",
+    distribution: "Normal",
+    mean: "3.145",
+    tolerance: "0.100",
+    oneSigma: "0.0250",
+    percentContributionToSigma: "4.3%",
+    notes: null,
+  };
   const artifactInput = {
     contractVersion: "v1",
     inputClassification: "confidential",
@@ -135,6 +153,7 @@ describe("F2 artifact user report contracts", () => {
     tableId: "table-a",
     sourceRow: 2,
     actualFields,
+    displayFields,
     sourceCells: { factorName: "Analysis-A!A2" },
     imageReference: { artifact: "f1", relativePath: "sheets/Demo.xlsx/images/a.png", contentHash: "b".repeat(64), worksheetName: "Analysis-A" },
     missingRequiredFields: [],

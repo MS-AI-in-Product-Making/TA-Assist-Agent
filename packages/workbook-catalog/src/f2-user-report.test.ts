@@ -143,6 +143,32 @@ describe("createF2UserReport", () => {
     expect(result.f4Handoffs).toHaveLength(1);
   });
 
+  it("projects Excel display fields while preserving actual numeric values", () => {
+    const fields = completeFields();
+    fields.mean = available("Analysis-A!L2", "-0.100", -0.10000000000000002);
+    fields.oneSigma = available("Analysis-A!N2", "0.0167", 0.016666666666666666);
+    fields.percentContributionToSigma = available("Analysis-A!O2", "2.7%", 0.026937809003607087);
+    const actualFields = {
+      ...completeActualFields(),
+      mean: -0.10000000000000002,
+      oneSigma: 0.016666666666666666,
+      percentContributionToSigma: 0.026937809003607087,
+    };
+
+    const result = createF2UserReport(input(fields, "available", actualFields));
+
+    expect(result.worksheets[0]?.rows[0]?.displayFields).toMatchObject({
+      mean: "-0.100",
+      oneSigma: "0.0167",
+      percentContributionToSigma: "2.7%",
+    });
+    expect(result.worksheets[0]?.rows[0]?.actualFields).toMatchObject({
+      mean: -0.10000000000000002,
+      oneSigma: 0.016666666666666666,
+      percentContributionToSigma: 0.026937809003607087,
+    });
+  });
+
   it("blocks only the worksheet with an unavailable system specification and emits one ready handoff", () => {
     const request = input(completeFields());
     request.worksheets.push({
