@@ -9,10 +9,12 @@ function redactSensitiveText(value) {
   return String(value)
     .replace(/(Authorization\s*[:=]\s*)([^\r\n|]+)/gi, "$1[redacted]")
     .replace(/\b(Bearer)\s+([^\r\n|]+)/gi, "$1 [redacted]")
-    .replace(/\b(token|api[-_]?key|secret|password)\s*[:=]\s*([^\r\n|]+)/gi, "$1=[redacted]")
-    .replace(/(^|[\s(])([A-Za-z]:[\\/](?:[^\\/\s\r\n|]+[\\/])*[^\\/\s\r\n|]+)(?=$|[\s),;])/g, "$1[redacted-local-path]")
-    .replace(/(^|[\s(])((?:\\\\|\/\/)[^\\/\s\r\n|]+(?:[\\/][^\\/\s\r\n|]+)+)(?=$|[\s),;])/g, "$1[redacted-local-path]")
-    .replace(/(^|[\s(])(\/(?:[^/\s\r\n|]+\/)+[^/\s\r\n|]+)(?=$|[\s),;])/g, "$1[redacted-local-path]");
+    .replace(/(\b(?:access_token|refresh_token|client_secret)\b\s*[:=]\s*)([^\r\n|;,]*?)(?=$|[\r\n|;,])/gi, "$1[redacted]")
+    .replace(/(\bpath\b\s*[:=]\s*)(?:'[^'\r\n|]*'|"[^"\r\n|]*"|\[[^\]\r\n|]*\]|[^\s\r\n|;,]+)/gi, "$1[redacted-local-path]")
+    .replace(/file:\/\/(?:\/(?:[A-Za-z]:\/|home\/)[^\s\r\n|\]"'),;]*)/gi, "file:///[redacted-local-path]")
+    .replace(/(^|[\s(["'])([A-Za-z]:[\\/](?:[^\\/\s\r\n|\]"'),;]+[\\/])*[^\\/\s\r\n|\]"'),;]+)(?=$|[\s)\],;"'])/g, "$1[redacted-local-path]")
+    .replace(/(^|[\s(["'])((?:\\\\|\/\/)[^\\/\s\r\n|\]"'),;]+(?:[\\/][^\\/\s\r\n|\]"'),;]+)+)(?=$|[\s)\],;"'])/g, "$1[redacted-local-path]")
+    .replace(/(^|[\s(["'])(\/(?:[^/\s\r\n|\]"'),;]+\/)+[^/\s\r\n|\]"'),;]+)(?=$|[\s)\],;"'])/g, "$1[redacted-local-path]");
 }
 
 function neutralizeMarkdownText(value) {
