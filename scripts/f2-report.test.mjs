@@ -24,6 +24,28 @@ function actualFields(overrides = {}) {
   };
 }
 
+function displayFields(overrides = {}) {
+  return {
+    factorName: "left|right",
+    partName: null,
+    drawingNumber: "DWG-1",
+    dimCharacteristicId: null,
+    partCategory: "demo",
+    nominalValue: null,
+    upperTolerance: "0.200",
+    lowerTolerance: "-0.200",
+    longTermSafetyFactor: "1",
+    sigmaLevel: "4",
+    distribution: "Normal",
+    mean: "-0.100",
+    tolerance: "0.200",
+    oneSigma: "0.0167",
+    percentContributionToSigma: "2.7%",
+    notes: null,
+    ...overrides,
+  };
+}
+
 function systemSpecification(worksheetName = "Analysis-A") {
   return {
     status: "available",
@@ -57,7 +79,8 @@ describe("renderF2Report", () => {
         ],
         rows: [{
           sourceRow: 2,
-          actualFields: actualFields(),
+          actualFields: actualFields({ mean: -0.10000000000000002, oneSigma: 0.016666666666666666, percentContributionToSigma: 0.026937809003607087 }),
+          displayFields: displayFields(),
           imageReference: { artifact: "f1", relativePath: "sheets/Demo/images/Analysis-A.png", contentHash: "b".repeat(64), worksheetName: "A|B" },
           capabilityStatus: "unable_to_check",
         }],
@@ -77,7 +100,10 @@ describe("renderF2Report", () => {
     expect(markdown).toContain("Demo\\|Book.xlsx");
     expect(markdown).toContain("[left\\|right](../f1/sheets/Demo/images/Analysis-A.png)");
     expect(markdown).toContain("[—](../f1/sheets/Demo/images/Analysis-A.png)");
-    expect(markdown).toContain("| — | 0.2 | -0.2 | 1 | 4 | Normal | 3.145 | 0.2 | 0.05 | 12.5 | — |");
+    expect(markdown).toContain("| — | 0.200 | -0.200 | 1 | 4 | Normal | -0.100 | 0.200 | 0.0167 | 2.7% | — |");
+    expect(markdown).not.toContain("-0.10000000000000002");
+    expect(markdown).not.toContain("0.016666666666666666");
+    expect(markdown).not.toContain("0.026937809003607087");
     expect(markdown.split("\n").filter((line) => line.includes("left\\|right"))).toHaveLength(1);
     expect(markdown).not.toContain("displayedFields");
     for (const internalTerm of ["required_field_unavailable", "tableId", "reasonCode", "governanceSignals"]) {
