@@ -3,17 +3,44 @@ import {
   f4WorkflowCalculationResultSchema,
 } from "../packages/contracts/dist/contracts.js";
 
+const EPSILON = 1e-12;
+
 function redactSensitiveText(value) {
   return String(value)
-    .replace(/\b[A-Za-z]:\\[^\s|)]+/g, "[redacted-local-path]")
-    .replace(/(Authorization\s*[:=]\s*)([^\s|]+)/gi, "$1[redacted]")
-    .replace(/\b(Bearer)\s+[^\s|]+/gi, "$1 [redacted]")
-    .replace(/\b(token|api[-_]?key|secret|password)\s*[:=]\s*[^\s|]+/gi, "$1=[redacted]");
+    .replace(/(Authorization\s*[:=]\s*)([^\r\n|]+)/gi, "$1[redacted]")
+    .replace(/\b(Bearer)\s+[A-Za-z0-9._~+/=-]+/gi, "$1 [redacted]")
+    .replace(/\b(token|api[-_]?key|secret|password)\s*[:=]\s*[^\s|]+/gi, "$1=[redacted]")
+    .replace(/[A-Za-z]:\\(?:[^\\\r\n|]+\\)*[^\\\r\n|]+\.[A-Za-z0-9]{1,10}/g, "[redacted-local-path]")
+    .replace(/[A-Za-z]:\/(?:[^/\r\n|]+\/)*[^/\r\n|]+\.[A-Za-z0-9]{1,10}/g, "[redacted-local-path]")
+    .replace(/(?:\\\\|\/\/)[^\s/\\]+(?:[/\\][^/\\\r\n|]+)+\.[A-Za-z0-9]{1,10}/g, "[redacted-local-path]");
+}
+
+function neutralizeMarkdownText(value) {
+  const withoutControls = Array.from(String(value), (character) => {
+    const code = character.charCodeAt(0);
+    return (code < 32 || code === 127) ? " " : character;
+  }).join("");
+
+  return withoutControls
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/!\[([^\]]*)\]\(([^)]*)\)/g, "$1")
+    .replace(/\[([^\]]+)\]\(([^)]*)\)/g, "$1")
+    .replace(/`/g, "\\`")
+    .replace(/(^|\n)\s*#+\s*/g, "$1")
+    .replace(/\|/g, "\\|")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function sanitizeText(value) {
+  return neutralizeMarkdownText(redactSensitiveText(value));
 }
 
 function cell(value) {
   if (value === null || value === undefined || value === "") return "—";
-  return redactSensitiveText(value).replaceAll("|", "\\|").replaceAll(/\r?\n/g, "<br>");
+  return sanitizeText(value);
 }
 
 function renderKeyValueTable(title, objectValue) {
@@ -26,14 +53,15 @@ function renderKeyValueTable(title, objectValue) {
 }
 
 function renderCalculationSection(calculation) {
+  const worksheetName = cell(calculation.worksheetSelection.worksheetName);
   const lines = [
-    `### 工作表 ${cell(calculation.worksheetSelection.worksheetName)}`,
+    `## ${worksheetName}`,
     "",
-    "#### 计算方法",
+    "### 系统计算",
     "",
     "| 字段 | 值 |",
     "| --- | --- |",
-    `| worksheetName | ${cell(calculation.worksheetSelection.worksheetName)} |`,
+    `| worksheetName | ${worksheetName} |`,
     `| tableId | ${cell(calculation.worksheetSelection.tableId)} |`,
     `| factorCount | ${cell(calculation.factorCount)} |`,
     `| method | ${cell(calculation.recommendation.method)} |`,
@@ -44,11 +72,11 @@ function renderCalculationSection(calculation) {
     "",
   ];
 
-  lines.push(...renderKeyValueTable("#### 系统结果", calculation.system));
-  lines.push(...renderKeyValueTable("#### 能力结果", calculation.capability));
+  lines.push(...renderKeyValueTable("### 系统计算", calculation.system));
+  lines.push(...renderKeyValueTable("### 能力指标", calculation.capability));
 
   lines.push(
-    "#### 因子结果",
+    "### Factor 结果",
     "",
     "| worksheetName | tableId | sourceRow | factorName | method | mean | halfTolerance | sigma | contribution |",
     "| --- | --- | ---: | --- | --- | ---: | ---: | ---: | ---: |",
@@ -64,7 +92,7 @@ function renderCalculationSection(calculation) {
 
 function renderComparisonSection(comparisonResult) {
   const lines = [
-    "## Excel 回归",
+    "### Excel 回归",
     "",
     `状态：${cell(comparisonResult.status)}`,
     "",
@@ -89,14 +117,100 @@ function renderComparisonSection(comparisonResult) {
   return lines;
 }
 
+function resolveMetricPath(calculation, metricPath) {
+  if (metricPath.startsWith("factors[")) {
+    const matched = /^factors\[(\d+)\]\.(mean|halfTolerance|sigma|contribution)$/.exec(metricPath);
+    if (!matched) {
+      throw new Error(`Feature 4 comparison metric path is unsupported: ${metricPath}`);
+    }
+    const factorIndex = Number(matched[1]);
+    const field = matched[2];
+    const factor = calculation.factors[factorIndex];
+    if (!factor) {
+      throw new Error(`Feature 4 comparison factor index is out of range: ${metricPath}`);
+    }
+    return {
+      value: factor[field],
+      formulaMatches: (formulaId) => factor.trace.formulaIds.includes(formulaId),
+    };
+  }
+
+  const [scope, field] = metricPath.split(".");
+  if ((scope !== "system" && scope !== "capability") || !field) {
+    throw new Error(`Feature 4 comparison metric path is unsupported: ${metricPath}`);
+  }
+  const scopeValue = calculation[scope];
+  const resolved = scopeValue[field];
+  if (typeof resolved !== "number" || !Number.isFinite(resolved)) {
+    throw new Error(`Feature 4 comparison metric is unknown or non-numeric: ${metricPath}`);
+  }
+  return {
+    value: resolved,
+    formulaMatches: (formulaId) => calculation.traceRecords.some((record) => record.outputField === metricPath && record.formulaId === formulaId),
+  };
+}
+
+function nearlyEqual(left, right) {
+  return Math.abs(left - right) <= EPSILON * Math.max(1, Math.abs(left), Math.abs(right));
+}
+
+function assertComparisonAssociation(calculationResult, comparisonResult) {
+  if (comparisonResult.runId !== calculationResult.runId) {
+    throw new Error("Feature 4 comparison runId must match workflow calculation runId.");
+  }
+
+  if (comparisonResult.status !== "passed" && comparisonResult.status !== "mismatch") {
+    return;
+  }
+
+  if (comparisonResult.source.workbookContentHash !== calculationResult.source.workbookContentHash) {
+    throw new Error("Feature 4 comparison workbook content hash must match workflow calculation source hash.");
+  }
+
+  const calcByWorksheet = new Map(
+    calculationResult.calculations.map((item) => [item.worksheetSelection.worksheetName, item]),
+  );
+  const calcWorksheets = new Set(calcByWorksheet.keys());
+  const comparisonWorksheets = new Set(comparisonResult.worksheets.map((item) => item.worksheetName));
+  if (calcWorksheets.size !== comparisonWorksheets.size) {
+    throw new Error("Feature 4 comparison worksheet set must equal calculation worksheet set.");
+  }
+  for (const worksheetName of calcWorksheets) {
+    if (!comparisonWorksheets.has(worksheetName)) {
+      throw new Error("Feature 4 comparison worksheet set must equal calculation worksheet set.");
+    }
+  }
+
+  for (const worksheet of comparisonResult.worksheets) {
+    const calculation = calcByWorksheet.get(worksheet.worksheetName);
+    if (!calculation) {
+      throw new Error(`Feature 4 comparison worksheet is unknown: ${worksheet.worksheetName}`);
+    }
+
+    for (const metric of worksheet.metrics) {
+      const resolved = resolveMetricPath(calculation, metric.metric);
+      if (!nearlyEqual(metric.f4Value, resolved.value)) {
+        throw new Error(`Feature 4 comparison f4Value mismatch for metric ${metric.metric}.`);
+      }
+      if (!resolved.formulaMatches(metric.f4FormulaId)) {
+        throw new Error(`Feature 4 comparison formula evidence mismatch for metric ${metric.metric}.`);
+      }
+    }
+  }
+}
+
 export function renderF4Report(workflowCalculationResult, options = {}) {
   const calculation = f4WorkflowCalculationResultSchema.parse(workflowCalculationResult);
   const comparison = options.comparisonResult === undefined
     ? undefined
     : f4ExcelComparisonResultSchema.parse(options.comparisonResult);
 
+  if (comparison) {
+    assertComparisonAssociation(calculation, comparison);
+  }
+
   const lines = [
-    "# Feature 4 工作流计算报告",
+    "# Feature 4 TA 计算报告",
     "",
     "## 执行摘要",
     "",

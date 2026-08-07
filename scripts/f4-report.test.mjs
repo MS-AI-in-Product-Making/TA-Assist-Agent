@@ -147,15 +147,15 @@ function comparisonResult(status = "passed") {
 }
 
 describe("renderF4Report", () => {
-  it("renders Chinese-readable workflow sections with worksheet/system/capability/factor fields", () => {
+  it("renders required report headings and worksheet sections", () => {
     const markdown = renderF4Report(workflowCalculationResult());
 
-    expect(markdown).toContain("# Feature 4 工作流计算报告");
+    expect(markdown).toContain("# Feature 4 TA 计算报告");
     expect(markdown).toContain("## 执行摘要");
-    expect(markdown).toContain("### 工作表 Analysis-A");
-    expect(markdown).toContain("#### 系统结果");
-    expect(markdown).toContain("#### 能力结果");
-    expect(markdown).toContain("#### 因子结果");
+    expect(markdown).toContain("## Analysis-A");
+    expect(markdown).toContain("### 系统计算");
+    expect(markdown).toContain("### 能力指标");
+    expect(markdown).toContain("### Factor 结果");
     expect(markdown).toContain("worksheetName");
     expect(markdown).toContain("tableId");
     expect(markdown).toContain("factorName");
@@ -176,7 +176,7 @@ describe("renderF4Report", () => {
     const mismatchMd = renderF4Report(workflowCalculationResult(), { comparisonResult: comparisonResult("mismatch") });
     const unavailableMd = renderF4Report(workflowCalculationResult(), { comparisonResult: comparisonResult("excel_unavailable") });
 
-    expect(passMd).toContain("## Excel 回归");
+    expect(passMd).toContain("### Excel 回归");
     expect(passMd).toContain("状态：passed");
     expect(passMd).toContain("capability.cpk");
 
@@ -187,18 +187,118 @@ describe("renderF4Report", () => {
     expect(unavailableMd).toContain("excel_runtime_unavailable");
   });
 
-  it("escapes Markdown-sensitive text and redacts sensitive content", () => {
+  it("redacts full authorization/token values and absolute path variants", () => {
     const input = workflowCalculationResult();
-    input.calculations[0].factors[0].factorName = "A|B\nC C:\\Users\\ralfye\\secret.xlsx Authorization: Bearer abc123 token=xyz";
+    input.calculations[0].worksheetSelection.worksheetName = "Analysis-A C:\\Users\\ralfye\\My Secret\\secret.xlsx C:/Program Files/TA Agent/secret.xlsx //server/share/ta folder/secret.xlsx normal-note";
+    input.calculations[0].factors[0].factorName = "Authorization: Bearer abc123 token=xyz";
 
     const markdown = renderF4Report(input);
 
-    expect(markdown).toContain("A\\|B<br>C");
     expect(markdown).toContain("[redacted-local-path]");
     expect(markdown).toContain("Authorization: [redacted]");
-    expect(markdown).toContain("token=[redacted]");
-    expect(markdown).not.toContain("C:\\Users\\ralfye\\secret.xlsx");
-    expect(markdown).not.toContain("Bearer abc123");
+    expect(markdown).not.toContain("abc123");
+    expect(markdown).not.toContain("C:\\Users\\ralfye\\My Secret\\secret.xlsx");
+    expect(markdown).not.toContain("C:/Program Files/TA Agent/secret.xlsx");
+    expect(markdown).not.toContain("//server/share/ta folder/secret.xlsx");
+    expect(markdown).toContain("normal-note");
+  });
+
+  it("neutralizes html and markdown-active content in worksheet headings and table cells", () => {
+    const input = workflowCalculationResult();
+    input.calculations[0].worksheetSelection.worksheetName = "<# [x](http://evil.example) ![img](http://evil.example/i.png) `code`";
+    input.calculations[0].factors[0].factorName = "<script>alert(1)</script> # heading [click](http://evil.example) ![img](http://evil.example/i.png) `x`";
+
+    const markdown = renderF4Report(input);
+
+    expect(markdown).toContain("&lt;");
+    expect(markdown).toContain("&gt;");
+    expect(markdown).not.toContain("<script>");
+    expect(markdown).not.toContain("![img](http://evil.example/i.png)");
+    expect(markdown).not.toContain("[click](http://evil.example)");
+    expect(markdown).not.toContain("http://evil.example");
+    expect(markdown).not.toContain("`code`");
+  });
+
+  it("rejects comparison when runId mismatches", () => {
+    const comparison = comparisonResult("passed");
+    comparison.runId = "run-mismatch";
+    expect(() => renderF4Report(workflowCalculationResult(), { comparisonResult: comparison })).toThrow(/runId/i);
+  });
+
+  it("rejects comparison when workbook hash mismatches for passed and mismatch", () => {
+    const passed = comparisonResult("passed");
+    passed.source.workbookContentHash = "b".repeat(64);
+    expect(() => renderF4Report(workflowCalculationResult(), { comparisonResult: passed })).toThrow(/workbook.*hash/i);
+
+    const mismatch = comparisonResult("mismatch");
+    mismatch.source.workbookContentHash = "b".repeat(64);
+    expect(() => renderF4Report(workflowCalculationResult(), { comparisonResult: mismatch })).toThrow(/workbook.*hash/i);
+  });
+
+  it("rejects passed/mismatch comparison when worksheet set mismatches", () => {
+    const comparison = comparisonResult("passed");
+    comparison.worksheets[0].worksheetName = "Analysis-B";
+    expect(() => renderF4Report(workflowCalculationResult(), { comparisonResult: comparison })).toThrow(/worksheet/i);
+  });
+
+  it("rejects comparison when metric f4Value does not match calculation field", () => {
+    const comparison = comparisonResult("passed");
+    comparison.worksheets[0].metrics[0].f4Value = 2.5;
+    comparison.worksheets[0].metrics[0].excelValue = 2.5;
+    comparison.worksheets[0].metrics[0].excelDisplayText = "2.500";
+    comparison.worksheets[0].metrics[0].absoluteDifference = 0;
+    comparison.worksheets[0].metrics[0].relativeDifference = 0;
+    comparison.worksheets[0].metrics[0].passed = true;
+
+    expect(() => renderF4Report(workflowCalculationResult(), { comparisonResult: comparison })).toThrow(/f4Value/i);
+  });
+
+  it("supports factor metric path mapping and rejects unknown metric paths", () => {
+    const calculation = workflowCalculationResult();
+
+    const factorPathComparison = comparisonResult("passed");
+    factorPathComparison.worksheets[0].metrics[0] = {
+      ...factorPathComparison.worksheets[0].metrics[0],
+      metric: "factors[0].mean",
+      f4Value: calculation.calculations[0].factors[0].mean,
+      excelValue: calculation.calculations[0].factors[0].mean,
+      excelDisplayText: `${calculation.calculations[0].factors[0].mean}`,
+      absoluteDifference: 0,
+      relativeDifference: 0,
+      passed: true,
+      f4FormulaId: "factor-mean-v1",
+    };
+    expect(() => renderF4Report(calculation, { comparisonResult: factorPathComparison })).not.toThrow();
+
+    const unknownPathComparison = comparisonResult("passed");
+    unknownPathComparison.worksheets[0].metrics[0] = {
+      ...unknownPathComparison.worksheets[0].metrics[0],
+      metric: "factors[0].unknown",
+      f4FormulaId: "factor-mean-v1",
+    };
+    expect(() => renderF4Report(calculation, { comparisonResult: unknownPathComparison })).toThrow(/metric|path|unknown/i);
+  });
+
+  it("rejects comparison when formula evidence does not match metric", () => {
+    const comparison = comparisonResult("passed");
+    comparison.worksheets[0].metrics[0].f4FormulaId = "cpk-v2";
+
+    expect(() => renderF4Report(workflowCalculationResult(), { comparisonResult: comparison })).toThrow(/formula/i);
+  });
+
+  it("allows error comparison variants without worksheets but still enforces runId", () => {
+    const excelUnavailable = comparisonResult("excel_unavailable");
+    expect(() => renderF4Report(workflowCalculationResult(), { comparisonResult: excelUnavailable })).not.toThrow();
+
+    const mappingError = {
+      ...excelUnavailable,
+      status: "mapping_error",
+      reasonCode: "metric_mapping_missing",
+    };
+    expect(() => renderF4Report(workflowCalculationResult(), { comparisonResult: mappingError })).not.toThrow();
+
+    const badRun = { ...excelUnavailable, runId: "other-run" };
+    expect(() => renderF4Report(workflowCalculationResult(), { comparisonResult: badRun })).toThrow(/runId/i);
   });
 
   it("rejects invalid workflow contract and invalid comparison contract", () => {

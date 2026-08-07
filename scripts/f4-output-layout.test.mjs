@@ -12,7 +12,7 @@ describe("resolveFeature4OutputLayout", () => {
       runId: "2026-08-07T12-34-56-789Z",
       f2ReportPath: "test/demo-output/f2-runs/Demo/Feature2-Report.json",
       workbookPath: undefined,
-      runRoot: "test/demo-output/f4-runs/Feature2-Report/2026-08-07T12-34-56-789Z",
+      runRoot: "test/demo-output/f4-runs/Demo/2026-08-07T12-34-56-789Z",
       calculationJsonName: "Feature4-Calculation.json",
       reportMdName: "Feature4-Report.md",
       comparisonJsonName: "Feature4-Comparison.json",
@@ -33,6 +33,24 @@ describe("resolveFeature4OutputLayout", () => {
     expect(layout.runRoot).toBe("test/demo-output/f4-runs/Demo-Workbook/2026-08-07T12-34-56-789Z");
   });
 
+  it("derives deterministic run stem from f2 report parent for absolute paths", () => {
+    const layout = resolveFeature4OutputLayout([
+      "--f2-report",
+      "C:/runs/F2 Demo/Feature2-Report.json",
+    ], undefined, fixedNow);
+
+    expect(layout.runRoot).toBe("test/demo-output/f4-runs/F2-Demo/2026-08-07T12-34-56-789Z");
+  });
+
+  it("derives deterministic run stem from f2 report parent for UNC-like paths", () => {
+    const layout = resolveFeature4OutputLayout([
+      "--f2-report",
+      "//server/share/F2 Run/Feature2-Report.json",
+    ], undefined, fixedNow);
+
+    expect(layout.runRoot).toBe("test/demo-output/f4-runs/F2-Run/2026-08-07T12-34-56-789Z");
+  });
+
   it("accepts a safe explicit output root override", () => {
     const layout = resolveFeature4OutputLayout([
       "--f2-report",
@@ -47,6 +65,18 @@ describe("resolveFeature4OutputLayout", () => {
       "--f2-report",
       "outputs/Feature2-Report.json",
     ], outputRoot, fixedNow)).toThrow(/output root/i);
+  });
+
+  it.each([
+    "Feature2-Report.json",
+    "../Feature2-Report.json",
+    "./Feature2-Report.json",
+    "a/../Feature2-Report.json",
+  ])('rejects f2 report paths that yield unsafe default run stem: "%s"', (f2ReportPath) => {
+    expect(() => resolveFeature4OutputLayout([
+      "--f2-report",
+      f2ReportPath,
+    ], undefined, fixedNow)).toThrow(/output name|unsafe/i);
   });
 
   it.each([

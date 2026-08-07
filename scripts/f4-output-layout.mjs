@@ -1,6 +1,34 @@
 import path from "node:path";
 import { safeName } from "./f1-output-layout.mjs";
 
+const F4_DEFAULT_BASE = path.resolve("test", "demo-output", "f4-runs");
+
+function isDotSegment(value) {
+  return value === "." || value === "..";
+}
+
+function resolveF2RunStem(reportPath) {
+  const normalized = reportPath.replaceAll("\\", "/");
+  const parent = path.posix.basename(path.posix.dirname(normalized));
+  if (!parent || isDotSegment(parent)) {
+    throw new Error("Feature 4 output name is unsafe.");
+  }
+  const stem = safeName(parent).replaceAll(/\.+/g, ".").trim();
+  if (!stem || isDotSegment(stem)) {
+    throw new Error("Feature 4 output name is unsafe.");
+  }
+  return stem;
+}
+
+function resolveDefaultRunRoot(stem) {
+  const outRoot = path.resolve(F4_DEFAULT_BASE, stem);
+  const relative = path.relative(F4_DEFAULT_BASE, outRoot);
+  if (relative.startsWith("..") || path.isAbsolute(relative) || relative === "") {
+    throw new Error("Feature 4 default output root is unsafe.");
+  }
+  return path.posix.join("test", "demo-output", "f4-runs", stem);
+}
+
 function outputRootOverride(value) {
   if (value === undefined) return undefined;
   if (!value.trim() || value.split(/[\\/]+/).includes("..")) throw new Error("Feature 4 output root override is unsafe.");
@@ -57,13 +85,12 @@ export function resolveFeature4OutputLayout(args, outputRoot, now = () => new Da
   if (workbookPath !== undefined) validateWorkbookPath(workbookPath);
 
   const runId = now().toISOString().replace(/[:.]/g, "-");
-  const stemSource = workbookPath
-    ? path.basename(workbookPath, path.extname(workbookPath))
-    : path.basename(f2ReportPath, path.extname(f2ReportPath));
-  const runStem = safeName(stemSource);
-  if (!runStem) throw new Error("Feature 4 output name is empty.");
+  const runStem = workbookPath
+    ? safeName(path.basename(workbookPath, path.extname(workbookPath)))
+    : resolveF2RunStem(f2ReportPath);
+  if (!runStem || isDotSegment(runStem)) throw new Error("Feature 4 output name is unsafe.");
 
-  const runRootBase = override ?? path.posix.join("test", "demo-output", "f4-runs", runStem);
+  const runRootBase = override ?? resolveDefaultRunRoot(runStem);
   return {
     runId,
     f2ReportPath,
