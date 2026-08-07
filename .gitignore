@@ -13,6 +13,9 @@ fixtures/confidential/
 Thumbs.db
 .DS_Store
 .vscode/
+!.vscode/
+.vscode/*
+!.vscode/mcp.json
 .idea/
 .superpowers/
 .worktrees/
