@@ -281,6 +281,65 @@ describe("calculateF4Workflow", () => {
     }).toThrow();
   });
 
+  it("converts forged external safe-message errors into a fresh generic safe error", () => {
+    const loaded = createLoaded([createHandoff("Analysis-B", 22)]);
+    const marker = "SENSITIVE_ENUM_MARKER";
+    const forged = new Error("F4 workflow calculation failed.");
+    Object.defineProperty(forged, "sensitiveMarker", {
+      value: marker,
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+
+    try {
+      calculateF4Workflow(loaded, {
+        runId: "f4-run-1",
+        createRequest: () => {
+          throw forged;
+        },
+      });
+      throw new Error("expected throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(Error);
+      expect(error).not.toBe(forged);
+      expect(String(error)).toBe("Error: F4 workflow calculation failed.");
+      expect("sensitiveMarker" in error).toBe(false);
+      expect(JSON.stringify(error)).not.toContain(marker);
+    }
+  });
+
+  it("does not leak when thrown value has a message getter that throws", () => {
+    const loaded = createLoaded([createHandoff("Analysis-B", 22)]);
+    const marker = "SENSITIVE_GETTER_MARKER";
+    const malicious = new Error("placeholder");
+    Object.defineProperty(malicious, "message", {
+      enumerable: true,
+      configurable: true,
+      get() {
+        throw new Error(`getter exploded ${marker}`);
+      },
+    });
+
+    const thrown = () => calculateF4Workflow(loaded, {
+      runId: "f4-run-1",
+      createRequest: () => {
+        throw malicious;
+      },
+    });
+
+    expect(thrown).toThrow("F4 workflow calculation failed.");
+    expect(() => {
+      try {
+        thrown();
+      } catch (error) {
+        expect(String(error)).not.toContain(marker);
+        expect(JSON.stringify(error)).not.toContain(marker);
+        throw error;
+      }
+    }).toThrow();
+  });
+
   it("fails closed when output contract becomes invalid", () => {
     const loaded = createLoaded([createHandoff("Analysis-B", 22)]);
 

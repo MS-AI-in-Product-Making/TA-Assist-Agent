@@ -15,6 +15,7 @@ const RUN_ID_MAX_LENGTH = 96;
 const RUN_REFERENCE_MAX_LENGTH = 128;
 const WORKBOOK_FILE_NAME_MAX_LENGTH = 240;
 const CONTROLLED_REFERENCE_PATTERN = /^[A-Za-z0-9._:-]+$/;
+const TRUSTED_WORKFLOW_ERRORS = new WeakSet();
 const SAFE_WORKBOOK_FILE_NAME_PATTERN = new RegExp(
   `^[^/\\\\${String.fromCharCode(0)}-${String.fromCharCode(31)}${String.fromCharCode(127)}${String.fromCharCode(0x2028)}${String.fromCharCode(0x2029)}]+\\.xlsx$`,
   "i",
@@ -23,11 +24,12 @@ const SAFE_WORKBOOK_FILE_NAME_PATTERN = new RegExp(
 function workflowError(code) {
   const error = new Error(SAFE_ERROR_MESSAGE);
   error.code = code;
+  TRUSTED_WORKFLOW_ERRORS.add(error);
   return error;
 }
 
 function isWorkflowError(error) {
-  return error instanceof Error && error.message === SAFE_ERROR_MESSAGE;
+  return typeof error === "object" && error !== null && TRUSTED_WORKFLOW_ERRORS.has(error);
 }
 
 function isPlainObject(value) {
