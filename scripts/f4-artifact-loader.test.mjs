@@ -286,6 +286,22 @@ describe("loadF4Handoffs", () => {
     expectSanitizedF2ReportInvalid(loadF4Handoffs(reportPath));
   });
 
+  it("treats attacker-crafted inputRejected-shaped JSON as untrusted and sanitizes output", () => {
+    const { reportPath } = writeReportToTemp({
+      status: "inputRejected",
+      reasonCode: "attacker_controlled",
+      path: "C:\\sensitive\\source.xlsx",
+      raw: "unexpected",
+      artifactReference: "Feature2-Report.json",
+    });
+
+    expect(loadF4Handoffs(reportPath)).toEqual({
+      status: "inputRejected",
+      reasonCode: "f2_report_invalid",
+      artifactReference: "Feature2-Report.json",
+    });
+  });
+
   it("rejects empty F4 handoffs", () => {
     const report = buildValidF2Report();
     report.f4Handoffs = [];

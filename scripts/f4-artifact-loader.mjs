@@ -15,26 +15,18 @@ function rejected(reasonCode) {
   };
 }
 
-function isLoaderRejection(value) {
-  return typeof value === "object"
-    && value !== null
-    && value.status === "inputRejected"
-    && typeof value.reasonCode === "string"
-    && value.artifactReference === ARTIFACT_REFERENCE;
-}
-
 function loadAndParseJson(resolvedReportPath) {
   try {
     const stat = statSync(resolvedReportPath);
-    if (!stat.isFile()) return rejected("f2_report_invalid");
-    if (stat.size > MAX_F2_REPORT_BYTES) return rejected("f2_report_invalid");
-    return JSON.parse(readFileSync(resolvedReportPath, "utf8"));
+    if (!stat.isFile()) return { ok: false, rejection: rejected("f2_report_invalid") };
+    if (stat.size > MAX_F2_REPORT_BYTES) return { ok: false, rejection: rejected("f2_report_invalid") };
+    return { ok: true, value: JSON.parse(readFileSync(resolvedReportPath, "utf8")) };
   } catch (error) {
-    if (error instanceof SyntaxError) return rejected("f2_report_invalid");
+    if (error instanceof SyntaxError) return { ok: false, rejection: rejected("f2_report_invalid") };
     if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
-      return rejected("f2_report_missing");
+      return { ok: false, rejection: rejected("f2_report_missing") };
     }
-    return rejected("f2_report_invalid");
+    return { ok: false, rejection: rejected("f2_report_invalid") };
   }
 }
 
@@ -90,11 +82,11 @@ export function loadF4Handoffs(reportPath) {
   }
 
   const loaded = loadAndParseJson(resolvedReportPath);
-  if (isLoaderRejection(loaded)) return loaded;
+  if (!loaded.ok) return loaded.rejection;
 
   let parsed;
   try {
-    parsed = f2UserReportSchema.safeParse(loaded);
+    parsed = f2UserReportSchema.safeParse(loaded.value);
   } catch {
     return rejected("f2_report_invalid");
   }
