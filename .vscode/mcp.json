@@ -1,0 +1,9 @@
+{
+  "servers": {
+    "surface-mcp": {
+      "type": "http",
+      "url": "https://surfacemcp.microsoft.com"
+    }
+  },
+  "inputs": []
+}
