@@ -5,6 +5,8 @@ import path from "node:path";
 import { loadF4Handoffs } from "./f4-artifact-loader.mjs";
 import { f2UserReportSchema } from "../packages/contracts/dist/contracts.js";
 
+const MAX_REPORT_BYTES = 5 * 1024 * 1024;
+
 const roots = [];
 
 afterEach(() => {
@@ -101,8 +103,8 @@ function f4Handoff(worksheetName, toleranceLoopDescription, row) {
       tableId: row.tableId,
       sourceRow: row.sourceRow,
       unit: "mm",
-      actualFields: row.actualFields,
-      sourceCells: row.sourceCells,
+      actualFields: { ...row.actualFields },
+      sourceCells: { ...row.sourceCells },
     }],
   };
 }
@@ -181,6 +183,14 @@ function writeReportToTemp(report = buildValidF2Report()) {
   return { root, reportPath };
 }
 
+function buildNestedObject(depth) {
+  let current = { leaf: "end" };
+  for (let index = 0; index < depth; index += 1) {
+    current = { nested: current };
+  }
+  return current;
+}
+
 function expectSanitizedF2ReportInvalid(value) {
   expect(value).toEqual({
     status: "inputRejected",
@@ -202,6 +212,8 @@ describe("loadF4Handoffs", () => {
     expect(loaded.status).toBe("accepted");
     expect(loaded.handoffs.map((handoff) => handoff.worksheetName)).toEqual(["Analysis-B", "Analysis-A"]);
     expect(loaded.workbook.contentHash).toBe("a".repeat(64));
+    expect(loaded.reportPath).toBe("Feature2-Report.json");
+    expect(loaded.reportPath.startsWith(reportPath)).toBe(false);
   });
 
   it("does not recover from Markdown when Feature2 JSON is missing", () => {
@@ -233,6 +245,31 @@ describe("loadF4Handoffs", () => {
     expectSanitizedF2ReportInvalid(loadF4Handoffs(reportPath));
   });
 
+  it("rejects malformed schema-invalid objects before business classification", () => {
+    const { reportPath } = writeReportToTemp({});
+
+    expectSanitizedF2ReportInvalid(loadF4Handoffs(reportPath));
+  });
+
+  it("rejects oversized Feature2 reports before parsing", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "f4-loader-"));
+    roots.push(root);
+    const reportPath = path.join(root, "Feature2-Report.json");
+    writeFileSync(reportPath, " ".repeat(MAX_REPORT_BYTES + 1));
+
+    expectSanitizedF2ReportInvalid(loadF4Handoffs(reportPath));
+  });
+
+  it("rejects deeply nested unknown JSON without uncaught errors", () => {
+    const report = buildValidF2Report();
+    const nested = buildNestedObject(2000);
+    report.worksheets[0].rows[0].actualFields.deepUnknown = nested;
+    report.f4Handoffs[1].factors[0].actualFields.deepUnknown = nested;
+    const { reportPath } = writeReportToTemp(report);
+
+    expectSanitizedF2ReportInvalid(loadF4Handoffs(reportPath));
+  });
+
   it("rejects schema-valid F2 inputRejected reports as invalid handoff input", () => {
     const report = f2UserReportSchema.parse({
       contractVersion: "v1",
@@ -254,11 +291,9 @@ describe("loadF4Handoffs", () => {
     report.f4Handoffs = [];
     const { reportPath } = writeReportToTemp(report);
 
-    expect(loadF4Handoffs(reportPath)).toEqual({
-      status: "inputRejected",
-      reasonCode: "no_ready_handoff",
-      artifactReference: "Feature2-Report.json",
-    });
+    // Distinction: this fixture is rejected by f2UserReportSchema (ready worksheet must bind to one handoff)
+    // before loader-level evidence comparison runs.
+    expectSanitizedF2ReportInvalid(loadF4Handoffs(reportPath));
   });
 
   it("rejects duplicate handoff worksheet names", () => {
@@ -266,11 +301,8 @@ describe("loadF4Handoffs", () => {
     report.f4Handoffs[1].worksheetName = "Analysis-B";
     const { reportPath } = writeReportToTemp(report);
 
-    expect(loadF4Handoffs(reportPath)).toEqual({
-      status: "inputRejected",
-      reasonCode: "evidence_mismatch",
-      artifactReference: "Feature2-Report.json",
-    });
+    // Distinction: duplicate worksheet names violate report schema constraints first.
+    expectSanitizedF2ReportInvalid(loadF4Handoffs(reportPath));
   });
 
   it("rejects workbook hash mismatch between report and handoff", () => {
@@ -278,11 +310,8 @@ describe("loadF4Handoffs", () => {
     report.f4Handoffs[0].workbookContentHash = "b".repeat(64);
     const { reportPath } = writeReportToTemp(report);
 
-    expect(loadF4Handoffs(reportPath)).toEqual({
-      status: "inputRejected",
-      reasonCode: "evidence_mismatch",
-      artifactReference: "Feature2-Report.json",
-    });
+    // Distinction: schema superRefine enforces workbook hash consistency.
+    expectSanitizedF2ReportInvalid(loadF4Handoffs(reportPath));
   });
 
   it("rejects a handoff without a matching ready worksheet", () => {
@@ -290,11 +319,8 @@ describe("loadF4Handoffs", () => {
     report.f4Handoffs[0].worksheetName = "Analysis-C";
     const { reportPath } = writeReportToTemp(report);
 
-    expect(loadF4Handoffs(reportPath)).toEqual({
-      status: "inputRejected",
-      reasonCode: "no_ready_handoff",
-      artifactReference: "Feature2-Report.json",
-    });
+    // Distinction: schema requires each ready worksheet to have exactly one handoff.
+    expectSanitizedF2ReportInvalid(loadF4Handoffs(reportPath));
   });
 
   it("rejects handoff factor evidence that does not match ready worksheet rows", () => {
@@ -307,5 +333,77 @@ describe("loadF4Handoffs", () => {
       reasonCode: "evidence_mismatch",
       artifactReference: "Feature2-Report.json",
     });
+  });
+
+  it("rejects handoff with empty factors as evidence mismatch", () => {
+    const report = buildValidF2Report();
+    report.f4Handoffs[0].factors = [];
+    const { reportPath } = writeReportToTemp(report);
+
+    expect(loadF4Handoffs(reportPath)).toEqual({
+      status: "inputRejected",
+      reasonCode: "evidence_mismatch",
+      artifactReference: "Feature2-Report.json",
+    });
+  });
+
+  it("rejects handoff with duplicate factors as evidence mismatch", () => {
+    const report = buildValidF2Report();
+    report.f4Handoffs[0].factors.push({ ...report.f4Handoffs[0].factors[0] });
+    const { reportPath } = writeReportToTemp(report);
+
+    expect(loadF4Handoffs(reportPath)).toEqual({
+      status: "inputRejected",
+      reasonCode: "evidence_mismatch",
+      artifactReference: "Feature2-Report.json",
+    });
+  });
+
+  it("rejects handoff with omitted worksheet factor as evidence mismatch", () => {
+    const report = buildValidF2Report();
+    report.f4Handoffs[0].factors = [];
+    report.f4Handoffs[1].factors = [];
+    report.f4Handoffs[1].factors.push({ ...f4Handoff("Analysis-A", "Loop A", enhancedRow("Analysis-A", "factor-table-1", 14)).factors[0] });
+    const { reportPath } = writeReportToTemp(report);
+
+    expect(loadF4Handoffs(reportPath)).toEqual({
+      status: "inputRejected",
+      reasonCode: "evidence_mismatch",
+      artifactReference: "Feature2-Report.json",
+    });
+  });
+
+  it("rejects mutated system specification additionalMeanShift evidence", () => {
+    const report = buildValidF2Report();
+    report.f4Handoffs[0].systemSpecification.additionalMeanShift.displayValue = "0.01";
+    report.f4Handoffs[0].systemSpecification.additionalMeanShift.actualValue = 0.01;
+    const { reportPath } = writeReportToTemp(report);
+
+    expect(loadF4Handoffs(reportPath)).toEqual({
+      status: "inputRejected",
+      reasonCode: "evidence_mismatch",
+      artifactReference: "Feature2-Report.json",
+    });
+  });
+
+  it("rejects source cell mutation as evidence mismatch", () => {
+    const report = buildValidF2Report();
+    report.f4Handoffs[0].factors[0].sourceCells.factorName = "Analysis-B!E999";
+    const { reportPath } = writeReportToTemp(report);
+
+    expect(loadF4Handoffs(reportPath)).toEqual({
+      status: "inputRejected",
+      reasonCode: "evidence_mismatch",
+      artifactReference: "Feature2-Report.json",
+    });
+  });
+
+  it("rejects ready worksheet and handoff count mismatch", () => {
+    const report = buildValidF2Report();
+    report.f4Handoffs.splice(0, 1);
+    const { reportPath } = writeReportToTemp(report);
+
+    // Distinction: schema-level one-to-one requirement fails before evidence compare.
+    expectSanitizedF2ReportInvalid(loadF4Handoffs(reportPath));
   });
 });

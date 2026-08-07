@@ -1,8 +1,11 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import path from "node:path";
-import { f2UserReportSchema } from "../packages/contracts/dist/contracts.js";
+import { isDeepStrictEqual } from "node:util";
+import { f2UserReportSchema, f4HandoffReadySchema } from "../packages/contracts/dist/contracts.js";
+import { createF4Handoff } from "../packages/workbook-catalog/dist/f4-handoff.js";
 
 const ARTIFACT_REFERENCE = "Feature2-Report.json";
+const MAX_F2_REPORT_BYTES = 5 * 1024 * 1024;
 
 function rejected(reasonCode) {
   return {
@@ -12,80 +15,69 @@ function rejected(reasonCode) {
   };
 }
 
-function isRecord(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+function isLoaderRejection(value) {
+  return typeof value === "object"
+    && value !== null
+    && value.status === "inputRejected"
+    && typeof value.reasonCode === "string"
+    && value.artifactReference === ARTIFACT_REFERENCE;
 }
 
-function deepEqual(left, right) {
-  if (Object.is(left, right)) return true;
-  if (typeof left !== typeof right) return false;
-  if (Array.isArray(left) && Array.isArray(right)) {
-    if (left.length !== right.length) return false;
-    return left.every((item, index) => deepEqual(item, right[index]));
+function loadAndParseJson(resolvedReportPath) {
+  try {
+    const stat = statSync(resolvedReportPath);
+    if (!stat.isFile()) return rejected("f2_report_invalid");
+    if (stat.size > MAX_F2_REPORT_BYTES) return rejected("f2_report_invalid");
+    return JSON.parse(readFileSync(resolvedReportPath, "utf8"));
+  } catch (error) {
+    if (error instanceof SyntaxError) return rejected("f2_report_invalid");
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+      return rejected("f2_report_missing");
+    }
+    return rejected("f2_report_invalid");
   }
-  if (!isRecord(left) || !isRecord(right)) return false;
-  const leftKeys = Object.keys(left);
-  const rightKeys = Object.keys(right);
-  if (leftKeys.length !== rightKeys.length) return false;
-  for (const key of leftKeys) {
-    if (!Object.hasOwn(right, key) || !deepEqual(left[key], right[key])) return false;
-  }
-  return true;
 }
 
-function preflightEvidenceCheck(report) {
-  if (!isRecord(report)) return rejected("f2_report_invalid");
+function validateEvidenceBindings(report) {
+  const readyWorksheets = report.worksheets.filter((worksheet) => worksheet.status === "ready");
+  const handoffs = report.f4Handoffs;
 
-  const workbookHash = isRecord(report.workbook) && typeof report.workbook.contentHash === "string"
-    ? report.workbook.contentHash
-    : undefined;
-  const worksheets = Array.isArray(report.worksheets) ? report.worksheets : [];
-  const readyWorksheets = worksheets.filter((worksheet) => isRecord(worksheet)
-    && worksheet.status === "ready"
-    && typeof worksheet.worksheetName === "string");
-  const handoffs = Array.isArray(report.f4Handoffs) ? report.f4Handoffs : [];
+  if (readyWorksheets.length === 0 || handoffs.length === 0) return rejected("no_ready_handoff");
+  if (readyWorksheets.length !== handoffs.length) return rejected("evidence_mismatch");
 
-  if (handoffs.length === 0 || readyWorksheets.length === 0) return rejected("no_ready_handoff");
-
+  const readyWorksheetByName = new Map(readyWorksheets.map((worksheet) => [worksheet.worksheetName, worksheet]));
   const seenWorksheetNames = new Set();
+
   for (const handoff of handoffs) {
-    if (!isRecord(handoff) || typeof handoff.worksheetName !== "string") return rejected("f2_report_invalid");
     if (seenWorksheetNames.has(handoff.worksheetName)) return rejected("evidence_mismatch");
     seenWorksheetNames.add(handoff.worksheetName);
 
-    if (workbookHash !== undefined && handoff.workbookContentHash !== workbookHash) {
-      return rejected("evidence_mismatch");
-    }
-
-    const worksheet = readyWorksheets.find((entry) => entry.worksheetName === handoff.worksheetName);
+    const worksheet = readyWorksheetByName.get(handoff.worksheetName);
     if (!worksheet) return rejected("no_ready_handoff");
 
-    if (typeof handoff.toleranceLoopDescription === "string"
-      && typeof worksheet.toleranceLoopDescription === "string"
-      && handoff.toleranceLoopDescription !== worksheet.toleranceLoopDescription) {
-      return rejected("evidence_mismatch");
+    let expectedHandoff;
+    try {
+      expectedHandoff = createF4Handoff({
+        workbookContentHash: report.workbook.contentHash,
+        worksheet,
+      });
+    } catch {
+      return rejected("f2_report_invalid");
     }
 
-    if (!Array.isArray(handoff.factors) || !Array.isArray(worksheet.rows)) return rejected("f2_report_invalid");
-
-    for (const factor of handoff.factors) {
-      if (!isRecord(factor)
-        || typeof factor.tableId !== "string"
-        || typeof factor.sourceRow !== "number"
-        || !Number.isInteger(factor.sourceRow)) {
-        return rejected("f2_report_invalid");
-      }
-      const matchedRow = worksheet.rows.find((row) => isRecord(row)
-        && row.tableId === factor.tableId
-        && row.sourceRow === factor.sourceRow);
-      if (!matchedRow) return rejected("evidence_mismatch");
-      if (!deepEqual(factor.actualFields, matchedRow.actualFields)
-        || !deepEqual(factor.sourceCells, matchedRow.sourceCells)) {
-        return rejected("evidence_mismatch");
-      }
+    let actualCanonical;
+    let expectedCanonical;
+    try {
+      actualCanonical = f4HandoffReadySchema.parse(handoff);
+      expectedCanonical = f4HandoffReadySchema.parse(expectedHandoff);
+    } catch {
+      return rejected("f2_report_invalid");
     }
+
+    if (!isDeepStrictEqual(actualCanonical, expectedCanonical)) return rejected("evidence_mismatch");
   }
 
+  if (seenWorksheetNames.size !== readyWorksheetByName.size) return rejected("evidence_mismatch");
   return undefined;
 }
 
@@ -97,31 +89,25 @@ export function loadF4Handoffs(reportPath) {
     return rejected("f2_report_invalid");
   }
 
-  if (!existsSync(resolvedReportPath)) return rejected("f2_report_missing");
-  if (!statSync(resolvedReportPath).isFile()) return rejected("f2_report_invalid");
+  const loaded = loadAndParseJson(resolvedReportPath);
+  if (isLoaderRejection(loaded)) return loaded;
 
-  let value;
+  let parsed;
   try {
-    value = JSON.parse(readFileSync(resolvedReportPath, "utf8"));
+    parsed = f2UserReportSchema.safeParse(loaded);
   } catch {
     return rejected("f2_report_invalid");
   }
-
-  if (isRecord(value) && value.status === "inputRejected") {
-    return rejected("f2_report_invalid");
-  }
-
-  const preflightResult = preflightEvidenceCheck(value);
-  if (preflightResult !== undefined) return preflightResult;
-
-  const parsed = f2UserReportSchema.safeParse(value);
   if (!parsed.success || parsed.data.status === "inputRejected") {
     return rejected("f2_report_invalid");
   }
 
+  const evidenceValidation = validateEvidenceBindings(parsed.data);
+  if (evidenceValidation !== undefined) return evidenceValidation;
+
   return {
     status: "accepted",
-    reportPath: resolvedReportPath,
+    reportPath: ARTIFACT_REFERENCE,
     workbook: parsed.data.workbook,
     handoffs: parsed.data.f4Handoffs,
   };
