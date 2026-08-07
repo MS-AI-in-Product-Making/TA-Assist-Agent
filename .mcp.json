@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "surface-mcp": {
+      "tools": [
+        "*"
+      ],
+      "type": "http",
+      "url": "https://surfacemcp.microsoft.com",
+      "headers": {}
+    }
+  }
+}

@@ -2,16 +2,27 @@ import { drawingGovernanceResultV2Schema } from "../packages/contracts/dist/cont
 
 const TABLE_HEADER = "| Device Level Dim | Dimension Description | Part / Subsystem | Drawing Number | Dim ID | Factor Description | Nominal | Upper Tolerance (+) | Lower Tolerance (-) | σ Level | Source Location |";
 const TABLE_SEPARATOR = "| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- |";
+const WINDOWS_ABSOLUTE_PATH_PATTERN = /[A-Za-z]:(?:\\[^\\/:*?"<>|\r\n]+)+(?=$|[\s"'|),;\]])/g;
+const WINDOWS_ESCAPED_ABSOLUTE_PATH_PATTERN = /[A-Za-z]:(?:\\\\[^\\/:*?"<>|\r\n]+)+(?=$|[\s"'|),;\]])/g;
 
 function redactSensitiveText(value) {
   return String(value)
-    .replace(/[A-Za-z]:\\[^\s|]*/g, "[redacted-local-path]")
-    .replace(/Authorization\s*[:=]\s*[^\s|]+/gi, "Authorization: [redacted]");
+    .replace(WINDOWS_ESCAPED_ABSOLUTE_PATH_PATTERN, "[redacted-local-path]")
+    .replace(WINDOWS_ABSOLUTE_PATH_PATTERN, "[redacted-local-path]")
+    .replace(/Authorization\s*[:=]\s*(?:Bearer\s+)?[^\s|"'`),;\]]+/gi, "Authorization: [redacted]");
 }
 
 function cell(value) {
   if (value === null || value === undefined || value === "") return "（缺失）";
   return redactSensitiveText(value).replaceAll("|", "\\|").replaceAll(/\r?\n/g, "<br>");
+}
+
+function inlineCode(value) {
+  if (value === null || value === undefined || value === "") return "（缺失）";
+  const sanitized = redactSensitiveText(value)
+    .replaceAll("`", "'")
+    .replaceAll(/\r?\n/g, " ");
+  return `\`${sanitized}\``;
 }
 
 function sourceLocation(row) {
@@ -54,6 +65,14 @@ function renderAccepted(report) {
     `- 需要治理：${report.summary.governanceRequiredCount}`,
     `- 同图纸重复冲突：${report.summary.duplicateConflictCount}`,
     `- ADO 状态：\`${report.ado.status}\``,
+  ];
+  if (report.ado.workItemReference !== undefined) {
+    lines.push(`- ADO Work Item：${inlineCode(report.ado.workItemReference)}`);
+  }
+  if (report.ado.reasonCode !== undefined) {
+    lines.push(`- ADO 原因：${cell(report.ado.reasonCode)}`);
+  }
+  lines.push(
     "",
     "## 质量状态计数",
     "",
@@ -63,7 +82,7 @@ function renderAccepted(report) {
     `| missing | ${statusCounts.get("missing") ?? 0} |`,
     `| suspected_invalid | ${statusCounts.get("suspected_invalid") ?? 0} |`,
     `| needs_confirmation | ${statusCounts.get("needs_confirmation") ?? 0} |`,
-  ];
+  );
 
   const groups = new Map();
   for (const row of rows) {

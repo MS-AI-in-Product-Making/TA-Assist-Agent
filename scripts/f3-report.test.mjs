@@ -59,12 +59,78 @@ describe("renderF3Report", () => {
     expect(markdown).toContain("ADO 状态：`not_requested`");
   });
 
+  it("renders optional ADO work item reference and reason code without comment body", () => {
+    const report = governanceReport();
+    report.ado = {
+      status: "blocked",
+      workItemReference: "1102392",
+      reasonCode: "surface_mcp_comment_body_unsupported",
+    };
+
+    const markdown = renderF3Report(report);
+
+    expect(markdown).toContain("ADO 状态：`blocked`");
+    expect(markdown).toContain("ADO Work Item：`1102392`");
+    expect(markdown).toContain("ADO 原因：surface_mcp_comment_body_unsupported");
+    expect(markdown).not.toContain("comment body");
+  });
+
+  it("sanitizes ADO work item reference before inline-code rendering", () => {
+    const report = governanceReport();
+    report.ado = {
+      status: "blocked",
+      workItemReference: "ticket`42 Authorization=token C:\\Users\\secret\\file",
+      reasonCode: "surface_mcp_comment_body_unsupported",
+    };
+
+    const markdown = renderF3Report(report);
+
+    expect(markdown).toContain("ADO Work Item：`ticket'42 Authorization: [redacted] [redacted-local-path]`");
+    expect(markdown).not.toContain("Authorization=token");
+    expect(markdown).not.toContain("C:\\Users\\secret\\file");
+  });
+
+  it("redacts full authorization bearer values in common formats", () => {
+    const report = governanceReport();
+    report.ado = {
+      status: "blocked",
+      workItemReference: "Authorization: Bearer very-secret-token | next=keep Authorization=Bearer very-secret-token-2 then",
+      reasonCode: "surface_mcp_comment_body_unsupported",
+    };
+
+    const markdown = renderF3Report(report);
+
+    expect(markdown).toContain("Authorization: [redacted]");
+    expect(markdown).not.toContain("very-secret-token");
+    expect(markdown).not.toContain("very-secret-token-2");
+    expect(markdown).not.toContain("Bearer very-secret-token");
+    expect(markdown).toContain("next=keep");
+    expect(markdown).toContain("then");
+  });
+
   it("escapes table text and does not expose local or authorization data", () => {
     const markdown = renderF3Report(governanceReport("A|B\nC"));
 
     expect(markdown).toContain("A\\|B<br>C");
     expect(markdown).not.toContain("C:\\Users\\");
     expect(markdown).not.toContain("Authorization");
+  });
+
+  it("redacts Windows absolute paths with spaces in work item and source fields", () => {
+    const report = governanceReport("source C:\\Users\\Name\\AI Project\\ado repro\\Feature3-Report.md");
+    report.ado = {
+      status: "failed",
+      workItemReference: "\"C:\\Users\\Name\\AI Project\\ado repro\\Feature3-Report.md\" and 'C:\\Users\\Name\\AI Project\\ado repro\\Feature3-Report.md'",
+      reasonCode: "project_not_found",
+    };
+
+    const markdown = renderF3Report(report);
+
+    expect(markdown).toContain("[redacted-local-path]");
+    expect(markdown).not.toContain("AI Project");
+    expect(markdown).not.toContain("ado repro");
+    expect(markdown).not.toContain("Feature3-Report.md");
+    expect(markdown).toContain("project_not_found");
   });
 
   it("renders structured input rejection issues", () => {
