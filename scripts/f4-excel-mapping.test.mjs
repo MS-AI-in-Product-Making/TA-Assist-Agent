@@ -132,6 +132,8 @@ function makeWorkbookBytes({
   includeStatusFormula = true,
   includeStatusCell = true,
   duplicatePreBoundaryCpLabel = false,
+  duplicatePreAnchorDesignNominalLabel = false,
+  addPostAnchorDuplicateSystemLabels = false,
   addStealFormulaNearAdjustedMean = false,
   makeYieldAdjacentAmbiguous = false,
   hugeRef = false,
@@ -196,8 +198,20 @@ function makeWorkbookBytes({
     setNumber(17, 46, 10.02, includeFormulaForAdjustedMean ? "=SUM(R14:R20)+R45" : undefined);
   }
 
+  if (duplicatePreAnchorDesignNominalLabel) {
+    setText(14, 43, "Design Nominal");
+    setNumber(15, 43, 9.99, "=AVERAGE(B1:B2)");
+  }
+
   if (includeResponseSummaryAnchor) {
     setText(10, 48, "Response Summary Table");
+  }
+
+  if (addPostAnchorDuplicateSystemLabels) {
+    setText(14, 52, "Adjusted Mean");
+    setNumber(15, 52, 10.2, "=1+1");
+    setText(14, 53, "Design Nominal");
+    setNumber(15, 53, 9.8, "=1+1");
   }
 
   setText(18, 50, "Lower Z (Sigma Level):");
@@ -316,6 +330,26 @@ describe("buildF4ExcelMapping", () => {
     expect(metrics.get("capability.status")).toMatchObject({ cell: "U57", expected: "PASS", tolerance: 1e-12, formulaId: "status-v1" });
   });
 
+  it("ignores post-anchor duplicate Design Nominal and Adjusted Mean labels in real-template positions", () => {
+    const factorRows = [14, 15, 16, 17, 18, 19, 20];
+    const calculation = createCalculation({ worksheetName: "Analysis-A", factorRows });
+    const workbookBytes = makeWorkbookBytes({
+      worksheetName: "Analysis-A",
+      factorRows,
+      addPostAnchorDuplicateSystemLabels: true,
+    });
+
+    const mapping = buildF4ExcelMapping({ workbookBytes, calculation });
+    const metrics = outputByName(mapping);
+
+    expect(metrics.get("system.designNominal")).toMatchObject({ cell: "L44" });
+    expect(metrics.get("system.mean")).toMatchObject({ cell: "R46" });
+    expect(metrics.get("system.worstCaseUpper")).toMatchObject({ cell: "M44" });
+    expect(metrics.get("system.worstCaseLower")).toMatchObject({ cell: "N44" });
+    expect(metrics.get("system.rssSigma")).toMatchObject({ cell: "T44" });
+    expect(metrics.get("capability.cpk")).toMatchObject({ cell: "T57" });
+  });
+
   it("supports moved rows/columns and ignores extra Suggested Spec labels after boundary", () => {
     const calculation = createCalculation({ worksheetName: "Shifted", factorRows: [33, 38] });
     const workbookBytes = makeWorkbookBytes({
@@ -375,6 +409,13 @@ describe("buildF4ExcelMapping", () => {
   it("rejects duplicate controlled labels before first Suggested Spec boundary", () => {
     const calculation = createCalculation({ worksheetName: "Analysis-A" });
     const workbookBytes = makeWorkbookBytes({ worksheetName: "Analysis-A", duplicatePreBoundaryCpLabel: true });
+
+    expect(() => buildF4ExcelMapping({ workbookBytes, calculation })).toThrow("F4 excel mapping failed.");
+  });
+
+  it("rejects duplicate pre-anchor Design Nominal labels", () => {
+    const calculation = createCalculation({ worksheetName: "Analysis-A" });
+    const workbookBytes = makeWorkbookBytes({ worksheetName: "Analysis-A", duplicatePreAnchorDesignNominalLabel: true });
 
     expect(() => buildF4ExcelMapping({ workbookBytes, calculation })).toThrow("F4 excel mapping failed.");
   });

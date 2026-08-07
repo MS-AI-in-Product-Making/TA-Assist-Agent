@@ -426,13 +426,12 @@ function createOutput(name, cell, expected, formulaId) {
 }
 
 function buildMetricCells(entries, anchorRow, sectionEndRow, sigmaColumn) {
-  const windowStart = Math.max(1, anchorRow - 24);
-  const beforeSuggestedWindow = (entry) => entry.row >= windowStart && entry.row < sectionEndRow;
+  const beforeAnchorSection = (entry) => entry.row < anchorRow;
   const responseSummarySection = (entry) => entry.row > anchorRow && entry.row < sectionEndRow;
 
   const metricCells = new Map();
 
-  const designLabel = findUniqueLabel(entries, SYSTEM_LABEL_ALIASES.designNominal, beforeSuggestedWindow);
+  const designLabel = findUniqueLabel(entries, SYSTEM_LABEL_ALIASES.designNominal, beforeAnchorSection);
   const designValue = findExactAdjacentValue(entries, designLabel);
   metricCells.set("system.designNominal", designValue);
 
@@ -450,11 +449,11 @@ function buildMetricCells(entries, anchorRow, sectionEndRow, sigmaColumn) {
   ensureScalarValueCell(rssCell);
   metricCells.set("system.rssSigma", rssCell);
 
-  const shiftLabel = findUniqueLabel(entries, SYSTEM_LABEL_ALIASES.additionalMeanShift, beforeSuggestedWindow);
+  const shiftLabel = findUniqueLabel(entries, SYSTEM_LABEL_ALIASES.additionalMeanShift, beforeAnchorSection);
   const shiftValue = findExactAdjacentValue(entries, shiftLabel);
   metricCells.set("system.additionalMeanShift", shiftValue);
 
-  const meanLabel = findUniqueLabel(entries, SYSTEM_LABEL_ALIASES.mean, beforeSuggestedWindow);
+  const meanLabel = findUniqueLabel(entries, SYSTEM_LABEL_ALIASES.mean, beforeAnchorSection);
   const meanValue = findExactAdjacentValue(entries, meanLabel);
   metricCells.set("system.mean", meanValue);
 
