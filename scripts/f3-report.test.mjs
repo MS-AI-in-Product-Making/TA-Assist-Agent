@@ -90,6 +90,24 @@ describe("renderF3Report", () => {
     expect(markdown).not.toContain("C:\\Users\\secret\\file");
   });
 
+  it("redacts full authorization bearer values in common formats", () => {
+    const report = governanceReport();
+    report.ado = {
+      status: "blocked",
+      workItemReference: "Authorization: Bearer very-secret-token | next=keep Authorization=Bearer very-secret-token-2 then",
+      reasonCode: "surface_mcp_comment_body_unsupported",
+    };
+
+    const markdown = renderF3Report(report);
+
+    expect(markdown).toContain("Authorization: [redacted]");
+    expect(markdown).not.toContain("very-secret-token");
+    expect(markdown).not.toContain("very-secret-token-2");
+    expect(markdown).not.toContain("Bearer very-secret-token");
+    expect(markdown).toContain("next=keep");
+    expect(markdown).toContain("then");
+  });
+
   it("escapes table text and does not expose local or authorization data", () => {
     const markdown = renderF3Report(governanceReport("A|B\nC"));
 

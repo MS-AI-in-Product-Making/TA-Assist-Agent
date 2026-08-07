@@ -9,7 +9,7 @@ function redactSensitiveText(value) {
   return String(value)
     .replace(WINDOWS_ESCAPED_ABSOLUTE_PATH_PATTERN, "[redacted-local-path]")
     .replace(WINDOWS_ABSOLUTE_PATH_PATTERN, "[redacted-local-path]")
-    .replace(/Authorization\s*[:=]\s*[^\s|]+/gi, "Authorization: [redacted]");
+    .replace(/Authorization\s*[:=]\s*(?:Bearer\s+)?[^\s|"'`),;\]]+/gi, "Authorization: [redacted]");
 }
 
 function cell(value) {
