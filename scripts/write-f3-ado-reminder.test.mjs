@@ -171,7 +171,7 @@ describe("writeF3AdoReminder", () => {
       }),
       renameSync: (fromPath, toPath) => {
         if (toPath === reportMdPath && String(fromPath).includes("copilot-stage")) {
-          throw new Error(`simulated-third-promotion-failure: \"${toPath}\"`);
+          throw new Error(`simulated-third-promotion-failure: "${toPath}"`);
         }
         renameSync(fromPath, toPath);
       },
