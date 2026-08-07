@@ -2528,9 +2528,8 @@ describe("F4 workflow and excel comparison contracts", () => {
         },
       ],
       summary: {
-        calculationCount: 2,
-        worksheetCount: 2,
-        factorCount: 2,
+        selectedWorksheetCount: 2,
+        completedWorksheetCount: 2,
       },
     };
 
@@ -2564,9 +2563,8 @@ describe("F4 workflow and excel comparison contracts", () => {
         },
       ],
       summary: {
-        calculationCount: 2,
-        worksheetCount: 2,
-        factorCount: 2,
+        selectedWorksheetCount: 2,
+        completedWorksheetCount: 2,
       },
     };
 
@@ -2586,7 +2584,19 @@ describe("F4 workflow and excel comparison contracts", () => {
       ],
     }).success).toBe(false);
 
-    expect(schema.safeParse({ ...valid, summary: { ...valid.summary, factorCount: 3 } }).success).toBe(false);
+    expect(schema.safeParse({ ...valid, summary: { ...valid.summary, selectedWorksheetCount: 3 } }).success).toBe(false);
+    expect(schema.safeParse({ ...valid, summary: { ...valid.summary, completedWorksheetCount: 1 } }).success).toBe(false);
+    expect(schema.safeParse({ ...valid, unexpected: true }).success).toBe(false);
+    expect(schema.safeParse({ ...valid, summary: { ...valid.summary, unexpected: 1 } }).success).toBe(false);
+    expect(schema.safeParse({
+      ...valid,
+      summary: {
+        ...valid.summary,
+        calculationCount: 2,
+        worksheetCount: 2,
+        factorCount: 2,
+      },
+    }).success).toBe(false);
   });
 
   it("accepts passed and mismatch excel comparison results", () => {

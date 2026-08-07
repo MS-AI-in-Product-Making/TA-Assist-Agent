@@ -2692,9 +2692,8 @@ export const interpretationResultSchema = z.union([
 
 const f4WorkflowResultSummarySchema = z
   .object({
-    calculationCount: z.number().int().positive(),
-    worksheetCount: z.number().int().positive(),
-    factorCount: z.number().int().positive(),
+    selectedWorksheetCount: z.number().int().positive(),
+    completedWorksheetCount: z.number().int().positive(),
   })
   .strict();
 
@@ -2736,29 +2735,20 @@ export const f4WorkflowCalculationResultSchema = z
       });
     }
 
-    const computedCalculationCount = result.calculations.length;
-    const computedWorksheetCount = new Set(worksheetNames).size;
-    const computedFactorCount = result.calculations.reduce((sum, calculation) => sum + calculation.factorCount, 0);
+    const completedCalculationCount = result.calculations.length;
 
-    if (result.summary.calculationCount !== computedCalculationCount) {
+    if (result.summary.selectedWorksheetCount !== completedCalculationCount) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "summary.calculationCount must equal calculations length",
-        path: ["summary", "calculationCount"],
+        message: "summary.selectedWorksheetCount must equal calculations length",
+        path: ["summary", "selectedWorksheetCount"],
       });
     }
-    if (result.summary.worksheetCount !== computedWorksheetCount) {
+    if (result.summary.completedWorksheetCount !== completedCalculationCount) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "summary.worksheetCount must equal unique worksheet count",
-        path: ["summary", "worksheetCount"],
-      });
-    }
-    if (result.summary.factorCount !== computedFactorCount) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "summary.factorCount must equal summed calculation factor counts",
-        path: ["summary", "factorCount"],
+        message: "summary.completedWorksheetCount must equal calculations length",
+        path: ["summary", "completedWorksheetCount"],
       });
     }
   });
