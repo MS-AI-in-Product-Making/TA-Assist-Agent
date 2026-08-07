@@ -193,16 +193,6 @@ function expectSanitizedF2ReportInvalid(value) {
   expect(value).not.toHaveProperty("rawError");
 }
 
-function expectSanitizedRejected(value, acceptedReasonCodes) {
-  expect(value.status).toBe("inputRejected");
-  expect(acceptedReasonCodes).toContain(value.reasonCode);
-  expect(value.artifactReference).toBe("Feature2-Report.json");
-  expect(value).not.toHaveProperty("path");
-  expect(value).not.toHaveProperty("raw");
-  expect(value).not.toHaveProperty("error");
-  expect(value).not.toHaveProperty("rawError");
-}
-
 describe("loadF4Handoffs", () => {
   it("accepts a valid Feature2 report and preserves F4 handoff order", () => {
     const { reportPath } = writeReportToTemp();
@@ -256,7 +246,7 @@ describe("loadF4Handoffs", () => {
     });
     const { reportPath } = writeReportToTemp(report);
 
-    expectSanitizedRejected(loadF4Handoffs(reportPath), ["f2_report_invalid", "no_ready_handoff"]);
+    expectSanitizedF2ReportInvalid(loadF4Handoffs(reportPath));
   });
 
   it("rejects empty F4 handoffs", () => {

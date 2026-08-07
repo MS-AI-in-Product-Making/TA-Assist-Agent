@@ -107,6 +107,10 @@ export function loadF4Handoffs(reportPath) {
     return rejected("f2_report_invalid");
   }
 
+  if (isRecord(value) && value.status === "inputRejected") {
+    return rejected("f2_report_invalid");
+  }
+
   const preflightResult = preflightEvidenceCheck(value);
   if (preflightResult !== undefined) return preflightResult;
 
