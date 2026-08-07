@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { loadF4Handoffs } from "./f4-artifact-loader.mjs";
+import { f2UserReportSchema } from "../packages/contracts/dist/contracts.js";
 
 const roots = [];
 
@@ -180,6 +181,28 @@ function writeReportToTemp(report = buildValidF2Report()) {
   return { root, reportPath };
 }
 
+function expectSanitizedF2ReportInvalid(value) {
+  expect(value).toEqual({
+    status: "inputRejected",
+    reasonCode: "f2_report_invalid",
+    artifactReference: "Feature2-Report.json",
+  });
+  expect(value).not.toHaveProperty("path");
+  expect(value).not.toHaveProperty("raw");
+  expect(value).not.toHaveProperty("error");
+  expect(value).not.toHaveProperty("rawError");
+}
+
+function expectSanitizedRejected(value, acceptedReasonCodes) {
+  expect(value.status).toBe("inputRejected");
+  expect(acceptedReasonCodes).toContain(value.reasonCode);
+  expect(value.artifactReference).toBe("Feature2-Report.json");
+  expect(value).not.toHaveProperty("path");
+  expect(value).not.toHaveProperty("raw");
+  expect(value).not.toHaveProperty("error");
+  expect(value).not.toHaveProperty("rawError");
+}
+
 describe("loadF4Handoffs", () => {
   it("accepts a valid Feature2 report and preserves F4 handoff order", () => {
     const { reportPath } = writeReportToTemp();
@@ -208,11 +231,32 @@ describe("loadF4Handoffs", () => {
     const workbookPath = path.join(root, "Anonymous.xlsx");
     writeFileSync(workbookPath, "dummy");
 
-    expect(loadF4Handoffs(workbookPath)).toEqual({
+    expectSanitizedF2ReportInvalid(loadF4Handoffs(workbookPath));
+  });
+
+  it("rejects malformed Feature2 JSON with controlled artifact reference only", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "f4-loader-"));
+    roots.push(root);
+    const reportPath = path.join(root, "Feature2-Report.json");
+    writeFileSync(reportPath, "{ this is not valid JSON");
+
+    expectSanitizedF2ReportInvalid(loadF4Handoffs(reportPath));
+  });
+
+  it("rejects schema-valid F2 inputRejected reports as invalid handoff input", () => {
+    const report = f2UserReportSchema.parse({
+      contractVersion: "v1",
+      inputClassification: "confidential",
       status: "inputRejected",
-      reasonCode: "f2_report_invalid",
-      artifactReference: "Feature2-Report.json",
+      artifactRoot: "controlled/f1",
+      artifactIssues: [{
+        reasonCode: "root_md_missing",
+        artifactPath: "Feature1-Report.md",
+      }],
     });
+    const { reportPath } = writeReportToTemp(report);
+
+    expectSanitizedRejected(loadF4Handoffs(reportPath), ["f2_report_invalid", "no_ready_handoff"]);
   });
 
   it("rejects empty F4 handoffs", () => {
