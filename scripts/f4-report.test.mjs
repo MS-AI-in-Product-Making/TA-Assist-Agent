@@ -187,6 +187,28 @@ describe("renderF4Report", () => {
     expect(unavailableMd).toContain("excel_runtime_unavailable");
   });
 
+  it("accepts fixed input formula evidence that is intentionally absent from trace records", () => {
+    const comparison = comparisonResult("passed");
+    comparison.worksheets[0].metrics[0] = {
+      metric: "system.designNominal",
+      f4Value: 12.5,
+      excelValue: 12.5,
+      excelDisplayText: "12.500",
+      absoluteDifference: 0,
+      relativeDifference: 0,
+      tolerance: 1e-12,
+      passed: true,
+      sourceCell: "Analysis-A!L44",
+      excelFormula: "=AVERAGE(B1:B2)",
+      f4FormulaId: "input-design-nominal-v1",
+    };
+
+    const markdown = renderF4Report(workflowCalculationResult(), { comparisonResult: comparison });
+
+    expect(markdown).toContain("system.designNominal");
+    expect(markdown).toContain("input-design-nominal-v1");
+  });
+
   it("redacts full authorization/token values and absolute path variants", () => {
     const input = workflowCalculationResult();
     input.calculations[0].worksheetSelection.worksheetName = "Analysis-A C:\\Users\\ralfye\\.ssh\\id_rsa C:/Users/ralfye/private-folder /home/ralfye/private/secret.xlsx //server/share/private-folder access_token: abc def?!";

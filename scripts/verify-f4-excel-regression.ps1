@@ -16,6 +16,7 @@ Set-Variable -Name MaximumNameLength -Value 128 -Option Constant -Scope Script
 Set-Variable -Name MaximumStringLength -Value 1024 -Option Constant -Scope Script
 Set-Variable -Name MaximumFormulaIdLength -Value 128 -Option Constant -Scope Script
 Set-Variable -Name MaximumFormulaLength -Value 4096 -Option Constant -Scope Script
+Set-Variable -Name MaximumFormulaFallbackCells -Value 10000 -Option Constant -Scope Script
 
 function Write-Json {
   param([Parameter(Mandatory = $true)] [object]$Payload)
@@ -195,25 +196,68 @@ function Release-ComObject {
 
 function Test-FormulaOptionalMetric {
   param([string]$MetricName)
-  return $MetricName -ceq "system.additionalMeanShift" -or $MetricName -ceq "system.designNominal"
+  return $MetricName -ceq "system.additionalMeanShift"
 }
 
-function Get-OutputProbeLookup {
-  param([object]$RawPayload)
+function Test-FormulaEvidenceSafe {
+  param([string]$FormulaText)
+    return $FormulaText -cnotmatch '(?i)([A-Za-z]:[\\/]|\\\\|\.\.[\\/]|(https?|file)://|["''](?!(?:Note):)[A-Za-z][A-Za-z0-9+.-]*:|\[[^\]]+\][^!]*!|\b(WEBSERVICE|RTD)\s*\(|\|[^!]*!|(password|secret|token|api[_ -]?key)\s*[=:])'
+}
 
-  if ($null -eq $RawPayload) { return @{} }
-  if ($RawPayload -isnot [pscustomobject]) {
-    throw (New-StatusException -Status "excel_error" -Message "Injected output payload is invalid.")
+function Assert-FormulaEvidenceSafe {
+  param([object]$FormulaValue)
+  Assert-ControlledString -Value $FormulaValue -Location "workbook formula" -MaximumLength $script:MaximumFormulaLength -Status "excel_error"
+  if ($FormulaValue -match '[\x00-\x1F\x7F]') {
+    throw (New-StatusException -Status "excel_error" -Message "Workbook formula evidence is indeterminate.")
   }
-  $lookup = @{}
-  foreach ($property in $RawPayload.PSObject.Properties) {
-    if ($property.Value -isnot [pscustomobject]) {
-      throw (New-StatusException -Status "excel_error" -Message "Injected output entry is invalid.")
+  if (-not (Test-FormulaEvidenceSafe -FormulaText $FormulaValue)) {
+    throw (New-StatusException -Status "excel_error" -Message "Workbook formula evidence is not safe to execute.")
+  }
+}
+
+function Assert-UsedRangeFormulasSafeByCell {
+  param([Parameter(Mandatory = $true)] [object]$UsedRange)
+
+  $cells = $null
+  $after = $null
+  $current = $null
+  try {
+    $cells = $UsedRange.Cells
+    $after = $cells.Item(1, 1)
+    $current = $UsedRange.Find("=*", $after, -4123, 2, 1, 1, $false, $false, $false)
+    Release-ComObject -Value $after
+    $after = $null
+    if ($null -eq $current) {
+      throw (New-StatusException -Status "excel_error" -Message "Workbook formula evidence is indeterminate.")
     }
-    Assert-ExactProperties -Value $property.Value -Allowed @("value", "text", "formula") -Location "injected output"
-    $lookup[[string]$property.Name] = $property.Value
+
+    $firstAddress = [string]$current.Address()
+    $formulaCount = 0
+    while ($null -ne $current) {
+      $formulaCount++
+      if ($formulaCount -gt $script:MaximumFormulaFallbackCells) {
+        throw (New-StatusException -Status "excel_error" -Message "Workbook formula evidence could not be bounded.")
+      }
+      if ($current.HasFormula -ne $true) {
+        throw (New-StatusException -Status "excel_error" -Message "Workbook formula evidence is indeterminate.")
+      }
+      Assert-FormulaEvidenceSafe -FormulaValue $current.Formula
+
+      $next = $UsedRange.FindNext($current)
+      Release-ComObject -Value $current
+      $current = $next
+      if ($null -eq $current) {
+        throw (New-StatusException -Status "excel_error" -Message "Workbook formula evidence is indeterminate.")
+      }
+      if ([string]$current.Address() -ceq $firstAddress) {
+        break
+      }
+    }
+  } finally {
+    Release-ComObject -Value $current
+    Release-ComObject -Value $after
+    Release-ComObject -Value $cells
   }
-  return $lookup
 }
 
 function Convert-OutputToDiagnostic {
@@ -234,7 +278,7 @@ function Convert-OutputToDiagnostic {
       throw (New-StatusException -Status "excel_error" -Message "Output formula is missing for a required metric.")
     }
   } else {
-    Assert-ControlledString -Value $formulaValue -Location "output formula" -MaximumLength $script:MaximumFormulaLength -Status "excel_error"
+    Assert-FormulaEvidenceSafe -FormulaValue $formulaValue
   }
 
   $expectedValue = $OutputItem.expected
@@ -280,6 +324,45 @@ function Convert-OutputToDiagnostic {
     formula = $formulaValue
     formulaId = [string]$OutputItem.formulaId
     pass = [bool]$pass
+  }
+}
+
+function Assert-WorkbookFormulaEvidenceSafe {
+  param([Parameter(Mandatory = $true)] [object]$Workbook)
+
+  $sheetCollection = $null
+  $nameCollection = $null
+  try {
+    $sheetCollection = $Workbook.Worksheets
+    for ($sheetIndex = 1; $sheetIndex -le $sheetCollection.Count; $sheetIndex++) {
+      $sheet = $null
+      $usedRange = $null
+      try {
+        $sheet = $sheetCollection.Item($sheetIndex)
+        $usedRange = $sheet.UsedRange
+        if ($usedRange.HasFormula -ne $false) {
+          Assert-UsedRangeFormulasSafeByCell -UsedRange $usedRange
+        }
+      } finally {
+        Release-ComObject -Value $usedRange
+        Release-ComObject -Value $sheet
+      }
+    }
+
+    $nameCollection = $Workbook.Names
+    for ($nameIndex = 1; $nameIndex -le $nameCollection.Count; $nameIndex++) {
+      $definedName = $null
+      try {
+        $definedName = $nameCollection.Item($nameIndex)
+        $reference = [string]$definedName.RefersTo
+        Assert-FormulaEvidenceSafe -FormulaValue $reference
+      } finally {
+        Release-ComObject -Value $definedName
+      }
+    }
+  } finally {
+    Release-ComObject -Value $nameCollection
+    Release-ComObject -Value $sheetCollection
   }
 }
 
@@ -356,7 +439,10 @@ if ($ValidateOnly) {
 }
 
 $excel = $null
+$workbooks = $null
+$bootstrapWorkbook = $null
 $workbook = $null
+$worksheets = $null
 $worksheet = $null
 $temporaryDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("f4-excel-regression-" + [guid]::NewGuid().ToString("N"))
 $resultPayload = $null
@@ -378,69 +464,56 @@ try {
     throw (New-StatusException -Status "hash_mismatch" -Message "Temporary workbook SHA-256 does not match the approved source.")
   }
 
-  $injectedOutputLookup = @{}
-  if (-not [string]::IsNullOrWhiteSpace($env:F4_EXCEL_REGRESSION_TEST_OUTPUTS_JSON)) {
+  $outputResults = [System.Collections.Generic.List[object]]::new()
+  $hasMismatch = $false
+  if ($env:F4_EXCEL_REGRESSION_FAIL_ON_COM_START -eq "1") {
+    throw (New-StatusException -Status "excel_error" -Message "Excel startup disabled by test hook.")
+  }
+  $excel = New-Object -ComObject Excel.Application
+  $excel.Visible = $false
+  $excel.DisplayAlerts = $false
+  $excel.AskToUpdateLinks = $false
+  $excel.AutomationSecurity = 3
+  $UpdateLinks = 0
+  $ReadOnly = $false
+  $workbooks = $excel.Workbooks
+  $bootstrapWorkbook = $workbooks.Add()
+  $excel.Calculation = -4135
+  $bootstrapWorkbook.Close($false)
+  Release-ComObject -Value $bootstrapWorkbook
+  $bootstrapWorkbook = $null
+  $workbook = $workbooks.Open($temporaryWorkbookPath, $UpdateLinks, $ReadOnly)
+  Assert-WorkbookFormulaEvidenceSafe -Workbook $workbook
+  $worksheets = $workbook.Worksheets
+  $worksheet = $worksheets.Item($WorksheetName)
+  if ([string]$worksheet.Name -cne $WorksheetName) {
+    throw (New-StatusException -Status "excel_error" -Message "Worksheet name did not match exactly.")
+  }
+
+  foreach ($inputItem in $mapping.inputs) {
+    $range = $null
     try {
-      $injectedOutputLookup = Get-OutputProbeLookup -RawPayload ($env:F4_EXCEL_REGRESSION_TEST_OUTPUTS_JSON | ConvertFrom-Json -Depth 20)
-    } catch {
-      throw (New-StatusException -Status "excel_error" -Message "Injected output payload is invalid.")
+      $range = $worksheet.Range([string]$inputItem.cell)
+      if ($inputItem.value -is [string]) {
+        $range.NumberFormat = '@'
+      }
+      $range.Value2 = $inputItem.value
+    } finally {
+      Release-ComObject -Value $range
     }
   }
 
-  $outputResults = [System.Collections.Generic.List[object]]::new()
-  $hasMismatch = $false
-  if ($injectedOutputLookup.Count -gt 0) {
-    foreach ($outputItem in $mapping.outputs) {
-      if (-not $injectedOutputLookup.ContainsKey([string]$outputItem.name)) {
-        throw (New-StatusException -Status "excel_error" -Message "Injected output payload is missing a metric.")
-      }
-      $probe = $injectedOutputLookup[[string]$outputItem.name]
-      $diagnostic = Convert-OutputToDiagnostic -OutputItem $outputItem -ActualValue $probe.value -DisplayText ([string]$probe.text) -FormulaText ([string]$probe.formula)
+  $excel.CalculateFullRebuild()
+  foreach ($outputItem in $mapping.outputs) {
+    $range = $null
+    try {
+      $range = $worksheet.Range([string]$outputItem.cell)
+      $displayText = if ($null -eq $range.Text) { "" } else { [string]$range.Text }
+      $diagnostic = Convert-OutputToDiagnostic -OutputItem $outputItem -ActualValue $range.Value2 -DisplayText $displayText -FormulaText ([string]$range.Formula)
       if (-not $diagnostic.pass) { $hasMismatch = $true }
       $outputResults.Add($diagnostic)
-    }
-  } else {
-    if ($env:F4_EXCEL_REGRESSION_FAIL_ON_COM_START -eq "1") {
-      throw (New-StatusException -Status "excel_error" -Message "Excel startup disabled by test hook.")
-    }
-    $excel = New-Object -ComObject Excel.Application
-    $excel.Visible = $false
-    $excel.DisplayAlerts = $false
-    $excel.AskToUpdateLinks = $false
-    $excel.AutomationSecurity = 3
-    $UpdateLinks = 0
-    $ReadOnly = $false
-    $workbook = $excel.Workbooks.Open($temporaryWorkbookPath, $UpdateLinks, $ReadOnly)
-    $worksheet = $workbook.Worksheets.Item($WorksheetName)
-    if ([string]$worksheet.Name -cne $WorksheetName) {
-      throw (New-StatusException -Status "excel_error" -Message "Worksheet name did not match exactly.")
-    }
-
-    foreach ($inputItem in $mapping.inputs) {
-      $range = $null
-      try {
-        $range = $worksheet.Range([string]$inputItem.cell)
-        if ($inputItem.value -is [string]) {
-          $range.NumberFormat = '@'
-        }
-        $range.Value2 = $inputItem.value
-      } finally {
-        Release-ComObject -Value $range
-      }
-    }
-
-    $excel.CalculateFullRebuild()
-    foreach ($outputItem in $mapping.outputs) {
-      $range = $null
-      try {
-        $range = $worksheet.Range([string]$outputItem.cell)
-        $displayText = if ($null -eq $range.Text) { "" } else { [string]$range.Text }
-        $diagnostic = Convert-OutputToDiagnostic -OutputItem $outputItem -ActualValue $range.Value2 -DisplayText $displayText -FormulaText ([string]$range.Formula)
-        if (-not $diagnostic.pass) { $hasMismatch = $true }
-        $outputResults.Add($diagnostic)
-      } finally {
-        Release-ComObject -Value $range
-      }
+    } finally {
+      Release-ComObject -Value $range
     }
   }
 
@@ -468,11 +541,17 @@ try {
   if ($null -ne $workbook) {
     try { $workbook.Close($false) } catch { }
   }
+  if ($null -ne $bootstrapWorkbook) {
+    try { $bootstrapWorkbook.Close($false) } catch { }
+  }
   if ($null -ne $excel) {
     try { $excel.Quit() } catch { }
   }
   Release-ComObject -Value $worksheet
+  Release-ComObject -Value $worksheets
   Release-ComObject -Value $workbook
+  Release-ComObject -Value $bootstrapWorkbook
+  Release-ComObject -Value $workbooks
   Release-ComObject -Value $excel
   [GC]::Collect()
   [GC]::WaitForPendingFinalizers()

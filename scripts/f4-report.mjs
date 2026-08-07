@@ -4,6 +4,10 @@ import {
 } from "../packages/contracts/dist/contracts.js";
 
 const EPSILON = 1e-12;
+const NON_TRACE_FORMULA_IDS = {
+  "system.designNominal": "input-design-nominal-v1",
+  "system.additionalMeanShift": "input-additional-mean-shift-v1",
+};
 
 function redactSensitiveText(value) {
   return String(value)
@@ -156,7 +160,8 @@ function resolveMetricPath(calculation, metricPath) {
   }
   return {
     value: resolved,
-    formulaMatches: (formulaId) => calculation.traceRecords.some((record) => record.outputField === metricPath && record.formulaId === formulaId),
+    formulaMatches: (formulaId) => NON_TRACE_FORMULA_IDS[metricPath] === formulaId
+      || calculation.traceRecords.some((record) => record.outputField === metricPath && record.formulaId === formulaId),
   };
 }
 

@@ -25,7 +25,7 @@ const FACTOR_HEADER_ALIASES = {
   mean: ["mean"],
   halfTolerance: ["tolerance", "half tolerance"],
   sigma: ["one sigma", "1 sigma"],
-  contribution: ["% contribution to sigma", "percent contribution to sigma", "contribution to sigma"],
+  contribution: ["% contribution to sigma", "percent contribution to sigma", "contribution to sigma", "percent cont to sigma"],
 };
 
 const SYSTEM_LABEL_ALIASES = {
@@ -186,8 +186,9 @@ function createCellEntries(worksheet) {
     const cell = worksheet[a1];
     if (!cell) continue;
 
-    const rawValue = cell.w ?? cell.v;
-    const text = rawValue === undefined || rawValue === null ? "" : String(rawValue).trim();
+    const rawValue = cell.v;
+    const displayValue = cell.w ?? rawValue;
+    const text = displayValue === undefined || displayValue === null ? "" : String(displayValue).trim();
     const formula = typeof cell.f === "string" && cell.f.trim().length > 0 ? cell.f.trim() : undefined;
     if (text.length === 0 && !formula) continue;
 
@@ -197,6 +198,8 @@ function createCellEntries(worksheet) {
       column,
       normalized: normalizeText(text),
       text,
+      rawValue,
+      type: cell.t,
       formula,
     });
   }
@@ -289,11 +292,12 @@ function ensureScalarValueCell(cellEntry, { allowString = false } = {}) {
   if (!cellEntry || cellEntry.text.length === 0) throw mappingError("mapping_error");
   if (RESERVED_LABELS.has(cellEntry.normalized)) throw mappingError("mapping_error");
 
-  const numeric = Number(cellEntry.text);
-  const isNumericText = Number.isFinite(numeric);
-  if (!isNumericText && !allowString) throw mappingError("mapping_error");
-  if (allowString && !isNumericText) {
-    const normalized = normalizeText(cellEntry.text);
+  const isNumericValue = cellEntry.type === "n"
+    && typeof cellEntry.rawValue === "number"
+    && Number.isFinite(cellEntry.rawValue);
+  if (!isNumericValue && !allowString) throw mappingError("mapping_error");
+  if (allowString && !isNumericValue) {
+    const normalized = normalizeText(cellEntry.rawValue);
     if (normalized !== "pass" && normalized !== "fail") throw mappingError("mapping_error");
   }
 }
@@ -319,6 +323,20 @@ function findExactAdjacentValue(entries, labelCell, { allowBelow = false, allowS
   if (!candidate) throw mappingError("mapping_error");
 
   return candidate;
+}
+
+function findUniqueLabelWithAdjacentValue(entries, aliases, rowFilter) {
+  const normalizedAliases = new Set(aliases.map((item) => normalizeText(item)));
+  const candidates = [];
+  for (const label of entries.filter((entry) => rowFilter(entry) && normalizedAliases.has(entry.normalized))) {
+    try {
+      candidates.push({ label, value: findExactAdjacentValue(entries, label) });
+    } catch {
+      // Labels used as table headers are not metric labels unless they bind an adjacent scalar.
+    }
+  }
+  if (candidates.length !== 1) throw mappingError("mapping_error");
+  return candidates[0];
 }
 
 function requireFormula(metricName, cellEntry) {
@@ -431,8 +449,11 @@ function buildMetricCells(entries, anchorRow, sectionEndRow, sigmaColumn) {
 
   const metricCells = new Map();
 
-  const designLabel = findUniqueLabel(entries, SYSTEM_LABEL_ALIASES.designNominal, beforeAnchorSection);
-  const designValue = findExactAdjacentValue(entries, designLabel);
+  const { value: designValue } = findUniqueLabelWithAdjacentValue(
+    entries,
+    SYSTEM_LABEL_ALIASES.designNominal,
+    beforeAnchorSection,
+  );
   metricCells.set("system.designNominal", designValue);
 
   const summaryRow = designValue.row;

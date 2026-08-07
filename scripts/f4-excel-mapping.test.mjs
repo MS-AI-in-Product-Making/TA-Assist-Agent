@@ -136,6 +136,9 @@ function makeWorkbookBytes({
   addPostAnchorDuplicateSystemLabels = false,
   addStealFormulaNearAdjustedMean = false,
   makeYieldAdjacentAmbiguous = false,
+  contributionHeader = "% Contribution to Sigma",
+  includeFactorInputHeaders = false,
+  useRealNumericFormats = false,
   hugeRef = false,
 } = {}) {
   const ws = XLSX.utils.aoa_to_sheet([[]]);
@@ -158,14 +161,24 @@ function makeWorkbookBytes({
   setText(17, 13, "Mean");
   setText(18, 13, "Tolerance");
   setText(19, 13, "One Sigma");
-  setText(20, 13, "% Contribution to Sigma");
+  setText(20, 13, contributionHeader);
+  if (includeFactorInputHeaders) {
+    setText(11, 13, "Design Nominal");
+    setText(12, 13, "+ Tolerance");
+    setText(13, 13, "- Tolerance");
+  }
 
   for (const [index, sourceRow] of factorRows.entries()) {
     const r = row(sourceRow);
     ws[`${col(17)}${r}`] = { t: "n", v: 10.01 + index, f: `=A${r}+0.01` };
-    ws[`${col(18)}${r}`] = { t: "n", v: 0.1, f: `=ABS(B${r})` };
+    ws[`${col(18)}${r}`] = { t: "n", v: 0.1, f: `=ABS(B${r})`, ...(useRealNumericFormats ? { z: '"± "0.000' } : {}) };
     ws[`${col(19)}${r}`] = { t: "n", v: 0.025, f: `=C${r}/4` };
-    ws[`${col(20)}${r}`] = { t: "n", v: Number((1 / factorRows.length).toFixed(6)), f: `=D${r}/SUM(D:D)` };
+    ws[`${col(20)}${r}`] = {
+      t: "n",
+      v: Number((1 / factorRows.length).toFixed(6)),
+      f: `=D${r}/SUM(D:D)`,
+      ...(useRealNumericFormats ? { z: "0.0%" } : {}),
+    };
   }
 
   if (addSecondFactorHeaderCluster) {
@@ -328,6 +341,47 @@ describe("buildF4ExcelMapping", () => {
     expect(metrics.get("capability.upperCpk")).toMatchObject({ cell: "T56", expected: 1.87, tolerance: 1e-12, formulaId: "cpk-upper-v1" });
     expect(metrics.get("capability.cpk")).toMatchObject({ cell: "T57", expected: 1.51, tolerance: 1e-12, formulaId: "cpk-v1" });
     expect(metrics.get("capability.status")).toMatchObject({ cell: "U57", expected: "PASS", tolerance: 1e-12, formulaId: "status-v1" });
+  });
+
+  it("recognizes the real-template abbreviated contribution header", () => {
+    const calculation = createCalculation({ worksheetName: "Analysis-A" });
+    const workbookBytes = makeWorkbookBytes({
+      worksheetName: "Analysis-A",
+      contributionHeader: "% Cont. to σ",
+    });
+
+    const mapping = buildF4ExcelMapping({ workbookBytes, calculation });
+
+    expect(outputByName(mapping).get("factors[6].contribution")).toMatchObject({
+      cell: "U20",
+      formulaId: "contribution-v1",
+    });
+  });
+
+  it("ignores the factor-table Design Nominal header when locating the system result", () => {
+    const calculation = createCalculation({ worksheetName: "Analysis-A" });
+    const workbookBytes = makeWorkbookBytes({
+      worksheetName: "Analysis-A",
+      includeFactorInputHeaders: true,
+    });
+
+    const mapping = buildF4ExcelMapping({ workbookBytes, calculation });
+
+    expect(outputByName(mapping).get("system.designNominal")).toMatchObject({ cell: "L44" });
+  });
+
+  it("uses numeric cached values when display text includes engineering formatting", () => {
+    const calculation = createCalculation({ worksheetName: "Analysis-A" });
+    const workbookBytes = makeWorkbookBytes({
+      worksheetName: "Analysis-A",
+      useRealNumericFormats: true,
+    });
+
+    const mapping = buildF4ExcelMapping({ workbookBytes, calculation });
+    const metrics = outputByName(mapping);
+
+    expect(metrics.get("factors[0].halfTolerance")).toMatchObject({ cell: "S14", expected: 0.1 });
+    expect(metrics.get("factors[0].contribution")).toMatchObject({ cell: "U14" });
   });
 
   it("ignores post-anchor duplicate Design Nominal and Adjusted Mean labels in real-template positions", () => {
