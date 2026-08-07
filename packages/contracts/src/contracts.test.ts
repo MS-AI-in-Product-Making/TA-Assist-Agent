@@ -2603,26 +2603,29 @@ describe("F4 workflow and excel comparison contracts", () => {
       },
     };
 
-    expect(f4WorkflowCalculationResultSchema.safeParse({
-      ...valid,
-      source: { ...valid.source, workbookFileName: "C:\\temp\\Anonymous.xlsx" },
-    }).success).toBe(false);
-    expect(f4WorkflowCalculationResultSchema.safeParse({
-      ...valid,
-      source: { ...valid.source, workbookFileName: "\\\\server\\share\\Anonymous.xlsx" },
-    }).success).toBe(false);
-    expect(f4WorkflowCalculationResultSchema.safeParse({
-      ...valid,
-      source: { ...valid.source, workbookFileName: "..\\Anonymous.xlsx" },
-    }).success).toBe(false);
-    expect(f4WorkflowCalculationResultSchema.safeParse({
-      ...valid,
-      source: { ...valid.source, workbookFileName: "Anonymous\u0001.xlsx" },
-    }).success).toBe(false);
-    expect(f4WorkflowCalculationResultSchema.safeParse({
-      ...valid,
-      source: { ...valid.source, workbookFileName: "Anonymous.xls" },
-    }).success).toBe(false);
+    const rejectedFileNames = [
+      "C:\\temp\\Anonymous.xlsx",
+      "\\\\server\\share\\Anonymous.xlsx",
+      "..\\Anonymous.xlsx",
+      "Anonymous\u0001.xlsx",
+      "Anonymous.xls",
+      "C:Anonymous.xlsx",
+      "Anonymous.xlsx:payload.xlsx",
+      "CON.xlsx",
+      "com1.xlsx",
+      "name?.xlsx",
+      "Anonymous.xlsx ",
+      "Anonymous.xlsx.",
+      "Anonymous .xlsx",
+      "Anonymous..xlsx",
+    ];
+
+    for (const workbookFileName of rejectedFileNames) {
+      expect(f4WorkflowCalculationResultSchema.safeParse({
+        ...valid,
+        source: { ...valid.source, workbookFileName },
+      }).success).toBe(false);
+    }
   });
 
   it("accepts passed and mismatch excel comparison results", () => {
@@ -2774,6 +2777,45 @@ describe("F4 workflow and excel comparison contracts", () => {
       },
       status: "passed",
     }).success).toBe(false);
+  });
+  
+  it("rejects metrics whose derived differences overflow even when claimed differences are finite", () => {
+    const overflowPayload = {
+      contractVersion: "v1",
+      comparisonVersion: "f4-excel-comparison-v1",
+      outputClassification: "confidential",
+      featureId: "F4",
+      status: "mismatch",
+      runId: "controlled-run-reference",
+      generatedAt: "2026-08-07T00:00:00.000Z",
+      source: {
+        workbookContentHash: contentHash,
+      },
+      worksheets: [{
+        worksheetName: "Analysis-A",
+        metrics: [{
+          metric: "cpk",
+          f4Value: Number.MAX_VALUE,
+          excelValue: -Number.MAX_VALUE,
+          excelDisplayText: "overflow",
+          absoluteDifference: 0,
+          relativeDifference: 0,
+          tolerance: 1e-12,
+          passed: false,
+          sourceCell: "Analysis-A!P10",
+          excelFormula: "=P8/P9",
+          f4FormulaId: "cpk-v1",
+        }],
+      }],
+      summary: {
+        worksheetCount: 1,
+        metricCount: 1,
+        passedMetricCount: 0,
+        mismatchMetricCount: 1,
+      },
+    };
+
+    expect(f4ExcelComparisonResultSchema.safeParse(overflowPayload).success).toBe(false);
   });
 
   it("rejects unknown fields, missing formula evidence, non-finite differences, and invalid summary", () => {
@@ -3470,6 +3512,15 @@ describe("workbook catalog contracts", () => {
 
   it.each([
     ["a Windows path", { ...confidentialRequest, fileName: "C:\\private\\anonymous-ta.xlsx" }],
+    ["a drive-relative path", { ...confidentialRequest, fileName: "C:Anonymous.xlsx" }],
+    ["an ADS path", { ...confidentialRequest, fileName: "Anonymous.xlsx:payload.xlsx" }],
+    ["a reserved device basename", { ...confidentialRequest, fileName: "CON.xlsx" }],
+    ["a reserved device basename in lowercase", { ...confidentialRequest, fileName: "com1.xlsx" }],
+    ["a filename with reserved wildcard punctuation", { ...confidentialRequest, fileName: "name?.xlsx" }],
+    ["a filename with trailing whitespace", { ...confidentialRequest, fileName: "anonymous-ta.xlsx " }],
+    ["a filename with a trailing dot", { ...confidentialRequest, fileName: "anonymous-ta.xlsx." }],
+    ["a filename whose root ends with whitespace", { ...confidentialRequest, fileName: "anonymous-ta .xlsx" }],
+    ["a filename whose root ends with dot", { ...confidentialRequest, fileName: "anonymous-ta..xlsx" }],
     ["a traversal path", { ...confidentialRequest, fileName: "../anonymous-ta.xlsx" }],
     ...["safe\u0000.xlsx", "safe\u000b.xlsx", "safe\u007f.xlsx", "safe\u2028.xlsx", "safe\u2029.xlsx"].map(
       (fileName) => ["a filename with a control character", { ...confidentialRequest, fileName }] as const,

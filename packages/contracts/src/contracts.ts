@@ -268,15 +268,83 @@ export const terminologyUnknownResultSchema = z
   })
   .strict();
 
-const filenameControlCharacters = new RegExp(`^[^/\\\\${String.fromCharCode(0)}-${String.fromCharCode(31)}${String.fromCharCode(127)}${String.fromCharCode(0x2028)}${String.fromCharCode(0x2029)}]+\\.xlsx$`, "i");
+const windowsWorkbookForbiddenCharacters = /[<>:"/\\|?*\u0000-\u001f\u007f\u2028\u2029]/;
+const windowsReservedDeviceBasenames = new Set([
+  "CON",
+  "PRN",
+  "AUX",
+  "NUL",
+  "COM1",
+  "COM2",
+  "COM3",
+  "COM4",
+  "COM5",
+  "COM6",
+  "COM7",
+  "COM8",
+  "COM9",
+  "LPT1",
+  "LPT2",
+  "LPT3",
+  "LPT4",
+  "LPT5",
+  "LPT6",
+  "LPT7",
+  "LPT8",
+  "LPT9",
+]);
 
 const workbookCatalogFileNameSchema = z
   .string()
   .min(1)
   .max(240)
-  .regex(filenameControlCharacters)
-  .refine((fileName) => !fileName.includes(".."), {
-    message: "fileName must not contain traversal segments",
+  .refine((fileName) => /\.xlsx$/i.test(fileName), {
+    message: "fileName must end with .xlsx",
+  })
+  .superRefine((fileName, context) => {
+    if (windowsWorkbookForbiddenCharacters.test(fileName)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "fileName contains reserved Windows characters or control characters",
+      });
+      return;
+    }
+
+    if (fileName.includes("..")) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "fileName must not contain traversal segments",
+      });
+    }
+
+    if (/^[A-Za-z]:/.test(fileName)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "fileName must not be drive-relative",
+      });
+    }
+
+    if (fileName !== fileName.trimEnd() || fileName.endsWith(".")) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "fileName must not end with a trailing space or dot",
+      });
+    }
+
+    const fileNameWithoutExtension = fileName.slice(0, -5);
+    if (/[ .]$/.test(fileNameWithoutExtension)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "fileName root must not end with a trailing space or dot",
+      });
+    }
+
+    if (windowsReservedDeviceBasenames.has(fileNameWithoutExtension.toUpperCase())) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "fileName root must not be a reserved Windows device name",
+      });
+    }
   });
 
 export const workbookCatalogRequestSchema = z
@@ -2779,7 +2847,36 @@ const f4ExcelComparisonMetricSchema = z
     const denominator = Math.max(1, Math.abs(metric.f4Value), Math.abs(metric.excelValue));
     const expectedAbsoluteDifference = Math.abs(metric.f4Value - metric.excelValue);
     const expectedRelativeDifference = expectedAbsoluteDifference / denominator;
-    const expectedPassed = expectedAbsoluteDifference <= metric.tolerance * denominator;
+
+    if (!Number.isFinite(expectedAbsoluteDifference)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "derived absoluteDifference must be finite",
+        path: ["absoluteDifference"],
+      });
+      return;
+    }
+
+    if (!Number.isFinite(expectedRelativeDifference)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "derived relativeDifference must be finite",
+        path: ["relativeDifference"],
+      });
+      return;
+    }
+
+    const expectedToleranceThreshold = metric.tolerance * denominator;
+    if (!Number.isFinite(expectedToleranceThreshold)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "derived tolerance threshold must be finite",
+        path: ["passed"],
+      });
+      return;
+    }
+
+    const expectedPassed = expectedAbsoluteDifference <= expectedToleranceThreshold;
 
     if (!nearEqual(metric.absoluteDifference, expectedAbsoluteDifference)) {
       context.addIssue({
