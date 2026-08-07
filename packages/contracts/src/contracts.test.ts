@@ -21,6 +21,7 @@ import {
   exceptionResolutionRequestSchema,
   exceptionResolutionResultSchema,
   f4ExcelComparisonResultSchema,
+  f4WorkflowCalculationResultSchema,
   f2InitialWorkflowRequestSchema,
   f2InitialWorkflowResultSchema,
   f2ArtifactInputSchema,
@@ -2485,24 +2486,7 @@ describe("F4 workflow and excel comparison contracts", () => {
     scenarios: [],
   };
 
-  function workflowSchema() {
-    const schema = Reflect.get(contractExports, "f4WorkflowCalculationResultSchema") as
-      | { parse(value: unknown): unknown; safeParse(value: unknown): { success: boolean } }
-      | undefined;
-    expect(schema).toBeDefined();
-    return schema!;
-  }
-
-  function excelComparisonSchema() {
-    const schema = Reflect.get(contractExports, "f4ExcelComparisonResultSchema") as
-      | { parse(value: unknown): unknown; safeParse(value: unknown): { success: boolean } }
-      | undefined;
-    expect(schema).toBeDefined();
-    return schema!;
-  }
-
   it("accepts a strict F4 workflow output based on F2 report source", () => {
-    const schema = workflowSchema();
     const valid = {
       contractVersion: "v1",
       workflowVersion: "f4-f2-v1",
@@ -2533,11 +2517,10 @@ describe("F4 workflow and excel comparison contracts", () => {
       },
     };
 
-    expect(schema.parse(valid)).toEqual(valid);
+    expect(f4WorkflowCalculationResultSchema.parse(valid)).toEqual(valid);
   });
 
   it("rejects duplicate worksheet names, workbook hash mismatch, and summary mismatch", () => {
-    const schema = workflowSchema();
     const valid = {
       contractVersion: "v1",
       workflowVersion: "f4-f2-v1",
@@ -2568,7 +2551,7 @@ describe("F4 workflow and excel comparison contracts", () => {
       },
     };
 
-    expect(schema.safeParse({
+    expect(f4WorkflowCalculationResultSchema.safeParse({
       ...valid,
       calculations: [
         valid.calculations[0],
@@ -2576,7 +2559,7 @@ describe("F4 workflow and excel comparison contracts", () => {
       ],
     }).success).toBe(false);
 
-    expect(schema.safeParse({
+    expect(f4WorkflowCalculationResultSchema.safeParse({
       ...valid,
       calculations: [
         valid.calculations[0],
@@ -2584,11 +2567,11 @@ describe("F4 workflow and excel comparison contracts", () => {
       ],
     }).success).toBe(false);
 
-    expect(schema.safeParse({ ...valid, summary: { ...valid.summary, selectedWorksheetCount: 3 } }).success).toBe(false);
-    expect(schema.safeParse({ ...valid, summary: { ...valid.summary, completedWorksheetCount: 1 } }).success).toBe(false);
-    expect(schema.safeParse({ ...valid, unexpected: true }).success).toBe(false);
-    expect(schema.safeParse({ ...valid, summary: { ...valid.summary, unexpected: 1 } }).success).toBe(false);
-    expect(schema.safeParse({
+    expect(f4WorkflowCalculationResultSchema.safeParse({ ...valid, summary: { ...valid.summary, selectedWorksheetCount: 3 } }).success).toBe(false);
+    expect(f4WorkflowCalculationResultSchema.safeParse({ ...valid, summary: { ...valid.summary, completedWorksheetCount: 1 } }).success).toBe(false);
+    expect(f4WorkflowCalculationResultSchema.safeParse({ ...valid, unexpected: true }).success).toBe(false);
+    expect(f4WorkflowCalculationResultSchema.safeParse({ ...valid, summary: { ...valid.summary, unexpected: 1 } }).success).toBe(false);
+    expect(f4WorkflowCalculationResultSchema.safeParse({
       ...valid,
       summary: {
         ...valid.summary,
@@ -2599,8 +2582,50 @@ describe("F4 workflow and excel comparison contracts", () => {
     }).success).toBe(false);
   });
 
+  it("rejects unsafe workbook filenames in workflow source", () => {
+    const valid = {
+      contractVersion: "v1",
+      workflowVersion: "f4-f2-v1",
+      outputClassification: "confidential",
+      featureId: "F4",
+      status: "completed",
+      runId: "controlled-run-reference",
+      generatedAt: "2026-08-07T00:00:00.000Z",
+      source: {
+        artifactReference: "Feature2-Report.json",
+        workbookFileName: "Anonymous.xlsx",
+        workbookContentHash: contentHash,
+      },
+      calculations: [calculationTemplate],
+      summary: {
+        selectedWorksheetCount: 1,
+        completedWorksheetCount: 1,
+      },
+    };
+
+    expect(f4WorkflowCalculationResultSchema.safeParse({
+      ...valid,
+      source: { ...valid.source, workbookFileName: "C:\\temp\\Anonymous.xlsx" },
+    }).success).toBe(false);
+    expect(f4WorkflowCalculationResultSchema.safeParse({
+      ...valid,
+      source: { ...valid.source, workbookFileName: "\\\\server\\share\\Anonymous.xlsx" },
+    }).success).toBe(false);
+    expect(f4WorkflowCalculationResultSchema.safeParse({
+      ...valid,
+      source: { ...valid.source, workbookFileName: "..\\Anonymous.xlsx" },
+    }).success).toBe(false);
+    expect(f4WorkflowCalculationResultSchema.safeParse({
+      ...valid,
+      source: { ...valid.source, workbookFileName: "Anonymous\u0001.xlsx" },
+    }).success).toBe(false);
+    expect(f4WorkflowCalculationResultSchema.safeParse({
+      ...valid,
+      source: { ...valid.source, workbookFileName: "Anonymous.xls" },
+    }).success).toBe(false);
+  });
+
   it("accepts passed and mismatch excel comparison results", () => {
-    const schema = excelComparisonSchema();
     const passed = {
       contractVersion: "v1",
       comparisonVersion: "f4-excel-comparison-v1",
@@ -2658,12 +2683,100 @@ describe("F4 workflow and excel comparison contracts", () => {
       },
     };
 
-    expect(schema.parse(passed)).toEqual(passed);
-    expect(schema.parse(mismatch)).toEqual(mismatch);
+    expect(f4ExcelComparisonResultSchema.parse(passed)).toEqual(passed);
+    expect(f4ExcelComparisonResultSchema.parse(mismatch)).toEqual(mismatch);
+  });
+
+  it("rejects inconsistent comparison metric invariants", () => {
+    const absoluteDifference = Math.abs(2.4 - 2.399);
+    const denominator = Math.max(1, Math.abs(2.4), Math.abs(2.399));
+    const relativeDifference = absoluteDifference / denominator;
+    const base = {
+      contractVersion: "v1",
+      comparisonVersion: "f4-excel-comparison-v1",
+      outputClassification: "confidential",
+      featureId: "F4",
+      status: "mismatch",
+      runId: "controlled-run-reference",
+      generatedAt: "2026-08-07T00:00:00.000Z",
+      source: {
+        workbookContentHash: contentHash,
+      },
+      worksheets: [{
+        worksheetName: "Analysis-A",
+        metrics: [{
+          metric: "cpk",
+          f4Value: 2.4,
+          excelValue: 2.399,
+          excelDisplayText: "2.399",
+          absoluteDifference,
+          relativeDifference,
+          tolerance: 1e-12,
+          passed: false,
+          sourceCell: "Analysis-A!P10",
+          excelFormula: "=P8/P9",
+          f4FormulaId: "cpk-v1",
+        }],
+      }],
+      summary: {
+        worksheetCount: 1,
+        metricCount: 1,
+        passedMetricCount: 0,
+        mismatchMetricCount: 1,
+      },
+    };
+
+    expect(f4ExcelComparisonResultSchema.parse(base)).toEqual(base);
+
+    expect(f4ExcelComparisonResultSchema.safeParse({
+      ...base,
+      worksheets: [{
+        ...base.worksheets[0],
+        metrics: [{ ...base.worksheets[0].metrics[0], absoluteDifference: -absoluteDifference }],
+      }],
+    }).success).toBe(false);
+
+    expect(f4ExcelComparisonResultSchema.safeParse({
+      ...base,
+      worksheets: [{
+        ...base.worksheets[0],
+        metrics: [{ ...base.worksheets[0].metrics[0], absoluteDifference: absoluteDifference + 1e-4 }],
+      }],
+    }).success).toBe(false);
+
+    expect(f4ExcelComparisonResultSchema.safeParse({
+      ...base,
+      worksheets: [{
+        ...base.worksheets[0],
+        metrics: [{ ...base.worksheets[0].metrics[0], relativeDifference: relativeDifference + 1e-4 }],
+      }],
+    }).success).toBe(false);
+
+    expect(f4ExcelComparisonResultSchema.safeParse({
+      ...base,
+      worksheets: [{
+        ...base.worksheets[0],
+        metrics: [{ ...base.worksheets[0].metrics[0], relativeDifference: -relativeDifference }],
+      }],
+    }).success).toBe(false);
+
+    expect(f4ExcelComparisonResultSchema.safeParse({
+      ...base,
+      worksheets: [{
+        ...base.worksheets[0],
+        metrics: [{ ...base.worksheets[0].metrics[0], passed: true }],
+      }],
+      summary: {
+        worksheetCount: 1,
+        metricCount: 1,
+        passedMetricCount: 1,
+        mismatchMetricCount: 0,
+      },
+      status: "passed",
+    }).success).toBe(false);
   });
 
   it("rejects unknown fields, missing formula evidence, non-finite differences, and invalid summary", () => {
-    const schema = excelComparisonSchema();
     const passed = {
       contractVersion: "v1",
       comparisonVersion: "f4-excel-comparison-v1",
@@ -2699,7 +2812,7 @@ describe("F4 workflow and excel comparison contracts", () => {
       },
     };
 
-    expect(schema.safeParse({
+    expect(f4ExcelComparisonResultSchema.safeParse({
       contractVersion: "v1",
       comparisonVersion: "f4-excel-comparison-v1",
       outputClassification: "confidential",
@@ -2711,7 +2824,7 @@ describe("F4 workflow and excel comparison contracts", () => {
       rawError: "must-not-leak",
     }).success).toBe(false);
 
-    expect(schema.safeParse({
+    expect(f4ExcelComparisonResultSchema.safeParse({
       ...passed,
       worksheets: [{
         ...passed.worksheets[0],
@@ -2719,7 +2832,7 @@ describe("F4 workflow and excel comparison contracts", () => {
       }],
     }).success).toBe(false);
 
-    expect(schema.safeParse({
+    expect(f4ExcelComparisonResultSchema.safeParse({
       ...passed,
       worksheets: [{
         ...passed.worksheets[0],
@@ -2727,7 +2840,7 @@ describe("F4 workflow and excel comparison contracts", () => {
       }],
     }).success).toBe(false);
 
-    expect(schema.safeParse({
+    expect(f4ExcelComparisonResultSchema.safeParse({
       ...passed,
       status: "mismatch",
       summary: {

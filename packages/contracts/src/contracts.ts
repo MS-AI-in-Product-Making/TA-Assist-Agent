@@ -2709,7 +2709,7 @@ export const f4WorkflowCalculationResultSchema = z
     source: z
       .object({
         artifactReference: z.literal("Feature2-Report.json"),
-        workbookFileName: z.string().min(1),
+        workbookFileName: workbookCatalogFileNameSchema,
         workbookContentHash: sha256Schema,
       })
       .strict(),
@@ -2759,15 +2759,52 @@ const f4ExcelComparisonMetricSchema = z
     f4Value: z.number().finite(),
     excelValue: z.number().finite(),
     excelDisplayText: z.string().min(1),
-    absoluteDifference: z.number().finite(),
-    relativeDifference: z.number().finite(),
+    absoluteDifference: z.number().finite().min(0),
+    relativeDifference: z.number().finite().min(0),
     tolerance: z.number().finite().min(0).max(1e-12),
     passed: z.boolean(),
     sourceCell: worksheetSourceCellSchema,
     excelFormula: z.string().trim().min(1),
     f4FormulaId: z.string().min(1),
   })
-  .strict();
+  .strict()
+  .superRefine((metric, context) => {
+    const nearEqual = (left: number, right: number): boolean => {
+      const epsilon = 1e-12;
+      const delta = Math.abs(left - right);
+      const scale = Math.max(1, Math.abs(left), Math.abs(right));
+      return delta <= epsilon * scale;
+    };
+
+    const denominator = Math.max(1, Math.abs(metric.f4Value), Math.abs(metric.excelValue));
+    const expectedAbsoluteDifference = Math.abs(metric.f4Value - metric.excelValue);
+    const expectedRelativeDifference = expectedAbsoluteDifference / denominator;
+    const expectedPassed = expectedAbsoluteDifference <= metric.tolerance * denominator;
+
+    if (!nearEqual(metric.absoluteDifference, expectedAbsoluteDifference)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "absoluteDifference must equal abs(f4Value - excelValue)",
+        path: ["absoluteDifference"],
+      });
+    }
+
+    if (!nearEqual(metric.relativeDifference, expectedRelativeDifference)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "relativeDifference must equal absoluteDifference / max(1, abs(f4Value), abs(excelValue))",
+        path: ["relativeDifference"],
+      });
+    }
+
+    if (metric.passed !== expectedPassed) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "passed must equal absoluteDifference <= tolerance * max(1, abs(f4Value), abs(excelValue))",
+        path: ["passed"],
+      });
+    }
+  });
 
 const f4ExcelComparisonWorksheetSchema = z
   .object({
