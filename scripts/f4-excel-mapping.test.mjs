@@ -1,11 +1,29 @@
 import { describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import * as XLSX from "xlsx";
+import { TextEncoder } from "node:util";
 import { buildF4ExcelMapping } from "./f4-excel-mapping.mjs";
+import { MAX_ARCHIVE_BYTES } from "../packages/workbook-catalog/dist/zip-security.js";
 
-function createCalculation({ worksheetName = "Analysis-A", factorRows = [14, 20] } = {}) {
+const FIXED_TRACE_FORMULA_IDS = {
+  "system.mean": "system-mean-v1",
+  "system.worstCaseUpper": "worst-case-v1",
+  "system.worstCaseLower": "worst-case-v1",
+  "system.rssSigma": "rss-v1",
+  "capability.cp": "cp-v1",
+  "capability.lowerCpk": "cpk-lower-v1",
+  "capability.upperCpk": "cpk-upper-v1",
+  "capability.cpk": "cpk-v1",
+  "capability.lowerZ": "z-lower-v1",
+  "capability.upperZ": "z-upper-v1",
+  "capability.lowerDpm": "dpm-lower-v1",
+  "capability.upperDpm": "dpm-upper-v1",
+  "capability.totalDpm": "dpm-total-v1",
+  "capability.outOfSpecRatio": "dpm-total-v1",
+  "capability.yield": "yield-v1",
+  "capability.status": "status-v1",
+};
+
+function createCalculation({ worksheetName = "Analysis-A", factorRows = [14, 15, 16, 17, 18, 19, 20] } = {}) {
   const factors = factorRows.map((sourceRow, index) => ({
     factorName: `Factor-${index + 1}`,
     unit: "mm",
@@ -25,12 +43,35 @@ function createCalculation({ worksheetName = "Analysis-A", factorRows = [14, 20]
     mean: 10.01 + index,
     halfTolerance: 0.1,
     sigma: 0.025,
-    contribution: index === 0 ? 0.6 : 0.4,
+    contribution: Number((1 / factorRows.length).toFixed(6)),
     trace: {
       formulaIds: ["factor-mean-v1", "factor-half-tolerance-v1", "factor-sigma-v1", "contribution-v1"],
       sourceCells: [`${worksheetName}!E${sourceRow}`],
     },
   }));
+
+  const traceRecords = Object.entries(FIXED_TRACE_FORMULA_IDS).map(([outputField, formulaId]) => ({
+    outputField,
+    formulaVersion: "excel-ta-v1",
+    formulaId,
+    sourceCells: ["x"],
+  }));
+
+  const recommendation = factorRows.length <= 3
+    ? {
+      method: "worst_case",
+      reason: "factor_count_1_to_3",
+      refer3d: false,
+      criticality: "none",
+      criticalityRisk: false,
+    }
+    : {
+      method: "rss_1d",
+      reason: "factor_count_4_to_10",
+      refer3d: false,
+      criticality: "none",
+      criticalityRisk: false,
+    };
 
   return {
     contractVersion: "v1",
@@ -46,13 +87,7 @@ function createCalculation({ worksheetName = "Analysis-A", factorRows = [14, 20]
       tableId: "table-1",
     },
     factorCount: factors.length,
-    recommendation: {
-      method: "worst_case",
-      reason: "factor_count_1_to_3",
-      refer3d: false,
-      criticality: "none",
-      criticalityRisk: false,
-    },
+    recommendation,
     factors,
     system: {
       designNominal: 10,
@@ -80,38 +115,26 @@ function createCalculation({ worksheetName = "Analysis-A", factorRows = [14, 20]
       yield: 0.999997,
       status: "PASS",
     },
-    traceRecords: [
-      { outputField: "system.mean", formulaVersion: "excel-ta-v1", formulaId: "system-mean-v1", sourceCells: ["factors[0].mean", "factors[1].mean", "request:systemSpecification.additionalMeanShift"] },
-      { outputField: "system.worstCaseUpper", formulaVersion: "excel-ta-v1", formulaId: "worst-case-v1", sourceCells: ["x"] },
-      { outputField: "system.worstCaseLower", formulaVersion: "excel-ta-v1", formulaId: "worst-case-v1", sourceCells: ["x"] },
-      { outputField: "system.rssSigma", formulaVersion: "excel-ta-v1", formulaId: "rss-v1", sourceCells: ["x"] },
-      { outputField: "capability.lowerZ", formulaVersion: "excel-ta-v1", formulaId: "z-lower-v1", sourceCells: ["x"] },
-      { outputField: "capability.upperZ", formulaVersion: "excel-ta-v1", formulaId: "z-upper-v1", sourceCells: ["x"] },
-      { outputField: "capability.lowerDpm", formulaVersion: "excel-ta-v1", formulaId: "dpm-lower-v1", sourceCells: ["x"] },
-      { outputField: "capability.upperDpm", formulaVersion: "excel-ta-v1", formulaId: "dpm-upper-v1", sourceCells: ["x"] },
-      { outputField: "capability.totalDpm", formulaVersion: "excel-ta-v1", formulaId: "dpm-total-v1", sourceCells: ["x"] },
-      { outputField: "capability.outOfSpecRatio", formulaVersion: "excel-ta-v1", formulaId: "dpm-total-v1", sourceCells: ["x"] },
-      { outputField: "capability.cp", formulaVersion: "excel-ta-v1", formulaId: "cp-v1", sourceCells: ["x"] },
-      { outputField: "capability.yield", formulaVersion: "excel-ta-v1", formulaId: "yield-v1", sourceCells: ["x"] },
-      { outputField: "capability.lowerCpk", formulaVersion: "excel-ta-v1", formulaId: "cpk-lower-v1", sourceCells: ["x"] },
-      { outputField: "capability.upperCpk", formulaVersion: "excel-ta-v1", formulaId: "cpk-upper-v1", sourceCells: ["x"] },
-      { outputField: "capability.cpk", formulaVersion: "excel-ta-v1", formulaId: "cpk-v1", sourceCells: ["x"] },
-      { outputField: "capability.status", formulaVersion: "excel-ta-v1", formulaId: "status-v1", sourceCells: ["x"] },
-    ],
+    traceRecords,
     scenarios: [],
   };
 }
 
 function makeWorkbookBytes({
   worksheetName = "Analysis-A",
-  factorRows = [14, 20],
+  factorRows = [14, 15, 16, 17, 18, 19, 20],
   shiftRow = 0,
   shiftColumn = 0,
   includeFormulaForDesignNominal = true,
   includeFormulaForAdjustedMean = true,
   includeResponseSummaryAnchor = true,
   addSecondFactorHeaderCluster = false,
-  placeLowerZAfterSuggestedSpec = false,
+  includeStatusFormula = true,
+  includeStatusCell = true,
+  duplicatePreBoundaryCpLabel = false,
+  addStealFormulaNearAdjustedMean = false,
+  makeYieldAdjacentAmbiguous = false,
+  hugeRef = false,
 } = {}) {
   const ws = XLSX.utils.aoa_to_sheet([[]]);
 
@@ -140,7 +163,7 @@ function makeWorkbookBytes({
     ws[`${col(17)}${r}`] = { t: "n", v: 10.01 + index, f: `=A${r}+0.01` };
     ws[`${col(18)}${r}`] = { t: "n", v: 0.1, f: `=ABS(B${r})` };
     ws[`${col(19)}${r}`] = { t: "n", v: 0.025, f: `=C${r}/4` };
-    ws[`${col(20)}${r}`] = { t: "n", v: index === 0 ? 0.6 : 0.4, f: `=D${r}/SUM(D:D)` };
+    ws[`${col(20)}${r}`] = { t: "n", v: Number((1 / factorRows.length).toFixed(6)), f: `=D${r}/SUM(D:D)` };
   }
 
   if (addSecondFactorHeaderCluster) {
@@ -158,31 +181,27 @@ function makeWorkbookBytes({
 
   setText(10, 44, "Design Nominal");
   setNumber(11, 44, 10, includeFormulaForDesignNominal ? "=AVERAGE(B1:B2)" : undefined);
+  setNumber(12, 44, 0.2, "=SUM(S14:S20)");
+  setNumber(13, 44, -0.2, "=-SUM(S14:S20)");
+  setNumber(19, 44, 0.033, "=SQRT(SUMSQ(T14:T20))");
 
   setText(16, 45, "Additional Mean Shift");
   setNumber(17, 45, 0.01);
 
   setText(16, 46, "Adjusted Mean");
-  setNumber(17, 46, 10.02, includeFormulaForAdjustedMean ? "=SUM(R14:R20)+R45" : undefined);
-
-  setText(12, 43, "+ Tolerance Total");
-  setNumber(12, 44, 0.2, "=SUM(S14:S20)");
-
-  setText(13, 43, "- Tolerance Total");
-  setNumber(13, 44, -0.2, "=-SUM(S14:S20)");
-
-  setText(19, 43, "RSS Total");
-  setNumber(19, 44, 0.033, "=SQRT(SUMSQ(T14:T20))");
+  if (addStealFormulaNearAdjustedMean) {
+    setText(17, 46, "");
+    setNumber(18, 46, 10.02, "=SUM(R14:R20)+R45");
+  } else {
+    setNumber(17, 46, 10.02, includeFormulaForAdjustedMean ? "=SUM(R14:R20)+R45" : undefined);
+  }
 
   if (includeResponseSummaryAnchor) {
     setText(10, 48, "Response Summary Table");
   }
 
-  const suggestedSpecRow = row(59);
-  const lowerZRow = placeLowerZAfterSuggestedSpec ? 61 : 50;
-
-  setText(18, lowerZRow, "Lower Z (Sigma Level):");
-  setNumber(19, lowerZRow, 4.53, "=T57*3");
+  setText(18, 50, "Lower Z (Sigma Level):");
+  setNumber(19, 50, 4.53, "=T57*3");
 
   setText(18, 51, "Upper Z (Sigma Level):");
   setNumber(19, 51, 5.61, "=T56*3");
@@ -204,6 +223,9 @@ function makeWorkbookBytes({
 
   setText(22, 54, "Yield:");
   setNumber(23, 54, 0.999997, "=1-X52/1000000");
+  if (makeYieldAdjacentAmbiguous) {
+    setNumber(22, 55, 0.999998, "=1-X52/900000");
+  }
 
   setText(18, 55, "Lower Cpk:");
   setNumber(19, 55, 1.51, "=(R46-LSL)/(3*T44)");
@@ -214,28 +236,54 @@ function makeWorkbookBytes({
   setText(18, 57, "Cpk:");
   setNumber(19, 57, 1.51, "=MIN(T55,T56)");
 
-  setText(20, 57, "Status");
-  setFormulaText(20, 57, "PASS", "=IF(T57>=1,\"PASS\",\"FAIL\")");
+  if (includeStatusCell) {
+    setText(20, 57, "Status");
+    if (includeStatusFormula) {
+      setFormulaText(20, 57, "PASS", "=IF(T57>=1,\"PASS\",\"FAIL\")");
+    } else {
+      setText(20, 57, "PASS");
+    }
+  }
+
+  if (duplicatePreBoundaryCpLabel) {
+    setText(18, 58, "Cp:");
+    setNumber(19, 58, 9.9, "=1+1");
+  }
 
   setText(10, 20, "Suggested Spec");
   setText(10, 59, "Suggested Spec");
   setText(10, 80, "Suggested Spec");
 
-  ws["!ref"] = `A1:${col(30)}${Math.max(120, suggestedSpecRow + 1)}`;
+  if (hugeRef) {
+    ws["!ref"] = "A1:ZZ6000";
+  } else {
+    ws["!ref"] = `A1:${col(30)}${Math.max(120, row(60))}`;
+  }
 
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, ws, worksheetName);
-  return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+  return XLSX.write(workbook, { type: "buffer", bookType: "xlsx", compression: false });
 }
 
 function outputByName(mapping) {
   return new Map(mapping.outputs.map((item) => [item.name, item]));
 }
 
+function cloneValue(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function forgeCalculation(calculation, mutate) {
+  const cloned = cloneValue(calculation);
+  mutate(cloned);
+  return cloned;
+}
+
 describe("buildF4ExcelMapping", () => {
-  it("maps sample-like controlled targets to excel-ta-v1 outputs", () => {
-    const calculation = createCalculation({ worksheetName: "Analysis-A", factorRows: [14, 20] });
-    const workbookBytes = makeWorkbookBytes({ worksheetName: "Analysis-A", factorRows: [14, 20] });
+  it("maps sample-like 7-factor semantic targets and capability.status", () => {
+    const factorRows = [14, 15, 16, 17, 18, 19, 20];
+    const calculation = createCalculation({ worksheetName: "Analysis-A", factorRows });
+    const workbookBytes = makeWorkbookBytes({ worksheetName: "Analysis-A", factorRows });
 
     const mapping = buildF4ExcelMapping({ workbookBytes, calculation });
 
@@ -245,14 +293,10 @@ describe("buildF4ExcelMapping", () => {
     const metrics = outputByName(mapping);
 
     expect(metrics.get("factors[0].mean")).toMatchObject({ cell: "R14", expected: 10.01, tolerance: 1e-12, formulaId: "factor-mean-v1" });
-    expect(metrics.get("factors[0].halfTolerance")).toMatchObject({ cell: "S14", expected: 0.1, tolerance: 1e-12, formulaId: "factor-half-tolerance-v1" });
-    expect(metrics.get("factors[0].sigma")).toMatchObject({ cell: "T14", expected: 0.025, tolerance: 1e-12, formulaId: "factor-sigma-v1" });
-    expect(metrics.get("factors[0].contribution")).toMatchObject({ cell: "U14", expected: 0.6, tolerance: 1e-12, formulaId: "contribution-v1" });
+    expect(metrics.get("factors[6].contribution")).toMatchObject({ cell: "U20", tolerance: 1e-12, formulaId: "contribution-v1" });
 
-    expect(metrics.get("factors[1].mean")).toMatchObject({ cell: "R20", expected: 11.01, tolerance: 1e-12, formulaId: "factor-mean-v1" });
-
-    expect(metrics.get("system.designNominal")).toMatchObject({ cell: "L44", expected: 10, tolerance: 1e-12 });
-    expect(metrics.get("system.additionalMeanShift")).toMatchObject({ cell: "R45", expected: 0.01, tolerance: 1e-12 });
+    expect(metrics.get("system.designNominal")).toMatchObject({ cell: "L44", expected: 10, tolerance: 1e-12, formulaId: "input-design-nominal-v1" });
+    expect(metrics.get("system.additionalMeanShift")).toMatchObject({ cell: "R45", expected: 0.01, tolerance: 1e-12, formulaId: "input-additional-mean-shift-v1" });
     expect(metrics.get("system.mean")).toMatchObject({ cell: "R46", expected: 10.02, tolerance: 1e-12, formulaId: "system-mean-v1" });
     expect(metrics.get("system.worstCaseUpper")).toMatchObject({ cell: "M44", expected: 0.2, tolerance: 1e-12, formulaId: "worst-case-v1" });
     expect(metrics.get("system.worstCaseLower")).toMatchObject({ cell: "N44", expected: -0.2, tolerance: 1e-12, formulaId: "worst-case-v1" });
@@ -269,11 +313,10 @@ describe("buildF4ExcelMapping", () => {
     expect(metrics.get("capability.lowerCpk")).toMatchObject({ cell: "T55", expected: 1.51, tolerance: 1e-12, formulaId: "cpk-lower-v1" });
     expect(metrics.get("capability.upperCpk")).toMatchObject({ cell: "T56", expected: 1.87, tolerance: 1e-12, formulaId: "cpk-upper-v1" });
     expect(metrics.get("capability.cpk")).toMatchObject({ cell: "T57", expected: 1.51, tolerance: 1e-12, formulaId: "cpk-v1" });
-
-    expect(metrics.has("capability.status")).toBe(false);
+    expect(metrics.get("capability.status")).toMatchObject({ cell: "U57", expected: "PASS", tolerance: 1e-12, formulaId: "status-v1" });
   });
 
-  it("supports moved rows/columns and ignores extra Suggested Spec labels", () => {
+  it("supports moved rows/columns and ignores extra Suggested Spec labels after boundary", () => {
     const calculation = createCalculation({ worksheetName: "Shifted", factorRows: [33, 38] });
     const workbookBytes = makeWorkbookBytes({
       worksheetName: "Shifted",
@@ -288,6 +331,7 @@ describe("buildF4ExcelMapping", () => {
     expect(metrics.get("factors[0].mean").cell).toBe("U33");
     expect(metrics.get("system.mean").cell).toBe("U53");
     expect(metrics.get("capability.cpk").cell).toBe("W64");
+    expect(metrics.get("capability.status").cell).toBe("X64");
   });
 
   it("rejects unknown worksheet selections", () => {
@@ -307,53 +351,91 @@ describe("buildF4ExcelMapping", () => {
   it("rejects missing or invalid formula requirements inside controlled cells", () => {
     const calculation = createCalculation({ worksheetName: "Analysis-A" });
 
-    const missingAdjustedFormula = makeWorkbookBytes({
-      worksheetName: "Analysis-A",
-      includeFormulaForAdjustedMean: false,
-    });
+    const missingAdjustedFormula = makeWorkbookBytes({ worksheetName: "Analysis-A", includeFormulaForAdjustedMean: false });
     expect(() => buildF4ExcelMapping({ workbookBytes: missingAdjustedFormula, calculation })).toThrow("F4 excel mapping failed.");
 
-    const missingDesignFormula = makeWorkbookBytes({
-      worksheetName: "Analysis-A",
-      includeFormulaForDesignNominal: false,
-    });
+    const missingDesignFormula = makeWorkbookBytes({ worksheetName: "Analysis-A", includeFormulaForDesignNominal: false });
     expect(() => buildF4ExcelMapping({ workbookBytes: missingDesignFormula, calculation })).toThrow("F4 excel mapping failed.");
   });
 
-  it("rejects metrics that would cross Suggested Spec boundary", () => {
+  it("rejects response summary labels that do not have exact adjacent value cells", () => {
     const calculation = createCalculation({ worksheetName: "Analysis-A" });
-    const workbookBytes = makeWorkbookBytes({
-      worksheetName: "Analysis-A",
-      placeLowerZAfterSuggestedSpec: true,
-    });
+    const workbookBytes = makeWorkbookBytes({ worksheetName: "Analysis-A", addStealFormulaNearAdjustedMean: true });
 
     expect(() => buildF4ExcelMapping({ workbookBytes, calculation })).toThrow("F4 excel mapping failed.");
   });
 
-  it("rejects unsafe workbook paths without leaking local path details", () => {
-    const tempRoot = mkdtempSync(join(tmpdir(), "f4-mapping-"));
-    const dangerousPath = join(tempRoot, "..", "..", "sensitive.xlsx");
+  it("rejects ambiguous adjacent target candidates", () => {
+    const calculation = createCalculation({ worksheetName: "Analysis-A" });
+    const workbookBytes = makeWorkbookBytes({ worksheetName: "Analysis-A", makeYieldAdjacentAmbiguous: true });
 
-    try {
-      expect(() => buildF4ExcelMapping({ workbookPath: dangerousPath, calculation: createCalculation() })).toThrow("F4 excel mapping failed.");
-      try {
-        buildF4ExcelMapping({ workbookPath: dangerousPath, calculation: createCalculation() });
-      } catch (error) {
-        expect(String(error)).toBe("Error: F4 excel mapping failed.");
-        expect(String(error)).not.toContain(dangerousPath);
-      }
-    } finally {
-      rmSync(tempRoot, { recursive: true, force: true });
-    }
+    expect(() => buildF4ExcelMapping({ workbookBytes, calculation })).toThrow("F4 excel mapping failed.");
+  });
+
+  it("rejects duplicate controlled labels before first Suggested Spec boundary", () => {
+    const calculation = createCalculation({ worksheetName: "Analysis-A" });
+    const workbookBytes = makeWorkbookBytes({ worksheetName: "Analysis-A", duplicatePreBoundaryCpLabel: true });
+
+    expect(() => buildF4ExcelMapping({ workbookBytes, calculation })).toThrow("F4 excel mapping failed.");
   });
 
   it("rejects missing response summary anchor", () => {
     const calculation = createCalculation({ worksheetName: "Analysis-A" });
-    const workbookBytes = makeWorkbookBytes({
-      worksheetName: "Analysis-A",
-      includeResponseSummaryAnchor: false,
-    });
+    const workbookBytes = makeWorkbookBytes({ worksheetName: "Analysis-A", includeResponseSummaryAnchor: false });
 
     expect(() => buildF4ExcelMapping({ workbookBytes, calculation })).toThrow("F4 excel mapping failed.");
+  });
+
+  it("rejects huge worksheet !ref ranges and avoids sparse key overrun", { timeout: 15_000 }, () => {
+    const calculation = createCalculation({ worksheetName: "Analysis-A" });
+    const workbookBytes = makeWorkbookBytes({ worksheetName: "Analysis-A", hugeRef: true });
+
+    expect(() => buildF4ExcelMapping({ workbookBytes, calculation })).toThrow("F4 excel mapping failed.");
+  });
+
+  it("rejects workbook bytes larger than MAX_ARCHIVE_BYTES", () => {
+    const calculation = createCalculation({ worksheetName: "Analysis-A" });
+    const tooLarge = new Uint8Array(MAX_ARCHIVE_BYTES + 1);
+
+    expect(() => buildF4ExcelMapping({ workbookBytes: tooLarge, calculation })).toThrow("F4 excel mapping failed.");
+  });
+
+  it("rejects invalid zip bytes before SheetJS parsing", () => {
+    const calculation = createCalculation({ worksheetName: "Analysis-A" });
+    const invalidZip = new TextEncoder().encode("not-a-zip-archive");
+
+    expect(() => buildF4ExcelMapping({ workbookBytes: invalidZip, calculation })).toThrow("F4 excel mapping failed.");
+  });
+
+  it("rejects missing, duplicate, and wrong trace formula records", () => {
+    const workbookBytes = makeWorkbookBytes({ worksheetName: "Analysis-A" });
+    const base = createCalculation({ worksheetName: "Analysis-A" });
+
+    const missing = forgeCalculation(base, (calculation) => {
+      calculation.traceRecords = calculation.traceRecords.filter((record) => record.outputField !== "capability.status");
+    });
+    expect(() => buildF4ExcelMapping({ workbookBytes, calculation: missing })).toThrow("F4 excel mapping failed.");
+
+    const duplicate = forgeCalculation(base, (calculation) => {
+      const target = calculation.traceRecords.find((record) => record.outputField === "capability.cp");
+      calculation.traceRecords.push(cloneValue(target));
+    });
+    expect(() => buildF4ExcelMapping({ workbookBytes, calculation: duplicate })).toThrow("F4 excel mapping failed.");
+
+    const wrong = forgeCalculation(base, (calculation) => {
+      const target = calculation.traceRecords.find((record) => record.outputField === "capability.cpk");
+      target.formulaId = "wrong-formula-id";
+    });
+    expect(() => buildF4ExcelMapping({ workbookBytes, calculation: wrong })).toThrow("F4 excel mapping failed.");
+  });
+
+  it("rejects missing status cell and status cell without formula", () => {
+    const calculation = createCalculation({ worksheetName: "Analysis-A" });
+
+    const missingStatus = makeWorkbookBytes({ worksheetName: "Analysis-A", includeStatusCell: false });
+    expect(() => buildF4ExcelMapping({ workbookBytes: missingStatus, calculation })).toThrow("F4 excel mapping failed.");
+
+    const nonFormulaStatus = makeWorkbookBytes({ worksheetName: "Analysis-A", includeStatusFormula: false });
+    expect(() => buildF4ExcelMapping({ workbookBytes: nonFormulaStatus, calculation })).toThrow("F4 excel mapping failed.");
   });
 });
