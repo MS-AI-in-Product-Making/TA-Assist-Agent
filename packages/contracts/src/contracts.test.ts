@@ -20,6 +20,7 @@ import {
   drawingGovernanceResultSchema,
   exceptionResolutionRequestSchema,
   exceptionResolutionResultSchema,
+  f4ExcelComparisonResultSchema,
   f2InitialWorkflowRequestSchema,
   f2InitialWorkflowResultSchema,
   f2ArtifactInputSchema,
@@ -1324,6 +1325,88 @@ describe("F4 calculation contracts", () => {
 
   it("accepts legacy unavailable results for backward compatibility", () => {
     expect(calculationResultSchema.parse(legacyUnavailableResult)).toEqual(legacyUnavailableResult);
+  });
+});
+
+describe("F4 excel comparison contracts", () => {
+  const metric = {
+    metric: "cpk",
+    f4Value: 1.33,
+    excelValue: 1.33,
+    excelDisplayText: "1.33",
+    absoluteDifference: 0,
+    relativeDifference: 0,
+    tolerance: 1e-12,
+    passed: true,
+    sourceCell: "Analysis-A!P10",
+    excelFormula: "=P8/P9",
+    f4FormulaId: "cpk-v1",
+  };
+
+  const passedResult = {
+    contractVersion: "v1" as const,
+    comparisonVersion: "f4-excel-comparison-v1" as const,
+    outputClassification: "confidential" as const,
+    featureId: "F4" as const,
+    status: "passed" as const,
+    runId: "run-f4-1",
+    generatedAt: "2026-08-07T00:00:00.000Z",
+    source: {
+      workbookContentHash: "a".repeat(64),
+    },
+    worksheets: [{
+      worksheetName: "Analysis-A",
+      metrics: [metric],
+    }],
+    summary: {
+      worksheetCount: 1,
+      metricCount: 1,
+      passedMetricCount: 1,
+      mismatchMetricCount: 0,
+    },
+  };
+
+  it("rejects duplicate worksheet names in passed comparison payloads", () => {
+    const duplicateWorksheetPayload = {
+      ...passedResult,
+      worksheets: [
+        passedResult.worksheets[0],
+        {
+          worksheetName: "Analysis-A",
+          metrics: [{ ...metric, metric: "cp", sourceCell: "Analysis-A!P11" }],
+        },
+      ],
+      summary: {
+        worksheetCount: 2,
+        metricCount: 2,
+        passedMetricCount: 2,
+        mismatchMetricCount: 0,
+      },
+    };
+
+    expect(f4ExcelComparisonResultSchema.safeParse(duplicateWorksheetPayload).success).toBe(false);
+  });
+
+  it("rejects duplicate metric identity per worksheet in mismatch comparison payloads", () => {
+    const duplicateMetricIdentityPayload = {
+      ...passedResult,
+      status: "mismatch" as const,
+      worksheets: [{
+        worksheetName: "Analysis-A",
+        metrics: [
+          { ...metric, passed: false, absoluteDifference: 0.01, relativeDifference: 0.01 },
+          { ...metric, excelValue: 1.31, excelDisplayText: "1.31", passed: false, absoluteDifference: 0.02, relativeDifference: 0.02 },
+        ],
+      }],
+      summary: {
+        worksheetCount: 1,
+        metricCount: 2,
+        passedMetricCount: 0,
+        mismatchMetricCount: 2,
+      },
+    };
+
+    expect(f4ExcelComparisonResultSchema.safeParse(duplicateMetricIdentityPayload).success).toBe(false);
   });
 });
 
