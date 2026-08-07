@@ -18,7 +18,7 @@ function validMapping(overrides = {}) {
   return {
     version: "excel-ta-v1",
     inputs: [{ cell: "A1", value: 42 }],
-    outputs: [{ name: "result", cell: "B2", expected: 42 }],
+    outputs: [{ name: "result", cell: "B2", expected: 42, formulaId: "result-v1" }],
     ...overrides,
   };
 }
@@ -157,30 +157,34 @@ test("cleans the temporary copy after Excel startup failure", () => {
 const invalidMappings = [
   ["unknown top-level field", { ...validMapping(), unexpected: true }],
   ["unknown input field", validMapping({ inputs: [{ cell: "A1", value: 1, unexpected: true }] })],
-  ["unknown output field", validMapping({ outputs: [{ name: "result", cell: "B2", expected: 1, unexpected: true }] })],
+  ["unknown output field", validMapping({ outputs: [{ name: "result", cell: "B2", expected: 1, formulaId: "result-v1", unexpected: true }] })],
   ["unsupported version", validMapping({ version: "excel-ta-v2" })],
   ["invalid input A1 address", validMapping({ inputs: [{ cell: "A0", value: 1 }] })],
-  ["invalid output A1 address", validMapping({ outputs: [{ name: "result", cell: "A:1", expected: 1 }] })],
+  ["invalid output A1 address", validMapping({ outputs: [{ name: "result", cell: "A:1", expected: 1, formulaId: "result-v1" }] })],
   ["empty outputs", validMapping({ outputs: [] })],
-  ["duplicate cell", validMapping({ outputs: [{ name: "result", cell: "A1", expected: 1 }] })],
+  ["duplicate cell", validMapping({ outputs: [{ name: "result", cell: "A1", expected: 1, formulaId: "result-v1" }] })],
   [
     "duplicate output name",
     validMapping({
       outputs: [
-        { name: "result", cell: "B2", expected: 1 },
-        { name: "result", cell: "C3", expected: 2 },
+        { name: "result", cell: "B2", expected: 1, formulaId: "result-v1" },
+        { name: "result", cell: "C3", expected: 2, formulaId: "result-v2" },
       ],
     }),
   ],
-  ["negative tolerance", validMapping({ outputs: [{ name: "result", cell: "B2", expected: 1, tolerance: -1 }] })],
-  ["non-numeric tolerance", validMapping({ outputs: [{ name: "result", cell: "B2", expected: 1, tolerance: "0.1" }] })],
+  ["negative tolerance", validMapping({ outputs: [{ name: "result", cell: "B2", expected: 1, tolerance: -1, formulaId: "result-v1" }] })],
+  ["non-numeric tolerance", validMapping({ outputs: [{ name: "result", cell: "B2", expected: 1, tolerance: "0.1", formulaId: "result-v1" }] })],
   ["invalid input value", validMapping({ inputs: [{ cell: "A1", value: true }] })],
-  ["invalid expected value", validMapping({ outputs: [{ name: "result", cell: "B2", expected: null }] })],
+  ["invalid expected value", validMapping({ outputs: [{ name: "result", cell: "B2", expected: null, formulaId: "result-v1" }] })],
+  ["missing formulaId", validMapping({ outputs: [{ name: "result", cell: "B2", expected: 1 }] })],
+  ["blank formulaId", validMapping({ outputs: [{ name: "result", cell: "B2", expected: 1, formulaId: " " }] })],
+  ["formulaId containing controls", validMapping({ outputs: [{ name: "result", cell: "B2", expected: 1, formulaId: "a\nb" }] })],
+  ["formulaId longer than 128 characters", validMapping({ outputs: [{ name: "result", cell: "B2", expected: 1, formulaId: "f".repeat(129) }] })],
   ["101 inputs", validMapping({ inputs: Array.from({ length: 101 }, (_, index) => ({ cell: `A${index + 1}`, value: index })) })],
-  ["101 outputs", validMapping({ outputs: Array.from({ length: 101 }, (_, index) => ({ name: `result-${index}`, cell: `B${index + 1}`, expected: index })) })],
-  ["output name longer than 128 characters", validMapping({ outputs: [{ name: "n".repeat(129), cell: "B2", expected: 1 }] })],
+  ["101 outputs", validMapping({ outputs: Array.from({ length: 101 }, (_, index) => ({ name: `result-${index}`, cell: `B${index + 1}`, expected: index, formulaId: `result-${index}-v1` })) })],
+  ["output name longer than 128 characters", validMapping({ outputs: [{ name: "n".repeat(129), cell: "B2", expected: 1, formulaId: "result-v1" }] })],
   ["input string longer than 1024 characters", validMapping({ inputs: [{ cell: "A1", value: "v".repeat(1025) }] })],
-  ["expected string longer than 1024 characters", validMapping({ outputs: [{ name: "result", cell: "B2", expected: "v".repeat(1025) }] })],
+  ["expected string longer than 1024 characters", validMapping({ outputs: [{ name: "result", cell: "B2", expected: "v".repeat(1025), formulaId: "result-v1" }] })],
 ];
 
 for (const [name, mapping] of invalidMappings) {
@@ -217,7 +221,7 @@ for (const worksheetName of ["W".repeat(32), "Sensitive\nSheet", "Sensitive\tShe
 for (const tolerance of [0, 1e-12]) {
   test(`ValidateOnly accepts mapping output tolerance ${tolerance}`, () => {
     const mapping = validMapping({
-      outputs: [{ name: "result", cell: "B2", expected: 1, tolerance }],
+      outputs: [{ name: "result", cell: "B2", expected: 1, tolerance, formulaId: "result-v1" }],
     });
 
     withFixture(mapping, (fixture) => {
@@ -232,7 +236,7 @@ for (const tolerance of [0, 1e-12]) {
 for (const tolerance of [1.0000001e-12, 1]) {
   test(`ValidateOnly rejects mapping output tolerance ${tolerance}`, () => {
     const mapping = validMapping({
-      outputs: [{ name: "result", cell: "B2", expected: 1, tolerance }],
+      outputs: [{ name: "result", cell: "B2", expected: 1, tolerance, formulaId: "result-v1" }],
     });
 
     withFixture(mapping, (fixture) => {
@@ -243,6 +247,89 @@ for (const tolerance of [1.0000001e-12, 1]) {
     });
   });
 }
+
+test("returns enriched controlled diagnostics with injected test outputs", () => {
+  const mapping = validMapping({
+    outputs: [
+      { name: "system.rssSigma", cell: "T44", expected: 0.045, tolerance: 1e-12, formulaId: "rss-v1" },
+      { name: "capability.status", cell: "U57", expected: "PASS", formulaId: "status-v1" },
+      { name: "system.additionalMeanShift", cell: "R45", expected: "0", formulaId: "system-mean-v1" },
+    ],
+  });
+
+  withFixture(mapping, (fixture) => {
+    const result = runHarness(validArgs(fixture, { validateOnly: false }), {
+      env: {
+        F4_EXCEL_REGRESSION_TEST_OUTPUTS_JSON: JSON.stringify({
+          "system.rssSigma": { value: 0.045, text: "0.045", formula: "SQRT(SUMSQ(T14:T43))" },
+          "capability.status": { value: "PASS", text: "PASS", formula: "=IF(T57>=1.33,\"PASS\",\"FAIL\")" },
+          "system.additionalMeanShift": { value: "0", text: "0", formula: "" },
+        }),
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const payload = parseLastJson(result.stdout);
+    assert.equal(payload.status, "regression_passed");
+    assert.deepEqual(payload.outputs[0], {
+      name: "system.rssSigma",
+      cell: "T44",
+      expected: 0.045,
+      actual: 0.045,
+      displayText: "0.045",
+      absoluteDifference: 0,
+      relativeDifference: 0,
+      tolerance: 1e-12,
+      formula: "SQRT(SUMSQ(T14:T43))",
+      formulaId: "rss-v1",
+      pass: true,
+    });
+    assert.deepEqual(payload.outputs[1], {
+      name: "capability.status",
+      cell: "U57",
+      expected: "PASS",
+      actual: "PASS",
+      displayText: "PASS",
+      absoluteDifference: null,
+      relativeDifference: null,
+      tolerance: null,
+      formula: "=IF(T57>=1.33,\"PASS\",\"FAIL\")",
+      formulaId: "status-v1",
+      pass: true,
+    });
+    assert.deepEqual(payload.outputs[2], {
+      name: "system.additionalMeanShift",
+      cell: "R45",
+      expected: "0",
+      actual: "0",
+      displayText: "0",
+      absoluteDifference: null,
+      relativeDifference: null,
+      tolerance: null,
+      formula: "[formula-empty-allowed]",
+      formulaId: "system-mean-v1",
+      pass: true,
+    });
+  });
+});
+
+test("rejects missing formula text for non-whitelisted metrics", () => {
+  const mapping = validMapping({
+    outputs: [{ name: "system.rssSigma", cell: "T44", expected: 0.045, tolerance: 1e-12, formulaId: "rss-v1" }],
+  });
+  withFixture(mapping, (fixture) => {
+    const result = runHarness(validArgs(fixture, { validateOnly: false }), {
+      env: {
+        F4_EXCEL_REGRESSION_TEST_OUTPUTS_JSON: JSON.stringify({
+          "system.rssSigma": { value: 0.045, text: "0.045", formula: "" },
+        }),
+      },
+    });
+
+    assert.notEqual(result.status, 0);
+    assert.equal(parseLastJson(result.stdout).status, "excel_error");
+  });
+});
 
 test("ValidateOnly accepts normalized hash casing without starting Excel", () => {
   withFixture(validMapping(), (fixture) => {
@@ -356,7 +443,9 @@ test("script declares the required isolated Excel execution controls", () => {
   assert.match(script, /Remove-Item[^\r\n]*-Recurse[^\r\n]*-Force/);
   assert.match(script, /NumberFormat\s*=\s*["']@["']/);
   assert.doesNotMatch(script, /\$resultPayload\s*=\s*\[ordered\]@[\s\S]*?worksheetName\s*=/);
-  assert.doesNotMatch(script, /\$outputResults\.Add\(\[ordered\]@[\s\S]*?difference\s*=/);
+  assert.match(script, /function\s+Convert-OutputToDiagnostic/);
+  assert.match(script, /absoluteDifference\s*=\s*\$absoluteDifference/);
+  assert.match(script, /formulaId\s*=\s*\[string\]\$OutputItem\.formulaId/);
   assert.match(script, /try\s*\{\s*\$finalSourceSha256\s*=\s*\(Get-FileHash[\s\S]*?\}\s*catch\s*\{/);
 });
 
