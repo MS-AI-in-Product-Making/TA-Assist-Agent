@@ -3556,6 +3556,25 @@ const f2ActualFieldsSchema = z.object({
   notes: f2ActualScalarSchema,
 }).strict();
 
+const f2DisplayFieldsSchema = z.object({
+  factorName: z.string().nullable(),
+  partName: z.string().nullable(),
+  drawingNumber: z.string().nullable(),
+  dimCharacteristicId: z.string().nullable(),
+  partCategory: z.string().nullable(),
+  nominalValue: z.string().nullable(),
+  upperTolerance: z.string().nullable(),
+  lowerTolerance: z.string().nullable(),
+  longTermSafetyFactor: z.string().nullable(),
+  sigmaLevel: z.string().nullable(),
+  distribution: z.string().nullable(),
+  mean: z.string().nullable(),
+  tolerance: z.string().nullable(),
+  oneSigma: z.string().nullable(),
+  percentContributionToSigma: z.string().nullable(),
+  notes: z.string().nullable(),
+}).strict();
+
 const f1ArtifactFactorTableSchema = z.object({
   tableId: z.string().min(1),
   headerRow: z.number().int().positive(),
@@ -3641,6 +3660,7 @@ const f2EnhancedRowSchema = z.object({
   tableId: z.string().min(1),
   sourceRow: z.number().int().positive(),
   actualFields: f2ActualFieldsSchema,
+  displayFields: f2DisplayFieldsSchema.optional(),
   sourceCells: z.record(worksheetFieldNameSchema, worksheetSourceCellSchema),
   imageReference: z.object({
     artifact: z.literal("f1"),
