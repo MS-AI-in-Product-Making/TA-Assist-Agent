@@ -2,10 +2,13 @@ import { drawingGovernanceResultV2Schema } from "../packages/contracts/dist/cont
 
 const TABLE_HEADER = "| Device Level Dim | Dimension Description | Part / Subsystem | Drawing Number | Dim ID | Factor Description | Nominal | Upper Tolerance (+) | Lower Tolerance (-) | σ Level | Source Location |";
 const TABLE_SEPARATOR = "| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- |";
+const WINDOWS_ABSOLUTE_PATH_PATTERN = /[A-Za-z]:(?:\\[^\\/:*?"<>|\r\n]+)+(?=$|[\s"'|),;\]])/g;
+const WINDOWS_ESCAPED_ABSOLUTE_PATH_PATTERN = /[A-Za-z]:(?:\\\\[^\\/:*?"<>|\r\n]+)+(?=$|[\s"'|),;\]])/g;
 
 function redactSensitiveText(value) {
   return String(value)
-    .replace(/[A-Za-z]:\\[^\s|]*/g, "[redacted-local-path]")
+    .replace(WINDOWS_ESCAPED_ABSOLUTE_PATH_PATTERN, "[redacted-local-path]")
+    .replace(WINDOWS_ABSOLUTE_PATH_PATTERN, "[redacted-local-path]")
     .replace(/Authorization\s*[:=]\s*[^\s|]+/gi, "Authorization: [redacted]");
 }
 

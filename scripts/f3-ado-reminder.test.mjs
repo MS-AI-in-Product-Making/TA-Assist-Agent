@@ -117,6 +117,23 @@ describe("renderF3AdoReminder", () => {
     expect(markdown).toContain("Authorization: [redacted]");
   });
 
+  it("redacts quoted Windows absolute paths with spaces without leaking suffix tokens", () => {
+    const markdown = renderF3AdoReminder(acceptedReport([
+      baseRow({
+        partSubsystem: "\"C:\\Users\\Name\\AI Project\\ado repro\\Feature3-Report.md\" and 'C:\\Users\\Name\\AI Project\\ado repro\\Feature3-Report.md'",
+        factorDescription: "from C:\\Users\\Name\\AI Project\\ado repro\\Feature3-Report.md",
+        qualitySignals: ["dim_id_missing"],
+        governanceStatus: "needs_governance",
+      }),
+    ]));
+
+    expect(markdown).toContain("[redacted-local-path]");
+    expect(markdown).not.toContain("AI Project");
+    expect(markdown).not.toContain("ado repro");
+    expect(markdown).not.toContain("Feature3-Report.md");
+    expect(markdown).toContain("DIM ID missing");
+  });
+
   it("rejects input_rejected reports", () => {
     expect(() => renderF3AdoReminder({
       contractVersion: "v1",

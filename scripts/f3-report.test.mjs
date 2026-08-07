@@ -98,6 +98,23 @@ describe("renderF3Report", () => {
     expect(markdown).not.toContain("Authorization");
   });
 
+  it("redacts Windows absolute paths with spaces in work item and source fields", () => {
+    const report = governanceReport("source C:\\Users\\Name\\AI Project\\ado repro\\Feature3-Report.md");
+    report.ado = {
+      status: "failed",
+      workItemReference: "\"C:\\Users\\Name\\AI Project\\ado repro\\Feature3-Report.md\" and 'C:\\Users\\Name\\AI Project\\ado repro\\Feature3-Report.md'",
+      reasonCode: "project_not_found",
+    };
+
+    const markdown = renderF3Report(report);
+
+    expect(markdown).toContain("[redacted-local-path]");
+    expect(markdown).not.toContain("AI Project");
+    expect(markdown).not.toContain("ado repro");
+    expect(markdown).not.toContain("Feature3-Report.md");
+    expect(markdown).toContain("project_not_found");
+  });
+
   it("renders structured input rejection issues", () => {
     const markdown = renderF3Report({
       contractVersion: "v1",

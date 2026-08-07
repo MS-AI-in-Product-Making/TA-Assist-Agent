@@ -18,10 +18,13 @@ const QUALITY_SIGNAL_ORDER = [
   "dim_id_needs_confirmation",
   "duplicate_conflict",
 ];
+const WINDOWS_ABSOLUTE_PATH_PATTERN = /[A-Za-z]:(?:\\[^\\/:*?"<>|\r\n]+)+(?=$|[\s"'|),;\]])/g;
+const WINDOWS_ESCAPED_ABSOLUTE_PATH_PATTERN = /[A-Za-z]:(?:\\\\[^\\/:*?"<>|\r\n]+)+(?=$|[\s"'|),;\]])/g;
 
 function redactSensitiveText(value) {
   return String(value)
-    .replace(/[A-Za-z]:\\[^\s|]*/g, "[redacted-local-path]")
+    .replace(WINDOWS_ESCAPED_ABSOLUTE_PATH_PATTERN, "[redacted-local-path]")
+    .replace(WINDOWS_ABSOLUTE_PATH_PATTERN, "[redacted-local-path]")
     .replace(/Authorization\s*[:=]\s*(?:Bearer\s+)?[^\s|]+/gi, "Authorization: [redacted]");
 }
 

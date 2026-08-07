@@ -17,6 +17,7 @@ const CONTROLLED_REASON_CODES = new Set([
   "user_declined_write",
   "write_verification_failed",
 ]);
+const LOCK_FILE_NAME = ".f3-ado-reminder.lock";
 
 function escapeRegex(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -98,6 +99,61 @@ function createFsOps(overrides = {}) {
     writeFileSync,
     ...overrides,
   };
+}
+
+function readLockPayload(lockPath, fsOps) {
+  try {
+    const raw = String(fsOps.readFileSync(lockPath, "utf8") ?? "").trim();
+    if (raw.length === 0) return null;
+    const parsed = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) return null;
+    const ownerToken = typeof parsed.ownerToken === "string" ? parsed.ownerToken : undefined;
+    const createdAt = typeof parsed.createdAt === "string" ? parsed.createdAt : undefined;
+    if (!ownerToken || !createdAt) return null;
+    return { ownerToken, createdAt };
+  } catch {
+    return null;
+  }
+}
+
+function acquireTransactionLock(resolvedRoot, fsOps) {
+  const ownerToken = `${process.pid}.${randomUUID()}`;
+  const lockPath = path.join(resolvedRoot, LOCK_FILE_NAME);
+  const lockPayload = `${JSON.stringify({
+    lockVersion: "v1",
+    ownerToken,
+    createdAt: new Date().toISOString(),
+  })}\n`;
+
+  try {
+    fsOps.writeFileSync(lockPath, lockPayload, { encoding: "utf8", flag: "wx" });
+  } catch (error) {
+    const code = typeof error === "object" && error !== null && "code" in error ? String(error.code) : undefined;
+    if (code === "EEXIST") {
+      const current = readLockPayload(lockPath, fsOps);
+      const ageHint = current?.createdAt
+        ? ` (lock createdAt=${current.createdAt})`
+        : "";
+      throw new Error(`Feature 3 reminder persistence is already in progress for this output directory${ageHint}.`);
+    }
+    throw error;
+  }
+
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    try {
+      if (!fsOps.existsSync(lockPath)) return;
+      const current = readLockPayload(lockPath, fsOps);
+      if (!current || current.ownerToken !== ownerToken) return;
+      fsOps.rmSync(lockPath);
+    } catch {
+      // Preserve caller outcome. Lock cleanup is best effort and owner-guarded.
+    }
+  };
+
+  return { lockPath, ownerToken, release };
 }
 
 function resolveSensitivePaths(f3OutputRoot) {
@@ -249,28 +305,39 @@ export function writeF3AdoReminder({
   __internalFailWithPath,
 }) {
   const fsOps = createFsOps(__internalFsOps);
-  const loaded = loadReportFromOutputRoot(f3OutputRoot, fsOps);
-  const nextAdo = validateAdoOutcome(adoOutcome);
-  const report = drawingGovernanceResultV2Schema.parse({
-    ...loaded.report,
-    ado: nextAdo,
-  });
+  const rootArg = ensureSafePathInput(f3OutputRoot, "Feature 3 output directory");
+  const resolvedRoot = path.resolve(rootArg);
+  if (!fsOps.existsSync(resolvedRoot) || !fsOps.statSync(resolvedRoot).isDirectory()) {
+    throw new Error("Feature 3 output directory is missing or invalid.");
+  }
 
-  const reminderMd = renderF3AdoReminder(report);
-  const reportMd = renderF3Report(report);
+  const transactionLock = acquireTransactionLock(resolvedRoot, fsOps);
+  try {
+    const loaded = loadReportFromOutputRoot(resolvedRoot, fsOps);
+    const nextAdo = validateAdoOutcome(adoOutcome);
+    const report = drawingGovernanceResultV2Schema.parse({
+      ...loaded.report,
+      ado: nextAdo,
+    });
 
-  persistArtifactsAtomically([
-    { targetPath: loaded.reminderPath, content: reminderMd },
-    { targetPath: loaded.reportJsonPath, content: `${JSON.stringify(report, null, 2)}\n` },
-    { targetPath: loaded.reportMdPath, content: reportMd },
-  ], fsOps, {
-    ...(Number.isInteger(__internalFailPromotionAt) ? { failPromotionAt: __internalFailPromotionAt } : {}),
-    ...(typeof __internalFailWithPath === "string" && __internalFailWithPath.length > 0
-      ? { failWithPath: __internalFailWithPath }
-      : {}),
-  });
+    const reminderMd = renderF3AdoReminder(report);
+    const reportMd = renderF3Report(report);
 
-  return { reminderPath: loaded.reminderPath, report };
+    persistArtifactsAtomically([
+      { targetPath: loaded.reminderPath, content: reminderMd },
+      { targetPath: loaded.reportJsonPath, content: `${JSON.stringify(report, null, 2)}\n` },
+      { targetPath: loaded.reportMdPath, content: reportMd },
+    ], fsOps, {
+      ...(Number.isInteger(__internalFailPromotionAt) ? { failPromotionAt: __internalFailPromotionAt } : {}),
+      ...(typeof __internalFailWithPath === "string" && __internalFailWithPath.length > 0
+        ? { failWithPath: __internalFailWithPath }
+        : {}),
+    });
+
+    return { reminderPath: loaded.reminderPath, report };
+  } finally {
+    transactionLock.release();
+  }
 }
 
 function parseCliArgs(args) {
@@ -322,16 +389,7 @@ if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === imp
   try {
     parsedArgs = parseCliArgs(process.argv.slice(2));
     sensitivePaths = resolveSensitivePaths(parsedArgs.f3OutputRoot);
-    const failPromotionAtRaw = process.env.F3_ADO_REMINDER_TEST_FAIL_PROMOTION;
-    const failPromotionAt = failPromotionAtRaw ? Number.parseInt(failPromotionAtRaw, 10) : undefined;
-    const failWithPath = process.env.F3_ADO_REMINDER_TEST_FAIL_WITH_PATH;
-    const result = writeF3AdoReminder({
-      ...parsedArgs,
-      ...(Number.isInteger(failPromotionAt) ? { __internalFailPromotionAt: failPromotionAt } : {}),
-      ...(typeof failWithPath === "string" && failWithPath.length > 0
-        ? { __internalFailWithPath: failWithPath }
-        : {}),
-    });
+    const result = writeF3AdoReminder(parsedArgs);
     console.log(JSON.stringify({
       status: result.report.ado.status,
       reminderPath: result.reminderPath,

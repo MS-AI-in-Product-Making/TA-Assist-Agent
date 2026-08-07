@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { writeF3AdoReminder } from "./write-f3-ado-reminder.mjs";
@@ -194,6 +194,131 @@ describe("writeF3AdoReminder", () => {
       name.includes("copilot-stage") || name.includes("copilot-backup") || name.endsWith(".tmp"));
     expect(leftovers).toHaveLength(0);
   });
+
+  it("fails closed for a concurrent writer while lock owner continues to commit", () => {
+    const root = setupF3Root();
+    const reportJsonPath = path.join(root, "Feature3-Report.json");
+    const reportMdPath = path.join(root, "Feature3-Report.md");
+    const reminderPath = path.join(root, "Feature3-ADO-Reminder.md");
+    writeFileSync(reportMdPath, "BASE_MD\n", "utf8");
+    writeFileSync(reminderPath, "BASE_REMINDER\n", "utf8");
+
+    let launchedB = false;
+    const injectedFsOps = {
+      existsSync,
+      readFileSync,
+      writeFileSync,
+      rmSync,
+      statSync: (targetPath) => {
+        if (path.resolve(targetPath).toLowerCase() === path.resolve(root).toLowerCase()) {
+          return { isDirectory: () => true };
+        }
+        return statSync(targetPath);
+      },
+      renameSync: (fromPath, toPath) => {
+        renameSync(fromPath, toPath);
+        const from = String(fromPath);
+        const to = String(toPath);
+        if (!launchedB && from.endsWith("Feature3-Report.md") && to.includes("copilot-backup")) {
+          launchedB = true;
+          expect(() => writeF3AdoReminder({
+            f3OutputRoot: root,
+            adoOutcome: {
+              status: "blocked",
+              reasonCode: "work_item_not_found",
+              workItemReference: "B-WRITE",
+            },
+          })).toThrow(/lock|busy|another writer|another process/i);
+        }
+      },
+    };
+
+    const resultA = writeF3AdoReminder({
+      f3OutputRoot: root,
+      adoOutcome: {
+        status: "failed",
+        reasonCode: "project_not_found",
+        workItemReference: "A-WRITE",
+      },
+      __internalFsOps: injectedFsOps,
+    });
+
+    const persisted = JSON.parse(readFileSync(reportJsonPath, "utf8"));
+    expect(launchedB).toBe(true);
+    expect(resultA.report.ado.workItemReference).toBe("A-WRITE");
+    expect(persisted.ado).toEqual({
+      status: "failed",
+      reasonCode: "project_not_found",
+      workItemReference: "A-WRITE",
+    });
+    expect(readFileSync(reportMdPath, "utf8")).toContain("A-WRITE");
+    expect(readFileSync(reminderPath, "utf8")).toContain("F3 DIM ID / Drawing Governance Reminder");
+  });
+
+  it("prevents concurrent entry so failing writer rollback cannot clobber other invocation", () => {
+    const root = setupF3Root();
+    const reportJsonPath = path.join(root, "Feature3-Report.json");
+    const reportMdPath = path.join(root, "Feature3-Report.md");
+    const reminderPath = path.join(root, "Feature3-ADO-Reminder.md");
+    writeFileSync(reportMdPath, "BASE_MD\n", "utf8");
+    writeFileSync(reminderPath, "BASE_REMINDER\n", "utf8");
+
+    const before = {
+      json: readFileSync(reportJsonPath, "utf8"),
+      md: readFileSync(reportMdPath, "utf8"),
+      reminder: readFileSync(reminderPath, "utf8"),
+    };
+
+    let launchedB = false;
+    const injectedFsOps = {
+      existsSync,
+      readFileSync,
+      writeFileSync,
+      rmSync,
+      statSync: (targetPath) => {
+        if (path.resolve(targetPath).toLowerCase() === path.resolve(root).toLowerCase()) {
+          return { isDirectory: () => true };
+        }
+        return statSync(targetPath);
+      },
+      renameSync: (fromPath, toPath) => {
+        renameSync(fromPath, toPath);
+        const from = String(fromPath);
+        const to = String(toPath);
+        if (!launchedB && from.endsWith("Feature3-Report.md") && to.includes("copilot-backup")) {
+          launchedB = true;
+          expect(() => writeF3AdoReminder({
+            f3OutputRoot: root,
+            adoOutcome: {
+              status: "blocked",
+              reasonCode: "work_item_not_found",
+              workItemReference: "B-WRITE",
+            },
+          })).toThrow(/lock|busy|another writer|another process/i);
+        }
+      },
+    };
+
+    expect(() => writeF3AdoReminder({
+      f3OutputRoot: root,
+      adoOutcome: {
+        status: "failed",
+        reasonCode: "project_not_found",
+        workItemReference: "A-WRITE",
+      },
+      __internalFsOps: injectedFsOps,
+      __internalFailPromotionAt: 3,
+      __internalFailWithPath: reportMdPath,
+    })).toThrow(/simulated-third-promotion-failure/i);
+
+    const after = {
+      json: readFileSync(reportJsonPath, "utf8"),
+      md: readFileSync(reportMdPath, "utf8"),
+      reminder: readFileSync(reminderPath, "utf8"),
+    };
+    expect(launchedB).toBe(true);
+    expect(after).toEqual(before);
+  });
 });
 
 describe("write-f3-ado-reminder CLI", () => {
@@ -305,34 +430,25 @@ describe("write-f3-ado-reminder CLI", () => {
     })).toThrow(/unsafe|failed|directory/i);
   });
 
-  it("redacts Windows paths with spaces and quoted absolute path variants in stderr", () => {
+  it("ignores former failure-injection env vars in CLI runtime", () => {
     const root = setupF3Root();
+    const stdout = execFileSync(process.execPath, [
+      "scripts/write-f3-ado-reminder.mjs",
+      root,
+      "--status",
+      "not_requested",
+    ], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      stdio: "pipe",
+      env: {
+        ...process.env,
+        F3_ADO_REMINDER_TEST_FAIL_PROMOTION: "3",
+        F3_ADO_REMINDER_TEST_FAIL_WITH_PATH: "C:\\Users\\Name\\AI Project\\ado repro\\Feature3-Report.md",
+      },
+    });
 
-    try {
-      execFileSync(process.execPath, [
-        "scripts/write-f3-ado-reminder.mjs",
-        root,
-        "--status",
-        "not_requested",
-      ], {
-        cwd: process.cwd(),
-        encoding: "utf8",
-        stdio: "pipe",
-        env: {
-          ...process.env,
-          F3_ADO_REMINDER_TEST_FAIL_PROMOTION: "3",
-          F3_ADO_REMINDER_TEST_FAIL_WITH_PATH: "C:\\Users\\Name\\AI Project\\ado repro\\Feature3-Report.md",
-        },
-      });
-    } catch (error) {
-      const stderr = String(error.stderr ?? "");
-      expect(stderr).toContain("[redacted-local-path]");
-      expect(stderr).not.toContain("ado repro");
-      expect(stderr).not.toContain("Feature3-Report.md");
-      expect(stderr).not.toContain("AI Project");
-      return;
-    }
-
-    throw new Error("Expected CLI writer command to fail for redaction coverage.");
+    const result = JSON.parse(stdout);
+    expect(result.status).toBe("not_requested");
   });
 });
