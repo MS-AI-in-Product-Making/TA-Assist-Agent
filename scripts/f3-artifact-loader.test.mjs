@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { f2UserReportSchema } from "../packages/contracts/dist/contracts.js";
 import { loadF2ArtifactBundle } from "./f3-artifact-loader.mjs";
 
 const roots = [];
@@ -10,9 +11,9 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-function enhancedRow() {
+function enhancedRow(worksheetName = "Analysis-A") {
   return {
-    worksheetName: "Analysis-A",
+    worksheetName,
     tableId: "factor-table-1",
     sourceRow: 14,
     actualFields: {
@@ -33,7 +34,13 @@ function enhancedRow() {
       percentContributionToSigma: 1,
       notes: null,
     },
-    sourceCells: { factorName: "Analysis-A!E14" },
+    sourceCells: { factorName: `${worksheetName}!E14` },
+    imageReference: {
+      artifact: "f1",
+      relativePath: `worksheets/${worksheetName}/tolerance-path.png`,
+      contentHash: "b".repeat(64),
+      worksheetName,
+    },
     missingRequiredFields: [],
     missingIdentifiers: [],
     capabilityStatus: "non_f0_process_category",
@@ -51,11 +58,11 @@ function systemSpecification() {
   };
 }
 
-function f4Handoff(row) {
+function f4Handoff(row, worksheetName = "Analysis-A", toleranceLoopDescription = "Anonymous device gap") {
   const specification = systemSpecification();
   return {
     contractVersion: "v1", handoffVersion: "f4-handoff-v1", inputClassification: "confidential", status: "ready",
-    workbookContentHash: "a".repeat(64), worksheetName: "Analysis-A", toleranceLoopDescription: "Anonymous device gap",
+    workbookContentHash: "a".repeat(64), worksheetName, toleranceLoopDescription,
     systemSpecification: {
       designNominal: -0.05, lowerSpecLimit: specification.lowerSpecLimit, upperSpecLimit: specification.upperSpecLimit,
       targetSigmaLevel: specification.targetSigmaLevel, targetCpk: 1, additionalMeanShift: specification.additionalMeanShift,
@@ -69,31 +76,46 @@ function f2Report(options = {}) {
   const worksheetStatus = options.worksheetStatus ?? "ready";
   const row = enhancedRow();
   const blocked = worksheetStatus === "blocked";
+  const secondRow = enhancedRow("Analysis-B");
+  const worksheets = [{
+    worksheetName: "Analysis-A",
+    ...(description === undefined ? {} : { toleranceLoopDescription: description }),
+    status: worksheetStatus,
+    tolerancePathImageStatus: blocked ? "unavailable" : "available",
+    systemSpecification: systemSpecification(),
+    systemSpecificationIssues: [],
+    rows: [row],
+    missingFieldSummary: blocked ? [{ field: "tolerancePathImage", factorCount: 0, sourceRows: [] }] : [],
+  }];
+  if (options.secondReady) worksheets.push({
+    worksheetName: "Analysis-B",
+    toleranceLoopDescription: "Anonymous device gap Analysis-B",
+    status: "ready",
+    tolerancePathImageStatus: "available",
+    systemSpecification: systemSpecification(),
+    systemSpecificationIssues: [],
+    rows: [secondRow],
+    missingFieldSummary: [],
+  });
   return {
     contractVersion: "v1",
     inputClassification: "confidential",
-    status: blocked ? "blocked" : "completed",
+    status: blocked ? (options.secondReady ? "partiallyBlocked" : "blocked") : "completed",
     workbook: { fileName: "Anonymous.xlsx", contentHash: "a".repeat(64), f1GeneratedAt: "2026-08-03T00:00:00.000Z" },
     knowledgeBaseVersions: ["v1", "internal-v1"],
     mappingRuleVersion: "v1",
     artifactRoot: "controlled/f1",
-    worksheets: [{
-      worksheetName: "Analysis-A",
-      ...(description === undefined ? {} : { toleranceLoopDescription: description }),
-      status: worksheetStatus,
-      tolerancePathImageStatus: blocked ? "unavailable" : "available",
-      systemSpecification: systemSpecification(),
-      systemSpecificationIssues: [],
-      rows: [row],
-      missingFieldSummary: blocked ? [{ field: "tolerancePathImage", factorCount: 0, sourceRows: [] }] : [],
-    }],
-    f4Handoffs: blocked ? [] : [f4Handoff(row)],
+    worksheets,
+    f4Handoffs: [
+      ...(!blocked ? [f4Handoff(row, "Analysis-A", description)] : []),
+      ...(options.secondReady ? [f4Handoff(secondRow, "Analysis-B", "Anonymous device gap Analysis-B")] : []),
+    ],
     adoEvents: [],
     summary: {
-      worksheetsChecked: 1,
+      worksheetsChecked: worksheets.length,
       blockedWorksheetCount: blocked ? 1 : 0,
-      readyWorksheetCount: blocked ? 0 : 1,
-      factorRowCount: 1,
+      readyWorksheetCount: blocked ? worksheets.length - 1 : worksheets.length,
+      factorRowCount: worksheets.length,
       rowsWithRequiredMissing: 0,
       requiredMissingFieldCount: 0,
       missingImageWorksheetCount: blocked ? 1 : 0,
@@ -101,7 +123,7 @@ function f2Report(options = {}) {
       internalGuidanceExceededCount: 0,
       f0InformationInsufficientCount: 0,
       publicLibraryMatchCount: 0,
-      nonF0ProcessCategoryCount: 1,
+      nonF0ProcessCategoryCount: worksheets.length,
       unableToCheckCount: 0,
       publicToleranceDifferenceCount: 0,
       publicDistributionDifferenceCount: 0,
@@ -120,12 +142,61 @@ function createF2Output(report = f2Report()) {
 }
 
 describe("loadF2ArtifactBundle", () => {
+  it("uses a valid F2 report fixture", () => {
+    const parsed = f2UserReportSchema.safeParse(f2Report({ secondReady: true }));
+    expect(parsed.success ? [] : parsed.error.issues).toEqual([]);
+  });
+
   it("loads only a structured Feature 2 JSON report", () => {
     const loaded = loadF2ArtifactBundle(createF2Output());
 
     expect(loaded.status).toBe("accepted");
     expect(loaded.request.worksheets[0].toleranceLoopDescription).toBe("Anonymous device gap");
     expect(loaded.request.worksheets[0].f2Status).toBe("ready");
+    expect(loaded.request.artifactRoot).toBe("controlled/f1");
+  });
+
+  it("filters ready worksheets in the requested order", () => {
+    const loaded = loadF2ArtifactBundle(createF2Output(f2Report({ secondReady: true })), {
+      selectedWorksheetNames: ["Analysis-B"],
+    });
+
+    expect(loaded.status).toBe("accepted");
+    expect(loaded.request.worksheets.map(({ worksheetName }) => worksheetName)).toEqual(["Analysis-B"]);
+  });
+
+  it("keeps all ready worksheets when no selection is provided", () => {
+    const loaded = loadF2ArtifactBundle(createF2Output(f2Report({ secondReady: true })));
+
+    expect(loaded.status).toBe("accepted");
+    expect(loaded.request.worksheets.map(({ worksheetName }) => worksheetName)).toEqual(["Analysis-A", "Analysis-B"]);
+  });
+
+  it.each([
+    { selection: [], reference: "empty" },
+    { selection: ["Analysis-A", "Analysis-A"], reference: "Analysis-A" },
+    { selection: ["Unknown"], reference: "Unknown" },
+  ])("rejects an invalid worksheet selection: $reference", ({ selection, reference }) => {
+    expect(loadF2ArtifactBundle(createF2Output(f2Report({ secondReady: true })), {
+      selectedWorksheetNames: selection,
+    })).toMatchObject({
+      status: "inputRejected",
+      report: {
+        artifactIssues: [{
+          reasonCode: "worksheet_selection_invalid",
+          artifactReference: expect.stringContaining(reference),
+        }],
+      },
+    });
+  });
+
+  it("rejects selecting a blocked worksheet", () => {
+    expect(loadF2ArtifactBundle(createF2Output(f2Report({ worksheetStatus: "blocked", secondReady: true })), {
+      selectedWorksheetNames: ["Analysis-A"],
+    })).toMatchObject({
+      status: "inputRejected",
+      report: { artifactIssues: [{ reasonCode: "worksheet_selection_invalid" }] },
+    });
   });
 
   it("does not recover descriptions from Markdown", () => {

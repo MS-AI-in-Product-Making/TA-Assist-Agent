@@ -20,7 +20,7 @@ function rejected(reasonCode, artifactReference) {
   };
 }
 
-export function loadF2ArtifactBundle(artifactRoot) {
+export function loadF2ArtifactBundle(artifactRoot, { selectedWorksheetNames } = {}) {
   const reportPath = path.join(path.resolve(artifactRoot), "Feature2-Report.json");
   if (!existsSync(reportPath)) return rejected("f2_report_missing", "Feature2-Report.json");
 
@@ -37,7 +37,22 @@ export function loadF2ArtifactBundle(artifactRoot) {
 
   const readyWorksheets = parsed.data.worksheets.filter((worksheet) => worksheet.status === "ready");
   if (readyWorksheets.length === 0) return rejected("no_ready_worksheet", "Feature2-Report.json");
-  const missingDescription = readyWorksheets.find((worksheet) => worksheet.toleranceLoopDescription === undefined);
+  const readyByName = new Map(readyWorksheets.map((worksheet) => [worksheet.worksheetName, worksheet]));
+  let selectedWorksheets = readyWorksheets;
+  if (selectedWorksheetNames !== undefined) {
+    const duplicateNames = selectedWorksheetNames.filter((name, index) => selectedWorksheetNames.indexOf(name) !== index);
+    const unavailableNames = selectedWorksheetNames.filter((name) => !readyByName.has(name));
+    if (selectedWorksheetNames.length === 0 || duplicateNames.length > 0 || unavailableNames.length > 0) {
+      const invalidNames = [...new Set([...duplicateNames, ...unavailableNames])];
+      return rejected(
+        "worksheet_selection_invalid",
+        invalidNames.length > 0 ? `worksheet-selection:${invalidNames.join(",")}` : "worksheet-selection:empty",
+      );
+    }
+    selectedWorksheets = selectedWorksheetNames.map((name) => readyByName.get(name));
+  }
+
+  const missingDescription = selectedWorksheets.find((worksheet) => worksheet.toleranceLoopDescription === undefined);
   if (missingDescription !== undefined) {
     return rejected("description_missing", `worksheet:${missingDescription.worksheetName}`);
   }
@@ -46,11 +61,12 @@ export function loadF2ArtifactBundle(artifactRoot) {
     contractVersion: "v1",
     modelVersion: "drawing-governance-v2",
     inputClassification: "confidential",
+    artifactRoot: parsed.data.artifactRoot,
     workbook: {
       fileName: parsed.data.workbook.fileName,
       contentHash: parsed.data.workbook.contentHash,
     },
-    worksheets: readyWorksheets.map((worksheet) => ({
+    worksheets: selectedWorksheets.map((worksheet) => ({
       worksheetName: worksheet.worksheetName,
       toleranceLoopDescription: worksheet.toleranceLoopDescription,
       f2Status: "ready",

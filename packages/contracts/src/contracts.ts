@@ -4442,6 +4442,7 @@ const drawingGovernanceInputRejectedResultV2Schema = z.object({
       "workbook_identity_mismatch",
       "description_missing",
       "no_ready_worksheet",
+      "worksheet_selection_invalid",
     ]),
     artifactReference: z.string().min(1),
   }).strict()).min(1),
