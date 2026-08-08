@@ -280,6 +280,7 @@ describe("f3-analysis skill contract", () => {
       "npm run workflow:f3 -- <f2-output-dir>",
       "npm run workflow:f3 -- <f2-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...]",
       "npm run workflow:f3:ado-reminder -- <f3-dir> --status not_requested",
+      "npm run workflow:f3:ado-reminder -- <f3-dir> --status updated --work-item-reference <id>",
       "npm run workflow:f3:ado-reminder -- <f3-dir> --status blocked --reason-code surface_mcp_unavailable",
       "npm run workflow:f3:ado-reminder -- <f3-dir> --status blocked --reason-code surface_mcp_authentication_failed",
       "npm run workflow:f3:ado-reminder -- <f3-dir> --status blocked --reason-code surface_mcp_comment_body_unsupported",
@@ -307,6 +308,7 @@ describe("f3-analysis skill contract", () => {
     expect(skill).toContain("npm run workflow:f3 -- <f2-output-dir>");
     expect(skill).toContain("npm run workflow:f3 -- <f2-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...]");
     expect(skill).toContain("npm run workflow:f3:ado-reminder -- <f3-dir> --status not_requested");
+    expect(skill).toContain("npm run workflow:f3:ado-reminder -- <f3-dir> --status updated --work-item-reference <id>");
     expect(skill).toContain("npm run workflow:f3:ado-reminder -- <f3-dir> --status blocked --reason-code surface_mcp_comment_body_unsupported");
     expect(skill).toContain("npm run workflow:f3:ado-reminder -- <f3-dir> --status failed --reason-code write_verification_failed");
     expect(skill).toContain("npm run workflow:f3:ado-reminder -- <f3-dir> --status blocked --reason-code user_declined_write");
