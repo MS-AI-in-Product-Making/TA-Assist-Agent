@@ -163,6 +163,32 @@ describe("writeF3AdoReminder", () => {
     })).toThrow(/not_requested/i);
   });
 
+  it("persists controlled pre-validation Surface MCP failures without a target reference", () => {
+    for (const reasonCode of ["surface_mcp_unavailable", "surface_mcp_authentication_failed"]) {
+      const root = setupF3Root();
+      const result = writeF3AdoReminder({
+        f3OutputRoot: root,
+        adoOutcome: { status: "blocked", reasonCode },
+      });
+
+      expect(result.report.ado).toEqual({ status: "blocked", reasonCode });
+    }
+  });
+
+  it("rejects target references for pre-validation Surface MCP failures", () => {
+    for (const reasonCode of ["surface_mcp_unavailable", "surface_mcp_authentication_failed"]) {
+      const root = setupF3Root();
+      expect(() => writeF3AdoReminder({
+        f3OutputRoot: root,
+        adoOutcome: {
+          status: "blocked",
+          reasonCode,
+          workItemReference: "1102392",
+        },
+      })).toThrow(/cannot include work item reference/i);
+    }
+  });
+
   it("rolls back all three artifacts when third promotion fails and leaves no controlled temp/backup files", () => {
     const root = setupF3Root();
     const reminderPath = path.join(root, "Feature3-ADO-Reminder.md");

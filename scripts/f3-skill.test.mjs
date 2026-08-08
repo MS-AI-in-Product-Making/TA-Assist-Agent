@@ -280,6 +280,8 @@ describe("f3-analysis skill contract", () => {
       "npm run workflow:f3 -- <f2-output-dir>",
       "npm run workflow:f3 -- <f2-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...]",
       "npm run workflow:f3:ado-reminder -- <f3-dir> --status not_requested",
+      "npm run workflow:f3:ado-reminder -- <f3-dir> --status blocked --reason-code surface_mcp_unavailable",
+      "npm run workflow:f3:ado-reminder -- <f3-dir> --status blocked --reason-code surface_mcp_authentication_failed",
       "npm run workflow:f3:ado-reminder -- <f3-dir> --status blocked --reason-code surface_mcp_comment_body_unsupported",
       "npm run workflow:f3:ado-reminder -- <f3-dir> --status blocked --reason-code surface_mcp_comment_body_unsupported --work-item-reference <id>",
       "npm run workflow:f3:ado-reminder -- <f3-dir> --status failed --reason-code write_verification_failed",
@@ -366,6 +368,23 @@ describe("f3-analysis skill contract", () => {
     expect(choiceCreateIndex).toBeLessThan(boundaryIndex);
     expect(choiceExistingIndex).toBeLessThan(boundaryIndex);
     expect(choiceNoPublishIndex).toBeLessThan(boundaryIndex);
+  });
+
+  it("connects and authenticates Surface MCP after publishing mode and before entity validation", () => {
+    const skill = readUtf8(skillPath);
+    const reference = readUtf8(referencePath);
+    const publishGate = "Question call 1 - publishing mode: vscode_askQuestions";
+    const connectionPhase = "## Phase 3 - Surface connection and authentication";
+    const readOnlyTrigger = "read-only organization listing";
+    const validationPhase = "## Phase 4 - Surface validation flow";
+
+    expect(skill.indexOf(connectionPhase)).toBeGreaterThan(skill.indexOf(publishGate));
+    expect(skill.indexOf(readOnlyTrigger)).toBeGreaterThan(skill.indexOf(connectionPhase));
+    expect(skill.indexOf(validationPhase)).toBeGreaterThan(skill.indexOf(readOnlyTrigger));
+    expect(skill).toContain("VS Code native authentication");
+    expect(skill).toContain("Wait for the tool call to return");
+    expect(skill).toContain("Never request passwords, PATs, tokens, verification codes, or MFA responses");
+    expect(reference).toContain("configured -> connected -> authenticated -> entity validated");
   });
 
   it("documents validated create/existing/no-publish flows and exact fallback command", () => {
@@ -457,7 +476,7 @@ describe("f3-analysis skill contract", () => {
     expect(reference).toContain("no signal -> Complete");
   });
 
-  it("defines exact status/reason matrix in reference and keeps all four flows unique", () => {
+  it("defines exact status/reason matrix in reference and keeps all six flows unique", () => {
     const reference = readUtf8(referencePath);
     const matrix = extractStatusReasonMatrixFromReference(reference);
 
@@ -467,6 +486,18 @@ describe("f3-analysis skill contract", () => {
         status: "not_requested",
         reasonCode: undefined,
         note: "no reason/reference",
+      },
+      {
+        flow: "Surface MCP unavailable",
+        status: "blocked",
+        reasonCode: "surface_mcp_unavailable",
+        note: undefined,
+      },
+      {
+        flow: "Surface MCP authentication failed",
+        status: "blocked",
+        reasonCode: "surface_mcp_authentication_failed",
+        note: undefined,
       },
       {
         flow: "final user decline",
@@ -489,7 +520,7 @@ describe("f3-analysis skill contract", () => {
     ]);
 
     const signatures = new Set(matrix.map((row) => `${row.status}|${row.reasonCode ?? ""}`));
-    expect(signatures.size).toBe(4);
+    expect(signatures.size).toBe(6);
 
     expect(reference).toContain("`updated` is persisted only after readback verification and carries no reason code.");
     expect(reference).toContain("local reminder fallback is not required on successful update");
@@ -500,12 +531,16 @@ describe("f3-analysis skill contract", () => {
     const commands = extractAdoReminderCommandsFromSkill(skill);
     const fallbackCommands = commands.filter((line) =>
       line.includes("--status not_requested")
+      || line.includes("--reason-code surface_mcp_unavailable")
+      || line.includes("--reason-code surface_mcp_authentication_failed")
       || line.includes("--reason-code user_declined_write")
       || line.includes("--reason-code surface_mcp_comment_body_unsupported")
       || line.includes("--reason-code write_verification_failed"));
 
     expect(fallbackCommands).toEqual([
       "npm run workflow:f3:ado-reminder -- <f3-dir> --status not_requested",
+      "npm run workflow:f3:ado-reminder -- <f3-dir> --status blocked --reason-code surface_mcp_unavailable",
+      "npm run workflow:f3:ado-reminder -- <f3-dir> --status blocked --reason-code surface_mcp_authentication_failed",
       "npm run workflow:f3:ado-reminder -- <f3-dir> --status blocked --reason-code surface_mcp_comment_body_unsupported",
       "npm run workflow:f3:ado-reminder -- <f3-dir> --status blocked --reason-code surface_mcp_comment_body_unsupported --work-item-reference <id>",
       "npm run workflow:f3:ado-reminder -- <f3-dir> --status failed --reason-code write_verification_failed",
@@ -542,8 +577,9 @@ describe("f3-analysis skill contract", () => {
     const phase1Index = skill.indexOf("## Phase 1 - Preconditions and entry");
     const phase2Index = skill.indexOf("## Phase 2 - Publish mode gate");
     const boundaryIndex = skill.indexOf("Surface MCP entity calls may start only after Question call 1 returns");
-    const phase3Index = skill.indexOf("## Phase 3 - Surface validation flow");
-    const phase4Index = skill.indexOf("## Phase 4 - Preview and final write confirmation");
+    const phase3Index = skill.indexOf("## Phase 3 - Surface connection and authentication");
+    const phase4Index = skill.indexOf("## Phase 4 - Surface validation flow");
+    const phase5Index = skill.indexOf("## Phase 5 - Preview and final write confirmation");
     const previewIndex = skill.indexOf("deterministic English preview");
     const confirmIndex = skill.indexOf("Question call 2 - final write confirmation: vscode_askQuestions");
     const writeIndex = skill.indexOf("write exactly once");
@@ -552,8 +588,9 @@ describe("f3-analysis skill contract", () => {
     expect(boundaryIndex).toBeGreaterThan(phase2Index);
     expect(phase3Index).toBeGreaterThan(boundaryIndex);
     expect(phase4Index).toBeGreaterThan(phase3Index);
+    expect(phase5Index).toBeGreaterThan(phase4Index);
     expect(previewIndex).toBeGreaterThan(-1);
-    expect(previewIndex).toBeGreaterThan(phase4Index);
+    expect(previewIndex).toBeGreaterThan(phase5Index);
     expect(confirmIndex).toBeGreaterThan(previewIndex);
     expect(writeIndex).toBeGreaterThan(confirmIndex);
 
@@ -576,9 +613,10 @@ describe("f3-analysis skill contract", () => {
   it("keeps phase markers and askQuestions markers strictly separated and ordered", () => {
     const skill = readUtf8(skillPath);
     const phase2 = "## Phase 2 - Publish mode gate";
-    const phase3 = "## Phase 3 - Surface validation flow";
-    const phase4 = "## Phase 4 - Preview and final write confirmation";
-    const phase5 = "## Phase 5 - Write execution contract";
+    const phase3 = "## Phase 3 - Surface connection and authentication";
+    const phase4 = "## Phase 4 - Surface validation flow";
+    const phase5 = "## Phase 5 - Preview and final write confirmation";
+    const phase6 = "## Phase 6 - Write execution contract";
     const q1 = "Question call 1 - publishing mode: vscode_askQuestions";
     const boundary = "Surface MCP entity calls may start only after Question call 1 returns";
     const preview = "deterministic English preview";
@@ -590,6 +628,7 @@ describe("f3-analysis skill contract", () => {
     const phase3Index = skill.indexOf(phase3);
     const phase4Index = skill.indexOf(phase4);
     const phase5Index = skill.indexOf(phase5);
+    const phase6Index = skill.indexOf(phase6);
     const q1Index = skill.indexOf(q1);
     const boundaryIndex = skill.indexOf(boundary);
     const previewIndex = skill.indexOf(preview);
@@ -605,11 +644,13 @@ describe("f3-analysis skill contract", () => {
     expect(q1Index).toBeGreaterThan(phase2Index);
     expect(boundaryIndex).toBeGreaterThan(q1Index);
     expect(boundaryIndex).toBeLessThan(phase3Index);
+    expect(phase4Index).toBeGreaterThan(phase3Index);
 
-    expect(previewIndex).toBeGreaterThan(phase4Index);
+    expect(previewIndex).toBeGreaterThan(phase5Index);
     expect(q2Index).toBeGreaterThan(previewIndex);
+    expect(phase6Index).toBeGreaterThan(q2Index);
     expect(confirmWriteIndex).toBeGreaterThan(q2Index);
-    expect(q2Index).toBeLessThan(phase5Index);
+    expect(q2Index).toBeLessThan(phase6Index);
   });
 
   it("rejects duplicate target headings instead of selecting the first section", () => {

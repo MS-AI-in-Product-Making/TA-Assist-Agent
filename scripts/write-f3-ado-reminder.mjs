@@ -13,6 +13,8 @@ const CONTROLLED_REASON_CODES = new Set([
   "work_item_type_not_found",
   "work_item_not_found",
   "surface_mcp_capability_missing",
+  "surface_mcp_unavailable",
+  "surface_mcp_authentication_failed",
   "surface_mcp_comment_body_unsupported",
   "user_declined_write",
   "write_verification_failed",
@@ -80,6 +82,14 @@ function validateAdoOutcome(adoOutcome) {
 
   if ((status === "blocked" || status === "failed") && reasonCode === undefined) {
     throw new Error("blocked/failed status requires a controlled reason code.");
+  }
+
+  const preValidationReasonCodes = new Set([
+    "surface_mcp_unavailable",
+    "surface_mcp_authentication_failed",
+  ]);
+  if (workItemReference !== undefined && preValidationReasonCodes.has(reasonCode)) {
+    throw new Error("Pre-validation Surface MCP failures cannot include work item reference.");
   }
 
   return {

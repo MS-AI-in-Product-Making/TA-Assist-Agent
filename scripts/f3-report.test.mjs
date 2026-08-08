@@ -120,6 +120,21 @@ describe("renderF3Report", () => {
     expect(markdown).not.toContain("comment body");
   });
 
+  it.each([
+    "surface_mcp_unavailable",
+    "surface_mcp_authentication_failed",
+  ])("renders pre-validation Surface MCP reason %s without sensitive content", (reasonCode) => {
+    const report = governanceReport();
+    report.ado = { status: "blocked", reasonCode };
+
+    const markdown = renderAccepted(report);
+
+    expect(markdown).toContain("ADO 状态：`blocked`");
+    expect(markdown).toContain(`ADO 原因：${reasonCode}`);
+    expect(markdown).not.toContain("comment body");
+    expect(markdown).not.toContain("Authorization");
+  });
+
   it("sanitizes ADO work item reference before inline-code rendering", () => {
     const report = governanceReport();
     report.ado = {
