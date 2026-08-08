@@ -77,17 +77,17 @@ Governance issue mappings:
 
 ## System.History write contract
 
-Define `confirmedMarkdownBody` as the complete deterministic Markdown body shown in the final confirmation. The only allowed `System.History` request shape is:
+The direct comment channel uses `confirmedMarkdownBody` from `Feature3-ADO-Reminder.md`. The System.History channel uses `confirmedHistoryHtml` from `Feature3-ADO-History.html`. The final confirmation shows the complete governance data and states that System.History writes its deterministic HTML table serialization. The only allowed `System.History` request shape is:
 
 ```js
 const requestBody = [{
 	"op": "add",
 	"path": "/fields/System.History",
-	value: confirmedMarkdownBody,
+	value: confirmedHistoryHtml,
 }];
 ```
 
-Do not add any other JSON Patch operation. Never derive `path` from user input. After the single write, read back with `mcp_surface_mcp_p_list_work_item_comments` exactly once and require exactly one new comment whose work item ID, exact text, and SHA-256 match `confirmedMarkdownBody`. Any write error or mismatch is `write_verification_failed`; do not retry.
+Do not add any other JSON Patch operation. Never derive `path` from user input. After the single write, read back with `mcp_surface_mcp_p_list_work_item_comments` exactly once and require exactly one new comment whose work item ID matches, whose comment format `html` is reported, and whose exact HTML text and SHA-256 match `confirmedHistoryHtml`. Any write error or mismatch is `write_verification_failed`; do not retry. Raw Markdown must never be sent to `System.History`.
 
 ## Confirmation and write policy
 

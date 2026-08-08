@@ -620,6 +620,10 @@ describe("f3-analysis skill contract", () => {
       expect(contract).toContain("mcp_surface_mcp_p_update_work_item");
       expect(contract).toContain("/fields/System.History");
       expect(contract).toContain("mcp_surface_mcp_p_list_work_item_comments");
+      expect(contract).toContain("Feature3-ADO-History.html");
+      expect(contract).toContain("confirmedHistoryHtml");
+      expect(contract).toContain("comment format `html`");
+      expect(contract).toContain("exact HTML text and SHA-256");
       expect(contract).toContain("exactly one new comment");
       expect(contract).toContain("SHA-256");
       expect(contract).toContain("write_verification_failed");
@@ -627,8 +631,10 @@ describe("f3-analysis skill contract", () => {
 
     expect(reference).toContain('"op": "add"');
     expect(reference).toContain('"path": "/fields/System.History"');
-    expect(reference).toContain("value: confirmedMarkdownBody");
+    expect(reference).toContain("value: confirmedHistoryHtml");
     expect(reference).toContain("Do not add any other JSON Patch operation");
+    expect(skill).toContain("direct comment channel uses `confirmedMarkdownBody`");
+    expect(skill).toContain("System.History channel uses `confirmedHistoryHtml`");
 
     const snapshotIndex = skill.indexOf("snapshot existing comment IDs");
     const previewIndex = skill.indexOf("deterministic English preview");
@@ -870,12 +876,20 @@ describe("f3-analysis skill contract", () => {
         "System.History",
       ], "missing governed System.History channel");
       expectContainsAny(flowSection, [
+        "Feature3-ADO-History.html",
+      ], "missing HTML history artifact");
+      expectContainsAny(flowSection, [
+        "confirmedHistoryHtml",
+      ], "missing channel-specific HTML body");
+      expectContainsAny(flowSection, [
         "exactly one new comment",
         "恰好一个新增评论",
       ], "missing new-comment readback rule");
       expectContainsAny(flowSection, [
         "exact text and SHA-256",
         "正文与 SHA-256 完全一致",
+        "exact HTML text and SHA-256",
+        "HTML 正文与 SHA-256 完全一致",
       ], "missing exact body verification rule");
 
       expectContainsAny(flowSection, [
@@ -918,6 +932,8 @@ describe("f3-analysis skill contract", () => {
     expect(featureRegister).toContain("no scheduler/milestone timer");
     expect(featureRegister).toContain("no F4 calculation/handoff impact");
     expect(featureRegister).toContain("System.History");
+    expect(featureRegister).toContain("Feature3-ADO-History.html");
+    expect(featureRegister).toContain("confirmedHistoryHtml");
     expect(featureRegister).toContain("exactly one new comment");
   });
 });

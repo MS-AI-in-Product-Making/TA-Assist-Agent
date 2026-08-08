@@ -100,8 +100,9 @@ F0 解读规则范围与维护边界见 [F0 TA 结果解读规则库设计](../s
   11 列固定表头为 `Device Level Dim | Dimension Description | Part / Subsystem | Drawing Number | Dim ID | Factor Description | Nominal | Upper Tolerance (+) | Lower Tolerance (-) | σ Level | Governance issue`；
   用户拒绝/能力不足/写后校验失败分别使用 `user_declined_write`、`surface_mcp_comment_body_unsupported`、
   `write_verification_failed` 并写本地 `Feature3-ADO-Reminder.md`；Bodyless direct comment schemas may use the
-  schema-qualified Surface MCP `System.History` channel; one write must produce exactly one new comment with exact
-  body/hash readback. 两种正文通道都不合格时必须阻断并拒绝空评论；
+  schema-qualified Surface MCP `System.History` channel. Direct comments use `confirmedMarkdownBody`; System.History
+  uses `confirmedHistoryHtml` from `Feature3-ADO-History.html`, and one write must produce exactly one new comment with
+  comment format `html` plus exact HTML body/hash readback. 两种正文通道都不合格时必须阻断并拒绝空评论；
   Never use Azure DevOps MCP/REST/browser/shell HTTP；no scheduler/milestone timer，且 no F4 calculation/handoff impact。
 - F4 的 `available` 只接受 F1/F2 已验证且内容哈希绑定的 `confidential` 结构化证据。计算版本为
   `excel-ta-v1`：少于 4 个有效因子推荐 WC，4 至 10 个推荐一维 RSS，多于 10 个转介 DM 团队
