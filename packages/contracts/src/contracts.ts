@@ -4043,6 +4043,13 @@ const f2InternalRecommendationSchema = z.object({
   }).strict(),
 }).strict();
 
+const f1ImageReferenceSchema = z.object({
+  artifact: z.literal("f1"),
+  relativePath: relativeArtifactPathSchema,
+  contentHash: sha256Schema,
+  worksheetName: z.string().min(1),
+}).strict();
+
 const f2EnhancedRowSchema = z.object({
   worksheetName: z.string().min(1),
   tableId: z.string().min(1),
@@ -4050,12 +4057,7 @@ const f2EnhancedRowSchema = z.object({
   actualFields: f2ActualFieldsSchema,
   displayFields: f2DisplayFieldsSchema.optional(),
   sourceCells: z.record(worksheetFieldNameSchema, worksheetSourceCellSchema),
-  imageReference: z.object({
-    artifact: z.literal("f1"),
-    relativePath: relativeArtifactPathSchema,
-    contentHash: sha256Schema,
-    worksheetName: z.string().min(1),
-  }).strict().optional(),
+  imageReference: f1ImageReferenceSchema.optional(),
   missingRequiredFields: z.array(requiredFieldNameSchema),
   missingIdentifiers: z.array(z.enum(["dimCharacteristicId", "partNumber"])),
   capabilityStatus: f2CapabilityStatusSchema,
@@ -4297,6 +4299,7 @@ export const drawingGovernanceRequestV2Schema = z.object({
   contractVersion: contractVersionSchema,
   modelVersion: z.literal("drawing-governance-v2"),
   inputClassification: z.literal("confidential"),
+  artifactRoot: z.string().min(1),
   workbook: z.object({
     fileName: z.string().min(1),
     contentHash: sha256Schema,
@@ -4306,7 +4309,15 @@ export const drawingGovernanceRequestV2Schema = z.object({
     toleranceLoopDescription: z.string().min(1),
     f2Status: z.literal("ready"),
     rows: z.array(f2EnhancedRowSchema),
-  }).strict()).min(1),
+  }).strict().superRefine((worksheet, context) => {
+    worksheet.rows.forEach((row, index) => {
+      if (row.imageReference === undefined) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "F3 rows require an F1 image reference", path: ["rows", index, "imageReference"] });
+      } else if (row.imageReference.worksheetName !== worksheet.worksheetName) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "image reference worksheet must match the containing worksheet", path: ["rows", index, "imageReference", "worksheetName"] });
+      }
+    });
+  })).min(1),
 }).strict();
 
 const f3QualitySignalSchema = z.enum([
@@ -4334,6 +4345,7 @@ const f3GovernanceRowSchema = z.object({
   dimIdStatus: f3DimIdStatusSchema,
   qualitySignals: z.array(f3QualitySignalSchema),
   governanceStatus: f3GovernanceStatusSchema,
+  imageReference: f1ImageReferenceSchema,
   source: f3SourceSchema,
 }).strict().superRefine((row, context) => {
   if (row.drawingDimensionKey !== undefined
@@ -4352,12 +4364,19 @@ const drawingGovernanceAcceptedResultV2Schema = z.object({
   outputClassification: z.literal("confidential"),
   featureId: z.literal("F3"),
   status: z.enum(["completed", "governance_required"]),
+  artifactRoot: z.string().min(1),
   workbook: z.object({ fileName: z.string().min(1), contentHash: sha256Schema }).strict(),
   worksheets: z.array(z.object({
     worksheetName: z.string().min(1),
     toleranceLoopDescription: z.string().min(1),
     rows: z.array(f3GovernanceRowSchema),
-  }).strict()),
+  }).strict().superRefine((worksheet, context) => {
+    worksheet.rows.forEach((row, index) => {
+      if (row.imageReference.worksheetName !== worksheet.worksheetName) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "image reference worksheet must match the containing worksheet", path: ["rows", index, "imageReference", "worksheetName"] });
+      }
+    });
+  })),
   ado: z.object({
     status: z.enum([
       "not_requested",

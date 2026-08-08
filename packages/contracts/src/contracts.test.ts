@@ -1479,12 +1479,19 @@ describe("F3 drawing governance v2 contracts", () => {
     lowerTolerance: "Analysis-A!L14",
     standardDeviation: "Analysis-A!N14",
   };
+  const imageReference = {
+    artifact: "f1",
+    relativePath: "worksheets/Analysis-A/tolerance-path.png",
+    contentHash: "a".repeat(64),
+    worksheetName: "Analysis-A",
+  };
   const enhancedRow = {
     worksheetName: "Analysis-A",
     tableId: "factor-table-1",
     sourceRow: 14,
     actualFields,
     sourceCells,
+    imageReference,
     missingRequiredFields: [],
     missingIdentifiers: [],
     capabilityStatus: "non_f0_process_category",
@@ -1494,6 +1501,7 @@ describe("F3 drawing governance v2 contracts", () => {
     contractVersion: "v1",
     modelVersion: "drawing-governance-v2",
     inputClassification: "confidential",
+    artifactRoot: "controlled/f1",
     workbook: { fileName: "Anonymous.xlsx", contentHash },
     worksheets: [{
       worksheetName: "Analysis-A",
@@ -1519,6 +1527,7 @@ describe("F3 drawing governance v2 contracts", () => {
     dimIdStatus: "valid",
     qualitySignals: [],
     governanceStatus: "complete",
+    imageReference,
     source: {
       worksheetName: "Analysis-A",
       tableId: "factor-table-1",
@@ -1532,6 +1541,7 @@ describe("F3 drawing governance v2 contracts", () => {
     outputClassification: "confidential",
     featureId: "F3",
     status: "completed",
+    artifactRoot: "controlled/f1",
     workbook: { fileName: "Anonymous.xlsx", contentHash },
     worksheets: [{
       worksheetName: "Analysis-A",
@@ -1597,6 +1607,35 @@ describe("F3 drawing governance v2 contracts", () => {
       summary: { ...result.summary, factorCount: 2 },
     }).success).toBe(false);
     expect(resultSchema.safeParse({ ...result, status: "governance_required" }).success).toBe(false);
+  });
+
+  it("requires F1 image provenance that matches the containing worksheet", () => {
+    const { requestSchema, resultSchema } = schemas();
+    const { imageReference: _requestImage, ...requestRowWithoutImage } = enhancedRow;
+    const { imageReference: _resultImage, ...resultRowWithoutImage } = governanceRow;
+
+    expect(requestSchema.safeParse({
+      ...request,
+      worksheets: [{ ...request.worksheets[0], rows: [requestRowWithoutImage] }],
+    }).success).toBe(false);
+    expect(resultSchema.safeParse({
+      ...result,
+      worksheets: [{ ...result.worksheets[0], rows: [resultRowWithoutImage] }],
+    }).success).toBe(false);
+    expect(resultSchema.safeParse({
+      ...result,
+      worksheets: [{
+        ...result.worksheets[0],
+        rows: [{ ...governanceRow, imageReference: { ...imageReference, artifact: "f2" } }],
+      }],
+    }).success).toBe(false);
+    expect(resultSchema.safeParse({
+      ...result,
+      worksheets: [{
+        ...result.worksheets[0],
+        rows: [{ ...governanceRow, imageReference: { ...imageReference, worksheetName: "Analysis-B" } }],
+      }],
+    }).success).toBe(false);
   });
 });
 
