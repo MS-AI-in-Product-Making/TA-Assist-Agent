@@ -623,7 +623,9 @@ describe("f3-analysis skill contract", () => {
       expect(contract).toContain("Feature3-ADO-History.html");
       expect(contract).toContain("confirmedHistoryHtml");
       expect(contract).toContain("comment format `html`");
-      expect(contract).toContain("exact HTML text and SHA-256");
+      expect(contract).toContain("ADO-safe canonical HTML");
+      expect(contract).toContain("canonical HTML text and SHA-256");
+      expect(contract).toContain("11 headers and the expected factor row count");
       expect(contract).toContain("exactly one new comment");
       expect(contract).toContain("SHA-256");
       expect(contract).toContain("write_verification_failed");
@@ -890,6 +892,8 @@ describe("f3-analysis skill contract", () => {
         "正文与 SHA-256 完全一致",
         "exact HTML text and SHA-256",
         "HTML 正文与 SHA-256 完全一致",
+        "canonical HTML text and SHA-256",
+        "ADO-safe canonical HTML 正文与 SHA-256",
       ], "missing exact body verification rule");
 
       expectContainsAny(flowSection, [

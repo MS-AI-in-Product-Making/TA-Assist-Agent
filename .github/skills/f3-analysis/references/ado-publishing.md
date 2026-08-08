@@ -87,7 +87,7 @@ const requestBody = [{
 }];
 ```
 
-Do not add any other JSON Patch operation. Never derive `path` from user input. After the single write, read back with `mcp_surface_mcp_p_list_work_item_comments` exactly once and require exactly one new comment whose work item ID matches, whose comment format `html` is reported, and whose exact HTML text and SHA-256 match `confirmedHistoryHtml`. Any write error or mismatch is `write_verification_failed`; do not retry. Raw Markdown must never be sent to `System.History`.
+Do not add any other JSON Patch operation. Never derive `path` from user input. After the single write, read back with `mcp_surface_mcp_p_list_work_item_comments` exactly once and require exactly one new comment whose work item ID matches and whose comment format `html` is reported. Require 11 headers and the expected factor row count. Compare ADO-safe canonical HTML by applying `normalizeAdoHistoryHtmlForVerification` to the confirmed and readback bodies; canonical HTML text and SHA-256 must match. This canonicalizer may remove only trailing line endings and ADO-injected whitespace immediately before `h2`, `p`, `li`, `ul`, `th`, or `td` closing tags. Any other write error, structure difference, text difference, or hash mismatch is `write_verification_failed`; do not retry. Raw Markdown must never be sent to `System.History`.
 
 ## Confirmation and write policy
 
@@ -97,7 +97,7 @@ Do not add any other JSON Patch operation. Never derive `path` from user input. 
 - Confirmation payload must include organization, project, work item ID/title, factor count, governance required count, complete preview, and write effect.
 - If user cancels Question call 2, use local reminder outcome `--status blocked --reason-code user_declined_write` (include work item reference only if valid target exists).
 - Execute the selected Surface write channel exactly once.
-- Read back comments exactly once and verify the new comment ID, work item ID, exact text, and SHA-256.
+- Read back comments exactly once and verify the new comment ID, work item ID, HTML structure, ADO-safe canonical HTML text, and canonical SHA-256.
 - On verification mismatch or failure, mark local failed fallback with `write_verification_failed`.
 
 Status/reason matrix (writer-compatible and unique):

@@ -59,6 +59,12 @@ function htmlCell(value) {
     .replaceAll(/\r?\n/g, "<br>");
 }
 
+export function normalizeAdoHistoryHtmlForVerification(value) {
+  return String(value)
+    .trimEnd()
+    .replace(/\s+(?=<\/(?:h2|p|li|ul|th|td)>)/g, "");
+}
+
 export function governanceIssue(row) {
   const issues = QUALITY_SIGNAL_ORDER
     .filter((signal) => row.qualitySignals.includes(signal))

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ADO_TABLE_HEADER,
   governanceIssue,
+  normalizeAdoHistoryHtmlForVerification,
   renderF3AdoReminder,
   renderF3AdoHistoryHtml,
 } from "./f3-ado-reminder.mjs";
@@ -200,5 +201,21 @@ describe("renderF3AdoHistoryHtml", () => {
       status: "input_rejected",
       artifactIssues: [{ reasonCode: "description_missing", artifactReference: "worksheet:TP_Gap_X" }],
     })).toThrow(/input_rejected/i);
+  });
+});
+
+describe("normalizeAdoHistoryHtmlForVerification", () => {
+  it("removes only ADO-injected whitespace before controlled closing tags", () => {
+    const expected = "<h2>Title</h2><p>Text</p><ul><li>Action</li></ul><table><thead><tr><th>Header</th></tr></thead><tbody><tr><td>Value</td></tr></tbody></table>\n";
+    const adoReadback = "<h2>Title </h2><p>Text </p><ul><li>Action </li> </ul><table><thead><tr><th>Header </th></tr></thead><tbody><tr><td>Value </td></tr></tbody></table>";
+
+    expect(normalizeAdoHistoryHtmlForVerification(adoReadback)).toBe(
+      normalizeAdoHistoryHtmlForVerification(expected),
+    );
+  });
+
+  it("preserves whitespace outside the controlled closing-tag boundary", () => {
+    expect(normalizeAdoHistoryHtmlForVerification("<td>A  B</td><div>C </div>"))
+      .toBe("<td>A  B</td><div>C </div>");
   });
 });
