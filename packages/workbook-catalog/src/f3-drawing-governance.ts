@@ -106,6 +106,7 @@ export function createF3DrawingGovernance(request: unknown): DrawingGovernanceRe
       dimIdStatus,
       qualitySignals,
       governanceStatus: qualitySignals.length === 0 ? "complete" as const : "needs_governance" as const,
+      imageReference: row.imageReference!,
       source: {
         worksheetName: row.worksheetName,
         tableId: row.tableId,
@@ -135,6 +136,7 @@ export function createF3DrawingGovernance(request: unknown): DrawingGovernanceRe
     outputClassification: "confidential",
     featureId: "F3",
     status: completeCount === composedRows.length ? "completed" : "governance_required",
+    artifactRoot: input.artifactRoot,
     workbook: input.workbook,
     worksheets,
     ado: { status: "not_requested" },

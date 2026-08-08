@@ -40,6 +40,12 @@ function row(overrides: { drawingNumber?: string | null; dimId?: string | null; 
       lowerTolerance: `Analysis-A!L${sourceRow}`,
       standardDeviation: `Analysis-A!N${sourceRow}`,
     },
+    imageReference: {
+      artifact: "f1" as const,
+      relativePath: "worksheets/Analysis-A/tolerance-path.png",
+      contentHash: "b".repeat(64),
+      worksheetName: "Analysis-A",
+    },
     missingRequiredFields: [],
     missingIdentifiers: [],
     capabilityStatus: "non_f0_process_category" as const,
@@ -52,6 +58,7 @@ function requestWithRows(rows: ReturnType<typeof row>[]) {
     contractVersion: "v1",
     modelVersion: "drawing-governance-v2",
     inputClassification: "confidential",
+    artifactRoot: "controlled/f1",
     workbook: { fileName: "Anonymous.xlsx", contentHash },
     worksheets: [{
       worksheetName: "Analysis-A",
@@ -67,6 +74,16 @@ function requestWithDimId(dimId: string | null) {
 }
 
 describe("createF3DrawingGovernance", () => {
+  it("preserves F1 image provenance", () => {
+    const request = requestWithRows([row()]);
+    const report = createF3DrawingGovernance(request);
+
+    expect(report.artifactRoot).toBe(request.artifactRoot);
+    expect(report.worksheets[0]?.rows[0]?.imageReference).toEqual(
+      request.worksheets[0]?.rows[0]?.imageReference,
+    );
+  });
+
   it.each([
     [null, "missing"],
     ["1", "suspected_invalid"],
