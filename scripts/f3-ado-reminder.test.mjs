@@ -23,6 +23,12 @@ function baseRow(overrides = {}) {
     dimIdStatus: "valid",
     qualitySignals: [],
     governanceStatus: "complete",
+    imageReference: {
+      artifact: "f1",
+      relativePath: "worksheets/TP_Gap_X/tolerance-path.png",
+      contentHash: "d".repeat(64),
+      worksheetName: "TP_Gap_X",
+    },
     source: {
       worksheetName: "TP_Gap_X",
       tableId: "factor-table-1",
@@ -42,6 +48,7 @@ function acceptedReport(rows) {
     status: rows.some((row) => row.governanceStatus !== "complete")
       ? "governance_required"
       : "completed",
+    artifactRoot: "controlled/f1",
     workbook: { fileName: "Anonymous.xlsx", contentHash: "a".repeat(64) },
     worksheets: [{
       worksheetName: "TP_Gap_X",
