@@ -610,6 +610,37 @@ describe("f3-analysis skill contract", () => {
     expect(skill).toContain("Never use Azure DevOps MCP/REST/browser/shell HTTP");
   });
 
+  it("governs the Surface System.History comment channel", () => {
+    const skill = readUtf8(skillPath);
+    const reference = readUtf8(referencePath);
+
+    for (const contract of [skill, reference]) {
+      expect(contract).toContain("mcp_surface_mcp_p_update_work_item");
+      expect(contract).toContain("/fields/System.History");
+      expect(contract).toContain("mcp_surface_mcp_p_list_work_item_comments");
+      expect(contract).toContain("exactly one new comment");
+      expect(contract).toContain("SHA-256");
+      expect(contract).toContain("write_verification_failed");
+    }
+
+    expect(reference).toContain('"op": "add"');
+    expect(reference).toContain('"path": "/fields/System.History"');
+    expect(reference).toContain("value: confirmedMarkdownBody");
+    expect(reference).toContain("Do not add any other JSON Patch operation");
+
+    const snapshotIndex = skill.indexOf("snapshot existing comment IDs");
+    const previewIndex = skill.indexOf("deterministic English preview");
+    const confirmIndex = skill.indexOf("Question call 2 - final write confirmation: vscode_askQuestions");
+    const writeIndex = skill.indexOf("call `mcp_surface_mcp_p_update_work_item` exactly once");
+    const readbackIndex = skill.indexOf("read back comments exactly once");
+
+    expect(snapshotIndex).toBeGreaterThan(-1);
+    expect(previewIndex).toBeGreaterThan(snapshotIndex);
+    expect(confirmIndex).toBeGreaterThan(previewIndex);
+    expect(writeIndex).toBeGreaterThan(confirmIndex);
+    expect(readbackIndex).toBeGreaterThan(writeIndex);
+  });
+
   it("keeps phase markers and askQuestions markers strictly separated and ordered", () => {
     const skill = readUtf8(skillPath);
     const phase2 = "## Phase 2 - Publish mode gate";
