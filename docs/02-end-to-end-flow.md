@@ -135,11 +135,14 @@ flowchart TB
 ## F3 Governed ADO Publishing Contract
 
 - User entry is the project Skill `.github/skills/f3-analysis/SKILL.md`.
+- Before a new F3 run, the user must select at least one worksheet from the F2 `ready` set; F3 analyzes only that selected subset.
+- The local F3 Markdown links `Device Level Dim`, `Dimension Description`, and `Factor Description` to the corresponding F1 worksheet image. F1 remains the only image owner; `Source Evidence` shows worksheet, table, row, and field-to-cell mappings.
 - Question call 1 - publishing mode: choose exactly one:
     - Create a new ADO work item
     - Use an existing ADO work item
     - Do not publish to ADO
 - Surface MCP entity calls may start only after Question call 1 returns.
+- Existing mode requires one HTTPS Azure DevOps work item URL. F3 parses organization, project, and ID from the URL, verifies the same target through Surface MCP, and does not persist the URL.
 - Surface MCP-only validation scope is `organization/project/type or ID`, with candidate correction before write.
 - New work item type default is `Default: Task` when user does not pick a type.
 - A complete preview is required before final write.

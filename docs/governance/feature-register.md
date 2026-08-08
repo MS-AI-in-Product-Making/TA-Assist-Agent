@@ -83,14 +83,18 @@ F0 解读规则范围与维护边界见 [F0 TA 结果解读规则库设计](../s
 - F3 的 `available` 只覆盖 `drawing-governance-v2` 确定性核心、本地 JSON/Markdown artifact workflow
   以及宿主注入的 Surface MCP adapter。当前 Part Number 等同 Drawing Number；正式键为
   `(Drawing Number, DIM ID)`，跨图纸相同 DIM ID 合法，同图纸重复产生 `duplicate_conflict`，
-  一位纯数字为不阻塞 TA 的 `suspected_invalid`。本地命令为
-  `npm run workflow:f3 -- "<feature2-artifact-directory>"`。ADO 写入仅更新 Comment 0，严格执行
+  一位纯数字为不阻塞 TA 的 `suspected_invalid`。Skill 必须先从 F2 `ready` worksheets 中取得至少一个
+  用户选择，并以可重复的 `--worksheet <worksheet-name>` 传入本地命令；不带筛选参数的直接 CLI 调用仍处理
+  全部 ready worksheets。F3 Markdown 的 Device Level Dim、Dimension Description 和 Factor Description
+  只链接 F1 所拥有的 worksheet 图片，`Source Evidence` 显示 worksheet/table/row/field-cell 追溯。
+  本地命令为 `npm run workflow:f3 -- "<feature2-artifact-directory>"`。ADO 写入仅更新 Comment 0，严格执行
   `prepare -> confirm -> execute`；真实写入仍需 Surface MCP capability、策略审批和逐次用户确认。
   无 ADO、负责人、能力、确认或写入失败时保存同一份 confidential 清单并继续 TA。F3 不依赖
   Azure DevOps MCP，不读取日期、不做截止临近判断，也不运行 scheduler。
   F3 治理发布的固定摘要为：用户经 `.github/skills/f3-analysis/SKILL.md` 进入；Question call 1 在
   `Create a new ADO work item` / `Use an existing ADO work item` / `Do not publish to ADO` 中三选一，且
-  Surface MCP entity calls may start only after Question call 1 returns；校验范围限定为
+  Surface MCP entity calls may start only after Question call 1 returns；existing 模式必须从 HTTPS ADO work item URL
+  解析 organization/project/ID，与 Surface readback 目标一致，且不持久化 URL；校验范围限定为
   Surface MCP-only 的 `organization/project/type or ID` 并允许 candidate correction；新建类型默认
   `Default: Task`；完整预览后再执行 Question call 2 终确认；Comment 与本地提醒模板均固定英文，
   11 列固定表头为 `Device Level Dim | Dimension Description | Part / Subsystem | Drawing Number | Dim ID | Factor Description | Nominal | Upper Tolerance (+) | Lower Tolerance (-) | σ Level | Governance issue`；
