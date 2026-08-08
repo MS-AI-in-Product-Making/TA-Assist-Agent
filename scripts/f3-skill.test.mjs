@@ -865,6 +865,18 @@ describe("f3-analysis skill contract", () => {
       ], "missing never-empty-comment rule");
 
       expectContainsAny(flowSection, [
+        "System.History",
+      ], "missing governed System.History channel");
+      expectContainsAny(flowSection, [
+        "exactly one new comment",
+        "恰好一个新增评论",
+      ], "missing new-comment readback rule");
+      expectContainsAny(flowSection, [
+        "exact text and SHA-256",
+        "正文与 SHA-256 完全一致",
+      ], "missing exact body verification rule");
+
+      expectContainsAny(flowSection, [
         "Never use Azure DevOps MCP/REST/browser/shell HTTP",
         "不得使用 Azure DevOps MCP/REST/browser/shell HTTP",
       ], "missing never-use-Azure-DevOps-fallback rule");
@@ -903,5 +915,7 @@ describe("f3-analysis skill contract", () => {
     expect(featureRegister).toContain("Never use Azure DevOps MCP/REST/browser/shell HTTP");
     expect(featureRegister).toContain("no scheduler/milestone timer");
     expect(featureRegister).toContain("no F4 calculation/handoff impact");
+    expect(featureRegister).toContain("System.History");
+    expect(featureRegister).toContain("exactly one new comment");
   });
 });
