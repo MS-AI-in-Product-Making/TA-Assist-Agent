@@ -47,10 +47,14 @@ Require Surface MCP capability for:
 - work item type query (create mode)
 - work item read
 - comments read
-- comment write with full Markdown body
+- a schema-qualified write channel for the full Markdown body
 
-If body capability is missing, do not call Surface comment write.
-Use local fallback reason: surface_mcp_comment_body_unsupported.
+Channel priority:
+
+1. A direct comment create/update tool with an explicit full-body string field.
+2. Surface `mcp_surface_mcp_p_update_work_item` only when its schema supports `requestBody[]` items with `op`, `path`, string `value`, and `add`.
+
+For either channel, call `mcp_surface_mcp_p_list_work_item_comments` once before preview and snapshot existing comment IDs. If body capability is missing, do not call Surface comment write. Body capability is missing only when neither route qualifies; use local fallback reason: surface_mcp_comment_body_unsupported.
 
 ## English payload contract
 
@@ -71,6 +75,20 @@ Governance issue mappings:
 - duplicate_conflict -> Duplicate Drawing Number and DIM ID conflict
 - no signal -> Complete
 
+## System.History write contract
+
+Define `confirmedMarkdownBody` as the complete deterministic Markdown body shown in the final confirmation. The only allowed `System.History` request shape is:
+
+```js
+const requestBody = [{
+	"op": "add",
+	"path": "/fields/System.History",
+	value: confirmedMarkdownBody,
+}];
+```
+
+Do not add any other JSON Patch operation. Never derive `path` from user input. After the single write, read back with `mcp_surface_mcp_p_list_work_item_comments` exactly once and require exactly one new comment whose work item ID, exact text, and SHA-256 match `confirmedMarkdownBody`. Any write error or mismatch is `write_verification_failed`; do not retry.
+
 ## Confirmation and write policy
 
 - Question call 1 (publishing mode) and Question call 2 (final write confirmation) MUST be separate calls and cannot be combined.
@@ -78,8 +96,8 @@ Governance issue mappings:
 - After validation and preview, Question call 2 asks user to `Confirm write`.
 - Confirmation payload must include organization, project, work item ID/title, factor count, governance required count, complete preview, and write effect.
 - If user cancels Question call 2, use local reminder outcome `--status blocked --reason-code user_declined_write` (include work item reference only if valid target exists).
-- Execute Surface write exactly once.
-- Read back the written comment and verify full body/hash match.
+- Execute the selected Surface write channel exactly once.
+- Read back comments exactly once and verify the new comment ID, work item ID, exact text, and SHA-256.
 - On verification mismatch or failure, mark local failed fallback with `write_verification_failed`.
 
 Status/reason matrix (writer-compatible and unique):
