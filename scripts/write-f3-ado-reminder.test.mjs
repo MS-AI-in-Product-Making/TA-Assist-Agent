@@ -83,14 +83,20 @@ describe("writeF3AdoReminder", () => {
     const result = writeF3AdoReminder({ f3OutputRoot: root, adoOutcome: { status: "not_requested" } });
 
     expect(result.reminderPath).toBe(path.join(root, "Feature3-ADO-Reminder.md"));
+    expect(result.historyHtmlPath).toBe(path.join(root, "Feature3-ADO-History.html"));
     expect(existsSync(result.reminderPath)).toBe(true);
+    expect(existsSync(result.historyHtmlPath)).toBe(true);
     expect(result.report.ado.status).toBe("not_requested");
 
     const reminder = readFileSync(result.reminderPath, "utf8");
+    const historyHtml = readFileSync(result.historyHtmlPath, "utf8");
     const json = JSON.parse(readFileSync(path.join(root, "Feature3-Report.json"), "utf8"));
     const reportMd = readFileSync(path.join(root, "Feature3-Report.md"), "utf8");
 
     expect(reminder).toContain("F3 DIM ID / Drawing Governance Reminder");
+    expect(historyHtml).toContain("<h2>F3 DIM ID / Drawing Governance Reminder</h2>");
+    expect(historyHtml).toContain("<table>");
+    expect(historyHtml.match(/<th>/g)).toHaveLength(11);
     expect(json.ado.status).toBe("not_requested");
     expect(reportMd).toContain("ADO 状态：`not_requested`");
     const href = path.relative(
@@ -189,16 +195,19 @@ describe("writeF3AdoReminder", () => {
     }
   });
 
-  it("rolls back all three artifacts when third promotion fails and leaves no controlled temp/backup files", () => {
+  it("rolls back all four artifacts when fourth promotion fails and leaves no controlled temp/backup files", () => {
     const root = setupF3Root();
     const reminderPath = path.join(root, "Feature3-ADO-Reminder.md");
+    const historyHtmlPath = path.join(root, "Feature3-ADO-History.html");
     const reportJsonPath = path.join(root, "Feature3-Report.json");
     const reportMdPath = path.join(root, "Feature3-Report.md");
 
     writeFileSync(reminderPath, "ORIGINAL_REMINDER\n", "utf8");
+    writeFileSync(historyHtmlPath, "ORIGINAL_HISTORY_HTML\n", "utf8");
     writeFileSync(reportMdPath, "ORIGINAL_REPORT_MD\n", "utf8");
 
     const originalReminder = readFileSync(reminderPath, "utf8");
+    const originalHistoryHtml = readFileSync(historyHtmlPath, "utf8");
     const originalJson = readFileSync(reportJsonPath, "utf8");
     const originalReportMd = readFileSync(reportMdPath, "utf8");
 
@@ -216,7 +225,7 @@ describe("writeF3AdoReminder", () => {
       }),
       renameSync: (fromPath, toPath) => {
         if (toPath === reportMdPath && String(fromPath).includes("copilot-stage")) {
-          throw new Error(`simulated-third-promotion-failure: "${toPath}"`);
+          throw new Error(`simulated-fourth-promotion-failure: "${toPath}"`);
         }
         renameSync(fromPath, toPath);
       },
@@ -229,9 +238,10 @@ describe("writeF3AdoReminder", () => {
         reasonCode: "surface_mcp_comment_body_unsupported",
       },
       __internalFsOps: injectedFsOps,
-    })).toThrow(/simulated-third-promotion-failure/i);
+    })).toThrow(/simulated-fourth-promotion-failure/i);
 
     expect(readFileSync(reminderPath, "utf8")).toBe(originalReminder);
+    expect(readFileSync(historyHtmlPath, "utf8")).toBe(originalHistoryHtml);
     expect(readFileSync(reportJsonPath, "utf8")).toBe(originalJson);
     expect(readFileSync(reportMdPath, "utf8")).toBe(originalReportMd);
 
@@ -245,8 +255,10 @@ describe("writeF3AdoReminder", () => {
     const reportJsonPath = path.join(root, "Feature3-Report.json");
     const reportMdPath = path.join(root, "Feature3-Report.md");
     const reminderPath = path.join(root, "Feature3-ADO-Reminder.md");
+    const historyHtmlPath = path.join(root, "Feature3-ADO-History.html");
     writeFileSync(reportMdPath, "BASE_MD\n", "utf8");
     writeFileSync(reminderPath, "BASE_REMINDER\n", "utf8");
+    writeFileSync(historyHtmlPath, "BASE_HISTORY_HTML\n", "utf8");
 
     let launchedB = false;
     const injectedFsOps = {
@@ -305,13 +317,16 @@ describe("writeF3AdoReminder", () => {
     const reportJsonPath = path.join(root, "Feature3-Report.json");
     const reportMdPath = path.join(root, "Feature3-Report.md");
     const reminderPath = path.join(root, "Feature3-ADO-Reminder.md");
+    const historyHtmlPath = path.join(root, "Feature3-ADO-History.html");
     writeFileSync(reportMdPath, "BASE_MD\n", "utf8");
     writeFileSync(reminderPath, "BASE_REMINDER\n", "utf8");
+    writeFileSync(historyHtmlPath, "BASE_HISTORY_HTML\n", "utf8");
 
     const before = {
       json: readFileSync(reportJsonPath, "utf8"),
       md: readFileSync(reportMdPath, "utf8"),
       reminder: readFileSync(reminderPath, "utf8"),
+      historyHtml: readFileSync(historyHtmlPath, "utf8"),
     };
 
     let launchedB = false;
@@ -352,7 +367,7 @@ describe("writeF3AdoReminder", () => {
         workItemReference: "A-WRITE",
       },
       __internalFsOps: injectedFsOps,
-      __internalFailPromotionAt: 3,
+      __internalFailPromotionAt: 4,
       __internalFailWithPath: reportMdPath,
     })).toThrow(/simulated-third-promotion-failure/i);
 
@@ -360,6 +375,7 @@ describe("writeF3AdoReminder", () => {
       json: readFileSync(reportJsonPath, "utf8"),
       md: readFileSync(reportMdPath, "utf8"),
       reminder: readFileSync(reminderPath, "utf8"),
+      historyHtml: readFileSync(historyHtmlPath, "utf8"),
     };
     expect(launchedB).toBe(true);
     expect(after).toEqual(before);
@@ -386,6 +402,7 @@ describe("write-f3-ado-reminder CLI", () => {
     const result = JSON.parse(stdout);
     expect(result.status).toBe("blocked");
     expect(result.reminderPath.endsWith("Feature3-ADO-Reminder.md")).toBe(true);
+    expect(result.historyHtmlPath.endsWith("Feature3-ADO-History.html")).toBe(true);
     expect(result.report.ado.reasonCode).toBe("surface_mcp_comment_body_unsupported");
   });
 

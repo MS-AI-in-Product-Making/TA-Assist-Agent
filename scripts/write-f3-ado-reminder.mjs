@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { drawingGovernanceResultV2Schema } from "../packages/contracts/dist/contracts.js";
-import { renderF3AdoReminder } from "./f3-ado-reminder.mjs";
+import { renderF3AdoHistoryHtml, renderF3AdoReminder } from "./f3-ado-reminder.mjs";
 import { renderF3Report } from "./f3-report.mjs";
 
 const SUPPORTED_STATUSES = new Set(["not_requested", "blocked", "failed", "updated"]);
@@ -175,6 +175,7 @@ function resolveSensitivePaths(f3OutputRoot) {
       path.join(resolvedRoot, "Feature3-Report.json"),
       path.join(resolvedRoot, "Feature3-Report.md"),
       path.join(resolvedRoot, "Feature3-ADO-Reminder.md"),
+      path.join(resolvedRoot, "Feature3-ADO-History.html"),
     ];
   } catch {
     return [];
@@ -207,6 +208,7 @@ function loadReportFromOutputRoot(f3OutputRoot, fsOps = createFsOps()) {
     reportJsonPath,
     reportMdPath: path.join(resolvedRoot, "Feature3-Report.md"),
     reminderPath: path.join(resolvedRoot, "Feature3-ADO-Reminder.md"),
+    historyHtmlPath: path.join(resolvedRoot, "Feature3-ADO-History.html"),
     report: parsed.data,
   };
 }
@@ -331,10 +333,12 @@ export function writeF3AdoReminder({
     });
 
     const reminderMd = renderF3AdoReminder(report);
+    const historyHtml = renderF3AdoHistoryHtml(report);
     const reportMd = renderF3Report(report, { outputRoot: resolvedRoot });
 
     persistArtifactsAtomically([
       { targetPath: loaded.reminderPath, content: reminderMd },
+      { targetPath: loaded.historyHtmlPath, content: historyHtml },
       { targetPath: loaded.reportJsonPath, content: `${JSON.stringify(report, null, 2)}\n` },
       { targetPath: loaded.reportMdPath, content: reportMd },
     ], fsOps, {
@@ -344,7 +348,7 @@ export function writeF3AdoReminder({
         : {}),
     });
 
-    return { reminderPath: loaded.reminderPath, report };
+    return { reminderPath: loaded.reminderPath, historyHtmlPath: loaded.historyHtmlPath, report };
   } finally {
     transactionLock.release();
   }
@@ -403,6 +407,7 @@ if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === imp
     console.log(JSON.stringify({
       status: result.report.ado.status,
       reminderPath: result.reminderPath,
+      historyHtmlPath: result.historyHtmlPath,
       report: result.report,
     }, null, 2));
   } catch (error) {

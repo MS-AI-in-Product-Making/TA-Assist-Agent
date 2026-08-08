@@ -119,12 +119,19 @@ describe("Feature 3 local artifact flow", () => {
     const result = JSON.parse(stdout);
     const json = JSON.parse(readFileSync(result.reportJsonPath, "utf8"));
     const markdown = readFileSync(result.reportMdPath, "utf8");
+    const reminder = readFileSync(path.join(outputRoot, "Feature3-ADO-Reminder.md"), "utf8");
+    const historyHtml = readFileSync(path.join(outputRoot, "Feature3-ADO-History.html"), "utf8");
 
     expect(result.status).toBe("governance_required");
     expect(json.modelVersion).toBe("drawing-governance-v2");
     expect(json.ado.status).toBe("not_requested");
     expect(markdown).toContain("Dimension Description");
     expect(markdown).toContain(json.worksheets[0].toleranceLoopDescription);
+    expect(result.reminderMdPath).toBe(path.join(outputRoot, "Feature3-ADO-Reminder.md"));
+    expect(result.historyHtmlPath).toBe(path.join(outputRoot, "Feature3-ADO-History.html"));
+    expect(reminder).toContain("| Device Level Dim | Dimension Description |");
+    expect(historyHtml).toContain("<table>");
+    expect(historyHtml.match(/<th>/g)).toHaveLength(11);
   });
 
   it("writes only the selected ready worksheet", () => {

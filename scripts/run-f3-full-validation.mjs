@@ -4,6 +4,7 @@ import { createF3DrawingGovernance } from "../packages/workbook-catalog/dist/f3-
 import { loadF2ArtifactBundle } from "./f3-artifact-loader.mjs";
 import { parseF3CliArgs } from "./f3-cli-args.mjs";
 import { resolveFeature3OutputLayout } from "./f3-output-layout.mjs";
+import { renderF3AdoHistoryHtml, renderF3AdoReminder } from "./f3-ado-reminder.mjs";
 import { renderF3Report } from "./f3-report.mjs";
 
 function atomicWrite(filePath, content) {
@@ -25,11 +26,20 @@ const reportJsonPath = path.join(outputLayout.outRoot, outputLayout.reportJsonNa
 const reportMdPath = path.join(outputLayout.outRoot, outputLayout.reportMdName);
 atomicWrite(reportJsonPath, `${JSON.stringify(report, null, 2)}\n`);
 atomicWrite(reportMdPath, renderF3Report(report, { outputRoot: outputLayout.outRoot }));
+let reminderMdPath;
+let historyHtmlPath;
+if (report.status !== "input_rejected") {
+  reminderMdPath = path.join(outputLayout.outRoot, "Feature3-ADO-Reminder.md");
+  historyHtmlPath = path.join(outputLayout.outRoot, "Feature3-ADO-History.html");
+  atomicWrite(reminderMdPath, renderF3AdoReminder(report));
+  atomicWrite(historyHtmlPath, renderF3AdoHistoryHtml(report));
+}
 
 console.log(JSON.stringify({
   status: report.status,
   outputDirectory: outputLayout.outRoot,
   reportJsonPath,
   reportMdPath,
+  ...(reminderMdPath ? { reminderMdPath, historyHtmlPath } : {}),
   ...(report.status === "input_rejected" ? { artifactIssues: report.artifactIssues } : { summary: report.summary }),
 }, null, 2));
