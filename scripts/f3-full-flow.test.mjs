@@ -34,6 +34,12 @@ function f2Report() {
       notes: null,
     },
     sourceCells: { factorName: "Analysis-A!E14" },
+    imageReference: {
+      artifact: "f1",
+      relativePath: "worksheets/Analysis-A/tolerance-path.png",
+      contentHash: "b".repeat(64),
+      worksheetName: "Analysis-A",
+    },
     missingRequiredFields: [],
     missingIdentifiers: [],
     capabilityStatus: "non_f0_process_category",
@@ -119,5 +125,55 @@ describe("Feature 3 local artifact flow", () => {
     expect(json.ado.status).toBe("not_requested");
     expect(markdown).toContain("Dimension Description");
     expect(markdown).toContain(json.worksheets[0].toleranceLoopDescription);
+  });
+
+  it("writes only the selected ready worksheet", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "f3-flow-selection-"));
+    roots.push(root);
+    const f2Root = path.join(root, "f2");
+    const outputRoot = path.join(root, "f3");
+    mkdirSync(f2Root);
+    const report = f2Report();
+    const secondWorksheet = structuredClone(report.worksheets[0]);
+    secondWorksheet.worksheetName = "Analysis-B";
+    secondWorksheet.toleranceLoopDescription = "Anonymous device gap B";
+    secondWorksheet.rows[0].worksheetName = "Analysis-B";
+    secondWorksheet.rows[0].actualFields.factorName = "Anonymous offset B";
+    secondWorksheet.rows[0].sourceCells.factorName = "Analysis-B!E14";
+    secondWorksheet.rows[0].imageReference = {
+      ...secondWorksheet.rows[0].imageReference,
+      relativePath: "worksheets/Analysis-B/tolerance-path.png",
+      worksheetName: "Analysis-B",
+    };
+    const secondHandoff = structuredClone(report.f4Handoffs[0]);
+    secondHandoff.worksheetName = "Analysis-B";
+    secondHandoff.toleranceLoopDescription = "Anonymous device gap B";
+    secondHandoff.factors[0].actualFields.factorName = "Anonymous offset B";
+    secondHandoff.factors[0].sourceCells.factorName = "Analysis-B!E14";
+    report.worksheets.push(secondWorksheet);
+    report.f4Handoffs.push(secondHandoff);
+    report.summary.worksheetsChecked = 2;
+    report.summary.readyWorksheetCount = 2;
+    report.summary.factorRowCount = 2;
+    report.summary.nonF0ProcessCategoryCount = 2;
+    writeFileSync(path.join(f2Root, "Feature2-Report.json"), JSON.stringify(report));
+
+    const stdout = execFileSync(process.execPath, [
+      "scripts/run-f3-full-validation.mjs",
+      f2Root,
+      "--worksheet", "Analysis-B",
+    ], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: { ...process.env, AI_TVA_F3_OUTPUT_ROOT: outputRoot },
+    });
+    const result = JSON.parse(stdout);
+    const json = JSON.parse(readFileSync(result.reportJsonPath, "utf8"));
+    const markdown = readFileSync(result.reportMdPath, "utf8");
+
+    expect(json.worksheets.map(({ worksheetName }) => worksheetName)).toEqual(["Analysis-B"]);
+    expect(json.summary.worksheetCount).toBe(1);
+    expect(markdown).toContain("Analysis-B");
+    expect(markdown).not.toContain("Analysis-A");
   });
 });
