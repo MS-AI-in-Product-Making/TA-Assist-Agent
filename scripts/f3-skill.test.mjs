@@ -80,6 +80,7 @@ function acceptedReport() {
     outputClassification: "confidential",
     featureId: "F3",
     status: "governance_required",
+    artifactRoot: "controlled/f1",
     workbook: { fileName: "Anonymous.xlsx", contentHash: "a".repeat(64) },
     worksheets: [{
       worksheetName: "TP_Gap_X",
@@ -101,6 +102,12 @@ function acceptedReport() {
         dimIdStatus: "valid",
         qualitySignals: [],
         governanceStatus: "needs_governance",
+        imageReference: {
+          artifact: "f1",
+          relativePath: "worksheets/TP_Gap_X/tolerance-path.png",
+          contentHash: "c".repeat(64),
+          worksheetName: "TP_Gap_X",
+        },
         source: {
           worksheetName: "TP_Gap_X",
           tableId: "factor-table-1",
@@ -271,6 +278,7 @@ describe("f3-analysis skill contract", () => {
       "npm run workflow:f1 -- <ta-workbook-path>",
       "npm run workflow:f2 -- <f1-output-dir>",
       "npm run workflow:f3 -- <f2-output-dir>",
+      "npm run workflow:f3 -- <f2-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...]",
       "npm run workflow:f3:ado-reminder -- <f3-dir> --status not_requested",
       "npm run workflow:f3:ado-reminder -- <f3-dir> --status blocked --reason-code surface_mcp_comment_body_unsupported",
       "npm run workflow:f3:ado-reminder -- <f3-dir> --status blocked --reason-code surface_mcp_comment_body_unsupported --work-item-reference <id>",
@@ -295,6 +303,7 @@ describe("f3-analysis skill contract", () => {
     expect(skill).toContain("npm run workflow:f1 -- <ta-workbook-path>");
     expect(skill).toContain("npm run workflow:f2 -- <f1-output-dir>");
     expect(skill).toContain("npm run workflow:f3 -- <f2-output-dir>");
+    expect(skill).toContain("npm run workflow:f3 -- <f2-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...]");
     expect(skill).toContain("npm run workflow:f3:ado-reminder -- <f3-dir> --status not_requested");
     expect(skill).toContain("npm run workflow:f3:ado-reminder -- <f3-dir> --status blocked --reason-code surface_mcp_comment_body_unsupported");
     expect(skill).toContain("npm run workflow:f3:ado-reminder -- <f3-dir> --status failed --reason-code write_verification_failed");
@@ -303,6 +312,37 @@ describe("f3-analysis skill contract", () => {
     // Ensure no placeholder command shape that bypasses npm script reality.
     expect(skill).not.toMatch(/npm\s+run\s+workflow:f0\b/i);
     expect(skill).not.toMatch(/npm\s+run\s+workflow:f3:ado-reminder\s+--\s+<f3-dir>\s+--status\s+cancel/i);
+  });
+
+  it("requires ready worksheet selection before F3 and validates existing targets from an ADO URL", () => {
+    const skill = readUtf8(skillPath);
+    const reference = readUtf8(referencePath);
+    const worksheetCall = "Worksheet selection call - vscode_askQuestions (multiSelect: true)";
+    const executionBoundary = "Run workflow:f3 only after the worksheet selection call returns at least one selection.";
+    const publishCall = "Question call 1 - publishing mode: vscode_askQuestions";
+    const urlCall = "Existing target URL call - vscode_askQuestions";
+
+    expect(skill).toContain(worksheetCall);
+    expect(skill).toContain("F2 ready worksheets");
+    expect(skill).toContain("stop without running F3");
+    expect(skill).toContain(executionBoundary);
+    expect(skill.indexOf(worksheetCall)).toBeLessThan(skill.indexOf(executionBoundary));
+    expect(skill.indexOf(executionBoundary)).toBeLessThan(skill.indexOf(publishCall));
+
+    expect(skill).toContain(urlCall);
+    expect(skill).toContain("HTTPS Azure DevOps work item URL");
+    expect(skill).toContain("_workitems/edit/<id>");
+    expect(skill).toContain("parse organization, project, and positive integer work item ID from the URL");
+    expect(skill).toContain("Do not ask for a separately entered ADO number");
+    expect(skill).toContain("do not persist the ADO URL");
+    expect(skill.indexOf(urlCall)).toBeGreaterThan(skill.indexOf(publishCall));
+    expect(skill).toContain("URL organization/project/ID must match the Surface readback target");
+
+    expect(reference).toContain("HTTPS Azure DevOps work item URL");
+    expect(reference).toContain("_workitems/edit/<id>");
+    expect(reference).toContain("URL is ephemeral validation input");
+    expect(reference).toContain("Do not accept an independently entered work item ID");
+    expect(reference).toContain("fail closed before any Surface write");
   });
 
   it("requires explicit Question call 1 marker before entity-call boundary", () => {

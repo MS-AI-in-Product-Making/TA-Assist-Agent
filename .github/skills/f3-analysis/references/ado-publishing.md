@@ -15,6 +15,15 @@ Use strict query order: organization -> project -> work item type/work item id.
 
 If any lookup is invalid, run candidate correction from Surface MCP results before moving forward.
 
+### Existing target URL input
+
+- Require an HTTPS Azure DevOps work item URL containing `_workitems/edit/<id>`.
+- Parse organization, project, and a positive integer work item ID from the URL before entity validation.
+- Do not accept an independently entered work item ID; the URL is the single user input for the existing target.
+- Validate the parsed organization, project, and ID in the strict query order above, then read the target through Surface MCP.
+- The URL organization/project/ID must match the Surface readback target. Any parse, lookup, or mismatch failure must fail closed before any Surface write.
+- The URL is ephemeral validation input. Do not persist it in F3 JSON, reminder state, CLI arguments, preview payloads, or comments; persist only the validated ID where the existing contract permits `workItemReference`.
+
 ## Capability checks
 
 Require Surface MCP capability for:

@@ -18,6 +18,7 @@ Use only these commands:
 - `npm run workflow:f1 -- <ta-workbook-path>`
 - `npm run workflow:f2 -- <f1-output-dir>`
 - `npm run workflow:f3 -- <f2-output-dir>`
+- `npm run workflow:f3 -- <f2-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...]`
 - `npm run workflow:f3:ado-reminder -- <f3-dir> --status not_requested`
 - `npm run workflow:f3:ado-reminder -- <f3-dir> --status blocked --reason-code surface_mcp_comment_body_unsupported`
 - `npm run workflow:f3:ado-reminder -- <f3-dir> --status blocked --reason-code surface_mcp_comment_body_unsupported --work-item-reference <id>`
@@ -36,6 +37,12 @@ Never invent additional `workflow:*` commands.
 	- a TA workbook path that can run `workflow:f1 -> workflow:f2 -> workflow:f3`, or
 	- an existing accepted Feature 3 artifact directory (`<f3-dir>`) that already contains valid `Feature3-Report.json`.
 3. The skill must resolve workbook/artifact input before publish decisions. If the preconditions are missing or invalid, stop and ask for valid input.
+4. For a new F3 run, read the accepted F2 report and list only F2 ready worksheets in artifact order.
+5. Worksheet selection call - vscode_askQuestions (multiSelect: true)
+6. Require at least one selected worksheet. If the user cancels or returns an empty selection, stop without running F3 and do not ask the publishing-mode question.
+7. Run workflow:f3 only after the worksheet selection call returns at least one selection.
+8. Pass every selected name with the repository-verified repeatable `--worksheet <worksheet-name>` flag. Never offer blocked or unknown worksheets.
+9. An existing accepted Feature 3 artifact does not rerun analysis and therefore does not repeat worksheet selection.
 
 ## Phase 2 - Publish mode gate
 
@@ -59,10 +66,16 @@ Surface MCP entity calls may start only after Question call 1 returns
 	- Collect title.
 	- no unvalidated create.
 2. existing mode:
-	- validate organization -> project -> work item id via Surface MCP.
+	- Existing target URL call - vscode_askQuestions
+	- Require an HTTPS Azure DevOps work item URL containing `_workitems/edit/<id>`.
+	- parse organization, project, and positive integer work item ID from the URL.
+	- Do not ask for a separately entered ADO number.
+	- validate the parsed organization -> project -> work item id via Surface MCP.
 	- Apply candidate correction for organization/project.
 	- Read target work item before preview.
 	- read back ID, title, type, state, assigned owner.
+	- URL organization/project/ID must match the Surface readback target.
+	- Treat the URL as ephemeral validation input; do not persist the ADO URL or pass it on the CLI.
 	- ask user to confirm target.
 	- Do not continue if target is not confirmed.
 3. Validation order is strict:
