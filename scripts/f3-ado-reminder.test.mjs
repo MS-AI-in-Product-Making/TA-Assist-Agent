@@ -3,6 +3,7 @@ import {
   ADO_TABLE_HEADER,
   governanceIssue,
   renderF3AdoReminder,
+  renderF3AdoHistoryHtml,
 } from "./f3-ado-reminder.mjs";
 
 function baseRow(overrides = {}) {
@@ -143,6 +144,55 @@ describe("renderF3AdoReminder", () => {
 
   it("rejects input_rejected reports", () => {
     expect(() => renderF3AdoReminder({
+      contractVersion: "v1",
+      modelVersion: "drawing-governance-v2",
+      outputClassification: "confidential",
+      featureId: "F3",
+      status: "input_rejected",
+      artifactIssues: [{ reasonCode: "description_missing", artifactReference: "worksheet:TP_Gap_X" }],
+    })).toThrow(/input_rejected/i);
+  });
+});
+
+describe("renderF3AdoHistoryHtml", () => {
+  it("renders a deterministic 11-column HTML table with every record", () => {
+    const rows = [
+      baseRow({ factorDescription: "A&B <critical> \"quoted\" 'single'\nnext", qualitySignals: ["drawing_number_missing"], governanceStatus: "needs_governance" }),
+      baseRow({ factorInstanceId: "d".repeat(64), drawingDimensionKey: undefined, drawingNumber: null, dimId: null, qualitySignals: ["dim_id_missing"], governanceStatus: "needs_governance" }),
+      baseRow({ factorInstanceId: "e".repeat(64), qualitySignals: ["duplicate_conflict"], governanceStatus: "blocked_for_reminder" }),
+    ];
+
+    const html = renderF3AdoHistoryHtml(acceptedReport(rows));
+
+    expect(html).toContain("<h2>F3 DIM ID / Drawing Governance Reminder</h2>");
+    expect(html).toContain("<table>");
+    expect(html).toContain("<thead><tr><th>Device Level Dim</th>");
+    expect(html.match(/<th>/g)).toHaveLength(11);
+    expect(html.match(/<tbody><tr>|<\/tr><tr>/g)).toHaveLength(3);
+    expect(html).toContain("<td>A&amp;B &lt;critical&gt; &quot;quoted&quot; &#39;single&#39;<br>next</td>");
+    expect(html).not.toContain("A&B <critical>");
+    expect(html).toContain("Drawing Number missing");
+    expect(html).toContain("DIM ID missing");
+    expect(html).toContain("Duplicate Drawing Number and DIM ID conflict");
+  });
+
+  it("redacts sensitive text before HTML escaping", () => {
+    const html = renderF3AdoHistoryHtml(acceptedReport([
+      baseRow({
+        partSubsystem: "C:\\Users\\xumax\\secret\\file.xlsx Authorization: Bearer token123",
+        qualitySignals: ["dim_id_needs_confirmation"],
+        governanceStatus: "needs_governance",
+      }),
+    ]));
+
+    expect(html).toContain("[redacted-local-path]");
+    expect(html).toContain("Authorization: [redacted]");
+    expect(html).not.toContain("C:\\Users\\xumax\\secret\\file.xlsx");
+    expect(html).not.toContain("token123");
+  });
+
+  it("rejects input_rejected reports", () => {
+    expect(() => renderF3AdoHistoryHtml({
       contractVersion: "v1",
       modelVersion: "drawing-governance-v2",
       outputClassification: "confidential",
