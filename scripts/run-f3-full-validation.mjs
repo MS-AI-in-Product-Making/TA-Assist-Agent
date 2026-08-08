@@ -24,7 +24,7 @@ mkdirSync(outputLayout.outRoot, { recursive: true });
 const reportJsonPath = path.join(outputLayout.outRoot, outputLayout.reportJsonName);
 const reportMdPath = path.join(outputLayout.outRoot, outputLayout.reportMdName);
 atomicWrite(reportJsonPath, `${JSON.stringify(report, null, 2)}\n`);
-atomicWrite(reportMdPath, renderF3Report(report));
+atomicWrite(reportMdPath, renderF3Report(report, { outputRoot: outputLayout.outRoot }));
 
 console.log(JSON.stringify({
   status: report.status,

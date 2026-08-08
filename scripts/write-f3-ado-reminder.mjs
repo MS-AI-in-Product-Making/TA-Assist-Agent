@@ -321,7 +321,7 @@ export function writeF3AdoReminder({
     });
 
     const reminderMd = renderF3AdoReminder(report);
-    const reportMd = renderF3Report(report);
+    const reportMd = renderF3Report(report, { outputRoot: resolvedRoot });
 
     persistArtifactsAtomically([
       { targetPath: loaded.reminderPath, content: reminderMd },

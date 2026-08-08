@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
+import path from "node:path";
 import { renderF3Report } from "./f3-report.mjs";
+
+const outputRoot = path.join("controlled", "f3");
+
+function renderAccepted(report) {
+  return renderF3Report(report, { outputRoot });
+}
 
 function governanceReport(factorDescription = "Anonymous display offset") {
   return {
@@ -8,6 +15,7 @@ function governanceReport(factorDescription = "Anonymous display offset") {
     outputClassification: "confidential",
     featureId: "F3",
     status: "completed",
+    artifactRoot: path.join("controlled", "f1"),
     workbook: { fileName: "Anonymous.xlsx", contentHash: "a".repeat(64) },
     worksheets: [{
       worksheetName: "TP_Gap_X",
@@ -29,6 +37,12 @@ function governanceReport(factorDescription = "Anonymous display offset") {
         dimIdStatus: "valid",
         qualitySignals: [],
         governanceStatus: "complete",
+        imageReference: {
+          artifact: "f1",
+          relativePath: "worksheets/TP_Gap_X/tolerance-path.png",
+          contentHash: "d".repeat(64),
+          worksheetName: "TP_Gap_X",
+        },
         source: {
           worksheetName: "TP_Gap_X",
           tableId: "factor-table-1",
@@ -50,13 +64,34 @@ function governanceReport(factorDescription = "Anonymous display offset") {
 
 describe("renderF3Report", () => {
   it("renders grouped drawing governance tables", () => {
-    const markdown = renderF3Report(governanceReport());
+    const report = governanceReport();
+    const markdown = renderAccepted(report);
+    const href = path.relative(
+      path.resolve(outputRoot),
+      path.resolve(report.artifactRoot, report.worksheets[0].rows[0].imageReference.relativePath),
+    ).split(path.sep).join("/");
 
     expect(markdown).toContain("# Feature 3 DIM ID 与图纸治理报告");
     expect(markdown).toContain("## Display / DRAW-A");
-    expect(markdown).toContain("| Device Level Dim | Dimension Description | Part / Subsystem | Drawing Number | Dim ID | Factor Description | Nominal | Upper Tolerance (+) | Lower Tolerance (-) | σ Level | Source Location |");
-    expect(markdown).toContain("TP_Gap_X!E14");
+    expect(markdown).toContain("| Device Level Dim | Dimension Description | Part / Subsystem | Drawing Number | Dim ID | Factor Description | Nominal | Upper Tolerance (+) | Lower Tolerance (-) | σ Level | Source Evidence |");
+    expect(markdown).toContain(`[TP_Gap_X](${href})`);
+    expect(markdown).toContain(`[Anonymous device gap](${href})`);
+    expect(markdown).toContain(`[Anonymous display offset](${href})`);
+    expect(markdown).toContain("Worksheet: TP_Gap_X; Table: factor-table-1; Row: 14; Fields: factorName=TP_Gap_X!E14");
     expect(markdown).toContain("ADO 状态：`not_requested`");
+  });
+
+  it("sorts source evidence fields and renders an empty fallback", () => {
+    const report = governanceReport();
+    report.worksheets[0].rows[0].source.sourceCells = {
+      nominalValue: "TP_Gap_X!F14",
+      factorName: "TP_Gap_X!E14",
+    };
+    const sortedMarkdown = renderAccepted(report);
+    expect(sortedMarkdown).toContain("Fields: factorName=TP_Gap_X!E14, nominalValue=TP_Gap_X!F14");
+
+    report.worksheets[0].rows[0].source.sourceCells = {};
+    expect(renderAccepted(report)).toContain("Fields: none");
   });
 
   it("renders optional ADO work item reference and reason code without comment body", () => {
@@ -67,7 +102,7 @@ describe("renderF3Report", () => {
       reasonCode: "surface_mcp_comment_body_unsupported",
     };
 
-    const markdown = renderF3Report(report);
+    const markdown = renderAccepted(report);
 
     expect(markdown).toContain("ADO 状态：`blocked`");
     expect(markdown).toContain("ADO Work Item：`1102392`");
@@ -83,7 +118,7 @@ describe("renderF3Report", () => {
       reasonCode: "surface_mcp_comment_body_unsupported",
     };
 
-    const markdown = renderF3Report(report);
+    const markdown = renderAccepted(report);
 
     expect(markdown).toContain("ADO Work Item：`ticket'42 Authorization: [redacted] [redacted-local-path]`");
     expect(markdown).not.toContain("Authorization=token");
@@ -98,7 +133,7 @@ describe("renderF3Report", () => {
       reasonCode: "surface_mcp_comment_body_unsupported",
     };
 
-    const markdown = renderF3Report(report);
+    const markdown = renderAccepted(report);
 
     expect(markdown).toContain("Authorization: [redacted]");
     expect(markdown).not.toContain("very-secret-token");
@@ -109,7 +144,7 @@ describe("renderF3Report", () => {
   });
 
   it("escapes table text and does not expose local or authorization data", () => {
-    const markdown = renderF3Report(governanceReport("A|B\nC"));
+    const markdown = renderAccepted(governanceReport("A|B\nC"));
 
     expect(markdown).toContain("A\\|B<br>C");
     expect(markdown).not.toContain("C:\\Users\\");
@@ -124,7 +159,7 @@ describe("renderF3Report", () => {
       reasonCode: "project_not_found",
     };
 
-    const markdown = renderF3Report(report);
+    const markdown = renderAccepted(report);
 
     expect(markdown).toContain("[redacted-local-path]");
     expect(markdown).not.toContain("AI Project");

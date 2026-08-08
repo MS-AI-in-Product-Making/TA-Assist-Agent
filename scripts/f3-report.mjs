@@ -1,6 +1,7 @@
+import path from "node:path";
 import { drawingGovernanceResultV2Schema } from "../packages/contracts/dist/contracts.js";
 
-const TABLE_HEADER = "| Device Level Dim | Dimension Description | Part / Subsystem | Drawing Number | Dim ID | Factor Description | Nominal | Upper Tolerance (+) | Lower Tolerance (-) | σ Level | Source Location |";
+const TABLE_HEADER = "| Device Level Dim | Dimension Description | Part / Subsystem | Drawing Number | Dim ID | Factor Description | Nominal | Upper Tolerance (+) | Lower Tolerance (-) | σ Level | Source Evidence |";
 const TABLE_SEPARATOR = "| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- |";
 const WINDOWS_ABSOLUTE_PATH_PATTERN = /[A-Za-z]:(?:\\[^\\/:*?"<>|\r\n]+)+(?=$|[\s"'|),;\]])/g;
 const WINDOWS_ESCAPED_ABSOLUTE_PATH_PATTERN = /[A-Za-z]:(?:\\\\[^\\/:*?"<>|\r\n]+)+(?=$|[\s"'|),;\]])/g;
@@ -25,11 +26,23 @@ function inlineCode(value) {
   return `\`${sanitized}\``;
 }
 
-function sourceLocation(row) {
-  const cells = Object.values(row.source.sourceCells).filter(Boolean).sort();
-  return cells.length > 0
-    ? cells.join(", ")
-    : `${row.source.worksheetName}!row ${row.source.sourceRow}`;
+function imageHref(report, outputRoot, imageReference) {
+  return path.relative(
+    path.resolve(outputRoot),
+    path.resolve(report.artifactRoot, imageReference.relativePath),
+  ).split(path.sep).join("/");
+}
+
+function imageLink(value, href) {
+  return `[${cell(value)}](${href})`;
+}
+
+function sourceEvidence(row) {
+  const fields = Object.entries(row.source.sourceCells)
+    .filter(([, sourceCell]) => Boolean(sourceCell))
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([field, sourceCell]) => `${field}=${sourceCell}`);
+  return `Worksheet: ${row.source.worksheetName}; Table: ${row.source.tableId}; Row: ${row.source.sourceRow}; Fields: ${fields.length > 0 ? fields.join(", ") : "none"}`;
 }
 
 function renderRejected(report) {
@@ -49,7 +62,7 @@ function renderRejected(report) {
   return `${lines.join("\n")}\n`;
 }
 
-function renderAccepted(report) {
+function renderAccepted(report, outputRoot) {
   const rows = report.worksheets.flatMap((worksheet) => worksheet.rows);
   const statusCounts = new Map();
   for (const row of rows) statusCounts.set(row.dimIdStatus, (statusCounts.get(row.dimIdStatus) ?? 0) + 1);
@@ -97,13 +110,18 @@ function renderAccepted(report) {
   for (const group of sortedGroups) {
     lines.push("", `## ${cell(group.partCategory)} / ${cell(group.drawingNumber)}`, "", TABLE_HEADER, TABLE_SEPARATOR);
     for (const row of group.rows) {
-      lines.push(`| ${cell(row.deviceLevelDim)} | ${cell(row.dimensionDescription)} | ${cell(row.partSubsystem)} | ${cell(row.drawingNumber)} | ${cell(row.dimId)} | ${cell(row.factorDescription)} | ${cell(row.nominal)} | ${cell(row.upperTolerance)} | ${cell(row.lowerTolerance)} | ${cell(row.sigmaLevel)} | ${cell(sourceLocation(row))} |`);
+      const href = imageHref(report, outputRoot, row.imageReference);
+      lines.push(`| ${imageLink(row.deviceLevelDim, href)} | ${imageLink(row.dimensionDescription, href)} | ${cell(row.partSubsystem)} | ${cell(row.drawingNumber)} | ${cell(row.dimId)} | ${imageLink(row.factorDescription, href)} | ${cell(row.nominal)} | ${cell(row.upperTolerance)} | ${cell(row.lowerTolerance)} | ${cell(row.sigmaLevel)} | ${cell(sourceEvidence(row))} |`);
     }
   }
   return `${lines.join("\n")}\n`;
 }
 
-export function renderF3Report(report) {
+export function renderF3Report(report, { outputRoot } = {}) {
   const parsed = drawingGovernanceResultV2Schema.parse(report);
-  return parsed.status === "input_rejected" ? renderRejected(parsed) : renderAccepted(parsed);
+  if (parsed.status === "input_rejected") return renderRejected(parsed);
+  if (typeof outputRoot !== "string" || outputRoot.length === 0) {
+    throw new Error("F3 report outputRoot is required.");
+  }
+  return renderAccepted(parsed, outputRoot);
 }

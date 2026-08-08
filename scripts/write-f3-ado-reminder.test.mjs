@@ -18,6 +18,7 @@ function acceptedReport() {
     outputClassification: "confidential",
     featureId: "F3",
     status: "governance_required",
+    artifactRoot: path.join("controlled", "f1"),
     workbook: { fileName: "Anonymous.xlsx", contentHash: "a".repeat(64) },
     worksheets: [{
       worksheetName: "TP_Gap_X",
@@ -39,6 +40,12 @@ function acceptedReport() {
         dimIdStatus: "valid",
         qualitySignals: [],
         governanceStatus: "needs_governance",
+        imageReference: {
+          artifact: "f1",
+          relativePath: "worksheets/TP_Gap_X/tolerance-path.png",
+          contentHash: "d".repeat(64),
+          worksheetName: "TP_Gap_X",
+        },
         source: {
           worksheetName: "TP_Gap_X",
           tableId: "factor-table-1",
@@ -82,6 +89,13 @@ describe("writeF3AdoReminder", () => {
     expect(reminder).toContain("F3 DIM ID / Drawing Governance Reminder");
     expect(json.ado.status).toBe("not_requested");
     expect(reportMd).toContain("ADO 状态：`not_requested`");
+    const href = path.relative(
+      root,
+      path.resolve(result.report.artifactRoot, result.report.worksheets[0].rows[0].imageReference.relativePath),
+    ).split(path.sep).join("/");
+    expect(reportMd).toContain(`[TP_Gap_X](${href})`);
+    expect(reportMd).toContain(`[Anonymous device gap](${href})`);
+    expect(reportMd).toContain(`[Anonymous display offset](${href})`);
     expect(readdirSync(root).filter((name) => name.endsWith(".tmp"))).toHaveLength(0);
   });
 
