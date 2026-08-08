@@ -4311,6 +4311,9 @@ export const drawingGovernanceRequestV2Schema = z.object({
     rows: z.array(f2EnhancedRowSchema),
   }).strict().superRefine((worksheet, context) => {
     worksheet.rows.forEach((row, index) => {
+      if (row.worksheetName !== worksheet.worksheetName) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "row worksheet must match the containing worksheet", path: ["rows", index, "worksheetName"] });
+      }
       if (row.imageReference === undefined) {
         context.addIssue({ code: z.ZodIssueCode.custom, message: "F3 rows require an F1 image reference", path: ["rows", index, "imageReference"] });
       } else if (row.imageReference.worksheetName !== worksheet.worksheetName) {

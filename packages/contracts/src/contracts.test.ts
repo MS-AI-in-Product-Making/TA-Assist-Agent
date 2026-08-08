@@ -1637,6 +1637,22 @@ describe("F3 drawing governance v2 contracts", () => {
       }],
     }).success).toBe(false);
   });
+
+  it("requires request row worksheet identity to match its container", () => {
+    const { requestSchema } = schemas();
+
+    expect(requestSchema.safeParse({
+      ...request,
+      worksheets: [{
+        ...request.worksheets[0],
+        rows: [{
+          ...enhancedRow,
+          worksheetName: "Analysis-B",
+          imageReference,
+        }],
+      }],
+    }).success).toBe(false);
+  });
 });
 
 describe("F5.1 objective interpretation contracts", () => {

@@ -94,6 +94,16 @@ describe("renderF3Report", () => {
     expect(renderAccepted(report)).toContain("Fields: none");
   });
 
+  it("uses relative image hrefs without exposing an absolute artifact root", () => {
+    const report = governanceReport();
+    report.artifactRoot = path.resolve("controlled", "f1");
+
+    const markdown = renderAccepted(report);
+
+    expect(markdown).not.toContain(report.artifactRoot);
+    expect(markdown).toContain("tolerance-path.png)");
+  });
+
   it("renders optional ADO work item reference and reason code without comment body", () => {
     const report = governanceReport();
     report.ado = {

@@ -76,6 +76,10 @@ function setupF3Root(report = acceptedReport()) {
 describe("writeF3AdoReminder", () => {
   it("writes reminder markdown and persists not_requested outcome", () => {
     const root = setupF3Root();
+    const initialHref = path.relative(
+      root,
+      path.resolve(acceptedReport().artifactRoot, acceptedReport().worksheets[0].rows[0].imageReference.relativePath),
+    ).split(path.sep).join("/");
     const result = writeF3AdoReminder({ f3OutputRoot: root, adoOutcome: { status: "not_requested" } });
 
     expect(result.reminderPath).toBe(path.join(root, "Feature3-ADO-Reminder.md"));
@@ -93,6 +97,7 @@ describe("writeF3AdoReminder", () => {
       root,
       path.resolve(result.report.artifactRoot, result.report.worksheets[0].rows[0].imageReference.relativePath),
     ).split(path.sep).join("/");
+    expect(href).toBe(initialHref);
     expect(reportMd).toContain(`[TP_Gap_X](${href})`);
     expect(reportMd).toContain(`[Anonymous device gap](${href})`);
     expect(reportMd).toContain(`[Anonymous display offset](${href})`);

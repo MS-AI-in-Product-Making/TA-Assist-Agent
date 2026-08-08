@@ -123,7 +123,11 @@ export function createF3DrawingGovernance(request: unknown): DrawingGovernanceRe
     || left.source.sourceRow - right.source.sourceRow);
 
   const rowsByWorksheet = new Map(input.worksheets.map((worksheet) => [worksheet.worksheetName, [] as typeof composedRows]));
-  for (const row of composedRows) rowsByWorksheet.get(row.source.worksheetName)!.push(row);
+  for (const row of composedRows) {
+    const worksheetRows = rowsByWorksheet.get(row.source.worksheetName);
+    if (worksheetRows === undefined) throw new Error(`F3 row references unknown worksheet: ${row.source.worksheetName}`);
+    worksheetRows.push(row);
+  }
   const worksheets = input.worksheets.map((worksheet) => ({
     worksheetName: worksheet.worksheetName,
     toleranceLoopDescription: worksheet.toleranceLoopDescription,
