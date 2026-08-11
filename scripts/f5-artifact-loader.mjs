@@ -139,7 +139,11 @@ function loadF1Index(f1ArtifactRoot) {
   );
   return {
     value: {
-      workbook: { ...workbook, f1GeneratedAt: report.generatedAt },
+      workbook: {
+        fileName: workbook.fileName,
+        contentHash: workbook.contentHash,
+        f1GeneratedAt: report.generatedAt,
+      },
       artifactContractVersion: report.artifactContractVersion,
       jsonByWorksheet: new Map(
         jsonSheets

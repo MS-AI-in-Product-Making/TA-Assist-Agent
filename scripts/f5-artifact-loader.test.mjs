@@ -287,6 +287,25 @@ function expectRejected(result, reasonCode, artifactReference) {
 }
 
 describe("loadF5ArtifactBundle", () => {
+  it("projects only controlled workbook identity fields from historical F1 reports", () => {
+    const bundle = setupBundle({ worksheetNames: ["Analysis-A"] });
+    rewriteJson(path.join(bundle.f1ArtifactRoot, "Feature1-Report.json"), (report) => {
+      report.workbooks[0].workbook.classification = "confidential";
+      report.workbooks[0].workbook.metadata = {
+        documentNo: "M1160113",
+        revision: "Beta",
+      };
+    });
+
+    const result = load(bundle, { selectedWorksheetNames: ["Analysis-A"] });
+
+    expect(result.status).toBe("accepted");
+    expect(result.request.workbook).toEqual({
+      fileName: "anonymous.xlsx",
+      contentHash: WORKBOOK_HASH,
+    });
+  });
+
   it.each([
     ["F1", "C:\\private\\Demo.xlsx"],
     ["F3", "\\\\server\\share\\Demo.xlsx"],
