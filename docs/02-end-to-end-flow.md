@@ -7,6 +7,12 @@
 
 F1 is the sole producer and physical owner of worksheet image evidence. F2 stores the validated F1-relative path, worksheet identity, and content hash, then renders a relative Markdown link; it never copies or regenerates the image. System-specification display labels are preserved from F1 `sourceLabel` evidence. Calculated columns such as `1σ` and `% Cont. to σ` are projected from cached worksheet formula values and are not recalculated by F2.
 
+## F5 Governed Interpretation Contract
+
+F5 directly consumes the controlled F0 rule snapshot plus F1, F3, and F4 artifacts. When the entry is a workbook, F2 is a mandatory upstream gate before those artifacts may enter F5. The supported entries are `workflow:f5` and the phrase `使用F5分析报告`. The fixed report presents five sections: F5 owns loop validity, capability versus specification, and top contributors; structural risks and parallel improvement options are delegated to F6.
+
+F1 remains the sole physical owner of each worksheet image. A missing F1 `imageReference` or physical image fails that worksheet closed. When the image and reference are verified but observation mode is unavailable, skipped, or produces no artifact, F5 continues deterministic interpretation with image evidence marked `not_evaluated` and an explicit clarification. Any observation is visible evidence, not drawing truth; it carries confidence and remains subject to ME review. F5 emits only `FACT`, `RULE`, `SIGNAL`, and unranked `OPTION`, preserves each F0 rule version and scope, and records assumptions without silently treating them as facts. It neither auto-publishes to ADO nor writes back to the workbook.
+
 ## Flow Diagram
 
 ```mermaid
@@ -49,19 +55,19 @@ flowchart TB
     CC -- No --> CQ["Clarification card (F5): pause only conclusions dependent on the missing information<br>Engineer confirms before continuing"]
     CQ --> L["Objective interpretation (F5)<br>FACT and RULE cite F0 entries<br>SIGNAL and OPTION are unranked"]
     CC -- Yes --> L
-    L --> M1["Loop validity (F5)<br>Optional: further investigate image-model effectiveness"]
+    L --> M1["Loop validity (F5)<br>Optional image observation is review-gated visible evidence"]
     L --> M2["Capability versus specification (F5)"]
     L --> M3["Top contributors (F5)"]
-    L --> M4["Structural risks (F5)"]
-    L --> M5["Parallel improvement options (F5)<br>Provide multiple options when targets are not met"]
-    L --> M6["Optimization (F6)<br>Centering · contribution economics · RSS apportionment<br>Reverse-solve 2-3 options; real-time bar feedback<br><br>Future roadmap only: ADO date/milestone/version metadata handoff is out of current F3 scope<br>Current run saves optimization evidence locally"]
+    L --> M4["Structural risks (delegated F6)<br>Not synthesized by F5"]
+    L --> M5["Parallel improvement options (delegated F6)<br>Not synthesized by F5"]
+    M4 -. Future optional path .-> M6["Optimization (F6 · inactive)<br>F6 is unavailable and returns feature_not_available<br>No optimization calculation runs and no optimization evidence is saved for the current run"]
+    M5 -. Future optional path .-> M6
     M1 --> N["User view (F8)<br>Read-only evidence pane, cited report, and Loop images<br>Traceable and reproducible"]
     M2 --> N
     M3 --> N
     M4 --> N
     M5 --> N
-    N --> M6
-    M6 --> R{"Is measured yield / Cpk available? (F7)"}
+    N --> R{"Is measured yield / Cpk available? (F7)"}
     R -- No: wait for later measurement --> WAIT["Retain baseline report (F7)<br>Await later measured-data import"]
     R -- Yes: manual import by DIM ID --> CL["Closed loop (F7)<br>Compare estimate with actual and recompute real capability<br>Upgrade Lib 1 evidence tier from T3 to T1<br><br>Output actual tolerance range and optimization report: attachment2"]
     CL -->|Feed measured evidence| KB["Knowledge Base (F0)"]
@@ -128,8 +134,8 @@ flowchart TB
 | DIM ID association | Whether the factor is linked to a drawing dimension | Linked factors go directly to method recommendation; missing IDs are grouped by Lib 3 category/drawing before governance. |
 | ADO governance | Whether a grouped missing-item list has an ADO work item | Reuse the upload-stage ADO choice. With ADO, the user confirms a reminder and the list is added to Comment 0; otherwise, save the list locally. Current F3 provides no scheduler, no milestone timer, no date-triggered reminder, and no F4 calculation/handoff mutation. |
 | Method recommendation | Factor count | `<4` recommends WC; `4-10` recommends RSS; `>10` notifies the DM team for 3D VA. The core engine always calculates both WC and RSS. |
-| Evidence sufficiency | Whether datum-face, stack-start, or cross-subsystem evidence is ambiguous | Show a clarification card and pause only conclusions that depend on the missing information. |
-| Optimization and versioning | Whether design or capability changes are needed | Provide centering, contribution, tolerance, and specification options with real-time feedback. Future roadmap: any ADO date/milestone/version persistence intent is out of current F3 scope. |
+| Evidence sufficiency | Whether the required F1 image exists and datum-face, stack-start, or cross-subsystem evidence is ambiguous | Missing physical image/reference fails the worksheet closed. Skipped optional observation produces `not_evaluated`; ambiguity creates an assumption and clarification that pause only dependent conclusions. |
+| Optimization and versioning | Whether design or capability changes are needed | Current F5 behavior is limited to `delegated_to_f6`. Invoking F6 returns `feature_not_available`; F5 does not generate centering, contribution, tolerance, or specification options or provide real-time feedback. Future F6 capability will generate those options and provide real-time feedback. Future roadmap: any ADO date/milestone/version persistence intent remains outside current F3 scope. |
 | Measured data feedback | Whether measured Cpk is available after optimization | Compare estimated and actual capability, output actual tolerance range and optimization report, and upgrade the capability-library entry; otherwise retain the baseline report. |
 
 ## F3 Governed ADO Publishing Contract
@@ -156,7 +162,7 @@ flowchart TB
 - F3 has no scheduler, no milestone timer, no date-triggered reminder, and no F4 calculation/handoff mutation.
 
 > Multiple worksheets can be processed in parallel for speed, but review is still completed page by page with a human gate.
-> Interpretation states only `FACT` (calculated result) and `RULE` (threshold check), citing knowledge-base entries. `SIGNAL` (attention item) and `OPTION` (alternative) are presented in parallel and unranked; the ME engineer makes the final decision.
+> Interpretation uses four statement types: `FACT` (calculated or directly observed evidence), `RULE` (an applicable F0 rule with version and scope), `SIGNAL` (attention item), and `OPTION` (unranked alternative). The ME engineer makes the final decision.
 
 ---
 **Related docs:** [Architecture](01-architecture.md) · [Differentiation](03-differentiation.md) · [Feature Breakdown](04-feature-breakdown.md) · [Design Decisions](05-design-decisions.md)

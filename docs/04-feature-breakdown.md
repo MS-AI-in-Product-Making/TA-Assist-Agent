@@ -150,8 +150,8 @@ The result must include a quick, easy-to-scan TA risk summary.
 
 ### Acceptance Criteria
 
-1. Interpretation covers loop validity, capability versus specification, top contributors, structural risks, and parallel options (F5, TBD).
-2. When key information is missing, show a clarification card and assumption log; keep only dependent conclusions blocked until clarified (F5, TBD).
+1. The five-section report covers loop validity, capability versus specification, top contributors, structural risks, and parallel options. F5 owns the first three sections; the last two are delegated to F6.
+2. When key information is missing, show a clarification card and assumption log; keep only dependent conclusions blocked until clarified (F5).
 3. Link every rule-based conclusion back to knowledge-base evidence (F5).
 
 ### F5 - Data Interpretation
@@ -160,15 +160,18 @@ The result must include a quick, easy-to-scan TA risk summary.
 
 **Tasks:**
 
-- Use four statement types: `FACT` for computed results, `RULE` for threshold checks, `SIGNAL` for items needing engineering attention, and `OPTION` for parallel alternatives (TBD).
-- Generate the five required interpretation sections: loop validity, capability versus specification, top contributors, structural risks, and parallel options (TBD).
-- Check loop closure, datum-chain consistency, assembly datum face, stack start, and additive/subtractive direction (TBD; without drawing evidence, this cannot be completed).
+- Consume controlled F0/F1/F3/F4 artifacts directly; workbook entry must first pass the F2 gate.
+- Use four statement types: `FACT` for computed or directly observed evidence, `RULE` for an applicable F0 rule, `SIGNAL` for items needing engineering attention, and `OPTION` for unranked alternatives.
+- Generate sections 1-3 of the five-section report: loop validity, capability versus specification, and top contributors. Delegate structural risks and parallel options to F6.
+- Check loop closure only from governed evidence. F1 is the sole physical image owner; missing image provenance fails closed, while skipped optional observation is `not_evaluated` plus clarification.
+- Treat every image observation as confidence-tagged visible evidence rather than drawing truth; structural use remains gated by ME review.
 - Evaluate RSS sigma, Cpk, and spec-window feasibility using the Rules Library.
-- Rank the top contributors and explain their measurable cause, such as large tolerance or mid-chain amplification (TBD).
-- Flag structural risks, including cross-subsystem chains, non-geometric variables, and overly long stacks, without making unsupported conclusions (TBD).
-- Cite the knowledge-base entry, version, and coverage for every `RULE` or capability conclusion.
-- Show a clarification card and assumption log when the assembly datum face, stack start, subsystem classification, or other required evidence is missing (TBD).
+- Order the top contributors by governed F4 contribution and explain only measurable causes supported by source evidence.
+- Cite the F0 knowledge-base entry, rule version, and applicable scope for every `RULE` or capability conclusion.
+- Show a clarification card and explicit assumption log when the assembly datum face, stack start, subsystem classification, or other required evidence is missing.
 - Hold only the conclusions that depend on the unanswered question; continue analysis for evidence that is already sufficient.
+- Support `workflow:f5` and the trigger phrase `使用F5分析报告`; never auto-publish to ADO or write back to the workbook.
+- Retain F5.1 as an internal compatible core, not as the only available F5 entry.
 
 ### F6 - Tolerance / Dimension-Chain Optimization
 
@@ -176,6 +179,7 @@ The result must include a quick, easy-to-scan TA risk summary.
 
 **Tasks:** Adjust mean / adjust tolerance range
 
+- Own report section 4, structural risks, and section 5, parallel improvement options; F5 shows these as delegated while F6 is unavailable.
 - Detect nominal offset and show the Cpk improvement from mean-shift centering.
 - Rank tolerance changes using contribution-weighted leverage and estimate the relative cost impact.
 - Apportion the required RSS sigma reduction across the top two or three contributors.
@@ -216,7 +220,7 @@ The result must include a quick, easy-to-scan TA risk summary.
 ## Scope Notes
 
 - The final engineering decision always remains with the ME engineer.
-- Drawing-content image reading, 3D variation analysis, automatic measurement-data capture, and automatic Excel write-back are outside V1 scope.
+- Automatic extraction of drawing truth, 3D variation analysis, automatic measurement-data capture, and automatic Excel write-back are outside V1 scope. Optional F5 image observations remain visible evidence only.
 - Multiple worksheets can be processed in parallel for speed, but they are still reviewed page by page with a human gate.
 
 ---

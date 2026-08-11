@@ -10,9 +10,9 @@ relying on individual engineers' experience.
 ## Two Core Highlights
 
 1. **Process automation** — Manual TA workbook upload, optional ADO governance, **server-side scheduled reminders** for linked ADO items (independent of whether the agent is running), and measured-data backfill connect **design ⇄ analysis ⇄ real data** into a traceable closed loop.
-2. **Data interpretation** — objective, evidence-backed **5-section** reading (every RULE cites a knowledge-base entry), with the final judgment left to the engineer.
+2. **Data interpretation** — objective, evidence-backed **5-section** report: F5 owns the first three sections and delegates the last two to F6; every RULE cites a versioned, scoped F0 entry and final judgment stays with the engineer.
 
-> **Scope.** Drawing-content image understanding, OCR, dimension recognition, and 3D VA are out of scope for now. F1.1 may register embedded-image metadata and return hash-gated raw bytes, but it does not interpret image content. Data-to-drawing linking is done via **DIM ID metadata** (not image recognition).
+> **Scope.** Automatic extraction of drawing truth, OCR, dimension recognition, and 3D VA are out of scope for now. F1 owns hash-gated worksheet images; optional F5 observations are confidence-tagged visible evidence subject to ME review, never drawing truth. Data-to-drawing linking is done via **DIM ID metadata**.
 
 ## Documentation
 
@@ -37,8 +37,9 @@ Phase 0 建立面向产品路线图的本地优先、可审计 TypeScript 工程
 扩展彼此的查询语义。制程指导结果
 仅为 `guidance-exceeded`、`within-guidance` 或 `unknown`，不声明能力紧度或可制造性。该快照
 保留来源文件 hash、工作表和单元格范围。解读规则快照只包含审核后的通用 `internal` 子集，
-不包含 worked examples 或计算器；原始能力矩阵、TA 模板与规则工作簿仍不进入 Git。F5/F6
-保持 `unavailable`，发布规则依赖不表示解释或推荐能力已经启用。F1 仅接受受控 `confidential` `.xlsx` 字节，创建只读
+不包含 worked examples 或计算器；原始能力矩阵、TA 模板与规则工作簿仍不进入 Git。根 F5 已按
+`f5-data-interpretation-request-v1` / `f5-data-interpretation-result-v1` 阶段性启用；F6 仍为
+`unavailable`，发布规则依赖本身不表示推荐能力已经启用。F1 仅接受受控 `confidential` `.xlsx` 字节，创建只读
 worksheet catalog，并从 catalog 确认的 worksheet 依据语义表头提取因子表、公式及缓存值、嵌入图片元数据，
 图片字节只可由 workbook hash 与唯一 image hash 共同验证后读取。F1 不计算公式、不换算单位、
 不执行 OCR、渲染、风险解释、行动建议或 workbook 写回，也不调用外部服务、不跟踪或导出原始
@@ -52,8 +53,9 @@ F2.1-F2.4 继续提供严格完整性阻断、非阻断一致性信号、受限�
 以及复用同一 kernel 且工作量不超过 1000 的 What-if。错误不得泄露机密输入；Windows Excel
 Worker 仅用于发布黄金回归，不在生产热路径中。F3 已启用 `drawing-governance-v2` 本地治理核心、
 JSON/Markdown workflow 和宿主注入的 Surface MCP adapter；真实 Comment 0 写入仍需 capability、
-策略审批及逐次用户确认。F5.1 提供受 F4/F0 证据约束的客观解读；根 F5、F6 和 F7 保持不可用。
-F4/F5.1 不启用根 F5/F6；F8 仅限用于受治理 Skill 运行时验收的匿名 `public` fixture。
+策略审批及逐次用户确认。根 F5 直接消费 F0/F1/F3/F4 受控工件，提供能力、规格、贡献和证据受限的
+公差链解读；F5.1 作为历史 internal compatible core 保留，F6 和 F7 保持不可用。F5 不自动发布
+ADO、不回写 workbook；F8 仅限用于受治理 Skill 运行时验收的匿名 `public` fixture。
 
 - [Phase 0 设计](docs/superpowers/specs/2026-07-22-ai-assist-agent-foundation-design.md)
 - [Phase 0 实施计划](docs/superpowers/plans/2026-07-22-ai-assist-agent-foundation.md)
@@ -109,7 +111,7 @@ In process-flow order. See [full table](docs/03-differentiation.md).
 | **F2 · Data cleansing** | Data cleansing | Manual, error-prone | No basis | Missing-field + DIM ID check + per-category **Capability Library** validation |
 | **F3 · DIM-to-drawing linking** | Data-to-drawing | Manual, ambiguous | Cannot link | Use `(Drawing Number, DIM ID)` as the formal identity, flag same-drawing conflicts, and generate a traceable confidential list. Optional ADO updates use Surface MCP Comment 0 with `prepare -> confirm -> execute`; otherwise the same list stays local. |
 | **F4 · Method recommendation / calculation** | Calculation | Reliable formulas | Often wrong / non-reproducible | Reuses the **same Excel engine** and selects WC or RSS by factor count |
-| **F5 · Data interpretation** | Interpretation | Personal experience | No rules / knowledge base | Fixed **5-section** output, **objective, each RULE cites its F0 entry**, judgment left to user |
+| **F5 · Data interpretation** | Interpretation | Personal experience | No rules / knowledge base | Sections 1-3 of the fixed **5-section** report, **objective, each RULE cites its versioned/scoped F0 entry**; sections 4-5 are delegated to F6 |
 | **F6 · Optimization** | Tolerance optimization | Manual re-runs | Cannot compute | Mean-shift centering + contribution economics + RSS apportionment + **spec reverse-solve** (over-capability warning) |
 | **F7 · Closed loop** | Real Cpk | Measured data never returns | None | Backfill measured Cpk by DIM ID → **real gap vs estimate** + library **T3 empirical → T1 measured** |
 | **F8 · Interaction / output** | User trust | Read raw Excel yourself | Chat only | Read-only faithful evidence pane + cited dialogue + consolidated report |
@@ -165,7 +167,7 @@ matches the template exactly.
 | **F2 Data cleansing** ⭐ | Missing required-field + DIM ID check; per-category Capability Library & distribution validation; source-Excel correction or recorded exception |
 | **F3 DIM-to-drawing linking (DIM ID)** ⭐ | Treat Part Number as Drawing Number in the current contract; use `(Drawing Number, DIM ID)` as the formal key; allow cross-drawing DIM ID reuse, flag same-drawing duplicates, and keep one-digit IDs as nonblocking `suspected_invalid`; optional Surface MCP writes update Comment 0 only after explicit confirmation, otherwise save the same confidential list locally |
 | **F4 Method recommendation / calculation** | Factor count + CTS/CTF; `<4`→WC, `4–10`→RSS, `>10`→notify DM for 3D VA follow-up; F4 continues to compute both WC and RSS |
-| **F5 Data interpretation** ⭐ | Fixed 5-section output — **objective (FACT/RULE/SIGNAL/OPTION)**, each RULE cites its F0 entry; clarification card when uncertain |
+| **F5 Data interpretation** ⭐ | Fixed 5-section presentation: F5 owns loop validity, capability vs specification, and top contributors; structural risks and parallel options are delegated to F6. Uses **FACT/RULE/SIGNAL/OPTION**, scoped F0 citations, clarifications, and assumptions. |
 | **F6 Tolerance / dimension-chain optimization** ⭐ | Mean-shift centering + contribution economics + RSS apportionment + spec reverse-solve (over-capability warning) |
 | **F7 Closed-loop real-Cpk feedback** ⭐ | Backfill measured Cpk by DIM ID → real gap vs estimate + upgrade library T3→T1. Reads in via manual import from a **centralized measured-data store (SharePoint / platform)** that must be set up out-of-band (external prerequisite) |
 | **F8 User interaction / read-only pane + output** ⭐ | Read-only faithful evidence pane + cited dialogue + consolidated report incl. Loop image |
@@ -174,8 +176,10 @@ matches the template exactly.
 1. **Loop validity** — closed loop? same datum chain? **assembly datum face / stack start** clear? (if uncertain → clarification card)
 2. **Capability vs Spec** — RSS σ / Cpk (`<1` FAIL · `1–1.33` risk · `≥1.33` PASS); spec window `<6σ` physically infeasible?
 3. **Top contributors** — ranked by % contribution; Top 2–3 with cause (large tol / mid-stack amplification / direct single-direction effect)
-4. **Structural risk (SIGNAL, flag only)** — cross-domain datum chain (ME/PCBA/Glass); non-geometric variables (switch travel, foam/adhesive); over-long stack (`>10`)
-5. **Options (OPTION, not ranked)** — A keep design / B adjust spec / C optimize capability, each with quantified consequence; CTF allows spec↔yield trade-off, CTS forbids loosening spec; one-line **FACT** summary (no recommended action)
+4. **Structural risk (delegated F6)** — cross-domain datum chain (ME/PCBA/Glass), non-geometric variables, and over-long stacks; F5 does not synthesize this section while F6 is unavailable.
+5. **Options (delegated F6)** — parallel quantified improvement paths remain an F6 responsibility; F5 does not rank, recommend, or invent them.
+
+F5 directly consumes F0/F1/F3/F4 artifacts; workbook entry first passes the F2 gate. F1 is the only physical image owner. A missing F1 image reference or physical image fails that worksheet closed, while skipped/unavailable optional observation mode continues deterministic interpretation as `not_evaluated` plus clarification. Image observations are not drawing truth and remain confidence-tagged and ME review-gated. Unconfirmed assumptions never replace evidence.
 
 ---
 
@@ -183,7 +187,7 @@ matches the template exactly.
 
 Deferred until there is a proven need; each can be merged into the product later.
 
-- Drawing-content **image** reading (extract nominal/tol from 2D drawings/PDF)
+- Automatic extraction of drawing truth from 2D drawings/PDF; optional governed F5 image observations remain visible evidence only
 - Three-way consistency (user ⇄ drawing ⇄ knowledge base)
 - DM-owned 3D VA (VSA-class tool integration)
 - **Automatic API capture** of measurement data (the loop is proven first via manual import from the centralized store)
@@ -242,6 +246,17 @@ The workflow executes Task 1.1-1.7 with real workbook inputs and emits a final r
 - F4 只计算 F2 报告中状态为 `ready` 且已由用户确认的 worksheet handoff。F2 JSON 是计算的唯一业务输入；可选 workbook 只验证 F4 输出，不提供或覆盖计算输入。
 - 每次运行输出到 `test/demo-output/f4-runs/<workbook-safe-name>/<UTC-run-id>/`。计算成功后依次原子写入 `Feature4-Calculation.json`、可选的 `Feature4-Comparison.json`、`Feature4-Report.md` 和最终 `manifest.json`。
 - JSON 计算结果供 F5 使用，Markdown 供人工查看；Excel 不可用时保留有效计算结果，并在 comparison 和 manifest 中记录受控状态。
+
+## Feature 5 Governed Interpretation Workflow
+
+- 三个直接 artifact roots：`npm run workflow:f5 -- "path/to/f1-root" "path/to/f3-root" "path/to/f4-root" --worksheet "Analysis-A" --worksheet "Analysis-B"`
+- 直接 `workflow:f5` 的 `--worksheet <name>` 可选且可重复；省略时默认使用 F4 calculations 中的 worksheets。
+- Skill/workbook 交互模式必须至少选择一个 worksheet，并将每个选择以重复的 `--worksheet <name>` 传入；F3 与 F5 必须使用完全相同的 selected worksheet set。
+- 可选图片观察：在上述命令末尾追加 `--image-observations "path/to/Feature5-Image-Observations.json"`。没有经过 schema、identity 和 hash 校验的观察工件不得传入。
+- workbook 启动顺序为 F1 -> F2 门禁 -> selected F3 -> F4 -> F5。F5 直接消费 F0 规则及 F1/F3/F4 工件；仓库不承诺或虚构独立 F0 workflow 命令。
+- Skill 入口为“使用F5分析报告”。该入口不自动发布 ADO、不回写 workbook。`approved-knowledge-base` 与 `approved-me-review` 是 Feature 发布/启用批准，当前 F5 `available` 表示部署已批准，不是每次运行的交互输入。
+- 运行时 ME review 由 `requiresEngineeringReview` SIGNAL、clarification/assumption 和不生成缺少受控证据支持的最终 RULE 门禁；必需 physical image 缺失、artifact identity/hash 不匹配或 schema evidence 校验失败仍 fail closed。
+- 每次运行输出到 `test/demo-output/f5-runs/<workbook-safe-name>/<UTC-run-id>/`，包含 `Feature5-Report.json`、`Feature5-Report.md`、`Feature5-Run-Summary.json` 和 `manifest.json`；可选输入 artifact 为 `Feature5-Image-Observations.json`。
 
 - `test/` and all `*.xlsx` (confidential templates / sample data) are **git-ignored**.
 - Internal `*.html` design reports are **git-ignored** and not committed.
