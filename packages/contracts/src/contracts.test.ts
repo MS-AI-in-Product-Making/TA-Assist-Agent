@@ -22,6 +22,10 @@ import {
   exceptionResolutionResultSchema,
   f4ExcelComparisonResultSchema,
   f4WorkflowCalculationResultSchema,
+  f5DataInterpretationRequestSchema,
+  f5DataInterpretationResultSchema,
+  f5ImageObservationArtifactSchema,
+  f5ObjectiveInterpretationCompletedResultSchema,
   f2InitialWorkflowRequestSchema,
   f2InitialWorkflowResultSchema,
   f2ArtifactInputSchema,
@@ -1956,6 +1960,8 @@ describe("F5.1 objective interpretation contracts", () => {
         section: "capability-vs-specification" as const,
         content: {
           entryId: "rule-cpk-target",
+          effectiveVersion: "interpretation-rules-v1" as const,
+          applicability: { analysisDimension: "one-dimensional" as const, method: "rss" as const },
           relatedFactReferences: ["cpk", "targetCpk"],
           evidence: {
             sourceAlias: "kb-performance",
@@ -1971,6 +1977,8 @@ describe("F5.1 objective interpretation contracts", () => {
         section: "major-contributors" as const,
         content: {
           entryId: "signal-major-contribution",
+          effectiveVersion: "interpretation-rules-v1" as const,
+          applicability: { analysisDimension: "one-dimensional" as const, method: "rss" as const },
           relatedFactReferences: ["contributors"],
           evidence: {
             sourceAlias: "kb-signal",
@@ -1987,6 +1995,8 @@ describe("F5.1 objective interpretation contracts", () => {
         section: "parallel-options" as const,
         content: {
           entryId: "option-tighten-process",
+          effectiveVersion: "interpretation-rules-v1" as const,
+          applicability: { analysisDimension: "one-dimensional" as const, method: "rss" as const },
           relatedFactReferences: ["cpk", "contributors"],
           evidence: {
             sourceAlias: "kb-option",
@@ -2028,6 +2038,7 @@ describe("F5.1 objective interpretation contracts", () => {
 
   it("accepts strict confidential request with completed F4 result and completed F5.1 result", () => {
     expect(interpretationRequestSchema.parse(request)).toEqual(request);
+    expect(f5ObjectiveInterpretationCompletedResultSchema.parse(completedResult)).toEqual(completedResult);
     expect(interpretationResultSchema.parse(completedResult)).toEqual(completedResult);
   });
 
@@ -2426,6 +2437,875 @@ describe("F5.1 objective interpretation contracts", () => {
     rule.content.relatedFactReferences = ["targetCpk"];
 
     expect(interpretationResultSchema.safeParse(result).success).toBe(false);
+  });
+
+  describe("root F5 data interpretation contracts", () => {
+    const imageReference = {
+      artifact: "f1" as const,
+      relativePath: "worksheets/Analysis-A/tolerance-path.png",
+      contentHash: "d".repeat(64),
+      worksheetName: "Analysis-A",
+    };
+    const imageObservation = {
+      scope: "stack_start" as const,
+      observedValue: "visible" as const,
+      confidence: "medium" as const,
+      visibleBasis: "A labeled start marker is visible in the worksheet image.",
+      reviewStatus: "unreviewed" as const,
+    };
+    const observationArtifact = {
+      contractVersion: "v1" as const,
+      inputClassification: "confidential" as const,
+      observationVersion: "f5-image-observation-v1" as const,
+      workbookContentHash: contentHash,
+      worksheets: [{
+        worksheetName: "Analysis-A",
+        imageReference,
+        observations: [imageObservation],
+      }],
+    };
+    const governanceRow = {
+      factorInstanceId: "e".repeat(64),
+      drawingDimensionKey: "f".repeat(64),
+      deviceLevelDim: "Analysis-A",
+      dimensionDescription: "Anonymous device gap",
+      partCategory: "CNC",
+      partSubsystem: "Anonymous bracket",
+      drawingNumber: "DRAW-100",
+      dimId: "307",
+      factorDescription: "Feature-A",
+      nominal: 12.45,
+      upperTolerance: 0.2,
+      lowerTolerance: -0.2,
+      sigmaLevel: 4,
+      dimIdStatus: "valid" as const,
+      qualitySignals: [],
+      governanceStatus: "complete" as const,
+      imageReference,
+      source: {
+        worksheetName: "Analysis-A",
+        tableId: "table-a",
+        sourceRow: 2,
+        sourceCells: {},
+      },
+    };
+    const rootRequest = {
+      contractVersion: "v1" as const,
+      inputClassification: "confidential" as const,
+      workbook: { fileName: "Anonymous.xlsx", contentHash },
+      knowledgeBaseVersion: "interpretation-rules-v1" as const,
+      worksheets: [{
+        worksheetName: "Analysis-A",
+        imageReference,
+        governanceRows: [governanceRow],
+        calculationResult: calculationCompletedResult,
+        imageObservations: [imageObservation],
+      }],
+    };
+    const rootRule = {
+      statementId: "root-rule-performance",
+      type: "RULE" as const,
+      section: "capability-vs-specification" as const,
+      content: {
+        entryId: "rule-cpk-target",
+        effectiveVersion: "interpretation-rules-v1" as const,
+        applicability: { analysisDimension: "one-dimensional" as const, method: "rss" as const },
+        relatedFactReferences: ["cpk", "targetCpk"] as const,
+        evidence: {
+          sourceAlias: "kb-performance",
+          sheetName: "Rules",
+          sourceRange: "A2:B2",
+          sourceFileHash: contentHash,
+        },
+      },
+    };
+    const rootOption = {
+      statementId: "root-option-follow-up",
+      type: "OPTION" as const,
+      section: "parallel-options" as const,
+      content: {
+        entryId: "option-tighten-process",
+        effectiveVersion: "interpretation-rules-v1" as const,
+        applicability: { analysisDimension: "one-dimensional" as const, method: "rss" as const },
+        relatedFactReferences: ["cpk"] as const,
+        evidence: {
+          sourceAlias: "kb-option",
+          sheetName: "Rules",
+          sourceRange: "E4:F4",
+          sourceFileHash: contentHash,
+        },
+        rank: null,
+      },
+    };
+    const rootFacts = completedResult.statements.filter((statement) => (
+      statement.type === "FACT" && ["cpk", "target_cpk", "factor_contribution"].includes(statement.content.metric)
+    ));
+    const contributorFact = rootFacts.find((statement) => statement.content.metric === "factor_contribution")!;
+    const contributorItem = {
+      factorReference: "Analysis-A/table-a/2",
+      factorName: "Feature-A",
+      factorIndex: 0,
+      contributionPercent: 100,
+      source: { worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 2 },
+      drawingNumber: "DRAW-100",
+      dimId: "307",
+      governanceStatus: "complete" as const,
+      relatedStatementIds: [contributorFact.statementId],
+    };
+    const rootImageFact = {
+      statementId: "root-fact-image-stack-start",
+      type: "FACT" as const,
+      section: "tolerance-chain-validity" as const,
+      content: {
+        provenanceKind: "image_observation" as const,
+        scope: "stack_start" as const,
+        observedValue: "visible" as const,
+        imageReference,
+        confidence: "high" as const,
+        visibleBasis: "The controlled worksheet image visibly identifies the stack start.",
+        reviewStatus: "unreviewed" as const,
+      },
+    };
+    const rootStructuralSignal = {
+      statementId: "root-signal-structural-review",
+      type: "SIGNAL" as const,
+      section: "tolerance-chain-validity" as const,
+      content: {
+        signalKind: "structural_evidence_review" as const,
+        requiresEngineeringReview: true as const,
+        triggerFactReferences: [rootImageFact.statementId],
+      },
+    };
+    const rootGovernanceFact = {
+      statementId: "root-fact-governance-1",
+      type: "FACT" as const,
+      section: "major-contributors" as const,
+      content: {
+        provenanceKind: "f3_governance" as const,
+        source: structuredClone(governanceRow.source),
+        drawingNumber: governanceRow.drawingNumber,
+        dimId: governanceRow.dimId,
+        dimIdStatus: governanceRow.dimIdStatus,
+        governanceStatus: governanceRow.governanceStatus,
+        qualitySignals: structuredClone(governanceRow.qualitySignals),
+      },
+    };
+    const rootGovernanceSignal = {
+      statementId: "root-signal-identifier-gap",
+      type: "SIGNAL" as const,
+      section: "major-contributors" as const,
+      content: {
+        signalKind: "identifier_governance_gap" as const,
+        requiresEngineeringReview: true as const,
+        triggerFactReferences: [rootGovernanceFact.statementId],
+      },
+    };
+    const completedWorksheet = {
+      worksheetName: "Analysis-A",
+      imageReference,
+      governanceRows: [governanceRow],
+      calculationResult: calculationCompletedResult,
+      status: "completed" as const,
+      sections: {
+        toleranceChainValidity: { status: "not_evaluated" as const },
+        capabilityVsSpecification: {
+          status: "supported" as const,
+          statementIds: [rootFacts.find((statement) => statement.content.metric === "cpk")!.statementId, rootRule.statementId],
+        },
+        majorContributors: { status: "supported" as const, items: [contributorItem] },
+        reasonableToleranceRange: { status: "delegated_to_f6" as const },
+        designOptimizationAndParallelOptions: { status: "delegated_to_f6" as const },
+      },
+      statements: [
+        ...rootFacts,
+        rootRule,
+        rootOption,
+        rootImageFact,
+        rootStructuralSignal,
+        rootGovernanceFact,
+        rootGovernanceSignal,
+      ],
+      clarifications: [{
+        clarificationId: "clarify-image",
+        reasonCode: "image_not_available",
+        section: "toleranceChainValidity",
+        missingEvidence: ["confirmed image observation"],
+        affectedConclusionIds: [],
+        blockingScope: "worksheet",
+        questionForReviewer: "Can the tolerance path image be reviewed?",
+      }],
+      assumptions: [{
+        assumptionId: "assumption-1",
+        source: "F4 calculation input",
+        affectedSections: ["capabilityVsSpecification"],
+        statement: "The selected calculation is the intended baseline.",
+        status: "proposed" as const,
+      }],
+    };
+    const rootResult = {
+      contractVersion: "v1" as const,
+      outputClassification: "confidential" as const,
+      featureId: "F5" as const,
+      status: "completed" as const,
+      interpretationVersion: "f5-data-interpretation-v1" as const,
+      knowledgeBaseVersion: "interpretation-rules-v1" as const,
+      workbook: { fileName: "Anonymous.xlsx", contentHash },
+      worksheets: [completedWorksheet],
+      summary: {
+        worksheetCount: 1,
+        completedWorksheetCount: 1,
+        inputRejectedWorksheetCount: 0,
+        statementCount: 9,
+        clarificationCount: 1,
+        assumptionCount: 1,
+      },
+    };
+
+    it("accepts strict image observations and enforces confirmation metadata", () => {
+      expect(f5ImageObservationArtifactSchema.parse(observationArtifact)).toEqual(observationArtifact);
+
+      const confirmed = structuredClone(observationArtifact);
+      confirmed.worksheets[0]!.observations[0] = {
+        ...confirmed.worksheets[0]!.observations[0]!,
+        reviewStatus: "confirmed",
+        confirmedBy: "controlled-reviewer",
+        confirmedAt: "2026-08-11T08:00:00.000Z",
+      } as typeof confirmed.worksheets[0]["observations"][number];
+      expect(f5ImageObservationArtifactSchema.safeParse(confirmed).success).toBe(true);
+
+      const missingConfirmation = structuredClone(confirmed);
+      delete (missingConfirmation.worksheets[0]!.observations[0] as { confirmedAt?: string }).confirmedAt;
+      const missingConfirmationResult = f5ImageObservationArtifactSchema.safeParse(missingConfirmation);
+      expect(missingConfirmationResult.success).toBe(false);
+      if (!missingConfirmationResult.success) {
+        expect(missingConfirmationResult.error.issues.map(({ path }) => path)).toContainEqual([
+          "worksheets", 0, "observations", 0, "confirmedAt",
+        ]);
+      }
+
+      const missingBoth = structuredClone(confirmed);
+      delete (missingBoth.worksheets[0]!.observations[0] as { confirmedBy?: string }).confirmedBy;
+      delete (missingBoth.worksheets[0]!.observations[0] as { confirmedAt?: string }).confirmedAt;
+      const missingBothResult = f5ImageObservationArtifactSchema.safeParse(missingBoth);
+      expect(missingBothResult.success).toBe(false);
+      if (!missingBothResult.success) {
+        const paths = missingBothResult.error.issues.map(({ path }) => path);
+        expect(paths).toContainEqual(["worksheets", 0, "observations", 0, "confirmedBy"]);
+        expect(paths).toContainEqual(["worksheets", 0, "observations", 0, "confirmedAt"]);
+      }
+
+      const unreviewedWithConfirmation = structuredClone(confirmed);
+      unreviewedWithConfirmation.worksheets[0]!.observations[0]!.reviewStatus = "unreviewed";
+      const unreviewedResult = f5ImageObservationArtifactSchema.safeParse(unreviewedWithConfirmation);
+      expect(unreviewedResult.success).toBe(false);
+      if (!unreviewedResult.success) {
+        const paths = unreviewedResult.error.issues.map(({ path }) => path);
+        expect(paths).toContainEqual(["worksheets", 0, "observations", 0, "confirmedBy"]);
+        expect(paths).toContainEqual(["worksheets", 0, "observations", 0, "confirmedAt"]);
+      }
+    });
+
+    it("rejects duplicate or mismatched observation worksheets, scopes, and paths", () => {
+      expect(f5ImageObservationArtifactSchema.safeParse({
+        ...observationArtifact,
+        worksheets: [{
+          ...observationArtifact.worksheets[0],
+          imageReference: { ...imageReference, worksheetName: "Analysis-B" },
+        }],
+      }).success).toBe(false);
+      expect(f5ImageObservationArtifactSchema.safeParse({
+        ...observationArtifact,
+        worksheets: [observationArtifact.worksheets[0], observationArtifact.worksheets[0]],
+      }).success).toBe(false);
+      expect(f5ImageObservationArtifactSchema.safeParse({
+        ...observationArtifact,
+        worksheets: [{
+          ...observationArtifact.worksheets[0],
+          observations: [imageObservation, imageObservation],
+        }],
+      }).success).toBe(false);
+      expect(f5ImageObservationArtifactSchema.safeParse({
+        ...observationArtifact,
+        worksheets: [{
+          ...observationArtifact.worksheets[0],
+          imageReference: { ...imageReference, relativePath: "C:\\controlled\\image.png" },
+        }],
+      }).success).toBe(false);
+    });
+
+    it("accepts a structured root request and rejects worksheet, hash, table, source, and image mismatches", () => {
+      expect(f5DataInterpretationRequestSchema.parse(rootRequest)).toEqual(rootRequest);
+      expect(f5DataInterpretationRequestSchema.safeParse({ ...rootRequest, inputClassification: "public" }).success).toBe(false);
+      expect(f5DataInterpretationRequestSchema.safeParse({ ...rootRequest, unexpected: true }).success).toBe(false);
+
+      const mutations = [
+        { workbook: { ...rootRequest.workbook, contentHash: "0".repeat(64) } },
+        { worksheets: [{ ...rootRequest.worksheets[0], worksheetName: "Analysis-B" }] },
+        { worksheets: [{ ...rootRequest.worksheets[0], imageReference: { ...imageReference, contentHash: "0".repeat(64) } }] },
+        { worksheets: [{ ...rootRequest.worksheets[0], calculationResult: { ...calculationCompletedResult, worksheetSelection: { worksheetName: "Analysis-A", tableId: "table-b" } } }] },
+        { worksheets: [{ ...rootRequest.worksheets[0], governanceRows: [{ ...governanceRow, source: { ...governanceRow.source, sourceRow: 3 } }] }] },
+      ];
+      for (const mutation of mutations) {
+        expect(f5DataInterpretationRequestSchema.safeParse({ ...rootRequest, ...mutation }).success).toBe(false);
+      }
+    });
+
+    it("requires unique and exactly matching F4/F3 source key sets at precise paths", () => {
+      const expectIssuePath = (request: unknown, expectedPath: Array<string | number>) => {
+        const parsed = f5DataInterpretationRequestSchema.safeParse(request);
+        expect(parsed.success).toBe(false);
+        if (!parsed.success) {
+          expect(parsed.error.issues.map(({ path }) => path)).toContainEqual(expectedPath);
+        }
+      };
+      const factor = calculationCompletedResult.factors[0]!;
+      const duplicateFactorRequest = structuredClone(rootRequest);
+      duplicateFactorRequest.worksheets[0]!.calculationResult.factorCount = 2;
+      duplicateFactorRequest.worksheets[0]!.calculationResult.factors.push(structuredClone(factor));
+      expectIssuePath(duplicateFactorRequest, [
+        "worksheets", 0, "calculationResult", "factors", 1, "source",
+      ]);
+
+      const duplicateGovernanceRequest = structuredClone(rootRequest);
+      duplicateGovernanceRequest.worksheets[0]!.governanceRows.push({
+        ...structuredClone(governanceRow),
+        factorInstanceId: "a".repeat(64),
+      });
+      expectIssuePath(duplicateGovernanceRequest, ["worksheets", 0, "governanceRows", 1, "source"]);
+
+      const missingGovernanceRequest = structuredClone(rootRequest);
+      missingGovernanceRequest.worksheets[0]!.governanceRows = [];
+      expectIssuePath(missingGovernanceRequest, [
+        "worksheets", 0, "calculationResult", "factors", 0, "source",
+      ]);
+
+      const extraGovernanceRequest = structuredClone(rootRequest);
+      extraGovernanceRequest.worksheets[0]!.governanceRows.push({
+        ...structuredClone(governanceRow),
+        factorInstanceId: "b".repeat(64),
+        source: { ...governanceRow.source, sourceRow: 3 },
+      });
+      expectIssuePath(extraGovernanceRequest, ["worksheets", 0, "governanceRows", 1, "source"]);
+    });
+
+    it("accepts a completed root result with all five fixed sections", () => {
+      const parsed = f5DataInterpretationResultSchema.parse(rootResult);
+      expect(parsed.worksheets[0]).toMatchObject({
+        sections: {
+          toleranceChainValidity: { status: "not_evaluated" },
+          capabilityVsSpecification: { status: "supported", statementIds: ["fact-cpk", "root-rule-performance"] },
+          majorContributors: { status: "supported", items: [contributorItem] },
+          reasonableToleranceRange: { status: "delegated_to_f6" },
+          designOptimizationAndParallelOptions: { status: "delegated_to_f6" },
+        },
+      });
+      expect(f5DataInterpretationResultSchema.safeParse({ ...rootResult, outputClassification: "public" }).success).toBe(false);
+      expect(f5DataInterpretationResultSchema.safeParse({ ...rootResult, unexpected: true }).success).toBe(false);
+    });
+
+    it.each([
+      ["confidence", "medium"],
+      ["confidence", "low"],
+      ["reviewStatus", "rejected"],
+    ] as const)("rejects root image FACT %s %s at the precise path", (field, value) => {
+      const result = structuredClone(rootResult);
+      const imageFactIndex = result.worksheets[0]!.statements.findIndex(
+        ({ statementId }) => statementId === rootImageFact.statementId,
+      );
+      const imageFact = result.worksheets[0]!.statements[imageFactIndex] as typeof rootImageFact;
+      (imageFact.content as Record<string, string>)[field] = value;
+
+      const parsed = f5DataInterpretationResultSchema.safeParse(result);
+      expect(parsed.success).toBe(false);
+      if (!parsed.success) {
+        expect(parsed.error.issues.map(({ path }) => path)).toContainEqual([
+          "worksheets", 0, "statements", imageFactIndex, "content", field,
+        ]);
+      }
+    });
+
+    it("allows medium confidence only as SIGNAL observation evidence", () => {
+      const result = structuredClone(rootResult);
+      (result.worksheets[0]!.sections.toleranceChainValidity as { status: string }).status = "needs_review";
+      const signal = result.worksheets[0]!.statements.find(
+        ({ statementId }) => statementId === rootStructuralSignal.statementId,
+      ) as typeof rootStructuralSignal & { content: { observationEvidence?: unknown[] } };
+      delete (signal.content as { triggerFactReferences?: string[] }).triggerFactReferences;
+      signal.content.observationEvidence = [{
+        ...imageObservation,
+        imageReference,
+      }];
+
+      expect(f5DataInterpretationResultSchema.safeParse(result).success).toBe(true);
+    });
+
+    it("allows not_evaluated without image FACT only with a structural clarification", () => {
+      const withoutObservation = structuredClone(rootResult);
+      withoutObservation.worksheets[0]!.statements = withoutObservation.worksheets[0]!.statements.filter(
+        ({ statementId }) => ![rootImageFact.statementId, rootStructuralSignal.statementId].includes(statementId),
+      );
+      withoutObservation.summary.statementCount -= 2;
+      expect(f5DataInterpretationResultSchema.safeParse(withoutObservation).success).toBe(true);
+
+      withoutObservation.worksheets[0]!.clarifications = [];
+      withoutObservation.summary.clarificationCount = 0;
+      const parsed = f5DataInterpretationResultSchema.safeParse(withoutObservation);
+      expect(parsed.success).toBe(false);
+      if (!parsed.success) {
+        expect(parsed.error.issues.map(({ path }) => path)).toContainEqual([
+          "worksheets", 0, "sections", "toleranceChainValidity", "status",
+        ]);
+      }
+    });
+
+    it("requires image FACT evidence for supported and needs_review tolerance status", () => {
+      for (const status of ["supported", "needs_review"] as const) {
+        const result = structuredClone(rootResult);
+        result.worksheets[0]!.sections.toleranceChainValidity.status = status;
+        result.worksheets[0]!.statements = result.worksheets[0]!.statements.filter(
+          ({ statementId }) => ![rootImageFact.statementId, rootStructuralSignal.statementId].includes(statementId),
+        );
+        result.summary.statementCount -= 2;
+        const parsed = f5DataInterpretationResultSchema.safeParse(result);
+        expect(parsed.success, status).toBe(false);
+        if (!parsed.success) {
+          expect(parsed.error.issues.map(({ path }) => path)).toContainEqual([
+            "worksheets", 0, "sections", "toleranceChainValidity", "status",
+          ]);
+        }
+      }
+
+      const supported = structuredClone(rootResult);
+      supported.worksheets[0]!.sections.toleranceChainValidity.status = "supported";
+      expect(f5DataInterpretationResultSchema.safeParse(supported).success).toBe(true);
+
+      const needsReview = structuredClone(rootResult);
+      needsReview.worksheets[0]!.sections.toleranceChainValidity.status = "needs_review";
+      expect(f5DataInterpretationResultSchema.safeParse(needsReview).success).toBe(true);
+
+      const unrelatedFact = structuredClone(needsReview);
+      const signalIndex = unrelatedFact.worksheets[0]!.statements.findIndex(
+        ({ statementId }) => statementId === rootStructuralSignal.statementId,
+      );
+      const signal = unrelatedFact.worksheets[0]!.statements[signalIndex] as typeof rootStructuralSignal;
+      signal.content.triggerFactReferences = [contributorFact.statementId];
+      const parsed = f5DataInterpretationResultSchema.safeParse(unrelatedFact);
+      expect(parsed.success).toBe(false);
+      if (!parsed.success) {
+        expect(parsed.error.issues.map(({ path }) => path)).toContainEqual([
+          "worksheets", 0, "statements", signalIndex, "content", "triggerFactReferences", 0,
+        ]);
+      }
+    });
+
+    it("does not count rejected image FACT evidence for supported or needs_review tolerance status", () => {
+      for (const status of ["supported", "needs_review"] as const) {
+        const result = structuredClone(rootResult);
+        result.worksheets[0]!.sections.toleranceChainValidity.status = status;
+        const imageFact = result.worksheets[0]!.statements.find(
+          ({ statementId }) => statementId === rootImageFact.statementId,
+        ) as typeof rootImageFact;
+        imageFact.content.reviewStatus = "rejected";
+
+        const parsed = f5DataInterpretationResultSchema.safeParse(result);
+        expect(parsed.success, status).toBe(false);
+        if (!parsed.success) {
+          expect(parsed.error.issues.map(({ path }) => path)).toContainEqual([
+            "worksheets", 0, "sections", "toleranceChainValidity", "status",
+          ]);
+        }
+      }
+
+    });
+
+    it("does not allow any SIGNAL to reference a rejected image FACT", () => {
+      for (const signalId of [rootStructuralSignal.statementId, rootGovernanceSignal.statementId]) {
+        const result = structuredClone(rootResult);
+        const imageFact = result.worksheets[0]!.statements.find(
+          ({ statementId }) => statementId === rootImageFact.statementId,
+        ) as typeof rootImageFact;
+        imageFact.content.reviewStatus = "rejected";
+        const signalIndex = result.worksheets[0]!.statements.findIndex(
+          ({ statementId }) => statementId === signalId,
+        );
+        const signal = result.worksheets[0]!.statements[signalIndex] as typeof rootStructuralSignal;
+        signal.content.triggerFactReferences = [rootImageFact.statementId];
+
+        const parsed = f5DataInterpretationResultSchema.safeParse(result);
+        expect(parsed.success, signalId).toBe(false);
+        if (!parsed.success) {
+          expect(parsed.error.issues.map(({ path }) => path)).toContainEqual([
+            "worksheets", 0, "statements", signalIndex, "content", "triggerFactReferences", 0,
+          ]);
+        }
+      }
+    });
+
+    it("requires a unique governance snapshot with the same source set as F4 factors", () => {
+      const duplicateFactor = structuredClone(rootResult);
+      duplicateFactor.worksheets[0]!.calculationResult.factorCount = 2;
+      duplicateFactor.worksheets[0]!.calculationResult.factors.push(
+        structuredClone(duplicateFactor.worksheets[0]!.calculationResult.factors[0]!),
+      );
+      const duplicateFactorParsed = f5DataInterpretationResultSchema.safeParse(duplicateFactor);
+      expect(duplicateFactorParsed.success).toBe(false);
+      if (!duplicateFactorParsed.success) {
+        expect(duplicateFactorParsed.error.issues.map(({ path }) => path)).toContainEqual([
+          "worksheets", 0, "calculationResult", "factors", 1, "source",
+        ]);
+      }
+
+      const duplicate = structuredClone(rootResult);
+      duplicate.worksheets[0]!.governanceRows.push({
+        ...structuredClone(governanceRow),
+        factorInstanceId: "a".repeat(64),
+      });
+      const duplicateParsed = f5DataInterpretationResultSchema.safeParse(duplicate);
+      expect(duplicateParsed.success).toBe(false);
+      if (!duplicateParsed.success) {
+        expect(duplicateParsed.error.issues.map(({ path }) => path)).toContainEqual([
+          "worksheets", 0, "governanceRows", 1, "source",
+        ]);
+      }
+
+      const missing = structuredClone(rootResult);
+      missing.worksheets[0]!.governanceRows = [];
+      const missingParsed = f5DataInterpretationResultSchema.safeParse(missing);
+      expect(missingParsed.success).toBe(false);
+      if (!missingParsed.success) {
+        expect(missingParsed.error.issues.map(({ path }) => path)).toContainEqual([
+          "worksheets", 0, "calculationResult", "factors", 0, "source",
+        ]);
+      }
+
+      const wrongWorksheet = structuredClone(rootResult);
+      wrongWorksheet.worksheets[0]!.governanceRows[0]!.source.worksheetName = "Analysis-B";
+      const wrongWorksheetParsed = f5DataInterpretationResultSchema.safeParse(wrongWorksheet);
+      expect(wrongWorksheetParsed.success).toBe(false);
+      if (!wrongWorksheetParsed.success) {
+        expect(wrongWorksheetParsed.error.issues.map(({ path }) => path)).toContainEqual([
+          "worksheets", 0, "governanceRows", 0, "source",
+        ]);
+      }
+    });
+
+    it("rejects every completed governance image identity tamper at its exact path", () => {
+      const mutations = [
+        { field: "worksheetName", value: "Analysis-B" },
+        { field: "relativePath", value: "worksheets/Analysis-A/other.png" },
+        { field: "contentHash", value: "0".repeat(64) },
+      ] as const;
+      for (const { field, value } of mutations) {
+        const result = structuredClone(rootResult);
+        result.worksheets[0]!.governanceRows[0]!.imageReference = {
+          ...result.worksheets[0]!.governanceRows[0]!.imageReference,
+          [field]: value,
+        };
+        const parsed = f5DataInterpretationResultSchema.safeParse(result);
+        expect(parsed.success, field).toBe(false);
+        if (!parsed.success) {
+          expect(parsed.error.issues.map(({ path }) => path)).toContainEqual([
+            "worksheets", 0, "governanceRows", 0, "imageReference", field,
+          ]);
+        }
+      }
+    });
+
+    it("rejects every contributor governance provenance field tamper at its exact path", () => {
+      const mutations = [
+        { field: "drawingNumber", value: "DRAW-FAKE" },
+        { field: "dimId", value: "999" },
+        { field: "governanceStatus", value: "needs_governance" },
+      ] as const;
+      for (const { field, value } of mutations) {
+        const result = structuredClone(rootResult);
+        result.worksheets[0]!.sections.majorContributors.items[0]![field] = value;
+        const parsed = f5DataInterpretationResultSchema.safeParse(result);
+        expect(parsed.success, field).toBe(false);
+        if (!parsed.success) {
+          expect(parsed.error.issues.map(({ path }) => path)).toContainEqual([
+            "worksheets", 0, "sections", "majorContributors", "items", 0, field,
+          ]);
+        }
+      }
+
+      const result = structuredClone(rootResult) as unknown as {
+        worksheets: Array<{ sections: { majorContributors: { items: Array<Record<string, unknown>> } } }>;
+      };
+      result.worksheets[0]!.sections.majorContributors.items[0]!.partNumber = "PART-FAKE";
+      const parsed = f5DataInterpretationResultSchema.safeParse(result);
+      expect(parsed.success).toBe(false);
+      if (!parsed.success) {
+        expect(parsed.error.issues.map(({ path }) => path)).toContainEqual([
+          "worksheets", 0, "sections", "majorContributors", "items", 0, "partNumber",
+        ]);
+      }
+    });
+
+    it("requires strict contributor coverage and matching FACT/source evidence", () => {
+      const invalidItems = [
+        [],
+        [{ ...contributorItem, factorReference: "Analysis-A/table-a/3" }],
+        [{ ...contributorItem, source: { ...contributorItem.source, sourceRow: 3 } }],
+        [{ ...contributorItem, relatedStatementIds: [rootFacts[0]!.statementId] }],
+        [{ ...contributorItem, factorIndex: 1 }],
+      ];
+      for (const items of invalidItems) {
+        const result = structuredClone(rootResult);
+        result.worksheets[0]!.sections.majorContributors.items = items;
+        expect(f5DataInterpretationResultSchema.safeParse(result).success).toBe(false);
+      }
+    });
+
+    it("matches every contributor directly to its F4 factor", () => {
+      const mutations = [
+        {
+          mutate: (result: typeof rootResult) => { result.worksheets[0]!.sections.majorContributors.items[0]!.factorName = "Feature-B"; },
+          path: ["worksheets", 0, "sections", "majorContributors", "items", 0, "factorName"],
+        },
+        {
+          mutate: (result: typeof rootResult) => { result.worksheets[0]!.sections.majorContributors.items[0]!.source.sourceRow = 3; },
+          path: ["worksheets", 0, "sections", "majorContributors", "items", 0, "source"],
+        },
+        {
+          mutate: (result: typeof rootResult) => { result.worksheets[0]!.sections.majorContributors.items[0]!.factorReference = "Analysis-A/table-a/3"; },
+          path: ["worksheets", 0, "sections", "majorContributors", "items", 0, "factorReference"],
+        },
+        {
+          mutate: (result: typeof rootResult) => { result.worksheets[0]!.sections.majorContributors.items[0]!.contributionPercent = 99; },
+          path: ["worksheets", 0, "sections", "majorContributors", "items", 0, "contributionPercent"],
+        },
+        {
+          mutate: (result: typeof rootResult) => { result.worksheets[0]!.calculationResult.worksheetSelection.worksheetName = "Analysis-B"; },
+          path: ["worksheets", 0, "calculationResult", "worksheetSelection", "worksheetName"],
+        },
+        {
+          mutate: (result: typeof rootResult) => { result.worksheets[0]!.calculationResult.workbookContentHash = "0".repeat(64); },
+          path: ["worksheets", 0, "calculationResult", "workbookContentHash"],
+        },
+      ] as const;
+      for (const { mutate, path } of mutations) {
+        const result = structuredClone(rootResult);
+        mutate(result);
+        const parsed = f5DataInterpretationResultSchema.safeParse(result);
+        expect(parsed.success).toBe(false);
+        if (!parsed.success) {
+          expect(parsed.error.issues.map((issue) => issue.path)).toContainEqual(path);
+        }
+      }
+    });
+
+    it("requires contributor order by percentage and factorIndex for ties", () => {
+      const secondFact = structuredClone(contributorFact);
+      secondFact.statementId = "fact-factor-contribution-second";
+      secondFact.content.factorReference = "Analysis-A/table-a/3";
+      secondFact.content.contributionPercent = 40;
+      secondFact.content.outputField = "factors[1].contribution";
+      secondFact.content.traceRecords[0]!.outputField = "factors[1].contribution";
+      const secondItem = {
+        ...contributorItem,
+        factorReference: "Analysis-A/table-a/3",
+        factorName: "Feature-B",
+        factorIndex: 1,
+        contributionPercent: 40,
+        source: { ...contributorItem.source, sourceRow: 3 },
+        relatedStatementIds: [secondFact.statementId],
+      };
+
+      for (const [factContribution, items] of [
+        [40, [secondItem, contributorItem]],
+        [100, [{ ...secondItem, contributionPercent: 100 }, contributorItem]],
+      ] as const) {
+        const result = structuredClone(rootResult);
+        const fact = structuredClone(secondFact);
+        fact.content.contributionPercent = factContribution;
+        result.worksheets[0]!.statements.push(fact);
+        result.worksheets[0]!.sections.majorContributors.items = structuredClone(items);
+        result.summary.statementCount += 1;
+        expect(f5DataInterpretationResultSchema.safeParse(result).success).toBe(false);
+      }
+    });
+
+    it("requires supported capability to list existing capability FACT or RULE statements", () => {
+      for (const statementIds of [[], [rootOption.statementId], ["missing-statement"]]) {
+        const result = structuredClone(rootResult);
+        result.worksheets[0]!.sections.capabilityVsSpecification.statementIds = statementIds;
+        expect(f5DataInterpretationResultSchema.safeParse(result).success).toBe(false);
+      }
+    });
+
+    it("reports assumption confirmation issues at each missing or illegal field", () => {
+      const confirmedAssumption = {
+        ...completedWorksheet.assumptions[0],
+        status: "confirmed" as const,
+        confirmedBy: "controlled-reviewer",
+        confirmedAt: "2026-08-11T08:00:00.000Z",
+      };
+      for (const field of ["confirmedBy", "confirmedAt"] as const) {
+        const result = structuredClone(rootResult);
+        result.worksheets[0]!.assumptions[0] = structuredClone(confirmedAssumption);
+        delete result.worksheets[0]!.assumptions[0]![field];
+        const parsed = f5DataInterpretationResultSchema.safeParse(result);
+        expect(parsed.success).toBe(false);
+        if (!parsed.success) {
+          expect(parsed.error.issues.map(({ path }) => path)).toContainEqual([
+            "worksheets", 0, "assumptions", 0, field,
+          ]);
+        }
+      }
+
+      const result = structuredClone(rootResult);
+      result.worksheets[0]!.assumptions[0] = { ...confirmedAssumption, status: "proposed" };
+      const parsed = f5DataInterpretationResultSchema.safeParse(result);
+      expect(parsed.success).toBe(false);
+      if (!parsed.success) {
+        const paths = parsed.error.issues.map(({ path }) => path);
+        expect(paths).toContainEqual(["worksheets", 0, "assumptions", 0, "confirmedBy"]);
+        expect(paths).toContainEqual(["worksheets", 0, "assumptions", 0, "confirmedAt"]);
+      }
+    });
+
+    it("accepts root image FACT and structural/governance SIGNAL statements", () => {
+      expect(f5DataInterpretationResultSchema.parse(rootResult)).toEqual(rootResult);
+
+      const mutations = [
+        { statementId: rootImageFact.statementId, field: "section", value: "major-contributors" },
+        { statementId: rootStructuralSignal.statementId, field: "section", value: "major-contributors" },
+        { statementId: rootGovernanceSignal.statementId, field: "section", value: "tolerance-chain-validity" },
+      ] as const;
+      for (const mutation of mutations) {
+        const result = structuredClone(rootResult);
+        const statement = result.worksheets[0]!.statements.find(({ statementId }) => statementId === mutation.statementId)!;
+        statement[mutation.field] = mutation.value as never;
+        expect(f5DataInterpretationResultSchema.safeParse(result).success).toBe(false);
+      }
+    });
+
+    it("rejects governance FACT tampering and identifier SIGNAL references to contribution FACTs", () => {
+      for (const field of ["source", "drawingNumber", "dimId", "dimIdStatus", "governanceStatus", "qualitySignals"] as const) {
+        const result = structuredClone(rootResult);
+        const governanceFactIndex = result.worksheets[0]!.statements.findIndex(
+          ({ statementId }) => statementId === rootGovernanceFact.statementId,
+        );
+        const governanceFact = result.worksheets[0]!.statements[governanceFactIndex] as typeof rootGovernanceFact;
+        if (field === "source") governanceFact.content.source.sourceRow = 3;
+        else if (field === "qualitySignals") governanceFact.content.qualitySignals = ["duplicate_conflict"];
+        else if (field === "dimIdStatus") governanceFact.content.dimIdStatus = "needs_confirmation";
+        else if (field === "governanceStatus") governanceFact.content.governanceStatus = "needs_governance";
+        else governanceFact.content[field] = `tampered-${field}` as never;
+        const parsed = f5DataInterpretationResultSchema.safeParse(result);
+        expect(parsed.success, field).toBe(false);
+        if (!parsed.success) {
+          expect(parsed.error.issues.map(({ path }) => path)).toContainEqual([
+            "worksheets", 0, "statements", governanceFactIndex, "content", field,
+          ]);
+        }
+      }
+
+      const result = structuredClone(rootResult);
+      const signalIndex = result.worksheets[0]!.statements.findIndex(
+        ({ statementId }) => statementId === rootGovernanceSignal.statementId,
+      );
+      const signal = result.worksheets[0]!.statements[signalIndex] as typeof rootGovernanceSignal;
+      signal.content.triggerFactReferences = [contributorFact.statementId];
+      const parsed = f5DataInterpretationResultSchema.safeParse(result);
+      expect(parsed.success).toBe(false);
+      if (!parsed.success) {
+        expect(parsed.error.issues.map(({ path }) => path)).toContainEqual([
+          "worksheets", 0, "statements", signalIndex, "content", "triggerFactReferences", 0,
+        ]);
+      }
+    });
+
+    it("rejects root statement image identity and trigger FACT reference violations", () => {
+      const wrongImage = structuredClone(rootResult);
+      const imageFact = wrongImage.worksheets[0]!.statements.find(({ statementId }) => statementId === rootImageFact.statementId) as typeof rootImageFact;
+      imageFact.content.imageReference = {
+        ...imageFact.content.imageReference,
+        relativePath: "worksheets/Analysis-A/other.png",
+      };
+      const wrongImageResult = f5DataInterpretationResultSchema.safeParse(wrongImage);
+      expect(wrongImageResult.success).toBe(false);
+      if (!wrongImageResult.success) {
+        const imageFactIndex = rootResult.worksheets[0].statements.findIndex(({ statementId }) => statementId === rootImageFact.statementId);
+        expect(wrongImageResult.error.issues.map(({ path }) => path)).toContainEqual([
+          "worksheets", 0, "statements", imageFactIndex, "content", "imageReference",
+        ]);
+      }
+
+      for (const [label, triggerFactReferences] of [
+        ["empty", []],
+        ["missing", ["missing-fact"]],
+        ["non-FACT", [rootStructuralSignal.statementId]],
+      ] as const) {
+        const result = structuredClone(rootResult);
+        const signal = result.worksheets[0]!.statements.find(({ statementId }) => statementId === rootStructuralSignal.statementId) as typeof rootStructuralSignal;
+        signal.content.triggerFactReferences = [...triggerFactReferences];
+        const parsed = f5DataInterpretationResultSchema.safeParse(result);
+        expect(parsed.success, label).toBe(false);
+      }
+    });
+
+    it("preserves RULE knowledge evidence and OPTION rank constraints", () => {
+      for (const field of ["entryId", "effectiveVersion", "applicability", "evidence"] as const) {
+        const result = structuredClone(rootResult);
+        const rule = result.worksheets[0]!.statements.find((statement) => statement.type === "RULE") as { content: Record<string, unknown> };
+        delete rule.content[field];
+        expect(f5DataInterpretationResultSchema.safeParse(result).success).toBe(false);
+      }
+
+      const rankedOption = structuredClone(rootResult);
+      const option = rankedOption.worksheets[0]!.statements.find((statement) => statement.type === "OPTION") as { content: { rank: unknown } };
+      option.content.rank = 1;
+      expect(f5DataInterpretationResultSchema.safeParse(rankedOption).success).toBe(false);
+    });
+
+    it("does not loosen existing FACT evidence constraints", () => {
+      const result = structuredClone(rootResult);
+      const cpk = result.worksheets[0]!.statements.find(
+        (statement) => statement.type === "FACT" && statement.content.metric === "cpk",
+      )!;
+      cpk.section = "calculation-summary";
+      expect(f5DataInterpretationResultSchema.safeParse(result).success).toBe(false);
+    });
+
+    it("rejects F6 sections that are not delegated", () => {
+      for (const section of ["reasonableToleranceRange", "designOptimizationAndParallelOptions"] as const) {
+        const result = structuredClone(rootResult);
+        result.worksheets[0]!.sections[section] = { status: "supported" } as never;
+        expect(f5DataInterpretationResultSchema.safeParse(result).success).toBe(false);
+      }
+    });
+
+    it("rejects summary and overall status inconsistencies", () => {
+      expect(f5DataInterpretationResultSchema.safeParse({
+        ...rootResult,
+        summary: { ...rootResult.summary, statementCount: 5 },
+      }).success).toBe(false);
+      expect(f5DataInterpretationResultSchema.safeParse({
+        ...rootResult,
+        status: "partially_completed",
+      }).success).toBe(false);
+
+      const rejectedWorksheet = {
+        worksheetName: "Analysis-B",
+        status: "input_rejected" as const,
+        issues: [{ reasonCode: "artifact_identity_mismatch", message: "Workbook hash differs." }],
+      };
+      expect(f5DataInterpretationResultSchema.safeParse({
+        ...rootResult,
+        status: "partially_completed",
+        worksheets: [completedWorksheet, rejectedWorksheet],
+        summary: {
+          worksheetCount: 2,
+          completedWorksheetCount: 1,
+          inputRejectedWorksheetCount: 1,
+          statementCount: 9,
+          clarificationCount: 1,
+          assumptionCount: 1,
+        },
+      }).success).toBe(true);
+    });
   });
 });
 
@@ -4669,6 +5549,8 @@ describe("interpretation rules contracts", () => {
     matchedRules: [{
       entryId: "performance-cpk",
       entryType: "performance-rule" as const,
+      effectiveVersion: "interpretation-rules-v1" as const,
+      applicability: { analysisDimension: "one-dimensional" as const, method: "rss" as const },
       relatedFactReferences: ["cpk", "targetCpk"],
       evidence: {
         sourceAlias: "capability-handbook",

@@ -212,6 +212,8 @@ function createInterpretationWithRules(
       statementId: `${matched.entryType}-${matched.entryId}`,
       content: {
         entryId: matched.entryId,
+        effectiveVersion: matched.effectiveVersion,
+        applicability: structuredClone(matched.applicability),
         relatedFactReferences: matched.relatedFactReferences,
         evidence: matched.evidence,
       },

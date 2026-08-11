@@ -2346,9 +2346,20 @@ const interpretationRuleStatementEvidenceSchema = z
   })
   .strict();
 
+export const interpretationRuleVersionSchema = z.literal("interpretation-rules-v1");
+
+export const interpretationApplicabilitySchema = z
+  .object({
+    analysisDimension: z.literal("one-dimensional"),
+    method: z.enum(["rss", "worst-case"]).optional(),
+  })
+  .strict();
+
 const interpretationRuleStatementContentSchema = z
   .object({
     entryId: z.string().min(1),
+    effectiveVersion: interpretationRuleVersionSchema,
+    applicability: interpretationApplicabilitySchema,
     relatedFactReferences: z.array(interpretationFactReferenceSchema).min(1),
     evidence: interpretationRuleStatementEvidenceSchema,
   })
@@ -2463,7 +2474,7 @@ export const interpretationRequestSchema = z
   })
   .strict();
 
-const interpretationCompletedResultSchema = z
+export const f5ObjectiveInterpretationCompletedResultSchema = z
   .object({
     contractVersion: contractVersionSchema,
     outputClassification: z.literal("confidential"),
@@ -2493,65 +2504,7 @@ const interpretationCompletedResultSchema = z
       });
     }
 
-    const statementIds = result.statements.map((statement) => statement.statementId);
-    if (new Set(statementIds).size !== statementIds.length) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "statementId must be unique",
-        path: ["statements"],
-      });
-    }
-
-    result.statements.forEach((statement, statementIndex) => {
-      if (statement.type === "FACT") {
-        const expectedSection = interpretationFactSectionByMetric[statement.content.metric];
-        if (statement.section !== expectedSection) {
-          context.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: `${statement.content.metric} FACT must use section ${expectedSection}`,
-            path: ["statements", statementIndex, "section"],
-          });
-        }
-
-        if (statement.content.provenanceKind === "formula_output") {
-          const { outputField } = statement.content;
-          statement.content.traceRecords.forEach((traceRecord, traceIndex) => {
-            if (traceRecord.outputField !== outputField) {
-              context.addIssue({
-                code: z.ZodIssueCode.custom,
-                message: "FACT trace outputField must match FACT outputField",
-                path: ["statements", statementIndex, "content", "traceRecords", traceIndex, "outputField"],
-              });
-            }
-          });
-        } else if (statement.content.provenanceKind === "derived_from_formula_outputs") {
-          const sourceOutputFields = new Set<string>(statement.content.sourceOutputFields);
-          const traceOutputFields = statement.content.traceRecords.map(({ outputField }) => outputField);
-          if (traceOutputFields.some((outputField) => !sourceOutputFields.has(outputField))
-            || new Set(traceOutputFields).size !== traceOutputFields.length
-            || statement.content.sourceOutputFields.some((outputField) => !traceOutputFields.includes(outputField))) {
-            context.addIssue({
-              code: z.ZodIssueCode.custom,
-              message: "derived FACT traces must correspond to and cover sourceOutputFields",
-              path: ["statements", statementIndex, "content", "traceRecords"],
-            });
-          }
-        }
-
-        validateInterpretationFactProvenance(statement.content, statementIndex, context);
-        return;
-      }
-
-      statement.content.relatedFactReferences.forEach((reference, referenceIndex) => {
-        if (!hasInterpretationFact(result.statements, reference)) {
-          context.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: `${reference} must be represented by a FACT statement`,
-            path: ["statements", statementIndex, "content", "relatedFactReferences", referenceIndex],
-          });
-        }
-      });
-    });
+    validateInterpretationStatements(result.statements, context);
 
     if (result.ruleEvaluationStatus === "matched") {
       if (!result.statements.some((statement) => statement.type === "RULE")) {
@@ -2585,28 +2538,6 @@ const interpretationCompletedResultSchema = z
       }
     }
 
-    const scalarMetricIndexes = new Map<string, number>();
-    const factorReferenceIndexes = new Map<string, number>();
-    result.statements.forEach((statement, statementIndex) => {
-      if (statement.type !== "FACT") return;
-      const key = statement.content.metric === "factor_contribution"
-        ? statement.content.factorReference
-        : statement.content.metric;
-      const indexes = statement.content.metric === "factor_contribution"
-        ? factorReferenceIndexes
-        : scalarMetricIndexes;
-      if (indexes.has(key)) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: statement.content.metric === "factor_contribution"
-            ? "factor_contribution factorReference must be unique"
-            : `scalar FACT metric ${statement.content.metric} must be unique`,
-          path: ["statements", statementIndex, "content"],
-        });
-      } else {
-        indexes.set(key, statementIndex);
-      }
-    });
   });
 
 function validateInterpretationFactProvenance(
@@ -2743,6 +2674,90 @@ function hasInterpretationFact(
   return statements.some((statement) => statement.type === "FACT" && statement.content.metric === metric);
 }
 
+function validateInterpretationStatements(
+  statements: readonly z.infer<typeof interpretationStatementSchema>[],
+  context: z.RefinementCtx,
+): void {
+  const statementIds = statements.map(({ statementId }) => statementId);
+  if (new Set(statementIds).size !== statementIds.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "statementId must be unique", path: ["statements"] });
+  }
+
+  statements.forEach((statement, statementIndex) => {
+    if (statement.type === "FACT") {
+      const expectedSection = interpretationFactSectionByMetric[statement.content.metric];
+      if (statement.section !== expectedSection) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `${statement.content.metric} FACT must use section ${expectedSection}`,
+          path: ["statements", statementIndex, "section"],
+        });
+      }
+
+      if (statement.content.provenanceKind === "formula_output") {
+        const { outputField } = statement.content;
+        statement.content.traceRecords.forEach((traceRecord, traceIndex) => {
+          if (traceRecord.outputField !== outputField) {
+            context.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: "FACT trace outputField must match FACT outputField",
+              path: ["statements", statementIndex, "content", "traceRecords", traceIndex, "outputField"],
+            });
+          }
+        });
+      } else if (statement.content.provenanceKind === "derived_from_formula_outputs") {
+        const sourceOutputFields = new Set<string>(statement.content.sourceOutputFields);
+        const traceOutputFields = statement.content.traceRecords.map(({ outputField }) => outputField);
+        if (traceOutputFields.some((outputField) => !sourceOutputFields.has(outputField))
+          || new Set(traceOutputFields).size !== traceOutputFields.length
+          || statement.content.sourceOutputFields.some((outputField) => !traceOutputFields.includes(outputField))) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "derived FACT traces must correspond to and cover sourceOutputFields",
+            path: ["statements", statementIndex, "content", "traceRecords"],
+          });
+        }
+      }
+
+      validateInterpretationFactProvenance(statement.content, statementIndex, context);
+      return;
+    }
+
+    statement.content.relatedFactReferences.forEach((reference, referenceIndex) => {
+      if (!hasInterpretationFact(statements, reference)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `${reference} must be represented by a FACT statement`,
+          path: ["statements", statementIndex, "content", "relatedFactReferences", referenceIndex],
+        });
+      }
+    });
+  });
+
+  const scalarMetricIndexes = new Map<string, number>();
+  const factorReferenceIndexes = new Map<string, number>();
+  statements.forEach((statement, statementIndex) => {
+    if (statement.type !== "FACT") return;
+    const key = statement.content.metric === "factor_contribution"
+      ? statement.content.factorReference
+      : statement.content.metric;
+    const indexes = statement.content.metric === "factor_contribution"
+      ? factorReferenceIndexes
+      : scalarMetricIndexes;
+    if (indexes.has(key)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: statement.content.metric === "factor_contribution"
+          ? "factor_contribution factorReference must be unique"
+          : `scalar FACT metric ${statement.content.metric} must be unique`,
+        path: ["statements", statementIndex, "content"],
+      });
+    } else {
+      indexes.set(key, statementIndex);
+    }
+  });
+}
+
 const interpretationLegacyUnavailableResultSchema = z
   .object({
     contractVersion: contractVersionSchema,
@@ -2757,7 +2772,7 @@ const interpretationLegacyUnavailableResultSchema = z
   .strict();
 
 export const interpretationResultSchema = z.union([
-  interpretationCompletedResultSchema,
+  f5ObjectiveInterpretationCompletedResultSchema,
   interpretationLegacyUnavailableResultSchema,
 ]);
 
@@ -3386,8 +3401,6 @@ export const internalToleranceGuidanceResultSchema = z.union([
   internalToleranceGuidanceUnknownResultSchema,
 ]);
 
-export const interpretationRuleVersionSchema = z.literal("interpretation-rules-v1");
-
 export const interpretationEntryTypeSchema = z.enum([
   "metric-definition",
   "performance-rule",
@@ -3410,13 +3423,6 @@ export const interpretationProvenanceSchema = z
     confidence: z.number().finite().min(0).max(1),
     effectiveVersion: interpretationRuleVersionSchema,
     changeSummary: z.string().min(1),
-  })
-  .strict();
-
-const interpretationApplicabilitySchema = z
-  .object({
-    analysisDimension: z.literal("one-dimensional"),
-    method: z.enum(["rss", "worst-case"]).optional(),
   })
   .strict();
 
@@ -3638,6 +3644,8 @@ const interpretationMatchedRuleSchema = z
   .object({
     entryId: z.string().min(1),
     entryType: z.enum(["performance-rule", "root-cause-signal", "improvement-option"]),
+    effectiveVersion: interpretationRuleVersionSchema,
+    applicability: interpretationApplicabilitySchema,
     relatedFactReferences: z.array(interpretationFactReferenceSchema),
     evidence: interpretationRuleEvidenceSchema,
   })
@@ -4361,6 +4369,699 @@ const f3GovernanceRowSchema = z.object({
   }
 });
 
+export const f5StructuralScopeSchema = z.enum([
+  "tolerance_loop_closure",
+  "datum_chain",
+  "assembly_datum_face",
+  "stack_start",
+  "direction",
+  "cross_subsystem",
+  "non_geometric_variable",
+  "long_dimension_chain",
+]);
+
+export const f5EvidenceStatusSchema = z.enum([
+  "supported",
+  "needs_review",
+  "not_evaluated",
+  "insufficient_evidence",
+  "not_applicable",
+]);
+
+function validateF5ObservationConfirmation(
+  observation: {
+    reviewStatus: "unreviewed" | "confirmed" | "rejected";
+    confirmedBy?: string | undefined;
+    confirmedAt?: string | undefined;
+  },
+  context: z.RefinementCtx,
+): void {
+  const hasConfirmedBy = observation.confirmedBy !== undefined;
+  const hasConfirmedAt = observation.confirmedAt !== undefined;
+  for (const [field, present] of [["confirmedBy", hasConfirmedBy], ["confirmedAt", hasConfirmedAt]] as const) {
+    if (observation.reviewStatus === "confirmed" && !present) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: `confirmed observations require ${field}`, path: [field] });
+    }
+    if (observation.reviewStatus !== "confirmed" && present) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: `only confirmed observations may include ${field}`, path: [field] });
+    }
+  }
+}
+
+const f5ImageObservationSchema = z.object({
+  scope: f5StructuralScopeSchema,
+  observedValue: z.enum(["visible", "not_visible", "ambiguous"]),
+  confidence: z.enum(["high", "medium", "low"]),
+  visibleBasis: z.string().min(1).max(500),
+  reviewStatus: z.enum(["unreviewed", "confirmed", "rejected"]),
+  confirmedBy: controlledReferenceSchema.optional(),
+  confirmedAt: z.string().datetime().optional(),
+}).strict().superRefine(validateF5ObservationConfirmation);
+
+const f5ImageObservationWorksheetSchema = z.object({
+  worksheetName: z.string().min(1),
+  imageReference: f1ImageReferenceSchema,
+  observations: z.array(f5ImageObservationSchema).max(100),
+}).strict().superRefine((worksheet, context) => {
+  if (worksheet.imageReference.worksheetName !== worksheet.worksheetName) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "image reference worksheet must match the containing worksheet",
+      path: ["imageReference", "worksheetName"],
+    });
+  }
+  const scopes = worksheet.observations.map(({ scope }) => scope);
+  if (new Set(scopes).size !== scopes.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "observation scope must be unique within a worksheet", path: ["observations"] });
+  }
+});
+
+export const f5ImageObservationArtifactSchema = z.object({
+  contractVersion: contractVersionSchema,
+  inputClassification: z.literal("confidential"),
+  observationVersion: z.literal("f5-image-observation-v1"),
+  workbookContentHash: sha256Schema,
+  worksheets: z.array(f5ImageObservationWorksheetSchema).min(1),
+}).strict().superRefine((artifact, context) => {
+  const worksheetNames = artifact.worksheets.map(({ worksheetName }) => worksheetName);
+  if (new Set(worksheetNames).size !== worksheetNames.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet names must be unique", path: ["worksheets"] });
+  }
+});
+
+const f5DataInterpretationRequestWorksheetSchema = z.object({
+  worksheetName: z.string().min(1),
+  imageReference: f1ImageReferenceSchema,
+  governanceRows: z.array(f3GovernanceRowSchema),
+  calculationResult: calculationCompletedResultSchema,
+  imageObservations: z.array(f5ImageObservationSchema).max(100),
+}).strict().superRefine((worksheet, context) => {
+  const { worksheetName, imageReference, calculationResult } = worksheet;
+  if (imageReference.worksheetName !== worksheetName) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "image worksheet must match worksheetName", path: ["imageReference", "worksheetName"] });
+  }
+  if (calculationResult.worksheetSelection.worksheetName !== worksheetName) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "calculation worksheet must match worksheetName", path: ["calculationResult", "worksheetSelection", "worksheetName"] });
+  }
+
+  const tableId = calculationResult.worksheetSelection.tableId;
+  const sourceKey = (source: { worksheetName: string; tableId: string; sourceRow: number }): string => (
+    `${source.worksheetName}\u0000${source.tableId}\u0000${source.sourceRow}`
+  );
+  const governanceSourceIndexes = new Map<string, number>();
+  worksheet.governanceRows.forEach((row, rowIndex) => {
+    if (row.source.worksheetName !== worksheetName || row.source.tableId !== tableId) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "governance source must match calculation worksheet and table", path: ["governanceRows", rowIndex, "source"] });
+    }
+    if (row.imageReference.worksheetName !== worksheetName
+      || row.imageReference.relativePath !== imageReference.relativePath
+      || row.imageReference.contentHash !== imageReference.contentHash) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "governance image must match the worksheet image", path: ["governanceRows", rowIndex, "imageReference"] });
+    }
+    const key = sourceKey(row.source);
+    if (governanceSourceIndexes.has(key)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "governance source key must be unique", path: ["governanceRows", rowIndex, "source"] });
+    } else {
+      governanceSourceIndexes.set(key, rowIndex);
+    }
+  });
+
+  const factorSourceIndexes = new Map<string, number>();
+  calculationResult.factors.forEach((factor, factorIndex) => {
+    if (factor.source.worksheetName !== worksheetName || factor.source.tableId !== tableId) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "factor source must match calculation worksheet and table", path: ["calculationResult", "factors", factorIndex, "source"] });
+    }
+    const key = sourceKey(factor.source);
+    if (factorSourceIndexes.has(key)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "factor source key must be unique", path: ["calculationResult", "factors", factorIndex, "source"] });
+    } else {
+      factorSourceIndexes.set(key, factorIndex);
+    }
+    if (!governanceSourceIndexes.has(key)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "factor source must match a governance row", path: ["calculationResult", "factors", factorIndex, "source"] });
+    }
+  });
+  worksheet.governanceRows.forEach((row, rowIndex) => {
+    if (!factorSourceIndexes.has(sourceKey(row.source))) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "governance source must match a calculation factor", path: ["governanceRows", rowIndex, "source"] });
+    }
+  });
+
+  const observationScopes = worksheet.imageObservations.map(({ scope }) => scope);
+  if (new Set(observationScopes).size !== observationScopes.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "image observation scope must be unique", path: ["imageObservations"] });
+  }
+});
+
+export const f5DataInterpretationRequestSchema = z.object({
+  contractVersion: contractVersionSchema,
+  inputClassification: z.literal("confidential"),
+  workbook: z.object({ fileName: z.string().min(1), contentHash: sha256Schema }).strict(),
+  knowledgeBaseVersion: z.literal("interpretation-rules-v1"),
+  worksheets: z.array(f5DataInterpretationRequestWorksheetSchema).min(1),
+}).strict().superRefine((request, context) => {
+  const worksheetNames = request.worksheets.map(({ worksheetName }) => worksheetName);
+  if (new Set(worksheetNames).size !== worksheetNames.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet names must be unique", path: ["worksheets"] });
+  }
+  request.worksheets.forEach((worksheet, worksheetIndex) => {
+    if (worksheet.calculationResult.workbookContentHash !== request.workbook.contentHash) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "calculation workbook hash must match request workbook", path: ["worksheets", worksheetIndex, "calculationResult", "workbookContentHash"] });
+    }
+  });
+});
+
+const f5RootRuleStatementSchema = interpretationRuleStatementSchema;
+
+const f5RootImageFactStatementSchema = z.object({
+  statementId: z.string().min(1),
+  type: z.literal("FACT"),
+  section: z.literal("tolerance-chain-validity"),
+  content: z.object({
+    provenanceKind: z.literal("image_observation"),
+    scope: f5StructuralScopeSchema,
+    observedValue: z.enum(["visible", "not_visible", "ambiguous"]),
+    imageReference: f1ImageReferenceSchema,
+    confidence: z.enum(["high", "medium", "low"]),
+    visibleBasis: z.string().min(1).max(500),
+    reviewStatus: z.enum(["unreviewed", "confirmed", "rejected"]),
+    confirmedBy: controlledReferenceSchema.optional(),
+    confirmedAt: z.string().datetime().optional(),
+  }).strict().superRefine((content, context) => {
+    validateF5ObservationConfirmation(content, context);
+    if (content.confidence !== "high") {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "image FACT confidence must be high", path: ["confidence"] });
+    }
+    if (content.reviewStatus === "rejected") {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "image FACT reviewStatus must be unreviewed or confirmed", path: ["reviewStatus"] });
+    }
+  }),
+}).strict();
+
+const f5RootGovernanceFactStatementSchema = z.object({
+  statementId: z.string().min(1),
+  type: z.literal("FACT"),
+  section: z.literal("major-contributors"),
+  content: z.object({
+    provenanceKind: z.literal("f3_governance"),
+    source: f3SourceSchema,
+    drawingNumber: z.string().min(1).nullable(),
+    dimId: z.string().min(1).nullable(),
+    dimIdStatus: f3DimIdStatusSchema,
+    governanceStatus: f3GovernanceStatusSchema,
+    qualitySignals: z.array(f3QualitySignalSchema),
+  }).strict(),
+}).strict();
+
+const f5RootObservationEvidenceSchema = z.object({
+  scope: f5StructuralScopeSchema,
+  observedValue: z.enum(["visible", "not_visible", "ambiguous"]),
+  imageReference: f1ImageReferenceSchema,
+  confidence: z.enum(["high", "medium", "low"]),
+  visibleBasis: z.string().min(1).max(500),
+  reviewStatus: z.enum(["unreviewed", "confirmed", "rejected"]),
+  confirmedBy: controlledReferenceSchema.optional(),
+  confirmedAt: z.string().datetime().optional(),
+}).strict().superRefine(validateF5ObservationConfirmation);
+
+const f5RootSignalStatementSchema = z.union([
+  z.object({
+    statementId: z.string().min(1),
+    type: z.literal("SIGNAL"),
+    section: z.literal("tolerance-chain-validity"),
+    content: z.object({
+      signalKind: z.literal("structural_evidence_review"),
+      requiresEngineeringReview: z.literal(true),
+      triggerFactReferences: z.array(z.string().min(1)).min(1).optional(),
+      observationEvidence: z.array(f5RootObservationEvidenceSchema).min(1).optional(),
+    }).strict().superRefine((content, context) => {
+      if (content.triggerFactReferences === undefined && content.observationEvidence === undefined) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "SIGNAL requires trigger FACT references or observation evidence" });
+      }
+    }),
+  }).strict(),
+  z.object({
+    statementId: z.string().min(1),
+    type: z.literal("SIGNAL"),
+    section: z.literal("major-contributors"),
+    content: z.object({
+      signalKind: z.literal("identifier_governance_gap"),
+      requiresEngineeringReview: z.literal(true),
+      triggerFactReferences: z.array(z.string().min(1)).min(1),
+    }).strict(),
+  }).strict(),
+]);
+
+const f5RootInterpretationStatementSchema = z.union([
+  interpretationFactStatementSchema,
+  f5RootImageFactStatementSchema,
+  f5RootGovernanceFactStatementSchema,
+  f5RootRuleStatementSchema,
+  interpretationSignalStatementSchema,
+  f5RootSignalStatementSchema,
+  interpretationOptionStatementSchema,
+]);
+
+const f5ResultSectionNameSchema = z.enum([
+  "toleranceChainValidity",
+  "capabilityVsSpecification",
+  "majorContributors",
+  "reasonableToleranceRange",
+  "designOptimizationAndParallelOptions",
+]);
+
+const f5MajorContributorItemSchema = z.object({
+  factorReference: z.string().min(1),
+  factorName: z.string().min(1),
+  factorIndex: z.number().int().nonnegative(),
+  contributionPercent: z.number().finite().min(0).max(100),
+  source: z.object({
+    worksheetName: z.string().min(1),
+    tableId: z.string().min(1),
+    sourceRow: z.number().int().positive(),
+  }).strict(),
+  drawingNumber: z.string().min(1).nullable(),
+  partNumber: z.unknown().optional(),
+  dimId: z.string().min(1).nullable(),
+  governanceStatus: f3GovernanceStatusSchema,
+  relatedStatementIds: z.array(z.string().min(1)).min(1),
+}).strict().superRefine((item, context) => {
+  if ("partNumber" in item) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "partNumber is not present in F3 governance provenance", path: ["partNumber"] });
+  }
+});
+
+const f5ResultSectionsSchema = z.object({
+  toleranceChainValidity: z.object({ status: f5EvidenceStatusSchema }).strict(),
+  capabilityVsSpecification: z.object({
+    status: z.literal("supported"),
+    statementIds: z.array(z.string().min(1)).min(1),
+  }).strict(),
+  majorContributors: z.object({
+    status: z.literal("supported"),
+    items: z.array(f5MajorContributorItemSchema).min(1),
+  }).strict(),
+  reasonableToleranceRange: z.object({ status: z.literal("delegated_to_f6") }).strict(),
+  designOptimizationAndParallelOptions: z.object({ status: z.literal("delegated_to_f6") }).strict(),
+}).strict();
+
+const f5ClarificationSchema = z.object({
+  clarificationId: z.string().min(1),
+  reasonCode: z.string().min(1),
+  section: f5ResultSectionNameSchema,
+  missingEvidence: z.array(z.string().min(1)),
+  affectedConclusionIds: z.array(z.string().min(1)),
+  blockingScope: z.enum(["worksheet", "section", "conclusion"]),
+  questionForReviewer: z.string().min(1),
+}).strict();
+
+const f5AssumptionSchema = z.object({
+  assumptionId: z.string().min(1),
+  source: z.string().min(1),
+  affectedSections: z.array(f5ResultSectionNameSchema).min(1),
+  statement: z.string().min(1),
+  status: z.enum(["proposed", "confirmed", "rejected"]),
+  confirmedBy: controlledReferenceSchema.optional(),
+  confirmedAt: z.string().datetime().optional(),
+}).strict().superRefine((assumption, context) => {
+  for (const field of ["confirmedBy", "confirmedAt"] as const) {
+    const present = assumption[field] !== undefined;
+    if (assumption.status === "confirmed" && !present) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: `confirmed assumptions require ${field}`, path: [field] });
+    }
+    if (assumption.status !== "confirmed" && present) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: `only confirmed assumptions may include ${field}`, path: [field] });
+    }
+  }
+});
+
+const f5CompletedWorksheetResultSchema = z.object({
+  worksheetName: z.string().min(1),
+  imageReference: f1ImageReferenceSchema,
+  governanceRows: z.array(f3GovernanceRowSchema),
+  calculationResult: calculationCompletedResultSchema,
+  status: z.literal("completed"),
+  sections: f5ResultSectionsSchema,
+  statements: z.array(f5RootInterpretationStatementSchema),
+  clarifications: z.array(f5ClarificationSchema),
+  assumptions: z.array(f5AssumptionSchema),
+}).strict().superRefine((worksheet, context) => {
+  const legacyStatements: Array<z.infer<typeof interpretationStatementSchema>> = [];
+  worksheet.statements.forEach((statement) => {
+    if (statement.type === "FACT" && statement.content.provenanceKind === "image_observation") return;
+    if (statement.type === "SIGNAL" && "signalKind" in statement.content) return;
+    if (statement.type === "RULE") {
+      legacyStatements.push(statement);
+      return;
+    }
+    const parsedLegacyStatement = interpretationStatementSchema.safeParse(statement);
+    if (parsedLegacyStatement.success) legacyStatements.push(parsedLegacyStatement.data);
+  });
+  validateInterpretationStatements(legacyStatements, context);
+  const statementIds = worksheet.statements.map(({ statementId }) => statementId);
+  if (new Set(statementIds).size !== statementIds.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "statementId must be unique", path: ["statements"] });
+  }
+  if (worksheet.imageReference.worksheetName !== worksheet.worksheetName) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet image must match worksheetName", path: ["imageReference", "worksheetName"] });
+  }
+  if (worksheet.calculationResult.worksheetSelection.worksheetName !== worksheet.worksheetName) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "calculation worksheet must match worksheetName", path: ["calculationResult", "worksheetSelection", "worksheetName"] });
+  }
+  const sourceKey = (source: { worksheetName: string; tableId: string; sourceRow: number }): string => (
+    `${source.worksheetName}\u0000${source.tableId}\u0000${source.sourceRow}`
+  );
+  const tableId = worksheet.calculationResult.worksheetSelection.tableId;
+  const governanceRowBySource = new Map<string, z.infer<typeof f3GovernanceRowSchema>>();
+  worksheet.governanceRows.forEach((row, rowIndex) => {
+    if (row.source.worksheetName !== worksheet.worksheetName || row.source.tableId !== tableId) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "governance source must match calculation worksheet and table", path: ["governanceRows", rowIndex, "source"] });
+    }
+    if (row.imageReference.worksheetName !== worksheet.imageReference.worksheetName) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "governance image worksheetName must match the worksheet image", path: ["governanceRows", rowIndex, "imageReference", "worksheetName"] });
+    }
+    if (row.imageReference.relativePath !== worksheet.imageReference.relativePath) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "governance image relativePath must match the worksheet image", path: ["governanceRows", rowIndex, "imageReference", "relativePath"] });
+    }
+    if (row.imageReference.contentHash !== worksheet.imageReference.contentHash) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "governance image contentHash must match the worksheet image", path: ["governanceRows", rowIndex, "imageReference", "contentHash"] });
+    }
+    const key = sourceKey(row.source);
+    if (governanceRowBySource.has(key)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "governance source key must be unique", path: ["governanceRows", rowIndex, "source"] });
+    } else {
+      governanceRowBySource.set(key, row);
+    }
+  });
+  const factorSourceKeys = new Set<string>();
+  worksheet.calculationResult.factors.forEach((factor, factorIndex) => {
+    const key = sourceKey(factor.source);
+    if (factorSourceKeys.has(key)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "factor source key must be unique", path: ["calculationResult", "factors", factorIndex, "source"] });
+    } else {
+      factorSourceKeys.add(key);
+    }
+    if (!governanceRowBySource.has(key)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "factor source must match a governance row", path: ["calculationResult", "factors", factorIndex, "source"] });
+    }
+  });
+  worksheet.governanceRows.forEach((row, rowIndex) => {
+    if (!factorSourceKeys.has(sourceKey(row.source))) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "governance source must match a calculation factor", path: ["governanceRows", rowIndex, "source"] });
+    }
+  });
+  const factStatementIds = new Set(worksheet.statements.filter(({ type }) => type === "FACT").map(({ statementId }) => statementId));
+  const rejectedImageFactIds = new Set(worksheet.statements.filter((statement) => (
+    statement.type === "FACT" && statement.content.provenanceKind === "image_observation"
+      && statement.content.reviewStatus === "rejected"
+  )).map(({ statementId }) => statementId));
+  const statementById = new Map(worksheet.statements.map((statement) => [statement.statementId, statement]));
+  worksheet.statements.forEach((statement, statementIndex) => {
+    if (statement.type === "FACT" && statement.content.provenanceKind === "image_observation") {
+      const imageReference = statement.content.imageReference;
+      if (imageReference.worksheetName !== worksheet.worksheetName
+        || imageReference.relativePath !== worksheet.imageReference.relativePath
+        || imageReference.contentHash !== worksheet.imageReference.contentHash) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "FACT image must match the worksheet image", path: ["statements", statementIndex, "content", "imageReference"] });
+      }
+    }
+    if (statement.type === "SIGNAL" && "triggerFactReferences" in statement.content) {
+      statement.content.triggerFactReferences?.forEach((reference, referenceIndex) => {
+        if (!factStatementIds.has(reference)) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "trigger reference must identify a FACT in the same worksheet", path: ["statements", statementIndex, "content", "triggerFactReferences", referenceIndex] });
+        }
+        if (rejectedImageFactIds.has(reference)) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "SIGNAL must not reference a rejected image FACT", path: ["statements", statementIndex, "content", "triggerFactReferences", referenceIndex] });
+        }
+      });
+    }
+  });
+  const governanceFacts = worksheet.statements.map((statement, statementIndex) => ({ statement, statementIndex })).filter(({ statement }) => (
+    statement.type === "FACT" && statement.content.provenanceKind === "f3_governance"
+  ));
+  const governanceFactBySource = new Map<string, (typeof governanceFacts)[number]>();
+  governanceFacts.forEach((governanceFact) => {
+    if (governanceFact.statement.type !== "FACT" || governanceFact.statement.content.provenanceKind !== "f3_governance") return;
+    const key = sourceKey(governanceFact.statement.content.source);
+    if (governanceFactBySource.has(key)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "governance FACT source must be unique", path: ["statements", governanceFact.statementIndex, "content", "source"] });
+    } else {
+      governanceFactBySource.set(key, governanceFact);
+    }
+    const row = governanceRowBySource.get(key);
+    if (row === undefined) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "governance FACT must match an F3 governance row", path: ["statements", governanceFact.statementIndex, "content", "source"] });
+      return;
+    }
+    for (const field of ["drawingNumber", "dimId", "dimIdStatus", "governanceStatus"] as const) {
+      if (governanceFact.statement.content[field] !== row[field]) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: `governance FACT ${field} must match the F3 governance row`, path: ["statements", governanceFact.statementIndex, "content", field] });
+      }
+    }
+    if (JSON.stringify(governanceFact.statement.content.qualitySignals) !== JSON.stringify(row.qualitySignals)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "governance FACT qualitySignals must match the F3 governance row", path: ["statements", governanceFact.statementIndex, "content", "qualitySignals"] });
+    }
+  });
+  worksheet.governanceRows.forEach((row, rowIndex) => {
+    if (!governanceFactBySource.has(sourceKey(row.source))) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "F3 governance row requires a matching governance FACT", path: ["governanceRows", rowIndex] });
+    }
+  });
+  worksheet.statements.forEach((statement, statementIndex) => {
+    if (statement.type !== "SIGNAL" || !("signalKind" in statement.content)
+      || statement.content.signalKind !== "identifier_governance_gap") return;
+    statement.content.triggerFactReferences.forEach((reference, referenceIndex) => {
+      const trigger = statementById.get(reference);
+      if (trigger?.type !== "FACT" || trigger.content.provenanceKind !== "f3_governance") {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "identifier governance SIGNAL must reference an F3 governance FACT", path: ["statements", statementIndex, "content", "triggerFactReferences", referenceIndex] });
+      }
+    });
+  });
+  const usableImageFactIds = new Set(worksheet.statements.filter((statement) => (
+    statement.type === "FACT" && statement.content.provenanceKind === "image_observation"
+      && statement.content.reviewStatus !== "rejected"
+  )).map(({ statementId }) => statementId));
+  const toleranceStatus = worksheet.sections.toleranceChainValidity.status;
+  const toleranceClarifications = worksheet.clarifications.filter(({ section }) => section === "toleranceChainValidity");
+  if (toleranceStatus === "not_evaluated" && toleranceClarifications.length === 0) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "not_evaluated tolerance validity requires a structural evidence clarification", path: ["sections", "toleranceChainValidity", "status"] });
+  }
+  if ((toleranceStatus === "supported" || toleranceStatus === "needs_review") && usableImageFactIds.size === 0) {
+    const hasUsableObservationEvidence = worksheet.statements.some((statement) => (
+      statement.type === "SIGNAL"
+      && "signalKind" in statement.content
+      && statement.content.signalKind === "structural_evidence_review"
+      && statement.content.observationEvidence?.some(({ reviewStatus }) => reviewStatus !== "rejected")
+    ));
+    if (toleranceStatus === "supported" || !hasUsableObservationEvidence) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: `${toleranceStatus} tolerance validity requires usable image evidence`, path: ["sections", "toleranceChainValidity", "status"] });
+    }
+  }
+  if (toleranceStatus === "needs_review") {
+    const structuralSignals = worksheet.statements.map((statement, statementIndex) => ({ statement, statementIndex })).filter(({ statement }) => (
+      statement.type === "SIGNAL"
+      && "signalKind" in statement.content
+      && statement.content.signalKind === "structural_evidence_review"
+    ));
+    if (structuralSignals.length === 0) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "needs_review tolerance validity requires a structural review SIGNAL", path: ["sections", "toleranceChainValidity", "status"] });
+    }
+    structuralSignals.forEach(({ statement, statementIndex }) => {
+      if (statement.type !== "SIGNAL" || !("signalKind" in statement.content)
+        || statement.content.signalKind !== "structural_evidence_review") return;
+      statement.content.triggerFactReferences?.forEach((reference, referenceIndex) => {
+        if (!usableImageFactIds.has(reference)) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "structural review SIGNAL must reference an image FACT", path: ["statements", statementIndex, "content", "triggerFactReferences", referenceIndex] });
+        }
+      });
+      statement.content.observationEvidence?.forEach((evidence, evidenceIndex) => {
+        if (evidence.reviewStatus === "rejected") {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "rejected observation evidence must not support a SIGNAL", path: ["statements", statementIndex, "content", "observationEvidence", evidenceIndex, "reviewStatus"] });
+        }
+        if (evidence.imageReference.worksheetName !== worksheet.imageReference.worksheetName
+          || evidence.imageReference.relativePath !== worksheet.imageReference.relativePath
+          || evidence.imageReference.contentHash !== worksheet.imageReference.contentHash) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "SIGNAL observation image must match the worksheet image", path: ["statements", statementIndex, "content", "observationEvidence", evidenceIndex, "imageReference"] });
+        }
+      });
+    });
+  }
+  worksheet.sections.capabilityVsSpecification.statementIds.forEach((statementId, statementIdIndex) => {
+    const statement = statementById.get(statementId);
+    if (statement === undefined
+      || (statement.type !== "FACT" && statement.type !== "RULE")
+      || statement.section !== "capability-vs-specification") {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "supported capability statements must reference capability FACT or RULE evidence",
+        path: ["sections", "capabilityVsSpecification", "statementIds", statementIdIndex],
+      });
+    }
+  });
+
+  const contributionFacts: Array<{
+    statementId: string;
+    content: z.infer<typeof interpretationFactorContributionFactContentSchema>;
+  }> = [];
+  worksheet.statements.forEach((statement) => {
+    if (statement.type === "FACT" && statement.content.provenanceKind !== "image_observation"
+      && "metric" in statement.content
+      && statement.content.metric === "factor_contribution") {
+      contributionFacts.push({ statementId: statement.statementId, content: statement.content });
+    }
+  });
+  const contributorItems = worksheet.sections.majorContributors.items;
+  const factors = worksheet.calculationResult.factors;
+  if (contributorItems.length !== factors.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "each F4 factor must have exactly one contributor item", path: ["sections", "majorContributors", "items"] });
+  }
+  const itemFactorReferences = contributorItems.map(({ factorReference }) => factorReference);
+  if (new Set(itemFactorReferences).size !== itemFactorReferences.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "contributor factorReference must be unique", path: ["sections", "majorContributors", "items"] });
+  }
+  const itemFactorIndexes = contributorItems.map(({ factorIndex }) => factorIndex);
+  if (new Set(itemFactorIndexes).size !== itemFactorIndexes.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "contributor factorIndex must be unique", path: ["sections", "majorContributors", "items"] });
+  }
+  contributorItems.forEach((item, itemIndex) => {
+    const itemPath: Array<string | number> = ["sections", "majorContributors", "items", itemIndex];
+    const factor = factors[item.factorIndex];
+    if (factor === undefined) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "contributor factorIndex must identify an F4 factor", path: [...itemPath, "factorIndex"] });
+    } else {
+      const expectedFactorReference = `${factor.source.worksheetName}/${factor.source.tableId}/${factor.source.sourceRow}`;
+      if (item.factorName !== factor.factorName) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "contributor factorName must match the F4 factor", path: [...itemPath, "factorName"] });
+      }
+      if (item.source.worksheetName !== factor.source.worksheetName
+        || item.source.tableId !== factor.source.tableId
+        || item.source.sourceRow !== factor.source.sourceRow) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "contributor source must match the F4 factor", path: [...itemPath, "source"] });
+      }
+      if (item.factorReference !== expectedFactorReference) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "contributor factorReference must match the F4 factor", path: [...itemPath, "factorReference"] });
+      }
+      if (!nearlyEqual(item.contributionPercent, factor.contribution * 100)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "contributor percentage must match the F4 factor", path: [...itemPath, "contributionPercent"] });
+      }
+    }
+    const governanceRow = governanceRowBySource.get(sourceKey(item.source));
+    if (governanceRow !== undefined) {
+      if (item.drawingNumber !== governanceRow.drawingNumber) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "contributor drawingNumber must match the F3 governance row", path: [...itemPath, "drawingNumber"] });
+      }
+      if (item.dimId !== governanceRow.dimId) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "contributor dimId must match the F3 governance row", path: [...itemPath, "dimId"] });
+      }
+      if (item.governanceStatus !== governanceRow.governanceStatus) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "contributor governanceStatus must match the F3 governance row", path: [...itemPath, "governanceStatus"] });
+      }
+    }
+    const contributionFact = contributionFacts.find((statement) => statement.content.factorReference === item.factorReference);
+    if (contributionFact === undefined) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "contributor must match an F4 factor FACT", path: [...itemPath, "factorReference"] });
+    } else {
+      const factorIndexMatch = /^factors\[(\d+)\]\.contribution$/.exec(contributionFact.content.outputField);
+      const expectedFactorIndex = factorIndexMatch === null ? -1 : Number(factorIndexMatch[1]);
+      if (item.factorIndex !== expectedFactorIndex) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "contributor factorIndex must match the F4 factor", path: [...itemPath, "factorIndex"] });
+      }
+      if (item.contributionPercent !== contributionFact.content.contributionPercent) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "contributor percentage must match the F4 factor FACT", path: [...itemPath, "contributionPercent"] });
+      }
+      if (!item.relatedStatementIds.includes(contributionFact.statementId)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "contributor must reference its factor contribution FACT", path: [...itemPath, "relatedStatementIds"] });
+      }
+    }
+    item.relatedStatementIds.forEach((statementId, relatedIndex) => {
+      if (statementById.get(statementId)?.type !== "FACT") {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "related contributor statement must identify a FACT", path: [...itemPath, "relatedStatementIds", relatedIndex] });
+      }
+    });
+    if (itemIndex > 0) {
+      const previous = contributorItems[itemIndex - 1]!;
+      if (item.contributionPercent > previous.contributionPercent
+        || (item.contributionPercent === previous.contributionPercent && item.factorIndex <= previous.factorIndex)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "contributors must be ordered by contribution and F4 factor index", path: itemPath });
+      }
+    }
+  });
+  const clarificationIds = worksheet.clarifications.map(({ clarificationId }) => clarificationId);
+  if (new Set(clarificationIds).size !== clarificationIds.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "clarificationId must be unique", path: ["clarifications"] });
+  }
+  const assumptionIds = worksheet.assumptions.map(({ assumptionId }) => assumptionId);
+  if (new Set(assumptionIds).size !== assumptionIds.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "assumptionId must be unique", path: ["assumptions"] });
+  }
+});
+
+const f5InputRejectedWorksheetResultSchema = z.object({
+  worksheetName: z.string().min(1),
+  status: z.literal("input_rejected"),
+  issues: z.array(z.object({ reasonCode: z.string().min(1), message: z.string().min(1) }).strict()).min(1),
+}).strict();
+
+const f5WorksheetResultSchema = z.union([
+  f5CompletedWorksheetResultSchema,
+  f5InputRejectedWorksheetResultSchema,
+]);
+
+export const f5DataInterpretationResultSchema = z.object({
+  contractVersion: contractVersionSchema,
+  outputClassification: z.literal("confidential"),
+  featureId: z.literal("F5"),
+  status: z.enum(["completed", "partially_completed", "input_rejected"]),
+  interpretationVersion: z.literal("f5-data-interpretation-v1"),
+  knowledgeBaseVersion: z.literal("interpretation-rules-v1"),
+  workbook: z.object({ fileName: z.string().min(1), contentHash: sha256Schema }).strict(),
+  worksheets: z.array(f5WorksheetResultSchema).min(1),
+  summary: z.object({
+    worksheetCount: z.number().int().positive(),
+    completedWorksheetCount: z.number().int().nonnegative(),
+    inputRejectedWorksheetCount: z.number().int().nonnegative(),
+    statementCount: z.number().int().nonnegative(),
+    clarificationCount: z.number().int().nonnegative(),
+    assumptionCount: z.number().int().nonnegative(),
+  }).strict(),
+}).strict().superRefine((result, context) => {
+  const worksheetNames = result.worksheets.map(({ worksheetName }) => worksheetName);
+  if (new Set(worksheetNames).size !== worksheetNames.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet names must be unique", path: ["worksheets"] });
+  }
+
+  const completedWorksheets = result.worksheets.filter((worksheet) => worksheet.status === "completed");
+  const completedWorksheetCount = completedWorksheets.length;
+  const inputRejectedWorksheetCount = result.worksheets.length - completedWorksheetCount;
+  const expectedStatus = inputRejectedWorksheetCount === 0
+    ? "completed"
+    : completedWorksheetCount === 0
+      ? "input_rejected"
+      : "partially_completed";
+  if (result.status !== expectedStatus) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "overall status must match worksheet statuses", path: ["status"] });
+  }
+
+  const expectedSummary = {
+    worksheetCount: result.worksheets.length,
+    completedWorksheetCount,
+    inputRejectedWorksheetCount,
+    statementCount: completedWorksheets.reduce((count, worksheet) => count + worksheet.statements.length, 0),
+    clarificationCount: completedWorksheets.reduce((count, worksheet) => count + worksheet.clarifications.length, 0),
+    assumptionCount: completedWorksheets.reduce((count, worksheet) => count + worksheet.assumptions.length, 0),
+  };
+  for (const [field, expectedValue] of Object.entries(expectedSummary)) {
+    if (result.summary[field as keyof typeof expectedSummary] !== expectedValue) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: `${field} must match worksheet records`, path: ["summary", field] });
+    }
+  }
+  result.worksheets.forEach((worksheet, worksheetIndex) => {
+    if (worksheet.status === "completed" && worksheet.calculationResult.workbookContentHash !== result.workbook.contentHash) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "calculation workbook hash must match result workbook", path: ["worksheets", worksheetIndex, "calculationResult", "workbookContentHash"] });
+    }
+  });
+});
+
 const drawingGovernanceAcceptedResultV2Schema = z.object({
   contractVersion: contractVersionSchema,
   modelVersion: z.literal("drawing-governance-v2"),
@@ -4560,6 +5261,9 @@ export type DrawingGovernanceRequest = z.infer<typeof drawingGovernanceRequestSc
 export type DrawingGovernanceResult = z.infer<typeof drawingGovernanceResultSchema>;
 export type InterpretationRequest = z.infer<typeof interpretationRequestSchema>;
 export type InterpretationResult = z.infer<typeof interpretationResultSchema>;
+export type F5ImageObservationArtifact = z.infer<typeof f5ImageObservationArtifactSchema>;
+export type F5DataInterpretationRequest = z.infer<typeof f5DataInterpretationRequestSchema>;
+export type F5DataInterpretationResult = z.infer<typeof f5DataInterpretationResultSchema>;
 export type ComparisonRequest = z.infer<typeof comparisonRequestSchema>;
 export type ComparisonResult = z.infer<typeof comparisonResultSchema>;
 export type CpkRequest = z.infer<typeof cpkRequestSchema>;

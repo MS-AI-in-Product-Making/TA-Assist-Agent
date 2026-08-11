@@ -64,6 +64,24 @@ describe("interpretation rule evaluation", () => {
     expect(equal.matchedRules.map(({ entryId }) => entryId)).not.toContain("performance-cpk-below-target");
   });
 
+  it("copies controlled version and applicability metadata from each matched entry", () => {
+    const seed = createValidInterpretationKnowledgeSeedPackage();
+    const matchedEntry = seed.entries.find(({ entryId }) => entryId === "performance-cpk-below-target")!;
+    matchedEntry.applicability = { analysisDimension: "one-dimensional", method: "rss" };
+    refreshInterpretationKnowledgeManifest(seed);
+
+    const result = createInterpretationRules(
+      createInterpretationKnowledgeSnapshot(seed),
+    ).evaluateInterpretationRules(cpkRequest);
+    const matched = result.matchedRules.find(({ entryId }) => entryId === matchedEntry.entryId);
+
+    expect(matched).toMatchObject({
+      effectiveVersion: matchedEntry.provenance.effectiveVersion,
+      applicability: matchedEntry.applicability,
+    });
+    expect(matched?.applicability).not.toBe(matchedEntry.applicability);
+  });
+
   it("does not activate below-target guidance for equality with contributors", () => {
     const result = createRules().evaluateInterpretationRules({
       ...cpkRequest,

@@ -20,6 +20,7 @@ export { createUnifiedExceptionResolution } from "./unified-exception-resolution
 export { createCalculation } from "./calculation.js";
 export { createDrawingGovernancePlaceholder } from "./drawing-governance-placeholder.js";
 export { createInterpretation, createInterpretationPlaceholder } from "./interpretation-placeholder.js";
+export { createF5DataInterpretation } from "./f5-data-interpretation.js";
 export { createComparisonPlaceholder } from "./comparison-placeholder.js";
 export { createCpkPlaceholder } from "./cpk-placeholder.js";
 export type {

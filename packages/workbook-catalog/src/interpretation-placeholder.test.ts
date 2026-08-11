@@ -277,6 +277,48 @@ describe("createInterpretation", () => {
     expect(interpretationResultSchema.parse(result)).toEqual(result);
   });
 
+  it("copies controlled matched-rule metadata into F5.1 statements without deriving it", () => {
+    const applicability = { analysisDimension: "one-dimensional" as const };
+    const interpret = createInterpretationService({
+      loadRules: () => ({
+        evaluateInterpretationRules: () => ({
+          knowledgeBaseVersion: "interpretation-rules-v1" as const,
+          status: "matched" as const,
+          resolvedTargets: { cpk: { value: 1.33, source: "project" as const } },
+          factsUsed: ["cpk" as const, "targetCpk" as const],
+          matchedRules: [{
+            entryId: "controlled-performance-rule",
+            entryType: "performance-rule" as const,
+            effectiveVersion: "interpretation-rules-v1" as const,
+            applicability,
+            relatedFactReferences: ["cpk" as const, "targetCpk" as const],
+            evidence: {
+              sourceAlias: "controlled-source",
+              sheetName: "Rules",
+              sourceRange: "A2:B2",
+              sourceFileHash: "b".repeat(64),
+            },
+          }],
+          missingFacts: [],
+        }),
+      }),
+    });
+
+    const result = interpret({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      calculationResult: completedCalculation(),
+    });
+    if (result.status !== "completed") throw new Error("expected completed interpretation");
+    const rule = result.statements.find(({ type }) => type === "RULE");
+
+    expect(rule?.content).toMatchObject({
+      effectiveVersion: "interpretation-rules-v1",
+      applicability,
+    });
+    expect(rule?.content.applicability).not.toBe(applicability);
+  });
+
   it("keeps WC facts without applying RSS rules", () => {
     const calculationResult = completedCalculation(3);
     expect(calculationResult.recommendation.method).toBe("worst_case");
