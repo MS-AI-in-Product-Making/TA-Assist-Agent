@@ -1617,6 +1617,8 @@ describe("F3 drawing governance v2 contracts", () => {
     const { requestSchema, resultSchema } = schemas();
     const { imageReference: _requestImage, ...requestRowWithoutImage } = enhancedRow;
     const { imageReference: _resultImage, ...resultRowWithoutImage } = governanceRow;
+    void _requestImage;
+    void _resultImage;
 
     expect(requestSchema.safeParse({
       ...request,
@@ -1661,6 +1663,18 @@ describe("F3 drawing governance v2 contracts", () => {
 
 describe("F5.1 objective interpretation contracts", () => {
   const contentHash = "c".repeat(64);
+  const ruleEvidence = (sourceAlias: string, sheetName: string, sourceRange: string) => ({
+    classification: "internal" as const,
+    sourceAlias,
+    sourceVersion: "2026-Q3",
+    sheetName,
+    sourceRange,
+    sourceFileHash: contentHash,
+    owner: "knowledge-steward",
+    confidence: 0.9,
+    effectiveVersion: "interpretation-rules-v1" as const,
+    changeSummary: "Initial reviewed interpretation rules.",
+  });
 
   const calculationCompletedResult = {
     contractVersion: "v1" as const,
@@ -1963,12 +1977,7 @@ describe("F5.1 objective interpretation contracts", () => {
           effectiveVersion: "interpretation-rules-v1" as const,
           applicability: { analysisDimension: "one-dimensional" as const, method: "rss" as const },
           relatedFactReferences: ["cpk", "targetCpk"],
-          evidence: {
-            sourceAlias: "kb-performance",
-            sheetName: "Rules",
-            sourceRange: "A2:B2",
-            sourceFileHash: contentHash,
-          },
+          evidence: ruleEvidence("kb-performance", "Rules", "A2:B2"),
         },
       },
       {
@@ -1980,12 +1989,7 @@ describe("F5.1 objective interpretation contracts", () => {
           effectiveVersion: "interpretation-rules-v1" as const,
           applicability: { analysisDimension: "one-dimensional" as const, method: "rss" as const },
           relatedFactReferences: ["contributors"],
-          evidence: {
-            sourceAlias: "kb-signal",
-            sheetName: "Rules",
-            sourceRange: "C3:D3",
-            sourceFileHash: contentHash,
-          },
+          evidence: ruleEvidence("kb-signal", "Rules", "C3:D3"),
           requiresEngineeringReview: true,
         },
       },
@@ -1998,12 +2002,7 @@ describe("F5.1 objective interpretation contracts", () => {
           effectiveVersion: "interpretation-rules-v1" as const,
           applicability: { analysisDimension: "one-dimensional" as const, method: "rss" as const },
           relatedFactReferences: ["cpk", "contributors"],
-          evidence: {
-            sourceAlias: "kb-option",
-            sheetName: "Rules",
-            sourceRange: "E4:F4",
-            sourceFileHash: contentHash,
-          },
+          evidence: ruleEvidence("kb-option", "Rules", "E4:F4"),
           rank: null,
         },
       },
@@ -2489,6 +2488,11 @@ describe("F5.1 objective interpretation contracts", () => {
         sourceCells: {},
       },
     };
+    const rootCalculationResult = structuredClone(calculationCompletedResult);
+    rootCalculationResult.traceRecords = completedResult.statements.flatMap((statement) => {
+      if (statement.type !== "FACT" || statement.content.provenanceKind === "calculation_input") return [];
+      return structuredClone(statement.content.traceRecords);
+    });
     const rootRequest = {
       contractVersion: "v1" as const,
       inputClassification: "confidential" as const,
@@ -2498,7 +2502,7 @@ describe("F5.1 objective interpretation contracts", () => {
         worksheetName: "Analysis-A",
         imageReference,
         governanceRows: [governanceRow],
-        calculationResult: calculationCompletedResult,
+        calculationResult: rootCalculationResult,
         imageObservations: [imageObservation],
       }],
     };
@@ -2511,12 +2515,7 @@ describe("F5.1 objective interpretation contracts", () => {
         effectiveVersion: "interpretation-rules-v1" as const,
         applicability: { analysisDimension: "one-dimensional" as const, method: "rss" as const },
         relatedFactReferences: ["cpk", "targetCpk"] as const,
-        evidence: {
-          sourceAlias: "kb-performance",
-          sheetName: "Rules",
-          sourceRange: "A2:B2",
-          sourceFileHash: contentHash,
-        },
+        evidence: ruleEvidence("kb-performance", "Rules", "A2:B2"),
       },
     };
     const rootOption = {
@@ -2528,30 +2527,53 @@ describe("F5.1 objective interpretation contracts", () => {
         effectiveVersion: "interpretation-rules-v1" as const,
         applicability: { analysisDimension: "one-dimensional" as const, method: "rss" as const },
         relatedFactReferences: ["cpk"] as const,
-        evidence: {
-          sourceAlias: "kb-option",
-          sheetName: "Rules",
-          sourceRange: "E4:F4",
-          sourceFileHash: contentHash,
-        },
+        evidence: ruleEvidence("kb-option", "Rules", "E4:F4"),
         rank: null,
       },
     };
-    const rootFacts = completedResult.statements.filter((statement) => (
-      statement.type === "FACT" && ["cpk", "target_cpk", "factor_contribution"].includes(statement.content.metric)
-    ));
+    const rootFacts = completedResult.statements.filter((statement) => statement.type === "FACT");
     const contributorFact = rootFacts.find((statement) => statement.content.metric === "factor_contribution")!;
     const contributorItem = {
       factorReference: "Analysis-A/table-a/2",
       factorName: "Feature-A",
       factorIndex: 0,
       contributionPercent: 100,
+      halfTolerance: calculationCompletedResult.factors[0]!.halfTolerance,
+      sigma: calculationCompletedResult.factors[0]!.sigma,
+      unit: calculationCompletedResult.factors[0]!.unit,
       source: { worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 2 },
       drawingNumber: "DRAW-100",
       dimId: "307",
       governanceStatus: "complete" as const,
+      reasonCodes: [],
       relatedStatementIds: [contributorFact.statementId],
     };
+    const structuralScopes = [
+      "tolerance_loop_closure",
+      "datum_chain",
+      "assembly_datum_face",
+      "stack_start",
+      "direction",
+      "cross_subsystem",
+      "non_geometric_variable",
+      "long_dimension_chain",
+    ] as const;
+    const toleranceItems = structuralScopes.map((scope) => ({
+      scope,
+      status: "not_evaluated" as const,
+      relatedStatementIds: [],
+      clarificationIds: [`clarify-image-${scope}`],
+    }));
+    const rootClarifications = structuralScopes.map((scope) => ({
+      clarificationId: `clarify-image-${scope}`,
+      reasonCode: "image_not_available",
+      section: "toleranceChainValidity" as const,
+      structuralScope: scope,
+      missingEvidence: [`confirmed ${scope} image observation`],
+      affectedConclusionIds: [],
+      blockingScope: "conclusion" as const,
+      questionForReviewer: `Can the ${scope} evidence be reviewed?`,
+    }));
     const rootImageFact = {
       statementId: "root-fact-image-stack-start",
       type: "FACT" as const,
@@ -2604,13 +2626,17 @@ describe("F5.1 objective interpretation contracts", () => {
       worksheetName: "Analysis-A",
       imageReference,
       governanceRows: [governanceRow],
-      calculationResult: calculationCompletedResult,
+      calculationResult: rootCalculationResult,
       status: "completed" as const,
       sections: {
-        toleranceChainValidity: { status: "not_evaluated" as const },
+        toleranceChainValidity: { status: "not_evaluated" as const, items: toleranceItems },
         capabilityVsSpecification: {
           status: "supported" as const,
-          statementIds: [rootFacts.find((statement) => statement.content.metric === "cpk")!.statementId, rootRule.statementId],
+          statementIds: [
+            ...rootFacts.filter((statement) => statement.content.metric !== "factor_contribution")
+              .map(({ statementId }) => statementId),
+            rootRule.statementId,
+          ],
         },
         majorContributors: { status: "supported" as const, items: [contributorItem] },
         reasonableToleranceRange: { status: "delegated_to_f6" as const },
@@ -2625,15 +2651,7 @@ describe("F5.1 objective interpretation contracts", () => {
         rootGovernanceFact,
         rootGovernanceSignal,
       ],
-      clarifications: [{
-        clarificationId: "clarify-image",
-        reasonCode: "image_not_available",
-        section: "toleranceChainValidity",
-        missingEvidence: ["confirmed image observation"],
-        affectedConclusionIds: [],
-        blockingScope: "worksheet",
-        questionForReviewer: "Can the tolerance path image be reviewed?",
-      }],
+      clarifications: rootClarifications,
       assumptions: [{
         assumptionId: "assumption-1",
         source: "F4 calculation input",
@@ -2655,10 +2673,32 @@ describe("F5.1 objective interpretation contracts", () => {
         worksheetCount: 1,
         completedWorksheetCount: 1,
         inputRejectedWorksheetCount: 0,
-        statementCount: 9,
-        clarificationCount: 1,
+        statementCount: completedWorksheet.statements.length,
+        clarificationCount: completedWorksheet.clarifications.length,
         assumptionCount: 1,
       },
+    };
+
+    const completeCapabilityResult = () => {
+      const result = structuredClone(rootResult);
+      const objectiveFacts = structuredClone(completedResult.statements.filter((statement) => (
+        statement.type === "FACT"
+      )));
+      const capabilityFacts = objectiveFacts.filter((statement) => (
+        statement.type === "FACT" && statement.content.metric !== "factor_contribution"
+      ));
+      result.worksheets[0]!.statements = [
+        ...objectiveFacts,
+        structuredClone(rootImageFact),
+        structuredClone(rootStructuralSignal),
+        structuredClone(rootGovernanceFact),
+        structuredClone(rootGovernanceSignal),
+      ];
+      result.worksheets[0]!.sections.capabilityVsSpecification.statementIds = capabilityFacts.map(
+        ({ statementId }) => statementId,
+      );
+      result.summary.statementCount = result.worksheets[0]!.statements.length;
+      return result;
     };
 
     it("accepts strict image observations and enforces confirmation metadata", () => {
@@ -2793,7 +2833,10 @@ describe("F5.1 objective interpretation contracts", () => {
       expect(parsed.worksheets[0]).toMatchObject({
         sections: {
           toleranceChainValidity: { status: "not_evaluated" },
-          capabilityVsSpecification: { status: "supported", statementIds: ["fact-cpk", "root-rule-performance"] },
+          capabilityVsSpecification: {
+            status: "supported",
+            statementIds: completedWorksheet.sections.capabilityVsSpecification.statementIds,
+          },
           majorContributors: { status: "supported", items: [contributorItem] },
           reasonableToleranceRange: { status: "delegated_to_f6" },
           designOptimizationAndParallelOptions: { status: "delegated_to_f6" },
@@ -2802,6 +2845,91 @@ describe("F5.1 objective interpretation contracts", () => {
       expect(f5DataInterpretationResultSchema.safeParse({ ...rootResult, outputClassification: "public" }).success).toBe(false);
       expect(f5DataInterpretationResultSchema.safeParse({ ...rootResult, unexpected: true }).success).toBe(false);
     });
+
+    it.each(toleranceItems.map(({ scope }) => scope))(
+      "rejects %s tolerance evidence from a different structural scope",
+      (scope) => {
+        const result = structuredClone(rootResult);
+        const worksheet = result.worksheets[0]!;
+        worksheet.sections.toleranceChainValidity.status = "needs_review";
+        const item = worksheet.sections.toleranceChainValidity.items.find((candidate) => candidate.scope === scope)!;
+        item.status = "needs_review";
+        item.relatedStatementIds = [rootStructuralSignal.statementId];
+        item.clarificationIds = [];
+        const imageFact = worksheet.statements.find(
+          ({ statementId }) => statementId === rootImageFact.statementId,
+        ) as typeof rootImageFact;
+        imageFact.content.scope = scope === "stack_start" ? "direction" : "stack_start";
+
+        expect(f5DataInterpretationResultSchema.safeParse(result).success).toBe(false);
+      },
+    );
+
+    it("requires tolerance clarifications to identify their structural scope", () => {
+      const result = structuredClone(rootResult);
+      delete (result.worksheets[0]!.clarifications[0] as { structuralScope?: string }).structuralScope;
+
+      expect(f5DataInterpretationResultSchema.safeParse(result).success).toBe(false);
+    });
+
+    it.each([
+      "cp",
+      "cpk",
+      "rss_sigma",
+      "total_dpm",
+      "yield",
+      "lower_spec_limit",
+      "upper_spec_limit",
+      "target_cpk",
+      "target_sigma",
+      "recommended_method",
+      "achieved_sigma",
+    ] as const)("rejects a capability section missing %s", (metric) => {
+      const result = completeCapabilityResult();
+      const worksheet = result.worksheets[0]!;
+      const removed = worksheet.statements.find(
+        (statement) => statement.type === "FACT" && statement.content.metric === metric,
+      )!;
+      worksheet.statements = worksheet.statements.filter(({ statementId }) => statementId !== removed.statementId);
+      worksheet.sections.capabilityVsSpecification.statementIds = worksheet.sections.capabilityVsSpecification.statementIds.filter(
+        (statementId) => statementId !== removed.statementId,
+      );
+      result.summary.statementCount -= 1;
+
+      expect(f5DataInterpretationResultSchema.safeParse(result).success).toBe(false);
+    });
+
+    it.each([
+      ["cpk value", "cpk", (content: Record<string, unknown>) => { content.value = -123; }],
+      ["cpk outputField", "cpk", (content: Record<string, unknown>) => { content.outputField = "capability.cp"; }],
+      ["cpk formulaId", "cpk", (content: Record<string, unknown>) => {
+        (content.traceRecords as Array<Record<string, unknown>>)[0]!.formulaId = "cp-v1";
+      }],
+      ["target inputField", "target_cpk", (content: Record<string, unknown>) => { content.inputField = "capability.targetSigmaLevel"; }],
+      ["recommended method", "recommended_method", (content: Record<string, unknown>) => { content.method = "rss_1d"; }],
+      ["achieved sourceOutputFields", "achieved_sigma", (content: Record<string, unknown>) => {
+        content.sourceOutputFields = ["capability.lowerZ", "capability.lowerZ"];
+      }],
+    ] as const)("rejects capability %s tampering", (_label, metric, mutate) => {
+      const result = completeCapabilityResult();
+      const fact = result.worksheets[0]!.statements.find(
+        (statement) => statement.type === "FACT" && statement.content.metric === metric,
+      )!;
+      mutate(fact.content as unknown as Record<string, unknown>);
+
+      expect(f5DataInterpretationResultSchema.safeParse(result).success).toBe(false);
+    });
+
+    it.each(["large_tolerance", "mid_chain_amplification"])(
+      "rejects unimplemented contributor reason code %s",
+      (reasonCode) => {
+        const result = structuredClone(rootResult);
+        result.worksheets[0]!.sections.majorContributors.items[0]!.reasonCodes = [reasonCode];
+
+        const parsed = f5DataInterpretationResultSchema.safeParse(result);
+        expect(parsed.success).toBe(false);
+      },
+    );
 
     it.each([
       ["confidence", "medium"],
@@ -2827,6 +2955,11 @@ describe("F5.1 objective interpretation contracts", () => {
     it("allows medium confidence only as SIGNAL observation evidence", () => {
       const result = structuredClone(rootResult);
       (result.worksheets[0]!.sections.toleranceChainValidity as { status: string }).status = "needs_review";
+      result.worksheets[0]!.sections.toleranceChainValidity.items = result.worksheets[0]!.sections.toleranceChainValidity.items.map((item) => (
+        item.scope === "stack_start"
+          ? { ...item, status: "needs_review", relatedStatementIds: [rootStructuralSignal.statementId], clarificationIds: [] }
+          : item
+      ));
       const signal = result.worksheets[0]!.statements.find(
         ({ statementId }) => statementId === rootStructuralSignal.statementId,
       ) as typeof rootStructuralSignal & { content: { observationEvidence?: unknown[] } };
@@ -2862,6 +2995,12 @@ describe("F5.1 objective interpretation contracts", () => {
       for (const status of ["supported", "needs_review"] as const) {
         const result = structuredClone(rootResult);
         result.worksheets[0]!.sections.toleranceChainValidity.status = status;
+        result.worksheets[0]!.sections.toleranceChainValidity.items = result.worksheets[0]!.sections.toleranceChainValidity.items.map((item) => ({
+          ...item,
+          status,
+          relatedStatementIds: [],
+          clarificationIds: [],
+        }));
         result.worksheets[0]!.statements = result.worksheets[0]!.statements.filter(
           ({ statementId }) => ![rootImageFact.statementId, rootStructuralSignal.statementId].includes(statementId),
         );
@@ -2877,10 +3016,31 @@ describe("F5.1 objective interpretation contracts", () => {
 
       const supported = structuredClone(rootResult);
       supported.worksheets[0]!.sections.toleranceChainValidity.status = "supported";
-      expect(f5DataInterpretationResultSchema.safeParse(supported).success).toBe(true);
+      const supportedFacts = structuralScopes.map((scope) => ({
+        ...structuredClone(rootImageFact),
+        statementId: scope === "stack_start" ? rootImageFact.statementId : `root-fact-image-${scope}`,
+        content: { ...structuredClone(rootImageFact.content), scope },
+      }));
+      supported.worksheets[0]!.statements.push(...supportedFacts.filter(({ content }) => content.scope !== "stack_start"));
+      supported.summary.statementCount = supported.worksheets[0]!.statements.length;
+      supported.worksheets[0]!.sections.toleranceChainValidity.items = supported.worksheets[0]!.sections.toleranceChainValidity.items.map((item) => {
+        const fact = supportedFacts.find(({ content }) => content.scope === item.scope)!;
+        return {
+          ...item,
+          status: "supported",
+          relatedStatementIds: [fact.statementId],
+          clarificationIds: [],
+        };
+      });
+      expect(f5DataInterpretationResultSchema.parse(supported)).toEqual(supported);
 
       const needsReview = structuredClone(rootResult);
       needsReview.worksheets[0]!.sections.toleranceChainValidity.status = "needs_review";
+      needsReview.worksheets[0]!.sections.toleranceChainValidity.items = needsReview.worksheets[0]!.sections.toleranceChainValidity.items.map((item) => (
+        item.scope === "stack_start"
+          ? { ...item, status: "needs_review", relatedStatementIds: [rootImageFact.statementId, rootStructuralSignal.statementId], clarificationIds: [] }
+          : item
+      ));
       expect(f5DataInterpretationResultSchema.safeParse(needsReview).success).toBe(true);
 
       const unrelatedFact = structuredClone(needsReview);
@@ -3134,6 +3294,20 @@ describe("F5.1 objective interpretation contracts", () => {
       }
     });
 
+    it("rejects duplicate valid capability statement IDs at the statementIds path", () => {
+      const result = completeCapabilityResult();
+      const statementIds = result.worksheets[0]!.sections.capabilityVsSpecification.statementIds;
+      statementIds[0] = statementIds[1]!;
+
+      const parsed = f5DataInterpretationResultSchema.safeParse(result);
+      expect(parsed.success).toBe(false);
+      if (!parsed.success) {
+        expect(parsed.error.issues.map(({ path }) => path)).toContainEqual([
+          "worksheets", 0, "sections", "capabilityVsSpecification", "statementIds",
+        ]);
+      }
+    });
+
     it("reports assumption confirmation issues at each missing or illegal field", () => {
       const confirmedAssumption = {
         ...completedWorksheet.assumptions[0],
@@ -3290,7 +3464,8 @@ describe("F5.1 objective interpretation contracts", () => {
       const rejectedWorksheet = {
         worksheetName: "Analysis-B",
         status: "input_rejected" as const,
-        issues: [{ reasonCode: "artifact_identity_mismatch", message: "Workbook hash differs." }],
+        reasonCode: "interpretation_failed" as const,
+        artifactReference: "worksheet:Analysis-B",
       };
       expect(f5DataInterpretationResultSchema.safeParse({
         ...rootResult,
@@ -3300,11 +3475,38 @@ describe("F5.1 objective interpretation contracts", () => {
           worksheetCount: 2,
           completedWorksheetCount: 1,
           inputRejectedWorksheetCount: 1,
-          statementCount: 9,
-          clarificationCount: 1,
+          statementCount: completedWorksheet.statements.length,
+          clarificationCount: completedWorksheet.clarifications.length,
           assumptionCount: 1,
         },
       }).success).toBe(true);
+
+      expect(f5DataInterpretationResultSchema.safeParse({
+        ...rootResult,
+        status: "input_rejected",
+        worksheets: [rejectedWorksheet],
+        summary: {
+          worksheetCount: 1,
+          completedWorksheetCount: 0,
+          inputRejectedWorksheetCount: 1,
+          statementCount: 0,
+          clarificationCount: 0,
+          assumptionCount: 0,
+        },
+      }).success).toBe(true);
+      expect(f5DataInterpretationResultSchema.safeParse({
+        ...rootResult,
+        status: "input_rejected",
+        worksheets: [{ ...rejectedWorksheet, artifactReference: "C:\\private\\Analysis-B.xlsx" }],
+        summary: {
+          worksheetCount: 1,
+          completedWorksheetCount: 0,
+          inputRejectedWorksheetCount: 1,
+          statementCount: 0,
+          clarificationCount: 0,
+          assumptionCount: 0,
+        },
+      }).success).toBe(false);
     });
   });
 });
@@ -5552,12 +5754,7 @@ describe("interpretation rules contracts", () => {
       effectiveVersion: "interpretation-rules-v1" as const,
       applicability: { analysisDimension: "one-dimensional" as const, method: "rss" as const },
       relatedFactReferences: ["cpk", "targetCpk"],
-      evidence: {
-        sourceAlias: "capability-handbook",
-        sheetName: "Rules",
-        sourceRange: "A2:H20",
-        sourceFileHash: "a".repeat(64),
-      },
+      evidence: provenance,
     }],
     missingFacts: [],
   };

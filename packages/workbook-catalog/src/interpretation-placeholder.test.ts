@@ -202,12 +202,18 @@ describe("createInterpretation", () => {
       expect.objectContaining({ type: "OPTION", content: expect.objectContaining({ rank: null }) }),
     ]));
     for (const statement of result.statements.filter(({ type }) => type !== "FACT")) {
-      expect(statement.content.evidence).toEqual({
+      expect(statement.content.evidence).toEqual(expect.objectContaining({
+        classification: "internal",
         sourceAlias: expect.any(String),
+        sourceVersion: expect.any(String),
         sheetName: expect.any(String),
         sourceRange: expect.any(String),
         sourceFileHash: expect.any(String),
-      });
+        owner: expect.any(String),
+        confidence: expect.any(Number),
+        effectiveVersion: "interpretation-rules-v1",
+        changeSummary: expect.any(String),
+      }));
     }
     expect(new Set(result.statements.map(({ statementId }) => statementId)).size).toBe(result.statements.length);
     expect(result.clarifications).toEqual(expect.arrayContaining([
@@ -293,10 +299,16 @@ describe("createInterpretation", () => {
             applicability,
             relatedFactReferences: ["cpk" as const, "targetCpk" as const],
             evidence: {
+              classification: "internal" as const,
               sourceAlias: "controlled-source",
+              sourceVersion: "2026-Q3",
               sheetName: "Rules",
               sourceRange: "A2:B2",
               sourceFileHash: "b".repeat(64),
+              owner: "controlled-owner",
+              confidence: 0.9,
+              effectiveVersion: "interpretation-rules-v1" as const,
+              changeSummary: "Controlled reviewed provenance.",
             },
           }],
           missingFacts: [],
@@ -315,6 +327,18 @@ describe("createInterpretation", () => {
     expect(rule?.content).toMatchObject({
       effectiveVersion: "interpretation-rules-v1",
       applicability,
+      evidence: {
+        classification: "internal",
+        sourceAlias: "controlled-source",
+        sourceVersion: "2026-Q3",
+        sheetName: "Rules",
+        sourceRange: "A2:B2",
+        sourceFileHash: "b".repeat(64),
+        owner: "controlled-owner",
+        confidence: 0.9,
+        effectiveVersion: "interpretation-rules-v1",
+        changeSummary: "Controlled reviewed provenance.",
+      },
     });
     expect(rule?.content.applicability).not.toBe(applicability);
   });

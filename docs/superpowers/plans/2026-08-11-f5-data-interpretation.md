@@ -190,7 +190,7 @@ export type F5DataInterpretationResult = z.infer<typeof f5DataInterpretationResu
 
 - [ ] **Step 4: 运行合同测试并确认 GREEN**
 
-Run: Step 2 command.  
+Run: Step 2 command.
 Expected: PASS，现有 F5.1 和新增根 F5 合同测试均通过。
 
 - [ ] **Step 5: 记录合同检查点**
@@ -494,7 +494,7 @@ export function renderF5Report(report, { outputRoot } = {})
 
 - [ ] **Step 5: 运行 report 测试并确认 GREEN**
 
-Run: Step 2 command.  
+Run: Step 2 command.
 Expected: PASS。
 
 - [ ] **Step 6: 记录 report 检查点**
@@ -569,7 +569,7 @@ Expected: FAIL with module-not-found。
 
 - [ ] **Step 5: 运行 parser/layout 测试并确认 GREEN**
 
-Run: Step 3 command.  
+Run: Step 3 command.
 Expected: PASS。
 
 - [ ] **Step 6: 记录 CLI/layout 检查点**
@@ -736,7 +736,7 @@ feature5 --root <repo> --f1-artifacts <dir> --f3-artifacts <dir> --f4-artifacts 
 
 - [ ] **Step 4: 运行 CLI 测试并确认 GREEN**
 
-Run: Step 2 command.  
+Run: Step 2 command.
 Expected: PASS，并且 feature1/2/3 路由回归通过。
 
 - [ ] **Step 5: 记录 CLI 检查点**

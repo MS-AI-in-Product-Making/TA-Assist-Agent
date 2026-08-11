@@ -287,6 +287,36 @@ function expectRejected(result, reasonCode, artifactReference) {
 }
 
 describe("loadF5ArtifactBundle", () => {
+  it.each([
+    ["F1", "C:\\private\\Demo.xlsx"],
+    ["F3", "\\\\server\\share\\Demo.xlsx"],
+    ["F4", "/home/private/Demo.xlsx"],
+  ])("rejects an unsafe %s workbook fileName as contract-invalid", (artifact, fileName) => {
+    const bundle = setupBundle({ worksheetNames: ["Analysis-A"] });
+    if (artifact === "F1") {
+      rewriteJson(path.join(bundle.f1ArtifactRoot, "Feature1-Report.json"), (report) => {
+        report.workbooks[0].workbook.fileName = fileName;
+      });
+      rewriteJson(path.join(bundle.f1ArtifactRoot, "sheets/anonymous.xlsx/json/Analysis-A.json"), (worksheet) => {
+        worksheet.workbook.fileName = fileName;
+      });
+    } else if (artifact === "F3") {
+      rewriteJson(path.join(bundle.f3ArtifactRoot, "Feature3-Report.json"), (report) => {
+        report.workbook.fileName = fileName;
+      });
+    } else {
+      rewriteJson(path.join(bundle.f4ArtifactRoot, "Feature4-Calculation.json"), (report) => {
+        report.source.workbookFileName = fileName;
+      });
+    }
+
+    expectRejected(
+      load(bundle),
+      "artifact_contract_invalid",
+      artifact === "F1" ? "Feature1-Report.json" : `Feature${artifact.slice(1)}-${artifact === "F3" ? "Report" : "Calculation"}.json`,
+    );
+  });
+
   it("loads an accepted request and reports controlled source references", () => {
     const bundle = setupBundle({ worksheetNames: ["Analysis-A"] });
     const result = load(bundle);
@@ -301,6 +331,7 @@ describe("loadF5ArtifactBundle", () => {
         worksheets: [{ worksheetName: "Analysis-A", imageObservations: [] }],
       },
       rejectedWorksheets: [],
+      worksheetOrder: ["Analysis-A"],
       sourceReferences: {
         f1: "Feature1-Report.json",
         f3: "Feature3-Report.json",
@@ -333,7 +364,10 @@ describe("loadF5ArtifactBundle", () => {
     const bundle = setupBundle();
 
     expect(load(bundle).request.worksheets.map(({ worksheetName }) => worksheetName)).toEqual(["Analysis-A", "Analysis-B"]);
-    expect(load(bundle, { selectedWorksheetNames: ["Analysis-B", "Analysis-A"] }).request.worksheets.map(({ worksheetName }) => worksheetName)).toEqual(["Analysis-B", "Analysis-A"]);
+    expect(load(bundle).worksheetOrder).toEqual(["Analysis-A", "Analysis-B"]);
+    const explicitlyOrdered = load(bundle, { selectedWorksheetNames: ["Analysis-B", "Analysis-A"] });
+    expect(explicitlyOrdered.request.worksheets.map(({ worksheetName }) => worksheetName)).toEqual(["Analysis-B", "Analysis-A"]);
+    expect(explicitlyOrdered.worksheetOrder).toEqual(["Analysis-B", "Analysis-A"]);
   });
 
   it.each([

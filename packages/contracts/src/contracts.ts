@@ -296,7 +296,7 @@ const windowsReservedDeviceBasenames = new Set([
   "LPT9",
 ]);
 
-const workbookCatalogFileNameSchema = z
+export const workbookCatalogFileNameSchema = z
   .string()
   .min(1)
   .max(240)
@@ -2339,10 +2339,16 @@ const interpretationFactContentSchema = z
 
 const interpretationRuleStatementEvidenceSchema = z
   .object({
+    classification: z.literal("internal"),
     sourceAlias: z.string().min(1),
+    sourceVersion: z.string().min(1),
     sheetName: z.string().min(1),
     sourceRange: z.string().regex(/^[A-Z]+[1-9]\d*:[A-Z]+[1-9]\d*$/),
     sourceFileHash: sha256Schema,
+    owner: z.string().min(1),
+    confidence: z.number().finite().min(0).max(1),
+    effectiveVersion: z.literal("interpretation-rules-v1"),
+    changeSummary: z.string().min(1),
   })
   .strict();
 
@@ -3631,14 +3637,7 @@ const interpretationResolvedTargetsSchema = z
   })
   .strict();
 
-const interpretationRuleEvidenceSchema = z
-  .object({
-    sourceAlias: z.string().min(1),
-    sheetName: z.string().min(1),
-    sourceRange: interpretationSourceRangeSchema,
-    sourceFileHash: sha256Schema,
-  })
-  .strict();
+const interpretationRuleEvidenceSchema = interpretationProvenanceSchema;
 
 const interpretationMatchedRuleSchema = z
   .object({
@@ -4516,7 +4515,7 @@ const f5DataInterpretationRequestWorksheetSchema = z.object({
 export const f5DataInterpretationRequestSchema = z.object({
   contractVersion: contractVersionSchema,
   inputClassification: z.literal("confidential"),
-  workbook: z.object({ fileName: z.string().min(1), contentHash: sha256Schema }).strict(),
+  workbook: z.object({ fileName: workbookCatalogFileNameSchema, contentHash: sha256Schema }).strict(),
   knowledgeBaseVersion: z.literal("interpretation-rules-v1"),
   worksheets: z.array(f5DataInterpretationRequestWorksheetSchema).min(1),
 }).strict().superRefine((request, context) => {
@@ -4635,6 +4634,9 @@ const f5MajorContributorItemSchema = z.object({
   factorName: z.string().min(1),
   factorIndex: z.number().int().nonnegative(),
   contributionPercent: z.number().finite().min(0).max(100),
+  halfTolerance: z.number().finite().nonnegative(),
+  sigma: z.number().finite().nonnegative(),
+  unit: z.string().min(1),
   source: z.object({
     worksheetName: z.string().min(1),
     tableId: z.string().min(1),
@@ -4644,6 +4646,10 @@ const f5MajorContributorItemSchema = z.object({
   partNumber: z.unknown().optional(),
   dimId: z.string().min(1).nullable(),
   governanceStatus: f3GovernanceStatusSchema,
+  reasonCodes: z.array(z.enum([
+    "contribution_concentration",
+    "identifier_governance_gap",
+  ])),
   relatedStatementIds: z.array(z.string().min(1)).min(1),
 }).strict().superRefine((item, context) => {
   if ("partNumber" in item) {
@@ -4651,8 +4657,18 @@ const f5MajorContributorItemSchema = z.object({
   }
 });
 
+const f5ToleranceChainValidityItemSchema = z.object({
+  scope: f5StructuralScopeSchema,
+  status: f5EvidenceStatusSchema,
+  relatedStatementIds: z.array(z.string().min(1)),
+  clarificationIds: z.array(z.string().min(1)),
+}).strict();
+
 const f5ResultSectionsSchema = z.object({
-  toleranceChainValidity: z.object({ status: f5EvidenceStatusSchema }).strict(),
+  toleranceChainValidity: z.object({
+    status: f5EvidenceStatusSchema,
+    items: z.array(f5ToleranceChainValidityItemSchema).length(8),
+  }).strict(),
   capabilityVsSpecification: z.object({
     status: z.literal("supported"),
     statementIds: z.array(z.string().min(1)).min(1),
@@ -4669,11 +4685,19 @@ const f5ClarificationSchema = z.object({
   clarificationId: z.string().min(1),
   reasonCode: z.string().min(1),
   section: f5ResultSectionNameSchema,
+  structuralScope: f5StructuralScopeSchema.optional(),
   missingEvidence: z.array(z.string().min(1)),
   affectedConclusionIds: z.array(z.string().min(1)),
   blockingScope: z.enum(["worksheet", "section", "conclusion"]),
   questionForReviewer: z.string().min(1),
-}).strict();
+}).strict().superRefine((clarification, context) => {
+  if (clarification.section === "toleranceChainValidity" && clarification.structuralScope === undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "tolerance clarification requires structuralScope", path: ["structuralScope"] });
+  }
+  if (clarification.section !== "toleranceChainValidity" && clarification.structuralScope !== undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "structuralScope is only valid for tolerance clarifications", path: ["structuralScope"] });
+  }
+});
 
 const f5AssumptionSchema = z.object({
   assumptionId: z.string().min(1),
@@ -4776,6 +4800,7 @@ const f5CompletedWorksheetResultSchema = z.object({
       && statement.content.reviewStatus === "rejected"
   )).map(({ statementId }) => statementId));
   const statementById = new Map(worksheet.statements.map((statement) => [statement.statementId, statement]));
+  const clarificationById = new Map(worksheet.clarifications.map((clarification) => [clarification.clarificationId, clarification]));
   worksheet.statements.forEach((statement, statementIndex) => {
     if (statement.type === "FACT" && statement.content.provenanceKind === "image_observation") {
       const imageReference = statement.content.imageReference;
@@ -4842,6 +4867,81 @@ const f5CompletedWorksheetResultSchema = z.object({
       && statement.content.reviewStatus !== "rejected"
   )).map(({ statementId }) => statementId));
   const toleranceStatus = worksheet.sections.toleranceChainValidity.status;
+  const structuralScopes = f5StructuralScopeSchema.options;
+  const toleranceItems = worksheet.sections.toleranceChainValidity.items;
+  toleranceItems.forEach((item, itemIndex) => {
+    const itemPath: Array<string | number> = ["sections", "toleranceChainValidity", "items", itemIndex];
+    if (item.scope !== structuralScopes[itemIndex]) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "tolerance scope items must be complete and in schema order", path: [...itemPath, "scope"] });
+    }
+    let hasSameScopeEvidence = false;
+    let hasSameScopeFact = false;
+    item.relatedStatementIds.forEach((statementId, referenceIndex) => {
+      const statement = statementById.get(statementId);
+      if (statement === undefined) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "tolerance item statement reference must exist", path: [...itemPath, "relatedStatementIds", referenceIndex] });
+        return;
+      }
+      if (statement.type === "FACT" && statement.content.provenanceKind === "image_observation") {
+        if (statement.content.scope !== item.scope) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "tolerance image FACT scope must match item scope", path: [...itemPath, "relatedStatementIds", referenceIndex] });
+        } else if (statement.content.reviewStatus !== "rejected") {
+          hasSameScopeEvidence = true;
+          hasSameScopeFact = true;
+        }
+        return;
+      }
+      if (statement.type === "SIGNAL" && "signalKind" in statement.content
+        && statement.content.signalKind === "structural_evidence_review") {
+        const triggerScopes = (statement.content.triggerFactReferences ?? []).flatMap((reference) => {
+          const trigger = statementById.get(reference);
+          return trigger?.type === "FACT" && trigger.content.provenanceKind === "image_observation"
+            && trigger.content.reviewStatus !== "rejected" ? [trigger.content.scope] : [];
+        });
+        const observationScopes = (statement.content.observationEvidence ?? [])
+          .filter(({ reviewStatus }) => reviewStatus !== "rejected")
+          .map(({ scope }) => scope);
+        const evidenceScopes = [...triggerScopes, ...observationScopes];
+        if (evidenceScopes.length === 0 || evidenceScopes.some((scope) => scope !== item.scope)) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "tolerance structural SIGNAL evidence scope must match item scope", path: [...itemPath, "relatedStatementIds", referenceIndex] });
+        } else {
+          hasSameScopeEvidence = true;
+        }
+        return;
+      }
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "tolerance item statements must be structural evidence", path: [...itemPath, "relatedStatementIds", referenceIndex] });
+    });
+    let hasSameScopeClarification = false;
+    item.clarificationIds.forEach((clarificationId, referenceIndex) => {
+      const clarification = clarificationById.get(clarificationId);
+      if (clarification === undefined) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "tolerance item clarification reference must exist", path: [...itemPath, "clarificationIds", referenceIndex] });
+      } else if (clarification.section !== "toleranceChainValidity" || clarification.structuralScope !== item.scope) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "tolerance clarification scope must match item scope", path: [...itemPath, "clarificationIds", referenceIndex] });
+      } else {
+        hasSameScopeClarification = true;
+      }
+    });
+    if ((item.status === "not_evaluated" || item.status === "insufficient_evidence") && !hasSameScopeClarification) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: `${item.status} tolerance item requires a same-scope clarification`, path: [...itemPath, "clarificationIds"] });
+    }
+    if (item.status === "needs_review" && !hasSameScopeEvidence) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "needs_review tolerance item requires same-scope evidence", path: [...itemPath, "relatedStatementIds"] });
+    }
+    if (item.status === "supported" && !hasSameScopeFact) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "supported tolerance item requires a same-scope image FACT", path: [...itemPath, "relatedStatementIds"] });
+    }
+    if (item.status === "not_applicable" && !hasSameScopeClarification) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "not_applicable tolerance item requires a same-scope applicability clarification", path: [...itemPath, "clarificationIds"] });
+    }
+  });
+  const toleranceSeverity = { supported: 0, not_applicable: 0, not_evaluated: 1, insufficient_evidence: 2, needs_review: 3 } as const;
+  const expectedToleranceStatus = toleranceItems.slice(1).reduce((highest, item) => (
+    toleranceSeverity[item.status] > toleranceSeverity[highest] ? item.status : highest
+  ), toleranceItems[0]!.status);
+  if (toleranceStatus !== expectedToleranceStatus) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "tolerance status must aggregate the most severe item status", path: ["sections", "toleranceChainValidity", "status"] });
+  }
   const toleranceClarifications = worksheet.clarifications.filter(({ section }) => section === "toleranceChainValidity");
   if (toleranceStatus === "not_evaluated" && toleranceClarifications.length === 0) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "not_evaluated tolerance validity requires a structural evidence clarification", path: ["sections", "toleranceChainValidity", "status"] });
@@ -4886,18 +4986,128 @@ const f5CompletedWorksheetResultSchema = z.object({
       });
     });
   }
-  worksheet.sections.capabilityVsSpecification.statementIds.forEach((statementId, statementIdIndex) => {
+  const capabilitySectionStatementIds = worksheet.sections.capabilityVsSpecification.statementIds;
+  capabilitySectionStatementIds.forEach((statementId, statementIdIndex) => {
     const statement = statementById.get(statementId);
     if (statement === undefined
       || (statement.type !== "FACT" && statement.type !== "RULE")
-      || statement.section !== "capability-vs-specification") {
+      || (statement.section !== "capability-vs-specification" && statement.section !== "calculation-summary")) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "supported capability statements must reference capability FACT or RULE evidence",
+        message: "supported capability statements must reference capability or calculation-summary FACT/RULE evidence",
         path: ["sections", "capabilityVsSpecification", "statementIds", statementIdIndex],
       });
     }
   });
+  const capabilityMetrics = [
+    "cp",
+    "cpk",
+    "rss_sigma",
+    "total_dpm",
+    "yield",
+    "lower_spec_limit",
+    "upper_spec_limit",
+    "target_cpk",
+    "target_sigma",
+    "recommended_method",
+    "achieved_sigma",
+  ] as const;
+  const capabilityMetricSet = new Set<string>(capabilityMetrics);
+  const capabilityFacts = worksheet.statements.filter((statement) => (
+    statement.type === "FACT" && statement.content.provenanceKind !== "image_observation"
+      && "metric" in statement.content && capabilityMetricSet.has(statement.content.metric)
+  ));
+  const capabilityRules = worksheet.statements.filter((statement) => (
+    statement.type === "RULE" && statement.section === "capability-vs-specification"
+  ));
+  const expectedCapabilityStatementIds = new Set([
+    ...capabilityFacts.map(({ statementId }) => statementId),
+    ...capabilityRules.map(({ statementId }) => statementId),
+  ]);
+  if (new Set(capabilitySectionStatementIds).size !== capabilitySectionStatementIds.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "capability statementIds must be unique", path: ["sections", "capabilityVsSpecification", "statementIds"] });
+  }
+  if (capabilitySectionStatementIds.length !== expectedCapabilityStatementIds.size
+    || capabilitySectionStatementIds.some((statementId) => !expectedCapabilityStatementIds.has(statementId))) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "capability statementIds must exactly cover required FACT and applicable RULE evidence", path: ["sections", "capabilityVsSpecification", "statementIds"] });
+  }
+  for (const metric of capabilityMetrics) {
+    const matchingFacts = capabilityFacts.filter((statement) => (
+      statement.type === "FACT" && statement.content.provenanceKind !== "image_observation"
+        && "metric" in statement.content && statement.content.metric === metric
+    ));
+    if (matchingFacts.length !== 1) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: `capability requires exactly one ${metric} FACT`, path: ["sections", "capabilityVsSpecification", "statementIds"] });
+      continue;
+    }
+    const fact = matchingFacts[0]!;
+    if (fact.type !== "FACT" || fact.content.provenanceKind === "image_observation" || !("metric" in fact.content)) continue;
+    const factIndex = worksheet.statements.findIndex(({ statementId }) => statementId === fact.statementId);
+    const factPath: Array<string | number> = ["statements", factIndex, "content"];
+    const formulaExpectations: Partial<Record<typeof metric, { value: number; outputField: string }>> = {
+      cp: { value: worksheet.calculationResult.capability.cp, outputField: "capability.cp" },
+      cpk: { value: worksheet.calculationResult.capability.cpk, outputField: "capability.cpk" },
+      rss_sigma: { value: worksheet.calculationResult.system.rssSigma, outputField: "system.rssSigma" },
+      total_dpm: { value: worksheet.calculationResult.capability.totalDpm, outputField: "capability.totalDpm" },
+      yield: { value: worksheet.calculationResult.capability.yield, outputField: "capability.yield" },
+    };
+    const formulaExpectation = formulaExpectations[metric];
+    if (formulaExpectation !== undefined) {
+      const content = fact.content as z.infer<typeof interpretationFormulaNumericFactContentSchema>;
+      const expectedTrace = worksheet.calculationResult.traceRecords.filter(({ outputField }) => outputField === formulaExpectation.outputField);
+      if (content.provenanceKind !== "formula_output"
+        || !nearlyEqual(content.value, formulaExpectation.value)
+        || content.outputField !== formulaExpectation.outputField
+        || JSON.stringify(content.traceRecords) !== JSON.stringify(expectedTrace)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: `${metric} FACT must match the F4 formula output and trace`, path: factPath });
+      }
+      continue;
+    }
+    const inputExpectations: Partial<Record<typeof metric, { value: number; inputField: string }>> = {
+      lower_spec_limit: { value: worksheet.calculationResult.capability.lowerSpecLimit, inputField: "capability.lowerSpecLimit" },
+      upper_spec_limit: { value: worksheet.calculationResult.capability.upperSpecLimit, inputField: "capability.upperSpecLimit" },
+      target_cpk: { value: worksheet.calculationResult.capability.targetCpk, inputField: "capability.targetCpk" },
+      target_sigma: { value: worksheet.calculationResult.capability.targetSigmaLevel, inputField: "capability.targetSigmaLevel" },
+    };
+    const inputExpectation = inputExpectations[metric];
+    if (inputExpectation !== undefined) {
+      const content = fact.content as z.infer<typeof interpretationCalculationInputNumericFactContentSchema>;
+      if (content.provenanceKind !== "calculation_input"
+        || !nearlyEqual(content.value, inputExpectation.value)
+        || content.inputField !== inputExpectation.inputField) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: `${metric} FACT must match the F4 calculation input`, path: factPath });
+      }
+      continue;
+    }
+    if (metric === "recommended_method") {
+      const content = fact.content as z.infer<typeof interpretationRecommendedMethodCalculationInputFactContentSchema>;
+      const recommendation = worksheet.calculationResult.recommendation;
+      if (content.provenanceKind !== "calculation_input"
+        || content.inputField !== "recommendation.method"
+        || content.method !== recommendation.method
+        || content.reason !== recommendation.reason
+        || content.refer3d !== recommendation.refer3d
+        || content.criticality !== recommendation.criticality
+        || content.criticalityRisk !== recommendation.criticalityRisk) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "recommended_method FACT must match the F4 recommendation", path: factPath });
+      }
+      continue;
+    }
+    const content = fact.content as z.infer<typeof interpretationDerivedAchievedSigmaFactContentSchema>;
+    const expectedOutputFields = ["capability.lowerZ", "capability.upperZ"];
+    const expectedTrace = expectedOutputFields.flatMap((outputField) => (
+      worksheet.calculationResult.traceRecords.filter((trace) => trace.outputField === outputField)
+    ));
+    if (content.provenanceKind !== "derived_from_formula_outputs"
+      || !nearlyEqual(content.value, Math.min(
+        worksheet.calculationResult.capability.lowerZ,
+        worksheet.calculationResult.capability.upperZ,
+      ))
+      || JSON.stringify(content.sourceOutputFields) !== JSON.stringify(expectedOutputFields)
+      || JSON.stringify(content.traceRecords) !== JSON.stringify(expectedTrace)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "achieved_sigma FACT must match the F4 derived outputs and traces", path: factPath });
+    }
+  }
 
   const contributionFacts: Array<{
     statementId: string;
@@ -4944,6 +5154,11 @@ const f5CompletedWorksheetResultSchema = z.object({
       if (!nearlyEqual(item.contributionPercent, factor.contribution * 100)) {
         context.addIssue({ code: z.ZodIssueCode.custom, message: "contributor percentage must match the F4 factor", path: [...itemPath, "contributionPercent"] });
       }
+      for (const field of ["halfTolerance", "sigma", "unit"] as const) {
+        if (item[field] !== factor[field]) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: `contributor ${field} must match the F4 factor`, path: [...itemPath, field] });
+        }
+      }
     }
     const governanceRow = governanceRowBySource.get(sourceKey(item.source));
     if (governanceRow !== undefined) {
@@ -4974,10 +5189,23 @@ const f5CompletedWorksheetResultSchema = z.object({
       }
     }
     item.relatedStatementIds.forEach((statementId, relatedIndex) => {
-      if (statementById.get(statementId)?.type !== "FACT") {
-        context.addIssue({ code: z.ZodIssueCode.custom, message: "related contributor statement must identify a FACT", path: [...itemPath, "relatedStatementIds", relatedIndex] });
+      if (!statementById.has(statementId)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "related contributor statement must exist", path: [...itemPath, "relatedStatementIds", relatedIndex] });
       }
     });
+    const relatedStatements = item.relatedStatementIds.map((statementId) => statementById.get(statementId));
+    if (item.reasonCodes.includes("contribution_concentration") && !relatedStatements.some((statement) => (
+      statement?.type === "SIGNAL" && "entryId" in statement.content
+        && statement.content.entryId === "root-cause-contributor-concentration"
+    ))) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "contribution concentration reason requires its F0 SIGNAL", path: [...itemPath, "reasonCodes"] });
+    }
+    if (item.reasonCodes.includes("identifier_governance_gap") && !relatedStatements.some((statement) => (
+      statement?.type === "SIGNAL" && "signalKind" in statement.content
+        && statement.content.signalKind === "identifier_governance_gap"
+    ))) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "identifier governance reason requires its governance SIGNAL", path: [...itemPath, "reasonCodes"] });
+    }
     if (itemIndex > 0) {
       const previous = contributorItems[itemIndex - 1]!;
       if (item.contributionPercent > previous.contributionPercent
@@ -4999,8 +5227,27 @@ const f5CompletedWorksheetResultSchema = z.object({
 const f5InputRejectedWorksheetResultSchema = z.object({
   worksheetName: z.string().min(1),
   status: z.literal("input_rejected"),
-  issues: z.array(z.object({ reasonCode: z.string().min(1), message: z.string().min(1) }).strict()).min(1),
-}).strict();
+  reasonCode: z.enum([
+    "artifact_missing",
+    "artifact_identity_mismatch",
+    "artifact_contract_invalid",
+    "interpretation_failed",
+  ]),
+  artifactReference: z.string().refine((reference) => {
+    const worksheetReference = reference.slice("worksheet:".length);
+    return reference.startsWith("worksheet:")
+      && worksheetReference.length > 0
+      && !/[\\/]/.test(worksheetReference)
+      && [...worksheetReference].every((character) => {
+        const codePoint = character.codePointAt(0)!;
+        return codePoint >= 32 && codePoint !== 127;
+      });
+  }),
+}).strict().superRefine((worksheet, context) => {
+  if (worksheet.artifactReference !== `worksheet:${worksheet.worksheetName}`) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "artifactReference must identify the rejected worksheet", path: ["artifactReference"] });
+  }
+});
 
 const f5WorksheetResultSchema = z.union([
   f5CompletedWorksheetResultSchema,
@@ -5014,7 +5261,7 @@ export const f5DataInterpretationResultSchema = z.object({
   status: z.enum(["completed", "partially_completed", "input_rejected"]),
   interpretationVersion: z.literal("f5-data-interpretation-v1"),
   knowledgeBaseVersion: z.literal("interpretation-rules-v1"),
-  workbook: z.object({ fileName: z.string().min(1), contentHash: sha256Schema }).strict(),
+  workbook: z.object({ fileName: workbookCatalogFileNameSchema, contentHash: sha256Schema }).strict(),
   worksheets: z.array(f5WorksheetResultSchema).min(1),
   summary: z.object({
     worksheetCount: z.number().int().positive(),

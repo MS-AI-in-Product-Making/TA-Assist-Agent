@@ -2,6 +2,7 @@ import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { f5DataInterpretationResultSchema } from "../packages/contracts/dist/contracts.js";
 import { createCalculation } from "../packages/workbook-catalog/src/calculation.ts";
 import { createF5DataInterpretation } from "../packages/workbook-catalog/src/f5-data-interpretation.ts";
 import { renderF5Report } from "./f5-report.mjs";
@@ -163,10 +164,8 @@ function withRejectedWorksheet(report, onlyRejected = false) {
   const rejected = {
     worksheetName: "Rejected|Sheet",
     status: "input_rejected",
-    issues: [{
-      reasonCode: "artifact|invalid",
-      message: "C:\\controlled\\secret.xlsx\nAuthorization: Bearer token-value hiddenReasoning=private password=secret workbookBytes=raw-data",
-    }],
+    reasonCode: "artifact_contract_invalid",
+    artifactReference: "worksheet:Rejected|Sheet",
   };
   if (onlyRejected) {
     return {
@@ -195,6 +194,39 @@ function chapter(markdown, heading, nextHeading) {
   const start = markdown.indexOf(heading);
   const end = nextHeading === undefined ? markdown.length : markdown.indexOf(nextHeading, start);
   return markdown.slice(start, end);
+}
+
+function toleranceStatusReport(status) {
+  if (status === "not_evaluated") return completedReport();
+  if (status === "needs_review") return completedReport({ observations: [observation()] });
+  if (status === "insufficient_evidence") {
+    return completedReport({ observations: [observation({ confidence: "low" })] });
+  }
+
+  const scopes = [
+    "tolerance_loop_closure",
+    "datum_chain",
+    "assembly_datum_face",
+    "stack_start",
+    "direction",
+    "cross_subsystem",
+    "non_geometric_variable",
+    "long_dimension_chain",
+  ];
+  const report = clone(status === "supported"
+    ? completedReport({ observations: scopes.map((scope) => observation({ scope, confidence: "high" })) })
+    : completedReport());
+  const worksheet = report.worksheets[0];
+  worksheet.sections.toleranceChainValidity.status = status;
+  worksheet.sections.toleranceChainValidity.items = worksheet.sections.toleranceChainValidity.items.map((item) => {
+    if (status === "not_applicable") return { ...item, status, relatedStatementIds: [] };
+    const imageFact = worksheet.statements.find((statement) => (
+      statement.type === "FACT" && statement.content.provenanceKind === "image_observation"
+        && statement.content.scope === item.scope
+    ));
+    return { ...item, status, relatedStatementIds: [imageFact.statementId], clarificationIds: [] };
+  });
+  return report;
 }
 
 describe("renderF5Report", () => {
@@ -227,9 +259,74 @@ describe("renderF5Report", () => {
     expect(capabilityChapter).toContain("sheetName=02_Performance_Rules");
     expect(capabilityChapter).toContain("sourceRange=A2:H4");
     expect(capabilityChapter).toContain("sourceFileHash=e3e1954233e94c058088c5084b9a27a7847efc74fbf8a26f51584c40ca4f9fa5");
+    for (const metric of [
+      "achieved_sigma",
+      "cp",
+      "cpk",
+      "lower_spec_limit",
+      "recommended_method",
+      "rss_sigma",
+      "target_cpk",
+      "target_sigma",
+      "total_dpm",
+      "upper_spec_limit",
+      "yield",
+    ]) {
+      expect(capabilityChapter).toContain(`| ${metric} |`);
+    }
     expect(contributorChapter).toContain("factorReference");
+    expect(contributorChapter).toContain("halfTolerance");
+    expect(contributorChapter).toContain("sigma");
+    expect(contributorChapter).toContain("unit");
+    expect(contributorChapter).toContain("reasonCodes");
+    expect(contributorChapter).toContain("relatedStatementIds");
     expect(contributorChapter).toContain("governance FACT=f5-fact-f3-governance-1");
     expect(contributorChapter).toContain("Worksheet=Analysis-A; Table=table-a; Row=2");
+    expect(contributorChapter).toContain("contribution_concentration");
+    expect(contributorChapter).toContain("root-cause-signal-root-cause-contributor-concentration");
+    expect(contributorChapter).toContain("#### SIGNAL root-cause-signal-root-cause-contributor-concentration");
+    expect(contributorChapter).toContain("| entryId | root-cause-contributor-concentration |");
+    expect(contributorChapter).toContain("| effectiveVersion | interpretation-rules-v1 |");
+    expect(contributorChapter).toContain("| applicability | analysisDimension=one-dimensional; method=rss |");
+    expect(contributorChapter).toContain("| requiresEngineeringReview | true |");
+    expect(contributorChapter).toContain("| relatedFactReferences | contributors |");
+  });
+
+  it("renders the fixed tolerance status table with every scope and its trace references", () => {
+    const report = completedReport({ observations: [observation()] });
+    const worksheet = report.worksheets[0];
+    const markdown = chapter(
+      renderF5Report(report),
+      "## 1. 公差链有效性",
+      "## 2. 能力与规格对比",
+    );
+
+    expect(markdown).toContain("| scope | status | relatedStatementIds | clarificationIds |");
+    expect(worksheet.sections.toleranceChainValidity.items).toHaveLength(8);
+    for (const item of worksheet.sections.toleranceChainValidity.items) {
+      expect(markdown).toContain(`| ${item.scope} | ${item.status} |`);
+      for (const statementId of item.relatedStatementIds) expect(markdown).toContain(statementId);
+      for (const clarificationId of item.clarificationIds) expect(markdown).toContain(clarificationId);
+    }
+  });
+
+  it("renders complete capability FACT provenance details", () => {
+    const markdown = chapter(
+      renderF5Report(completedReport()),
+      "## 2. 能力与规格对比",
+      "## 3. 主要贡献因子",
+    );
+
+    expect(markdown).toContain("| 类型 | statementId | metric | value | unit | provenance | detail |");
+    expect(markdown).toContain("outputField=capability.cpk");
+    expect(markdown).toContain("formulaId=cpk-v1");
+    expect(markdown).toContain("formulaVersion=excel-ta-v1");
+    expect(markdown).toContain("sourceCells=Analysis-A\\!B2");
+    expect(markdown).toContain("inputField=capability.targetCpk");
+    expect(markdown).toContain("method=rss_1d; reason=factor_count_4_to_10; inputField=recommendation.method");
+    expect(markdown).toContain("sourceOutputFields=capability.lowerZ, capability.upperZ");
+    expect(markdown).toContain("outputField=capability.lowerZ; formulaId=z-lower-v1");
+    expect(markdown).toContain("outputField=capability.upperZ; formulaId=z-upper-v1");
   });
 
   it("uses real contained roots to calculate a relative image link", () => {
@@ -326,18 +423,15 @@ describe("renderF5Report", () => {
     expect(markdown).not.toContain(outsideRoot);
   });
 
-  it("escapes Markdown tables and redacts Windows paths and credentials", () => {
+  it("escapes Markdown tables and renders only controlled rejection metadata", () => {
     const markdown = renderF5Report(withRejectedWorksheet(completedReport()));
 
     expect(markdown).toContain("factor\\|one");
     expect(markdown).toContain("DRAW\\|1");
     expect(markdown).toContain("Rejected\\|Sheet");
-    expect(markdown).toContain("artifact\\|invalid");
-    expect(markdown).toContain("[redacted-local-path]");
-    expect(markdown).toContain("Authorization: [redacted]");
-    expect(markdown).not.toContain("secret.xlsx");
-    expect(markdown).not.toContain("token-value");
-    expect(markdown).not.toMatch(/hiddenReasoning|password|workbookBytes|private|raw-data/i);
+    expect(markdown).toContain("artifact_contract_invalid");
+    expect(markdown).toContain("worksheet:Rejected\\|Sheet");
+    expect(markdown).not.toMatch(/message|hiddenReasoning|password|workbookBytes|token/i);
   });
 
   it("neutralizes raw HTML and Markdown injection in worksheet, factor, clarification, and assumption text", () => {
@@ -347,7 +441,8 @@ describe("renderF5Report", () => {
     worksheet.clarifications[0].missingEvidence = ["<img src=x>", "[x](javascript:alert(1))"];
     worksheet.assumptions[0].statement = "<script>alert(1)</script>\n1. injected-list";
     worksheet.assumptions[0].source = "[source](javascript:alert(1)) & <unsafe>";
-    report.worksheets[1].worksheetName = "<script>alert(1)</script>\n# injected-heading";
+    report.worksheets[1].worksheetName = "<img src=x onerror=alert(1)> # injected-heading";
+    report.worksheets[1].artifactReference = `worksheet:${report.worksheets[1].worksheetName}`;
 
     const markdown = renderF5Report(report);
 
@@ -360,45 +455,48 @@ describe("renderF5Report", () => {
     expect(markdown).not.toMatch(/^(?:-|\d+\.)\s+injected-list$/m);
   });
 
-  it("redacts spaced Windows, UNC, POSIX paths and multi-word sensitive values up to safe delimiters", () => {
+  it("renders an all-rejected report without accepting path-like artifact references", () => {
     const report = withRejectedWorksheet(completedReport(), true);
-    report.worksheets[0].issues[0].message = [
-      "windows=C:\\Users\\Jane Doe\\secret.xlsx; safeField=visible",
-      "unc=\\\\server\\Team Share\\secret file.xlsx; safeField2=visible-two",
-      "posix=/home/jane/secret.xlsx; safeField3=visible-three",
-      "token=multi word secret; safeField4=visible-four",
-      "Authorization: Bearer multi word credential; safeField5=visible-five",
-    ].join("\n");
 
     const markdown = renderF5Report(report);
 
-    expect(markdown.match(/\[redacted-local-path\]/g)).toHaveLength(3 * 5);
-    expect(markdown.match(/\[redacted(?:-sensitive-field)?\]/g)?.length).toBeGreaterThanOrEqual(2 * 5);
-    expect(markdown).toContain("safeField=visible");
-    expect(markdown).toContain("safeField5=visible-five");
-    expect(markdown).not.toMatch(/Jane Doe|Team Share|secret\.xlsx|secret file\.xlsx|multi word secret|multi word credential/);
+    expect(markdown).toContain("根状态：`input_rejected`");
+    expect(markdown).toContain("worksheet:Rejected\\|Sheet");
+    const unsafe = clone(report);
+    unsafe.worksheets[0].artifactReference = "C:\\private\\Rejected.xlsx";
+    expect(() => renderF5Report(unsafe)).toThrow("Invalid F5 report.");
   });
 
-  it("renders completed, partially_completed, input_rejected, and all tolerance page statuses independently", () => {
+  it("renders completed, partially_completed, input_rejected, and contract-valid tolerance status aggregation", () => {
     const completed = completedReport();
     expect(renderF5Report(completed)).toContain("根状态：`completed`");
     expect(renderF5Report(withRejectedWorksheet(completed))).toContain("根状态：`partially_completed`");
     expect(renderF5Report(withRejectedWorksheet(completed, true))).toContain("根状态：`input_rejected`");
 
-    const statusReports = [
-      completed,
-      completedReport({ observations: [observation()] }),
-      completedReport({ observations: [observation({ confidence: "low" })] }),
-      clone(completed),
-      clone(completedReport({ observations: [observation({ confidence: "high" })] })),
-    ];
-    statusReports[3].worksheets[0].sections.toleranceChainValidity.status = "not_applicable";
-    statusReports[4].worksheets[0].sections.toleranceChainValidity.status = "supported";
     const statuses = ["not_evaluated", "needs_review", "insufficient_evidence", "not_applicable", "supported"];
+    const severity = { supported: 0, not_applicable: 0, not_evaluated: 1, insufficient_evidence: 2, needs_review: 3 };
 
-    statuses.forEach((status, index) => {
-      expect(renderF5Report(statusReports[index])).toContain(`章节状态：\`${status}\``);
-    });
+    for (const status of statuses) {
+      const report = toleranceStatusReport(status);
+      const toleranceSection = report.worksheets[0].sections.toleranceChainValidity;
+      expect(toleranceSection.status).toBe(status);
+      const aggregateStatus = toleranceSection.items.reduce((highest, item) => (
+        severity[item.status] > severity[highest] ? item.status : highest
+      ), toleranceSection.items[0].status);
+      expect(aggregateStatus).toBe(status);
+      const parsed = f5DataInterpretationResultSchema.safeParse(report);
+      expect(parsed.success, parsed.success ? status : JSON.stringify(parsed.error.issues)).toBe(true);
+      expect(() => renderF5Report(report), status).not.toThrow();
+      const toleranceMarkdown = chapter(
+        renderF5Report(report),
+        "## 1. 公差链有效性",
+        "## 2. 能力与规格对比",
+      );
+      expect(toleranceMarkdown).toContain(`章节状态：\`${status}\``);
+      for (const item of toleranceSection.items) {
+        expect(toleranceMarkdown).toContain(`| ${item.scope} | ${item.status} |`);
+      }
+    }
     const partialMarkdown = renderF5Report(withRejectedWorksheet(completed));
     expect(partialMarkdown).toContain("### Worksheet: Analysis-A");
     expect(partialMarkdown).toContain("### Worksheet: Rejected\\|Sheet");
@@ -416,7 +514,7 @@ describe("renderF5Report", () => {
     report.worksheets[0].assumptions[1].status = "rejected";
     const markdown = renderF5Report(report);
 
-    expect(markdown).toContain("- SIGNAL `f5-signal-structural-evidence-review`：需要 ME 评审");
+    expect(markdown).toContain("- SIGNAL `f5-signal-structural-evidence-review-stack_start`：需要 ME 评审");
     expect(markdown).toContain("reviewStatus=unreviewed; 需要 ME 评审；观察证据，非确认事实");
     expect(markdown).toContain("观察证据，非确认事实");
     expect(markdown).toContain("reasonCode");
@@ -431,7 +529,11 @@ describe("renderF5Report", () => {
   });
 
   it("renders a legal identifier governance gap SIGNAL with exact ME review text and governance traceability", () => {
-    const markdown = renderF5Report(completedReport({ governanceGap: true }));
+    const markdown = chapter(
+      renderF5Report(completedReport({ governanceGap: true })),
+      "## 3. 主要贡献因子",
+      "## 4. 合理公差范围",
+    );
 
     expect(markdown.split("\n")).toContain("- SIGNAL `f5-signal-identifier-governance-gap-1`：需要 ME 评审");
     expect(markdown).toContain("- triggerFactReferences: f5-fact-f3-governance-1");
@@ -440,11 +542,12 @@ describe("renderF5Report", () => {
 
   it("keeps both F6 chapters delegated and options unranked without quantitative or recommendation claims", () => {
     const markdown = renderF5Report(completedReport());
+    const delegatedChapters = chapter(markdown, "## 4. 合理公差范围");
 
-    expect(markdown.match(/delegated_to_f6/g)?.length).toBeGreaterThanOrEqual(2);
-    expect(markdown).toContain("OPTION");
-    expect(markdown).toContain("未排序");
-    expect(markdown).not.toMatch(/量化收益|量化成本|排名|推荐|\brecommended\b|\bpreferred\b/i);
+    expect(delegatedChapters.match(/delegated_to_f6/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(delegatedChapters).toContain("OPTION");
+    expect(delegatedChapters).toContain("未排序");
+    expect(delegatedChapters).not.toMatch(/量化收益|量化成本|排名|推荐|\brecommended\b|\bpreferred\b/i);
   });
 
   it("throws a generic controlled error for invalid schema input without echoing values", () => {

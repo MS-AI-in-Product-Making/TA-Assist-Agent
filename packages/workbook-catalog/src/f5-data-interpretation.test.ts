@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { describe, expect, it, vi } from "vitest";
 import {
+  f5DataInterpretationRequestSchema,
   f5DataInterpretationResultSchema,
   type F5DataInterpretationRequest,
 } from "@ai-assist/contracts";
@@ -158,6 +159,29 @@ function request(options: {
   };
 }
 
+function requestForWorksheets(worksheetNames: string[]): F5DataInterpretationRequest {
+  const input = request();
+  input.worksheets = worksheetNames.map((worksheetName, index) => {
+    const worksheet = structuredClone(input.worksheets[0]!);
+    worksheet.worksheetName = worksheetName;
+    worksheet.imageReference = {
+      ...worksheet.imageReference,
+      worksheetName,
+      relativePath: `artifacts/analysis-${index + 1}.png`,
+    };
+    worksheet.calculationResult.worksheetSelection.worksheetName = worksheetName;
+    for (const factor of worksheet.calculationResult.factors) {
+      factor.source.worksheetName = worksheetName;
+    }
+    for (const row of worksheet.governanceRows) {
+      row.source.worksheetName = worksheetName;
+      row.imageReference = structuredClone(worksheet.imageReference);
+    }
+    return worksheet;
+  });
+  return f5DataInterpretationRequestSchema.parse(input);
+}
+
 function observation(overrides: Partial<F5DataInterpretationRequest["worksheets"][number]["imageObservations"][number]> = {}) {
   return {
     scope: "stack_start" as const,
@@ -185,6 +209,25 @@ function captureThrown(action: () => unknown): unknown {
 }
 
 describe("createF5DataInterpretation", () => {
+  it.each([
+    "C:\\private\\Demo.xlsx",
+    "\\\\server\\share\\Demo.xlsx",
+    "/home/private/Demo.xlsx",
+    "subdir/name.xlsx",
+    "../Demo.xlsx",
+    "Demo\u0001.xlsx",
+  ])("rejects unsafe workbook basename %j", (fileName) => {
+    const input = request();
+    input.workbook.fileName = fileName;
+    expect(f5DataInterpretationRequestSchema.safeParse(input).success).toBe(false);
+  });
+
+  it("accepts a normal workbook basename", () => {
+    const input = request();
+    input.workbook.fileName = "Demo.xlsx";
+    expect(f5DataInterpretationRequestSchema.safeParse(input).success).toBe(true);
+  });
+
   it("calls objective interpretation once per worksheet and builds all fixed sections", () => {
     const createObjectiveInterpretation = vi.fn(createInterpretation);
     const result = createF5DataInterpretation(request(), { createObjectiveInterpretation });
@@ -212,13 +255,90 @@ describe("createF5DataInterpretation", () => {
     expect(f5DataInterpretationResultSchema.parse(result)).toEqual(result);
   });
 
-  it("maps only capability FACT/RULE and contribution FACT/SIGNAL/OPTION with complete RULE metadata", () => {
-    const result = createF5DataInterpretation(request());
+  it.each([
+    ["throw", () => { throw new Error("C:\\private\\objective.txt token=secret"); }],
+    ["invalid result", () => ({ status: "completed" })],
+    ["trace prerequisite", (objectiveInput: Parameters<typeof createInterpretation>[0]) => {
+      const objective = structuredClone(createInterpretation(objectiveInput));
+      if (objective.status !== "completed") throw new Error("expected completed objective fixture");
+      const tracedFact = objective.statements.find((statement) => (
+        statement.type === "FACT" && statement.content.provenanceKind === "formula_output"
+      ));
+      if (tracedFact?.type !== "FACT" || tracedFact.content.provenanceKind !== "formula_output") {
+        throw new Error("expected traced objective FACT fixture");
+      }
+      tracedFact.content.traceRecords = [];
+      return objective;
+    }],
+  ])("isolates an objective %s failure to its worksheet and preserves selection order", (_case, failObjective) => {
+    const input = requestForWorksheets(["Analysis-A", "Analysis-B"]);
+    const createObjectiveInterpretation = vi.fn((objectiveInput: Parameters<typeof createInterpretation>[0]) => {
+      if (objectiveInput.calculationResult.worksheetSelection.worksheetName === "Analysis-B") {
+        return failObjective(objectiveInput) as ReturnType<typeof createInterpretation>;
+      }
+      return createInterpretation(objectiveInput);
+    });
+
+    const result = createF5DataInterpretation(input, { createObjectiveInterpretation });
+
+    expect(result.status).toBe("partially_completed");
+    expect(result.worksheets.map(({ worksheetName }) => worksheetName)).toEqual(["Analysis-A", "Analysis-B"]);
+    expect(result.worksheets[0]).toMatchObject({ worksheetName: "Analysis-A", status: "completed" });
+    expect(result.worksheets[1]).toEqual({
+      worksheetName: "Analysis-B",
+      status: "input_rejected",
+      reasonCode: "interpretation_failed",
+      artifactReference: "worksheet:Analysis-B",
+    });
+    expect(result.summary).toMatchObject({
+      worksheetCount: 2,
+      completedWorksheetCount: 1,
+      inputRejectedWorksheetCount: 1,
+    });
+    expect(JSON.stringify(result)).not.toMatch(/private|objective\.txt|token|secret/i);
+  });
+
+  it("returns an input_rejected root when objective interpretation fails for every worksheet", () => {
+    const result = createF5DataInterpretation(
+      requestForWorksheets(["Analysis-A", "Analysis-B"]),
+      { createObjectiveInterpretation: vi.fn(() => { throw new Error("objective failed"); }) },
+    );
+
+    expect(result.status).toBe("input_rejected");
+    expect(result.worksheets).toEqual([
+      {
+        worksheetName: "Analysis-A",
+        status: "input_rejected",
+        reasonCode: "interpretation_failed",
+        artifactReference: "worksheet:Analysis-A",
+      },
+      {
+        worksheetName: "Analysis-B",
+        status: "input_rejected",
+        reasonCode: "interpretation_failed",
+        artifactReference: "worksheet:Analysis-B",
+      },
+    ]);
+    expect(result.summary).toEqual({
+      worksheetCount: 2,
+      completedWorksheetCount: 0,
+      inputRejectedWorksheetCount: 2,
+      statementCount: 0,
+      clarificationCount: 0,
+      assumptionCount: 0,
+    });
+    expect(f5DataInterpretationResultSchema.parse(result)).toEqual(result);
+  });
+
+  it("preserves the complete objective capability FACT set with exact F4 values and trace", () => {
+    const input = request();
+    const result = createF5DataInterpretation(input);
     const worksheet = result.worksheets[0]!;
     if (worksheet.status !== "completed") throw new Error("expected completed worksheet");
 
     const capabilityIds = new Set(worksheet.sections.capabilityVsSpecification.statementIds);
-    expect(worksheet.statements.filter(({ statementId }) => capabilityIds.has(statementId))).toEqual(
+    const capabilityStatements = worksheet.statements.filter(({ statementId }) => capabilityIds.has(statementId));
+    expect(capabilityStatements).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ type: "FACT", content: expect.objectContaining({ metric: "cpk" }) }),
         expect.objectContaining({
@@ -232,13 +352,41 @@ describe("createF5DataInterpretation", () => {
         }),
       ]),
     );
-    expect(worksheet.statements.some((statement) => statement.type === "FACT" && statement.section === "calculation-summary")).toBe(false);
+    const capabilityFacts = capabilityStatements.filter((statement) => statement.type === "FACT");
+    expect(capabilityFacts.map((statement) => statement.content.metric).sort()).toEqual([
+      "achieved_sigma",
+      "cp",
+      "cpk",
+      "lower_spec_limit",
+      "recommended_method",
+      "rss_sigma",
+      "target_cpk",
+      "target_sigma",
+      "total_dpm",
+      "upper_spec_limit",
+      "yield",
+    ]);
+    const factByMetric = new Map(capabilityFacts.map((statement) => [statement.content.metric, statement]));
+    expect(factByMetric.get("cp")?.content).toMatchObject({
+      value: input.worksheets[0]!.calculationResult.capability.cp,
+      outputField: "capability.cp",
+      traceRecords: [input.worksheets[0]!.calculationResult.traceRecords.find(({ outputField }) => outputField === "capability.cp")],
+    });
+    expect(factByMetric.get("rss_sigma")?.content).toMatchObject({
+      value: input.worksheets[0]!.calculationResult.system.rssSigma,
+      outputField: "system.rssSigma",
+      traceRecords: [input.worksheets[0]!.calculationResult.traceRecords.find(({ outputField }) => outputField === "system.rssSigma")],
+    });
+    expect(factByMetric.get("recommended_method")?.content).toMatchObject({
+      method: input.worksheets[0]!.calculationResult.recommendation.method,
+    });
     expect(worksheet.statements.some((statement) => statement.type === "SIGNAL" && "entryId" in statement.content)).toBe(true);
     expect(worksheet.statements.some((statement) => statement.type === "OPTION" && statement.content.rank === null)).toBe(true);
   });
 
   it("orders every contributor descending and resolves ties by original F4 index", () => {
-    const result = createF5DataInterpretation(request());
+    const input = request();
+    const result = createF5DataInterpretation(input);
     const worksheet = result.worksheets[0]!;
     if (worksheet.status !== "completed") throw new Error("expected completed worksheet");
     const items = worksheet.sections.majorContributors.items;
@@ -253,9 +401,87 @@ describe("createF5DataInterpretation", () => {
       }
     }
     for (const item of items) {
+      const factor = input.worksheets[0]!.calculationResult.factors[item.factorIndex]!;
       expect(item.factorReference).toBe(`${item.source.worksheetName}/${item.source.tableId}/${item.source.sourceRow}`);
-      expect(item.relatedStatementIds).toHaveLength(1);
+      expect(item).toMatchObject({
+        halfTolerance: factor.halfTolerance,
+        sigma: factor.sigma,
+        unit: factor.unit,
+      });
+      expect(item.relatedStatementIds).toContain(`fact-factor-contribution-${item.factorIndex + 1}`);
       expect(item).not.toHaveProperty("partNumber");
+    }
+    const highestContribution = items[0]!.contributionPercent;
+    for (const item of items) {
+      if (item.contributionPercent === highestContribution) {
+        expect(item.reasonCodes).toEqual(["contribution_concentration"]);
+        expect(item.relatedStatementIds).toContain("root-cause-signal-root-cause-contributor-concentration");
+      } else {
+        expect(item.reasonCodes).toEqual([]);
+      }
+    }
+  });
+
+  it("publishes all eight structural scopes in stable order with per-item evidence status and references", () => {
+    const result = createF5DataInterpretation(request({ observations: [
+      observation({ scope: "tolerance_loop_closure", confidence: "low" }),
+      observation({ scope: "datum_chain", confidence: "high", reviewStatus: "rejected" }),
+      observation({ scope: "assembly_datum_face", confidence: "medium" }),
+      observation({ scope: "stack_start", confidence: "high" }),
+    ] }));
+    const worksheet = result.worksheets[0]!;
+    if (worksheet.status !== "completed") throw new Error("expected completed worksheet");
+
+    expect(worksheet.sections.toleranceChainValidity.items.map(({ scope }) => scope)).toEqual([
+      "tolerance_loop_closure",
+      "datum_chain",
+      "assembly_datum_face",
+      "stack_start",
+      "direction",
+      "cross_subsystem",
+      "non_geometric_variable",
+      "long_dimension_chain",
+    ]);
+    expect(worksheet.sections.toleranceChainValidity.items.map(({ status }) => status)).toEqual([
+      "insufficient_evidence",
+      "insufficient_evidence",
+      "needs_review",
+      "needs_review",
+      "not_evaluated",
+      "not_evaluated",
+      "not_evaluated",
+      "not_evaluated",
+    ]);
+    expect(worksheet.sections.toleranceChainValidity.status).toBe("needs_review");
+    for (const item of worksheet.sections.toleranceChainValidity.items) {
+      expect(item.relatedStatementIds.every((id) => worksheet.statements.some(({ statementId }) => statementId === id))).toBe(true);
+      expect(item.clarificationIds.every((id) => worksheet.clarifications.some(({ clarificationId }) => clarificationId === id))).toBe(true);
+      for (const clarificationId of item.clarificationIds) {
+        expect(worksheet.clarifications.find(({ clarificationId: id }) => id === clarificationId)).toMatchObject({
+          section: "toleranceChainValidity",
+          structuralScope: item.scope,
+        });
+      }
+      if (item.status === "needs_review") {
+        expect(item.relatedStatementIds.length).toBeGreaterThan(0);
+        for (const statementId of item.relatedStatementIds) {
+          const statement = worksheet.statements.find(({ statementId: id }) => id === statementId)!;
+          if (statement.type === "FACT" && statement.content.provenanceKind === "image_observation") {
+            expect(statement.content.scope).toBe(item.scope);
+          } else if (statement.type === "SIGNAL" && "signalKind" in statement.content) {
+            const triggerScopes = (statement.content.triggerFactReferences ?? []).map((triggerId) => {
+              const trigger = worksheet.statements.find(({ statementId: id }) => id === triggerId)!;
+              return trigger.type === "FACT" && trigger.content.provenanceKind === "image_observation"
+                ? trigger.content.scope
+                : undefined;
+            });
+            const observationScopes = (statement.content.observationEvidence ?? []).map(({ scope }) => scope);
+            expect([...triggerScopes, ...observationScopes]).toEqual([item.scope]);
+          }
+        }
+      } else {
+        expect(item.clarificationIds.length).toBeGreaterThan(0);
+      }
     }
   });
 
@@ -276,7 +502,7 @@ describe("createF5DataInterpretation", () => {
       observation({ scope: "stack_start", confidence: "high", reviewStatus: "confirmed", confirmedBy: "controlled-reviewer", confirmedAt: "2026-08-11T08:00:00.000Z" }),
       observation({ scope: "cross_subsystem", confidence: "high", reviewStatus: "confirmed", confirmedBy: "controlled-reviewer", confirmedAt: "2026-08-11T08:00:00.000Z" }),
       observation({ scope: "direction", confidence: "high", reviewStatus: "confirmed", confirmedBy: "controlled-reviewer", confirmedAt: "2026-08-11T08:00:00.000Z" }),
-    ], "needs_review", 4, 1],
+    ], "needs_review", 4, 4],
   ] as const)("applies the %s image evidence gate", (imageCase, observations, status, factCount, signalCount) => {
     const result = createF5DataInterpretation(request({ observations: [...observations] }));
     const worksheet = result.worksheets[0]!;
@@ -377,6 +603,7 @@ describe("createF5DataInterpretation", () => {
     const structuralSignal = worksheet.statements.find((statement) => (
       statement.type === "SIGNAL" && "signalKind" in statement.content
         && statement.content.signalKind === "structural_evidence_review"
+        && statement.content.observationEvidence !== undefined
     ));
     expect(structuralSignal).toEqual(expect.objectContaining({
       content: expect.objectContaining({

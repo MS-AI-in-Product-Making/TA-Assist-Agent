@@ -8,6 +8,16 @@ import {
 import { createInterpretation } from "./interpretation-placeholder.js";
 
 const REQUEST_REFERENCE = "f5-data-interpretation-request-v1";
+const STRUCTURAL_SCOPES = [
+  "tolerance_loop_closure",
+  "datum_chain",
+  "assembly_datum_face",
+  "stack_start",
+  "direction",
+  "cross_subsystem",
+  "non_geometric_variable",
+  "long_dimension_chain",
+] as const;
 const STRUCTURAL_ASSUMPTIONS = [
   ["assembly_datum_face", "assembly-datum-face", "The assembly datum face requires engineering confirmation."],
   ["stack_start", "stack-start", "The tolerance stack start requires engineering confirmation."],
@@ -58,13 +68,20 @@ type ObjectiveResult = ReturnType<typeof f5ObjectiveInterpretationCompletedResul
 type CompletedWorksheetResult = Extract<F5DataInterpretationResult["worksheets"][number], { status: "completed" }>;
 type RootStatement = CompletedWorksheetResult["statements"][number];
 
-function mapObjectiveStatements(objective: ObjectiveResult, worksheet: RequestWorksheet): RootStatement[] {
+function rejectedWorksheet(worksheetName: string) {
+  return {
+    worksheetName,
+    status: "input_rejected" as const,
+    reasonCode: "interpretation_failed" as const,
+    artifactReference: `worksheet:${worksheetName}`,
+  };
+}
+
+function mapObjectiveStatements(objective: ObjectiveResult): RootStatement[] {
   const mapped: RootStatement[] = [];
   for (const statement of objective.statements) {
     if (statement.type === "FACT") {
-      if (statement.section === "capability-vs-specification" || statement.section === "major-contributors") {
-        mapped.push(structuredClone(statement));
-      }
+      mapped.push(structuredClone(statement));
       continue;
     }
     if (statement.type === "RULE") {
@@ -113,17 +130,21 @@ function createImageEvidence(worksheet: RequestWorksheet) {
       ...structuredClone(observation),
       imageReference: structuredClone(worksheet.imageReference),
     }));
-  const signals = [{
-    statementId: "f5-signal-structural-evidence-review",
-    type: "SIGNAL" as const,
-    section: "tolerance-chain-validity" as const,
-    content: {
-      signalKind: "structural_evidence_review" as const,
-      requiresEngineeringReview: true as const,
-      ...(facts.length === 0 ? {} : { triggerFactReferences: facts.map(({ statementId }) => statementId) }),
-      ...(mediumEvidence.length === 0 ? {} : { observationEvidence: mediumEvidence }),
-    },
-  }];
+  const signals = usableObservations.map((observation) => {
+    const fact = facts.find(({ content }) => content.scope === observation.scope);
+    const evidence = mediumEvidence.find(({ scope }) => scope === observation.scope);
+    return {
+      statementId: `f5-signal-structural-evidence-review-${observation.scope}`,
+      type: "SIGNAL" as const,
+      section: "tolerance-chain-validity" as const,
+      content: {
+        signalKind: "structural_evidence_review" as const,
+        requiresEngineeringReview: true as const,
+        ...(fact === undefined ? {} : { triggerFactReferences: [fact.statementId] }),
+        ...(evidence === undefined ? {} : { observationEvidence: [evidence] }),
+      },
+    };
+  });
   return {
     status: "needs_review" as const,
     statements: [...facts, ...signals],
@@ -132,55 +153,62 @@ function createImageEvidence(worksheet: RequestWorksheet) {
 
 function structuralClarifications(
   worksheet: RequestWorksheet,
-  status: "supported" | "needs_review" | "not_evaluated" | "insufficient_evidence",
-  imageStatementIds: readonly string[],
 ) {
-  const usableObservations = worksheet.imageObservations.filter(({ confidence, reviewStatus }) => (
-    confidence !== "low" && reviewStatus !== "rejected"
-  ));
-  const observedScopes = new Set(usableObservations.map(({ scope }) => scope));
-  const missingScopes = STRUCTURAL_ASSUMPTIONS
-    .map(([scope]) => scope)
-    .filter((scope) => !observedScopes.has(scope));
-  const observationClarifications = worksheet.imageObservations.flatMap((observation) => {
-    const reasonCode = observation.reviewStatus === "rejected"
-      ? "image_observation_rejected"
-      : observation.confidence === "low"
-        ? "image_observation_low_confidence"
-        : undefined;
+  const observationByScope = new Map(worksheet.imageObservations.map((observation) => [observation.scope, observation]));
+  return STRUCTURAL_SCOPES.flatMap((scope) => {
+    const observation = observationByScope.get(scope);
+    const reasonCode = observation === undefined
+      ? "drawing_evidence_not_evaluated"
+      : observation.reviewStatus === "rejected"
+        ? "image_observation_rejected"
+        : observation.confidence === "low"
+          ? "image_observation_low_confidence"
+          : undefined;
     if (reasonCode === undefined) return [];
     return [{
-      clarificationId: `clarification-${reasonCode}-${observation.scope}`,
+      clarificationId: `clarification-${reasonCode}-${scope}`,
       reasonCode,
       section: "toleranceChainValidity" as const,
-      missingEvidence: [`usable ${observation.scope} image observation`],
+      structuralScope: scope,
+      missingEvidence: [`usable ${scope} image observation`],
       affectedConclusionIds: [] as string[],
       blockingScope: "conclusion" as const,
-      questionForReviewer: `Can the ${observation.scope} image observation be reviewed with acceptable evidence?`,
+      questionForReviewer: `Can the ${scope} image observation be reviewed with acceptable evidence?`,
     }];
   });
-  if (status === "not_evaluated") {
-    return [...observationClarifications, {
-      clarificationId: "clarification-structural-evidence",
-      reasonCode: "drawing_evidence_not_evaluated",
-      section: "toleranceChainValidity" as const,
-      missingEvidence: ["reviewed worksheet image observations"],
-      affectedConclusionIds: [...imageStatementIds],
-      blockingScope: "section" as const,
-      questionForReviewer: "Can the missing structural evidence be reviewed and confirmed?",
-    }];
-  }
-  if (missingScopes.length === 0 || status === "insufficient_evidence") return observationClarifications;
+}
 
-  return [...observationClarifications, {
-    clarificationId: "clarification-structural-evidence",
-    reasonCode: "structural_scope_confirmation_required",
-    section: "toleranceChainValidity" as const,
-    missingEvidence: missingScopes.map((scope) => `confirmed ${scope} evidence`),
-    affectedConclusionIds: [...imageStatementIds],
-    blockingScope: "section" as const,
-    questionForReviewer: "Can the missing structural evidence be reviewed and confirmed?",
-  }];
+function structuralItems(
+  worksheet: RequestWorksheet,
+  imageStatements: readonly RootStatement[],
+  clarifications: ReturnType<typeof structuralClarifications>,
+) {
+  const observationByScope = new Map(worksheet.imageObservations.map((observation) => [observation.scope, observation]));
+  return STRUCTURAL_SCOPES.map((scope) => {
+    const observation = observationByScope.get(scope);
+    const status = observation === undefined
+      ? "not_evaluated" as const
+      : observation.confidence === "low" || observation.reviewStatus === "rejected"
+        ? "insufficient_evidence" as const
+        : "needs_review" as const;
+    const relatedStatementIds = imageStatements.filter((statement) => (
+      (statement.type === "FACT" && statement.content.provenanceKind === "image_observation" && statement.content.scope === scope)
+      || (statement.type === "SIGNAL" && "signalKind" in statement.content
+        && statement.content.signalKind === "structural_evidence_review" && status === "needs_review"
+        && (statement.content.triggerFactReferences?.some((statementId) => imageStatements.some((candidate) => (
+          candidate.statementId === statementId && candidate.type === "FACT"
+            && candidate.content.provenanceKind === "image_observation" && candidate.content.scope === scope
+        ))) === true
+          || statement.content.observationEvidence?.some((evidence) => evidence.scope === scope) === true))
+    )).map(({ statementId }) => statementId);
+    return {
+      scope,
+      status,
+      relatedStatementIds,
+      clarificationIds: clarifications.filter(({ clarificationId }) => clarificationId.endsWith(`-${scope}`))
+        .map(({ clarificationId }) => clarificationId),
+    };
+  });
 }
 
 function structuralAssumptions(worksheet: RequestWorksheet) {
@@ -217,7 +245,7 @@ function createWorksheetResult(
     throw typedRequestError("F5 objective interpretation result is invalid.", "prerequisite_not_ready");
   }
 
-  const objectiveStatements = mapObjectiveStatements(objective.data, worksheet);
+  const objectiveStatements = mapObjectiveStatements(objective.data);
   const contributionFactIdByReference = new Map<string, string>();
   for (const statement of objectiveStatements) {
     if (statement.type === "FACT" && statement.content.provenanceKind !== "image_observation"
@@ -263,10 +291,14 @@ function createWorksheetResult(
       factorName: factor.factorName,
       factorIndex,
       contributionPercent: factor.contribution * 100,
+      halfTolerance: factor.halfTolerance,
+      sigma: factor.sigma,
+      unit: factor.unit,
       source: structuredClone(factor.source),
       drawingNumber: governance.drawingNumber,
       dimId: governance.dimId,
       governanceStatus: governance.governanceStatus,
+      reasonCodes: [] as Array<"contribution_concentration" | "identifier_governance_gap">,
       relatedStatementIds: [contributionFactId],
     };
   }).sort((left, right) => (
@@ -294,14 +326,34 @@ function createWorksheetResult(
       },
     }];
   });
+  const concentrationSignal = objectiveStatements.find((statement) => (
+    statement.type === "SIGNAL" && "entryId" in statement.content
+      && statement.content.entryId === "root-cause-contributor-concentration"
+  ));
+  const highestContribution = Math.max(...contributors.map(({ contributionPercent }) => contributionPercent));
+  for (const contributor of contributors) {
+    if (concentrationSignal !== undefined && contributor.contributionPercent === highestContribution) {
+      contributor.reasonCodes.push("contribution_concentration");
+      contributor.relatedStatementIds.push(concentrationSignal.statementId);
+    }
+    const governanceSignal = governanceSignals.find((signal) => signal.statementId === `f5-signal-identifier-governance-gap-${contributor.factorIndex + 1}`);
+    if (governanceSignal !== undefined) {
+      contributor.reasonCodes.push("identifier_governance_gap");
+      contributor.relatedStatementIds.push(governanceSignal.statementId);
+    }
+  }
   const imageEvidence = createImageEvidence(worksheet);
   const capabilityStatementIds = objectiveStatements.filter((statement) => (
-    statement.section === "capability-vs-specification"
-      && (statement.type === "FACT" || statement.type === "RULE")
+    statement.type === "RULE"
+      || (statement.type === "FACT" && "metric" in statement.content
+        && statement.content.metric !== "factor_contribution")
   )).map(({ statementId }) => statementId);
-  const imageStatementIds = imageEvidence.statements
-    .filter(({ type }) => type === "FACT")
-    .map(({ statementId }) => statementId);
+  const clarifications = structuralClarifications(worksheet);
+  const toleranceItems = structuralItems(worksheet, imageEvidence.statements, clarifications);
+  const toleranceSeverity = { not_evaluated: 1, insufficient_evidence: 2, needs_review: 3 } as const;
+  const toleranceStatus = toleranceItems.reduce((highest, item) => (
+    toleranceSeverity[item.status] > toleranceSeverity[highest] ? item.status : highest
+  ), "not_evaluated" as "not_evaluated" | "insufficient_evidence" | "needs_review");
 
   return {
     worksheetName: worksheet.worksheetName,
@@ -310,18 +362,14 @@ function createWorksheetResult(
     calculationResult: structuredClone(worksheet.calculationResult),
     status: "completed" as const,
     sections: {
-      toleranceChainValidity: { status: imageEvidence.status },
+      toleranceChainValidity: { status: toleranceStatus, items: toleranceItems },
       capabilityVsSpecification: { status: "supported" as const, statementIds: capabilityStatementIds },
       majorContributors: { status: "supported" as const, items: contributors },
       reasonableToleranceRange: { status: "delegated_to_f6" as const },
       designOptimizationAndParallelOptions: { status: "delegated_to_f6" as const },
     },
     statements: [...objectiveStatements, ...governanceFacts, ...imageEvidence.statements, ...governanceSignals],
-    clarifications: structuralClarifications(
-      worksheet,
-      imageEvidence.status,
-      imageStatementIds,
-    ),
+    clarifications,
     assumptions: structuralAssumptions(worksheet),
   };
 }
@@ -344,23 +392,33 @@ export function createF5DataInterpretation(
   if (!parsed.success) throw typedRequestError("F5 data interpretation request is invalid.");
 
   const createObjectiveInterpretation = dependencies.createObjectiveInterpretation ?? createInterpretation;
-  const worksheets = parsed.data.worksheets.map((worksheet) => (
-    createWorksheetResult(worksheet, createObjectiveInterpretation)
-  ));
+  const worksheets = parsed.data.worksheets.map((worksheet) => {
+    try {
+      return createWorksheetResult(worksheet, createObjectiveInterpretation);
+    } catch {
+      return rejectedWorksheet(worksheet.worksheetName);
+    }
+  });
+  const completedWorksheets = worksheets.filter((worksheet) => worksheet.status === "completed");
+  const inputRejectedWorksheetCount = worksheets.length - completedWorksheets.length;
   const summary = {
     worksheetCount: worksheets.length,
-    completedWorksheetCount: worksheets.length,
-    inputRejectedWorksheetCount: 0,
-    statementCount: worksheets.reduce((count, worksheet) => count + worksheet.statements.length, 0),
-    clarificationCount: worksheets.reduce((count, worksheet) => count + worksheet.clarifications.length, 0),
-    assumptionCount: worksheets.reduce((count, worksheet) => count + worksheet.assumptions.length, 0),
+    completedWorksheetCount: completedWorksheets.length,
+    inputRejectedWorksheetCount,
+    statementCount: completedWorksheets.reduce((count, worksheet) => count + worksheet.statements.length, 0),
+    clarificationCount: completedWorksheets.reduce((count, worksheet) => count + worksheet.clarifications.length, 0),
+    assumptionCount: completedWorksheets.reduce((count, worksheet) => count + worksheet.assumptions.length, 0),
   };
 
   return validatedResult({
     contractVersion: parsed.data.contractVersion,
     outputClassification: "confidential",
     featureId: "F5",
-    status: "completed",
+    status: inputRejectedWorksheetCount === 0
+      ? "completed"
+      : completedWorksheets.length === 0
+        ? "input_rejected"
+        : "partially_completed",
     interpretationVersion: "f5-data-interpretation-v1",
     knowledgeBaseVersion: parsed.data.knowledgeBaseVersion,
     workbook: structuredClone(parsed.data.workbook),

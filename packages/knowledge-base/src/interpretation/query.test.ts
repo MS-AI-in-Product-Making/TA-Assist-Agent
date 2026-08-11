@@ -78,8 +78,10 @@ describe("interpretation rule evaluation", () => {
     expect(matched).toMatchObject({
       effectiveVersion: matchedEntry.provenance.effectiveVersion,
       applicability: matchedEntry.applicability,
+      evidence: matchedEntry.provenance,
     });
     expect(matched?.applicability).not.toBe(matchedEntry.applicability);
+    expect(matched?.evidence).not.toBe(matchedEntry.provenance);
   });
 
   it("does not activate below-target guidance for equality with contributors", () => {
@@ -381,13 +383,22 @@ describe("interpretation rule loading", () => {
   it("loads only the strict reviewed v1 request", () => {
     const rules = loadInterpretationRules({ version: "interpretation-rules-v1" });
     const result = rules.evaluateInterpretationRules(cpkRequest);
+    const commonProvenance = {
+      classification: "internal",
+      sourceAlias: "ta-interpretation-rules-v4-2",
+      sourceFileHash: "e3e1954233e94c058088c5084b9a27a7847efc74fbf8a26f51584c40ca4f9fa5",
+      sourceVersion: "4.2",
+      owner: "TA knowledge steward",
+      confidence: 0.9,
+      effectiveVersion: "interpretation-rules-v1",
+      changeSummary: "Reviewed TA interpretation guidance from source version 4.2.",
+    };
     expect(result.knowledgeBaseVersion).toBe("interpretation-rules-v1");
     expect(result.matchedRules.map(({ entryType, evidence }) => ({ entryType, evidence }))).toEqual([
       {
         entryType: "performance-rule",
         evidence: {
-          sourceAlias: "ta-interpretation-rules-v4-2",
-          sourceFileHash: "e3e1954233e94c058088c5084b9a27a7847efc74fbf8a26f51584c40ca4f9fa5",
+          ...commonProvenance,
           sheetName: "02_Performance_Rules",
           sourceRange: "A2:H4",
         },
@@ -395,8 +406,7 @@ describe("interpretation rule loading", () => {
       {
         entryType: "root-cause-signal",
         evidence: {
-          sourceAlias: "ta-interpretation-rules-v4-2",
-          sourceFileHash: "e3e1954233e94c058088c5084b9a27a7847efc74fbf8a26f51584c40ca4f9fa5",
+          ...commonProvenance,
           sheetName: "03_Root_Cause_Library",
           sourceRange: "A4:H4",
         },
@@ -404,8 +414,7 @@ describe("interpretation rule loading", () => {
       {
         entryType: "improvement-option",
         evidence: {
-          sourceAlias: "ta-interpretation-rules-v4-2",
-          sourceFileHash: "e3e1954233e94c058088c5084b9a27a7847efc74fbf8a26f51584c40ca4f9fa5",
+          ...commonProvenance,
           sheetName: "04_Improvement_Proposals",
           sourceRange: "A4:M4",
         },

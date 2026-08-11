@@ -1,7 +1,7 @@
 # System Architecture (V1)
 
 > V1 end-to-end architecture of AI Assist Agent.
-> Scope: no drawing image recognition and no 3D VA for now. Data-to-drawing linking is done through DIM ID.
+> Scope: no extraction of drawing truth and no 3D VA for now. F5 may record review-gated observations from F1-owned images, but data-to-drawing linking remains anchored by DIM ID.
 
 ## Architecture Diagram
 
@@ -49,8 +49,8 @@ flowchart TB
     subgraph MODE["7 Output Modes"]
         M1["Prompt · Data cleansing (F2)<br/>required-field check + DIM ID/PN completeness<br/>vs Lib 1: tolerance range + distribution"]
         M2["Assign · Method recommendation (F4)<br/>&lt;4 WC · 4-10 RSS · &gt;10 notify DM for 3D VA<br/>both WC / RSS computed"]
-        M3["Interpret · Objective 5-section (F5)<br/>FACT/RULE asserted (cite F0) · SIGNAL/OPTION presented<br/>uncertain -&gt; clarification card · judgment left to user"]
-        M4["Optimize · What-if / reverse-solve / centering (F6)<br/>mean-shift + contribution economics + RSS apportionment<br/>over-capability -&gt; RED warning"]
+        M3["Interpret · Sections 1-3 (F5)<br/>loop validity · capability vs specification · top contributors<br/>FACT/RULE cite F0 · SIGNAL/OPTION remain governed"]
+        M4["Delegate · Sections 4-5 (F6)<br/>structural risks · parallel improvement options<br/>F5 does not synthesize unavailable F6 results"]
     end
     subgraph LOOP["8 Closed Loop (F7)"]
         CL["Ingest measured yield / Cpk by DIM ID<br/>manual import from centralized store (SharePoint / platform)<br/>real gap vs initial estimate · upgrade Lib 1 T3 -&gt; T1"]
@@ -117,11 +117,15 @@ flowchart TB
 | 5 DIM ID linking | **F3** | Link each factor to a drawing dimension and produce a drawing-governance list | Part Number currently equals Drawing Number. The formal key is `(Drawing Number, DIM ID)`; the same DIM ID may occur on different drawings, while duplicates on one drawing are conflicts. A one-digit numeric DIM ID is `suspected_invalid` and does not block TA. |
 | 5b ADO governance | **F3** | Optional ADO link, owner assignment, Comment 0 update, and local-list fallback | F3 uses only Surface MCP. Every write follows `prepare -> confirm -> execute`; without ADO or required capabilities, the same confidential list is saved locally and TA continues. F3 does not read dates, evaluate deadline proximity, or run a scheduler. |
 | 6 Calculation engine | F4 | One-dimensional calculation, fully consistent with Excel formulas | Validates only user-filled fields |
-| 7 Output modes | F2/F4/F5/F6 | Cleansing, method recommendation, objective interpretation, and optimization | `<4` recommends WC; `4-10` recommends RSS; `>10` notifies DM for 3D VA while the engine still computes WC/RSS. Interpretation cites knowledge-base evidence; judgment remains with the user. |
+| 7 Output modes | F2/F4/F5/F6 | Cleansing, method recommendation, objective interpretation, and delegated optimization | `<4` recommends WC; `4-10` recommends RSS; `>10` notifies DM for 3D VA while the engine still computes WC/RSS. The five-section report assigns sections 1-3 to F5 and delegates sections 4-5 to F6. |
 | 8 Closed loop | **F7** | Backfill measured Cpk by DIM ID, compare the real gap, and feed back into F0 | Manual import from a centralized store (SharePoint / platform) at first; auto-capture and write-back come later |
 | 9 Interaction & output | **F8** | Read-only evidence pane, citable dialogue, structured report | Includes the Loop image; traceable and reproducible item by item |
 
-> **Out of scope for now:** drawing image recognition, DM-owned 3D variation analysis, automatic capture of measured data, and automatically writing suggested specs back into Excel.
+### F5 governance boundary
+
+F5 directly consumes controlled F0/F1/F3/F4 artifacts; a workbook-started run must first pass the F2 handoff gate. The supported entry points are `workflow:f5`, `使用F5分析报告`, and `use F5 analysis report`. F0 rules retain version and scope, and F1 remains the sole physical owner of worksheet images. A missing F1 image reference or physical image fails the worksheet closed. With a verified image, skipped or unavailable observation mode continues deterministic interpretation as `not_evaluated`; an observation is not drawing truth and remains confidence-tagged and ME review-gated. F5 emits only `FACT`, `RULE`, `SIGNAL`, and unranked `OPTION` statements, records explicit assumptions and clarifications, never auto-publishes to ADO, and never writes back to the workbook. Sections 4 and 5 remain `delegated_to_f6`; while F6 is `unavailable`, the current run returns `feature_not_available` for that future optional path, performs no optimization calculation, and saves no optimization evidence.
+
+> **Out of scope for now:** automatic extraction of drawing truth, DM-owned 3D variation analysis, automatic capture of measured data, and automatically writing suggested specs back into Excel.
 
 ---
 **Related docs:** [End-to-End Flow](02-end-to-end-flow.md) · [Differentiation](03-differentiation.md) · [Feature Breakdown](04-feature-breakdown.md) · [Design Decisions](05-design-decisions.md)

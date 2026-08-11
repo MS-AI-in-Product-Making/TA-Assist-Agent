@@ -262,18 +262,34 @@ const featureRegister: ReadonlyMap<string, FeatureRegistration> = new Map([
       disableBehavior: "return feature_not_available",
     },
   ],
+  // These external prerequisites are feature release/enablement approvals, not per-run inputs;
+  // status available records that deployment is approved. Runtime ME review remains gated by
+  // review SIGNALs, clarifications/assumptions, and suppression of unsupported final RULEs;
+  // physical image, artifact identity/hash, and schema evidence failures still fail closed.
   [
     "F5",
-    unavailableFeature(
-      "F5",
-      "客观结果解释",
-      ["calculation-worker-v1", "knowledge-base-v1", "interpretation-rules-v1"],
-      "interpretation-request-v1",
-      "interpretation-result-v1",
-      "confidential",
-      ["anonymous-interpretation-fixture"],
-      ["approved-knowledge-base"],
-    ),
+    {
+      featureId: "F5",
+      title: "客观结果解释",
+      status: "available",
+      dependsOn: [
+        "interpretation-rules-v1",
+        "worksheet-analysis-assets-v1",
+        "drawing-governance-v2",
+        "calculation-service-v1",
+      ],
+      inputContractId: "f5-data-interpretation-request-v1",
+      outputContractId: "f5-data-interpretation-result-v1",
+      maximumClassification: "confidential",
+      acceptanceChecks: [
+        "f5-artifact-association-check",
+        "f5-rule-traceability-check",
+        "f5-clarification-gate-check",
+        "f5-skill-contract-check",
+      ],
+      externalPrerequisites: ["approved-knowledge-base", "approved-me-review"],
+      disableBehavior: "return feature_not_available",
+    },
   ],
   [
     "F5.1",

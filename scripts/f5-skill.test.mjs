@@ -15,6 +15,17 @@ const allowedCommands = [
   "npm run workflow:f5 -- <f1-output-dir> <f3-output-dir> <f4-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] --image-observations <artifact-path>",
 ];
 
+const structuralScopes = [
+  "tolerance_loop_closure",
+  "datum_chain",
+  "assembly_datum_face",
+  "stack_start",
+  "direction",
+  "cross_subsystem",
+  "non_geometric_variable",
+  "long_dimension_chain",
+];
+
 const frontmatterKeys = ["argument-hint", "description", "name", "user-invocable"];
 const executableStart = /^(?:npm|pnpm|yarn|node|pwsh|powershell|curl|Invoke-WebRequest)(?:\s|$)/i;
 const imperativeExecutableStart = /^(?:please(?:\s+run)?|run|use|execute|call|invoke)\s*:?\s*((?:npm|pnpm|yarn|node|pwsh|powershell|curl|Invoke-WebRequest)(?:\s|$).*)/i;
@@ -259,6 +270,11 @@ function normalizeContractText(markdown) {
     .trim();
 }
 
+function structuralScopeList(markdown) {
+  const line = markdown.match(/^- Allowed scopes are (.+)\.$/m)?.[1] ?? "";
+  return [...line.matchAll(/`([^`]+)`/g)].map((match) => match[1]);
+}
+
 describe("f5-analysis skill contract", () => {
   it("starts RED while the skill file is absent", () => {
     expect(existsSync(skillPath), "SKILL.md must exist at .github/skills/f5-analysis/SKILL.md").toBe(true);
@@ -426,6 +442,10 @@ describe("f5-analysis skill contract", () => {
     }
     expect(skill).not.toContain("apply_patch");
     expect(skill).toContain("Do not claim that a shell command invokes an image model");
+  });
+
+  it("lists all eight structural scopes exactly once in contract order", () => {
+    expect(structuralScopeList(readSkill())).toEqual(structuralScopes);
   });
 
   it("fails closed for a missing F1 physical image or imageReference but continues deterministic F5 when observation is skipped", () => {

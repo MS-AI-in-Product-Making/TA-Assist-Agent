@@ -87,7 +87,7 @@ The artifact contract is:
 - Root: `contractVersion`, `inputClassification` = `confidential`, `observationVersion` = `f5-image-observation-v1`, `workbookContentHash`, and nonempty `worksheets`.
 - Worksheet: `worksheetName`, exact F1 `imageReference`, and `observations`. Worksheet names are unique and must match their image references.
 - Observation: unique `scope`, `observedValue` (`visible`, `not_visible`, or `ambiguous`), `confidence` (`low`, `medium`, or `high`), nonempty `visibleBasis`, `reviewStatus` (`unreviewed`, `confirmed`, or `rejected`), and conditional `confirmedBy` / `confirmedAt`.
-- Allowed scopes are `tolerance_loop_closure`, `datum_chain`, `assembly_datum_face`, `stack_start`, `direction`, and `cross_subsystem`.
+- Allowed scopes are `tolerance_loop_closure`, `datum_chain`, `assembly_datum_face`, `stack_start`, `direction`, `cross_subsystem`, `non_geometric_variable`, and `long_dimension_chain`.
 - `confirmedBy` and `confirmedAt` are required only when `reviewStatus` is `confirmed`; they are forbidden otherwise.
 
 Evidence gates are strict and apply exactly as follows. An image FACT records only what is visibly observed; it is never a dimensional RULE or a final engineering determination.

@@ -23,7 +23,7 @@ import {
   f5ImageObservationArtifactSchema,
 } from "../packages/contracts/dist/contracts.js";
 import { createF5DataInterpretation } from "../packages/workbook-catalog/dist/index.js";
-import { runF5FullValidation } from "./run-f5-full-validation.mjs";
+import { runF5Cli, runF5FullValidation } from "./run-f5-full-validation.mjs";
 
 const cleanup = [];
 const WORKBOOK_HASH = "a".repeat(64);
@@ -202,6 +202,7 @@ function setup({ rejectedWorksheets = [], observationArtifact } = {}) {
       status: "accepted",
       request: request(),
       rejectedWorksheets,
+      worksheetOrder: ["Analysis-A", ...rejectedWorksheets.map(({ worksheetName }) => worksheetName)],
       sourceReferences: {
         f1: "Feature1-Report.json",
         f3: "Feature3-Report.json",
@@ -222,6 +223,10 @@ function setup({ rejectedWorksheets = [], observationArtifact } = {}) {
 
 function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, "utf8"));
+}
+
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value));
 }
 
 function writeJson(filePath, value) {
@@ -540,7 +545,8 @@ describe("runF5FullValidation", () => {
       worksheets: expect.arrayContaining([{
         worksheetName: "Analysis-B",
         status: "input_rejected",
-        issues: [{ reasonCode: "artifact_identity_mismatch", message: "Input artifact was rejected." }],
+        reasonCode: "artifact_identity_mismatch",
+        artifactReference: "worksheet:Analysis-B",
       }]),
     });
     expect(readJson(result.manifestPath)).toEqual({
@@ -554,6 +560,140 @@ describe("runF5FullValidation", () => {
         runSummary: "Feature5-Run-Summary.json",
       },
     });
+  });
+
+  it("merges loader and core rejections in the original selected worksheet order", () => {
+    const context = setup({
+      rejectedWorksheets: [{
+        worksheetName: "Loader-Rejected",
+        reasonCode: "artifact_identity_mismatch",
+        artifactReference: "worksheet:Loader-Rejected",
+      }],
+    });
+    context.deps.loadBundle.mock.results.length = 0;
+    context.deps.loadBundle.mockImplementation(() => ({
+      status: "accepted",
+      request: request(),
+      rejectedWorksheets: [{
+        worksheetName: "Loader-Rejected",
+        reasonCode: "artifact_identity_mismatch",
+        artifactReference: "worksheet:Loader-Rejected",
+      }],
+      worksheetOrder: ["Loader-Rejected", "Analysis-A", "Core-Rejected"],
+      sourceReferences: {
+        f1: "Feature1-Report.json",
+        f3: "Feature3-Report.json",
+        f4: "Feature4-Calculation.json",
+      },
+    }));
+    const coreResult = f5DataInterpretationResultSchema.parse({
+      ...cloneJson(context.completed),
+      status: "partially_completed",
+      worksheets: [
+        cloneJson(context.completed.worksheets[0]),
+        {
+          worksheetName: "Core-Rejected",
+          status: "input_rejected",
+          reasonCode: "interpretation_failed",
+          artifactReference: "worksheet:Core-Rejected",
+        },
+      ],
+      summary: {
+        ...context.completed.summary,
+        worksheetCount: 2,
+        inputRejectedWorksheetCount: 1,
+      },
+    });
+    context.deps.createInterpretation.mockReturnValue(coreResult);
+
+    const result = runF5FullValidation({ args: [] }, context.deps);
+    const report = readJson(result.reportJsonPath);
+
+    expect(report.worksheets.map(({ worksheetName }) => worksheetName)).toEqual([
+      "Loader-Rejected",
+      "Analysis-A",
+      "Core-Rejected",
+    ]);
+    expect(report.worksheets.map(({ status }) => status)).toEqual([
+      "input_rejected",
+      "completed",
+      "input_rejected",
+    ]);
+    expect(report.summary).toMatchObject({
+      worksheetCount: 3,
+      completedWorksheetCount: 1,
+      inputRejectedWorksheetCount: 2,
+    });
+  });
+
+  it("writes an input_rejected report and failed manifest when every core worksheet is rejected", () => {
+    const context = setup();
+    const rejectedReport = f5DataInterpretationResultSchema.parse({
+      ...cloneJson(context.completed),
+      status: "input_rejected",
+      worksheets: [{
+        worksheetName: "Analysis-A",
+        status: "input_rejected",
+        reasonCode: "interpretation_failed",
+        artifactReference: "worksheet:Analysis-A",
+      }],
+      summary: {
+        worksheetCount: 1,
+        completedWorksheetCount: 0,
+        inputRejectedWorksheetCount: 1,
+        statementCount: 0,
+        clarificationCount: 0,
+        assumptionCount: 0,
+      },
+    });
+    context.deps.createInterpretation.mockReturnValue(rejectedReport);
+
+    const result = runF5FullValidation({ args: [] }, context.deps);
+
+    expect(result).toMatchObject({ status: "failed", reasonCode: "input_rejected" });
+    expect(f5DataInterpretationResultSchema.parse(readJson(result.reportJsonPath))).toEqual(rejectedReport);
+    expect(readJson(result.runSummaryPath)).toMatchObject({ status: "input_rejected" });
+    expect(readJson(result.manifestPath)).toEqual({
+      contractVersion: "v1",
+      featureId: "F5",
+      status: "failed",
+      runId: "2026-08-11T12-00-00-000Z",
+      reasonCode: "input_rejected",
+      artifacts: {
+        reportJson: "Feature5-Report.json",
+        reportMarkdown: "Feature5-Report.md",
+        runSummary: "Feature5-Run-Summary.json",
+      },
+    });
+  });
+
+  it("returns a nonzero CLI code after publishing an all-core input_rejected report", () => {
+    const context = setup();
+    const rejectedReport = f5DataInterpretationResultSchema.parse({
+      ...cloneJson(context.completed),
+      status: "input_rejected",
+      worksheets: [{
+        worksheetName: "Analysis-A",
+        status: "input_rejected",
+        reasonCode: "interpretation_failed",
+        artifactReference: "worksheet:Analysis-A",
+      }],
+      summary: {
+        worksheetCount: 1,
+        completedWorksheetCount: 0,
+        inputRejectedWorksheetCount: 1,
+        statementCount: 0,
+        clarificationCount: 0,
+        assumptionCount: 0,
+      },
+    });
+    context.deps.createInterpretation.mockReturnValue(rejectedReport);
+    const stdout = [];
+
+    const exitCode = runF5Cli({ args: [] }, context.deps, { log: (value) => stdout.push(value) });
+
+    expect(exitCode).toBe(1);
+    expect(JSON.parse(stdout[0])).toEqual({ status: "failed", reasonCode: "input_rejected" });
   });
 
   it("writes only a failed manifest when the loader rejects all input", () => {

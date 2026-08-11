@@ -7,6 +7,7 @@ import {
   f4WorkflowCalculationResultSchema,
   f5DataInterpretationRequestSchema,
   f5ImageObservationArtifactSchema,
+  workbookCatalogFileNameSchema,
 } from "../packages/contracts/dist/contracts.js";
 
 const SOURCE_REFERENCES = Object.freeze({
@@ -119,7 +120,7 @@ function loadF1Index(f1ArtifactRoot) {
   const markdownSheets = workbookRecord?.task16_loop_screenshot_and_run_record?.sheets ?? [];
   if (report?.contractVersion !== "v1"
     || typeof report.generatedAt !== "string"
-    || !workbook?.fileName
+    || !workbookCatalogFileNameSchema.safeParse(workbook?.fileName).success
     || !workbook?.contentHash
     || !Array.isArray(jsonSheets)
     || !Array.isArray(markdownSheets)
@@ -353,6 +354,9 @@ export function loadF5ArtifactBundle({
     return inputRejected("artifact_contract_invalid", SOURCE_REFERENCES.f3);
   }
   const f3 = f3Loaded.value;
+  if (!workbookCatalogFileNameSchema.safeParse(f3.workbook.fileName).success) {
+    return inputRejected("artifact_contract_invalid", SOURCE_REFERENCES.f3);
+  }
   if (workbook.contentHash !== f3.workbook.contentHash || workbook.fileName !== f3.workbook.fileName) {
     return inputRejected("artifact_identity_mismatch", SOURCE_REFERENCES.f3);
   }
@@ -454,6 +458,7 @@ export function loadF5ArtifactBundle({
     status: "accepted",
     request,
     rejectedWorksheets,
+    worksheetOrder: [...selection],
     sourceReferences: {
       ...SOURCE_REFERENCES,
       ...(observationReference ? { observation: observationReference } : {}),

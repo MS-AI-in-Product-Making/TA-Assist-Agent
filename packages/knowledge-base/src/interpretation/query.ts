@@ -206,12 +206,7 @@ function matchedRule(
     effectiveVersion: entry.provenance.effectiveVersion,
     applicability: structuredClone(entry.applicability),
     relatedFactReferences: [...relatedFactReferences],
-    evidence: {
-      sourceAlias: entry.provenance.sourceAlias,
-      sheetName: entry.provenance.sheetName,
-      sourceRange: entry.provenance.sourceRange,
-      sourceFileHash: entry.provenance.sourceFileHash,
-    },
+    evidence: structuredClone(entry.provenance),
   };
 }
 

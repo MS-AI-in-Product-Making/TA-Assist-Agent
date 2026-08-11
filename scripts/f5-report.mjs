@@ -119,19 +119,47 @@ function applicabilityText(applicability) {
 
 function evidenceText(evidence) {
   return [
+    `classification=${inline(evidence.classification)}`,
     `sourceAlias=${inline(evidence.sourceAlias)}`,
+    `sourceVersion=${inline(evidence.sourceVersion)}`,
     `sheetName=${inline(evidence.sheetName)}`,
     `sourceRange=${inline(evidence.sourceRange)}`,
     `sourceFileHash=${inline(evidence.sourceFileHash)}`,
+    `owner=${inline(evidence.owner)}`,
+    `confidence=${inline(evidence.confidence)}`,
+    `effectiveVersion=${inline(evidence.effectiveVersion)}`,
+    `changeSummary=${inline(evidence.changeSummary)}`,
   ].join("; ");
+}
+
+function traceText(trace) {
+  return [
+    `outputField=${trace.outputField}`,
+    `formulaId=${trace.formulaId}`,
+    `formulaVersion=${trace.formulaVersion}`,
+    `sourceCells=${trace.sourceCells.join(", ")}`,
+  ].join("; ");
+}
+
+function factProvenanceDetail(content) {
+  if (content.provenanceKind === "formula_output") {
+    return [`outputField=${content.outputField}`, ...content.traceRecords.map(traceText)].join("; ");
+  }
+  if (content.provenanceKind === "derived_from_formula_outputs") {
+    return [
+      `sourceOutputFields=${content.sourceOutputFields.join(", ")}`,
+      ...content.traceRecords.map(traceText),
+    ].join("; ");
+  }
+  if (content.metric === "recommended_method") {
+    return `method=${content.method}; reason=${content.reason}; inputField=${content.inputField}`;
+  }
+  return `inputField=${content.inputField}`;
 }
 
 function renderRejectedWorksheet(lines, worksheet) {
   lines.push(`### Worksheet: ${cell(worksheet.worksheetName)}`, "", "页状态：`input_rejected`", "");
-  lines.push("| reasonCode | message |", "| --- | --- |");
-  for (const issue of worksheet.issues) {
-    lines.push(`| ${cell(issue.reasonCode)} | ${cell(issue.message)} |`);
-  }
+  lines.push("| reasonCode | artifactReference |", "| --- | --- |", `| ${cell(worksheet.reasonCode)} | ${cell(worksheet.artifactReference)} |`);
 }
 
 function renderSupportCards(lines, worksheet, section) {
@@ -171,7 +199,16 @@ function renderSupportCards(lines, worksheet, section) {
 }
 
 function renderTolerance(lines, worksheet, options) {
-  lines.push(`章节状态：${code(worksheet.sections.toleranceChainValidity.status)}`);
+  const section = worksheet.sections.toleranceChainValidity;
+  lines.push(
+    `章节状态：${code(section.status)}`,
+    "",
+    "| scope | status | relatedStatementIds | clarificationIds |",
+    "| --- | --- | --- | --- |",
+  );
+  for (const item of section.items) {
+    lines.push(`| ${cell(item.scope)} | ${cell(item.status)} | ${cell(item.relatedStatementIds.join("; "))} | ${cell(item.clarificationIds.join("; "))} |`);
+  }
   const facts = worksheet.statements.filter((statement) => (
     statement.type === "FACT" && statement.section === "tolerance-chain-validity"
   ));
@@ -208,10 +245,10 @@ function renderCapability(lines, worksheet) {
   const rules = statements.filter((statement) => statement?.type === "RULE");
 
   if (facts.length > 0) {
-    lines.push("", "| 类型 | statementId | metric | value | unit | provenance |", "| --- | --- | --- | ---: | --- | --- |");
+    lines.push("", "| 类型 | statementId | metric | value | unit | provenance | detail |", "| --- | --- | --- | ---: | --- | --- | --- |");
     for (const fact of facts) {
-      const value = "value" in fact.content ? fact.content.value : "（缺失）";
-      lines.push(`| FACT | ${cell(fact.statementId)} | ${cell(fact.content.metric)} | ${cell(value)} | ${cell(fact.content.unit)} | ${cell(fact.content.provenanceKind)} |`);
+      const value = "value" in fact.content ? fact.content.value : fact.content.method;
+      lines.push(`| FACT | ${cell(fact.statementId)} | ${cell(fact.content.metric)} | ${cell(value)} | ${cell(fact.content.unit)} | ${cell(fact.content.provenanceKind)} | ${cell(factProvenanceDetail(fact.content))} |`);
     }
   }
   for (const rule of rules) {
@@ -236,14 +273,21 @@ function sourceKey(source) {
 
 function renderContributors(lines, worksheet) {
   const section = worksheet.sections.majorContributors;
-  lines.push(`章节状态：${code(section.status)}`, "", "| factorReference | factor | contribution | drawing | dim | governance | source | 治理证据 |", "| --- | --- | ---: | --- | --- | --- | --- | --- |");
+  lines.push(
+    `章节状态：${code(section.status)}`,
+    "",
+    "| factorReference | factor | contribution | halfTolerance | sigma | unit | drawing | dim | governance | reasonCodes | relatedStatementIds | source | 治理证据 |",
+    "| --- | --- | ---: | ---: | ---: | --- | --- | --- | --- | --- | --- | --- | --- |",
+  );
   const governanceFacts = worksheet.statements.filter((statement) => (
     statement.type === "FACT" && statement.section === "major-contributors"
       && statement.content.provenanceKind === "f3_governance"
   ));
-  const governanceSignals = worksheet.statements.filter((statement) => (
+  const contributorSignals = worksheet.statements.filter((statement) => (
     statement.type === "SIGNAL" && statement.section === "major-contributors"
-      && "signalKind" in statement.content && statement.content.signalKind === "identifier_governance_gap"
+  ));
+  const governanceSignals = contributorSignals.filter((statement) => (
+    "signalKind" in statement.content && statement.content.signalKind === "identifier_governance_gap"
   ));
   for (const item of section.items) {
     const governanceFact = governanceFacts.find((fact) => sourceKey(fact.content.source) === sourceKey(item.source));
@@ -253,13 +297,31 @@ function renderContributors(lines, worksheet) {
     const governanceEvidence = governanceFact === undefined
       ? "governance FACT=（缺失）; SIGNAL=（无）"
       : `governance FACT=${inline(governanceFact.statementId)}; SIGNAL=${signalIds.length > 0 ? signalIds.map(inline).join(", ") : "（无）"}`;
-    lines.push(`| ${cell(item.factorReference)} | ${cell(item.factorName)} | ${cell(item.contributionPercent)}% | ${cell(item.drawingNumber)} | ${cell(item.dimId)} | ${cell(item.governanceStatus)} | ${cell(sourceText(item.source))} | ${cell(governanceEvidence)} |`);
+    lines.push(`| ${cell(item.factorReference)} | ${cell(item.factorName)} | ${cell(item.contributionPercent)}% | ${cell(item.halfTolerance)} | ${cell(item.sigma)} | ${cell(item.unit)} | ${cell(item.drawingNumber)} | ${cell(item.dimId)} | ${cell(item.governanceStatus)} | ${cell(item.reasonCodes.join("; "))} | ${cell(item.relatedStatementIds.join("; "))} | ${cell(sourceText(item.source))} | ${cell(governanceEvidence)} |`);
   }
-  for (const signal of governanceSignals) {
+  for (const signal of contributorSignals) {
+    if ("signalKind" in signal.content) {
+      lines.push(
+        "",
+        `- SIGNAL ${code(signal.statementId)}：需要 ME 评审`,
+        `- signalKind: ${code(signal.content.signalKind)}`,
+        `- requiresEngineeringReview: ${inline(signal.content.requiresEngineeringReview)}`,
+        `- triggerFactReferences: ${signal.content.triggerFactReferences.map(inline).join("; ")}`,
+      );
+      continue;
+    }
     lines.push(
       "",
-      `- SIGNAL ${code(signal.statementId)}：需要 ME 评审`,
-      `- triggerFactReferences: ${signal.content.triggerFactReferences.map(inline).join("; ")}`,
+      `#### SIGNAL ${inline(signal.statementId)}`,
+      "",
+      "| 字段 | 结构化值 |",
+      "| --- | --- |",
+      `| entryId | ${cell(signal.content.entryId)} |`,
+      `| effectiveVersion | ${cell(signal.content.effectiveVersion)} |`,
+      `| applicability | ${cell(applicabilityText(signal.content.applicability))} |`,
+      `| evidence | ${cell(evidenceText(signal.content.evidence))} |`,
+      `| requiresEngineeringReview | ${cell(signal.content.requiresEngineeringReview)} |`,
+      `| relatedFactReferences | ${cell(signal.content.relatedFactReferences.join("; "))} |`,
     );
   }
   renderSupportCards(lines, worksheet, "majorContributors");

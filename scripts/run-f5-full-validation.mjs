@@ -22,8 +22,6 @@ import { parseF5CliArgs } from "./f5-cli-args.mjs";
 import { resolveFeature5OutputLayout } from "./f5-output-layout.mjs";
 import { renderF5Report } from "./f5-report.mjs";
 
-const REJECTED_WORKSHEET_MESSAGE = "Input artifact was rejected.";
-
 function json(value) {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
@@ -135,20 +133,32 @@ function assertRunRootContained(boundary, dependencies) {
   }
 }
 
-function recomputeResult(coreResult, rejectedWorksheets) {
-  const worksheets = [
-    ...coreResult.worksheets,
-    ...rejectedWorksheets.map(({ worksheetName, reasonCode }) => ({
+function recomputeResult(coreResult, rejectedWorksheets, worksheetOrder) {
+  const resultsByWorksheet = new Map([
+    ...coreResult.worksheets.map((worksheet) => [worksheet.worksheetName, worksheet]),
+    ...rejectedWorksheets.map(({ worksheetName, reasonCode, artifactReference }) => [worksheetName, {
       worksheetName,
       status: "input_rejected",
-      issues: [{ reasonCode, message: REJECTED_WORKSHEET_MESSAGE }],
-    })),
-  ];
+      reasonCode,
+      artifactReference,
+    }]),
+  ]);
+  if (!Array.isArray(worksheetOrder)
+    || worksheetOrder.length !== resultsByWorksheet.size
+    || new Set(worksheetOrder).size !== worksheetOrder.length
+    || worksheetOrder.some((worksheetName) => !resultsByWorksheet.has(worksheetName))) {
+    throw new Error("F5 worksheet order does not match worksheet results.");
+  }
+  const worksheets = worksheetOrder.map((worksheetName) => resultsByWorksheet.get(worksheetName));
   const completedWorksheets = worksheets.filter(({ status }) => status === "completed");
   const inputRejectedWorksheetCount = worksheets.length - completedWorksheets.length;
   return f5DataInterpretationResultSchema.parse({
     ...coreResult,
-    status: inputRejectedWorksheetCount === 0 ? "completed" : "partially_completed",
+    status: inputRejectedWorksheetCount === 0
+      ? "completed"
+      : completedWorksheets.length === 0
+        ? "input_rejected"
+        : "partially_completed",
     worksheets,
     summary: {
       worksheetCount: worksheets.length,
@@ -276,7 +286,11 @@ export function runF5FullValidation(options = {}, dependencyOverrides = {}) {
     const coreResult = f5DataInterpretationResultSchema.parse(
       dependencies.createInterpretation(loaded.request),
     );
-    const result = recomputeResult(coreResult, loaded.rejectedWorksheets ?? []);
+    const result = recomputeResult(
+      coreResult,
+      loaded.rejectedWorksheets ?? [],
+      loaded.worksheetOrder,
+    );
     const observationArtifact = loaded.observationArtifact === undefined
       ? undefined
       : f5ImageObservationArtifactSchema.parse(loaded.observationArtifact);
@@ -303,15 +317,22 @@ export function runF5FullValidation(options = {}, dependencyOverrides = {}) {
     }
     atomicWrite(paths.runSummaryPath, json(summary), boundary, dependencies);
     committedArtifacts.runSummary = layout.runSummaryJsonName;
+    const workflowFailed = result.status === "input_rejected";
     atomicWrite(
       paths.manifestPath,
-      json(manifest(layout, result.status, committedArtifacts)),
+      json(manifest(
+        layout,
+        workflowFailed ? "failed" : result.status,
+        committedArtifacts,
+        workflowFailed ? "input_rejected" : undefined,
+      )),
       boundary,
       dependencies,
     );
 
     return {
-      status: result.status,
+      status: workflowFailed ? "failed" : result.status,
+      ...(workflowFailed ? { reasonCode: "input_rejected" } : {}),
       outputDirectory: layout.runRoot,
       reportJsonPath: paths.reportJsonPath,
       reportMdPath: paths.reportMdPath,

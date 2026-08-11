@@ -49,8 +49,15 @@ hash 或必要元数据；`secret` 始终以 `policy_denied` 拒绝且不得持�
   工作表和范围，分类为 `internal`。原始 TA 模板、规则工作簿、worked examples 与计算器
   均为 `confidential`，不得提交到 Git，也不得在运行时由 F0 读取。
 - `public-v1`、`internal-v1` 与 `interpretation-rules-v1` 是三个独立只读模块，版本和 API
-  不可互换。未来 F5 将解读规则与 TA 事实组合时，结果保持 `confidential`；F5/F6 当前仍为
-  `unavailable`。
+  不可互换。F5 将 `interpretation-rules-v1` 的规则 ID、版本和适用范围与 F1/F3/F4 TA 事实组合，
+  请求、结果、可选图片观察和澄清/假设均保持 `confidential`；F6 当前仍为 `unavailable`。
+- F1 是 worksheet 图片的唯一物理 owner。F5 缺少 F1 `imageReference` 或对应物理图片时必须对该
+  worksheet fail closed；存在已验证图片但 image mode 不可用、用户跳过观察或没有观察工件时，
+  可继续确定性解读，但必须标记 `not_evaluated` 并说明未评估 drawing evidence。图片观察不是 drawing
+  truth，不得自动成为 `RULE` 或最终工程判断；confidence 和 ME review gate 不得省略。
+- F5 仅输出 `FACT`、`RULE`、`SIGNAL` 和未排序 `OPTION`。未确认 assumption 不能补足缺失证据，
+  clarification 只阻断依赖结论。F5 不自动发布 ADO、不回写 workbook；所有缺失、越界、身份/hash
+  不匹配或受治理前置未满足的路径均 fail closed，并且不得通过日志泄露原始 `confidential` 内容。
 - F0 的 T0 仅表示 `guidance-exceeded`、`within-guidance` 或 `unknown` 三种指导结果语义；
   不得由此推断能力紧度或可制造性。
 - 审计和日志只能记录分类、别名、哈希、事件代码与必要元数据。它们不得包含

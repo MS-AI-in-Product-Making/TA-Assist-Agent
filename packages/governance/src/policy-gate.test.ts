@@ -272,25 +272,31 @@ describe("policy gate", () => {
     });
   });
 
-  it("keeps F5 unavailable with its established interpretation contracts", () => {
+  it("reports root F5 as available with its feature release approvals", () => {
     const feature = getFeatureStatus("F5");
 
-    expect(feature).toMatchObject({
+    expect(feature).toEqual({
       featureId: "F5",
       title: "客观结果解释",
-      status: "unavailable",
-      inputContractId: "interpretation-request-v1",
-      outputContractId: "interpretation-result-v1",
+      status: "available",
+      dependsOn: [
+        "interpretation-rules-v1",
+        "worksheet-analysis-assets-v1",
+        "drawing-governance-v2",
+        "calculation-service-v1",
+      ],
+      inputContractId: "f5-data-interpretation-request-v1",
+      outputContractId: "f5-data-interpretation-result-v1",
       maximumClassification: "confidential",
-      acceptanceChecks: ["anonymous-interpretation-fixture"],
-      externalPrerequisites: ["approved-knowledge-base"],
+      acceptanceChecks: [
+        "f5-artifact-association-check",
+        "f5-rule-traceability-check",
+        "f5-clarification-gate-check",
+        "f5-skill-contract-check",
+      ],
+      externalPrerequisites: ["approved-knowledge-base", "approved-me-review"],
       disableBehavior: "return feature_not_available",
     });
-    expect(feature?.dependsOn).toEqual(expect.arrayContaining([
-      "calculation-worker-v1",
-      "knowledge-base-v1",
-      "interpretation-rules-v1",
-    ]));
   });
 
   it("reports F5.1 as the available objective interpretation capability", () => {
@@ -353,7 +359,7 @@ describe("policy gate", () => {
     });
   });
 
-  it.each(["F5", "F6", "F7"])(
+  it.each(["F6", "F7"])(
     "keeps %s unavailable",
     (featureId) => {
       expect(getFeatureStatus(featureId)).toMatchObject({
