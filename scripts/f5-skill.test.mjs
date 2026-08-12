@@ -7,8 +7,8 @@ const root = process.cwd();
 const skillPath = path.join(root, ".github", "skills", "f5-analysis", "SKILL.md");
 
 const allowedCommands = [
-  "npm run workflow:f1 -- <ta-workbook-path>",
-  "npm run workflow:f2 -- <f1-output-dir>",
+  "npm run workflow:f2:excel -- <ta-workbook-path>",
+  "npm run workflow:f2:excel -- <ta-workbook-path> --worksheets <worksheet-name>[,<worksheet-name>...] --workbook-hash <sha256> --confirm",
   "npm run workflow:f3 -- <f2-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...]",
   "npm run workflow:f4 -- --f2-report <f2-output-dir>/Feature2-Report.json",
   "npm run workflow:f5 -- <f1-output-dir> <f3-output-dir> <f4-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...]",
@@ -345,25 +345,28 @@ describe("f5-analysis skill contract", () => {
       expect(allowedCommands, `Non-whitelisted executable in SKILL.md: ${executable}`).toContain(executable);
     }
     expect([...new Set(workflowCommands(skill))].sort()).toEqual([
-      "workflow:f1",
-      "workflow:f2",
+      "workflow:f2:excel",
       "workflow:f3",
       "workflow:f4",
       "workflow:f5",
     ]);
-    for (const command of ["workflow:f1", "workflow:f2", "workflow:f3", "workflow:f4", "workflow:f5"]) {
+    expect(scripts["workflow:f2:excel"]).toBe("node scripts/f2-excel-runner.mjs");
+    for (const command of ["workflow:f3", "workflow:f4", "workflow:f5"]) {
       expect(scripts[command], `${command} must be backed by package.json`).toMatch(/^node scripts\//);
     }
+    expect(skill).not.toMatch(/npm\s+run\s+workflow:f1\s+--\s+<ta-workbook-path>/i);
+    expect(skill).not.toMatch(/npm\s+run\s+workflow:f2\s+--\s+<f1-output-dir>/i);
     expect(skill).not.toMatch(/npm\s+run\s+workflow:f0\b/i);
     expect(skill).not.toMatch(/npm\s+run\s+workflow:f4[^\n]*--worksheet/i);
     expect(skill).not.toMatch(/npm\s+run\s+workflow:f3:ado-reminder/i);
   });
 
-  it("orders workbook phases and selects ready worksheets before F3, F4, and F5", () => {
+  it("orders the F0 check, F1 selection handshake, ready selection, and downstream features", () => {
     const skill = readSkill();
     expectOrdered(skill, [
-      "Phase W1 - Run F1",
-      "Phase W2 - Run F2",
+      "Phase W0 - Validate input and F0 capabilities",
+      "Phase W1 - Generate F1 worksheet selection",
+      "Phase W2 - Confirm and run F1 plus F2",
       "Phase W3 - Select ready worksheets",
       "Phase W4 - Run local F3",
       "Phase W5 - Run F4 from F2",
@@ -373,13 +376,24 @@ describe("f5-analysis skill contract", () => {
     ]);
     expect(skill).toContain("Feature2-Report.json");
     expect(skill).toContain("status: readyForNextFeature");
-    expect(skill).toContain("vscode_askQuestions");
-    expect(skill).toContain("multiSelect: true");
+    expect(skill).toContain("F1/F2 scope call - `vscode_askQuestions` (`multiSelect: true`)");
+    expect(skill).toContain("F3/F4/F5 scope call - `vscode_askQuestions` (`multiSelect: true`)");
     expect(skill).toContain("at least one worksheet");
+    expect(skill).toContain("No complete F1, F2, F3, F4, or F5 execution may begin before the first selection succeeds");
+    expect(skill).toContain("No F3, F4, or F5 execution may begin before the second selection succeeds");
     expect(skill).toContain("stop before F3, F4, and F5");
     expect(skill).toContain("F3 and F5 receive the identical selected worksheet-name set");
     expect(skill).toContain("F4 may calculate every F2 ready worksheet because its runner has no worksheet flag");
     expect(skill.replaceAll("`", "")).toContain("F5 --worksheet filters F4 output back to the selected set");
+  });
+
+  it("keeps F0 internal and discloses controlled versions", () => {
+    const skill = readSkill();
+    expect(skill).toContain("`v1`");
+    expect(skill).toContain("`internal-v1`");
+    expect(skill).toContain("`interpretation-rules-v1`");
+    expect(skill).toContain("validate the versions recorded by the F2 and F5 artifacts");
+    expect(skill).not.toMatch(/npm\s+run\s+workflow:f0\b/i);
   });
 
   it("defines workbook and existing-artifact entry modes without implicit reruns", () => {
