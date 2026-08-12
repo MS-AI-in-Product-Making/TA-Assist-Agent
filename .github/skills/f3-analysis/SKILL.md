@@ -15,8 +15,8 @@ Reference: [ADO publishing protocol](./references/ado-publishing.md)
 
 Use only these commands:
 
-- `npm run workflow:f1 -- <ta-workbook-path>`
-- `npm run workflow:f2 -- <f1-output-dir>`
+- `npm run workflow:f2:excel -- <ta-workbook-path>`
+- `npm run workflow:f2:excel -- <ta-workbook-path> --worksheets <worksheet-name>[,<worksheet-name>...] --workbook-hash <sha256> --confirm`
 - `npm run workflow:f3 -- <f2-output-dir>`
 - `npm run workflow:f3 -- <f2-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...]`
 - `npm run workflow:f3:ado-reminder -- <f3-dir> --status not_requested`
@@ -35,17 +35,19 @@ Never invent additional `workflow:*` commands.
 
 ## Phase 1 - Preconditions and entry
 
-1. There is no executable `workflow:f0` script in package.json. Do not invent `workflow:f0` or any equivalent command.
-2. Supported entry precondition is one of:
-	- a TA workbook path that can run `workflow:f1 -> workflow:f2 -> workflow:f3`, or
-	- an existing accepted Feature 3 artifact directory (`<f3-dir>`) that already contains valid `Feature3-Report.json`.
+1. There is no executable `workflow:f0` script in package.json. F2 consumes controlled F0 public `v1` and internal `internal-v1` APIs; do not invent an F0 command.
+2. Supported entry precondition is one of a TA workbook path or an existing accepted Feature 3 artifact directory (`<f3-dir>`) containing valid `Feature3-Report.json`.
 3. The skill must resolve workbook/artifact input before publish decisions. If the preconditions are missing or invalid, stop and ask for valid input.
-4. For a new F3 run, read the accepted F2 report and list only F2 ready worksheets in artifact order.
-5. Worksheet selection call - vscode_askQuestions (multiSelect: true)
-6. Require at least one selected worksheet. If the user cancels or returns an empty selection, stop without running F3 and do not ask the publishing-mode question.
-7. Run workflow:f3 only after the worksheet selection call returns at least one selection.
-8. Pass every selected name with the repository-verified repeatable `--worksheet <worksheet-name>` flag. Never offer blocked or unknown worksheets.
-9. An existing accepted Feature 3 artifact does not rerun analysis and therefore does not repeat worksheet selection.
+4. Workbook step 1 - generate F1 selection: for a TA workbook, run `npm run workflow:f2:excel -- <ta-workbook-path>` and validate the selection prompt, workbook hash, unique options, controlled run root, and manifest.
+5. F1/F2 scope call - vscode_askQuestions (multiSelect: true)
+6. Require at least one F1/F2 worksheet. If the user cancels or returns an empty selection, stop before complete F1, F2, F3, and every publishing question.
+7. Workbook step 2 - confirm F1 and run F2: run `npm run workflow:f2:excel -- <ta-workbook-path> --worksheets <worksheet-name>[,<worksheet-name>...] --workbook-hash <sha256> --confirm` with the exact prompt hash and selected names. Validate the completed F1/F2 roots, reports, workbook identities, worksheet scope, hashes, and manifest. Never continue from the selection-only root or another historical run.
+8. For a new F3 run, read the accepted F2 report and list only F2 ready worksheets in artifact order.
+9. Worksheet selection call - vscode_askQuestions (multiSelect: true)
+10. Require at least one selected worksheet. If the user cancels or returns an empty selection, stop without running F3 and do not ask the publishing-mode question.
+11. Run workflow:f3 only after the worksheet selection call returns at least one selection.
+12. Pass every selected name with the repository-verified repeatable `--worksheet <worksheet-name>` flag. Never offer blocked or unknown worksheets.
+13. An existing accepted Feature 3 artifact does not rerun analysis and therefore skips both workbook selection calls.
 
 ## Phase 2 - Publish mode gate
 

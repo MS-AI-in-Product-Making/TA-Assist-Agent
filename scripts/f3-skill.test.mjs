@@ -257,26 +257,23 @@ describe("f3-analysis skill contract", () => {
     const commands = getWorkflowCommands(skill);
     const commandExamples = getCommandExampleLines(skill);
     const allowed = new Set([
-      "workflow:f1",
-      "workflow:f2",
+      "workflow:f2:excel",
       "workflow:f3",
       "workflow:f3:ado-reminder",
     ]);
 
-    expect(scripts["workflow:f1"]).toBe("node scripts/run-f1-full-validation.mjs");
-    expect(scripts["workflow:f2"]).toBe("node scripts/run-f2-full-validation.mjs");
+    expect(scripts["workflow:f2:excel"]).toBe("node scripts/f2-excel-runner.mjs");
     expect(scripts["workflow:f3"]).toBe("node scripts/run-f3-full-validation.mjs");
     expect(scripts["workflow:f3:ado-reminder"]).toBe("node scripts/write-f3-ado-reminder.mjs");
 
-    expect(commands).toContain("workflow:f1");
-    expect(commands).toContain("workflow:f2");
+    expect(commands).toContain("workflow:f2:excel");
     expect(commands).toContain("workflow:f3");
     expect(commands).toContain("workflow:f3:ado-reminder");
 
     // Lock complete example lines in skill to package script keys and argument shapes.
     expect(commandExamples).toEqual([
-      "npm run workflow:f1 -- <ta-workbook-path>",
-      "npm run workflow:f2 -- <f1-output-dir>",
+      "npm run workflow:f2:excel -- <ta-workbook-path>",
+      "npm run workflow:f2:excel -- <ta-workbook-path> --worksheets <worksheet-name>[,<worksheet-name>...] --workbook-hash <sha256> --confirm",
       "npm run workflow:f3 -- <f2-output-dir>",
       "npm run workflow:f3 -- <f2-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...]",
       "npm run workflow:f3:ado-reminder -- <f3-dir> --status not_requested",
@@ -303,8 +300,10 @@ describe("f3-analysis skill contract", () => {
       expect(allowed.has(command), `Unsupported workflow command in skill: ${command}`).toBe(true);
     }
 
-    expect(skill).toContain("npm run workflow:f1 -- <ta-workbook-path>");
-    expect(skill).toContain("npm run workflow:f2 -- <f1-output-dir>");
+    expect(skill).not.toContain("npm run workflow:f1 -- <ta-workbook-path>");
+    expect(skill).not.toContain("npm run workflow:f2 -- <f1-output-dir>");
+    expect(skill).toContain("npm run workflow:f2:excel -- <ta-workbook-path>");
+    expect(skill).toContain("npm run workflow:f2:excel -- <ta-workbook-path> --worksheets <worksheet-name>[,<worksheet-name>...] --workbook-hash <sha256> --confirm");
     expect(skill).toContain("npm run workflow:f3 -- <f2-output-dir>");
     expect(skill).toContain("npm run workflow:f3 -- <f2-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...]");
     expect(skill).toContain("npm run workflow:f3:ado-reminder -- <f3-dir> --status not_requested");
@@ -316,6 +315,25 @@ describe("f3-analysis skill contract", () => {
     // Ensure no placeholder command shape that bypasses npm script reality.
     expect(skill).not.toMatch(/npm\s+run\s+workflow:f0\b/i);
     expect(skill).not.toMatch(/npm\s+run\s+workflow:f3:ado-reminder\s+--\s+<f3-dir>\s+--status\s+cancel/i);
+  });
+
+  it("requires the F1 selection handshake before F2 validation and F3 selection", () => {
+    const skill = readUtf8(skillPath);
+    const markers = [
+      "Workbook step 1 - generate F1 selection",
+      "F1/F2 scope call - vscode_askQuestions (multiSelect: true)",
+      "Workbook step 2 - confirm F1 and run F2",
+      "Worksheet selection call - vscode_askQuestions (multiSelect: true)",
+      "Run workflow:f3 only after the worksheet selection call returns at least one selection.",
+    ];
+    let previous = -1;
+    for (const marker of markers) {
+      const index = skill.indexOf(marker);
+      expect(index, `Missing ordered marker: ${marker}`).toBeGreaterThan(previous);
+      previous = index;
+    }
+    expect(skill).toContain("public `v1` and internal `internal-v1`");
+    expect(skill).not.toMatch(/npm\s+run\s+workflow:f0\b/i);
   });
 
   it("requires ready worksheet selection before F3 and validates existing targets from an ADO URL", () => {
