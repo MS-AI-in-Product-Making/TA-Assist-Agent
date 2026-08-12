@@ -232,8 +232,7 @@ The workflow executes Task 1.1-1.7 with real workbook inputs and emits a final r
 - 短语别名：`帮我用F2分析下excel "path/to/report.xlsx"` 或 `use F2 to analyze Excel "path/to/report.xlsx"`
 - 确认与 workbook hash 绑定；文件内容变化后，旧确认以 `stale_worksheet_selection` fail closed，必须重新获取 options。
 - 每次运行输出：`test/demo-output/f2-runs/<workbook-safe-name>/<UTC-run-id>/{f1,f2,validation}`，根目录同时保留 `manifest.json`；失败时不删除已完成阶段和 debug logs。
-- 先运行 F1：`npm run workflow:f1 -- "test/<workbook.xlsx>"`
-- 再运行 F2：`npm run workflow:f2 -- "test/demo-output/feature1-output/<workbook-safe-name>"`
+- F3/F5 从 workbook 启动时复用上述两阶段 `workflow:f2:excel` 协议：先获取 F1 worksheet options，再由用户确认 hash 与范围后生成同一 workbook identity 的受控 F1/F2 artifacts；不得以裸 F1→F2 命令绕过确认。
 - 输出：`test/demo-output/feature2-output/<workbook-base-name>/Feature2-Report.json` 和 `Feature2-Report.md`
 - 报告：每个 factor 按语义表头投影 canonical actual values，不依赖固定 column；并追加可移植截面图链接、`能力库结果` 与 `知识库推荐`，空值显示 `—`。
 - 阻塞：因子必填字段、截面图或三项系统规格缺失时，只阻断对应 worksheet；能力库差异、库外、Drawing Number、DIM ID 或 Part Number 缺失均非阻塞。只有 `ready` worksheet 生成一个 F4 handoff。

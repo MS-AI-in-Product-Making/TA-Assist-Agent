@@ -67,6 +67,8 @@ F6 和 F7 仍为 `unavailable`，并返回 `feature_not_available`；F8 仅提�
 | [F2 Initial 实施计划](superpowers/plans/2026-08-03-f2-initial-workflow.md) | F2 Initial TDD、CLI、报告与完整链路验收 |
 | [F2 Artifact 报告优化设计](superpowers/specs/2026-08-03-f2-artifact-report-redesign.md) | F1 artifact 输入、增强 raw-data 报告与 ADO 事件边界 |
 | [F2 Artifact 报告实施计划](superpowers/plans/2026-08-03-f2-artifact-report-redesign.md) | Artifact loader、用户报告契约、CLI 与真实 demo |
+| [F5 Workbook 完整编排设计](superpowers/specs/2026-08-12-f5-workbook-end-to-end-orchestration-design.md) | F0-F5 完整链路、双 worksheet 确认和 fail-closed 边界 |
+| [F5 Workbook 完整编排实施计划](superpowers/plans/2026-08-12-f5-workbook-end-to-end-orchestration.md) | F3/F5 skill 合同、文档回归和真实 workbook 验收步骤 |
 | [F4 计算引擎设计](superpowers/specs/2026-07-30-f4-calculation-engine-design.md) | 方法推荐、Excel 一致计算、What-if、隐私与黄金回归边界 |
 | [F4 计算引擎实施计划](superpowers/plans/2026-07-30-f4-calculation-engine.md) | F4 契约、kernel、服务、回归、治理和质量门 |
 | [系统架构](01-architecture.md) | 产品架构与后续业务能力边界 |
@@ -75,9 +77,8 @@ F6 和 F7 仍为 `unavailable`，并返回 `feature_not_available`；F8 仅提�
 | [开发协作标准](governance/development-standard.md) | 分支、PR、文档和验收要求 |
 | [Phase 0 验收](governance/phase-0-acceptance.md) | Definition of Done、命令、预期结果和安全边界 |
 
-先执行 `npm run workflow:f1 -- "test/<workbook.xlsx>"`，再执行
-`npm run workflow:f2 -- "test/demo-output/feature1-output/<workbook-safe-name>"`。报告写入
-`test/demo-output/feature2-output/<workbook-base-name>/Feature2-Report.json` 与 `Feature2-Report.md`。
+单 workbook 先执行 prompt phase：`npm run workflow:f2:excel -- "test/<workbook.xlsx>"`。用户选择至少一个 worksheet 后，使用 prompt 返回的 hash 执行 confirm phase：`npm run workflow:f2:excel -- "test/<workbook.xlsx>" --worksheets "Analysis-A,Analysis-B" --workbook-hash "<sha256>" --confirm`。confirmed run 在独立受控目录中依次生成并验证 F1/F2 artifacts；F3/F5 不得跳过该握手。
+
 F2 任一模块验收必须运行完整 `F0 -> F1 artifacts -> F2` 链路。
 
 ## Shared Conventions
