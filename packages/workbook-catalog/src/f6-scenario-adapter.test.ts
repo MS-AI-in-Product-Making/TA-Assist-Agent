@@ -1,4 +1,9 @@
-import { describe, expect, it } from "vitest";
+import type {
+  CalculationCompletedResult,
+  CalculationRequest,
+  F6ControlledScenario,
+} from "@ai-assist/contracts";
+import { describe, expect, expectTypeOf, it, vi } from "vitest";
 import * as packageRoot from "./index.js";
 import { calculateF6Scenario } from "./f6-scenario-adapter.js";
 
@@ -133,16 +138,28 @@ function captureError(action: () => unknown): unknown {
   }
 }
 
-function expectControlledError(action: () => unknown, code: string): unknown {
+function expectControlledError(
+  action: () => unknown,
+  code: string,
+  reference = "f6-controlled-scenario-v1",
+): unknown {
   const error = captureError(action);
   expect(error).toMatchObject({
     code,
-    affectedInputReferences: ["f6-controlled-scenario-v1"],
+    affectedInputReferences: [reference],
   });
   return error;
 }
 
 describe("calculateF6Scenario", () => {
+  it("exposes the governed request, scenario, and completed result types", () => {
+    expectTypeOf(calculateF6Scenario).parameter(0).toEqualTypeOf<{
+      readonly baselineRequest: CalculationRequest;
+      readonly scenario: F6ControlledScenario;
+    }>();
+    expectTypeOf(calculateF6Scenario).returns.toEqualTypeOf<CalculationCompletedResult>();
+  });
+
   it("runs a valid factor override through F4 and preserves governed identity and trace", () => {
     const baseline = baselineRequest();
     const result = calculateF6Scenario({ baselineRequest: baseline, scenario: factorScenario() });
@@ -238,6 +255,110 @@ describe("calculateF6Scenario", () => {
     }), "validation_error");
   });
 
+  it.each(["baselineRequest", "scenario"] as const)(
+    "contains a throwing %s getter without leaking its marker",
+    (property) => {
+      const marker = `RAW-${property}-GETTER-MARKER`;
+      const input = {
+        baselineRequest: baselineRequest(),
+        scenario: factorScenario(),
+      };
+      Object.defineProperty(input, property, {
+        enumerable: true,
+        get() {
+          throw new Error(marker);
+        },
+      });
+
+      const error = expectControlledError(
+        () => calculateF6Scenario(input as unknown as Parameters<typeof calculateF6Scenario>[0]),
+        "validation_error",
+      );
+      expect(JSON.stringify(error)).not.toContain(marker);
+      expect(String(error)).not.toContain(marker);
+    },
+  );
+
+  it("contains nested getters and proxies without leaking raw markers", () => {
+    const getterMarker = "RAW-NESTED-GETTER-MARKER";
+    const proxyMarker = "RAW-PROXY-MARKER";
+    const baseline = baselineRequest();
+    Object.defineProperty(baseline, "worksheetAnalysisAssets", {
+      enumerable: true,
+      get() {
+        throw new Error(getterMarker);
+      },
+    });
+    const getterError = expectControlledError(
+      () => calculateF6Scenario({
+        baselineRequest: baseline,
+        scenario: factorScenario(),
+      } as unknown as Parameters<typeof calculateF6Scenario>[0]),
+      "validation_error",
+    );
+    expect(JSON.stringify(getterError)).not.toContain(getterMarker);
+
+    const scenario = new Proxy(factorScenario(), {
+      ownKeys() {
+        throw new Error(proxyMarker);
+      },
+    });
+    const proxyError = expectControlledError(
+      () => calculateF6Scenario({
+        baselineRequest: baselineRequest(),
+        scenario,
+      } as unknown as Parameters<typeof calculateF6Scenario>[0]),
+      "validation_error",
+    );
+    expect(JSON.stringify(proxyError)).not.toContain(proxyMarker);
+  });
+
+  it("rejects factor override arrays above the schema maximum", () => {
+    const oversizedOverrides = Array.from(
+      { length: 101 },
+      () => ({ ...factorScenario().factorOverrides[0] }),
+    );
+    expectControlledError(() => calculateF6Scenario({
+      baselineRequest: baselineRequest(),
+      scenario: factorScenario({ factorOverrides: oversizedOverrides }),
+    } as unknown as Parameters<typeof calculateF6Scenario>[0]), "validation_error");
+  });
+
+  it("preserves the trusted validation code for an invalid existing scenario source", () => {
+    const baseline = baselineRequest();
+    baseline.scenarioOverrides.push({
+      scenarioId: "existing-invalid-source",
+      factorOverrides: [{
+        worksheetName: "Analysis-A",
+        tableId: "table-a",
+        sourceRow: 999,
+        sigmaLevel: 3,
+      }],
+    });
+
+    expectControlledError(() => calculateF6Scenario({
+      baselineRequest: baseline,
+      scenario: factorScenario(),
+    }), "validation_error", "calculation-request-v1");
+  });
+
+  it("maps unknown internal exceptions without leaking their marker", () => {
+    const marker = "RAW-INTERNAL-EXCEPTION-MARKER";
+    const values = vi.spyOn(Object, "values").mockImplementationOnce(() => {
+      throw new Error(marker);
+    });
+    try {
+      const error = expectControlledError(() => calculateF6Scenario({
+        baselineRequest: baselineRequest(),
+        scenario: factorScenario(),
+      }), "internal_error");
+      expect(JSON.stringify(error)).not.toContain(marker);
+      expect(String(error)).not.toContain(marker);
+    } finally {
+      values.mockRestore();
+    }
+  });
+
   it("does not mutate baseline or scenario and returns a detached result", () => {
     const baseline = baselineRequest();
     const scenario = factorScenario();
@@ -264,7 +385,7 @@ describe("calculateF6Scenario", () => {
         factorOverrides: [],
         systemSpecification: { lowerSpecLimit: 4 },
       },
-    }), "calculation_not_possible");
+    }), "calculation_not_possible", "calculation-request-v1");
 
     expect(JSON.stringify(error)).not.toContain(marker);
   });
