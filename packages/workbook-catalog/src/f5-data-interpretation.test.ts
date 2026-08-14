@@ -234,6 +234,7 @@ function v2Request() {
           signalValue: "indicated_consistent" | "indicated_conflict" | "ambiguous" | "insufficient_evidence";
           textBasis: string;
           linkedSourceRows: Array<{ tableId: string; sourceRow: number }>;
+          linkedVisualLabels: Array<{ label: string; tableId: string; sourceRow: number }>;
           requiresEngineeringReview: true;
         };
       }>;
@@ -272,6 +273,13 @@ function v2Request() {
       textBasis: `Image and worksheet context require review for ${scope}.`,
       linkedSourceRows: scope === "direction"
         ? [{ tableId: firstGovernanceRow.source.tableId, sourceRow: firstGovernanceRow.source.sourceRow }]
+        : [],
+      linkedVisualLabels: scope === "direction"
+        ? [{
+            label: "factor-1",
+            tableId: firstGovernanceRow.source.tableId,
+            sourceRow: firstGovernanceRow.source.sourceRow,
+          }]
         : [],
       requiresEngineeringReview: true,
     },
@@ -742,6 +750,7 @@ describe("createF5DataInterpretation", () => {
       signalValue: "indicated_consistent",
       textBasis: expect.stringContaining("direction"),
       linkedSourceRows: [{ tableId: "table-a", sourceRow: 2 }],
+      linkedVisualLabels: [{ label: "factor-1", tableId: "table-a", sourceRow: 2 }],
     });
     expect(worksheet.statements.some((statement) => (
       statement.type === "RULE" && statement.section === "tolerance-chain-validity"
@@ -761,12 +770,14 @@ describe("createF5DataInterpretation", () => {
       signalValue: "insufficient_evidence",
       textBasis: "The first row alone does not identify a visible stack start.",
       linkedSourceRows: [],
+      linkedVisualLabels: [],
       requiresEngineeringReview: true,
     };
     worksheetInput.imageObservations.find(({ scope }) => scope === "assembly_datum_face")!.contextualSignal = {
       signalValue: "insufficient_evidence",
       textBasis: "No marked assembly datum face is visible.",
       linkedSourceRows: [],
+      linkedVisualLabels: [],
       requiresEngineeringReview: true,
     };
 

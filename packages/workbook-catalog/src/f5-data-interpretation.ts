@@ -127,6 +127,7 @@ function createImageEvidence(worksheet: RequestWorksheet) {
         signalValue: contextualSignal.signalValue,
         textBasis: contextualSignal.textBasis,
         linkedSourceRows: structuredClone(contextualSignal.linkedSourceRows),
+        linkedVisualLabels: structuredClone(contextualSignal.linkedVisualLabels),
         requiresEngineeringReview: true as const,
       },
     }));

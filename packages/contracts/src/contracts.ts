@@ -4508,6 +4508,12 @@ const f5LinkedSourceRowV2Schema = z.object({
   sourceRow: z.number().int().positive(),
 }).strict();
 
+const f5LinkedVisualLabelV2Schema = z.object({
+  label: z.string().min(1),
+  tableId: z.string().min(1),
+  sourceRow: z.number().int().positive(),
+}).strict();
+
 export const f5ContextualSignalV2Schema = z.object({
   signalValue: z.enum([
     "indicated_consistent",
@@ -4517,6 +4523,7 @@ export const f5ContextualSignalV2Schema = z.object({
   ]),
   textBasis: z.string().min(1),
   linkedSourceRows: z.array(f5LinkedSourceRowV2Schema),
+  linkedVisualLabels: z.array(f5LinkedVisualLabelV2Schema),
   requiresEngineeringReview: z.literal(true),
 }).strict();
 
@@ -4531,18 +4538,62 @@ function validateF5ContextualObservationEvidence(
   context: z.RefinementCtx,
   path: Array<string | number>,
 ): void {
-  if (observation.visualObservation.observedValue === "visible") return;
+  const { contextualSignal, visualObservation } = observation;
+  const hasVisualLabels = contextualSignal.linkedVisualLabels.length > 0;
+  const hasIndicatedConclusion = contextualSignal.signalValue === "indicated_consistent"
+    || contextualSignal.signalValue === "indicated_conflict";
+
+  if (observation.scope !== "direction" && hasVisualLabels) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "linked visual labels are only supported for direction observations",
+      path: [...path, "contextualSignal", "linkedVisualLabels"],
+    });
+  }
+
+  if (observation.scope === "direction") {
+    if ((contextualSignal.linkedSourceRows.length > 0 || hasIndicatedConclusion) && !hasVisualLabels) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "direction source rows and indicated conclusions require linked visual labels",
+        path: [...path, "contextualSignal", "linkedVisualLabels"],
+      });
+    }
+    if (hasVisualLabels && visualObservation.observedValue !== "visible") {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "direction linked visual labels require a visible visual observation",
+        path: [...path, "visualObservation", "observedValue"],
+      });
+    }
+    if (!hasVisualLabels && contextualSignal.linkedSourceRows.length > 0) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "direction without linked visual labels must not link source rows",
+        path: [...path, "contextualSignal", "linkedSourceRows"],
+      });
+    }
+    if (!hasVisualLabels && hasIndicatedConclusion) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "direction without linked visual labels must be ambiguous or insufficient_evidence",
+        path: [...path, "contextualSignal", "signalValue"],
+      });
+    }
+  }
+
+  if (visualObservation.observedValue === "visible") return;
 
   if (observation.scope === "stack_start") {
-    if (observation.contextualSignal.linkedSourceRows.length > 0) {
+    if (contextualSignal.linkedSourceRows.length > 0) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message: "stack_start without a visible marker must not link source rows",
         path: [...path, "contextualSignal", "linkedSourceRows"],
       });
     }
-    if (observation.contextualSignal.signalValue !== "ambiguous"
-      && observation.contextualSignal.signalValue !== "insufficient_evidence") {
+    if (contextualSignal.signalValue !== "ambiguous"
+      && contextualSignal.signalValue !== "insufficient_evidence") {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message: "stack_start without a visible marker must be ambiguous or insufficient_evidence",
@@ -4552,7 +4603,7 @@ function validateF5ContextualObservationEvidence(
   }
 
   if (observation.scope === "assembly_datum_face"
-    && observation.contextualSignal.signalValue === "indicated_consistent") {
+    && contextualSignal.signalValue === "indicated_consistent") {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       message: "assembly_datum_face without a visible marked face cannot be indicated_consistent",
@@ -4560,12 +4611,62 @@ function validateF5ContextualObservationEvidence(
     });
   }
 
-  if (observation.scope === "direction" && observation.contextualSignal.linkedSourceRows.length > 0) {
+}
+
+function validateF5ContextualSignalLinks(
+  contextualSignal: z.infer<typeof f5ContextualSignalV2Schema>,
+  snapshotRowKeys: Set<string>,
+  context: z.RefinementCtx,
+  path: Array<string | number>,
+): void {
+  const linkedSourceRowKeys = contextualSignal.linkedSourceRows.map(f5SnapshotRowKey);
+  const linkedVisualLabelKeys = contextualSignal.linkedVisualLabels.map(f5SnapshotRowKey);
+
+  contextualSignal.linkedSourceRows.forEach((linkedSourceRow, linkedRowIndex) => {
+    if (!snapshotRowKeys.has(f5SnapshotRowKey(linkedSourceRow))) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "linked source rows must refer to context snapshot rows",
+        path: [...path, "linkedSourceRows", linkedRowIndex],
+      });
+    }
+  });
+  contextualSignal.linkedVisualLabels.forEach((linkedVisualLabel, linkedLabelIndex) => {
+    if (!snapshotRowKeys.has(f5SnapshotRowKey(linkedVisualLabel))) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "linked visual labels must refer to context snapshot rows",
+        path: [...path, "linkedVisualLabels", linkedLabelIndex],
+      });
+    }
+  });
+
+  if (new Set(linkedSourceRowKeys).size !== linkedSourceRowKeys.length) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
-      message: "direction source rows require visible label evidence",
-      path: [...path, "contextualSignal", "linkedSourceRows"],
+      message: "linked source row keys must be unique",
+      path: [...path, "linkedSourceRows"],
     });
+  }
+  if (new Set(linkedVisualLabelKeys).size !== linkedVisualLabelKeys.length) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "linked visual label row keys must be unique",
+      path: [...path, "linkedVisualLabels"],
+    });
+  }
+
+  if (linkedSourceRowKeys.length > 0 || linkedVisualLabelKeys.length > 0) {
+    const linkedSourceRowKeySet = new Set(linkedSourceRowKeys);
+    const linkedVisualLabelKeySet = new Set(linkedVisualLabelKeys);
+    if (linkedSourceRowKeySet.size !== linkedVisualLabelKeySet.size
+      || [...linkedSourceRowKeySet].some((rowKey) => !linkedVisualLabelKeySet.has(rowKey))) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "linked visual label row keys must exactly match linked source row keys",
+        path: [...path, "linkedVisualLabels"],
+      });
+    }
   }
 }
 
@@ -4596,15 +4697,12 @@ export const f5ContextualObservationWorksheetV2Schema = z.object({
   worksheet.observations.forEach((observation, observationIndex) => {
     validateF5ContextualObservationEvidence(observation, context, ["observations", observationIndex]);
     const { contextualSignal } = observation;
-    contextualSignal.linkedSourceRows.forEach((linkedSourceRow, linkedRowIndex) => {
-      if (!snapshotRowKeys.has(f5SnapshotRowKey(linkedSourceRow))) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "linked source rows must refer to context snapshot rows",
-          path: ["observations", observationIndex, "contextualSignal", "linkedSourceRows", linkedRowIndex],
-        });
-      }
-    });
+    validateF5ContextualSignalLinks(
+      contextualSignal,
+      snapshotRowKeys,
+      context,
+      ["observations", observationIndex, "contextualSignal"],
+    );
     if (contextualSignal.linkedSourceRows.length === 0
       && contextualSignal.signalValue !== "ambiguous"
       && contextualSignal.signalValue !== "insufficient_evidence") {
@@ -4724,15 +4822,12 @@ const f5DataInterpretationRequestWorksheetSchema = z.union([
     const snapshotRowKeys = new Set(worksheet.contextSnapshot.rows.map(f5SnapshotRowKey));
     worksheet.imageObservations.forEach((observation, observationIndex) => {
       validateF5ContextualObservationEvidence(observation, context, ["imageObservations", observationIndex]);
-      observation.contextualSignal.linkedSourceRows.forEach((linkedSourceRow, linkedRowIndex) => {
-        if (!snapshotRowKeys.has(f5SnapshotRowKey(linkedSourceRow))) {
-          context.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: "linked source rows must refer to context snapshot rows",
-            path: ["imageObservations", observationIndex, "contextualSignal", "linkedSourceRows", linkedRowIndex],
-          });
-        }
-      });
+      validateF5ContextualSignalLinks(
+        observation.contextualSignal,
+        snapshotRowKeys,
+        context,
+        ["imageObservations", observationIndex, "contextualSignal"],
+      );
       if (observation.contextualSignal.linkedSourceRows.length === 0
         && observation.contextualSignal.signalValue !== "ambiguous"
         && observation.contextualSignal.signalValue !== "insufficient_evidence") {
@@ -4833,6 +4928,7 @@ const f5RootSignalStatementSchema = z.union([
       ]),
       textBasis: z.string().min(1),
       linkedSourceRows: z.array(f5LinkedSourceRowV2Schema),
+      linkedVisualLabels: z.array(f5LinkedVisualLabelV2Schema),
       requiresEngineeringReview: z.literal(true),
     }).strict(),
   }).strict(),

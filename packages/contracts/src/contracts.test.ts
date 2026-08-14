@@ -2508,6 +2508,7 @@ describe("F5.1 objective interpretation contracts", () => {
             signalValue: "insufficient_evidence" as const,
             textBasis: `Context basis for ${scope}.`,
             linkedSourceRows: [],
+            linkedVisualLabels: [],
             requiresEngineeringReview: true as const,
           },
         })),
@@ -2884,6 +2885,78 @@ describe("F5.1 objective interpretation contracts", () => {
       expect(f5ImageObservationArtifactV2Schema.safeParse(directionWithoutVisibleLabel).success).toBe(false);
     });
 
+    it("requires structured visible label evidence for direction links and conclusions", () => {
+      const artifact = structuredClone(validV2);
+      const worksheet = artifact.worksheets[0]!;
+      const snapshotRow = worksheet.contextSnapshot.rows[0]!;
+      const direction = worksheet.observations.find((observation) => observation.scope === "direction")!;
+      direction.visualObservation.observedValue = "visible";
+      direction.contextualSignal.signalValue = "indicated_consistent";
+      direction.contextualSignal.linkedSourceRows = [{
+        tableId: snapshotRow.tableId,
+        sourceRow: snapshotRow.sourceRow,
+      }];
+
+      expect(f5ImageObservationArtifactV2Schema.safeParse(artifact).success).toBe(false);
+
+      direction.contextualSignal.linkedVisualLabels = [{
+        label: "Bracket height",
+        tableId: snapshotRow.tableId,
+        sourceRow: snapshotRow.sourceRow,
+      }];
+      expect(f5ImageObservationArtifactV2Schema.safeParse(artifact).success).toBe(true);
+    });
+
+    it("rejects mismatched, duplicate, and outside-snapshot direction label references", () => {
+      const createLinkedDirection = () => {
+        const artifact = structuredClone(validV2);
+        const worksheet = artifact.worksheets[0]!;
+        const snapshotRow = worksheet.contextSnapshot.rows[0]!;
+        const direction = worksheet.observations.find((observation) => observation.scope === "direction")!;
+        direction.visualObservation.observedValue = "visible";
+        direction.contextualSignal.signalValue = "indicated_consistent";
+        direction.contextualSignal.linkedSourceRows = [{
+          tableId: snapshotRow.tableId,
+          sourceRow: snapshotRow.sourceRow,
+        }];
+        direction.contextualSignal.linkedVisualLabels = [{
+          label: "Bracket height",
+          tableId: snapshotRow.tableId,
+          sourceRow: snapshotRow.sourceRow,
+        }];
+        return { artifact, direction };
+      };
+
+      const mismatched = createLinkedDirection();
+      mismatched.direction.contextualSignal.linkedVisualLabels[0]!.sourceRow = 99;
+      expect(f5ImageObservationArtifactV2Schema.safeParse(mismatched.artifact).success).toBe(false);
+
+      const duplicate = createLinkedDirection();
+      duplicate.direction.contextualSignal.linkedVisualLabels.push(
+        structuredClone(duplicate.direction.contextualSignal.linkedVisualLabels[0]!),
+      );
+      expect(f5ImageObservationArtifactV2Schema.safeParse(duplicate.artifact).success).toBe(false);
+
+      const outsideSnapshot = createLinkedDirection();
+      outsideSnapshot.direction.contextualSignal.linkedSourceRows[0]!.sourceRow = 99;
+      outsideSnapshot.direction.contextualSignal.linkedVisualLabels[0]!.sourceRow = 99;
+      expect(f5ImageObservationArtifactV2Schema.safeParse(outsideSnapshot.artifact).success).toBe(false);
+    });
+
+    it("rejects visual label evidence for non-direction scopes", () => {
+      const artifact = structuredClone(validV2);
+      const worksheet = artifact.worksheets[0]!;
+      const snapshotRow = worksheet.contextSnapshot.rows[0]!;
+      const stackStart = worksheet.observations.find((observation) => observation.scope === "stack_start")!;
+      stackStart.contextualSignal.linkedVisualLabels = [{
+        label: "Stack start",
+        tableId: snapshotRow.tableId,
+        sourceRow: snapshotRow.sourceRow,
+      }];
+
+      expect(f5ImageObservationArtifactV2Schema.safeParse(artifact).success).toBe(false);
+    });
+
     it("requires both v2 confirmation fields and forbids them for other review statuses", () => {
       const confirmed = structuredClone(validV2);
       confirmed.worksheets[0]!.observations[0]!.visualObservation = {
@@ -2999,6 +3072,7 @@ describe("F5.1 objective interpretation contracts", () => {
           signalValue: "indicated_consistent" as const,
           textBasis: "The visible direction label aligns with the factor description.",
           linkedSourceRows: [{ tableId: "table-a", sourceRow: 2 }],
+          linkedVisualLabels: [{ label: "Bracket height", tableId: "table-a", sourceRow: 2 }],
           requiresEngineeringReview: true as const,
         },
       };
