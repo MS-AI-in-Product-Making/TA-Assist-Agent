@@ -458,6 +458,70 @@ describe("f5-analysis skill contract", () => {
     expect(skill).toContain("Do not claim that a shell command invokes an image model");
   });
 
+  it("creates only immutable v2 observations through the governed W6 sequence", () => {
+    const skill = readSkill();
+    const normalizedSkill = normalizeContractText(skill);
+
+    for (const phrase of [
+      "f5-image-observation-v1 is historical read-only compatibility; new workbook image mode never creates v1.",
+      "New image mode creates only f5-image-observation-v2.",
+      "The UUID must be system-generated and must not be user-derived.",
+      "Create the observation artifact with create_file only.",
+      "Never edit, overwrite, append to, or reuse an observation artifact or target.",
+      "Before creation, check every existing ancestor for a reparse point, symlink, or junction.",
+      "After creation, read back and validate the artifact with f5ImageObservationArtifactSchema.",
+      "Verify the immutable artifact SHA-256 after readback.",
+    ]) {
+      expect(normalizedSkill).toContain(phrase);
+    }
+
+    expectOrdered(skill, [
+      "Verify every selected F1 image",
+      "Construct and validate the all-row context snapshot",
+      "Ask exactly five image-mode questions per selected worksheet",
+      "Create one immutable `f5-image-observation-v2` artifact",
+      "Read back and validate schema, identity, and source rows",
+      "Pass the validated v2 artifact to F5, or discard the whole artifact and use deterministic fallback",
+    ]);
+  });
+
+  it("requires an exact all-row snapshot and exactly five contextual questions", () => {
+    const skill = readSkill();
+    const normalizedSkill = normalizeContractText(skill);
+
+    for (const phrase of [
+      "The context snapshot includes ALL active factor rows, not only top contributors.",
+      "Its exact row set equals the verified F1/F3 selected rows.",
+      "The snapshot preserves original partName and factorName, mapped partSubsystem and factorDescription, dimensionDescription, and source provenance.",
+      "Each selected worksheet answers exactly five questions: tolerance_loop_closure, datum_chain, assembly_datum_face, stack_start, and direction.",
+      "visualObservation may produce only an image FACT when the evidence gates permit; image_text_context_review is always SIGNAL.",
+      "Context always requires ME review and cannot create a RULE or final engineering determination.",
+      "direction row links require structured linkedVisualLabels; never parse visibleBasis to infer links.",
+      "With no reliable mapping, linkedVisualLabels and linkedSourceRows are empty and signalValue is ambiguous or insufficient_evidence.",
+    ]) {
+      expect(normalizedSkill).toContain(phrase);
+    }
+  });
+
+  it("rejects partial v2 consumption and distinguishes fallback from baseline failure", () => {
+    const skill = readSkill();
+    const normalizedSkill = normalizeContractText(skill);
+
+    for (const phrase of [
+      "The v2 selected worksheet set must be exact.",
+      "Any worksheet, scope, or snapshot mismatch discards the entire v2 artifact; partial consumption is prohibited.",
+      "When the validated baseline remains valid, continue deterministic F5 with not_evaluated plus clarification.",
+      "A baseline identity mismatch fails closed and prohibits F5 continuation.",
+    ]) {
+      expect(normalizedSkill).toContain(phrase);
+    }
+
+    expect(commandLines(skill)).toEqual(allowedCommands);
+    expect(skill).not.toMatch(/npm\s+run\s+workflow:f[06]\b/i);
+    expect(skill).not.toMatch(/(?:npm|node|pwsh|powershell)\s+[^\n`]*(?:image-model|image_model)/i);
+    expect(skill).not.toMatch(/npm\s+run\s+[^\n`]*ado/i);
+  });
+
   it("lists all eight structural scopes exactly once in contract order", () => {
     expect(structuralScopeList(readSkill())).toEqual(structuralScopes);
   });
