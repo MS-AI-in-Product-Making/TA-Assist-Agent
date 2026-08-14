@@ -2,7 +2,7 @@
 
 **日期：** 2026-08-12  
 **状态：** 已批准  
-**分支：** `feature/f5-contextual-image-observations`
+**分支：** `user/xumax/F5-F6-contextual-image-observations-report-optimization`
 
 ## 背景
 
