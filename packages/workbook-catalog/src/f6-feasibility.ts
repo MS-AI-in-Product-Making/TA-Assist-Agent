@@ -4,42 +4,25 @@ import {
   f6FeasibilityAssessmentSchema,
   f6OptionSchema,
   f6SupplierCapabilityEvidenceSchema,
-  f6ToleranceChangeSchema,
   type F6CostEvidence,
-  type F6DatumEvidence,
   type F6FeasibilityAssessment,
   type F6Option,
   type F6OptionKind,
-  type F6SupplierCapabilityEvidence,
-  type F6ToleranceChange,
 } from "@ai-assist/contracts";
 
-type CapabilityTier = "T0" | "T1" | "T2" | "T3";
 type EvidenceLimitedOption = Extract<F6Option, { status: "insufficient_evidence" }>;
+type ArtifactReference = F6Option["evidenceReferences"][number];
 
 export interface ToleranceFeasibilityInput {
-  readonly requestedToleranceBand?: number;
-  readonly toleranceChange?: F6ToleranceChange;
-  readonly capabilityTier?: CapabilityTier;
-  readonly achievableToleranceBand?: number;
+  readonly requestedToleranceBand: number;
+  readonly evidence?: unknown;
   readonly guidanceStatus?: string;
-  readonly evidenceReferences?: readonly string[];
 }
 
-export interface GovernedEvidenceScenario {
-  readonly status: "requires_engineering_review";
-  readonly optionKind: "improve_supplier_capability" | "tighten_datum_strategy";
-  readonly predictedImprovement: "controlled_scenario_required";
-  readonly requiredInputs: readonly string[];
-  readonly evidenceReferences: readonly string[];
-  readonly relativeCost: "insufficient_evidence";
-  readonly roiScore: "not_computed";
-  readonly impactRank: null;
-  readonly requiresEngineeringReview: true;
+export interface F6EvidenceScenarioResult {
+  readonly option: EvidenceLimitedOption;
   readonly feasibility: F6FeasibilityAssessment;
 }
-
-export type F6EvidenceScenarioResult = EvidenceLimitedOption | GovernedEvidenceScenario;
 
 export interface CostAssessmentInput {
   readonly evidence?: unknown;
@@ -52,7 +35,7 @@ export interface F6CostAssessment {
   readonly roiPolicyStatus: "insufficient_evidence" | "governed_not_computed";
   readonly roiPolicyVersion?: string;
   readonly roiCalculationReference?: F6CostEvidence["roiCalculationReference"];
-  readonly evidenceReferences: readonly string[];
+  readonly evidenceReferences: readonly ArtifactReference[];
 }
 
 function deepFreeze<Value>(value: Value, seen = new WeakSet<object>()): Value {
@@ -72,8 +55,17 @@ function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
-function uniqueReferences(references: readonly string[]): string[] {
-  return [...new Set(references)].sort(compareText);
+function uniquePaths(paths: readonly string[]): string[] {
+  return [...new Set(paths)].sort(compareText);
+}
+
+function uniqueArtifactReferences(references: readonly ArtifactReference[]): ArtifactReference[] {
+  const byIdentity = new Map(references.map((reference) => [
+    `${reference.artifact}\u0000${reference.contentHash}`,
+    reference,
+  ]));
+  return [...byIdentity.values()].sort((left, right) =>
+    compareText(left.artifact, right.artifact) || compareText(left.contentHash, right.contentHash));
 }
 
 function feasibility(
@@ -84,42 +76,42 @@ function feasibility(
   return immutable(f6FeasibilityAssessmentSchema.parse({
     status,
     reasonCodes: [...reasonCodes],
-    evidenceReferences: uniqueReferences(evidenceReferences),
+    evidenceReferences: uniquePaths(evidenceReferences),
   }));
 }
 
-function requestedBand(input: ToleranceFeasibilityInput): number | undefined {
-  if (input.toleranceChange !== undefined) {
-    const parsed = f6ToleranceChangeSchema.safeParse(input.toleranceChange);
-    return parsed.success ? parsed.data.resultingBand : undefined;
-  }
-  return input.requestedToleranceBand;
+function evidenceReference(evidence: { readonly source: string; readonly contentHash: string }): ArtifactReference {
+  return { artifact: evidence.source, contentHash: evidence.contentHash };
 }
 
 export function assessToleranceFeasibility(input: ToleranceFeasibilityInput): F6FeasibilityAssessment {
-  const references = input.evidenceReferences ?? [];
-  const requested = requestedBand(input);
-  const achievable = input.achievableToleranceBand;
-  const validRequested = requested !== undefined && Number.isFinite(requested) && requested >= 0;
-  const validAchievable = achievable !== undefined && Number.isFinite(achievable) && achievable >= 0;
-
-  if (input.capabilityTier === undefined || input.capabilityTier === "T0") {
+  const parsed = f6SupplierCapabilityEvidenceSchema.safeParse(input.evidence);
+  if (!parsed.success) {
     const reasonCode = input.guidanceStatus === "internal_guidance_exceeded"
       ? "internal_guidance_exceeded_without_t1_bound"
-      : "capability_tier_missing_or_t0";
+      : "governed_capability_evidence_missing_or_invalid";
+    return feasibility("insufficient_evidence", [reasonCode], []);
+  }
+
+  const evidence = parsed.data;
+  const references = [evidence.source];
+  if (evidence.capabilityTier === "T0") {
+    const reasonCode = input.guidanceStatus === "internal_guidance_exceeded"
+      ? "internal_guidance_exceeded_without_t1_bound"
+      : "capability_tier_t0";
     return feasibility("insufficient_evidence", [reasonCode], references);
   }
-  if (input.capabilityTier === "T2") {
+  if (evidence.capabilityTier === "T2") {
     return feasibility("requires_engineering_review", ["t2_requires_engineering_review"], references);
   }
-  if (input.capabilityTier === "T3") {
+  if (evidence.capabilityTier === "T3") {
     return feasibility("requires_engineering_review", ["t3_empirical_requires_engineering_review"], references);
   }
-  if (!validRequested || !validAchievable) {
+  if (!Number.isFinite(input.requestedToleranceBand) || input.requestedToleranceBand < 0) {
     return feasibility("insufficient_evidence", ["t1_governed_bound_incomplete"], references);
   }
 
-  if (requested >= achievable) {
+  if (input.requestedToleranceBand >= evidence.achievableToleranceBand) {
     return feasibility("supported", ["t1_governed_bound_satisfied"], references);
   }
   return feasibility("not_supported", ["t1_governed_bound_exceeded"], references);
@@ -143,22 +135,14 @@ function insufficientOption(
   }) as EvidenceLimitedOption);
 }
 
-function governedScenario(
-  optionKind: GovernedEvidenceScenario["optionKind"],
-  source: string,
-  reasonCode: string,
-): GovernedEvidenceScenario {
-  const assessment = feasibility("requires_engineering_review", [reasonCode], [source]);
+function scenarioResult(
+  optionKind: EvidenceLimitedOption["optionKind"],
+  requiredInputs: readonly string[],
+  references: readonly ArtifactReference[],
+  assessment: F6FeasibilityAssessment,
+): F6EvidenceScenarioResult {
   return immutable({
-    status: "requires_engineering_review",
-    optionKind,
-    predictedImprovement: "controlled_scenario_required",
-    requiredInputs: ["controlled_scenario_inputs", "engineering_review"],
-    evidenceReferences: [source],
-    relativeCost: "insufficient_evidence",
-    roiScore: "not_computed",
-    impactRank: null,
-    requiresEngineeringReview: true,
+    option: insufficientOption(optionKind, requiredInputs, references),
     feasibility: assessment,
   });
 }
@@ -166,32 +150,51 @@ function governedScenario(
 export function assessSupplierScenario(evidence?: unknown): F6EvidenceScenarioResult {
   const parsed = f6SupplierCapabilityEvidenceSchema.safeParse(evidence);
   if (!parsed.success) {
-    return insufficientOption(
+    return scenarioResult(
       "improve_supplier_capability",
       ["confirmed_supplier_capability_evidence", "controlled_scenario_inputs"],
       [],
+      feasibility("insufficient_evidence", ["governed_supplier_evidence_missing_or_invalid"], []),
     );
   }
-  return governedScenario(
+
+  const reference = evidenceReference(parsed.data);
+  const assessment = parsed.data.capabilityTier === "T1"
+    ? feasibility("supported", ["supplier_t1_governed_evidence_confirmed"], [reference.artifact])
+    : parsed.data.capabilityTier === "T2"
+      ? feasibility("requires_engineering_review", ["t2_requires_engineering_review"], [reference.artifact])
+      : parsed.data.capabilityTier === "T3"
+        ? feasibility("requires_engineering_review", ["t3_empirical_requires_engineering_review"], [reference.artifact])
+        : feasibility("insufficient_evidence", ["capability_tier_t0"], [reference.artifact]);
+  return scenarioResult(
     "improve_supplier_capability",
-    parsed.data.source,
-    `supplier_${parsed.data.capabilityTier.toLowerCase()}_evidence_requires_controlled_scenario`,
+    ["controlled_supplier_scenario_calculation"],
+    [reference],
+    assessment,
   );
 }
 
 export function assessDatumScenario(evidence?: unknown): F6EvidenceScenarioResult {
   const parsed = f6DatumEvidenceSchema.safeParse(evidence);
   if (!parsed.success) {
-    return insufficientOption(
+    return scenarioResult(
       "tighten_datum_strategy",
       ["confirmed_datum_chain_evidence", "controlled_scenario_inputs"],
       [],
+      feasibility("insufficient_evidence", ["governed_datum_evidence_missing_or_invalid"], []),
     );
   }
-  return governedScenario(
+
+  const reference = evidenceReference(parsed.data);
+  return scenarioResult(
     "tighten_datum_strategy",
-    parsed.data.source,
-    "confirmed_datum_evidence_requires_engineering_review",
+    ["controlled_datum_scenario_calculation", "engineering_review"],
+    [reference],
+    feasibility(
+      "requires_engineering_review",
+      ["confirmed_datum_evidence_requires_engineering_review"],
+      [reference.artifact],
+    ),
   );
 }
 
@@ -234,9 +237,9 @@ export function assessCost(
     roiPolicyStatus: "governed_not_computed",
     roiPolicyVersion: parsed.data.roiPolicyVersion,
     roiCalculationReference: parsed.data.roiCalculationReference,
-    evidenceReferences: uniqueReferences([
-      parsed.data.source,
-      parsed.data.roiCalculationReference.artifact,
+    evidenceReferences: uniqueArtifactReferences([
+      evidenceReference(parsed.data),
+      parsed.data.roiCalculationReference,
     ]),
   });
 }
