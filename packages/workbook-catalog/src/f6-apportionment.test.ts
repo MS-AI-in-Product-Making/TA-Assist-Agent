@@ -5,7 +5,6 @@ import {
 } from "@ai-assist/contracts";
 import { describe, expect, it } from "vitest";
 import { apportionRssTolerance } from "./f6-apportionment.js";
-import { F6SolverError } from "./f6-solver.js";
 
 type CompletedOption = Extract<F6Option, { status: "completed" }>;
 
@@ -200,7 +199,158 @@ describe("F6 RSS tolerance apportionment", () => {
     });
   });
 
-  it("rejects duplicate or missing selected sources and duplicate capability bounds", () => {
+  it("returns insufficient evidence for missing bounds before fixed variance feasibility", () => {
+    const factors = [factor(1, 1, 0.2), factor(2, 3, 0.8)];
+    const result = apportionRssTolerance({
+      factors,
+      targetRssSigma: 2,
+      policy: "bounded-by-capability",
+      selectedSources: [factors[0]!.source],
+      capabilityBounds: [],
+    });
+
+    expect(result.allocations).toEqual([]);
+    expect(result.residualError).toBe(1);
+    expect(result.feasibility).toEqual({
+      status: "insufficient_evidence",
+      reasonCodes: ["missing_capability_bounds"],
+      evidenceReferences: [],
+    });
+  });
+
+  it("uses fixed variance in the residual when selected capability bounds are missing", () => {
+    const factors = [factor(1, 1, 0.5), factor(2, 1, 0.5)];
+    const result = apportionRssTolerance({
+      factors,
+      targetRssSigma: 2,
+      policy: "bounded-by-capability",
+      selectedSources: [factors[0]!.source],
+      capabilityBounds: [],
+    });
+
+    expect(result.allocations).toEqual([]);
+    expect(result.residualError).toBe(1);
+    expect(result.feasibility.status).toBe("insufficient_evidence");
+  });
+
+  it("returns insufficient evidence when a capability bound identifies an unselected factor", () => {
+    const factors = [factor(1, 1, 0.5), factor(2, 1, 0.5)];
+    const result = apportionRssTolerance({
+      factors,
+      targetRssSigma: 2,
+      policy: "bounded-by-capability",
+      selectedSources: [factors[0]!.source],
+      capabilityBounds: [
+        { tableId: "table-1", sourceRow: 2, minimumToleranceBand: 0, maximumToleranceBand: 4, evidenceReference: "capability/row-2.json" },
+      ],
+    });
+
+    expect(result.allocations).toEqual([]);
+    expect(result.residualError).toBe(1);
+    expect(result.feasibility.status).toBe("insufficient_evidence");
+  });
+
+  it.each([
+    "equal-allocation-among-top-N",
+    "proportional-to-contribution",
+    "residual-after-centering",
+  ] as const)("returns supported zero allocations when fixed variance equals the target for %s", (policy) => {
+    const factors = [factor(1, 2, 0.5), factor(2, 2, 0.5)];
+    const result = apportionRssTolerance({
+      factors,
+      targetRssSigma: 2,
+      policy,
+      selectedSources: [factors[0]!.source],
+    });
+
+    expect(result.allocations).toEqual([{
+      tableId: "table-1",
+      sourceRow: 1,
+      targetSigma: 0,
+      targetTolerance: 0,
+    }]);
+    expect(result.residualError).toBe(0);
+    expect(result.feasibility).toEqual({
+      status: "supported",
+      reasonCodes: ["rss_target_met"],
+      evidenceReferences: [],
+    });
+  });
+
+  it("treats numeric noise as equality but rejects fixed variance materially above the target", () => {
+    const selected = factor(1, 1, 0.5);
+    const nearEqual = apportionRssTolerance({
+      factors: [selected, factor(2, 1 + 4 * Number.EPSILON, 0.5)],
+      targetRssSigma: 1,
+      policy: "equal-allocation-among-top-N",
+      selectedSources: [selected.source],
+    });
+    const aboveTarget = apportionRssTolerance({
+      factors: [selected, factor(2, 1 + 64 * Number.EPSILON, 0.5)],
+      targetRssSigma: 1,
+      policy: "equal-allocation-among-top-N",
+      selectedSources: [selected.source],
+    });
+
+    expect(nearEqual.allocations[0]!.targetSigma).toBe(0);
+    expect(nearEqual.residualError).toBe(0);
+    expect(nearEqual.feasibility.status).toBe("supported");
+    expect(aboveTarget.allocations).toEqual([]);
+    expect(aboveTarget.residualError).toBeGreaterThan(0);
+    expect(aboveTarget.feasibility).toEqual({
+      status: "not_supported",
+      reasonCodes: ["fixed_variance_exceeds_rss_target"],
+      evidenceReferences: [],
+    });
+  });
+
+  it("supports zero bounded allocations when fixed variance equals the target and all minimums are zero", () => {
+    const factors = [factor(1, 2, 0.5), factor(2, 2, 0.5)];
+    const result = apportionRssTolerance({
+      factors,
+      targetRssSigma: 2,
+      policy: "bounded-by-capability",
+      selectedSources: [factors[0]!.source],
+      capabilityBounds: [
+        { tableId: "table-1", sourceRow: 1, minimumToleranceBand: 0, maximumToleranceBand: 4, evidenceReference: "capability/row-1.json" },
+      ],
+    });
+
+    expect(result.allocations.map(({ targetSigma, targetTolerance }) => ({ targetSigma, targetTolerance }))).toEqual([
+      { targetSigma: 0, targetTolerance: 0 },
+    ]);
+    expect(result.residualError).toBe(0);
+    expect(result.feasibility).toEqual({
+      status: "requires_engineering_review",
+      reasonCodes: ["rss_target_met_with_capability_bounds"],
+      evidenceReferences: ["capability/row-1.json"],
+    });
+  });
+
+  it("rejects zero bounded allocations when fixed variance equals the target and any minimum is positive", () => {
+    const factors = [factor(1, 2, 0.5), factor(2, 2, 0.5)];
+    const result = apportionRssTolerance({
+      factors,
+      targetRssSigma: 2,
+      policy: "bounded-by-capability",
+      selectedSources: [factors[0]!.source],
+      capabilityBounds: [
+        { tableId: "table-1", sourceRow: 1, minimumToleranceBand: 2, maximumToleranceBand: 4, evidenceReference: "capability/row-1.json" },
+      ],
+    });
+
+    expect(result.allocations.map(({ targetSigma, targetTolerance }) => ({ targetSigma, targetTolerance }))).toEqual([
+      { targetSigma: 1, targetTolerance: 1 },
+    ]);
+    expect(result.residualError).toBeCloseTo(Math.sqrt(5) - 2, 12);
+    expect(result.feasibility).toEqual({
+      status: "not_supported",
+      reasonCodes: ["capability_bounds_exclude_rss_target"],
+      evidenceReferences: ["capability/row-1.json"],
+    });
+  });
+
+  it("rejects duplicate or missing selected sources", () => {
     const factors = [factor(1, 2, 0.8), factor(2, 1, 0.2)];
     const base = {
       factors,
@@ -225,15 +375,27 @@ describe("F6 RSS tolerance apportionment", () => {
       ...base,
       selectedSources: [{ worksheetName: "Sheet1", tableId: "table-1", sourceRow: 99 }],
     })).toThrowError(/missing_selected_source/);
-    expect(() => apportionRssTolerance({
-      ...base,
+  });
+
+  it("returns insufficient evidence for duplicate capability bounds", () => {
+    const factors = [factor(1, 2, 0.8), factor(2, 1, 0.2)];
+    const result = apportionRssTolerance({
+      factors,
+      targetRssSigma: 2,
       policy: "bounded-by-capability",
       selectedSources: [factors[0]!.source],
       capabilityBounds: [
         { tableId: "table-1", sourceRow: 1, minimumToleranceBand: 1, maximumToleranceBand: 4, evidenceReference: "capability/a.json" },
         { tableId: "table-1", sourceRow: 1, minimumToleranceBand: 1, maximumToleranceBand: 4, evidenceReference: "capability/b.json" },
       ],
-    })).toThrowError(F6SolverError);
+    });
+
+    expect(result.allocations).toEqual([]);
+    expect(result.feasibility).toEqual({
+      status: "insufficient_evidence",
+      reasonCodes: ["missing_capability_bounds"],
+      evidenceReferences: ["capability/a.json", "capability/b.json"],
+    });
   });
 
   it.each([

@@ -184,7 +184,9 @@ function resolveFactors(input: ApportionRssToleranceInput): {
 }
 
 function selectedTargetSigma(targetRssSigma: number, fixedSigma: number): number | undefined {
-  if (fixedSigma >= targetRssSigma) return undefined;
+  const comparisonTolerance = 32 * Number.EPSILON * Math.max(targetRssSigma, fixedSigma);
+  if (fixedSigma - targetRssSigma > comparisonTolerance) return undefined;
+  if (Math.abs(fixedSigma - targetRssSigma) <= comparisonTolerance) return 0;
   if (fixedSigma === 0) return targetRssSigma;
   const ratio = fixedSigma / targetRssSigma;
   const result = targetRssSigma * Math.sqrt((1 - ratio) * (1 + ratio));
@@ -250,8 +252,12 @@ function evidenceReferences(bounds: readonly F6CapabilityBound[]): string[] {
   return [...new Set(bounds.map(({ evidenceReference }) => evidenceReference))].sort(compareText);
 }
 
-function validateBounds(bounds: readonly F6CapabilityBound[]): ReadonlyMap<string, F6CapabilityBound> {
+function validateBounds(bounds: readonly F6CapabilityBound[]): {
+  readonly boundMap: ReadonlyMap<string, F6CapabilityBound>;
+  readonly hasDuplicate: boolean;
+} {
   const boundMap = new Map<string, F6CapabilityBound>();
+  let hasDuplicate = false;
   bounds.forEach((bound, index) => {
     const parsed = f6CapabilityBoundSchema.safeParse(bound);
     if (!parsed.success) {
@@ -259,11 +265,11 @@ function validateBounds(bounds: readonly F6CapabilityBound[]): ReadonlyMap<strin
     }
     const key = allocationKey(parsed.data);
     if (boundMap.has(key)) {
-      fail("invalid_solver_input", `capability bound source must be unique: ${key}`);
+      hasDuplicate = true;
     }
     boundMap.set(key, parsed.data);
   });
-  return boundMap;
+  return { boundMap, hasDuplicate };
 }
 
 function boundedAllocations(
@@ -285,6 +291,13 @@ function boundedAllocations(
   });
   const minimumNorm = stableL2Norm(limits.map(({ minimumSigma }) => minimumSigma));
   const maximumNorm = stableL2Norm(limits.map(({ maximumSigma }) => maximumSigma));
+  if (selectedSigma === 0) {
+    return limits.map(({ factor, minimumSigma, minimumTolerance }) => ({
+      factor,
+      targetSigma: minimumSigma,
+      targetTolerance: minimumTolerance,
+    }));
+  }
   if (selectedSigma < minimumNorm) {
     return limits.map(({ factor, minimumSigma, minimumTolerance }) => ({
       factor,
@@ -340,9 +353,28 @@ export function apportionRssTolerance(input: ApportionRssToleranceInput): F6Appo
   }
   const { selectedFactors, unselectedFactors } = resolveFactors(input);
   const fixedSigma = stableL2Norm(unselectedFactors.map((factor) => factor.sigma));
+
+  let selectedBounds: readonly F6CapabilityBound[] | undefined;
+  if (input.policy === "bounded-by-capability") {
+    const bounds = input.capabilityBounds ?? [];
+    const { boundMap, hasDuplicate } = validateBounds(bounds);
+    const resolvedBounds = selectedFactors.map((factor) => boundMap.get(allocationKey(factor.source)));
+    const hasCompleteBounds = !hasDuplicate
+      && bounds.length === selectedFactors.length
+      && resolvedBounds.every((bound) => bound !== undefined);
+    if (!hasCompleteBounds) {
+      return result(input.policy, input.targetRssSigma, [], residualError(input.targetRssSigma, unselectedFactors, []), {
+        status: "insufficient_evidence",
+        reasonCodes: ["missing_capability_bounds"],
+        evidenceReferences: evidenceReferences(bounds),
+      });
+    }
+    selectedBounds = resolvedBounds as readonly F6CapabilityBound[];
+  }
+
   const availableSelectedSigma = selectedTargetSigma(input.targetRssSigma, fixedSigma);
   if (availableSelectedSigma === undefined) {
-    return result(input.policy, input.targetRssSigma, [], Math.abs(fixedSigma - input.targetRssSigma), {
+    return result(input.policy, input.targetRssSigma, [], residualError(input.targetRssSigma, unselectedFactors, []), {
       status: "not_supported",
       reasonCodes: ["fixed_variance_exceeds_rss_target"],
       evidenceReferences: [],
@@ -350,6 +382,14 @@ export function apportionRssTolerance(input: ApportionRssToleranceInput): F6Appo
   }
 
   if (input.policy !== "bounded-by-capability") {
+    if (availableSelectedSigma === 0) {
+      const allocations = selectedFactors.map((factor) => ({ factor, targetSigma: 0, targetTolerance: 0 }));
+      return result(input.policy, input.targetRssSigma, allocations, residualError(input.targetRssSigma, unselectedFactors, allocations), {
+        status: "supported",
+        reasonCodes: ["rss_target_met"],
+        evidenceReferences: [],
+      });
+    }
     const allocation = input.policy === "equal-allocation-among-top-N"
       ? "equal-allocation-among-top-N"
       : "proportional-to-contribution";
@@ -377,27 +417,16 @@ export function apportionRssTolerance(input: ApportionRssToleranceInput): F6Appo
     });
   }
 
-  const bounds = input.capabilityBounds ?? [];
-  const boundMap = validateBounds(bounds);
-  const selectedBounds = selectedFactors.map((factor) => boundMap.get(allocationKey(factor.source)));
-  if (selectedBounds.some((bound) => bound === undefined)) {
-    return result(input.policy, input.targetRssSigma, [], input.targetRssSigma, {
-      status: "insufficient_evidence",
-      reasonCodes: ["missing_capability_bounds"],
-      evidenceReferences: evidenceReferences(bounds),
-    });
-  }
-
   const allocations = boundedAllocations(
     selectedFactors,
     availableSelectedSigma,
-    selectedBounds as readonly F6CapabilityBound[],
+    selectedBounds!,
   );
   const residual = residualError(input.targetRssSigma, unselectedFactors, allocations);
   const supported = residual <= 1e-12 * input.targetRssSigma;
   return result(input.policy, input.targetRssSigma, allocations, residual, {
     status: supported ? "requires_engineering_review" : "not_supported",
     reasonCodes: [supported ? "rss_target_met_with_capability_bounds" : "capability_bounds_exclude_rss_target"],
-    evidenceReferences: evidenceReferences(selectedBounds as readonly F6CapabilityBound[]),
+    evidenceReferences: evidenceReferences(selectedBounds!),
   });
 }
