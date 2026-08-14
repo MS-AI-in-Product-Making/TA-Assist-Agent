@@ -267,8 +267,7 @@ function renderContextSignals(lines, signals) {
 }
 
 function renderContextSnapshot(lines, worksheet) {
-  const rows = worksheet.contextSnapshot.rows
-    .map((row) => structuredClone(row))
+  const rows = [...worksheet.contextSnapshot.rows]
     .sort((left, right) => (
       left.sourceRow - right.sourceRow || left.tableId.localeCompare(right.tableId)
     ));

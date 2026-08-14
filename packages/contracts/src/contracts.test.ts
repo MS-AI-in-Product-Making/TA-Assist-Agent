@@ -2557,6 +2557,29 @@ describe("F5.1 objective interpretation contracts", () => {
         imageObservations: [imageObservation],
       }],
     };
+    const contextualRootRequest = () => {
+      const request = structuredClone(rootRequest) as unknown as Record<string, unknown>;
+      const worksheet = (request.worksheets as Array<Record<string, unknown>>)[0]!;
+      const snapshot = structuredClone(validV2.worksheets[0]!.contextSnapshot);
+      const snapshotRow = snapshot.rows[0]!;
+      const row = rootRequest.worksheets[0]!.governanceRows[0]!;
+      Object.assign(snapshotRow, {
+        tableId: row.source.tableId,
+        sourceRow: row.source.sourceRow,
+        partSubsystem: row.partSubsystem,
+        partCategory: row.partCategory,
+        factorDescription: row.factorDescription,
+        nominal: row.nominal,
+        upperTolerance: row.upperTolerance,
+        lowerTolerance: row.lowerTolerance,
+        sigmaLevel: row.sigmaLevel,
+        sourceCells: structuredClone(row.source.sourceCells),
+      });
+      worksheet.observationVersion = validV2.observationVersion;
+      worksheet.contextSnapshot = snapshot;
+      worksheet.imageObservations = structuredClone(validV2.worksheets[0]!.observations);
+      return request;
+    };
     const rootRule = {
       statementId: "root-rule-performance",
       type: "RULE" as const,
@@ -3045,11 +3068,7 @@ describe("F5.1 objective interpretation contracts", () => {
     });
 
     it("accepts the loader v2 request shape while preserving the v1 request shape", () => {
-      const v2Request = structuredClone(rootRequest) as unknown as Record<string, unknown>;
-      const v2Worksheet = (v2Request.worksheets as Array<Record<string, unknown>>)[0]!;
-      v2Worksheet.observationVersion = validV2.observationVersion;
-      v2Worksheet.contextSnapshot = structuredClone(validV2.worksheets[0]!.contextSnapshot);
-      v2Worksheet.imageObservations = structuredClone(validV2.worksheets[0]!.observations);
+      const v2Request = contextualRootRequest();
 
       expect(f5DataInterpretationRequestSchema.parse(rootRequest)).toEqual(rootRequest);
       expect(f5DataInterpretationRequestSchema.parse(v2Request)).toEqual(v2Request);
@@ -3057,6 +3076,38 @@ describe("F5.1 objective interpretation contracts", () => {
       const incompleteV2 = structuredClone(v2Request) as Record<string, unknown>;
       delete ((incompleteV2.worksheets as Array<Record<string, unknown>>)[0]!).contextSnapshot;
       expect(f5DataInterpretationRequestSchema.safeParse(incompleteV2).success).toBe(false);
+    });
+
+    it("requires the v2 request snapshot and governance rows to have the same row keys", () => {
+      const missingRow = contextualRootRequest();
+      const missingSnapshot = ((missingRow.worksheets as Array<Record<string, unknown>>)[0]!
+        .contextSnapshot as { rows: unknown[] });
+      missingSnapshot.rows = [];
+      expect(f5DataInterpretationRequestSchema.safeParse(missingRow).success).toBe(false);
+
+      const extraRow = contextualRootRequest();
+      const extraSnapshot = ((extraRow.worksheets as Array<Record<string, unknown>>)[0]!
+        .contextSnapshot as { rows: Array<Record<string, unknown>> });
+      extraSnapshot.rows.push({ ...structuredClone(extraSnapshot.rows[0]!), sourceRow: 99 });
+      expect(f5DataInterpretationRequestSchema.safeParse(extraRow).success).toBe(false);
+    });
+
+    it.each([
+      ["partSubsystem", "changed subsystem"],
+      ["partCategory", "changed category"],
+      ["factorDescription", "changed factor"],
+      ["nominal", 999],
+      ["upperTolerance", 999],
+      ["lowerTolerance", -999],
+      ["sigmaLevel", 999],
+      ["sourceCells", { factorName: "Analysis-A!Z99" }],
+    ] as const)("rejects v2 request snapshot %s changes", (field, value) => {
+      const request = contextualRootRequest();
+      const snapshot = ((request.worksheets as Array<Record<string, unknown>>)[0]!
+        .contextSnapshot as { rows: Array<Record<string, unknown>> });
+      snapshot.rows[0]![field] = value;
+
+      expect(f5DataInterpretationRequestSchema.safeParse(request).success).toBe(false);
     });
 
     it("accepts strict image-text context review root signals", () => {

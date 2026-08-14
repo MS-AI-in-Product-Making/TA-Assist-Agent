@@ -242,6 +242,9 @@ function v2Request() {
   };
   const worksheet = input.worksheets[0]!;
   const firstGovernanceRow = worksheet.governanceRows[0]!;
+  worksheet.governanceRows.forEach((row) => {
+    row.source.sourceCells = { factorName: `Analysis-A!A${row.source.sourceRow}` };
+  });
   worksheet.observationVersion = "f5-image-observation-v2";
   worksheet.contextSnapshot = {
     dimensionDescription: firstGovernanceRow.dimensionDescription,
@@ -257,7 +260,7 @@ function v2Request() {
       upperTolerance: row.upperTolerance,
       lowerTolerance: row.lowerTolerance,
       sigmaLevel: row.sigmaLevel,
-      sourceCells: { factorName: `Analysis-A!A${row.source.sourceRow}` },
+      sourceCells: structuredClone(row.source.sourceCells),
     })),
   };
   worksheet.imageObservations = CORE_SCOPES.map((scope) => ({
