@@ -6293,6 +6293,8 @@ export const f6CostEvidenceSchema = z.object({
   model: z.string().min(1),
   unit: z.string().min(1),
   optionCosts: z.array(z.object({ optionKind: f6OptionKindSchema, cost: z.number().finite().nonnegative() }).strict()).min(1),
+  roiPolicyVersion: z.string().min(1),
+  roiCalculationReference: f6ArtifactReferenceSchema,
   ...f6VersionedEvidenceFields,
 }).strict().superRefine((evidence, context) => {
   const seen = new Set<string>();
@@ -6341,6 +6343,27 @@ export const f6TargetCapabilitySchema = z.object({
   source: z.enum(["worksheet", "controlled_default"]),
 }).strict();
 
+const f6NearlyEqual = (left: number, right: number): boolean =>
+  Math.abs(left - right) <= 1e-12 * Math.max(1, Math.abs(left), Math.abs(right));
+
+const f6EvidenceScopeSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("supplier"),
+    supplierReference: z.string().min(1),
+    processFamily: z.string().min(1),
+    partCategory: z.string().min(1),
+    evidenceReference: f6ArtifactReferenceSchema,
+  }).strict(),
+  z.object({
+    kind: z.literal("datum"),
+    factorSources: z.array(z.object({
+      tableId: z.string().min(1),
+      sourceRow: z.number().int().positive(),
+    }).strict()).min(1),
+    evidenceReference: f6ArtifactReferenceSchema,
+  }).strict(),
+]);
+
 const f6CompletedOptionSchema = z.object({
   status: z.literal("completed"),
   optionId: z.string().min(1),
@@ -6358,6 +6381,7 @@ const f6CompletedOptionSchema = z.object({
   apportionment: f6ApportionmentResultSchema.optional(),
   feasibility: f6FeasibilityAssessmentSchema,
   evidenceReferences: z.array(f6ArtifactReferenceSchema),
+  evidenceScope: f6EvidenceScopeSchema.optional(),
   relativeCost: z.union([z.number().finite().nonnegative(), z.literal("insufficient_evidence")]),
   roiScore: z.union([z.number().finite(), z.literal("not_computed")]),
   impactRank: z.number().int().positive().nullable(),
@@ -6391,6 +6415,26 @@ export const f6OptionSchema = z.discriminatedUnion("status", [
   f6InsufficientEvidenceOptionSchema,
 ]).superRefine((option, context) => {
   if (option.status !== "completed") return;
+  const expectedScopeKind = option.optionKind === "improve_supplier_capability"
+    ? "supplier"
+    : option.optionKind === "tighten_datum_strategy"
+      ? "datum"
+      : undefined;
+  if (expectedScopeKind === undefined && option.evidenceScope !== undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "evidenceScope is forbidden for this option kind", path: ["evidenceScope"] });
+  } else if (expectedScopeKind !== undefined && option.evidenceScope?.kind !== expectedScopeKind) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: `${expectedScopeKind} evidenceScope is required for this option kind`, path: ["evidenceScope"] });
+  }
+  if (option.evidenceScope?.kind === "datum") {
+    const seen = new Set<string>();
+    option.evidenceScope.factorSources.forEach((source, index) => {
+      const key = `${source.tableId}\u0000${source.sourceRow}`;
+      if (seen.has(key)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "datum evidence scope factor sources must be unique", path: ["evidenceScope", "factorSources", index] });
+      }
+      seen.add(key);
+    });
+  }
   const expectedDeltas = {
     deltaCpk: option.resultMetrics.cpk - option.baselineMetrics.cpk,
     deltaCp: option.resultMetrics.cp - option.baselineMetrics.cp,
@@ -6398,9 +6442,8 @@ export const f6OptionSchema = z.discriminatedUnion("status", [
     deltaDpm: option.resultMetrics.dpm - option.baselineMetrics.dpm,
     deltaYield: option.resultMetrics.yield - option.baselineMetrics.yield,
   };
-  const nearlyEqual = (left: number, right: number) => Math.abs(left - right) <= 1e-12 * Math.max(1, Math.abs(left), Math.abs(right));
   for (const [field, expected] of Object.entries(expectedDeltas) as Array<[keyof typeof expectedDeltas, number]>) {
-    if (!nearlyEqual(option[field], expected)) {
+    if (!f6NearlyEqual(option[field], expected)) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: `${field} must equal result minus baseline`, path: [field] });
     }
   }
@@ -6600,11 +6643,6 @@ export const f6OptimizationResultSchema = z.object({
     context.addIssue({ code: z.ZodIssueCode.custom, message: "root status must match worksheet statuses", path: ["status"] });
   }
   result.worksheets.forEach((worksheet, worksheetIndex) => {
-    if (worksheet.status === "input_rejected") return;
-    if (worksheet.targetCapability.source === "controlled_default"
-      && (worksheet.targetCapability.targetCpk !== 1.33 || worksheet.targetCapability.targetSigmaLevel !== 4)) {
-      context.addIssue({ code: z.ZodIssueCode.custom, message: "controlled default target must be Cpk 1.33 at sigma level 4", path: ["worksheets", worksheetIndex, "targetCapability"] });
-    }
     const validateUniqueField = <T>(
       records: readonly T[],
       field: keyof T,
@@ -6619,10 +6657,15 @@ export const f6OptimizationResultSchema = z.object({
         seen.add(value);
       });
     };
-    validateUniqueField(worksheet.options, "optionId", "options");
     validateUniqueField(worksheet.risks, "riskId", "risks");
-    validateUniqueField(worksheet.recommendations, "recommendationId", "recommendations");
     validateUniqueField(worksheet.clarifications, "clarificationId", "clarifications");
+    if (worksheet.status === "input_rejected") return;
+    if (worksheet.targetCapability.source === "controlled_default"
+      && (worksheet.targetCapability.targetCpk !== 1.33 || worksheet.targetCapability.targetSigmaLevel !== 4)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "controlled default target must be Cpk 1.33 at sigma level 4", path: ["worksheets", worksheetIndex, "targetCapability"] });
+    }
+    validateUniqueField(worksheet.options, "optionId", "options");
+    validateUniqueField(worksheet.recommendations, "recommendationId", "recommendations");
     const seenRanks = new Set<number>();
     worksheet.options.forEach((option, optionIndex) => {
       if (option.status !== "completed" || option.impactRank === null) return;
@@ -6649,15 +6692,16 @@ export const f6OptimizationResultSchema = z.object({
     }
     if (worksheet.roiStatus === "computed") {
       const completedOptions = worksheet.options.filter((option) => option.status === "completed");
-      const costedKinds = new Set(costEvidence?.optionCosts.map(({ optionKind }) => optionKind) ?? []);
       if (completedOptions.length === 0) {
         context.addIssue({ code: z.ZodIssueCode.custom, message: "computed ROI requires a completed option", path: ["worksheets", worksheetIndex, "roiStatus"] });
       }
       completedOptions.forEach((option) => {
         const optionIndex = worksheet.options.indexOf(option);
-        if (!costedKinds.has(option.optionKind)
+        const matchingCosts = costEvidence?.optionCosts.filter(({ optionKind }) => optionKind === option.optionKind) ?? [];
+        if (matchingCosts.length !== 1
           || typeof option.relativeCost !== "number"
-          || typeof option.roiScore !== "number") {
+          || typeof option.roiScore !== "number"
+          || !f6NearlyEqual(option.relativeCost, matchingCosts[0]!.cost)) {
           context.addIssue({ code: z.ZodIssueCode.custom, message: "computed ROI requires matching cost evidence and numeric option values", path: ["worksheets", worksheetIndex, "options", optionIndex] });
         }
       });
@@ -6668,11 +6712,29 @@ export const f6OptimizationResultSchema = z.object({
         && (option.relativeCost !== "insufficient_evidence" || option.roiScore !== "not_computed")) {
         context.addIssue({ code: z.ZodIssueCode.custom, message: "cost and ROI must remain uncomputed without controlled cost evidence", path: ["worksheets", worksheetIndex, "options", optionIndex] });
       }
-      if (option.optionKind === "improve_supplier_capability" && result.provenance.supplierCapabilityEvidence === undefined) {
-        context.addIssue({ code: z.ZodIssueCode.custom, message: "supplier capability option requires supplier-specific evidence", path: ["worksheets", worksheetIndex, "options", optionIndex] });
+      if (option.optionKind === "improve_supplier_capability" && option.evidenceScope?.kind === "supplier") {
+        const scope = option.evidenceScope;
+        const matches = (result.provenance.supplierCapabilityEvidence ?? []).filter((evidence) =>
+          evidence.source === scope.evidenceReference.artifact
+          && evidence.contentHash === scope.evidenceReference.contentHash
+          && evidence.supplierReference === scope.supplierReference
+          && evidence.processFamily === scope.processFamily
+          && evidence.partCategory === scope.partCategory);
+        if (matches.length !== 1) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "supplier option evidenceScope must match exactly one governed evidence entry", path: ["worksheets", worksheetIndex, "options", optionIndex, "evidenceScope"] });
+        }
       }
-      if (option.optionKind === "tighten_datum_strategy" && result.provenance.datumEvidence === undefined) {
-        context.addIssue({ code: z.ZodIssueCode.custom, message: "datum strategy option requires reviewed datum evidence", path: ["worksheets", worksheetIndex, "options", optionIndex] });
+      if (option.optionKind === "tighten_datum_strategy" && option.evidenceScope?.kind === "datum") {
+        const scope = option.evidenceScope;
+        const matches = (result.provenance.datumEvidence ?? []).filter((evidence) => {
+          if (evidence.source !== scope.evidenceReference.artifact
+            || evidence.contentHash !== scope.evidenceReference.contentHash) return false;
+          const evidenceSources = new Set(evidence.factorDirections.map(({ tableId, sourceRow }) => `${tableId}\u0000${sourceRow}`));
+          return scope.factorSources.every(({ tableId, sourceRow }) => evidenceSources.has(`${tableId}\u0000${sourceRow}`));
+        });
+        if (matches.length !== 1) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "datum option evidenceScope must match exactly one governed evidence entry", path: ["worksheets", worksheetIndex, "options", optionIndex, "evidenceScope"] });
+        }
       }
     });
   });

@@ -4338,6 +4338,25 @@ describe("F5.1 objective interpretation contracts", () => {
       };
       const metrics = { mean: 12.46, rssSigma: 0.05, cp: 2.67, cpk: 2.4, yield: 0.999, dpm: 1000 };
       const feasibility = { status: "supported", reasonCodes: ["within_capability_bound"], evidenceReferences: ["supplier-capability.json"] };
+      const roiCalculationReference = reference("calculations/roi-policy-v2.json");
+      const costEvidence = {
+        evidenceVersion: "cost-model-v1", model: "relative-cost", unit: "USD",
+        optionCosts: [{ optionKind: "reduce_top_contributor_20", cost: 100 }],
+        roiPolicyVersion: "roi-policy-v2", roiCalculationReference,
+        source: "cost-model.json", effectiveVersion: "FY26", contentHash: "a".repeat(64),
+      };
+      const supplierEvidence = {
+        evidenceVersion: "supplier-capability-v1", supplierReference: "supplier-a", processFamily: "cnc", partCategory: "CNC",
+        capabilityTier: "T1", achievableToleranceBand: 0.3, distribution: "normal",
+        source: "supplier-capability.json", effectiveVersion: "2026-Q3", contentHash: "b".repeat(64),
+      };
+      const datumEvidence = {
+        evidenceVersion: "datum-strategy-v1", datumFace: "A", stackStart: "A",
+        factorDirections: [{ tableId: "table-a", sourceRow: 2, direction: 1 }],
+        datumChainEdges: [{ from: "A", to: "B" }], crossSubsystemRelations: ["bracket-to-frame"],
+        drawingEvidence: ["drawing-a.pdf"], reviewStatus: "confirmed",
+        source: "datum-review.json", effectiveVersion: "v1", contentHash: "c".repeat(64),
+      };
       const completedOption = {
         status: "completed",
         optionId: "top-contributor-20",
@@ -4406,9 +4425,9 @@ describe("F5.1 objective interpretation contracts", () => {
         expect(f6CapabilityBoundSchema.safeParse({ tableId: "table-a", sourceRow: 2, minimumToleranceBand: 0.1, maximumToleranceBand: 0.4, evidenceReference: "supplier-capability.json" }).success).toBe(true);
         expect(f6FeasibilityAssessmentSchema.parse(feasibility)).toEqual(feasibility);
         expect(f6ApportionmentResultSchema.safeParse({ policy: "bounded-by-capability", targetRssSigma: 0.04, allocations: [{ tableId: "table-a", sourceRow: 2, targetSigma: 0.04, targetTolerance: 0.16 }], residualError: 0, feasibility }).success).toBe(true);
-        expect(f6SupplierCapabilityEvidenceSchema.safeParse({ evidenceVersion: "supplier-capability-v1", supplierReference: "supplier-a", processFamily: "cnc", partCategory: "CNC", capabilityTier: "T1", achievableToleranceBand: 0.3, distribution: "normal", source: "supplier-capability.json", effectiveVersion: "2026-Q3", contentHash: "a".repeat(64) }).success).toBe(true);
-        expect(f6DatumEvidenceSchema.safeParse({ evidenceVersion: "datum-strategy-v1", datumFace: "A", stackStart: "A", factorDirections: [{ tableId: "table-a", sourceRow: 2, direction: 1 }], datumChainEdges: [{ from: "A", to: "B" }], crossSubsystemRelations: ["bracket-to-frame"], drawingEvidence: ["drawing-a.pdf"], reviewStatus: "confirmed", source: "datum-review.json", effectiveVersion: "v1", contentHash: "a".repeat(64) }).success).toBe(true);
-        expect(f6CostEvidenceSchema.safeParse({ evidenceVersion: "cost-model-v1", model: "relative-cost", unit: "USD", optionCosts: [{ optionKind: "reduce_top_contributor_20", cost: 100 }], source: "cost-model.json", effectiveVersion: "FY26", contentHash: "a".repeat(64) }).success).toBe(true);
+        expect(f6SupplierCapabilityEvidenceSchema.safeParse(supplierEvidence).success).toBe(true);
+        expect(f6DatumEvidenceSchema.safeParse(datumEvidence).success).toBe(true);
+        expect(f6CostEvidenceSchema.safeParse(costEvidence).success).toBe(true);
       });
 
       it("rejects duplicate solver and governed evidence source identities at precise paths", () => {
@@ -4427,7 +4446,7 @@ describe("F5.1 objective interpretation contracts", () => {
         expect(duplicateDirection.success).toBe(false);
         if (!duplicateDirection.success) expect(duplicateDirection.error.issues.map(({ path }) => path)).toContainEqual(["factorDirections", 1]);
 
-        const duplicateCost = f6CostEvidenceSchema.safeParse({ evidenceVersion: "cost-model-v1", model: "relative-cost", unit: "USD", optionCosts: [{ optionKind: "reduce_top_contributor_20", cost: 100 }, { optionKind: "reduce_top_contributor_20", cost: 120 }], source: "cost-model.json", effectiveVersion: "FY26", contentHash: "a".repeat(64) });
+        const duplicateCost = f6CostEvidenceSchema.safeParse({ ...costEvidence, optionCosts: [{ optionKind: "reduce_top_contributor_20", cost: 100 }, { optionKind: "reduce_top_contributor_20", cost: 120 }] });
         expect(duplicateCost.success).toBe(false);
         if (!duplicateCost.success) expect(duplicateCost.error.issues.map(({ path }) => path)).toContainEqual(["optionCosts", 1, "optionKind"]);
       });
@@ -4496,8 +4515,19 @@ describe("F5.1 objective interpretation contracts", () => {
         if (!duplicateRank.success) expect(duplicateRank.error.issues.map(({ path }) => path)).toContainEqual(["worksheets", 0, "options", 1, "impactRank"]);
       });
 
-      it("derives worksheet ROI state from controlled cost provenance", () => {
-        const costEvidence = { evidenceVersion: "cost-model-v1", model: "relative-cost", unit: "USD", optionCosts: [{ optionKind: "reduce_top_contributor_20", cost: 100 }], source: "cost-model.json", effectiveVersion: "FY26", contentHash: "a".repeat(64) };
+      it("enforces duplicate risk and clarification identities for input-rejected worksheets", () => {
+        const risk = { riskId: "risk-1", category: "Manufacturing", rating: "High", status: "open", reason: "Input is incomplete.", evidenceReferences: [reference("finding.json")] };
+        const clarification = { clarificationId: "clarify-1", reasonCode: "missing", requiredInputs: ["input"], questionForReviewer: "Provide input?", evidenceReferences: [] };
+        const rejectedWorksheet = { worksheetName: "Analysis-A", status: "input_rejected", inputFindings: [{ findingCode: "missing", severity: "Critical", message: "Input is missing.", evidenceReferences: [] }], options: [], risks: [risk], clarifications: [clarification] };
+        const rejectedResult = {
+          ...f6Result, status: "input_rejected", worksheets: [rejectedWorksheet],
+          summary: { worksheetCount: 1, completedWorksheetCount: 0, partiallyCompletedWorksheetCount: 0, inputRejectedWorksheetCount: 1, completedOptionCount: 0, calculationFailedOptionCount: 0, insufficientEvidenceOptionCount: 0 },
+        };
+        expect(f6OptimizationResultSchema.safeParse({ ...rejectedResult, worksheets: [{ ...rejectedWorksheet, risks: [risk, { ...risk }] }] }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({ ...rejectedResult, worksheets: [{ ...rejectedWorksheet, clarifications: [clarification, { ...clarification }] }] }).success).toBe(false);
+      });
+
+      it("binds computed ROI values to governed cost and calculation provenance", () => {
         expect(f6OptimizationResultSchema.safeParse({
           ...f6Result,
           worksheets: [{ ...f6Result.worksheets[0], roiStatus: "computed" }],
@@ -4510,7 +4540,72 @@ describe("F5.1 objective interpretation contracts", () => {
         expect(f6OptimizationResultSchema.safeParse({
           ...f6Result,
           provenance: { ...f6Result.provenance, costEvidence },
+          worksheets: [{ ...f6Result.worksheets[0], roiStatus: "computed", options: [{ ...completedOption, relativeCost: 101, roiScore: 0.006 }] }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          provenance: { ...f6Result.provenance, costEvidence },
           worksheets: [{ ...f6Result.worksheets[0], roiStatus: "computed" }],
+        }).success).toBe(false);
+        const { roiPolicyVersion: _policy, ...withoutPolicy } = costEvidence;
+        const { roiCalculationReference: _reference, ...withoutReference } = costEvidence;
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          provenance: { ...f6Result.provenance, costEvidence: withoutPolicy },
+          worksheets: [{ ...f6Result.worksheets[0], roiStatus: "computed", options: [{ ...completedOption, relativeCost: 100, roiScore: 0.006 }] }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          provenance: { ...f6Result.provenance, costEvidence: withoutReference },
+          worksheets: [{ ...f6Result.worksheets[0], roiStatus: "computed", options: [{ ...completedOption, relativeCost: 100, roiScore: 0.006 }] }],
+        }).success).toBe(false);
+      });
+
+      it("binds completed supplier and datum options to exact governed evidence scopes", () => {
+        const supplierScope = {
+          kind: "supplier", supplierReference: supplierEvidence.supplierReference,
+          processFamily: supplierEvidence.processFamily, partCategory: supplierEvidence.partCategory,
+          evidenceReference: { artifact: supplierEvidence.source, contentHash: supplierEvidence.contentHash },
+        };
+        const supplierOption = { ...completedOption, optionId: "supplier", optionKind: "improve_supplier_capability", evidenceScope: supplierScope };
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result, provenance: { ...f6Result.provenance, supplierCapabilityEvidence: [supplierEvidence] },
+          worksheets: [{ ...f6Result.worksheets[0], options: [supplierOption], recommendations: [], highestImpactAction: undefined }],
+        }).success).toBe(true);
+        for (const supplierCapabilityEvidence of [[], [{ ...supplierEvidence, supplierReference: "supplier-b" }], [supplierEvidence, { ...supplierEvidence }]]) {
+          expect(f6OptimizationResultSchema.safeParse({
+            ...f6Result, provenance: { ...f6Result.provenance, supplierCapabilityEvidence },
+            worksheets: [{ ...f6Result.worksheets[0], options: [supplierOption], recommendations: [], highestImpactAction: undefined }],
+          }).success).toBe(false);
+        }
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result, provenance: { ...f6Result.provenance, supplierCapabilityEvidence: [supplierEvidence] },
+          worksheets: [{ ...f6Result.worksheets[0], options: [{ ...supplierOption, evidenceScope: { ...supplierScope, evidenceReference: reference("unrelated.json") } }], recommendations: [], highestImpactAction: undefined }],
+        }).success).toBe(false);
+
+        const datumScope = { kind: "datum", factorSources: [{ tableId: "table-a", sourceRow: 2 }], evidenceReference: { artifact: datumEvidence.source, contentHash: datumEvidence.contentHash } };
+        const datumOption = { ...completedOption, optionId: "datum", optionKind: "tighten_datum_strategy", evidenceScope: datumScope };
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result, provenance: { ...f6Result.provenance, datumEvidence: [datumEvidence] },
+          worksheets: [{ ...f6Result.worksheets[0], options: [datumOption], recommendations: [], highestImpactAction: undefined }],
+        }).success).toBe(true);
+        for (const evidenceScope of [
+          { ...datumScope, factorSources: [{ tableId: "table-a", sourceRow: 99 }] },
+          { ...datumScope, factorSources: [{ tableId: "table-a", sourceRow: 2 }, { tableId: "table-a", sourceRow: 2 }] },
+          { ...datumScope, evidenceReference: reference("unrelated.json") },
+        ]) {
+          expect(f6OptimizationResultSchema.safeParse({
+            ...f6Result, provenance: { ...f6Result.provenance, datumEvidence: [datumEvidence] },
+            worksheets: [{ ...f6Result.worksheets[0], options: [{ ...datumOption, evidenceScope }], recommendations: [], highestImpactAction: undefined }],
+          }).success).toBe(false);
+        }
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result, provenance: { ...f6Result.provenance, datumEvidence: [] },
+          worksheets: [{ ...f6Result.worksheets[0], options: [datumOption], recommendations: [], highestImpactAction: undefined }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], options: [{ ...completedOption, evidenceScope: supplierScope }] }],
         }).success).toBe(false);
       });
 
