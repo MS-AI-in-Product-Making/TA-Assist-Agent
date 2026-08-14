@@ -745,6 +745,13 @@ describe("createF5DataInterpretation", () => {
     ));
     expect(contextSignals).toHaveLength(5);
     expect(contextSignals.map((statement) => statement.content.scope)).toEqual(CORE_SCOPES);
+    expect(contextSignals.map((statement) => statement.statementId)).toEqual([
+      "f5-context-signal-tolerance_loop_closure",
+      "f5-context-signal-datum_chain",
+      "f5-context-signal-assembly_datum_face",
+      "f5-context-signal-stack_start",
+      "f5-context-signal-direction",
+    ]);
     expect(contextSignals.every((statement) => statement.content.requiresEngineeringReview)).toBe(true);
     expect(contextSignals.find((statement) => statement.content.scope === "direction")?.content).toMatchObject({
       signalValue: "indicated_consistent",

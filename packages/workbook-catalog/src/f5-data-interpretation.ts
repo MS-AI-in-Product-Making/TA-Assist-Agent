@@ -118,7 +118,7 @@ function createImageEvidence(worksheet: RequestWorksheet) {
         },
       }));
     const signals = worksheet.imageObservations.map(({ scope, contextualSignal }) => ({
-      statementId: `f5-signal-image-text-context-review-${scope}`,
+      statementId: `f5-context-signal-${scope}`,
       type: "SIGNAL" as const,
       section: "tolerance-chain-validity" as const,
       content: {

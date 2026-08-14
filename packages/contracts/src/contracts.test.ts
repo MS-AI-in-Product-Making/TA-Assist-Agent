@@ -3063,7 +3063,7 @@ describe("F5.1 objective interpretation contracts", () => {
       const result = structuredClone(rootResult);
       const worksheet = result.worksheets[0]!;
       const contextSignal = {
-        statementId: "f5-signal-image-text-context-review-direction",
+        statementId: "f5-context-signal-direction",
         type: "SIGNAL" as const,
         section: "tolerance-chain-validity" as const,
         content: {
@@ -3087,6 +3087,77 @@ describe("F5.1 objective interpretation contracts", () => {
       )! as typeof contextSignal;
       parsedSignal.content.requiresEngineeringReview = false as true;
       expect(f5DataInterpretationResultSchema.safeParse(reviewDisabled).success).toBe(false);
+    });
+
+    it.each([
+      {
+        name: "mismatched linked row-key sets",
+        mutate: (signal: {
+          content: {
+            linkedSourceRows: Array<{ tableId: string; sourceRow: number }>;
+            linkedVisualLabels: Array<{ label: string; tableId: string; sourceRow: number }>;
+          };
+        }) => {
+          signal.content.linkedVisualLabels[0]!.sourceRow = 3;
+        },
+      },
+      {
+        name: "duplicate linked visual label row keys",
+        mutate: (signal: {
+          content: { linkedVisualLabels: Array<{ label: string; tableId: string; sourceRow: number }> };
+        }) => {
+          signal.content.linkedVisualLabels.push({ label: "duplicate", tableId: "table-a", sourceRow: 2 });
+        },
+      },
+      {
+        name: "duplicate linked source row keys",
+        mutate: (signal: {
+          content: { linkedSourceRows: Array<{ tableId: string; sourceRow: number }> };
+        }) => {
+          signal.content.linkedSourceRows.push({ tableId: "table-a", sourceRow: 2 });
+        },
+      },
+      {
+        name: "linked visual labels on a non-direction scope",
+        mutate: (signal: { content: { scope: string; signalValue: string } }) => {
+          signal.content.scope = "datum_chain";
+          signal.content.signalValue = "ambiguous";
+        },
+      },
+      {
+        name: "an indicated direction without linked evidence",
+        mutate: (signal: {
+          content: {
+            linkedSourceRows: Array<{ tableId: string; sourceRow: number }>;
+            linkedVisualLabels: Array<{ label: string; tableId: string; sourceRow: number }>;
+          };
+        }) => {
+          signal.content.linkedSourceRows = [];
+          signal.content.linkedVisualLabels = [];
+        },
+      },
+    ])("rejects $name in public image-text context review results", ({ mutate }) => {
+      const result = structuredClone(rootResult);
+      const worksheet = result.worksheets[0]!;
+      const contextSignal = {
+        statementId: "f5-context-signal-direction",
+        type: "SIGNAL" as const,
+        section: "tolerance-chain-validity" as const,
+        content: {
+          signalKind: "image_text_context_review" as const,
+          scope: "direction" as string,
+          signalValue: "indicated_consistent" as string,
+          textBasis: "The visible direction label aligns with the factor description.",
+          linkedSourceRows: [{ tableId: "table-a", sourceRow: 2 }],
+          linkedVisualLabels: [{ label: "Bracket height", tableId: "table-a", sourceRow: 2 }],
+          requiresEngineeringReview: true as const,
+        },
+      };
+      worksheet.statements.push(contextSignal as typeof worksheet.statements[number]);
+      result.summary.statementCount += 1;
+      mutate(contextSignal);
+
+      expect(f5DataInterpretationResultSchema.safeParse(result).success).toBe(false);
     });
 
     it("requires unique and exactly matching F4/F3 source key sets at precise paths", () => {
