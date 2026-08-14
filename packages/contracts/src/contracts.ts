@@ -5101,12 +5101,21 @@ const f5CompletedWorksheetResultSchema = z.object({
   imageReference: f1ImageReferenceSchema,
   governanceRows: z.array(f3GovernanceRowSchema),
   calculationResult: calculationCompletedResultSchema,
+  observationVersion: z.literal("f5-image-observation-v2").optional(),
+  contextSnapshot: f5ContextSnapshotV2Schema.optional(),
   status: z.literal("completed"),
   sections: f5ResultSectionsSchema,
   statements: z.array(f5RootInterpretationStatementSchema),
   clarifications: z.array(f5ClarificationSchema),
   assumptions: z.array(f5AssumptionSchema),
 }).strict().superRefine((worksheet, context) => {
+  if ((worksheet.observationVersion === undefined) !== (worksheet.contextSnapshot === undefined)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "completed v2 worksheet results require observationVersion and contextSnapshot together",
+      path: [worksheet.observationVersion === undefined ? "observationVersion" : "contextSnapshot"],
+    });
+  }
   const legacyStatements: Array<z.infer<typeof interpretationStatementSchema>> = [];
   worksheet.statements.forEach((statement) => {
     if (statement.type === "FACT" && statement.content.provenanceKind === "image_observation") return;

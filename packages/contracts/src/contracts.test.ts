@@ -3216,6 +3216,23 @@ describe("F5.1 objective interpretation contracts", () => {
       expect(f5DataInterpretationResultSchema.safeParse({ ...rootResult, unexpected: true }).success).toBe(false);
     });
 
+    it("requires observationVersion and contextSnapshot together on completed v2 worksheet results", () => {
+      const v2Result = structuredClone(rootResult) as unknown as Record<string, unknown>;
+      const v2Worksheet = (v2Result.worksheets as Array<Record<string, unknown>>)[0]!;
+      v2Worksheet.observationVersion = "f5-image-observation-v2";
+      v2Worksheet.contextSnapshot = structuredClone(validV2.worksheets[0]!.contextSnapshot);
+
+      expect(f5DataInterpretationResultSchema.safeParse(v2Result).success).toBe(true);
+
+      const withoutSnapshot = structuredClone(v2Result) as Record<string, unknown>;
+      delete ((withoutSnapshot.worksheets as Array<Record<string, unknown>>)[0]!).contextSnapshot;
+      expect(f5DataInterpretationResultSchema.safeParse(withoutSnapshot).success).toBe(false);
+
+      const withoutVersion = structuredClone(v2Result) as Record<string, unknown>;
+      delete ((withoutVersion.worksheets as Array<Record<string, unknown>>)[0]!).observationVersion;
+      expect(f5DataInterpretationResultSchema.safeParse(withoutVersion).success).toBe(false);
+    });
+
     it.each(toleranceItems.map(({ scope }) => scope))(
       "rejects %s tolerance evidence from a different structural scope",
       (scope) => {

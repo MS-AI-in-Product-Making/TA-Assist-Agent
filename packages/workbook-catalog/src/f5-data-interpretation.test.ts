@@ -723,11 +723,19 @@ describe("createF5DataInterpretation", () => {
 
   it("separates v2 visual FACTs from one contextual SIGNAL per core scope", () => {
     const input = v2Request();
+    const expectedContextSnapshot = structuredClone(input.worksheets[0]!.contextSnapshot);
     const parsedInput = f5DataInterpretationRequestSchema.safeParse(input);
     expect(parsedInput.success, parsedInput.success ? undefined : JSON.stringify(parsedInput.error.issues, null, 2)).toBe(true);
     const result = createF5DataInterpretation(input);
     const worksheet = result.worksheets[0]!;
     if (worksheet.status !== "completed") throw new Error("expected completed worksheet");
+
+    expect(worksheet).toMatchObject({
+      observationVersion: "f5-image-observation-v2",
+      contextSnapshot: expectedContextSnapshot,
+    });
+    expect(worksheet.contextSnapshot).not.toBe(input.worksheets[0]!.contextSnapshot);
+    expect(worksheet.contextSnapshot.rows[0]).not.toBe(input.worksheets[0]!.contextSnapshot.rows[0]);
 
     const imageFacts = worksheet.statements.filter((statement) => (
       statement.type === "FACT" && statement.content.provenanceKind === "image_observation"

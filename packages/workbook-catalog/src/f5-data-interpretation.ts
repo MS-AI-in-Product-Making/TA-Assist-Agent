@@ -410,6 +410,10 @@ function createWorksheetResult(
     imageReference: structuredClone(worksheet.imageReference),
     governanceRows: structuredClone(worksheet.governanceRows),
     calculationResult: structuredClone(worksheet.calculationResult),
+    ...("observationVersion" in worksheet ? {
+      observationVersion: worksheet.observationVersion,
+      contextSnapshot: structuredClone(worksheet.contextSnapshot),
+    } : {}),
     status: "completed" as const,
     sections: {
       toleranceChainValidity: { status: toleranceStatus, items: toleranceItems },

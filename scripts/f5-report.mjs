@@ -220,8 +220,11 @@ function renderScopeMatrix(lines, worksheet, contextSignals) {
 }
 
 function renderVisualFacts(lines, facts, options, contextual) {
-  if (facts.length === 0) return;
   if (contextual) {
+    if (facts.length === 0) {
+      lines.push("", "#### Visual FACT", "", "无满足 FACT gate 的视觉观察");
+      return;
+    }
     lines.push(
       "",
       "#### Visual FACT",
@@ -234,6 +237,7 @@ function renderVisualFacts(lines, facts, options, contextual) {
     }
     return;
   }
+  if (facts.length === 0) return;
 
   lines.push("", "| 类型 | statementId | scope | observedValue | confidence | reviewStatus | image | visibleBasis |", "| --- | --- | --- | --- | --- | --- | --- | --- |");
   for (const fact of facts) {
@@ -263,25 +267,23 @@ function renderContextSignals(lines, signals) {
 }
 
 function renderContextSnapshot(lines, worksheet) {
-  const factorBySource = new Map(worksheet.calculationResult.factors.map((factor) => [sourceKey(factor.source), factor]));
-  const rows = worksheet.governanceRows
-    .map((governance) => ({ governance, factor: factorBySource.get(sourceKey(governance.source)) }))
+  const rows = worksheet.contextSnapshot.rows
+    .map((row) => structuredClone(row))
     .sort((left, right) => (
-      left.governance.source.sourceRow - right.governance.source.sourceRow
-        || left.governance.source.tableId.localeCompare(right.governance.source.tableId)
+      left.sourceRow - right.sourceRow || left.tableId.localeCompare(right.tableId)
     ));
   lines.push(
     "",
     "#### 分析上下文快照",
     "",
-    `dimensionDescription: ${inline(rows[0]?.governance.dimensionDescription)}`,
+    `dimensionDescription: ${inline(worksheet.contextSnapshot.dimensionDescription)}`,
     "",
     "| tableId | sourceRow | partName | partSubsystem | partCategory | factorName | factorDescription | nominal | upperTolerance | lowerTolerance | sigmaLevel | sourceCells |",
     "| --- | ---: | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- |",
   );
-  for (const { governance, factor } of rows) {
-    const sourceCells = Object.values(governance.source.sourceCells).sort().join("; ");
-    lines.push(`| ${cell(governance.source.tableId)} | ${cell(governance.source.sourceRow)} | ${cell(governance.partSubsystem)} | ${cell(governance.partSubsystem)} | ${cell(governance.partCategory)} | ${cell(factor?.factorName)} | ${cell(governance.factorDescription)} | ${cell(governance.nominal)} | ${cell(governance.upperTolerance)} | ${cell(governance.lowerTolerance)} | ${cell(governance.sigmaLevel)} | ${cell(sourceCells)} |`);
+  for (const row of rows) {
+    const sourceCells = Object.values(row.sourceCells).sort().join("; ");
+    lines.push(`| ${cell(row.tableId)} | ${cell(row.sourceRow)} | ${cell(row.partName)} | ${cell(row.partSubsystem)} | ${cell(row.partCategory)} | ${cell(row.factorName)} | ${cell(row.factorDescription)} | ${cell(row.nominal)} | ${cell(row.upperTolerance)} | ${cell(row.lowerTolerance)} | ${cell(row.sigmaLevel)} | ${cell(sourceCells)} |`);
   }
 }
 

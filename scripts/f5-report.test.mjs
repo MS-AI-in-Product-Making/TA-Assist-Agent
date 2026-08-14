@@ -123,7 +123,13 @@ function observation(overrides = {}) {
   };
 }
 
-function completedReport({ observations = [], factorName, governanceGap = false, contextual = false } = {}) {
+function completedReport({
+  observations = [],
+  factorName,
+  governanceGap = false,
+  contextual = false,
+  contextualConfidences = CORE_SCOPES.map(() => "high"),
+} = {}) {
   const calculationResult = createCalculation(calculationRequest(factorName));
   if (calculationResult.status !== "completed") throw new Error("Expected completed calculation fixture.");
   const imageReference = {
@@ -162,11 +168,11 @@ function completedReport({ observations = [], factorName, governanceGap = false,
       },
     },
   }));
-  const contextualObservations = CORE_SCOPES.map((scope) => ({
+  const contextualObservations = CORE_SCOPES.map((scope, index) => ({
     scope,
     visualObservation: {
       observedValue: "visible",
-      confidence: "high",
+      confidence: contextualConfidences[index],
       visibleBasis: `Visible marker for ${scope}.`,
       reviewStatus: "unreviewed",
     },
@@ -190,8 +196,8 @@ function completedReport({ observations = [], factorName, governanceGap = false,
       partName: `part-${index + 1}`,
       partSubsystem: row.partSubsystem,
       partCategory: row.partCategory,
-      factorName: calculationResult.factors[index].factorName,
-      factorDescription: row.factorDescription,
+      factorName: `factor-original-${index + 1}`,
+      factorDescription: `factor-mapped-${index + 1}`,
       nominal: row.nominal,
       upperTolerance: row.upperTolerance,
       lowerTolerance: row.lowerTolerance,
@@ -351,10 +357,27 @@ describe("renderF5Report", () => {
     expect(snapshot.indexOf("| table-a | 2 |")).toBeLessThan(snapshot.indexOf("| table-a | 3 |"));
     expect(snapshot.indexOf("| table-a | 3 |")).toBeLessThan(snapshot.indexOf("| table-a | 4 |"));
     expect(snapshot.indexOf("| table-a | 4 |")).toBeLessThan(snapshot.indexOf("| table-a | 5 |"));
-    expect(snapshot).toContain("controlled-subsystem");
-    expect(snapshot).toContain("factor\\|one");
+    expect(snapshot).toContain("| table-a | 2 | part-1 | controlled-subsystem | controlled-category | factor-original-1 | factor-mapped-1 | 0 | 1 | -1 | 2 |");
     expect(snapshot).toContain("Analysis-A\\!A2");
     expect(markdown).not.toMatch(/[A-Za-z]:[\\/]/);
+  });
+
+  it("renders a controlled Visual FACT empty state for valid v2 medium and low observations", () => {
+    const markdown = chapter(
+      renderF5Report(completedReport({
+        contextual: true,
+        contextualConfidences: ["medium", "low", "medium", "low", "medium"],
+      })),
+      "## 1. 公差链有效性",
+      "## 2. 能力与规格对比",
+    );
+
+    const matrix = section(markdown, "#### 五项状态矩阵", "#### Visual FACT");
+    expect(matrix.match(/^\| (?:tolerance_loop_closure|datum_chain|assembly_datum_face|stack_start|direction) \|/gm)).toHaveLength(5);
+    const visualFacts = section(markdown, "#### Visual FACT", "#### Worksheet context SIGNAL");
+    expect(visualFacts).toContain("无满足 FACT gate 的视觉观察");
+    expect(markdown).toContain("#### Worksheet context SIGNAL");
+    expect(markdown).toContain("#### 分析上下文快照");
   });
 
   it("preserves v1 rendering and keeps no-v2 fallback clarifications", () => {
