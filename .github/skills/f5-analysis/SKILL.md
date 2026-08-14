@@ -38,7 +38,7 @@ Run `npm run workflow:f2:excel -- <ta-workbook-path> --worksheets <worksheet-nam
 
 ### Phase W3 - Select ready worksheets
 
-Read only worksheets whose validated F2 handoff has `status: readyForNextFeature`. Before treating one as F5 ready, require it to belong to the Phase W1 selection and require its F1 `imageReference` and referenced physical image to exist and pass the controlled-path, identity, and hash checks. Apply the same fail-closed boundary as F2/F5 when either is missing, even if the F2 handoff says ready: exclude that worksheet from the F5 ready set and do not promise or attempt continuation for it. Never offer blocked, malformed, or F5-ineligible worksheets.
+Read only worksheets whose validated F2 handoff has `status: readyForNextFeature`. Before treating one as F5 ready, require it to belong to the Phase W1 selection and require its F1 `imageReference` and referenced physical image to exist and pass the controlled-path, identity, and hash checks. W3 already validates each F1 physical image SHA and keeps its verified `imageReference`. For each selected worksheet, use only the real file referenced by F1 imageReference, resolve it beneath the controlled F1 root, and verify the controlled path and SHA-256 contentHash before viewing. Apply the same fail-closed boundary as F2/F5 when either is missing, even if the F2 handoff says ready: exclude that worksheet from the F5 ready set and do not promise or attempt continuation for it. Never offer blocked, malformed, or F5-ineligible worksheets.
 
 Make an **F3/F4/F5 scope call - `vscode_askQuestions` (`multiSelect: true`)** listing only those ready worksheet names. Require at least one worksheet. Preserve the returned names as one exact, unique selected set. If the call is cancelled or returns none, stop before F3, F4, and F5.
 
@@ -75,11 +75,11 @@ Before optional image processing, validate the F1/F3/F4 baseline identities, sel
 
 Follow this order without omission or reordering:
 
-1. **Verify every selected F1 image.** For each selected worksheet, use only the real file referenced by F1 imageReference. Resolve it beneath the controlled F1 root, verify the controlled path and SHA-256 contentHash before viewing, and require `artifact: f1` plus the same worksheet name. Never substitute a screenshot, report rendering, URL, or similarly named file.
+1. **Use every W3-verified selected F1 image.** Preserve each verified F1 `imageReference`, require `artifact: f1` plus the same worksheet name, and never substitute a screenshot, report rendering, URL, or similarly named file.
 2. **Construct and validate the all-row context snapshot.** The context snapshot includes ALL active factor rows, not only top contributors. Its exact row set equals the verified F1/F3 selected rows. The snapshot preserves original `partName` and `factorName`, mapped `partSubsystem` and `factorDescription`, `dimensionDescription`, and source provenance. Preserve `tableId`, `sourceRow`, `partCategory`, `nominal`, `upperTolerance`, `lowerTolerance`, `sigmaLevel`, and `sourceCells`; retain missing source values as `null` and do not infer replacements. Require unique `{tableId, sourceRow}` pairs and exact field-by-field agreement with the validated F1/F3 evidence.
 3. **Ask exactly five image-mode questions per selected worksheet.** Each selected worksheet answers exactly five questions: `tolerance_loop_closure`, `datum_chain`, `assembly_datum_face`, `stack_start`, and `direction`. Use the current agent image capability with the verified image, complete snapshot, and all five questions. Do not claim that a shell command invokes an image model. The model must record only visible evidence and a concise visible basis. Do not record hidden chain-of-thought or inferred unseen geometry.
 4. **Create one immutable `f5-image-observation-v2` artifact.** Write the optional strict JSON artifact only at `test/demo-output/f5-observations/<workbook-content-hash>/<system-generated-uuid>/Feature5-Image-Observations.json`. Do not invent a CLI for image analysis.
-5. **Read back and validate schema, identity, and source rows.** After creation, read back and validate the artifact with `f5ImageObservationArtifactSchema`. Validate the contract version, workbook identity, selected worksheets, images, five scopes, complete snapshots, source provenance, and structured links. Verify the immutable artifact SHA-256 after readback.
+5. **Read back and validate schema, identity, and source rows.** After creation, read back and validate the artifact with `f5ImageObservationArtifactSchema`. Validate the contract version, workbook identity, selected worksheets, images, five scopes, complete snapshots, source provenance, and structured links. W6 readback must exactly match those already verified image references and the v2 snapshot and source identities.
 6. **Pass the validated v2 artifact to F5, or discard the whole artifact and use deterministic fallback.** The v2 selected worksheet set must be exact. Any worksheet, scope, or snapshot mismatch discards the entire v2 artifact; partial consumption is prohibited. When the validated baseline remains valid, continue deterministic F5 with `not_evaluated` plus clarification. Never repair an immutable artifact in place.
 
 Creation controls apply to the entire v2 artifact:
@@ -92,8 +92,10 @@ Creation controls apply to the entire v2 artifact:
 - Never edit, overwrite, append to, or reuse an observation artifact or target.
 - If the target already exists, fail closed and select a new system-generated UUID directory, then repeat all containment and ancestry checks before a single creation attempt.
 - Readback must exactly match the validated workbook content hash and selected worksheets.
-- Each readback `imageReference` must exactly match `relativePath`, `contentHash`, and `worksheetName`, including SHA-256 `contentHash` verification.
+- Each readback `imageReference` must exactly match the W3-verified `relativePath`, `contentHash`, and `worksheetName`; W6 does not independently rehash the physical image or the new observation artifact.
 - If reread, schema, identity, source-row, provenance, link, or hash validation fails, discard the entire artifact from the F5 invocation. Do not partially consume it.
+- The F5 loader is the authoritative runtime revalidation gate for physical image SHA and content identity when consuming v2.
+- No additional shell or hash command is permitted or invented.
 
 The artifact contract is:
 
@@ -109,7 +111,7 @@ The artifact contract is:
 
 `direction` row links require structured `linkedVisualLabels`; never parse `visibleBasis` to infer links. Every `linkedSourceRows` item must reference a current snapshot `{tableId, sourceRow}` and its structured visual label. With no reliable mapping, `linkedVisualLabels` and `linkedSourceRows` are empty and `signalValue` is `ambiguous` or `insufficient_evidence`.
 
-`visualObservation` may produce only an image `FACT` when the evidence gates permit; `image_text_context_review` is always `SIGNAL`. Context always requires ME review and cannot create a `RULE` or final engineering determination. `visibleBasis` describes only labels, arrows, symbols, lines, faces, and visible geometric relationships in the image; worksheet text belongs in `textBasis` and cannot prove a visual FACT.
+`visualObservation` may produce only an image `FACT` when the evidence gates permit. The current classification table governs only outputs derived from `visualObservation`. `image_text_context_review` is an independent contextual `SIGNAL` for every core scope. It remains present when visual confidence is low or visual `reviewStatus` is rejected. It always requires ME review and never creates a `FACT`, `RULE`, or final engineering determination. `visibleBasis` describes only labels, arrows, symbols, lines, faces, and visible geometric relationships in the image; worksheet text belongs in `textBasis` and cannot prove a visual FACT.
 
 Evidence gates are strict and apply exactly as follows. An image FACT records only what is visibly observed; it is never a dimensional RULE or a final engineering determination.
 
@@ -131,7 +133,7 @@ Run the matching allowed F5 worksheet-filtered command with a repeated `--worksh
 
 ### Phase W8 - Validate and present F5
 
-Strictly validate `Feature5-Report.json`, the manifest, run summary, output containment, source identities, worksheet set, classifications, and recorded hashes. Present FACT, RULE, SIGNAL, OPTION, assumptions, and clarifications without promoting one category into another. Before presentation, validate the versions recorded by the F2 and F5 artifacts and present public knowledge base `v1`, internal tolerance guidance `internal-v1`, and interpretation rules `interpretation-rules-v1`. This disclosure records controlled F0 use; it does not imply a separate F0 workflow command. When a verified F1 image reference exists but image mode is unavailable, the user skips evaluation, or no observation artifact is generated, drawing evidence remains `not_evaluated` with clarification and deterministic F5 results still complete. A missing F1 physical image or `imageReference` is instead fail-closed and produces no F5 result for that worksheet.
+Strictly validate `Feature5-Report.json`, the manifest, run summary, output containment, source identities, worksheet set, classifications, and recorded hashes. The post-run summary records the observation artifact hash. Present FACT, RULE, SIGNAL, OPTION, assumptions, and clarifications without promoting one category into another. Before presentation, validate the versions recorded by the F2 and F5 artifacts and present public knowledge base `v1`, internal tolerance guidance `internal-v1`, and interpretation rules `interpretation-rules-v1`. This disclosure records controlled F0 use; it does not imply a separate F0 workflow command. When a verified F1 image reference exists but image mode is unavailable, the user skips evaluation, or no observation artifact is generated, drawing evidence remains `not_evaluated` with clarification and deterministic F5 results still complete. A missing F1 physical image or `imageReference` is instead fail-closed and produces no F5 result for that worksheet.
 
 ## Entry mode 2 - Existing F5 artifact
 

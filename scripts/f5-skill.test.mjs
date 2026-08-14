@@ -27,8 +27,13 @@ const structuralScopes = [
 ];
 
 const frontmatterKeys = ["argument-hint", "description", "name", "user-invocable"];
-const executableStart = /^(?:npm|pnpm|yarn|node|pwsh|powershell|curl|Invoke-WebRequest)(?:\s|$)/i;
-const imperativeExecutableStart = /^(?:please(?:\s+run)?|run|use|execute|call|invoke)\s*:?\s*((?:npm|pnpm|yarn|node|pwsh|powershell|curl|Invoke-WebRequest)(?:\s|$).*)/i;
+const executableName = String.raw`(?:npm|npx|pnpm|yarn|bun|node|deno|python|python3|py|pwsh|powershell|bash|sh|curl|Invoke-WebRequest)`;
+const executableStart = new RegExp(`^${executableName}(?:\\s|$)`, "i");
+const imperativeExecutableStart = new RegExp(
+  `^(?:please(?:\\s+run)?|run|use|execute|call|invoke)\\s*:?\\s*(${executableName}(?:\\s|$).*)`,
+  "i",
+);
+const directWorkflowStart = /^workflow:[a-z0-9:-]+(?:\s|$)/i;
 const dangerousPatterns = [
   /\b(?:allow|permit)\s+ADO\s+publishing\b/i,
   /\b(?:ignore|bypass)\s+(?:the\s+)?(?:recorded\s+)?hash(?:es|\s+validation)?\b/i,
@@ -127,7 +132,7 @@ function executableCommands(markdown) {
     const unquoted = normalized.replace(/`+/g, "");
     const imperative = unquoted.match(imperativeExecutableStart)?.[1]?.trim();
     if (imperative) candidates.add(imperative);
-    else if (executableStart.test(unquoted)) candidates.add(unquoted);
+    else if (executableStart.test(unquoted) || directWorkflowStart.test(unquoted)) candidates.add(unquoted);
   }
   return [...candidates];
 }
@@ -341,6 +346,52 @@ describe("f5-analysis skill contract", () => {
       "curl https://example.invalid",
     ]);
     expect(executableCommands("Fallback command: `node unsafe.mjs`")).toEqual(["node unsafe.mjs"]);
+    expect(executableCommands([
+      "Inline candidate: `python image_model.py`.",
+      "Run npx image-model after validation.",
+      "```sh",
+      "bash analyze.sh",
+      "deno run image-analysis.ts",
+      "```",
+      "workflow:f0 --unsafe-direct-command",
+      "The Python observation schema is descriptive ordinary prose.",
+      "A bash shell is not itself an instruction to execute.",
+    ].join("\n"))).toEqual([
+      "python image_model.py",
+      "npx image-model after validation.",
+      "bash analyze.sh",
+      "deno run image-analysis.ts",
+      "workflow:f0 --unsafe-direct-command",
+    ]);
+    for (const adversarial of [
+      "python image_model.py",
+      "npx image-model after validation.",
+      "bash analyze.sh",
+      "deno run image-analysis.ts",
+      "workflow:f0 --unsafe-direct-command",
+    ]) {
+      expect(allowedCommands).not.toContain(adversarial);
+    }
+    for (const commandStart of [
+      "npm",
+      "npx",
+      "pnpm",
+      "yarn",
+      "bun",
+      "node",
+      "deno",
+      "python",
+      "python3",
+      "py",
+      "pwsh",
+      "powershell",
+      "bash",
+      "sh",
+      "curl",
+      "Invoke-WebRequest",
+    ]) {
+      expect(executableCommands(`Run ${commandStart} unsafe-command`)).toEqual([`${commandStart} unsafe-command`]);
+    }
     for (const executable of executableCommands(skill)) {
       expect(allowedCommands, `Non-whitelisted executable in SKILL.md: ${executable}`).toContain(executable);
     }
@@ -450,7 +501,7 @@ describe("f5-analysis skill contract", () => {
       "If ancestry is unverifiable, do not create the artifact; continue deterministic F5 with not_evaluated plus clarification.",
       "After creation, read back and validate the artifact with f5ImageObservationArtifactSchema.",
       "Readback must exactly match the validated workbook content hash and selected worksheets.",
-      "Each readback imageReference must exactly match relativePath, contentHash, and worksheetName, including SHA-256 contentHash verification.",
+      "Each readback imageReference must exactly match the W3-verified relativePath, contentHash, and worksheetName; W6 does not independently rehash the physical image or the new observation artifact.",
     ]) {
       expect(normalizedSkill).toContain(phrase);
     }
@@ -470,13 +521,15 @@ describe("f5-analysis skill contract", () => {
       "Never edit, overwrite, append to, or reuse an observation artifact or target.",
       "Before creation, check every existing ancestor for a reparse point, symlink, or junction.",
       "After creation, read back and validate the artifact with f5ImageObservationArtifactSchema.",
-      "Verify the immutable artifact SHA-256 after readback.",
+      "The F5 loader is the authoritative runtime revalidation gate for physical image SHA and content identity when consuming v2.",
+      "The post-run summary records the observation artifact hash.",
+      "No additional shell or hash command is permitted or invented.",
     ]) {
       expect(normalizedSkill).toContain(phrase);
     }
 
     expectOrdered(skill, [
-      "Verify every selected F1 image",
+      "Use every W3-verified selected F1 image",
       "Construct and validate the all-row context snapshot",
       "Ask exactly five image-mode questions per selected worksheet",
       "Create one immutable `f5-image-observation-v2` artifact",
@@ -494,13 +547,53 @@ describe("f5-analysis skill contract", () => {
       "Its exact row set equals the verified F1/F3 selected rows.",
       "The snapshot preserves original partName and factorName, mapped partSubsystem and factorDescription, dimensionDescription, and source provenance.",
       "Each selected worksheet answers exactly five questions: tolerance_loop_closure, datum_chain, assembly_datum_face, stack_start, and direction.",
-      "visualObservation may produce only an image FACT when the evidence gates permit; image_text_context_review is always SIGNAL.",
-      "Context always requires ME review and cannot create a RULE or final engineering determination.",
+      "visualObservation may produce only an image FACT when the evidence gates permit.",
+      "image_text_context_review is an independent contextual SIGNAL for every core scope.",
       "direction row links require structured linkedVisualLabels; never parse visibleBasis to infer links.",
       "With no reliable mapping, linkedVisualLabels and linkedSourceRows are empty and signalValue is ambiguous or insufficient_evidence.",
     ]) {
       expect(normalizedSkill).toContain(phrase);
     }
+  });
+
+  it("governs visual classifications independently from contextual signals for every core scope", () => {
+    const skill = readSkill();
+    const normalizedSkill = normalizeContractText(skill);
+    for (const phrase of [
+      "The current classification table governs only outputs derived from visualObservation.",
+      "image_text_context_review is an independent contextual SIGNAL for every core scope.",
+      "It remains present when visual confidence is low or visual reviewStatus is rejected.",
+      "It always requires ME review and never creates a FACT, RULE, or final engineering determination.",
+    ]) {
+      expect(normalizedSkill).toContain(phrase);
+    }
+
+    const mutations = [
+      normalizedSkill.replace("governs only outputs derived from visualObservation", "governs all observation outputs"),
+      normalizedSkill.replace("an independent contextual SIGNAL for every core scope", "a contextual SIGNAL for selected scopes"),
+      normalizedSkill.replace("remains present when visual confidence is low or visual reviewStatus is rejected", "is omitted when visual confidence is low or visual reviewStatus is rejected"),
+      normalizedSkill.replace("always requires ME review and never creates a FACT, RULE, or final engineering determination", "may create a FACT after ME review"),
+    ];
+    for (const mutated of mutations) {
+      expect(mutated).not.toBe(normalizedSkill);
+      expect(mutated).not.toContain("The current classification table governs only outputs derived from visualObservation. image_text_context_review is an independent contextual SIGNAL for every core scope. It remains present when visual confidence is low or visual reviewStatus is rejected. It always requires ME review and never creates a FACT, RULE, or final engineering determination.");
+    }
+  });
+
+  it("assigns image and observation SHA checks to existing governed mechanisms", () => {
+    const skill = readSkill();
+    const normalizedSkill = normalizeContractText(skill);
+    for (const phrase of [
+      "W3 already validates each F1 physical image SHA and keeps its verified imageReference.",
+      "W6 readback must exactly match those already verified image references and the v2 snapshot and source identities.",
+      "The F5 loader is the authoritative runtime revalidation gate for physical image SHA and content identity when consuming v2.",
+      "The post-run summary records the observation artifact hash.",
+      "No additional shell or hash command is permitted or invented.",
+    ]) {
+      expect(normalizedSkill).toContain(phrase);
+    }
+    expect(normalizedSkill).not.toContain("Verify the immutable artifact SHA-256 after readback.");
+    expect(skill).not.toMatch(/(?:run|use|invoke|execute)\s+(?:an?\s+)?(?:independent\s+)?(?:shell\s+)?(?:hash|sha-?256)\s+command/i);
   });
 
   it("rejects partial v2 consumption and distinguishes fallback from baseline failure", () => {
