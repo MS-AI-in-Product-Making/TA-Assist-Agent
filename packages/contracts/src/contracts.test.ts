@@ -24,6 +24,18 @@ import {
   f4WorkflowCalculationResultSchema,
   f5DataInterpretationRequestSchema,
   f5DataInterpretationResultSchema,
+  f6ApportionmentResultSchema,
+  f6CapabilityBoundSchema,
+  f6ComposedEngineeringReportSchema,
+  f6ControlledScenarioSchema,
+  f6CostEvidenceSchema,
+  f6DatumEvidenceSchema,
+  f6FeasibilityAssessmentSchema,
+  f6OptimizationRequestSchema,
+  f6OptimizationResultSchema,
+  f6ReverseSolveResultSchema,
+  f6SupplierCapabilityEvidenceSchema,
+  f6ToleranceChangeSchema,
   f5ImageObservationArtifactSchema,
   f5ImageObservationArtifactV2Schema,
   f5ObjectiveInterpretationCompletedResultSchema,
@@ -4296,6 +4308,177 @@ describe("F5.1 objective interpretation contracts", () => {
           assumptionCount: 0,
         },
       }).success).toBe(false);
+    });
+
+    describe("F6 optimization and composed report contracts", () => {
+      const reference = (artifact: string) => ({ artifact, contentHash: "a".repeat(64) });
+      const validF6WorksheetInput = {
+        worksheetName: "Analysis-A",
+        baselineCalculation: calculationCompletedResult,
+        f5Worksheet: rootResult.worksheets[0],
+        f3GovernanceRows: [governanceRow],
+        f2Findings: [],
+      };
+      const f6Request = {
+        contractVersion: "v1",
+        inputClassification: "confidential",
+        workbook: { fileName: "Demo.xlsx", contentHash: calculationCompletedResult.workbookContentHash },
+        selectedWorksheetNames: ["Analysis-A"],
+        f2Reference: reference("Feature2-Report.json"),
+        f3Reference: reference("Feature3-Report.json"),
+        f4Reference: { ...reference("Feature4-Calculation.json"), runId: calculationCompletedResult.runReference, calculationVersion: "excel-ta-v1" },
+        f5Reference: { ...reference("Feature5-Report.json"), interpretationVersion: "f5-data-interpretation-v1" },
+        f0Versions: {
+          knowledgeBaseVersion: "v1",
+          capabilityVersion: "internal-v1",
+          interpretationVersion: "interpretation-rules-v1",
+        },
+        scenarioPolicyVersion: "f6-scenario-policy-v1",
+        worksheets: [validF6WorksheetInput],
+      };
+      const metrics = { mean: 12.46, rssSigma: 0.05, cp: 2.67, cpk: 2.4, yield: 0.999, dpm: 1000 };
+      const feasibility = { status: "supported", reasonCodes: ["within_capability_bound"], evidenceReferences: ["supplier-capability.json"] };
+      const completedOption = {
+        status: "completed",
+        optionId: "top-contributor-20",
+        optionKind: "reduce_top_contributor_20",
+        baselineMetrics: metrics,
+        resultMetrics: { ...metrics, rssSigma: 0.04, cp: 3.17, cpk: 3, yield: 0.9999, dpm: 100 },
+        deltaCpk: 0.6,
+        deltaCp: 0.5,
+        deltaRssSigma: -0.01,
+        deltaDpm: -900,
+        deltaYield: 0.0009,
+        factorOverrides: [{ worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 2, upperTolerance: 0.16, lowerTolerance: -0.16 }],
+        toleranceChanges: [{
+          worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 2,
+          originalLowerTolerance: -0.2, originalUpperTolerance: 0.2,
+          resultingLowerTolerance: -0.16, resultingUpperTolerance: 0.16,
+          originalBand: 0.4, resultingBand: 0.32, bandCenter: 0,
+        }],
+        feasibility,
+        evidenceReferences: [reference("Feature4-Calculation.json")],
+        relativeCost: "insufficient_evidence",
+        roiScore: "not_computed",
+        impactRank: 1,
+        calculationTrace: reference("scenarios/top-contributor-20.json"),
+      };
+      const f6Result = {
+        contractVersion: "v1",
+        outputClassification: "confidential",
+        featureId: "F6",
+        status: "completed",
+        optimizationVersion: "f6-optimization-v1",
+        workbook: f6Request.workbook,
+        worksheets: [{
+          worksheetName: "Analysis-A",
+          status: "completed",
+          baselineMetrics: metrics,
+          targetCapability: { targetCpk: 1.33, targetSigmaLevel: 4, source: "worksheet" },
+          inputFindings: [],
+          options: [completedOption],
+          risks: [],
+          recommendations: [{ recommendationId: "recommend-top", optionId: completedOption.optionId, text: "Apply the verified top contributor tolerance change.", evidenceReferences: [reference("scenarios/top-contributor-20.json")] }],
+          highestImpactAction: { optionId: completedOption.optionId, rationale: "Largest verified capability improvement." },
+          roiStatus: "not_computed",
+          clarifications: [],
+        }],
+        summary: { worksheetCount: 1, completedWorksheetCount: 1, partiallyCompletedWorksheetCount: 0, inputRejectedWorksheetCount: 0, completedOptionCount: 1, calculationFailedOptionCount: 0, insufficientEvidenceOptionCount: 0 },
+        provenance: {
+          f2Reference: f6Request.f2Reference, f3Reference: f6Request.f3Reference,
+          f4Reference: f6Request.f4Reference, f5Reference: f6Request.f5Reference,
+          f0Versions: f6Request.f0Versions, scenarioPolicyVersion: f6Request.scenarioPolicyVersion,
+        },
+      };
+
+      it("accepts strict F6 requests and binds workbook and worksheet identities", () => {
+        expect(f6OptimizationRequestSchema.parse(f6Request)).toEqual(f6Request);
+        expect(f6OptimizationRequestSchema.safeParse({ ...f6Request, inputClassification: "public" }).success).toBe(false);
+        expect(f6OptimizationRequestSchema.safeParse({ ...f6Request, f2Reference: reference("C:\\absolute\\Feature2-Report.json") }).success).toBe(false);
+        expect(f6OptimizationRequestSchema.safeParse({ ...f6Request, selectedWorksheetNames: ["Analysis-A", "Analysis-A"] }).success).toBe(false);
+        expect(f6OptimizationRequestSchema.safeParse({ ...f6Request, workbook: { ...f6Request.workbook, contentHash: "0".repeat(64) } }).success).toBe(false);
+      });
+
+      it("accepts strict solver DTOs and versioned supplier, datum, and cost evidence", () => {
+        expect(f6ToleranceChangeSchema.parse(completedOption.toleranceChanges[0])).toEqual(completedOption.toleranceChanges[0]);
+        expect(f6ControlledScenarioSchema.safeParse({ scenarioId: "scenario-1", optionKind: "reduce_top_contributor_20", factorOverrides: completedOption.factorOverrides }).success).toBe(true);
+        expect(f6ReverseSolveResultSchema.safeParse({ targetCpk: 1.33, targetRssSigma: 0.04, strategy: "single-factor", toleranceChanges: completedOption.toleranceChanges, residualError: 0 }).success).toBe(true);
+        expect(f6CapabilityBoundSchema.safeParse({ tableId: "table-a", sourceRow: 2, minimumToleranceBand: 0.1, maximumToleranceBand: 0.4, evidenceReference: "supplier-capability.json" }).success).toBe(true);
+        expect(f6FeasibilityAssessmentSchema.parse(feasibility)).toEqual(feasibility);
+        expect(f6ApportionmentResultSchema.safeParse({ policy: "bounded-by-capability", targetRssSigma: 0.04, allocations: [{ tableId: "table-a", sourceRow: 2, targetSigma: 0.04, targetTolerance: 0.16 }], residualError: 0, feasibility }).success).toBe(true);
+        expect(f6SupplierCapabilityEvidenceSchema.safeParse({ evidenceVersion: "supplier-capability-v1", supplierReference: "supplier-a", processFamily: "cnc", partCategory: "CNC", capabilityTier: "T1", achievableToleranceBand: 0.3, distribution: "normal", source: "supplier-capability.json", effectiveVersion: "2026-Q3", contentHash: "a".repeat(64) }).success).toBe(true);
+        expect(f6DatumEvidenceSchema.safeParse({ evidenceVersion: "datum-strategy-v1", datumFace: "A", stackStart: "A", factorDirections: [{ tableId: "table-a", sourceRow: 2, direction: 1 }], datumChainEdges: [{ from: "A", to: "B" }], crossSubsystemRelations: ["bracket-to-frame"], drawingEvidence: ["drawing-a.pdf"], reviewStatus: "confirmed", source: "datum-review.json", effectiveVersion: "v1", contentHash: "a".repeat(64) }).success).toBe(true);
+        expect(f6CostEvidenceSchema.safeParse({ evidenceVersion: "cost-model-v1", model: "relative-cost", unit: "USD", optionCosts: [{ optionKind: "reduce_top_contributor_20", cost: 100 }], source: "cost-model.json", effectiveVersion: "FY26", contentHash: "a".repeat(64) }).success).toBe(true);
+      });
+
+      it("enforces strict option branches and result status summaries", () => {
+        expect(f6OptimizationResultSchema.parse(f6Result)).toEqual(f6Result);
+        expect(f6OptimizationResultSchema.safeParse({ ...f6Result, summary: { ...f6Result.summary, completedOptionCount: 0 } }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({ ...f6Result, worksheets: [{ ...f6Result.worksheets[0], options: [{ ...completedOption, deltaCpk: 0.7 }] }] }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({ ...f6Result, worksheets: [{ ...f6Result.worksheets[0], status: "input_rejected", options: [completedOption] }] }).success).toBe(false);
+        const failedOption = { status: "calculation_failed", optionId: "failed", optionKind: "reduce_top_3_contributors_30", reasonCode: "f4_calculation_failed", evidenceReferences: [], impactRank: null };
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          status: "partially_completed",
+          worksheets: [{ ...f6Result.worksheets[0], status: "partially_completed", options: [completedOption, failedOption] }],
+          summary: { ...f6Result.summary, partiallyCompletedWorksheetCount: 1, completedWorksheetCount: 0, calculationFailedOptionCount: 1 },
+        }).success).toBe(true);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], options: [{ ...failedOption, resultMetrics: metrics }] }],
+        }).success).toBe(false);
+        const insufficientOption = { status: "insufficient_evidence", optionId: "supplier", optionKind: "improve_supplier_capability", predictedImprovement: "insufficient_evidence", requiredInputs: ["supplier capability study"], evidenceReferences: [], relativeCost: "insufficient_evidence", roiScore: "not_computed", impactRank: null };
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], options: [completedOption, insufficientOption] }],
+          summary: { ...f6Result.summary, insufficientEvidenceOptionCount: 1 },
+        }).success).toBe(true);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], options: [{ ...completedOption, relativeCost: 0, roiScore: 0 }] }],
+        }).success).toBe(false);
+      });
+
+      it("accepts the fixed ten-section composed report and enforces bullet limits", () => {
+        const evidenceReferences = [reference("Feature5-Report.json"), reference("Feature6-Optimization.json")];
+        const report = {
+          contractVersion: "v1", outputClassification: "confidential", reportVersion: "f6-composed-report-v1",
+          workbook: f6Request.workbook, overallStatus: "RISK",
+          workbookExecutiveSummary: ["Overall RISK because one worksheet is blocked."],
+          blockedWorksheets: [{ worksheetName: "Blocked", findings: [{ findingCode: "missing_nominal", severity: "Critical", message: "Nominal is missing.", evidenceReferences: [reference("Feature2-Report.json")] }] }],
+          worksheets: [{
+            worksheetName: "Analysis-A", status: "PASS", evidenceReferences,
+            sections: {
+              executiveSummary: ["Cpk 2.4 exceeds the 1.33 target."],
+              requirementReview: { ctq: "Anonymous device gap", nominal: 12.5, lowerSpecLimit: 12.1, upperSpecLimit: 12.9, specWidth: 0.8, assessment: "Requirement is understood.", riskLevel: "Low", evidenceReferences },
+              inputValidation: [],
+              capabilityAssessment: { metrics, oosRate: 0.001, oosPpm: 1000, findings: ["Capability exceeds target."], evidenceReferences },
+              contributorAnalysis: { topContributors: [{ factorName: "Feature-A", contributionPercent: 100, tableId: "table-a", sourceRow: 2 }], top1Concentration: 100, top3Concentration: 100, concentrationAssessment: "concentrated", policyVersion: "f6-contributor-policy-v1", evidenceReferences },
+              rootCauseAnalysis: { factBasedFindings: ["Feature-A dominates RSS sigma."], signals: [], evidenceStatus: "supported", evidenceReferences },
+              riskAssessment: [{ category: "Manufacturing", rating: "Low", reason: "Baseline capability exceeds target.", evidenceReferences }],
+              recommendations: [{ text: "Apply the verified top contributor option.", optionId: completedOption.optionId, evidenceReferences }],
+              whatIfAnalysis: { options: [
+                { optionKind: "reduce_top_contributor_20", status: "completed", summary: "Cpk improves by 0.6.", evidenceReferences },
+                { optionKind: "reduce_top_3_contributors_30", status: "completed", summary: "Top three contributors were recalculated.", evidenceReferences },
+                { optionKind: "improve_supplier_capability", status: "insufficient_evidence", summary: "Supplier capability evidence is required.", evidenceReferences },
+                { optionKind: "tighten_datum_strategy", status: "insufficient_evidence", summary: "Reviewed datum evidence is required.", evidenceReferences },
+              ], highestImpactAction: "Apply top contributor tightening.", roiStatus: "not_computed", evidenceReferences },
+              finalConclusion: ["The current design reaches the target capability."],
+            },
+          }],
+        };
+        expect(f6ComposedEngineeringReportSchema.parse(report)).toEqual(report);
+        expect(f6ComposedEngineeringReportSchema.safeParse({ ...report, workbookExecutiveSummary: Array(6).fill("bullet") }).success).toBe(false);
+        expect(f6ComposedEngineeringReportSchema.safeParse({ ...report, worksheets: [{ ...report.worksheets[0], sections: { ...report.worksheets[0].sections, executiveSummary: Array(6).fill("bullet") } }] }).success).toBe(false);
+        expect(f6ComposedEngineeringReportSchema.safeParse({ ...report, worksheets: [{ ...report.worksheets[0], sections: { ...report.worksheets[0].sections, finalConclusion: Array(11).fill("bullet") } }] }).success).toBe(false);
+      });
+
+      it("preserves the legacy feature_not_available comparison contracts", () => {
+        const legacyRequest = { contractVersion: "v1", inputClassification: "confidential", projectReference: "project", runReference: "run", worksheetReferences: ["Analysis-A"] };
+        const legacyResult = { contractVersion: "v1", outputClassification: "confidential", featureId: "F6", status: "feature_not_available", projectReference: "project", runReference: "run", worksheetReferences: ["Analysis-A"], requiredPrerequisites: ["approved-knowledge-base"] };
+        expect(comparisonRequestSchema.parse(legacyRequest)).toEqual(legacyRequest);
+        expect(comparisonResultSchema.parse(legacyResult)).toEqual(legacyResult);
+      });
     });
   });
 });
