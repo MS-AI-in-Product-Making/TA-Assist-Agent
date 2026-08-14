@@ -1,5 +1,6 @@
 import {
   f6ReverseSolveResultSchema,
+  f6ToleranceChangeSchema,
   type F6ReverseSolveResult,
   CalculationFactorResult,
   type Distribution,
@@ -170,10 +171,26 @@ function positiveDifference(upperValue: number, lowerValue: number, label: strin
   return difference;
 }
 
-function midpoint(lowerValue: number, upperValue: number, width: number): number {
-  const result = lowerValue + width / 2;
+function midpoint(lowerValue: number, upperValue: number): number {
+  const result = lowerValue / 2 + upperValue / 2;
   assertFinite(result, "bandCenter");
   return result;
+}
+
+function buildToleranceChange(change: F6ToleranceChange): F6ToleranceChange {
+  if (!(change.resultingLowerTolerance < change.resultingUpperTolerance)) {
+    fail("target_unreachable", "target tolerance endpoints are not separately representable");
+  }
+  const representedBand = change.resultingUpperTolerance - change.resultingLowerTolerance;
+  const schemaTolerance = 1e-12 * Math.max(1, Math.abs(change.resultingBand), Math.abs(representedBand));
+  if (!Number.isFinite(representedBand) || Math.abs(change.resultingBand - representedBand) > schemaTolerance) {
+    fail("target_unreachable", "represented target tolerance band does not match the requested band");
+  }
+  const parsed = f6ToleranceChangeSchema.safeParse(change);
+  if (!parsed.success) {
+    fail("target_unreachable", "target tolerance change is not representable by the solver contract");
+  }
+  return parsed.data;
 }
 
 function assertValidSpecBounds(lowerSpecLimit: number, upperSpecLimit: number): void {
@@ -345,14 +362,14 @@ function toleranceChangeForSigma(
   const originalLowerTolerance = factor.input.lowerTolerance;
   const originalUpperTolerance = factor.input.upperTolerance;
   const originalBand = positiveDifference(originalUpperTolerance, originalLowerTolerance, "originalBand");
-  const bandCenter = midpoint(originalLowerTolerance, originalUpperTolerance, originalBand);
+  const bandCenter = midpoint(originalLowerTolerance, originalUpperTolerance);
   const resultingBand = safePositiveProductQuotient([targetHalfTolerance, 2], [1], "resultingBand");
   const resultingLowerTolerance = bandCenter - targetHalfTolerance;
   const resultingUpperTolerance = bandCenter + targetHalfTolerance;
   assertFinite(resultingLowerTolerance, "resultingLowerTolerance");
   assertFinite(resultingUpperTolerance, "resultingUpperTolerance");
 
-  return {
+  return buildToleranceChange({
     worksheetName: factor.source.worksheetName,
     tableId: factor.source.tableId,
     sourceRow: factor.source.sourceRow,
@@ -363,7 +380,7 @@ function toleranceChangeForSigma(
     originalBand,
     resultingBand,
     bandCenter,
-  };
+  });
 }
 
 export function scaleToleranceBandAroundCenter(input: ScaleToleranceBandInput): ScaleToleranceBandResult {
@@ -377,7 +394,7 @@ export function scaleToleranceBandAroundCenter(input: ScaleToleranceBandInput): 
     fail("invalid_solver_input", "scale must be in the interval (0, 1]");
   }
   const originalBand = positiveDifference(input.upperTolerance, input.lowerTolerance, "originalBand");
-  const center = midpoint(input.lowerTolerance, input.upperTolerance, originalBand);
+  const center = midpoint(input.lowerTolerance, input.upperTolerance);
   const resultingBand = safePositiveProductQuotient([input.scale, originalBand], [1], "resultingBand");
   const lowerTolerance = center - resultingBand / 2;
   const upperTolerance = center + resultingBand / 2;
@@ -421,8 +438,7 @@ export function solveCenteringShift(input: CenteringInput): CenteringResult {
     return sum + factorMean;
   }, 0);
   assertFinite(currentMean, "currentMean");
-  const specificationWidth = positiveDifference(upperSpecLimit, lowerSpecLimit, "specificationWidth");
-  const targetMean = midpoint(lowerSpecLimit, upperSpecLimit, specificationWidth);
+  const targetMean = midpoint(lowerSpecLimit, upperSpecLimit);
   const additionalMeanShift = targetMean - currentMean;
   assertFinite(additionalMeanShift, "additionalMeanShift");
   return { targetMean, additionalMeanShift };

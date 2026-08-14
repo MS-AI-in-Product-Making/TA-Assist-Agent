@@ -132,6 +132,14 @@ describe("F6 deterministic solver primitives", () => {
     })).toEqual({ targetMean: 1, additionalMeanShift: 0.5 });
   });
 
+  it("centers symmetric extreme specification bounds without computing their width", () => {
+    expect(solveCenteringShift({
+      factorMeans: [0],
+      LSL: -1e308,
+      USL: 1e308,
+    })).toEqual({ targetMean: 0, additionalMeanShift: 0 });
+  });
+
   it("solves target RSS sigma from the limiting specification distance", () => {
     expect(solveTargetRssSigma({
       mean: 1,
@@ -230,6 +238,25 @@ describe("F6 deterministic solver primitives", () => {
     expect(change.resultingLowerTolerance).toBe(-1e-300);
     expect(change.resultingBand).toBe(2e-300);
     expectFiniteNumericFields(change);
+  });
+
+  it("rejects a target tolerance below endpoint resolution at a huge band center", () => {
+    const selected = factor(1, 1, 1, {
+      input: {
+        nominalValue: 0,
+        lowerTolerance: 1e308,
+        upperTolerance: 1.6e308,
+        longTermSafetyFactor: 1,
+        sigmaLevel: 1,
+        distribution: "normal",
+      },
+    });
+
+    expect(() => solveSingleFactorTolerance({
+      factors: [selected],
+      selectedSource: selected.source,
+      targetRssSigma: 1,
+    })).toThrowError(/target_unreachable|invalid_solver_input/);
   });
 
   it("accepts a finite target half tolerance before rejecting its unrepresentable result band", () => {
