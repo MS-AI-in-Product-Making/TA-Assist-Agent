@@ -141,6 +141,15 @@ describe("F6 deterministic solver primitives", () => {
     })).toBeCloseTo(0.25, 12);
   });
 
+  it("avoids target Cpk denominator overflow for representable extreme ratios", () => {
+    expect(solveTargetRssSigma({
+      mean: 0,
+      LSL: -1e308,
+      USL: 1e308,
+      targetCpk: 1e308,
+    })).toBeCloseTo(1 / 3, 12);
+  });
+
   it.each([
     { mean: 0, lowerSpecLimit: 0, upperSpecLimit: 2, targetCpk: 1 },
     { mean: 3, lowerSpecLimit: 0, upperSpecLimit: 2, targetCpk: 1 },
@@ -196,6 +205,30 @@ describe("F6 deterministic solver primitives", () => {
     expect(change.resultingUpperTolerance).toBe(5e307);
     expect(change.resultingBand).toBe(1e308);
     expect(f6ToleranceChangeSchema.parse(change)).toEqual(change);
+    expectFiniteNumericFields(change);
+  });
+
+  it("avoids intermediate underflow for a representable extreme product quotient", () => {
+    const selected = factor(1, 1, 1, {
+      input: {
+        nominalValue: 0,
+        lowerTolerance: -1,
+        upperTolerance: 1,
+        longTermSafetyFactor: 1e300,
+        sigmaLevel: 1e300,
+        distribution: "normal",
+      },
+    });
+
+    const change = solveSingleFactorTolerance({
+      factors: [selected],
+      selectedSource: selected.source,
+      targetRssSigma: 1e-300,
+    });
+
+    expect(change.resultingUpperTolerance).toBe(1e-300);
+    expect(change.resultingLowerTolerance).toBe(-1e-300);
+    expect(change.resultingBand).toBe(2e-300);
     expectFiniteNumericFields(change);
   });
 
@@ -261,6 +294,55 @@ describe("F6 deterministic solver primitives", () => {
     expect(changes[0].resultingUpperTolerance).toBeCloseTo(Math.sqrt(5 / 3), 12);
     expect(changes[1].resultingUpperTolerance).toBeCloseTo(Math.sqrt(10 / 3), 12);
     expect(changes.every((change) => f6ToleranceChangeSchema.safeParse(change).success)).toBe(true);
+  });
+
+  it("normalizes extreme proportional contributions without sum overflow", () => {
+    const factors = [factor(1, 1, 1e308), factor(2, 1, 1e308)];
+
+    const changes = solveTopNCombinedTolerance({
+      factors,
+      selectedSources: factors.map((item) => item.source),
+      targetRssSigma: 1,
+      allocation: "proportional-to-contribution",
+    });
+
+    expect(changes[0].resultingUpperTolerance).toBeCloseTo(Math.sqrt(0.5), 12);
+    expect(changes[1].resultingUpperTolerance).toBeCloseTo(Math.sqrt(0.5), 12);
+    expectFiniteNumericFields(changes);
+  });
+
+  it("keeps proportional allocation invariant when all contributions share a finite scale", () => {
+    const solve = (scale: number) => {
+      const factors = [factor(1, 1, 2 * scale), factor(2, 1, scale)];
+      return solveTopNCombinedTolerance({
+        factors,
+        selectedSources: factors.map((item) => item.source),
+        targetRssSigma: 1,
+        allocation: "proportional-to-contribution",
+      });
+    };
+
+    const baseline = solve(1);
+    const scaled = solve(5e307);
+
+    expect(scaled.map((change) => change.resultingUpperTolerance)).toEqual(
+      baseline.map((change) => change.resultingUpperTolerance),
+    );
+  });
+
+  it.each([
+    [0, 0],
+    [Number.POSITIVE_INFINITY, 1],
+    [-1, 1],
+  ])("rejects invalid proportional contributions %s and %s", (firstContribution, secondContribution) => {
+    const factors = [factor(1, 1, firstContribution), factor(2, 1, secondContribution)];
+
+    expect(() => solveTopNCombinedTolerance({
+      factors,
+      selectedSources: factors.map((item) => item.source),
+      targetRssSigma: 1,
+      allocation: "proportional-to-contribution",
+    })).toThrow(F6SolverError);
   });
 
   it("solves selected Top-N tolerances with equal variance allocation", () => {

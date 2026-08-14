@@ -111,29 +111,50 @@ function safePositiveProductQuotient(
   denominatorValues: readonly number[],
   label: string,
 ): number {
-  const numerators = [...numeratorValues];
-  const denominators = [...denominatorValues];
+  const values = [...numeratorValues, ...denominatorValues];
+  if (values.some((value) => !(value > 0) || !Number.isFinite(value))) {
+    fail("invalid_solver_input", `${label} factors must be finite and greater than zero`);
+  }
 
-  for (let numeratorIndex = 0; numeratorIndex < numerators.length; numeratorIndex += 1) {
-    for (let denominatorIndex = 0; denominatorIndex < denominators.length; denominatorIndex += 1) {
-      const numerator = numerators[numeratorIndex]!;
-      const denominator = denominators[denominatorIndex]!;
-      if (numerator >= denominator) {
-        numerators[numeratorIndex] = numerator / denominator;
-        denominators[denominatorIndex] = 1;
-      } else {
-        denominators[denominatorIndex] = denominator / numerator;
-        numerators[numeratorIndex] = 1;
-      }
+  const numeratorProduct = numeratorValues.reduce((product, value) => product * value, 1);
+  const denominatorProduct = denominatorValues.reduce((product, value) => product * value, 1);
+  const directResult = numeratorProduct / denominatorProduct;
+  if (directResult > 0 && Number.isFinite(directResult)) {
+    return directResult;
+  }
+
+  let coefficient = 1;
+  let decimalExponent = 0;
+  const accumulate = (value: number, divide: boolean): void => {
+    const [coefficientText, exponentText] = value.toExponential(17).split("e");
+    const valueCoefficient = Number(coefficientText);
+    const valueExponent = Number(exponentText);
+    coefficient = divide ? coefficient / valueCoefficient : coefficient * valueCoefficient;
+    decimalExponent += divide ? -valueExponent : valueExponent;
+    if (coefficient >= 10) {
+      coefficient /= 10;
+      decimalExponent += 1;
+    } else if (coefficient < 1) {
+      coefficient *= 10;
+      decimalExponent -= 1;
     }
+  };
+
+  for (const numerator of numeratorValues) {
+    accumulate(numerator, false);
+  }
+  for (const denominator of denominatorValues) {
+    accumulate(denominator, true);
   }
 
-  let result = 1;
-  for (const numerator of numerators) {
-    result *= numerator;
+  if (decimalExponent > 308 || decimalExponent < -324) {
+    fail("invalid_solver_input", `${label} must be finite and representable`);
   }
-  for (const denominator of denominators) {
-    result /= denominator;
+  let result = coefficient;
+  while (decimalExponent !== 0) {
+    const exponentStep = Math.max(-308, Math.min(308, decimalExponent));
+    result *= 10 ** exponentStep;
+    decimalExponent -= exponentStep;
   }
   if (!(result > 0) || !Number.isFinite(result)) {
     fail("invalid_solver_input", `${label} must be finite and representable`);
@@ -417,10 +438,13 @@ export function solveTargetRssSigma(input: TargetRssSigmaInput): number {
   if (!(input.targetCpk > 0)) {
     fail("invalid_solver_input", "targetCpk must be greater than zero");
   }
-  return Math.min(
-    input.mean - lowerSpecLimit,
-    upperSpecLimit - input.mean,
-  ) / (3 * input.targetCpk);
+  const lowerTargetSigma = (input.mean - lowerSpecLimit) / input.targetCpk / 3;
+  const upperTargetSigma = (upperSpecLimit - input.mean) / input.targetCpk / 3;
+  const targetRssSigma = Math.min(lowerTargetSigma, upperTargetSigma);
+  if (!(targetRssSigma > 0) || !Number.isFinite(targetRssSigma)) {
+    fail("invalid_solver_input", "targetRssSigma must be finite and representable");
+  }
+  return targetRssSigma;
 }
 
 export function solveSingleFactorTolerance(input: SingleFactorSolveInput): F6ToleranceChange {
@@ -447,11 +471,16 @@ export function solveTopNCombinedTolerance(input: TopNSolveInput): readonly F6To
   if (input.allocation === "equal-allocation-among-top-N") {
     weights = selectedFactors.map(() => 1 / selectedFactors.length);
   } else if (input.allocation === "proportional-to-contribution") {
-    const contributionSum = selectedFactors.reduce((sum, factor) => sum + factor.contribution, 0);
-    if (!(contributionSum > 0) || !Number.isFinite(contributionSum)) {
+    const maximumContribution = Math.max(...selectedFactors.map((factor) => factor.contribution));
+    if (!(maximumContribution > 0) || !Number.isFinite(maximumContribution)) {
       fail("target_unreachable", "selected factors must have positive total contribution");
     }
-    weights = selectedFactors.map((factor) => factor.contribution / contributionSum);
+    const scaledContributions = selectedFactors.map((factor) => factor.contribution / maximumContribution);
+    const scaledContributionSum = scaledContributions.reduce((sum, contribution) => sum + contribution, 0);
+    if (!(scaledContributionSum > 0) || !Number.isFinite(scaledContributionSum)) {
+      fail("target_unreachable", "selected factors must have positive total contribution");
+    }
+    weights = scaledContributions.map((contribution) => contribution / scaledContributionSum);
   } else {
     fail("invalid_solver_input", "allocation is unsupported");
   }
