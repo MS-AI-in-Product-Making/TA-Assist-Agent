@@ -172,7 +172,8 @@ function positiveDifference(upperValue: number, lowerValue: number, label: strin
 }
 
 function midpoint(lowerValue: number, upperValue: number): number {
-  const result = lowerValue / 2 + upperValue / 2;
+  const sum = lowerValue + upperValue;
+  const result = Number.isFinite(sum) ? sum / 2 : lowerValue / 2 + upperValue / 2;
   assertFinite(result, "bandCenter");
   return result;
 }
@@ -395,11 +396,28 @@ export function scaleToleranceBandAroundCenter(input: ScaleToleranceBandInput): 
   }
   const originalBand = positiveDifference(input.upperTolerance, input.lowerTolerance, "originalBand");
   const center = midpoint(input.lowerTolerance, input.upperTolerance);
+  if (input.scale === 1) {
+    return {
+      lowerTolerance: input.lowerTolerance,
+      upperTolerance: input.upperTolerance,
+      center,
+      originalBand,
+      resultingBand: originalBand,
+    };
+  }
   const resultingBand = safePositiveProductQuotient([input.scale, originalBand], [1], "resultingBand");
   const lowerTolerance = center - resultingBand / 2;
   const upperTolerance = center + resultingBand / 2;
   assertFinite(lowerTolerance, "resultingLowerTolerance");
   assertFinite(upperTolerance, "resultingUpperTolerance");
+  if (!(lowerTolerance < upperTolerance)) {
+    fail("target_unreachable", "target tolerance endpoints are not separately representable");
+  }
+  const representedBand = upperTolerance - lowerTolerance;
+  const representationTolerance = 8 * Number.EPSILON * Math.max(resultingBand, representedBand);
+  if (Math.abs(representedBand - resultingBand) > representationTolerance) {
+    fail("target_unreachable", "represented target tolerance band does not match the requested band");
+  }
   return {
     lowerTolerance,
     upperTolerance,

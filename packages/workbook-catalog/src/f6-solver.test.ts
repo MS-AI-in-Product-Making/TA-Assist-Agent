@@ -71,6 +71,40 @@ describe("F6 deterministic solver primitives", () => {
     expect(result.resultingBand).toBeCloseTo(0.32, 12);
   });
 
+  it("preserves representable subnormal bounds exactly at scale one", () => {
+    const lowerTolerance = Number.MIN_VALUE;
+    const upperTolerance = 2 * Number.MIN_VALUE;
+    const result = scaleToleranceBandAroundCenter({ lowerTolerance, upperTolerance, scale: 1 });
+
+    expect(result).toEqual({
+      lowerTolerance,
+      upperTolerance,
+      center: (lowerTolerance + upperTolerance) / 2,
+      originalBand: upperTolerance - lowerTolerance,
+      resultingBand: upperTolerance - lowerTolerance,
+    });
+    expect(f6ToleranceChangeSchema.safeParse({
+      worksheetName: "Sheet1",
+      tableId: "table-1",
+      sourceRow: 1,
+      originalLowerTolerance: lowerTolerance,
+      originalUpperTolerance: upperTolerance,
+      resultingLowerTolerance: result.lowerTolerance,
+      resultingUpperTolerance: result.upperTolerance,
+      originalBand: result.originalBand,
+      resultingBand: result.resultingBand,
+      bandCenter: result.center,
+    }).success).toBe(true);
+  });
+
+  it("rejects a subnormal shrink whose endpoints are not separately representable", () => {
+    expect(() => scaleToleranceBandAroundCenter({
+      lowerTolerance: Number.MIN_VALUE,
+      upperTolerance: 2 * Number.MIN_VALUE,
+      scale: 0.75,
+    })).toThrowError(/target_unreachable/);
+  });
+
   it.each([
     { lowerTolerance: 0, upperTolerance: 1, scale: 0 },
     { lowerTolerance: 0, upperTolerance: 1, scale: 1.1 },
@@ -99,6 +133,17 @@ describe("F6 deterministic solver primitives", () => {
     expect(result.originalBand).toBe(6e307);
     expect(result.resultingBand).toBe(3e307);
     expectFiniteNumericFields(result);
+  });
+
+  it("computes a stable midpoint for huge same-sign bounds", () => {
+    const lowerTolerance = 1e308;
+    const upperTolerance = 1.6e308;
+    const expectedCenter = lowerTolerance / 2 + upperTolerance / 2;
+    const result = scaleToleranceBandAroundCenter({ lowerTolerance, upperTolerance, scale: 1 });
+
+    expect(result.center).toBe(expectedCenter);
+    expect(result.lowerTolerance).toBe(lowerTolerance);
+    expect(result.upperTolerance).toBe(upperTolerance);
   });
 
   it("selects contributors by descending contribution with stable source tie breaks without mutation", () => {
@@ -138,6 +183,34 @@ describe("F6 deterministic solver primitives", () => {
       LSL: -1e308,
       USL: 1e308,
     })).toEqual({ targetMean: 0, additionalMeanShift: 0 });
+  });
+
+  it.each([
+    {
+      lowerSpecLimit: Number.MIN_VALUE,
+      upperSpecLimit: 2 * Number.MIN_VALUE,
+      expectedTarget: (Number.MIN_VALUE + 2 * Number.MIN_VALUE) / 2,
+    },
+    {
+      lowerSpecLimit: -1.6e308,
+      upperSpecLimit: 1e308,
+      expectedTarget: (-1.6e308 + 1e308) / 2,
+    },
+    {
+      lowerSpecLimit: 1e308,
+      upperSpecLimit: 1.6e308,
+      expectedTarget: 1e308 / 2 + 1.6e308 / 2,
+    },
+  ])("uses the stable midpoint when solving a centering shift", ({
+    lowerSpecLimit,
+    upperSpecLimit,
+    expectedTarget,
+  }) => {
+    expect(solveCenteringShift({
+      factorMeans: [expectedTarget],
+      lowerSpecLimit,
+      upperSpecLimit,
+    })).toEqual({ targetMean: expectedTarget, additionalMeanShift: 0 });
   });
 
   it("solves target RSS sigma from the limiting specification distance", () => {
