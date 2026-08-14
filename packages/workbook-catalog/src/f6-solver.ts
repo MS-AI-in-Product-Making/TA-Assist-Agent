@@ -111,10 +111,20 @@ function safePositiveProductQuotient(
   numeratorValues: readonly number[],
   denominatorValues: readonly number[],
   label: string,
+  unrepresentableCode: F6SolverErrorCode = "invalid_solver_input",
 ): number {
   const values = [...numeratorValues, ...denominatorValues];
   if (values.some((value) => !(value > 0) || !Number.isFinite(value))) {
     fail("invalid_solver_input", `${label} factors must be finite and greater than zero`);
+  }
+
+  if (numeratorValues.length === 1) {
+    const sequentialResult = [...denominatorValues]
+      .sort((left, right) => right - left)
+      .reduce((result, denominator) => result / denominator, numeratorValues[0]!);
+    if (sequentialResult > 0 && Number.isFinite(sequentialResult)) {
+      return sequentialResult;
+    }
   }
 
   const numeratorProduct = numeratorValues.reduce((product, value) => product * value, 1);
@@ -149,7 +159,7 @@ function safePositiveProductQuotient(
   }
 
   if (decimalExponent > 308 || decimalExponent < -324) {
-    fail("invalid_solver_input", `${label} must be finite and representable`);
+    fail(unrepresentableCode, `${label} must be finite and representable`);
   }
   let result = coefficient;
   while (decimalExponent !== 0) {
@@ -158,7 +168,35 @@ function safePositiveProductQuotient(
     decimalExponent -= exponentStep;
   }
   if (!(result > 0) || !Number.isFinite(result)) {
-    fail("invalid_solver_input", `${label} must be finite and representable`);
+    fail(unrepresentableCode, `${label} must be finite and representable`);
+  }
+  return result;
+}
+
+function stableFiniteSum(values: readonly number[], label: string): number {
+  let maximumMagnitude = 0;
+  values.forEach((value, index) => {
+    assertFinite(value, `${label}[${index}]`);
+    maximumMagnitude = Math.max(maximumMagnitude, Math.abs(value));
+  });
+  if (maximumMagnitude === 0) {
+    return 0;
+  }
+
+  let sum = 0;
+  let compensation = 0;
+  for (const value of values) {
+    const scaledValue = value / maximumMagnitude;
+    const nextSum = sum + scaledValue;
+    compensation += Math.abs(sum) >= Math.abs(scaledValue)
+      ? (sum - nextSum) + scaledValue
+      : (scaledValue - nextSum) + sum;
+    sum = nextSum;
+  }
+
+  const result = (sum + compensation) * maximumMagnitude;
+  if (!Number.isFinite(result)) {
+    fail("target_unreachable", `${label} sum must be finite and representable`);
   }
   return result;
 }
@@ -360,9 +398,11 @@ function remainingSigma(targetSigma: number, fixedSigma: number): number {
   if (fixedSigma === 0) {
     return targetSigma;
   }
+  if (fixedSigma >= targetSigma) {
+    fail("target_unreachable", "fixed factors consume the target RSS variance");
+  }
   const ratio = fixedSigma / targetSigma;
-  const equalityTolerance = 16 * Number.EPSILON;
-  if (!Number.isFinite(ratio) || ratio >= 1 - equalityTolerance) {
+  if (!Number.isFinite(ratio) || ratio >= 1) {
     fail("target_unreachable", "fixed factors consume the target RSS variance");
   }
   const result = targetSigma * Math.sqrt((1 - ratio) * (1 + ratio));
@@ -388,16 +428,23 @@ function toleranceChangeForSigma(
     [targetSigma, factor.input.sigmaLevel],
     [factor.input.longTermSafetyFactor, distributionMultiplier],
     "targetHalfTolerance",
+    "target_unreachable",
   );
   const originalLowerTolerance = factor.input.lowerTolerance;
   const originalUpperTolerance = factor.input.upperTolerance;
   const originalBand = positiveDifference(originalUpperTolerance, originalLowerTolerance, "originalBand");
   const bandCenter = midpoint(originalLowerTolerance, originalUpperTolerance);
-  const resultingBand = safePositiveProductQuotient([targetHalfTolerance, 2], [1], "resultingBand");
+  const resultingBand = safePositiveProductQuotient(
+    [targetHalfTolerance, 2],
+    [1],
+    "resultingBand",
+    "target_unreachable",
+  );
   const resultingLowerTolerance = bandCenter - targetHalfTolerance;
   const resultingUpperTolerance = bandCenter + targetHalfTolerance;
-  assertFinite(resultingLowerTolerance, "resultingLowerTolerance");
-  assertFinite(resultingUpperTolerance, "resultingUpperTolerance");
+  if (!Number.isFinite(resultingLowerTolerance) || !Number.isFinite(resultingUpperTolerance)) {
+    fail("target_unreachable", "target tolerance endpoints must be finite and representable");
+  }
 
   return buildToleranceChange({
     worksheetName: factor.source.worksheetName,
@@ -434,7 +481,12 @@ export function scaleToleranceBandAroundCenter(input: ScaleToleranceBandInput): 
       resultingBand: originalBand,
     };
   }
-  const resultingBand = safePositiveProductQuotient([input.scale, originalBand], [1], "resultingBand");
+  const resultingBand = safePositiveProductQuotient(
+    [input.scale, originalBand],
+    [1],
+    "resultingBand",
+    "target_unreachable",
+  );
   const lowerTolerance = center - resultingBand / 2;
   const upperTolerance = center + resultingBand / 2;
   assertFinite(lowerTolerance, "resultingLowerTolerance");
@@ -473,14 +525,12 @@ export function solveCenteringShift(input: CenteringInput): CenteringResult {
   if (input.factorMeans.length === 0) {
     fail("invalid_solver_input", "factorMeans must not be empty");
   }
-  const currentMean = input.factorMeans.reduce((sum, factorMean, index) => {
-    assertFinite(factorMean, `factorMeans[${index}]`);
-    return sum + factorMean;
-  }, 0);
-  assertFinite(currentMean, "currentMean");
+  const currentMean = stableFiniteSum(input.factorMeans, "factorMeans");
   const targetMean = midpoint(lowerSpecLimit, upperSpecLimit);
   const additionalMeanShift = targetMean - currentMean;
-  assertFinite(additionalMeanShift, "additionalMeanShift");
+  if (!Number.isFinite(additionalMeanShift)) {
+    fail("target_unreachable", "additionalMeanShift must be finite and representable");
+  }
   return { targetMean, additionalMeanShift };
 }
 
@@ -494,13 +544,16 @@ export function solveTargetRssSigma(input: TargetRssSigmaInput): number {
   if (!(input.targetCpk > 0)) {
     fail("invalid_solver_input", "targetCpk must be greater than zero");
   }
-  const lowerTargetSigma = (input.mean - lowerSpecLimit) / input.targetCpk / 3;
-  const upperTargetSigma = (upperSpecLimit - input.mean) / input.targetCpk / 3;
-  const targetRssSigma = Math.min(lowerTargetSigma, upperTargetSigma);
-  if (!(targetRssSigma > 0) || !Number.isFinite(targetRssSigma)) {
-    fail("invalid_solver_input", "targetRssSigma must be finite and representable");
-  }
-  return targetRssSigma;
+  const limitingDistance = Math.min(
+    input.mean - lowerSpecLimit,
+    upperSpecLimit - input.mean,
+  );
+  return safePositiveProductQuotient(
+    [limitingDistance],
+    [3, input.targetCpk],
+    "targetRssSigma",
+    "target_unreachable",
+  );
 }
 
 export function solveSingleFactorTolerance(input: SingleFactorSolveInput): F6ToleranceChange {

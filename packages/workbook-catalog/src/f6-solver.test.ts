@@ -198,6 +198,41 @@ describe("F6 deterministic solver primitives", () => {
     })).toEqual({ targetMean: 1, additionalMeanShift: 0.5 });
   });
 
+  it.each([
+    [1e16, 1, -1e16],
+    [1e16, -1e16, 1],
+    [1, 1e16, -1e16],
+    [-1e16, 1, 1e16],
+    [-1e16, 1e16, 1],
+    [1, -1e16, 1e16],
+  ])("stably sums cancelling factor means in permutation %#", (...factorMeans) => {
+    const result = solveCenteringShift({ factorMeans, LSL: -1, USL: 1 });
+
+    expect(result.additionalMeanShift).toBeCloseTo(-1, 14);
+  });
+
+  it("avoids intermediate overflow when summing extreme factor means", () => {
+    expect(solveCenteringShift({
+      factorMeans: [Number.MAX_VALUE, Number.MAX_VALUE, -Number.MAX_VALUE],
+      LSL: -1,
+      USL: 1,
+    })).toEqual({ targetMean: 0, additionalMeanShift: -Number.MAX_VALUE });
+  });
+
+  it("classifies an unrepresentable factor-mean sum as an unreachable target", () => {
+    try {
+      solveCenteringShift({
+        factorMeans: [Number.MAX_VALUE, Number.MAX_VALUE],
+        LSL: -1,
+        USL: 1,
+      });
+      expect.unreachable();
+    } catch (error) {
+      expect(error).toBeInstanceOf(F6SolverError);
+      expect((error as F6SolverError).code).toBe("target_unreachable");
+    }
+  });
+
   it("centers symmetric extreme specification bounds without computing their width", () => {
     expect(solveCenteringShift({
       factorMeans: [0],
@@ -250,6 +285,52 @@ describe("F6 deterministic solver primitives", () => {
       USL: 1e308,
       targetCpk: 1e308,
     })).toBeCloseTo(1 / 3, 12);
+  });
+
+  it("avoids intermediate overflow when a small target Cpk produces a large finite sigma", () => {
+    expect(solveTargetRssSigma({
+      mean: 0,
+      LSL: -1e308,
+      USL: 1e308,
+      targetCpk: 0.2,
+    })).toBe(1.6666666666666666e308);
+  });
+
+  it("stably solves a small specification distance and target Cpk", () => {
+    expect(solveTargetRssSigma({
+      mean: 0,
+      LSL: -1e-300,
+      USL: 1e-300,
+      targetCpk: 2e-300,
+    })).toBeCloseTo(1 / 6, 12);
+  });
+
+  it("normalizes a valid but unrepresentable target sigma as unreachable", () => {
+    try {
+      solveTargetRssSigma({
+        mean: 0,
+        LSL: -Number.MAX_VALUE,
+        USL: Number.MAX_VALUE,
+        targetCpk: Number.MIN_VALUE,
+      });
+      expect.unreachable();
+    } catch (error) {
+      expect(error).toBeInstanceOf(F6SolverError);
+      expect((error as F6SolverError).code).toBe("target_unreachable");
+    }
+  });
+
+  it.each([
+    () => solveCenteringShift({ factorMeans: [Number.NaN], LSL: -1, USL: 1 }),
+    () => solveTargetRssSigma({ mean: 0, LSL: -1, USL: 1, targetCpk: 0 }),
+  ])("preserves invalid_solver_input for invalid solver input %#", (solve) => {
+    try {
+      solve();
+      expect.unreachable();
+    } catch (error) {
+      expect(error).toBeInstanceOf(F6SolverError);
+      expect((error as F6SolverError).code).toBe("invalid_solver_input");
+    }
   });
 
   it.each([
@@ -384,11 +465,17 @@ describe("F6 deterministic solver primitives", () => {
       },
     });
 
-    expect(() => solveSingleFactorTolerance({
-      factors: [selected],
-      selectedSource: selected.source,
-      targetRssSigma: 1e308,
-    })).toThrowError(/resultingBand must be finite/);
+    try {
+      solveSingleFactorTolerance({
+        factors: [selected],
+        selectedSource: selected.source,
+        targetRssSigma: 1e308,
+      });
+      expect.unreachable();
+    } catch (error) {
+      expect(error).toBeInstanceOf(F6SolverError);
+      expect((error as F6SolverError).code).toBe("target_unreachable");
+    }
   });
 
   it.each([
@@ -541,8 +628,39 @@ describe("F6 deterministic solver primitives", () => {
     expect(changes.every((change) => f6ToleranceChangeSchema.safeParse(change).success)).toBe(true);
   });
 
-  it("treats a fixed sigma within numerical tolerance of the target as unreachable", () => {
-    const factors = [factor(1, 1, 0.5), factor(2, 1 - Number.EPSILON, 0.5)];
+  it("solves a positive remaining sigma when fixed sigma is strictly below target", () => {
+    const fixedSigma = 1 - 1e-15;
+    const factors = [factor(1, 1, 0.5), factor(2, fixedSigma, 0.5)];
+
+    const change = solveSingleFactorTolerance({
+      factors,
+      selectedSource: factors[0].source,
+      targetRssSigma: 1,
+    });
+
+    expect(change.resultingUpperTolerance).toBeCloseTo(Math.sqrt(1 - fixedSigma ** 2), 14);
+    expect(change.resultingUpperTolerance).toBeGreaterThan(0);
+  });
+
+  it("allows a representable subnormal remaining sigma to proceed", () => {
+    const factors = [
+      factor(1, Number.MIN_VALUE, 0.5),
+      factor(2, Number.MIN_VALUE, 0.5),
+    ];
+
+    const change = solveSingleFactorTolerance({
+      factors,
+      selectedSource: factors[0].source,
+      targetRssSigma: 2 * Number.MIN_VALUE,
+    });
+
+    expect(change.resultingUpperTolerance).toBeGreaterThan(0);
+    expect(change.resultingUpperTolerance).toBeLessThanOrEqual(Number.MIN_VALUE * 2);
+    expectFiniteNumericFields(change);
+  });
+
+  it.each([1, 1 + Number.EPSILON])("rejects fixed sigma at or above target (%s)", (fixedSigma) => {
+    const factors = [factor(1, 1, 0.5), factor(2, fixedSigma, 0.5)];
 
     expect(() => solveSingleFactorTolerance({
       factors,
