@@ -283,17 +283,31 @@ export function runF5FullValidation(options = {}, dependencyOverrides = {}) {
     }
 
     failureStage = "interpretation";
+    const observationFallback = loaded.observationFallback === undefined
+      ? undefined
+      : { reasonCode: "enhanced_observation_rejected" };
+    const interpretationRequest = observationFallback === undefined
+      ? loaded.request
+      : { ...loaded.request, observationFallback };
     const coreResult = f5DataInterpretationResultSchema.parse(
-      dependencies.createInterpretation(loaded.request),
+      dependencies.createInterpretation(interpretationRequest),
     );
     const result = recomputeResult(
       coreResult,
       loaded.rejectedWorksheets ?? [],
       loaded.worksheetOrder,
     );
-    const observationArtifact = loaded.observationArtifact === undefined
+    const observationArtifact = observationFallback !== undefined || loaded.observationArtifact === undefined
       ? undefined
       : f5ImageObservationArtifactSchema.parse(loaded.observationArtifact);
+    const summaryLoaded = observationFallback === undefined
+      ? loaded
+      : {
+          ...loaded,
+          sourceReferences: Object.fromEntries(
+            Object.entries(loaded.sourceReferences).filter(([key]) => key !== "observation"),
+          ),
+        };
 
     failureStage = "output";
     const contents = {
@@ -305,7 +319,7 @@ export function runF5FullValidation(options = {}, dependencyOverrides = {}) {
       }),
       ...(observationArtifact === undefined ? {} : { observations: json(observationArtifact) }),
     };
-    const summary = runSummary(result, loaded, contents);
+    const summary = runSummary(result, summaryLoaded, contents);
 
     atomicWrite(paths.reportJsonPath, contents.reportJson, boundary, dependencies);
     committedArtifacts.reportJson = layout.reportJsonName;

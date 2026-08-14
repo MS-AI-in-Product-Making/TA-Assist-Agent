@@ -352,6 +352,29 @@ describe("createF5DataInterpretation", () => {
     expect(f5DataInterpretationResultSchema.parse(result)).toEqual(result);
   });
 
+  it("adds a controlled clarification to every worksheet after enhanced observations are rejected", () => {
+    const input = requestForWorksheets(["Analysis-A", "Analysis-B"]);
+    const result = createF5DataInterpretation({
+      ...input,
+      observationFallback: { reasonCode: "enhanced_observation_rejected" },
+    });
+
+    expect(result.status).toBe("completed");
+    for (const worksheet of result.worksheets) {
+      if (worksheet.status !== "completed") throw new Error("expected completed worksheet");
+      expect(worksheet.sections.toleranceChainValidity.status).toBe("not_evaluated");
+      expect(worksheet.clarifications).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          reasonCode: "enhanced_observation_rejected",
+          missingEvidence: ["validated enhanced image observations"],
+        }),
+      ]));
+      expect(worksheet).not.toHaveProperty("observationVersion");
+      expect(worksheet).not.toHaveProperty("contextSnapshot");
+    }
+    expect(f5DataInterpretationResultSchema.parse(result)).toEqual(result);
+  });
+
   it.each([
     ["throw", () => { throw new Error("C:\\private\\objective.txt token=secret"); }],
     ["invalid result", () => ({ status: "completed" })],

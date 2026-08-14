@@ -191,6 +191,7 @@ function createImageEvidence(worksheet: RequestWorksheet) {
 
 function structuralClarifications(
   worksheet: RequestWorksheet,
+  observationFallback: ParsedRequest["observationFallback"],
 ) {
   const observationByScope = new Map(worksheet.imageObservations.map((observation) => [
     observation.scope,
@@ -199,22 +200,29 @@ function structuralClarifications(
   return STRUCTURAL_SCOPES.flatMap((scope) => {
     const observation = observationByScope.get(scope);
     const reasonCode = observation === undefined
-      ? "drawing_evidence_not_evaluated"
+      ? observationFallback !== undefined && (STRUCTURAL_SCOPES.slice(0, 5) as readonly string[]).includes(scope)
+        ? observationFallback.reasonCode
+        : "drawing_evidence_not_evaluated"
       : observation.reviewStatus === "rejected"
         ? "image_observation_rejected"
         : observation.confidence === "low"
           ? "image_observation_low_confidence"
           : undefined;
     if (reasonCode === undefined) return [];
+    const enhancedObservationRejected = reasonCode === "enhanced_observation_rejected";
     return [{
       clarificationId: `clarification-${reasonCode}-${scope}`,
       reasonCode,
       section: "toleranceChainValidity" as const,
       structuralScope: scope,
-      missingEvidence: [`usable ${scope} image observation`],
+      missingEvidence: enhancedObservationRejected
+        ? ["validated enhanced image observations"]
+        : [`usable ${scope} image observation`],
       affectedConclusionIds: [] as string[],
       blockingScope: "conclusion" as const,
-      questionForReviewer: `Can the ${scope} image observation be reviewed with acceptable evidence?`,
+      questionForReviewer: enhancedObservationRejected
+        ? `Can the enhanced ${scope} observation be regenerated and validated from the existing worksheet image?`
+        : `Can the ${scope} image observation be reviewed with acceptable evidence?`,
     }];
   });
 }
@@ -279,6 +287,7 @@ function structuralAssumptions(worksheet: RequestWorksheet) {
 function createWorksheetResult(
   worksheet: RequestWorksheet,
   createObjectiveInterpretation: typeof createInterpretation,
+  observationFallback: ParsedRequest["observationFallback"],
 ) {
   let objectiveRaw: unknown;
   try {
@@ -398,7 +407,7 @@ function createWorksheetResult(
       || (statement.type === "FACT" && "metric" in statement.content
         && statement.content.metric !== "factor_contribution")
   )).map(({ statementId }) => statementId);
-  const clarifications = structuralClarifications(worksheet);
+  const clarifications = structuralClarifications(worksheet, observationFallback);
   const toleranceItems = structuralItems(worksheet, imageEvidence.statements, clarifications);
   const toleranceSeverity = { not_evaluated: 1, insufficient_evidence: 2, needs_review: 3 } as const;
   const toleranceStatus = toleranceItems.reduce((highest, item) => (
@@ -448,7 +457,11 @@ export function createF5DataInterpretation(
   const createObjectiveInterpretation = dependencies.createObjectiveInterpretation ?? createInterpretation;
   const worksheets = parsed.data.worksheets.map((worksheet) => {
     try {
-      return createWorksheetResult(worksheet, createObjectiveInterpretation);
+      return createWorksheetResult(
+        worksheet,
+        createObjectiveInterpretation,
+        parsed.data.observationFallback,
+      );
     } catch {
       return rejectedWorksheet(worksheet.worksheetName);
     }

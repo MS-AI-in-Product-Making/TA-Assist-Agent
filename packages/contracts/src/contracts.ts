@@ -4940,6 +4940,9 @@ export const f5DataInterpretationRequestSchema = z.object({
   inputClassification: z.literal("confidential"),
   workbook: z.object({ fileName: workbookCatalogFileNameSchema, contentHash: sha256Schema }).strict(),
   knowledgeBaseVersion: z.literal("interpretation-rules-v1"),
+  observationFallback: z.object({
+    reasonCode: z.literal("enhanced_observation_rejected"),
+  }).strict().optional(),
   worksheets: z.array(f5DataInterpretationRequestWorksheetSchema).min(1),
 }).strict().superRefine((request, context) => {
   const worksheetNames = request.worksheets.map(({ worksheetName }) => worksheetName);

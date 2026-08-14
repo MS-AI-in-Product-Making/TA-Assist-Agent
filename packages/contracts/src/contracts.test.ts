@@ -2557,6 +2557,18 @@ describe("F5.1 objective interpretation contracts", () => {
         imageObservations: [imageObservation],
       }],
     };
+
+    it("accepts only the controlled enhanced-observation fallback reason", () => {
+      expect(f5DataInterpretationRequestSchema.safeParse({
+        ...rootRequest,
+        observationFallback: { reasonCode: "enhanced_observation_rejected" },
+      }).success).toBe(true);
+      expect(f5DataInterpretationRequestSchema.safeParse({
+        ...rootRequest,
+        observationFallback: { reasonCode: "unvalidated_reason" },
+      }).success).toBe(false);
+    });
+
     const contextualRootRequest = () => {
       const request = structuredClone(rootRequest) as unknown as Record<string, unknown>;
       const worksheet = (request.worksheets as Array<Record<string, unknown>>)[0]!;

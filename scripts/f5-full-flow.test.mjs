@@ -172,6 +172,95 @@ function observations() {
   });
 }
 
+const CORE_SCOPES = [
+  "tolerance_loop_closure",
+  "datum_chain",
+  "assembly_datum_face",
+  "stack_start",
+  "direction",
+];
+
+function contextualObservationBundle() {
+  const baselineRequest = request();
+  const worksheet = baselineRequest.worksheets[0];
+  const governanceRow = worksheet.governanceRows[0];
+  const contextSnapshot = {
+    dimensionDescription: governanceRow.dimensionDescription,
+    rows: [{
+      tableId: governanceRow.source.tableId,
+      sourceRow: governanceRow.source.sourceRow,
+      partName: null,
+      partSubsystem: governanceRow.partSubsystem,
+      partCategory: governanceRow.partCategory,
+      factorName: worksheet.calculationResult.factors[0].factorName,
+      factorDescription: governanceRow.factorDescription,
+      nominal: governanceRow.nominal,
+      upperTolerance: governanceRow.upperTolerance,
+      lowerTolerance: governanceRow.lowerTolerance,
+      sigmaLevel: governanceRow.sigmaLevel,
+      sourceCells: governanceRow.source.sourceCells,
+    }],
+  };
+  const imageObservations = CORE_SCOPES.map((scope) => ({
+    scope,
+    visualObservation: {
+      observedValue: "visible",
+      confidence: "high",
+      visibleBasis: `Visible controlled marker for ${scope}.`,
+      reviewStatus: "unreviewed",
+    },
+    contextualSignal: {
+      signalValue: "insufficient_evidence",
+      textBasis: `Worksheet context requires engineering review for ${scope}.`,
+      linkedSourceRows: [],
+      linkedVisualLabels: [],
+      requiresEngineeringReview: true,
+    },
+  }));
+  const enrichedRequest = {
+    ...baselineRequest,
+    worksheets: [{
+      ...worksheet,
+      observationVersion: "f5-image-observation-v2",
+      contextSnapshot,
+      imageObservations,
+    }],
+  };
+  const observationArtifact = f5ImageObservationArtifactSchema.parse({
+    contractVersion: "v1",
+    inputClassification: "confidential",
+    observationVersion: "f5-image-observation-v2",
+    workbookContentHash: WORKBOOK_HASH,
+    worksheets: [{
+      worksheetName: worksheet.worksheetName,
+      imageReference: worksheet.imageReference,
+      contextSnapshot,
+      observations: imageObservations,
+    }],
+  });
+  return { baselineRequest, enrichedRequest, observationArtifact };
+}
+
+function requestForWorksheets(worksheetNames) {
+  const baseline = request();
+  return {
+    ...baseline,
+    worksheets: worksheetNames.map((worksheetName, index) => {
+      const worksheet = cloneJson(baseline.worksheets[0]);
+      worksheet.worksheetName = worksheetName;
+      worksheet.imageReference = {
+        ...worksheet.imageReference,
+        worksheetName,
+        relativePath: `images/analysis-${index + 1}.png`,
+      };
+      worksheet.calculationResult = calculation(worksheetName);
+      worksheet.governanceRows[0].source.worksheetName = worksheetName;
+      worksheet.governanceRows[0].imageReference = cloneJson(worksheet.imageReference);
+      return worksheet;
+    }),
+  };
+}
+
 function setup({ rejectedWorksheets = [], observationArtifact } = {}) {
   const root = mkdtempSync(path.join(tmpdir(), "f5-full-flow-"));
   cleanup.push(root);
@@ -388,6 +477,7 @@ describe("runF5FullValidation", () => {
   it("writes completed artifacts atomically in the locked order", () => {
     const context = setup();
     const result = runF5FullValidation({ args: ["f1", "f3", "f4"] }, context.deps);
+    const report = readJson(result.reportJsonPath);
 
     expect(result).toMatchObject({ status: "completed", outputDirectory: context.runRoot });
     expect(context.renameCalls.map(({ to }) => path.basename(to))).toEqual([
@@ -418,6 +508,11 @@ describe("runF5FullValidation", () => {
         runSummary: "Feature5-Run-Summary.json",
       },
     });
+    expect(report.worksheets[0].sections.toleranceChainValidity.status).toBe("not_evaluated");
+    expect(report.worksheets[0].clarifications).toEqual(expect.arrayContaining([
+      expect.objectContaining({ reasonCode: "drawing_evidence_not_evaluated" }),
+    ]));
+    expect(result).not.toHaveProperty("imageObservationsPath");
   });
 
   it("exclusively opens, writes through, and closes a fresh temp fd for every atomic write", () => {
@@ -525,6 +620,188 @@ describe("runF5FullValidation", () => {
         runSummary: "Feature5-Run-Summary.json",
       },
     });
+  });
+
+  it("accepts a historical v1 artifact without snapshot enrichment or v2 reserialization", () => {
+    const context = setup();
+    const observationArtifact = f5ImageObservationArtifactSchema.parse({
+      ...observations(),
+      worksheets: [{
+        ...observations().worksheets[0],
+        observations: [{
+          scope: "stack_start",
+          observedValue: "visible",
+          confidence: "high",
+          visibleBasis: "A controlled stack-start marker is visible.",
+          reviewStatus: "unreviewed",
+        }],
+      }],
+    });
+    const enrichedRequest = request();
+    enrichedRequest.worksheets[0].imageObservations = observationArtifact.worksheets[0].observations;
+    context.deps.loadBundle.mockReturnValue({
+      status: "accepted",
+      request: enrichedRequest,
+      rejectedWorksheets: [],
+      worksheetOrder: ["Analysis-A"],
+      sourceReferences: {
+        f1: "Feature1-Report.json",
+        f3: "Feature3-Report.json",
+        f4: "Feature4-Calculation.json",
+        observation: "observations.json",
+      },
+      observationArtifact,
+    });
+    context.deps.createInterpretation.mockImplementation(createF5DataInterpretation);
+
+    const result = runF5FullValidation({ args: [] }, context.deps);
+    const report = readJson(result.reportJsonPath);
+    const copiedArtifact = readJson(result.imageObservationsPath);
+    const summary = readJson(result.runSummaryPath);
+
+    expect(result.status).toBe("completed");
+    expect(report.worksheets[0].sections.toleranceChainValidity.items.find(
+      ({ scope }) => scope === "stack_start",
+    ).status).toBe("needs_review");
+    expect(report.worksheets[0]).not.toHaveProperty("observationVersion");
+    expect(report.worksheets[0]).not.toHaveProperty("contextSnapshot");
+    expect(copiedArtifact).toEqual(observationArtifact);
+    expect(copiedArtifact.observationVersion).toBe("f5-image-observation-v1");
+    expect(summary.hashes.imageObservationsSha256).toBe(
+      createHash("sha256").update(readFileSync(result.imageObservationsPath)).digest("hex"),
+    );
+  });
+
+  it("accepts valid v2 context and copies the supplied artifact with its observation hash", () => {
+    const context = setup();
+    const { enrichedRequest, observationArtifact } = contextualObservationBundle();
+    context.deps.loadBundle.mockReturnValue({
+      status: "accepted",
+      request: enrichedRequest,
+      rejectedWorksheets: [],
+      worksheetOrder: ["Analysis-A"],
+      sourceReferences: {
+        f1: "Feature1-Report.json",
+        f3: "Feature3-Report.json",
+        f4: "Feature4-Calculation.json",
+        observation: "observations.json",
+      },
+      observationArtifact,
+    });
+    context.deps.createInterpretation.mockImplementation(createF5DataInterpretation);
+
+    const result = runF5FullValidation({ args: [] }, context.deps);
+    const report = readJson(result.reportJsonPath);
+    const worksheet = report.worksheets[0];
+    const summary = readJson(result.runSummaryPath);
+
+    expect(result.status).toBe("completed");
+    expect(worksheet).toMatchObject({
+      observationVersion: "f5-image-observation-v2",
+      contextSnapshot: observationArtifact.worksheets[0].contextSnapshot,
+    });
+    expect(worksheet.sections.toleranceChainValidity.items.find(
+      ({ scope }) => scope === "stack_start",
+    ).status).not.toBe("not_evaluated");
+    expect(worksheet.statements.filter(({ type, content }) => (
+      type === "SIGNAL" && content.signalKind === "image_text_context_review"
+    ))).toHaveLength(CORE_SCOPES.length);
+    expect(readJson(result.imageObservationsPath)).toEqual(observationArtifact);
+    expect(summary.hashes.imageObservationsSha256).toBe(
+      createHash("sha256").update(readFileSync(result.imageObservationsPath)).digest("hex"),
+    );
+  });
+
+  it.each([
+    ["invalid v2 snapshot", "artifact_contract_invalid"],
+    ["selected worksheet missing from v2", "artifact_identity_mismatch"],
+  ])("completes deterministic F5 when %s", (_case, fallbackReasonCode) => {
+    const context = setup();
+    context.deps.loadBundle.mockReturnValue({
+      status: "accepted",
+      request: request(),
+      rejectedWorksheets: [],
+      worksheetOrder: ["Analysis-A"],
+      sourceReferences: {
+        f1: "Feature1-Report.json",
+        f3: "Feature3-Report.json",
+        f4: "Feature4-Calculation.json",
+      },
+      observationFallback: {
+        reasonCode: fallbackReasonCode,
+        artifactReference: "observations.json",
+      },
+    });
+    context.deps.createInterpretation.mockImplementation(createF5DataInterpretation);
+
+    const result = runF5FullValidation({ args: [] }, context.deps);
+    const report = readJson(result.reportJsonPath);
+    const summary = readJson(result.runSummaryPath);
+
+    expect(result.status).toBe("completed");
+    expect(context.deps.loadBundle).toHaveBeenCalledTimes(1);
+    expect(context.deps.createInterpretation).toHaveBeenCalledWith({
+      ...request(),
+      observationFallback: { reasonCode: "enhanced_observation_rejected" },
+    });
+    expect(report.worksheets[0].sections.toleranceChainValidity.status).toBe("not_evaluated");
+    expect(report.worksheets[0].clarifications).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        reasonCode: "enhanced_observation_rejected",
+        missingEvidence: expect.arrayContaining(["validated enhanced image observations"]),
+      }),
+    ]));
+    expect(report.worksheets[0]).not.toHaveProperty("observationVersion");
+    expect(report.worksheets[0]).not.toHaveProperty("contextSnapshot");
+    expect(report.worksheets[0].statements).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "SIGNAL",
+        content: expect.objectContaining({ signalKind: "image_text_context_review" }),
+      }),
+    ]));
+    expect(summary.sources).not.toHaveProperty("observation");
+    expect(summary.hashes).not.toHaveProperty("imageObservationsSha256");
+    expect(result).not.toHaveProperty("imageObservationsPath");
+    expect(existsSync(path.join(context.runRoot, "Feature5-Image-Observations.json"))).toBe(false);
+  });
+
+  it("applies enhanced-observation fallback to every worksheet without partial context", () => {
+    const context = setup();
+    const baselineRequest = requestForWorksheets(["Analysis-A", "Analysis-B"]);
+    context.deps.loadBundle.mockReturnValue({
+      status: "accepted",
+      request: baselineRequest,
+      rejectedWorksheets: [],
+      worksheetOrder: ["Analysis-A", "Analysis-B"],
+      sourceReferences: {
+        f1: "Feature1-Report.json",
+        f3: "Feature3-Report.json",
+        f4: "Feature4-Calculation.json",
+      },
+      observationFallback: {
+        reasonCode: "artifact_identity_mismatch",
+        artifactReference: "observations.json",
+      },
+    });
+    context.deps.createInterpretation.mockImplementation(createF5DataInterpretation);
+
+    const result = runF5FullValidation({ args: [] }, context.deps);
+    const report = readJson(result.reportJsonPath);
+
+    expect(result.status).toBe("completed");
+    expect(report.worksheets).toHaveLength(2);
+    for (const worksheet of report.worksheets) {
+      expect(worksheet.sections.toleranceChainValidity.status).toBe("not_evaluated");
+      expect(worksheet).not.toHaveProperty("observationVersion");
+      expect(worksheet).not.toHaveProperty("contextSnapshot");
+      expect(worksheet.statements.some(({ type, content }) => (
+        type === "SIGNAL" && content.signalKind === "image_text_context_review"
+      ))).toBe(false);
+      expect(worksheet.clarifications).toEqual(expect.arrayContaining([
+        expect.objectContaining({ reasonCode: "enhanced_observation_rejected" }),
+      ]));
+    }
+    expect(result).not.toHaveProperty("imageObservationsPath");
   });
 
   it("merges accepted and rejected worksheets and recomputes root status and summary", () => {
@@ -716,6 +993,7 @@ describe("runF5FullValidation", () => {
       reasonCode: "input_rejected",
       artifacts: {},
     });
+    expect(context.deps.createInterpretation).not.toHaveBeenCalled();
   });
 
   it.each([
