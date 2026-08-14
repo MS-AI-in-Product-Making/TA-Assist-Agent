@@ -4411,6 +4411,27 @@ describe("F5.1 objective interpretation contracts", () => {
         expect(f6CostEvidenceSchema.safeParse({ evidenceVersion: "cost-model-v1", model: "relative-cost", unit: "USD", optionCosts: [{ optionKind: "reduce_top_contributor_20", cost: 100 }], source: "cost-model.json", effectiveVersion: "FY26", contentHash: "a".repeat(64) }).success).toBe(true);
       });
 
+      it("rejects duplicate solver and governed evidence source identities at precise paths", () => {
+        const duplicateAllocation = f6ApportionmentResultSchema.safeParse({
+          policy: "bounded-by-capability", targetRssSigma: 0.04,
+          allocations: [
+            { tableId: "table-a", sourceRow: 2, targetSigma: 0.04, targetTolerance: 0.16 },
+            { tableId: "table-a", sourceRow: 2, targetSigma: 0.03, targetTolerance: 0.12 },
+          ],
+          residualError: 0, feasibility,
+        });
+        expect(duplicateAllocation.success).toBe(false);
+        if (!duplicateAllocation.success) expect(duplicateAllocation.error.issues.map(({ path }) => path)).toContainEqual(["allocations", 1]);
+
+        const duplicateDirection = f6DatumEvidenceSchema.safeParse({ evidenceVersion: "datum-strategy-v1", datumFace: "A", stackStart: "A", factorDirections: [{ tableId: "table-a", sourceRow: 2, direction: 1 }, { tableId: "table-a", sourceRow: 2, direction: -1 }], datumChainEdges: [{ from: "A", to: "B" }], crossSubsystemRelations: [], drawingEvidence: ["drawing-a.pdf"], reviewStatus: "confirmed", source: "datum-review.json", effectiveVersion: "v1", contentHash: "a".repeat(64) });
+        expect(duplicateDirection.success).toBe(false);
+        if (!duplicateDirection.success) expect(duplicateDirection.error.issues.map(({ path }) => path)).toContainEqual(["factorDirections", 1]);
+
+        const duplicateCost = f6CostEvidenceSchema.safeParse({ evidenceVersion: "cost-model-v1", model: "relative-cost", unit: "USD", optionCosts: [{ optionKind: "reduce_top_contributor_20", cost: 100 }, { optionKind: "reduce_top_contributor_20", cost: 120 }], source: "cost-model.json", effectiveVersion: "FY26", contentHash: "a".repeat(64) });
+        expect(duplicateCost.success).toBe(false);
+        if (!duplicateCost.success) expect(duplicateCost.error.issues.map(({ path }) => path)).toContainEqual(["optionCosts", 1, "optionKind"]);
+      });
+
       it("enforces strict option branches and result status summaries", () => {
         expect(f6OptimizationResultSchema.parse(f6Result)).toEqual(f6Result);
         expect(f6OptimizationResultSchema.safeParse({ ...f6Result, summary: { ...f6Result.summary, completedOptionCount: 0 } }).success).toBe(false);
@@ -4439,6 +4460,60 @@ describe("F5.1 objective interpretation contracts", () => {
         }).success).toBe(false);
       });
 
+      it("requires partially completed worksheets to contain both completed and failed options", () => {
+        const failedOption = { status: "calculation_failed", optionId: "failed", optionKind: "reduce_top_3_contributors_30", reasonCode: "f4_calculation_failed", evidenceReferences: [], impactRank: null };
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          status: "partially_completed",
+          worksheets: [{ ...f6Result.worksheets[0], status: "partially_completed", options: [failedOption] }],
+          summary: { ...f6Result.summary, completedWorksheetCount: 0, partiallyCompletedWorksheetCount: 1, completedOptionCount: 0, calculationFailedOptionCount: 1 },
+        }).success).toBe(false);
+      });
+
+      it("rejects duplicate per-worksheet identities and ranks at precise paths", () => {
+        const duplicateCases = [
+          { field: "options", value: [completedOption, { ...completedOption, optionKind: "reduce_top_3_contributors_30", impactRank: 2 }] },
+          { field: "risks", value: [{ riskId: "risk-1", category: "Manufacturing", rating: "Low", status: "open", reason: "One", evidenceReferences: [reference("risk.json")] }, { riskId: "risk-1", category: "Supplier", rating: "Medium", status: "open", reason: "Two", evidenceReferences: [reference("risk.json")] }] },
+          { field: "recommendations", value: [f6Result.worksheets[0].recommendations[0], { ...f6Result.worksheets[0].recommendations[0], text: "Duplicate." }] },
+          { field: "clarifications", value: [{ clarificationId: "clarify-1", reasonCode: "missing", requiredInputs: ["input"], questionForReviewer: "Question?", evidenceReferences: [] }, { clarificationId: "clarify-1", reasonCode: "missing-2", requiredInputs: ["input"], questionForReviewer: "Another?", evidenceReferences: [] }] },
+        ] as const;
+        for (const { field, value } of duplicateCases) {
+          const parsed = f6OptimizationResultSchema.safeParse({
+            ...f6Result,
+            worksheets: [{ ...f6Result.worksheets[0], [field]: value }],
+            summary: field === "options" ? { ...f6Result.summary, completedOptionCount: 2 } : f6Result.summary,
+          });
+          expect(parsed.success, field).toBe(false);
+          if (!parsed.success) expect(parsed.error.issues.some(({ path }) => path[0] === "worksheets" && path[2] === field)).toBe(true);
+        }
+
+        const duplicateRank = f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], options: [completedOption, { ...completedOption, optionId: "top-three-30", optionKind: "reduce_top_3_contributors_30" }] }],
+          summary: { ...f6Result.summary, completedOptionCount: 2 },
+        });
+        expect(duplicateRank.success).toBe(false);
+        if (!duplicateRank.success) expect(duplicateRank.error.issues.map(({ path }) => path)).toContainEqual(["worksheets", 0, "options", 1, "impactRank"]);
+      });
+
+      it("derives worksheet ROI state from controlled cost provenance", () => {
+        const costEvidence = { evidenceVersion: "cost-model-v1", model: "relative-cost", unit: "USD", optionCosts: [{ optionKind: "reduce_top_contributor_20", cost: 100 }], source: "cost-model.json", effectiveVersion: "FY26", contentHash: "a".repeat(64) };
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], roiStatus: "computed" }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          provenance: { ...f6Result.provenance, costEvidence },
+          worksheets: [{ ...f6Result.worksheets[0], roiStatus: "computed", options: [{ ...completedOption, relativeCost: 100, roiScore: 0.006 }] }],
+        }).success).toBe(true);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          provenance: { ...f6Result.provenance, costEvidence },
+          worksheets: [{ ...f6Result.worksheets[0], roiStatus: "computed" }],
+        }).success).toBe(false);
+      });
+
       it("accepts the fixed ten-section composed report and enforces bullet limits", () => {
         const evidenceReferences = [reference("Feature5-Report.json"), reference("Feature6-Optimization.json")];
         const report = {
@@ -4448,6 +4523,8 @@ describe("F5.1 objective interpretation contracts", () => {
           blockedWorksheets: [{ worksheetName: "Blocked", findings: [{ findingCode: "missing_nominal", severity: "Critical", message: "Nominal is missing.", evidenceReferences: [reference("Feature2-Report.json")] }] }],
           worksheets: [{
             worksheetName: "Analysis-A", status: "PASS", evidenceReferences,
+            targetCapability: { targetCpk: 1.33, targetSigmaLevel: 4, source: "worksheet" },
+            confirmedRequirementViolation: false, missingCapabilityData: false,
             sections: {
               executiveSummary: ["Cpk 2.4 exceeds the 1.33 target."],
               requirementReview: { ctq: "Anonymous device gap", nominal: 12.5, lowerSpecLimit: 12.1, upperSpecLimit: 12.9, specWidth: 0.8, assessment: "Requirement is understood.", riskLevel: "Low", evidenceReferences },
@@ -4455,13 +4532,13 @@ describe("F5.1 objective interpretation contracts", () => {
               capabilityAssessment: { metrics, oosRate: 0.001, oosPpm: 1000, findings: ["Capability exceeds target."], evidenceReferences },
               contributorAnalysis: { topContributors: [{ factorName: "Feature-A", contributionPercent: 100, tableId: "table-a", sourceRow: 2 }], top1Concentration: 100, top3Concentration: 100, concentrationAssessment: "concentrated", policyVersion: "f6-contributor-policy-v1", evidenceReferences },
               rootCauseAnalysis: { factBasedFindings: ["Feature-A dominates RSS sigma."], signals: [], evidenceStatus: "supported", evidenceReferences },
-              riskAssessment: [{ category: "Manufacturing", rating: "Low", reason: "Baseline capability exceeds target.", evidenceReferences }],
+              riskAssessment: [{ category: "Manufacturing", rating: "Low", status: "open", reason: "Baseline capability exceeds target.", evidenceReferences }],
               recommendations: [{ text: "Apply the verified top contributor option.", optionId: completedOption.optionId, evidenceReferences }],
               whatIfAnalysis: { options: [
-                { optionKind: "reduce_top_contributor_20", status: "completed", summary: "Cpk improves by 0.6.", evidenceReferences },
-                { optionKind: "reduce_top_3_contributors_30", status: "completed", summary: "Top three contributors were recalculated.", evidenceReferences },
-                { optionKind: "improve_supplier_capability", status: "insufficient_evidence", summary: "Supplier capability evidence is required.", evidenceReferences },
-                { optionKind: "tighten_datum_strategy", status: "insufficient_evidence", summary: "Reviewed datum evidence is required.", evidenceReferences },
+                { optionKind: "reduce_top_contributor_20", status: "completed", summary: "Cpk improves by 0.6.", predictedImprovement: 0.6, evidenceReferences },
+                { optionKind: "reduce_top_3_contributors_30", status: "completed", summary: "Top three contributors were recalculated.", predictedImprovement: 0.4, evidenceReferences },
+                { optionKind: "improve_supplier_capability", status: "insufficient_evidence", summary: "Supplier capability evidence is required.", predictedImprovement: "insufficient_evidence", requiredInputs: ["supplier capability study"], evidenceReferences },
+                { optionKind: "tighten_datum_strategy", status: "insufficient_evidence", summary: "Reviewed datum evidence is required.", predictedImprovement: "insufficient_evidence", requiredInputs: ["confirmed datum review"], evidenceReferences },
               ], highestImpactAction: "Apply top contributor tightening.", roiStatus: "not_computed", evidenceReferences },
               finalConclusion: ["The current design reaches the target capability."],
             },
@@ -4471,6 +4548,53 @@ describe("F5.1 objective interpretation contracts", () => {
         expect(f6ComposedEngineeringReportSchema.safeParse({ ...report, workbookExecutiveSummary: Array(6).fill("bullet") }).success).toBe(false);
         expect(f6ComposedEngineeringReportSchema.safeParse({ ...report, worksheets: [{ ...report.worksheets[0], sections: { ...report.worksheets[0].sections, executiveSummary: Array(6).fill("bullet") } }] }).success).toBe(false);
         expect(f6ComposedEngineeringReportSchema.safeParse({ ...report, worksheets: [{ ...report.worksheets[0], sections: { ...report.worksheets[0].sections, finalConclusion: Array(11).fill("bullet") } }] }).success).toBe(false);
+
+        const statusCases = [
+          { cpk: 0.99, targetCpk: 1.33, violation: false, missing: false, rating: "Low", expected: "FAIL" },
+          { cpk: 2, targetCpk: 1.33, violation: true, missing: false, rating: "Low", expected: "FAIL" },
+          { cpk: 1.1, targetCpk: 1.33, violation: false, missing: false, rating: "Low", expected: "RISK" },
+          { cpk: 2, targetCpk: 1.33, violation: false, missing: true, rating: "Low", expected: "RISK" },
+          { cpk: 2, targetCpk: 1.33, violation: false, missing: false, rating: "High", expected: "RISK" },
+          { cpk: 1.33, targetCpk: 1.33, violation: false, missing: false, rating: "Low", expected: "PASS" },
+        ] as const;
+        for (const scenario of statusCases) {
+          const worksheet = structuredClone(report.worksheets[0]);
+          worksheet.status = scenario.expected;
+          worksheet.targetCapability.targetCpk = scenario.targetCpk;
+          worksheet.confirmedRequirementViolation = scenario.violation;
+          worksheet.missingCapabilityData = scenario.missing;
+          worksheet.sections.capabilityAssessment.metrics.cpk = scenario.cpk;
+          worksheet.sections.riskAssessment[0]!.rating = scenario.rating;
+          const candidate = { ...report, overallStatus: scenario.expected, blockedWorksheets: [], worksheets: [worksheet] };
+          expect(f6ComposedEngineeringReportSchema.safeParse(candidate).success, JSON.stringify(scenario)).toBe(true);
+          expect(f6ComposedEngineeringReportSchema.safeParse({ ...candidate, overallStatus: "PASS", worksheets: [{ ...worksheet, status: "PASS" }] }).success, `tampered ${JSON.stringify(scenario)}`).toBe(scenario.expected === "PASS");
+        }
+
+        for (const field of ["yield", "dpm", "oosRate", "oosPpm"] as const) {
+          const worksheet = structuredClone(report.worksheets[0]);
+          if (field === "yield") worksheet.sections.capabilityAssessment.metrics.yield = 0.5;
+          else if (field === "dpm") worksheet.sections.capabilityAssessment.metrics.dpm = 50;
+          else worksheet.sections.capabilityAssessment[field] += 0.01;
+          expect(f6ComposedEngineeringReportSchema.safeParse({ ...report, worksheets: [worksheet] }).success, field).toBe(false);
+        }
+
+        const toleranceWorksheet = structuredClone(report.worksheets[0]);
+        toleranceWorksheet.sections.capabilityAssessment.oosRate += 5e-13;
+        toleranceWorksheet.sections.capabilityAssessment.oosPpm += 5e-7;
+        expect(f6ComposedEngineeringReportSchema.safeParse({ ...report, worksheets: [toleranceWorksheet] }).success).toBe(true);
+
+        const malformedWhatIf = structuredClone(report);
+        Object.assign(malformedWhatIf.worksheets[0]!.sections.whatIfAnalysis.options[2]!, { status: "insufficient_evidence", predictedImprovement: 0.2, requiredInputs: [] });
+        expect(f6ComposedEngineeringReportSchema.safeParse(malformedWhatIf).success).toBe(false);
+
+        const failedWhatIf = structuredClone(report);
+        failedWhatIf.worksheets[0]!.sections.whatIfAnalysis.options[0] = { optionKind: "reduce_top_contributor_20", status: "calculation_failed", summary: "Calculation failed.", reasonCode: "f4_calculation_failed", evidenceReferences };
+        expect(f6ComposedEngineeringReportSchema.safeParse(failedWhatIf).success).toBe(true);
+
+        const governedWhatIf = structuredClone(report);
+        governedWhatIf.worksheets[0]!.sections.whatIfAnalysis.options[2] = { optionKind: "improve_supplier_capability", status: "completed", summary: "Supplier scenario completed.", predictedImprovement: 0.2, governedEvidenceReference: "supplier-capability.json", evidenceStatus: "confirmed", evidenceReferences };
+        governedWhatIf.worksheets[0]!.sections.whatIfAnalysis.options[3] = { optionKind: "tighten_datum_strategy", status: "completed", summary: "Datum scenario completed.", predictedImprovement: 0.1, governedEvidenceReference: "datum-review.json", evidenceStatus: "confirmed", evidenceReferences };
+        expect(f6ComposedEngineeringReportSchema.safeParse(governedWhatIf).success).toBe(true);
       });
 
       it("preserves the legacy feature_not_available comparison contracts", () => {
