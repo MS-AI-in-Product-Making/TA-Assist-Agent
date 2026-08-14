@@ -148,7 +148,9 @@ describe("F6 capability and evidence feasibility gates", () => {
 
   it("returns a strict evidence-limited supplier option when evidence is missing or malformed", () => {
     const missing = assessSupplierScenario();
-    const malformed = assessSupplierScenario({ ...supplierEvidence(), contentHash: "bad" });
+    const malformed = assessSupplierScenario({
+      evidence: { ...supplierEvidence(), contentHash: "bad" },
+    });
 
     for (const result of [missing, malformed]) {
       expect(result.option.status).toBe("insufficient_evidence");
@@ -162,9 +164,9 @@ describe("F6 capability and evidence feasibility gates", () => {
     }
   });
 
-  it("keeps the supplier option evidence-limited while assessing governed T1 feasibility", () => {
+  it("requires a requested tolerance band before assessing governed supplier evidence", () => {
     const evidence = supplierEvidence();
-    const result = assessSupplierScenario(evidence);
+    const result = assessSupplierScenario({ evidence });
 
     expect(f6SupplierCapabilityEvidenceSchema.parse(evidence)).toEqual(evidence);
     expect(result.option.status).toBe("insufficient_evidence");
@@ -173,10 +175,55 @@ describe("F6 capability and evidence feasibility gates", () => {
     expect(result.option.evidenceReferences).toEqual([
       { artifact: "evidence/supplier-a.json", contentHash: HASH },
     ]);
-    expect(result.feasibility.status).toBe("supported");
+    expect(result.feasibility).toEqual({
+      status: "insufficient_evidence",
+      reasonCodes: ["controlled_supplier_scenario_calculation"],
+      evidenceReferences: ["evidence/supplier-a.json"],
+    });
     expect(f6OptionSchema.parse(result.option)).toEqual(result.option);
     expect(f6FeasibilityAssessmentSchema.parse(result.feasibility)).toEqual(result.feasibility);
   });
+
+  it.each([
+    [0.2, "supported", "t1_governed_bound_satisfied"],
+    [0.199, "not_supported", "t1_governed_bound_exceeded"],
+  ] as const)(
+    "assesses a governed T1 supplier scenario with requested band %s as %s",
+    (requestedToleranceBand, status, reasonCode) => {
+      const evidence = supplierEvidence();
+      const result = assessSupplierScenario({ evidence, requestedToleranceBand });
+
+      expect(result.option.status).toBe("insufficient_evidence");
+      expect(result.option.predictedImprovement).toBe("insufficient_evidence");
+      expect(result.option.evidenceReferences).toEqual([
+        { artifact: "evidence/supplier-a.json", contentHash: HASH },
+      ]);
+      expect(result.feasibility).toEqual({
+        status,
+        reasonCodes: [reasonCode],
+        evidenceReferences: ["evidence/supplier-a.json"],
+      });
+    },
+  );
+
+  it.each([
+    ["T2", "requires_engineering_review", "t2_requires_engineering_review"],
+    ["T3", "requires_engineering_review", "t3_empirical_requires_engineering_review"],
+    ["T0", "insufficient_evidence", "capability_tier_t0"],
+  ] as const)(
+    "preserves the %s supplier feasibility gate when a requested band is provided",
+    (capabilityTier, status, reasonCode) => {
+      const result = assessSupplierScenario({
+        evidence: supplierEvidence({ capabilityTier }),
+        requestedToleranceBand: 0.2,
+      });
+
+      expect(result.option.status).toBe("insufficient_evidence");
+      expect(result.feasibility.status).toBe(status);
+      expect(result.feasibility.reasonCodes).toEqual([reasonCode]);
+      expect(result.feasibility.evidenceReferences).toEqual(["evidence/supplier-a.json"]);
+    },
+  );
 
   it("fails closed for missing, malformed, or unconfirmed datum evidence", () => {
     const missing = assessDatumScenario();
@@ -256,7 +303,7 @@ describe("F6 capability and evidence feasibility gates", () => {
     const evidence = supplierEvidence();
     const snapshot = structuredClone(evidence);
     const tolerance = assessToleranceFeasibility({ requestedToleranceBand: 0.2, evidence });
-    const scenario = assessSupplierScenario(evidence);
+    const scenario = assessSupplierScenario({ evidence, requestedToleranceBand: 0.2 });
 
     expect(evidence).toEqual(snapshot);
     expect(Object.isFrozen(tolerance)).toBe(true);

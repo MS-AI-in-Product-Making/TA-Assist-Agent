@@ -24,6 +24,11 @@ export interface F6EvidenceScenarioResult {
   readonly feasibility: F6FeasibilityAssessment;
 }
 
+export interface SupplierScenarioInput {
+  readonly evidence?: unknown;
+  readonly requestedToleranceBand?: number;
+}
+
 export interface CostAssessmentInput {
   readonly evidence?: unknown;
   readonly optionKind?: F6OptionKind;
@@ -147,8 +152,28 @@ function scenarioResult(
   });
 }
 
-export function assessSupplierScenario(evidence?: unknown): F6EvidenceScenarioResult {
-  const parsed = f6SupplierCapabilityEvidenceSchema.safeParse(evidence);
+function supplierScenarioInput(
+  inputOrEvidence: SupplierScenarioInput | unknown,
+  requestedToleranceBandArgument: number | undefined,
+): { readonly evidence: unknown; readonly requestedToleranceBand: number | undefined } {
+  if (inputOrEvidence !== null && typeof inputOrEvidence === "object" && "evidence" in inputOrEvidence) {
+    const input = inputOrEvidence as SupplierScenarioInput;
+    return {
+      evidence: input.evidence,
+      requestedToleranceBand: input.requestedToleranceBand ?? requestedToleranceBandArgument,
+    };
+  }
+  return { evidence: inputOrEvidence, requestedToleranceBand: requestedToleranceBandArgument };
+}
+
+export function assessSupplierScenario(input?: SupplierScenarioInput): F6EvidenceScenarioResult;
+export function assessSupplierScenario(evidence?: unknown, requestedToleranceBand?: number): F6EvidenceScenarioResult;
+export function assessSupplierScenario(
+  inputOrEvidence?: SupplierScenarioInput | unknown,
+  requestedToleranceBandArgument?: number,
+): F6EvidenceScenarioResult {
+  const input = supplierScenarioInput(inputOrEvidence, requestedToleranceBandArgument);
+  const parsed = f6SupplierCapabilityEvidenceSchema.safeParse(input.evidence);
   if (!parsed.success) {
     return scenarioResult(
       "improve_supplier_capability",
@@ -159,13 +184,16 @@ export function assessSupplierScenario(evidence?: unknown): F6EvidenceScenarioRe
   }
 
   const reference = evidenceReference(parsed.data);
-  const assessment = parsed.data.capabilityTier === "T1"
-    ? feasibility("supported", ["supplier_t1_governed_evidence_confirmed"], [reference.artifact])
-    : parsed.data.capabilityTier === "T2"
-      ? feasibility("requires_engineering_review", ["t2_requires_engineering_review"], [reference.artifact])
-      : parsed.data.capabilityTier === "T3"
-        ? feasibility("requires_engineering_review", ["t3_empirical_requires_engineering_review"], [reference.artifact])
-        : feasibility("insufficient_evidence", ["capability_tier_t0"], [reference.artifact]);
+  const assessment = input.requestedToleranceBand === undefined
+    ? feasibility(
+      "insufficient_evidence",
+      ["controlled_supplier_scenario_calculation"],
+      [reference.artifact],
+    )
+    : assessToleranceFeasibility({
+      evidence: parsed.data,
+      requestedToleranceBand: input.requestedToleranceBand,
+    });
   return scenarioResult(
     "improve_supplier_capability",
     ["controlled_supplier_scenario_calculation"],
