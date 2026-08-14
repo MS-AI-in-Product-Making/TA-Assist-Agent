@@ -230,6 +230,8 @@ function v2Request() {
           visibleBasis: string;
           visibleLabels: string[];
           reviewStatus: "unreviewed" | "confirmed" | "rejected";
+          confirmedBy?: string;
+          confirmedAt?: string;
         };
         contextualSignal: {
           signalValue: "indicated_consistent" | "indicated_conflict" | "ambiguous" | "insufficient_evidence";
@@ -803,6 +805,49 @@ describe("createF5DataInterpretation", () => {
       statement.type === "RULE" && statement.section === "tolerance-chain-validity"
     ))).toBe(false);
   });
+
+  it.each([
+    ["high", "unreviewed", true],
+    ["medium", "unreviewed", false],
+    ["low", "unreviewed", false],
+    ["high", "rejected", false],
+  ] as const)(
+    "preserves linked direction visual evidence for %s confidence and %s review without requiring a FACT",
+    (confidence, reviewStatus, expectsFact) => {
+      const input = v2Request();
+      const direction = input.worksheets[0]!.imageObservations.find(({ scope }) => scope === "direction")!;
+      direction.visualObservation.confidence = confidence;
+      direction.visualObservation.reviewStatus = reviewStatus;
+
+      const result = createF5DataInterpretation(input);
+      const worksheet = result.worksheets[0]!;
+      if (worksheet.status !== "completed") throw new Error("expected completed worksheet");
+      const directionSignal = worksheet.statements.find((statement) => (
+        statement.type === "SIGNAL" && "signalKind" in statement.content
+          && statement.content.signalKind === "image_text_context_review"
+          && statement.content.scope === "direction"
+      ));
+
+      expect(directionSignal).toEqual(expect.objectContaining({
+        content: expect.objectContaining({
+          linkedVisualLabels: [{ label: "factor-1", tableId: "table-a", sourceRow: 2 }],
+          visualEvidence: {
+            observedValue: "visible",
+            confidence,
+            visibleBasis: "Visible marker for direction.",
+            visibleLabels: ["factor-1"],
+            reviewStatus,
+            imageReference,
+          },
+        }),
+      }));
+      expect(worksheet.statements.some((statement) => (
+        statement.type === "FACT" && statement.content.provenanceKind === "image_observation"
+          && statement.content.scope === "direction"
+      ))).toBe(expectsFact);
+      expect(f5DataInterpretationResultSchema.safeParse(result).success).toBe(true);
+    },
+  );
 
   it("keeps all v2 core scopes reviewed while retaining noncore clarifications and F6 delegation", () => {
     const input = v2Request();

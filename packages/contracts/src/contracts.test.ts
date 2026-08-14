@@ -3427,6 +3427,14 @@ describe("F5.1 objective interpretation contracts", () => {
           textBasis: `Image and worksheet context require review for ${scope}.`,
           linkedSourceRows: [],
           linkedVisualLabels: [],
+          visualEvidence: {
+            observedValue: "ambiguous" as const,
+            confidence: "medium" as const,
+            visibleBasis: `Visible evidence requires review for ${scope}.`,
+            visibleLabels: [],
+            reviewStatus: "unreviewed" as const,
+            imageReference: structuredClone(imageReference),
+          },
           requiresEngineeringReview: true as const,
         },
       }));
@@ -3559,7 +3567,7 @@ describe("F5.1 objective interpretation contracts", () => {
       expect(f5DataInterpretationResultSchema.safeParse(result).success).toBe(false);
     });
 
-    it("binds completed v2 direction context labels to same-scope visual FACT labels", () => {
+    it("binds completed v2 direction context labels to the same SIGNAL visual evidence", () => {
       const createLinkedResult = () => {
         const result = completedResultWithContextSignals(coreScopes);
         const worksheet = result.worksheets[0]!;
@@ -3579,17 +3587,17 @@ describe("F5.1 objective interpretation contracts", () => {
           tableId: "table-a",
           sourceRow: 2,
         }];
-        worksheet.statements.push({
-          ...structuredClone(rootImageFact),
-          statementId: "root-fact-image-direction",
-          content: {
-            ...structuredClone(rootImageFact.content),
-            scope: "direction",
+        Object.assign(directionSignal.content, {
+          visualEvidence: {
+            observedValue: "visible",
+            confidence: "medium",
+            visibleBasis: "The direction label is visible in the controlled worksheet image.",
             visibleLabels: ["factor-1"],
+            reviewStatus: "unreviewed",
+            imageReference: structuredClone(imageReference),
           },
         });
-        result.summary.statementCount += 1;
-        return { result, worksheet, directionSignal };
+        return { result, directionSignal };
       };
 
       const valid = createLinkedResult();
@@ -3599,12 +3607,26 @@ describe("F5.1 objective interpretation contracts", () => {
       invented.directionSignal.content.linkedVisualLabels[0]!.label = "invented";
       expect(f5DataInterpretationResultSchema.safeParse(invented.result).success).toBe(false);
 
-      const missingFact = createLinkedResult();
-      missingFact.worksheet.statements = missingFact.worksheet.statements.filter(
-        ({ statementId }) => statementId !== "root-fact-image-direction",
-      );
-      missingFact.result.summary.statementCount -= 1;
-      expect(f5DataInterpretationResultSchema.safeParse(missingFact.result).success).toBe(false);
+      const imageMismatch = createLinkedResult();
+      const mismatchedEvidence = imageMismatch.directionSignal.content as unknown as {
+        visualEvidence: { imageReference: { contentHash: string } };
+      };
+      mismatchedEvidence.visualEvidence.imageReference.contentHash = "0".repeat(64);
+      expect(f5DataInterpretationResultSchema.safeParse(imageMismatch.result).success).toBe(false);
+
+      const malformedConfirmation = createLinkedResult();
+      const malformedEvidence = malformedConfirmation.directionSignal.content as unknown as {
+        visualEvidence: { reviewStatus: string };
+      };
+      malformedEvidence.visualEvidence.reviewStatus = "confirmed";
+      expect(f5DataInterpretationResultSchema.safeParse(malformedConfirmation.result).success).toBe(false);
+
+      const nonvisibleDirection = createLinkedResult();
+      const nonvisibleEvidence = nonvisibleDirection.directionSignal.content as unknown as {
+        visualEvidence: { observedValue: string };
+      };
+      nonvisibleEvidence.visualEvidence.observedValue = "ambiguous";
+      expect(f5DataInterpretationResultSchema.safeParse(nonvisibleDirection.result).success).toBe(false);
     });
 
     it("forbids orphan image-text context signals on completed non-v2 worksheet results", () => {

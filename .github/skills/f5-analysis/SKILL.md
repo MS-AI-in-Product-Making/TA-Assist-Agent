@@ -113,6 +113,8 @@ The artifact contract is:
 
 `visualObservation` may produce only an image `FACT` when the evidence gates permit. The current classification table governs only outputs derived from `visualObservation`. `image_text_context_review` is an independent contextual `SIGNAL` for every core scope. It remains present when visual confidence is low or visual `reviewStatus` is rejected. It always requires ME review and never creates a `FACT`, `RULE`, or final engineering determination. `visibleBasis` describes only labels, arrows, symbols, lines, faces, and visible geometric relationships in the image; worksheet text belongs in `textBasis` and cannot prove a visual FACT.
 
+Each result `image_text_context_review` SIGNAL copies the complete `visualObservation` into self-contained `visualEvidence`, adding the exact worksheet `imageReference`. Preserve `observedValue`, `confidence`, `visibleBasis`, `visibleLabels`, `reviewStatus`, and conditional `confirmedBy` / `confirmedAt`. Result validation uses `visualEvidence.visibleLabels`, never the existence of a visual FACT, for structured direction label links. It also validates confirmation metadata and exact image identity against the containing worksheet. Visual FACT gates do not remove or invalidate the context SIGNAL.
+
 Evidence gates are strict and apply exactly as follows. An image FACT records only what is visibly observed; it is never a dimensional RULE or a final engineering determination.
 
 ### Image evidence classification gates
@@ -122,8 +124,8 @@ Evidence gates are strict and apply exactly as follows. An image FACT records on
 | high + unreviewed | image FACT only | requiresEngineeringReview | prohibited | prohibited | required | image evidence pending ME review |
 | high + confirmed | image FACT only | requiresEngineeringReview | prohibited; never automatic | prohibited | still required | image evidence remains subject to ME review |
 | medium | prohibited | at most SIGNAL | prohibited | prohibited | required before promotion | SIGNAL only |
-| low | prohibited | prohibited | prohibited | prohibited | not applicable | clarification only |
-| rejected | prohibited | prohibited | prohibited | prohibited | not applicable | excluded from conclusions; emit clarification requiring reviewer/new evidence |
+| low | prohibited | visual-derived SIGNAL prohibited; independent context SIGNAL preserved | prohibited | prohibited | context SIGNAL still requires review | clarification plus context SIGNAL |
+| rejected | prohibited | visual-derived SIGNAL prohibited; independent context SIGNAL preserved | prohibited | prohibited | context SIGNAL still requires review | excluded from visual conclusions; emit clarification and preserve context SIGNAL |
 
 Never upgrade confidence or review status to avoid these gates. `confirmed` records reviewer confirmation but does not remove ME review, create a RULE automatically, or authorize a final engineering determination.
 

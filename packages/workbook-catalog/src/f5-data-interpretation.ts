@@ -118,7 +118,7 @@ function createImageEvidence(worksheet: RequestWorksheet) {
           ...(visualObservation.confirmedAt === undefined ? {} : { confirmedAt: visualObservation.confirmedAt }),
         },
       }));
-    const signals = worksheet.imageObservations.map(({ scope, contextualSignal }) => ({
+    const signals = worksheet.imageObservations.map(({ scope, visualObservation, contextualSignal }) => ({
       statementId: `f5-context-signal-${scope}`,
       type: "SIGNAL" as const,
       section: "tolerance-chain-validity" as const,
@@ -129,6 +129,10 @@ function createImageEvidence(worksheet: RequestWorksheet) {
         textBasis: contextualSignal.textBasis,
         linkedSourceRows: structuredClone(contextualSignal.linkedSourceRows),
         linkedVisualLabels: structuredClone(contextualSignal.linkedVisualLabels),
+        visualEvidence: {
+          ...structuredClone(visualObservation),
+          imageReference: structuredClone(worksheet.imageReference),
+        },
         requiresEngineeringReview: true as const,
       },
     }));

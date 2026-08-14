@@ -421,6 +421,7 @@ describe("renderF5Report", () => {
     directionSignal.content.textBasis = "<script>signal()</script>|C:\\private\\signal.txt";
     const unsafeLabel = "![label](javascript:alert(3))|<svg>";
     directionSignal.content.linkedVisualLabels[0].label = unsafeLabel;
+    directionSignal.content.visualEvidence.visibleLabels = [unsafeLabel];
     directionFact.content.visibleLabels = [unsafeLabel];
 
     const markdown = renderF5Report(report);

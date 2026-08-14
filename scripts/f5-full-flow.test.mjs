@@ -242,6 +242,27 @@ function contextualObservationBundle() {
   return { baselineRequest, enrichedRequest, observationArtifact };
 }
 
+function contextualDirectionBundle(confidence, reviewStatus) {
+  const bundle = contextualObservationBundle();
+  for (const observations of [
+    bundle.enrichedRequest.worksheets[0].imageObservations,
+    bundle.observationArtifact.worksheets[0].observations,
+  ]) {
+    const direction = observations.find(({ scope }) => scope === "direction");
+    direction.visualObservation.confidence = confidence;
+    direction.visualObservation.reviewStatus = reviewStatus;
+    direction.visualObservation.visibleLabels = ["Factor A"];
+    direction.contextualSignal.signalValue = "indicated_consistent";
+    direction.contextualSignal.linkedSourceRows = [{ tableId: "table-a", sourceRow: 2 }];
+    direction.contextualSignal.linkedVisualLabels = [{
+      label: "Factor A",
+      tableId: "table-a",
+      sourceRow: 2,
+    }];
+  }
+  return bundle;
+}
+
 function requestForWorksheets(worksheetNames) {
   const baseline = request();
   return {
@@ -712,6 +733,55 @@ describe("runF5FullValidation", () => {
     expect(summary.hashes.imageObservationsSha256).toBe(
       createHash("sha256").update(readFileSync(result.imageObservationsPath)).digest("hex"),
     );
+  });
+
+  it.each([
+    ["medium", "unreviewed"],
+    ["high", "rejected"],
+  ])("completes valid v2 direction context with %s confidence and %s review without fallback", (confidence, reviewStatus) => {
+    const context = setup();
+    const { enrichedRequest, observationArtifact } = contextualDirectionBundle(confidence, reviewStatus);
+    context.deps.loadBundle.mockReturnValue({
+      status: "accepted",
+      request: enrichedRequest,
+      rejectedWorksheets: [],
+      worksheetOrder: ["Analysis-A"],
+      sourceReferences: {
+        f1: "Feature1-Report.json",
+        f3: "Feature3-Report.json",
+        f4: "Feature4-Calculation.json",
+        observation: "observations.json",
+      },
+      observationArtifact,
+    });
+    context.deps.createInterpretation.mockImplementation(createF5DataInterpretation);
+
+    const result = runF5FullValidation({ args: [] }, context.deps);
+    const report = readJson(result.reportJsonPath);
+    const worksheet = report.worksheets[0];
+    const directionSignal = worksheet.statements.find(({ type, content }) => (
+      type === "SIGNAL" && content.signalKind === "image_text_context_review"
+        && content.scope === "direction"
+    ));
+
+    expect(result).toMatchObject({ status: "completed" });
+    expect(result).not.toHaveProperty("reasonCode");
+    expect(worksheet).not.toHaveProperty("observationFallback");
+    expect(directionSignal.content).toMatchObject({
+      linkedVisualLabels: [{ label: "Factor A", tableId: "table-a", sourceRow: 2 }],
+      visualEvidence: {
+        observedValue: "visible",
+        confidence,
+        visibleLabels: ["Factor A"],
+        reviewStatus,
+        imageReference: worksheet.imageReference,
+      },
+      requiresEngineeringReview: true,
+    });
+    expect(worksheet.statements.some(({ type, content }) => (
+      type === "FACT" && content.provenanceKind === "image_observation"
+        && content.scope === "direction"
+    ))).toBe(false);
   });
 
   it.each([

@@ -5076,6 +5076,21 @@ const f5RootObservationEvidenceSchema = z.object({
   confirmedAt: z.string().datetime().optional(),
 }).strict().superRefine(validateF5ObservationConfirmation);
 
+const f5RootContextVisualEvidenceSchema = z.object({
+  observedValue: z.enum(["visible", "not_visible", "ambiguous"]),
+  imageReference: f1ImageReferenceSchema,
+  confidence: z.enum(["high", "medium", "low"]),
+  visibleBasis: z.string().min(1).max(500),
+  visibleLabels: z.array(z.string().min(1)).superRefine((labels, context) => {
+    if (new Set(labels).size !== labels.length) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "visible labels must be unique" });
+    }
+  }),
+  reviewStatus: z.enum(["unreviewed", "confirmed", "rejected"]),
+  confirmedBy: controlledReferenceSchema.optional(),
+  confirmedAt: z.string().datetime().optional(),
+}).strict().superRefine(validateF5ObservationConfirmation);
+
 const f5RootSignalStatementSchema = z.union([
   z.object({
     statementId: z.string().min(1),
@@ -5093,10 +5108,30 @@ const f5RootSignalStatementSchema = z.union([
       textBasis: z.string().min(1),
       linkedSourceRows: z.array(f5LinkedSourceRowV2Schema),
       linkedVisualLabels: z.array(f5LinkedVisualLabelV2Schema),
+      visualEvidence: f5RootContextVisualEvidenceSchema,
       requiresEngineeringReview: z.literal(true),
     }).strict().superRefine((content, context) => {
       validateF5ContextualSignalSemantics(content.scope, content, context, []);
       validateF5ContextualSignalRowKeySets(content.scope, content, context, []);
+      if (content.scope === "direction" && content.linkedVisualLabels.length > 0) {
+        if (content.visualEvidence.observedValue !== "visible") {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "direction linked visual labels require visible SIGNAL evidence",
+            path: ["visualEvidence", "observedValue"],
+          });
+        }
+        const visibleLabelSet = new Set(content.visualEvidence.visibleLabels);
+        content.linkedVisualLabels.forEach((linkedVisualLabel, linkedLabelIndex) => {
+          if (!visibleLabelSet.has(linkedVisualLabel.label)) {
+            context.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: "context labels must reference visible labels in the same SIGNAL",
+              path: ["linkedVisualLabels", linkedLabelIndex, "label"],
+            });
+          }
+        });
+      }
     }),
   }).strict(),
   z.object({
@@ -5333,13 +5368,6 @@ const f5CompletedWorksheetResultSchema = z.object({
       worksheet.governanceRows,
       context,
     );
-    const visibleFactLabelsByScope = new Map<string, Set<string>>();
-    worksheet.statements.forEach((statement) => {
-      if (statement.type !== "FACT" || statement.content.provenanceKind !== "image_observation") return;
-      const labels = visibleFactLabelsByScope.get(statement.content.scope) ?? new Set<string>();
-      statement.content.visibleLabels?.forEach((label) => labels.add(label));
-      visibleFactLabelsByScope.set(statement.content.scope, labels);
-    });
     worksheet.statements.forEach((statement, statementIndex) => {
       if (statement.type !== "SIGNAL" || !("signalKind" in statement.content)
         || statement.content.signalKind !== "image_text_context_review") return;
@@ -5350,16 +5378,16 @@ const f5CompletedWorksheetResultSchema = z.object({
         context,
         ["statements", statementIndex, "content"],
       );
-      const visibleFactLabels = visibleFactLabelsByScope.get(statement.content.scope) ?? new Set<string>();
-      statement.content.linkedVisualLabels.forEach((linkedVisualLabel, linkedLabelIndex) => {
-        if (!visibleFactLabels.has(linkedVisualLabel.label)) {
-          context.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: "context labels must reference visual FACT labels for the same scope",
-            path: ["statements", statementIndex, "content", "linkedVisualLabels", linkedLabelIndex, "label"],
-          });
-        }
-      });
+      const imageReference = statement.content.visualEvidence.imageReference;
+      if (imageReference.worksheetName !== worksheet.imageReference.worksheetName
+        || imageReference.relativePath !== worksheet.imageReference.relativePath
+        || imageReference.contentHash !== worksheet.imageReference.contentHash) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "context SIGNAL image must match the worksheet image",
+          path: ["statements", statementIndex, "content", "visualEvidence", "imageReference"],
+        });
+      }
     });
   }
   const factorSourceKeys = new Set<string>();

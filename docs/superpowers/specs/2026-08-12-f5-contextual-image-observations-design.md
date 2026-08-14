@@ -102,10 +102,12 @@ Snapshot 包含 worksheet 的 `dimensionDescription` 和按 `sourceRow` 升序�
 - `observedValue: visible | not_visible | ambiguous`
 - `confidence: high | medium | low`
 - `visibleBasis`
+- `visibleLabels[]`
 - `reviewStatus: unreviewed | confirmed | rejected`
 - 条件式 `confirmedBy/confirmedAt`
 
 `visibleBasis` 只能描述图片中的标签、箭头、符号、线段、接触面和几何可见关系，不得用 worksheet 文字证明图上事实。
+`visibleLabels` 是图片中实际可见标签的唯一结构化来源，值在 observation 内唯一；不得解析 `visibleBasis` 推断标签。
 
 沿用 evidence gates：
 
@@ -122,15 +124,30 @@ Snapshot 包含 worksheet 的 `dimensionDescription` 和按 `sourceRow` 升序�
 - `signalValue: indicated_consistent | indicated_conflict | ambiguous | insufficient_evidence`
 - `textBasis`
 - `linkedSourceRows[]`
+- `linkedVisualLabels[]`
 - `requiresEngineeringReview: true`
 
 约束：
 
 - `textBasis` 描述图片观察与 snapshot 文字共同提示的检查事项，不是最终结论。
 - `linkedSourceRows` 只引用当前 snapshot 的 `{tableId, sourceRow}`。
+- `direction` 的 `linkedVisualLabels` 同时引用 `visualObservation.visibleLabels` 中的 label 和当前 snapshot 的 `{tableId, sourceRow}`；其 row-key set 必须与 `linkedSourceRows` 完全一致。
+- 非 `direction` scope 的 `linkedVisualLabels` 必须为空；不得解析 `visibleBasis` 建立结构化链接。
 - 无法可靠映射图片元素到 row 时，引用必须为空，且状态只能是 `ambiguous` 或 `insufficient_evidence`。
 - Context signal 永远不能生成 FACT 或 RULE。
 - `indicated_consistent` 仍要求 ME review，不能表述为“已确认一致”。
+
+### Result SIGNAL 视觉证据保留
+
+F5 interpretation 为每个 core scope 始终生成一个 `image_text_context_review` SIGNAL。每个 SIGNAL 在其 content 内包含自包含 `visualEvidence`，从同 scope 的 `visualObservation` 原样复制：
+
+- `observedValue`、`confidence`、`visibleBasis`、`visibleLabels`、`reviewStatus`
+- 条件式 `confirmedBy/confirmedAt`
+- 当前 worksheet 的精确 `imageReference`
+
+Result schema 直接使用同一 SIGNAL 的 `visualEvidence.visibleLabels` 验证 `linkedVisualLabels`，并验证 direction 的 `observedValue: visible`、confirmation metadata、worksheet image identity 和现有 row-key 语义。验证不依赖 image FACT 是否存在。
+
+视觉门禁只决定是否附加 visual FACT 和 clarification：只有 high 且非 rejected 的视觉观察可附加 FACT；medium、low、rejected 不需要 FACT 即可形成合法 result。Context SIGNAL 独立于 confidence 与 review status，始终保留且始终要求 ME review。Visual FACT 仍不得包含 `textBasis`、linked rows 或其他文字上下文。
 
 ## 五项解读定义
 
@@ -169,7 +186,7 @@ Snapshot 包含 worksheet 的 `dimensionDescription` 和按 `sourceRow` 升序�
 6. 在新 UUID 目录中单次创建 v2 artifact。
 7. Readback 验证 schema、selected set、五项完整性、图片 hash、snapshot rows 和 provenance。
 8. 验证成功才传给 F5；失败时丢弃整个 v2，不修补、不部分消费。
-9. F5 loader 接受 v1/v2 union；v2 生成 visual FACT 和 `image_text_context_review` SIGNAL。
+9. F5 loader 接受 v1/v2 union；v2 始终生成携带自包含 `visualEvidence` 的 `image_text_context_review` SIGNAL，仅在视觉门禁允许时额外生成 visual FACT。
 
 ## 失败与回退
 
@@ -177,6 +194,7 @@ Snapshot 包含 worksheet 的 `dimensionDescription` 和按 `sourceRow` 升序�
 - Image mode 启用但 v2 无法创建或验证：继续 deterministic F5，并说明图片存在但增强 artifact 未通过验证。
 - 任一 selected worksheet 缺 record、缺核心 scope、图片 mismatch 或 snapshot mismatch：整个 v2 不消费。
 - Part/factor/provenance 缺失：保持 `null`，context signal 使用 `ambiguous` 或 `insufficient_evidence`。
+- Medium、low 或 rejected visual observation 不触发 result fallback；其 context SIGNAL 保留 `visualEvidence` 并继续完成 F5，只有 visual FACT 受门禁抑制。
 - 不允许从 v2 自动确认 assumption、生成 RULE 或产生最终工程判断。
 - F6 可读取已验证的 v2 contextual signals 作为风险与 clarification 输入，但只有满足 F6 自身的 identity、review 和 evidence gates 后才能消费；v2 本身不自动触发 F6，也不证明 datum strategy 成立。
 

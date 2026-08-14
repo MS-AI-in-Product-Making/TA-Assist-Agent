@@ -507,6 +507,9 @@ describe("f5-analysis skill contract", () => {
     }
     expect(skill).not.toContain("apply_patch");
     expect(skill).toContain("Do not claim that a shell command invokes an image model");
+    expect(skill).toContain("Each result `image_text_context_review` SIGNAL copies the complete `visualObservation` into self-contained `visualEvidence`");
+    expect(skill).toContain("Result validation uses `visualEvidence.visibleLabels`, never the existence of a visual FACT");
+    expect(skill).toContain("Visual FACT gates do not remove or invalidate the context SIGNAL");
   });
 
   it("creates only immutable v2 observations through the governed W6 sequence", () => {
@@ -661,13 +664,15 @@ describe("f5-analysis skill contract", () => {
     const medium = rowBy(gates, "Classification", "medium");
     expect(medium["FACT"]).toBe("prohibited");
     expect(medium["SIGNAL"]).toBe("at most SIGNAL");
-    expect(rowBy(gates, "Classification", "low")["Conclusion handling"]).toBe("clarification only");
+    const low = rowBy(gates, "Classification", "low");
+    expect(low["SIGNAL"]).toBe("visual-derived SIGNAL prohibited; independent context SIGNAL preserved");
+    expect(low["Conclusion handling"]).toBe("clarification plus context SIGNAL");
     const rejected = rowBy(gates, "Classification", "rejected");
     expect(rejected["FACT"]).toBe("prohibited");
-    expect(rejected["SIGNAL"]).toBe("prohibited");
+    expect(rejected["SIGNAL"]).toBe("visual-derived SIGNAL prohibited; independent context SIGNAL preserved");
     expect(rejected["RULE"]).toBe("prohibited");
     expect(rejected["Conclusion handling"]).toBe(
-      "excluded from conclusions; emit clarification requiring reviewer/new evidence",
+      "excluded from visual conclusions; emit clarification and preserve context SIGNAL",
     );
 
     expect(imageRuleViolations(skill)).toEqual([]);
