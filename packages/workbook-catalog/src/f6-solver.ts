@@ -3,20 +3,17 @@ import {
   f6ToleranceChangeSchema,
   type F6ReverseSolveResult,
   CalculationFactorResult,
-  type Distribution,
   type F6ToleranceChange,
 } from "@ai-assist/contracts";
+import {
+  factorSigmaToHalfTolerance,
+  F6NumericError,
+  getDistributionMultiplier,
+  positiveProductQuotient,
+  stableL2Norm as sharedStableL2Norm,
+} from "./f6-numerics.js";
 
 type FactorSource = CalculationFactorResult["source"];
-
-const DISTRIBUTION_MULTIPLIER: Readonly<Record<Distribution, number>> = {
-  normal: 1,
-  uniform: 1.732,
-  triangular: 1.225,
-  trapezoidal: 1.369,
-  elliptical: 1.5,
-  beta: 2.023,
-};
 
 export type F6SolverErrorCode =
   | "invalid_solver_input"
@@ -101,9 +98,14 @@ function fail(code: F6SolverErrorCode, summary: string): never {
   throw new F6SolverError(code, summary);
 }
 
-function assertFinite(value: number, label: string): void {
-  if (!Number.isFinite(value)) {
-    fail("invalid_solver_input", `${label} must be finite`);
+function mapNumericError<T>(operation: () => T): T {
+  try {
+    return operation();
+  } catch (error) {
+    if (error instanceof F6NumericError) {
+      fail(error.code, error.summary);
+    }
+    throw error;
   }
 }
 
@@ -113,64 +115,22 @@ function safePositiveProductQuotient(
   label: string,
   unrepresentableCode: F6SolverErrorCode = "invalid_solver_input",
 ): number {
-  const values = [...numeratorValues, ...denominatorValues];
-  if (values.some((value) => !(value > 0) || !Number.isFinite(value))) {
-    fail("invalid_solver_input", `${label} factors must be finite and greater than zero`);
-  }
+  return mapNumericError(() => positiveProductQuotient(
+    numeratorValues,
+    denominatorValues,
+    label,
+    unrepresentableCode === "target_unreachable" ? "target_unreachable" : "invalid_solver_input",
+  ));
+}
 
-  if (numeratorValues.length === 1) {
-    const sequentialResult = [...denominatorValues]
-      .sort((left, right) => right - left)
-      .reduce((result, denominator) => result / denominator, numeratorValues[0]!);
-    if (sequentialResult > 0 && Number.isFinite(sequentialResult)) {
-      return sequentialResult;
-    }
-  }
+function stableL2Norm(values: readonly number[]): number {
+  return mapNumericError(() => sharedStableL2Norm(values));
+}
 
-  const numeratorProduct = numeratorValues.reduce((product, value) => product * value, 1);
-  const denominatorProduct = denominatorValues.reduce((product, value) => product * value, 1);
-  const directResult = numeratorProduct / denominatorProduct;
-  if (directResult > 0 && Number.isFinite(directResult)) {
-    return directResult;
+function assertFinite(value: number, label: string): void {
+  if (!Number.isFinite(value)) {
+    fail("invalid_solver_input", `${label} must be finite`);
   }
-
-  let coefficient = 1;
-  let decimalExponent = 0;
-  const accumulate = (value: number, divide: boolean): void => {
-    const [coefficientText, exponentText] = value.toExponential(17).split("e");
-    const valueCoefficient = Number(coefficientText);
-    const valueExponent = Number(exponentText);
-    coefficient = divide ? coefficient / valueCoefficient : coefficient * valueCoefficient;
-    decimalExponent += divide ? -valueExponent : valueExponent;
-    if (coefficient >= 10) {
-      coefficient /= 10;
-      decimalExponent += 1;
-    } else if (coefficient < 1) {
-      coefficient *= 10;
-      decimalExponent -= 1;
-    }
-  };
-
-  for (const numerator of numeratorValues) {
-    accumulate(numerator, false);
-  }
-  for (const denominator of denominatorValues) {
-    accumulate(denominator, true);
-  }
-
-  if (decimalExponent > 308 || decimalExponent < -324) {
-    fail(unrepresentableCode, `${label} must be finite and representable`);
-  }
-  let result = coefficient;
-  while (decimalExponent !== 0) {
-    const exponentStep = Math.max(-308, Math.min(308, decimalExponent));
-    result *= 10 ** exponentStep;
-    decimalExponent -= exponentStep;
-  }
-  if (!(result > 0) || !Number.isFinite(result)) {
-    fail(unrepresentableCode, `${label} must be finite and representable`);
-  }
-  return result;
 }
 
 function stableFiniteSum(values: readonly number[], label: string): number {
@@ -400,9 +360,7 @@ function validateFactor(factor: CalculationFactorResult, index: number): void {
   if (!(factor.input.sigmaLevel > 0)) {
     fail("invalid_solver_input", `${label}.sigmaLevel must be greater than zero`);
   }
-  if (DISTRIBUTION_MULTIPLIER[factor.input.distribution] === undefined) {
-    fail("invalid_solver_input", `${label}.distribution is unsupported`);
-  }
+  mapNumericError(() => getDistributionMultiplier(factor.input.distribution));
 }
 
 function buildFactorMap(factors: readonly CalculationFactorResult[]): ReadonlyMap<string, CalculationFactorResult> {
@@ -451,28 +409,6 @@ function assertTargetRssSigma(targetRssSigma: number): void {
   }
 }
 
-function stableL2Norm(values: readonly number[]): number {
-  let scale = 0;
-  let sumSquares = 1;
-
-  for (const value of values) {
-    const absValue = Math.abs(value);
-    if (absValue === 0) {
-      continue;
-    }
-    if (scale < absValue) {
-      const ratio = scale / absValue;
-      sumSquares = 1 + sumSquares * ratio * ratio;
-      scale = absValue;
-      continue;
-    }
-    const ratio = absValue / scale;
-    sumSquares += ratio * ratio;
-  }
-
-  return scale === 0 ? 0 : scale * Math.sqrt(sumSquares);
-}
-
 function remainingSigma(targetSigma: number, fixedSigma: number): number {
   if (fixedSigma === 0) {
     return targetSigma;
@@ -499,16 +435,7 @@ function toleranceChangeForSigma(
   if (!(targetSigma > 0)) {
     fail("target_unreachable", "target factor sigma must be greater than zero");
   }
-  const distributionMultiplier = DISTRIBUTION_MULTIPLIER[factor.input.distribution];
-  if (!(distributionMultiplier > 0) || !Number.isFinite(distributionMultiplier)) {
-    fail("invalid_solver_input", "distribution multiplier must be finite and greater than zero");
-  }
-  const targetHalfTolerance = safePositiveProductQuotient(
-    [targetSigma, factor.input.sigmaLevel],
-    [factor.input.longTermSafetyFactor, distributionMultiplier],
-    "targetHalfTolerance",
-    "target_unreachable",
-  );
+  const targetHalfTolerance = mapNumericError(() => factorSigmaToHalfTolerance(factor, targetSigma));
   const originalLowerTolerance = factor.input.lowerTolerance;
   const originalUpperTolerance = factor.input.upperTolerance;
   const originalBand = positiveDifference(originalUpperTolerance, originalLowerTolerance, "originalBand");

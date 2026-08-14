@@ -3,11 +3,16 @@ import {
   f6CapabilityBoundSchema,
   type CalculationCompletedResult,
   type CalculationFactorResult,
-  type Distribution,
   type F6ApportionmentResult,
   type F6CapabilityBound,
   type F6FeasibilityAssessment,
 } from "@ai-assist/contracts";
+import {
+  factorSigmaToHalfTolerance,
+  factorToleranceBandToSigma,
+  F6NumericError,
+  stableL2Norm as sharedStableL2Norm,
+} from "./f6-numerics.js";
 import { F6SolverError, solveTopNCombinedTolerance } from "./f6-solver.js";
 
 type FactorSource = CalculationFactorResult["source"];
@@ -27,17 +32,28 @@ interface AllocationValue {
   readonly targetTolerance: number;
 }
 
-const DISTRIBUTION_MULTIPLIER: Readonly<Record<Distribution, number>> = {
-  normal: 1,
-  uniform: 1.732,
-  triangular: 1.225,
-  trapezoidal: 1.369,
-  elliptical: 1.5,
-  beta: 2.023,
-};
+const MAX_SELECTED_SOURCES = 100;
 
-function fail(code: "invalid_solver_input" | "missing_selected_source" | "duplicate_selected_source", summary: string): never {
+function fail(
+  code: "invalid_solver_input" | "missing_selected_source" | "duplicate_selected_source" | "target_unreachable",
+  summary: string,
+): never {
   throw new F6SolverError(code, summary);
+}
+
+function mapNumericError<T>(operation: () => T): T {
+  try {
+    return operation();
+  } catch (error) {
+    if (error instanceof F6NumericError) {
+      fail(error.code, error.summary);
+    }
+    throw error;
+  }
+}
+
+function stableL2Norm(values: readonly number[]): number {
+  return mapNumericError(() => sharedStableL2Norm(values));
 }
 
 function sourceKey(source: FactorSource): string {
@@ -58,72 +74,6 @@ function compareSources(left: FactorSource, right: FactorSource): number {
     || left.sourceRow - right.sourceRow;
 }
 
-function stableL2Norm(values: readonly number[]): number {
-  let scale = 0;
-  let sumSquares = 1;
-  for (const value of values) {
-    if (!Number.isFinite(value)) {
-      fail("invalid_solver_input", "sigma values must be finite");
-    }
-    const absoluteValue = Math.abs(value);
-    if (absoluteValue === 0) continue;
-    if (absoluteValue > scale) {
-      const ratio = scale / absoluteValue;
-      sumSquares = 1 + sumSquares * ratio * ratio;
-      scale = absoluteValue;
-    } else {
-      const ratio = absoluteValue / scale;
-      sumSquares += ratio * ratio;
-    }
-  }
-  return scale === 0 ? 0 : scale * Math.sqrt(sumSquares);
-}
-
-function positiveProductQuotient(
-  numerators: readonly number[],
-  denominators: readonly number[],
-  label: string,
-): number {
-  const values = [...numerators, ...denominators];
-  if (values.some((value) => !(value > 0) || !Number.isFinite(value))) {
-    fail("invalid_solver_input", `${label} factors must be finite and greater than zero`);
-  }
-
-  let coefficient = 1;
-  let exponent = 0;
-  const accumulate = (value: number, divide: boolean): void => {
-    const [coefficientText, exponentText] = value.toExponential(17).split("e");
-    const valueCoefficient = Number(coefficientText);
-    const valueExponent = Number(exponentText);
-    coefficient = divide ? coefficient / valueCoefficient : coefficient * valueCoefficient;
-    exponent += divide ? -valueExponent : valueExponent;
-    while (coefficient >= 10) {
-      coefficient /= 10;
-      exponent += 1;
-    }
-    while (coefficient < 1) {
-      coefficient *= 10;
-      exponent -= 1;
-    }
-  };
-
-  numerators.forEach((value) => accumulate(value, false));
-  denominators.forEach((value) => accumulate(value, true));
-  if (exponent > 308 || exponent < -324) {
-    fail("invalid_solver_input", `${label} must be finite and representable`);
-  }
-  let result = coefficient;
-  while (exponent !== 0) {
-    const step = Math.max(-308, Math.min(308, exponent));
-    result *= 10 ** step;
-    exponent -= step;
-  }
-  if (!(result > 0) || !Number.isFinite(result)) {
-    fail("invalid_solver_input", `${label} must be finite and representable`);
-  }
-  return result;
-}
-
 function validateSource(source: FactorSource, label: string): void {
   if (source.worksheetName.length === 0 || source.tableId.length === 0) {
     fail("invalid_solver_input", `${label} worksheetName and tableId must be non-empty`);
@@ -137,6 +87,9 @@ function resolveFactors(input: ApportionRssToleranceInput): {
   readonly selectedFactors: readonly CalculationFactorResult[];
   readonly unselectedFactors: readonly CalculationFactorResult[];
 } {
+  if (input.selectedSources.length > MAX_SELECTED_SOURCES) {
+    fail("invalid_solver_input", `selectedSources must contain at most ${MAX_SELECTED_SOURCES} entries`);
+  }
   if (input.factors.length === 0) {
     fail("invalid_solver_input", "factors must not be empty");
   }
@@ -194,22 +147,11 @@ function selectedTargetSigma(targetRssSigma: number, fixedSigma: number): number
 }
 
 function sigmaForTolerance(factor: CalculationFactorResult, targetTolerance: number): number {
-  const multiplier = DISTRIBUTION_MULTIPLIER[factor.input.distribution];
-  return positiveProductQuotient(
-    [targetTolerance, factor.input.longTermSafetyFactor, multiplier],
-    [factor.input.sigmaLevel],
-    "targetSigma",
-  );
+  return mapNumericError(() => factorToleranceBandToSigma(factor, targetTolerance * 2));
 }
 
 function toleranceForSigma(factor: CalculationFactorResult, targetSigma: number): number {
-  if (targetSigma === 0) return 0;
-  const multiplier = DISTRIBUTION_MULTIPLIER[factor.input.distribution];
-  return positiveProductQuotient(
-    [targetSigma, factor.input.sigmaLevel],
-    [factor.input.longTermSafetyFactor, multiplier],
-    "targetTolerance",
-  );
+  return mapNumericError(() => factorSigmaToHalfTolerance(factor, targetSigma));
 }
 
 function residualError(

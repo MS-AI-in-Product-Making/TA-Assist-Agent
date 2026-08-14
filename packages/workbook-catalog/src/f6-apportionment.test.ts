@@ -460,6 +460,34 @@ describe("F6 RSS tolerance apportionment", () => {
     })).toThrowError(/missing_selected_source/);
   });
 
+  it("accepts the contract maximum of 100 selected sources", () => {
+    const factors = Array.from({ length: 100 }, (_, index) => factor(index + 1, 1, 0.01));
+    const result = apportionRssTolerance({
+      factors,
+      targetRssSigma: 10,
+      policy: "equal-allocation-among-top-N",
+      selectedSources: factors.map((item) => item.source),
+    });
+
+    expect(result.allocations).toHaveLength(100);
+    expect(result.feasibility.status).toBe("supported");
+  });
+
+  it("rejects more than 100 selected sources before resolving factors", () => {
+    const selectedSources = Array.from({ length: 101 }, (_, index) => ({
+      worksheetName: "Sheet1",
+      tableId: "table-1",
+      sourceRow: index + 1,
+    }));
+
+    expect(() => apportionRssTolerance({
+      factors: [],
+      targetRssSigma: 1,
+      policy: "equal-allocation-among-top-N",
+      selectedSources,
+    })).toThrowError(/invalid_solver_input: selectedSources must contain at most 100 entries/);
+  });
+
   it("returns insufficient evidence for duplicate capability bounds", () => {
     const factors = [factor(1, 2, 0.8), factor(2, 1, 0.2)];
     const result = apportionRssTolerance({
