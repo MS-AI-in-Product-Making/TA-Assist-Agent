@@ -1,7 +1,9 @@
-import type {
+import {
+  f6ReverseSolveResultSchema,
+  type F6ReverseSolveResult,
   CalculationFactorResult,
-  Distribution,
-  F6ToleranceChange,
+  type Distribution,
+  type F6ToleranceChange,
 } from "@ai-assist/contracts";
 
 type FactorSource = CalculationFactorResult["source"];
@@ -91,6 +93,8 @@ export interface TopNSolveInput {
   readonly targetRssSigma: number;
   readonly allocation: TopNAllocation;
 }
+
+export type CreateReverseSolveResultInput = F6ReverseSolveResult;
 
 function fail(code: F6SolverErrorCode, summary: string): never {
   throw new F6SolverError(code, summary);
@@ -212,6 +216,44 @@ function assertTargetRssSigma(targetRssSigma: number): void {
   }
 }
 
+function stableL2Norm(values: readonly number[]): number {
+  let scale = 0;
+  let sumSquares = 1;
+
+  for (const value of values) {
+    const absValue = Math.abs(value);
+    if (absValue === 0) {
+      continue;
+    }
+    if (scale < absValue) {
+      const ratio = scale / absValue;
+      sumSquares = 1 + sumSquares * ratio * ratio;
+      scale = absValue;
+      continue;
+    }
+    const ratio = absValue / scale;
+    sumSquares += ratio * ratio;
+  }
+
+  return scale === 0 ? 0 : scale * Math.sqrt(sumSquares);
+}
+
+function remainingSigma(targetSigma: number, fixedSigma: number): number {
+  if (fixedSigma === 0) {
+    return targetSigma;
+  }
+  const ratio = fixedSigma / targetSigma;
+  const equalityTolerance = 16 * Number.EPSILON;
+  if (!Number.isFinite(ratio) || ratio >= 1 - equalityTolerance) {
+    fail("target_unreachable", "fixed factors consume the target RSS variance");
+  }
+  const result = targetSigma * Math.sqrt((1 - ratio) * (1 + ratio));
+  if (!(result > 0) || !Number.isFinite(result)) {
+    fail("target_unreachable", "fixed factors consume the target RSS variance");
+  }
+  return result;
+}
+
 function toleranceChangeForSigma(
   factor: CalculationFactorResult,
   targetSigma: number,
@@ -323,15 +365,10 @@ export function solveSingleFactorTolerance(input: SingleFactorSolveInput): F6Tol
   assertTargetRssSigma(input.targetRssSigma);
   const factorMap = buildFactorMap(input.factors);
   const selectedFactor = resolveSelectedFactors(factorMap, [input.selectedSource])[0]!;
-  const fixedVariance = input.factors.reduce(
-    (sum, factor) => sum + (factor === selectedFactor ? 0 : factor.sigma ** 2),
-    0,
+  const fixedSigma = stableL2Norm(
+    input.factors.map((factor) => factor === selectedFactor ? 0 : factor.sigma),
   );
-  const targetFactorVariance = input.targetRssSigma ** 2 - fixedVariance;
-  if (!(targetFactorVariance > 0) || !Number.isFinite(targetFactorVariance)) {
-    fail("target_unreachable", "fixed factors consume the target RSS variance");
-  }
-  return toleranceChangeForSigma(selectedFactor, Math.sqrt(targetFactorVariance));
+  return toleranceChangeForSigma(selectedFactor, remainingSigma(input.targetRssSigma, fixedSigma));
 }
 
 export function solveTopNCombinedTolerance(input: TopNSolveInput): readonly F6ToleranceChange[] {
@@ -339,14 +376,10 @@ export function solveTopNCombinedTolerance(input: TopNSolveInput): readonly F6To
   const factorMap = buildFactorMap(input.factors);
   const selectedFactors = resolveSelectedFactors(factorMap, input.selectedSources);
   const selectedKeys = new Set(input.selectedSources.map(sourceKey));
-  const fixedVariance = input.factors.reduce(
-    (sum, factor) => sum + (selectedKeys.has(sourceKey(factor.source)) ? 0 : factor.sigma ** 2),
-    0,
+  const fixedSigma = stableL2Norm(
+    input.factors.map((factor) => selectedKeys.has(sourceKey(factor.source)) ? 0 : factor.sigma),
   );
-  const selectedTargetVariance = input.targetRssSigma ** 2 - fixedVariance;
-  if (!(selectedTargetVariance > 0) || !Number.isFinite(selectedTargetVariance)) {
-    fail("target_unreachable", "fixed factors consume the target RSS variance");
-  }
+  const selectedTargetSigma = remainingSigma(input.targetRssSigma, fixedSigma);
 
   let weights: readonly number[];
   if (input.allocation === "equal-allocation-among-top-N") {
@@ -362,12 +395,13 @@ export function solveTopNCombinedTolerance(input: TopNSolveInput): readonly F6To
   }
 
   return selectedFactors.map((factor, index) => {
-    const targetVariance = selectedTargetVariance * weights[index]!;
-    if (!(targetVariance > 0) || !Number.isFinite(targetVariance)) {
-      fail("target_unreachable", "allocation produced a non-positive target variance");
-    }
-    return toleranceChangeForSigma(factor, Math.sqrt(targetVariance));
+    const targetSigma = selectedTargetSigma * Math.sqrt(weights[index]!);
+    return toleranceChangeForSigma(factor, targetSigma);
   });
+}
+
+export function createReverseSolveResult(input: CreateReverseSolveResultInput): F6ReverseSolveResult {
+  return f6ReverseSolveResultSchema.parse(input);
 }
 
 function resolveSpecBounds(input: SpecificationBounds): readonly [number, number] {

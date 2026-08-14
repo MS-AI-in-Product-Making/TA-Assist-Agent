@@ -1,6 +1,11 @@
-import { f6ToleranceChangeSchema, type CalculationFactorResult } from "@ai-assist/contracts";
+import {
+  f6ReverseSolveResultSchema,
+  f6ToleranceChangeSchema,
+  type CalculationFactorResult,
+} from "@ai-assist/contracts";
 import { describe, expect, it } from "vitest";
 import {
+  createReverseSolveResult,
   F6SolverError,
   scaleToleranceBandAroundCenter,
   selectTopContributors,
@@ -190,6 +195,84 @@ describe("F6 deterministic solver primitives", () => {
 
     expect(changes[0].resultingUpperTolerance).toBeCloseTo(Math.sqrt(2), 12);
     expect(changes[1].resultingUpperTolerance).toBeCloseTo(Math.sqrt(2), 12);
+  });
+
+  it.each([
+    { magnitude: 1e200, target: 1e200, fixed: 6e199, expectedSelected: 8e199 },
+    { magnitude: 1e-200, target: 1e-200, fixed: 6e-201, expectedSelected: 8e-201 },
+  ])("stably solves reachable single-factor magnitudes near $magnitude", ({ magnitude, target, fixed, expectedSelected }) => {
+    const factors = [factor(1, magnitude, 0.8), factor(2, fixed, 0.2)];
+
+    const change = solveSingleFactorTolerance({
+      factors,
+      selectedSource: factors[0].source,
+      targetRssSigma: target,
+    });
+
+    expect(Number.isFinite(change.resultingLowerTolerance)).toBe(true);
+    expect(Number.isFinite(change.resultingUpperTolerance)).toBe(true);
+    expect(change.resultingUpperTolerance / expectedSelected).toBeCloseTo(1, 12);
+    expect(f6ToleranceChangeSchema.safeParse(change).success).toBe(true);
+  });
+
+  it.each([
+    { magnitude: 1e200, target: 1e200, fixed: 6e199 },
+    { magnitude: 1e-200, target: 1e-200, fixed: 6e-201 },
+  ])("stably allocates reachable Top-N magnitudes near $magnitude", ({ magnitude, target, fixed }) => {
+    const factors = [
+      factor(1, magnitude, 0.4),
+      factor(2, magnitude / 2, 0.4),
+      factor(3, fixed, 0.2),
+    ];
+
+    const changes = solveTopNCombinedTolerance({
+      factors,
+      selectedSources: [factors[0].source, factors[1].source],
+      targetRssSigma: target,
+      allocation: "equal-allocation-among-top-N",
+    });
+
+    const expectedSigma = target * 0.8 / Math.sqrt(2);
+    expect(changes).toHaveLength(2);
+    expect(changes.every((change) => Number.isFinite(change.resultingBand))).toBe(true);
+    expect(changes[0].resultingUpperTolerance / expectedSigma).toBeCloseTo(1, 12);
+    expect(changes[1].resultingUpperTolerance / expectedSigma).toBeCloseTo(1, 12);
+    expect(changes.every((change) => f6ToleranceChangeSchema.safeParse(change).success)).toBe(true);
+  });
+
+  it("treats a fixed sigma within numerical tolerance of the target as unreachable", () => {
+    const factors = [factor(1, 1, 0.5), factor(2, 1 - Number.EPSILON, 0.5)];
+
+    expect(() => solveSingleFactorTolerance({
+      factors,
+      selectedSource: factors[0].source,
+      targetRssSigma: 1,
+    })).toThrowError(/target_unreachable/);
+  });
+
+  it("builds a complete reverse solve DTO through the contract schema", () => {
+    const toleranceChanges = [solveSingleFactorTolerance({
+      factors: [factor(1, 2, 1)],
+      selectedSource: factor(1, 2, 1).source,
+      targetRssSigma: 1,
+    })];
+
+    const result = createReverseSolveResult({
+      strategy: "single-factor",
+      targetCpk: 1.67,
+      targetRssSigma: 1,
+      toleranceChanges,
+      residualError: 0,
+    });
+
+    expect(result).toEqual({
+      strategy: "single-factor",
+      targetCpk: 1.67,
+      targetRssSigma: 1,
+      toleranceChanges,
+      residualError: 0,
+    });
+    expect(f6ReverseSolveResultSchema.parse(result)).toEqual(result);
   });
 
   it("rejects unreachable targets, invalid factor controls, and invalid source selections", () => {
