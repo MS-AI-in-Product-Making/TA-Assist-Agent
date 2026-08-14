@@ -5189,6 +5189,73 @@ const f5CompletedWorksheetResultSchema = z.object({
       governanceRowBySource.set(key, row);
     }
   });
+  if (worksheet.observationVersion === "f5-image-observation-v2" && worksheet.contextSnapshot !== undefined) {
+    const snapshotRowKeys = new Set(worksheet.contextSnapshot.rows.map(f5SnapshotRowKey));
+    const snapshotMappedFields = [
+      "partSubsystem",
+      "partCategory",
+      "factorDescription",
+      "nominal",
+      "upperTolerance",
+      "lowerTolerance",
+      "sigmaLevel",
+    ] as const;
+    worksheet.contextSnapshot.rows.forEach((snapshotRow, snapshotRowIndex) => {
+      const governanceRow = governanceRowBySource.get(sourceKey({
+        worksheetName: worksheet.worksheetName,
+        tableId: snapshotRow.tableId,
+        sourceRow: snapshotRow.sourceRow,
+      }));
+      if (governanceRow === undefined) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "context snapshot row must match an F3 governance row",
+          path: ["contextSnapshot", "rows", snapshotRowIndex],
+        });
+        return;
+      }
+      for (const field of snapshotMappedFields) {
+        if (snapshotRow[field] !== governanceRow[field]) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `context snapshot ${field} must match the F3 governance row`,
+            path: ["contextSnapshot", "rows", snapshotRowIndex, field],
+          });
+        }
+      }
+      const snapshotSourceCellKeys = Object.keys(snapshotRow.sourceCells);
+      const governanceSourceCellKeys = Object.keys(governanceRow.source.sourceCells);
+      if (snapshotSourceCellKeys.length !== governanceSourceCellKeys.length
+        || snapshotSourceCellKeys.some((field) => (
+          snapshotRow.sourceCells[field] !== governanceRow.source.sourceCells[field as keyof typeof governanceRow.source.sourceCells]
+        ))) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "context snapshot sourceCells must match the F3 governance row",
+          path: ["contextSnapshot", "rows", snapshotRowIndex, "sourceCells"],
+        });
+      }
+    });
+    worksheet.governanceRows.forEach((governanceRow, governanceRowIndex) => {
+      if (!snapshotRowKeys.has(f5SnapshotRowKey(governanceRow.source))) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "F3 governance row requires a matching context snapshot row",
+          path: ["governanceRows", governanceRowIndex, "source"],
+        });
+      }
+    });
+    worksheet.statements.forEach((statement, statementIndex) => {
+      if (statement.type !== "SIGNAL" || !("signalKind" in statement.content)
+        || statement.content.signalKind !== "image_text_context_review") return;
+      validateF5ContextualSignalLinks(
+        statement.content,
+        snapshotRowKeys,
+        context,
+        ["statements", statementIndex, "content"],
+      );
+    });
+  }
   const factorSourceKeys = new Set<string>();
   worksheet.calculationResult.factors.forEach((factor, factorIndex) => {
     const key = sourceKey(factor.source);

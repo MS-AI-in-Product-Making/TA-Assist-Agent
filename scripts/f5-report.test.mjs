@@ -197,7 +197,7 @@ function completedReport({
       partSubsystem: row.partSubsystem,
       partCategory: row.partCategory,
       factorName: `factor-original-${index + 1}`,
-      factorDescription: `factor-mapped-${index + 1}`,
+      factorDescription: row.factorDescription,
       nominal: row.nominal,
       upperTolerance: row.upperTolerance,
       lowerTolerance: row.lowerTolerance,
@@ -377,9 +377,46 @@ describe("renderF5Report", () => {
     expect(snapshot.indexOf("| table-a | 2 |")).toBeLessThan(snapshot.indexOf("| table-a | 3 |"));
     expect(snapshot.indexOf("| table-a | 3 |")).toBeLessThan(snapshot.indexOf("| table-a | 4 |"));
     expect(snapshot.indexOf("| table-a | 4 |")).toBeLessThan(snapshot.indexOf("| table-a | 5 |"));
-    expect(snapshot).toContain("| table-a | 2 | part-1 | controlled-subsystem | controlled-category | factor-original-1 | factor-mapped-1 | 0 | 1 | -1 | 2 |");
+    expect(snapshot).toContain("| table-a | 2 | part-1 | controlled-subsystem | controlled-category | factor-original-1 | factor|one | 0 | 1 | -1 | 2 |".replace("factor|one", "factor\\|one"));
     expect(snapshot).toContain("Analysis-A\\!A2");
     expect(markdown).not.toMatch(/[A-Za-z]:[\\/]/);
+  });
+
+  it("escapes and redacts adversarial v2 context text without leaking raw unsafe payloads", () => {
+    const report = clone(completedReport({ contextual: true }));
+    const worksheet = report.worksheets[0];
+    const row = worksheet.contextSnapshot.rows[0];
+    const governanceRow = worksheet.governanceRows.find((candidate) => (
+      candidate.source.tableId === row.tableId && candidate.source.sourceRow === row.sourceRow
+    ));
+    const directionSignal = worksheet.statements.find((statement) => (
+      statement.type === "SIGNAL"
+      && statement.content.signalKind === "image_text_context_review"
+      && statement.content.scope === "direction"
+    ));
+    const unsafeMapped = "<script>mapped()</script>|[mapped](javascript:alert(1))";
+    const unsafeOriginal = "# injected-heading|<img src=x onerror=alert(1)>";
+    const unsafePath = "C:\\private\\context\\source.xlsx!A2";
+
+    governanceRow.partSubsystem = unsafeMapped;
+    row.partSubsystem = unsafeMapped;
+    row.partName = unsafeOriginal;
+    row.factorName = "*factor* [link](javascript:alert(2))";
+    worksheet.contextSnapshot.dimensionDescription = "<b>dimension</b> C:\\private\\dimension.txt";
+    governanceRow.source.sourceCells = { factorName: unsafePath };
+    row.sourceCells = { factorName: unsafePath };
+    directionSignal.content.textBasis = "<script>signal()</script>|C:\\private\\signal.txt";
+    directionSignal.content.linkedVisualLabels[0].label = "![label](javascript:alert(3))|<svg>";
+
+    const markdown = renderF5Report(report);
+
+    expect(markdown).toContain("&lt;script&gt;mapped\\(\\)&lt;/script&gt;\\|");
+    expect(markdown).toContain("[redacted-local-path]");
+    expect(markdown).not.toMatch(/<\/?(?:script|img|svg|b)\b/i);
+    expect(markdown).not.toMatch(/!?\[[^\]]*\]\(javascript:/i);
+    expect(markdown).not.toContain(unsafePath);
+    expect(markdown).not.toContain("C:\\private\\");
+    expect(markdown).not.toMatch(/^# injected-heading$/m);
   });
 
   it("renders a controlled Visual FACT empty state for valid v2 medium and low observations", () => {

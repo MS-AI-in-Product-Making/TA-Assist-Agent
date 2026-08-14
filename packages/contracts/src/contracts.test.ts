@@ -3214,7 +3214,23 @@ describe("F5.1 objective interpretation contracts", () => {
       const worksheet = result.worksheets[0]!;
       if (contextual) {
         worksheet.observationVersion = "f5-image-observation-v2";
-        worksheet.contextSnapshot = structuredClone(validV2.worksheets[0]!.contextSnapshot);
+        worksheet.contextSnapshot = {
+          dimensionDescription: "Original worksheet dimension provenance",
+          rows: worksheet.governanceRows.map((row) => ({
+            tableId: row.source.tableId,
+            sourceRow: row.source.sourceRow,
+            partName: "Original part name",
+            partSubsystem: row.partSubsystem,
+            partCategory: row.partCategory,
+            factorName: "Original factor name",
+            factorDescription: row.factorDescription,
+            nominal: row.nominal,
+            upperTolerance: row.upperTolerance,
+            lowerTolerance: row.lowerTolerance,
+            sigmaLevel: row.sigmaLevel,
+            sourceCells: structuredClone(row.source.sourceCells),
+          })),
+        };
       }
       const contextSignals = scopes.map((scope, index) => ({
         statementId: `f5-context-signal-${scope}-${index}`,
@@ -3274,6 +3290,76 @@ describe("F5.1 objective interpretation contracts", () => {
       expect(f5DataInterpretationResultSchema.safeParse(
         completedResultWithContextSignals(coreScopes),
       ).success).toBe(true);
+    });
+
+    it("binds completed v2 snapshot provenance to governance rows while preserving original text provenance", () => {
+      const validResult = completedResultWithContextSignals(coreScopes);
+      const snapshot = validResult.worksheets[0]!.contextSnapshot!;
+
+      expect(snapshot.dimensionDescription).not.toBe(governanceRow.dimensionDescription);
+      expect(snapshot.rows[0]!.partName).not.toBe(governanceRow.partSubsystem);
+      expect(snapshot.rows[0]!.factorName).not.toBe(governanceRow.factorDescription);
+      expect(f5DataInterpretationResultSchema.safeParse(validResult).success).toBe(true);
+
+      const missingRow = structuredClone(validResult);
+      missingRow.worksheets[0]!.contextSnapshot!.rows = [];
+      expect(f5DataInterpretationResultSchema.safeParse(missingRow).success).toBe(false);
+
+      const extraRow = structuredClone(validResult);
+      extraRow.worksheets[0]!.contextSnapshot!.rows.push({
+        ...structuredClone(extraRow.worksheets[0]!.contextSnapshot!.rows[0]!),
+        sourceRow: 99,
+      });
+      expect(f5DataInterpretationResultSchema.safeParse(extraRow).success).toBe(false);
+    });
+
+    it.each([
+      ["partSubsystem", (result: ReturnType<typeof completedResultWithContextSignals>) => {
+        result.worksheets[0]!.contextSnapshot!.rows[0]!.partSubsystem = "changed subsystem";
+      }],
+      ["partCategory", (result: ReturnType<typeof completedResultWithContextSignals>) => {
+        result.worksheets[0]!.contextSnapshot!.rows[0]!.partCategory = "changed category";
+      }],
+      ["factorDescription", (result: ReturnType<typeof completedResultWithContextSignals>) => {
+        result.worksheets[0]!.contextSnapshot!.rows[0]!.factorDescription = "changed factor";
+      }],
+      ["nominal", (result: ReturnType<typeof completedResultWithContextSignals>) => {
+        result.worksheets[0]!.contextSnapshot!.rows[0]!.nominal = 999;
+      }],
+      ["upperTolerance", (result: ReturnType<typeof completedResultWithContextSignals>) => {
+        result.worksheets[0]!.contextSnapshot!.rows[0]!.upperTolerance = 999;
+      }],
+      ["lowerTolerance", (result: ReturnType<typeof completedResultWithContextSignals>) => {
+        result.worksheets[0]!.contextSnapshot!.rows[0]!.lowerTolerance = -999;
+      }],
+      ["sigmaLevel", (result: ReturnType<typeof completedResultWithContextSignals>) => {
+        result.worksheets[0]!.contextSnapshot!.rows[0]!.sigmaLevel = 999;
+      }],
+      ["sourceCells", (result: ReturnType<typeof completedResultWithContextSignals>) => {
+        result.worksheets[0]!.contextSnapshot!.rows[0]!.sourceCells = { factorName: "Analysis-A!Z99" };
+      }],
+    ] as const)("rejects completed v2 snapshot %s changes", (_field, mutate) => {
+      const result = completedResultWithContextSignals(coreScopes);
+      mutate(result);
+
+      expect(f5DataInterpretationResultSchema.safeParse(result).success).toBe(false);
+    });
+
+    it("rejects completed v2 context SIGNAL links outside the bound snapshot", () => {
+      const result = completedResultWithContextSignals(coreScopes);
+      const direction = result.worksheets[0]!.statements.find((statement) => (
+        statement.type === "SIGNAL"
+        && "signalKind" in statement.content
+        && statement.content.signalKind === "image_text_context_review"
+        && statement.content.scope === "direction"
+      ))!;
+      if (direction.type !== "SIGNAL" || !("linkedSourceRows" in direction.content)) {
+        throw new Error("Expected direction context SIGNAL fixture.");
+      }
+      direction.content.linkedSourceRows = [{ tableId: "table-a", sourceRow: 99 }];
+      direction.content.linkedVisualLabels = [{ label: "outside", tableId: "table-a", sourceRow: 99 }];
+
+      expect(f5DataInterpretationResultSchema.safeParse(result).success).toBe(false);
     });
 
     it("forbids orphan image-text context signals on completed non-v2 worksheet results", () => {
