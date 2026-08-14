@@ -105,6 +105,27 @@ describe("F6 deterministic solver primitives", () => {
     })).toThrowError(/target_unreachable/);
   });
 
+  it("rejects a tiny scaled band when its represented endpoints materially distort its width", () => {
+    expect(() => scaleToleranceBandAroundCenter({
+      lowerTolerance: 0,
+      upperTolerance: 2e-10,
+      scale: 1e-16,
+    })).toThrowError(/target_unreachable: represented target tolerance band does not match the requested band/);
+  });
+
+  it.each([
+    { lowerTolerance: -(2 ** -900), upperTolerance: 2 ** -900, scale: 0.5 },
+    { lowerTolerance: -1e-300, upperTolerance: 1e-300, scale: 0.5 },
+  ])("accepts a small scaled band when its endpoint width is representable", (input) => {
+    const result = scaleToleranceBandAroundCenter(input);
+    const representedBand = result.upperTolerance - result.lowerTolerance;
+
+    expect(Math.abs(representedBand - result.resultingBand)).toBeLessThanOrEqual(
+      8 * Number.EPSILON * Math.max(Math.abs(representedBand), Math.abs(result.resultingBand)),
+    );
+    expect((result.lowerTolerance + result.upperTolerance) / 2).toBe(result.center);
+  });
+
   it.each([
     { lowerTolerance: 0, upperTolerance: 1, scale: 0 },
     { lowerTolerance: 0, upperTolerance: 1, scale: 1.1 },
@@ -311,6 +332,25 @@ describe("F6 deterministic solver primitives", () => {
     expect(change.resultingLowerTolerance).toBe(-1e-300);
     expect(change.resultingBand).toBe(2e-300);
     expectFiniteNumericFields(change);
+  });
+
+  it("rejects a tiny reverse band when its represented endpoints materially distort its width", () => {
+    const selected = factor(1, 1e-10, 1, {
+      input: {
+        nominalValue: 0,
+        lowerTolerance: 0,
+        upperTolerance: 2e-10,
+        longTermSafetyFactor: 1,
+        sigmaLevel: 1,
+        distribution: "normal",
+      },
+    });
+
+    expect(() => solveSingleFactorTolerance({
+      factors: [selected],
+      selectedSource: selected.source,
+      targetRssSigma: 1e-26,
+    })).toThrowError(/target_unreachable: represented target tolerance band does not match the requested band/);
   });
 
   it("rejects a target tolerance below endpoint resolution at a huge band center", () => {

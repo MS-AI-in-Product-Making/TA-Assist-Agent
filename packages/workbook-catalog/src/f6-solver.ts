@@ -178,15 +178,44 @@ function midpoint(lowerValue: number, upperValue: number): number {
   return result;
 }
 
-function buildToleranceChange(change: F6ToleranceChange): F6ToleranceChange {
-  if (!(change.resultingLowerTolerance < change.resultingUpperTolerance)) {
+function equalWithinMachinePrecision(left: number, right: number): boolean {
+  if (left === right) {
+    return true;
+  }
+  if (!Number.isFinite(left) || !Number.isFinite(right)) {
+    return false;
+  }
+  const magnitude = Math.max(Math.abs(left), Math.abs(right));
+  const tolerance = 8 * Number.EPSILON * magnitude;
+  return Math.abs(left - right) <= tolerance;
+}
+
+function assertRepresentableToleranceBand(
+  lowerTolerance: number,
+  upperTolerance: number,
+  requestedBand: number,
+  requestedCenter: number,
+): void {
+  if (!(lowerTolerance < upperTolerance)) {
     fail("target_unreachable", "target tolerance endpoints are not separately representable");
   }
-  const representedBand = change.resultingUpperTolerance - change.resultingLowerTolerance;
-  const schemaTolerance = 1e-12 * Math.max(1, Math.abs(change.resultingBand), Math.abs(representedBand));
-  if (!Number.isFinite(representedBand) || Math.abs(change.resultingBand - representedBand) > schemaTolerance) {
+  const representedBand = upperTolerance - lowerTolerance;
+  if (!equalWithinMachinePrecision(representedBand, requestedBand)) {
     fail("target_unreachable", "represented target tolerance band does not match the requested band");
   }
+  const representedCenter = midpoint(lowerTolerance, upperTolerance);
+  if (!equalWithinMachinePrecision(representedCenter, requestedCenter)) {
+    fail("target_unreachable", "represented target tolerance center does not match the requested center");
+  }
+}
+
+function buildToleranceChange(change: F6ToleranceChange): F6ToleranceChange {
+  assertRepresentableToleranceBand(
+    change.resultingLowerTolerance,
+    change.resultingUpperTolerance,
+    change.resultingBand,
+    change.bandCenter,
+  );
   const parsed = f6ToleranceChangeSchema.safeParse(change);
   if (!parsed.success) {
     fail("target_unreachable", "target tolerance change is not representable by the solver contract");
@@ -410,14 +439,7 @@ export function scaleToleranceBandAroundCenter(input: ScaleToleranceBandInput): 
   const upperTolerance = center + resultingBand / 2;
   assertFinite(lowerTolerance, "resultingLowerTolerance");
   assertFinite(upperTolerance, "resultingUpperTolerance");
-  if (!(lowerTolerance < upperTolerance)) {
-    fail("target_unreachable", "target tolerance endpoints are not separately representable");
-  }
-  const representedBand = upperTolerance - lowerTolerance;
-  const representationTolerance = 8 * Number.EPSILON * Math.max(resultingBand, representedBand);
-  if (Math.abs(representedBand - resultingBand) > representationTolerance) {
-    fail("target_unreachable", "represented target tolerance band does not match the requested band");
-  }
+  assertRepresentableToleranceBand(lowerTolerance, upperTolerance, resultingBand, center);
   return {
     lowerTolerance,
     upperTolerance,
