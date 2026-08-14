@@ -1023,6 +1023,8 @@ describe("loadF5ArtifactBundle", () => {
         cloneJson(artifact.worksheets[0].contextSnapshot.rows[0]),
       );
     }],
+    ["tableId", (artifact) => { artifact.worksheets[0].contextSnapshot.rows[0].tableId = "other-table"; }],
+    ["sourceRow", (artifact) => { artifact.worksheets[0].contextSnapshot.rows[0].sourceRow = 99; }],
     ["partName", (artifact) => { artifact.worksheets[0].contextSnapshot.rows[0].partName = "Other part"; }],
     ["partSubsystem", (artifact) => { artifact.worksheets[0].contextSnapshot.rows[0].partSubsystem = "Other subsystem"; }],
     ["partCategory", (artifact) => { artifact.worksheets[0].contextSnapshot.rows[0].partCategory = "Other category"; }],
