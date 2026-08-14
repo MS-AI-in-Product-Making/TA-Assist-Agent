@@ -102,8 +102,8 @@ function calculation(worksheetName, tableId, workbookContentHash = WORKBOOK_HASH
 
 function actualFields() {
   return {
-    factorName: "factor",
-    partName: "part",
+    factorName: "Feature-Analysis-A",
+    partName: "Anonymous bracket",
     drawingNumber: "DRAW-100",
     dimCharacteristicId: "307",
     partCategory: "CNC",
@@ -140,7 +140,15 @@ function governanceRow(worksheetName, tableId, imageReference) {
     qualitySignals: [],
     governanceStatus: "complete",
     imageReference,
-    source: { worksheetName, tableId, sourceRow: 2, sourceCells: {} },
+    source: {
+      worksheetName,
+      tableId,
+      sourceRow: 2,
+      sourceCells: {
+        factorName: `${worksheetName}!A2`,
+        partName: `${worksheetName}!B2`,
+      },
+    },
   };
 }
 
@@ -187,7 +195,14 @@ function setupBundle({ worksheetNames = ["Analysis-A", "Analysis-B"] } = {}) {
         headerRow: 1,
         dataRange: { startRow: 2, endRow: 2 },
         columns: [],
-        rows: [{ sourceRow: 2, fields: {}, actualFields: actualFields() }],
+        rows: [{
+          sourceRow: 2,
+          fields: {},
+          actualFields: {
+            ...actualFields(),
+            factorName: `Feature-${worksheetName}`,
+          },
+        }],
       }],
       imageAssets: [{ contentHash: imageHash, mediaType: "image/png", byteLength: imageBytes.length, outputFile: imageRelative }],
       tolerancePathImage: {
@@ -272,6 +287,66 @@ function rewriteJson(filePath, mutate) {
   writeJson(filePath, value);
 }
 
+function addSecondMappedRow(bundle, worksheetName) {
+  const f1Path = path.join(bundle.f1ArtifactRoot, `sheets/anonymous.xlsx/json/${worksheetName}.json`);
+  rewriteJson(f1Path, (worksheet) => {
+    const table = worksheet.factorTables[0];
+    table.dataRange.endRow = 3;
+    table.rows.unshift({
+      sourceRow: 3,
+      fields: {},
+      actualFields: {
+        ...actualFields(),
+        factorName: `Feature-${worksheetName}-Second`,
+        partName: "Anonymous bracket second",
+        partCategory: "Sheet Metal",
+        nominalValue: 7.5,
+        upperTolerance: 0.1,
+        lowerTolerance: -0.15,
+        sigmaLevel: 3,
+      },
+    });
+  });
+
+  rewriteJson(path.join(bundle.f3ArtifactRoot, "Feature3-Report.json"), (report) => {
+    const worksheet = report.worksheets.find((candidate) => candidate.worksheetName === worksheetName);
+    const secondRow = cloneJson(worksheet.rows[0]);
+    secondRow.factorInstanceId = createHash("sha256").update(`${worksheetName}-factor-second`).digest("hex");
+    secondRow.drawingDimensionKey = createHash("sha256").update(`${worksheetName}-dimension-second`).digest("hex");
+    secondRow.partCategory = "Sheet Metal";
+    secondRow.partSubsystem = "Anonymous bracket second";
+    secondRow.factorDescription = `Feature-${worksheetName}-Second`;
+    secondRow.nominal = 7.5;
+    secondRow.upperTolerance = 0.1;
+    secondRow.lowerTolerance = -0.15;
+    secondRow.sigmaLevel = 3;
+    secondRow.source.sourceRow = 3;
+    secondRow.source.sourceCells = {
+      factorName: `${worksheetName}!A3`,
+      partName: `${worksheetName}!B3`,
+    };
+    worksheet.rows.unshift(secondRow);
+    report.summary.factorCount += 1;
+    report.summary.completeCount += 1;
+  });
+
+  rewriteJson(path.join(bundle.f4ArtifactRoot, "Feature4-Calculation.json"), (report) => {
+    const result = report.calculations.find(
+      (candidate) => candidate.worksheetSelection.worksheetName === worksheetName,
+    );
+    const secondFactor = cloneJson(result.factors[0]);
+    secondFactor.factorName = `Feature-${worksheetName}-Second`;
+    secondFactor.source.sourceRow = 3;
+    secondFactor.input.nominalValue = 7.5;
+    secondFactor.input.upperTolerance = 0.1;
+    secondFactor.input.lowerTolerance = -0.15;
+    secondFactor.input.sigmaLevel = 3;
+    secondFactor.trace.sourceCells = [`${worksheetName}!A3`, `${worksheetName}!B3`];
+    result.factors.push(secondFactor);
+    result.factorCount = 2;
+  });
+}
+
 function load(bundle, overrides = {}) {
   return loadF5ArtifactBundle({
     f1ArtifactRoot: bundle.f1ArtifactRoot,
@@ -279,6 +354,83 @@ function load(bundle, overrides = {}) {
     f4ArtifactRoot: bundle.f4ArtifactRoot,
     ...overrides,
   });
+}
+
+const CORE_SCOPES = [
+  "tolerance_loop_closure",
+  "datum_chain",
+  "assembly_datum_face",
+  "stack_start",
+  "direction",
+];
+
+function v2ObservationArtifact(bundle, worksheetNames = [...bundle.imageReferences.keys()]) {
+  const f1Report = loadJson(path.join(bundle.f1ArtifactRoot, "Feature1-Report.json"));
+  const f3Report = loadJson(path.join(bundle.f3ArtifactRoot, "Feature3-Report.json"));
+  const f1Indexes = new Map(
+    f1Report.workbooks[0].task15_factor_table_and_debug_json.sheets
+      .map((index) => [index.worksheetName, index]),
+  );
+  return {
+    contractVersion: "v1",
+    inputClassification: "confidential",
+    observationVersion: "f5-image-observation-v2",
+    workbookContentHash: WORKBOOK_HASH,
+    worksheets: worksheetNames.map((worksheetName) => {
+      const f1Worksheet = loadJson(path.join(bundle.f1ArtifactRoot, f1Indexes.get(worksheetName).jsonPath));
+      const f3Worksheet = f3Report.worksheets.find((worksheet) => worksheet.worksheetName === worksheetName);
+      const tableId = f3Worksheet.rows[0].source.tableId;
+      const f1Table = f1Worksheet.factorTables.find((table) => table.tableId === tableId);
+      const f1BySourceRow = new Map(f1Table.rows.map((row) => [row.sourceRow, row]));
+      return {
+        worksheetName,
+        imageReference: bundle.imageReferences.get(worksheetName),
+        contextSnapshot: {
+          dimensionDescription: f3Worksheet.toleranceLoopDescription,
+          rows: [...f3Worksheet.rows]
+            .sort((left, right) => left.source.sourceRow - right.source.sourceRow)
+            .map((row) => {
+              const f1Row = f1BySourceRow.get(row.source.sourceRow);
+              return {
+                tableId: row.source.tableId,
+                sourceRow: row.source.sourceRow,
+                partName: f1Row.actualFields.partName,
+                partSubsystem: row.partSubsystem,
+                partCategory: row.partCategory,
+                factorName: f1Row.actualFields.factorName,
+                factorDescription: row.factorDescription,
+                nominal: row.nominal,
+                upperTolerance: row.upperTolerance,
+                lowerTolerance: row.lowerTolerance,
+                sigmaLevel: row.sigmaLevel,
+                sourceCells: row.source.sourceCells,
+              };
+            }),
+        },
+        observations: CORE_SCOPES.map((scope) => ({
+          scope,
+          visualObservation: {
+            observedValue: "ambiguous",
+            confidence: "low",
+            visibleBasis: `Visible basis for ${scope}.`,
+            reviewStatus: "unreviewed",
+          },
+          contextualSignal: {
+            signalValue: "insufficient_evidence",
+            textBasis: `Context basis for ${scope}.`,
+            linkedSourceRows: [],
+            requiresEngineeringReview: true,
+          },
+        })),
+      };
+    }),
+  };
+}
+
+function writeObservationArtifact(bundle, artifact) {
+  const observationPath = path.join(bundle.base, "observations.json");
+  writeJson(observationPath, artifact);
+  return observationPath;
 }
 
 function expectRejected(result, reasonCode, artifactReference) {
@@ -793,8 +945,135 @@ describe("loadF5ArtifactBundle", () => {
     const result = load(bundle, { imageObservationArtifact: observationPath });
     expect(result.status).toBe("accepted");
     expect(result.request.worksheets[0].imageObservations[0]).toMatchObject(fields);
-    expect(result.observationArtifact.worksheets[0].worksheetName).toBe("Analysis-A");
+    expect(result.observationArtifact).toEqual(loadJson(observationPath));
+    expect(result.request.worksheets[0]).not.toHaveProperty("contextSnapshot");
+    expect(result.request.worksheets[0]).not.toHaveProperty("observationVersion");
     expect(result.sourceReferences.observation).toBe("observations.json");
+  });
+
+  it("accepts a valid v2 artifact with its exact sorted snapshot and contextual observations", () => {
+    const bundle = setupBundle();
+    addSecondMappedRow(bundle, "Analysis-A");
+    const artifact = v2ObservationArtifact(bundle);
+    const observationPath = writeObservationArtifact(bundle, artifact);
+
+    const result = load(bundle, { imageObservationArtifact: observationPath });
+
+    expect(result.status).toBe("accepted");
+    expect(result.observationArtifact).toEqual(artifact);
+    expect(result.observationArtifact.worksheets[0].contextSnapshot).toEqual({
+      dimensionDescription: "Tolerance loop Analysis-A",
+      rows: [{
+        tableId: "table-1",
+        sourceRow: 2,
+        partName: "Anonymous bracket",
+        partSubsystem: "Anonymous bracket",
+        partCategory: "CNC",
+        factorName: "Feature-Analysis-A",
+        factorDescription: "Feature-Analysis-A",
+        nominal: 12.45,
+        upperTolerance: 0.2,
+        lowerTolerance: -0.2,
+        sigmaLevel: 4,
+        sourceCells: {
+          factorName: "Analysis-A!A2",
+          partName: "Analysis-A!B2",
+        },
+      }, {
+        tableId: "table-1",
+        sourceRow: 3,
+        partName: "Anonymous bracket second",
+        partSubsystem: "Anonymous bracket second",
+        partCategory: "Sheet Metal",
+        factorName: "Feature-Analysis-A-Second",
+        factorDescription: "Feature-Analysis-A-Second",
+        nominal: 7.5,
+        upperTolerance: 0.1,
+        lowerTolerance: -0.15,
+        sigmaLevel: 3,
+        sourceCells: {
+          factorName: "Analysis-A!A3",
+          partName: "Analysis-A!B3",
+        },
+      }],
+    });
+    expect(result.observationArtifact.worksheets[0].contextSnapshot.rows.map(({ sourceRow }) => sourceRow))
+      .toEqual([2, 3]);
+    expect(result.observationArtifact.worksheets[0].observations.map(({ scope }) => scope))
+      .toEqual(CORE_SCOPES);
+    expect(result.request.worksheets[0]).toMatchObject({
+      observationVersion: "f5-image-observation-v2",
+      contextSnapshot: artifact.worksheets[0].contextSnapshot,
+      imageObservations: artifact.worksheets[0].observations,
+    });
+    expect(result).not.toHaveProperty("observationFallback");
+  });
+
+  it.each([
+    ["dimension description", (artifact) => { artifact.worksheets[0].contextSnapshot.dimensionDescription = "Other loop"; }],
+    ["missing row", (artifact) => { artifact.worksheets[0].contextSnapshot.rows = []; }],
+    ["extra row", (artifact) => {
+      artifact.worksheets[0].contextSnapshot.rows.push({
+        ...cloneJson(artifact.worksheets[0].contextSnapshot.rows[0]),
+        sourceRow: 3,
+      });
+    }],
+    ["duplicate row", (artifact) => {
+      artifact.worksheets[0].contextSnapshot.rows.push(
+        cloneJson(artifact.worksheets[0].contextSnapshot.rows[0]),
+      );
+    }],
+    ["partName", (artifact) => { artifact.worksheets[0].contextSnapshot.rows[0].partName = "Other part"; }],
+    ["partSubsystem", (artifact) => { artifact.worksheets[0].contextSnapshot.rows[0].partSubsystem = "Other subsystem"; }],
+    ["partCategory", (artifact) => { artifact.worksheets[0].contextSnapshot.rows[0].partCategory = "Other category"; }],
+    ["factorName", (artifact) => { artifact.worksheets[0].contextSnapshot.rows[0].factorName = "Other factor"; }],
+    ["factorDescription", (artifact) => { artifact.worksheets[0].contextSnapshot.rows[0].factorDescription = "Other description"; }],
+    ["nominal", (artifact) => { artifact.worksheets[0].contextSnapshot.rows[0].nominal = 99; }],
+    ["upperTolerance", (artifact) => { artifact.worksheets[0].contextSnapshot.rows[0].upperTolerance = 99; }],
+    ["lowerTolerance", (artifact) => { artifact.worksheets[0].contextSnapshot.rows[0].lowerTolerance = -99; }],
+    ["sigmaLevel", (artifact) => { artifact.worksheets[0].contextSnapshot.rows[0].sigmaLevel = 6; }],
+    ["sourceCells", (artifact) => { artifact.worksheets[0].contextSnapshot.rows[0].sourceCells.partName = "Analysis-A!Z99"; }],
+    ["image reference", (artifact) => { artifact.worksheets[0].imageReference.contentHash = "b".repeat(64); }],
+    ["missing selected worksheet", (artifact) => { artifact.worksheets.pop(); }],
+    ["extra worksheet", (artifact) => {
+      const extra = cloneJson(artifact.worksheets[0]);
+      extra.worksheetName = "Extra";
+      extra.imageReference.worksheetName = "Extra";
+      artifact.worksheets.push(extra);
+    }],
+  ])("falls back without partially consuming v2 when %s differs", (_kind, mutate) => {
+    const bundle = setupBundle();
+    const artifact = v2ObservationArtifact(bundle);
+    mutate(artifact);
+    const observationPath = writeObservationArtifact(bundle, artifact);
+
+    const result = load(bundle, { imageObservationArtifact: observationPath });
+
+    expect(result.status).toBe("accepted");
+    expect(result.request.worksheets.map(({ worksheetName }) => worksheetName))
+      .toEqual(["Analysis-A", "Analysis-B"]);
+    expect(result.request.worksheets.every((worksheet) => worksheet.imageObservations.length === 0)).toBe(true);
+    expect(result.request.worksheets.every((worksheet) => !("contextSnapshot" in worksheet))).toBe(true);
+    expect(result).not.toHaveProperty("observationArtifact");
+    expect(result.observationFallback).toEqual({
+      reasonCode: expect.stringMatching(/^artifact_(contract_invalid|identity_mismatch)$/),
+      artifactReference: "observations.json",
+    });
+    expect(result.sourceReferences).not.toHaveProperty("observation");
+  });
+
+  it("keeps baseline identity rejection authoritative when a v2 artifact is present", () => {
+    const bundle = setupBundle({ worksheetNames: ["Analysis-A"] });
+    const observationPath = writeObservationArtifact(bundle, v2ObservationArtifact(bundle));
+    rewriteJson(path.join(bundle.f3ArtifactRoot, "Feature3-Report.json"), (report) => {
+      report.workbook.contentHash = "b".repeat(64);
+    });
+
+    expectRejected(
+      load(bundle, { imageObservationArtifact: observationPath }),
+      "artifact_identity_mismatch",
+      "Feature3-Report.json",
+    );
   });
 
   it("isolates an observation workbook or image identity mismatch", () => {
