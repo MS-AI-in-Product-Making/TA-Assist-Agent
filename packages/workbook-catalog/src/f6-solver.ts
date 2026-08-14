@@ -106,6 +106,55 @@ function assertFinite(value: number, label: string): void {
   }
 }
 
+function safePositiveProductQuotient(
+  numeratorValues: readonly number[],
+  denominatorValues: readonly number[],
+  label: string,
+): number {
+  const numerators = [...numeratorValues];
+  const denominators = [...denominatorValues];
+
+  for (let numeratorIndex = 0; numeratorIndex < numerators.length; numeratorIndex += 1) {
+    for (let denominatorIndex = 0; denominatorIndex < denominators.length; denominatorIndex += 1) {
+      const numerator = numerators[numeratorIndex]!;
+      const denominator = denominators[denominatorIndex]!;
+      if (numerator >= denominator) {
+        numerators[numeratorIndex] = numerator / denominator;
+        denominators[denominatorIndex] = 1;
+      } else {
+        denominators[denominatorIndex] = denominator / numerator;
+        numerators[numeratorIndex] = 1;
+      }
+    }
+  }
+
+  let result = 1;
+  for (const numerator of numerators) {
+    result *= numerator;
+  }
+  for (const denominator of denominators) {
+    result /= denominator;
+  }
+  if (!(result > 0) || !Number.isFinite(result)) {
+    fail("invalid_solver_input", `${label} must be finite and representable`);
+  }
+  return result;
+}
+
+function positiveDifference(upperValue: number, lowerValue: number, label: string): number {
+  const difference = upperValue - lowerValue;
+  if (!(difference > 0) || !Number.isFinite(difference)) {
+    fail("invalid_solver_input", `${label} must be finite and representable`);
+  }
+  return difference;
+}
+
+function midpoint(lowerValue: number, upperValue: number, width: number): number {
+  const result = lowerValue + width / 2;
+  assertFinite(result, "bandCenter");
+  return result;
+}
+
 function assertValidSpecBounds(lowerSpecLimit: number, upperSpecLimit: number): void {
   assertFinite(lowerSpecLimit, "lowerSpecLimit");
   assertFinite(upperSpecLimit, "upperSpecLimit");
@@ -159,6 +208,7 @@ function validateFactor(factor: CalculationFactorResult, index: number): void {
   if (!(factor.input.upperTolerance > factor.input.lowerTolerance)) {
     fail("invalid_solver_input", `${label} tolerance bounds must define a positive band`);
   }
+  positiveDifference(factor.input.upperTolerance, factor.input.lowerTolerance, `${label}.originalBand`);
   if (!(factor.input.longTermSafetyFactor > 0)) {
     fail("invalid_solver_input", `${label}.longTermSafetyFactor must be greater than zero`);
   }
@@ -266,15 +316,20 @@ function toleranceChangeForSigma(
   if (!(distributionMultiplier > 0) || !Number.isFinite(distributionMultiplier)) {
     fail("invalid_solver_input", "distribution multiplier must be finite and greater than zero");
   }
-  const targetHalfTolerance = targetSigma
-    * factor.input.sigmaLevel
-    / (factor.input.longTermSafetyFactor * distributionMultiplier);
-  assertFinite(targetHalfTolerance, "targetHalfTolerance");
+  const targetHalfTolerance = safePositiveProductQuotient(
+    [targetSigma, factor.input.sigmaLevel],
+    [factor.input.longTermSafetyFactor, distributionMultiplier],
+    "targetHalfTolerance",
+  );
   const originalLowerTolerance = factor.input.lowerTolerance;
   const originalUpperTolerance = factor.input.upperTolerance;
-  const originalBand = originalUpperTolerance - originalLowerTolerance;
-  const bandCenter = (originalUpperTolerance + originalLowerTolerance) / 2;
-  const resultingBand = targetHalfTolerance * 2;
+  const originalBand = positiveDifference(originalUpperTolerance, originalLowerTolerance, "originalBand");
+  const bandCenter = midpoint(originalLowerTolerance, originalUpperTolerance, originalBand);
+  const resultingBand = safePositiveProductQuotient([targetHalfTolerance, 2], [1], "resultingBand");
+  const resultingLowerTolerance = bandCenter - targetHalfTolerance;
+  const resultingUpperTolerance = bandCenter + targetHalfTolerance;
+  assertFinite(resultingLowerTolerance, "resultingLowerTolerance");
+  assertFinite(resultingUpperTolerance, "resultingUpperTolerance");
 
   return {
     worksheetName: factor.source.worksheetName,
@@ -282,8 +337,8 @@ function toleranceChangeForSigma(
     sourceRow: factor.source.sourceRow,
     originalLowerTolerance,
     originalUpperTolerance,
-    resultingLowerTolerance: bandCenter - targetHalfTolerance,
-    resultingUpperTolerance: bandCenter + targetHalfTolerance,
+    resultingLowerTolerance,
+    resultingUpperTolerance,
     originalBand,
     resultingBand,
     bandCenter,
@@ -300,12 +355,16 @@ export function scaleToleranceBandAroundCenter(input: ScaleToleranceBandInput): 
   if (!(input.scale > 0 && input.scale <= 1)) {
     fail("invalid_solver_input", "scale must be in the interval (0, 1]");
   }
-  const center = (input.upperTolerance + input.lowerTolerance) / 2;
-  const originalBand = input.upperTolerance - input.lowerTolerance;
-  const resultingBand = input.scale * originalBand;
+  const originalBand = positiveDifference(input.upperTolerance, input.lowerTolerance, "originalBand");
+  const center = midpoint(input.lowerTolerance, input.upperTolerance, originalBand);
+  const resultingBand = safePositiveProductQuotient([input.scale, originalBand], [1], "resultingBand");
+  const lowerTolerance = center - resultingBand / 2;
+  const upperTolerance = center + resultingBand / 2;
+  assertFinite(lowerTolerance, "resultingLowerTolerance");
+  assertFinite(upperTolerance, "resultingUpperTolerance");
   return {
-    lowerTolerance: center - resultingBand / 2,
-    upperTolerance: center + resultingBand / 2,
+    lowerTolerance,
+    upperTolerance,
     center,
     originalBand,
     resultingBand,
@@ -341,8 +400,11 @@ export function solveCenteringShift(input: CenteringInput): CenteringResult {
     return sum + factorMean;
   }, 0);
   assertFinite(currentMean, "currentMean");
-  const targetMean = (upperSpecLimit + lowerSpecLimit) / 2;
-  return { targetMean, additionalMeanShift: targetMean - currentMean };
+  const specificationWidth = positiveDifference(upperSpecLimit, lowerSpecLimit, "specificationWidth");
+  const targetMean = midpoint(lowerSpecLimit, upperSpecLimit, specificationWidth);
+  const additionalMeanShift = targetMean - currentMean;
+  assertFinite(additionalMeanShift, "additionalMeanShift");
+  return { targetMean, additionalMeanShift };
 }
 
 export function solveTargetRssSigma(input: TargetRssSigmaInput): number {

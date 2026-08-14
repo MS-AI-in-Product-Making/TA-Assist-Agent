@@ -42,6 +42,20 @@ function factor(
   };
 }
 
+function expectFiniteNumericFields(value: unknown): void {
+  if (typeof value === "number") {
+    expect(Number.isFinite(value)).toBe(true);
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach(expectFiniteNumericFields);
+    return;
+  }
+  if (value !== null && typeof value === "object") {
+    Object.values(value).forEach(expectFiniteNumericFields);
+  }
+}
+
 describe("F6 deterministic solver primitives", () => {
   it("scales an asymmetric tolerance band around its center", () => {
     const result = scaleToleranceBandAroundCenter({
@@ -64,6 +78,27 @@ describe("F6 deterministic solver primitives", () => {
     { lowerTolerance: 0, upperTolerance: Number.POSITIVE_INFINITY, scale: 0.5 },
   ])("rejects an invalid tolerance scaling input", (input) => {
     expect(() => scaleToleranceBandAroundCenter(input)).toThrow(F6SolverError);
+  });
+
+  it("rejects a finite tolerance band whose width is not representable", () => {
+    expect(() => scaleToleranceBandAroundCenter({
+      lowerTolerance: -1e308,
+      upperTolerance: 1e308,
+      scale: 0.5,
+    })).toThrowError(/invalid_solver_input/);
+  });
+
+  it("scales large same-sign finite tolerance endpoints without overflowing the center", () => {
+    const result = scaleToleranceBandAroundCenter({
+      lowerTolerance: 1e308,
+      upperTolerance: 1.6e308,
+      scale: 0.5,
+    });
+
+    expect(result.center).toBe(1.3e308);
+    expect(result.originalBand).toBe(6e307);
+    expect(result.resultingBand).toBe(3e307);
+    expectFiniteNumericFields(result);
   });
 
   it("selects contributors by descending contribution with stable source tie breaks without mutation", () => {
@@ -137,6 +172,50 @@ describe("F6 deterministic solver primitives", () => {
       bandCenter: 0,
     });
     expect(f6ToleranceChangeSchema.safeParse(change).success).toBe(true);
+  });
+
+  it("avoids intermediate overflow when computing a representable target tolerance", () => {
+    const selected = factor(1, 1e308, 1, {
+      input: {
+        nominalValue: 0,
+        lowerTolerance: -1e307,
+        upperTolerance: 1e307,
+        longTermSafetyFactor: 4,
+        sigmaLevel: 2,
+        distribution: "normal",
+      },
+    });
+
+    const change = solveSingleFactorTolerance({
+      factors: [selected],
+      selectedSource: selected.source,
+      targetRssSigma: 1e308,
+    });
+
+    expect(change.resultingLowerTolerance).toBe(-5e307);
+    expect(change.resultingUpperTolerance).toBe(5e307);
+    expect(change.resultingBand).toBe(1e308);
+    expect(f6ToleranceChangeSchema.parse(change)).toEqual(change);
+    expectFiniteNumericFields(change);
+  });
+
+  it("accepts a finite target half tolerance before rejecting its unrepresentable result band", () => {
+    const selected = factor(1, 1e308, 1, {
+      input: {
+        nominalValue: 0,
+        lowerTolerance: -1e307,
+        upperTolerance: 1e307,
+        longTermSafetyFactor: 2,
+        sigmaLevel: 2,
+        distribution: "normal",
+      },
+    });
+
+    expect(() => solveSingleFactorTolerance({
+      factors: [selected],
+      selectedSource: selected.source,
+      targetRssSigma: 1e308,
+    })).toThrowError(/resultingBand must be finite/);
   });
 
   it.each([
@@ -273,6 +352,27 @@ describe("F6 deterministic solver primitives", () => {
       residualError: 0,
     });
     expect(f6ReverseSolveResultSchema.parse(result)).toEqual(result);
+    expectFiniteNumericFields(result);
+  });
+
+  it("all successful public solver DTO outputs parse their schemas and contain only finite numbers", () => {
+    const factors = [factor(1, 3, 0.6), factor(2, 2, 0.4)];
+    const single = solveSingleFactorTolerance({
+      factors,
+      selectedSource: factors[0].source,
+      targetRssSigma: Math.sqrt(5),
+    });
+    const topN = solveTopNCombinedTolerance({
+      factors,
+      selectedSources: factors.map((item) => item.source),
+      targetRssSigma: 2,
+      allocation: "equal-allocation-among-top-N",
+    });
+
+    expect(f6ToleranceChangeSchema.parse(single)).toEqual(single);
+    topN.forEach((change) => expect(f6ToleranceChangeSchema.parse(change)).toEqual(change));
+    expectFiniteNumericFields(single);
+    expectFiniteNumericFields(topN);
   });
 
   it("rejects unreachable targets, invalid factor controls, and invalid source selections", () => {
