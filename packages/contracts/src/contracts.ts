@@ -4950,6 +4950,27 @@ export const f5DataInterpretationRequestSchema = z.object({
     context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet names must be unique", path: ["worksheets"] });
   }
   request.worksheets.forEach((worksheet, worksheetIndex) => {
+    if (request.observationFallback !== undefined) {
+      if (worksheet.imageObservations.length > 0) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "observation fallback requires empty image observations",
+          path: ["worksheets", worksheetIndex, "imageObservations"],
+        });
+      }
+      if ("observationVersion" in worksheet) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "observation fallback must not include an observation version",
+          path: ["worksheets", worksheetIndex, "observationVersion"],
+        });
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "observation fallback must not include a context snapshot",
+          path: ["worksheets", worksheetIndex, "contextSnapshot"],
+        });
+      }
+    }
     if (worksheet.calculationResult.workbookContentHash !== request.workbook.contentHash) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: "calculation workbook hash must match request workbook", path: ["worksheets", worksheetIndex, "calculationResult", "workbookContentHash"] });
     }

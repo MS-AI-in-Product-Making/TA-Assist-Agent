@@ -2558,15 +2558,32 @@ describe("F5.1 objective interpretation contracts", () => {
       }],
     };
 
-    it("accepts only the controlled enhanced-observation fallback reason", () => {
+    it("accepts a clean enhanced-observation fallback with no image observations", () => {
+      const fallbackRequest = structuredClone(rootRequest);
+      fallbackRequest.worksheets[0]!.imageObservations = [];
+
       expect(f5DataInterpretationRequestSchema.safeParse({
-        ...rootRequest,
+        ...fallbackRequest,
         observationFallback: { reasonCode: "enhanced_observation_rejected" },
       }).success).toBe(true);
       expect(f5DataInterpretationRequestSchema.safeParse({
-        ...rootRequest,
+        ...fallbackRequest,
         observationFallback: { reasonCode: "unvalidated_reason" },
       }).success).toBe(false);
+    });
+
+    it("rejects fallback combined with v1 image observations", () => {
+      const parsed = f5DataInterpretationRequestSchema.safeParse({
+        ...rootRequest,
+        observationFallback: { reasonCode: "enhanced_observation_rejected" },
+      });
+
+      expect(parsed.success).toBe(false);
+      if (!parsed.success) {
+        expect(parsed.error.issues.map(({ path }) => path)).toContainEqual([
+          "worksheets", 0, "imageObservations",
+        ]);
+      }
     });
 
     const contextualRootRequest = () => {
@@ -2592,6 +2609,21 @@ describe("F5.1 objective interpretation contracts", () => {
       worksheet.imageObservations = structuredClone(validV2.worksheets[0]!.observations);
       return request;
     };
+
+    it("rejects fallback combined with v2 worksheet fields and observations", () => {
+      const request = contextualRootRequest();
+      request.observationFallback = { reasonCode: "enhanced_observation_rejected" };
+
+      const parsed = f5DataInterpretationRequestSchema.safeParse(request);
+
+      expect(parsed.success).toBe(false);
+      if (!parsed.success) {
+        const paths = parsed.error.issues.map(({ path }) => path);
+        expect(paths).toContainEqual(["worksheets", 0, "observationVersion"]);
+        expect(paths).toContainEqual(["worksheets", 0, "contextSnapshot"]);
+        expect(paths).toContainEqual(["worksheets", 0, "imageObservations"]);
+      }
+    });
     const rootRule = {
       statementId: "root-rule-performance",
       type: "RULE" as const,
