@@ -158,6 +158,89 @@ describe("F6 RSS tolerance apportionment", () => {
     });
   });
 
+  it("allocates the remaining variance when minimum and maximum bounds cross the unconstrained candidate", () => {
+    const factors = [
+      factor(1, 1, 0.5, { input: { nominalValue: 0, lowerTolerance: -1, upperTolerance: 1, longTermSafetyFactor: 3, sigmaLevel: 3, distribution: "normal" } }),
+      factor(2, 1, 0.5, { input: { nominalValue: 0, lowerTolerance: -1, upperTolerance: 1, longTermSafetyFactor: 2, sigmaLevel: 2, distribution: "normal" } }),
+    ];
+    const result = apportionRssTolerance({
+      factors,
+      targetRssSigma: 0.95,
+      policy: "bounded-by-capability",
+      selectedSources: factors.map((item) => item.source),
+      capabilityBounds: [
+        { tableId: "table-1", sourceRow: 1, minimumToleranceBand: 1.8, maximumToleranceBand: 2, evidenceReference: "capability/row-1.json" },
+        { tableId: "table-1", sourceRow: 2, minimumToleranceBand: 0, maximumToleranceBand: 0.2, evidenceReference: "capability/row-2.json" },
+      ],
+    });
+
+    expect(result.allocations.map(({ targetSigma }) => targetSigma)).toEqual([
+      expect.closeTo(0.9447221814, 10),
+      expect.closeTo(0.1, 12),
+    ]);
+    expect(result.residualError).toBeLessThanOrEqual(1e-12);
+    expect(result.feasibility.status).toBe("requires_engineering_review");
+  });
+
+  it("redistributes multiple crossed min and max capacities independently of selected source order", () => {
+    const factors = [factor(1, 1, 0.25), factor(2, 1, 0.25), factor(3, 1, 0.25), factor(4, 1, 0.25)];
+    const capabilityBounds = [
+      { tableId: "table-1", sourceRow: 1, minimumToleranceBand: 1.6, maximumToleranceBand: 2, evidenceReference: "capability/row-1.json" },
+      { tableId: "table-1", sourceRow: 2, minimumToleranceBand: 1, maximumToleranceBand: 1.4, evidenceReference: "capability/row-2.json" },
+      { tableId: "table-1", sourceRow: 3, minimumToleranceBand: 0, maximumToleranceBand: 0.2, evidenceReference: "capability/row-3.json" },
+      { tableId: "table-1", sourceRow: 4, minimumToleranceBand: 0, maximumToleranceBand: 0.4, evidenceReference: "capability/row-4.json" },
+    ];
+    const forward = apportionRssTolerance({
+      factors,
+      targetRssSigma: 1,
+      policy: "bounded-by-capability",
+      selectedSources: factors.map((item) => item.source),
+      capabilityBounds,
+    });
+    const reversed = apportionRssTolerance({
+      factors,
+      targetRssSigma: 1,
+      policy: "bounded-by-capability",
+      selectedSources: [...factors].reverse().map((item) => item.source),
+      capabilityBounds: [...capabilityBounds].reverse(),
+    });
+
+    expect(reversed.allocations).toEqual(forward.allocations);
+    expect(forward.allocations.map(({ targetSigma }) => targetSigma)).toEqual([
+      expect.closeTo(Math.sqrt(101 / 150), 12),
+      expect.closeTo(Math.sqrt(17 / 60), 12),
+      expect.closeTo(0.1, 12),
+      expect.closeTo(Math.sqrt(1 / 30), 12),
+    ]);
+    expect(forward.residualError).toBeLessThanOrEqual(1e-12);
+    expect(forward.feasibility.status).toBe("requires_engineering_review");
+  });
+
+  it("returns maximum allocations when capability capacity cannot fill the selected variance budget", () => {
+    const factors = [factor(1, 1, 0.5), factor(2, 1, 0.5)];
+    const result = apportionRssTolerance({
+      factors,
+      targetRssSigma: 1,
+      policy: "bounded-by-capability",
+      selectedSources: factors.map((item) => item.source),
+      capabilityBounds: [
+        { tableId: "table-1", sourceRow: 1, minimumToleranceBand: 0, maximumToleranceBand: 1.2, evidenceReference: "capability/row-1.json" },
+        { tableId: "table-1", sourceRow: 2, minimumToleranceBand: 0, maximumToleranceBand: 1.2, evidenceReference: "capability/row-2.json" },
+      ],
+    });
+
+    expect(result.allocations.map(({ targetSigma }) => targetSigma)).toEqual([
+      expect.closeTo(0.6, 12),
+      expect.closeTo(0.6, 12),
+    ]);
+    expect(result.residualError).toBeCloseTo(1 - Math.sqrt(0.72), 12);
+    expect(result.feasibility).toEqual({
+      status: "not_supported",
+      reasonCodes: ["capability_bounds_exclude_rss_target"],
+      evidenceReferences: ["capability/row-1.json", "capability/row-2.json"],
+    });
+  });
+
   it("returns not_supported with residual when capability minimums make the target impossible", () => {
     const factors = [factor(1, 3, 0.6), factor(2, 2, 0.3), factor(3, 1, 0.1)];
     const result = apportionRssTolerance({
@@ -404,6 +487,25 @@ describe("F6 RSS tolerance apportionment", () => {
   ])("keeps finite allocations and controlled residual near $magnitude", ({ magnitude, target, fixed, expected }) => {
     const factors = [factor(1, magnitude, 0.4), factor(2, magnitude / 2, 0.4), factor(3, fixed, 0.2)];
     expectSuccessfulRss(factors, [1, 2], target, [expected, expected]);
+  });
+
+  it.each([1e200, 1e-200])("keeps bounded variance redistribution stable near %s", (magnitude) => {
+    const factors = [factor(1, magnitude, 0.5), factor(2, magnitude, 0.5)];
+    const result = apportionRssTolerance({
+      factors,
+      targetRssSigma: 0.95 * magnitude,
+      policy: "bounded-by-capability",
+      selectedSources: factors.map((item) => item.source),
+      capabilityBounds: [
+        { tableId: "table-1", sourceRow: 1, minimumToleranceBand: 1.8 * magnitude, maximumToleranceBand: 2 * magnitude, evidenceReference: "capability/row-1.json" },
+        { tableId: "table-1", sourceRow: 2, minimumToleranceBand: 0, maximumToleranceBand: 0.2 * magnitude, evidenceReference: "capability/row-2.json" },
+      ],
+    });
+
+    expect(result.allocations[0]!.targetSigma / magnitude).toBeCloseTo(0.9447221814, 10);
+    expect(result.allocations[1]!.targetSigma / magnitude).toBeCloseTo(0.1, 12);
+    expect(result.residualError / magnitude).toBeLessThanOrEqual(1e-12);
+    expect(result.feasibility.status).toBe("requires_engineering_review");
   });
 
   it("does not mutate inputs and returns allocations sorted by source identity", () => {

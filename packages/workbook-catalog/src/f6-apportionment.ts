@@ -277,18 +277,20 @@ function boundedAllocations(
   selectedSigma: number,
   selectedBounds: readonly F6CapabilityBound[],
 ): readonly AllocationValue[] {
-  const limits = selectedFactors.map((factor, index) => {
-    const bound = selectedBounds[index]!;
-    const minimumTolerance = bound.minimumToleranceBand / 2;
-    const maximumTolerance = bound.maximumToleranceBand / 2;
-    return {
-      factor,
-      minimumTolerance,
-      maximumTolerance,
-      minimumSigma: minimumTolerance === 0 ? 0 : sigmaForTolerance(factor, minimumTolerance),
-      maximumSigma: maximumTolerance === 0 ? 0 : sigmaForTolerance(factor, maximumTolerance),
-    };
-  });
+  const limits = selectedFactors
+    .map((factor, index) => {
+      const bound = selectedBounds[index]!;
+      const minimumTolerance = bound.minimumToleranceBand / 2;
+      const maximumTolerance = bound.maximumToleranceBand / 2;
+      return {
+        factor,
+        minimumTolerance,
+        maximumTolerance,
+        minimumSigma: minimumTolerance === 0 ? 0 : sigmaForTolerance(factor, minimumTolerance),
+        maximumSigma: maximumTolerance === 0 ? 0 : sigmaForTolerance(factor, maximumTolerance),
+      };
+    })
+    .sort((left, right) => compareSources(left.factor.source, right.factor.source));
   const minimumNorm = stableL2Norm(limits.map(({ minimumSigma }) => minimumSigma));
   const maximumNorm = stableL2Norm(limits.map(({ maximumSigma }) => maximumSigma));
   if (selectedSigma === 0) {
@@ -313,36 +315,39 @@ function boundedAllocations(
     }));
   }
 
-  const normalized = limits.map((limit) => ({
+  const normalized = limits.map((limit, index) => ({
     ...limit,
-    minimum: limit.minimumSigma / selectedSigma,
-    maximum: limit.maximumSigma / selectedSigma,
+    index,
+    assignedVariance: (limit.minimumSigma / selectedSigma) ** 2,
+    capacity: Math.max(0,
+      (limit.maximumSigma / selectedSigma - limit.minimumSigma / selectedSigma)
+      * (limit.maximumSigma / selectedSigma + limit.minimumSigma / selectedSigma)),
   }));
-  const assigned = new Map<number, number>();
-  let active = normalized.map((_, index) => index);
-  let remainingVariance = 1;
-  while (active.length > 0) {
-    const equalSigma = Math.sqrt(Math.max(0, remainingVariance) / active.length);
-    const saturated = active.filter((index) => {
+  let remainingVariance = Math.max(0, 1 - normalized.reduce(
+    (sum, limit) => sum + limit.assignedVariance,
+    0,
+  ));
+  let active = normalized.map(({ index }) => index);
+  const varianceTolerance = 32 * Number.EPSILON;
+  while (remainingVariance > varianceTolerance && active.length > 0) {
+    const varianceShare = remainingVariance / active.length;
+    let distributedVariance = 0;
+    const nextActive: number[] = [];
+    active.forEach((index) => {
       const limit = normalized[index]!;
-      return equalSigma < limit.minimum || equalSigma > limit.maximum;
+      const allocation = Math.min(varianceShare, limit.capacity);
+      limit.assignedVariance += allocation;
+      limit.capacity -= allocation;
+      distributedVariance += allocation;
+      if (limit.capacity > varianceTolerance) nextActive.push(index);
     });
-    if (saturated.length === 0) {
-      active.forEach((index) => assigned.set(index, equalSigma));
-      break;
-    }
-    saturated.forEach((index) => {
-      const limit = normalized[index]!;
-      const value = equalSigma < limit.minimum ? limit.minimum : limit.maximum;
-      assigned.set(index, value);
-      remainingVariance = Math.max(0, remainingVariance - value * value);
-    });
-    const saturatedSet = new Set(saturated);
-    active = active.filter((index) => !saturatedSet.has(index));
+    if (distributedVariance <= varianceTolerance) break;
+    remainingVariance = Math.max(0, remainingVariance - distributedVariance);
+    active = nextActive;
   }
 
-  return normalized.map(({ factor }, index) => {
-    const targetSigma = selectedSigma * assigned.get(index)!;
+  return normalized.map(({ factor, assignedVariance }) => {
+    const targetSigma = selectedSigma * Math.sqrt(assignedVariance);
     return { factor, targetSigma, targetTolerance: toleranceForSigma(factor, targetSigma) };
   });
 }
