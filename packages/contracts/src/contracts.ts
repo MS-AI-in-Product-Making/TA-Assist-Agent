@@ -6359,6 +6359,7 @@ const f6EvidenceScopeSchema = z.discriminatedUnion("kind", [
     factorSources: z.array(z.object({
       tableId: z.string().min(1),
       sourceRow: z.number().int().positive(),
+      direction: z.union([z.literal(-1), z.literal(1)]),
     }).strict()).min(1),
     evidenceReference: f6ArtifactReferenceSchema,
   }).strict(),
@@ -6697,20 +6698,23 @@ export const f6OptimizationResultSchema = z.object({
       }
       completedOptions.forEach((option) => {
         const optionIndex = worksheet.options.indexOf(option);
-        const matchingCosts = costEvidence?.optionCosts.filter(({ optionKind }) => optionKind === option.optionKind) ?? [];
-        if (matchingCosts.length !== 1
-          || typeof option.relativeCost !== "number"
-          || typeof option.roiScore !== "number"
-          || !f6NearlyEqual(option.relativeCost, matchingCosts[0]!.cost)) {
+        if (typeof option.relativeCost !== "number" || typeof option.roiScore !== "number") {
           context.addIssue({ code: z.ZodIssueCode.custom, message: "computed ROI requires matching cost evidence and numeric option values", path: ["worksheets", worksheetIndex, "options", optionIndex] });
         }
       });
     }
     worksheet.options.forEach((option, optionIndex) => {
       if (option.status !== "completed") return;
-      if (result.provenance.costEvidence === undefined
-        && (option.relativeCost !== "insufficient_evidence" || option.roiScore !== "not_computed")) {
-        context.addIssue({ code: z.ZodIssueCode.custom, message: "cost and ROI must remain uncomputed without controlled cost evidence", path: ["worksheets", worksheetIndex, "options", optionIndex] });
+      if (worksheet.roiStatus === "not_computed" && option.roiScore !== "not_computed") {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "not-computed ROI requires every completed option ROI score to remain uncomputed", path: ["worksheets", worksheetIndex, "options", optionIndex, "roiScore"] });
+      }
+      if (typeof option.relativeCost === "number") {
+        const matchingCosts = costEvidence?.optionCosts.filter(({ optionKind }) => optionKind === option.optionKind) ?? [];
+        if (matchingCosts.length !== 1 || !f6NearlyEqual(option.relativeCost, matchingCosts[0]!.cost)) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "numeric relative cost must match exactly one governed cost evidence entry", path: ["worksheets", worksheetIndex, "options", optionIndex, "relativeCost"] });
+        }
+      } else if (worksheet.roiStatus !== "not_computed") {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "insufficient relative cost is allowed only when ROI is not computed", path: ["worksheets", worksheetIndex, "options", optionIndex, "relativeCost"] });
       }
       if (option.optionKind === "improve_supplier_capability" && option.evidenceScope?.kind === "supplier") {
         const scope = option.evidenceScope;
@@ -6729,8 +6733,9 @@ export const f6OptimizationResultSchema = z.object({
         const matches = (result.provenance.datumEvidence ?? []).filter((evidence) => {
           if (evidence.source !== scope.evidenceReference.artifact
             || evidence.contentHash !== scope.evidenceReference.contentHash) return false;
-          const evidenceSources = new Set(evidence.factorDirections.map(({ tableId, sourceRow }) => `${tableId}\u0000${sourceRow}`));
-          return scope.factorSources.every(({ tableId, sourceRow }) => evidenceSources.has(`${tableId}\u0000${sourceRow}`));
+          const evidenceSources = new Set(evidence.factorDirections.map(({ tableId, sourceRow, direction }) => `${tableId}\u0000${sourceRow}\u0000${direction}`));
+          return scope.factorSources.length === evidenceSources.size
+            && scope.factorSources.every(({ tableId, sourceRow, direction }) => evidenceSources.has(`${tableId}\u0000${sourceRow}\u0000${direction}`));
         });
         if (matches.length !== 1) {
           context.addIssue({ code: z.ZodIssueCode.custom, message: "datum option evidenceScope must match exactly one governed evidence entry", path: ["worksheets", worksheetIndex, "options", optionIndex, "evidenceScope"] });
@@ -6819,11 +6824,15 @@ export const f6ComposedWorksheetReportSchema = z.object({
 }).strict().superRefine((worksheet, context) => {
   const cpk = worksheet.sections.capabilityAssessment.metrics.cpk;
   const hasOpenHighRisk = worksheet.sections.riskAssessment.some((risk) => risk.status === "open" && (risk.rating === "High" || risk.rating === "Critical"));
-  const expectedStatus = cpk < 1 || worksheet.confirmedRequirementViolation
+  const expectedStatus = worksheet.confirmedRequirementViolation
     ? "FAIL"
-    : worksheet.missingCapabilityData || cpk < worksheet.targetCapability.targetCpk || hasOpenHighRisk
+    : worksheet.missingCapabilityData
       ? "RISK"
-      : "PASS";
+      : cpk < 1
+        ? "FAIL"
+        : cpk < worksheet.targetCapability.targetCpk || hasOpenHighRisk
+          ? "RISK"
+          : "PASS";
   if (worksheet.status !== expectedStatus) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet status must be derived from capability, requirement, and open risk evidence", path: ["status"] });
   }

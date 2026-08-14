@@ -4561,6 +4561,33 @@ describe("F5.1 objective interpretation contracts", () => {
         }).success).toBe(false);
       });
 
+      it("enforces ROI status and governed costs for every completed option", () => {
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          provenance: { ...f6Result.provenance, costEvidence },
+          worksheets: [{ ...f6Result.worksheets[0], options: [{ ...completedOption, relativeCost: 100, roiScore: "not_computed" }] }],
+        }).success).toBe(true);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          provenance: { ...f6Result.provenance, costEvidence },
+          worksheets: [{ ...f6Result.worksheets[0], options: [{ ...completedOption, relativeCost: 100, roiScore: 0.006 }] }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          provenance: { ...f6Result.provenance, costEvidence },
+          worksheets: [{ ...f6Result.worksheets[0], options: [{ ...completedOption, relativeCost: 101, roiScore: "not_computed" }] }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], options: [{ ...completedOption, relativeCost: 100, roiScore: "not_computed" }] }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          provenance: { ...f6Result.provenance, costEvidence },
+          worksheets: [{ ...f6Result.worksheets[0], options: [{ ...completedOption, relativeCost: "insufficient_evidence", roiScore: "not_computed" }] }],
+        }).success).toBe(true);
+      });
+
       it("binds completed supplier and datum options to exact governed evidence scopes", () => {
         const supplierScope = {
           kind: "supplier", supplierReference: supplierEvidence.supplierReference,
@@ -4583,22 +4610,40 @@ describe("F5.1 objective interpretation contracts", () => {
           worksheets: [{ ...f6Result.worksheets[0], options: [{ ...supplierOption, evidenceScope: { ...supplierScope, evidenceReference: reference("unrelated.json") } }], recommendations: [], highestImpactAction: undefined }],
         }).success).toBe(false);
 
-        const datumScope = { kind: "datum", factorSources: [{ tableId: "table-a", sourceRow: 2 }], evidenceReference: { artifact: datumEvidence.source, contentHash: datumEvidence.contentHash } };
+        const exactDatumEvidence = {
+          ...datumEvidence,
+          factorDirections: [
+            { tableId: "table-a", sourceRow: 2, direction: 1 },
+            { tableId: "table-b", sourceRow: 3, direction: -1 },
+          ],
+        };
+        const datumScope = {
+          kind: "datum",
+          factorSources: exactDatumEvidence.factorDirections,
+          evidenceReference: { artifact: exactDatumEvidence.source, contentHash: exactDatumEvidence.contentHash },
+        };
         const datumOption = { ...completedOption, optionId: "datum", optionKind: "tighten_datum_strategy", evidenceScope: datumScope };
         expect(f6OptimizationResultSchema.safeParse({
-          ...f6Result, provenance: { ...f6Result.provenance, datumEvidence: [datumEvidence] },
+          ...f6Result, provenance: { ...f6Result.provenance, datumEvidence: [exactDatumEvidence] },
           worksheets: [{ ...f6Result.worksheets[0], options: [datumOption], recommendations: [], highestImpactAction: undefined }],
         }).success).toBe(true);
         for (const evidenceScope of [
-          { ...datumScope, factorSources: [{ tableId: "table-a", sourceRow: 99 }] },
-          { ...datumScope, factorSources: [{ tableId: "table-a", sourceRow: 2 }, { tableId: "table-a", sourceRow: 2 }] },
+          { ...datumScope, factorSources: [{ tableId: "table-a", sourceRow: 2, direction: -1 }, datumScope.factorSources[1]] },
+          { ...datumScope, factorSources: [datumScope.factorSources[0]] },
+          { ...datumScope, factorSources: [...datumScope.factorSources, { tableId: "table-c", sourceRow: 4, direction: 1 }] },
+          { ...datumScope, factorSources: [datumScope.factorSources[0], { ...datumScope.factorSources[0] }] },
           { ...datumScope, evidenceReference: reference("unrelated.json") },
         ]) {
           expect(f6OptimizationResultSchema.safeParse({
-            ...f6Result, provenance: { ...f6Result.provenance, datumEvidence: [datumEvidence] },
+            ...f6Result, provenance: { ...f6Result.provenance, datumEvidence: [exactDatumEvidence] },
             worksheets: [{ ...f6Result.worksheets[0], options: [{ ...datumOption, evidenceScope }], recommendations: [], highestImpactAction: undefined }],
           }).success).toBe(false);
         }
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          provenance: { ...f6Result.provenance, datumEvidence: [{ ...exactDatumEvidence, factorDirections: [...exactDatumEvidence.factorDirections, { tableId: "table-c", sourceRow: 4, direction: 1 }] }] },
+          worksheets: [{ ...f6Result.worksheets[0], options: [datumOption], recommendations: [], highestImpactAction: undefined }],
+        }).success).toBe(false);
         expect(f6OptimizationResultSchema.safeParse({
           ...f6Result, provenance: { ...f6Result.provenance, datumEvidence: [] },
           worksheets: [{ ...f6Result.worksheets[0], options: [datumOption], recommendations: [], highestImpactAction: undefined }],
@@ -4646,6 +4691,7 @@ describe("F5.1 objective interpretation contracts", () => {
 
         const statusCases = [
           { cpk: 0.99, targetCpk: 1.33, violation: false, missing: false, rating: "Low", expected: "FAIL" },
+          { cpk: 0, targetCpk: 1.33, violation: false, missing: true, rating: "Low", expected: "RISK" },
           { cpk: 2, targetCpk: 1.33, violation: true, missing: false, rating: "Low", expected: "FAIL" },
           { cpk: 1.1, targetCpk: 1.33, violation: false, missing: false, rating: "Low", expected: "RISK" },
           { cpk: 2, targetCpk: 1.33, violation: false, missing: true, rating: "Low", expected: "RISK" },
