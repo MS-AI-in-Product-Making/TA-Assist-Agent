@@ -21,6 +21,13 @@ const CHAPTERS = [
   { key: "reasonableToleranceRange", title: "## 4. 合理公差范围" },
   { key: "designOptimizationAndParallelOptions", title: "## 5. 设计优化与并列方案" },
 ];
+const CORE_SCOPES = new Set([
+  "tolerance_loop_closure",
+  "datum_chain",
+  "assembly_datum_face",
+  "stack_start",
+  "direction",
+]);
 
 function redact(value) {
   return String(value)
@@ -198,32 +205,121 @@ function renderSupportCards(lines, worksheet, section) {
   }
 }
 
-function renderTolerance(lines, worksheet, options) {
-  const section = worksheet.sections.toleranceChainValidity;
+function renderScopeMatrix(lines, worksheet, contextSignals) {
+  const signalByScope = new Map(contextSignals.map((signal) => [signal.content.scope, signal]));
   lines.push(
-    `章节状态：${code(section.status)}`,
+    "#### 五项状态矩阵",
     "",
-    "| scope | status | relatedStatementIds | clarificationIds |",
+    "| scope | visualStatus | contextSignal | requiresEngineeringReview |",
     "| --- | --- | --- | --- |",
   );
-  for (const item of section.items) {
-    lines.push(`| ${cell(item.scope)} | ${cell(item.status)} | ${cell(item.relatedStatementIds.join("; "))} | ${cell(item.clarificationIds.join("; "))} |`);
+  for (const item of worksheet.sections.toleranceChainValidity.items.filter(({ scope }) => CORE_SCOPES.has(scope))) {
+    const signal = signalByScope.get(item.scope);
+    lines.push(`| ${cell(item.scope)} | ${cell(item.status)} | ${cell(signal?.content.signalValue)} | ${cell(signal?.content.requiresEngineeringReview)} |`);
   }
+}
+
+function renderVisualFacts(lines, facts, options, contextual) {
+  if (facts.length === 0) return;
+  if (contextual) {
+    lines.push(
+      "",
+      "#### Visual FACT",
+      "",
+      "| scope | observedValue | confidence | reviewStatus | image | visibleBasis |",
+      "| --- | --- | --- | --- | --- | --- |",
+    );
+    for (const fact of facts) {
+      lines.push(`| ${cell(fact.content.scope)} | ${cell(fact.content.observedValue)} | ${cell(fact.content.confidence)} | ${cell(fact.content.reviewStatus)} | ${imageLink(fact.content.imageReference, options)} | ${cell(fact.content.visibleBasis)} |`);
+    }
+    return;
+  }
+
+  lines.push("", "| 类型 | statementId | scope | observedValue | confidence | reviewStatus | image | visibleBasis |", "| --- | --- | --- | --- | --- | --- | --- | --- |");
+  for (const fact of facts) {
+    lines.push(`| FACT | ${cell(fact.statementId)} | ${cell(fact.content.scope)} | ${cell(fact.content.observedValue)} | ${cell(fact.content.confidence)} | ${cell(fact.content.reviewStatus)} | ${imageLink(fact.content.imageReference, options)} | ${cell(fact.content.visibleBasis)} |`);
+  }
+}
+
+function renderContextSignals(lines, signals) {
+  lines.push(
+    "",
+    "#### Worksheet context SIGNAL",
+    "",
+    "图文联合提示，非工程结论。",
+    "",
+    "| scope | signalValue | textBasis | linkedSourceRows | linkedVisualLabels | requiresEngineeringReview |",
+    "| --- | --- | --- | --- | --- | --- |",
+  );
+  for (const signal of signals) {
+    const linkedSourceRows = signal.content.linkedSourceRows
+      .map(({ tableId, sourceRow }) => `${tableId}:${sourceRow}`)
+      .join("; ");
+    const linkedVisualLabels = signal.content.linkedVisualLabels
+      .map(({ label, tableId, sourceRow }) => `${label} -> ${tableId}:${sourceRow}`)
+      .join("; ");
+    lines.push(`| ${cell(signal.content.scope)} | ${cell(signal.content.signalValue)} | ${cell(signal.content.textBasis)} | ${cell(linkedSourceRows)} | ${cell(linkedVisualLabels)} | ${cell(signal.content.requiresEngineeringReview)} |`);
+  }
+}
+
+function renderContextSnapshot(lines, worksheet) {
+  const factorBySource = new Map(worksheet.calculationResult.factors.map((factor) => [sourceKey(factor.source), factor]));
+  const rows = worksheet.governanceRows
+    .map((governance) => ({ governance, factor: factorBySource.get(sourceKey(governance.source)) }))
+    .sort((left, right) => (
+      left.governance.source.sourceRow - right.governance.source.sourceRow
+        || left.governance.source.tableId.localeCompare(right.governance.source.tableId)
+    ));
+  lines.push(
+    "",
+    "#### 分析上下文快照",
+    "",
+    `dimensionDescription: ${inline(rows[0]?.governance.dimensionDescription)}`,
+    "",
+    "| tableId | sourceRow | partName | partSubsystem | partCategory | factorName | factorDescription | nominal | upperTolerance | lowerTolerance | sigmaLevel | sourceCells |",
+    "| --- | ---: | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- |",
+  );
+  for (const { governance, factor } of rows) {
+    const sourceCells = Object.values(governance.source.sourceCells).sort().join("; ");
+    lines.push(`| ${cell(governance.source.tableId)} | ${cell(governance.source.sourceRow)} | ${cell(governance.partSubsystem)} | ${cell(governance.partSubsystem)} | ${cell(governance.partCategory)} | ${cell(factor?.factorName)} | ${cell(governance.factorDescription)} | ${cell(governance.nominal)} | ${cell(governance.upperTolerance)} | ${cell(governance.lowerTolerance)} | ${cell(governance.sigmaLevel)} | ${cell(sourceCells)} |`);
+  }
+}
+
+function renderTolerance(lines, worksheet, options) {
+  const section = worksheet.sections.toleranceChainValidity;
   const facts = worksheet.statements.filter((statement) => (
     statement.type === "FACT" && statement.section === "tolerance-chain-validity"
   ));
   const signals = worksheet.statements.filter((statement) => (
     statement.type === "SIGNAL" && statement.section === "tolerance-chain-validity"
   ));
+  const contextSignals = signals.filter((statement) => (
+    "signalKind" in statement.content && statement.content.signalKind === "image_text_context_review"
+  ));
+  const contextual = contextSignals.length > 0;
 
-  if (facts.length > 0) {
-    lines.push("", "| 类型 | statementId | scope | observedValue | confidence | reviewStatus | image | visibleBasis |", "| --- | --- | --- | --- | --- | --- | --- | --- |");
-    for (const fact of facts) {
-      lines.push(`| FACT | ${cell(fact.statementId)} | ${cell(fact.content.scope)} | ${cell(fact.content.observedValue)} | ${cell(fact.content.confidence)} | ${cell(fact.content.reviewStatus)} | ${imageLink(fact.content.imageReference, options)} | ${cell(fact.content.visibleBasis)} |`);
+  lines.push(`章节状态：${code(section.status)}`);
+  if (contextual) {
+    lines.push("");
+    renderScopeMatrix(lines, worksheet, contextSignals);
+  } else {
+    lines.push(
+      "",
+      "| scope | status | relatedStatementIds | clarificationIds |",
+      "| --- | --- | --- | --- |",
+    );
+    for (const item of section.items) {
+      lines.push(`| ${cell(item.scope)} | ${cell(item.status)} | ${cell(item.relatedStatementIds.join("; "))} | ${cell(item.clarificationIds.join("; "))} |`);
     }
   }
 
-  for (const signal of signals) {
+  renderVisualFacts(lines, facts, options, contextual);
+  if (contextual) {
+    renderContextSignals(lines, contextSignals);
+    renderContextSnapshot(lines, worksheet);
+  }
+
+  for (const signal of signals.filter((statement) => !contextSignals.includes(statement))) {
     lines.push("", `- SIGNAL ${code(signal.statementId)}：需要 ME 评审`);
     if (signal.content.triggerFactReferences !== undefined) {
       lines.push(`- triggerFactReferences: ${signal.content.triggerFactReferences.map(inline).join("; ")}`);

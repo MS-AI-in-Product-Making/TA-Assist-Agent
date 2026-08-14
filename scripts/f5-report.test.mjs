@@ -9,6 +9,13 @@ import { renderF5Report } from "./f5-report.mjs";
 
 const CONTENT_HASH = "a".repeat(64);
 const IMAGE_HASH = "b".repeat(64);
+const CORE_SCOPES = [
+  "tolerance_loop_closure",
+  "datum_chain",
+  "assembly_datum_face",
+  "stack_start",
+  "direction",
+];
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -116,7 +123,7 @@ function observation(overrides = {}) {
   };
 }
 
-function completedReport({ observations = [], factorName, governanceGap = false } = {}) {
+function completedReport({ observations = [], factorName, governanceGap = false, contextual = false } = {}) {
   const calculationResult = createCalculation(calculationRequest(factorName));
   if (calculationResult.status !== "completed") throw new Error("Expected completed calculation fixture.");
   const imageReference = {
@@ -143,20 +150,69 @@ function completedReport({ observations = [], factorName, governanceGap = false 
     qualitySignals: [],
     governanceStatus: governanceGap && index === 0 ? "needs_governance" : "complete",
     imageReference,
-    source: { ...factor.source, sourceCells: {} },
+    source: {
+      ...factor.source,
+      sourceCells: {
+        partName: `Analysis-A!I${factor.source.sourceRow}`,
+        factorName: `Analysis-A!A${factor.source.sourceRow}`,
+        nominalValue: `Analysis-A!B${factor.source.sourceRow}`,
+        upperTolerance: `Analysis-A!C${factor.source.sourceRow}`,
+        lowerTolerance: `Analysis-A!D${factor.source.sourceRow}`,
+        standardDeviation: `Analysis-A!F${factor.source.sourceRow}`,
+      },
+    },
   }));
+  const contextualObservations = CORE_SCOPES.map((scope) => ({
+    scope,
+    visualObservation: {
+      observedValue: "visible",
+      confidence: "high",
+      visibleBasis: `Visible marker for ${scope}.`,
+      reviewStatus: "unreviewed",
+    },
+    contextualSignal: {
+      signalValue: scope === "direction" ? "indicated_consistent" : "ambiguous",
+      textBasis: `Image and worksheet context require review for ${scope}.`,
+      linkedSourceRows: scope === "direction"
+        ? [{ tableId: governanceRows[0].source.tableId, sourceRow: governanceRows[0].source.sourceRow }]
+        : [],
+      linkedVisualLabels: scope === "direction"
+        ? [{ label: "direction-label", tableId: governanceRows[0].source.tableId, sourceRow: governanceRows[0].source.sourceRow }]
+        : [],
+      requiresEngineeringReview: true,
+    },
+  }));
+  const contextSnapshot = {
+    dimensionDescription: governanceRows[0].dimensionDescription,
+    rows: governanceRows.map((row, index) => ({
+      tableId: row.source.tableId,
+      sourceRow: row.source.sourceRow,
+      partName: `part-${index + 1}`,
+      partSubsystem: row.partSubsystem,
+      partCategory: row.partCategory,
+      factorName: calculationResult.factors[index].factorName,
+      factorDescription: row.factorDescription,
+      nominal: row.nominal,
+      upperTolerance: row.upperTolerance,
+      lowerTolerance: row.lowerTolerance,
+      sigmaLevel: row.sigmaLevel,
+      sourceCells: row.source.sourceCells,
+    })).reverse(),
+  };
+  const worksheet = {
+    worksheetName: "Analysis-A",
+    imageReference,
+    governanceRows,
+    calculationResult,
+    imageObservations: contextual ? contextualObservations : observations,
+    ...(contextual ? { observationVersion: "f5-image-observation-v2", contextSnapshot } : {}),
+  };
   return createF5DataInterpretation({
     contractVersion: "v1",
     inputClassification: "confidential",
     workbook: { fileName: "Anonymous.xlsx", contentHash: CONTENT_HASH },
     knowledgeBaseVersion: "interpretation-rules-v1",
-    worksheets: [{
-      worksheetName: "Analysis-A",
-      imageReference,
-      governanceRows,
-      calculationResult,
-      imageObservations: observations,
-    }],
+    worksheets: [worksheet],
   });
 }
 
@@ -196,6 +252,12 @@ function chapter(markdown, heading, nextHeading) {
   return markdown.slice(start, end);
 }
 
+function section(markdown, heading, nextHeading) {
+  const start = markdown.indexOf(heading);
+  const end = nextHeading === undefined ? markdown.length : markdown.indexOf(nextHeading, start + heading.length);
+  return markdown.slice(start, end < 0 ? markdown.length : end);
+}
+
 function toleranceStatusReport(status) {
   if (status === "not_evaluated") return completedReport();
   if (status === "needs_review") return completedReport({ observations: [observation()] });
@@ -230,6 +292,87 @@ function toleranceStatusReport(status) {
 }
 
 describe("renderF5Report", () => {
+  it("renders v2 scope matrix, isolated visual FACTs, and contextual SIGNALs", () => {
+    const markdown = chapter(
+      renderF5Report(completedReport({ contextual: true })),
+      "## 1. 公差链有效性",
+      "## 2. 能力与规格对比",
+    );
+
+    expect(markdown).toContain("五项状态矩阵");
+    expect(markdown).toContain("Visual FACT");
+    expect(markdown).toContain("Worksheet context SIGNAL");
+    expect(markdown).toContain("图文联合提示，非工程结论");
+    const matrix = section(markdown, "#### 五项状态矩阵", "#### Visual FACT");
+    for (const scope of CORE_SCOPES) {
+      expect(matrix.match(new RegExp(`\\| ${scope} \\|`, "g"))).toHaveLength(1);
+    }
+
+    const visualFacts = section(markdown, "#### Visual FACT", "#### Worksheet context SIGNAL");
+    for (const label of ["observedValue", "confidence", "reviewStatus", "image", "visibleBasis"]) {
+      expect(visualFacts).toContain(label);
+    }
+    expect(visualFacts).not.toMatch(/textBasis|context snapshot/i);
+
+    const contextSignals = section(markdown, "#### Worksheet context SIGNAL", "#### 分析上下文快照");
+    for (const label of ["signalValue", "textBasis", "linkedSourceRows", "linkedVisualLabels", "requiresEngineeringReview"]) {
+      expect(contextSignals).toContain(label);
+    }
+    expect(contextSignals).toContain("direction-label");
+    expect(contextSignals).toContain("table-a:2");
+  });
+
+  it("renders every v2 context snapshot row in source order with original, mapped, numeric, and source-cell fields", () => {
+    const report = clone(completedReport({ contextual: true }));
+    report.worksheets[0].governanceRows.reverse();
+    const markdown = chapter(
+      renderF5Report(report),
+      "## 1. 公差链有效性",
+      "## 2. 能力与规格对比",
+    );
+    const snapshot = section(markdown, "#### 分析上下文快照", "#### 澄清卡片");
+
+    for (const label of [
+      "dimensionDescription",
+      "partName",
+      "partSubsystem",
+      "partCategory",
+      "factorName",
+      "factorDescription",
+      "nominal",
+      "upperTolerance",
+      "lowerTolerance",
+      "sigmaLevel",
+      "sourceCells",
+    ]) {
+      expect(snapshot).toContain(label);
+    }
+    for (const sourceRow of [2, 3, 4, 5]) expect(snapshot).toContain(`| table-a | ${sourceRow} |`);
+    expect(snapshot.indexOf("| table-a | 2 |")).toBeLessThan(snapshot.indexOf("| table-a | 3 |"));
+    expect(snapshot.indexOf("| table-a | 3 |")).toBeLessThan(snapshot.indexOf("| table-a | 4 |"));
+    expect(snapshot.indexOf("| table-a | 4 |")).toBeLessThan(snapshot.indexOf("| table-a | 5 |"));
+    expect(snapshot).toContain("controlled-subsystem");
+    expect(snapshot).toContain("factor\\|one");
+    expect(snapshot).toContain("Analysis-A\\!A2");
+    expect(markdown).not.toMatch(/[A-Za-z]:[\\/]/);
+  });
+
+  it("preserves v1 rendering and keeps no-v2 fallback clarifications", () => {
+    const legacy = renderF5Report(completedReport({ observations: [observation()] }));
+    expect(legacy).toContain("- SIGNAL `f5-signal-structural-evidence-review-stack_start`：需要 ME 评审");
+    expect(legacy).not.toContain("五项状态矩阵");
+    expect(legacy).not.toContain("Worksheet context SIGNAL");
+
+    const fallback = chapter(
+      renderF5Report(completedReport()),
+      "## 1. 公差链有效性",
+      "## 2. 能力与规格对比",
+    );
+    expect(fallback).toContain("not_evaluated");
+    expect(fallback).toContain("drawing_evidence_not_evaluated");
+    expect(fallback).toContain("questionForReviewer");
+  });
+
   it("renders the five fixed chapters in order with chapter-scoped FACT and RULE provenance", () => {
     const markdown = renderF5Report(completedReport({ observations: [observation({ confidence: "high" })] }));
     const headings = [
