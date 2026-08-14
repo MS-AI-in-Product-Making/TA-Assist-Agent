@@ -6288,6 +6288,22 @@ export const f6DatumEvidenceSchema = z.object({
   });
 });
 
+const validateF6GovernedEvidenceIdentities = (
+  evidenceCollections: ReadonlyArray<readonly ["supplierCapabilityEvidence" | "datumEvidence", ReadonlyArray<{ source: string; contentHash: string }> | undefined]>,
+  context: z.RefinementCtx,
+): void => {
+  evidenceCollections.forEach(([field, records]) => {
+    const seen = new Set<string>();
+    records?.forEach((record, index) => {
+      const identity = `${record.source}\u0000${record.contentHash}`;
+      if (seen.has(identity)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: `${field} governed identities must be unique`, path: [field, index] });
+      }
+      seen.add(identity);
+    });
+  });
+};
+
 export const f6CostEvidenceSchema = z.object({
   evidenceVersion: z.literal("cost-model-v1"),
   model: z.string().min(1),
@@ -6496,16 +6512,27 @@ export const f6OptimizationRequestSchema = z.object({
   worksheets: z.array(f6WorksheetInputSchema).min(1),
 }).strict().superRefine((request, context) => {
   const selected = request.selectedWorksheetNames;
-  const worksheetNames = request.worksheets.map(({ worksheetName }) => worksheetName);
-  if (new Set(selected).size !== selected.length) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: "selected worksheet names must be unique", path: ["selectedWorksheetNames"] });
-  }
-  if (new Set(worksheetNames).size !== worksheetNames.length) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet input names must be unique", path: ["worksheets"] });
-  }
-  if (selected.length !== worksheetNames.length || selected.some((name) => !worksheetNames.includes(name))) {
+  const selectedSet = new Set<string>();
+  selected.forEach((name, index) => {
+    if (selectedSet.has(name)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "selected worksheet names must be unique", path: ["selectedWorksheetNames", index] });
+    }
+    selectedSet.add(name);
+  });
+  const worksheetNameSet = new Set<string>();
+  request.worksheets.forEach(({ worksheetName }, index) => {
+    if (worksheetNameSet.has(worksheetName)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet input names must be unique", path: ["worksheets", index, "worksheetName"] });
+    }
+    worksheetNameSet.add(worksheetName);
+  });
+  if (selectedSet.size !== worksheetNameSet.size || [...selectedSet].some((name) => !worksheetNameSet.has(name))) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "selected worksheet names must exactly match worksheet inputs", path: ["selectedWorksheetNames"] });
   }
+  validateF6GovernedEvidenceIdentities([
+    ["supplierCapabilityEvidence", request.supplierCapabilityEvidence],
+    ["datumEvidence", request.datumEvidence],
+  ], context);
   request.worksheets.forEach((worksheet, index) => {
     if (worksheet.baselineCalculation.workbookContentHash !== request.workbook.contentHash) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline workbook hash must match request workbook", path: ["worksheets", index, "baselineCalculation", "workbookContentHash"] });
@@ -6598,7 +6625,12 @@ export const f6ProvenanceSchema = z.object({
   supplierCapabilityEvidence: z.array(f6SupplierCapabilityEvidenceSchema).optional(),
   datumEvidence: z.array(f6DatumEvidenceSchema).optional(),
   costEvidence: f6CostEvidenceSchema.optional(),
-}).strict();
+}).strict().superRefine((provenance, context) => {
+  validateF6GovernedEvidenceIdentities([
+    ["supplierCapabilityEvidence", provenance.supplierCapabilityEvidence],
+    ["datumEvidence", provenance.datumEvidence],
+  ], context);
+});
 
 export const f6OptimizationResultSchema = z.object({
   contractVersion: contractVersionSchema,
@@ -6611,10 +6643,13 @@ export const f6OptimizationResultSchema = z.object({
   summary: f6SummarySchema,
   provenance: f6ProvenanceSchema,
 }).strict().superRefine((result, context) => {
-  const worksheetNames = result.worksheets.map(({ worksheetName }) => worksheetName);
-  if (new Set(worksheetNames).size !== worksheetNames.length) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet result names must be unique", path: ["worksheets"] });
-  }
+  const worksheetNames = new Set<string>();
+  result.worksheets.forEach(({ worksheetName }, index) => {
+    if (worksheetNames.has(worksheetName)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet result names must be unique", path: ["worksheets", index, "worksheetName"] });
+    }
+    worksheetNames.add(worksheetName);
+  });
   const statusCounts = {
     completed: result.worksheets.filter(({ status }) => status === "completed").length,
     partially_completed: result.worksheets.filter(({ status }) => status === "partially_completed").length,
@@ -6705,6 +6740,26 @@ export const f6OptimizationResultSchema = z.object({
     }
     worksheet.options.forEach((option, optionIndex) => {
       if (option.status !== "completed") return;
+      for (const field of ["mean", "rssSigma", "cp", "cpk", "yield", "dpm"] as const) {
+        if (!f6NearlyEqual(option.baselineMetrics[field], worksheet.baselineMetrics[field])) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "option baseline metrics must match the parent worksheet", path: ["worksheets", worksheetIndex, "options", optionIndex, "baselineMetrics", field] });
+        }
+      }
+      option.factorOverrides.forEach((override, overrideIndex) => {
+        if (override.worksheetName !== worksheet.worksheetName) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "factor override worksheet must match the parent worksheet", path: ["worksheets", worksheetIndex, "options", optionIndex, "factorOverrides", overrideIndex, "worksheetName"] });
+        }
+      });
+      option.toleranceChanges.forEach((change, changeIndex) => {
+        if (change.worksheetName !== worksheet.worksheetName) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "tolerance change worksheet must match the parent worksheet", path: ["worksheets", worksheetIndex, "options", optionIndex, "toleranceChanges", changeIndex, "worksheetName"] });
+        }
+      });
+      option.reverseSolve?.toleranceChanges.forEach((change, changeIndex) => {
+        if (change.worksheetName !== worksheet.worksheetName) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "reverse-solve tolerance change worksheet must match the parent worksheet", path: ["worksheets", worksheetIndex, "options", optionIndex, "reverseSolve", "toleranceChanges", changeIndex, "worksheetName"] });
+        }
+      });
       if (worksheet.roiStatus === "not_computed" && option.roiScore !== "not_computed") {
         context.addIssue({ code: z.ZodIssueCode.custom, message: "not-computed ROI requires every completed option ROI score to remain uncomputed", path: ["worksheets", worksheetIndex, "options", optionIndex, "roiScore"] });
       }
@@ -6848,14 +6903,26 @@ export const f6ComposedEngineeringReportSchema = z.object({
   blockedWorksheets: z.array(f6BlockedWorksheetReportSchema),
   worksheets: z.array(f6ComposedWorksheetReportSchema),
 }).strict().superRefine((report, context) => {
-  const blockedNames = report.blockedWorksheets.map(({ worksheetName }) => worksheetName);
-  const worksheetNames = report.worksheets.map(({ worksheetName }) => worksheetName);
-  if (new Set(blockedNames).size !== blockedNames.length || new Set(worksheetNames).size !== worksheetNames.length) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: "report worksheet identities must be unique" });
+  if (report.blockedWorksheets.length + report.worksheets.length === 0) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "report requires at least one blocked or ready worksheet", path: ["worksheets"] });
   }
-  if (blockedNames.some((name) => worksheetNames.includes(name))) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: "blocked and ready worksheet identities must be disjoint" });
-  }
+  const blockedNames = new Set<string>();
+  report.blockedWorksheets.forEach(({ worksheetName }, index) => {
+    if (blockedNames.has(worksheetName)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "blocked worksheet identities must be unique", path: ["blockedWorksheets", index, "worksheetName"] });
+    }
+    blockedNames.add(worksheetName);
+  });
+  const worksheetNames = new Set<string>();
+  report.worksheets.forEach(({ worksheetName }, index) => {
+    if (worksheetNames.has(worksheetName)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "ready worksheet identities must be unique", path: ["worksheets", index, "worksheetName"] });
+    }
+    if (blockedNames.has(worksheetName)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "blocked and ready worksheet identities must be disjoint", path: ["worksheets", index, "worksheetName"] });
+    }
+    worksheetNames.add(worksheetName);
+  });
   const statuses = report.worksheets.map(({ status }) => status);
   const expectedStatus = statuses.includes("FAIL")
     ? "FAIL"

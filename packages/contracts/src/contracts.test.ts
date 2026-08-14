@@ -4418,6 +4418,17 @@ describe("F5.1 objective interpretation contracts", () => {
         expect(f6OptimizationRequestSchema.safeParse({ ...f6Request, workbook: { ...f6Request.workbook, contentHash: "0".repeat(64) } }).success).toBe(false);
       });
 
+      it("rejects duplicate governed evidence identities in requests at the second record", () => {
+        for (const [field, evidence] of [
+          ["supplierCapabilityEvidence", supplierEvidence],
+          ["datumEvidence", datumEvidence],
+        ] as const) {
+          const parsed = f6OptimizationRequestSchema.safeParse({ ...f6Request, [field]: [evidence, { ...evidence }] });
+          expect(parsed.success, field).toBe(false);
+          if (!parsed.success) expect(parsed.error.issues.map(({ path }) => path)).toContainEqual([field, 1]);
+        }
+      });
+
       it("accepts strict solver DTOs and versioned supplier, datum, and cost evidence", () => {
         expect(f6ToleranceChangeSchema.parse(completedOption.toleranceChanges[0])).toEqual(completedOption.toleranceChanges[0]);
         expect(f6ControlledScenarioSchema.safeParse({ scenarioId: "scenario-1", optionKind: "reduce_top_contributor_20", factorOverrides: completedOption.factorOverrides }).success).toBe(true);
@@ -4477,6 +4488,55 @@ describe("F5.1 objective interpretation contracts", () => {
           ...f6Result,
           worksheets: [{ ...f6Result.worksheets[0], options: [{ ...completedOption, relativeCost: 0, roiScore: 0 }] }],
         }).success).toBe(false);
+      });
+
+      it("binds every completed option baseline and worksheet identity to its parent worksheet", () => {
+        const tamperedOptions = [
+          { ...completedOption, baselineMetrics: { ...completedOption.baselineMetrics, mean: completedOption.baselineMetrics.mean + 1 } },
+          { ...completedOption, factorOverrides: [{ ...completedOption.factorOverrides[0], worksheetName: "Analysis-B" }] },
+          { ...completedOption, toleranceChanges: [{ ...completedOption.toleranceChanges[0], worksheetName: "Analysis-B" }] },
+          {
+            ...completedOption,
+            reverseSolve: {
+              targetCpk: 1.33,
+              targetRssSigma: 0.04,
+              strategy: "single-factor",
+              toleranceChanges: [{ ...completedOption.toleranceChanges[0], worksheetName: "Analysis-B" }],
+              residualError: 0,
+            },
+          },
+        ];
+        for (const option of tamperedOptions) {
+          expect(f6OptimizationResultSchema.safeParse({
+            ...f6Result,
+            worksheets: [{ ...f6Result.worksheets[0], options: [option] }],
+          }).success).toBe(false);
+        }
+      });
+
+      it("rejects duplicate governed evidence identities in input-rejected results at the second record", () => {
+        const rejectedResult = {
+          ...f6Result,
+          status: "input_rejected",
+          worksheets: [{
+            worksheetName: "Analysis-A",
+            status: "input_rejected",
+            inputFindings: [{ findingCode: "missing", severity: "Critical", message: "Input is missing.", evidenceReferences: [] }],
+            options: [], risks: [], clarifications: [],
+          }],
+          summary: { worksheetCount: 1, completedWorksheetCount: 0, partiallyCompletedWorksheetCount: 0, inputRejectedWorksheetCount: 1, completedOptionCount: 0, calculationFailedOptionCount: 0, insufficientEvidenceOptionCount: 0 },
+        };
+        for (const [field, evidence] of [
+          ["supplierCapabilityEvidence", supplierEvidence],
+          ["datumEvidence", datumEvidence],
+        ] as const) {
+          const parsed = f6OptimizationResultSchema.safeParse({
+            ...rejectedResult,
+            provenance: { ...rejectedResult.provenance, [field]: [evidence, { ...evidence }] },
+          });
+          expect(parsed.success, field).toBe(false);
+          if (!parsed.success) expect(parsed.error.issues.map(({ path }) => path)).toContainEqual(["provenance", field, 1]);
+        }
       });
 
       it("requires partially completed worksheets to contain both completed and failed options", () => {
@@ -4685,9 +4745,31 @@ describe("F5.1 objective interpretation contracts", () => {
           }],
         };
         expect(f6ComposedEngineeringReportSchema.parse(report)).toEqual(report);
+        expect(f6ComposedEngineeringReportSchema.safeParse({ ...report, blockedWorksheets: [], worksheets: [] }).success).toBe(false);
         expect(f6ComposedEngineeringReportSchema.safeParse({ ...report, workbookExecutiveSummary: Array(6).fill("bullet") }).success).toBe(false);
         expect(f6ComposedEngineeringReportSchema.safeParse({ ...report, worksheets: [{ ...report.worksheets[0], sections: { ...report.worksheets[0].sections, executiveSummary: Array(6).fill("bullet") } }] }).success).toBe(false);
         expect(f6ComposedEngineeringReportSchema.safeParse({ ...report, worksheets: [{ ...report.worksheets[0], sections: { ...report.worksheets[0].sections, finalConclusion: Array(11).fill("bullet") } }] }).success).toBe(false);
+
+        const duplicateBlocked = f6ComposedEngineeringReportSchema.safeParse({
+          ...report,
+          blockedWorksheets: [report.blockedWorksheets[0], { ...report.blockedWorksheets[0] }],
+        });
+        expect(duplicateBlocked.success).toBe(false);
+        if (!duplicateBlocked.success) expect(duplicateBlocked.error.issues.map(({ path }) => path)).toContainEqual(["blockedWorksheets", 1, "worksheetName"]);
+
+        const duplicateReady = f6ComposedEngineeringReportSchema.safeParse({
+          ...report,
+          worksheets: [report.worksheets[0], { ...report.worksheets[0] }],
+        });
+        expect(duplicateReady.success).toBe(false);
+        if (!duplicateReady.success) expect(duplicateReady.error.issues.map(({ path }) => path)).toContainEqual(["worksheets", 1, "worksheetName"]);
+
+        const crossSet = f6ComposedEngineeringReportSchema.safeParse({
+          ...report,
+          worksheets: [{ ...report.worksheets[0], worksheetName: report.blockedWorksheets[0].worksheetName }],
+        });
+        expect(crossSet.success).toBe(false);
+        if (!crossSet.success) expect(crossSet.error.issues.map(({ path }) => path)).toContainEqual(["worksheets", 0, "worksheetName"]);
 
         const statusCases = [
           { cpk: 0.99, targetCpk: 1.33, violation: false, missing: false, rating: "Low", expected: "FAIL" },
