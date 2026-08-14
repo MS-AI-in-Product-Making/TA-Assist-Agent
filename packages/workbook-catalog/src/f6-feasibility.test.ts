@@ -135,6 +135,34 @@ describe("F6 capability and evidence feasibility gates", () => {
     expect(result.status).toBe("insufficient_evidence");
   });
 
+  it.each([
+    ["T0", Number.NaN],
+    ["T0", -0.1],
+    ["T1", Number.NaN],
+    ["T1", -0.1],
+    ["T2", Number.NaN],
+    ["T2", -0.1],
+    ["T3", Number.NaN],
+    ["T3", -0.1],
+  ] as const)(
+    "rejects governed tier %s with invalid requested tolerance band %s",
+    (capabilityTier, requestedToleranceBand) => {
+      const result = assessToleranceFeasibility({
+        requestedToleranceBand,
+        evidence: supplierEvidence({ capabilityTier }),
+      });
+
+      expect(result).toEqual({
+        status: "insufficient_evidence",
+        reasonCodes: ["invalid_requested_tolerance_band"],
+        evidenceReferences: ["evidence/supplier-a.json"],
+      });
+      expect(f6FeasibilityAssessmentSchema.parse(result)).toEqual(result);
+      expect(Object.isFrozen(result)).toBe(true);
+      expect(Object.isFrozen(result.evidenceReferences)).toBe(true);
+    },
+  );
+
   it("does not turn internal guidance alone into a controlled rejection", () => {
     const result = assessToleranceFeasibility({
       requestedToleranceBand: 0.1,
@@ -147,7 +175,7 @@ describe("F6 capability and evidence feasibility gates", () => {
   });
 
   it("returns a strict evidence-limited supplier option when evidence is missing or malformed", () => {
-    const missing = assessSupplierScenario();
+    const missing = assessSupplierScenario({});
     const malformed = assessSupplierScenario({
       evidence: { ...supplierEvidence(), contentHash: "bad" },
     });
@@ -226,9 +254,9 @@ describe("F6 capability and evidence feasibility gates", () => {
   );
 
   it("fails closed for missing, malformed, or unconfirmed datum evidence", () => {
-    const missing = assessDatumScenario();
-    const malformed = assessDatumScenario({ ...datumEvidence(), factorDirections: [] });
-    const unconfirmed = assessDatumScenario({ ...datumEvidence(), reviewStatus: "pending" });
+    const missing = assessDatumScenario({});
+    const malformed = assessDatumScenario({ evidence: { ...datumEvidence(), factorDirections: [] } });
+    const unconfirmed = assessDatumScenario({ evidence: { ...datumEvidence(), reviewStatus: "pending" } });
 
     for (const result of [missing, malformed, unconfirmed]) {
       expect(result.option.status).toBe("insufficient_evidence");
@@ -241,7 +269,7 @@ describe("F6 capability and evidence feasibility gates", () => {
 
   it("requires engineering review for confirmed datum evidence and produces no numeric delta", () => {
     const evidence = datumEvidence();
-    const result = assessDatumScenario(evidence);
+    const result = assessDatumScenario({ evidence });
 
     expect(f6DatumEvidenceSchema.parse(evidence)).toEqual(evidence);
     expect(result.option.status).toBe("insufficient_evidence");
@@ -256,17 +284,47 @@ describe("F6 capability and evidence feasibility gates", () => {
     expect(f6FeasibilityAssessmentSchema.parse(result.feasibility)).toEqual(result.feasibility);
   });
 
-  it("returns insufficient cost and ROI without governed evidence or a matching option", () => {
-    expect(assessCost()).toEqual({
+  it("returns insufficient cost and ROI without governed evidence", () => {
+    const missing = assessCost({ optionKind: "improve_supplier_capability" });
+    const malformed = assessCost({
+      evidence: { ...costEvidence(), contentHash: "bad" },
+      optionKind: "improve_supplier_capability",
+    });
+
+    for (const result of [missing, malformed]) {
+      expect(result).toEqual({
+        relativeCost: "insufficient_evidence",
+        roiScore: "not_computed",
+        roiPolicyStatus: "insufficient_evidence",
+        reasonCodes: ["governed_cost_evidence_missing_or_invalid"],
+        evidenceReferences: [],
+      });
+      expect(Object.isFrozen(result)).toBe(true);
+      expect(Object.isFrozen(result.reasonCodes)).toBe(true);
+      expect(Object.isFrozen(result.evidenceReferences)).toBe(true);
+    }
+  });
+
+  it("preserves governed cost and ROI policy evidence when the option is not applicable", () => {
+    const result = assessCost({ evidence: costEvidence(), optionKind: "requirement_change" });
+
+    expect(result).toEqual({
       relativeCost: "insufficient_evidence",
       roiScore: "not_computed",
-      roiPolicyStatus: "insufficient_evidence",
-      evidenceReferences: [],
+      roiPolicyStatus: "governed_not_computed",
+      roiPolicyVersion: "roi-v2",
+      roiCalculationReference: { artifact: "policies/roi-v2.json", contentHash: HASH },
+      reasonCodes: ["cost_evidence_not_applicable"],
+      evidenceReferences: [
+        { artifact: "evidence/cost-model.json", contentHash: HASH },
+        { artifact: "policies/roi-v2.json", contentHash: HASH },
+      ],
     });
-    expect(assessCost({ evidence: costEvidence(), optionKind: "requirement_change" }).relativeCost)
-      .toBe("insufficient_evidence");
-    expect(assessCost({ evidence: { ...costEvidence(), contentHash: "bad" }, optionKind: "improve_supplier_capability" }).relativeCost)
-      .toBe("insufficient_evidence");
+    expect(Object.isFrozen(result)).toBe(true);
+    expect(Object.isFrozen(result.reasonCodes)).toBe(true);
+    expect(Object.isFrozen(result.roiCalculationReference)).toBe(true);
+    expect(Object.isFrozen(result.evidenceReferences)).toBe(true);
+    expect(Object.isFrozen(result.evidenceReferences[0])).toBe(true);
   });
 
   it("looks up relative cost and returns governed ROI policy references without computing ROI", () => {
@@ -280,6 +338,7 @@ describe("F6 capability and evidence feasibility gates", () => {
       roiPolicyStatus: "governed_not_computed",
       roiPolicyVersion: "roi-v2",
       roiCalculationReference: { artifact: "policies/roi-v2.json", contentHash: HASH },
+      reasonCodes: [],
       evidenceReferences: [
         { artifact: "evidence/cost-model.json", contentHash: HASH },
         { artifact: "policies/roi-v2.json", contentHash: HASH },

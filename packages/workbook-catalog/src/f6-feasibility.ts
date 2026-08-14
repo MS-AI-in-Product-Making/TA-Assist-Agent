@@ -29,9 +29,13 @@ export interface SupplierScenarioInput {
   readonly requestedToleranceBand?: number;
 }
 
+export interface DatumScenarioInput {
+  readonly evidence?: unknown;
+}
+
 export interface CostAssessmentInput {
   readonly evidence?: unknown;
-  readonly optionKind?: F6OptionKind;
+  readonly optionKind: F6OptionKind;
 }
 
 export interface F6CostAssessment {
@@ -40,6 +44,7 @@ export interface F6CostAssessment {
   readonly roiPolicyStatus: "insufficient_evidence" | "governed_not_computed";
   readonly roiPolicyVersion?: string;
   readonly roiCalculationReference?: F6CostEvidence["roiCalculationReference"];
+  readonly reasonCodes: readonly string[];
   readonly evidenceReferences: readonly ArtifactReference[];
 }
 
@@ -100,6 +105,9 @@ export function assessToleranceFeasibility(input: ToleranceFeasibilityInput): F6
 
   const evidence = parsed.data;
   const references = [evidence.source];
+  if (!Number.isFinite(input.requestedToleranceBand) || input.requestedToleranceBand < 0) {
+    return feasibility("insufficient_evidence", ["invalid_requested_tolerance_band"], references);
+  }
   if (evidence.capabilityTier === "T0") {
     const reasonCode = input.guidanceStatus === "internal_guidance_exceeded"
       ? "internal_guidance_exceeded_without_t1_bound"
@@ -111,9 +119,6 @@ export function assessToleranceFeasibility(input: ToleranceFeasibilityInput): F6
   }
   if (evidence.capabilityTier === "T3") {
     return feasibility("requires_engineering_review", ["t3_empirical_requires_engineering_review"], references);
-  }
-  if (!Number.isFinite(input.requestedToleranceBand) || input.requestedToleranceBand < 0) {
-    return feasibility("insufficient_evidence", ["t1_governed_bound_incomplete"], references);
   }
 
   if (input.requestedToleranceBand >= evidence.achievableToleranceBand) {
@@ -152,27 +157,7 @@ function scenarioResult(
   });
 }
 
-function supplierScenarioInput(
-  inputOrEvidence: SupplierScenarioInput | unknown,
-  requestedToleranceBandArgument: number | undefined,
-): { readonly evidence: unknown; readonly requestedToleranceBand: number | undefined } {
-  if (inputOrEvidence !== null && typeof inputOrEvidence === "object" && "evidence" in inputOrEvidence) {
-    const input = inputOrEvidence as SupplierScenarioInput;
-    return {
-      evidence: input.evidence,
-      requestedToleranceBand: input.requestedToleranceBand ?? requestedToleranceBandArgument,
-    };
-  }
-  return { evidence: inputOrEvidence, requestedToleranceBand: requestedToleranceBandArgument };
-}
-
-export function assessSupplierScenario(input?: SupplierScenarioInput): F6EvidenceScenarioResult;
-export function assessSupplierScenario(evidence?: unknown, requestedToleranceBand?: number): F6EvidenceScenarioResult;
-export function assessSupplierScenario(
-  inputOrEvidence?: SupplierScenarioInput | unknown,
-  requestedToleranceBandArgument?: number,
-): F6EvidenceScenarioResult {
-  const input = supplierScenarioInput(inputOrEvidence, requestedToleranceBandArgument);
+export function assessSupplierScenario(input: SupplierScenarioInput): F6EvidenceScenarioResult {
   const parsed = f6SupplierCapabilityEvidenceSchema.safeParse(input.evidence);
   if (!parsed.success) {
     return scenarioResult(
@@ -202,8 +187,8 @@ export function assessSupplierScenario(
   );
 }
 
-export function assessDatumScenario(evidence?: unknown): F6EvidenceScenarioResult {
-  const parsed = f6DatumEvidenceSchema.safeParse(evidence);
+export function assessDatumScenario(input: DatumScenarioInput): F6EvidenceScenarioResult {
+  const parsed = f6DatumEvidenceSchema.safeParse(input.evidence);
   if (!parsed.success) {
     return scenarioResult(
       "tighten_datum_strategy",
@@ -226,38 +211,39 @@ export function assessDatumScenario(evidence?: unknown): F6EvidenceScenarioResul
   );
 }
 
-function insufficientCost(): F6CostAssessment {
+function governedCostReferences(evidence: F6CostEvidence): ArtifactReference[] {
+  return uniqueArtifactReferences([
+    evidenceReference(evidence),
+    evidence.roiCalculationReference,
+  ]);
+}
+
+function insufficientCost(reasonCode: string): F6CostAssessment {
   return immutable({
     relativeCost: "insufficient_evidence",
     roiScore: "not_computed",
     roiPolicyStatus: "insufficient_evidence",
+    reasonCodes: [reasonCode],
     evidenceReferences: [],
   });
 }
 
-function costInput(
-  evidenceOrInput: unknown,
-  optionKindArgument: F6OptionKind | undefined,
-): { readonly evidence: unknown; readonly optionKind: F6OptionKind | undefined } {
-  if (evidenceOrInput !== null && typeof evidenceOrInput === "object" && "evidence" in evidenceOrInput) {
-    const input = evidenceOrInput as CostAssessmentInput;
-    return { evidence: input.evidence, optionKind: input.optionKind ?? optionKindArgument };
-  }
-  return { evidence: evidenceOrInput, optionKind: optionKindArgument };
-}
-
-export function assessCost(
-  evidenceOrInput?: F6CostEvidence | CostAssessmentInput | unknown,
-  optionKindArgument?: F6OptionKind,
-): F6CostAssessment {
-  const input = costInput(evidenceOrInput, optionKindArgument);
+export function assessCost(input: CostAssessmentInput): F6CostAssessment {
   const parsed = f6CostEvidenceSchema.safeParse(input.evidence);
-  if (!parsed.success) return insufficientCost();
+  if (!parsed.success) return insufficientCost("governed_cost_evidence_missing_or_invalid");
 
-  const optionKind = input.optionKind
-    ?? (parsed.data.optionCosts.length === 1 ? parsed.data.optionCosts[0]!.optionKind : undefined);
-  const optionCost = parsed.data.optionCosts.find((candidate) => candidate.optionKind === optionKind);
-  if (optionCost === undefined) return insufficientCost();
+  const optionCost = parsed.data.optionCosts.find((candidate) => candidate.optionKind === input.optionKind);
+  if (optionCost === undefined) {
+    return immutable({
+      relativeCost: "insufficient_evidence",
+      roiScore: "not_computed",
+      roiPolicyStatus: "governed_not_computed",
+      roiPolicyVersion: parsed.data.roiPolicyVersion,
+      roiCalculationReference: parsed.data.roiCalculationReference,
+      reasonCodes: ["cost_evidence_not_applicable"],
+      evidenceReferences: governedCostReferences(parsed.data),
+    });
+  }
 
   return immutable({
     relativeCost: optionCost.cost,
@@ -265,9 +251,7 @@ export function assessCost(
     roiPolicyStatus: "governed_not_computed",
     roiPolicyVersion: parsed.data.roiPolicyVersion,
     roiCalculationReference: parsed.data.roiCalculationReference,
-    evidenceReferences: uniqueArtifactReferences([
-      evidenceReference(parsed.data),
-      parsed.data.roiCalculationReference,
-    ]),
+    reasonCodes: [],
+    evidenceReferences: governedCostReferences(parsed.data),
   });
 }
