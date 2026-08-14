@@ -174,31 +174,110 @@ function safePositiveProductQuotient(
 }
 
 function stableFiniteSum(values: readonly number[], label: string): number {
-  let maximumMagnitude = 0;
+  const buffer = new ArrayBuffer(8);
+  const view = new DataView(buffer);
+  let accumulator = 0n;
+
   values.forEach((value, index) => {
     assertFinite(value, `${label}[${index}]`);
-    maximumMagnitude = Math.max(maximumMagnitude, Math.abs(value));
+    if (value === 0) {
+      return;
+    }
+
+    view.setFloat64(0, value, false);
+    const bits = view.getBigUint64(0, false);
+    const negative = (bits >> 63n) !== 0n;
+    const exponentBits = Number((bits >> 52n) & 0x7ffn);
+    const fraction = bits & 0xfffffffffffffn;
+    const significand = exponentBits === 0 ? fraction : (1n << 52n) | fraction;
+    const scaledSignificand = significand << BigInt(Math.max(0, exponentBits - 1));
+    accumulator += negative ? -scaledSignificand : scaledSignificand;
   });
-  if (maximumMagnitude === 0) {
+
+  if (accumulator === 0n) {
     return 0;
   }
 
-  let sum = 0;
-  let compensation = 0;
-  for (const value of values) {
-    const scaledValue = value / maximumMagnitude;
-    const nextSum = sum + scaledValue;
-    compensation += Math.abs(sum) >= Math.abs(scaledValue)
-      ? (sum - nextSum) + scaledValue
-      : (scaledValue - nextSum) + sum;
-    sum = nextSum;
+  const negative = accumulator < 0n;
+  let magnitude = negative ? -accumulator : accumulator;
+  let bitLength = magnitude.toString(2).length;
+  let unitExponent = -1074;
+  if (bitLength > 53) {
+    let shift = bitLength - 53;
+    let significand = magnitude >> BigInt(shift);
+    const remainder = magnitude - (significand << BigInt(shift));
+    const halfway = 1n << BigInt(shift - 1);
+    if (remainder > halfway || (remainder === halfway && (significand & 1n) !== 0n)) {
+      significand += 1n;
+      if (significand === (1n << 53n)) {
+        significand >>= 1n;
+        shift += 1;
+      }
+    }
+    magnitude = significand;
+    unitExponent += shift;
+    bitLength = magnitude.toString(2).length;
   }
 
-  const result = (sum + compensation) * maximumMagnitude;
+  const resultMagnitude = bitLength <= 53
+    ? Number(magnitude) * (2 ** unitExponent)
+    : Number.POSITIVE_INFINITY;
+  const result = negative ? -resultMagnitude : resultMagnitude;
   if (!Number.isFinite(result)) {
     fail("target_unreachable", `${label} sum must be finite and representable`);
   }
   return result;
+}
+
+function scalePositiveByPowerOfTwo(value: number, power: number, label: string): number {
+  if (!(value > 0) || !Number.isFinite(value) || !Number.isFinite(power)) {
+    fail("target_unreachable", `${label} must be finite and representable`);
+  }
+  if (power === 0) {
+    return value;
+  }
+
+  let valueExponent = Math.floor(Math.log2(value));
+  if (valueExponent === 1024) {
+    valueExponent = 1023;
+  }
+  const mantissa = value / (2 ** valueExponent);
+  const combinedExponent = valueExponent + power;
+  const integerExponent = Math.floor(combinedExponent);
+  let coefficient = mantissa * (2 ** (combinedExponent - integerExponent));
+  let result: number;
+  if (integerExponent < -1074) {
+    coefficient *= 2 ** (integerExponent + 1074);
+    result = coefficient * Number.MIN_VALUE;
+  } else if (integerExponent > 1023) {
+    result = Number.POSITIVE_INFINITY;
+  } else {
+    result = coefficient * (2 ** integerExponent);
+  }
+
+  if (!(result > 0) || !Number.isFinite(result)) {
+    fail("target_unreachable", `${label} must be finite and representable`);
+  }
+  return result;
+}
+
+function log2PositiveRatio(numerator: number, denominator: number): number {
+  const ratio = numerator / denominator;
+  if (ratio > 0) {
+    return Math.log2(ratio);
+  }
+
+  let numeratorExponent = Math.floor(Math.log2(numerator));
+  let denominatorExponent = Math.floor(Math.log2(denominator));
+  if (numeratorExponent === 1024) {
+    numeratorExponent = 1023;
+  }
+  if (denominatorExponent === 1024) {
+    denominatorExponent = 1023;
+  }
+  const numeratorMantissa = numerator / (2 ** numeratorExponent);
+  const denominatorMantissa = denominator / (2 ** denominatorExponent);
+  return (numeratorExponent - denominatorExponent) + Math.log2(numeratorMantissa / denominatorMantissa);
 }
 
 function positiveDifference(upperValue: number, lowerValue: number, label: string): number {
@@ -576,27 +655,39 @@ export function solveTopNCombinedTolerance(input: TopNSolveInput): readonly F6To
   );
   const selectedTargetSigma = remainingSigma(input.targetRssSigma, fixedSigma);
 
-  let weights: readonly number[];
+  let targetSigmas: readonly number[];
   if (input.allocation === "equal-allocation-among-top-N") {
-    weights = selectedFactors.map(() => 1 / selectedFactors.length);
+    const targetSigma = selectedTargetSigma * Math.sqrt(1 / selectedFactors.length);
+    targetSigmas = selectedFactors.map(() => targetSigma);
   } else if (input.allocation === "proportional-to-contribution") {
     const maximumContribution = Math.max(...selectedFactors.map((factor) => factor.contribution));
     if (!(maximumContribution > 0) || !Number.isFinite(maximumContribution)) {
       fail("target_unreachable", "selected factors must have positive total contribution");
     }
-    const scaledContributions = selectedFactors.map((factor) => factor.contribution / maximumContribution);
-    const scaledContributionSum = scaledContributions.reduce((sum, contribution) => sum + contribution, 0);
+    const relativeLog2Contributions = selectedFactors.map((factor) => factor.contribution === 0
+      ? Number.NEGATIVE_INFINITY
+      : log2PositiveRatio(factor.contribution, maximumContribution));
+    const scaledContributionSum = relativeLog2Contributions.reduce(
+      (sum, contribution) => sum + (contribution === Number.NEGATIVE_INFINITY
+        ? 0
+        : 2 ** contribution),
+      0,
+    );
     if (!(scaledContributionSum > 0) || !Number.isFinite(scaledContributionSum)) {
       fail("target_unreachable", "selected factors must have positive total contribution");
     }
-    weights = scaledContributions.map((contribution) => contribution / scaledContributionSum);
+    const relativeLog2ContributionSum = Math.log2(scaledContributionSum);
+    targetSigmas = relativeLog2Contributions.map((contribution) => scalePositiveByPowerOfTwo(
+      selectedTargetSigma,
+      0.5 * (contribution - relativeLog2ContributionSum),
+      "target factor sigma",
+    ));
   } else {
     fail("invalid_solver_input", "allocation is unsupported");
   }
 
   return selectedFactors.map((factor, index) => {
-    const targetSigma = selectedTargetSigma * Math.sqrt(weights[index]!);
-    return toleranceChangeForSigma(factor, targetSigma);
+    return toleranceChangeForSigma(factor, targetSigmas[index]!);
   });
 }
 

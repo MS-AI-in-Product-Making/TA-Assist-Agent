@@ -211,6 +211,19 @@ describe("F6 deterministic solver primitives", () => {
     expect(result.additionalMeanShift).toBeCloseTo(-1, 14);
   });
 
+  it.each([
+    [Number.MAX_VALUE, -Number.MAX_VALUE, Number.MIN_VALUE],
+    [Number.MAX_VALUE, Number.MIN_VALUE, -Number.MAX_VALUE],
+    [-Number.MAX_VALUE, Number.MAX_VALUE, Number.MIN_VALUE],
+    [-Number.MAX_VALUE, Number.MIN_VALUE, Number.MAX_VALUE],
+    [Number.MIN_VALUE, Number.MAX_VALUE, -Number.MAX_VALUE],
+    [Number.MIN_VALUE, -Number.MAX_VALUE, Number.MAX_VALUE],
+  ])("preserves a representable full-range residual in permutation %#", (...factorMeans) => {
+    const result = solveCenteringShift({ factorMeans, LSL: -1, USL: 1 });
+
+    expect(result).toEqual({ targetMean: 0, additionalMeanShift: -Number.MIN_VALUE });
+  });
+
   it("avoids intermediate overflow when summing extreme factor means", () => {
     expect(solveCenteringShift({
       factorMeans: [Number.MAX_VALUE, Number.MAX_VALUE, -Number.MAX_VALUE],
@@ -536,6 +549,51 @@ describe("F6 deterministic solver primitives", () => {
     expect(changes[0].resultingUpperTolerance).toBeCloseTo(Math.sqrt(0.5), 12);
     expect(changes[1].resultingUpperTolerance).toBeCloseTo(Math.sqrt(0.5), 12);
     expectFiniteNumericFields(changes);
+  });
+
+  it.each([
+    [1, 2],
+    [2, 1],
+  ])("allocates full-range proportional contributions without underflow in order %s,%s", (firstRow, secondRow) => {
+    const factors = [
+      factor(1, 1, Number.MIN_VALUE),
+      factor(2, 1, Number.MAX_VALUE),
+    ];
+    const factorByRow = new Map(factors.map((item) => [item.source.sourceRow, item]));
+
+    const changes = solveTopNCombinedTolerance({
+      factors,
+      selectedSources: [firstRow, secondRow].map((row) => factorByRow.get(row)!.source),
+      targetRssSigma: 8e307,
+      allocation: "proportional-to-contribution",
+    });
+    const changeByRow = new Map(changes.map((change) => [change.sourceRow, change]));
+
+    expect(changeByRow.get(1)!.resultingUpperTolerance).toBeGreaterThan(0);
+    expect(changeByRow.get(1)!.resultingUpperTolerance).toBeLessThan(1);
+    expect(changeByRow.get(2)!.resultingUpperTolerance).toBe(8e307);
+    changes.forEach((change) => expect(f6ToleranceChangeSchema.parse(change)).toEqual(change));
+    expectFiniteNumericFields(changes);
+  });
+
+  it("keeps full-range proportional allocation invariant under a common binary scale", () => {
+    const solve = (smallContribution: number, largeContribution: number) => {
+      const factors = [factor(1, 1, smallContribution), factor(2, 1, largeContribution)];
+      return solveTopNCombinedTolerance({
+        factors,
+        selectedSources: factors.map((item) => item.source),
+        targetRssSigma: 1,
+        allocation: "proportional-to-contribution",
+      });
+    };
+
+    const baseline = solve(2 ** -1000, 2 ** 1000);
+    const scaled = solve(2 ** -1020, 2 ** 980);
+
+    expect(scaled.map((change) => change.resultingUpperTolerance)).toEqual(
+      baseline.map((change) => change.resultingUpperTolerance),
+    );
+    expectFiniteNumericFields(scaled);
   });
 
   it("keeps proportional allocation invariant when all contributions share a finite scale", () => {
