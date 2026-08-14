@@ -42,8 +42,11 @@ workflow；F5.1 保留为受 F4/F0 证据约束的 compatibility core，不代�
 历史 `f5-image-observation-v1` artifact 仅只读兼容；新 image mode 只创建 v2。每个 selected worksheet
 必须完整覆盖五项 core scope 与全部 active factor rows；visual FACT 和要求 ME review 的
 `image_text_context_review` SIGNAL 分层保存，direction 仅通过结构化 `linkedVisualLabels` 映射，
-不得使用自由文本推断。V2 以 immutable UUID-scoped 目录单次创建并 readback，由 loader 对 schema、
-identity 和 hash 最终校验；observation-only 失败整件回退到 deterministic F5，baseline identity 错误 fail closed。
+不得使用自由文本推断。V2 以 immutable UUID-scoped 目录单次创建，并在 invocation 前 readback。Loader 校验
+exact content against schema、workbook/worksheet identity 与 selected set、snapshot/source provenance、携带的
+`imageReference` identity，并重新校验物理 F1 image SHA-256。Observation artifact 不存在可预先校验的自身
+digest；接受后由 workflow runner 计算其 SHA-256 并记录到 `Feature5-Run-Summary`。Observation-only 失败整件
+回退到 deterministic F5，baseline identity 错误 fail closed。
 F6 和 F7 仍为 `unavailable`，并返回 `feature_not_available`；F8 仅提供匿名
 `public` fixture 的受治理 Skill 运行时验收，不包含外部 Adapter、模型、ADO、SharePoint 或 UI 行为。
 

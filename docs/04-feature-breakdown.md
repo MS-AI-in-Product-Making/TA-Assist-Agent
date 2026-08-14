@@ -168,7 +168,7 @@ The result must include a quick, easy-to-scan TA risk summary.
 - Snapshot all active factor rows with original and mapped part/factor fields, numeric inputs, and source-cell provenance.
 - Keep visual evidence in confidence-gated image `FACT`s and image-plus-text assessment in `image_text_context_review` `SIGNAL`s requiring ME review. Direction mapping uses structured `linkedVisualLabels`; free-text inference is prohibited.
 - Validate v2 all-or-nothing. Observation-only failure discards the entire v2 and continues deterministic F5 with clarification; baseline identity and required-image errors fail closed.
-- Create v2 once in an immutable UUID-scoped location, read it back, and defer schema, identity, and hash authority to the F5 loader.
+- Create v2 once in an immutable UUID-scoped location and read it back before invocation. The F5 loader validates exact content against the schema, workbook/worksheet identity and selected set, snapshot/source provenance, carried `imageReference` identity, and the physical F1 image SHA-256. No pre-existing observation artifact digest exists; after acceptance, the workflow runner computes and records its SHA-256 in `Feature5-Run-Summary`.
 - Evaluate RSS sigma, Cpk, and spec-window feasibility using the Rules Library.
 - Order the top contributors by governed F4 contribution and explain only measurable causes supported by source evidence.
 - Cite the F0 knowledge-base entry, rule version, and applicable scope for every `RULE` or capability conclusion.
