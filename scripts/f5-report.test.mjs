@@ -142,7 +142,7 @@ function completedReport({
     factorInstanceId: String(index + 1).padStart(64, "0"),
     drawingDimensionKey: String(index + 11).padStart(64, "0"),
     deviceLevelDim: `device-dim-${index + 1}`,
-    dimensionDescription: `dimension-${index + 1}`,
+    dimensionDescription: "dimension-1",
     partCategory: "controlled-category",
     partSubsystem: "controlled-subsystem",
     drawingNumber: index === 0 ? "DRAW|1" : `DRAW-${index + 1}`,
@@ -174,15 +174,18 @@ function completedReport({
       observedValue: "visible",
       confidence: contextualConfidences[index],
       visibleBasis: `Visible marker for ${scope}.`,
+      visibleLabels: scope === "direction" ? ["direction-label"] : [],
       reviewStatus: "unreviewed",
     },
     contextualSignal: {
-      signalValue: scope === "direction" ? "indicated_consistent" : "ambiguous",
+      signalValue: scope === "direction" && contextualConfidences[index] === "high"
+        ? "indicated_consistent"
+        : "ambiguous",
       textBasis: `Image and worksheet context require review for ${scope}.`,
-      linkedSourceRows: scope === "direction"
+      linkedSourceRows: scope === "direction" && contextualConfidences[index] === "high"
         ? [{ tableId: governanceRows[0].source.tableId, sourceRow: governanceRows[0].source.sourceRow }]
         : [],
-      linkedVisualLabels: scope === "direction"
+      linkedVisualLabels: scope === "direction" && contextualConfidences[index] === "high"
         ? [{ label: "direction-label", tableId: governanceRows[0].source.tableId, sourceRow: governanceRows[0].source.sourceRow }]
         : [],
       requiresEngineeringReview: true,
@@ -190,13 +193,13 @@ function completedReport({
   }));
   const contextSnapshot = {
     dimensionDescription: governanceRows[0].dimensionDescription,
-    rows: governanceRows.map((row, index) => ({
+    rows: governanceRows.map((row) => ({
       tableId: row.source.tableId,
       sourceRow: row.source.sourceRow,
-      partName: `part-${index + 1}`,
+      partName: row.partSubsystem,
       partSubsystem: row.partSubsystem,
       partCategory: row.partCategory,
-      factorName: `factor-original-${index + 1}`,
+      factorName: row.factorDescription,
       factorDescription: row.factorDescription,
       nominal: row.nominal,
       upperTolerance: row.upperTolerance,
@@ -335,9 +338,10 @@ describe("renderF5Report", () => {
     }
 
     const visualFacts = section(markdown, "#### Visual FACT", "#### Worksheet context SIGNAL");
-    for (const label of ["observedValue", "confidence", "reviewStatus", "image", "visibleBasis"]) {
+    for (const label of ["observedValue", "confidence", "reviewStatus", "image", "visibleBasis", "visibleLabels"]) {
       expect(visualFacts).toContain(label);
     }
+    expect(visualFacts).toContain("direction-label");
     expect(visualFacts).not.toMatch(/textBasis|context snapshot/i);
 
     const contextSignals = section(markdown, "#### Worksheet context SIGNAL", "#### 分析上下文快照");
@@ -377,7 +381,7 @@ describe("renderF5Report", () => {
     expect(snapshot.indexOf("| table-a | 2 |")).toBeLessThan(snapshot.indexOf("| table-a | 3 |"));
     expect(snapshot.indexOf("| table-a | 3 |")).toBeLessThan(snapshot.indexOf("| table-a | 4 |"));
     expect(snapshot.indexOf("| table-a | 4 |")).toBeLessThan(snapshot.indexOf("| table-a | 5 |"));
-    expect(snapshot).toContain("| table-a | 2 | part-1 | controlled-subsystem | controlled-category | factor-original-1 | factor|one | 0 | 1 | -1 | 2 |".replace("factor|one", "factor\\|one"));
+    expect(snapshot).toContain("| table-a | 2 | controlled-subsystem | controlled-subsystem | controlled-category | factor|one | factor|one | 0 | 1 | -1 | 2 |".replaceAll("factor|one", "factor\\|one"));
     expect(snapshot).toContain("Analysis-A\\!A2");
     expect(markdown).not.toMatch(/[A-Za-z]:[\\/]/);
   });
@@ -394,19 +398,30 @@ describe("renderF5Report", () => {
       && statement.content.signalKind === "image_text_context_review"
       && statement.content.scope === "direction"
     ));
+    const directionFact = worksheet.statements.find((statement) => (
+      statement.type === "FACT"
+      && statement.content.provenanceKind === "image_observation"
+      && statement.content.scope === "direction"
+    ));
     const unsafeMapped = "<script>mapped()</script>|[mapped](javascript:alert(1))";
     const unsafeOriginal = "# injected-heading|<img src=x onerror=alert(1)>";
     const unsafePath = "C:\\private\\context\\source.xlsx!A2";
 
     governanceRow.partSubsystem = unsafeMapped;
     row.partSubsystem = unsafeMapped;
-    row.partName = unsafeOriginal;
-    row.factorName = "*factor* [link](javascript:alert(2))";
-    worksheet.contextSnapshot.dimensionDescription = "<b>dimension</b> C:\\private\\dimension.txt";
+    row.partName = unsafeMapped;
+    governanceRow.factorDescription = unsafeOriginal;
+    row.factorName = unsafeOriginal;
+    row.factorDescription = unsafeOriginal;
+    const unsafeDimension = "<b>dimension</b> C:\\private\\dimension.txt";
+    worksheet.contextSnapshot.dimensionDescription = unsafeDimension;
+    for (const candidate of worksheet.governanceRows) candidate.dimensionDescription = unsafeDimension;
     governanceRow.source.sourceCells = { factorName: unsafePath };
     row.sourceCells = { factorName: unsafePath };
     directionSignal.content.textBasis = "<script>signal()</script>|C:\\private\\signal.txt";
-    directionSignal.content.linkedVisualLabels[0].label = "![label](javascript:alert(3))|<svg>";
+    const unsafeLabel = "![label](javascript:alert(3))|<svg>";
+    directionSignal.content.linkedVisualLabels[0].label = unsafeLabel;
+    directionFact.content.visibleLabels = [unsafeLabel];
 
     const markdown = renderF5Report(report);
 

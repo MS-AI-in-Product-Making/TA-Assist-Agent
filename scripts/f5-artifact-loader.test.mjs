@@ -413,6 +413,7 @@ function v2ObservationArtifact(bundle, worksheetNames = [...bundle.imageReferenc
             observedValue: "ambiguous",
             confidence: "low",
             visibleBasis: `Visible basis for ${scope}.`,
+            visibleLabels: [],
             reviewStatus: "unreviewed",
           },
           contextualSignal: {
@@ -1008,6 +1009,61 @@ describe("loadF5ArtifactBundle", () => {
       imageObservations: artifact.worksheets[0].observations,
     });
     expect(result).not.toHaveProperty("observationFallback");
+  });
+
+  it.each([
+    ["missing", (observationPath) => observationPath, "artifact_missing"],
+    ["unreadable", (observationPath) => {
+      mkdirSync(observationPath);
+      return observationPath;
+    }, "artifact_contract_invalid"],
+    ["malformed JSON", (observationPath) => {
+      writeFileSync(observationPath, "{malformed observation", "utf8");
+      return observationPath;
+    }, "artifact_contract_invalid"],
+    ["unknown version", (observationPath) => {
+      writeJson(observationPath, {
+        contractVersion: "v1",
+        inputClassification: "confidential",
+        observationVersion: "f5-image-observation-unknown",
+        workbookContentHash: WORKBOOK_HASH,
+        worksheets: [],
+      });
+      return observationPath;
+    }, "artifact_contract_invalid"],
+    ["schema-invalid", (observationPath) => {
+      writeJson(observationPath, {
+        contractVersion: "v1",
+        inputClassification: "confidential",
+        observationVersion: "f5-image-observation-v2",
+        workbookContentHash: WORKBOOK_HASH,
+        worksheets: [],
+      });
+      return observationPath;
+    }, "artifact_contract_invalid"],
+  ])("falls back to the deterministic request for an optional %s observation artifact", (
+    _case,
+    prepareObservation,
+    reasonCode,
+  ) => {
+    const bundle = setupBundle();
+    const observationPath = prepareObservation(path.join(bundle.base, "optional-observations.json"));
+
+    const result = load(bundle, { imageObservationArtifact: observationPath });
+
+    expect(result.status).toBe("accepted");
+    expect(result.request.worksheets.map(({ worksheetName }) => worksheetName))
+      .toEqual(["Analysis-A", "Analysis-B"]);
+    expect(result.request.worksheets.every((worksheet) => worksheet.imageObservations.length === 0)).toBe(true);
+    expect(result.request.worksheets.every((worksheet) => !(
+      "observationVersion" in worksheet || "contextSnapshot" in worksheet
+    ))).toBe(true);
+    expect(result.observationFallback).toEqual({
+      reasonCode,
+      artifactReference: "optional-observations.json",
+    });
+    expect(result).not.toHaveProperty("observationArtifact");
+    expect(result.sourceReferences).not.toHaveProperty("observation");
   });
 
   it.each([

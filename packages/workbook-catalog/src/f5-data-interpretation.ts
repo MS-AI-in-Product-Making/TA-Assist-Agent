@@ -112,6 +112,7 @@ function createImageEvidence(worksheet: RequestWorksheet) {
           imageReference: structuredClone(worksheet.imageReference),
           confidence: visualObservation.confidence,
           visibleBasis: visualObservation.visibleBasis,
+          visibleLabels: structuredClone(visualObservation.visibleLabels),
           reviewStatus: visualObservation.reviewStatus,
           ...(visualObservation.confirmedBy === undefined ? {} : { confirmedBy: visualObservation.confirmedBy }),
           ...(visualObservation.confirmedAt === undefined ? {} : { confirmedAt: visualObservation.confirmedAt }),

@@ -546,10 +546,15 @@ describe("f5-analysis skill contract", () => {
       "The context snapshot includes ALL active factor rows, not only top contributors.",
       "Its exact row set equals the verified F1/F3 selected rows.",
       "The snapshot preserves original partName and factorName, mapped partSubsystem and factorDescription, dimensionDescription, and source provenance.",
+      "Current mapping requires partName to equal partSubsystem and factorName to equal factorDescription.",
+      "Snapshot dimensionDescription equals every governance row dimensionDescription, and all governance rows for the worksheet agree.",
       "Each selected worksheet answers exactly five questions: tolerance_loop_closure, datum_chain, assembly_datum_face, stack_start, and direction.",
       "visualObservation may produce only an image FACT when the evidence gates permit.",
       "image_text_context_review is an independent contextual SIGNAL for every core scope.",
+      "visualObservation records unique nonempty visibleLabels as structured visual evidence; never parse visibleBasis to discover labels.",
       "direction row links require structured linkedVisualLabels; never parse visibleBasis to infer links.",
+      "Each direction linkedVisualLabels label exists in visualObservation.visibleLabels, and direction label/source row key sets align exactly.",
+      "Non-direction scopes keep linkedVisualLabels empty but may link unique snapshot source rows and may use indicated_consistent or indicated_conflict when evidence permits.",
       "With no reliable mapping, linkedVisualLabels and linkedSourceRows are empty and signalValue is ambiguous or insufficient_evidence.",
     ]) {
       expect(normalizedSkill).toContain(phrase);
@@ -603,6 +608,7 @@ describe("f5-analysis skill contract", () => {
     for (const phrase of [
       "The v2 selected worksheet set must be exact.",
       "Any worksheet, scope, or snapshot mismatch discards the entire v2 artifact; partial consumption is prohibited.",
+      "A missing, unreadable, malformed JSON, unknown, or invalid optional observation artifact uses the same whole-artifact deterministic fallback.",
       "When the validated baseline remains valid, continue deterministic F5 with not_evaluated plus clarification.",
       "A baseline identity mismatch fails closed and prohibits F5 continuation.",
     ]) {

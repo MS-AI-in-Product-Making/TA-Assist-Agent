@@ -2502,6 +2502,7 @@ describe("F5.1 objective interpretation contracts", () => {
             observedValue: "ambiguous" as const,
             confidence: "medium" as const,
             visibleBasis: `Visible basis for ${scope}.`,
+            visibleLabels: scope === "direction" ? ["Bracket height"] : [],
             reviewStatus: "unreviewed" as const,
           },
           contextualSignal: {
@@ -2595,8 +2596,10 @@ describe("F5.1 objective interpretation contracts", () => {
       Object.assign(snapshotRow, {
         tableId: row.source.tableId,
         sourceRow: row.source.sourceRow,
+        partName: row.partSubsystem,
         partSubsystem: row.partSubsystem,
         partCategory: row.partCategory,
+        factorName: row.factorDescription,
         factorDescription: row.factorDescription,
         nominal: row.nominal,
         upperTolerance: row.upperTolerance,
@@ -2604,6 +2607,7 @@ describe("F5.1 objective interpretation contracts", () => {
         sigmaLevel: row.sigmaLevel,
         sourceCells: structuredClone(row.source.sourceCells),
       });
+      snapshot.dimensionDescription = row.dimensionDescription;
       worksheet.observationVersion = validV2.observationVersion;
       worksheet.contextSnapshot = snapshot;
       worksheet.imageObservations = structuredClone(validV2.worksheets[0]!.observations);
@@ -2703,6 +2707,7 @@ describe("F5.1 objective interpretation contracts", () => {
         imageReference,
         confidence: "high" as const,
         visibleBasis: "The controlled worksheet image visibly identifies the stack start.",
+        visibleLabels: [] as string[],
         reviewStatus: "unreviewed" as const,
       },
     };
@@ -2919,6 +2924,53 @@ describe("F5.1 objective interpretation contracts", () => {
       expect(f5ImageObservationArtifactV2Schema.safeParse(outsideSnapshot).success).toBe(false);
     });
 
+    it.each([
+      "tolerance_loop_closure",
+      "datum_chain",
+      "assembly_datum_face",
+      "stack_start",
+    ] as const)("accepts %s linked rows without visual labels", (scope) => {
+      const artifact = structuredClone(validV2);
+      const worksheet = artifact.worksheets[0]!;
+      const snapshotRow = worksheet.contextSnapshot.rows[0]!;
+      const observation = worksheet.observations.find((candidate) => candidate.scope === scope)!;
+      observation.visualObservation.observedValue = "visible";
+      observation.contextualSignal.signalValue = "indicated_consistent";
+      observation.contextualSignal.linkedSourceRows = [{
+        tableId: snapshotRow.tableId,
+        sourceRow: snapshotRow.sourceRow,
+      }];
+
+      expect(observation.contextualSignal.linkedVisualLabels).toEqual([]);
+      expect(f5ImageObservationArtifactV2Schema.safeParse(artifact).success).toBe(true);
+    });
+
+    it("rejects duplicate and outside-snapshot non-direction linked rows", () => {
+      const createLinkedDatumChain = () => {
+        const artifact = structuredClone(validV2);
+        const worksheet = artifact.worksheets[0]!;
+        const snapshotRow = worksheet.contextSnapshot.rows[0]!;
+        const observation = worksheet.observations.find(({ scope }) => scope === "datum_chain")!;
+        observation.visualObservation.observedValue = "visible";
+        observation.contextualSignal.signalValue = "indicated_consistent";
+        observation.contextualSignal.linkedSourceRows = [{
+          tableId: snapshotRow.tableId,
+          sourceRow: snapshotRow.sourceRow,
+        }];
+        return { artifact, observation };
+      };
+
+      const duplicate = createLinkedDatumChain();
+      duplicate.observation.contextualSignal.linkedSourceRows.push(
+        structuredClone(duplicate.observation.contextualSignal.linkedSourceRows[0]!),
+      );
+      expect(f5ImageObservationArtifactV2Schema.safeParse(duplicate.artifact).success).toBe(false);
+
+      const outsideSnapshot = createLinkedDatumChain();
+      outsideSnapshot.observation.contextualSignal.linkedSourceRows[0]!.sourceRow = 99;
+      expect(f5ImageObservationArtifactV2Schema.safeParse(outsideSnapshot.artifact).success).toBe(false);
+    });
+
     it("restricts unlinked contextual signals and always requires engineering review", () => {
       const unlinkedConclusion = structuredClone(validV2);
       unlinkedConclusion.worksheets[0]!.observations[0]!.contextualSignal.signalValue = "indicated_consistent" as "insufficient_evidence";
@@ -2958,6 +3010,7 @@ describe("F5.1 objective interpretation contracts", () => {
       const snapshotRow = worksheet.contextSnapshot.rows[0]!;
       const direction = worksheet.observations.find((observation) => observation.scope === "direction")!;
       direction.visualObservation.observedValue = "visible";
+      direction.visualObservation.visibleLabels = ["Bracket height"];
       direction.contextualSignal.signalValue = "indicated_consistent";
       direction.contextualSignal.linkedSourceRows = [{
         tableId: snapshotRow.tableId,
@@ -2981,6 +3034,7 @@ describe("F5.1 objective interpretation contracts", () => {
         const snapshotRow = worksheet.contextSnapshot.rows[0]!;
         const direction = worksheet.observations.find((observation) => observation.scope === "direction")!;
         direction.visualObservation.observedValue = "visible";
+        direction.visualObservation.visibleLabels = ["Bracket height"];
         direction.contextualSignal.signalValue = "indicated_consistent";
         direction.contextualSignal.linkedSourceRows = [{
           tableId: snapshotRow.tableId,
@@ -3008,6 +3062,30 @@ describe("F5.1 objective interpretation contracts", () => {
       outsideSnapshot.direction.contextualSignal.linkedSourceRows[0]!.sourceRow = 99;
       outsideSnapshot.direction.contextualSignal.linkedVisualLabels[0]!.sourceRow = 99;
       expect(f5ImageObservationArtifactV2Schema.safeParse(outsideSnapshot.artifact).success).toBe(false);
+    });
+
+    it("rejects invented or duplicate structured direction labels", () => {
+      const artifact = structuredClone(validV2);
+      const worksheet = artifact.worksheets[0]!;
+      const snapshotRow = worksheet.contextSnapshot.rows[0]!;
+      const direction = worksheet.observations.find(({ scope }) => scope === "direction")!;
+      direction.visualObservation.observedValue = "visible";
+      direction.visualObservation.visibleLabels = ["Bracket height"];
+      direction.contextualSignal.signalValue = "indicated_consistent";
+      direction.contextualSignal.linkedSourceRows = [{
+        tableId: snapshotRow.tableId,
+        sourceRow: snapshotRow.sourceRow,
+      }];
+      direction.contextualSignal.linkedVisualLabels = [{
+        label: "Invented label",
+        tableId: snapshotRow.tableId,
+        sourceRow: snapshotRow.sourceRow,
+      }];
+      expect(f5ImageObservationArtifactV2Schema.safeParse(artifact).success).toBe(false);
+
+      direction.contextualSignal.linkedVisualLabels[0]!.label = "Bracket height";
+      direction.visualObservation.visibleLabels.push("Bracket height");
+      expect(f5ImageObservationArtifactV2Schema.safeParse(artifact).success).toBe(false);
     });
 
     it("rejects visual label evidence for non-direction scopes", () => {
@@ -3137,8 +3215,10 @@ describe("F5.1 objective interpretation contracts", () => {
     });
 
     it.each([
+      ["partName", "changed original part"],
       ["partSubsystem", "changed subsystem"],
       ["partCategory", "changed category"],
+      ["factorName", "changed original factor"],
       ["factorDescription", "changed factor"],
       ["nominal", 999],
       ["upperTolerance", 999],
@@ -3150,6 +3230,15 @@ describe("F5.1 objective interpretation contracts", () => {
       const snapshot = ((request.worksheets as Array<Record<string, unknown>>)[0]!
         .contextSnapshot as { rows: Array<Record<string, unknown>> });
       snapshot.rows[0]![field] = value;
+
+      expect(f5DataInterpretationRequestSchema.safeParse(request).success).toBe(false);
+    });
+
+    it("rejects v2 request snapshot dimension provenance changes", () => {
+      const request = contextualRootRequest();
+      const snapshot = ((request.worksheets as Array<Record<string, unknown>>)[0]!
+        .contextSnapshot as { dimensionDescription: string });
+      snapshot.dimensionDescription = "Changed dimension";
 
       expect(f5DataInterpretationRequestSchema.safeParse(request).success).toBe(false);
     });
@@ -3310,14 +3399,14 @@ describe("F5.1 objective interpretation contracts", () => {
       if (contextual) {
         worksheet.observationVersion = "f5-image-observation-v2";
         worksheet.contextSnapshot = {
-          dimensionDescription: "Original worksheet dimension provenance",
+          dimensionDescription: worksheet.governanceRows[0]!.dimensionDescription,
           rows: worksheet.governanceRows.map((row) => ({
             tableId: row.source.tableId,
             sourceRow: row.source.sourceRow,
-            partName: "Original part name",
+            partName: row.partSubsystem,
             partSubsystem: row.partSubsystem,
             partCategory: row.partCategory,
-            factorName: "Original factor name",
+            factorName: row.factorDescription,
             factorDescription: row.factorDescription,
             nominal: row.nominal,
             upperTolerance: row.upperTolerance,
@@ -3391,9 +3480,9 @@ describe("F5.1 objective interpretation contracts", () => {
       const validResult = completedResultWithContextSignals(coreScopes);
       const snapshot = validResult.worksheets[0]!.contextSnapshot!;
 
-      expect(snapshot.dimensionDescription).not.toBe(governanceRow.dimensionDescription);
-      expect(snapshot.rows[0]!.partName).not.toBe(governanceRow.partSubsystem);
-      expect(snapshot.rows[0]!.factorName).not.toBe(governanceRow.factorDescription);
+      expect(snapshot.dimensionDescription).toBe(governanceRow.dimensionDescription);
+      expect(snapshot.rows[0]!.partName).toBe(governanceRow.partSubsystem);
+      expect(snapshot.rows[0]!.factorName).toBe(governanceRow.factorDescription);
       expect(f5DataInterpretationResultSchema.safeParse(validResult).success).toBe(true);
 
       const missingRow = structuredClone(validResult);
@@ -3409,11 +3498,17 @@ describe("F5.1 objective interpretation contracts", () => {
     });
 
     it.each([
+      ["partName", (result: ReturnType<typeof completedResultWithContextSignals>) => {
+        result.worksheets[0]!.contextSnapshot!.rows[0]!.partName = "changed original part";
+      }],
       ["partSubsystem", (result: ReturnType<typeof completedResultWithContextSignals>) => {
         result.worksheets[0]!.contextSnapshot!.rows[0]!.partSubsystem = "changed subsystem";
       }],
       ["partCategory", (result: ReturnType<typeof completedResultWithContextSignals>) => {
         result.worksheets[0]!.contextSnapshot!.rows[0]!.partCategory = "changed category";
+      }],
+      ["factorName", (result: ReturnType<typeof completedResultWithContextSignals>) => {
+        result.worksheets[0]!.contextSnapshot!.rows[0]!.factorName = "changed original factor";
       }],
       ["factorDescription", (result: ReturnType<typeof completedResultWithContextSignals>) => {
         result.worksheets[0]!.contextSnapshot!.rows[0]!.factorDescription = "changed factor";
@@ -3440,6 +3535,13 @@ describe("F5.1 objective interpretation contracts", () => {
       expect(f5DataInterpretationResultSchema.safeParse(result).success).toBe(false);
     });
 
+    it("rejects completed v2 snapshot dimension provenance changes", () => {
+      const result = completedResultWithContextSignals(coreScopes);
+      result.worksheets[0]!.contextSnapshot!.dimensionDescription = "Changed dimension";
+
+      expect(f5DataInterpretationResultSchema.safeParse(result).success).toBe(false);
+    });
+
     it("rejects completed v2 context SIGNAL links outside the bound snapshot", () => {
       const result = completedResultWithContextSignals(coreScopes);
       const direction = result.worksheets[0]!.statements.find((statement) => (
@@ -3455,6 +3557,54 @@ describe("F5.1 objective interpretation contracts", () => {
       direction.content.linkedVisualLabels = [{ label: "outside", tableId: "table-a", sourceRow: 99 }];
 
       expect(f5DataInterpretationResultSchema.safeParse(result).success).toBe(false);
+    });
+
+    it("binds completed v2 direction context labels to same-scope visual FACT labels", () => {
+      const createLinkedResult = () => {
+        const result = completedResultWithContextSignals(coreScopes);
+        const worksheet = result.worksheets[0]!;
+        const directionSignal = worksheet.statements.find((statement) => (
+          statement.type === "SIGNAL"
+          && "signalKind" in statement.content
+          && statement.content.signalKind === "image_text_context_review"
+          && statement.content.scope === "direction"
+        ))!;
+        if (directionSignal.type !== "SIGNAL" || !("linkedSourceRows" in directionSignal.content)) {
+          throw new Error("Expected direction context SIGNAL fixture.");
+        }
+        directionSignal.content.signalValue = "indicated_consistent";
+        directionSignal.content.linkedSourceRows = [{ tableId: "table-a", sourceRow: 2 }];
+        directionSignal.content.linkedVisualLabels = [{
+          label: "factor-1",
+          tableId: "table-a",
+          sourceRow: 2,
+        }];
+        worksheet.statements.push({
+          ...structuredClone(rootImageFact),
+          statementId: "root-fact-image-direction",
+          content: {
+            ...structuredClone(rootImageFact.content),
+            scope: "direction",
+            visibleLabels: ["factor-1"],
+          },
+        });
+        result.summary.statementCount += 1;
+        return { result, worksheet, directionSignal };
+      };
+
+      const valid = createLinkedResult();
+      expect(f5DataInterpretationResultSchema.safeParse(valid.result).success).toBe(true);
+
+      const invented = createLinkedResult();
+      invented.directionSignal.content.linkedVisualLabels[0]!.label = "invented";
+      expect(f5DataInterpretationResultSchema.safeParse(invented.result).success).toBe(false);
+
+      const missingFact = createLinkedResult();
+      missingFact.worksheet.statements = missingFact.worksheet.statements.filter(
+        ({ statementId }) => statementId !== "root-fact-image-direction",
+      );
+      missingFact.result.summary.statementCount -= 1;
+      expect(f5DataInterpretationResultSchema.safeParse(missingFact.result).success).toBe(false);
     });
 
     it("forbids orphan image-text context signals on completed non-v2 worksheet results", () => {

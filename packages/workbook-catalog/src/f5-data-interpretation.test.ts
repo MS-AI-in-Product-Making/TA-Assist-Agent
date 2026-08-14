@@ -228,6 +228,7 @@ function v2Request() {
           observedValue: "visible" | "not_visible" | "ambiguous";
           confidence: "high" | "medium" | "low";
           visibleBasis: string;
+          visibleLabels: string[];
           reviewStatus: "unreviewed" | "confirmed" | "rejected";
         };
         contextualSignal: {
@@ -243,18 +244,19 @@ function v2Request() {
   const worksheet = input.worksheets[0]!;
   const firstGovernanceRow = worksheet.governanceRows[0]!;
   worksheet.governanceRows.forEach((row) => {
+    row.dimensionDescription = firstGovernanceRow.dimensionDescription;
     row.source.sourceCells = { factorName: `Analysis-A!A${row.source.sourceRow}` };
   });
   worksheet.observationVersion = "f5-image-observation-v2";
   worksheet.contextSnapshot = {
     dimensionDescription: firstGovernanceRow.dimensionDescription,
-    rows: worksheet.governanceRows.map((row, index) => ({
+    rows: worksheet.governanceRows.map((row) => ({
       tableId: row.source.tableId,
       sourceRow: row.source.sourceRow,
-      partName: `part-${index + 1}`,
+      partName: row.partSubsystem,
       partSubsystem: row.partSubsystem,
       partCategory: row.partCategory,
-      factorName: worksheet.calculationResult.factors[index]!.factorName,
+      factorName: row.factorDescription,
       factorDescription: row.factorDescription,
       nominal: row.nominal,
       upperTolerance: row.upperTolerance,
@@ -269,6 +271,7 @@ function v2Request() {
       observedValue: "visible",
       confidence: scope === "direction" || scope === "stack_start" ? "high" : "medium",
       visibleBasis: `Visible marker for ${scope}.`,
+      visibleLabels: scope === "direction" ? ["factor-1"] : [],
       reviewStatus: "unreviewed",
     },
     contextualSignal: {
@@ -767,6 +770,9 @@ describe("createF5DataInterpretation", () => {
       statement.type === "FACT" && statement.content.provenanceKind === "image_observation"
     ));
     expect(imageFacts.map((statement) => statement.content.scope)).toEqual(["stack_start", "direction"]);
+    expect(imageFacts.find(({ content }) => content.scope === "direction")?.content).toMatchObject({
+      visibleLabels: ["factor-1"],
+    });
     for (const fact of imageFacts) {
       expect(fact.content).not.toHaveProperty("textBasis");
       expect(fact.content).not.toHaveProperty("contextSnapshot");
@@ -805,6 +811,7 @@ describe("createF5DataInterpretation", () => {
       observedValue: "ambiguous",
       confidence: "low",
       visibleBasis: "No visible start marker or reliable mapping.",
+      visibleLabels: [],
       reviewStatus: "unreviewed",
     };
     worksheetInput.imageObservations.find(({ scope }) => scope === "stack_start")!.contextualSignal = {

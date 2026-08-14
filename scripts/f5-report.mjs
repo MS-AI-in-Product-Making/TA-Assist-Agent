@@ -229,11 +229,11 @@ function renderVisualFacts(lines, facts, options, contextual) {
       "",
       "#### Visual FACT",
       "",
-      "| scope | observedValue | confidence | reviewStatus | image | visibleBasis |",
-      "| --- | --- | --- | --- | --- | --- |",
+      "| scope | observedValue | confidence | reviewStatus | image | visibleBasis | visibleLabels |",
+      "| --- | --- | --- | --- | --- | --- | --- |",
     );
     for (const fact of facts) {
-      lines.push(`| ${cell(fact.content.scope)} | ${cell(fact.content.observedValue)} | ${cell(fact.content.confidence)} | ${cell(fact.content.reviewStatus)} | ${imageLink(fact.content.imageReference, options)} | ${cell(fact.content.visibleBasis)} |`);
+      lines.push(`| ${cell(fact.content.scope)} | ${cell(fact.content.observedValue)} | ${cell(fact.content.confidence)} | ${cell(fact.content.reviewStatus)} | ${imageLink(fact.content.imageReference, options)} | ${cell(fact.content.visibleBasis)} | ${cell((fact.content.visibleLabels ?? []).join("; "))} |`);
     }
     return;
   }

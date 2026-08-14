@@ -4504,6 +4504,17 @@ function validateF5ContextSnapshotGovernanceRows(
     f5SnapshotRowKey(row.source),
     row,
   ]));
+  const governanceDimensionDescriptions = new Set(
+    governanceRows.map(({ dimensionDescription }) => dimensionDescription),
+  );
+  if (governanceDimensionDescriptions.size !== 1
+    || !governanceDimensionDescriptions.has(snapshot.dimensionDescription)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "context snapshot dimensionDescription must match every F3 governance row",
+      path: ["contextSnapshot", "dimensionDescription"],
+    });
+  }
   const mappedFields = [
     "partSubsystem",
     "partCategory",
@@ -4523,6 +4534,20 @@ function validateF5ContextSnapshotGovernanceRows(
         path: ["contextSnapshot", "rows", snapshotRowIndex],
       });
       return;
+    }
+    if (snapshotRow.partName !== snapshotRow.partSubsystem) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "context snapshot partName must match partSubsystem",
+        path: ["contextSnapshot", "rows", snapshotRowIndex, "partName"],
+      });
+    }
+    if (snapshotRow.factorName !== snapshotRow.factorDescription) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "context snapshot factorName must match factorDescription",
+        path: ["contextSnapshot", "rows", snapshotRowIndex, "factorName"],
+      });
     }
     for (const field of mappedFields) {
       if (snapshotRow[field] !== governanceRow[field]) {
@@ -4562,6 +4587,11 @@ export const f5VisualObservationV2Schema = z.object({
   observedValue: z.enum(["visible", "not_visible", "ambiguous"]),
   confidence: z.enum(["high", "medium", "low"]),
   visibleBasis: z.string().min(1).max(500),
+  visibleLabels: z.array(z.string().min(1)).superRefine((labels, context) => {
+    if (new Set(labels).size !== labels.length) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "visible labels must be unique" });
+    }
+  }),
   reviewStatus: z.enum(["unreviewed", "confirmed", "rejected"]),
   confirmedBy: controlledReferenceSchema.optional(),
   confirmedAt: z.string().datetime().optional(),
@@ -4663,6 +4693,16 @@ function validateF5ContextualObservationEvidence(
         path: [...path, "visualObservation", "observedValue"],
       });
     }
+    const visibleLabelSet = new Set(visualObservation.visibleLabels);
+    contextualSignal.linkedVisualLabels.forEach((linkedVisualLabel, linkedLabelIndex) => {
+      if (!visibleLabelSet.has(linkedVisualLabel.label)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "direction linked visual labels must reference structured visible labels",
+          path: [...path, "contextualSignal", "linkedVisualLabels", linkedLabelIndex, "label"],
+        });
+      }
+    });
   }
 
   if (visualObservation.observedValue === "visible") return;
@@ -4697,6 +4737,7 @@ function validateF5ContextualObservationEvidence(
 }
 
 function validateF5ContextualSignalRowKeySets(
+  scope: z.infer<typeof f5CoreStructuralScopeSchema>,
   contextualSignal: z.infer<typeof f5ContextualSignalV2Schema>,
   context: z.RefinementCtx,
   path: Array<string | number>,
@@ -4719,7 +4760,7 @@ function validateF5ContextualSignalRowKeySets(
     });
   }
 
-  if (linkedSourceRowKeys.length > 0 || linkedVisualLabelKeys.length > 0) {
+  if (scope === "direction" && (linkedSourceRowKeys.length > 0 || linkedVisualLabelKeys.length > 0)) {
     const linkedSourceRowKeySet = new Set(linkedSourceRowKeys);
     const linkedVisualLabelKeySet = new Set(linkedVisualLabelKeys);
     if (linkedSourceRowKeySet.size !== linkedVisualLabelKeySet.size
@@ -4734,6 +4775,7 @@ function validateF5ContextualSignalRowKeySets(
 }
 
 function validateF5ContextualSignalLinks(
+  scope: z.infer<typeof f5CoreStructuralScopeSchema>,
   contextualSignal: z.infer<typeof f5ContextualSignalV2Schema>,
   snapshotRowKeys: Set<string>,
   context: z.RefinementCtx,
@@ -4757,7 +4799,7 @@ function validateF5ContextualSignalLinks(
       });
     }
   });
-  validateF5ContextualSignalRowKeySets(contextualSignal, context, path);
+  validateF5ContextualSignalRowKeySets(scope, contextualSignal, context, path);
 }
 
 export const f5ContextualObservationWorksheetV2Schema = z.object({
@@ -4788,6 +4830,7 @@ export const f5ContextualObservationWorksheetV2Schema = z.object({
     validateF5ContextualObservationEvidence(observation, context, ["observations", observationIndex]);
     const { contextualSignal } = observation;
     validateF5ContextualSignalLinks(
+      observation.scope,
       contextualSignal,
       snapshotRowKeys,
       context,
@@ -4917,6 +4960,7 @@ const f5DataInterpretationRequestWorksheetSchema = z.union([
     worksheet.imageObservations.forEach((observation, observationIndex) => {
       validateF5ContextualObservationEvidence(observation, context, ["imageObservations", observationIndex]);
       validateF5ContextualSignalLinks(
+        observation.scope,
         observation.contextualSignal,
         snapshotRowKeys,
         context,
@@ -4990,6 +5034,7 @@ const f5RootImageFactStatementSchema = z.object({
     imageReference: f1ImageReferenceSchema,
     confidence: z.enum(["high", "medium", "low"]),
     visibleBasis: z.string().min(1).max(500),
+    visibleLabels: z.array(z.string().min(1)).optional(),
     reviewStatus: z.enum(["unreviewed", "confirmed", "rejected"]),
     confirmedBy: controlledReferenceSchema.optional(),
     confirmedAt: z.string().datetime().optional(),
@@ -5025,6 +5070,7 @@ const f5RootObservationEvidenceSchema = z.object({
   imageReference: f1ImageReferenceSchema,
   confidence: z.enum(["high", "medium", "low"]),
   visibleBasis: z.string().min(1).max(500),
+  visibleLabels: z.array(z.string().min(1)).optional(),
   reviewStatus: z.enum(["unreviewed", "confirmed", "rejected"]),
   confirmedBy: controlledReferenceSchema.optional(),
   confirmedAt: z.string().datetime().optional(),
@@ -5050,7 +5096,7 @@ const f5RootSignalStatementSchema = z.union([
       requiresEngineeringReview: z.literal(true),
     }).strict().superRefine((content, context) => {
       validateF5ContextualSignalSemantics(content.scope, content, context, []);
-      validateF5ContextualSignalRowKeySets(content, context, []);
+      validateF5ContextualSignalRowKeySets(content.scope, content, context, []);
     }),
   }).strict(),
   z.object({
@@ -5287,15 +5333,33 @@ const f5CompletedWorksheetResultSchema = z.object({
       worksheet.governanceRows,
       context,
     );
+    const visibleFactLabelsByScope = new Map<string, Set<string>>();
+    worksheet.statements.forEach((statement) => {
+      if (statement.type !== "FACT" || statement.content.provenanceKind !== "image_observation") return;
+      const labels = visibleFactLabelsByScope.get(statement.content.scope) ?? new Set<string>();
+      statement.content.visibleLabels?.forEach((label) => labels.add(label));
+      visibleFactLabelsByScope.set(statement.content.scope, labels);
+    });
     worksheet.statements.forEach((statement, statementIndex) => {
       if (statement.type !== "SIGNAL" || !("signalKind" in statement.content)
         || statement.content.signalKind !== "image_text_context_review") return;
       validateF5ContextualSignalLinks(
+        statement.content.scope,
         statement.content,
         snapshotRowKeys,
         context,
         ["statements", statementIndex, "content"],
       );
+      const visibleFactLabels = visibleFactLabelsByScope.get(statement.content.scope) ?? new Set<string>();
+      statement.content.linkedVisualLabels.forEach((linkedVisualLabel, linkedLabelIndex) => {
+        if (!visibleFactLabels.has(linkedVisualLabel.label)) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "context labels must reference visual FACT labels for the same scope",
+            path: ["statements", statementIndex, "content", "linkedVisualLabels", linkedLabelIndex, "label"],
+          });
+        }
+      });
     });
   }
   const factorSourceKeys = new Set<string>();

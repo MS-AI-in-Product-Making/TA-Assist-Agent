@@ -189,7 +189,7 @@ function contextualObservationBundle() {
     rows: [{
       tableId: governanceRow.source.tableId,
       sourceRow: governanceRow.source.sourceRow,
-      partName: null,
+      partName: governanceRow.partSubsystem,
       partSubsystem: governanceRow.partSubsystem,
       partCategory: governanceRow.partCategory,
       factorName: worksheet.calculationResult.factors[0].factorName,
@@ -207,6 +207,7 @@ function contextualObservationBundle() {
       observedValue: "visible",
       confidence: "high",
       visibleBasis: `Visible controlled marker for ${scope}.`,
+      visibleLabels: [],
       reviewStatus: "unreviewed",
     },
     contextualSignal: {
@@ -456,12 +457,13 @@ function createRealArtifactBundle() {
   return { root, publishRoot, outputRoot, f1ArtifactRoot, f3ArtifactRoot, f4ArtifactRoot };
 }
 
-function runDirectProcess(bundle) {
+function runDirectProcess(bundle, imageObservationsPath) {
   return spawnSync(process.execPath, [
     "scripts/run-f5-full-validation.mjs",
     bundle.f1ArtifactRoot,
     bundle.f3ArtifactRoot,
     bundle.f4ArtifactRoot,
+    ...(imageObservationsPath === undefined ? [] : ["--image-observations", imageObservationsPath]),
   ], {
     cwd: path.resolve("."),
     encoding: "utf8",
@@ -715,6 +717,8 @@ describe("runF5FullValidation", () => {
   it.each([
     ["invalid v2 snapshot", "artifact_contract_invalid"],
     ["selected worksheet missing from v2", "artifact_identity_mismatch"],
+    ["missing optional observation", "artifact_missing"],
+    ["malformed optional observation", "artifact_contract_invalid"],
   ])("completes deterministic F5 when %s", (_case, fallbackReasonCode) => {
     const context = setup();
     context.deps.loadBundle.mockReturnValue({
@@ -1260,6 +1264,31 @@ describe("runF5FullValidation", () => {
         runSummary: "Feature5-Run-Summary.json",
       },
     });
+  });
+
+  it.each([
+    ["missing", (observationPath) => observationPath],
+    ["malformed JSON", (observationPath) => {
+      writeFileSync(observationPath, "{malformed observation", "utf8");
+      return observationPath;
+    }],
+  ])("completes the real workflow without partial observation output for a %s optional artifact", (
+    _case,
+    prepareObservation,
+  ) => {
+    const bundle = createRealArtifactBundle();
+    const observationPath = prepareObservation(path.join(bundle.root, "optional-observations.json"));
+    const child = runDirectProcess(bundle, observationPath);
+
+    expect(child.status).toBe(0);
+    expect(child.stderr).toBe("");
+    const result = JSON.parse(child.stdout);
+    const summary = readJson(result.runSummaryPath);
+    expect(result.status).toBe("completed");
+    expect(result).not.toHaveProperty("imageObservationsPath");
+    expect(readdirSync(result.outputDirectory)).not.toContain("Feature5-Image-Observations.json");
+    expect(summary.sources).not.toHaveProperty("observation");
+    expect(summary.hashes).not.toHaveProperty("imageObservationsSha256");
   });
 
   it("runs the package workflow:f5 script with an isolated successful fixture", () => {

@@ -498,28 +498,23 @@ export function loadF5ArtifactBundle({
   if (imageObservationArtifact === undefined) return acceptedResult(baselineRequest);
 
   const observationReference = safeReference(imageObservationArtifact);
+  const observationFallback = (reasonCode) => acceptedResult(baselineRequest, {
+    observationFallback: { reasonCode, artifactReference: observationReference },
+  });
   const observationJson = readJson(path.resolve(imageObservationArtifact), observationReference);
-  if (observationJson.rejection) return observationJson.rejection;
+  if (observationJson.rejection) {
+    return observationFallback(observationJson.rejection.reasonCode);
+  }
   const observationParsed = f5ImageObservationArtifactSchema.safeParse(observationJson.value);
   if (!observationParsed.success) {
-    return observationJson.value?.observationVersion === "f5-image-observation-v2"
-      ? acceptedResult(baselineRequest, {
-        observationFallback: {
-          reasonCode: "artifact_contract_invalid",
-          artifactReference: observationReference,
-        },
-      })
-      : inputRejected("artifact_contract_invalid", observationReference);
+    return observationFallback("artifact_contract_invalid");
   }
 
   const observationArtifact = observationParsed.data;
   if (observationArtifact.observationVersion === "f5-image-observation-v2") {
-    const fallback = (reasonCode) => acceptedResult(baselineRequest, {
-      observationFallback: { reasonCode, artifactReference: observationReference },
-    });
     if (observationArtifact.workbookContentHash !== workbook.contentHash
       || !sameWorksheetSet(observationArtifact.worksheets, selection)) {
-      return fallback("artifact_identity_mismatch");
+      return observationFallback("artifact_identity_mismatch");
     }
 
     const observationByWorksheet = new Map(
@@ -548,7 +543,7 @@ export function loadF5ArtifactBundle({
         || !expectedSnapshot
         || !sameImageReference(observation.imageReference, imageReference)
         || !sameStableValue(observation.contextSnapshot, expectedSnapshot)) {
-        return fallback("artifact_identity_mismatch");
+        return observationFallback("artifact_identity_mismatch");
       }
       enrichedWorksheets.push({
         ...baselineWorksheet,
