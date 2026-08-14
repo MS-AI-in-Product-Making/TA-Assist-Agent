@@ -163,15 +163,19 @@ The result must include a quick, easy-to-scan TA risk summary.
 - Consume controlled F0/F1/F3/F4 artifacts directly; workbook entry must first pass the F2 gate.
 - Use four statement types: `FACT` for computed or directly observed evidence, `RULE` for an applicable F0 rule, `SIGNAL` for items needing engineering attention, and `OPTION` for unranked alternatives.
 - Generate sections 1-3 of the five-section report: loop validity, capability versus specification, and top contributors. Delegate structural risks and parallel options to F6.
-- Check loop closure only from governed evidence. F1 is the sole physical image owner; missing image provenance fails closed, while skipped optional observation is `not_evaluated` plus clarification.
-- Treat every image observation as confidence-tagged visible evidence rather than drawing truth; structural use remains gated by ME review.
+- Keep historical `f5-image-observation-v1` artifacts read-only compatible; create only v2 from new image-mode runs.
+- For every selected worksheet, require exactly one observation for each of `tolerance_loop_closure`, `datum_chain`, `assembly_datum_face`, `stack_start`, and `direction`.
+- Snapshot all active factor rows with original and mapped part/factor fields, numeric inputs, and source-cell provenance.
+- Keep visual evidence in confidence-gated image `FACT`s and image-plus-text assessment in `image_text_context_review` `SIGNAL`s requiring ME review. Direction mapping uses structured `linkedVisualLabels`; free-text inference is prohibited.
+- Validate v2 all-or-nothing. Observation-only failure discards the entire v2 and continues deterministic F5 with clarification; baseline identity and required-image errors fail closed.
+- Create v2 once in an immutable UUID-scoped location, read it back, and defer schema, identity, and hash authority to the F5 loader.
 - Evaluate RSS sigma, Cpk, and spec-window feasibility using the Rules Library.
 - Order the top contributors by governed F4 contribution and explain only measurable causes supported by source evidence.
 - Cite the F0 knowledge-base entry, rule version, and applicable scope for every `RULE` or capability conclusion.
 - Show a clarification card and explicit assumption log when the assembly datum face, stack start, subsystem classification, or other required evidence is missing.
 - Hold only the conclusions that depend on the unanswered question; continue analysis for evidence that is already sufficient.
 - Support `workflow:f5` and the trigger phrase `使用F5分析报告`; never auto-publish to ADO or write back to the workbook.
-- Retain F5.1 as an internal compatible core, not as the only available F5 entry.
+- Retain F5.1 as an internal compatible core, not as the only available F5 entry. Keep the existing detailed F5 report and F6 delegation unchanged; the separate F6 spec and plan do not mean F6 is implemented.
 
 ### F6 - Tolerance / Dimension-Chain Optimization
 

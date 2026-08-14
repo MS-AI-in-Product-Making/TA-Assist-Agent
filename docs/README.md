@@ -39,6 +39,11 @@ DM 团队进行 3D 分析，同时始终计算 WC/RSS；支持六种受控分布
 `drawing-governance-v2` 本地治理核心和受控 Surface MCP adapter，真实 Comment 0 写入仍需
 capability、策略审批和逐次用户确认。根 F5 现为 staged `available`，提供受治理的完整解读
 workflow；F5.1 保留为受 F4/F0 证据约束的 compatibility core，不代表独立的完整工作流状态。
+历史 `f5-image-observation-v1` artifact 仅只读兼容；新 image mode 只创建 v2。每个 selected worksheet
+必须完整覆盖五项 core scope 与全部 active factor rows；visual FACT 和要求 ME review 的
+`image_text_context_review` SIGNAL 分层保存，direction 仅通过结构化 `linkedVisualLabels` 映射，
+不得使用自由文本推断。V2 以 immutable UUID-scoped 目录单次创建并 readback，由 loader 对 schema、
+identity 和 hash 最终校验；observation-only 失败整件回退到 deterministic F5，baseline identity 错误 fail closed。
 F6 和 F7 仍为 `unavailable`，并返回 `feature_not_available`；F8 仅提供匿名
 `public` fixture 的受治理 Skill 运行时验收，不包含外部 Adapter、模型、ADO、SharePoint 或 UI 行为。
 
@@ -69,6 +74,10 @@ F6 和 F7 仍为 `unavailable`，并返回 `feature_not_available`；F8 仅提�
 | [F2 Artifact 报告实施计划](superpowers/plans/2026-08-03-f2-artifact-report-redesign.md) | Artifact loader、用户报告契约、CLI 与真实 demo |
 | [F5 Workbook 完整编排设计](superpowers/specs/2026-08-12-f5-workbook-end-to-end-orchestration-design.md) | F0-F5 完整链路、双 worksheet 确认和 fail-closed 边界 |
 | [F5 Workbook 完整编排实施计划](superpowers/plans/2026-08-12-f5-workbook-end-to-end-orchestration.md) | F3/F5 skill 合同、文档回归和真实 workbook 验收步骤 |
+| [F5 图文联合图片观察 v2 设计](superpowers/specs/2026-08-12-f5-contextual-image-observations-design.md) | v1 只读兼容、五项 scope、全 active-row snapshot 与 visual/context evidence 分层 |
+| [F5 图文联合图片观察 v2 实施计划](superpowers/plans/2026-08-14-f5-contextual-image-observations-v2.md) | v2 contracts、loader 校验、报告、Skill protocol 与回归任务 |
+| [F6 优化与 F5+F6 联合工程报告设计](superpowers/specs/2026-08-14-f6-optimization-and-composed-report-design.md) | F6 独立设计；不改变当前 F5 详细报告 delegation，也不表示 F6 已实现 |
+| [F6 优化与 F5+F6 联合工程报告实施计划](superpowers/plans/2026-08-14-f6-optimization-and-composed-report.md) | F6 后续实施任务与 availability gate；当前仍为 `feature_not_available` |
 | [F4 计算引擎设计](superpowers/specs/2026-07-30-f4-calculation-engine-design.md) | 方法推荐、Excel 一致计算、What-if、隐私与黄金回归边界 |
 | [F4 计算引擎实施计划](superpowers/plans/2026-07-30-f4-calculation-engine.md) | F4 契约、kernel、服务、回归、治理和质量门 |
 | [系统架构](01-architecture.md) | 产品架构与后续业务能力边界 |

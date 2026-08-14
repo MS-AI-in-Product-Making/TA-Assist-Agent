@@ -12,7 +12,7 @@ relying on individual engineers' experience.
 1. **Process automation** — Manual TA workbook upload, optional ADO governance, **server-side scheduled reminders** for linked ADO items (independent of whether the agent is running), and measured-data backfill connect **design ⇄ analysis ⇄ real data** into a traceable closed loop.
 2. **Data interpretation** — objective, evidence-backed **5-section** report: F5 owns the first three sections and delegates the last two to F6; every RULE cites a versioned, scoped F0 entry and final judgment stays with the engineer.
 
-> **Scope.** Automatic extraction of drawing truth, OCR, dimension recognition, and 3D VA are out of scope for now. F1 owns hash-gated worksheet images; optional F5 observations are confidence-tagged visible evidence subject to ME review, never drawing truth. Data-to-drawing linking is done via **DIM ID metadata**.
+> **Scope.** Automatic extraction of drawing truth, OCR, dimension recognition, and 3D VA are out of scope for now. F1 owns hash-gated worksheet images. Historical F5 image-observation v1 artifacts are read-only; new image mode creates v2 only, separating visual FACTs from ME-review-gated image-plus-text SIGNALs. Data-to-drawing linking is done via **DIM ID metadata**.
 
 ## Documentation
 
@@ -179,7 +179,9 @@ matches the template exactly.
 4. **Structural risk (delegated F6)** — cross-domain datum chain (ME/PCBA/Glass), non-geometric variables, and over-long stacks; F5 does not synthesize this section while F6 is unavailable.
 5. **Options (delegated F6)** — parallel quantified improvement paths remain an F6 responsibility; F5 does not rank, recommend, or invent them.
 
-F5 directly consumes F0/F1/F3/F4 artifacts; workbook entry first passes the F2 gate. F1 is the only physical image owner. A missing F1 image reference or physical image fails that worksheet closed, while skipped/unavailable optional observation mode continues deterministic interpretation as `not_evaluated` plus clarification. Image observations are not drawing truth and remain confidence-tagged and ME review-gated. Unconfirmed assumptions never replace evidence.
+F5 directly consumes F0/F1/F3/F4 artifacts; workbook entry first passes the F2 gate. Historical `f5-image-observation-v1` artifacts remain read-only compatible, while new image mode creates only v2. Each selected worksheet must contain exactly the five scopes `tolerance_loop_closure`, `datum_chain`, `assembly_datum_face`, `stack_start`, and `direction`, with a snapshot of all active factor rows preserving original/mapped fields and source-cell provenance. Confidence-gated visual evidence may produce an image `FACT`; image-plus-text assessment produces only an ME-review-required `image_text_context_review` `SIGNAL`. Direction mapping requires structured `linkedVisualLabels`, never free-text inference.
+
+V2 is validated all-or-nothing. An observation-only failure discards the whole v2 and continues deterministic F5 with clarification; baseline identity or required-image errors fail closed. V2 is immutable, UUID-scoped, created once, read back, and accepted only when the loader verifies schema, identities, and hashes. The existing detailed F5 report still delegates sections 4-5 to F6; the separate F6 design does not mean F6 is implemented.
 
 ---
 
@@ -251,10 +253,10 @@ The workflow executes Task 1.1-1.7 with real workbook inputs and emits a final r
 - 三个直接 artifact roots：`npm run workflow:f5 -- "path/to/f1-root" "path/to/f3-root" "path/to/f4-root" --worksheet "Analysis-A" --worksheet "Analysis-B"`
 - 直接 `workflow:f5` 的 `--worksheet <name>` 可选且可重复；省略时默认使用 F4 calculations 中的 worksheets。
 - Skill/workbook 交互模式必须至少选择一个 worksheet，并将每个选择以重复的 `--worksheet <name>` 传入；F3 与 F5 必须使用完全相同的 selected worksheet set。
-- 可选图片观察：在上述命令末尾追加 `--image-observations "path/to/Feature5-Image-Observations.json"`。没有经过 schema、identity 和 hash 校验的观察工件不得传入。
+- 可选图片观察：在上述命令末尾追加 `--image-observations "path/to/Feature5-Image-Observations.json"`。历史 v1 仅只读；新 image mode 只创建 immutable、UUID-scoped v2，并在 readback 后由 loader 校验 schema、identity 和 hash。
 - workbook 启动顺序为 F1 -> F2 门禁 -> selected F3 -> F4 -> F5。F5 直接消费 F0 规则及 F1/F3/F4 工件；仓库不承诺或虚构独立 F0 workflow 命令。
 - Skill 入口为“使用F5分析报告”。该入口不自动发布 ADO、不回写 workbook。`approved-knowledge-base` 与 `approved-me-review` 是 Feature 发布/启用批准，当前 F5 `available` 表示部署已批准，不是每次运行的交互输入。
-- 运行时 ME review 由 `requiresEngineeringReview` SIGNAL、clarification/assumption 和不生成缺少受控证据支持的最终 RULE 门禁；必需 physical image 缺失、artifact identity/hash 不匹配或 schema evidence 校验失败仍 fail closed。
+- 运行时 ME review 由 `requiresEngineeringReview` SIGNAL、clarification/assumption 和不生成缺少受控证据支持的最终 RULE 门禁。V2 observation 校验失败时整件丢弃并继续 deterministic F5；baseline identity/hash 或必需 physical image 错误仍 fail closed。
 - 每次运行输出到 `test/demo-output/f5-runs/<workbook-safe-name>/<UTC-run-id>/`，包含 `Feature5-Report.json`、`Feature5-Report.md`、`Feature5-Run-Summary.json` 和 `manifest.json`；可选输入 artifact 为 `Feature5-Image-Observations.json`。
 
 - `test/` and all `*.xlsx` (confidential templates / sample data) are **git-ignored**.
