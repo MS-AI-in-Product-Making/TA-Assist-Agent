@@ -1,0 +1,378 @@
+import type {
+  CalculationFactorResult,
+  Distribution,
+  F6ToleranceChange,
+} from "@ai-assist/contracts";
+
+type FactorSource = CalculationFactorResult["source"];
+
+const DISTRIBUTION_MULTIPLIER: Readonly<Record<Distribution, number>> = {
+  normal: 1,
+  uniform: 1.732,
+  triangular: 1.225,
+  trapezoidal: 1.369,
+  elliptical: 1.5,
+  beta: 2.023,
+};
+
+export type F6SolverErrorCode =
+  | "invalid_solver_input"
+  | "missing_selected_source"
+  | "duplicate_selected_source"
+  | "target_unreachable";
+
+export class F6SolverError extends Error {
+  readonly code: F6SolverErrorCode;
+  readonly summary: string;
+
+  constructor(code: F6SolverErrorCode, summary: string) {
+    super(`${code}: ${summary}`);
+    this.name = "F6SolverError";
+    this.code = code;
+    this.summary = summary;
+  }
+}
+
+export interface ScaleToleranceBandInput {
+  readonly lowerTolerance: number;
+  readonly upperTolerance: number;
+  readonly scale: number;
+}
+
+export interface ScaleToleranceBandResult {
+  readonly lowerTolerance: number;
+  readonly upperTolerance: number;
+  readonly center: number;
+  readonly originalBand: number;
+  readonly resultingBand: number;
+}
+
+type SpecificationBounds =
+  | {
+      readonly lowerSpecLimit: number;
+      readonly upperSpecLimit: number;
+      readonly LSL?: never;
+      readonly USL?: never;
+    }
+  | {
+      readonly LSL: number;
+      readonly USL: number;
+      readonly lowerSpecLimit?: never;
+      readonly upperSpecLimit?: never;
+    };
+
+export type CenteringInput = SpecificationBounds & {
+  readonly factorMeans: readonly number[];
+};
+
+export interface CenteringResult {
+  readonly targetMean: number;
+  readonly additionalMeanShift: number;
+}
+
+export type TargetRssSigmaInput = SpecificationBounds & {
+  readonly mean: number;
+  readonly targetCpk: number;
+};
+
+export interface SingleFactorSolveInput {
+  readonly factors: readonly CalculationFactorResult[];
+  readonly selectedSource: FactorSource;
+  readonly targetRssSigma: number;
+}
+
+export type TopNAllocation =
+  | "proportional-to-contribution"
+  | "equal-allocation-among-top-N";
+
+export interface TopNSolveInput {
+  readonly factors: readonly CalculationFactorResult[];
+  readonly selectedSources: readonly FactorSource[];
+  readonly targetRssSigma: number;
+  readonly allocation: TopNAllocation;
+}
+
+function fail(code: F6SolverErrorCode, summary: string): never {
+  throw new F6SolverError(code, summary);
+}
+
+function assertFinite(value: number, label: string): void {
+  if (!Number.isFinite(value)) {
+    fail("invalid_solver_input", `${label} must be finite`);
+  }
+}
+
+function assertValidSpecBounds(lowerSpecLimit: number, upperSpecLimit: number): void {
+  assertFinite(lowerSpecLimit, "lowerSpecLimit");
+  assertFinite(upperSpecLimit, "upperSpecLimit");
+  if (!(upperSpecLimit > lowerSpecLimit)) {
+    fail("invalid_solver_input", "upperSpecLimit must be greater than lowerSpecLimit");
+  }
+}
+
+function sourceKey(source: FactorSource): string {
+  return `${source.worksheetName}\u0000${source.tableId}\u0000${source.sourceRow}`;
+}
+
+function compareText(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function compareSources(left: FactorSource, right: FactorSource): number {
+  return compareText(left.worksheetName, right.worksheetName)
+    || compareText(left.tableId, right.tableId)
+    || left.sourceRow - right.sourceRow;
+}
+
+function validateSource(source: FactorSource, label: string): void {
+  if (source.worksheetName.length === 0 || source.tableId.length === 0) {
+    fail("invalid_solver_input", `${label} worksheetName and tableId must be non-empty`);
+  }
+  if (!Number.isInteger(source.sourceRow) || source.sourceRow <= 0) {
+    fail("invalid_solver_input", `${label}.sourceRow must be a positive integer`);
+  }
+}
+
+function validateFactor(factor: CalculationFactorResult, index: number): void {
+  const label = `factor[${index}]`;
+  validateSource(factor.source, `${label}.source`);
+  for (const [field, value] of [
+    ["sigma", factor.sigma],
+    ["contribution", factor.contribution],
+    ["lowerTolerance", factor.input.lowerTolerance],
+    ["upperTolerance", factor.input.upperTolerance],
+    ["longTermSafetyFactor", factor.input.longTermSafetyFactor],
+    ["sigmaLevel", factor.input.sigmaLevel],
+  ] as const) {
+    assertFinite(value, `${label}.${field}`);
+  }
+  if (!(factor.sigma > 0)) {
+    fail("invalid_solver_input", `${label}.sigma must be greater than zero`);
+  }
+  if (factor.contribution < 0) {
+    fail("invalid_solver_input", `${label}.contribution must be non-negative`);
+  }
+  if (!(factor.input.upperTolerance > factor.input.lowerTolerance)) {
+    fail("invalid_solver_input", `${label} tolerance bounds must define a positive band`);
+  }
+  if (!(factor.input.longTermSafetyFactor > 0)) {
+    fail("invalid_solver_input", `${label}.longTermSafetyFactor must be greater than zero`);
+  }
+  if (!(factor.input.sigmaLevel > 0)) {
+    fail("invalid_solver_input", `${label}.sigmaLevel must be greater than zero`);
+  }
+  if (DISTRIBUTION_MULTIPLIER[factor.input.distribution] === undefined) {
+    fail("invalid_solver_input", `${label}.distribution is unsupported`);
+  }
+}
+
+function buildFactorMap(factors: readonly CalculationFactorResult[]): ReadonlyMap<string, CalculationFactorResult> {
+  if (factors.length === 0) {
+    fail("invalid_solver_input", "factors must not be empty");
+  }
+  const factorMap = new Map<string, CalculationFactorResult>();
+  factors.forEach((factor, index) => {
+    validateFactor(factor, index);
+    const key = sourceKey(factor.source);
+    if (factorMap.has(key)) {
+      fail("invalid_solver_input", `factor source must be unique: ${key}`);
+    }
+    factorMap.set(key, factor);
+  });
+  return factorMap;
+}
+
+function resolveSelectedFactors(
+  factorMap: ReadonlyMap<string, CalculationFactorResult>,
+  selectedSources: readonly FactorSource[],
+): readonly CalculationFactorResult[] {
+  if (selectedSources.length === 0) {
+    fail("invalid_solver_input", "selectedSources must not be empty");
+  }
+  const seen = new Set<string>();
+  return selectedSources.map((source, index) => {
+    validateSource(source, `selectedSources[${index}]`);
+    const key = sourceKey(source);
+    if (seen.has(key)) {
+      fail("duplicate_selected_source", `selected source must be unique: ${key}`);
+    }
+    seen.add(key);
+    const factor = factorMap.get(key);
+    if (factor === undefined) {
+      fail("missing_selected_source", `selected source was not found: ${key}`);
+    }
+    return factor;
+  });
+}
+
+function assertTargetRssSigma(targetRssSigma: number): void {
+  assertFinite(targetRssSigma, "targetRssSigma");
+  if (!(targetRssSigma > 0)) {
+    fail("invalid_solver_input", "targetRssSigma must be greater than zero");
+  }
+}
+
+function toleranceChangeForSigma(
+  factor: CalculationFactorResult,
+  targetSigma: number,
+): F6ToleranceChange {
+  assertFinite(targetSigma, "targetSigma");
+  if (!(targetSigma > 0)) {
+    fail("target_unreachable", "target factor sigma must be greater than zero");
+  }
+  const distributionMultiplier = DISTRIBUTION_MULTIPLIER[factor.input.distribution];
+  if (!(distributionMultiplier > 0) || !Number.isFinite(distributionMultiplier)) {
+    fail("invalid_solver_input", "distribution multiplier must be finite and greater than zero");
+  }
+  const targetHalfTolerance = targetSigma
+    * factor.input.sigmaLevel
+    / (factor.input.longTermSafetyFactor * distributionMultiplier);
+  assertFinite(targetHalfTolerance, "targetHalfTolerance");
+  const originalLowerTolerance = factor.input.lowerTolerance;
+  const originalUpperTolerance = factor.input.upperTolerance;
+  const originalBand = originalUpperTolerance - originalLowerTolerance;
+  const bandCenter = (originalUpperTolerance + originalLowerTolerance) / 2;
+  const resultingBand = targetHalfTolerance * 2;
+
+  return {
+    worksheetName: factor.source.worksheetName,
+    tableId: factor.source.tableId,
+    sourceRow: factor.source.sourceRow,
+    originalLowerTolerance,
+    originalUpperTolerance,
+    resultingLowerTolerance: bandCenter - targetHalfTolerance,
+    resultingUpperTolerance: bandCenter + targetHalfTolerance,
+    originalBand,
+    resultingBand,
+    bandCenter,
+  };
+}
+
+export function scaleToleranceBandAroundCenter(input: ScaleToleranceBandInput): ScaleToleranceBandResult {
+  assertFinite(input.lowerTolerance, "lowerTolerance");
+  assertFinite(input.upperTolerance, "upperTolerance");
+  assertFinite(input.scale, "scale");
+  if (!(input.upperTolerance > input.lowerTolerance)) {
+    fail("invalid_solver_input", "upperTolerance must be greater than lowerTolerance");
+  }
+  if (!(input.scale > 0 && input.scale <= 1)) {
+    fail("invalid_solver_input", "scale must be in the interval (0, 1]");
+  }
+  const center = (input.upperTolerance + input.lowerTolerance) / 2;
+  const originalBand = input.upperTolerance - input.lowerTolerance;
+  const resultingBand = input.scale * originalBand;
+  return {
+    lowerTolerance: center - resultingBand / 2,
+    upperTolerance: center + resultingBand / 2,
+    center,
+    originalBand,
+    resultingBand,
+  };
+}
+
+export function selectTopContributors(
+  factors: readonly CalculationFactorResult[],
+  count: number,
+): readonly CalculationFactorResult[] {
+  if (!Number.isInteger(count) || count <= 0 || count > factors.length) {
+    fail("invalid_solver_input", "count must be a positive integer no greater than factors.length");
+  }
+  factors.forEach((factor, index) => {
+    assertFinite(factor.contribution, `factor[${index}].contribution`);
+    if (factor.contribution < 0) {
+      fail("invalid_solver_input", `factor[${index}].contribution must be non-negative`);
+    }
+    validateSource(factor.source, `factor[${index}].source`);
+  });
+  return [...factors]
+    .sort((left, right) => right.contribution - left.contribution || compareSources(left.source, right.source))
+    .slice(0, count);
+}
+
+export function solveCenteringShift(input: CenteringInput): CenteringResult {
+  const [lowerSpecLimit, upperSpecLimit] = resolveSpecBounds(input);
+  if (input.factorMeans.length === 0) {
+    fail("invalid_solver_input", "factorMeans must not be empty");
+  }
+  const currentMean = input.factorMeans.reduce((sum, factorMean, index) => {
+    assertFinite(factorMean, `factorMeans[${index}]`);
+    return sum + factorMean;
+  }, 0);
+  assertFinite(currentMean, "currentMean");
+  const targetMean = (upperSpecLimit + lowerSpecLimit) / 2;
+  return { targetMean, additionalMeanShift: targetMean - currentMean };
+}
+
+export function solveTargetRssSigma(input: TargetRssSigmaInput): number {
+  const [lowerSpecLimit, upperSpecLimit] = resolveSpecBounds(input);
+  assertFinite(input.mean, "mean");
+  assertFinite(input.targetCpk, "targetCpk");
+  if (!(input.mean > lowerSpecLimit && input.mean < upperSpecLimit)) {
+    fail("invalid_solver_input", "mean must be strictly inside the specification bounds");
+  }
+  if (!(input.targetCpk > 0)) {
+    fail("invalid_solver_input", "targetCpk must be greater than zero");
+  }
+  return Math.min(
+    input.mean - lowerSpecLimit,
+    upperSpecLimit - input.mean,
+  ) / (3 * input.targetCpk);
+}
+
+export function solveSingleFactorTolerance(input: SingleFactorSolveInput): F6ToleranceChange {
+  assertTargetRssSigma(input.targetRssSigma);
+  const factorMap = buildFactorMap(input.factors);
+  const selectedFactor = resolveSelectedFactors(factorMap, [input.selectedSource])[0]!;
+  const fixedVariance = input.factors.reduce(
+    (sum, factor) => sum + (factor === selectedFactor ? 0 : factor.sigma ** 2),
+    0,
+  );
+  const targetFactorVariance = input.targetRssSigma ** 2 - fixedVariance;
+  if (!(targetFactorVariance > 0) || !Number.isFinite(targetFactorVariance)) {
+    fail("target_unreachable", "fixed factors consume the target RSS variance");
+  }
+  return toleranceChangeForSigma(selectedFactor, Math.sqrt(targetFactorVariance));
+}
+
+export function solveTopNCombinedTolerance(input: TopNSolveInput): readonly F6ToleranceChange[] {
+  assertTargetRssSigma(input.targetRssSigma);
+  const factorMap = buildFactorMap(input.factors);
+  const selectedFactors = resolveSelectedFactors(factorMap, input.selectedSources);
+  const selectedKeys = new Set(input.selectedSources.map(sourceKey));
+  const fixedVariance = input.factors.reduce(
+    (sum, factor) => sum + (selectedKeys.has(sourceKey(factor.source)) ? 0 : factor.sigma ** 2),
+    0,
+  );
+  const selectedTargetVariance = input.targetRssSigma ** 2 - fixedVariance;
+  if (!(selectedTargetVariance > 0) || !Number.isFinite(selectedTargetVariance)) {
+    fail("target_unreachable", "fixed factors consume the target RSS variance");
+  }
+
+  let weights: readonly number[];
+  if (input.allocation === "equal-allocation-among-top-N") {
+    weights = selectedFactors.map(() => 1 / selectedFactors.length);
+  } else if (input.allocation === "proportional-to-contribution") {
+    const contributionSum = selectedFactors.reduce((sum, factor) => sum + factor.contribution, 0);
+    if (!(contributionSum > 0) || !Number.isFinite(contributionSum)) {
+      fail("target_unreachable", "selected factors must have positive total contribution");
+    }
+    weights = selectedFactors.map((factor) => factor.contribution / contributionSum);
+  } else {
+    fail("invalid_solver_input", "allocation is unsupported");
+  }
+
+  return selectedFactors.map((factor, index) => {
+    const targetVariance = selectedTargetVariance * weights[index]!;
+    if (!(targetVariance > 0) || !Number.isFinite(targetVariance)) {
+      fail("target_unreachable", "allocation produced a non-positive target variance");
+    }
+    return toleranceChangeForSigma(factor, Math.sqrt(targetVariance));
+  });
+}
+
+function resolveSpecBounds(input: SpecificationBounds): readonly [number, number] {
+  const lowerSpecLimit = "LSL" in input ? input.LSL : input.lowerSpecLimit;
+  const upperSpecLimit = "USL" in input ? input.USL : input.upperSpecLimit;
+  assertValidSpecBounds(lowerSpecLimit, upperSpecLimit);
+  return [lowerSpecLimit, upperSpecLimit];
+}
