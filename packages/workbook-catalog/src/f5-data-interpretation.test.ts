@@ -193,6 +193,92 @@ function observation(overrides: Partial<F5DataInterpretationRequest["worksheets"
   };
 }
 
+const CORE_SCOPES = [
+  "tolerance_loop_closure",
+  "datum_chain",
+  "assembly_datum_face",
+  "stack_start",
+  "direction",
+] as const;
+
+function v2Request() {
+  const input = request() as unknown as ReturnType<typeof request> & {
+    worksheets: Array<ReturnType<typeof request>["worksheets"][number] & {
+      observationVersion: "f5-image-observation-v2";
+      contextSnapshot: {
+        dimensionDescription: string;
+        rows: Array<{
+          tableId: string;
+          sourceRow: number;
+          partName: string | null;
+          partSubsystem: string | null;
+          partCategory: string | null;
+          factorName: string | null;
+          factorDescription: string | null;
+          nominal: number | null;
+          upperTolerance: number | null;
+          lowerTolerance: number | null;
+          sigmaLevel: number | null;
+          sourceCells: Record<string, string>;
+        }>;
+      };
+      imageObservations: Array<{
+        scope: typeof CORE_SCOPES[number];
+        visualObservation: {
+          observedValue: "visible" | "not_visible" | "ambiguous";
+          confidence: "high" | "medium" | "low";
+          visibleBasis: string;
+          reviewStatus: "unreviewed" | "confirmed" | "rejected";
+        };
+        contextualSignal: {
+          signalValue: "indicated_consistent" | "indicated_conflict" | "ambiguous" | "insufficient_evidence";
+          textBasis: string;
+          linkedSourceRows: Array<{ tableId: string; sourceRow: number }>;
+          requiresEngineeringReview: true;
+        };
+      }>;
+    }>;
+  };
+  const worksheet = input.worksheets[0]!;
+  const firstGovernanceRow = worksheet.governanceRows[0]!;
+  worksheet.observationVersion = "f5-image-observation-v2";
+  worksheet.contextSnapshot = {
+    dimensionDescription: firstGovernanceRow.dimensionDescription,
+    rows: worksheet.governanceRows.map((row, index) => ({
+      tableId: row.source.tableId,
+      sourceRow: row.source.sourceRow,
+      partName: `part-${index + 1}`,
+      partSubsystem: row.partSubsystem,
+      partCategory: row.partCategory,
+      factorName: worksheet.calculationResult.factors[index]!.factorName,
+      factorDescription: row.factorDescription,
+      nominal: row.nominal,
+      upperTolerance: row.upperTolerance,
+      lowerTolerance: row.lowerTolerance,
+      sigmaLevel: row.sigmaLevel,
+      sourceCells: { factorName: `Analysis-A!A${row.source.sourceRow}` },
+    })),
+  };
+  worksheet.imageObservations = CORE_SCOPES.map((scope) => ({
+    scope,
+    visualObservation: {
+      observedValue: "visible",
+      confidence: scope === "direction" || scope === "stack_start" ? "high" : "medium",
+      visibleBasis: `Visible marker for ${scope}.`,
+      reviewStatus: "unreviewed",
+    },
+    contextualSignal: {
+      signalValue: scope === "direction" ? "indicated_consistent" : "ambiguous",
+      textBasis: `Image and worksheet context require review for ${scope}.`,
+      linkedSourceRows: scope === "direction"
+        ? [{ tableId: firstGovernanceRow.source.tableId, sourceRow: firstGovernanceRow.source.sourceRow }]
+        : [],
+      requiresEngineeringReview: true,
+    },
+  }));
+  return input;
+}
+
 function expectDeeplyFrozen(value: unknown): void {
   if (value === null || typeof value !== "object") return;
   expect(Object.isFrozen(value)).toBe(true);
@@ -625,6 +711,89 @@ describe("createF5DataInterpretation", () => {
 
     expect(worksheet.sections.toleranceChainValidity.status).toBe("needs_review");
     expect(worksheet.statements.some((statement) => statement.type === "RULE" && statement.section === "tolerance-chain-validity")).toBe(false);
+  });
+
+  it("separates v2 visual FACTs from one contextual SIGNAL per core scope", () => {
+    const input = v2Request();
+    const parsedInput = f5DataInterpretationRequestSchema.safeParse(input);
+    expect(parsedInput.success, parsedInput.success ? undefined : JSON.stringify(parsedInput.error.issues, null, 2)).toBe(true);
+    const result = createF5DataInterpretation(input);
+    const worksheet = result.worksheets[0]!;
+    if (worksheet.status !== "completed") throw new Error("expected completed worksheet");
+
+    const imageFacts = worksheet.statements.filter((statement) => (
+      statement.type === "FACT" && statement.content.provenanceKind === "image_observation"
+    ));
+    expect(imageFacts.map((statement) => statement.content.scope)).toEqual(["stack_start", "direction"]);
+    for (const fact of imageFacts) {
+      expect(fact.content).not.toHaveProperty("textBasis");
+      expect(fact.content).not.toHaveProperty("contextSnapshot");
+      expect(fact.statementId).toBe(`f5-image-fact-${fact.content.scope}`);
+    }
+
+    const contextSignals = worksheet.statements.filter((statement) => (
+      statement.type === "SIGNAL" && "signalKind" in statement.content
+        && statement.content.signalKind === "image_text_context_review"
+    ));
+    expect(contextSignals).toHaveLength(5);
+    expect(contextSignals.map((statement) => statement.content.scope)).toEqual(CORE_SCOPES);
+    expect(contextSignals.every((statement) => statement.content.requiresEngineeringReview)).toBe(true);
+    expect(contextSignals.find((statement) => statement.content.scope === "direction")?.content).toMatchObject({
+      signalValue: "indicated_consistent",
+      textBasis: expect.stringContaining("direction"),
+      linkedSourceRows: [{ tableId: "table-a", sourceRow: 2 }],
+    });
+    expect(worksheet.statements.some((statement) => (
+      statement.type === "RULE" && statement.section === "tolerance-chain-validity"
+    ))).toBe(false);
+  });
+
+  it("keeps all v2 core scopes reviewed while retaining noncore clarifications and F6 delegation", () => {
+    const input = v2Request();
+    const worksheetInput = input.worksheets[0]!;
+    worksheetInput.imageObservations.find(({ scope }) => scope === "stack_start")!.visualObservation = {
+      observedValue: "ambiguous",
+      confidence: "low",
+      visibleBasis: "No visible start marker or reliable mapping.",
+      reviewStatus: "unreviewed",
+    };
+    worksheetInput.imageObservations.find(({ scope }) => scope === "stack_start")!.contextualSignal = {
+      signalValue: "insufficient_evidence",
+      textBasis: "The first row alone does not identify a visible stack start.",
+      linkedSourceRows: [],
+      requiresEngineeringReview: true,
+    };
+    worksheetInput.imageObservations.find(({ scope }) => scope === "assembly_datum_face")!.contextualSignal = {
+      signalValue: "insufficient_evidence",
+      textBasis: "No marked assembly datum face is visible.",
+      linkedSourceRows: [],
+      requiresEngineeringReview: true,
+    };
+
+    const parsedInput = f5DataInterpretationRequestSchema.safeParse(input);
+    expect(parsedInput.success, parsedInput.success ? undefined : JSON.stringify(parsedInput.error.issues, null, 2)).toBe(true);
+
+    const result = createF5DataInterpretation(input);
+    const worksheet = result.worksheets[0]!;
+    if (worksheet.status !== "completed") throw new Error("expected completed worksheet");
+    const itemByScope = new Map(worksheet.sections.toleranceChainValidity.items.map((item) => [item.scope, item]));
+
+    for (const scope of CORE_SCOPES) {
+      expect(itemByScope.get(scope)?.status).not.toBe("not_evaluated");
+    }
+    expect(itemByScope.get("stack_start")?.status).toBe("insufficient_evidence");
+    expect(worksheet.statements.some((statement) => (
+      statement.type === "FACT" && statement.content.provenanceKind === "image_observation"
+        && statement.content.scope === "stack_start"
+    ))).toBe(false);
+    expect(worksheet.clarifications.map(({ structuralScope }) => structuralScope)).toEqual([
+      "stack_start",
+      "cross_subsystem",
+      "non_geometric_variable",
+      "long_dimension_chain",
+    ]);
+    expect(worksheet.sections.reasonableToleranceRange.status).toBe("delegated_to_f6");
+    expect(worksheet.sections.designOptimizationAndParallelOptions.status).toBe("delegated_to_f6");
   });
 
   it.each(["missing", "suspected_invalid", "duplicate_conflict", "blocked_for_reminder"] as const)(

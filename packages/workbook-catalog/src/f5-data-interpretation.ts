@@ -96,6 +96,43 @@ function mapObjectiveStatements(objective: ObjectiveResult): RootStatement[] {
 }
 
 function createImageEvidence(worksheet: RequestWorksheet) {
+  if ("observationVersion" in worksheet) {
+    const facts = worksheet.imageObservations
+      .filter(({ visualObservation }) => (
+        visualObservation.confidence === "high" && visualObservation.reviewStatus !== "rejected"
+      ))
+      .map(({ scope, visualObservation }) => ({
+        statementId: `f5-image-fact-${scope}`,
+        type: "FACT" as const,
+        section: "tolerance-chain-validity" as const,
+        content: {
+          provenanceKind: "image_observation" as const,
+          scope,
+          observedValue: visualObservation.observedValue,
+          imageReference: structuredClone(worksheet.imageReference),
+          confidence: visualObservation.confidence,
+          visibleBasis: visualObservation.visibleBasis,
+          reviewStatus: visualObservation.reviewStatus,
+          ...(visualObservation.confirmedBy === undefined ? {} : { confirmedBy: visualObservation.confirmedBy }),
+          ...(visualObservation.confirmedAt === undefined ? {} : { confirmedAt: visualObservation.confirmedAt }),
+        },
+      }));
+    const signals = worksheet.imageObservations.map(({ scope, contextualSignal }) => ({
+      statementId: `f5-signal-image-text-context-review-${scope}`,
+      type: "SIGNAL" as const,
+      section: "tolerance-chain-validity" as const,
+      content: {
+        signalKind: "image_text_context_review" as const,
+        scope,
+        signalValue: contextualSignal.signalValue,
+        textBasis: contextualSignal.textBasis,
+        linkedSourceRows: structuredClone(contextualSignal.linkedSourceRows),
+        requiresEngineeringReview: true as const,
+      },
+    }));
+    return { status: "needs_review" as const, statements: [...facts, ...signals] };
+  }
+
   const observations = worksheet.imageObservations;
   if (observations.length === 0) {
     return { status: "not_evaluated" as const, statements: [] };
@@ -154,7 +191,10 @@ function createImageEvidence(worksheet: RequestWorksheet) {
 function structuralClarifications(
   worksheet: RequestWorksheet,
 ) {
-  const observationByScope = new Map(worksheet.imageObservations.map((observation) => [observation.scope, observation]));
+  const observationByScope = new Map(worksheet.imageObservations.map((observation) => [
+    observation.scope,
+    "visualObservation" in observation ? observation.visualObservation : observation,
+  ]));
   return STRUCTURAL_SCOPES.flatMap((scope) => {
     const observation = observationByScope.get(scope);
     const reasonCode = observation === undefined
@@ -183,7 +223,10 @@ function structuralItems(
   imageStatements: readonly RootStatement[],
   clarifications: ReturnType<typeof structuralClarifications>,
 ) {
-  const observationByScope = new Map(worksheet.imageObservations.map((observation) => [observation.scope, observation]));
+  const observationByScope = new Map(worksheet.imageObservations.map((observation) => [
+    observation.scope,
+    "visualObservation" in observation ? observation.visualObservation : observation,
+  ]));
   return STRUCTURAL_SCOPES.map((scope) => {
     const observation = observationByScope.get(scope);
     const status = observation === undefined
@@ -200,6 +243,9 @@ function structuralItems(
             && candidate.content.provenanceKind === "image_observation" && candidate.content.scope === scope
         ))) === true
           || statement.content.observationEvidence?.some((evidence) => evidence.scope === scope) === true))
+      || (statement.type === "SIGNAL" && "signalKind" in statement.content
+        && statement.content.signalKind === "image_text_context_review"
+        && statement.content.scope === scope)
     )).map(({ statementId }) => statementId);
     return {
       scope,
@@ -213,7 +259,10 @@ function structuralItems(
 
 function structuralAssumptions(worksheet: RequestWorksheet) {
   const observedScopes = new Set(worksheet.imageObservations
-    .filter(({ confidence, reviewStatus }) => confidence !== "low" && reviewStatus !== "rejected")
+    .filter((observation) => {
+      const visual = "visualObservation" in observation ? observation.visualObservation : observation;
+      return visual.confidence !== "low" && visual.reviewStatus !== "rejected";
+    })
     .map(({ scope }) => scope));
   return STRUCTURAL_ASSUMPTIONS
     .filter(([scope]) => !observedScopes.has(scope))

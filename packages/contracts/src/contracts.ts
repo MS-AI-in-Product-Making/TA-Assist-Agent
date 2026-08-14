@@ -4526,6 +4526,49 @@ export const f5ContextualObservationV2Schema = z.object({
   contextualSignal: f5ContextualSignalV2Schema,
 }).strict();
 
+function validateF5ContextualObservationEvidence(
+  observation: z.infer<typeof f5ContextualObservationV2Schema>,
+  context: z.RefinementCtx,
+  path: Array<string | number>,
+): void {
+  if (observation.visualObservation.observedValue === "visible") return;
+
+  if (observation.scope === "stack_start") {
+    if (observation.contextualSignal.linkedSourceRows.length > 0) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "stack_start without a visible marker must not link source rows",
+        path: [...path, "contextualSignal", "linkedSourceRows"],
+      });
+    }
+    if (observation.contextualSignal.signalValue !== "ambiguous"
+      && observation.contextualSignal.signalValue !== "insufficient_evidence") {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "stack_start without a visible marker must be ambiguous or insufficient_evidence",
+        path: [...path, "contextualSignal", "signalValue"],
+      });
+    }
+  }
+
+  if (observation.scope === "assembly_datum_face"
+    && observation.contextualSignal.signalValue === "indicated_consistent") {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "assembly_datum_face without a visible marked face cannot be indicated_consistent",
+      path: [...path, "contextualSignal", "signalValue"],
+    });
+  }
+
+  if (observation.scope === "direction" && observation.contextualSignal.linkedSourceRows.length > 0) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "direction source rows require visible label evidence",
+      path: [...path, "contextualSignal", "linkedSourceRows"],
+    });
+  }
+}
+
 export const f5ContextualObservationWorksheetV2Schema = z.object({
   worksheetName: z.string().min(1),
   imageReference: f1ImageReferenceSchema,
@@ -4551,6 +4594,7 @@ export const f5ContextualObservationWorksheetV2Schema = z.object({
 
   const snapshotRowKeys = new Set(worksheet.contextSnapshot.rows.map(f5SnapshotRowKey));
   worksheet.observations.forEach((observation, observationIndex) => {
+    validateF5ContextualObservationEvidence(observation, context, ["observations", observationIndex]);
     const { contextualSignal } = observation;
     contextualSignal.linkedSourceRows.forEach((linkedSourceRow, linkedRowIndex) => {
       if (!snapshotRowKeys.has(f5SnapshotRowKey(linkedSourceRow))) {
@@ -4594,13 +4638,27 @@ export const f5ImageObservationArtifactSchema = z.discriminatedUnion("observatio
   f5ImageObservationArtifactV2Schema,
 ]);
 
-const f5DataInterpretationRequestWorksheetSchema = z.object({
+const f5DataInterpretationRequestWorksheetBaseSchema = z.object({
   worksheetName: z.string().min(1),
   imageReference: f1ImageReferenceSchema,
   governanceRows: z.array(f3GovernanceRowSchema),
   calculationResult: calculationCompletedResultSchema,
+});
+
+const f5DataInterpretationRequestWorksheetV1Schema = f5DataInterpretationRequestWorksheetBaseSchema.extend({
   imageObservations: z.array(f5ImageObservationSchema).max(100),
-}).strict().superRefine((worksheet, context) => {
+}).strict();
+
+const f5DataInterpretationRequestWorksheetV2Schema = f5DataInterpretationRequestWorksheetBaseSchema.extend({
+  observationVersion: z.literal("f5-image-observation-v2"),
+  contextSnapshot: f5ContextSnapshotV2Schema,
+  imageObservations: z.array(f5ContextualObservationV2Schema).length(f5CoreStructuralScopes.length),
+}).strict();
+
+const f5DataInterpretationRequestWorksheetSchema = z.union([
+  f5DataInterpretationRequestWorksheetV1Schema,
+  f5DataInterpretationRequestWorksheetV2Schema,
+]).superRefine((worksheet, context) => {
   const { worksheetName, imageReference, calculationResult } = worksheet;
   if (imageReference.worksheetName !== worksheetName) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "image worksheet must match worksheetName", path: ["imageReference", "worksheetName"] });
@@ -4653,8 +4711,38 @@ const f5DataInterpretationRequestWorksheetSchema = z.object({
   });
 
   const observationScopes = worksheet.imageObservations.map(({ scope }) => scope);
-  if (new Set(observationScopes).size !== observationScopes.length) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: "image observation scope must be unique", path: ["imageObservations"] });
+  const expectedScopeCount = "observationVersion" in worksheet ? f5CoreStructuralScopes.length : observationScopes.length;
+  if (new Set(observationScopes).size !== expectedScopeCount) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "image observations must contain the required scopes exactly once",
+      path: ["imageObservations"],
+    });
+  }
+
+  if ("observationVersion" in worksheet) {
+    const snapshotRowKeys = new Set(worksheet.contextSnapshot.rows.map(f5SnapshotRowKey));
+    worksheet.imageObservations.forEach((observation, observationIndex) => {
+      validateF5ContextualObservationEvidence(observation, context, ["imageObservations", observationIndex]);
+      observation.contextualSignal.linkedSourceRows.forEach((linkedSourceRow, linkedRowIndex) => {
+        if (!snapshotRowKeys.has(f5SnapshotRowKey(linkedSourceRow))) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "linked source rows must refer to context snapshot rows",
+            path: ["imageObservations", observationIndex, "contextualSignal", "linkedSourceRows", linkedRowIndex],
+          });
+        }
+      });
+      if (observation.contextualSignal.linkedSourceRows.length === 0
+        && observation.contextualSignal.signalValue !== "ambiguous"
+        && observation.contextualSignal.signalValue !== "insufficient_evidence") {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "unlinked contextual signals must be ambiguous or insufficient_evidence",
+          path: ["imageObservations", observationIndex, "contextualSignal", "signalValue"],
+        });
+      }
+    });
   }
 });
 
@@ -4730,6 +4818,24 @@ const f5RootObservationEvidenceSchema = z.object({
 }).strict().superRefine(validateF5ObservationConfirmation);
 
 const f5RootSignalStatementSchema = z.union([
+  z.object({
+    statementId: z.string().min(1),
+    type: z.literal("SIGNAL"),
+    section: z.literal("tolerance-chain-validity"),
+    content: z.object({
+      signalKind: z.literal("image_text_context_review"),
+      scope: f5CoreStructuralScopeSchema,
+      signalValue: z.enum([
+        "indicated_consistent",
+        "indicated_conflict",
+        "ambiguous",
+        "insufficient_evidence",
+      ]),
+      textBasis: z.string().min(1),
+      linkedSourceRows: z.array(f5LinkedSourceRowV2Schema),
+      requiresEngineeringReview: z.literal(true),
+    }).strict(),
+  }).strict(),
   z.object({
     statementId: z.string().min(1),
     type: z.literal("SIGNAL"),
@@ -5055,6 +5161,15 @@ const f5CompletedWorksheetResultSchema = z.object({
         }
         return;
       }
+      if (statement.type === "SIGNAL" && "signalKind" in statement.content
+        && statement.content.signalKind === "image_text_context_review") {
+        if (statement.content.scope !== item.scope) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "tolerance context SIGNAL scope must match item scope", path: [...itemPath, "relatedStatementIds", referenceIndex] });
+        } else {
+          hasSameScopeEvidence = true;
+        }
+        return;
+      }
       context.addIssue({ code: z.ZodIssueCode.custom, message: "tolerance item statements must be structural evidence", path: [...itemPath, "relatedStatementIds", referenceIndex] });
     });
     let hasSameScopeClarification = false;
@@ -5096,8 +5211,9 @@ const f5CompletedWorksheetResultSchema = z.object({
     const hasUsableObservationEvidence = worksheet.statements.some((statement) => (
       statement.type === "SIGNAL"
       && "signalKind" in statement.content
-      && statement.content.signalKind === "structural_evidence_review"
-      && statement.content.observationEvidence?.some(({ reviewStatus }) => reviewStatus !== "rejected")
+      && (statement.content.signalKind === "image_text_context_review"
+        || (statement.content.signalKind === "structural_evidence_review"
+          && statement.content.observationEvidence?.some(({ reviewStatus }) => reviewStatus !== "rejected")))
     ));
     if (toleranceStatus === "supported" || !hasUsableObservationEvidence) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: `${toleranceStatus} tolerance validity requires usable image evidence`, path: ["sections", "toleranceChainValidity", "status"] });
@@ -5107,7 +5223,8 @@ const f5CompletedWorksheetResultSchema = z.object({
     const structuralSignals = worksheet.statements.map((statement, statementIndex) => ({ statement, statementIndex })).filter(({ statement }) => (
       statement.type === "SIGNAL"
       && "signalKind" in statement.content
-      && statement.content.signalKind === "structural_evidence_review"
+      && (statement.content.signalKind === "structural_evidence_review"
+        || statement.content.signalKind === "image_text_context_review")
     ));
     if (structuralSignals.length === 0) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: "needs_review tolerance validity requires a structural review SIGNAL", path: ["sections", "toleranceChainValidity", "status"] });

@@ -2861,6 +2861,29 @@ describe("F5.1 objective interpretation contracts", () => {
       expect(f5ImageObservationArtifactV2Schema.safeParse(reviewDisabled).success).toBe(false);
     });
 
+    it("requires visible core markers before consistency or source-row linkage", () => {
+      const worksheet = validV2.worksheets[0]!;
+      const snapshotRow = worksheet.contextSnapshot.rows[0]!;
+
+      for (const scope of ["stack_start", "assembly_datum_face"] as const) {
+        const artifact = structuredClone(validV2);
+        const observation = artifact.worksheets[0]!.observations.find((candidate) => candidate.scope === scope)!;
+        observation.visualObservation.observedValue = "not_visible";
+        observation.contextualSignal.signalValue = "indicated_consistent";
+        observation.contextualSignal.linkedSourceRows = [{ tableId: snapshotRow.tableId, sourceRow: snapshotRow.sourceRow }];
+        expect(f5ImageObservationArtifactV2Schema.safeParse(artifact).success).toBe(false);
+      }
+
+      const directionWithoutVisibleLabel = structuredClone(validV2);
+      const direction = directionWithoutVisibleLabel.worksheets[0]!.observations.find(
+        (observation) => observation.scope === "direction",
+      )!;
+      direction.visualObservation.observedValue = "ambiguous";
+      direction.contextualSignal.signalValue = "ambiguous";
+      direction.contextualSignal.linkedSourceRows = [{ tableId: snapshotRow.tableId, sourceRow: snapshotRow.sourceRow }];
+      expect(f5ImageObservationArtifactV2Schema.safeParse(directionWithoutVisibleLabel).success).toBe(false);
+    });
+
     it("requires both v2 confirmation fields and forbids them for other review statuses", () => {
       const confirmed = structuredClone(validV2);
       confirmed.worksheets[0]!.observations[0]!.visualObservation = {
@@ -2946,6 +2969,50 @@ describe("F5.1 objective interpretation contracts", () => {
       for (const mutation of mutations) {
         expect(f5DataInterpretationRequestSchema.safeParse({ ...rootRequest, ...mutation }).success).toBe(false);
       }
+    });
+
+    it("accepts the loader v2 request shape while preserving the v1 request shape", () => {
+      const v2Request = structuredClone(rootRequest) as unknown as Record<string, unknown>;
+      const v2Worksheet = (v2Request.worksheets as Array<Record<string, unknown>>)[0]!;
+      v2Worksheet.observationVersion = validV2.observationVersion;
+      v2Worksheet.contextSnapshot = structuredClone(validV2.worksheets[0]!.contextSnapshot);
+      v2Worksheet.imageObservations = structuredClone(validV2.worksheets[0]!.observations);
+
+      expect(f5DataInterpretationRequestSchema.parse(rootRequest)).toEqual(rootRequest);
+      expect(f5DataInterpretationRequestSchema.parse(v2Request)).toEqual(v2Request);
+
+      const incompleteV2 = structuredClone(v2Request) as Record<string, unknown>;
+      delete ((incompleteV2.worksheets as Array<Record<string, unknown>>)[0]!).contextSnapshot;
+      expect(f5DataInterpretationRequestSchema.safeParse(incompleteV2).success).toBe(false);
+    });
+
+    it("accepts strict image-text context review root signals", () => {
+      const result = structuredClone(rootResult);
+      const worksheet = result.worksheets[0]!;
+      const contextSignal = {
+        statementId: "f5-signal-image-text-context-review-direction",
+        type: "SIGNAL" as const,
+        section: "tolerance-chain-validity" as const,
+        content: {
+          signalKind: "image_text_context_review" as const,
+          scope: "direction" as const,
+          signalValue: "indicated_consistent" as const,
+          textBasis: "The visible direction label aligns with the factor description.",
+          linkedSourceRows: [{ tableId: "table-a", sourceRow: 2 }],
+          requiresEngineeringReview: true as const,
+        },
+      };
+      worksheet.statements.push(contextSignal as typeof worksheet.statements[number]);
+      result.summary.statementCount += 1;
+
+      expect(f5DataInterpretationResultSchema.safeParse(result).success).toBe(true);
+
+      const reviewDisabled = structuredClone(result);
+      const parsedSignal = reviewDisabled.worksheets[0]!.statements.find(
+        ({ statementId }) => statementId === contextSignal.statementId,
+      )! as typeof contextSignal;
+      parsedSignal.content.requiresEngineeringReview = false as true;
+      expect(f5DataInterpretationResultSchema.safeParse(reviewDisabled).success).toBe(false);
     });
 
     it("requires unique and exactly matching F4/F3 source key sets at precise paths", () => {
