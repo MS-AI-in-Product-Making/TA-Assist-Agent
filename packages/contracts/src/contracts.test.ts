@@ -25,6 +25,7 @@ import {
   f5DataInterpretationRequestSchema,
   f5DataInterpretationResultSchema,
   f5ImageObservationArtifactSchema,
+  f5ImageObservationArtifactV2Schema,
   f5ObjectiveInterpretationCompletedResultSchema,
   f2InitialWorkflowRequestSchema,
   f2InitialWorkflowResultSchema,
@@ -2463,6 +2464,55 @@ describe("F5.1 objective interpretation contracts", () => {
         observations: [imageObservation],
       }],
     };
+    const coreScopes = [
+      "tolerance_loop_closure",
+      "datum_chain",
+      "assembly_datum_face",
+      "stack_start",
+      "direction",
+    ] as const;
+    const validV2 = {
+      contractVersion: "v1" as const,
+      inputClassification: "confidential" as const,
+      observationVersion: "f5-image-observation-v2" as const,
+      workbookContentHash: contentHash,
+      worksheets: [{
+        worksheetName: "Analysis-A",
+        imageReference,
+        contextSnapshot: {
+          dimensionDescription: "Device gap",
+          rows: [{
+            tableId: "table-a",
+            sourceRow: 14,
+            partName: "Bracket",
+            partSubsystem: "Bracket",
+            partCategory: "CNC",
+            factorName: "Bracket height",
+            factorDescription: "Bracket height",
+            nominal: 1,
+            upperTolerance: 0.1,
+            lowerTolerance: -0.1,
+            sigmaLevel: 4,
+            sourceCells: { factorName: "Analysis-A!G14", partName: "Analysis-A!H14" },
+          }],
+        },
+        observations: coreScopes.map((scope) => ({
+          scope,
+          visualObservation: {
+            observedValue: "ambiguous" as const,
+            confidence: "medium" as const,
+            visibleBasis: `Visible basis for ${scope}.`,
+            reviewStatus: "unreviewed" as const,
+          },
+          contextualSignal: {
+            signalValue: "insufficient_evidence" as const,
+            textBasis: `Context basis for ${scope}.`,
+            linkedSourceRows: [],
+            requiresEngineeringReview: true as const,
+          },
+        })),
+      }],
+    };
     const governanceRow = {
       factorInstanceId: "e".repeat(64),
       drawingDimensionKey: "f".repeat(64),
@@ -2743,6 +2793,114 @@ describe("F5.1 objective interpretation contracts", () => {
         expect(paths).toContainEqual(["worksheets", 0, "observations", 0, "confirmedBy"]);
         expect(paths).toContainEqual(["worksheets", 0, "observations", 0, "confirmedAt"]);
       }
+    });
+
+    it("preserves historical v1 and accepts valid v2 through its schema and the version union", () => {
+      expect(f5ImageObservationArtifactSchema.parse(observationArtifact)).toEqual(observationArtifact);
+      expect(f5ImageObservationArtifactV2Schema.parse(validV2)).toEqual(validV2);
+      expect(f5ImageObservationArtifactSchema.parse(validV2)).toEqual(validV2);
+      expect(f5ImageObservationArtifactSchema.safeParse({
+        ...validV2,
+        observationVersion: "f5-image-observation-v3",
+      }).success).toBe(false);
+    });
+
+    it("requires exactly one of every core scope in each v2 worksheet", () => {
+      const worksheet = validV2.worksheets[0]!;
+      expect(f5ImageObservationArtifactV2Schema.safeParse({
+        ...validV2,
+        worksheets: [{ ...worksheet, observations: worksheet.observations.slice(1) }],
+      }).success).toBe(false);
+      expect(f5ImageObservationArtifactV2Schema.safeParse({
+        ...validV2,
+        worksheets: [{
+          ...worksheet,
+          observations: [...worksheet.observations.slice(0, -1), worksheet.observations[0]],
+        }],
+      }).success).toBe(false);
+    });
+
+    it("rejects duplicate v2 worksheets and duplicate snapshot row keys", () => {
+      const worksheet = validV2.worksheets[0]!;
+      expect(f5ImageObservationArtifactV2Schema.safeParse({
+        ...validV2,
+        worksheets: [worksheet, worksheet],
+      }).success).toBe(false);
+      expect(f5ImageObservationArtifactV2Schema.safeParse({
+        ...validV2,
+        worksheets: [{
+          ...worksheet,
+          contextSnapshot: {
+            ...worksheet.contextSnapshot,
+            rows: [worksheet.contextSnapshot.rows[0], worksheet.contextSnapshot.rows[0]],
+          },
+        }],
+      }).success).toBe(false);
+    });
+
+    it("requires sourceCells and keeps contextual links within the snapshot", () => {
+      const missingSourceCells = structuredClone(validV2);
+      delete (missingSourceCells.worksheets[0]!.contextSnapshot.rows[0] as { sourceCells?: unknown }).sourceCells;
+      expect(f5ImageObservationArtifactV2Schema.safeParse(missingSourceCells).success).toBe(false);
+
+      const outsideSnapshot = structuredClone(validV2);
+      outsideSnapshot.worksheets[0]!.observations[0]!.contextualSignal.linkedSourceRows = [{
+        tableId: "table-a",
+        sourceRow: 99,
+      }];
+      expect(f5ImageObservationArtifactV2Schema.safeParse(outsideSnapshot).success).toBe(false);
+    });
+
+    it("restricts unlinked contextual signals and always requires engineering review", () => {
+      const unlinkedConclusion = structuredClone(validV2);
+      unlinkedConclusion.worksheets[0]!.observations[0]!.contextualSignal.signalValue = "indicated_consistent" as "insufficient_evidence";
+      expect(f5ImageObservationArtifactV2Schema.safeParse(unlinkedConclusion).success).toBe(false);
+
+      const reviewDisabled = structuredClone(validV2);
+      reviewDisabled.worksheets[0]!.observations[0]!.contextualSignal.requiresEngineeringReview = false as true;
+      expect(f5ImageObservationArtifactV2Schema.safeParse(reviewDisabled).success).toBe(false);
+    });
+
+    it("requires both v2 confirmation fields and forbids them for other review statuses", () => {
+      const confirmed = structuredClone(validV2);
+      confirmed.worksheets[0]!.observations[0]!.visualObservation = {
+        ...confirmed.worksheets[0]!.observations[0]!.visualObservation,
+        reviewStatus: "confirmed",
+        confirmedBy: "controlled-reviewer",
+        confirmedAt: "2026-08-11T08:00:00.000Z",
+      } as typeof confirmed.worksheets[0]["observations"][number]["visualObservation"];
+      expect(f5ImageObservationArtifactV2Schema.safeParse(confirmed).success).toBe(true);
+
+      for (const field of ["confirmedBy", "confirmedAt"] as const) {
+        const missingField = structuredClone(confirmed);
+        delete (missingField.worksheets[0]!.observations[0]!.visualObservation as Record<string, unknown>)[field];
+        expect(f5ImageObservationArtifactV2Schema.safeParse(missingField).success).toBe(false);
+      }
+
+      const unreviewed = structuredClone(confirmed);
+      unreviewed.worksheets[0]!.observations[0]!.visualObservation.reviewStatus = "unreviewed";
+      expect(f5ImageObservationArtifactV2Schema.safeParse(unreviewed).success).toBe(false);
+    });
+
+    it("rejects v2 image identity mismatches and strict unknown fields", () => {
+      const worksheet = validV2.worksheets[0]!;
+      expect(f5ImageObservationArtifactV2Schema.safeParse({
+        ...validV2,
+        worksheets: [{
+          ...worksheet,
+          imageReference: { ...worksheet.imageReference, worksheetName: "Analysis-B" },
+        }],
+      }).success).toBe(false);
+      expect(f5ImageObservationArtifactV2Schema.safeParse({
+        ...validV2,
+        worksheets: [{
+          ...worksheet,
+          contextSnapshot: {
+            ...worksheet.contextSnapshot,
+            rows: [{ ...worksheet.contextSnapshot.rows[0], unexpected: true }],
+          },
+        }],
+      }).success).toBe(false);
     });
 
     it("rejects duplicate or mismatched observation worksheets, scopes, and paths", () => {

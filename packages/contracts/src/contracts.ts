@@ -4379,6 +4379,16 @@ export const f5StructuralScopeSchema = z.enum([
   "long_dimension_chain",
 ]);
 
+const f5CoreStructuralScopes = [
+  "tolerance_loop_closure",
+  "datum_chain",
+  "assembly_datum_face",
+  "stack_start",
+  "direction",
+] as const;
+
+export const f5CoreStructuralScopeSchema = z.enum(f5CoreStructuralScopes);
+
 export const f5EvidenceStatusSchema = z.enum([
   "supported",
   "needs_review",
@@ -4435,18 +4445,154 @@ const f5ImageObservationWorksheetSchema = z.object({
   }
 });
 
-export const f5ImageObservationArtifactSchema = z.object({
+const f5ImageObservationWorksheetsV1Schema = z.array(f5ImageObservationWorksheetSchema).min(1)
+  .superRefine((worksheets, context) => {
+    const worksheetNames = worksheets.map(({ worksheetName }) => worksheetName);
+    if (new Set(worksheetNames).size !== worksheetNames.length) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet names must be unique" });
+    }
+  });
+
+export const f5ImageObservationArtifactV1Schema = z.object({
   contractVersion: contractVersionSchema,
   inputClassification: z.literal("confidential"),
   observationVersion: z.literal("f5-image-observation-v1"),
   workbookContentHash: sha256Schema,
-  worksheets: z.array(f5ImageObservationWorksheetSchema).min(1),
-}).strict().superRefine((artifact, context) => {
-  const worksheetNames = artifact.worksheets.map(({ worksheetName }) => worksheetName);
-  if (new Set(worksheetNames).size !== worksheetNames.length) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet names must be unique", path: ["worksheets"] });
+  worksheets: f5ImageObservationWorksheetsV1Schema,
+}).strict();
+
+export const f5ContextSnapshotRowV2Schema = z.object({
+  tableId: z.string().min(1),
+  sourceRow: z.number().int().positive(),
+  partName: z.string().min(1).nullable(),
+  partSubsystem: z.string().min(1).nullable(),
+  partCategory: z.string().min(1).nullable(),
+  factorName: z.string().min(1).nullable(),
+  factorDescription: z.string().min(1).nullable(),
+  nominal: z.number().finite().nullable(),
+  upperTolerance: z.number().finite().nullable(),
+  lowerTolerance: z.number().finite().nullable(),
+  sigmaLevel: z.number().finite().positive().nullable(),
+  sourceCells: z.record(z.string(), z.string().min(1)),
+}).strict();
+
+const f5SnapshotRowKey = ({ tableId, sourceRow }: { tableId: string; sourceRow: number }): string => (
+  `${tableId}\u0000${sourceRow}`
+);
+
+export const f5ContextSnapshotV2Schema = z.object({
+  dimensionDescription: z.string().min(1),
+  rows: z.array(f5ContextSnapshotRowV2Schema).min(1),
+}).strict().superRefine((snapshot, context) => {
+  const rowKeys = snapshot.rows.map(f5SnapshotRowKey);
+  if (new Set(rowKeys).size !== rowKeys.length) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "context snapshot row keys must be unique",
+      path: ["rows"],
+    });
   }
 });
+
+export const f5VisualObservationV2Schema = z.object({
+  observedValue: z.enum(["visible", "not_visible", "ambiguous"]),
+  confidence: z.enum(["high", "medium", "low"]),
+  visibleBasis: z.string().min(1).max(500),
+  reviewStatus: z.enum(["unreviewed", "confirmed", "rejected"]),
+  confirmedBy: controlledReferenceSchema.optional(),
+  confirmedAt: z.string().datetime().optional(),
+}).strict().superRefine(validateF5ObservationConfirmation);
+
+const f5LinkedSourceRowV2Schema = z.object({
+  tableId: z.string().min(1),
+  sourceRow: z.number().int().positive(),
+}).strict();
+
+export const f5ContextualSignalV2Schema = z.object({
+  signalValue: z.enum([
+    "indicated_consistent",
+    "indicated_conflict",
+    "ambiguous",
+    "insufficient_evidence",
+  ]),
+  textBasis: z.string().min(1),
+  linkedSourceRows: z.array(f5LinkedSourceRowV2Schema),
+  requiresEngineeringReview: z.literal(true),
+}).strict();
+
+export const f5ContextualObservationV2Schema = z.object({
+  scope: f5CoreStructuralScopeSchema,
+  visualObservation: f5VisualObservationV2Schema,
+  contextualSignal: f5ContextualSignalV2Schema,
+}).strict();
+
+export const f5ContextualObservationWorksheetV2Schema = z.object({
+  worksheetName: z.string().min(1),
+  imageReference: f1ImageReferenceSchema,
+  contextSnapshot: f5ContextSnapshotV2Schema,
+  observations: z.array(f5ContextualObservationV2Schema).length(f5CoreStructuralScopes.length),
+}).strict().superRefine((worksheet, context) => {
+  if (worksheet.imageReference.worksheetName !== worksheet.worksheetName) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "image reference worksheet must match the containing worksheet",
+      path: ["imageReference", "worksheetName"],
+    });
+  }
+
+  const scopes = worksheet.observations.map(({ scope }) => scope);
+  if (new Set(scopes).size !== f5CoreStructuralScopes.length) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "observations must contain each core structural scope exactly once",
+      path: ["observations"],
+    });
+  }
+
+  const snapshotRowKeys = new Set(worksheet.contextSnapshot.rows.map(f5SnapshotRowKey));
+  worksheet.observations.forEach((observation, observationIndex) => {
+    const { contextualSignal } = observation;
+    contextualSignal.linkedSourceRows.forEach((linkedSourceRow, linkedRowIndex) => {
+      if (!snapshotRowKeys.has(f5SnapshotRowKey(linkedSourceRow))) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "linked source rows must refer to context snapshot rows",
+          path: ["observations", observationIndex, "contextualSignal", "linkedSourceRows", linkedRowIndex],
+        });
+      }
+    });
+    if (contextualSignal.linkedSourceRows.length === 0
+      && contextualSignal.signalValue !== "ambiguous"
+      && contextualSignal.signalValue !== "insufficient_evidence") {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "unlinked contextual signals must be ambiguous or insufficient_evidence",
+        path: ["observations", observationIndex, "contextualSignal", "signalValue"],
+      });
+    }
+  });
+});
+
+const f5ContextualObservationWorksheetsV2Schema = z.array(f5ContextualObservationWorksheetV2Schema).min(1)
+  .superRefine((worksheets, context) => {
+    const worksheetNames = worksheets.map(({ worksheetName }) => worksheetName);
+    if (new Set(worksheetNames).size !== worksheetNames.length) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet names must be unique" });
+    }
+  });
+
+export const f5ImageObservationArtifactV2Schema = z.object({
+  contractVersion: contractVersionSchema,
+  inputClassification: z.literal("confidential"),
+  observationVersion: z.literal("f5-image-observation-v2"),
+  workbookContentHash: sha256Schema,
+  worksheets: f5ContextualObservationWorksheetsV2Schema,
+}).strict();
+
+export const f5ImageObservationArtifactSchema = z.discriminatedUnion("observationVersion", [
+  f5ImageObservationArtifactV1Schema,
+  f5ImageObservationArtifactV2Schema,
+]);
 
 const f5DataInterpretationRequestWorksheetSchema = z.object({
   worksheetName: z.string().min(1),
@@ -5508,6 +5654,15 @@ export type DrawingGovernanceRequest = z.infer<typeof drawingGovernanceRequestSc
 export type DrawingGovernanceResult = z.infer<typeof drawingGovernanceResultSchema>;
 export type InterpretationRequest = z.infer<typeof interpretationRequestSchema>;
 export type InterpretationResult = z.infer<typeof interpretationResultSchema>;
+export type F5CoreStructuralScope = z.infer<typeof f5CoreStructuralScopeSchema>;
+export type F5ContextSnapshotRowV2 = z.infer<typeof f5ContextSnapshotRowV2Schema>;
+export type F5ContextSnapshotV2 = z.infer<typeof f5ContextSnapshotV2Schema>;
+export type F5VisualObservationV2 = z.infer<typeof f5VisualObservationV2Schema>;
+export type F5ContextualSignalV2 = z.infer<typeof f5ContextualSignalV2Schema>;
+export type F5ContextualObservationV2 = z.infer<typeof f5ContextualObservationV2Schema>;
+export type F5ContextualObservationWorksheetV2 = z.infer<typeof f5ContextualObservationWorksheetV2Schema>;
+export type F5ImageObservationArtifactV1 = z.infer<typeof f5ImageObservationArtifactV1Schema>;
+export type F5ImageObservationArtifactV2 = z.infer<typeof f5ImageObservationArtifactV2Schema>;
 export type F5ImageObservationArtifact = z.infer<typeof f5ImageObservationArtifactSchema>;
 export type F5DataInterpretationRequest = z.infer<typeof f5DataInterpretationRequestSchema>;
 export type F5DataInterpretationResult = z.infer<typeof f5DataInterpretationResultSchema>;
