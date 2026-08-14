@@ -177,7 +177,8 @@ Snapshot 包含 worksheet 的 `dimensionDescription` 和按 `sourceRow` 升序�
 - Image mode 启用但 v2 无法创建或验证：继续 deterministic F5，并说明图片存在但增强 artifact 未通过验证。
 - 任一 selected worksheet 缺 record、缺核心 scope、图片 mismatch 或 snapshot mismatch：整个 v2 不消费。
 - Part/factor/provenance 缺失：保持 `null`，context signal 使用 `ambiguous` 或 `insufficient_evidence`。
-- 不允许从 v2 自动确认 assumption、生成 RULE、产生最终工程判断或触发 F6。
+- 不允许从 v2 自动确认 assumption、生成 RULE 或产生最终工程判断。
+- F6 可读取已验证的 v2 contextual signals 作为风险与 clarification 输入，但只有满足 F6 自身的 identity、review 和 evidence gates 后才能消费；v2 本身不自动触发 F6，也不证明 datum strategy 成立。
 
 ## F5 报告
 
@@ -189,6 +190,8 @@ Snapshot 包含 worksheet 的 `dimensionDescription` 和按 `sourceRow` 升序�
 4. 分析上下文表：实际提供给 image mode 的 part name、factor description、dimension description 和 source cells。
 
 其余三个 structural scopes 继续按已有 observation/clarification 规则处理；F6 sections 保持 `delegated_to_f6`。
+
+完整 F6 optimization workflow 与 F5+F6 composed engineering report 由 [F6 优化与联合工程报告设计](2026-08-14-f6-optimization-and-composed-report-design.md) 独立定义。该设计可以消费本 spec 的受治理证据，但不得改变 visual FACT 与 contextual SIGNAL 的分类。
 
 ## 修改边界
 
@@ -202,7 +205,7 @@ Snapshot 包含 worksheet 的 `dimensionDescription` 和按 `sourceRow` 升序�
 - `scripts/f5-full-flow.test.mjs`：v1/v2/no-image end-to-end。
 - 相关中英文流程文档与 README 索引。
 
-不修改 F0、F1 parser、F2 清洗规则、F3 ADO protocol、F4 kernel 或 F6。
+不修改 F0、F1 parser、F2 清洗规则、F3 ADO protocol 或 F4 kernel。本 spec 不实现 F6；F6 作为后续独立交付。
 
 ## 测试策略
 
