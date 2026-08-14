@@ -298,7 +298,7 @@ function renderTolerance(lines, worksheet, options) {
   const contextSignals = signals.filter((statement) => (
     "signalKind" in statement.content && statement.content.signalKind === "image_text_context_review"
   ));
-  const contextual = contextSignals.length > 0;
+  const contextual = worksheet.observationVersion === "f5-image-observation-v2";
 
   lines.push(`章节状态：${code(section.status)}`);
   if (contextual) {

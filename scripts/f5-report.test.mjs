@@ -298,6 +298,26 @@ function toleranceStatusReport(status) {
 }
 
 describe("renderF5Report", () => {
+  it("uses the v2 observation version discriminator to render all v2 evidence layers", () => {
+    const report = completedReport({ contextual: true });
+    expect(report.worksheets[0].observationVersion).toBe("f5-image-observation-v2");
+
+    const markdown = chapter(
+      renderF5Report(report),
+      "## 1. 公差链有效性",
+      "## 2. 能力与规格对比",
+    );
+
+    for (const heading of [
+      "#### 五项状态矩阵",
+      "#### Visual FACT",
+      "#### Worksheet context SIGNAL",
+      "#### 分析上下文快照",
+    ]) {
+      expect(markdown).toContain(heading);
+    }
+  });
+
   it("renders v2 scope matrix, isolated visual FACTs, and contextual SIGNALs", () => {
     const markdown = chapter(
       renderF5Report(completedReport({ contextual: true })),

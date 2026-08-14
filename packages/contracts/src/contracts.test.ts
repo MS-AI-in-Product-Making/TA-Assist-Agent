@@ -3060,24 +3060,14 @@ describe("F5.1 objective interpretation contracts", () => {
     });
 
     it("accepts strict image-text context review root signals", () => {
-      const result = structuredClone(rootResult);
+      const result = completedResultWithContextSignals(coreScopes);
       const worksheet = result.worksheets[0]!;
-      const contextSignal = {
-        statementId: "f5-context-signal-direction",
-        type: "SIGNAL" as const,
-        section: "tolerance-chain-validity" as const,
-        content: {
-          signalKind: "image_text_context_review" as const,
-          scope: "direction" as const,
-          signalValue: "indicated_consistent" as const,
-          textBasis: "The visible direction label aligns with the factor description.",
-          linkedSourceRows: [{ tableId: "table-a", sourceRow: 2 }],
-          linkedVisualLabels: [{ label: "Bracket height", tableId: "table-a", sourceRow: 2 }],
-          requiresEngineeringReview: true as const,
-        },
-      };
-      worksheet.statements.push(contextSignal as typeof worksheet.statements[number]);
-      result.summary.statementCount += 1;
+      const contextSignal = worksheet.statements.find((statement) => (
+        statement.type === "SIGNAL"
+        && "signalKind" in statement.content
+        && statement.content.signalKind === "image_text_context_review"
+        && statement.content.scope === "direction"
+      ))!;
 
       expect(f5DataInterpretationResultSchema.safeParse(result).success).toBe(true);
 
@@ -3216,11 +3206,37 @@ describe("F5.1 objective interpretation contracts", () => {
       expect(f5DataInterpretationResultSchema.safeParse({ ...rootResult, unexpected: true }).success).toBe(false);
     });
 
+    function completedResultWithContextSignals(
+      scopes: ReadonlyArray<(typeof coreScopes)[number]>,
+      contextual = true,
+    ) {
+      const result = structuredClone(rootResult);
+      const worksheet = result.worksheets[0]!;
+      if (contextual) {
+        worksheet.observationVersion = "f5-image-observation-v2";
+        worksheet.contextSnapshot = structuredClone(validV2.worksheets[0]!.contextSnapshot);
+      }
+      const contextSignals = scopes.map((scope, index) => ({
+        statementId: `f5-context-signal-${scope}-${index}`,
+        type: "SIGNAL" as const,
+        section: "tolerance-chain-validity" as const,
+        content: {
+          signalKind: "image_text_context_review" as const,
+          scope,
+          signalValue: "ambiguous" as const,
+          textBasis: `Image and worksheet context require review for ${scope}.`,
+          linkedSourceRows: [],
+          linkedVisualLabels: [],
+          requiresEngineeringReview: true as const,
+        },
+      }));
+      worksheet.statements.push(...contextSignals);
+      result.summary.statementCount += contextSignals.length;
+      return result;
+    }
+
     it("requires observationVersion and contextSnapshot together on completed v2 worksheet results", () => {
-      const v2Result = structuredClone(rootResult) as unknown as Record<string, unknown>;
-      const v2Worksheet = (v2Result.worksheets as Array<Record<string, unknown>>)[0]!;
-      v2Worksheet.observationVersion = "f5-image-observation-v2";
-      v2Worksheet.contextSnapshot = structuredClone(validV2.worksheets[0]!.contextSnapshot);
+      const v2Result = completedResultWithContextSignals(coreScopes);
 
       expect(f5DataInterpretationResultSchema.safeParse(v2Result).success).toBe(true);
 
@@ -3231,6 +3247,39 @@ describe("F5.1 objective interpretation contracts", () => {
       const withoutVersion = structuredClone(v2Result) as Record<string, unknown>;
       delete ((withoutVersion.worksheets as Array<Record<string, unknown>>)[0]!).observationVersion;
       expect(f5DataInterpretationResultSchema.safeParse(withoutVersion).success).toBe(false);
+    });
+
+    it("rejects completed v2 worksheet results with zero or incomplete context signals", () => {
+      expect(f5DataInterpretationResultSchema.safeParse(
+        completedResultWithContextSignals([]),
+      ).success).toBe(false);
+      expect(f5DataInterpretationResultSchema.safeParse(
+        completedResultWithContextSignals(coreScopes.slice(0, -1)),
+      ).success).toBe(false);
+    });
+
+    it("rejects completed v2 worksheet results with duplicate or extra context signals", () => {
+      expect(f5DataInterpretationResultSchema.safeParse(
+        completedResultWithContextSignals([
+          ...coreScopes.slice(0, -1),
+          "stack_start",
+        ]),
+      ).success).toBe(false);
+      expect(f5DataInterpretationResultSchema.safeParse(
+        completedResultWithContextSignals([...coreScopes, "direction"]),
+      ).success).toBe(false);
+    });
+
+    it("accepts exactly five completed v2 context signals with the exact core scopes", () => {
+      expect(f5DataInterpretationResultSchema.safeParse(
+        completedResultWithContextSignals(coreScopes),
+      ).success).toBe(true);
+    });
+
+    it("forbids orphan image-text context signals on completed non-v2 worksheet results", () => {
+      expect(f5DataInterpretationResultSchema.safeParse(
+        completedResultWithContextSignals(["direction"], false),
+      ).success).toBe(false);
     });
 
     it.each(toleranceItems.map(({ scope }) => scope))(

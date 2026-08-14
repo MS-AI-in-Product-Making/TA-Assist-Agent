@@ -5116,6 +5116,32 @@ const f5CompletedWorksheetResultSchema = z.object({
       path: [worksheet.observationVersion === undefined ? "observationVersion" : "contextSnapshot"],
     });
   }
+  const contextSignalScopes: Array<z.infer<typeof f5CoreStructuralScopeSchema>> = [];
+  worksheet.statements.forEach((statement) => {
+    if (statement.type === "SIGNAL"
+      && "signalKind" in statement.content
+      && statement.content.signalKind === "image_text_context_review") {
+      contextSignalScopes.push(statement.content.scope);
+    }
+  });
+  if (worksheet.observationVersion === "f5-image-observation-v2") {
+    const uniqueContextSignalScopes = new Set(contextSignalScopes);
+    if (contextSignalScopes.length !== f5CoreStructuralScopes.length
+      || uniqueContextSignalScopes.size !== f5CoreStructuralScopes.length
+      || f5CoreStructuralScopes.some((scope) => !uniqueContextSignalScopes.has(scope))) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "completed v2 worksheet results require exactly one image-text context SIGNAL for each core scope",
+        path: ["statements"],
+      });
+    }
+  } else if (contextSignalScopes.length > 0) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "image-text context SIGNALs require a completed v2 worksheet result",
+      path: ["statements"],
+    });
+  }
   const legacyStatements: Array<z.infer<typeof interpretationStatementSchema>> = [];
   worksheet.statements.forEach((statement) => {
     if (statement.type === "FACT" && statement.content.provenanceKind === "image_observation") return;

@@ -419,6 +419,7 @@ function v2ObservationArtifact(bundle, worksheetNames = [...bundle.imageReferenc
             signalValue: "insufficient_evidence",
             textBasis: `Context basis for ${scope}.`,
             linkedSourceRows: [],
+            linkedVisualLabels: [],
             requiresEngineeringReview: true,
           },
         })),
