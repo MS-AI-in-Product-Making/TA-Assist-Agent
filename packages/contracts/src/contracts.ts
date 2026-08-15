@@ -6402,7 +6402,11 @@ const f6CompletedOptionSchema = z.object({
   relativeCost: z.union([z.number().finite().nonnegative(), z.literal("insufficient_evidence")]),
   roiScore: z.union([z.number().finite(), z.literal("not_computed")]),
   impactRank: z.number().int().positive().nullable(),
-  calculationTrace: f6ArtifactReferenceSchema,
+  scenarioEvidence: z.object({
+    scenarioId: z.string().min(1),
+    calculation: calculationCompletedResultSchema,
+  }).strict(),
+  closedRiskIds: z.array(z.string().min(1)),
 }).strict();
 
 const f6CalculationFailedOptionSchema = z.object({
@@ -6468,11 +6472,28 @@ export const f6OptionSchema = z.discriminatedUnion("status", [
 
 export const f6WorksheetInputSchema = z.object({
   worksheetName: z.string().min(1),
+  baselineCalculationRequest: calculationRequestSchema,
   baselineCalculation: calculationCompletedResultSchema,
   f5Worksheet: f5CompletedWorksheetResultSchema,
   f3GovernanceRows: z.array(f3GovernanceRowSchema),
   f2Findings: z.array(f6InputFindingSchema),
 }).strict().superRefine((worksheet, context) => {
+  if (worksheet.baselineCalculationRequest.scenarioOverrides.length !== 0) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline calculation request must not contain scenarios", path: ["baselineCalculationRequest", "scenarioOverrides"] });
+  }
+  if (worksheet.baselineCalculationRequest.worksheetSelection.worksheetName !== worksheet.worksheetName) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline request worksheet must match worksheetName", path: ["baselineCalculationRequest", "worksheetSelection", "worksheetName"] });
+  }
+  if (worksheet.baselineCalculationRequest.worksheetSelection.tableId !== worksheet.baselineCalculation.worksheetSelection.tableId) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline request table must match baseline calculation", path: ["baselineCalculationRequest", "worksheetSelection", "tableId"] });
+  }
+  if (worksheet.baselineCalculationRequest.projectReference !== worksheet.baselineCalculation.projectReference
+    || worksheet.baselineCalculationRequest.runReference !== worksheet.baselineCalculation.runReference) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline request project and run identities must match baseline calculation", path: ["baselineCalculationRequest"] });
+  }
+  if (worksheet.baselineCalculationRequest.worksheetAnalysisAssets.workbook.contentHash !== worksheet.baselineCalculation.workbookContentHash) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline request workbook must match baseline calculation", path: ["baselineCalculationRequest", "worksheetAnalysisAssets", "workbook", "contentHash"] });
+  }
   if (worksheet.baselineCalculation.worksheetSelection.worksheetName !== worksheet.worksheetName) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline worksheet must match worksheetName", path: ["baselineCalculation", "worksheetSelection", "worksheetName"] });
   }
@@ -6740,6 +6761,91 @@ export const f6OptimizationResultSchema = z.object({
     }
     worksheet.options.forEach((option, optionIndex) => {
       if (option.status !== "completed") return;
+      const closedRiskIds = new Set(option.closedRiskIds);
+      if (closedRiskIds.size !== option.closedRiskIds.length) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "closedRiskIds must be unique", path: ["worksheets", worksheetIndex, "options", optionIndex, "closedRiskIds"] });
+      }
+      option.closedRiskIds.forEach((riskId, riskIndex) => {
+        const risk = worksheet.risks.find((candidate) => candidate.riskId === riskId);
+        if (risk === undefined) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "closedRiskIds must identify parent worksheet risks", path: ["worksheets", worksheetIndex, "options", optionIndex, "closedRiskIds", riskIndex] });
+        } else if (risk.rating !== "High" && risk.rating !== "Critical") {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "closedRiskIds may identify only High or Critical risks", path: ["worksheets", worksheetIndex, "options", optionIndex, "closedRiskIds", riskIndex] });
+        }
+      });
+      if (option.scenarioEvidence.scenarioId !== option.optionId) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "scenario evidence must match optionId", path: ["worksheets", worksheetIndex, "options", optionIndex, "scenarioEvidence", "scenarioId"] });
+      }
+      const scenarioCalculation = option.scenarioEvidence.calculation;
+      if (scenarioCalculation.workbookContentHash !== result.workbook.contentHash) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "scenario evidence workbook must match result workbook", path: ["worksheets", worksheetIndex, "options", optionIndex, "scenarioEvidence", "calculation", "workbookContentHash"] });
+      }
+      if (scenarioCalculation.runReference !== result.provenance.f4Reference.runId) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "scenario evidence run must match F4 provenance", path: ["worksheets", worksheetIndex, "options", optionIndex, "scenarioEvidence", "calculation", "runReference"] });
+      }
+      if (scenarioCalculation.worksheetSelection.worksheetName !== worksheet.worksheetName) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "scenario evidence worksheet must match parent worksheet", path: ["worksheets", worksheetIndex, "options", optionIndex, "scenarioEvidence", "calculation", "worksheetSelection", "worksheetName"] });
+      }
+      const scenarioBaselineMetrics = {
+        mean: scenarioCalculation.system.mean,
+        rssSigma: scenarioCalculation.system.rssSigma,
+        cp: scenarioCalculation.capability.cp,
+        cpk: scenarioCalculation.capability.cpk,
+        yield: scenarioCalculation.capability.yield,
+        dpm: scenarioCalculation.capability.totalDpm,
+      };
+      for (const field of ["mean", "rssSigma", "cp", "cpk", "yield", "dpm"] as const) {
+        if (!f6NearlyEqual(option.baselineMetrics[field], scenarioBaselineMetrics[field])) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "scenario evidence baseline must match option baseline metrics", path: ["worksheets", worksheetIndex, "options", optionIndex, "scenarioEvidence", "calculation", field] });
+        }
+      }
+      if (scenarioCalculation.scenarios.length !== 1) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "scenario evidence calculation must contain exactly one scenario", path: ["worksheets", worksheetIndex, "options", optionIndex, "scenarioEvidence", "calculation", "scenarios"] });
+      }
+      const matchingScenarios = option.scenarioEvidence.calculation.scenarios.filter(({ scenarioId }) => scenarioId === option.optionId);
+      if (matchingScenarios.length !== 1) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "scenario evidence calculation must contain the option scenario exactly once", path: ["worksheets", worksheetIndex, "options", optionIndex, "scenarioEvidence", "calculation", "scenarios"] });
+      } else {
+        const scenario = matchingScenarios[0]!;
+        if (scenario.baselineRunReference !== scenarioCalculation.runReference) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "scenario baseline run must match scenario calculation run", path: ["worksheets", worksheetIndex, "options", optionIndex, "scenarioEvidence", "calculation", "scenarios", 0, "baselineRunReference"] });
+        }
+        const expectedOverrideFactors = option.factorOverrides.map(({ worksheetName, tableId, sourceRow, ...fields }) => ({
+          source: { worksheetName, tableId, sourceRow },
+          fields: Object.keys(fields).sort(),
+        }));
+        const actualOverrideFactors = scenario.overrides.factors.map(({ source, fields }) => ({
+          source,
+          fields: [...fields].sort(),
+        }));
+        if (JSON.stringify(actualOverrideFactors) !== JSON.stringify(expectedOverrideFactors)) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "scenario overrides must match option factor overrides", path: ["worksheets", worksheetIndex, "options", optionIndex, "scenarioEvidence", "calculation", "scenarios", 0, "overrides", "factors"] });
+        }
+        const scenarioMetrics = {
+          mean: scenario.calculation.system.mean,
+          rssSigma: scenario.calculation.system.rssSigma,
+          cp: scenario.calculation.capability.cp,
+          cpk: scenario.calculation.capability.cpk,
+          yield: scenario.calculation.capability.yield,
+          dpm: scenario.calculation.capability.totalDpm,
+        };
+        for (const field of ["mean", "rssSigma", "cp", "cpk", "yield", "dpm"] as const) {
+          if (!f6NearlyEqual(option.resultMetrics[field], scenarioMetrics[field])) {
+            context.addIssue({ code: z.ZodIssueCode.custom, message: "resultMetrics must match scenario evidence calculation", path: ["worksheets", worksheetIndex, "options", optionIndex, "resultMetrics", field] });
+          }
+        }
+        const scenarioDeltas = {
+          deltaCpk: scenario.deltas.cpk,
+          deltaRssSigma: scenario.deltas.rssSigma,
+          deltaDpm: scenario.deltas.totalDpm,
+          deltaYield: scenario.deltas.yield,
+        };
+        for (const field of ["deltaCpk", "deltaRssSigma", "deltaDpm", "deltaYield"] as const) {
+          if (!f6NearlyEqual(option[field], scenarioDeltas[field])) {
+            context.addIssue({ code: z.ZodIssueCode.custom, message: "option deltas must match scenario evidence deltas", path: ["worksheets", worksheetIndex, "options", optionIndex, field] });
+          }
+        }
+      }
       for (const field of ["mean", "rssSigma", "cp", "cpk", "yield", "dpm"] as const) {
         if (!f6NearlyEqual(option.baselineMetrics[field], worksheet.baselineMetrics[field])) {
           context.addIssue({ code: z.ZodIssueCode.custom, message: "option baseline metrics must match the parent worksheet", path: ["worksheets", worksheetIndex, "options", optionIndex, "baselineMetrics", field] });

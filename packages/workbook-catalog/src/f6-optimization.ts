@@ -1,4 +1,5 @@
 import {
+  calculationRequestSchema,
   f6OptimizationRequestSchema,
   f6OptimizationResultSchema,
   type CalculationCompletedResult,
@@ -11,6 +12,7 @@ import {
   type F6OptionKind,
   type F6ToleranceChange,
 } from "@ai-assist/contracts";
+import { createCalculation } from "./calculation.js";
 import { apportionRssTolerance } from "./f6-apportionment.js";
 import {
   assessCost,
@@ -60,115 +62,34 @@ function immutable<Value>(value: Value): Value {
   return deepFreeze(structuredClone(value));
 }
 
-function availableText(rawText: string, sourceCell: string) {
-  return { status: "available" as const, rawText, sourceCell };
-}
-
-function availableNumber(value: number, sourceCell: string, unit: string) {
-  return { status: "available" as const, rawText: String(value), sourceCell, numericValue: value, unit };
-}
-
-function columnName(index: number): string {
-  let value = index + 1;
-  let result = "";
-  while (value > 0) {
-    value -= 1;
-    result = String.fromCharCode(65 + (value % 26)) + result;
-    value = Math.floor(value / 26);
+function equivalent(left: unknown, right: unknown): boolean {
+  if (typeof left === "number" && typeof right === "number") {
+    return Math.abs(left - right) <= 1e-12 * Math.max(1, Math.abs(left), Math.abs(right));
   }
-  return result;
+  if (left === null || right === null || typeof left !== "object" || typeof right !== "object") return left === right;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left) && Array.isArray(right)
+      && left.length === right.length
+      && left.every((value, index) => equivalent(value, right[index]));
+  }
+  const leftRecord = left as Record<string, unknown>;
+  const rightRecord = right as Record<string, unknown>;
+  const leftKeys = Object.keys(leftRecord);
+  const rightKeys = Object.keys(rightRecord);
+  return leftKeys.length === rightKeys.length
+    && leftKeys.every((key) => Object.hasOwn(rightRecord, key) && equivalent(leftRecord[key], rightRecord[key]));
 }
 
-function reconstructBaselineRequest(baseline: CalculationCompletedResult): CalculationRequest {
-  const worksheetName = baseline.worksheetSelection.worksheetName;
-  const tableId = baseline.worksheetSelection.tableId;
-  const rows = baseline.factors.map((factor, index) => {
-    const row = factor.source.sourceRow;
-    const cell = (column: number) => `${worksheetName}!${columnName(column)}${row}`;
-    return {
-      sourceRow: row,
-      fields: {
-        factorName: availableText(factor.factorName, cell(0)),
-        nominalValue: availableNumber(factor.input.nominalValue, cell(1), factor.unit),
-        upperTolerance: availableNumber(factor.input.upperTolerance, cell(2), factor.unit),
-        lowerTolerance: availableNumber(factor.input.lowerTolerance, cell(3), factor.unit),
-        longTermSafetyFactor: availableNumber(factor.input.longTermSafetyFactor, cell(4), factor.unit),
-        standardDeviation: availableNumber(factor.sigma, cell(5), factor.unit),
-        distribution: availableText(factor.input.distribution, cell(6)),
-        unit: availableText(factor.unit, cell(7)),
-      },
-    };
-  });
-  const sourceRows = rows.map(({ sourceRow }) => sourceRow);
-  return {
-    contractVersion: baseline.contractVersion,
-    inputClassification: "confidential",
-    projectReference: baseline.projectReference,
-    runReference: baseline.runReference,
-    worksheetAnalysisAssets: {
-      contractVersion: baseline.contractVersion,
-      workbook: { classification: "confidential", contentHash: baseline.workbookContentHash, catalogContractVersion: "v1" },
-      worksheets: [{
-        worksheetName,
-        toleranceLoopDescription: "controlled-f6-baseline",
-        factorTables: [{
-          tableId,
-          headerRow: Math.max(1, Math.min(...sourceRows) - 1),
-          dataRange: { startRow: Math.min(...sourceRows), endRow: Math.max(...sourceRows) },
-          columns: [
-            { semanticField: "factorName", headerText: "Factor", sourceColumn: "A" },
-            { semanticField: "nominalValue", headerText: "Nominal", sourceColumn: "B" },
-            { semanticField: "upperTolerance", headerText: "Upper", sourceColumn: "C" },
-            { semanticField: "lowerTolerance", headerText: "Lower", sourceColumn: "D" },
-            { semanticField: "longTermSafetyFactor", headerText: "LTSF", sourceColumn: "E" },
-            { semanticField: "standardDeviation", headerText: "Sigma", sourceColumn: "F" },
-            { semanticField: "distribution", headerText: "Distribution", sourceColumn: "G" },
-            { semanticField: "unit", headerText: "Unit", sourceColumn: "H" },
-          ],
-          rows,
-        }],
-        formulaCells: [],
-        imageAssets: [],
-      }],
-    },
-    requiredFieldCheck: {
-      contractVersion: baseline.contractVersion,
-      inputClassification: "confidential",
-      workbookContentHash: baseline.workbookContentHash,
-      status: "readyForNextCheck",
-      blockingIssues: [],
-      advisoryIssues: [],
-      summary: {
-        worksheetsChecked: 1,
-        factorTablesChecked: 1,
-        factorRowsChecked: rows.length,
-        blockingIssueCount: 0,
-        advisoryIssueCount: 0,
-      },
-    },
-    exceptionResolution: {
-      contractVersion: baseline.contractVersion,
-      inputClassification: "confidential",
-      workbookContentHash: baseline.workbookContentHash,
-      knowledgeBaseVersion: "v1",
-      status: "readyToContinue",
-      readyToContinue: true,
-      acceptedExceptions: [],
-      pendingExceptions: [],
-      summary: { actionableSignalCount: 0, acceptedExceptionCount: 0, pendingExceptionCount: 0, invalidCandidateCount: 0 },
-    },
-    worksheetSelection: structuredClone(baseline.worksheetSelection),
-    systemSpecification: {
-      designNominal: baseline.system.designNominal,
-      lowerSpecLimit: baseline.capability.lowerSpecLimit,
-      upperSpecLimit: baseline.capability.upperSpecLimit,
-      targetSigmaLevel: baseline.capability.targetSigmaLevel,
-      targetCpk: baseline.capability.targetCpk,
-      additionalMeanShift: baseline.system.additionalMeanShift,
-    },
-    criticality: baseline.recommendation.criticality,
-    scenarioOverrides: [],
-  };
+function verifiedBaselineRequest(
+  request: CalculationRequest,
+  expected: CalculationCompletedResult,
+): CalculationRequest {
+  const parsed = calculationRequestSchema.parse(request);
+  const actual = createCalculation(parsed);
+  if (actual.status !== "completed" || !equivalent(actual, expected)) {
+    throw new Error("F6 baseline calculation request does not reproduce the governed baseline result.");
+  }
+  return parsed;
 }
 
 function metrics(calculation: Pick<CalculationCompletedResult, "system" | "capability">) {
@@ -249,7 +170,8 @@ function completedOption(
     relativeCost: cost.relativeCost,
     roiScore: "not_computed",
     impactRank: null,
-    calculationTrace: { artifact: request.f4Reference.artifact, contentHash: request.f4Reference.contentHash },
+    scenarioEvidence: { scenarioId: scenario.scenarioId, calculation: structuredClone(scenarioResult) },
+    closedRiskIds: [],
   };
 }
 
@@ -275,13 +197,20 @@ function feasibilityRank(option: CompletedOption): number {
   return { supported: 4, requires_engineering_review: 3, insufficient_evidence: 2, not_supported: 1 }[option.feasibility.status];
 }
 
-function rankOptions(options: F6Option[], targetCpk: number): F6Option[] {
+function rankOptions(
+  options: F6Option[],
+  targetCpk: number,
+  risks: ReadyWorksheet["risks"],
+): F6Option[] {
   const completed = options.filter((option): option is CompletedOption => option.status === "completed");
+  const riskSeverity = new Map(risks.map((risk) => [risk.riskId, { Critical: 2, High: 1, Medium: 0, Low: 0 }[risk.rating]]));
+  const closureScore = (option: CompletedOption) => option.closedRiskIds.reduce((score, riskId) => score + (riskSeverity.get(riskId) ?? 0), 0);
   const ordered = [...completed].sort((left, right) =>
     Number(right.resultMetrics.cpk >= targetCpk) - Number(left.resultMetrics.cpk >= targetCpk)
     || right.deltaCpk - left.deltaCpk
     || (-right.deltaDpm) - (-left.deltaDpm)
     || right.deltaYield - left.deltaYield
+    || closureScore(right) - closureScore(left)
     || feasibilityRank(right) - feasibilityRank(left)
     || compareText(left.optionId, right.optionId));
   const ranks = new Map(ordered.map((option, index) => [option.optionId, index + 1]));
@@ -361,10 +290,9 @@ function buildNumericOption(
   };
   const scenarioResult = calculateScenario({ baselineRequest, scenario });
   const requestedBand = changes.length === 0 ? Number.NaN : Math.min(...changes.map(({ resultingBand }) => resultingBand));
-  const supplierEvidence = request.supplierCapabilityEvidence?.[0];
   const feasibility = changes.length === 0
     ? { status: "supported" as const, reasonCodes: ["controlled_centering_calculation_completed"], evidenceReferences: [] }
-    : assessToleranceFeasibility({ evidence: supplierEvidence, requestedToleranceBand: requestedBand });
+    : assessToleranceFeasibility({ requestedToleranceBand: requestedBand });
   return completedOption(request, baseline, scenarioResult, scenario, changes, {
     feasibility,
     ...(reverseSolve === undefined ? {} : { reverseSolve }),
@@ -375,10 +303,10 @@ function buildNumericOption(
 function optimizeWorksheet(
   request: F6OptimizationRequest,
   worksheet: F6OptimizationRequest["worksheets"][number],
+  baselineRequest: CalculationRequest,
   calculateScenario: typeof calculateF6Scenario,
 ): F6OptimizationResult["worksheets"][number] {
   const baseline = worksheet.baselineCalculation;
-  const baselineRequest = reconstructBaselineRequest(baseline);
   const top = selectTopContributors(baseline.factors, Math.min(3, baseline.factors.length));
   const targetCapability = baseline.capability.targetCpk > 0 && baseline.capability.targetSigmaLevel > 0
     ? { targetCpk: baseline.capability.targetCpk, targetSigmaLevel: baseline.capability.targetSigmaLevel, source: "worksheet" as const }
@@ -390,9 +318,14 @@ function optimizeWorksheet(
       return failure(kind, worksheet.worksheetName, error);
     }
   });
+  const baselineSourceKeys = new Set(baseline.factors.map(({ source }) => `${source.tableId}\u0000${source.sourceRow}`));
+  const matchingDatumEvidence = (request.datumEvidence ?? []).filter((evidence) => {
+    const evidenceKeys = new Set(evidence.factorDirections.map(({ tableId, sourceRow }) => `${tableId}\u0000${sourceRow}`));
+    return evidenceKeys.size === baselineSourceKeys.size && [...baselineSourceKeys].every((key) => evidenceKeys.has(key));
+  });
   options.push(
-    assessSupplierScenario({ evidence: request.supplierCapabilityEvidence?.[0] }).option,
-    assessDatumScenario({ evidence: request.datumEvidence?.[0] }).option,
+    assessSupplierScenario({}).option,
+    assessDatumScenario({ evidence: matchingDatumEvidence.length === 1 ? matchingDatumEvidence[0] : undefined }).option,
   );
   const completedCount = options.filter(({ status }) => status === "completed").length;
   if (completedCount === 0) {
@@ -410,7 +343,49 @@ function optimizeWorksheet(
       clarifications: [],
     };
   }
-  const ranked = rankOptions(options, targetCapability.targetCpk);
+  const capabilityRisk = baseline.capability.cpk < targetCapability.targetCpk
+    ? [{
+      riskId: `${worksheet.worksheetName}:f5:capability-below-target`,
+      category: "Product" as const,
+      rating: baseline.capability.cpk < 1 ? "Critical" as const : "High" as const,
+      status: "open" as const,
+      reason: `F5 governed baseline Cpk ${baseline.capability.cpk} is below target ${targetCapability.targetCpk}.`,
+      evidenceReferences: [{ artifact: request.f5Reference.artifact, contentHash: request.f5Reference.contentHash }],
+    }]
+    : [];
+  const risks: ReadyWorksheet["risks"] = [
+    ...capabilityRisk,
+    ...worksheet.f3GovernanceRows
+      .filter((row) => row.governanceStatus !== "complete" || row.qualitySignals.length > 0)
+      .map((row) => ({
+        riskId: `${worksheet.worksheetName}:f3:${row.source.tableId}:${row.source.sourceRow}`,
+        category: "Manufacturing" as const,
+        rating: row.governanceStatus !== "complete" ? "Critical" as const : "High" as const,
+        status: "open" as const,
+        reason: row.governanceStatus !== "complete"
+          ? "Factor governance is incomplete."
+          : `Factor governance signals remain open: ${row.qualitySignals.join(", ")}.`,
+        evidenceReferences: [{ artifact: request.f3Reference.artifact, contentHash: request.f3Reference.contentHash }],
+      })),
+    ...worksheet.f5Worksheet.clarifications.map((clarification) => ({
+      riskId: `${worksheet.worksheetName}:f5:${clarification.clarificationId}`,
+      category: "Product" as const,
+      rating: "High" as const,
+      status: "open" as const,
+      reason: clarification.questionForReviewer,
+      evidenceReferences: [{ artifact: request.f5Reference.artifact, contentHash: request.f5Reference.contentHash }],
+    })),
+  ];
+  const optionsWithRiskClosure = options.map((option): F6Option => {
+    if (option.status !== "completed") return option;
+    return {
+      ...option,
+      closedRiskIds: capabilityRisk.length > 0 && option.resultMetrics.cpk >= targetCapability.targetCpk
+        ? [capabilityRisk[0]!.riskId]
+        : [],
+    };
+  });
+  const ranked = rankOptions(optionsWithRiskClosure, targetCapability.targetCpk, risks);
   const highest = ranked.find((option) => option.status === "completed" && option.impactRank === 1) as CompletedOption | undefined;
   const recommendations = ranked
     .filter((option): option is CompletedOption => option.status === "completed")
@@ -427,7 +402,7 @@ function optimizeWorksheet(
     targetCapability,
     inputFindings: structuredClone(worksheet.f2Findings),
     options: ranked,
-    risks: [],
+    risks,
     recommendations,
     ...(highest === undefined ? {} : {
       highestImpactAction: { optionId: highest.optionId, rationale: "Highest deterministic impact rank among completed options." },
@@ -456,7 +431,10 @@ function optimizeWorksheet(
 export function createF6Optimization(input: unknown, dependencies: OptimizationDependencies = {}): F6OptimizationResult {
   const request = f6OptimizationRequestSchema.parse(input);
   const calculateScenario = dependencies.calculateScenario ?? calculateF6Scenario;
-  const worksheets = request.worksheets.map((worksheet) => optimizeWorksheet(request, worksheet, calculateScenario));
+  const baselineRequests = request.worksheets.map((worksheet) =>
+    verifiedBaselineRequest(worksheet.baselineCalculationRequest, worksheet.baselineCalculation));
+  const worksheets = request.worksheets.map((worksheet, index) =>
+    optimizeWorksheet(request, worksheet, baselineRequests[index]!, calculateScenario));
   const options = worksheets.flatMap((worksheet) => worksheet.options);
   const summary = {
     worksheetCount: worksheets.length,

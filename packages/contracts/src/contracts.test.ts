@@ -4312,8 +4312,69 @@ describe("F5.1 objective interpretation contracts", () => {
 
     describe("F6 optimization and composed report contracts", () => {
       const reference = (artifact: string) => ({ artifact, contentHash: "a".repeat(64) });
+      const baselineCalculationRequest = {
+        contractVersion: "v1" as const,
+        inputClassification: "confidential" as const,
+        projectReference: calculationCompletedResult.projectReference,
+        runReference: calculationCompletedResult.runReference,
+        worksheetAnalysisAssets: {
+          contractVersion: "v1" as const,
+          workbook: { classification: "confidential" as const, contentHash: calculationCompletedResult.workbookContentHash, catalogContractVersion: "v1" },
+          worksheets: [{
+            worksheetName: "Analysis-A", toleranceLoopDescription: "controlled",
+            factorTables: [{
+              tableId: "table-a", headerRow: 1, dataRange: { startRow: 2, endRow: 2 },
+              columns: [
+                { semanticField: "factorName" as const, headerText: "Factor", sourceColumn: "J" },
+                { semanticField: "nominalValue" as const, headerText: "Nominal", sourceColumn: "K" },
+                { semanticField: "upperTolerance" as const, headerText: "Upper", sourceColumn: "L" },
+                { semanticField: "lowerTolerance" as const, headerText: "Lower", sourceColumn: "M" },
+                { semanticField: "longTermSafetyFactor" as const, headerText: "LTSF", sourceColumn: "N" },
+                { semanticField: "standardDeviation" as const, headerText: "Sigma", sourceColumn: "O" },
+                { semanticField: "distribution" as const, headerText: "Distribution", sourceColumn: "P" },
+                { semanticField: "unit" as const, headerText: "Unit", sourceColumn: "Q" },
+              ],
+              rows: [{ sourceRow: 2, fields: {
+                factorName: { status: "available" as const, rawText: "Feature-A", sourceCell: "Analysis-A!J2" },
+                nominalValue: { status: "available" as const, rawText: "12.45", sourceCell: "Analysis-A!K2", numericValue: 12.45, unit: "mm" },
+                upperTolerance: { status: "available" as const, rawText: "0.2", sourceCell: "Analysis-A!L2", numericValue: 0.2, unit: "mm" },
+                lowerTolerance: { status: "available" as const, rawText: "-0.2", sourceCell: "Analysis-A!M2", numericValue: -0.2, unit: "mm" },
+                longTermSafetyFactor: { status: "available" as const, rawText: "1", sourceCell: "Analysis-A!N2", numericValue: 1, unit: "mm" },
+                standardDeviation: { status: "available" as const, rawText: "4", sourceCell: "Analysis-A!O2", numericValue: 4, unit: "mm" },
+                distribution: { status: "available" as const, rawText: "normal", sourceCell: "Analysis-A!P2" },
+                unit: { status: "available" as const, rawText: "mm", sourceCell: "Analysis-A!Q2" },
+              } }],
+            }],
+            formulaCells: [], imageAssets: [],
+          }],
+        },
+        requiredFieldCheck: {
+          contractVersion: "v1" as const, inputClassification: "confidential" as const,
+          workbookContentHash: calculationCompletedResult.workbookContentHash, status: "readyForNextCheck" as const,
+          blockingIssues: [], advisoryIssues: [],
+          summary: { worksheetsChecked: 1, factorTablesChecked: 1, factorRowsChecked: 1, blockingIssueCount: 0, advisoryIssueCount: 0 },
+        },
+        exceptionResolution: {
+          contractVersion: "v1" as const, inputClassification: "confidential" as const,
+          workbookContentHash: calculationCompletedResult.workbookContentHash, knowledgeBaseVersion: "v1" as const,
+          status: "readyToContinue" as const, readyToContinue: true, acceptedExceptions: [], pendingExceptions: [],
+          summary: { actionableSignalCount: 0, acceptedExceptionCount: 0, pendingExceptionCount: 0, invalidCandidateCount: 0 },
+        },
+        worksheetSelection: calculationCompletedResult.worksheetSelection,
+        systemSpecification: {
+          designNominal: calculationCompletedResult.system.designNominal,
+          lowerSpecLimit: calculationCompletedResult.capability.lowerSpecLimit,
+          upperSpecLimit: calculationCompletedResult.capability.upperSpecLimit,
+          targetSigmaLevel: calculationCompletedResult.capability.targetSigmaLevel,
+          targetCpk: calculationCompletedResult.capability.targetCpk,
+          additionalMeanShift: calculationCompletedResult.system.additionalMeanShift,
+        },
+        criticality: calculationCompletedResult.recommendation.criticality,
+        scenarioOverrides: [],
+      };
       const validF6WorksheetInput = {
         worksheetName: "Analysis-A",
+        baselineCalculationRequest,
         baselineCalculation: calculationCompletedResult,
         f5Worksheet: rootResult.worksheets[0],
         f3GovernanceRows: [governanceRow],
@@ -4336,7 +4397,14 @@ describe("F5.1 objective interpretation contracts", () => {
         scenarioPolicyVersion: "f6-scenario-policy-v1",
         worksheets: [validF6WorksheetInput],
       };
-      const metrics = { mean: 12.46, rssSigma: 0.05, cp: 2.67, cpk: 2.4, yield: 0.999, dpm: 1000 };
+      const metrics = {
+        mean: calculationCompletedResult.system.mean,
+        rssSigma: calculationCompletedResult.system.rssSigma,
+        cp: calculationCompletedResult.capability.cp,
+        cpk: calculationCompletedResult.capability.cpk,
+        yield: calculationCompletedResult.capability.yield,
+        dpm: calculationCompletedResult.capability.totalDpm,
+      };
       const feasibility = { status: "supported", reasonCodes: ["within_capability_bound"], evidenceReferences: ["supplier-capability.json"] };
       const roiCalculationReference = reference("calculations/roi-policy-v2.json");
       const costEvidence = {
@@ -4362,12 +4430,12 @@ describe("F5.1 objective interpretation contracts", () => {
         optionId: "top-contributor-20",
         optionKind: "reduce_top_contributor_20",
         baselineMetrics: metrics,
-        resultMetrics: { ...metrics, rssSigma: 0.04, cp: 3.17, cpk: 3, yield: 0.9999, dpm: 100 },
-        deltaCpk: 0.6,
-        deltaCp: 0.5,
-        deltaRssSigma: -0.01,
-        deltaDpm: -900,
-        deltaYield: 0.0009,
+        resultMetrics: metrics,
+        deltaCpk: 0,
+        deltaCp: 0,
+        deltaRssSigma: 0,
+        deltaDpm: 0,
+        deltaYield: 0,
         factorOverrides: [{ worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 2, upperTolerance: 0.16, lowerTolerance: -0.16 }],
         toleranceChanges: [{
           worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 2,
@@ -4380,8 +4448,41 @@ describe("F5.1 objective interpretation contracts", () => {
         relativeCost: "insufficient_evidence",
         roiScore: "not_computed",
         impactRank: 1,
-        calculationTrace: reference("scenarios/top-contributor-20.json"),
+        scenarioEvidence: {
+          scenarioId: "top-contributor-20",
+          calculation: {
+            ...calculationCompletedResult,
+            scenarios: [{
+              scenarioId: "top-contributor-20",
+              baselineRunReference: calculationCompletedResult.runReference,
+              calculation: {
+                factorCount: calculationCompletedResult.factorCount,
+                recommendation: calculationCompletedResult.recommendation,
+                factors: calculationCompletedResult.factors,
+                system: calculationCompletedResult.system,
+                capability: calculationCompletedResult.capability,
+                traceRecords: calculationCompletedResult.traceRecords,
+              },
+              overrides: {
+                factors: [{
+                  source: calculationCompletedResult.factors[0]!.source,
+                  fields: ["upperTolerance" as const, "lowerTolerance" as const],
+                }],
+              },
+              deltas: { mean: 0, rssSigma: 0, worstCaseUpper: 0, worstCaseLower: 0, cpk: 0, totalDpm: 0, yield: 0 },
+            }],
+          },
+        },
+        closedRiskIds: [],
       };
+      const scenarioEvidenceFor = (scenarioId: string) => ({
+        ...completedOption.scenarioEvidence,
+        scenarioId,
+        calculation: {
+          ...completedOption.scenarioEvidence.calculation,
+          scenarios: completedOption.scenarioEvidence.calculation.scenarios.map((scenario) => ({ ...scenario, scenarioId })),
+        },
+      });
       const f6Result = {
         contractVersion: "v1",
         outputClassification: "confidential",
@@ -4416,6 +4517,10 @@ describe("F5.1 objective interpretation contracts", () => {
         expect(f6OptimizationRequestSchema.safeParse({ ...f6Request, f2Reference: reference("C:\\absolute\\Feature2-Report.json") }).success).toBe(false);
         expect(f6OptimizationRequestSchema.safeParse({ ...f6Request, selectedWorksheetNames: ["Analysis-A", "Analysis-A"] }).success).toBe(false);
         expect(f6OptimizationRequestSchema.safeParse({ ...f6Request, workbook: { ...f6Request.workbook, contentHash: "0".repeat(64) } }).success).toBe(false);
+        expect(f6OptimizationRequestSchema.safeParse({
+          ...f6Request,
+          worksheets: [{ ...validF6WorksheetInput, baselineCalculationRequest: { ...baselineCalculationRequest, runReference: "tampered-run" } }],
+        }).success).toBe(false);
       });
 
       it("rejects duplicate governed evidence identities in requests at the second record", () => {
@@ -4487,6 +4592,81 @@ describe("F5.1 objective interpretation contracts", () => {
         expect(f6OptimizationResultSchema.safeParse({
           ...f6Result,
           worksheets: [{ ...f6Result.worksheets[0], options: [{ ...completedOption, relativeCost: 0, roiScore: 0 }] }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], options: [{ ...completedOption, scenarioEvidence: { ...completedOption.scenarioEvidence, scenarioId: "other" } }] }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], options: [{ ...completedOption, resultMetrics: { ...completedOption.resultMetrics, cpk: completedOption.resultMetrics.cpk + 1 }, deltaCpk: 1 }] }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], options: [{ ...completedOption, closedRiskIds: ["missing-risk"] }] }],
+        }).success).toBe(false);
+        const lowRisk = {
+          riskId: "low-risk", category: "Product", rating: "Low", status: "open",
+          reason: "Low governed risk.", evidenceReferences: [f6Request.f5Reference],
+        } as const;
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], risks: [lowRisk], options: [{ ...completedOption, closedRiskIds: [lowRisk.riskId] }] }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], options: [{
+            ...completedOption,
+            scenarioEvidence: {
+              ...completedOption.scenarioEvidence,
+              calculation: {
+                ...completedOption.scenarioEvidence.calculation,
+                scenarios: [
+                  ...completedOption.scenarioEvidence.calculation.scenarios,
+                  { ...completedOption.scenarioEvidence.calculation.scenarios[0], scenarioId: "extra-scenario" },
+                ],
+              },
+            },
+          }] }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], options: [{
+            ...completedOption,
+            scenarioEvidence: {
+              ...completedOption.scenarioEvidence,
+              calculation: { ...completedOption.scenarioEvidence.calculation, runReference: "other-run" },
+            },
+          }] }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], options: [{
+            ...completedOption,
+            scenarioEvidence: {
+              ...completedOption.scenarioEvidence,
+              calculation: {
+                ...completedOption.scenarioEvidence.calculation,
+                worksheetSelection: { ...completedOption.scenarioEvidence.calculation.worksheetSelection, worksheetName: "Other" },
+              },
+            },
+          }] }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], options: [{
+            ...completedOption,
+            scenarioEvidence: {
+              ...completedOption.scenarioEvidence,
+              calculation: {
+                ...completedOption.scenarioEvidence.calculation,
+                scenarios: completedOption.scenarioEvidence.calculation.scenarios.map((scenario) => ({
+                  ...scenario,
+                  overrides: { ...scenario.overrides, factors: [] },
+                })),
+              },
+            },
+          }] }],
         }).success).toBe(false);
       });
 
@@ -4607,8 +4787,8 @@ describe("F5.1 objective interpretation contracts", () => {
           provenance: { ...f6Result.provenance, costEvidence },
           worksheets: [{ ...f6Result.worksheets[0], roiStatus: "computed" }],
         }).success).toBe(false);
-        const { roiPolicyVersion: _policy, ...withoutPolicy } = costEvidence;
-        const { roiCalculationReference: _reference, ...withoutReference } = costEvidence;
+        const withoutPolicy = Object.fromEntries(Object.entries(costEvidence).filter(([key]) => key !== "roiPolicyVersion"));
+        const withoutReference = Object.fromEntries(Object.entries(costEvidence).filter(([key]) => key !== "roiCalculationReference"));
         expect(f6OptimizationResultSchema.safeParse({
           ...f6Result,
           provenance: { ...f6Result.provenance, costEvidence: withoutPolicy },
@@ -4654,7 +4834,13 @@ describe("F5.1 objective interpretation contracts", () => {
           processFamily: supplierEvidence.processFamily, partCategory: supplierEvidence.partCategory,
           evidenceReference: { artifact: supplierEvidence.source, contentHash: supplierEvidence.contentHash },
         };
-        const supplierOption = { ...completedOption, optionId: "supplier", optionKind: "improve_supplier_capability", evidenceScope: supplierScope };
+        const supplierOption = {
+          ...completedOption,
+          optionId: "supplier",
+          optionKind: "improve_supplier_capability",
+          evidenceScope: supplierScope,
+          scenarioEvidence: scenarioEvidenceFor("supplier"),
+        };
         expect(f6OptimizationResultSchema.safeParse({
           ...f6Result, provenance: { ...f6Result.provenance, supplierCapabilityEvidence: [supplierEvidence] },
           worksheets: [{ ...f6Result.worksheets[0], options: [supplierOption], recommendations: [], highestImpactAction: undefined }],
@@ -4682,7 +4868,13 @@ describe("F5.1 objective interpretation contracts", () => {
           factorSources: exactDatumEvidence.factorDirections,
           evidenceReference: { artifact: exactDatumEvidence.source, contentHash: exactDatumEvidence.contentHash },
         };
-        const datumOption = { ...completedOption, optionId: "datum", optionKind: "tighten_datum_strategy", evidenceScope: datumScope };
+        const datumOption = {
+          ...completedOption,
+          optionId: "datum",
+          optionKind: "tighten_datum_strategy",
+          evidenceScope: datumScope,
+          scenarioEvidence: scenarioEvidenceFor("datum"),
+        };
         expect(f6OptimizationResultSchema.safeParse({
           ...f6Result, provenance: { ...f6Result.provenance, datumEvidence: [exactDatumEvidence] },
           worksheets: [{ ...f6Result.worksheets[0], options: [datumOption], recommendations: [], highestImpactAction: undefined }],
@@ -4729,7 +4921,7 @@ describe("F5.1 objective interpretation contracts", () => {
               executiveSummary: ["Cpk 2.4 exceeds the 1.33 target."],
               requirementReview: { ctq: "Anonymous device gap", nominal: 12.5, lowerSpecLimit: 12.1, upperSpecLimit: 12.9, specWidth: 0.8, assessment: "Requirement is understood.", riskLevel: "Low", evidenceReferences },
               inputValidation: [],
-              capabilityAssessment: { metrics, oosRate: 0.001, oosPpm: 1000, findings: ["Capability exceeds target."], evidenceReferences },
+              capabilityAssessment: { metrics, oosRate: 1 - metrics.yield, oosPpm: metrics.dpm, findings: ["Capability exceeds target."], evidenceReferences },
               contributorAnalysis: { topContributors: [{ factorName: "Feature-A", contributionPercent: 100, tableId: "table-a", sourceRow: 2 }], top1Concentration: 100, top3Concentration: 100, concentrationAssessment: "concentrated", policyVersion: "f6-contributor-policy-v1", evidenceReferences },
               rootCauseAnalysis: { factBasedFindings: ["Feature-A dominates RSS sigma."], signals: [], evidenceStatus: "supported", evidenceReferences },
               riskAssessment: [{ category: "Manufacturing", rating: "Low", status: "open", reason: "Baseline capability exceeds target.", evidenceReferences }],
@@ -4803,7 +4995,7 @@ describe("F5.1 objective interpretation contracts", () => {
 
         const toleranceWorksheet = structuredClone(report.worksheets[0]);
         toleranceWorksheet.sections.capabilityAssessment.oosRate += 5e-13;
-        toleranceWorksheet.sections.capabilityAssessment.oosPpm += 5e-7;
+        toleranceWorksheet.sections.capabilityAssessment.oosPpm += 5e-10;
         expect(f6ComposedEngineeringReportSchema.safeParse({ ...report, worksheets: [toleranceWorksheet] }).success).toBe(true);
 
         const malformedWhatIf = structuredClone(report);
