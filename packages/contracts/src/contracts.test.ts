@@ -4379,6 +4379,7 @@ describe("F5.1 objective interpretation contracts", () => {
         f5Worksheet: rootResult.worksheets[0],
         f3GovernanceRows: [governanceRow],
         f2Findings: [],
+        supplierBindings: [],
       };
       const f6Request = {
         contractVersion: "v1",
@@ -4534,6 +4535,37 @@ describe("F5.1 objective interpretation contracts", () => {
         }
       });
 
+      it("requires unique supplier bindings that resolve to one governed evidence record", () => {
+        const evidenceReference = { artifact: supplierEvidence.source, contentHash: supplierEvidence.contentHash };
+        const binding = { tableId: "table-a", sourceRow: 2, evidenceReference };
+        const boundRequest = {
+          ...f6Request,
+          supplierCapabilityEvidence: [supplierEvidence],
+          worksheets: [{ ...validF6WorksheetInput, supplierBindings: [binding] }],
+        };
+
+        expect(f6OptimizationRequestSchema.parse(boundRequest)).toEqual(boundRequest);
+        expect(f6OptimizationRequestSchema.safeParse({
+          ...f6Request,
+          worksheets: [{ ...validF6WorksheetInput, supplierBindings: undefined }],
+        }).success).toBe(false);
+
+        for (const supplierBindings of [
+          [binding, binding],
+          [{ ...binding, sourceRow: 99 }],
+          [{ ...binding, evidenceReference: { ...evidenceReference, contentHash: "f".repeat(64) } }],
+        ]) {
+          expect(f6OptimizationRequestSchema.safeParse({
+            ...boundRequest,
+            worksheets: [{ ...validF6WorksheetInput, supplierBindings }],
+          }).success).toBe(false);
+        }
+        expect(f6OptimizationRequestSchema.safeParse({
+          ...boundRequest,
+          supplierCapabilityEvidence: [{ ...supplierEvidence, partCategory: "mismatched-category" }],
+        }).success).toBe(false);
+      });
+
       it("accepts strict solver DTOs and versioned supplier, datum, and cost evidence", () => {
         expect(f6ToleranceChangeSchema.parse(completedOption.toleranceChanges[0])).toEqual(completedOption.toleranceChanges[0]);
         expect(f6ControlledScenarioSchema.safeParse({ scenarioId: "scenario-1", optionKind: "reduce_top_contributor_20", factorOverrides: completedOption.factorOverrides }).success).toBe(true);
@@ -4613,6 +4645,22 @@ describe("F5.1 objective interpretation contracts", () => {
           ...f6Result,
           worksheets: [{ ...f6Result.worksheets[0], risks: [lowRisk], options: [{ ...completedOption, closedRiskIds: [lowRisk.riskId] }] }],
         }).success).toBe(false);
+        const structuralRisk = {
+          riskId: "structural-risk", category: "Manufacturing", rating: "High", status: "open",
+          reason: "Structural governance remains open.", evidenceReferences: [f6Request.f3Reference],
+        } as const;
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], risks: [structuralRisk], options: [{ ...completedOption, closedRiskIds: [structuralRisk.riskId] }] }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{
+            ...f6Result.worksheets[0],
+            risks: [{ ...structuralRisk, status: "closed" }],
+            options: [{ ...completedOption, closedRiskIds: [structuralRisk.riskId] }],
+          }],
+        }).success).toBe(true);
         expect(f6OptimizationResultSchema.safeParse({
           ...f6Result,
           worksheets: [{ ...f6Result.worksheets[0], options: [{

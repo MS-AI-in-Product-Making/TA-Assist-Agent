@@ -10,6 +10,7 @@ import {
   type F6OptimizationResult,
   type F6Option,
   type F6OptionKind,
+  type F6SupplierCapabilityEvidence,
   type F6ToleranceChange,
 } from "@ai-assist/contracts";
 import { createCalculation } from "./calculation.js";
@@ -144,6 +145,7 @@ function completedOption(
   scenario: F6ControlledScenario,
   toleranceChanges: readonly F6ToleranceChange[],
   extra: Pick<CompletedOption, "feasibility"> & Partial<Pick<CompletedOption, "reverseSolve" | "apportionment">>,
+  evidenceReferences: CompletedOption["evidenceReferences"] = [],
 ): CompletedOption {
   const scenarioCalculation = scenarioResult.scenarios.at(-1)?.calculation;
   if (scenarioCalculation === undefined || scenarioResult.scenarios.at(-1)?.scenarioId !== scenario.scenarioId) {
@@ -166,7 +168,7 @@ function completedOption(
     factorOverrides: structuredClone(scenario.factorOverrides),
     toleranceChanges: structuredClone([...toleranceChanges]),
     ...extra,
-    evidenceReferences: [f4ArtifactReference(request)],
+    evidenceReferences: [f4ArtifactReference(request), ...structuredClone(evidenceReferences)],
     relativeCost: cost.relativeCost,
     roiScore: "not_computed",
     impactRank: null,
@@ -197,14 +199,23 @@ function feasibilityRank(option: CompletedOption): number {
   return { supported: 4, requires_engineering_review: 3, insufficient_evidence: 2, not_supported: 1 }[option.feasibility.status];
 }
 
-function rankOptions(
+function verifiedRiskClosure(option: CompletedOption, risk: ReadyWorksheet["risks"][number], targetCpk: number): boolean {
+  return risk.status === "closed"
+    || (risk.riskId.endsWith(":f5:capability-below-target") && option.resultMetrics.cpk >= targetCpk);
+}
+
+export function rankCompletedOptions(
   options: F6Option[],
   targetCpk: number,
   risks: ReadyWorksheet["risks"],
 ): F6Option[] {
   const completed = options.filter((option): option is CompletedOption => option.status === "completed");
-  const riskSeverity = new Map(risks.map((risk) => [risk.riskId, { Critical: 2, High: 1, Medium: 0, Low: 0 }[risk.rating]]));
-  const closureScore = (option: CompletedOption) => option.closedRiskIds.reduce((score, riskId) => score + (riskSeverity.get(riskId) ?? 0), 0);
+  const riskById = new Map(risks.map((risk) => [risk.riskId, risk]));
+  const closureScore = (option: CompletedOption) => option.closedRiskIds.reduce((score, riskId) => {
+    const risk = riskById.get(riskId);
+    if (risk === undefined || !verifiedRiskClosure(option, risk, targetCpk)) return score;
+    return score + ({ Critical: 2, High: 1, Medium: 0, Low: 0 }[risk.rating]);
+  }, 0);
   const ordered = [...completed].sort((left, right) =>
     Number(right.resultMetrics.cpk >= targetCpk) - Number(left.resultMetrics.cpk >= targetCpk)
     || right.deltaCpk - left.deltaCpk
@@ -219,6 +230,22 @@ function rankOptions(
     : option);
 }
 
+function sourceKey(source: { readonly tableId: string; readonly sourceRow: number }): string {
+  return `${source.tableId}\u0000${source.sourceRow}`;
+}
+
+function combineFeasibility(assessments: CompletedOption["feasibility"][]): CompletedOption["feasibility"] {
+  const statusRank = { supported: 4, requires_engineering_review: 3, insufficient_evidence: 2, not_supported: 1 } as const;
+  const status = assessments.reduce((worst, assessment) =>
+    statusRank[assessment.status] < statusRank[worst] ? assessment.status : worst,
+  "supported" as CompletedOption["feasibility"]["status"]);
+  return {
+    status,
+    reasonCodes: [...new Set(assessments.flatMap(({ reasonCodes }) => reasonCodes))],
+    evidenceReferences: [...new Set(assessments.flatMap(({ evidenceReferences }) => evidenceReferences))],
+  };
+}
+
 function buildNumericOption(
   kind: (typeof NUMERIC_OPTION_KINDS)[number],
   request: F6OptimizationRequest,
@@ -227,6 +254,7 @@ function buildNumericOption(
   top: readonly CalculationFactorResult[],
   targetCpk: number,
   calculateScenario: typeof calculateF6Scenario,
+  supplierEvidenceBySource: ReadonlyMap<string, F6SupplierCapabilityEvidence>,
 ): CompletedOption {
   const optionId = `${baseline.worksheetSelection.worksheetName}:${kind}`;
   let changes: readonly F6ToleranceChange[] = [];
@@ -289,15 +317,21 @@ function buildNumericOption(
     ...(systemSpecification === undefined ? {} : { systemSpecification }),
   };
   const scenarioResult = calculateScenario({ baselineRequest, scenario });
-  const requestedBand = changes.length === 0 ? Number.NaN : Math.min(...changes.map(({ resultingBand }) => resultingBand));
   const feasibility = changes.length === 0
     ? { status: "supported" as const, reasonCodes: ["controlled_centering_calculation_completed"], evidenceReferences: [] }
-    : assessToleranceFeasibility({ requestedToleranceBand: requestedBand });
+    : combineFeasibility(changes.map((change) => assessToleranceFeasibility({
+      requestedToleranceBand: change.resultingBand,
+      evidence: supplierEvidenceBySource.get(sourceKey(change)),
+    })));
+  const supplierReferences = changes.flatMap((change) => {
+    const evidence = supplierEvidenceBySource.get(sourceKey(change));
+    return evidence === undefined ? [] : [{ artifact: evidence.source, contentHash: evidence.contentHash }];
+  });
   return completedOption(request, baseline, scenarioResult, scenario, changes, {
     feasibility,
     ...(reverseSolve === undefined ? {} : { reverseSolve }),
     ...(apportionment === undefined ? {} : { apportionment }),
-  });
+  }, supplierReferences);
 }
 
 function optimizeWorksheet(
@@ -311,9 +345,26 @@ function optimizeWorksheet(
   const targetCapability = baseline.capability.targetCpk > 0 && baseline.capability.targetSigmaLevel > 0
     ? { targetCpk: baseline.capability.targetCpk, targetSigmaLevel: baseline.capability.targetSigmaLevel, source: "worksheet" as const }
     : { targetCpk: 1.33, targetSigmaLevel: 4, source: "controlled_default" as const };
+  const supplierEvidenceByIdentity = new Map((request.supplierCapabilityEvidence ?? []).map((evidence) => [
+    `${evidence.source}\u0000${evidence.contentHash}`,
+    evidence,
+  ]));
+  const supplierEvidenceBySource = new Map(worksheet.supplierBindings.map((binding) => [
+    sourceKey(binding),
+    supplierEvidenceByIdentity.get(`${binding.evidenceReference.artifact}\u0000${binding.evidenceReference.contentHash}`)!,
+  ]));
   const options: F6Option[] = NUMERIC_OPTION_KINDS.map((kind) => {
     try {
-      return buildNumericOption(kind, request, baselineRequest, baseline, top, targetCapability.targetCpk, calculateScenario);
+      return buildNumericOption(
+        kind,
+        request,
+        baselineRequest,
+        baseline,
+        top,
+        targetCapability.targetCpk,
+        calculateScenario,
+        supplierEvidenceBySource,
+      );
     } catch (error) {
       return failure(kind, worksheet.worksheetName, error);
     }
@@ -323,8 +374,25 @@ function optimizeWorksheet(
     const evidenceKeys = new Set(evidence.factorDirections.map(({ tableId, sourceRow }) => `${tableId}\u0000${sourceRow}`));
     return evidenceKeys.size === baselineSourceKeys.size && [...baselineSourceKeys].every((key) => evidenceKeys.has(key));
   });
+  const supplierEvidence = supplierEvidenceBySource.get(sourceKey(top[0]!.source));
+  const supplierAssessment = assessSupplierScenario({
+    evidence: supplierEvidence,
+    requestedToleranceBand: scaledChange(top[0]!, 0.8).resultingBand,
+  });
   options.push(
-    assessSupplierScenario({}).option,
+    {
+      ...supplierAssessment.option,
+      feasibility: supplierAssessment.feasibility,
+      ...(supplierEvidence === undefined ? {} : {
+        evidenceScope: {
+          kind: "supplier" as const,
+          supplierReference: supplierEvidence.supplierReference,
+          processFamily: supplierEvidence.processFamily,
+          partCategory: supplierEvidence.partCategory,
+          evidenceReference: { artifact: supplierEvidence.source, contentHash: supplierEvidence.contentHash },
+        },
+      }),
+    },
     assessDatumScenario({ evidence: matchingDatumEvidence.length === 1 ? matchingDatumEvidence[0] : undefined }).option,
   );
   const completedCount = options.filter(({ status }) => status === "completed").length;
@@ -385,7 +453,7 @@ function optimizeWorksheet(
         : [],
     };
   });
-  const ranked = rankOptions(optionsWithRiskClosure, targetCapability.targetCpk, risks);
+  const ranked = rankCompletedOptions(optionsWithRiskClosure, targetCapability.targetCpk, risks);
   const highest = ranked.find((option) => option.status === "completed" && option.impactRank === 1) as CompletedOption | undefined;
   const recommendations = ranked
     .filter((option): option is CompletedOption => option.status === "completed")

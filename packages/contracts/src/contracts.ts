@@ -6425,6 +6425,8 @@ const f6InsufficientEvidenceOptionSchema = z.object({
   predictedImprovement: z.literal("insufficient_evidence"),
   requiredInputs: z.array(z.string().min(1)).min(1),
   evidenceReferences: z.array(f6ArtifactReferenceSchema),
+  feasibility: f6FeasibilityAssessmentSchema.optional(),
+  evidenceScope: f6EvidenceScopeSchema.optional(),
   relativeCost: z.literal("insufficient_evidence"),
   roiScore: z.literal("not_computed"),
   impactRank: z.null(),
@@ -6470,6 +6472,12 @@ export const f6OptionSchema = z.discriminatedUnion("status", [
   }
 });
 
+export const f6SupplierBindingSchema = z.object({
+  tableId: z.string().min(1),
+  sourceRow: z.number().int().positive(),
+  evidenceReference: f6ArtifactReferenceSchema,
+}).strict();
+
 export const f6WorksheetInputSchema = z.object({
   worksheetName: z.string().min(1),
   baselineCalculationRequest: calculationRequestSchema,
@@ -6477,6 +6485,7 @@ export const f6WorksheetInputSchema = z.object({
   f5Worksheet: f5CompletedWorksheetResultSchema,
   f3GovernanceRows: z.array(f3GovernanceRowSchema),
   f2Findings: z.array(f6InputFindingSchema),
+  supplierBindings: z.array(f6SupplierBindingSchema),
 }).strict().superRefine((worksheet, context) => {
   if (worksheet.baselineCalculationRequest.scenarioOverrides.length !== 0) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline calculation request must not contain scenarios", path: ["baselineCalculationRequest", "scenarioOverrides"] });
@@ -6509,6 +6518,19 @@ export const f6WorksheetInputSchema = z.object({
   if (JSON.stringify(worksheet.f3GovernanceRows) !== JSON.stringify(worksheet.f5Worksheet.governanceRows)) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "F3 governance rows must match the F5 worksheet", path: ["f3GovernanceRows"] });
   }
+  const baselineSourceKeys = new Set(worksheet.baselineCalculation.factors.map(({ source }) => `${source.tableId}\u0000${source.sourceRow}`));
+  const governanceSourceKeys = new Set(worksheet.f3GovernanceRows.map(({ source }) => `${source.tableId}\u0000${source.sourceRow}`));
+  const bindingSourceKeys = new Set<string>();
+  worksheet.supplierBindings.forEach((binding, index) => {
+    const sourceKey = `${binding.tableId}\u0000${binding.sourceRow}`;
+    if (bindingSourceKeys.has(sourceKey)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "supplier binding source keys must be unique", path: ["supplierBindings", index] });
+    }
+    bindingSourceKeys.add(sourceKey);
+    if (!baselineSourceKeys.has(sourceKey) || !governanceSourceKeys.has(sourceKey)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "supplier binding source must exist in baseline factors and F3 governance rows", path: ["supplierBindings", index] });
+    }
+  });
 });
 
 export const f6OptimizationRequestSchema = z.object({
@@ -6561,6 +6583,28 @@ export const f6OptimizationRequestSchema = z.object({
     if (worksheet.baselineCalculation.runReference !== request.f4Reference.runId) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline run must match the F4 reference", path: ["worksheets", index, "baselineCalculation", "runReference"] });
     }
+    worksheet.supplierBindings.forEach((binding, bindingIndex) => {
+      const matchingEvidence = (request.supplierCapabilityEvidence ?? []).filter((evidence) =>
+        evidence.source === binding.evidenceReference.artifact
+        && evidence.contentHash === binding.evidenceReference.contentHash);
+      if (matchingEvidence.length !== 1) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "supplier binding must resolve to exactly one governed evidence record",
+          path: ["worksheets", index, "supplierBindings", bindingIndex, "evidenceReference"],
+        });
+        return;
+      }
+      const governanceRow = worksheet.f3GovernanceRows.find(({ source }) =>
+        source.tableId === binding.tableId && source.sourceRow === binding.sourceRow);
+      if (governanceRow !== undefined && matchingEvidence[0]!.partCategory !== governanceRow.partCategory) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "bound supplier evidence partCategory must match the F3 governance row",
+          path: ["worksheets", index, "supplierBindings", bindingIndex, "evidenceReference"],
+        });
+      }
+    });
   });
 });
 
@@ -6771,6 +6815,10 @@ export const f6OptimizationResultSchema = z.object({
           context.addIssue({ code: z.ZodIssueCode.custom, message: "closedRiskIds must identify parent worksheet risks", path: ["worksheets", worksheetIndex, "options", optionIndex, "closedRiskIds", riskIndex] });
         } else if (risk.rating !== "High" && risk.rating !== "Critical") {
           context.addIssue({ code: z.ZodIssueCode.custom, message: "closedRiskIds may identify only High or Critical risks", path: ["worksheets", worksheetIndex, "options", optionIndex, "closedRiskIds", riskIndex] });
+        } else if (risk.status !== "closed"
+          && !(risk.riskId.endsWith(":f5:capability-below-target")
+            && option.resultMetrics.cpk >= worksheet.targetCapability.targetCpk)) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "open risks require explicit option closure evidence", path: ["worksheets", worksheetIndex, "options", optionIndex, "closedRiskIds", riskIndex] });
         }
       });
       if (option.scenarioEvidence.scenarioId !== option.optionId) {

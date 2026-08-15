@@ -8,7 +8,7 @@ import * as packageRoot from "./index.js";
 import { createCalculation } from "./calculation.js";
 import { createF5DataInterpretation } from "./f5-data-interpretation.js";
 import { calculateF6Scenario } from "./f6-scenario-adapter.js";
-import { createF6Optimization } from "./f6-optimization.js";
+import { createF6Optimization, rankCompletedOptions } from "./f6-optimization.js";
 
 const HASH = "a".repeat(64);
 const IMAGE_HASH = "b".repeat(64);
@@ -161,8 +161,34 @@ function request(worksheetName = "Analysis-A"): F6OptimizationRequest {
       f5Worksheet,
       f3GovernanceRows: governanceRows,
       f2Findings: [],
+      supplierBindings: [],
     }],
   };
+}
+
+function supplierEvidence(overrides: Partial<NonNullable<F6OptimizationRequest["supplierCapabilityEvidence"]>[number]> = {}) {
+  return {
+    evidenceVersion: "supplier-capability-v1" as const,
+    supplierReference: "supplier-a",
+    processFamily: "cnc",
+    partCategory: "category",
+    capabilityTier: "T1" as const,
+    achievableToleranceBand: 3,
+    distribution: "normal" as const,
+    source: "supplier/a.json",
+    effectiveVersion: "2026-Q3",
+    contentHash: "c".repeat(64),
+    ...overrides,
+  };
+}
+
+function bindSupplier(input: F6OptimizationRequest, evidence: ReturnType<typeof supplierEvidence>, sourceRow = 2): void {
+  input.supplierCapabilityEvidence = [...(input.supplierCapabilityEvidence ?? []), evidence];
+  input.worksheets[0]!.supplierBindings.push({
+    tableId: "table-a",
+    sourceRow,
+    evidenceReference: { artifact: evidence.source, contentHash: evidence.contentHash },
+  });
 }
 
 function refreshGovernedBaseline(input: F6OptimizationRequest): void {
@@ -503,6 +529,108 @@ describe("createF6Optimization", () => {
         && option.feasibility.evidenceReferences.length === 0)).toBe(true);
     expect(worksheet.options[7]).toMatchObject({ status: "insufficient_evidence", evidenceReferences: [] });
     expect(worksheet.options[8]).toMatchObject({ status: "insufficient_evidence", evidenceReferences: [] });
+  });
+
+  it.each([
+    ["T1", 3, "supported"],
+    ["T1", 4, "not_supported"],
+    ["T2", 3, "requires_engineering_review"],
+  ] as const)("applies bound %s supplier evidence to the top-factor requested band as %s", (capabilityTier, achievableToleranceBand, expectedStatus) => {
+    const input = request();
+    const evidence = supplierEvidence({ capabilityTier, achievableToleranceBand });
+    bindSupplier(input, evidence);
+
+    const result = createF6Optimization(input);
+    const worksheet = result.worksheets[0];
+    if (worksheet?.status === "input_rejected" || worksheet === undefined) throw new Error("expected ready worksheet");
+    const topFactor = worksheet.options[0];
+    if (topFactor?.status !== "completed") throw new Error("expected completed top-factor option");
+    expect(topFactor.feasibility.status).toBe(expectedStatus);
+    expect(topFactor.feasibility.evidenceReferences).toEqual([evidence.source]);
+    expect(topFactor.evidenceReferences).toContainEqual({ artifact: evidence.source, contentHash: evidence.contentHash });
+    expect(worksheet.options[7]).toMatchObject({
+      status: "insufficient_evidence",
+      predictedImprovement: "insufficient_evidence",
+      feasibility: { status: expectedStatus, evidenceReferences: [evidence.source] },
+      evidenceReferences: [{ artifact: evidence.source, contentHash: evidence.contentHash }],
+      evidenceScope: {
+        kind: "supplier",
+        supplierReference: evidence.supplierReference,
+        processFamily: evidence.processFamily,
+        partCategory: evidence.partCategory,
+        evidenceReference: { artifact: evidence.source, contentHash: evidence.contentHash },
+      },
+    });
+  });
+
+  it("rejects conflicting supplier bindings and ignores unbound supplier evidence", () => {
+    const input = request();
+    const bound = supplierEvidence();
+    const unrelated = supplierEvidence({
+      supplierReference: "supplier-b",
+      source: "supplier/b.json",
+      contentHash: "d".repeat(64),
+    });
+    bindSupplier(input, bound);
+    input.supplierCapabilityEvidence!.push(unrelated);
+
+    const result = createF6Optimization(input);
+    expect(result.worksheets[0]!.options[7]).toMatchObject({
+      evidenceReferences: [{ artifact: bound.source, contentHash: bound.contentHash }],
+    });
+    expect(JSON.stringify(result.worksheets[0]!.options[7])).not.toContain(unrelated.source);
+
+    input.worksheets[0]!.supplierBindings.push({ ...input.worksheets[0]!.supplierBindings[0]! });
+    expect(() => createF6Optimization(input)).toThrow();
+  });
+
+  it("ranks independently verified closed severe risk before an otherwise tied option", () => {
+    const result = createF6Optimization(request());
+    const worksheet = result.worksheets[0];
+    if (worksheet?.status === "input_rejected" || worksheet === undefined) throw new Error("expected ready worksheet");
+    const template = worksheet.options.find((option) => option.status === "completed")!;
+    if (template.status !== "completed") throw new Error("expected completed option");
+    const risks = [{
+      riskId: "verified-risk",
+      category: "Supplier" as const,
+      rating: "Critical" as const,
+      status: "closed" as const,
+      reason: "Closed by governed supplier evidence.",
+      evidenceReferences: [{ artifact: "risk/closure.json", contentHash: "e".repeat(64) }],
+    }];
+    const options = [
+      { ...structuredClone(template), optionId: "without-closure", impactRank: null, closedRiskIds: [] },
+      { ...structuredClone(template), optionId: "with-closure", impactRank: null, closedRiskIds: [risks[0]!.riskId] },
+    ];
+
+    const ranked = rankCompletedOptions(options, worksheet.targetCapability.targetCpk, risks);
+    expect(ranked.map(({ optionId, impactRank }) => [optionId, impactRank])).toEqual([
+      ["without-closure", 2],
+      ["with-closure", 1],
+    ]);
+  });
+
+  it("ranks tied feasibility supported before review before insufficient before not supported", () => {
+    const result = createF6Optimization(request());
+    const worksheet = result.worksheets[0];
+    if (worksheet?.status === "input_rejected" || worksheet === undefined) throw new Error("expected ready worksheet");
+    const template = worksheet.options.find((option) => option.status === "completed")!;
+    if (template.status !== "completed") throw new Error("expected completed option");
+    const statuses = ["not_supported", "insufficient_evidence", "requires_engineering_review", "supported"] as const;
+    const options = statuses.map((status) => ({
+      ...structuredClone(template),
+      optionId: status,
+      impactRank: null,
+      feasibility: { status, reasonCodes: [status], evidenceReferences: [] },
+    }));
+
+    const ranked = rankCompletedOptions(options, worksheet.targetCapability.targetCpk, []);
+    expect([...ranked].sort((left, right) => left.impactRank! - right.impactRank!).map(({ optionId }) => optionId)).toEqual([
+      "supported",
+      "requires_engineering_review",
+      "insufficient_evidence",
+      "not_supported",
+    ]);
   });
 
   it("uses datum evidence only when one record exactly covers the worksheet factor scope", () => {
