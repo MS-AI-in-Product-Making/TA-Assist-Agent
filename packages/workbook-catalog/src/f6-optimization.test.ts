@@ -245,6 +245,8 @@ describe("createF6Optimization", () => {
     expect(worksheet.targetCapability).toEqual({ targetCpk: 1.33, targetSigmaLevel: 4, source: "worksheet" });
     expect(worksheet.options[7]).toMatchObject({ status: "insufficient_evidence", predictedImprovement: "insufficient_evidence" });
     expect(worksheet.options[8]).toMatchObject({ status: "insufficient_evidence", predictedImprovement: "insufficient_evidence" });
+    expect(worksheet.options[7]).not.toHaveProperty("evidenceScope");
+    expect(worksheet.options[8]).not.toHaveProperty("evidenceScope");
     expect(worksheet.roiStatus).toBe("not_computed");
     expect(worksheet.options.filter((option) => option.status === "completed").every((option) => option.roiScore === "not_computed")).toBe(true);
     for (const option of worksheet.options.filter((candidate) => candidate.status === "completed")) {
@@ -529,6 +531,8 @@ describe("createF6Optimization", () => {
         && option.feasibility.evidenceReferences.length === 0)).toBe(true);
     expect(worksheet.options[7]).toMatchObject({ status: "insufficient_evidence", evidenceReferences: [] });
     expect(worksheet.options[8]).toMatchObject({ status: "insufficient_evidence", evidenceReferences: [] });
+    expect(worksheet.options[7]).not.toHaveProperty("evidenceScope");
+    expect(worksheet.options[8]).not.toHaveProperty("evidenceScope");
   });
 
   it.each([
@@ -561,6 +565,7 @@ describe("createF6Optimization", () => {
         evidenceReference: { artifact: evidence.source, contentHash: evidence.contentHash },
       },
     });
+    expect(f6OptimizationResultSchema.safeParse(result).success).toBe(true);
   });
 
   it("rejects conflicting supplier bindings and ignores unbound supplier evidence", () => {
@@ -658,11 +663,17 @@ describe("createF6Optimization", () => {
     expect(result.worksheets[0]!.options[8]).toMatchObject({
       status: "insufficient_evidence",
       evidenceReferences: [{ artifact: exactDatum.source, contentHash: exactDatum.contentHash }],
+      evidenceScope: {
+        kind: "datum",
+        factorSources: exactDatum.factorDirections,
+        evidenceReference: { artifact: exactDatum.source, contentHash: exactDatum.contentHash },
+      },
     });
 
     input.datumEvidence.push({ ...exactDatum, source: "datum/b.json", contentHash: "d".repeat(64) });
     result = createF6Optimization(input);
     expect(result.worksheets[0]!.options[8]).toMatchObject({ status: "insufficient_evidence", evidenceReferences: [] });
+    expect(result.worksheets[0]!.options[8]).not.toHaveProperty("evidenceScope");
   });
 
   it("uses governed cost evidence but leaves ROI not computed without a calculation result", () => {

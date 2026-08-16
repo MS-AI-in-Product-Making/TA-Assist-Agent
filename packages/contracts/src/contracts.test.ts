@@ -4954,6 +4954,69 @@ describe("F5.1 objective interpretation contracts", () => {
         }).success).toBe(false);
       });
 
+      it("allows absent insufficient evidence scopes and validates present scopes exactly", () => {
+        const insufficientOption = {
+          status: "insufficient_evidence",
+          optionId: "supplier-insufficient",
+          optionKind: "improve_supplier_capability",
+          predictedImprovement: "insufficient_evidence",
+          requiredInputs: ["supplier capability study"],
+          evidenceReferences: [],
+          relativeCost: "insufficient_evidence",
+          roiScore: "not_computed",
+          impactRank: null,
+        } as const;
+        const supplierScope = {
+          kind: "supplier" as const,
+          supplierReference: supplierEvidence.supplierReference,
+          processFamily: supplierEvidence.processFamily,
+          partCategory: supplierEvidence.partCategory,
+          evidenceReference: { artifact: supplierEvidence.source, contentHash: supplierEvidence.contentHash },
+        };
+        const datumScope = {
+          kind: "datum" as const,
+          factorSources: datumEvidence.factorDirections,
+          evidenceReference: { artifact: datumEvidence.source, contentHash: datumEvidence.contentHash },
+        };
+        const parseInsufficient = (option: object, provenance: object = {}) => f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          provenance: { ...f6Result.provenance, ...provenance },
+          worksheets: [{ ...f6Result.worksheets[0], options: [completedOption, option] }],
+          summary: { ...f6Result.summary, insufficientEvidenceOptionCount: 1 },
+        });
+
+        expect(parseInsufficient(insufficientOption).success).toBe(true);
+        expect(parseInsufficient(
+          { ...insufficientOption, evidenceScope: supplierScope },
+          { supplierCapabilityEvidence: [supplierEvidence] },
+        ).success).toBe(true);
+        expect(parseInsufficient(
+          { ...insufficientOption, optionId: "datum-insufficient", optionKind: "tighten_datum_strategy", evidenceScope: datumScope },
+          { datumEvidence: [datumEvidence] },
+        ).success).toBe(true);
+
+        expect(parseInsufficient(
+          { ...insufficientOption, evidenceScope: datumScope },
+          { datumEvidence: [datumEvidence] },
+        ).success).toBe(false);
+        expect(parseInsufficient(
+          { ...insufficientOption, optionId: "datum-insufficient", optionKind: "tighten_datum_strategy", evidenceScope: supplierScope },
+          { supplierCapabilityEvidence: [supplierEvidence] },
+        ).success).toBe(false);
+        expect(parseInsufficient(
+          { ...insufficientOption, evidenceScope: { ...supplierScope, evidenceReference: reference("unrelated.json") } },
+          { supplierCapabilityEvidence: [supplierEvidence] },
+        ).success).toBe(false);
+        expect(parseInsufficient(
+          { ...insufficientOption, evidenceScope: { ...supplierScope, supplierReference: "unrelated-supplier" } },
+          { supplierCapabilityEvidence: [supplierEvidence] },
+        ).success).toBe(false);
+        expect(parseInsufficient(
+          { ...insufficientOption, optionId: "datum-insufficient", optionKind: "tighten_datum_strategy", evidenceScope: { ...datumScope, factorSources: [{ ...datumScope.factorSources[0], direction: -1 }] } },
+          { datumEvidence: [datumEvidence] },
+        ).success).toBe(false);
+      });
+
       it("accepts the fixed ten-section composed report and enforces bullet limits", () => {
         const evidenceReferences = [reference("Feature5-Report.json"), reference("Feature6-Optimization.json")];
         const report = {

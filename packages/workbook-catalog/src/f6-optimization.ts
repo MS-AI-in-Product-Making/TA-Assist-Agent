@@ -375,6 +375,7 @@ function optimizeWorksheet(
     return evidenceKeys.size === baselineSourceKeys.size && [...baselineSourceKeys].every((key) => evidenceKeys.has(key));
   });
   const supplierEvidence = supplierEvidenceBySource.get(sourceKey(top[0]!.source));
+  const datumEvidence = matchingDatumEvidence.length === 1 ? matchingDatumEvidence[0] : undefined;
   const supplierAssessment = assessSupplierScenario({
     evidence: supplierEvidence,
     requestedToleranceBand: scaledChange(top[0]!, 0.8).resultingBand,
@@ -393,7 +394,16 @@ function optimizeWorksheet(
         },
       }),
     },
-    assessDatumScenario({ evidence: matchingDatumEvidence.length === 1 ? matchingDatumEvidence[0] : undefined }).option,
+    {
+      ...assessDatumScenario({ evidence: datumEvidence }).option,
+      ...(datumEvidence === undefined ? {} : {
+        evidenceScope: {
+          kind: "datum" as const,
+          factorSources: datumEvidence.factorDirections,
+          evidenceReference: { artifact: datumEvidence.source, contentHash: datumEvidence.contentHash },
+        },
+      }),
+    },
   );
   const completedCount = options.filter(({ status }) => status === "completed").length;
   if (completedCount === 0) {

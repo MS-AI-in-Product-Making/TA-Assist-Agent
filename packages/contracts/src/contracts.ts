@@ -6437,7 +6437,7 @@ export const f6OptionSchema = z.discriminatedUnion("status", [
   f6CalculationFailedOptionSchema,
   f6InsufficientEvidenceOptionSchema,
 ]).superRefine((option, context) => {
-  if (option.status !== "completed") return;
+  if (option.status === "calculation_failed") return;
   const expectedScopeKind = option.optionKind === "improve_supplier_capability"
     ? "supplier"
     : option.optionKind === "tighten_datum_strategy"
@@ -6445,7 +6445,11 @@ export const f6OptionSchema = z.discriminatedUnion("status", [
       : undefined;
   if (expectedScopeKind === undefined && option.evidenceScope !== undefined) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "evidenceScope is forbidden for this option kind", path: ["evidenceScope"] });
-  } else if (expectedScopeKind !== undefined && option.evidenceScope?.kind !== expectedScopeKind) {
+  } else if (expectedScopeKind !== undefined
+    && option.evidenceScope !== undefined
+    && option.evidenceScope.kind !== expectedScopeKind) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: `${expectedScopeKind} evidenceScope is required for this option kind`, path: ["evidenceScope"] });
+  } else if (option.status === "completed" && expectedScopeKind !== undefined && option.evidenceScope === undefined) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: `${expectedScopeKind} evidenceScope is required for this option kind`, path: ["evidenceScope"] });
   }
   if (option.evidenceScope?.kind === "datum") {
@@ -6458,6 +6462,7 @@ export const f6OptionSchema = z.discriminatedUnion("status", [
       seen.add(key);
     });
   }
+  if (option.status !== "completed") return;
   const expectedDeltas = {
     deltaCpk: option.resultMetrics.cpk - option.baselineMetrics.cpk,
     deltaCp: option.resultMetrics.cp - option.baselineMetrics.cp,
@@ -6804,6 +6809,32 @@ export const f6OptimizationResultSchema = z.object({
       });
     }
     worksheet.options.forEach((option, optionIndex) => {
+      if (option.status === "calculation_failed") return;
+      if (option.optionKind === "improve_supplier_capability" && option.evidenceScope?.kind === "supplier") {
+        const scope = option.evidenceScope;
+        const matches = (result.provenance.supplierCapabilityEvidence ?? []).filter((evidence) =>
+          evidence.source === scope.evidenceReference.artifact
+          && evidence.contentHash === scope.evidenceReference.contentHash
+          && evidence.supplierReference === scope.supplierReference
+          && evidence.processFamily === scope.processFamily
+          && evidence.partCategory === scope.partCategory);
+        if (matches.length !== 1) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "supplier option evidenceScope must match exactly one governed evidence entry", path: ["worksheets", worksheetIndex, "options", optionIndex, "evidenceScope"] });
+        }
+      }
+      if (option.optionKind === "tighten_datum_strategy" && option.evidenceScope?.kind === "datum") {
+        const scope = option.evidenceScope;
+        const matches = (result.provenance.datumEvidence ?? []).filter((evidence) => {
+          if (evidence.source !== scope.evidenceReference.artifact
+            || evidence.contentHash !== scope.evidenceReference.contentHash) return false;
+          const evidenceSources = new Set(evidence.factorDirections.map(({ tableId, sourceRow, direction }) => `${tableId}\u0000${sourceRow}\u0000${direction}`));
+          return scope.factorSources.length === evidenceSources.size
+            && scope.factorSources.every(({ tableId, sourceRow, direction }) => evidenceSources.has(`${tableId}\u0000${sourceRow}\u0000${direction}`));
+        });
+        if (matches.length !== 1) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "datum option evidenceScope must match exactly one governed evidence entry", path: ["worksheets", worksheetIndex, "options", optionIndex, "evidenceScope"] });
+        }
+      }
       if (option.status !== "completed") return;
       const closedRiskIds = new Set(option.closedRiskIds);
       if (closedRiskIds.size !== option.closedRiskIds.length) {
@@ -6924,31 +6955,6 @@ export const f6OptimizationResultSchema = z.object({
         }
       } else if (worksheet.roiStatus !== "not_computed") {
         context.addIssue({ code: z.ZodIssueCode.custom, message: "insufficient relative cost is allowed only when ROI is not computed", path: ["worksheets", worksheetIndex, "options", optionIndex, "relativeCost"] });
-      }
-      if (option.optionKind === "improve_supplier_capability" && option.evidenceScope?.kind === "supplier") {
-        const scope = option.evidenceScope;
-        const matches = (result.provenance.supplierCapabilityEvidence ?? []).filter((evidence) =>
-          evidence.source === scope.evidenceReference.artifact
-          && evidence.contentHash === scope.evidenceReference.contentHash
-          && evidence.supplierReference === scope.supplierReference
-          && evidence.processFamily === scope.processFamily
-          && evidence.partCategory === scope.partCategory);
-        if (matches.length !== 1) {
-          context.addIssue({ code: z.ZodIssueCode.custom, message: "supplier option evidenceScope must match exactly one governed evidence entry", path: ["worksheets", worksheetIndex, "options", optionIndex, "evidenceScope"] });
-        }
-      }
-      if (option.optionKind === "tighten_datum_strategy" && option.evidenceScope?.kind === "datum") {
-        const scope = option.evidenceScope;
-        const matches = (result.provenance.datumEvidence ?? []).filter((evidence) => {
-          if (evidence.source !== scope.evidenceReference.artifact
-            || evidence.contentHash !== scope.evidenceReference.contentHash) return false;
-          const evidenceSources = new Set(evidence.factorDirections.map(({ tableId, sourceRow, direction }) => `${tableId}\u0000${sourceRow}\u0000${direction}`));
-          return scope.factorSources.length === evidenceSources.size
-            && scope.factorSources.every(({ tableId, sourceRow, direction }) => evidenceSources.has(`${tableId}\u0000${sourceRow}\u0000${direction}`));
-        });
-        if (matches.length !== 1) {
-          context.addIssue({ code: z.ZodIssueCode.custom, message: "datum option evidenceScope must match exactly one governed evidence entry", path: ["worksheets", worksheetIndex, "options", optionIndex, "evidenceScope"] });
-        }
       }
     });
   });
