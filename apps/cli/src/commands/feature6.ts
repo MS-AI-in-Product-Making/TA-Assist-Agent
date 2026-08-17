@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync, lstatSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import { createTypedError } from "@ai-assist/contracts";
 
@@ -65,12 +65,20 @@ function containsControlCharacter(value: string): boolean {
   });
 }
 
-function formatFeature6Output(value: unknown): string {
+function isContained(root: string, candidate: string): boolean {
+  const relativePath = relative(root, candidate);
+  return relativePath.length > 0 && relativePath !== ".."
+    && !relativePath.startsWith(`..${sep}`) && !isAbsolute(relativePath);
+}
+
+function formatFeature6Output(rootDir: string, value: unknown): string {
   if (typeof value !== "object" || value === null) throw new Error("invalid runner output");
   const output = value as Record<string, unknown>;
   const statuses = new Set(["completed", "partially_completed", "calculation_failed"]);
   if (typeof output.outputDirectory !== "string" || output.outputDirectory.length === 0
     || output.outputDirectory.trim() !== output.outputDirectory || containsControlCharacter(output.outputDirectory)
+    || isAbsolute(output.outputDirectory)
+    || !isContained(resolve(rootDir, "test", "demo-output"), resolve(rootDir, output.outputDirectory))
     || typeof output.status !== "string" || !statuses.has(output.status)) {
     throw new Error("invalid runner output");
   }
@@ -96,6 +104,13 @@ function timeoutFailure(error: unknown): boolean {
   return candidate.code === "ETIMEDOUT" || (candidate.killed === true && candidate.signal === "SIGTERM");
 }
 
+function feature6RunnerEnvironment(): NodeJS.ProcessEnv {
+  const environment = { ...process.env };
+  delete environment.AI_TVA_F6_OUTPUT_ROOT;
+  delete environment.AI_TVA_F6_PUBLISH_ROOT;
+  return environment;
+}
+
 export async function runFeature6WorkflowCommand(
   rootDir: string,
   f2Root: string,
@@ -106,6 +121,10 @@ export async function runFeature6WorkflowCommand(
 ): Promise<string> {
   const scriptPath = join(rootDir, "scripts", "run-f6-full-validation.mjs");
   if (!existsSync(scriptPath)) throw feature6Error("validation_error", "Feature 6 workflow script is missing.");
+  const scriptStats = lstatSync(scriptPath);
+  if (scriptStats.isSymbolicLink() || !scriptStats.isFile()) {
+    throw feature6Error("validation_error", "Feature 6 workflow script is invalid.");
+  }
   validateArtifactRoot(f2Root, "Feature2-Report.json", "Feature 2");
   validateArtifactRoot(f3Root, "Feature3-Report.json", "Feature 3");
   validateArtifactRoot(f4Root, "Feature4-Calculation.json", "Feature 4");
@@ -127,11 +146,12 @@ export async function runFeature6WorkflowCommand(
   try {
     const { stdout } = await execFileAsync(process.execPath, args, {
       cwd: rootDir,
+      env: feature6RunnerEnvironment(),
       maxBuffer: 4 * 1024 * 1024,
       timeout: 120_000,
       killSignal: "SIGTERM",
     });
-    return formatFeature6Output(JSON.parse(stdout));
+    return formatFeature6Output(rootDir, JSON.parse(stdout));
   } catch (error: unknown) {
     if (timeoutFailure(error)) {
       throw feature6Error("transient_error", "Feature 6 workflow execution timed out.");

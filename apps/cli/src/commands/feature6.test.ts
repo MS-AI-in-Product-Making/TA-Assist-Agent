@@ -37,10 +37,11 @@ vi.mock("node:child_process", async (importOriginal) => {
 afterEach(async () => {
   execFileState.options.length = 0;
   execFileState.nextError = undefined;
+  vi.unstubAllEnvs();
   await Promise.all(cleanup.splice(0).map((target) => rm(target, { recursive: true, force: true })));
 });
 
-async function fixture(scriptBody = `console.log(JSON.stringify({status:"completed",outputDirectory:"runs/demo/f6"}));\n`): Promise<{
+async function fixture(scriptBody = `console.log(JSON.stringify({status:"completed",outputDirectory:"test/demo-output/f6-runs/demo/run-1"}));\n`): Promise<{
   rootDir: string;
   f2Root: string;
   f3Root: string;
@@ -69,7 +70,7 @@ describe("Feature 6 CLI command", () => {
     const setup = await fixture(`
 import { writeFileSync } from "node:fs";
 writeFileSync("invocation.json", JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd() }));
-console.log(JSON.stringify({ status: "partially_completed", outputDirectory: "runs/demo/f6" }));
+console.log(JSON.stringify({ status: "partially_completed", outputDirectory: "test/demo-output/f6-runs/demo/run-1" }));
 `);
     const options = {
       selectedWorksheetNames: ["Overview", "Details"],
@@ -83,7 +84,7 @@ console.log(JSON.stringify({ status: "partially_completed", outputDirectory: "ru
       setup.rootDir, setup.f2Root, setup.f3Root, setup.f4Root, setup.f5Root, options,
     );
 
-    expect(result).toBe("Feature 6 workflow completed.\nf6: runs/demo/f6\nstatus: partially_completed");
+    expect(result).toBe("Feature 6 workflow completed.\nf6: test/demo-output/f6-runs/demo/run-1\nstatus: partially_completed");
     expect(JSON.parse(await readFile(join(setup.rootDir, "invocation.json"), "utf8"))).toEqual({
       argv: [
         setup.f2Root, setup.f3Root, setup.f4Root, setup.f5Root,
@@ -105,7 +106,7 @@ console.log(JSON.stringify({ status: "partially_completed", outputDirectory: "ru
   it.each(["completed", "partially_completed", "calculation_failed"])(
     "accepts the governed nonfailed runner status %s",
     async (status) => {
-      const setup = await fixture(`console.log(JSON.stringify({status:${JSON.stringify(status)},outputDirectory:"runs/demo/f6"}));\n`);
+      const setup = await fixture(`console.log(JSON.stringify({status:${JSON.stringify(status)},outputDirectory:"test/demo-output/f6-runs/demo/run-1"}));\n`);
 
       await expect(runFeature6WorkflowCommand(
         setup.rootDir, setup.f2Root, setup.f3Root, setup.f4Root, setup.f5Root,
@@ -118,7 +119,7 @@ console.log(JSON.stringify({ status: "partially_completed", outputDirectory: "ru
     for (const scriptBody of [
       `console.log(JSON.stringify({status:"failed",reasonCode:"secret C:/private/input.xlsx"}));\n`,
       `console.log("not-json");\n`,
-      `process.stdout.write(JSON.stringify({status:"completed",outputDirectory:"runs/demo/f6"}) + "\\n{}\\n");\n`,
+      `process.stdout.write(JSON.stringify({status:"completed",outputDirectory:"test/demo-output/f6-runs/demo/run-1"}) + "\\n{}\\n");\n`,
     ]) {
       const setup = await fixture(scriptBody);
       await expect(runFeature6WorkflowCommand(
@@ -128,7 +129,7 @@ console.log(JSON.stringify({ status: "partially_completed", outputDirectory: "ru
     }
   });
 
-  it.each(["", " runs/demo/f6", "runs/demo/f6 ", "runs/demo/f6\r\nforged", "runs/demo/f6\u0000forged"])(
+  it.each(["", " test/demo-output/f6", "test/demo-output/f6 ", "test/demo-output/f6\r\nforged", "test/demo-output/f6\u0000forged"])(
     "rejects a polluted runner output directory %j",
     async (outputDirectory) => {
       const setup = await fixture(`console.log(${JSON.stringify(JSON.stringify({ status: "completed", outputDirectory }))});\n`);
@@ -138,6 +139,45 @@ console.log(JSON.stringify({ status: "partially_completed", outputDirectory: "ru
       )).rejects.toMatchObject({ code: "internal_error", summary: "Feature 6 workflow execution failed." });
     },
   );
+
+  it("rejects runner output directories outside the repository publish root", async () => {
+    const setup = await fixture();
+    for (const outputDirectory of [
+      "../private/f6",
+      "test/demo-output/../../../private/f6",
+      "test/demo-output",
+      join(setup.rootDir, "test", "demo-output", "f6-runs", "demo", "run-1"),
+    ]) {
+      await writeFile(
+        join(setup.rootDir, "scripts", "run-f6-full-validation.mjs"),
+        `console.log(${JSON.stringify(JSON.stringify({ status: "completed", outputDirectory }))});\n`,
+        "utf8",
+      );
+
+      await expect(runFeature6WorkflowCommand(
+        setup.rootDir, setup.f2Root, setup.f3Root, setup.f4Root, setup.f5Root,
+        { selectedWorksheetNames: ["Overview"] },
+      )).rejects.toMatchObject({ code: "internal_error", summary: "Feature 6 workflow execution failed." });
+    }
+  });
+
+  it("does not inherit Feature 6 output root overrides from the CLI environment", async () => {
+    vi.stubEnv("AI_TVA_F6_OUTPUT_ROOT", "outside/f6-runs");
+    vi.stubEnv("AI_TVA_F6_PUBLISH_ROOT", "outside");
+    const setup = await fixture();
+
+    await runFeature6WorkflowCommand(
+      setup.rootDir, setup.f2Root, setup.f3Root, setup.f4Root, setup.f5Root,
+      { selectedWorksheetNames: ["Overview"] },
+    );
+
+    expect(execFileState.options).toContainEqual(expect.objectContaining({
+      env: expect.not.objectContaining({
+        AI_TVA_F6_OUTPUT_ROOT: expect.anything(),
+        AI_TVA_F6_PUBLISH_ROOT: expect.anything(),
+      }),
+    }));
+  });
 
   it("maps child failures to safe typed errors without leaking paths", async () => {
     const timeoutSetup = await fixture();
@@ -171,5 +211,17 @@ console.log(JSON.stringify({ status: "partially_completed", outputDirectory: "ru
         { selectedWorksheetNames },
       )).rejects.toMatchObject({ code: "validation_error" });
     }
+  });
+
+  it("requires the repository runner to be a regular physical file", async () => {
+    const setup = await fixture();
+    const scriptPath = join(setup.rootDir, "scripts", "run-f6-full-validation.mjs");
+    await rm(scriptPath);
+    await mkdir(scriptPath);
+
+    await expect(runFeature6WorkflowCommand(
+      setup.rootDir, setup.f2Root, setup.f3Root, setup.f4Root, setup.f5Root,
+      { selectedWorksheetNames: ["Overview"] },
+    )).rejects.toMatchObject({ code: "validation_error", summary: "Feature 6 workflow script is invalid." });
   });
 });
