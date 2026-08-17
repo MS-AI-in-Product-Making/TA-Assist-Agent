@@ -83,6 +83,26 @@ describe("resolveFeature6OutputLayout", () => {
       .toThrow(/publish root|outside|link/i);
   });
 
+  it("rejects a publish root that is itself a directory link", ({ skip }) => {
+    const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "f6-publish-link-layout-"));
+    cleanup.push(sandbox);
+    const realPublishRoot = path.join(sandbox, "real-publish");
+    const linkedPublishRoot = path.join(sandbox, "linked-publish");
+    fs.mkdirSync(realPublishRoot);
+    try {
+      fs.symlinkSync(realPublishRoot, linkedPublishRoot, process.platform === "win32" ? "junction" : "dir");
+    } catch (error) {
+      if (["EPERM", "EACCES"].includes(error?.code)) return skip();
+      throw error;
+    }
+    expect(() => resolveFeature6OutputLayout(
+      roots(linkedPublishRoot),
+      path.join(linkedPublishRoot, "f6", "run"),
+      fixedNow,
+      linkedPublishRoot,
+    )).toThrow(/publish root|link/i);
+  });
+
   it("does not create output directories while resolving", () => {
     const publishRoot = fs.mkdtempSync(path.join(os.tmpdir(), "f6-no-create-"));
     cleanup.push(publishRoot);

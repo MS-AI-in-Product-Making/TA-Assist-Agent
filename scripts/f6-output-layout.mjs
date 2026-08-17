@@ -87,6 +87,9 @@ export function resolveFeature6OutputLayout(parsed, outputRoot, now = () => new 
   if (!fs.existsSync(path.resolve(controlledPublishRoot))) {
     throw new Error("Feature 6 publish root must exist before resolving output layout.");
   }
+  if (fs.lstatSync(path.resolve(controlledPublishRoot)).isSymbolicLink()) {
+    throw new Error("Feature 6 publish root must not be a link.");
+  }
   for (const candidate of [...roots, outputBase]) assertSameRoot(controlledPublishRoot, candidate);
   const realPublishRoot = fs.realpathSync(path.resolve(controlledPublishRoot));
   const candidates = [...roots, outputBase].map(resolveThroughNearestExistingAncestor);

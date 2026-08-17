@@ -236,6 +236,21 @@ function expectRejected(result, reasonCode, artifactReference) {
 }
 
 describe("F6 governed bundle validation", () => {
+  it.each([
+    ["f2ArtifactRoot", "Feature2-Report.json"],
+    ["f3ArtifactRoot", "Feature3-Report.json"],
+    ["f4ArtifactRoot", "Feature4-Calculation.json"],
+    ["f5ArtifactRoot", "Feature5-Report.json"],
+  ])("rejects %s outside the governed publish root", (rootField, artifactReference) => {
+    const bundle = setupBundle();
+    const outsideRoot = path.join(bundle.root, "outside", rootField);
+    mkdirSync(path.dirname(outsideRoot), { recursive: true });
+    renameSync(bundle[rootField], outsideRoot);
+    bundle[rootField] = outsideRoot;
+
+    expectRejected(loadF6ArtifactBundle(bundle), "artifact_identity_mismatch", artifactReference);
+  });
+
   it("returns F2 blocked worksheets only as validation records", () => {
     const bundle = setupBundle({ blockedWorksheetNames: ["Blocked-A"] });
     rewriteJson(bundle.paths.f2, (f2) => {

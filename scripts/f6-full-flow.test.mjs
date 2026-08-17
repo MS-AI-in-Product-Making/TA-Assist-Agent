@@ -387,6 +387,24 @@ describe("F6 real artifact full flow", () => {
     expect(fixtureFileSha256(bundle.paths.f5)).toBe(f5Sha256);
   });
 
+  it("rejects an out-of-bound core root when layout validation is bypassed", () => {
+    const bundle = createRealBundle();
+    const outsideF2Root = path.join(bundle.root, "outside", "f2");
+    mkdirSync(path.dirname(outsideF2Root), { recursive: true });
+    renameSync(bundle.f2ArtifactRoot, outsideF2Root);
+    bundle.f2ArtifactRoot = outsideF2Root;
+
+    const { result, runRoot } = runRealF6(bundle, "outside-core-root");
+
+    expect(result).toMatchObject({ status: "failed", reasonCode: "input_rejected" });
+    expect(readdirSync(runRoot)).toEqual(["manifest.json"]);
+    expect(readJson(path.join(runRoot, "manifest.json"))).toMatchObject({
+      status: "failed",
+      reasonCode: "input_rejected",
+      artifacts: {},
+    });
+  });
+
   it("selects only ready F2 worksheets and keeps blocked worksheets out of numeric sections", () => {
     const bundle = createRealBundle({ blockedWorksheetNames: ["Blocked-A"] });
     const { result, runRoot } = runRealF6(bundle, "mixed-ready-blocked");
