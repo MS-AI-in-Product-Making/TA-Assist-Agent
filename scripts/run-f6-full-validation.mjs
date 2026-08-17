@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
   closeSync,
+  lstatSync,
   mkdirSync,
   openSync,
   realpathSync,
@@ -65,39 +66,143 @@ function captureBoundary(layout, dependencies) {
   };
 }
 
-function assertBoundary(boundary, dependencies) {
+function assertPublishBoundary(boundary, dependencies) {
   const realPublishRoot = dependencies.realpath(path.resolve(boundary.layout.publishRoot));
+  if (realPublishRoot !== boundary.realPublishRoot
+    || !sameIdentity(boundary.publishIdentity, identity(realPublishRoot, dependencies))) {
+    throw new Error("Feature 6 publish root changed after creation.");
+  }
+}
+
+function assertBoundary(boundary, dependencies) {
+  assertPublishBoundary(boundary, dependencies);
+  const realPublishRoot = boundary.realPublishRoot;
   const realRunRoot = dependencies.realpath(path.resolve(boundary.layout.runRoot));
   if (!isContained(realPublishRoot, realRunRoot)
-    || realPublishRoot !== boundary.realPublishRoot
     || realRunRoot !== boundary.realRunRoot
-    || !sameIdentity(boundary.publishIdentity, identity(realPublishRoot, dependencies))
     || !sameIdentity(boundary.runIdentity, identity(realRunRoot, dependencies))) {
     throw new Error("Feature 6 run root changed after creation.");
   }
 }
 
-function atomicWrite(filePath, content, boundary, dependencies) {
+function assertDirectoryNotReparse(target, dependencies) {
+  const stats = dependencies.lstat(target);
+  if (!stats.isDirectory() || stats.isSymbolicLink()) {
+    throw new Error("Feature 6 staging path must be a physical directory.");
+  }
+}
+
+function captureStagingBoundary(boundary, dependencies) {
   assertBoundary(boundary, dependencies);
-  const temporaryPath = `${filePath}.${dependencies.randomUUID()}.tmp`;
+  const stagingBase = path.join(boundary.realPublishRoot, ".f6-staging");
+  dependencies.mkdir(stagingBase, { recursive: true });
+  assertDirectoryNotReparse(stagingBase, dependencies);
+  const realStagingBase = dependencies.realpath(stagingBase);
+  if (realStagingBase !== stagingBase || !isContained(boundary.realPublishRoot, realStagingBase)) {
+    throw new Error("Feature 6 staging root escaped the publish root.");
+  }
+
+  const safeRunId = String(boundary.layout.runId).replace(/[^A-Za-z0-9._-]/g, "_");
+  const stagingRoot = path.join(realStagingBase, `${safeRunId}-${dependencies.randomUUID()}`);
+  dependencies.mkdir(stagingRoot);
+  assertDirectoryNotReparse(stagingRoot, dependencies);
+  const realStagingRoot = dependencies.realpath(stagingRoot);
+  if (realStagingRoot !== stagingRoot
+    || !isContained(boundary.realPublishRoot, realStagingRoot)
+    || isContained(boundary.realRunRoot, realStagingRoot)) {
+    throw new Error("Feature 6 staging directory is outside its controlled boundary.");
+  }
+  return {
+    stagingBase,
+    realStagingBase,
+    stagingRoot,
+    realStagingRoot,
+    baseIdentity: identity(realStagingBase, dependencies),
+    rootIdentity: identity(realStagingRoot, dependencies),
+    ownedTemporaryPaths: new Set(),
+  };
+}
+
+function assertStagingBoundary(boundary, staging, dependencies) {
+  assertPublishBoundary(boundary, dependencies);
+  assertDirectoryNotReparse(staging.stagingBase, dependencies);
+  assertDirectoryNotReparse(staging.stagingRoot, dependencies);
+  const realStagingBase = dependencies.realpath(staging.stagingBase);
+  const realStagingRoot = dependencies.realpath(staging.stagingRoot);
+  if (realStagingBase !== staging.realStagingBase
+    || realStagingRoot !== staging.realStagingRoot
+    || !isContained(boundary.realPublishRoot, realStagingRoot)
+    || isContained(boundary.realRunRoot, realStagingRoot)
+    || !sameIdentity(staging.baseIdentity, identity(realStagingBase, dependencies))
+    || !sameIdentity(staging.rootIdentity, identity(realStagingRoot, dependencies))) {
+    throw new Error("Feature 6 staging boundary changed after creation.");
+  }
+}
+
+function assertCommittedFile(filePath, expectedIdentity, boundary, dependencies) {
+  const relative = path.relative(path.resolve(boundary.layout.runRoot), path.resolve(filePath));
+  const expectedRealPath = path.resolve(boundary.realRunRoot, relative);
+  const realFilePath = dependencies.realpath(path.resolve(filePath));
+  const stats = dependencies.stat(realFilePath);
+  if (!isContained(boundary.realRunRoot, realFilePath)
+    || realFilePath !== expectedRealPath
+    || !stats.isFile()
+    || !sameIdentity(expectedIdentity, { dev: stats.dev, ino: stats.ino })) {
+    throw new Error("Feature 6 committed output failed identity validation.");
+  }
+}
+
+function removeOwnedTemporary(temporaryPath, boundary, staging, dependencies) {
+  try {
+    assertStagingBoundary(boundary, staging, dependencies);
+    dependencies.rm(temporaryPath, { force: true });
+    staging.ownedTemporaryPaths.delete(temporaryPath);
+  } catch {
+    // The captured staging path is no longer safe to address.
+  }
+}
+
+function atomicWrite(filePath, content, boundary, staging, dependencies) {
+  assertBoundary(boundary, dependencies);
+  assertStagingBoundary(boundary, staging, dependencies);
+  const temporaryPath = path.join(staging.realStagingRoot, `${dependencies.randomUUID()}.tmp`);
   let owned = false;
-  let committed = false;
   try {
     const descriptor = dependencies.open(temporaryPath, "wx");
     owned = true;
+    staging.ownedTemporaryPaths.add(temporaryPath);
     try { dependencies.writeFd(descriptor, content); } finally { dependencies.close(descriptor); }
+    const temporaryIdentity = identity(temporaryPath, dependencies);
+    dependencies.beforeRename({ temporaryPath, filePath });
     assertBoundary(boundary, dependencies);
+    assertStagingBoundary(boundary, staging, dependencies);
+    // Portable Node APIs cannot make boundary validation and rename one indivisible filesystem operation.
     dependencies.rename(temporaryPath, filePath);
-    committed = true;
+    staging.ownedTemporaryPaths.delete(temporaryPath);
+    owned = false;
+    dependencies.afterRename({ temporaryPath, filePath });
+    assertBoundary(boundary, dependencies);
+    assertCommittedFile(filePath, temporaryIdentity, boundary, dependencies);
   } finally {
-    if (owned && !committed) {
-      try {
-        assertBoundary(boundary, dependencies);
-        dependencies.rm(temporaryPath, { force: true });
-      } catch {
-        // The controlled path is no longer safe to address.
-      }
+    if (owned) removeOwnedTemporary(temporaryPath, boundary, staging, dependencies);
+  }
+}
+
+function cleanupStaging(boundary, staging, dependencies) {
+  try {
+    assertStagingBoundary(boundary, staging, dependencies);
+    for (const temporaryPath of staging.ownedTemporaryPaths) {
+      dependencies.rm(temporaryPath, { force: true });
     }
+    staging.ownedTemporaryPaths.clear();
+    dependencies.rmdir(staging.stagingRoot);
+    assertPublishBoundary(boundary, dependencies);
+    assertDirectoryNotReparse(staging.stagingBase, dependencies);
+    if (sameIdentity(staging.baseIdentity, identity(staging.stagingBase, dependencies))) {
+      try { dependencies.rmdir(staging.stagingBase); } catch { /* Keep a non-empty shared staging base. */ }
+    }
+  } catch {
+    // Cleanup never follows a staging path whose captured identity no longer matches.
   }
 }
 
@@ -130,12 +235,13 @@ function manifest(layout, status, artifacts, reasonCode) {
   };
 }
 
-function failedResult(layout, paths, artifacts, reasonCode, boundary, dependencies) {
+function failedResult(layout, paths, artifacts, reasonCode, boundary, staging, dependencies) {
   try {
-    atomicWrite(paths.manifest, json(manifest(layout, "failed", artifacts, reasonCode)), boundary, dependencies);
+    assertBoundary(boundary, dependencies);
+    atomicWrite(paths.manifest, json(manifest(layout, "failed", artifacts, reasonCode)), boundary, staging, dependencies);
     return { status: "failed", reasonCode, outputDirectory: layout.runRoot, manifestPath: paths.manifest };
   } catch {
-    return { status: "failed", reasonCode: "workflow_output_failed", outputDirectory: layout.runRoot };
+    return { status: "failed", reasonCode: "workflow_output_failed" };
   }
 }
 
@@ -177,11 +283,14 @@ function normalizeDependencies(overrides = {}) {
     mkdir: overrides.mkdir ?? mkdirSync,
     randomUUID: overrides.randomUUID ?? randomUUID,
     realpath: overrides.realpath ?? realpathSync,
+    lstat: overrides.lstat ?? lstatSync,
     stat: overrides.stat ?? statSync,
     open: overrides.open ?? openSync,
     writeFd: overrides.writeFd ?? ((descriptor, content) => writeFileSync(descriptor, content, "utf8")),
     close: overrides.close ?? closeSync,
     rename: overrides.rename ?? renameSync,
+    beforeRename: overrides.beforeRename ?? (() => {}),
+    afterRename: overrides.afterRename ?? (() => {}),
     rmdir: overrides.rmdir ?? rmdirSync,
     rm: overrides.rm ?? rmSync,
   };
@@ -196,11 +305,14 @@ export function runF6FullValidation(options = {}, dependencyOverrides = {}) {
   dependencies.mkdir(layout.runRoot);
   const boundary = captureBoundary(layout, dependencies);
   const artifacts = {};
-  let failureStage = "input";
+  let failureStage = "output";
+  let staging;
   try {
+    staging = captureStagingBoundary(boundary, dependencies);
+    failureStage = "input";
     const loaded = dependencies.loadBundle(loaderOptions({ ...parsed, publishRoot: layout.publishRoot }));
     if (loaded?.status !== "accepted") {
-      return failedResult(layout, paths, artifacts, "input_rejected", boundary, dependencies);
+      return failedResult(layout, paths, artifacts, "input_rejected", boundary, staging, dependencies);
     }
     failureStage = "optimization";
     const optimization = dependencies.createOptimization(loaded.request);
@@ -227,12 +339,12 @@ export function runF6FullValidation(options = {}, dependencyOverrides = {}) {
 
     failureStage = "output";
     for (const key of ["optimizationJson", "optimizationMarkdown", "composedReportJson", "composedReportMarkdown"]) {
-      atomicWrite(paths[key], contents[key], boundary, dependencies);
+      atomicWrite(paths[key], contents[key], boundary, staging, dependencies);
       artifacts[key] = path.basename(paths[key]);
     }
-    atomicWrite(paths.runSummary, json(summary), boundary, dependencies);
+    atomicWrite(paths.runSummary, json(summary), boundary, staging, dependencies);
     artifacts.runSummary = layout.runSummaryJsonName;
-    atomicWrite(paths.manifest, json(manifest(layout, optimization.status, artifacts)), boundary, dependencies);
+    atomicWrite(paths.manifest, json(manifest(layout, optimization.status, artifacts)), boundary, staging, dependencies);
     return {
       status: optimization.status,
       outputDirectory: layout.runRoot,
@@ -252,7 +364,10 @@ export function runF6FullValidation(options = {}, dependencyOverrides = {}) {
         : failureStage === "report"
           ? "report_failed"
           : "workflow_output_failed";
-    return failedResult(layout, paths, artifacts, reasonCode, boundary, dependencies);
+    if (staging === undefined) return { status: "failed", reasonCode: "workflow_output_failed" };
+    return failedResult(layout, paths, artifacts, reasonCode, boundary, staging, dependencies);
+  } finally {
+    if (staging !== undefined) cleanupStaging(boundary, staging, dependencies);
   }
 }
 

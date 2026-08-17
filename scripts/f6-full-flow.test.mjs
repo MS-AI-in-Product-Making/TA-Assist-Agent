@@ -1,6 +1,15 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -114,6 +123,21 @@ function artifactHash(filePath) {
   return sha256(readFileSync(filePath));
 }
 
+function temporaryFiles(root) {
+  if (!existsSync(root)) return [];
+  return readdirSync(root, { recursive: true })
+    .map(String)
+    .filter((entry) => entry.endsWith(".tmp"));
+}
+
+const committedArtifacts = [
+  ["optimizationJson", "Feature6-Optimization.json"],
+  ["optimizationMarkdown", "Feature6-Optimization.md"],
+  ["composedReportJson", "Feature6-Composed-Report.json"],
+  ["composedReportMarkdown", "Feature6-Composed-Report.md"],
+  ["runSummary", "Feature6-Run-Summary.json"],
+];
+
 describe("runF6FullValidation", () => {
   it("rejects four roots from the direct CLI without creating artifacts", () => {
     const root = mkdtempSync(path.join(tmpdir(), "f6-direct-cli-"));
@@ -204,6 +228,7 @@ describe("runF6FullValidation", () => {
       "manifest.json",
     ]);
     expect(readdirSync(context.runRoot).some((name) => name.endsWith(".tmp"))).toBe(false);
+    expect(existsSync(path.join(context.publishRoot, ".f6-staging"))).toBe(false);
   });
 
   it("preserves partial option failure as a successful partially completed run", () => {
@@ -233,17 +258,99 @@ describe("runF6FullValidation", () => {
     expect(lines.join("\n")).toContain("optimization_failed");
   });
 
-  it("removes an owned temporary file when an atomic rename fails", () => {
+  it.each([1, 2, 3, 4, 5, 6])(
+    "records exactly the postchecked artifacts when rename %i fails",
+    (failurePosition) => {
     const context = setup();
     let calls = 0;
     context.deps.rename = (from, to) => {
       calls += 1;
-      if (calls === 2) throw new Error("disk failure");
+      if (calls === failurePosition) throw new Error("disk failure");
       renameSync(from, to);
     };
     const result = runF6FullValidation({}, context.deps);
+    const expectedArtifacts = Object.fromEntries(committedArtifacts.slice(0, failurePosition - 1));
+    const expectedFiles = [
+      ...committedArtifacts.slice(0, failurePosition - 1).map(([, fileName]) => fileName),
+      "manifest.json",
+    ].sort();
+
     expect(result).toMatchObject({ status: "failed", reasonCode: "workflow_output_failed" });
-    expect(readdirSync(context.runRoot).some((name) => name.endsWith(".tmp"))).toBe(false);
+    expect(readdirSync(context.runRoot).sort()).toEqual(expectedFiles);
+    expect(readJson(path.join(context.runRoot, "manifest.json"))).toMatchObject({
+      status: "failed",
+      reasonCode: "workflow_output_failed",
+      artifacts: expectedArtifacts,
+    });
+    expect(temporaryFiles(context.runRoot)).toEqual([]);
+    expect(temporaryFiles(path.join(context.publishRoot, ".f6-staging"))).toEqual([]);
+    expect(existsSync(path.join(context.publishRoot, ".f6-staging"))).toBe(false);
+  });
+
+  it("does not return a manifest when every manifest rename fails", () => {
+    const context = setup();
+    context.deps.rename = (from, to) => {
+      if (path.basename(to) === "manifest.json") throw new Error("manifest disk failure");
+      renameSync(from, to);
+    };
+
+    const result = runF6FullValidation({}, context.deps);
+
+    expect(result).toMatchObject({ status: "failed", reasonCode: "workflow_output_failed" });
+    expect(result).not.toHaveProperty("manifestPath");
+    expect(readdirSync(context.runRoot).sort()).toEqual(committedArtifacts.map(([, fileName]) => fileName).sort());
+    expect(temporaryFiles(context.runRoot)).toEqual([]);
+    expect(temporaryFiles(path.join(context.publishRoot, ".f6-staging"))).toEqual([]);
+  });
+
+  it.each([
+    ...[1, 2, 3, 4, 5, 6].map((position) => ["before", position]),
+    ...[1, 2, 3, 4, 5, 6].map((position) => ["after", position]),
+  ])("fails closed when the run root is swapped %s rename %i", (phase, swapPosition) => {
+    const context = setup();
+    const parkedRoot = path.join(context.root, `parked-${phase}-${swapPosition}`);
+    const outsideRoot = path.join(context.root, `outside-${phase}-${swapPosition}`);
+    mkdirSync(outsideRoot);
+    let renamePosition = 0;
+    const swapRunRoot = () => {
+      renameSync(context.runRoot, parkedRoot);
+      symlinkSync(outsideRoot, context.runRoot, process.platform === "win32" ? "junction" : "dir");
+    };
+    context.deps.beforeRename = () => {
+      renamePosition += 1;
+      if (phase === "before" && renamePosition === swapPosition) swapRunRoot();
+    };
+    context.deps.afterRename = () => {
+      if (phase === "after" && renamePosition === swapPosition) swapRunRoot();
+    };
+
+    const result = runF6FullValidation({}, context.deps);
+
+    expect(result).toEqual({ status: "failed", reasonCode: "workflow_output_failed" });
+    expect(temporaryFiles(parkedRoot)).toEqual([]);
+    expect(temporaryFiles(context.runRoot)).toEqual([]);
+    expect(temporaryFiles(path.join(context.publishRoot, ".f6-staging"))).toEqual([]);
+    expect(readdirSync(outsideRoot)).toEqual([]);
+    expect(result).not.toHaveProperty("manifestPath");
+    for (const [, fileName] of committedArtifacts) {
+      expect(existsSync(path.join(outsideRoot, fileName))).toBe(false);
+      expect(Object.values(result)).not.toContain(path.join(outsideRoot, fileName));
+    }
+  });
+
+  it("rejects a staging junction without writing through it", () => {
+    const context = setup();
+    const stagingRoot = path.join(context.publishRoot, ".f6-staging");
+    const outsideRoot = path.join(context.root, "outside-staging");
+    mkdirSync(outsideRoot);
+    symlinkSync(outsideRoot, stagingRoot, process.platform === "win32" ? "junction" : "dir");
+
+    const result = runF6FullValidation({}, context.deps);
+
+    expect(result).toEqual({ status: "failed", reasonCode: "workflow_output_failed" });
+    expect(readdirSync(outsideRoot)).toEqual([]);
+    expect(existsSync(context.runRoot)).toBe(true);
+    expect(readdirSync(context.runRoot)).toEqual([]);
   });
 
   it("fails closed when the run root identity changes after creation", () => {
