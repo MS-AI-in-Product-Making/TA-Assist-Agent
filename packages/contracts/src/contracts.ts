@@ -6452,6 +6452,18 @@ export const f6OptionSchema = z.discriminatedUnion("status", [
   } else if (option.status === "completed" && expectedScopeKind !== undefined && option.evidenceScope === undefined) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: `${expectedScopeKind} evidenceScope is required for this option kind`, path: ["evidenceScope"] });
   }
+  if (option.status === "insufficient_evidence") {
+    if (option.evidenceReferences.length === 0 && option.evidenceScope !== undefined) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "evidenceScope is forbidden without evidenceReferences", path: ["evidenceScope"] });
+    } else if (option.evidenceReferences.length > 0 && option.evidenceScope === undefined) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: `${expectedScopeKind} evidenceScope is required when evidenceReferences are present`, path: ["evidenceScope"] });
+    } else if (option.evidenceScope !== undefined
+      && !option.evidenceReferences.some((reference) =>
+        reference.artifact === option.evidenceScope!.evidenceReference.artifact
+        && reference.contentHash === option.evidenceScope!.evidenceReference.contentHash)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "evidenceScope reference must be included in evidenceReferences", path: ["evidenceScope", "evidenceReference"] });
+    }
+  }
   if (option.evidenceScope?.kind === "datum") {
     const seen = new Set<string>();
     option.evidenceScope.factorSources.forEach((source, index) => {

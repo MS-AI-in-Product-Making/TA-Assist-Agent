@@ -376,34 +376,61 @@ function optimizeWorksheet(
   });
   const supplierEvidence = supplierEvidenceBySource.get(sourceKey(top[0]!.source));
   const datumEvidence = matchingDatumEvidence.length === 1 ? matchingDatumEvidence[0] : undefined;
-  const supplierAssessment = assessSupplierScenario({
-    evidence: supplierEvidence,
-    requestedToleranceBand: scaledChange(top[0]!, 0.8).resultingBand,
-  });
-  options.push(
-    {
-      ...supplierAssessment.option,
-      feasibility: supplierAssessment.feasibility,
-      ...(supplierEvidence === undefined ? {} : {
+  const supplierOption: F6Option = supplierEvidence === undefined
+    ? (() => {
+        const assessment = assessSupplierScenario({
+          requestedToleranceBand: scaledChange(top[0]!, 0.8).resultingBand,
+        });
+        return { ...assessment.option, feasibility: assessment.feasibility };
+      })()
+    : {
+        status: "insufficient_evidence",
+        optionId: "improve_supplier_capability-evidence-gate",
+        optionKind: "improve_supplier_capability",
+        predictedImprovement: "insufficient_evidence",
+        requiredInputs: ["controlled_supplier_scenario_calculation"],
+        evidenceReferences: [{ artifact: supplierEvidence.source, contentHash: supplierEvidence.contentHash }],
+        feasibility: assessToleranceFeasibility({
+          evidence: supplierEvidence,
+          requestedToleranceBand: scaledChange(top[0]!, 0.8).resultingBand,
+        }),
         evidenceScope: {
-          kind: "supplier" as const,
+          kind: "supplier",
           supplierReference: supplierEvidence.supplierReference,
           processFamily: supplierEvidence.processFamily,
           partCategory: supplierEvidence.partCategory,
           evidenceReference: { artifact: supplierEvidence.source, contentHash: supplierEvidence.contentHash },
         },
-      }),
-    },
-    {
-      ...assessDatumScenario({ evidence: datumEvidence }).option,
-      ...(datumEvidence === undefined ? {} : {
+        relativeCost: "insufficient_evidence",
+        roiScore: "not_computed",
+        impactRank: null,
+      };
+  const datumOption: F6Option = datumEvidence === undefined
+    ? assessDatumScenario({}).option
+    : {
+        status: "insufficient_evidence",
+        optionId: "tighten_datum_strategy-evidence-gate",
+        optionKind: "tighten_datum_strategy",
+        predictedImprovement: "insufficient_evidence",
+        requiredInputs: ["controlled_datum_scenario_calculation", "engineering_review"],
+        evidenceReferences: [{ artifact: datumEvidence.source, contentHash: datumEvidence.contentHash }],
+        feasibility: {
+          status: "requires_engineering_review",
+          reasonCodes: ["confirmed_datum_evidence_requires_engineering_review"],
+          evidenceReferences: [datumEvidence.source],
+        },
         evidenceScope: {
-          kind: "datum" as const,
+          kind: "datum",
           factorSources: datumEvidence.factorDirections,
           evidenceReference: { artifact: datumEvidence.source, contentHash: datumEvidence.contentHash },
         },
-      }),
-    },
+        relativeCost: "insufficient_evidence",
+        roiScore: "not_computed",
+        impactRank: null,
+      };
+  options.push(
+    supplierOption,
+    datumOption,
   );
   const completedCount = options.filter(({ status }) => status === "completed").length;
   if (completedCount === 0) {

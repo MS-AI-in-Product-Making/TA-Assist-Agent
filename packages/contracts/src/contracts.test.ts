@@ -4954,7 +4954,7 @@ describe("F5.1 objective interpretation contracts", () => {
         }).success).toBe(false);
       });
 
-      it("allows absent insufficient evidence scopes and validates present scopes exactly", () => {
+      it("requires exact governed scopes when insufficient options reference evidence", () => {
         const insufficientOption = {
           status: "insufficient_evidence",
           optionId: "supplier-insufficient",
@@ -4978,6 +4978,8 @@ describe("F5.1 objective interpretation contracts", () => {
           factorSources: datumEvidence.factorDirections,
           evidenceReference: { artifact: datumEvidence.source, contentHash: datumEvidence.contentHash },
         };
+        const supplierReference = supplierScope.evidenceReference;
+        const datumReference = datumScope.evidenceReference;
         const parseInsufficient = (option: object, provenance: object = {}) => f6OptimizationResultSchema.safeParse({
           ...f6Result,
           provenance: { ...f6Result.provenance, ...provenance },
@@ -4987,32 +4989,45 @@ describe("F5.1 objective interpretation contracts", () => {
 
         expect(parseInsufficient(insufficientOption).success).toBe(true);
         expect(parseInsufficient(
-          { ...insufficientOption, evidenceScope: supplierScope },
+          { ...insufficientOption, evidenceReferences: [supplierReference], evidenceScope: supplierScope },
           { supplierCapabilityEvidence: [supplierEvidence] },
         ).success).toBe(true);
         expect(parseInsufficient(
-          { ...insufficientOption, optionId: "datum-insufficient", optionKind: "tighten_datum_strategy", evidenceScope: datumScope },
+          { ...insufficientOption, optionId: "datum-insufficient", optionKind: "tighten_datum_strategy", evidenceReferences: [datumReference], evidenceScope: datumScope },
           { datumEvidence: [datumEvidence] },
         ).success).toBe(true);
 
         expect(parseInsufficient(
-          { ...insufficientOption, evidenceScope: datumScope },
+          { ...insufficientOption, evidenceReferences: [supplierReference] },
+          { supplierCapabilityEvidence: [supplierEvidence] },
+        ).success).toBe(false);
+        expect(parseInsufficient(
+          { ...insufficientOption, evidenceReferences: [reference("other.json")], evidenceScope: supplierScope },
+          { supplierCapabilityEvidence: [supplierEvidence] },
+        ).success).toBe(false);
+        expect(parseInsufficient(
+          { ...insufficientOption, evidenceScope: supplierScope },
+          { supplierCapabilityEvidence: [supplierEvidence] },
+        ).success).toBe(false);
+
+        expect(parseInsufficient(
+          { ...insufficientOption, evidenceReferences: [datumReference], evidenceScope: datumScope },
           { datumEvidence: [datumEvidence] },
         ).success).toBe(false);
         expect(parseInsufficient(
-          { ...insufficientOption, optionId: "datum-insufficient", optionKind: "tighten_datum_strategy", evidenceScope: supplierScope },
+          { ...insufficientOption, optionId: "datum-insufficient", optionKind: "tighten_datum_strategy", evidenceReferences: [supplierReference], evidenceScope: supplierScope },
           { supplierCapabilityEvidence: [supplierEvidence] },
         ).success).toBe(false);
         expect(parseInsufficient(
-          { ...insufficientOption, evidenceScope: { ...supplierScope, evidenceReference: reference("unrelated.json") } },
+          { ...insufficientOption, evidenceReferences: [supplierReference], evidenceScope: { ...supplierScope, evidenceReference: reference("unrelated.json") } },
           { supplierCapabilityEvidence: [supplierEvidence] },
         ).success).toBe(false);
         expect(parseInsufficient(
-          { ...insufficientOption, evidenceScope: { ...supplierScope, supplierReference: "unrelated-supplier" } },
+          { ...insufficientOption, evidenceReferences: [supplierReference], evidenceScope: { ...supplierScope, supplierReference: "unrelated-supplier" } },
           { supplierCapabilityEvidence: [supplierEvidence] },
         ).success).toBe(false);
         expect(parseInsufficient(
-          { ...insufficientOption, optionId: "datum-insufficient", optionKind: "tighten_datum_strategy", evidenceScope: { ...datumScope, factorSources: [{ ...datumScope.factorSources[0], direction: -1 }] } },
+          { ...insufficientOption, optionId: "datum-insufficient", optionKind: "tighten_datum_strategy", evidenceReferences: [datumReference], evidenceScope: { ...datumScope, factorSources: [{ ...datumScope.factorSources[0], direction: -1 }] } },
           { datumEvidence: [datumEvidence] },
         ).success).toBe(false);
       });
