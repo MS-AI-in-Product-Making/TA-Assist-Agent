@@ -570,6 +570,8 @@ export function loadF6ArtifactBundle({
   return {
     status: "accepted",
     request: request.data,
+    f2Report: f2,
+    f5Report: f5,
     blockedWorksheets: f2.worksheets
       .filter(({ status }) => status === "blocked")
       .map((worksheet) => blockedValidation(worksheet, sourceReferences.f2)),

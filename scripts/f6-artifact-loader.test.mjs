@@ -317,6 +317,8 @@ describe("loadF6ArtifactBundle", () => {
     expect(createCalculation(result.request.worksheets[0].baselineCalculationRequest)).toEqual(
       result.request.worksheets[0].baselineCalculation,
     );
+    expect(result.f2Report).toEqual(JSON.parse(readFileSync(bundle.paths.f2, "utf8")));
+    expect(result.f5Report).toEqual(JSON.parse(readFileSync(bundle.paths.f5, "utf8")));
     expect(result.sourceReferences).toEqual({
       f2: { artifact: "Feature2-Report.json", contentHash: sha256(bundle.paths.f2) },
       f3: { artifact: "Feature3-Report.json", contentHash: sha256(bundle.paths.f3) },

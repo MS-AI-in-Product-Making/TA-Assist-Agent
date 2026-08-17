@@ -23,7 +23,8 @@
     "workflow:f3": "node scripts/run-f3-full-validation.mjs",
     "workflow:f3:ado-reminder": "node scripts/write-f3-ado-reminder.mjs",
     "workflow:f4": "node scripts/run-f4-full-validation.mjs",
-    "workflow:f5": "node scripts/run-f5-full-validation.mjs"
+    "workflow:f5": "node scripts/run-f5-full-validation.mjs",
+    "workflow:f6": "node scripts/run-f6-full-validation.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
