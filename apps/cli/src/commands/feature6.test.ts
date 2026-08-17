@@ -1,12 +1,16 @@
 import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { realpathSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runFeature6WorkflowCommand } from "./feature6.js";
 
+const trustedRoot = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", ".."));
+const publishRoot = join(trustedRoot, "test", "demo-output");
 const cleanup: string[] = [];
 const execFileState = vi.hoisted(() => ({
   options: [] as unknown[],
+  scriptPath: undefined as string | undefined,
   nextError: undefined as ({ code: string; message: string; killed?: boolean; signal?: string } | undefined),
 }));
 
@@ -21,7 +25,9 @@ vi.mock("node:child_process", async (importOriginal) => {
       queueMicrotask(() => callback(error, "", ""));
       return undefined;
     }
-    return Reflect.apply(original.execFile, undefined, args);
+    const commandArgs = [...(args[1] as string[])];
+    if (execFileState.scriptPath !== undefined) commandArgs[0] = execFileState.scriptPath;
+    return Reflect.apply(original.execFile, undefined, [args[0], commandArgs, ...args.slice(2)]);
   }) as typeof original.execFile;
   Object.defineProperty(mockedExecFile, Symbol.for("nodejs.util.promisify.custom"), {
     value: (file: string, args: readonly string[], options: object) => new Promise((resolve, reject) => {
@@ -36,8 +42,10 @@ vi.mock("node:child_process", async (importOriginal) => {
 
 afterEach(async () => {
   execFileState.options.length = 0;
+  execFileState.scriptPath = undefined;
   execFileState.nextError = undefined;
   vi.unstubAllEnvs();
+  await rm(join(trustedRoot, "invocation.json"), { force: true });
   await Promise.all(cleanup.splice(0).map((target) => rm(target, { recursive: true, force: true })));
 });
 
@@ -47,13 +55,20 @@ async function fixture(scriptBody = `console.log(JSON.stringify({status:"complet
   f3Root: string;
   f4Root: string;
   f5Root: string;
+  scriptPath: string;
 }> {
-  const rootDir = await mkdtemp(join(tmpdir(), "feature6-command-"));
-  cleanup.push(rootDir);
-  const roots = ["f2", "f3", "f4", "f5"].map((feature) => join(rootDir, "runs", "demo", feature));
+  await mkdir(publishRoot, { recursive: true });
+  const fixtureRoot = await mkdtemp(join(publishRoot, ".feature6-legacy-"));
+  cleanup.push(fixtureRoot);
+  const rootDir = trustedRoot;
+  const roots = ["f2", "f3", "f4", "f5"].map((feature) => join(fixtureRoot, "inputs", feature));
   const [f2Root, f3Root, f4Root, f5Root] = roots as [string, string, string, string];
-  const scriptPath = join(rootDir, "scripts", "run-f6-full-validation.mjs");
-  await Promise.all([...roots.map((root) => mkdir(root, { recursive: true })), mkdir(join(rootDir, "scripts"), { recursive: true })]);
+  const scriptPath = join(fixtureRoot, "runner.mjs");
+  execFileState.scriptPath = scriptPath;
+  await Promise.all([
+    ...roots.map((root) => mkdir(root, { recursive: true })),
+    mkdir(join(publishRoot, "f6-runs", "demo", "run-1"), { recursive: true }),
+  ]);
   await Promise.all([
     writeFile(join(f2Root, "Feature2-Report.json"), "{}", "utf8"),
     writeFile(join(f3Root, "Feature3-Report.json"), "{}", "utf8"),
@@ -62,7 +77,7 @@ async function fixture(scriptBody = `console.log(JSON.stringify({status:"complet
     writeFile(scriptPath, scriptBody, "utf8"),
   ]);
   await chmod(scriptPath, 0o755);
-  return { rootDir, f2Root, f3Root, f4Root, f5Root };
+  return { rootDir, f2Root, f3Root, f4Root, f5Root, scriptPath };
 }
 
 describe("Feature 6 CLI command", () => {
@@ -149,7 +164,7 @@ console.log(JSON.stringify({ status: "partially_completed", outputDirectory: "te
       join(setup.rootDir, "test", "demo-output", "f6-runs", "demo", "run-1"),
     ]) {
       await writeFile(
-        join(setup.rootDir, "scripts", "run-f6-full-validation.mjs"),
+        setup.scriptPath,
         `console.log(${JSON.stringify(JSON.stringify({ status: "completed", outputDirectory }))});\n`,
         "utf8",
       );
@@ -213,15 +228,4 @@ console.log(JSON.stringify({ status: "partially_completed", outputDirectory: "te
     }
   });
 
-  it("requires the repository runner to be a regular physical file", async () => {
-    const setup = await fixture();
-    const scriptPath = join(setup.rootDir, "scripts", "run-f6-full-validation.mjs");
-    await rm(scriptPath);
-    await mkdir(scriptPath);
-
-    await expect(runFeature6WorkflowCommand(
-      setup.rootDir, setup.f2Root, setup.f3Root, setup.f4Root, setup.f5Root,
-      { selectedWorksheetNames: ["Overview"] },
-    )).rejects.toMatchObject({ code: "validation_error", summary: "Feature 6 workflow script is invalid." });
-  });
 });

@@ -1,10 +1,38 @@
 import { execFile } from "node:child_process";
-import { existsSync, lstatSync } from "node:fs";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { existsSync, lstatSync, realpathSync } from "node:fs";
+import { dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { createTypedError } from "@ai-assist/contracts";
 
 const execFileAsync = promisify(execFile);
+const trustedRepositoryRoot = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", ".."));
+const trustedRunnerPath = join(trustedRepositoryRoot, "scripts", "run-f6-full-validation.mjs");
+const trustedPublishRoot = join(trustedRepositoryRoot, "test", "demo-output");
+
+interface Feature6ExecutionOptions {
+  readonly cwd: string;
+  readonly env: NodeJS.ProcessEnv;
+  readonly encoding: "utf8";
+  readonly maxBuffer: number;
+  readonly timeout: number;
+  readonly killSignal: NodeJS.Signals;
+}
+
+interface Feature6CommandDependencies {
+  readonly executeFile: (
+    file: string,
+    args: readonly string[],
+    options: Feature6ExecutionOptions,
+  ) => Promise<{ stdout: string; stderr: string }>;
+}
+
+const defaultDependencies: Feature6CommandDependencies = {
+  executeFile: async (file, args, options) => {
+    const { stdout, stderr } = await execFileAsync(file, [...args], options);
+    return { stdout, stderr };
+  },
+};
 
 export interface Feature6CommandOptions {
   readonly selectedWorksheetNames: readonly string[];
@@ -60,9 +88,21 @@ function optionalPath(value: string | undefined, label: string): string | undefi
 
 function containsControlCharacter(value: string): boolean {
   return [...value].some((character) => {
-    const code = character.charCodeAt(0);
-    return code <= 0x1f || code === 0x7f;
+    const code = character.codePointAt(0) ?? 0;
+    return code <= 0x1f || (code >= 0x7f && code <= 0x9f);
   });
+}
+
+function containsBidiCharacter(value: string): boolean {
+  return /[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/u.test(value);
+}
+
+function hasUnsafePathForm(value: string): boolean {
+  const normalizedSeparators = value.replaceAll("\\", "/");
+  return isAbsolute(value)
+    || normalizedSeparators.startsWith("/")
+    || /^[A-Za-z]:/u.test(value)
+    || normalizedSeparators.split("/").some((segment) => segment === "..");
 }
 
 function isContained(root: string, candidate: string): boolean {
@@ -71,20 +111,61 @@ function isContained(root: string, candidate: string): boolean {
     && !relativePath.startsWith(`..${sep}`) && !isAbsolute(relativePath);
 }
 
-function formatFeature6Output(rootDir: string, value: unknown): string {
+function hasLinkedPathComponent(value: string): boolean {
+  const absolutePath = resolve(value);
+  const root = parse(absolutePath).root;
+  const components = relative(root, absolutePath).split(sep).filter(Boolean);
+  let current = root;
+  for (const component of components) {
+    current = join(current, component);
+    if (lstatSync(current).isSymbolicLink()) return true;
+  }
+  return false;
+}
+
+function validateTrustedExecutionRoot(rootDir: string): void {
+  if (!existsSync(rootDir)) {
+    throw feature6Error("validation_error", "Feature 6 repository root is invalid.");
+  }
+  const rootStats = lstatSync(rootDir);
+  if (!rootStats.isDirectory() || rootStats.isSymbolicLink() || hasLinkedPathComponent(rootDir)
+    || realpathSync(rootDir) !== trustedRepositoryRoot) {
+    throw feature6Error("validation_error", "Feature 6 repository root is invalid.");
+  }
+  if (!existsSync(trustedRunnerPath)) {
+    throw feature6Error("validation_error", "Feature 6 workflow script is missing.");
+  }
+  const runnerStats = lstatSync(trustedRunnerPath);
+  if (!runnerStats.isFile() || runnerStats.isSymbolicLink()
+    || realpathSync(trustedRunnerPath) !== trustedRunnerPath
+    || !isContained(trustedRepositoryRoot, trustedRunnerPath)) {
+    throw feature6Error("validation_error", "Feature 6 workflow script is invalid.");
+  }
+}
+
+function formatFeature6Output(value: unknown): string {
   if (typeof value !== "object" || value === null) throw new Error("invalid runner output");
   const output = value as Record<string, unknown>;
   const statuses = new Set(["completed", "partially_completed", "calculation_failed"]);
   if (typeof output.outputDirectory !== "string" || output.outputDirectory.length === 0
     || output.outputDirectory.trim() !== output.outputDirectory || containsControlCharacter(output.outputDirectory)
-    || isAbsolute(output.outputDirectory)
-    || !isContained(resolve(rootDir, "test", "demo-output"), resolve(rootDir, output.outputDirectory))
+    || containsBidiCharacter(output.outputDirectory) || hasUnsafePathForm(output.outputDirectory)
     || typeof output.status !== "string" || !statuses.has(output.status)) {
     throw new Error("invalid runner output");
   }
+  const resolvedOutput = resolve(trustedRepositoryRoot, output.outputDirectory);
+  if (!existsSync(resolvedOutput)) throw new Error("invalid runner output");
+  const outputStats = lstatSync(resolvedOutput);
+  if (!outputStats.isDirectory() || outputStats.isSymbolicLink() || hasLinkedPathComponent(resolvedOutput)) {
+    throw new Error("invalid runner output");
+  }
+  const realPublishRoot = realpathSync(trustedPublishRoot);
+  const realOutput = realpathSync(resolvedOutput);
+  if (!isContained(realPublishRoot, realOutput)) throw new Error("invalid runner output");
+  const safeOutputDirectory = relative(trustedRepositoryRoot, realOutput).replaceAll(sep, "/");
   return [
     "Feature 6 workflow completed.",
-    `f6: ${output.outputDirectory}`,
+    `f6: ${safeOutputDirectory}`,
     `status: ${output.status}`,
   ].join("\n");
 }
@@ -118,19 +199,15 @@ export async function runFeature6WorkflowCommand(
   f4Root: string,
   f5Root: string,
   options: Feature6CommandOptions,
+  dependencies: Feature6CommandDependencies = defaultDependencies,
 ): Promise<string> {
-  const scriptPath = join(rootDir, "scripts", "run-f6-full-validation.mjs");
-  if (!existsSync(scriptPath)) throw feature6Error("validation_error", "Feature 6 workflow script is missing.");
-  const scriptStats = lstatSync(scriptPath);
-  if (scriptStats.isSymbolicLink() || !scriptStats.isFile()) {
-    throw feature6Error("validation_error", "Feature 6 workflow script is invalid.");
-  }
+  validateTrustedExecutionRoot(rootDir);
   validateArtifactRoot(f2Root, "Feature2-Report.json", "Feature 2");
   validateArtifactRoot(f3Root, "Feature3-Report.json", "Feature 3");
   validateArtifactRoot(f4Root, "Feature4-Calculation.json", "Feature 4");
   validateArtifactRoot(f5Root, "Feature5-Report.json", "Feature 5");
 
-  const args = [scriptPath, f2Root, f3Root, f4Root, f5Root];
+  const args = [trustedRunnerPath, f2Root, f3Root, f4Root, f5Root];
   for (const worksheetName of normalizedWorksheets(options.selectedWorksheetNames)) {
     args.push("--worksheet", worksheetName);
   }
@@ -144,14 +221,15 @@ export async function runFeature6WorkflowCommand(
   }
 
   try {
-    const { stdout } = await execFileAsync(process.execPath, args, {
-      cwd: rootDir,
+    const { stdout } = await dependencies.executeFile(process.execPath, args, {
+      cwd: trustedRepositoryRoot,
       env: feature6RunnerEnvironment(),
+      encoding: "utf8",
       maxBuffer: 4 * 1024 * 1024,
       timeout: 120_000,
       killSignal: "SIGTERM",
     });
-    return formatFeature6Output(rootDir, JSON.parse(stdout));
+    return formatFeature6Output(JSON.parse(stdout));
   } catch (error: unknown) {
     if (timeoutFailure(error)) {
       throw feature6Error("transient_error", "Feature 6 workflow execution timed out.");
