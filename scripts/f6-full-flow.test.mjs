@@ -4,6 +4,16 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSy
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  createComparisonPlaceholder,
+  createF6Optimization,
+} from "../packages/workbook-catalog/dist/index.js";
+import { calculateF6Scenario } from "../packages/workbook-catalog/dist/f6-scenario-adapter.js";
+import {
+  createF6ArtifactBundleFixture,
+  installF6V2Evidence,
+  rewriteFixtureJson,
+} from "./f6-artifact-test-fixture.mjs";
 import { runF6Cli, runF6FullValidation } from "./run-f6-full-validation.mjs";
 
 const cleanup = [];
@@ -71,6 +81,36 @@ function setup({ status = "completed" } = {}) {
 
 function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, "utf8"));
+}
+
+function createRealBundle(options) {
+  const bundle = createF6ArtifactBundleFixture(options);
+  cleanup.push(bundle.root);
+  return bundle;
+}
+
+function runRealF6(bundle, runId, dependencyOverrides = {}, parsedOverrides = {}) {
+  const runRoot = path.join(bundle.publishRoot, "f6-runs", runId);
+  const result = runF6FullValidation({}, {
+    parseArgs: () => ({ ...bundle, ...parsedOverrides }),
+    resolveLayout: () => ({
+      runId,
+      runRoot,
+      publishRoot: bundle.publishRoot,
+      optimizationJsonName: "Feature6-Optimization.json",
+      optimizationMdName: "Feature6-Optimization.md",
+      composedReportJsonName: "Feature6-Composed-Report.json",
+      composedReportMdName: "Feature6-Composed-Report.md",
+      runSummaryJsonName: "Feature6-Run-Summary.json",
+      manifestName: "manifest.json",
+    }),
+    ...dependencyOverrides,
+  });
+  return { result, runRoot };
+}
+
+function artifactHash(filePath) {
+  return sha256(readFileSync(filePath));
 }
 
 describe("runF6FullValidation", () => {
@@ -219,5 +259,178 @@ describe("runF6FullValidation", () => {
     const result = runF6FullValidation({}, context.deps);
     expect(result.status).toBe("failed");
     expect(existsSync(path.join(context.runRoot, "Feature6-Optimization.json"))).toBe(false);
+  });
+});
+
+describe("F6 real artifact full flow", () => {
+  it("selects only ready F2 worksheets and keeps blocked worksheets out of numeric sections", () => {
+    const bundle = createRealBundle({ blockedWorksheetNames: ["Blocked-A"] });
+    const { result, runRoot } = runRealF6(bundle, "mixed-ready-blocked");
+    const optimization = readJson(path.join(runRoot, "Feature6-Optimization.json"));
+    const composed = readJson(path.join(runRoot, "Feature6-Composed-Report.json"));
+
+    expect(result.status).toBe("completed");
+    expect(readdirSync(runRoot).sort()).toEqual([
+      "Feature6-Composed-Report.json",
+      "Feature6-Composed-Report.md",
+      "Feature6-Optimization.json",
+      "Feature6-Optimization.md",
+      "Feature6-Run-Summary.json",
+      "manifest.json",
+    ]);
+    expect(optimization.worksheets.map(({ worksheetName }) => worksheetName)).toEqual(["Analysis-A"]);
+    expect(composed.blockedWorksheets.map(({ worksheetName }) => worksheetName)).toEqual(["Blocked-A"]);
+    expect(composed.worksheets.map(({ worksheetName }) => worksheetName)).toEqual(["Analysis-A"]);
+    expect(JSON.stringify(composed.blockedWorksheets)).not.toMatch(/capabilityAssessment|options|whatIfAnalysis/);
+  });
+
+  it("publishes valid hashes and conservative results when optional evidence is absent", () => {
+    const bundle = createRealBundle();
+    const { result, runRoot } = runRealF6(bundle, "no-optional-evidence");
+    const optimization = readJson(path.join(runRoot, "Feature6-Optimization.json"));
+    const summary = readJson(path.join(runRoot, "Feature6-Run-Summary.json"));
+    const worksheet = optimization.worksheets[0];
+    const optionsByKind = new Map(worksheet.options.map((option) => [option.optionKind, option]));
+
+    expect(result.status).toBe("completed");
+    expect(readdirSync(runRoot)).toHaveLength(6);
+    expect(optionsByKind.get("improve_supplier_capability")).toMatchObject({
+      status: "insufficient_evidence",
+      predictedImprovement: "insufficient_evidence",
+    });
+    expect(optionsByKind.get("tighten_datum_strategy")).toMatchObject({
+      status: "insufficient_evidence",
+      predictedImprovement: "insufficient_evidence",
+    });
+    expect(worksheet.roiStatus).toBe("not_computed");
+    expect(worksheet.options.filter(({ status }) => status === "completed").every(({ roiScore }) =>
+      roiScore === "not_computed")).toBe(true);
+    expect(summary.hashes).toEqual({
+      optimizationJsonSha256: artifactHash(path.join(runRoot, "Feature6-Optimization.json")),
+      optimizationMarkdownSha256: artifactHash(path.join(runRoot, "Feature6-Optimization.md")),
+      composedReportJsonSha256: artifactHash(path.join(runRoot, "Feature6-Composed-Report.json")),
+      composedReportMarkdownSha256: artifactHash(path.join(runRoot, "Feature6-Composed-Report.md")),
+    });
+    expect(readJson(path.join(runRoot, "manifest.json"))).toMatchObject({
+      status: "completed",
+      artifacts: {
+        optimizationJson: "Feature6-Optimization.json",
+        optimizationMarkdown: "Feature6-Optimization.md",
+        composedReportJson: "Feature6-Composed-Report.json",
+        composedReportMarkdown: "Feature6-Composed-Report.md",
+        runSummary: "Feature6-Run-Summary.json",
+      },
+    });
+  });
+
+  it("rejects explicitly supplied invalid F5 v2 evidence without successful report artifacts", () => {
+    const bundle = createRealBundle();
+    const evidence = installF6V2Evidence(bundle);
+    cleanup.push(evidence.evidenceArtifactRoot);
+    const evidencePath = path.join(evidence.evidenceArtifactRoot, evidence.imageObservationArtifact);
+    rewriteFixtureJson(evidencePath, (artifact) => {
+      artifact.worksheets[0].contextSnapshot.dimensionDescription = "Other loop";
+    });
+
+    const { result, runRoot } = runRealF6(bundle, "invalid-v2-evidence", {}, {
+      imageObservationArtifact: evidencePath,
+    });
+
+    expect(result).toMatchObject({ status: "failed", reasonCode: "input_rejected" });
+    expect(readdirSync(runRoot)).toEqual(["manifest.json"]);
+    expect(readJson(path.join(runRoot, "manifest.json"))).toMatchObject({
+      status: "failed",
+      reasonCode: "input_rejected",
+      artifacts: {},
+    });
+  });
+
+  it("retains other options and all report artifacts when one real scenario calculation fails", () => {
+    const bundle = createRealBundle();
+    const { result, runRoot } = runRealF6(bundle, "one-option-failed", {
+      createOptimization(request) {
+        return createF6Optimization(request, {
+          calculateScenario(input) {
+            if (input.scenario.optionKind === "reduce_top_contributor_20") {
+              throw { code: "controlled_calculation_failed", privateValue: "DO-NOT-LEAK" };
+            }
+            return calculateF6Scenario(input);
+          },
+        });
+      },
+    });
+    const optimization = readJson(path.join(runRoot, "Feature6-Optimization.json"));
+    const composed = readJson(path.join(runRoot, "Feature6-Composed-Report.json"));
+    const worksheet = optimization.worksheets[0];
+
+    expect(result.status).toBe("partially_completed");
+    expect(readdirSync(runRoot)).toHaveLength(6);
+    expect(worksheet.options.find(({ optionKind }) => optionKind === "reduce_top_contributor_20")).toMatchObject({
+      status: "calculation_failed",
+      reasonCode: "controlled_calculation_failed",
+    });
+    expect(worksheet.options.filter(({ status }) => status === "completed")).toHaveLength(6);
+    expect(composed.worksheets[0].sections.whatIfAnalysis.options.find(({ optionKind }) =>
+      optionKind === "reduce_top_contributor_20")).toMatchObject({ status: "calculation_failed" });
+    expect(JSON.stringify({ optimization, composed })).not.toContain("DO-NOT-LEAK");
+  });
+
+  it.each([
+    ["workbook", "f3", (report) => { report.workbook.contentHash = "c".repeat(64); }],
+    ["run", "f4", (report) => { report.runId = "other-run"; }],
+    ["source", "f2", (report) => { report.worksheets[0].rows[0].sourceRow = 99; }],
+  ])("rejects an actual %s identity mutation", (identity, artifactKey, mutate) => {
+    const bundle = createRealBundle();
+    rewriteFixtureJson(bundle.paths[artifactKey], mutate);
+
+    const { result, runRoot } = runRealF6(bundle, `identity-${identity}`);
+
+    expect(result).toMatchObject({ status: "failed", reasonCode: "input_rejected" });
+    expect(readdirSync(runRoot)).toEqual(["manifest.json"]);
+  });
+
+  it("keeps the legacy comparison placeholder unavailable", () => {
+    expect(createComparisonPlaceholder({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      projectReference: "controlled-project-reference",
+      runReference: "controlled-run-reference",
+      worksheetReferences: ["controlled-worksheet-reference"],
+    })).toMatchObject({
+      featureId: "F6",
+      status: "feature_not_available",
+      requiredPrerequisites: ["approved-knowledge-base"],
+    });
+  });
+
+  it("publishes a calculation_failed optimization when every real scenario calculation fails", () => {
+    const bundle = createRealBundle();
+    const { result, runRoot } = runRealF6(bundle, "all-options-failed", {
+      createOptimization(request) {
+        return createF6Optimization(request, {
+          calculateScenario() {
+            throw { code: "controlled_calculation_failed" };
+          },
+        });
+      },
+    });
+    const optimization = readJson(path.join(runRoot, "Feature6-Optimization.json"));
+
+    expect(result.status).toBe("calculation_failed");
+    expect(readdirSync(runRoot)).toHaveLength(6);
+    expect(optimization).toMatchObject({
+      status: "calculation_failed",
+      summary: {
+        completedOptionCount: 0,
+        calculationFailedOptionCount: 7,
+        insufficientEvidenceOptionCount: 2,
+      },
+    });
+    expect(optimization.worksheets[0].options.filter(({ status }) =>
+      status === "calculation_failed")).toHaveLength(7);
+    expect(readJson(path.join(runRoot, "manifest.json"))).toMatchObject({
+      status: "calculation_failed",
+      artifacts: { optimizationJson: "Feature6-Optimization.json" },
+    });
   });
 });
