@@ -426,7 +426,7 @@ describe("createF6ComposedEngineeringReport", () => {
       findingKind: "confirmed_requirement_violation",
       severity: "Critical",
       message: "A governed requirement is violated.",
-      affectsCapabilityData: false,
+      affectsCapabilityData: true,
       evidenceReferences: [violationInput.f6Result.provenance.f2Reference],
     }];
     const violation = createF6ComposedEngineeringReport(violationInput);

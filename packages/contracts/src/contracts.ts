@@ -6323,21 +6323,37 @@ export const f6CostEvidenceSchema = z.object({
   });
 });
 
-const f6FindingKindSchema = z.enum([
-  "validation_abnormality",
-  "confirmed_requirement_violation",
-  "governance_gap",
-  "optimization_failure",
-]);
-
-export const f6InputFindingSchema = z.object({
+const f6InputFindingBaseShape = {
   findingCode: z.string().min(1),
-  findingKind: f6FindingKindSchema,
   severity: z.enum(["Critical", "Major", "Minor"]),
   message: z.string().min(1),
-  affectsCapabilityData: z.boolean(),
   evidenceReferences: z.array(f6ArtifactReferenceSchema),
-}).strict();
+};
+const f6CapabilityImpactTrueSchema = z.literal(true).transform((value): boolean => value);
+const f6CapabilityImpactFalseSchema = z.literal(false).transform((value): boolean => value);
+
+export const f6InputFindingSchema = z.discriminatedUnion("findingKind", [
+  z.object({
+    ...f6InputFindingBaseShape,
+    findingKind: z.literal("validation_abnormality"),
+    affectsCapabilityData: z.boolean(),
+  }).strict(),
+  z.object({
+    ...f6InputFindingBaseShape,
+    findingKind: z.literal("confirmed_requirement_violation"),
+    affectsCapabilityData: f6CapabilityImpactTrueSchema,
+  }).strict(),
+  z.object({
+    ...f6InputFindingBaseShape,
+    findingKind: z.literal("governance_gap"),
+    affectsCapabilityData: f6CapabilityImpactFalseSchema,
+  }).strict(),
+  z.object({
+    ...f6InputFindingBaseShape,
+    findingKind: z.literal("optimization_failure"),
+    affectsCapabilityData: f6CapabilityImpactFalseSchema,
+  }).strict(),
+]);
 
 export const f6RiskSchema = z.object({
   riskId: z.string().min(1),
@@ -7123,14 +7139,10 @@ export const f6OptimizationResultSchema = z.object({
 });
 
 const f6ReportEvidenceReferencesSchema = z.array(f6ArtifactReferenceSchema).min(1);
-const f6ReportFindingSchema = z.object({
-  findingCode: z.string().min(1),
-  findingKind: f6FindingKindSchema,
-  severity: z.enum(["Critical", "Major", "Minor"]),
-  message: z.string().min(1),
-  affectsCapabilityData: z.boolean(),
-  evidenceReferences: f6ReportEvidenceReferencesSchema,
-}).strict();
+const f6ReportFindingSchema = f6InputFindingSchema.refine(
+  (finding) => finding.evidenceReferences.length > 0,
+  { message: "report findings require evidence", path: ["evidenceReferences"] },
+);
 
 export const f6BlockedWorksheetReportSchema = z.object({
   worksheetName: z.string().min(1),
@@ -7224,6 +7236,11 @@ export const f6ComposedWorksheetReportSchema = z.object({
   sections: f6ComposedSectionsSchema,
 }).strict().superRefine((worksheet, context) => {
   const cpk = worksheet.sections.capabilityAssessment.metrics.cpk;
+  const hasConfirmedRequirementViolation = worksheet.sections.inputValidation.some(({ findingKind }) =>
+    findingKind === "confirmed_requirement_violation");
+  if (worksheet.confirmedRequirementViolation !== hasConfirmedRequirementViolation) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "confirmedRequirementViolation must match input validation findings", path: ["confirmedRequirementViolation"] });
+  }
   const hasOpenHighRisk = worksheet.sections.riskAssessment.some((risk) => risk.status === "open" && (risk.rating === "High" || risk.rating === "Critical"));
   const hasInsufficientRiskEvidence = worksheet.sections.riskAssessment.some((risk) => risk.status === "insufficient_evidence");
   const hasOptimizationFailure = worksheet.sections.inputValidation.some(({ findingKind }) => findingKind === "optimization_failure")

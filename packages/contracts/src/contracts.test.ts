@@ -4578,19 +4578,32 @@ describe("F5.1 objective interpretation contracts", () => {
         }).success).toBe(false);
       });
 
-      it("requires a governed finding kind on every F6 input finding", () => {
+      it("binds every F6 input finding kind to capability impact semantics", () => {
         const finding = {
           findingCode: "arbitrary-code",
-          findingKind: "governance_gap",
           severity: "Major",
           message: "A governed identifier is unavailable.",
-          affectsCapabilityData: false,
           evidenceReferences: [],
         };
 
-        expect(f6InputFindingSchema.parse(finding)).toEqual(finding);
-        expect(f6InputFindingSchema.safeParse({ ...finding, findingKind: undefined }).success).toBe(false);
-        expect(f6InputFindingSchema.safeParse({ ...finding, findingKind: "requirement_violation" }).success).toBe(false);
+        for (const candidate of [
+          { ...finding, findingKind: "validation_abnormality", affectsCapabilityData: false },
+          { ...finding, findingKind: "validation_abnormality", affectsCapabilityData: true },
+          { ...finding, findingKind: "governance_gap", affectsCapabilityData: false },
+          { ...finding, findingKind: "optimization_failure", affectsCapabilityData: false },
+          { ...finding, findingKind: "confirmed_requirement_violation", affectsCapabilityData: true },
+        ] as const) {
+          expect(f6InputFindingSchema.parse(candidate)).toEqual(candidate);
+        }
+        for (const candidate of [
+          { ...finding, findingKind: "governance_gap", affectsCapabilityData: true },
+          { ...finding, findingKind: "optimization_failure", affectsCapabilityData: true },
+          { ...finding, findingKind: "confirmed_requirement_violation", affectsCapabilityData: false },
+        ] as const) {
+          expect(f6InputFindingSchema.safeParse(candidate).success).toBe(false);
+        }
+        expect(f6InputFindingSchema.safeParse({ ...finding, findingKind: undefined, affectsCapabilityData: false }).success).toBe(false);
+        expect(f6InputFindingSchema.safeParse({ ...finding, findingKind: "requirement_violation", affectsCapabilityData: false }).success).toBe(false);
       });
 
       it("rejects duplicate governed evidence identities in requests at the second record", () => {
@@ -5275,6 +5288,30 @@ describe("F5.1 objective interpretation contracts", () => {
         expect(f6ComposedEngineeringReportSchema.safeParse({ ...report, worksheets: [{ ...report.worksheets[0], sections: { ...report.worksheets[0].sections, finalConclusion: Array(11).fill("bullet") } }] }).success).toBe(false);
         expect(f6ComposedEngineeringReportSchema.safeParse({
           ...report,
+          overallStatus: "FAIL",
+          blockedWorksheets: [],
+          worksheets: [{ ...report.worksheets[0], status: "FAIL", confirmedRequirementViolation: true }],
+        }).success).toBe(false);
+        expect(f6ComposedEngineeringReportSchema.safeParse({
+          ...report,
+          blockedWorksheets: [],
+          worksheets: [{
+            ...report.worksheets[0],
+            sections: {
+              ...report.worksheets[0].sections,
+              inputValidation: [{
+                findingCode: "requirement_violation",
+                findingKind: "confirmed_requirement_violation",
+                severity: "Critical",
+                message: "A governed requirement is violated.",
+                affectsCapabilityData: true,
+                evidenceReferences,
+              }],
+            },
+          }],
+        }).success).toBe(false);
+        expect(f6ComposedEngineeringReportSchema.safeParse({
+          ...report,
           worksheets: [{
             ...report.worksheets[0],
             sections: { ...report.worksheets[0].sections, riskAssessment: report.worksheets[0].sections.riskAssessment.slice(0, 4) },
@@ -5327,6 +5364,16 @@ describe("F5.1 objective interpretation contracts", () => {
           worksheet.status = scenario.expected;
           worksheet.targetCapability.targetCpk = scenario.targetCpk;
           worksheet.confirmedRequirementViolation = scenario.violation;
+          if (scenario.violation) {
+            worksheet.sections.inputValidation = [{
+              findingCode: "requirement_violation",
+              findingKind: "confirmed_requirement_violation",
+              severity: "Critical",
+              message: "A governed requirement is violated.",
+              affectsCapabilityData: true,
+              evidenceReferences,
+            }];
+          }
           worksheet.missingCapabilityData = scenario.missing;
           worksheet.sections.capabilityAssessment.metrics.cpk = scenario.cpk;
           worksheet.sections.riskAssessment[0]!.rating = scenario.rating;

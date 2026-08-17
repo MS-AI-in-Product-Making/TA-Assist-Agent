@@ -267,4 +267,29 @@ describe("renderComposedEngineeringReport", () => {
     expect(() => renderComposedEngineeringReport({ reportVersion: "f6-composed-report-v1", secret: "do-not-echo" }))
       .toThrow("Invalid F6 composed engineering report.");
   });
+
+  it.each([
+    ["true without a finding", (input) => {
+      input.blockedWorksheets = [];
+      input.worksheets[0].confirmedRequirementViolation = true;
+      input.worksheets[0].status = "FAIL";
+      input.overallStatus = "FAIL";
+    }],
+    ["a finding with false", (input) => {
+      input.worksheets[0].sections.inputValidation.push({
+        findingCode: "requirement_violation",
+        findingKind: "confirmed_requirement_violation",
+        severity: "Critical",
+        message: "A governed requirement is violated.",
+        affectsCapabilityData: true,
+        evidenceReferences: [REFERENCE],
+      });
+    }],
+  ])("rejects a forged requirement violation (%s) before rendering output", (_label, forge) => {
+    const input = report();
+    forge(input);
+
+    expect(() => renderComposedEngineeringReport(input))
+      .toThrow("Invalid F6 composed engineering report.");
+  });
 });

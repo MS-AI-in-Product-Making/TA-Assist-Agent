@@ -179,7 +179,7 @@ describe("renderF6Report", () => {
 
   it.each([
     ["validation_abnormality", true, "RISK"],
-    ["confirmed_requirement_violation", false, "FAIL"],
+    ["confirmed_requirement_violation", true, "FAIL"],
     ["optimization_failure", false, "PASS"],
   ])("derives capability status from governed %s input risk", (findingKind, affectsCapabilityData, expectedStatus) => {
     const input = result();
