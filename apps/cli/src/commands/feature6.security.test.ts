@@ -99,8 +99,16 @@ describe("Feature 6 CLI trust boundary", () => {
   });
 
   it("uses only the fixed trusted runner with governed execution options and cleared overrides", async () => {
+    vi.stubEnv("PATH", "trusted-path");
+    vi.stubEnv("SystemRoot", "C:\\Windows");
+    vi.stubEnv("NODE_OPTIONS", "--require attacker.cjs");
+    vi.stubEnv("NODE_PATH", "attacker-modules");
+    vi.stubEnv("NODE_EXTRA_CA_CERTS", "attacker-ca.pem");
+    vi.stubEnv("npm_config_node_options", "--import=attacker.mjs");
+    vi.stubEnv("ELECTRON_RUN_AS_NODE", "1");
     vi.stubEnv("AI_TVA_F6_OUTPUT_ROOT", "outside/f6-runs");
     vi.stubEnv("AI_TVA_F6_PUBLISH_ROOT", "outside");
+    vi.stubEnv("AI_TVA_UNTRUSTED_OVERRIDE", "outside");
     const setup = await fixture();
     const calls: Array<{ file: string; args: readonly string[]; options: ExecuteOptions }> = [];
     const executeFile: ExecuteFile = async (file, args, options) => {
@@ -134,11 +142,55 @@ describe("Feature 6 CLI trust boundary", () => {
     expect(calls[0].options).toMatchObject({
       cwd: trustedRoot, timeout: 120_000, maxBuffer: 4 * 1024 * 1024, killSignal: "SIGTERM",
     });
-    expect(calls[0].options.env).not.toHaveProperty("AI_TVA_F6_OUTPUT_ROOT");
-    expect(calls[0].options.env).not.toHaveProperty("AI_TVA_F6_PUBLISH_ROOT");
+    expect(calls[0].options.env).toMatchObject({ PATH: "trusted-path", SystemRoot: "C:\\Windows" });
+    expect(Object.keys(calls[0].options.env)).toEqual(expect.arrayContaining(["PATH", "SystemRoot"]));
+    expect(Object.keys(calls[0].options.env).every((key) => [
+      "PATH", "Path", "SystemRoot", "WINDIR", "COMSPEC", "PATHEXT", "TEMP", "TMP", "USERPROFILE",
+      "HOMEDRIVE", "HOMEPATH", "LOCALAPPDATA", "APPDATA", "HOME", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE",
+    ].includes(key))).toBe(true);
+    for (const rejectedKey of [
+      "NODE_OPTIONS", "NODE_PATH", "NODE_EXTRA_CA_CERTS", "npm_config_node_options", "ELECTRON_RUN_AS_NODE",
+      "AI_TVA_F6_OUTPUT_ROOT", "AI_TVA_F6_PUBLISH_ROOT", "AI_TVA_UNTRUSTED_OVERRIDE",
+    ]) {
+      expect(calls[0].options.env).not.toHaveProperty(rejectedKey);
+    }
     expect(lstatSync(trustedRunner).isFile()).toBe(true);
     expect(lstatSync(trustedRunner).isSymbolicLink()).toBe(false);
     expect(realpathSync(trustedRunner)).toBe(trustedRunner);
+  });
+
+  it("does not let NODE_OPTIONS execute a marker module in the real default child", async () => {
+    const setup = await fixture();
+    const markerRoot = await mkdtemp(join(tmpdir(), "feature6-node-options-"));
+    cleanup.push(markerRoot);
+    const markerPath = join(markerRoot, "executed.marker");
+    const markerModulePath = join(markerRoot, "marker.cjs");
+    await writeFile(
+      markerModulePath,
+      `require("node:fs").writeFileSync(${JSON.stringify(markerPath)}, "executed");\n`,
+      "utf8",
+    );
+    await writeFile(join(setup.f2Root, "Feature2-Report.json"), "not-json", "utf8");
+    const previousNodeOptions = process.env.NODE_OPTIONS;
+    process.env.NODE_OPTIONS = `--require ${JSON.stringify(markerModulePath)}`;
+
+    let failure: unknown;
+    try {
+      await runFeature6WorkflowCommand(
+        trustedRoot, setup.f2Root, setup.f3Root, setup.f4Root, setup.f5Root,
+        { selectedWorksheetNames: ["Overview"] },
+      );
+    } catch (error: unknown) {
+      failure = error;
+    } finally {
+      if (previousNodeOptions === undefined) delete process.env.NODE_OPTIONS;
+      else process.env.NODE_OPTIONS = previousNodeOptions;
+    }
+
+    expect(failure).toMatchObject({ code: "internal_error", summary: "Feature 6 workflow execution failed." });
+    expect(String(failure)).not.toContain(setup.f2Root);
+    expect(String(failure)).not.toContain(markerModulePath);
+    await expect(readFile(markerPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it.each(["completed", "partially_completed", "calculation_failed"])(

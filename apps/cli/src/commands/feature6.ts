@@ -186,9 +186,20 @@ function timeoutFailure(error: unknown): boolean {
 }
 
 function feature6RunnerEnvironment(): NodeJS.ProcessEnv {
-  const environment = { ...process.env };
-  delete environment.AI_TVA_F6_OUTPUT_ROOT;
-  delete environment.AI_TVA_F6_PUBLISH_ROOT;
+  const allowedKeys = [
+    "PATH", "Path", "SystemRoot", "WINDIR", "COMSPEC", "PATHEXT", "TEMP", "TMP", "USERPROFILE",
+    "HOMEDRIVE", "HOMEPATH", "LOCALAPPDATA", "APPDATA", "HOME", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE",
+  ] as const;
+  const environment: NodeJS.ProcessEnv = {};
+  const includedKeys = new Set<string>();
+  for (const key of allowedKeys) {
+    const value = process.env[key];
+    const comparisonKey = process.platform === "win32" ? key.toLowerCase() : key;
+    if (typeof value === "string" && !includedKeys.has(comparisonKey)) {
+      environment[key] = value;
+      includedKeys.add(comparisonKey);
+    }
+  }
   return environment;
 }
 
