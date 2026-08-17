@@ -1,6 +1,21 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
-import { mkdtempSync, mkdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  closeSync,
+  fstatSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  readSync,
+  renameSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  truncateSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createCalculation } from "../packages/workbook-catalog/dist/calculation.js";
@@ -16,6 +31,7 @@ const WORKBOOK_HASH = "a".repeat(64);
 const IMAGE_HASH = "b".repeat(64);
 const RUN_ID = "f4-run-1";
 const CONTROLLED_OUTPUT_ROOT = path.join(process.cwd(), "test", "demo-output");
+const MAX_JSON_BYTES = 10 * 1024 * 1024;
 
 function fileSymlinksAvailable() {
   const probeRoot = mkdtempSync(path.join(tmpdir(), "f6-symlink-probe-"));
@@ -315,6 +331,117 @@ describe("loadF6ArtifactBundle", () => {
       f5: { artifact: "Feature5-Report.json", contentHash: sha256(bundle.paths.f5), interpretationVersion: "f5-data-interpretation-v1" },
     });
     expect(JSON.stringify(result)).not.toContain(rootPath(bundle));
+  });
+
+  it("closes each descriptor exactly once after a normal bounded read", () => {
+    const bundle = setupBundle();
+    let closeCalls = 0;
+
+    const result = loadF6ArtifactBundle(bundle, {
+      closeSync(descriptor) {
+        closeCalls += 1;
+        return closeSync(descriptor);
+      },
+    });
+
+    expect(result.status, JSON.stringify(result)).toBe("accepted");
+    expect(closeCalls).toBe(4);
+  });
+
+  it("rejects an artifact appended past the byte limit without reading past the limit plus one", () => {
+    const bundle = setupBundle();
+    const initialSize = statSync(bundle.paths.f2).size;
+    let bytesRead = 0;
+    let closeCalls = 0;
+
+    const result = loadF6ArtifactBundle(bundle, {
+      afterArtifactHandleVerified({ artifactReference, filePath }) {
+        if (artifactReference === "Feature2-Report.json") {
+          appendFileSync(filePath, Buffer.alloc(MAX_JSON_BYTES - initialSize + 1, 0x20));
+        }
+      },
+      readSync(descriptor, buffer, offset, length, position) {
+        const count = readSync(descriptor, buffer, offset, length, position);
+        bytesRead += count;
+        return count;
+      },
+      closeSync(descriptor) {
+        closeCalls += 1;
+        return closeSync(descriptor);
+      },
+    });
+
+    expectRejected(result, "artifact_contract_invalid", "Feature2-Report.json");
+    expect(bytesRead).toBe(MAX_JSON_BYTES + 1);
+    expect(closeCalls).toBe(1);
+  });
+
+  it("rejects same-size content mutation when post-read metadata changes", () => {
+    const bundle = setupBundle();
+    let fstatCalls = 0;
+    let closeCalls = 0;
+
+    const result = loadF6ArtifactBundle(bundle, {
+      afterArtifactHandleVerified({ artifactReference, filePath }) {
+        if (artifactReference !== "Feature2-Report.json") return;
+        const content = readFileSync(filePath, "utf8");
+        writeFileSync(filePath, content.replace("2026-08-17", "2027-08-17"), "utf8");
+      },
+      fstatSync(descriptor) {
+        fstatCalls += 1;
+        const stat = fstatSync(descriptor);
+        return fstatCalls === 2
+          ? { ...stat, mtimeMs: stat.mtimeMs + 1, isFile: () => stat.isFile() }
+          : stat;
+      },
+      closeSync(descriptor) {
+        closeCalls += 1;
+        return closeSync(descriptor);
+      },
+    });
+
+    expectRejected(result, "artifact_contract_invalid", "Feature2-Report.json");
+    expect(fstatCalls).toBe(2);
+    expect(closeCalls).toBe(1);
+  });
+
+  it("rejects truncation when post size differs from the pre-read size", () => {
+    const bundle = setupBundle();
+    let closeCalls = 0;
+
+    const result = loadF6ArtifactBundle(bundle, {
+      afterArtifactHandleVerified({ artifactReference, filePath }) {
+        if (artifactReference === "Feature2-Report.json") {
+          truncateSync(filePath, readFileSync(filePath).length - 1);
+        }
+      },
+      closeSync(descriptor) {
+        closeCalls += 1;
+        return closeSync(descriptor);
+      },
+    });
+
+    expectRejected(result, "artifact_contract_invalid", "Feature2-Report.json");
+    expect(closeCalls).toBe(1);
+  });
+
+  it("sanitizes read errors and closes the descriptor exactly once", () => {
+    const bundle = setupBundle();
+    let closeCalls = 0;
+
+    const result = loadF6ArtifactBundle(bundle, {
+      readSync() {
+        throw new Error(`sensitive read failure at ${rootPath(bundle)}`);
+      },
+      closeSync(descriptor) {
+        closeCalls += 1;
+        return closeSync(descriptor);
+      },
+    });
+
+    expectRejected(result, "artifact_contract_invalid", "Feature2-Report.json");
+    expect(JSON.stringify(result)).not.toContain("sensitive read failure");
+    expect(closeCalls).toBe(1);
   });
 
   it("reads a core artifact from its verified handle when the path is replaced", () => {

@@ -1,5 +1,6 @@
+import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
-import { closeSync, fstatSync, lstatSync, openSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { closeSync, fstatSync, lstatSync, openSync, readSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import {
@@ -62,12 +63,50 @@ function canonicalChild(root, artifactReference) {
   }
 }
 
+function readBoundedBytes(descriptor, readDescriptor) {
+  const chunks = [];
+  let totalBytes = 0;
+  while (totalBytes <= MAX_JSON_BYTES) {
+    const chunk = Buffer.allocUnsafe(Math.min(64 * 1024, MAX_JSON_BYTES + 1 - totalBytes));
+    const bytesRead = readDescriptor(descriptor, chunk, 0, chunk.length, totalBytes);
+    if (!Number.isInteger(bytesRead) || bytesRead < 0 || bytesRead > chunk.length) {
+      throw new Error("invalid descriptor read result");
+    }
+    if (bytesRead === 0) break;
+    totalBytes += bytesRead;
+    if (totalBytes > MAX_JSON_BYTES) return { oversized: true };
+    chunks.push(chunk.subarray(0, bytesRead));
+  }
+  return { bytes: Buffer.concat(chunks, totalBytes) };
+}
+
+function stableHandleMetadata(before, after, actualBytes, pathStillReferencesHandle) {
+  const birthtimeStable = !Number.isFinite(before.birthtimeMs)
+    || !Number.isFinite(after.birthtimeMs)
+    || before.birthtimeMs === 0
+    || after.birthtimeMs === 0
+    || before.birthtimeMs === after.birthtimeMs;
+  // Same-size writes that preserve timestamps within platform granularity require stronger OS primitives to detect.
+  return after.isFile()
+    && before.dev === after.dev
+    && before.ino === after.ino
+    && before.size <= MAX_JSON_BYTES
+    && before.size === after.size
+    && after.size === actualBytes
+    && before.mtimeMs === after.mtimeMs
+    && (before.ctimeMs === after.ctimeMs || !pathStillReferencesHandle)
+    && birthtimeStable;
+}
+
 function readVerifiedBytes(filePath, artifactReference, hooks) {
   let descriptor;
   let result;
+  const readDescriptor = hooks?.readSync ?? readSync;
+  const statDescriptor = hooks?.fstatSync ?? fstatSync;
+  const closeDescriptor = hooks?.closeSync ?? closeSync;
   try {
     descriptor = openSync(filePath, "r");
-    const handleStat = fstatSync(descriptor);
+    const handleStat = statDescriptor(descriptor);
     const pathStat = lstatSync(filePath);
     if (pathStat.isSymbolicLink()
       || handleStat.dev !== pathStat.dev
@@ -77,16 +116,28 @@ function readVerifiedBytes(filePath, artifactReference, hooks) {
       result = { rejection: inputRejected("artifact_contract_invalid", artifactReference) };
     } else {
       hooks?.afterArtifactHandleVerified?.({ artifactReference, filePath });
-      result = { bytes: readFileSync(descriptor) };
+      const loaded = readBoundedBytes(descriptor, readDescriptor);
+      if (loaded.oversized) {
+        result = { rejection: inputRejected("artifact_contract_invalid", artifactReference) };
+      } else {
+        const postReadStat = statDescriptor(descriptor);
+        const postReadPathStat = lstatSync(filePath);
+        const pathStillReferencesHandle = postReadPathStat.dev === postReadStat.dev
+          && postReadPathStat.ino === postReadStat.ino;
+        result = stableHandleMetadata(handleStat, postReadStat, loaded.bytes.length, pathStillReferencesHandle)
+          ? loaded
+          : { rejection: inputRejected("artifact_contract_invalid", artifactReference) };
+      }
     }
   } catch (error) {
     result = { rejection: inputRejected(ioReason(error), artifactReference) };
-  }
-  if (descriptor !== undefined) {
-    try {
-      closeSync(descriptor);
-    } catch (error) {
-      result = { rejection: inputRejected(ioReason(error), artifactReference) };
+  } finally {
+    if (descriptor !== undefined) {
+      try {
+        closeDescriptor(descriptor);
+      } catch (error) {
+        result = { rejection: inputRejected(ioReason(error), artifactReference) };
+      }
     }
   }
   return result;
