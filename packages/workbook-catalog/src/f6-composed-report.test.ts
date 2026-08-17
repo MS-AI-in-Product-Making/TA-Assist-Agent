@@ -1,0 +1,405 @@
+import { describe, expect, it } from "vitest";
+import {
+  f6ComposedEngineeringReportSchema,
+  type CalculationRequest,
+  type F2UserReport,
+} from "@ai-assist/contracts";
+import { createCalculation } from "./calculation.js";
+import { createF5DataInterpretation } from "./f5-data-interpretation.js";
+import { createF6Optimization } from "./f6-optimization.js";
+import * as packageRoot from "./index.js";
+import { createF6ComposedEngineeringReport } from "./f6-composed-report.js";
+
+const HASH = "a".repeat(64);
+const IMAGE_HASH = "b".repeat(64);
+
+function text(rawText: string, sourceCell: string) {
+  return { status: "available" as const, rawText, sourceCell };
+}
+
+function number(rawText: string, sourceCell: string, numericValue: number) {
+  return { status: "available" as const, rawText, sourceCell, numericValue, unit: "mm" };
+}
+
+function calculationRequest(worksheetName: string, specificationLimit: number): CalculationRequest {
+  return {
+    contractVersion: "v1",
+    inputClassification: "confidential",
+    projectReference: "project",
+    runReference: `run-1-${worksheetName === "Analysis-A" ? 1 : 2}`,
+    worksheetAnalysisAssets: {
+      contractVersion: "v1",
+      workbook: { classification: "confidential", contentHash: HASH, catalogContractVersion: "v1" },
+      worksheets: [{
+        worksheetName,
+        toleranceLoopDescription: `Loop ${worksheetName}`,
+        factorTables: [{
+          tableId: `table-${worksheetName}`,
+          headerRow: 1,
+          dataRange: { startRow: 2, endRow: 3 },
+          columns: [
+            { semanticField: "factorName", headerText: "Factor", sourceColumn: "A" },
+            { semanticField: "nominalValue", headerText: "Nominal", sourceColumn: "B" },
+            { semanticField: "upperTolerance", headerText: "Upper", sourceColumn: "C" },
+            { semanticField: "lowerTolerance", headerText: "Lower", sourceColumn: "D" },
+            { semanticField: "longTermSafetyFactor", headerText: "LTSF", sourceColumn: "E" },
+            { semanticField: "standardDeviation", headerText: "Sigma", sourceColumn: "F" },
+            { semanticField: "distribution", headerText: "Distribution", sourceColumn: "G" },
+            { semanticField: "unit", headerText: "Unit", sourceColumn: "H" },
+          ],
+          rows: [1, 2].map((factor, index) => {
+            const sourceRow = index + 2;
+            return {
+              sourceRow,
+              fields: {
+                factorName: text(`factor-${factor}`, `${worksheetName}!A${sourceRow}`),
+                nominalValue: number("0", `${worksheetName}!B${sourceRow}`, 0),
+                upperTolerance: number("0.2", `${worksheetName}!C${sourceRow}`, 0.2),
+                lowerTolerance: number("-0.2", `${worksheetName}!D${sourceRow}`, -0.2),
+                longTermSafetyFactor: number("1", `${worksheetName}!E${sourceRow}`, 1),
+                standardDeviation: number("4", `${worksheetName}!F${sourceRow}`, 4),
+                distribution: text("normal", `${worksheetName}!G${sourceRow}`),
+                unit: text("mm", `${worksheetName}!H${sourceRow}`),
+              },
+            };
+          }),
+        }],
+        formulaCells: [],
+        imageAssets: [],
+      }],
+    },
+    requiredFieldCheck: {
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbookContentHash: HASH,
+      status: "readyForNextCheck",
+      blockingIssues: [],
+      advisoryIssues: [],
+      summary: { worksheetsChecked: 1, factorTablesChecked: 1, factorRowsChecked: 2, blockingIssueCount: 0, advisoryIssueCount: 0 },
+    },
+    exceptionResolution: {
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbookContentHash: HASH,
+      knowledgeBaseVersion: "v1",
+      status: "readyToContinue",
+      readyToContinue: true,
+      acceptedExceptions: [],
+      pendingExceptions: [],
+      summary: { actionableSignalCount: 0, acceptedExceptionCount: 0, pendingExceptionCount: 0, invalidCandidateCount: 0 },
+    },
+    worksheetSelection: { worksheetName, tableId: `table-${worksheetName}` },
+    systemSpecification: {
+      designNominal: 0,
+      lowerSpecLimit: -specificationLimit,
+      upperSpecLimit: specificationLimit,
+      targetSigmaLevel: 4,
+      targetCpk: 4 / 3,
+      additionalMeanShift: 0,
+    },
+    criticality: "none",
+    scenarioOverrides: [],
+  };
+}
+
+function governanceRows(worksheetName: string, calculation: ReturnType<typeof createCalculation>) {
+  if (calculation.status !== "completed") throw new Error("fixture calculation failed");
+  const imageReference = {
+    artifact: "f1" as const,
+    worksheetName,
+    relativePath: `images/${worksheetName}.png`,
+    contentHash: IMAGE_HASH,
+  };
+  return calculation.factors.map((factor, index) => ({
+    factorInstanceId: String(index + 1).padStart(64, "0"),
+    drawingDimensionKey: String(index + 11).padStart(64, "0"),
+    deviceLevelDim: `device-${index + 1}`,
+    dimensionDescription: `CTQ ${worksheetName}`,
+    partCategory: "CNC",
+    partSubsystem: "Assembly",
+    drawingNumber: `DRAW-${index + 1}`,
+    dimId: `DIM-${index + 1}`,
+    factorDescription: factor.factorName,
+    nominal: factor.input.nominalValue,
+    upperTolerance: factor.input.upperTolerance,
+    lowerTolerance: factor.input.lowerTolerance,
+    sigmaLevel: factor.input.sigmaLevel,
+    dimIdStatus: "valid" as const,
+    qualitySignals: [],
+    governanceStatus: "complete" as const,
+    imageReference,
+    source: { ...factor.source, sourceCells: {} },
+  }));
+}
+
+function f2Row(worksheetName: string, sourceRow: number) {
+  return {
+    worksheetName,
+    tableId: `table-${worksheetName}`,
+    sourceRow,
+    actualFields: {
+      factorName: `factor-${sourceRow - 1}`,
+      partName: "Part",
+      drawingNumber: `DRAW-${sourceRow - 1}`,
+      dimCharacteristicId: `DIM-${sourceRow - 1}`,
+      partCategory: "CNC",
+      nominalValue: 0,
+      upperTolerance: 0.2,
+      lowerTolerance: -0.2,
+      longTermSafetyFactor: 1,
+      sigmaLevel: 4,
+      distribution: "normal",
+      mean: 0,
+      tolerance: 0.2,
+      oneSigma: 0.05,
+      percentContributionToSigma: 0.5,
+      notes: null,
+    },
+    sourceCells: {},
+    missingRequiredFields: [],
+    missingIdentifiers: [],
+    capabilityStatus: "non_f0_process_category" as const,
+    adoReminderRequested: false,
+  };
+}
+
+function f2Specification(worksheetName: string, specificationLimit: number) {
+  return {
+    status: "available" as const,
+    lowerSpecLimit: { status: "available" as const, actualValue: -specificationLimit, displayValue: String(-specificationLimit), sourceLabel: "Lower", sourceCell: `${worksheetName}!P54`, valueOrigin: "numeric_literal" as const },
+    upperSpecLimit: { status: "available" as const, actualValue: specificationLimit, displayValue: String(specificationLimit), sourceLabel: "Upper", sourceCell: `${worksheetName}!P55`, valueOrigin: "numeric_literal" as const },
+    targetSigmaLevel: { status: "available" as const, actualValue: 4, displayValue: "4", sourceLabel: "Target", sourceCell: `${worksheetName}!P56`, valueOrigin: "numeric_literal" as const },
+    additionalMeanShift: { status: "available" as const, actualValue: 0, displayValue: "0", sourceLabel: "Shift", valueOrigin: "defaulted" as const },
+  };
+}
+
+function summary(readyCount: number, blockedCount: number) {
+  return {
+    worksheetsChecked: readyCount + blockedCount,
+    blockedWorksheetCount: blockedCount,
+    readyWorksheetCount: readyCount,
+    factorRowCount: readyCount * 2 + blockedCount,
+    rowsWithRequiredMissing: 0,
+    requiredMissingFieldCount: 0,
+    missingImageWorksheetCount: blockedCount,
+    internalWithinGuidanceCount: 0,
+    internalGuidanceExceededCount: 0,
+    f0InformationInsufficientCount: 0,
+    publicLibraryMatchCount: 0,
+    nonF0ProcessCategoryCount: readyCount * 2 + blockedCount,
+    unableToCheckCount: 0,
+    publicToleranceDifferenceCount: 0,
+    publicDistributionDifferenceCount: 0,
+    missingDimIdCount: 0,
+    missingPartNumberCount: 0,
+  };
+}
+
+function bundle(specifications: Array<[string, number]>, blockedWorksheetName?: string, failOptions = false) {
+  const calculations = specifications.map(([name, limit]) => createCalculation(calculationRequest(name, limit)));
+  if (calculations.some(({ status }) => status !== "completed")) throw new Error("fixture calculation failed");
+  const rows = calculations.map((calculation, index) => governanceRows(specifications[index]![0], calculation));
+  const f5Report = createF5DataInterpretation({
+    contractVersion: "v1",
+    inputClassification: "confidential",
+    workbook: { fileName: "Anonymous.xlsx", contentHash: HASH },
+    knowledgeBaseVersion: "interpretation-rules-v1",
+    worksheets: calculations.map((calculation, index) => ({
+      worksheetName: specifications[index]![0],
+      imageReference: rows[index]![0]!.imageReference,
+      governanceRows: rows[index]!,
+      calculationResult: calculation,
+      imageObservations: [],
+    })),
+  });
+  const generatedF6Result = createF6Optimization({
+    contractVersion: "v1",
+    inputClassification: "confidential",
+    workbook: { fileName: "Anonymous.xlsx", contentHash: HASH },
+    selectedWorksheetNames: specifications.map(([name]) => name),
+    f2Reference: { artifact: "Feature2-Report.json", contentHash: "2".repeat(64) },
+    f3Reference: { artifact: "Feature3-Report.json", contentHash: "3".repeat(64) },
+    f4Reference: { artifact: "Feature4-Calculation.json", contentHash: "4".repeat(64), runId: "run-1", calculationVersion: "excel-ta-v1" },
+    f5Reference: { artifact: "Feature5-Report.json", contentHash: "5".repeat(64), interpretationVersion: "f5-data-interpretation-v1" },
+    f0Versions: { knowledgeBaseVersion: "v1", capabilityVersion: "internal-v1", interpretationVersion: "interpretation-rules-v1" },
+    scenarioPolicyVersion: "f6-scenario-policy-v1",
+    worksheets: calculations.map((calculation, index) => ({
+      worksheetName: specifications[index]![0],
+      f4CalculationIndex: index + 1,
+      baselineCalculationRequest: calculationRequest(specifications[index]![0], specifications[index]![1]),
+      baselineCalculation: calculation,
+      f5Worksheet: f5Report.worksheets[index],
+      f3GovernanceRows: rows[index],
+      f2Findings: [],
+      supplierBindings: [],
+    })),
+  }, failOptions ? {
+    calculateScenario() {
+      throw { code: "controlled_calculation_failed" };
+    },
+  } : {});
+  const f6Result = structuredClone(generatedF6Result);
+  for (const worksheet of f6Result.worksheets) {
+    for (const risk of worksheet.risks) risk.status = "closed";
+  }
+  const readyWorksheets = specifications.map(([worksheetName, limit]) => ({
+    worksheetName,
+    toleranceLoopDescription: `Loop ${worksheetName}`,
+    status: "ready" as const,
+    tolerancePathImageStatus: "available" as const,
+    systemSpecification: f2Specification(worksheetName, limit),
+    systemSpecificationIssues: [],
+    rows: [f2Row(worksheetName, 2), f2Row(worksheetName, 3)],
+    missingFieldSummary: [],
+  }));
+  const blockedWorksheets = blockedWorksheetName === undefined ? [] : [{
+    worksheetName: blockedWorksheetName,
+    toleranceLoopDescription: `Loop ${blockedWorksheetName}`,
+    status: "blocked" as const,
+    tolerancePathImageStatus: "unavailable" as const,
+    systemSpecification: { status: "unavailable" as const, reasonCode: "legacy_artifact_missing_system_specification" as const },
+    systemSpecificationIssues: [{ field: "lowerSpecLimit" as const, reasonCode: "legacy_artifact_missing_system_specification" as const }],
+    rows: [f2Row(blockedWorksheetName, 2)],
+    missingFieldSummary: [{ field: "tolerancePathImage" as const, factorCount: 0, sourceRows: [] }],
+  }];
+  const f2Report: F2UserReport = {
+    contractVersion: "v1",
+    inputClassification: "confidential",
+    status: blockedWorksheets.length === 0 ? "completed" : "partiallyBlocked",
+    workbook: { fileName: "Anonymous.xlsx", contentHash: HASH, f1GeneratedAt: "2026-08-17T00:00:00.000Z" },
+    knowledgeBaseVersions: ["v1", "internal-v1"],
+    mappingRuleVersion: "v1",
+    artifactRoot: "controlled/f1",
+    worksheets: [...readyWorksheets, ...blockedWorksheets],
+    f4Handoffs: readyWorksheets.map((worksheet) => ({
+      contractVersion: "v1",
+      handoffVersion: "f4-handoff-v1",
+      inputClassification: "confidential",
+      status: "ready",
+      workbookContentHash: HASH,
+      worksheetName: worksheet.worksheetName,
+      toleranceLoopDescription: worksheet.toleranceLoopDescription,
+      systemSpecification: {
+        designNominal: 0,
+        lowerSpecLimit: worksheet.systemSpecification.lowerSpecLimit,
+        upperSpecLimit: worksheet.systemSpecification.upperSpecLimit,
+        targetSigmaLevel: worksheet.systemSpecification.targetSigmaLevel,
+        targetCpk: 4 / 3,
+        additionalMeanShift: worksheet.systemSpecification.additionalMeanShift,
+      },
+      factors: [],
+    })),
+    adoEvents: [],
+    summary: summary(readyWorksheets.length, blockedWorksheets.length),
+  };
+  return { f2Report, f5Report, f6Result };
+}
+
+describe("createF6ComposedEngineeringReport", () => {
+  it.each([
+    [0.12, "FAIL"],
+    [0.25, "RISK"],
+    [1, "PASS"],
+  ] as const)("derives %s capability as %s", (specificationLimit, expectedStatus) => {
+    const report = createF6ComposedEngineeringReport(bundle([["Analysis-A", specificationLimit]]));
+
+    expect(report.overallStatus).toBe(expectedStatus);
+    expect(report.worksheets[0]!.status).toBe(expectedStatus);
+    expect(f6ComposedEngineeringReportSchema.parse(report)).toEqual(report);
+  });
+
+  it("keeps blocked worksheets in input validation only and makes PASS plus blocked overall RISK", () => {
+    const report = createF6ComposedEngineeringReport(bundle([["Analysis-A", 1]], "Blocked-Sheet"));
+
+    expect(report.overallStatus).toBe("RISK");
+    expect(report.blockedWorksheets.map(({ worksheetName }) => worksheetName)).toEqual(["Blocked-Sheet"]);
+    expect(report.worksheets.map(({ worksheetName }) => worksheetName)).toEqual(["Analysis-A"]);
+    expect(JSON.stringify(report.blockedWorksheets)).not.toMatch(/capabilityAssessment|options|whatIfAnalysis/);
+
+    const failed = createF6ComposedEngineeringReport(bundle([["Analysis-A", 0.12]], "Blocked-Sheet"));
+    expect(failed.overallStatus).toBe("FAIL");
+  });
+
+  it("treats missing capability and open High risk as RISK", () => {
+    const missing = createF6ComposedEngineeringReport(bundle([["Analysis-A", 0.12]], undefined, true));
+    expect(missing.worksheets[0]).toMatchObject({ status: "RISK", missingCapabilityData: true });
+
+    const openRiskInput = bundle([["Analysis-A", 1]]);
+    openRiskInput.f6Result.worksheets[0]!.risks[0]!.status = "open";
+    const openRisk = createF6ComposedEngineeringReport(openRiskInput);
+    expect(openRisk.worksheets[0]!.status).toBe("RISK");
+  });
+
+  it("uses the worst worksheet without averaging Cpk and limits fixed report data", () => {
+    const report = createF6ComposedEngineeringReport(bundle([["Analysis-A", 1], ["Analysis-B", 0.12]]));
+    const worst = report.worksheets.find(({ worksheetName }) => worksheetName === "Analysis-B")!;
+
+    expect(report.overallStatus).toBe("FAIL");
+    expect(report.workbookExecutiveSummary.join(" ")).toContain("Analysis-B");
+    expect(report.workbookExecutiveSummary).toHaveLength(5);
+    expect(report.workbookExecutiveSummary.join(" ")).not.toContain(String(
+      report.worksheets.reduce((sum, worksheet) => sum + worksheet.sections.capabilityAssessment.metrics.cpk, 0) / report.worksheets.length,
+    ));
+    expect(worst.sections.executiveSummary.length).toBeLessThanOrEqual(5);
+    expect(worst.sections.finalConclusion.length).toBeLessThanOrEqual(10);
+    expect(worst.sections.whatIfAnalysis.options.map(({ optionKind }) => optionKind)).toEqual([
+      "reduce_top_contributor_20",
+      "reduce_top_3_contributors_30",
+      "improve_supplier_capability",
+      "tighten_datum_strategy",
+    ]);
+  });
+
+  it("preserves governed evidence classes and permits only verified options or evidence closure recommendations", () => {
+    const { f2Report, f5Report, f6Result } = bundle([["Analysis-A", 0.2]]);
+    const report = createF6ComposedEngineeringReport({ f2Report, f5Report, f6Result });
+    const worksheet = report.worksheets[0]!;
+    const verifiedOptionIds = new Set(f6Result.worksheets[0]!.options.map(({ optionId }) => optionId));
+
+    expect(worksheet.sections.rootCauseAnalysis.factBasedFindings.every((finding) => finding.startsWith("FACT"))).toBe(true);
+    expect(worksheet.sections.rootCauseAnalysis.signals.every((signal) => signal.startsWith("SIGNAL"))).toBe(true);
+    expect(worksheet.sections.recommendations.every((recommendation) =>
+      recommendation.optionId === undefined || verifiedOptionIds.has(recommendation.optionId))).toBe(true);
+    expect(worksheet.sections.whatIfAnalysis.roiStatus).toBe("not_computed");
+    expect(worksheet.sections.whatIfAnalysis.highestImpactAction).not.toContain("Highest ROI");
+  });
+
+  it("rejects workbook and worksheet identity mismatches", () => {
+    const input = bundle([["Analysis-A", 1]]);
+    const wrongHash = structuredClone(input.f5Report);
+    wrongHash.workbook.contentHash = "f".repeat(64);
+    expect(() => createF6ComposedEngineeringReport({ ...input, f5Report: wrongHash })).toThrow(/Invalid F5 report|identity/i);
+
+    const missingWorksheet = structuredClone(input.f6Result);
+    missingWorksheet.worksheets[0]!.worksheetName = "Analysis-B";
+    expect(() => createF6ComposedEngineeringReport({ ...input, f6Result: missingWorksheet })).toThrow();
+  });
+
+  it("joins worksheets by identity without depending on input order", () => {
+    const input = bundle([["Analysis-A", 1], ["Analysis-B", 0.12]]);
+    const f5Report = structuredClone(input.f5Report);
+    f5Report.worksheets = [...f5Report.worksheets].reverse();
+
+    const report = createF6ComposedEngineeringReport({ ...input, f5Report });
+
+    expect(report.worksheets.map(({ worksheetName }) => worksheetName)).toEqual(["Analysis-A", "Analysis-B"]);
+    expect(report.worksheets.map(({ status }) => status)).toEqual(["PASS", "FAIL"]);
+  });
+
+  it("deep freezes output without mutating inputs and is deterministic", () => {
+    const input = bundle([["Analysis-A", 0.2]]);
+    const snapshot = structuredClone(input);
+    const first = createF6ComposedEngineeringReport(input);
+    const second = createF6ComposedEngineeringReport(structuredClone(input));
+
+    expect(second).toEqual(first);
+    expect(input).toEqual(snapshot);
+    expect(Object.isFrozen(first)).toBe(true);
+    expect(Object.isFrozen(first.worksheets)).toBe(true);
+    expect(Object.isFrozen(first.worksheets[0]!.sections.whatIfAnalysis.options)).toBe(true);
+  });
+
+  it("exports the governed service from the package root", () => {
+    expect(packageRoot.createF6ComposedEngineeringReport).toBe(createF6ComposedEngineeringReport);
+  });
+});
