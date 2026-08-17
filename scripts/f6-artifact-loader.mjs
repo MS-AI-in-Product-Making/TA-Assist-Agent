@@ -273,6 +273,8 @@ function indexCalculationsExactlyOnce(calculations, selection) {
 }
 
 function f2Findings(worksheet, f2Reference) {
+  // F2 validation codes remain ordinary abnormalities or governance gaps. A
+  // confirmed requirement violation must arrive as an explicit governed finding.
   return worksheet.rows.flatMap((row) => [
     ...row.missingRequiredFields.map((field) => ({
       findingCode: `missing_required_field:${field}`,

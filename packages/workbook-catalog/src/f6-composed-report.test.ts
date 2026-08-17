@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   f6ComposedEngineeringReportSchema,
+  f6OptimizationResultSchema,
   type CalculationRequest,
   type F2UserReport,
   type F5DataInterpretationResult,
@@ -8,6 +9,7 @@ import {
 import { createCalculation } from "./calculation.js";
 import { createF5DataInterpretation } from "./f5-data-interpretation.js";
 import { createF6Optimization } from "./f6-optimization.js";
+import { calculateF6Scenario } from "./f6-scenario-adapter.js";
 import * as packageRoot from "./index.js";
 import { createF6ComposedEngineeringReport } from "./f6-composed-report.js";
 
@@ -351,6 +353,70 @@ describe("createF6ComposedEngineeringReport", () => {
     expect(report.overallStatus).toBe(expectedStatus);
     expect(report.worksheets[0]).toMatchObject({ status: expectedStatus, missingCapabilityData: false });
     expect(report.worksheets[0]!.sections.capabilityAssessment.metrics.cpk).toBeGreaterThan(0);
+    expect(report.worksheets[0]!.sections.inputValidation).toContainEqual(expect.objectContaining({
+      findingKind: "optimization_failure",
+      affectsCapabilityData: false,
+    }));
+  });
+
+  it("consumes a partial optimization failure produced by the orchestrator as RISK", () => {
+    const input = bundle([["Analysis-A", 1]]);
+    const generated = createF6Optimization({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbook: input.f6Result.workbook,
+      selectedWorksheetNames: ["Analysis-A"],
+      f2Reference: input.f6Result.provenance.f2Reference,
+      f3Reference: input.f6Result.provenance.f3Reference,
+      f4Reference: input.f6Result.provenance.f4Reference,
+      f5Reference: input.f6Result.provenance.f5Reference,
+      f0Versions: input.f6Result.provenance.f0Versions,
+      scenarioPolicyVersion: input.f6Result.provenance.scenarioPolicyVersion,
+      worksheets: [{
+        worksheetName: "Analysis-A",
+        f4CalculationIndex: 1,
+        baselineCalculationRequest: calculationRequest("Analysis-A", 1),
+        baselineCalculation: input.f5Report.worksheets[0]!.calculationResult,
+        f5Worksheet: input.f5Report.worksheets[0]!,
+        f3GovernanceRows: input.f5Report.worksheets[0]!.governanceRows,
+        f2Findings: [],
+        supplierBindings: [],
+      }],
+    }, {
+      calculateScenario(scenarioInput) {
+        if (scenarioInput.scenario.optionKind === "reduce_top_contributor_20") {
+          throw { code: "controlled_calculation_failed", privateValue: "DO-NOT-LEAK" };
+        }
+        return calculateF6Scenario(scenarioInput);
+      },
+    });
+    const f6Result = structuredClone(generated);
+    for (const risk of f6Result.worksheets[0]!.risks) risk.status = "closed";
+    for (const category of ["Manufacturing", "Assembly", "Supplier", "Customer Experience"] as const) {
+      f6Result.worksheets[0]!.risks.push({
+        riskId: `Analysis-A:fixture:${category}`,
+        category,
+        rating: "Low",
+        status: "closed",
+        reason: `Governed ${category} assessment found no open risk.`,
+        evidenceReferences: [{
+          artifact: f6Result.provenance.f5Reference.artifact,
+          contentHash: f6Result.provenance.f5Reference.contentHash,
+        }],
+      });
+    }
+
+    const parsed = f6OptimizationResultSchema.safeParse(f6Result);
+    expect(parsed.success, parsed.success ? undefined : JSON.stringify(parsed.error.issues, null, 2)).toBe(true);
+    const report = createF6ComposedEngineeringReport({ ...input, f6Result });
+
+    expect(f6Result.worksheets[0]!.status).toBe("partially_completed");
+    expect(JSON.stringify(f6Result)).not.toContain("DO-NOT-LEAK");
+    expect(report.worksheets[0]!.status).toBe("RISK");
+    expect(report.worksheets[0]!.sections.inputValidation).toContainEqual(expect.objectContaining({
+      findingKind: "optimization_failure",
+      severity: "Major",
+    }));
   });
 
   it("uses findingKind only for requirement violations", () => {

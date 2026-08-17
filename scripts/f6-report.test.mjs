@@ -155,10 +155,45 @@ describe("renderF6Report", () => {
     expect(markdown).toContain(String.raw`Highest Impact Action: insufficient\_evidence`);
     expect(markdown).toContain(String.raw`ROI: not\_computed`);
     expect(markdown).toContain(String.raw`| Cpk | 0.8 | FAIL |`);
+    expect(markdown).toContain("Capability Status: FAIL");
     expect(markdown).toContain(String.raw`Optimization Status: calculation\_failed`);
+    expect(markdown).not.toMatch(/^- Status:/m);
     expect(markdown).not.toMatch(/meets target|below target/);
     expect(markdown).not.toContain("Highest ROI");
     expect(markdown.endsWith("\n")).toBe(true);
+  });
+
+  it.each([
+    [0.8, "FAIL"],
+    [1.1, "RISK"],
+    [1.33, "PASS"],
+  ])("renders baseline Cpk %s with capability status %s independently of optimization status", (cpk, expectedStatus) => {
+    const input = result();
+    input.worksheets[0].baselineMetrics.cpk = cpk;
+
+    const markdown = renderF6Report(input);
+
+    expect(markdown).toContain(`Capability Status: ${expectedStatus}`);
+    expect(markdown).toContain(String.raw`Optimization Status: calculation\_failed`);
+  });
+
+  it.each([
+    ["validation_abnormality", true, "RISK"],
+    ["confirmed_requirement_violation", false, "FAIL"],
+    ["optimization_failure", false, "PASS"],
+  ])("derives capability status from governed %s input risk", (findingKind, affectsCapabilityData, expectedStatus) => {
+    const input = result();
+    input.worksheets[0].baselineMetrics.cpk = 1.33;
+    input.worksheets[0].inputFindings = [{
+      findingCode: "governed-finding",
+      findingKind,
+      severity: "Major",
+      message: "A governed finding is available.",
+      affectsCapabilityData,
+      evidenceReferences: [{ artifact: "Feature2-Report.json", contentHash: HASH }],
+    }];
+
+    expect(renderF6Report(input)).toContain(`Capability Status: ${expectedStatus}`);
   });
 
   it("escapes Markdown, HTML, tables, and links without emitting traces or absolute paths", () => {

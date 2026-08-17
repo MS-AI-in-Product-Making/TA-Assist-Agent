@@ -268,6 +268,7 @@ describe("createF6Optimization", () => {
     expect(worksheet.options[8]).toMatchObject({ status: "insufficient_evidence", predictedImprovement: "insufficient_evidence" });
     expect(worksheet.options[7]).not.toHaveProperty("evidenceScope");
     expect(worksheet.options[8]).not.toHaveProperty("evidenceScope");
+    expect(worksheet.inputFindings.some(({ findingKind }) => findingKind === "optimization_failure")).toBe(false);
     expect(worksheet.roiStatus).toBe("not_computed");
     expect(worksheet.options.filter((option) => option.status === "completed").every((option) => option.roiScore === "not_computed")).toBe(true);
     for (const option of worksheet.options.filter((candidate) => candidate.status === "completed")) {
@@ -493,6 +494,17 @@ describe("createF6Optimization", () => {
       impactRank: null,
     });
     expect(JSON.stringify(result)).not.toContain("DO-NOT-LEAK");
+    expect(worksheet.inputFindings).toContainEqual({
+      findingCode: "f6_option_calculation_failed",
+      findingKind: "optimization_failure",
+      severity: "Major",
+      message: "One or more controlled optimization options could not be calculated.",
+      affectsCapabilityData: false,
+      evidenceReferences: [
+        { artifact: "f4/result.json", contentHash: HASH },
+        { artifact: "f5/result.json", contentHash: HASH },
+      ],
+    });
     expect(calculateScenario).toHaveBeenCalledTimes(7);
     expect(result.summary).toMatchObject({ completedOptionCount: 6, calculationFailedOptionCount: 1, insufficientEvidenceOptionCount: 2 });
   });
@@ -517,6 +529,12 @@ describe("createF6Optimization", () => {
       ]),
       recommendations: [],
       roiStatus: "not_computed",
+      inputFindings: [expect.objectContaining({
+        findingCode: "f6_option_calculation_failed",
+        findingKind: "optimization_failure",
+        severity: "Major",
+        affectsCapabilityData: false,
+      })],
     });
     expect(result.worksheets[0]).not.toHaveProperty("highestImpactAction");
     expect(result.summary).toEqual({
@@ -529,6 +547,25 @@ describe("createF6Optimization", () => {
       calculationFailedOptionCount: 7,
       insufficientEvidenceOptionCount: 2,
     });
+  });
+
+  it("does not duplicate an existing governed optimization failure finding", () => {
+    const input = request();
+    input.worksheets[0]!.f2Findings.push({
+      findingCode: "upstream_optimization_failure",
+      findingKind: "optimization_failure",
+      severity: "Major",
+      message: "A governed upstream optimization failure is already recorded.",
+      affectsCapabilityData: false,
+      evidenceReferences: [{ artifact: input.f5Reference.artifact, contentHash: input.f5Reference.contentHash }],
+    });
+
+    const result = createF6Optimization(input, {
+      calculateScenario: vi.fn(() => { throw { code: "calculation_not_possible" }; }),
+    });
+
+    expect(result.worksheets[0]!.inputFindings.filter(({ findingKind }) =>
+      findingKind === "optimization_failure")).toEqual(input.worksheets[0]!.f2Findings);
   });
 
   it("aggregates completed and calculation-failed worksheets as partially completed", () => {

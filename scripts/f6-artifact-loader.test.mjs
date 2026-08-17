@@ -481,6 +481,10 @@ describe("F6 governed bundle validation", () => {
       const blocked = f2.worksheets.find(({ worksheetName }) => worksheetName === "Blocked-A");
       blocked.rows[0].missingIdentifiers = ["partNumber"];
       blocked.rows[0].actualFields.drawingNumber = null;
+      blocked.systemSpecificationIssues = [{
+        field: "lowerSpecLimit",
+        reasonCode: "legacy_artifact_missing_system_specification",
+      }];
       f2.summary.missingPartNumberCount = 1;
     });
 
@@ -492,7 +496,13 @@ describe("F6 governed bundle validation", () => {
     expect(result.blockedWorksheets[0].findings).toEqual(expect.arrayContaining([
       expect.objectContaining({ findingKind: "validation_abnormality", findingCode: "tolerance_path_image_unavailable" }),
       expect.objectContaining({ findingKind: "governance_gap", findingCode: "missing_identifier:partNumber" }),
+      expect.objectContaining({ findingKind: "validation_abnormality", findingCode: expect.stringMatching(/^system_specification:/) }),
     ]));
+    expect(new Set(result.blockedWorksheets[0].findings.map(({ findingKind }) => findingKind))).toEqual(
+      new Set(["validation_abnormality", "governance_gap"]),
+    );
+    expect(result.blockedWorksheets[0].findings.some(({ findingKind }) =>
+      findingKind === "confirmed_requirement_violation")).toBe(false);
   });
 
   it("preserves requested worksheet order while retaining original F4 calculation indices", () => {

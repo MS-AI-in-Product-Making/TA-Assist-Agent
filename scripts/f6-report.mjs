@@ -28,17 +28,20 @@ function optionResult(option) {
 
 function capabilityStatus(worksheet) {
   if (worksheet.baselineMetrics.cpk < 1) return "FAIL";
+  if (worksheet.inputFindings.some(({ findingKind }) => findingKind === "confirmed_requirement_violation")) return "FAIL";
+  if (worksheet.inputFindings.some(({ affectsCapabilityData }) => affectsCapabilityData)) return "RISK";
   if (worksheet.baselineMetrics.cpk < worksheet.targetCapability.targetCpk) return "RISK";
   return "PASS";
 }
 
 function renderReadyWorksheet(lines, worksheet) {
+  const baselineCapabilityStatus = capabilityStatus(worksheet);
   lines.push(
     `## Worksheet: ${cell(worksheet.worksheetName)}`,
     "",
     "### Executive Summary",
     "",
-    `- Status: ${cell(worksheet.status)}`,
+    `- Capability Status: ${baselineCapabilityStatus}`,
     `- Optimization Status: ${cell(worksheet.status)}`,
     `- Target Cpk: ${worksheet.targetCapability.targetCpk} (${cell(worksheet.targetCapability.source)})`,
     `- Highest Impact Action: ${cell(worksheet.highestImpactAction?.optionId ?? "insufficient_evidence")}`,
@@ -51,7 +54,7 @@ function renderReadyWorksheet(lines, worksheet) {
     `| Mean | ${worksheet.baselineMetrics.mean} | baseline |`,
     `| Sigma | ${worksheet.baselineMetrics.rssSigma} | baseline |`,
     `| Cp | ${worksheet.baselineMetrics.cp} | baseline |`,
-    `| Cpk | ${worksheet.baselineMetrics.cpk} | ${capabilityStatus(worksheet)} |`,
+    `| Cpk | ${worksheet.baselineMetrics.cpk} | ${baselineCapabilityStatus} |`,
     `| Yield | ${worksheet.baselineMetrics.yield} | baseline |`,
     `| DPMO | ${worksheet.baselineMetrics.dpm} | baseline |`,
     "",
@@ -109,7 +112,7 @@ export function renderF6Report(result, options = {}) {
     "",
     "## Workbook Executive Summary",
     "",
-    `- Status: ${cell(parsed.status)}`,
+    `- Optimization Status: ${cell(parsed.status)}`,
     `- Workbook: ${cell(parsed.workbook.fileName)}`,
     `- Worksheets: ${parsed.summary.worksheetCount}`,
     `- Completed options: ${parsed.summary.completedOptionCount}`,

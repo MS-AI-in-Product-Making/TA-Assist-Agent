@@ -127,6 +127,25 @@ function f4ArtifactReference(request: F6OptimizationRequest) {
   return { artifact: request.f4Reference.artifact, contentHash: request.f4Reference.contentHash };
 }
 
+function inputFindings(request: F6OptimizationRequest, worksheet: F6OptimizationRequest["worksheets"][number], options: readonly F6Option[]) {
+  const findings = structuredClone(worksheet.f2Findings);
+  if (!options.some(({ status }) => status === "calculation_failed")
+    || findings.some(({ findingKind }) => findingKind === "optimization_failure")) {
+    return findings;
+  }
+  return [...findings, {
+    findingCode: "f6_option_calculation_failed",
+    findingKind: "optimization_failure" as const,
+    severity: "Major" as const,
+    message: "One or more controlled optimization options could not be calculated.",
+    affectsCapabilityData: false,
+    evidenceReferences: [
+      f4ArtifactReference(request),
+      { artifact: request.f5Reference.artifact, contentHash: request.f5Reference.contentHash },
+    ],
+  }];
+}
+
 function factorOverride(change: F6ToleranceChange) {
   return {
     worksheetName: change.worksheetName,
@@ -576,7 +595,7 @@ function optimizeWorksheet(
         : "completed",
     baselineMetrics: metrics(baseline),
     targetCapability,
-    inputFindings: structuredClone(worksheet.f2Findings),
+    inputFindings: inputFindings(request, worksheet, roi.options),
     options: roi.options,
     risks,
     recommendations,
