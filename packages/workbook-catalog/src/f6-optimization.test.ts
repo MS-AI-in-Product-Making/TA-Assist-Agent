@@ -308,9 +308,63 @@ describe("createF6Optimization", () => {
     expect(completed.map(({ impactRank }) => impactRank).sort((left, right) => left! - right!)).toEqual(
       Array.from({ length: completed.length }, (_, index) => index + 1),
     );
-    expect(worksheet.highestImpactAction?.optionId).toBe(completed.find(({ impactRank }) => impactRank === 1)?.optionId);
+    const highestSupported = completed
+      .filter(({ feasibility }) => feasibility.status === "supported")
+      .sort((left, right) => left.impactRank! - right.impactRank!)[0];
+    expect(worksheet.highestImpactAction?.optionId).toBe(highestSupported?.optionId);
     expect(worksheet.recommendations.every(({ optionId }) =>
       completed.some((option) => option.optionId === optionId))).toBe(true);
+  });
+
+  it("keeps default mean shift as a review-only option without automatically recommending it", () => {
+    const input = request();
+    const result = createF6Optimization(input);
+    const worksheet = result.worksheets[0];
+    if (worksheet?.status === "input_rejected" || worksheet === undefined) throw new Error("expected ready worksheet");
+    const meanShift = worksheet.options.find(({ optionKind }) => optionKind === "mean_shift_centering");
+    if (meanShift?.status !== "completed") throw new Error("expected completed mean-shift option");
+
+    expect(meanShift.toleranceChanges).toEqual([]);
+    expect(meanShift.feasibility).toEqual({
+      status: "requires_engineering_review",
+      reasonCodes: ["mean_shift_physical_constraint_unverified"],
+      evidenceReferences: [input.f4Reference.artifact, input.f5Reference.artifact],
+    });
+    expect(meanShift.evidenceReferences).toEqual(expect.arrayContaining([
+      { artifact: input.f4Reference.artifact, contentHash: input.f4Reference.contentHash },
+      { artifact: input.f5Reference.artifact, contentHash: input.f5Reference.contentHash },
+    ]));
+    expect(worksheet.recommendations.some(({ optionId }) => optionId === meanShift.optionId)).toBe(false);
+    expect(worksheet.highestImpactAction?.optionId).not.toBe(meanShift.optionId);
+  });
+
+  it("conservatively keeps mean shift under review when exact confirmed datum evidence lacks design authorization", () => {
+    const input = request();
+    input.datumEvidence = [{
+      evidenceVersion: "datum-strategy-v1",
+      datumFace: "A",
+      stackStart: "A",
+      factorDirections: input.worksheets[0]!.baselineCalculation.factors.map(({ source }) => ({
+        tableId: source.tableId,
+        sourceRow: source.sourceRow,
+        direction: 1 as const,
+      })),
+      datumChainEdges: [{ from: "A", to: "B" }],
+      crossSubsystemRelations: [],
+      drawingEvidence: ["drawings/a.pdf"],
+      reviewStatus: "confirmed",
+      source: "datum/a.json",
+      effectiveVersion: "v1",
+      contentHash: "c".repeat(64),
+    }];
+
+    const result = createF6Optimization(input);
+    const meanShift = result.worksheets[0]!.options.find(({ optionKind }) => optionKind === "mean_shift_centering");
+    if (meanShift?.status !== "completed") throw new Error("expected completed mean-shift option");
+    expect(meanShift.feasibility).toMatchObject({
+      status: "requires_engineering_review",
+      reasonCodes: ["mean_shift_physical_constraint_unverified"],
+    });
   });
 
   it("isolates one controlled calculation failure and continues remaining options", () => {
@@ -635,6 +689,38 @@ describe("createF6Optimization", () => {
       "requires_engineering_review",
       "insufficient_evidence",
       "not_supported",
+    ]);
+  });
+
+  it("ranks a supported option above an otherwise equal review-only option with a larger delta", () => {
+    const result = createF6Optimization(request());
+    const worksheet = result.worksheets[0];
+    if (worksheet?.status === "input_rejected" || worksheet === undefined) throw new Error("expected ready worksheet");
+    const template = worksheet.options.find((option) => option.status === "completed")!;
+    if (template.status !== "completed") throw new Error("expected completed option");
+    const supported = {
+      ...structuredClone(template),
+      optionId: "supported",
+      impactRank: null,
+      deltaCpk: 0.1,
+      feasibility: { status: "supported" as const, reasonCodes: ["supported"], evidenceReferences: [] },
+    };
+    const reviewOnly = {
+      ...structuredClone(template),
+      optionId: "review-only",
+      impactRank: null,
+      deltaCpk: 1,
+      feasibility: {
+        status: "requires_engineering_review" as const,
+        reasonCodes: ["mean_shift_physical_constraint_unverified"],
+        evidenceReferences: [],
+      },
+    };
+
+    const ranked = rankCompletedOptions([reviewOnly, supported], worksheet.targetCapability.targetCpk, []);
+    expect([...ranked].sort((left, right) => left.impactRank! - right.impactRank!).map(({ optionId }) => optionId)).toEqual([
+      "supported",
+      "review-only",
     ]);
   });
 

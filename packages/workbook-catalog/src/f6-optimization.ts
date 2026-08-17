@@ -217,12 +217,12 @@ export function rankCompletedOptions(
     return score + ({ Critical: 2, High: 1, Medium: 0, Low: 0 }[risk.rating]);
   }, 0);
   const ordered = [...completed].sort((left, right) =>
-    Number(right.resultMetrics.cpk >= targetCpk) - Number(left.resultMetrics.cpk >= targetCpk)
+    feasibilityRank(right) - feasibilityRank(left)
+    || Number(right.resultMetrics.cpk >= targetCpk) - Number(left.resultMetrics.cpk >= targetCpk)
     || right.deltaCpk - left.deltaCpk
     || (-right.deltaDpm) - (-left.deltaDpm)
     || right.deltaYield - left.deltaYield
     || closureScore(right) - closureScore(left)
-    || feasibilityRank(right) - feasibilityRank(left)
     || compareText(left.optionId, right.optionId));
   const ranks = new Map(ordered.map((option, index) => [option.optionId, index + 1]));
   return options.map((option) => option.status === "completed"
@@ -317,8 +317,12 @@ function buildNumericOption(
     ...(systemSpecification === undefined ? {} : { systemSpecification }),
   };
   const scenarioResult = calculateScenario({ baselineRequest, scenario });
-  const feasibility = changes.length === 0
-    ? { status: "supported" as const, reasonCodes: ["controlled_centering_calculation_completed"], evidenceReferences: [] }
+  const feasibility = kind === "mean_shift_centering"
+    ? {
+        status: "requires_engineering_review" as const,
+        reasonCodes: ["mean_shift_physical_constraint_unverified"],
+        evidenceReferences: [request.f4Reference.artifact, request.f5Reference.artifact],
+      }
     : combineFeasibility(changes.map((change) => assessToleranceFeasibility({
       requestedToleranceBand: change.resultingBand,
       evidence: supplierEvidenceBySource.get(sourceKey(change)),
@@ -331,7 +335,12 @@ function buildNumericOption(
     feasibility,
     ...(reverseSolve === undefined ? {} : { reverseSolve }),
     ...(apportionment === undefined ? {} : { apportionment }),
-  }, supplierReferences);
+  }, [
+    ...(kind === "mean_shift_centering"
+      ? [{ artifact: request.f5Reference.artifact, contentHash: request.f5Reference.contentHash }]
+      : []),
+    ...supplierReferences,
+  ]);
 }
 
 function optimizeWorksheet(
@@ -491,9 +500,11 @@ function optimizeWorksheet(
     };
   });
   const ranked = rankCompletedOptions(optionsWithRiskClosure, targetCapability.targetCpk, risks);
-  const highest = ranked.find((option) => option.status === "completed" && option.impactRank === 1) as CompletedOption | undefined;
+  const highest = ranked.find((option) => option.status === "completed"
+    && option.feasibility.status === "supported"
+    && option.impactRank === 1) as CompletedOption | undefined;
   const recommendations = ranked
-    .filter((option): option is CompletedOption => option.status === "completed")
+    .filter((option): option is CompletedOption => option.status === "completed" && option.feasibility.status === "supported")
     .map((option) => ({
       recommendationId: `recommend:${option.optionId}`,
       optionId: option.optionId,
