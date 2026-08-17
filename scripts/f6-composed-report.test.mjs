@@ -94,25 +94,23 @@ function report() {
           evidenceReferences: [REFERENCE],
         },
         rootCauseAnalysis: {
-          factBasedFindings: [
-            "FACT visual-1: visual datum_chain observation remains unreviewed.",
-            "RULE rule-1: governed interpretation rule evidence.",
-            "OPTION option-1: F5 option evidence retained without recommendation promotion.",
-          ],
+          factBasedFindings: ["FACT visual-1: visual datum_chain observation remains unreviewed."],
+          ruleFindings: ["RULE rule-1: governed interpretation rule evidence."],
+          optionFindings: ["OPTION option-1: F5 option evidence retained without recommendation promotion."],
           signals: ["SIGNAL context-1: datum context is unreviewed; engineering review required."],
           evidenceStatus: "supported",
           evidenceReferences: [REFERENCE],
         },
-        riskAssessment: [{
-          category: "Product",
-          rating: "High",
-          status: "open",
-          reason: "Cpk below target | <u>risk</u>",
+        riskAssessment: ["Product", "Manufacturing", "Assembly", "Supplier", "Customer Experience"].map((category, index) => ({
+          category,
+          rating: index === 0 ? "High" : "Low",
+          status: index === 0 ? "open" : "closed",
+          reason: index === 0 ? "Cpk below target | <u>risk</u>" : `Governed ${category} assessment found no elevated risk.`,
           evidenceReferences: [REFERENCE],
-        }],
+        })),
         recommendations: [
-          { text: "Review controlled top contributor option.", optionId: "Ready:reduce_top_contributor_20", evidenceReferences: [REFERENCE] },
-          { text: "Evidence closure datum-review: confirm datum evidence.", evidenceReferences: [REFERENCE] },
+          { kind: "verified_option", recommendationId: "recommend-top", text: "Review controlled top contributor option.", expectedBenefit: "Improve Cpk.", optionId: "Ready:reduce_top_contributor_20", evidenceReferences: [REFERENCE] },
+          { kind: "evidence_closure", recommendationId: "close-datum", clarificationId: "datum-review", text: "Evidence closure datum-review: confirm datum evidence.", expectedBenefit: "Close datum evidence gap.", evidenceReferences: [REFERENCE] },
         ],
         whatIfAnalysis: {
           options: [
@@ -214,6 +212,35 @@ describe("renderComposedEngineeringReport", () => {
     expect(markdown).toContain(String.raw`Cpk below target \| &lt;u&gt;risk&lt;/u&gt;`);
     expect(markdown).not.toMatch(/<script|<img|<u>|[A-Za-z]:[\\/]/i);
     expect(markdown).not.toMatch(/sourceCells|traceRecords|excelFormula|calculationTrace/i);
+  });
+
+  it("redacts absolute paths from rendered risk, recommendation, and root-cause text", () => {
+    const input = report();
+    const injected = String.raw`C:\private\risk.txt after-win; \\server\share\evidence.csv after-unc; /home/user/input after-posix; [/opt/review] after-bracket; [drawing](/var/drawings/a.pdf) after-markdown; "C:\Program Files\secret.txt" after-quoted; <b>html</b> | table SAFE_TRAILER`;
+    input.worksheets[0].sections.riskAssessment[0].reason = injected;
+    input.worksheets[0].sections.recommendations[0].text = injected;
+    input.worksheets[0].sections.recommendations[0].expectedBenefit = injected;
+    input.worksheets[0].sections.recommendations[1].text = injected;
+    input.worksheets[0].sections.rootCauseAnalysis.factBasedFindings[0] = injected;
+    input.worksheets[0].sections.rootCauseAnalysis.ruleFindings[0] = injected;
+    input.worksheets[0].sections.rootCauseAnalysis.optionFindings[0] = injected;
+    input.worksheets[0].sections.rootCauseAnalysis.signals[0] = injected;
+    input.worksheets[0].sections.inputValidation[0].message = injected;
+    input.worksheets[0].sections.capabilityAssessment.findings[0] = injected;
+    input.worksheets[0].sections.whatIfAnalysis.options[0].summary = injected;
+    input.worksheets[0].sections.finalConclusion[0] = injected;
+
+    const markdown = renderComposedEngineeringReport(input);
+
+    for (const raw of ["C:\\private", "\\\\server\\share", "/home/user", "/opt/review", "/var/drawings"]) {
+      expect(markdown).not.toContain(raw);
+    }
+    expect(markdown).not.toContain("<b>");
+    expect(markdown).toContain("[redacted-local-path]");
+    for (const preserved of ["after-win", "after-unc", "after-posix", "after-bracket", "after-markdown", "after-quoted", String.raw`SAFE\_TRAILER`]) {
+      expect(markdown).toContain(preserved);
+    }
+    expect(markdown).toContain(String.raw`\| table`);
   });
 
   it("is deterministic and rejects invalid composed input generically", () => {

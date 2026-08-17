@@ -6647,6 +6647,13 @@ const f6ReadyWorksheetFields = {
   clarifications: z.array(f6ClarificationSchema),
 };
 
+const f6FixedReportOptionKinds = [
+  "reduce_top_contributor_20",
+  "reduce_top_3_contributors_30",
+  "improve_supplier_capability",
+  "tighten_datum_strategy",
+] as const;
+
 const validateF6ReadyWorksheet = (
   worksheet: {
     status: "completed" | "partially_completed" | "calculation_failed";
@@ -6659,6 +6666,11 @@ const validateF6ReadyWorksheet = (
 ): void => {
   const failedCount = worksheet.options.filter(({ status }) => status === "calculation_failed").length;
   const completedCount = worksheet.options.filter(({ status }) => status === "completed").length;
+  f6FixedReportOptionKinds.forEach((optionKind) => {
+    if (worksheet.options.filter((option) => option.optionKind === optionKind).length !== 1) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: `worksheet requires exactly one ${optionKind} option`, path: ["options"] });
+    }
+  });
   if (worksheet.status === "completed" && failedCount > 0) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "completed worksheet must not contain calculation_failed options", path: ["status"] });
   }
@@ -7096,14 +7108,36 @@ const f6ComposedSectionsSchema = z.object({
     concentrationAssessment: z.enum(["concentrated", "distributed"]), policyVersion: z.literal("f6-contributor-policy-v1"), evidenceReferences: f6ReportEvidenceReferencesSchema,
   }).strict(),
   rootCauseAnalysis: z.object({
-    factBasedFindings: z.array(z.string().min(1)), signals: z.array(z.string().min(1)),
+    factBasedFindings: z.array(z.string().min(1)), ruleFindings: z.array(z.string().min(1)),
+    optionFindings: z.array(z.string().min(1)), signals: z.array(z.string().min(1)),
     evidenceStatus: z.enum(["supported", "insufficient_evidence"]), evidenceReferences: f6ReportEvidenceReferencesSchema,
   }).strict(),
-  riskAssessment: z.array(z.object({
-    category: z.enum(["Product", "Manufacturing", "Assembly", "Supplier", "Customer Experience"]),
-    rating: z.enum(["Low", "Medium", "High", "Critical"]), status: z.enum(["open", "closed"]), reason: z.string().min(1), evidenceReferences: f6ReportEvidenceReferencesSchema,
-  }).strict()),
-  recommendations: z.array(z.object({ text: z.string().min(1), optionId: z.string().min(1).optional(), evidenceReferences: f6ReportEvidenceReferencesSchema }).strict()),
+  riskAssessment: z.array(z.union([
+    z.object({
+      category: z.enum(["Product", "Manufacturing", "Assembly", "Supplier", "Customer Experience"]),
+      rating: z.enum(["Low", "Medium", "High", "Critical"]), status: z.enum(["open", "closed"]), reason: z.string().min(1), evidenceReferences: f6ReportEvidenceReferencesSchema,
+    }).strict(),
+    z.object({
+      category: z.enum(["Product", "Manufacturing", "Assembly", "Supplier", "Customer Experience"]),
+      rating: z.literal("insufficient_evidence"), status: z.literal("insufficient_evidence"), reason: z.string().min(1), evidenceReferences: f6ReportEvidenceReferencesSchema,
+    }).strict(),
+  ])).superRefine((risks, context) => {
+    for (const category of ["Product", "Manufacturing", "Assembly", "Supplier", "Customer Experience"] as const) {
+      if (!risks.some((risk) => risk.category === category)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: `risk assessment requires ${category}`, path: [] });
+      }
+    }
+  }),
+  recommendations: z.array(z.discriminatedUnion("kind", [
+    z.object({
+      kind: z.literal("verified_option"), recommendationId: z.string().min(1), optionId: z.string().min(1),
+      text: z.string().min(1), expectedBenefit: z.string().min(1), evidenceReferences: f6ReportEvidenceReferencesSchema,
+    }).strict(),
+    z.object({
+      kind: z.literal("evidence_closure"), recommendationId: z.string().min(1), clarificationId: z.string().min(1),
+      text: z.string().min(1), expectedBenefit: z.string().min(1), evidenceReferences: f6ReportEvidenceReferencesSchema,
+    }).strict(),
+  ])),
   whatIfAnalysis: z.object({
     options: z.array(z.union([
       z.object({ optionKind: z.enum(["reduce_top_contributor_20", "reduce_top_3_contributors_30"]), status: z.literal("completed"), summary: z.string().min(1), predictedImprovement: z.number().finite(), evidenceReferences: f6ReportEvidenceReferencesSchema }).strict(),
@@ -7134,13 +7168,14 @@ export const f6ComposedWorksheetReportSchema = z.object({
 }).strict().superRefine((worksheet, context) => {
   const cpk = worksheet.sections.capabilityAssessment.metrics.cpk;
   const hasOpenHighRisk = worksheet.sections.riskAssessment.some((risk) => risk.status === "open" && (risk.rating === "High" || risk.rating === "Critical"));
+  const hasInsufficientRiskEvidence = worksheet.sections.riskAssessment.some((risk) => risk.status === "insufficient_evidence");
   const expectedStatus = worksheet.confirmedRequirementViolation
     ? "FAIL"
     : worksheet.missingCapabilityData
       ? "RISK"
       : cpk < 1
         ? "FAIL"
-        : cpk < worksheet.targetCapability.targetCpk || hasOpenHighRisk
+        : cpk < worksheet.targetCapability.targetCpk || hasOpenHighRisk || hasInsufficientRiskEvidence
           ? "RISK"
           : "PASS";
   if (worksheet.status !== expectedStatus) {

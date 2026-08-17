@@ -20,10 +20,12 @@ type ArtifactReference = { readonly artifact: string; readonly contentHash: stri
 type ReadyF6Worksheet = Exclude<F6OptimizationResult["worksheets"][number], { status: "input_rejected" }>;
 type CompletedF5Worksheet = Extract<F5DataInterpretationResult["worksheets"][number], { status: "completed" }>;
 type WhatIfRow = F6ComposedEngineeringReport["worksheets"][number]["sections"]["whatIfAnalysis"]["options"][number];
+type RiskRow = F6ComposedEngineeringReport["worksheets"][number]["sections"]["riskAssessment"][number];
 
 const STATUS_RANK = { PASS: 0, RISK: 1, FAIL: 2 } as const;
 const RISK_RANK = { Low: 0, Medium: 1, High: 2, Critical: 3 } as const;
 const CONTRIBUTOR_POLICY = { top1Percent: 50, top3Percent: 80 } as const;
+const FIXED_RISK_CATEGORIES = ["Product", "Manufacturing", "Assembly", "Supplier", "Customer Experience"] as const;
 
 function deepFreeze<Value>(value: Value, seen = new WeakSet<object>()): Value {
   if (value !== null && typeof value === "object" && !seen.has(value)) {
@@ -58,8 +60,32 @@ function nearlyEqual(left: number, right: number): boolean {
   return Math.abs(left - right) <= 1e-12 * Math.max(1, Math.abs(left), Math.abs(right));
 }
 
-function assertBaselineIdentity(f5Worksheet: CompletedF5Worksheet, f6Worksheet: ReadyF6Worksheet): void {
+function assertBaselineIdentity(
+  f5Worksheet: CompletedF5Worksheet,
+  f6Worksheet: ReadyF6Worksheet,
+  provenance: F6OptimizationResult["provenance"],
+): void {
   const calculation = f5Worksheet.calculationResult;
+  const expectedRunReference = `${provenance.f4Reference.runId}-${f6Worksheet.f4CalculationIndex}`;
+  if (calculation.runReference !== expectedRunReference
+    || calculation.calculationVersion !== provenance.f4Reference.calculationVersion
+    || calculation.worksheetSelection.worksheetName !== f6Worksheet.worksheetName) {
+    throw new Error("F5 and F6 worksheet calculation identity mismatch.");
+  }
+  const baselineEvidence = f6Worksheet.options.find((option) => option.status === "completed")?.scenarioEvidence.calculation;
+  if (baselineEvidence !== undefined) {
+    if (calculation.projectReference !== baselineEvidence.projectReference
+      || calculation.runReference !== baselineEvidence.runReference
+      || calculation.calculationVersion !== baselineEvidence.calculationVersion
+      || calculation.worksheetSelection.worksheetName !== baselineEvidence.worksheetSelection.worksheetName
+      || calculation.worksheetSelection.tableId !== baselineEvidence.worksheetSelection.tableId
+      || calculation.factorCount !== baselineEvidence.factorCount
+      || JSON.stringify(calculation.factors) !== JSON.stringify(baselineEvidence.factors)
+      || JSON.stringify(calculation.system) !== JSON.stringify(baselineEvidence.system)
+      || JSON.stringify(calculation.capability) !== JSON.stringify(baselineEvidence.capability)) {
+      throw new Error("F5 and F6 worksheet calculation identity mismatch.");
+    }
+  }
   const expected = {
     mean: calculation.system.mean,
     rssSigma: calculation.system.rssSigma,
@@ -90,6 +116,8 @@ function worksheetStatus(
   if (confirmedRequirementViolation) return "FAIL";
   if (worksheet.status === "calculation_failed") return "RISK";
   if (worksheet.baselineMetrics.cpk < 1) return "FAIL";
+  const assessedCategories = new Set(worksheet.risks.map(({ category }) => category));
+  if (FIXED_RISK_CATEGORIES.some((category) => !assessedCategories.has(category))) return "RISK";
   const hasOpenHighRisk = worksheet.risks.some(({ status, rating }) =>
     status === "open" && (rating === "High" || rating === "Critical"));
   if (worksheet.baselineMetrics.cpk < worksheet.targetCapability.targetCpk
@@ -172,41 +200,36 @@ function buildWhatIfOptions(worksheet: ReadyF6Worksheet, fallbackReference: Arti
   ] as const;
   return kinds.map((kind) => {
     const option = worksheet.options.find(({ optionKind }) => optionKind === kind);
-    if (option === undefined) {
-      return {
-        optionKind: kind,
-        status: "calculation_failed" as const,
-        summary: `${kind}: controlled option missing.`,
-        reasonCode: "controlled_option_missing",
-        evidenceReferences: [structuredClone(fallbackReference)],
-      };
-    }
+    if (option === undefined) throw new Error("Fixed What-If option is missing.");
     return optionSummary(option, fallbackReference);
   });
 }
 
-function buildRisks(worksheet: ReadyF6Worksheet, fallbackReference: ArtifactReference) {
-  const categories = ["Product", "Manufacturing", "Assembly", "Supplier", "Customer Experience"] as const;
-  return categories.map((category) => {
-    const matching = worksheet.risks
-      .filter((risk) => risk.category === category)
-      .sort((left, right) => RISK_RANK[right.rating] - RISK_RANK[left.rating])[0];
-    return matching === undefined
-      ? {
-          category,
-          rating: "Low" as const,
-          status: "closed" as const,
-          reason: "No open evidence-backed risk is recorded for this area.",
-          evidenceReferences: [structuredClone(fallbackReference)],
-        }
-      : {
-          category,
-          rating: matching.rating,
-          status: matching.status,
-          reason: matching.reason,
-          evidenceReferences: uniqueReferences(matching.evidenceReferences),
-        };
-  });
+function buildRisks(worksheet: ReadyF6Worksheet, fallbackReference: ArtifactReference): RiskRow[] {
+  const rows: RiskRow[] = [];
+  for (const category of FIXED_RISK_CATEGORIES) {
+    const matching = worksheet.risks.filter((risk) => risk.category === category);
+    if (matching.length === 0) {
+      rows.push({
+        category,
+        rating: "insufficient_evidence",
+        status: "insufficient_evidence",
+        reason: "Missing evidence-backed risk assessment for this area.",
+        evidenceReferences: [structuredClone(fallbackReference)],
+      });
+      continue;
+    }
+    for (const risk of matching) {
+      rows.push({
+        category,
+        rating: risk.rating,
+        status: risk.status,
+        reason: risk.reason,
+        evidenceReferences: uniqueReferences(risk.evidenceReferences),
+      });
+    }
+  }
+  return rows;
 }
 
 function buildWorksheet(
@@ -214,7 +237,7 @@ function buildWorksheet(
   f6Worksheet: ReadyF6Worksheet,
   provenance: F6OptimizationResult["provenance"],
 ): F6ComposedEngineeringReport["worksheets"][number] {
-  assertBaselineIdentity(f5Worksheet, f6Worksheet);
+  assertBaselineIdentity(f5Worksheet, f6Worksheet, provenance);
   const calculation = f5Worksheet.calculationResult;
   const f5Reference = { artifact: provenance.f5Reference.artifact, contentHash: provenance.f5Reference.contentHash };
   const f4Reference = { artifact: provenance.f4Reference.artifact, contentHash: provenance.f4Reference.contentHash };
@@ -232,21 +255,50 @@ function buildWorksheet(
   const highestImpactAction = f6Worksheet.highestImpactAction === undefined
     ? "Highest Impact Action: insufficient_evidence until a supported verified option is available."
     : `Highest Impact Action: ${f6Worksheet.highestImpactAction.optionId}.`;
+  const optionById = new Map(f6Worksheet.options.map((option) => [option.optionId, option]));
   const recommendations = [
-    ...f6Worksheet.recommendations.map((recommendation) => ({
-      text: recommendation.text,
-      ...(recommendation.optionId === undefined ? {} : { optionId: recommendation.optionId }),
-      evidenceReferences: uniqueReferences(recommendation.evidenceReferences),
-    })),
-    ...f6Worksheet.clarifications.map((clarification) => ({
-      text: `Evidence closure ${clarification.clarificationId}: ${clarification.questionForReviewer} Required inputs: ${clarification.requiredInputs.join(", ")}.`,
-      evidenceReferences: uniqueReferences(clarification.evidenceReferences.length > 0
-        ? clarification.evidenceReferences
-        : [f5Reference]),
-    })),
+    ...f6Worksheet.recommendations
+      .map((recommendation) => {
+        const option = recommendation.optionId === undefined ? undefined : optionById.get(recommendation.optionId);
+        if (option?.status !== "completed" || option.feasibility.status !== "supported") {
+          throw new Error("Recommendation option evidence is invalid.");
+        }
+        return {
+          impactRank: option.impactRank ?? Number.MAX_SAFE_INTEGER,
+          recommendation: {
+            kind: "verified_option" as const,
+            recommendationId: recommendation.recommendationId,
+            optionId: option.optionId,
+            text: recommendation.text,
+            expectedBenefit: `Verified delta Cpk ${option.deltaCpk}.`,
+            evidenceReferences: uniqueReferences(recommendation.evidenceReferences),
+          },
+        };
+      })
+      .sort((left, right) => left.impactRank - right.impactRank
+        || left.recommendation.recommendationId.localeCompare(right.recommendation.recommendationId))
+      .map(({ recommendation }) => recommendation),
+    ...[...f6Worksheet.clarifications]
+      .sort((left, right) => left.clarificationId.localeCompare(right.clarificationId))
+      .map((clarification) => ({
+        kind: "evidence_closure" as const,
+        recommendationId: `evidence-closure:${clarification.clarificationId}`,
+        clarificationId: clarification.clarificationId,
+        text: `Evidence closure ${clarification.clarificationId}: ${clarification.questionForReviewer} Required inputs: ${clarification.requiredInputs.join(", ")}.`,
+        expectedBenefit: `Close evidence gap for ${clarification.requiredInputs.join(", ")}.`,
+        evidenceReferences: uniqueReferences(clarification.evidenceReferences.length > 0
+          ? clarification.evidenceReferences
+          : [f5Reference]),
+      })),
   ];
   const factBasedFindings = f5Worksheet.statements
-    .filter(({ type }) => type !== "SIGNAL")
+    .filter(({ type }) => type === "FACT")
+    .map(statementSummary);
+  const ruleFindings = f5Worksheet.statements
+    .filter(({ type }) => type === "RULE")
+    .map(statementSummary);
+  const optionFindings = f5Worksheet.statements
+    .filter(({ type }) => type === "OPTION")
     .map(statementSummary);
   const signals = f5Worksheet.statements
     .filter(({ type }) => type === "SIGNAL")
@@ -314,6 +366,8 @@ function buildWorksheet(
       },
       rootCauseAnalysis: {
         factBasedFindings,
+        ruleFindings,
+        optionFindings,
         signals,
         evidenceStatus: factBasedFindings.length > 0 ? "supported" : "insufficient_evidence",
         evidenceReferences: [structuredClone(f5Reference)],

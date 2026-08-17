@@ -3,6 +3,7 @@ import {
   f6ComposedEngineeringReportSchema,
   type CalculationRequest,
   type F2UserReport,
+  type F5DataInterpretationResult,
 } from "@ai-assist/contracts";
 import { createCalculation } from "./calculation.js";
 import { createF5DataInterpretation } from "./f5-data-interpretation.js";
@@ -12,6 +13,10 @@ import { createF6ComposedEngineeringReport } from "./f6-composed-report.js";
 
 const HASH = "a".repeat(64);
 const IMAGE_HASH = "b".repeat(64);
+type CompletedF5Calculation = Extract<
+  F5DataInterpretationResult["worksheets"][number],
+  { status: "completed" }
+>["calculationResult"];
 
 function text(rawText: string, sourceCell: string) {
   return { status: "available" as const, rawText, sourceCell };
@@ -241,6 +246,22 @@ function bundle(specifications: Array<[string, number]>, blockedWorksheetName?: 
   const f6Result = structuredClone(generatedF6Result);
   for (const worksheet of f6Result.worksheets) {
     for (const risk of worksheet.risks) risk.status = "closed";
+    if (worksheet.status === "input_rejected") continue;
+    const assessedCategories = new Set(worksheet.risks.map(({ category }) => category));
+    for (const category of ["Product", "Manufacturing", "Assembly", "Supplier", "Customer Experience"] as const) {
+      if (assessedCategories.has(category)) continue;
+      worksheet.risks.push({
+        riskId: `${worksheet.worksheetName}:fixture:${category}`,
+        category,
+        rating: "Low",
+        status: "closed",
+        reason: `Governed ${category} assessment found no open risk.`,
+        evidenceReferences: [{
+          artifact: f6Result.provenance.f5Reference.artifact,
+          contentHash: f6Result.provenance.f5Reference.contentHash,
+        }],
+      });
+    }
   }
   const readyWorksheets = specifications.map(([worksheetName, limit]) => ({
     worksheetName,
@@ -330,6 +351,44 @@ describe("createF6ComposedEngineeringReport", () => {
     expect(openRisk.worksheets[0]!.status).toBe("RISK");
   });
 
+  it("preserves every evidence-backed risk and marks uncovered fixed areas insufficient", () => {
+    const input = bundle([["Analysis-A", 1]]);
+    const evidenceReferences = [{
+      artifact: input.f6Result.provenance.f5Reference.artifact,
+      contentHash: input.f6Result.provenance.f5Reference.contentHash,
+    }];
+    input.f6Result.worksheets[0]!.risks = [
+      { riskId: "closed-critical", category: "Product", rating: "Critical", status: "closed", reason: "Closed historical risk.", evidenceReferences },
+      { riskId: "open-high", category: "Product", rating: "High", status: "open", reason: "Open evidence-backed risk.", evidenceReferences },
+    ];
+    for (const option of input.f6Result.worksheets[0]!.options) option.impactRank = null;
+    input.f6Result.worksheets[0]!.highestImpactAction = undefined;
+
+    const report = createF6ComposedEngineeringReport(input);
+    const risks = report.worksheets[0]!.sections.riskAssessment;
+
+    expect(report.worksheets[0]!.status).toBe("RISK");
+    expect(risks.filter(({ category }) => category === "Product")).toHaveLength(input.f6Result.worksheets[0]!.risks.length);
+    expect(risks.filter(({ rating }) => rating === "insufficient_evidence").map(({ category }) => category)).toEqual([
+      "Manufacturing",
+      "Assembly",
+      "Supplier",
+      "Customer Experience",
+    ]);
+    expect(risks.filter(({ rating }) => rating === "insufficient_evidence").every(({ reason }) => /missing|no evidence/i.test(reason))).toBe(true);
+  });
+
+  it("does not report PASS when fixed risk areas lack evidence", () => {
+    const input = bundle([["Analysis-A", 1]]);
+    input.f6Result.worksheets[0]!.risks = [];
+
+    const report = createF6ComposedEngineeringReport(input);
+
+    expect(report.worksheets[0]!.status).toBe("RISK");
+    expect(report.worksheets[0]!.sections.riskAssessment).toHaveLength(5);
+    expect(report.worksheets[0]!.sections.riskAssessment.every(({ status }) => status === "insufficient_evidence")).toBe(true);
+  });
+
   it("uses the worst worksheet without averaging Cpk and limits fixed report data", () => {
     const report = createF6ComposedEngineeringReport(bundle([["Analysis-A", 1], ["Analysis-B", 0.12]]));
     const worst = report.worksheets.find(({ worksheetName }) => worksheetName === "Analysis-B")!;
@@ -357,9 +416,18 @@ describe("createF6ComposedEngineeringReport", () => {
     const verifiedOptionIds = new Set(f6Result.worksheets[0]!.options.map(({ optionId }) => optionId));
 
     expect(worksheet.sections.rootCauseAnalysis.factBasedFindings.every((finding) => finding.startsWith("FACT"))).toBe(true);
+    expect(worksheet.sections.rootCauseAnalysis.ruleFindings.every((finding) => finding.startsWith("RULE"))).toBe(true);
+    expect(worksheet.sections.rootCauseAnalysis.optionFindings.every((finding) => finding.startsWith("OPTION"))).toBe(true);
     expect(worksheet.sections.rootCauseAnalysis.signals.every((signal) => signal.startsWith("SIGNAL"))).toBe(true);
-    expect(worksheet.sections.recommendations.every((recommendation) =>
-      recommendation.optionId === undefined || verifiedOptionIds.has(recommendation.optionId))).toBe(true);
+    expect(worksheet.sections.recommendations.every((recommendation) => recommendation.recommendationId.length > 0)).toBe(true);
+    expect(worksheet.sections.recommendations.every((recommendation) => recommendation.expectedBenefit.length > 0)).toBe(true);
+    expect(worksheet.sections.recommendations.filter(({ kind }) => kind === "verified_option").every((recommendation) =>
+      verifiedOptionIds.has(recommendation.optionId))).toBe(true);
+    expect(worksheet.sections.recommendations.filter(({ kind }) => kind === "evidence_closure").map(({ clarificationId }) => clarificationId)).toEqual(
+      f6Result.worksheets[0]!.clarifications.map(({ clarificationId }) => clarificationId).sort(),
+    );
+    const recommendationKinds = worksheet.sections.recommendations.map(({ kind }) => kind);
+    expect(recommendationKinds).toEqual([...recommendationKinds].sort((left, right) => left === right ? 0 : left === "verified_option" ? -1 : 1));
     expect(worksheet.sections.whatIfAnalysis.roiStatus).toBe("not_computed");
     expect(worksheet.sections.whatIfAnalysis.highestImpactAction).not.toContain("Highest ROI");
   });
@@ -373,6 +441,42 @@ describe("createF6ComposedEngineeringReport", () => {
     const missingWorksheet = structuredClone(input.f6Result);
     missingWorksheet.worksheets[0]!.worksheetName = "Analysis-B";
     expect(() => createF6ComposedEngineeringReport({ ...input, f6Result: missingWorksheet })).toThrow();
+  });
+
+  it.each([
+    ["projectReference", "other-project"],
+    ["runReference", "other-run"],
+  ] as const)("rejects equal-metric F5 calculations with a different %s", (field, value) => {
+    const input = bundle([["Analysis-A", 1]]);
+    const f5Report = structuredClone(input.f5Report);
+    if (f5Report.worksheets[0]!.status !== "completed") throw new Error("fixture worksheet failed");
+    f5Report.worksheets[0]!.calculationResult[field] = value;
+
+    expect(() => createF6ComposedEngineeringReport({ ...input, f5Report })).toThrow(/identity/i);
+  });
+
+  it("rejects equal-metric F5 calculations with different table or factor source identity", () => {
+    const mutations: Array<(calculation: CompletedF5Calculation) => void> = [
+      (calculation) => {
+        calculation.worksheetSelection.tableId = "other-table";
+      },
+      (calculation) => {
+        calculation.factors[0]!.source.tableId = "other-table";
+      },
+      (calculation) => {
+        calculation.factors[0]!.source.sourceRow += 1;
+      },
+    ];
+
+    for (const mutate of mutations) {
+      const input = bundle([["Analysis-A", 1]]);
+      const f5Report = structuredClone(input.f5Report);
+      const worksheet = f5Report.worksheets[0]!;
+      if (worksheet.status !== "completed") throw new Error("fixture worksheet failed");
+      mutate(worksheet.calculationResult);
+
+      expect(() => createF6ComposedEngineeringReport({ ...input, f5Report })).toThrow(/Invalid F5 report|identity/i);
+    }
   });
 
   it("joins worksheets by identity without depending on input order", () => {

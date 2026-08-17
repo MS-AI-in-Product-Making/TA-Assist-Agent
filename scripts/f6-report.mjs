@@ -1,27 +1,5 @@
 import { f6OptimizationResultSchema } from "../packages/contracts/dist/contracts.js";
-
-const WINDOWS_PATH = /[A-Za-z]:[\\/][^;|\r\n<>"'`]+/g;
-const UNC_PATH = /\\\\[^;|\r\n<>"'`]+/g;
-const POSIX_PATH = /(^|[\s=:])\/(?!\/)[^;|\r\n<>"'`]+/gm;
-const MARKDOWN_CHARACTERS = ["\\", "`", "|", "[", "]", "(", ")", "!", "*", "#", "+", "_"];
-
-function safeText(value) {
-  let escaped = String(value)
-    .replace(UNC_PATH, "[redacted-local-path]")
-    .replace(WINDOWS_PATH, "[redacted-local-path]")
-    .replace(POSIX_PATH, "$1[redacted-local-path]")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
-  for (const character of MARKDOWN_CHARACTERS) escaped = escaped.replaceAll(character, `\\${character}`);
-  return escaped
-    .replaceAll("\\[redacted-local-path\\]", "[redacted-local-path]")
-    .replaceAll(/\r?\n/g, "<br>");
-}
-
-function cell(value) {
-  return value === null || value === undefined || value === "" ? "（缺失）" : safeText(value);
-}
+import { cell } from "./f6-markdown-sanitizer.mjs";
 
 function optionName(kind) {
   return {

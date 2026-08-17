@@ -131,6 +131,25 @@ describe("renderF6Report", () => {
     expect(markdown).not.toMatch(/sourceCells|traceRecords|excelFormula|calculationTrace/i);
   });
 
+  it("redacts absolute paths from rendered risk and clarification text", () => {
+    const input = result();
+    const injected = String.raw`C:\private\risk.txt after-win; \\server\share\evidence.csv after-unc; /home/user/input after-posix; [/opt/review] after-bracket; [drawing](/var/drawings/a.pdf) after-markdown; "C:\Program Files\secret.txt" after-quoted; <b>html</b> | table SAFE_TRAILER`;
+    input.worksheets[0].risks[0].reason = injected;
+    input.worksheets[0].clarifications[0].questionForReviewer = injected;
+
+    const markdown = renderF6Report(input);
+
+    for (const raw of ["C:\\private", "\\\\server\\share", "/home/user", "/opt/review", "/var/drawings"]) {
+      expect(markdown).not.toContain(raw);
+    }
+    expect(markdown).not.toContain("<b>");
+    expect(markdown).toContain("[redacted-local-path]");
+    for (const preserved of ["after-win", "after-unc", "after-posix", "after-bracket", "after-markdown", "after-quoted", String.raw`SAFE\_TRAILER`]) {
+      expect(markdown).toContain(preserved);
+    }
+    expect(markdown).toContain(String.raw`\| table`);
+  });
+
   it("is deterministic and rejects invalid structured input generically", () => {
     expect(renderF6Report(clone(result()))).toBe(renderF6Report(result()));
     expect(() => renderF6Report({ featureId: "F6", secret: "do-not-echo" })).toThrow("Invalid F6 result.");
