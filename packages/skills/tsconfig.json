@@ -7,8 +7,5 @@
   },
   "include": ["src/**/*.ts"],
   "exclude": ["src/**/*.test.ts"],
-  "references": [
-    { "path": "../skill-sdk" },
-    { "path": "../workbook-catalog" }
-  ]
+  "references": [{ "path": "../skill-sdk" }]
 }

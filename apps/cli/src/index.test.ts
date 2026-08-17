@@ -264,6 +264,86 @@ it("routes explicit Feature 5 command with three artifact roots and options", as
   }]]);
 });
 
+it("routes explicit Feature 6 with four artifact roots, repeated worksheets, and optional evidence", async () => {
+  const calls: unknown[] = [];
+  const runFeature6 = async (...args: unknown[]) => {
+    calls.push(args);
+    return "Feature 6 workflow completed.\nf6: runs/demo/f6\nstatus: completed";
+  };
+  const result = await executeCli([
+    "feature6", "--root", " repo ",
+    "--f2-artifacts", " f2 ",
+    "--f3-artifacts", " f3 ",
+    "--f4-artifacts", " f4 ",
+    "--f5-artifacts", " f5 ",
+    "--worksheet", " Overview ",
+    "--worksheet", " Details ",
+    "--supplier-capability", " supplier.json ",
+    "--datum-strategy", " datum.json ",
+    "--cost", " cost.json ",
+    "--image-observations", " images.json ",
+  ], { cwd: () => "ignored", runFeature2: async () => "unused", runFeature6 });
+
+  expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+  expect(calls).toEqual([["repo", "f2", "f3", "f4", "f5", {
+    selectedWorksheetNames: ["Overview", "Details"],
+    supplierCapabilityPath: "supplier.json",
+    datumStrategyPath: "datum.json",
+    costPath: "cost.json",
+    imageObservationsPath: "images.json",
+  }]]);
+});
+
+it("requires exactly four Feature 6 artifact flags and at least one worksheet", async () => {
+  const runFeature6 = async () => "unused";
+  const dependencies = { cwd: () => "repo", runFeature2: async () => "unused", runFeature6 };
+  const complete = [
+    "feature6", "--root", "repo",
+    "--f2-artifacts", "f2", "--f3-artifacts", "f3", "--f4-artifacts", "f4", "--f5-artifacts", "f5",
+    "--worksheet", "Overview",
+  ];
+
+  for (const flag of ["--f2-artifacts", "--f3-artifacts", "--f4-artifacts", "--f5-artifacts", "--worksheet"]) {
+    const args = [...complete];
+    args.splice(args.indexOf(flag), 2);
+    await expect(executeCli(args, dependencies)).resolves.toMatchObject({ exitCode: 2, stdout: "" });
+  }
+  await expect(executeCli([...complete, "--f2-artifacts", "other"], dependencies))
+    .resolves.toMatchObject({ exitCode: 2, stderr: expect.stringContaining("duplicate option") });
+});
+
+it("rejects blank, missing, and duplicate-after-trim Feature 6 values", async () => {
+  const dependencies = { cwd: () => "repo", runFeature2: async () => "unused", runFeature6: async () => "unused" };
+  const complete = [
+    "feature6", "--root", "repo",
+    "--f2-artifacts", "f2", "--f3-artifacts", "f3", "--f4-artifacts", "f4", "--f5-artifacts", "f5",
+    "--worksheet", "Overview",
+  ];
+
+  for (const flag of ["--root", "--f2-artifacts", "--f3-artifacts", "--f4-artifacts", "--f5-artifacts", "--worksheet"]) {
+    const args = [...complete];
+    args[args.indexOf(flag) + 1] = "   ";
+    await expect(executeCli(args, dependencies)).resolves.toMatchObject({ exitCode: 2, stdout: "" });
+  }
+  await expect(executeCli([...complete, "--worksheet", " Overview "], dependencies))
+    .resolves.toMatchObject({ exitCode: 2, stderr: expect.stringContaining("unique worksheet") });
+  await expect(executeCli([...complete, "--cost"], dependencies))
+    .resolves.toMatchObject({ exitCode: 2, stderr: expect.stringContaining("option value is missing") });
+  await expect(executeCli([...complete, "--cost", "   "], dependencies))
+    .resolves.toMatchObject({ exitCode: 2, stdout: "" });
+});
+
+it("keeps Feature 6 flags command-specific and provides no phrase alias", async () => {
+  const dependencies = { cwd: () => "repo", runFeature2: async () => "unused", runFeature6: async () => "unused" };
+
+  await expect(executeCli([
+    "feature5", "--root", "repo", "--f1-artifacts", "f1", "--f3-artifacts", "f3", "--f4-artifacts", "f4",
+    "--supplier-capability", "supplier.json",
+  ], dependencies)).resolves.toMatchObject({ exitCode: 2, stdout: "" });
+  await expect(executeCli(["use f6 analysis report"], dependencies))
+    .resolves.toMatchObject({ exitCode: 2, stdout: "", stderr: expect.stringContaining("command is invalid") });
+});
+
 it("trims Feature 5 root, artifact, and image-observation paths consistently", async () => {
   const calls: unknown[] = [];
   const runFeature5 = async (...args: unknown[]) => {

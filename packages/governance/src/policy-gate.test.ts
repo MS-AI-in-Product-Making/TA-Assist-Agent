@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createComparisonPlaceholder } from "../../workbook-catalog/src/comparison-placeholder.js";
 import { evaluatePolicy, getFeatureStatus } from "./index.js";
 
 describe("policy gate", () => {
@@ -329,22 +330,40 @@ describe("policy gate", () => {
       title: "可比较的方案选项",
       status: "available",
       dependsOn: [
+        "f2-user-report-v1",
+        "drawing-governance-v2",
         "calculation-service-v1",
-        "knowledge-base-v1",
-        "interpretation-rules-v1",
+        "f5-data-interpretation-v1",
         "f6-optimization-v1",
-        "skill-runtime-v1",
       ],
       inputContractId: "f6-optimization-request-v1",
       outputContractId: "f6-optimization-result-v1",
       maximumClassification: "confidential",
       acceptanceChecks: [
         "anonymous-f6-optimization-fixture",
+        "f6-artifact-association-check",
         "f6-optimization-contract-check",
-        "f6-skill-contract-check",
+        "f6-privacy-check",
+        "f6-no-write-network-check",
+        "f6-supplier-datum-evidence-gate-check",
+        "f6-roi-gate-check",
       ],
       externalPrerequisites: ["approved-knowledge-base"],
       disableBehavior: "return feature_not_available",
+    });
+  });
+
+  it("keeps the legacy F6 comparison placeholder compatible and unavailable", () => {
+    expect(createComparisonPlaceholder({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      projectReference: "controlled-project-reference",
+      runReference: "controlled-run-reference",
+      worksheetReferences: ["controlled-worksheet-reference"],
+    })).toMatchObject({
+      featureId: "F6",
+      status: "feature_not_available",
+      requiredPrerequisites: ["approved-knowledge-base"],
     });
   });
 
