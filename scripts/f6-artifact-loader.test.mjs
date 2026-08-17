@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createCalculation } from "../packages/workbook-catalog/dist/calculation.js";
@@ -316,6 +316,23 @@ describe("loadF6ArtifactBundle", () => {
     });
     expect(JSON.stringify(result)).not.toContain(rootPath(bundle));
   });
+
+  it("reads a core artifact from its verified handle when the path is replaced", () => {
+    const bundle = setupBundle();
+    const originalHash = sha256(bundle.paths.f2);
+
+    const result = loadF6ArtifactBundle(bundle, {
+      afterArtifactHandleVerified({ artifactReference, filePath }) {
+        if (artifactReference !== "Feature2-Report.json") return;
+        renameSync(filePath, `${filePath}.verified`);
+        writeFileSync(filePath, "{", "utf8");
+      },
+    });
+
+    expect(result.status, JSON.stringify(result)).toBe("accepted");
+    expect(result.sourceReferences.f2.contentHash).toBe(originalHash);
+    expect(readFileSync(bundle.paths.f2, "utf8")).toBe("{");
+  });
 });
 
 function rootPath(bundle) {
@@ -422,6 +439,19 @@ describe("F6 governed bundle validation", () => {
     rewriteJson(bundle.paths.f4, (report) => { report.runId = "other-run"; });
 
     expectRejected(loadF6ArtifactBundle(bundle), "artifact_identity_mismatch", "worksheet:Analysis-A");
+  });
+
+  it("sanitizes replay exceptions as an artifact identity rejection", () => {
+    const bundle = setupBundle();
+
+    const result = loadF6ArtifactBundle(bundle, {
+      replayCalculation() {
+        throw new Error(`sensitive replay failure at ${rootPath(bundle)}`);
+      },
+    });
+
+    expectRejected(result, "artifact_identity_mismatch", "worksheet:Analysis-A");
+    expect(JSON.stringify(result)).not.toContain("sensitive replay failure");
   });
 
   it("rejects F3 governance rows that differ from F5", () => {
@@ -736,6 +766,36 @@ describe("F6 optional governed evidence", () => {
     expect(result.status, JSON.stringify(result)).toBe("accepted");
     expect(result.request.costEvidence).toEqual(evidence);
     expect(path.isAbsolute(result.sourceReferences.cost.artifact)).toBe(false);
+  });
+
+  it("reads optional evidence from its verified handle when the path is replaced", () => {
+    const bundle = setupBundle();
+    const evidence = {
+      evidenceVersion: "cost-model-v1",
+      model: "relative-cost",
+      unit: "index",
+      optionCosts: [{ optionKind: "reduce_top_contributor_20", cost: 1 }],
+      roiPolicyVersion: "f6-delta-cpk-per-cost-v1",
+      roiCalculationReference: { artifact: "Feature4-Calculation.json", contentHash: sha256(bundle.paths.f4) },
+      source: "cost.json",
+      effectiveVersion: "v1",
+      contentHash: "e".repeat(64),
+    };
+    bundle.costArtifact = writeOptional(bundle, evidence.source, evidence);
+    const costPath = path.join(bundle.evidenceArtifactRoot, bundle.costArtifact);
+    const originalHash = sha256(costPath);
+
+    const result = loadF6ArtifactBundle(bundle, {
+      afterArtifactHandleVerified({ artifactReference, filePath }) {
+        if (artifactReference !== "cost.json") return;
+        renameSync(filePath, `${filePath}.verified`);
+        writeFileSync(filePath, "{", "utf8");
+      },
+    });
+
+    expect(result.status, JSON.stringify(result)).toBe("accepted");
+    expect(result.sourceReferences.cost.contentHash).toBe(originalHash);
+    expect(readFileSync(costPath, "utf8")).toBe("{");
   });
 
   it("rejects governed evidence whose source basename or ROI reference drifts", () => {

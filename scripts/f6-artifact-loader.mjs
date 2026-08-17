@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { lstatSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { closeSync, fstatSync, lstatSync, openSync, readFileSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import {
@@ -62,22 +62,49 @@ function canonicalChild(root, artifactReference) {
   }
 }
 
-function readArtifact(root, artifactReference, schema) {
+function readVerifiedBytes(filePath, artifactReference, hooks) {
+  let descriptor;
+  let result;
+  try {
+    descriptor = openSync(filePath, "r");
+    const handleStat = fstatSync(descriptor);
+    const pathStat = lstatSync(filePath);
+    if (pathStat.isSymbolicLink()
+      || handleStat.dev !== pathStat.dev
+      || handleStat.ino !== pathStat.ino) {
+      result = { rejection: inputRejected("artifact_identity_mismatch", artifactReference) };
+    } else if (!handleStat.isFile() || handleStat.size > MAX_JSON_BYTES) {
+      result = { rejection: inputRejected("artifact_contract_invalid", artifactReference) };
+    } else {
+      hooks?.afterArtifactHandleVerified?.({ artifactReference, filePath });
+      result = { bytes: readFileSync(descriptor) };
+    }
+  } catch (error) {
+    result = { rejection: inputRejected(ioReason(error), artifactReference) };
+  }
+  if (descriptor !== undefined) {
+    try {
+      closeSync(descriptor);
+    } catch (error) {
+      result = { rejection: inputRejected(ioReason(error), artifactReference) };
+    }
+  }
+  return result;
+}
+
+function readArtifact(root, artifactReference, schema, hooks) {
   const child = canonicalChild(root, artifactReference);
   if (!child.filePath) return { rejection: inputRejected(child.reasonCode, artifactReference) };
+  const loaded = readVerifiedBytes(child.filePath, artifactReference, hooks);
+  if (loaded.rejection) return loaded;
   try {
-    const stat = statSync(child.filePath);
-    if (!stat.isFile() || stat.size > MAX_JSON_BYTES) {
-      return { rejection: inputRejected("artifact_contract_invalid", artifactReference) };
-    }
-    const bytes = readFileSync(child.filePath);
-    const parsed = schema.safeParse(JSON.parse(bytes.toString("utf8")));
+    const parsed = schema.safeParse(JSON.parse(loaded.bytes.toString("utf8")));
     if (!parsed.success) return { rejection: inputRejected("artifact_contract_invalid", artifactReference) };
     return {
       value: parsed.data,
       reference: {
         artifact: artifactReference,
-        contentHash: createHash("sha256").update(bytes).digest("hex"),
+        contentHash: createHash("sha256").update(loaded.bytes).digest("hex"),
       },
     };
   } catch (error) {
@@ -131,7 +158,7 @@ function validatedEvidenceRoot(evidenceArtifactRoot) {
   }
 }
 
-function readOptionalArtifact(evidenceRoot, relativePath, schema) {
+function readOptionalArtifact(evidenceRoot, relativePath, schema, hooks) {
   const artifactReference = path.basename(String(relativePath)) || "artifact.json";
   if (typeof relativePath !== "string" || relativePath.trim().length === 0) {
     return { rejection: inputRejected("artifact_contract_invalid", artifactReference) };
@@ -150,16 +177,13 @@ function readOptionalArtifact(evidenceRoot, relativePath, schema) {
     if (!containedChild(evidenceRoot, realPath)) {
       return { rejection: inputRejected("artifact_identity_mismatch", artifactReference) };
     }
-    const stat = statSync(realPath);
-    if (!stat.isFile() || stat.size > MAX_JSON_BYTES) {
-      return { rejection: inputRejected("artifact_contract_invalid", artifactReference) };
-    }
-    const bytes = readFileSync(realPath);
-    const parsed = schema.safeParse(JSON.parse(bytes.toString("utf8")));
+    const loaded = readVerifiedBytes(realPath, artifactReference, hooks);
+    if (loaded.rejection) return loaded;
+    const parsed = schema.safeParse(JSON.parse(loaded.bytes.toString("utf8")));
     if (!parsed.success) return { rejection: inputRejected("artifact_contract_invalid", artifactReference) };
     return {
       value: parsed.data,
-      reference: { artifact: artifactReference, contentHash: createHash("sha256").update(bytes).digest("hex") },
+      reference: { artifact: artifactReference, contentHash: createHash("sha256").update(loaded.bytes).digest("hex") },
     };
   } catch (error) {
     return { rejection: inputRejected(error instanceof SyntaxError ? "artifact_contract_invalid" : ioReason(error), artifactReference) };
@@ -262,14 +286,14 @@ export function loadF6ArtifactBundle({
   supplierCapabilityArtifact,
   datumStrategyArtifact,
   costArtifact,
-}) {
-  const f2Loaded = readArtifact(f2ArtifactRoot, ARTIFACTS.f2, f2UserReportSchema);
+}, hooks) {
+  const f2Loaded = readArtifact(f2ArtifactRoot, ARTIFACTS.f2, f2UserReportSchema, hooks);
   if (f2Loaded.rejection) return f2Loaded.rejection;
-  const f3Loaded = readArtifact(f3ArtifactRoot, ARTIFACTS.f3, drawingGovernanceResultV2Schema);
+  const f3Loaded = readArtifact(f3ArtifactRoot, ARTIFACTS.f3, drawingGovernanceResultV2Schema, hooks);
   if (f3Loaded.rejection) return f3Loaded.rejection;
-  const f4Loaded = readArtifact(f4ArtifactRoot, ARTIFACTS.f4, f4WorkflowCalculationResultSchema);
+  const f4Loaded = readArtifact(f4ArtifactRoot, ARTIFACTS.f4, f4WorkflowCalculationResultSchema, hooks);
   if (f4Loaded.rejection) return f4Loaded.rejection;
-  const f5Loaded = readArtifact(f5ArtifactRoot, ARTIFACTS.f5, f5DataInterpretationResultSchema);
+  const f5Loaded = readArtifact(f5ArtifactRoot, ARTIFACTS.f5, f5DataInterpretationResultSchema, hooks);
   if (f5Loaded.rejection) return f5Loaded.rejection;
 
   const f2 = f2Loaded.value;
@@ -328,7 +352,12 @@ export function loadF6ArtifactBundle({
     } catch {
       return inputRejected("artifact_identity_mismatch", ARTIFACTS.f2);
     }
-    const replay = createCalculation(baselineCalculationRequest);
+    let replay;
+    try {
+      replay = (hooks?.replayCalculation ?? createCalculation)(baselineCalculationRequest);
+    } catch {
+      return inputRejected("artifact_identity_mismatch", `worksheet:${worksheetName}`);
+    }
     if (!isDeepStrictEqual(replay, baselineCalculation)
       || baselineCalculation.runReference !== f4.runId
       || !isDeepStrictEqual(f3Worksheet.rows, f5Worksheet.governanceRows)
@@ -360,7 +389,7 @@ export function loadF6ArtifactBundle({
     evidenceRoot = validatedRoot.filePath;
   }
   if (imageObservationArtifact !== undefined) {
-    const loaded = readOptionalArtifact(evidenceRoot, imageObservationArtifact, f5ImageObservationArtifactSchema);
+    const loaded = readOptionalArtifact(evidenceRoot, imageObservationArtifact, f5ImageObservationArtifactSchema, hooks);
     if (loaded.rejection) return loaded.rejection;
     const observation = loaded.value;
     const observationByName = indexExactlyOnce(observation.worksheets, selection);
@@ -413,7 +442,7 @@ export function loadF6ArtifactBundle({
   }
 
   if (supplierCapabilityArtifact !== undefined) {
-    const loaded = readOptionalArtifact(evidenceRoot, supplierCapabilityArtifact, f6SupplierCapabilityEvidenceSchema);
+    const loaded = readOptionalArtifact(evidenceRoot, supplierCapabilityArtifact, f6SupplierCapabilityEvidenceSchema, hooks);
     if (loaded.rejection) return loaded.rejection;
     if (loaded.value.source !== loaded.reference.artifact) {
       return inputRejected("artifact_identity_mismatch", loaded.reference.artifact);
@@ -423,7 +452,7 @@ export function loadF6ArtifactBundle({
   }
 
   if (datumStrategyArtifact !== undefined) {
-    const loaded = readOptionalArtifact(evidenceRoot, datumStrategyArtifact, f6DatumEvidenceSchema);
+    const loaded = readOptionalArtifact(evidenceRoot, datumStrategyArtifact, f6DatumEvidenceSchema, hooks);
     if (loaded.rejection) return loaded.rejection;
     const requestWorksheet = requestWorksheets.find(({ worksheetName }) => worksheetName === loaded.value.worksheetName);
     const sourceKeys = new Set(requestWorksheet?.baselineCalculation.factors.map(
@@ -439,7 +468,7 @@ export function loadF6ArtifactBundle({
   }
 
   if (costArtifact !== undefined) {
-    const loaded = readOptionalArtifact(evidenceRoot, costArtifact, f6CostEvidenceSchema);
+    const loaded = readOptionalArtifact(evidenceRoot, costArtifact, f6CostEvidenceSchema, hooks);
     if (loaded.rejection) return loaded.rejection;
     if (loaded.value.source !== loaded.reference.artifact
       || !isDeepStrictEqual(loaded.value.roiCalculationReference, f4Loaded.reference)) {
