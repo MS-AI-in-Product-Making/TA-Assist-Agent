@@ -12,6 +12,7 @@ import {
 
 type EvidenceLimitedOption = Extract<F6Option, { status: "insufficient_evidence" }>;
 type ArtifactReference = F6Option["evidenceReferences"][number];
+type EvidenceScope = NonNullable<EvidenceLimitedOption["evidenceScope"]>;
 
 export interface ToleranceFeasibilityInput {
   readonly requestedToleranceBand: number;
@@ -131,6 +132,7 @@ function insufficientOption(
   optionKind: EvidenceLimitedOption["optionKind"],
   requiredInputs: readonly string[],
   evidenceReferences: readonly F6Option["evidenceReferences"][number][],
+  evidenceScope?: EvidenceScope,
 ): EvidenceLimitedOption {
   return immutable(f6OptionSchema.parse({
     status: "insufficient_evidence",
@@ -139,6 +141,7 @@ function insufficientOption(
     predictedImprovement: "insufficient_evidence",
     requiredInputs: [...requiredInputs],
     evidenceReferences: [...evidenceReferences],
+    ...(evidenceScope === undefined ? {} : { evidenceScope }),
     relativeCost: "insufficient_evidence",
     roiScore: "not_computed",
     impactRank: null,
@@ -150,9 +153,10 @@ function scenarioResult(
   requiredInputs: readonly string[],
   references: readonly ArtifactReference[],
   assessment: F6FeasibilityAssessment,
+  evidenceScope?: EvidenceScope,
 ): F6EvidenceScenarioResult {
   return immutable({
-    option: insufficientOption(optionKind, requiredInputs, references),
+    option: insufficientOption(optionKind, requiredInputs, references, evidenceScope),
     feasibility: assessment,
   });
 }
@@ -184,6 +188,13 @@ export function assessSupplierScenario(input: SupplierScenarioInput): F6Evidence
     ["controlled_supplier_scenario_calculation"],
     [reference],
     assessment,
+    {
+      kind: "supplier",
+      supplierReference: parsed.data.supplierReference,
+      processFamily: parsed.data.processFamily,
+      partCategory: parsed.data.partCategory,
+      evidenceReference: reference,
+    },
   );
 }
 
@@ -208,6 +219,11 @@ export function assessDatumScenario(input: DatumScenarioInput): F6EvidenceScenar
       ["confirmed_datum_evidence_requires_engineering_review"],
       [reference.artifact],
     ),
+    {
+      kind: "datum",
+      factorSources: parsed.data.factorDirections,
+      evidenceReference: reference,
+    },
   );
 }
 

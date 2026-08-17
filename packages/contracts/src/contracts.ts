@@ -6796,13 +6796,18 @@ export const f6OptimizationResultSchema = z.object({
 
     const optionById = new Map(worksheet.options.map((option) => [option.optionId, option]));
     worksheet.recommendations.forEach((recommendation, recommendationIndex) => {
-      if (recommendation.optionId !== undefined && optionById.get(recommendation.optionId)?.status !== "completed") {
-        context.addIssue({ code: z.ZodIssueCode.custom, message: "recommendations may reference only completed options", path: ["worksheets", worksheetIndex, "recommendations", recommendationIndex, "optionId"] });
+      const option = recommendation.optionId === undefined ? undefined : optionById.get(recommendation.optionId);
+      if (recommendation.optionId !== undefined
+        && (option?.status !== "completed" || option.feasibility.status !== "supported")) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "recommendations may reference only completed supported options", path: ["worksheets", worksheetIndex, "recommendations", recommendationIndex, "optionId"] });
       }
     });
+    const highestImpactOption = worksheet.highestImpactAction === undefined
+      ? undefined
+      : optionById.get(worksheet.highestImpactAction.optionId);
     if (worksheet.highestImpactAction !== undefined
-      && optionById.get(worksheet.highestImpactAction.optionId)?.status !== "completed") {
-      context.addIssue({ code: z.ZodIssueCode.custom, message: "highest impact action must reference a completed option", path: ["worksheets", worksheetIndex, "highestImpactAction", "optionId"] });
+      && (highestImpactOption?.status !== "completed" || highestImpactOption.feasibility.status !== "supported")) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "highest impact action must reference a completed supported option", path: ["worksheets", worksheetIndex, "highestImpactAction", "optionId"] });
     }
     const costEvidence = result.provenance.costEvidence;
     if (costEvidence === undefined && worksheet.roiStatus !== "not_computed") {

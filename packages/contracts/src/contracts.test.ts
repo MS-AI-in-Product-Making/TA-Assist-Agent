@@ -4718,6 +4718,40 @@ describe("F5.1 objective interpretation contracts", () => {
         }).success).toBe(false);
       });
 
+      it("allows recommendation references only to completed supported options", () => {
+        const reviewOnlyOption = {
+          ...completedOption,
+          feasibility: {
+            status: "requires_engineering_review",
+            reasonCodes: ["mean_shift_physical_constraint_unverified"],
+            evidenceReferences: [f6Request.f4Reference.artifact, f6Request.f5Reference.artifact],
+          },
+        };
+
+        expect(f6OptimizationResultSchema.safeParse(f6Result).success).toBe(true);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], options: [reviewOnlyOption], highestImpactAction: undefined }],
+        }).success).toBe(false);
+      });
+
+      it("allows highest impact references only to completed supported options", () => {
+        const reviewOnlyOption = {
+          ...completedOption,
+          feasibility: {
+            status: "requires_engineering_review",
+            reasonCodes: ["mean_shift_physical_constraint_unverified"],
+            evidenceReferences: [f6Request.f4Reference.artifact, f6Request.f5Reference.artifact],
+          },
+        };
+
+        expect(f6OptimizationResultSchema.safeParse(f6Result).success).toBe(true);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], options: [reviewOnlyOption], recommendations: [] }],
+        }).success).toBe(false);
+      });
+
       it("binds every completed option baseline and worksheet identity to its parent worksheet", () => {
         const tamperedOptions = [
           { ...completedOption, baselineMetrics: { ...completedOption.baselineMetrics, mean: completedOption.baselineMetrics.mean + 1 } },

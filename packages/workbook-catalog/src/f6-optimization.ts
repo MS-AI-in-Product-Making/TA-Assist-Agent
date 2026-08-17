@@ -317,7 +317,8 @@ function buildNumericOption(
     ...(systemSpecification === undefined ? {} : { systemSpecification }),
   };
   const scenarioResult = calculateScenario({ baselineRequest, scenario });
-  const feasibility = kind === "mean_shift_centering"
+  const altersMeanShift = kind === "mean_shift_centering" || kind === "centering_plus_tighten";
+  const feasibility = altersMeanShift
     ? {
         status: "requires_engineering_review" as const,
         reasonCodes: ["mean_shift_physical_constraint_unverified"],
@@ -336,7 +337,7 @@ function buildNumericOption(
     ...(reverseSolve === undefined ? {} : { reverseSolve }),
     ...(apportionment === undefined ? {} : { apportionment }),
   }, [
-    ...(kind === "mean_shift_centering"
+    ...(altersMeanShift
       ? [{ artifact: request.f5Reference.artifact, contentHash: request.f5Reference.contentHash }]
       : []),
     ...supplierReferences,

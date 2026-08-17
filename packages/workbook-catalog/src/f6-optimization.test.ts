@@ -338,6 +338,34 @@ describe("createF6Optimization", () => {
     expect(worksheet.highestImpactAction?.optionId).not.toBe(meanShift.optionId);
   });
 
+  it("keeps combined centering and tightening review-only with complete T1 evidence", () => {
+    const input = request();
+    for (const sourceRow of [2, 3, 4, 5]) {
+      const evidence = supplierEvidence({
+        supplierReference: `supplier-${sourceRow}`,
+        source: `supplier/${sourceRow}.json`,
+        contentHash: String(sourceRow).repeat(64),
+      });
+      bindSupplier(input, evidence, sourceRow);
+    }
+
+    const result = createF6Optimization(input);
+    const worksheet = result.worksheets[0];
+    if (worksheet?.status === "input_rejected" || worksheet === undefined) throw new Error("expected ready worksheet");
+    const combined = worksheet.options.find(({ optionKind }) => optionKind === "centering_plus_tighten");
+    if (combined?.status !== "completed") throw new Error("expected completed combined option");
+    const supported = worksheet.options.filter((option) => option.status === "completed" && option.feasibility.status === "supported");
+
+    expect(combined.feasibility).toMatchObject({
+      status: "requires_engineering_review",
+      reasonCodes: expect.arrayContaining(["mean_shift_physical_constraint_unverified"]),
+    });
+    expect(supported.length).toBeGreaterThan(0);
+    expect(combined.impactRank).toBeGreaterThan(Math.min(...supported.map(({ impactRank }) => impactRank!)));
+    expect(worksheet.recommendations.some(({ optionId }) => optionId === combined.optionId)).toBe(false);
+    expect(worksheet.highestImpactAction?.optionId).not.toBe(combined.optionId);
+  });
+
   it("conservatively keeps mean shift under review when exact confirmed datum evidence lacks design authorization", () => {
     const input = request();
     input.datumEvidence = [{
@@ -579,7 +607,9 @@ describe("createF6Optimization", () => {
     const result = createF6Optimization(input);
     const worksheet = result.worksheets[0];
     if (worksheet?.status === "input_rejected" || worksheet === undefined) throw new Error("expected ready worksheet");
-    expect(worksheet.options.slice(0, 7).filter((option) => option.status === "completed" && option.toleranceChanges.length > 0)
+    expect(worksheet.options.slice(0, 7).filter((option) => option.status === "completed"
+      && option.toleranceChanges.length > 0
+      && option.optionKind !== "centering_plus_tighten")
       .every((option) => option.status === "completed"
         && option.feasibility.status === "insufficient_evidence"
         && option.feasibility.evidenceReferences.length === 0)).toBe(true);

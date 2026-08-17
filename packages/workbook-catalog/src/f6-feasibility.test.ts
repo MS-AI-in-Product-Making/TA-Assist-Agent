@@ -212,6 +212,20 @@ describe("F6 capability and evidence feasibility gates", () => {
     expect(f6FeasibilityAssessmentSchema.parse(result.feasibility)).toEqual(result.feasibility);
   });
 
+  it("constructs a schema-valid supplier evidence scope matching the governed reference", () => {
+    const evidence = supplierEvidence();
+    const result = assessSupplierScenario({ evidence, requestedToleranceBand: 0.2 });
+
+    expect(result.option.evidenceScope).toEqual({
+      kind: "supplier",
+      supplierReference: evidence.supplierReference,
+      processFamily: evidence.processFamily,
+      partCategory: evidence.partCategory,
+      evidenceReference: { artifact: evidence.source, contentHash: evidence.contentHash },
+    });
+    expect(f6OptionSchema.parse(result.option)).toEqual(result.option);
+  });
+
   it.each([
     [0.2, "supported", "t1_governed_bound_satisfied"],
     [0.199, "not_supported", "t1_governed_bound_exceeded"],
@@ -282,6 +296,18 @@ describe("F6 capability and evidence feasibility gates", () => {
     expect(result.option).not.toHaveProperty("numericDelta");
     expect(f6OptionSchema.parse(result.option)).toEqual(result.option);
     expect(f6FeasibilityAssessmentSchema.parse(result.feasibility)).toEqual(result.feasibility);
+  });
+
+  it("constructs a schema-valid datum evidence scope matching provenance", () => {
+    const evidence = datumEvidence();
+    const result = assessDatumScenario({ evidence });
+
+    expect(result.option.evidenceScope).toEqual({
+      kind: "datum",
+      factorSources: evidence.factorDirections,
+      evidenceReference: { artifact: evidence.source, contentHash: evidence.contentHash },
+    });
+    expect(f6OptionSchema.parse(result.option)).toEqual(result.option);
   });
 
   it("returns insufficient cost and ROI without governed evidence", () => {
