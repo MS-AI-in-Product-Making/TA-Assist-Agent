@@ -47,7 +47,7 @@ function calculationRequest(worksheetName = "Analysis-A"): CalculationRequest {
     contractVersion: "v1",
     inputClassification: "confidential",
     projectReference: "project",
-    runReference: "run",
+    runReference: "run-1",
     worksheetAnalysisAssets: {
       contractVersion: "v1",
       workbook: { classification: "confidential", contentHash: HASH, catalogContractVersion: "v1" },
@@ -160,6 +160,7 @@ function request(worksheetName = "Analysis-A"): F6OptimizationRequest {
     scenarioPolicyVersion: "f6-scenario-policy-v1",
     worksheets: [{
       worksheetName,
+      f4CalculationIndex: 1,
       baselineCalculationRequest: baselineRequest,
       baselineCalculation: calculation,
       f5Worksheet,

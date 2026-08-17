@@ -6497,6 +6497,7 @@ export const f6SupplierBindingSchema = z.object({
 
 export const f6WorksheetInputSchema = z.object({
   worksheetName: z.string().min(1),
+  f4CalculationIndex: z.number().int().positive(),
   baselineCalculationRequest: calculationRequestSchema,
   baselineCalculation: calculationCompletedResultSchema,
   f5Worksheet: f5CompletedWorksheetResultSchema,
@@ -6597,8 +6598,10 @@ export const f6OptimizationRequestSchema = z.object({
     if (worksheet.baselineCalculation.workbookContentHash !== request.workbook.contentHash) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline workbook hash must match request workbook", path: ["worksheets", index, "baselineCalculation", "workbookContentHash"] });
     }
-    if (worksheet.baselineCalculation.runReference !== request.f4Reference.runId) {
-      context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline run must match the F4 reference", path: ["worksheets", index, "baselineCalculation", "runReference"] });
+    const expectedRunReference = `${request.f4Reference.runId}-${worksheet.f4CalculationIndex}`;
+    if (worksheet.baselineCalculation.runReference !== expectedRunReference
+      || worksheet.baselineCalculationRequest.runReference !== expectedRunReference) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline run must derive from the F4 reference and calculation index", path: ["worksheets", index, "baselineCalculation", "runReference"] });
     }
     worksheet.supplierBindings.forEach((binding, bindingIndex) => {
       const matchingEvidence = (request.supplierCapabilityEvidence ?? []).filter((evidence) =>
@@ -6632,6 +6635,7 @@ const f6HighestImpactActionSchema = z.object({
 
 const f6ReadyWorksheetFields = {
   worksheetName: z.string().min(1),
+  f4CalculationIndex: z.number().int().positive(),
   baselineMetrics: f6MetricsSchema,
   targetCapability: f6TargetCapabilitySchema,
   inputFindings: z.array(f6InputFindingSchema),
@@ -6922,8 +6926,8 @@ export const f6OptimizationResultSchema = z.object({
       if (scenarioCalculation.workbookContentHash !== result.workbook.contentHash) {
         context.addIssue({ code: z.ZodIssueCode.custom, message: "scenario evidence workbook must match result workbook", path: ["worksheets", worksheetIndex, "options", optionIndex, "scenarioEvidence", "calculation", "workbookContentHash"] });
       }
-      if (scenarioCalculation.runReference !== result.provenance.f4Reference.runId) {
-        context.addIssue({ code: z.ZodIssueCode.custom, message: "scenario evidence run must match F4 provenance", path: ["worksheets", worksheetIndex, "options", optionIndex, "scenarioEvidence", "calculation", "runReference"] });
+      if (scenarioCalculation.runReference !== `${result.provenance.f4Reference.runId}-${worksheet.f4CalculationIndex}`) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "scenario evidence run must derive from F4 provenance and calculation index", path: ["worksheets", worksheetIndex, "options", optionIndex, "scenarioEvidence", "calculation", "runReference"] });
       }
       if (scenarioCalculation.worksheetSelection.worksheetName !== worksheet.worksheetName) {
         context.addIssue({ code: z.ZodIssueCode.custom, message: "scenario evidence worksheet must match parent worksheet", path: ["worksheets", worksheetIndex, "options", optionIndex, "scenarioEvidence", "calculation", "worksheetSelection", "worksheetName"] });

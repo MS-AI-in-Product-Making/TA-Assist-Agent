@@ -548,6 +548,7 @@ function optimizeWorksheet(
     }));
   const result: ReadyWorksheet = {
     worksheetName: worksheet.worksheetName,
+    f4CalculationIndex: worksheet.f4CalculationIndex,
     status: completedCount === 0
       ? "calculation_failed"
       : ranked.some(({ status }) => status === "calculation_failed")

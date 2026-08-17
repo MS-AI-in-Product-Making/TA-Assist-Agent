@@ -263,9 +263,9 @@ function indexExactlyOnce(records, selection) {
 function indexCalculationsExactlyOnce(calculations, selection) {
   const result = new Map();
   for (const worksheetName of selection) {
-    const matches = calculations.filter(
-      (calculation) => calculation.worksheetSelection.worksheetName === worksheetName,
-    );
+    const matches = calculations
+      .map((calculation, index) => ({ calculation, calculationIndex: index + 1 }))
+      .filter(({ calculation }) => calculation.worksheetSelection.worksheetName === worksheetName);
     if (matches.length !== 1) return undefined;
     result.set(worksheetName, matches[0]);
   }
@@ -387,18 +387,25 @@ export function loadF6ArtifactBundle({
     const f2Worksheet = f2ByName.get(worksheetName);
     const handoff = handoffByName.get(worksheetName);
     const f3Worksheet = f3ByName.get(worksheetName);
-    const baselineCalculation = f4ByName.get(worksheetName);
+    const { calculation: baselineCalculation, calculationIndex: f4CalculationIndex } = f4ByName.get(worksheetName);
     const f5Worksheet = f5ByName.get(worksheetName);
     if (!f2WorksheetMatchesHandoff(f2Worksheet, handoff, workbook.contentHash)) {
+      return inputRejected("artifact_identity_mismatch", `worksheet:${worksheetName}`);
+    }
+    const expectedProjectReference = `f4-${workbook.contentHash.slice(0, 16)}`;
+    const expectedRunReference = `${f4.runId}-${f4CalculationIndex}`;
+    if (baselineCalculation.projectReference !== expectedProjectReference
+      || baselineCalculation.runReference !== expectedRunReference
+      || baselineCalculation.recommendation.criticality !== "none") {
       return inputRejected("artifact_identity_mismatch", `worksheet:${worksheetName}`);
     }
     let baselineCalculationRequest;
     try {
       baselineCalculationRequest = createCalculationRequestFromF4Handoff({
         handoff,
-        projectReference: baselineCalculation.projectReference,
-        runReference: baselineCalculation.runReference,
-        criticality: baselineCalculation.recommendation.criticality,
+        projectReference: expectedProjectReference,
+        runReference: expectedRunReference,
+        criticality: "none",
       });
     } catch {
       return inputRejected("artifact_identity_mismatch", ARTIFACTS.f2);
@@ -410,13 +417,13 @@ export function loadF6ArtifactBundle({
       return inputRejected("artifact_identity_mismatch", `worksheet:${worksheetName}`);
     }
     if (!isDeepStrictEqual(replay, baselineCalculation)
-      || baselineCalculation.runReference !== f4.runId
       || !isDeepStrictEqual(f3Worksheet.rows, f5Worksheet.governanceRows)
       || !isDeepStrictEqual(baselineCalculation, f5Worksheet.calculationResult)) {
       return inputRejected("artifact_identity_mismatch", `worksheet:${worksheetName}`);
     }
     requestWorksheets.push({
       worksheetName,
+      f4CalculationIndex,
       baselineCalculationRequest,
       baselineCalculation,
       f5Worksheet,
@@ -453,7 +460,7 @@ export function loadF6ArtifactBundle({
     for (const worksheetName of selection) {
       const observed = observationByName.get(worksheetName);
       const f3Worksheet = f3ByName.get(worksheetName);
-      const baselineCalculation = f4ByName.get(worksheetName);
+      const baselineCalculation = f4ByName.get(worksheetName).calculation;
       if (!isDeepStrictEqual(observed.imageReference, f5ByName.get(worksheetName).imageReference)) {
         return inputRejected("artifact_identity_mismatch", loaded.reference.artifact);
       }

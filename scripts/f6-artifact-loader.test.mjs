@@ -20,10 +20,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { createCalculation } from "../packages/workbook-catalog/dist/calculation.js";
 import { createF5DataInterpretation } from "../packages/workbook-catalog/dist/f5-data-interpretation.js";
-import {
-  createCalculationRequestFromF4Handoff,
-  createF4Handoff,
-} from "../packages/workbook-catalog/dist/f4-handoff.js";
+import { createF4Handoff } from "../packages/workbook-catalog/dist/f4-handoff.js";
+import { calculateF4Workflow } from "./f4-calculation-workflow.mjs";
 import { loadF6ArtifactBundle } from "./f6-artifact-loader.mjs";
 
 const roots = [];
@@ -191,14 +189,20 @@ function setupBundle({ worksheetNames = ["Analysis-A"], blockedWorksheetNames = 
     workbookContentHash: WORKBOOK_HASH,
     worksheet,
   }));
-  const calculations = handoffs.map((handoff) => createCalculation(
-    createCalculationRequestFromF4Handoff({
-      handoff,
-      projectReference: `f4-${WORKBOOK_HASH.slice(0, 16)}`,
-      runReference: RUN_ID,
-      criticality: "none",
-    }),
-  ));
+  const f4 = calculateF4Workflow({
+    status: "accepted",
+    reportPath: "Feature2-Report.json",
+    workbook: {
+      fileName: "Anonymous.xlsx",
+      contentHash: WORKBOOK_HASH,
+      f1GeneratedAt: "2026-08-17T00:00:00.000Z",
+    },
+    handoffs,
+  }, {
+    runId: RUN_ID,
+    generatedAt: "2026-08-17T00:01:00.000Z",
+  });
+  const calculations = f4.calculations;
   if (calculations.some(({ status }) => status !== "completed")) throw new Error("fixture calculation failed");
 
   const f2 = {
@@ -255,18 +259,6 @@ function setupBundle({ worksheetNames = ["Analysis-A"], blockedWorksheetNames = 
       duplicateConflictCount: 0,
     },
   };
-  const f4 = {
-    contractVersion: "v1",
-    workflowVersion: "f4-f2-v1",
-    outputClassification: "confidential",
-    featureId: "F4",
-    status: "completed",
-    runId: RUN_ID,
-    generatedAt: "2026-08-17T00:01:00.000Z",
-    source: { artifactReference: "Feature2-Report.json", workbookFileName: "Anonymous.xlsx", workbookContentHash: WORKBOOK_HASH },
-    calculations,
-    summary: { selectedWorksheetCount: calculations.length, completedWorksheetCount: calculations.length },
-  };
   const f5Request = {
     contractVersion: "v1",
     inputClassification: "confidential",
@@ -320,7 +312,8 @@ describe("loadF6ArtifactBundle", () => {
       interpretationVersion: "interpretation-rules-v1",
     });
     expect(result.request.worksheets.map(({ worksheetName }) => worksheetName)).toEqual(["Analysis-A"]);
-    expect(result.request.worksheets[0].baselineCalculationRequest.runReference).toBe(RUN_ID);
+    expect(result.request.worksheets[0].f4CalculationIndex).toBe(1);
+    expect(result.request.worksheets[0].baselineCalculationRequest.runReference).toBe(`${RUN_ID}-1`);
     expect(createCalculation(result.request.worksheets[0].baselineCalculationRequest)).toEqual(
       result.request.worksheets[0].baselineCalculation,
     );
@@ -499,7 +492,7 @@ describe("F6 governed bundle validation", () => {
     }]);
   });
 
-  it("preserves explicit selected worksheet order", () => {
+  it("preserves requested worksheet order while retaining original F4 calculation indices", () => {
     const bundle = setupBundle({ worksheetNames: ["Analysis-A", "Analysis-B"] });
     bundle.selectedWorksheetNames = ["Analysis-B", "Analysis-A"];
 
@@ -508,6 +501,11 @@ describe("F6 governed bundle validation", () => {
     expect(result.status, JSON.stringify(result)).toBe("accepted");
     expect(result.request.selectedWorksheetNames).toEqual(bundle.selectedWorksheetNames);
     expect(result.request.worksheets.map(({ worksheetName }) => worksheetName)).toEqual(bundle.selectedWorksheetNames);
+    expect(result.request.worksheets.map(({ f4CalculationIndex }) => f4CalculationIndex)).toEqual([2, 1]);
+    expect(result.request.worksheets.map(({ baselineCalculation }) => baselineCalculation.runReference)).toEqual([
+      `${RUN_ID}-2`,
+      `${RUN_ID}-1`,
+    ]);
   });
 
   it.each([
@@ -566,6 +564,29 @@ describe("F6 governed bundle validation", () => {
     rewriteJson(bundle.paths.f4, (report) => { report.runId = "other-run"; });
 
     expectRejected(loadF6ArtifactBundle(bundle), "artifact_identity_mismatch", "worksheet:Analysis-A");
+  });
+
+  it.each([
+    ["projectReference", "f4-bbbbbbbbbbbbbbbb", "artifact_identity_mismatch", "worksheet:Analysis-A"],
+    ["runReference", "tampered-run-1", "artifact_identity_mismatch", "worksheet:Analysis-A"],
+    ["criticality", "safety_critical", "artifact_contract_invalid", "Feature4-Calculation.json"],
+  ])("rejects synchronized F4/F5 %s tampering before replay", (field, tamperedValue, reasonCode, artifactReference) => {
+    const bundle = setupBundle();
+    for (const artifactPath of [bundle.paths.f4, bundle.paths.f5]) {
+      rewriteJson(artifactPath, (report) => {
+        const calculation = artifactPath === bundle.paths.f4
+          ? report.calculations[0]
+          : report.worksheets[0].calculationResult;
+        if (field === "criticality") {
+          calculation.recommendation.criticality = tamperedValue;
+          calculation.recommendation.criticalityRisk = true;
+        } else {
+          calculation[field] = tamperedValue;
+        }
+      });
+    }
+
+    expectRejected(loadF6ArtifactBundle(bundle), reasonCode, artifactReference);
   });
 
   it("sanitizes replay exceptions as an artifact identity rejection", () => {

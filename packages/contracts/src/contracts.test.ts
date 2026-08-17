@@ -1696,7 +1696,7 @@ describe("F5.1 objective interpretation contracts", () => {
     status: "completed" as const,
     calculationVersion: "excel-ta-v1" as const,
     projectReference: "controlled-project-reference",
-    runReference: "controlled-run-reference",
+    runReference: "controlled-run-reference-1",
     workbookContentHash: contentHash,
     worksheetSelection: {
       worksheetName: "Analysis-A",
@@ -4374,6 +4374,7 @@ describe("F5.1 objective interpretation contracts", () => {
       };
       const validF6WorksheetInput = {
         worksheetName: "Analysis-A",
+        f4CalculationIndex: 1,
         baselineCalculationRequest,
         baselineCalculation: calculationCompletedResult,
         f5Worksheet: rootResult.worksheets[0],
@@ -4388,7 +4389,7 @@ describe("F5.1 objective interpretation contracts", () => {
         selectedWorksheetNames: ["Analysis-A"],
         f2Reference: reference("Feature2-Report.json"),
         f3Reference: reference("Feature3-Report.json"),
-        f4Reference: { ...reference("Feature4-Calculation.json"), runId: calculationCompletedResult.runReference, calculationVersion: "excel-ta-v1" },
+        f4Reference: { ...reference("Feature4-Calculation.json"), runId: "controlled-run-reference", calculationVersion: "excel-ta-v1" },
         f5Reference: { ...reference("Feature5-Report.json"), interpretationVersion: "f5-data-interpretation-v1" },
         f0Versions: {
           knowledgeBaseVersion: "v1",
@@ -4493,6 +4494,7 @@ describe("F5.1 objective interpretation contracts", () => {
         workbook: f6Request.workbook,
         worksheets: [{
           worksheetName: "Analysis-A",
+          f4CalculationIndex: 1,
           status: "completed",
           baselineMetrics: metrics,
           targetCapability: { targetCpk: 1.33, targetSigmaLevel: 4, source: "worksheet" },
@@ -4521,6 +4523,10 @@ describe("F5.1 objective interpretation contracts", () => {
         expect(f6OptimizationRequestSchema.safeParse({
           ...f6Request,
           worksheets: [{ ...validF6WorksheetInput, baselineCalculationRequest: { ...baselineCalculationRequest, runReference: "tampered-run" } }],
+        }).success).toBe(false);
+        expect(f6OptimizationRequestSchema.safeParse({
+          ...f6Request,
+          worksheets: [{ ...validF6WorksheetInput, f4CalculationIndex: 2 }],
         }).success).toBe(false);
       });
 
