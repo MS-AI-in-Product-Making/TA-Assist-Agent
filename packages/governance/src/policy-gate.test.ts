@@ -323,25 +323,29 @@ describe("policy gate", () => {
     });
   });
 
-  it("keeps F6 unavailable with its established comparison contracts", () => {
-    const feature = getFeatureStatus("F6");
-
-    expect(feature).toMatchObject({
+  it("reports F6 as the available governed optimization workflow", () => {
+    expect(getFeatureStatus("F6")).toEqual({
       featureId: "F6",
       title: "可比较的方案选项",
-      status: "unavailable",
-      inputContractId: "comparison-request-v1",
-      outputContractId: "comparison-result-v1",
+      status: "available",
+      dependsOn: [
+        "calculation-service-v1",
+        "knowledge-base-v1",
+        "interpretation-rules-v1",
+        "f6-optimization-v1",
+        "skill-runtime-v1",
+      ],
+      inputContractId: "f6-optimization-request-v1",
+      outputContractId: "f6-optimization-result-v1",
       maximumClassification: "confidential",
-      acceptanceChecks: ["anonymous-comparison-fixture"],
+      acceptanceChecks: [
+        "anonymous-f6-optimization-fixture",
+        "f6-optimization-contract-check",
+        "f6-skill-contract-check",
+      ],
       externalPrerequisites: ["approved-knowledge-base"],
       disableBehavior: "return feature_not_available",
     });
-    expect(feature?.dependsOn).toEqual(expect.arrayContaining([
-      "knowledge-base-v1",
-      "comparison-engine-v1",
-      "interpretation-rules-v1",
-    ]));
   });
 
   it("keeps F7 unavailable with its established Cpk contracts", () => {
@@ -359,7 +363,7 @@ describe("policy gate", () => {
     });
   });
 
-  it.each(["F6", "F7"])(
+  it.each(["F7"])(
     "keeps %s unavailable",
     (featureId) => {
       expect(getFeatureStatus(featureId)).toMatchObject({

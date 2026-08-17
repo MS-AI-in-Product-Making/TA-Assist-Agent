@@ -2,14 +2,10 @@ import { expect, it } from "vitest";
 import { featureNotAvailable } from "./feature-placeholder-skill.js";
 
 it("returns the disabled feature dependencies and enablement requirements", () => {
-  expect(featureNotAvailable("F6")).toMatchObject({
+  expect(featureNotAvailable("F7")).toMatchObject({
     code: "feature_not_available",
-    featureId: "F6",
-    dependencies: [
-      "knowledge-base-v1",
-      "comparison-engine-v1",
-      "interpretation-rules-v1",
-    ],
-    enablementRequirements: ["approved-knowledge-base"],
+    featureId: "F7",
+    dependencies: ["measurement-store-v1", "dim-id-service-v1"],
+    enablementRequirements: ["approved-measurement-store", "canonical-dim-id-policy"],
   });
 });

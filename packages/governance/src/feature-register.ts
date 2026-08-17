@@ -317,16 +317,28 @@ const featureRegister: ReadonlyMap<string, FeatureRegistration> = new Map([
   ],
   [
     "F6",
-    unavailableFeature(
-      "F6",
-      "可比较的方案选项",
-      ["knowledge-base-v1", "comparison-engine-v1", "interpretation-rules-v1"],
-      "comparison-request-v1",
-      "comparison-result-v1",
-      "confidential",
-      ["anonymous-comparison-fixture"],
-      ["approved-knowledge-base"],
-    ),
+    {
+      featureId: "F6",
+      title: "可比较的方案选项",
+      status: "available",
+      dependsOn: [
+        "calculation-service-v1",
+        "knowledge-base-v1",
+        "interpretation-rules-v1",
+        "f6-optimization-v1",
+        "skill-runtime-v1",
+      ],
+      inputContractId: "f6-optimization-request-v1",
+      outputContractId: "f6-optimization-result-v1",
+      maximumClassification: "confidential",
+      acceptanceChecks: [
+        "anonymous-f6-optimization-fixture",
+        "f6-optimization-contract-check",
+        "f6-skill-contract-check",
+      ],
+      externalPrerequisites: ["approved-knowledge-base"],
+      disableBehavior: "return feature_not_available",
+    },
   ],
   [
     "F7",
