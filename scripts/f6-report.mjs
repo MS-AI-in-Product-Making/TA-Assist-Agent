@@ -26,6 +26,12 @@ function optionResult(option) {
   return `calculation_failed; reason: ${option.reasonCode}`;
 }
 
+function capabilityStatus(worksheet) {
+  if (worksheet.baselineMetrics.cpk < 1) return "FAIL";
+  if (worksheet.baselineMetrics.cpk < worksheet.targetCapability.targetCpk) return "RISK";
+  return "PASS";
+}
+
 function renderReadyWorksheet(lines, worksheet) {
   lines.push(
     `## Worksheet: ${cell(worksheet.worksheetName)}`,
@@ -33,6 +39,7 @@ function renderReadyWorksheet(lines, worksheet) {
     "### Executive Summary",
     "",
     `- Status: ${cell(worksheet.status)}`,
+    `- Optimization Status: ${cell(worksheet.status)}`,
     `- Target Cpk: ${worksheet.targetCapability.targetCpk} (${cell(worksheet.targetCapability.source)})`,
     `- Highest Impact Action: ${cell(worksheet.highestImpactAction?.optionId ?? "insufficient_evidence")}`,
     `- ROI: ${cell(worksheet.roiStatus)}`,
@@ -44,7 +51,7 @@ function renderReadyWorksheet(lines, worksheet) {
     `| Mean | ${worksheet.baselineMetrics.mean} | baseline |`,
     `| Sigma | ${worksheet.baselineMetrics.rssSigma} | baseline |`,
     `| Cp | ${worksheet.baselineMetrics.cp} | baseline |`,
-    `| Cpk | ${worksheet.baselineMetrics.cpk} | ${cell(worksheet.status)} |`,
+    `| Cpk | ${worksheet.baselineMetrics.cpk} | ${capabilityStatus(worksheet)} |`,
     `| Yield | ${worksheet.baselineMetrics.yield} | baseline |`,
     `| DPMO | ${worksheet.baselineMetrics.dpm} | baseline |`,
     "",

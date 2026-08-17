@@ -39,6 +39,7 @@ function report() {
       worksheetName: "Blocked|<script>[bad](javascript:alert(2))",
       findings: [{
         findingCode: "f2_input_blocked",
+        findingKind: "validation_abnormality",
         severity: "Critical",
         message: "Missing required image | <img src=x onerror=alert(1)>",
         affectsCapabilityData: false,
@@ -72,6 +73,7 @@ function report() {
         },
         inputValidation: [{
           findingCode: "unsupported_assumption",
+          findingKind: "governance_gap",
           severity: "Major",
           message: "Assumption requires review.",
           affectsCapabilityData: false,

@@ -31,6 +31,7 @@ import {
   f6CostEvidenceSchema,
   f6DatumEvidenceSchema,
   f6FeasibilityAssessmentSchema,
+  f6InputFindingSchema,
   f6OptimizationRequestSchema,
   f6OptimizationResultSchema,
   f6ReverseSolveResultSchema,
@@ -4577,6 +4578,21 @@ describe("F5.1 objective interpretation contracts", () => {
         }).success).toBe(false);
       });
 
+      it("requires a governed finding kind on every F6 input finding", () => {
+        const finding = {
+          findingCode: "arbitrary-code",
+          findingKind: "governance_gap",
+          severity: "Major",
+          message: "A governed identifier is unavailable.",
+          affectsCapabilityData: false,
+          evidenceReferences: [],
+        };
+
+        expect(f6InputFindingSchema.parse(finding)).toEqual(finding);
+        expect(f6InputFindingSchema.safeParse({ ...finding, findingKind: undefined }).success).toBe(false);
+        expect(f6InputFindingSchema.safeParse({ ...finding, findingKind: "requirement_violation" }).success).toBe(false);
+      });
+
       it("rejects duplicate governed evidence identities in requests at the second record", () => {
         for (const [field, evidence] of [
           ["supplierCapabilityEvidence", supplierEvidence],
@@ -4875,7 +4891,7 @@ describe("F5.1 objective interpretation contracts", () => {
             f4CalculationIndex: 1,
             baselineIdentity,
             status: "input_rejected",
-            inputFindings: [{ findingCode: "missing", severity: "Critical", message: "Input is missing.", affectsCapabilityData: true, evidenceReferences: [] }],
+            inputFindings: [{ findingCode: "missing", findingKind: "validation_abnormality", severity: "Critical", message: "Input is missing.", affectsCapabilityData: true, evidenceReferences: [] }],
             options: [], risks: [], clarifications: [],
           }],
           summary: { worksheetCount: 1, completedWorksheetCount: 0, partiallyCompletedWorksheetCount: 0, calculationFailedWorksheetCount: 0, inputRejectedWorksheetCount: 1, completedOptionCount: 0, calculationFailedOptionCount: 0, insufficientEvidenceOptionCount: 0 },
@@ -4970,7 +4986,7 @@ describe("F5.1 objective interpretation contracts", () => {
         const clarification = { clarificationId: "clarify-1", reasonCode: "missing", requiredInputs: ["input"], questionForReviewer: "Provide input?", evidenceReferences: [] };
         const rejectedWorksheet = {
           worksheetName: "Analysis-A", f4CalculationIndex: 1, baselineIdentity, status: "input_rejected",
-          inputFindings: [{ findingCode: "missing", severity: "Critical", message: "Input is missing.", affectsCapabilityData: true, evidenceReferences: [] }],
+          inputFindings: [{ findingCode: "missing", findingKind: "validation_abnormality", severity: "Critical", message: "Input is missing.", affectsCapabilityData: true, evidenceReferences: [] }],
           options: [], risks: [risk], clarifications: [clarification],
         };
         const rejectedResult = {
@@ -5222,7 +5238,7 @@ describe("F5.1 objective interpretation contracts", () => {
           contractVersion: "v1", outputClassification: "confidential", reportVersion: "f6-composed-report-v1",
           workbook: f6Request.workbook, overallStatus: "RISK",
           workbookExecutiveSummary: ["Overall RISK because one worksheet is blocked."],
-          blockedWorksheets: [{ worksheetName: "Blocked", findings: [{ findingCode: "missing_nominal", severity: "Critical", message: "Nominal is missing.", affectsCapabilityData: true, evidenceReferences: [reference("Feature2-Report.json")] }] }],
+          blockedWorksheets: [{ worksheetName: "Blocked", findings: [{ findingCode: "missing_nominal", findingKind: "validation_abnormality", severity: "Critical", message: "Nominal is missing.", affectsCapabilityData: true, evidenceReferences: [reference("Feature2-Report.json")] }] }],
           worksheets: [{
             worksheetName: "Analysis-A", status: "PASS", evidenceReferences,
             targetCapability: { targetCpk: 1.33, targetSigmaLevel: 4, source: "worksheet" },
@@ -5249,6 +5265,10 @@ describe("F5.1 objective interpretation contracts", () => {
           }],
         };
         expect(f6ComposedEngineeringReportSchema.parse(report)).toEqual(report);
+        expect(f6ComposedEngineeringReportSchema.safeParse({
+          ...report,
+          worksheets: [{ ...report.worksheets[0], missingCapabilityData: true, status: "RISK" }],
+        }).success).toBe(false);
         expect(f6ComposedEngineeringReportSchema.safeParse({ ...report, blockedWorksheets: [], worksheets: [] }).success).toBe(false);
         expect(f6ComposedEngineeringReportSchema.safeParse({ ...report, workbookExecutiveSummary: Array(6).fill("bullet") }).success).toBe(false);
         expect(f6ComposedEngineeringReportSchema.safeParse({ ...report, worksheets: [{ ...report.worksheets[0], sections: { ...report.worksheets[0].sections, executiveSummary: Array(6).fill("bullet") } }] }).success).toBe(false);
@@ -5297,10 +5317,8 @@ describe("F5.1 objective interpretation contracts", () => {
 
         const statusCases = [
           { cpk: 0.99, targetCpk: 1.33, violation: false, missing: false, rating: "Low", expected: "FAIL" },
-          { cpk: 0, targetCpk: 1.33, violation: false, missing: true, rating: "Low", expected: "RISK" },
           { cpk: 2, targetCpk: 1.33, violation: true, missing: false, rating: "Low", expected: "FAIL" },
           { cpk: 1.1, targetCpk: 1.33, violation: false, missing: false, rating: "Low", expected: "RISK" },
-          { cpk: 2, targetCpk: 1.33, violation: false, missing: true, rating: "Low", expected: "RISK" },
           { cpk: 2, targetCpk: 1.33, violation: false, missing: false, rating: "High", expected: "RISK" },
           { cpk: 1.33, targetCpk: 1.33, violation: false, missing: false, rating: "Low", expected: "PASS" },
         ] as const;
@@ -5336,6 +5354,8 @@ describe("F5.1 objective interpretation contracts", () => {
 
         const failedWhatIf = structuredClone(report);
         failedWhatIf.worksheets[0]!.sections.whatIfAnalysis.options[0] = { optionKind: "reduce_top_contributor_20", status: "calculation_failed", summary: "Calculation failed.", reasonCode: "f4_calculation_failed", evidenceReferences };
+        failedWhatIf.worksheets[0]!.status = "RISK";
+        failedWhatIf.overallStatus = "RISK";
         expect(f6ComposedEngineeringReportSchema.safeParse(failedWhatIf).success).toBe(true);
 
         const governedWhatIf = structuredClone(report);

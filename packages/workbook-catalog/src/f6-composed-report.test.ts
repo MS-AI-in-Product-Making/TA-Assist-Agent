@@ -341,25 +341,42 @@ describe("createF6ComposedEngineeringReport", () => {
     expect(failed.overallStatus).toBe("FAIL");
   });
 
-  it("preserves verified baseline capability when every controlled option calculation fails", () => {
-    const report = createF6ComposedEngineeringReport(bundle([["Analysis-A", 0.12]], undefined, true));
+  it.each([
+    [0.12, "FAIL"],
+    [0.25, "RISK"],
+    [1, "RISK"],
+  ] as const)("preserves all-failed baseline capability and derives %s as %s", (specificationLimit, expectedStatus) => {
+    const report = createF6ComposedEngineeringReport(bundle([["Analysis-A", specificationLimit]], undefined, true));
 
-    expect(report.overallStatus).toBe("FAIL");
-    expect(report.worksheets[0]).toMatchObject({ status: "FAIL", missingCapabilityData: false });
+    expect(report.overallStatus).toBe(expectedStatus);
+    expect(report.worksheets[0]).toMatchObject({ status: expectedStatus, missingCapabilityData: false });
     expect(report.worksheets[0]!.sections.capabilityAssessment.metrics.cpk).toBeGreaterThan(0);
   });
 
-  it("treats an input finding that affects capability data as RISK", () => {
-    const missingInput = bundle([["Analysis-A", 1]]);
-    missingInput.f6Result.worksheets[0]!.inputFindings = [{
-      findingCode: "missing_capability_input",
+  it("uses findingKind only for requirement violations", () => {
+    const violationInput = bundle([["Analysis-A", 1]]);
+    violationInput.f6Result.worksheets[0]!.inputFindings = [{
+      findingCode: "arbitrary-code-without-inference",
+      findingKind: "confirmed_requirement_violation",
       severity: "Critical",
-      message: "A capability input is unavailable.",
-      affectsCapabilityData: true,
-      evidenceReferences: [missingInput.f6Result.provenance.f2Reference],
+      message: "A governed requirement is violated.",
+      affectsCapabilityData: false,
+      evidenceReferences: [violationInput.f6Result.provenance.f2Reference],
     }];
-    const missing = createF6ComposedEngineeringReport(missingInput);
-    expect(missing.worksheets[0]).toMatchObject({ status: "RISK", missingCapabilityData: true });
+    const violation = createF6ComposedEngineeringReport(violationInput);
+    expect(violation.worksheets[0]).toMatchObject({ status: "FAIL", confirmedRequirementViolation: true });
+
+    const ordinaryInput = bundle([["Analysis-A", 1]]);
+    ordinaryInput.f6Result.worksheets[0]!.inputFindings = [{
+      findingCode: "confirmed_requirement_violation",
+      findingKind: "validation_abnormality",
+      severity: "Critical",
+      message: "A loader validation abnormality was retained with the verified baseline.",
+      affectsCapabilityData: true,
+      evidenceReferences: [ordinaryInput.f6Result.provenance.f2Reference],
+    }];
+    const ordinary = createF6ComposedEngineeringReport(ordinaryInput);
+    expect(ordinary.worksheets[0]).toMatchObject({ status: "PASS", confirmedRequirementViolation: false, missingCapabilityData: false });
 
     const openRiskInput = bundle([["Analysis-A", 1]]);
     openRiskInput.f6Result.worksheets[0]!.risks[0]!.status = "open";

@@ -276,6 +276,7 @@ function f2Findings(worksheet, f2Reference) {
   return worksheet.rows.flatMap((row) => [
     ...row.missingRequiredFields.map((field) => ({
       findingCode: `missing_required_field:${field}`,
+      findingKind: "validation_abnormality",
       severity: "Critical",
       message: `Required field ${field} is unavailable.`,
       affectsCapabilityData: true,
@@ -283,6 +284,7 @@ function f2Findings(worksheet, f2Reference) {
     })),
     ...row.missingIdentifiers.map((field) => ({
       findingCode: `missing_identifier:${field}`,
+      findingKind: "governance_gap",
       severity: "Major",
       message: `Governed identifier ${field} is unavailable.`,
       affectsCapabilityData: false,
@@ -296,6 +298,7 @@ function blockedValidation(worksheet, f2Reference) {
   if (worksheet.tolerancePathImageStatus === "unavailable") {
     findings.push({
       findingCode: "tolerance_path_image_unavailable",
+      findingKind: "validation_abnormality",
       severity: "Critical",
       message: "Tolerance-path image evidence is unavailable.",
       affectsCapabilityData: false,
@@ -305,6 +308,7 @@ function blockedValidation(worksheet, f2Reference) {
   for (const issue of worksheet.systemSpecificationIssues) {
     findings.push({
       findingCode: `system_specification:${issue.field}:${issue.reasonCode}`,
+      findingKind: "validation_abnormality",
       severity: "Critical",
       message: `System specification ${issue.field} is unavailable.`,
       affectsCapabilityData: true,
@@ -314,6 +318,7 @@ function blockedValidation(worksheet, f2Reference) {
   if (findings.length === 0) {
     findings.push({
       findingCode: "f2_worksheet_blocked",
+      findingKind: "validation_abnormality",
       severity: "Critical",
       message: "F2 validation blocked this worksheet.",
       affectsCapabilityData: true,

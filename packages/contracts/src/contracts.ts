@@ -6323,8 +6323,16 @@ export const f6CostEvidenceSchema = z.object({
   });
 });
 
+const f6FindingKindSchema = z.enum([
+  "validation_abnormality",
+  "confirmed_requirement_violation",
+  "governance_gap",
+  "optimization_failure",
+]);
+
 export const f6InputFindingSchema = z.object({
   findingCode: z.string().min(1),
+  findingKind: f6FindingKindSchema,
   severity: z.enum(["Critical", "Major", "Minor"]),
   message: z.string().min(1),
   affectsCapabilityData: z.boolean(),
@@ -7117,6 +7125,7 @@ export const f6OptimizationResultSchema = z.object({
 const f6ReportEvidenceReferencesSchema = z.array(f6ArtifactReferenceSchema).min(1);
 const f6ReportFindingSchema = z.object({
   findingCode: z.string().min(1),
+  findingKind: f6FindingKindSchema,
   severity: z.enum(["Critical", "Major", "Minor"]),
   message: z.string().min(1),
   affectsCapabilityData: z.boolean(),
@@ -7210,22 +7219,22 @@ export const f6ComposedWorksheetReportSchema = z.object({
   status: z.enum(["PASS", "FAIL", "RISK"]),
   targetCapability: f6TargetCapabilitySchema,
   confirmedRequirementViolation: z.boolean(),
-  missingCapabilityData: z.boolean(),
+  missingCapabilityData: z.literal(false),
   evidenceReferences: f6ReportEvidenceReferencesSchema,
   sections: f6ComposedSectionsSchema,
 }).strict().superRefine((worksheet, context) => {
   const cpk = worksheet.sections.capabilityAssessment.metrics.cpk;
   const hasOpenHighRisk = worksheet.sections.riskAssessment.some((risk) => risk.status === "open" && (risk.rating === "High" || risk.rating === "Critical"));
   const hasInsufficientRiskEvidence = worksheet.sections.riskAssessment.some((risk) => risk.status === "insufficient_evidence");
+  const hasOptimizationFailure = worksheet.sections.inputValidation.some(({ findingKind }) => findingKind === "optimization_failure")
+    || worksheet.sections.whatIfAnalysis.options.some(({ status }) => status === "calculation_failed");
   const expectedStatus = worksheet.confirmedRequirementViolation
     ? "FAIL"
-    : worksheet.missingCapabilityData
-      ? "RISK"
-      : cpk < 1
-        ? "FAIL"
-        : cpk < worksheet.targetCapability.targetCpk || hasOpenHighRisk || hasInsufficientRiskEvidence
-          ? "RISK"
-          : "PASS";
+    : cpk < 1
+      ? "FAIL"
+      : cpk < worksheet.targetCapability.targetCpk || hasOptimizationFailure || hasOpenHighRisk || hasInsufficientRiskEvidence
+        ? "RISK"
+        : "PASS";
   if (worksheet.status !== expectedStatus) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet status must be derived from capability, requirement, and open risk evidence", path: ["status"] });
   }

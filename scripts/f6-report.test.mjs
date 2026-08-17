@@ -154,7 +154,8 @@ describe("renderF6Report", () => {
     expect(markdown).toContain(String.raw`confirmed\_datum\_chain\_evidence`);
     expect(markdown).toContain(String.raw`Highest Impact Action: insufficient\_evidence`);
     expect(markdown).toContain(String.raw`ROI: not\_computed`);
-    expect(markdown).toContain(String.raw`| Cpk | 0.8 | calculation\_failed |`);
+    expect(markdown).toContain(String.raw`| Cpk | 0.8 | FAIL |`);
+    expect(markdown).toContain(String.raw`Optimization Status: calculation\_failed`);
     expect(markdown).not.toMatch(/meets target|below target/);
     expect(markdown).not.toContain("Highest ROI");
     expect(markdown.endsWith("\n")).toBe(true);

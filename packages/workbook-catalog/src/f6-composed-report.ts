@@ -106,11 +106,7 @@ function assertBaselineIdentity(
 }
 
 function requirementViolation(findings: ReadyF6Worksheet["inputFindings"]): boolean {
-  return findings.some(({ findingCode }) => [
-    "confirmed_requirement_violation",
-    "requirement_violation",
-    "specification_violation",
-  ].includes(findingCode));
+  return findings.some(({ findingKind }) => findingKind === "confirmed_requirement_violation");
 }
 
 function worksheetStatus(
@@ -121,6 +117,8 @@ function worksheetStatus(
   if (confirmedRequirementViolation) return "FAIL";
   if (missingCapabilityData) return "RISK";
   if (worksheet.baselineMetrics.cpk < 1) return "FAIL";
+  if (worksheet.status !== "completed"
+    || worksheet.inputFindings.some(({ findingKind }) => findingKind === "optimization_failure")) return "RISK";
   const assessedCategories = new Set(worksheet.risks.map(({ category }) => category));
   if (FIXED_RISK_CATEGORIES.some((category) => !assessedCategories.has(category))) return "RISK";
   const hasOpenHighRisk = worksheet.risks.some(({ status, rating }) =>
@@ -249,7 +247,7 @@ function buildWorksheet(
   const f2Reference = provenance.f2Reference;
   const evidenceReferences = uniqueReferences([f2Reference, f4Reference, f5Reference]);
   const confirmedRequirementViolation = requirementViolation(f6Worksheet.inputFindings);
-  const missingCapabilityData = f6Worksheet.inputFindings.some(({ affectsCapabilityData }) => affectsCapabilityData);
+  const missingCapabilityData = false as const;
   const status = worksheetStatus(f6Worksheet, confirmedRequirementViolation, missingCapabilityData);
   const contributors = f5Worksheet.sections.majorContributors.items.slice(0, 5);
   const top1Concentration = contributors[0]?.contributionPercent ?? 0;
@@ -441,6 +439,7 @@ export function createF6ComposedEngineeringReport(input: F6ComposedEngineeringRe
       worksheetName: worksheet.worksheetName,
       findings: [{
         findingCode: "f2_input_blocked",
+        findingKind: "validation_abnormality" as const,
         severity: "Critical" as const,
         message: `F2 blocked worksheet; missing or invalid required inputs: ${[
           ...worksheet.missingFieldSummary.map(({ field }) => field),

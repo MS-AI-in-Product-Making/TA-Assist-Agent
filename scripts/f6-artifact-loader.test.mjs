@@ -477,20 +477,22 @@ function expectRejected(result, reasonCode, artifactReference) {
 describe("F6 governed bundle validation", () => {
   it("returns F2 blocked worksheets only as validation records", () => {
     const bundle = setupBundle({ blockedWorksheetNames: ["Blocked-A"] });
+    rewriteJson(bundle.paths.f2, (f2) => {
+      const blocked = f2.worksheets.find(({ worksheetName }) => worksheetName === "Blocked-A");
+      blocked.rows[0].missingIdentifiers = ["partNumber"];
+      blocked.rows[0].actualFields.drawingNumber = null;
+      f2.summary.missingPartNumberCount = 1;
+    });
 
     const result = loadF6ArtifactBundle(bundle);
 
     expect(result.status, JSON.stringify(result)).toBe("accepted");
     expect(result.request.selectedWorksheetNames).toEqual(["Analysis-A"]);
     expect(result.request.worksheets.map(({ worksheetName }) => worksheetName)).toEqual(["Analysis-A"]);
-    expect(result.blockedWorksheets).toEqual([{
-      worksheetName: "Blocked-A",
-      findings: expect.arrayContaining([expect.objectContaining({
-        severity: "Critical",
-        affectsCapabilityData: false,
-        evidenceReferences: [result.sourceReferences.f2],
-      })]),
-    }]);
+    expect(result.blockedWorksheets[0].findings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ findingKind: "validation_abnormality", findingCode: "tolerance_path_image_unavailable" }),
+      expect.objectContaining({ findingKind: "governance_gap", findingCode: "missing_identifier:partNumber" }),
+    ]));
   });
 
   it("preserves requested worksheet order while retaining original F4 calculation indices", () => {
