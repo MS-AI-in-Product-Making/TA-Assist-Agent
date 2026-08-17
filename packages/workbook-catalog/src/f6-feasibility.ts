@@ -221,6 +221,7 @@ export function assessDatumScenario(input: DatumScenarioInput): F6EvidenceScenar
     ),
     {
       kind: "datum",
+      worksheetName: parsed.data.worksheetName,
       factorSources: parsed.data.factorDirections,
       evidenceReference: reference,
     },

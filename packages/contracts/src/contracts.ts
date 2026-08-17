@@ -6265,6 +6265,7 @@ export const f6SupplierCapabilityEvidenceSchema = z.object({
 
 export const f6DatumEvidenceSchema = z.object({
   evidenceVersion: z.literal("datum-strategy-v1"),
+  worksheetName: z.string().min(1),
   datumFace: z.string().min(1),
   stackStart: z.string().min(1),
   factorDirections: z.array(z.object({
@@ -6309,7 +6310,7 @@ export const f6CostEvidenceSchema = z.object({
   model: z.string().min(1),
   unit: z.string().min(1),
   optionCosts: z.array(z.object({ optionKind: f6OptionKindSchema, cost: z.number().finite().nonnegative() }).strict()).min(1),
-  roiPolicyVersion: z.string().min(1),
+  roiPolicyVersion: z.literal("f6-delta-cpk-per-cost-v1"),
   roiCalculationReference: f6ArtifactReferenceSchema,
   ...f6VersionedEvidenceFields,
 }).strict().superRefine((evidence, context) => {
@@ -6372,6 +6373,7 @@ const f6EvidenceScopeSchema = z.discriminatedUnion("kind", [
   }).strict(),
   z.object({
     kind: z.literal("datum"),
+    worksheetName: z.string().min(1),
     factorSources: z.array(z.object({
       tableId: z.string().min(1),
       sourceRow: z.number().int().positive(),
@@ -6455,8 +6457,6 @@ export const f6OptionSchema = z.discriminatedUnion("status", [
   if (option.status === "insufficient_evidence") {
     if (option.evidenceReferences.length === 0 && option.evidenceScope !== undefined) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: "evidenceScope is forbidden without evidenceReferences", path: ["evidenceScope"] });
-    } else if (option.evidenceReferences.length > 0 && option.evidenceScope === undefined) {
-      context.addIssue({ code: z.ZodIssueCode.custom, message: `${expectedScopeKind} evidenceScope is required when evidenceReferences are present`, path: ["evidenceScope"] });
     } else if (option.evidenceScope !== undefined
       && !option.evidenceReferences.some((reference) =>
         reference.artifact === option.evidenceScope!.evidenceReference.artifact
@@ -6644,7 +6644,13 @@ const f6ReadyWorksheetFields = {
 };
 
 const validateF6ReadyWorksheet = (
-  worksheet: { status: "completed" | "partially_completed"; options: Array<z.infer<typeof f6OptionSchema>> },
+  worksheet: {
+    status: "completed" | "partially_completed" | "calculation_failed";
+    options: Array<z.infer<typeof f6OptionSchema>>;
+    recommendations: Array<z.infer<typeof f6RecommendationSchema>>;
+    highestImpactAction?: z.infer<typeof f6HighestImpactActionSchema> | undefined;
+    roiStatus: "computed" | "not_computed";
+  },
   context: z.RefinementCtx,
 ): void => {
   const failedCount = worksheet.options.filter(({ status }) => status === "calculation_failed").length;
@@ -6655,6 +6661,17 @@ const validateF6ReadyWorksheet = (
   if (worksheet.status === "partially_completed" && (failedCount === 0 || completedCount === 0)) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "partially_completed requires completed and calculation_failed options", path: ["status"] });
   }
+  if (worksheet.status === "calculation_failed") {
+    if (failedCount === 0 || completedCount > 0) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "calculation_failed requires at least one failed option and no completed options", path: ["status"] });
+    }
+    if (worksheet.recommendations.length > 0 || worksheet.highestImpactAction !== undefined) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "calculation_failed forbids recommendations and highest impact action", path: ["recommendations"] });
+    }
+    if (worksheet.roiStatus !== "not_computed") {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "calculation_failed requires ROI to remain uncomputed", path: ["roiStatus"] });
+    }
+  }
 };
 
 const f6CompletedWorksheetResultSchema = z.object({
@@ -6664,6 +6681,11 @@ const f6CompletedWorksheetResultSchema = z.object({
 
 const f6PartiallyCompletedWorksheetResultSchema = z.object({
   status: z.literal("partially_completed"),
+  ...f6ReadyWorksheetFields,
+}).strict().superRefine(validateF6ReadyWorksheet);
+
+const f6CalculationFailedWorksheetResultSchema = z.object({
+  status: z.literal("calculation_failed"),
   ...f6ReadyWorksheetFields,
 }).strict().superRefine(validateF6ReadyWorksheet);
 
@@ -6679,6 +6701,7 @@ const f6InputRejectedWorksheetResultSchema = z.object({
 export const f6WorksheetResultSchema = z.union([
   f6CompletedWorksheetResultSchema,
   f6PartiallyCompletedWorksheetResultSchema,
+  f6CalculationFailedWorksheetResultSchema,
   f6InputRejectedWorksheetResultSchema,
 ]);
 
@@ -6686,6 +6709,7 @@ export const f6SummarySchema = z.object({
   worksheetCount: z.number().int().nonnegative(),
   completedWorksheetCount: z.number().int().nonnegative(),
   partiallyCompletedWorksheetCount: z.number().int().nonnegative(),
+  calculationFailedWorksheetCount: z.number().int().nonnegative(),
   inputRejectedWorksheetCount: z.number().int().nonnegative(),
   completedOptionCount: z.number().int().nonnegative(),
   calculationFailedOptionCount: z.number().int().nonnegative(),
@@ -6718,7 +6742,7 @@ export const f6OptimizationResultSchema = z.object({
   contractVersion: contractVersionSchema,
   outputClassification: z.literal("confidential"),
   featureId: z.literal("F6"),
-  status: z.enum(["completed", "partially_completed", "input_rejected"]),
+  status: z.enum(["completed", "partially_completed", "calculation_failed", "input_rejected"]),
   optimizationVersion: z.literal("f6-optimization-v1"),
   workbook: z.object({ fileName: workbookCatalogFileNameSchema, contentHash: sha256Schema }).strict(),
   worksheets: z.array(f6WorksheetResultSchema).min(1),
@@ -6735,6 +6759,7 @@ export const f6OptimizationResultSchema = z.object({
   const statusCounts = {
     completed: result.worksheets.filter(({ status }) => status === "completed").length,
     partially_completed: result.worksheets.filter(({ status }) => status === "partially_completed").length,
+    calculation_failed: result.worksheets.filter(({ status }) => status === "calculation_failed").length,
     input_rejected: result.worksheets.filter(({ status }) => status === "input_rejected").length,
   };
   const options = result.worksheets.flatMap((worksheet) => worksheet.options);
@@ -6742,6 +6767,7 @@ export const f6OptimizationResultSchema = z.object({
     ["worksheetCount", result.worksheets.length],
     ["completedWorksheetCount", statusCounts.completed],
     ["partiallyCompletedWorksheetCount", statusCounts.partially_completed],
+    ["calculationFailedWorksheetCount", statusCounts.calculation_failed],
     ["inputRejectedWorksheetCount", statusCounts.input_rejected],
     ["completedOptionCount", options.filter(({ status }) => status === "completed").length],
     ["calculationFailedOptionCount", options.filter(({ status }) => status === "calculation_failed").length],
@@ -6754,7 +6780,9 @@ export const f6OptimizationResultSchema = z.object({
   });
   const expectedStatus = statusCounts.input_rejected === result.worksheets.length
     ? "input_rejected"
-    : statusCounts.partially_completed > 0 || statusCounts.input_rejected > 0
+    : statusCounts.calculation_failed === result.worksheets.length
+      ? "calculation_failed"
+      : statusCounts.partially_completed > 0 || statusCounts.calculation_failed > 0 || statusCounts.input_rejected > 0
       ? "partially_completed"
       : "completed";
   if (result.status !== expectedStatus) {
@@ -6814,19 +6842,33 @@ export const f6OptimizationResultSchema = z.object({
       context.addIssue({ code: z.ZodIssueCode.custom, message: "ROI must not be computed without controlled cost evidence", path: ["worksheets", worksheetIndex, "roiStatus"] });
     }
     if (worksheet.roiStatus === "computed") {
-      const completedOptions = worksheet.options.filter((option) => option.status === "completed");
-      if (completedOptions.length === 0) {
-        context.addIssue({ code: z.ZodIssueCode.custom, message: "computed ROI requires a completed option", path: ["worksheets", worksheetIndex, "roiStatus"] });
+      const rankedSupportedOptions = worksheet.options.filter((option): option is z.infer<typeof f6CompletedOptionSchema> =>
+        option.status === "completed" && option.feasibility.status === "supported" && option.impactRank !== null);
+      if (rankedSupportedOptions.length === 0) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "computed ROI requires a ranked supported completed option", path: ["worksheets", worksheetIndex, "roiStatus"] });
       }
-      completedOptions.forEach((option) => {
+      rankedSupportedOptions.forEach((option) => {
         const optionIndex = worksheet.options.indexOf(option);
-        if (typeof option.relativeCost !== "number" || typeof option.roiScore !== "number") {
-          context.addIssue({ code: z.ZodIssueCode.custom, message: "computed ROI requires matching cost evidence and numeric option values", path: ["worksheets", worksheetIndex, "options", optionIndex] });
+        if (typeof option.relativeCost !== "number" || option.relativeCost <= 0 || typeof option.roiScore !== "number") {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "computed ROI requires positive matching cost evidence and numeric option values", path: ["worksheets", worksheetIndex, "options", optionIndex] });
         }
       });
     }
     worksheet.options.forEach((option, optionIndex) => {
       if (option.status === "calculation_failed") return;
+      const referencesEvidence = (evidence: { source: string; contentHash: string }): boolean =>
+        option.evidenceReferences.some((reference) =>
+          reference.artifact === evidence.source && reference.contentHash === evidence.contentHash);
+      if (option.optionKind === "improve_supplier_capability"
+        && option.evidenceScope === undefined
+        && (result.provenance.supplierCapabilityEvidence ?? []).some(referencesEvidence)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "supplier evidenceScope is required when governed supplier evidence is referenced", path: ["worksheets", worksheetIndex, "options", optionIndex, "evidenceScope"] });
+      }
+      if (option.optionKind === "tighten_datum_strategy"
+        && option.evidenceScope === undefined
+        && (result.provenance.datumEvidence ?? []).some(referencesEvidence)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "datum evidenceScope is required when governed datum evidence is referenced", path: ["worksheets", worksheetIndex, "options", optionIndex, "evidenceScope"] });
+      }
       if (option.optionKind === "improve_supplier_capability" && option.evidenceScope?.kind === "supplier") {
         const scope = option.evidenceScope;
         const matches = (result.provenance.supplierCapabilityEvidence ?? []).filter((evidence) =>
@@ -6841,9 +6883,13 @@ export const f6OptimizationResultSchema = z.object({
       }
       if (option.optionKind === "tighten_datum_strategy" && option.evidenceScope?.kind === "datum") {
         const scope = option.evidenceScope;
+        if (scope.worksheetName !== worksheet.worksheetName) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "datum option evidenceScope worksheet must match the parent worksheet", path: ["worksheets", worksheetIndex, "options", optionIndex, "evidenceScope", "worksheetName"] });
+        }
         const matches = (result.provenance.datumEvidence ?? []).filter((evidence) => {
           if (evidence.source !== scope.evidenceReference.artifact
-            || evidence.contentHash !== scope.evidenceReference.contentHash) return false;
+            || evidence.contentHash !== scope.evidenceReference.contentHash
+            || evidence.worksheetName !== scope.worksheetName) return false;
           const evidenceSources = new Set(evidence.factorDirections.map(({ tableId, sourceRow, direction }) => `${tableId}\u0000${sourceRow}\u0000${direction}`));
           return scope.factorSources.length === evidenceSources.size
             && scope.factorSources.every(({ tableId, sourceRow, direction }) => evidenceSources.has(`${tableId}\u0000${sourceRow}\u0000${direction}`));
@@ -6970,10 +7016,38 @@ export const f6OptimizationResultSchema = z.object({
         if (matchingCosts.length !== 1 || !f6NearlyEqual(option.relativeCost, matchingCosts[0]!.cost)) {
           context.addIssue({ code: z.ZodIssueCode.custom, message: "numeric relative cost must match exactly one governed cost evidence entry", path: ["worksheets", worksheetIndex, "options", optionIndex, "relativeCost"] });
         }
+        if (costEvidence !== undefined) {
+          const requiredReferences = [
+            { artifact: costEvidence.source, contentHash: costEvidence.contentHash },
+            costEvidence.roiCalculationReference,
+          ];
+          if (requiredReferences.some((required) => !option.evidenceReferences.some((reference) =>
+            reference.artifact === required.artifact && reference.contentHash === required.contentHash))) {
+            context.addIssue({ code: z.ZodIssueCode.custom, message: "numeric cost and ROI require cost source and calculation lineage", path: ["worksheets", worksheetIndex, "options", optionIndex, "evidenceReferences"] });
+          }
+        }
       } else if (worksheet.roiStatus !== "not_computed") {
         context.addIssue({ code: z.ZodIssueCode.custom, message: "insufficient relative cost is allowed only when ROI is not computed", path: ["worksheets", worksheetIndex, "options", optionIndex, "relativeCost"] });
       }
+      if (typeof option.roiScore === "number") {
+        if (typeof option.relativeCost !== "number" || option.relativeCost <= 0) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "numeric ROI requires positive governed cost", path: ["worksheets", worksheetIndex, "options", optionIndex, "roiScore"] });
+        } else {
+          const expectedRoi = Math.max(option.deltaCpk, 0) / option.relativeCost;
+          if (!f6NearlyEqual(option.roiScore, expectedRoi)) {
+            context.addIssue({ code: z.ZodIssueCode.custom, message: "ROI score must equal governed positive delta Cpk per cost", path: ["worksheets", worksheetIndex, "options", optionIndex, "roiScore"] });
+          }
+        }
+      }
     });
+    if (worksheet.roiStatus === "computed") {
+      const rankedSupported = worksheet.options.filter((option): option is z.infer<typeof f6CompletedOptionSchema> =>
+        option.status === "completed" && option.feasibility.status === "supported" && option.impactRank !== null);
+      if (rankedSupported.length === 0 || rankedSupported.some((option) =>
+        typeof option.relativeCost !== "number" || option.relativeCost <= 0 || typeof option.roiScore !== "number")) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "computed ROI requires positive cost and score for every ranked supported option", path: ["worksheets", worksheetIndex, "roiStatus"] });
+      }
+    }
   });
 });
 

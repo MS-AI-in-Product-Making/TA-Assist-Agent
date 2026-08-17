@@ -34,7 +34,7 @@ import {
 
 type CompletedOption = Extract<F6Option, { status: "completed" }>;
 type FailedOption = Extract<F6Option, { status: "calculation_failed" }>;
-type ReadyWorksheet = Extract<F6OptimizationResult["worksheets"][number], { status: "completed" | "partially_completed" }>;
+type ReadyWorksheet = Extract<F6OptimizationResult["worksheets"][number], { status: "completed" | "partially_completed" | "calculation_failed" }>;
 
 interface OptimizationDependencies {
   readonly calculateScenario?: typeof calculateF6Scenario;
@@ -153,7 +153,6 @@ function completedOption(
   }
   const baselineMetrics = metrics(baseline);
   const resultMetrics = metrics(scenarioCalculation);
-  const cost = assessCost({ evidence: request.costEvidence, optionKind: scenario.optionKind });
   return {
     status: "completed",
     optionId: scenario.scenarioId,
@@ -169,12 +168,26 @@ function completedOption(
     toleranceChanges: structuredClone([...toleranceChanges]),
     ...extra,
     evidenceReferences: [f4ArtifactReference(request), ...structuredClone(evidenceReferences)],
-    relativeCost: cost.relativeCost,
+    relativeCost: "insufficient_evidence",
     roiScore: "not_computed",
     impactRank: null,
     scenarioEvidence: { scenarioId: scenario.scenarioId, calculation: structuredClone(scenarioResult) },
     closedRiskIds: [],
   };
+}
+
+function applyCostAssessment(request: F6OptimizationRequest, option: F6Option): F6Option {
+  const cost = assessCost({ evidence: request.costEvidence, optionKind: option.optionKind });
+  const referencesByIdentity = new Map(
+    [...option.evidenceReferences, ...cost.evidenceReferences].map((reference) => [
+      `${reference.artifact}\u0000${reference.contentHash}`,
+      reference,
+    ]),
+  );
+  const evidenceReferences = [...referencesByIdentity.values()];
+  return option.status === "completed"
+    ? { ...option, relativeCost: cost.relativeCost, evidenceReferences }
+    : { ...option, evidenceReferences };
 }
 
 function failure(optionKind: F6OptionKind, worksheetName: string, error: unknown): FailedOption {
@@ -257,6 +270,25 @@ function combineFeasibility(assessments: CompletedOption["feasibility"][]): Comp
   };
 }
 
+function applyGovernedRoi(options: F6Option[]): Pick<ReadyWorksheet, "options" | "roiStatus"> {
+  const rankedSupported = options.filter((option): option is CompletedOption => option.status === "completed"
+    && option.feasibility.status === "supported" && option.impactRank !== null);
+  const canCompute = rankedSupported.length > 0 && rankedSupported.every(({ relativeCost }) =>
+    typeof relativeCost === "number" && relativeCost > 0);
+  const rankedSupportedIds = new Set(rankedSupported.map(({ optionId }) => optionId));
+  return {
+    options: options.map((option): F6Option => {
+      if (option.status !== "completed" || !canCompute || !rankedSupportedIds.has(option.optionId)) {
+        return option.status === "completed" ? { ...option, roiScore: "not_computed" } : option;
+      }
+      const relativeCost = option.relativeCost;
+      if (typeof relativeCost !== "number" || relativeCost <= 0) return { ...option, roiScore: "not_computed" };
+      return { ...option, roiScore: Math.max(option.deltaCpk, 0) / relativeCost };
+    }),
+    roiStatus: canCompute ? "computed" : "not_computed",
+  };
+}
+
 function buildNumericOption(
   kind: (typeof NUMERIC_OPTION_KINDS)[number],
   request: F6OptimizationRequest,
@@ -329,16 +361,20 @@ function buildNumericOption(
   };
   const scenarioResult = calculateScenario({ baselineRequest, scenario });
   const altersMeanShift = kind === "mean_shift_centering" || kind === "centering_plus_tighten";
-  const feasibility = altersMeanShift
-    ? {
-        status: "requires_engineering_review" as const,
-        reasonCodes: ["mean_shift_physical_constraint_unverified"],
-        evidenceReferences: [request.f4Reference.artifact, request.f5Reference.artifact],
-      }
-    : combineFeasibility(changes.map((change) => assessToleranceFeasibility({
+  const meanShiftFeasibility: CompletedOption["feasibility"] = {
+    status: "requires_engineering_review",
+    reasonCodes: ["mean_shift_physical_constraint_unverified"],
+    evidenceReferences: [request.f4Reference.artifact, request.f5Reference.artifact],
+  };
+  const toleranceFeasibility = changes.map((change) => assessToleranceFeasibility({
       requestedToleranceBand: change.resultingBand,
       evidence: supplierEvidenceBySource.get(sourceKey(change)),
-    })));
+    }));
+  const feasibility = kind === "mean_shift_centering"
+    ? meanShiftFeasibility
+    : kind === "centering_plus_tighten"
+      ? combineFeasibility([meanShiftFeasibility, ...toleranceFeasibility])
+      : combineFeasibility(toleranceFeasibility);
   const supplierReferences = changes.flatMap((change) => {
     const evidence = supplierEvidenceBySource.get(sourceKey(change));
     return evidence === undefined ? [] : [{ artifact: evidence.source, contentHash: evidence.contentHash }];
@@ -392,6 +428,7 @@ function optimizeWorksheet(
   });
   const baselineSourceKeys = new Set(baseline.factors.map(({ source }) => `${source.tableId}\u0000${source.sourceRow}`));
   const matchingDatumEvidence = (request.datumEvidence ?? []).filter((evidence) => {
+    if (evidence.worksheetName !== worksheet.worksheetName) return false;
     const evidenceKeys = new Set(evidence.factorDirections.map(({ tableId, sourceRow }) => `${tableId}\u0000${sourceRow}`));
     return evidenceKeys.size === baselineSourceKeys.size && [...baselineSourceKeys].every((key) => evidenceKeys.has(key));
   });
@@ -442,6 +479,7 @@ function optimizeWorksheet(
         },
         evidenceScope: {
           kind: "datum",
+          worksheetName: datumEvidence.worksheetName,
           factorSources: datumEvidence.factorDirections,
           evidenceReference: { artifact: datumEvidence.source, contentHash: datumEvidence.contentHash },
         },
@@ -453,22 +491,8 @@ function optimizeWorksheet(
     supplierOption,
     datumOption,
   );
-  const completedCount = options.filter(({ status }) => status === "completed").length;
-  if (completedCount === 0) {
-    return {
-      worksheetName: worksheet.worksheetName,
-      status: "input_rejected",
-      inputFindings: [{
-        findingCode: "all_controlled_options_failed",
-        severity: "Critical",
-        message: "Controlled optimization calculations could not be completed.",
-        evidenceReferences: [f4ArtifactReference(request)],
-      }],
-      options: [],
-      risks: [],
-      clarifications: [],
-    };
-  }
+  const costedOptions = options.map((option) => applyCostAssessment(request, option));
+  const completedCount = costedOptions.filter(({ status }) => status === "completed").length;
   const capabilityRisk = baseline.capability.cpk < targetCapability.targetCpk
     ? [{
       riskId: `${worksheet.worksheetName}:f5:capability-below-target`,
@@ -502,7 +526,7 @@ function optimizeWorksheet(
       evidenceReferences: [{ artifact: request.f5Reference.artifact, contentHash: request.f5Reference.contentHash }],
     })),
   ];
-  const optionsWithRiskClosure = options.map((option): F6Option => {
+  const optionsWithRiskClosure = costedOptions.map((option): F6Option => {
     if (option.status !== "completed") return option;
     return {
       ...option,
@@ -512,8 +536,9 @@ function optimizeWorksheet(
     };
   });
   const ranked = rankCompletedOptions(optionsWithRiskClosure, targetCapability.targetCpk, risks);
-  const highest = selectHighestSupportedCompletedOption(ranked);
-  const recommendations = ranked
+  const roi = applyGovernedRoi(ranked);
+  const highest = selectHighestSupportedCompletedOption(roi.options);
+  const recommendations = roi.options
     .filter((option): option is CompletedOption => option.status === "completed" && option.feasibility.status === "supported")
     .map((option) => ({
       recommendationId: `recommend:${option.optionId}`,
@@ -523,17 +548,21 @@ function optimizeWorksheet(
     }));
   const result: ReadyWorksheet = {
     worksheetName: worksheet.worksheetName,
-    status: ranked.some(({ status }) => status === "calculation_failed") ? "partially_completed" : "completed",
+    status: completedCount === 0
+      ? "calculation_failed"
+      : ranked.some(({ status }) => status === "calculation_failed")
+        ? "partially_completed"
+        : "completed",
     baselineMetrics: metrics(baseline),
     targetCapability,
     inputFindings: structuredClone(worksheet.f2Findings),
-    options: ranked,
+    options: roi.options,
     risks,
     recommendations,
     ...(highest === undefined ? {} : {
       highestImpactAction: { optionId: highest.optionId, rationale: "Highest deterministic impact rank among completed options." },
     }),
-    roiStatus: "not_computed",
+    roiStatus: roi.roiStatus,
     clarifications: [
       {
         clarificationId: `${worksheet.worksheetName}:supplier-evidence`,
@@ -566,6 +595,7 @@ export function createF6Optimization(input: unknown, dependencies: OptimizationD
     worksheetCount: worksheets.length,
     completedWorksheetCount: worksheets.filter(({ status }) => status === "completed").length,
     partiallyCompletedWorksheetCount: worksheets.filter(({ status }) => status === "partially_completed").length,
+    calculationFailedWorksheetCount: worksheets.filter(({ status }) => status === "calculation_failed").length,
     inputRejectedWorksheetCount: worksheets.filter(({ status }) => status === "input_rejected").length,
     completedOptionCount: options.filter(({ status }) => status === "completed").length,
     calculationFailedOptionCount: options.filter(({ status }) => status === "calculation_failed").length,
@@ -573,9 +603,13 @@ export function createF6Optimization(input: unknown, dependencies: OptimizationD
   };
   const status = summary.inputRejectedWorksheetCount === worksheets.length
     ? "input_rejected"
-    : summary.partiallyCompletedWorksheetCount > 0 || summary.inputRejectedWorksheetCount > 0
-      ? "partially_completed"
-      : "completed";
+    : summary.calculationFailedWorksheetCount === worksheets.length
+      ? "calculation_failed"
+      : summary.partiallyCompletedWorksheetCount > 0
+        || summary.calculationFailedWorksheetCount > 0
+        || summary.inputRejectedWorksheetCount > 0
+        ? "partially_completed"
+        : "completed";
   return immutable(f6OptimizationResultSchema.parse({
     contractVersion: request.contractVersion,
     outputClassification: "confidential",

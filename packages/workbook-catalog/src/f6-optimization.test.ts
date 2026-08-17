@@ -347,6 +347,7 @@ describe("createF6Optimization", () => {
     for (const sourceRow of [2, 3, 4, 5]) {
       const evidence = supplierEvidence({
         supplierReference: `supplier-${sourceRow}`,
+        achievableToleranceBand: 0,
         source: `supplier/${sourceRow}.json`,
         contentHash: String(sourceRow).repeat(64),
       });
@@ -367,6 +368,30 @@ describe("createF6Optimization", () => {
     expect(supported.length).toBeGreaterThan(0);
     expect(worksheet.recommendations.some(({ optionId }) => optionId === combined.optionId)).toBe(false);
     expect(worksheet.highestImpactAction?.optionId).not.toBe(combined.optionId);
+  });
+
+  it("combines centering review with a stronger T1 not-supported tolerance assessment", () => {
+    const input = request();
+    for (const sourceRow of [2, 3, 4, 5]) {
+      bindSupplier(input, supplierEvidence({
+        supplierReference: `supplier-${sourceRow}`,
+        achievableToleranceBand: 100,
+        source: `supplier/${sourceRow}.json`,
+        contentHash: String(sourceRow).repeat(64),
+      }), sourceRow);
+    }
+
+    const result = createF6Optimization(input);
+    const worksheet = result.worksheets[0];
+    if (worksheet?.status === "input_rejected" || worksheet === undefined) throw new Error("expected ready worksheet");
+    const combined = worksheet.options.find(({ optionKind }) => optionKind === "centering_plus_tighten");
+    if (combined?.status !== "completed") throw new Error("expected completed combined option");
+
+    expect(combined.feasibility.status).toBe("not_supported");
+    expect(combined.feasibility.reasonCodes).toEqual(expect.arrayContaining([
+      "mean_shift_physical_constraint_unverified",
+      "t1_governed_bound_exceeded",
+    ]));
   });
 
   it("selects the lowest global impact rank among supported completed options", () => {
@@ -404,6 +429,7 @@ describe("createF6Optimization", () => {
     const input = request();
     input.datumEvidence = [{
       evidenceVersion: "datum-strategy-v1",
+      worksheetName: input.worksheets[0]!.worksheetName,
       datumFace: "A",
       stackStart: "A",
       factorDirections: input.worksheets[0]!.baselineCalculation.factors.map(({ source }) => ({
@@ -454,50 +480,52 @@ describe("createF6Optimization", () => {
     expect(result.summary).toMatchObject({ completedOptionCount: 6, calculationFailedOptionCount: 1, insufficientEvidenceOptionCount: 2 });
   });
 
-  it("marks a worksheet and root rejected when every numeric option fails", () => {
+  it("preserves every failed option and marks worksheet and root calculation failed", () => {
     const result = createF6Optimization(request(), {
       calculateScenario: vi.fn(() => { throw { code: "calculation_not_possible" }; }),
     });
-    expect(result.status).toBe("input_rejected");
+    expect(result.status).toBe("calculation_failed");
     expect(result.worksheets[0]).toMatchObject({
       worksheetName: "Analysis-A",
-      status: "input_rejected",
-      options: [],
-      inputFindings: [{ findingCode: "all_controlled_options_failed" }],
+      status: "calculation_failed",
+      options: expect.arrayContaining([
+        expect.objectContaining({ status: "calculation_failed", reasonCode: "calculation_not_possible" }),
+        expect.objectContaining({ status: "insufficient_evidence" }),
+      ]),
+      recommendations: [],
+      roiStatus: "not_computed",
     });
+    expect(result.worksheets[0]).not.toHaveProperty("highestImpactAction");
     expect(result.summary).toEqual({
       worksheetCount: 1,
       completedWorksheetCount: 0,
       partiallyCompletedWorksheetCount: 0,
-      inputRejectedWorksheetCount: 1,
+      calculationFailedWorksheetCount: 1,
+      inputRejectedWorksheetCount: 0,
       completedOptionCount: 0,
-      calculationFailedOptionCount: 0,
-      insufficientEvidenceOptionCount: 0,
+      calculationFailedOptionCount: 7,
+      insufficientEvidenceOptionCount: 2,
     });
   });
 
-  it("aggregates completed and partially completed worksheets deterministically", () => {
+  it("aggregates completed and calculation-failed worksheets as partially completed", () => {
     const input = request();
     const second = request("Analysis-B");
     input.selectedWorksheetNames = ["Analysis-A", "Analysis-B"];
     input.worksheets.push(second.worksheets[0]!);
-    let failed = false;
     const result = createF6Optimization(input, {
       calculateScenario: (scenarioInput) => {
-        if (!failed && scenarioInput.scenario.scenarioId.startsWith("Analysis-B:")) {
-          failed = true;
-          throw { code: "calculation_not_possible" };
-        }
+        if (scenarioInput.scenario.scenarioId.startsWith("Analysis-B:")) throw { code: "calculation_not_possible" };
         return calculateF6Scenario(scenarioInput);
       },
     });
     expect(result.status).toBe("partially_completed");
-    expect(result.worksheets.map(({ status }) => status)).toEqual(["completed", "partially_completed"]);
+    expect(result.worksheets.map(({ status }) => status)).toEqual(["completed", "calculation_failed"]);
     expect(result.summary).toMatchObject({
       worksheetCount: 2,
       completedWorksheetCount: 1,
-      partiallyCompletedWorksheetCount: 1,
-      calculationFailedOptionCount: 1,
+      calculationFailedWorksheetCount: 1,
+      calculationFailedOptionCount: 7,
     });
   });
 
@@ -632,7 +660,7 @@ describe("createF6Optimization", () => {
       },
     ];
     input.datumEvidence = [{
-      evidenceVersion: "datum-strategy-v1", datumFace: "Z", stackStart: "Z",
+      evidenceVersion: "datum-strategy-v1", worksheetName: input.worksheets[0]!.worksheetName, datumFace: "Z", stackStart: "Z",
       factorDirections: [{ tableId: "unrelated-table", sourceRow: 99, direction: 1 }],
       datumChainEdges: [{ from: "Z", to: "Y" }], crossSubsystemRelations: [], drawingEvidence: ["unrelated.pdf"],
       reviewStatus: "confirmed", source: "datum-unrelated.json", effectiveVersion: "v1", contentHash: "e".repeat(64),
@@ -921,6 +949,7 @@ describe("createF6Optimization", () => {
     }));
     const exactDatum = {
       evidenceVersion: "datum-strategy-v1" as const,
+      worksheetName: input.worksheets[0]!.worksheetName,
       datumFace: "A",
       stackStart: "A",
       factorDirections,
@@ -939,6 +968,7 @@ describe("createF6Optimization", () => {
       evidenceReferences: [{ artifact: exactDatum.source, contentHash: exactDatum.contentHash }],
       evidenceScope: {
         kind: "datum",
+        worksheetName: exactDatum.worksheetName,
         factorSources: exactDatum.factorDirections,
         evidenceReference: { artifact: exactDatum.source, contentHash: exactDatum.contentHash },
       },
@@ -950,14 +980,66 @@ describe("createF6Optimization", () => {
     expect(result.worksheets[0]!.options[8]).not.toHaveProperty("evidenceScope");
   });
 
-  it("uses governed cost evidence but leaves ROI not computed without a calculation result", () => {
+  it("binds datum evidence to its worksheet when table and source identities collide", () => {
     const input = request();
+    const second = request("Analysis-B");
+    input.selectedWorksheetNames.push("Analysis-B");
+    input.worksheets.push(second.worksheets[0]!);
+    input.datumEvidence = input.worksheets.map((worksheet, index) => ({
+      evidenceVersion: "datum-strategy-v1" as const,
+      worksheetName: worksheet.worksheetName,
+      datumFace: index === 0 ? "A" : "B",
+      stackStart: index === 0 ? "A" : "B",
+      factorDirections: worksheet.baselineCalculation.factors.map(({ source }) => ({
+        tableId: source.tableId,
+        sourceRow: source.sourceRow,
+        direction: 1 as const,
+      })),
+      datumChainEdges: [{ from: index === 0 ? "A" : "B", to: "C" }],
+      crossSubsystemRelations: [],
+      drawingEvidence: [`drawings/${worksheet.worksheetName}.pdf`],
+      reviewStatus: "confirmed" as const,
+      source: `datum/${worksheet.worksheetName}.json`,
+      effectiveVersion: "v1",
+      contentHash: String(index + 3).repeat(64),
+    }));
+
+    const result = createF6Optimization(input);
+    result.worksheets.forEach((worksheet, index) => {
+      expect(worksheet.options[8]).toMatchObject({
+        evidenceReferences: [{
+          artifact: input.datumEvidence![index]!.source,
+          contentHash: input.datumEvidence![index]!.contentHash,
+        }],
+        evidenceScope: { worksheetName: worksheet.worksheetName },
+      });
+    });
+  });
+
+  it("computes governed ROI and carries cost lineage when every ranked supported option has positive cost", () => {
+    const input = request();
+    for (const sourceRow of [2, 3, 4, 5]) {
+      bindSupplier(input, supplierEvidence({
+        supplierReference: `supplier-${sourceRow}`,
+        achievableToleranceBand: 0,
+        source: `supplier/${sourceRow}.json`,
+        contentHash: String(sourceRow).repeat(64),
+      }), sourceRow);
+    }
     input.costEvidence = {
       evidenceVersion: "cost-model-v1",
       model: "controlled-model",
       unit: "relative-points",
-      optionCosts: [{ optionKind: "reduce_top_contributor_20", cost: 12 }],
-      roiPolicyVersion: "roi-policy-v1",
+      optionCosts: [
+        { optionKind: "reduce_top_contributor_20", cost: 12 },
+        { optionKind: "reduce_top_3_contributors_30", cost: 12 },
+        { optionKind: "mean_shift_centering", cost: 12 },
+        { optionKind: "reverse_solve_single_factor", cost: 12 },
+        { optionKind: "reverse_solve_top_3", cost: 12 },
+        { optionKind: "rss_apportionment", cost: 12 },
+        { optionKind: "centering_plus_tighten", cost: 12 },
+      ],
+      roiPolicyVersion: "f6-delta-cpk-per-cost-v1",
       roiCalculationReference: { artifact: "cost/roi-result.json", contentHash: "c".repeat(64) },
       source: "cost/model.json",
       effectiveVersion: "2026-08-15",
@@ -966,8 +1048,65 @@ describe("createF6Optimization", () => {
     const result = createF6Optimization(input);
     const worksheet = result.worksheets[0];
     if (worksheet?.status === "input_rejected" || worksheet === undefined) throw new Error("expected ready worksheet");
+    expect(worksheet.roiStatus).toBe("computed");
+    const rankedSupported = worksheet.options.filter((option) =>
+      option.status === "completed" && option.feasibility.status === "supported" && option.impactRank !== null);
+    expect(rankedSupported.length).toBeGreaterThan(0);
+    for (const option of rankedSupported) {
+      expect(option.relativeCost).toBe(12);
+      expect(option.roiScore).toBe(Math.max(option.deltaCpk, 0) / 12);
+      expect(option.evidenceReferences).toEqual(expect.arrayContaining([
+        { artifact: input.costEvidence.source, contentHash: input.costEvidence.contentHash },
+        input.costEvidence.roiCalculationReference,
+      ]));
+    }
+  });
+
+  it("keeps every ROI score uncomputed when a ranked supported option has zero cost", () => {
+    const input = request();
+    bindSupplier(input, supplierEvidence({ achievableToleranceBand: 0 }), 2);
+    input.costEvidence = {
+      evidenceVersion: "cost-model-v1",
+      model: "controlled-model",
+      unit: "relative-points",
+      optionCosts: [{ optionKind: "reduce_top_contributor_20", cost: 0 }],
+      roiPolicyVersion: "f6-delta-cpk-per-cost-v1",
+      roiCalculationReference: { artifact: "cost/roi-result.json", contentHash: "c".repeat(64) },
+      source: "cost/model.json",
+      effectiveVersion: "2026-08-15",
+      contentHash: "d".repeat(64),
+    };
+
+    const result = createF6Optimization(input);
+    const worksheet = result.worksheets[0];
+    if (worksheet?.status === "input_rejected" || worksheet === undefined) throw new Error("expected ready worksheet");
     expect(worksheet.roiStatus).toBe("not_computed");
-    expect(worksheet.options[0]).toMatchObject({ relativeCost: 12, roiScore: "not_computed" });
+    expect(worksheet.options.filter((option) => option.status === "completed").every((option) => option.roiScore === "not_computed")).toBe(true);
+  });
+
+  it("carries governed cost lineage on every option when only some options have a numeric cost", () => {
+    const input = request();
+    input.costEvidence = {
+      evidenceVersion: "cost-model-v1",
+      model: "controlled-model",
+      unit: "relative-points",
+      optionCosts: [{ optionKind: "reduce_top_contributor_20", cost: 12 }],
+      roiPolicyVersion: "f6-delta-cpk-per-cost-v1",
+      roiCalculationReference: { artifact: "cost/roi-result.json", contentHash: "c".repeat(64) },
+      source: "cost/model.json",
+      effectiveVersion: "2026-08-15",
+      contentHash: "d".repeat(64),
+    };
+
+    const result = createF6Optimization(input);
+    const worksheet = result.worksheets[0];
+    if (worksheet?.status === "input_rejected" || worksheet === undefined) throw new Error("expected ready worksheet");
+    for (const option of worksheet.options) {
+      expect(option.evidenceReferences).toEqual(expect.arrayContaining([
+        { artifact: input.costEvidence.source, contentHash: input.costEvidence.contentHash },
+        input.costEvidence.roiCalculationReference,
+      ]));
+    }
   });
 
   it("exports only the public orchestrator and no private optimization helpers", () => {

@@ -37,6 +37,7 @@ function supplierEvidence(overrides: Partial<F6SupplierCapabilityEvidence> = {})
 function datumEvidence(overrides: Partial<F6DatumEvidence> = {}): F6DatumEvidence {
   return {
     evidenceVersion: "datum-strategy-v1",
+    worksheetName: "Analysis-A",
     datumFace: "A",
     stackStart: "A",
     factorDirections: [{ tableId: "table-a", sourceRow: 2, direction: 1 }],
@@ -60,7 +61,7 @@ function costEvidence(): F6CostEvidence {
       { optionKind: "improve_supplier_capability", cost: 40 },
       { optionKind: "tighten_datum_strategy", cost: 25 },
     ],
-    roiPolicyVersion: "roi-v2",
+    roiPolicyVersion: "f6-delta-cpk-per-cost-v1",
     roiCalculationReference: { artifact: "policies/roi-v2.json", contentHash: HASH },
     source: "evidence/cost-model.json",
     effectiveVersion: "v3",
@@ -304,6 +305,7 @@ describe("F6 capability and evidence feasibility gates", () => {
 
     expect(result.option.evidenceScope).toEqual({
       kind: "datum",
+      worksheetName: evidence.worksheetName,
       factorSources: evidence.factorDirections,
       evidenceReference: { artifact: evidence.source, contentHash: evidence.contentHash },
     });
@@ -338,7 +340,7 @@ describe("F6 capability and evidence feasibility gates", () => {
       relativeCost: "insufficient_evidence",
       roiScore: "not_computed",
       roiPolicyStatus: "governed_not_computed",
-      roiPolicyVersion: "roi-v2",
+      roiPolicyVersion: "f6-delta-cpk-per-cost-v1",
       roiCalculationReference: { artifact: "policies/roi-v2.json", contentHash: HASH },
       reasonCodes: ["cost_evidence_not_applicable"],
       evidenceReferences: [
@@ -362,7 +364,7 @@ describe("F6 capability and evidence feasibility gates", () => {
       relativeCost: 25,
       roiScore: "not_computed",
       roiPolicyStatus: "governed_not_computed",
-      roiPolicyVersion: "roi-v2",
+      roiPolicyVersion: "f6-delta-cpk-per-cost-v1",
       roiCalculationReference: { artifact: "policies/roi-v2.json", contentHash: HASH },
       reasonCodes: [],
       evidenceReferences: [

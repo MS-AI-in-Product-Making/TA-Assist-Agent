@@ -4411,7 +4411,7 @@ describe("F5.1 objective interpretation contracts", () => {
       const costEvidence = {
         evidenceVersion: "cost-model-v1", model: "relative-cost", unit: "USD",
         optionCosts: [{ optionKind: "reduce_top_contributor_20", cost: 100 }],
-        roiPolicyVersion: "roi-policy-v2", roiCalculationReference,
+        roiPolicyVersion: "f6-delta-cpk-per-cost-v1", roiCalculationReference,
         source: "cost-model.json", effectiveVersion: "FY26", contentHash: "a".repeat(64),
       };
       const supplierEvidence = {
@@ -4420,7 +4420,7 @@ describe("F5.1 objective interpretation contracts", () => {
         source: "supplier-capability.json", effectiveVersion: "2026-Q3", contentHash: "b".repeat(64),
       };
       const datumEvidence = {
-        evidenceVersion: "datum-strategy-v1", datumFace: "A", stackStart: "A",
+        evidenceVersion: "datum-strategy-v1", worksheetName: "Analysis-A", datumFace: "A", stackStart: "A",
         factorDirections: [{ tableId: "table-a", sourceRow: 2, direction: 1 }],
         datumChainEdges: [{ from: "A", to: "B" }], crossSubsystemRelations: ["bracket-to-frame"],
         drawingEvidence: ["drawing-a.pdf"], reviewStatus: "confirmed",
@@ -4504,7 +4504,7 @@ describe("F5.1 objective interpretation contracts", () => {
           roiStatus: "not_computed",
           clarifications: [],
         }],
-        summary: { worksheetCount: 1, completedWorksheetCount: 1, partiallyCompletedWorksheetCount: 0, inputRejectedWorksheetCount: 0, completedOptionCount: 1, calculationFailedOptionCount: 0, insufficientEvidenceOptionCount: 0 },
+        summary: { worksheetCount: 1, completedWorksheetCount: 1, partiallyCompletedWorksheetCount: 0, calculationFailedWorksheetCount: 0, inputRejectedWorksheetCount: 0, completedOptionCount: 1, calculationFailedOptionCount: 0, insufficientEvidenceOptionCount: 0 },
         provenance: {
           f2Reference: f6Request.f2Reference, f3Reference: f6Request.f3Reference,
           f4Reference: f6Request.f4Reference, f5Reference: f6Request.f5Reference,
@@ -4576,6 +4576,8 @@ describe("F5.1 objective interpretation contracts", () => {
         expect(f6SupplierCapabilityEvidenceSchema.safeParse(supplierEvidence).success).toBe(true);
         expect(f6DatumEvidenceSchema.safeParse(datumEvidence).success).toBe(true);
         expect(f6CostEvidenceSchema.safeParse(costEvidence).success).toBe(true);
+        expect(f6DatumEvidenceSchema.safeParse({ ...datumEvidence, worksheetName: "" }).success).toBe(false);
+        expect(f6CostEvidenceSchema.safeParse({ ...costEvidence, roiPolicyVersion: "legacy-roi-policy" }).success).toBe(false);
       });
 
       it("rejects duplicate solver and governed evidence source identities at precise paths", () => {
@@ -4590,7 +4592,7 @@ describe("F5.1 objective interpretation contracts", () => {
         expect(duplicateAllocation.success).toBe(false);
         if (!duplicateAllocation.success) expect(duplicateAllocation.error.issues.map(({ path }) => path)).toContainEqual(["allocations", 1]);
 
-        const duplicateDirection = f6DatumEvidenceSchema.safeParse({ evidenceVersion: "datum-strategy-v1", datumFace: "A", stackStart: "A", factorDirections: [{ tableId: "table-a", sourceRow: 2, direction: 1 }, { tableId: "table-a", sourceRow: 2, direction: -1 }], datumChainEdges: [{ from: "A", to: "B" }], crossSubsystemRelations: [], drawingEvidence: ["drawing-a.pdf"], reviewStatus: "confirmed", source: "datum-review.json", effectiveVersion: "v1", contentHash: "a".repeat(64) });
+        const duplicateDirection = f6DatumEvidenceSchema.safeParse({ evidenceVersion: "datum-strategy-v1", worksheetName: "Analysis-A", datumFace: "A", stackStart: "A", factorDirections: [{ tableId: "table-a", sourceRow: 2, direction: 1 }, { tableId: "table-a", sourceRow: 2, direction: -1 }], datumChainEdges: [{ from: "A", to: "B" }], crossSubsystemRelations: [], drawingEvidence: ["drawing-a.pdf"], reviewStatus: "confirmed", source: "datum-review.json", effectiveVersion: "v1", contentHash: "a".repeat(64) });
         expect(duplicateDirection.success).toBe(false);
         if (!duplicateDirection.success) expect(duplicateDirection.error.issues.map(({ path }) => path)).toContainEqual(["factorDirections", 1]);
 
@@ -4786,7 +4788,7 @@ describe("F5.1 objective interpretation contracts", () => {
             inputFindings: [{ findingCode: "missing", severity: "Critical", message: "Input is missing.", evidenceReferences: [] }],
             options: [], risks: [], clarifications: [],
           }],
-          summary: { worksheetCount: 1, completedWorksheetCount: 0, partiallyCompletedWorksheetCount: 0, inputRejectedWorksheetCount: 1, completedOptionCount: 0, calculationFailedOptionCount: 0, insufficientEvidenceOptionCount: 0 },
+          summary: { worksheetCount: 1, completedWorksheetCount: 0, partiallyCompletedWorksheetCount: 0, calculationFailedWorksheetCount: 0, inputRejectedWorksheetCount: 1, completedOptionCount: 0, calculationFailedOptionCount: 0, insufficientEvidenceOptionCount: 0 },
         };
         for (const [field, evidence] of [
           ["supplierCapabilityEvidence", supplierEvidence],
@@ -4808,6 +4810,41 @@ describe("F5.1 objective interpretation contracts", () => {
           status: "partially_completed",
           worksheets: [{ ...f6Result.worksheets[0], status: "partially_completed", options: [failedOption] }],
           summary: { ...f6Result.summary, completedWorksheetCount: 0, partiallyCompletedWorksheetCount: 1, completedOptionCount: 0, calculationFailedOptionCount: 1 },
+        }).success).toBe(false);
+      });
+
+      it("accepts calculation-failed worksheets only when all retained numeric options failed", () => {
+        const failedOption = { status: "calculation_failed", optionId: "failed", optionKind: "reduce_top_3_contributors_30", reasonCode: "f4_calculation_failed", evidenceReferences: [], impactRank: null };
+        const insufficientOption = { status: "insufficient_evidence", optionId: "supplier", optionKind: "improve_supplier_capability", predictedImprovement: "insufficient_evidence", requiredInputs: ["supplier capability study"], evidenceReferences: [], relativeCost: "insufficient_evidence", roiScore: "not_computed", impactRank: null };
+        const failedWorksheet = {
+          ...f6Result.worksheets[0],
+          status: "calculation_failed",
+          options: [failedOption, insufficientOption],
+          recommendations: [],
+          highestImpactAction: undefined,
+          roiStatus: "not_computed",
+        };
+        const failedResult = {
+          ...f6Result,
+          status: "calculation_failed",
+          worksheets: [failedWorksheet],
+          summary: {
+            worksheetCount: 1,
+            completedWorksheetCount: 0,
+            partiallyCompletedWorksheetCount: 0,
+            calculationFailedWorksheetCount: 1,
+            inputRejectedWorksheetCount: 0,
+            completedOptionCount: 0,
+            calculationFailedOptionCount: 1,
+            insufficientEvidenceOptionCount: 1,
+          },
+        };
+
+        expect(f6OptimizationResultSchema.safeParse(failedResult).success).toBe(true);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...failedResult,
+          worksheets: [{ ...failedWorksheet, options: [completedOption, failedOption] }],
+          summary: { ...failedResult.summary, completedOptionCount: 1 },
         }).success).toBe(false);
       });
 
@@ -4843,13 +4880,14 @@ describe("F5.1 objective interpretation contracts", () => {
         const rejectedWorksheet = { worksheetName: "Analysis-A", status: "input_rejected", inputFindings: [{ findingCode: "missing", severity: "Critical", message: "Input is missing.", evidenceReferences: [] }], options: [], risks: [risk], clarifications: [clarification] };
         const rejectedResult = {
           ...f6Result, status: "input_rejected", worksheets: [rejectedWorksheet],
-          summary: { worksheetCount: 1, completedWorksheetCount: 0, partiallyCompletedWorksheetCount: 0, inputRejectedWorksheetCount: 1, completedOptionCount: 0, calculationFailedOptionCount: 0, insufficientEvidenceOptionCount: 0 },
+          summary: { worksheetCount: 1, completedWorksheetCount: 0, partiallyCompletedWorksheetCount: 0, calculationFailedWorksheetCount: 0, inputRejectedWorksheetCount: 1, completedOptionCount: 0, calculationFailedOptionCount: 0, insufficientEvidenceOptionCount: 0 },
         };
         expect(f6OptimizationResultSchema.safeParse({ ...rejectedResult, worksheets: [{ ...rejectedWorksheet, risks: [risk, { ...risk }] }] }).success).toBe(false);
         expect(f6OptimizationResultSchema.safeParse({ ...rejectedResult, worksheets: [{ ...rejectedWorksheet, clarifications: [clarification, { ...clarification }] }] }).success).toBe(false);
       });
 
       it("binds computed ROI values to governed cost and calculation provenance", () => {
+        const costReferences = [reference(costEvidence.source), costEvidence.roiCalculationReference];
         expect(f6OptimizationResultSchema.safeParse({
           ...f6Result,
           worksheets: [{ ...f6Result.worksheets[0], roiStatus: "computed" }],
@@ -4857,7 +4895,7 @@ describe("F5.1 objective interpretation contracts", () => {
         expect(f6OptimizationResultSchema.safeParse({
           ...f6Result,
           provenance: { ...f6Result.provenance, costEvidence },
-          worksheets: [{ ...f6Result.worksheets[0], roiStatus: "computed", options: [{ ...completedOption, relativeCost: 100, roiScore: 0.006 }] }],
+          worksheets: [{ ...f6Result.worksheets[0], roiStatus: "computed", options: [{ ...completedOption, evidenceReferences: [...completedOption.evidenceReferences, ...costReferences], relativeCost: 100, roiScore: 0 }] }],
         }).success).toBe(true);
         expect(f6OptimizationResultSchema.safeParse({
           ...f6Result,
@@ -4881,13 +4919,19 @@ describe("F5.1 objective interpretation contracts", () => {
           provenance: { ...f6Result.provenance, costEvidence: withoutReference },
           worksheets: [{ ...f6Result.worksheets[0], roiStatus: "computed", options: [{ ...completedOption, relativeCost: 100, roiScore: 0.006 }] }],
         }).success).toBe(false);
-      });
-
-      it("enforces ROI status and governed costs for every completed option", () => {
         expect(f6OptimizationResultSchema.safeParse({
           ...f6Result,
           provenance: { ...f6Result.provenance, costEvidence },
-          worksheets: [{ ...f6Result.worksheets[0], options: [{ ...completedOption, relativeCost: 100, roiScore: "not_computed" }] }],
+          worksheets: [{ ...f6Result.worksheets[0], roiStatus: "computed", options: [{ ...completedOption, relativeCost: 100, roiScore: 0 }] }],
+        }).success).toBe(false);
+      });
+
+      it("enforces ROI status and governed costs for every completed option", () => {
+        const costReferences = [reference(costEvidence.source), costEvidence.roiCalculationReference];
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          provenance: { ...f6Result.provenance, costEvidence },
+          worksheets: [{ ...f6Result.worksheets[0], options: [{ ...completedOption, evidenceReferences: [...completedOption.evidenceReferences, ...costReferences], relativeCost: 100, roiScore: "not_computed" }] }],
         }).success).toBe(true);
         expect(f6OptimizationResultSchema.safeParse({
           ...f6Result,
@@ -4947,6 +4991,7 @@ describe("F5.1 objective interpretation contracts", () => {
         };
         const datumScope = {
           kind: "datum",
+          worksheetName: exactDatumEvidence.worksheetName,
           factorSources: exactDatumEvidence.factorDirections,
           evidenceReference: { artifact: exactDatumEvidence.source, contentHash: exactDatumEvidence.contentHash },
         };
@@ -5009,6 +5054,7 @@ describe("F5.1 objective interpretation contracts", () => {
         };
         const datumScope = {
           kind: "datum" as const,
+          worksheetName: datumEvidence.worksheetName,
           factorSources: datumEvidence.factorDirections,
           evidenceReference: { artifact: datumEvidence.source, contentHash: datumEvidence.contentHash },
         };
