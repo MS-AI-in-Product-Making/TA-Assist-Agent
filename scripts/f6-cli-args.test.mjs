@@ -26,18 +26,22 @@ describe("parseF6CliArgs", () => {
     });
   });
 
-  it("keeps optional values undefined", () => {
-    expect(parseF6CliArgs(ROOTS)).toEqual({
+  it("keeps optional evidence values undefined", () => {
+    expect(parseF6CliArgs([...ROOTS, "--worksheet", "Analysis-A"])).toEqual({
       f2ArtifactRoot: ROOTS[0],
       f3ArtifactRoot: ROOTS[1],
       f4ArtifactRoot: ROOTS[2],
       f5ArtifactRoot: ROOTS[3],
-      selectedWorksheetNames: undefined,
+      selectedWorksheetNames: ["Analysis-A"],
       supplierCapabilityArtifact: undefined,
       datumStrategyArtifact: undefined,
       costArtifact: undefined,
       imageObservationArtifact: undefined,
     });
+  });
+
+  it("rejects four roots without an explicit worksheet", () => {
+    expect(() => parseF6CliArgs(ROOTS)).toThrow(/at least one --worksheet/i);
   });
 
   it.each([[], ["f2"], ["f2", "f3"], ["f2", "f3", "f4"]])(

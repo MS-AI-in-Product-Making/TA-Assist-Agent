@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -73,6 +74,51 @@ function readJson(filePath) {
 }
 
 describe("runF6FullValidation", () => {
+  it("rejects four roots from the direct CLI without creating artifacts", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "f6-direct-cli-"));
+    cleanup.push(root);
+    const publishRoot = path.join(root, "publish");
+    const roots = ["f2", "f3", "f4", "f5"].map((name) => path.join(publishRoot, name));
+    const outputRoot = path.join(publishRoot, "f6-runs", "run");
+    for (const artifactRoot of roots) mkdirSync(artifactRoot, { recursive: true });
+
+    const result = spawnSync(process.execPath, [
+      path.join(process.cwd(), "scripts", "run-f6-full-validation.mjs"),
+      ...roots,
+    ], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        AI_TVA_F6_OUTPUT_ROOT: outputRoot,
+        AI_TVA_F6_PUBLISH_ROOT: publishRoot,
+      },
+    });
+
+    expect(result.status).toBe(1);
+    expect(JSON.parse(result.stdout)).toEqual({
+      status: "failed",
+      reasonCode: "invalid_arguments_or_output_root",
+    });
+    expect(existsSync(outputRoot)).toBe(false);
+  });
+
+  it("rejects a direct CLI command with four roots before creating artifacts", () => {
+    const lines = [];
+    const resolveLayout = vi.fn(() => { throw new Error("layout must not be resolved"); });
+
+    expect(runF6Cli(
+      { args: ["f2 run", "f3 run", "f4 run", "f5 run"] },
+      { resolveLayout },
+      { log: (line) => lines.push(line) },
+    )).toBe(1);
+    expect(resolveLayout).not.toHaveBeenCalled();
+    expect(JSON.parse(lines.join("\n"))).toEqual({
+      status: "failed",
+      reasonCode: "invalid_arguments_or_output_root",
+    });
+  });
+
   it("writes all six fixed artifacts and passes validated reports to the composed model", () => {
     const context = setup();
     const result = runF6FullValidation({ args: ["ignored"] }, context.deps);

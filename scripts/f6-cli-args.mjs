@@ -44,12 +44,16 @@ export function parseF6CliArgs(args = []) {
     index += 1;
   }
 
+  if (selectedWorksheetNames.length === 0) {
+    throw new Error("Feature 6 requires at least one --worksheet selection.");
+  }
+
   return {
     f2ArtifactRoot,
     f3ArtifactRoot,
     f4ArtifactRoot,
     f5ArtifactRoot,
-    selectedWorksheetNames: selectedWorksheetNames.length > 0 ? selectedWorksheetNames : undefined,
+    selectedWorksheetNames,
     ...optionalPaths,
   };
 }
