@@ -217,17 +217,28 @@ export function rankCompletedOptions(
     return score + ({ Critical: 2, High: 1, Medium: 0, Low: 0 }[risk.rating]);
   }, 0);
   const ordered = [...completed].sort((left, right) =>
-    feasibilityRank(right) - feasibilityRank(left)
-    || Number(right.resultMetrics.cpk >= targetCpk) - Number(left.resultMetrics.cpk >= targetCpk)
+    Number(right.resultMetrics.cpk >= targetCpk) - Number(left.resultMetrics.cpk >= targetCpk)
     || right.deltaCpk - left.deltaCpk
-    || (-right.deltaDpm) - (-left.deltaDpm)
+    || left.deltaDpm - right.deltaDpm
     || right.deltaYield - left.deltaYield
     || closureScore(right) - closureScore(left)
+    || feasibilityRank(right) - feasibilityRank(left)
     || compareText(left.optionId, right.optionId));
   const ranks = new Map(ordered.map((option, index) => [option.optionId, index + 1]));
   return options.map((option) => option.status === "completed"
     ? { ...option, impactRank: ranks.get(option.optionId)! }
     : option);
+}
+
+export function selectHighestSupportedCompletedOption(options: readonly F6Option[]): CompletedOption | undefined {
+  return options.reduce<CompletedOption | undefined>((highest, option) => {
+    if (option.status !== "completed" || option.feasibility.status !== "supported" || option.impactRank === null) {
+      return highest;
+    }
+    return highest === undefined || highest.impactRank === null || option.impactRank < highest.impactRank
+      ? option
+      : highest;
+  }, undefined);
 }
 
 function sourceKey(source: { readonly tableId: string; readonly sourceRow: number }): string {
@@ -501,9 +512,7 @@ function optimizeWorksheet(
     };
   });
   const ranked = rankCompletedOptions(optionsWithRiskClosure, targetCapability.targetCpk, risks);
-  const highest = ranked.find((option) => option.status === "completed"
-    && option.feasibility.status === "supported"
-    && option.impactRank === 1) as CompletedOption | undefined;
+  const highest = selectHighestSupportedCompletedOption(ranked);
   const recommendations = ranked
     .filter((option): option is CompletedOption => option.status === "completed" && option.feasibility.status === "supported")
     .map((option) => ({

@@ -8,7 +8,11 @@ import * as packageRoot from "./index.js";
 import { createCalculation } from "./calculation.js";
 import { createF5DataInterpretation } from "./f5-data-interpretation.js";
 import { calculateF6Scenario } from "./f6-scenario-adapter.js";
-import { createF6Optimization, rankCompletedOptions } from "./f6-optimization.js";
+import {
+  createF6Optimization,
+  rankCompletedOptions,
+  selectHighestSupportedCompletedOption,
+} from "./f6-optimization.js";
 
 const HASH = "a".repeat(64);
 const IMAGE_HASH = "b".repeat(64);
@@ -334,8 +338,8 @@ describe("createF6Optimization", () => {
       { artifact: input.f4Reference.artifact, contentHash: input.f4Reference.contentHash },
       { artifact: input.f5Reference.artifact, contentHash: input.f5Reference.contentHash },
     ]));
-    expect(worksheet.recommendations.some(({ optionId }) => optionId === meanShift.optionId)).toBe(false);
-    expect(worksheet.highestImpactAction?.optionId).not.toBe(meanShift.optionId);
+    expect(worksheet.recommendations).toEqual([]);
+    expect(worksheet.highestImpactAction).toBeUndefined();
   });
 
   it("keeps combined centering and tightening review-only with complete T1 evidence", () => {
@@ -361,9 +365,39 @@ describe("createF6Optimization", () => {
       reasonCodes: expect.arrayContaining(["mean_shift_physical_constraint_unverified"]),
     });
     expect(supported.length).toBeGreaterThan(0);
-    expect(combined.impactRank).toBeGreaterThan(Math.min(...supported.map(({ impactRank }) => impactRank!)));
     expect(worksheet.recommendations.some(({ optionId }) => optionId === combined.optionId)).toBe(false);
     expect(worksheet.highestImpactAction?.optionId).not.toBe(combined.optionId);
+  });
+
+  it("selects the lowest global impact rank among supported completed options", () => {
+    const result = createF6Optimization(request());
+    const worksheet = result.worksheets[0];
+    if (worksheet?.status === "input_rejected" || worksheet === undefined) throw new Error("expected ready worksheet");
+    const template = worksheet.options.find((option) => option.status === "completed")!;
+    if (template.status !== "completed") throw new Error("expected completed option");
+    const options = [
+      {
+        ...structuredClone(template),
+        optionId: "review-rank-1",
+        impactRank: 1,
+        feasibility: { status: "requires_engineering_review" as const, reasonCodes: [], evidenceReferences: [] },
+      },
+      {
+        ...structuredClone(template),
+        optionId: "supported-rank-3",
+        impactRank: 3,
+        feasibility: { status: "supported" as const, reasonCodes: [], evidenceReferences: [] },
+      },
+      {
+        ...structuredClone(template),
+        optionId: "supported-rank-2",
+        impactRank: 2,
+        feasibility: { status: "supported" as const, reasonCodes: [], evidenceReferences: [] },
+      },
+    ];
+
+    expect(selectHighestSupportedCompletedOption(options)?.optionId).toBe("supported-rank-2");
+    expect(selectHighestSupportedCompletedOption(options.slice(0, 1))).toBeUndefined();
   });
 
   it("conservatively keeps mean shift under review when exact confirmed datum evidence lacks design authorization", () => {
@@ -699,58 +733,182 @@ describe("createF6Optimization", () => {
     ]);
   });
 
-  it("ranks tied feasibility supported before review before insufficient before not supported", () => {
+  it("ranks target attainment before feasibility and delta Cpk before feasibility", () => {
     const result = createF6Optimization(request());
     const worksheet = result.worksheets[0];
     if (worksheet?.status === "input_rejected" || worksheet === undefined) throw new Error("expected ready worksheet");
     const template = worksheet.options.find((option) => option.status === "completed")!;
     if (template.status !== "completed") throw new Error("expected completed option");
-    const statuses = ["not_supported", "insufficient_evidence", "requires_engineering_review", "supported"] as const;
-    const options = statuses.map((status) => ({
-      ...structuredClone(template),
-      optionId: status,
-      impactRank: null,
-      feasibility: { status, reasonCodes: [status], evidenceReferences: [] },
-    }));
+    const options = [
+      {
+        ...structuredClone(template),
+        optionId: "supported-non-target",
+        impactRank: null,
+        resultMetrics: { ...template.resultMetrics, cpk: worksheet.targetCapability.targetCpk - 0.01 },
+        deltaCpk: 10,
+        feasibility: { status: "supported" as const, reasonCodes: [], evidenceReferences: [] },
+      },
+      {
+        ...structuredClone(template),
+        optionId: "review-target",
+        impactRank: null,
+        resultMetrics: { ...template.resultMetrics, cpk: worksheet.targetCapability.targetCpk },
+        deltaCpk: 0.1,
+        feasibility: { status: "requires_engineering_review" as const, reasonCodes: [], evidenceReferences: [] },
+      },
+      {
+        ...structuredClone(template),
+        optionId: "supported-lower-delta",
+        impactRank: null,
+        resultMetrics: { ...template.resultMetrics, cpk: worksheet.targetCapability.targetCpk },
+        deltaCpk: 0.2,
+        feasibility: { status: "supported" as const, reasonCodes: [], evidenceReferences: [] },
+      },
+      {
+        ...structuredClone(template),
+        optionId: "review-higher-delta",
+        impactRank: null,
+        resultMetrics: { ...template.resultMetrics, cpk: worksheet.targetCapability.targetCpk },
+        deltaCpk: 0.3,
+        feasibility: { status: "requires_engineering_review" as const, reasonCodes: [], evidenceReferences: [] },
+      },
+    ];
 
     const ranked = rankCompletedOptions(options, worksheet.targetCapability.targetCpk, []);
     expect([...ranked].sort((left, right) => left.impactRank! - right.impactRank!).map(({ optionId }) => optionId)).toEqual([
-      "supported",
-      "requires_engineering_review",
-      "insufficient_evidence",
-      "not_supported",
+      "review-higher-delta",
+      "supported-lower-delta",
+      "review-target",
+      "supported-non-target",
     ]);
   });
 
-  it("ranks a supported option above an otherwise equal review-only option with a larger delta", () => {
+  it("treats a more negative delta Dpm as the larger improvement before yield and feasibility", () => {
     const result = createF6Optimization(request());
     const worksheet = result.worksheets[0];
     if (worksheet?.status === "input_rejected" || worksheet === undefined) throw new Error("expected ready worksheet");
     const template = worksheet.options.find((option) => option.status === "completed")!;
     if (template.status !== "completed") throw new Error("expected completed option");
-    const supported = {
+    const smallerReduction = {
       ...structuredClone(template),
-      optionId: "supported",
+      optionId: "smaller-reduction",
       impactRank: null,
-      deltaCpk: 0.1,
+      resultMetrics: { ...template.resultMetrics, cpk: worksheet.targetCapability.targetCpk },
+      deltaCpk: 0.5,
+      deltaDpm: -10,
+      deltaYield: 0.9,
       feasibility: { status: "supported" as const, reasonCodes: ["supported"], evidenceReferences: [] },
     };
-    const reviewOnly = {
+    const largerReduction = {
       ...structuredClone(template),
-      optionId: "review-only",
+      optionId: "larger-reduction",
       impactRank: null,
-      deltaCpk: 1,
+      resultMetrics: { ...template.resultMetrics, cpk: worksheet.targetCapability.targetCpk },
+      deltaCpk: 0.5,
+      deltaDpm: -100,
+      deltaYield: 0.1,
       feasibility: {
         status: "requires_engineering_review" as const,
-        reasonCodes: ["mean_shift_physical_constraint_unverified"],
+        reasonCodes: ["review"],
         evidenceReferences: [],
       },
     };
 
-    const ranked = rankCompletedOptions([reviewOnly, supported], worksheet.targetCapability.targetCpk, []);
+    const ranked = rankCompletedOptions([smallerReduction, largerReduction], worksheet.targetCapability.targetCpk, []);
     expect([...ranked].sort((left, right) => left.impactRank! - right.impactRank!).map(({ optionId }) => optionId)).toEqual([
-      "supported",
-      "review-only",
+      "larger-reduction",
+      "smaller-reduction",
+    ]);
+  });
+
+  it("ranks verified severe risk closure before feasibility after preceding impact ties", () => {
+    const result = createF6Optimization(request());
+    const worksheet = result.worksheets[0];
+    if (worksheet?.status === "input_rejected" || worksheet === undefined) throw new Error("expected ready worksheet");
+    const template = worksheet.options.find((option) => option.status === "completed")!;
+    if (template.status !== "completed") throw new Error("expected completed option");
+    const risk = {
+      riskId: "verified-high-risk",
+      category: "Supplier" as const,
+      rating: "High" as const,
+      status: "closed" as const,
+      reason: "Closed by governed supplier evidence.",
+      evidenceReferences: [{ artifact: "risk/closure.json", contentHash: "e".repeat(64) }],
+    };
+    const common = {
+      ...structuredClone(template),
+      impactRank: null,
+      resultMetrics: { ...template.resultMetrics, cpk: worksheet.targetCapability.targetCpk },
+      deltaCpk: 0.5,
+      deltaDpm: -100,
+      deltaYield: 0.25,
+    };
+    const ranked = rankCompletedOptions([
+      {
+        ...common,
+        optionId: "higher-yield-without-closure",
+        deltaYield: 0.3,
+        closedRiskIds: [],
+        feasibility: { status: "not_supported" as const, reasonCodes: [], evidenceReferences: [] },
+      },
+      {
+        ...common,
+        optionId: "supported-without-closure",
+        closedRiskIds: [],
+        feasibility: { status: "supported" as const, reasonCodes: [], evidenceReferences: [] },
+      },
+      {
+        ...common,
+        optionId: "review-with-closure",
+        closedRiskIds: [risk.riskId],
+        feasibility: { status: "requires_engineering_review" as const, reasonCodes: [], evidenceReferences: [] },
+      },
+    ], worksheet.targetCapability.targetCpk, [risk]);
+
+    expect([...ranked].sort((left, right) => left.impactRank! - right.impactRank!).map(({ optionId }) => optionId)).toEqual([
+      "higher-yield-without-closure",
+      "review-with-closure",
+      "supported-without-closure",
+    ]);
+  });
+
+  it("uses feasibility only after impact ties and optionId as the deterministic final tie-break", () => {
+    const result = createF6Optimization(request());
+    const worksheet = result.worksheets[0];
+    if (worksheet?.status === "input_rejected" || worksheet === undefined) throw new Error("expected ready worksheet");
+    const template = worksheet.options.find((option) => option.status === "completed")!;
+    if (template.status !== "completed") throw new Error("expected completed option");
+    const tied = {
+      ...structuredClone(template),
+      impactRank: null,
+      resultMetrics: { ...template.resultMetrics, cpk: worksheet.targetCapability.targetCpk },
+      deltaCpk: 0.5,
+      deltaDpm: -100,
+      deltaYield: 0.25,
+      closedRiskIds: [],
+    };
+    const ranked = rankCompletedOptions([
+      {
+        ...tied,
+        optionId: "z-review",
+        feasibility: { status: "requires_engineering_review" as const, reasonCodes: [], evidenceReferences: [] },
+      },
+      {
+        ...tied,
+        optionId: "z-supported",
+        feasibility: { status: "supported" as const, reasonCodes: [], evidenceReferences: [] },
+      },
+      {
+        ...tied,
+        optionId: "a-supported",
+        feasibility: { status: "supported" as const, reasonCodes: [], evidenceReferences: [] },
+      },
+    ], worksheet.targetCapability.targetCpk, []);
+
+    expect([...ranked].sort((left, right) => left.impactRank! - right.impactRank!).map(({ optionId }) => optionId)).toEqual([
+      "a-supported",
+      "z-supported",
+      "z-review",
     ]);
   });
 
