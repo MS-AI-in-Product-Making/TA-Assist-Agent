@@ -351,6 +351,20 @@ describe("createF6ComposedEngineeringReport", () => {
     expect(openRisk.worksheets[0]!.status).toBe("RISK");
   });
 
+  it.each([
+    ["project", (calculation: CompletedF5Calculation) => { calculation.projectReference = "other-project"; }],
+    ["table", (calculation: CompletedF5Calculation) => { calculation.worksheetSelection.tableId = "other-table"; }],
+    ["factor source", (calculation: CompletedF5Calculation) => { calculation.factors[0]!.source.sourceRow += 1; }],
+  ] as const)("rejects all-failed F5 calculations with tampered %s identity", (_label, mutate) => {
+    const input = bundle([["Analysis-A", 0.12]], undefined, true);
+    const f5Report = structuredClone(input.f5Report);
+    const worksheet = f5Report.worksheets[0]!;
+    if (worksheet.status !== "completed") throw new Error("fixture worksheet failed");
+    mutate(worksheet.calculationResult);
+
+    expect(() => createF6ComposedEngineeringReport({ ...input, f5Report })).toThrow(/Invalid F5 report|identity/i);
+  });
+
   it("preserves every evidence-backed risk and marks uncovered fixed areas insufficient", () => {
     const input = bundle([["Analysis-A", 1]]);
     const evidenceReferences = [{

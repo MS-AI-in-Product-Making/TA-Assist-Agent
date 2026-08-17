@@ -126,7 +126,10 @@ function renderRecommendations(lines, recommendations) {
   );
   if (recommendations.length === 0) lines.push("| — | No supported recommendation | insufficient_evidence | ");
   for (const [index, recommendation] of recommendations.entries()) {
-    lines.push(`| ${index + 1} | ${cell(recommendation.text)} | ${cell(recommendation.expectedBenefit)} |`);
+    const reference = recommendation.kind === "verified_option"
+      ? `option:${recommendation.optionId}`
+      : `clarification:${recommendation.clarificationId}`;
+    lines.push(`| ${index + 1} | ${cell(`[${recommendation.recommendationId}] [${reference}] ${recommendation.text}`)} | ${cell(recommendation.expectedBenefit)} |`);
   }
 }
 

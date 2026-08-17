@@ -72,19 +72,23 @@ function assertBaselineIdentity(
     || calculation.worksheetSelection.worksheetName !== f6Worksheet.worksheetName) {
     throw new Error("F5 and F6 worksheet calculation identity mismatch.");
   }
-  const baselineEvidence = f6Worksheet.options.find((option) => option.status === "completed")?.scenarioEvidence.calculation;
-  if (baselineEvidence !== undefined) {
-    if (calculation.projectReference !== baselineEvidence.projectReference
-      || calculation.runReference !== baselineEvidence.runReference
-      || calculation.calculationVersion !== baselineEvidence.calculationVersion
-      || calculation.worksheetSelection.worksheetName !== baselineEvidence.worksheetSelection.worksheetName
-      || calculation.worksheetSelection.tableId !== baselineEvidence.worksheetSelection.tableId
-      || calculation.factorCount !== baselineEvidence.factorCount
-      || JSON.stringify(calculation.factors) !== JSON.stringify(baselineEvidence.factors)
-      || JSON.stringify(calculation.system) !== JSON.stringify(baselineEvidence.system)
-      || JSON.stringify(calculation.capability) !== JSON.stringify(baselineEvidence.capability)) {
-      throw new Error("F5 and F6 worksheet calculation identity mismatch.");
-    }
+  const baselineIdentity = f6Worksheet.baselineIdentity;
+  const factorIdentities = calculation.factors.map((factor) => {
+    const identity: Partial<typeof factor> = structuredClone(factor);
+    delete identity.trace;
+    return identity;
+  });
+  if (calculation.projectReference !== baselineIdentity.projectReference
+    || calculation.runReference !== baselineIdentity.runReference
+    || calculation.calculationVersion !== baselineIdentity.calculationVersion
+    || calculation.workbookContentHash !== baselineIdentity.workbookContentHash
+    || calculation.worksheetSelection.worksheetName !== baselineIdentity.worksheetName
+    || calculation.worksheetSelection.tableId !== baselineIdentity.tableId
+    || calculation.factorCount !== baselineIdentity.factorCount
+    || JSON.stringify(factorIdentities) !== JSON.stringify(baselineIdentity.factors)
+    || JSON.stringify(calculation.system) !== JSON.stringify(baselineIdentity.system)
+    || JSON.stringify(calculation.capability) !== JSON.stringify(baselineIdentity.capability)) {
+    throw new Error("F5 and F6 worksheet calculation identity mismatch.");
   }
   const expected = {
     mean: calculation.system.mean,

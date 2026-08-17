@@ -6633,9 +6633,40 @@ const f6HighestImpactActionSchema = z.object({
   rationale: z.string().min(1),
 }).strict();
 
+const f6BaselineFactorIdentitySchema = calculationFactorResultSchema.omit({ trace: true });
+
+export const f6BaselineIdentitySchema = z.object({
+  projectReference: controlledCalculationReferenceSchema,
+  runReference: controlledCalculationReferenceSchema,
+  calculationVersion: z.literal("excel-ta-v1"),
+  workbookContentHash: sha256Schema,
+  worksheetName: z.string().min(1),
+  tableId: z.string().min(1),
+  factorCount: z.number().int().positive(),
+  factors: z.array(f6BaselineFactorIdentitySchema).min(1),
+  system: calculationSystemResultSchema,
+  capability: calculationCapabilityResultSchema,
+}).strict().superRefine((identity, context) => {
+  if (identity.factorCount !== identity.factors.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "factorCount must match baseline identity factors", path: ["factorCount"] });
+  }
+  const sourceKeys = new Set<string>();
+  identity.factors.forEach((factor, index) => {
+    if (factor.source.worksheetName !== identity.worksheetName || factor.source.tableId !== identity.tableId) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "factor source must match baseline worksheet and table", path: ["factors", index, "source"] });
+    }
+    const key = `${factor.source.worksheetName}\u0000${factor.source.tableId}\u0000${factor.source.sourceRow}`;
+    if (sourceKeys.has(key)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline factor source keys must be unique", path: ["factors", index, "source"] });
+    }
+    sourceKeys.add(key);
+  });
+});
+
 const f6ReadyWorksheetFields = {
   worksheetName: z.string().min(1),
   f4CalculationIndex: z.number().int().positive(),
+  baselineIdentity: f6BaselineIdentitySchema,
   baselineMetrics: f6MetricsSchema,
   targetCapability: f6TargetCapabilitySchema,
   inputFindings: z.array(f6InputFindingSchema),
@@ -6707,6 +6738,8 @@ const f6CalculationFailedWorksheetResultSchema = z.object({
 
 const f6InputRejectedWorksheetResultSchema = z.object({
   worksheetName: z.string().min(1),
+  f4CalculationIndex: z.number().int().positive(),
+  baselineIdentity: f6BaselineIdentitySchema,
   status: z.literal("input_rejected"),
   inputFindings: z.array(f6InputFindingSchema).min(1),
   options: z.array(z.never()).length(0),
@@ -6805,6 +6838,19 @@ export const f6OptimizationResultSchema = z.object({
     context.addIssue({ code: z.ZodIssueCode.custom, message: "root status must match worksheet statuses", path: ["status"] });
   }
   result.worksheets.forEach((worksheet, worksheetIndex) => {
+    if (worksheet.baselineIdentity.worksheetName !== worksheet.worksheetName) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline identity worksheet must match worksheet result", path: ["worksheets", worksheetIndex, "baselineIdentity", "worksheetName"] });
+    }
+    if (worksheet.baselineIdentity.workbookContentHash !== result.workbook.contentHash) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline identity workbook must match result workbook", path: ["worksheets", worksheetIndex, "baselineIdentity", "workbookContentHash"] });
+    }
+    if (worksheet.baselineIdentity.calculationVersion !== result.provenance.f4Reference.calculationVersion) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline calculation version must match F4 provenance", path: ["worksheets", worksheetIndex, "baselineIdentity", "calculationVersion"] });
+    }
+    const expectedRunReference = `${result.provenance.f4Reference.runId}-${worksheet.f4CalculationIndex}`;
+    if (worksheet.baselineIdentity.runReference !== expectedRunReference) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline run must derive from F4 provenance and calculation index", path: ["worksheets", worksheetIndex, "baselineIdentity", "runReference"] });
+    }
     const validateUniqueField = <T>(
       records: readonly T[],
       field: keyof T,

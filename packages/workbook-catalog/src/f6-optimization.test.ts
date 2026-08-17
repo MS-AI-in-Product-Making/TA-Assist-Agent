@@ -248,6 +248,22 @@ describe("createF6Optimization", () => {
     ]);
     expect(worksheet.options.slice(0, 7).map(({ status }) => status)).toEqual(Array(7).fill("completed"));
     expect(worksheet.targetCapability).toEqual({ targetCpk: 1.33, targetSigmaLevel: 4, source: "worksheet" });
+    expect(worksheet.baselineIdentity).toEqual({
+      projectReference: input.worksheets[0]!.baselineCalculation.projectReference,
+      runReference: input.worksheets[0]!.baselineCalculation.runReference,
+      calculationVersion: input.worksheets[0]!.baselineCalculation.calculationVersion,
+      workbookContentHash: input.worksheets[0]!.baselineCalculation.workbookContentHash,
+      worksheetName: input.worksheets[0]!.baselineCalculation.worksheetSelection.worksheetName,
+      tableId: input.worksheets[0]!.baselineCalculation.worksheetSelection.tableId,
+      factorCount: input.worksheets[0]!.baselineCalculation.factorCount,
+      factors: input.worksheets[0]!.baselineCalculation.factors.map((factor) => {
+        const identity: Partial<typeof factor> = structuredClone(factor);
+        delete identity.trace;
+        return identity;
+      }),
+      system: input.worksheets[0]!.baselineCalculation.system,
+      capability: input.worksheets[0]!.baselineCalculation.capability,
+    });
     expect(worksheet.options[7]).toMatchObject({ status: "insufficient_evidence", predictedImprovement: "insufficient_evidence" });
     expect(worksheet.options[8]).toMatchObject({ status: "insufficient_evidence", predictedImprovement: "insufficient_evidence" });
     expect(worksheet.options[7]).not.toHaveProperty("evidenceScope");
@@ -489,6 +505,12 @@ describe("createF6Optimization", () => {
     expect(result.worksheets[0]).toMatchObject({
       worksheetName: "Analysis-A",
       status: "calculation_failed",
+      baselineIdentity: expect.objectContaining({
+        projectReference: "project",
+        runReference: "run-1",
+        worksheetName: "Analysis-A",
+        tableId: "table-a",
+      }),
       options: expect.arrayContaining([
         expect.objectContaining({ status: "calculation_failed", reasonCode: "calculation_not_possible" }),
         expect.objectContaining({ status: "insufficient_evidence" }),

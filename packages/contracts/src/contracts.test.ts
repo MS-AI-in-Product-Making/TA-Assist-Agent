@@ -4407,6 +4407,22 @@ describe("F5.1 objective interpretation contracts", () => {
         yield: calculationCompletedResult.capability.yield,
         dpm: calculationCompletedResult.capability.totalDpm,
       };
+      const baselineIdentity = {
+        projectReference: calculationCompletedResult.projectReference,
+        runReference: calculationCompletedResult.runReference,
+        calculationVersion: calculationCompletedResult.calculationVersion,
+        workbookContentHash: calculationCompletedResult.workbookContentHash,
+        worksheetName: calculationCompletedResult.worksheetSelection.worksheetName,
+        tableId: calculationCompletedResult.worksheetSelection.tableId,
+        factorCount: calculationCompletedResult.factorCount,
+        factors: calculationCompletedResult.factors.map((factor) => {
+          const identity: Partial<typeof factor> = structuredClone(factor);
+          delete identity.trace;
+          return identity;
+        }),
+        system: calculationCompletedResult.system,
+        capability: calculationCompletedResult.capability,
+      };
       const feasibility = { status: "supported", reasonCodes: ["within_capability_bound"], evidenceReferences: ["supplier-capability.json"] };
       const roiCalculationReference = reference("calculations/roi-policy-v2.json");
       const costEvidence = {
@@ -4525,6 +4541,7 @@ describe("F5.1 objective interpretation contracts", () => {
         worksheets: [{
           worksheetName: "Analysis-A",
           f4CalculationIndex: 1,
+          baselineIdentity,
           status: "completed",
           baselineMetrics: metrics,
           targetCapability: { targetCpk: 1.33, targetSigmaLevel: 4, source: "worksheet" },
@@ -4639,6 +4656,22 @@ describe("F5.1 objective interpretation contracts", () => {
 
       it("enforces strict option branches and result status summaries", () => {
         expect(f6OptimizationResultSchema.parse(f6Result)).toEqual(f6Result);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], baselineIdentity: { ...baselineIdentity, projectReference: "other-project" } }],
+        }).success).toBe(true);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], baselineIdentity: { ...baselineIdentity, worksheetName: "Other" } }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], baselineIdentity: { ...baselineIdentity, workbookContentHash: "f".repeat(64) } }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], baselineIdentity: { ...baselineIdentity, runReference: "other-run" } }],
+        }).success).toBe(false);
         expect(f6OptimizationResultSchema.safeParse({ ...f6Result, summary: { ...f6Result.summary, completedOptionCount: 0 } }).success).toBe(false);
         expect(f6OptimizationResultSchema.safeParse({ ...f6Result, worksheets: [{ ...f6Result.worksheets[0], options: [{ ...completedOption, deltaCpk: 0.7 }] }] }).success).toBe(false);
         expect(f6OptimizationResultSchema.safeParse({ ...f6Result, worksheets: [{ ...f6Result.worksheets[0], status: "input_rejected", options: [completedOption] }] }).success).toBe(false);
@@ -4839,6 +4872,8 @@ describe("F5.1 objective interpretation contracts", () => {
           status: "input_rejected",
           worksheets: [{
             worksheetName: "Analysis-A",
+            f4CalculationIndex: 1,
+            baselineIdentity,
             status: "input_rejected",
             inputFindings: [{ findingCode: "missing", severity: "Critical", message: "Input is missing.", evidenceReferences: [] }],
             options: [], risks: [], clarifications: [],
@@ -4933,7 +4968,11 @@ describe("F5.1 objective interpretation contracts", () => {
       it("enforces duplicate risk and clarification identities for input-rejected worksheets", () => {
         const risk = { riskId: "risk-1", category: "Manufacturing", rating: "High", status: "open", reason: "Input is incomplete.", evidenceReferences: [reference("finding.json")] };
         const clarification = { clarificationId: "clarify-1", reasonCode: "missing", requiredInputs: ["input"], questionForReviewer: "Provide input?", evidenceReferences: [] };
-        const rejectedWorksheet = { worksheetName: "Analysis-A", status: "input_rejected", inputFindings: [{ findingCode: "missing", severity: "Critical", message: "Input is missing.", evidenceReferences: [] }], options: [], risks: [risk], clarifications: [clarification] };
+        const rejectedWorksheet = {
+          worksheetName: "Analysis-A", f4CalculationIndex: 1, baselineIdentity, status: "input_rejected",
+          inputFindings: [{ findingCode: "missing", severity: "Critical", message: "Input is missing.", evidenceReferences: [] }],
+          options: [], risks: [risk], clarifications: [clarification],
+        };
         const rejectedResult = {
           ...f6Result, status: "input_rejected", worksheets: [rejectedWorksheet],
           summary: { worksheetCount: 1, completedWorksheetCount: 0, partiallyCompletedWorksheetCount: 0, calculationFailedWorksheetCount: 0, inputRejectedWorksheetCount: 1, completedOptionCount: 0, calculationFailedOptionCount: 0, insufficientEvidenceOptionCount: 0 },

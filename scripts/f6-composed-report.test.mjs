@@ -204,6 +204,21 @@ describe("renderComposedEngineeringReport", () => {
     expect(markdown).not.toContain("Highest ROI");
   });
 
+  it("renders sanitized recommendation IDs and exact option or clarification references", () => {
+    const input = report();
+    input.worksheets[0].sections.recommendations[0].recommendationId = String.raw`recommend|<b>C:\private\id`;
+    input.worksheets[0].sections.recommendations[0].optionId = String.raw`option|<i>C:\private\option`;
+    input.worksheets[0].sections.recommendations[1].recommendationId = String.raw`closure|<u>C:\private\id`;
+    input.worksheets[0].sections.recommendations[1].clarificationId = String.raw`clarify|<em>C:\private\action`;
+
+    const markdown = renderComposedEngineeringReport(input);
+    const recommendations = section(markdown, "### Recommendations", "### What-If Analysis");
+
+    expect(recommendations).toContain(String.raw`\[recommend\|&lt;b&gt;[redacted-local-path]\] \[option:option\|&lt;i&gt;[redacted-local-path]\]`);
+    expect(recommendations).toContain(String.raw`\[closure\|&lt;u&gt;[redacted-local-path]\] \[clarification:clarify\|&lt;em&gt;[redacted-local-path]\]`);
+    expect(recommendations).not.toMatch(/<b>|<i>|<u>|<em>|C:\\private/i);
+  });
+
   it("escapes Markdown, HTML, tables, and links without traces or absolute paths", () => {
     const markdown = renderComposedEngineeringReport(report(), { outputRoot: "C:\\private\\report" });
 

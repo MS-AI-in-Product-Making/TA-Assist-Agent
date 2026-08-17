@@ -104,6 +104,25 @@ function metrics(calculation: Pick<CalculationCompletedResult, "system" | "capab
   };
 }
 
+function baselineIdentity(calculation: CalculationCompletedResult) {
+  return {
+    projectReference: calculation.projectReference,
+    runReference: calculation.runReference,
+    calculationVersion: calculation.calculationVersion,
+    workbookContentHash: calculation.workbookContentHash,
+    worksheetName: calculation.worksheetSelection.worksheetName,
+    tableId: calculation.worksheetSelection.tableId,
+    factorCount: calculation.factorCount,
+    factors: calculation.factors.map((factor) => {
+      const identity: Partial<CalculationFactorResult> = structuredClone(factor);
+      delete identity.trace;
+      return identity as Omit<CalculationFactorResult, "trace">;
+    }),
+    system: structuredClone(calculation.system),
+    capability: structuredClone(calculation.capability),
+  };
+}
+
 function f4ArtifactReference(request: F6OptimizationRequest) {
   return { artifact: request.f4Reference.artifact, contentHash: request.f4Reference.contentHash };
 }
@@ -549,6 +568,7 @@ function optimizeWorksheet(
   const result: ReadyWorksheet = {
     worksheetName: worksheet.worksheetName,
     f4CalculationIndex: worksheet.f4CalculationIndex,
+    baselineIdentity: baselineIdentity(baseline),
     status: completedCount === 0
       ? "calculation_failed"
       : ranked.some(({ status }) => status === "calculation_failed")
