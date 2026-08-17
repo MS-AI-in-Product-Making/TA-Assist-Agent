@@ -11,6 +11,7 @@ import {
 import { calculateF6Scenario } from "../packages/workbook-catalog/dist/f6-scenario-adapter.js";
 import {
   createF6ArtifactBundleFixture,
+  fixtureFileSha256,
   installF6V2Evidence,
   rewriteFixtureJson,
 } from "./f6-artifact-test-fixture.mjs";
@@ -263,6 +264,129 @@ describe("runF6FullValidation", () => {
 });
 
 describe("F6 real artifact full flow", () => {
+  it("runs the real CLI and layout without changing any governed input artifact", () => {
+    const bundle = createRealBundle({ worksheetNames: ["Analysis-A", "Analysis-B"] });
+    const evidence = installF6V2Evidence(bundle);
+    const outputRoot = path.join(bundle.publishRoot, "f6-runs", "real-cli");
+    const fixedNow = () => new Date("2026-08-17T01:02:03.456Z");
+    const runRoot = path.join(outputRoot, "2026-08-17T01-02-03-456Z");
+    const inputSnapshots = Object.fromEntries(Object.entries(bundle.paths).map(([key, filePath]) => [key, {
+      bytes: readFileSync(filePath),
+      sha256: fixtureFileSha256(filePath),
+    }]));
+    const lines = [];
+    const previousOutputRoot = process.env.AI_TVA_F6_OUTPUT_ROOT;
+    const previousPublishRoot = process.env.AI_TVA_F6_PUBLISH_ROOT;
+    process.env.AI_TVA_F6_OUTPUT_ROOT = outputRoot;
+    process.env.AI_TVA_F6_PUBLISH_ROOT = bundle.publishRoot;
+
+    let exitCode;
+    try {
+      exitCode = runF6Cli({
+        args: [
+          bundle.f2ArtifactRoot,
+          bundle.f3ArtifactRoot,
+          bundle.f4ArtifactRoot,
+          bundle.f5ArtifactRoot,
+          "--worksheet", "Analysis-B",
+          "--worksheet", "Analysis-A",
+          "--image-observations", path.join(evidence.evidenceArtifactRoot, evidence.imageObservationArtifact),
+        ],
+        now: fixedNow,
+      }, {}, { log: (line) => lines.push(line) });
+    } finally {
+      if (previousOutputRoot === undefined) delete process.env.AI_TVA_F6_OUTPUT_ROOT;
+      else process.env.AI_TVA_F6_OUTPUT_ROOT = previousOutputRoot;
+      if (previousPublishRoot === undefined) delete process.env.AI_TVA_F6_PUBLISH_ROOT;
+      else process.env.AI_TVA_F6_PUBLISH_ROOT = previousPublishRoot;
+    }
+
+    expect(exitCode, lines.join("\n")).toBe(0);
+    expect(readdirSync(runRoot).sort()).toEqual([
+      "Feature6-Composed-Report.json",
+      "Feature6-Composed-Report.md",
+      "Feature6-Optimization.json",
+      "Feature6-Optimization.md",
+      "Feature6-Run-Summary.json",
+      "manifest.json",
+    ]);
+    const summary = readJson(path.join(runRoot, "Feature6-Run-Summary.json"));
+    expect(summary.status).toBe("completed");
+    expect(summary.hashes).toEqual({
+      optimizationJsonSha256: artifactHash(path.join(runRoot, "Feature6-Optimization.json")),
+      optimizationMarkdownSha256: artifactHash(path.join(runRoot, "Feature6-Optimization.md")),
+      composedReportJsonSha256: artifactHash(path.join(runRoot, "Feature6-Composed-Report.json")),
+      composedReportMarkdownSha256: artifactHash(path.join(runRoot, "Feature6-Composed-Report.md")),
+    });
+    expect(readJson(path.join(runRoot, "manifest.json"))).toEqual({
+      contractVersion: "v1",
+      featureId: "F6",
+      status: "completed",
+      runId: "2026-08-17T01-02-03-456Z",
+      artifacts: {
+        optimizationJson: "Feature6-Optimization.json",
+        optimizationMarkdown: "Feature6-Optimization.md",
+        composedReportJson: "Feature6-Composed-Report.json",
+        composedReportMarkdown: "Feature6-Composed-Report.md",
+        runSummary: "Feature6-Run-Summary.json",
+      },
+    });
+    for (const [key, filePath] of Object.entries(bundle.paths)) {
+      expect(readFileSync(filePath).equals(inputSnapshots[key].bytes)).toBe(true);
+      expect(fixtureFileSha256(filePath)).toBe(inputSnapshots[key].sha256);
+    }
+  });
+
+  it("runs the package workflow:f6 script with an isolated successful fixture", () => {
+    const bundle = createRealBundle();
+    const evidence = installF6V2Evidence(bundle);
+    const outputRoot = path.join(bundle.publishRoot, "f6-runs", "package-script");
+    const f5Bytes = readFileSync(bundle.paths.f5);
+    const f5Sha256 = fixtureFileSha256(bundle.paths.f5);
+    const npmExecutable = process.platform === "win32" ? process.execPath : "npm";
+    const npmPrefixArgs = process.platform === "win32" ? [process.env.npm_execpath] : [];
+
+    const child = spawnSync(npmExecutable, [
+      ...npmPrefixArgs,
+      "run",
+      "--silent",
+      "workflow:f6",
+      "--",
+      bundle.f2ArtifactRoot,
+      bundle.f3ArtifactRoot,
+      bundle.f4ArtifactRoot,
+      bundle.f5ArtifactRoot,
+      "--worksheet", "Analysis-A",
+      "--image-observations", path.join(evidence.evidenceArtifactRoot, evidence.imageObservationArtifact),
+    ], {
+      cwd: path.resolve("."),
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        AI_TVA_F6_OUTPUT_ROOT: outputRoot,
+        AI_TVA_F6_PUBLISH_ROOT: bundle.publishRoot,
+        npm_config_update_notifier: "false",
+      },
+      shell: false,
+    });
+
+    expect(child.error).toBeUndefined();
+    expect(child.status, child.stderr || child.stdout).toBe(0);
+    expect(child.stderr).toBe("");
+    const result = JSON.parse(child.stdout);
+    expect(result.status).toBe("completed");
+    expect(readdirSync(result.outputDirectory).sort()).toEqual([
+      "Feature6-Composed-Report.json",
+      "Feature6-Composed-Report.md",
+      "Feature6-Optimization.json",
+      "Feature6-Optimization.md",
+      "Feature6-Run-Summary.json",
+      "manifest.json",
+    ]);
+    expect(readFileSync(bundle.paths.f5).equals(f5Bytes)).toBe(true);
+    expect(fixtureFileSha256(bundle.paths.f5)).toBe(f5Sha256);
+  });
+
   it("selects only ready F2 worksheets and keeps blocked worksheets out of numeric sections", () => {
     const bundle = createRealBundle({ blockedWorksheetNames: ["Blocked-A"] });
     const { result, runRoot } = runRealF6(bundle, "mixed-ready-blocked");

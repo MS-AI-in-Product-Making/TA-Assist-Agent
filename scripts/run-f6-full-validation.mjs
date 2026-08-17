@@ -198,7 +198,7 @@ export function runF6FullValidation(options = {}, dependencyOverrides = {}) {
   const artifacts = {};
   let failureStage = "input";
   try {
-    const loaded = dependencies.loadBundle(loaderOptions(parsed));
+    const loaded = dependencies.loadBundle(loaderOptions({ ...parsed, publishRoot: layout.publishRoot }));
     if (loaded?.status !== "accepted") {
       return failedResult(layout, paths, artifacts, "input_rejected", boundary, dependencies);
     }

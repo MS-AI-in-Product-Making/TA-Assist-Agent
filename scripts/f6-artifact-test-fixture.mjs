@@ -9,7 +9,6 @@ import { calculateF4Workflow } from "./f4-calculation-workflow.mjs";
 export const F6_FIXTURE_WORKBOOK_HASH = "a".repeat(64);
 export const F6_FIXTURE_RUN_ID = "f4-run-1";
 const IMAGE_HASH = "b".repeat(64);
-const CONTROLLED_OUTPUT_ROOT = path.join(process.cwd(), "test", "demo-output");
 const CORE_SCOPES = [
   "tolerance_loop_closure",
   "datum_chain",
@@ -149,10 +148,12 @@ export function fixtureFileSha256(filePath) {
 export function createF6ArtifactBundleFixture({ worksheetNames = ["Analysis-A"], blockedWorksheetNames = [] } = {}) {
   const root = mkdtempSync(path.join(tmpdir(), "f6-artifact-fixture-"));
   const publishRoot = path.join(root, "publish");
-  const f2ArtifactRoot = path.join(root, "f2");
-  const f3ArtifactRoot = path.join(root, "f3");
-  const f4ArtifactRoot = path.join(root, "f4");
-  const f5ArtifactRoot = path.join(root, "f5");
+  const inputRoot = path.join(publishRoot, "inputs");
+  const f2ArtifactRoot = path.join(inputRoot, "f2");
+  const f3ArtifactRoot = path.join(inputRoot, "f3");
+  const f4ArtifactRoot = path.join(inputRoot, "f4");
+  const f5ArtifactRoot = path.join(inputRoot, "f5");
+  mkdirSync(publishRoot, { recursive: true });
   const worksheets = worksheetNames.map((worksheetName, index) =>
     readyWorksheet(worksheetName, `table-${index + 1}`, index + 2));
   const blockedWorksheets = blockedWorksheetNames.map((worksheetName, index) => ({
@@ -335,8 +336,9 @@ export function createF6V2ObservationArtifact(bundle) {
 }
 
 export function installF6V2Evidence(bundle) {
-  mkdirSync(CONTROLLED_OUTPUT_ROOT, { recursive: true });
-  const evidenceArtifactRoot = mkdtempSync(path.join(CONTROLLED_OUTPUT_ROOT, "f6-evidence-"));
+  const evidenceParent = path.join(bundle.publishRoot, "inputs");
+  mkdirSync(evidenceParent, { recursive: true });
+  const evidenceArtifactRoot = mkdtempSync(path.join(evidenceParent, "evidence-"));
   const imageObservationArtifact = "observations.json";
   const artifact = createF6V2ObservationArtifact(bundle);
   writeFixtureJson(path.join(evidenceArtifactRoot, imageObservationArtifact), artifact);

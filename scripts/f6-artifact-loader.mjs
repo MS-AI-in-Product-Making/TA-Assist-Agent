@@ -185,20 +185,22 @@ function inspectPathWithoutLinks(root, candidate) {
   }
 }
 
-function validatedEvidenceRoot(evidenceArtifactRoot) {
+function validatedEvidenceRoot(evidenceArtifactRoot, publishRoot = CONTROLLED_OUTPUT_ROOT) {
   if (typeof evidenceArtifactRoot !== "string" || evidenceArtifactRoot.trim().length === 0) {
     return { rejection: inputRejected("artifact_contract_invalid", "evidenceArtifactRoot") };
   }
   try {
+    const requestedPublishRoot = path.resolve(publishRoot);
     const requestedRoot = path.resolve(evidenceArtifactRoot);
-    if (!containedChild(CONTROLLED_OUTPUT_ROOT, requestedRoot)) {
+    if (lstatSync(requestedPublishRoot).isSymbolicLink()
+      || !containedChild(requestedPublishRoot, requestedRoot)) {
       return { rejection: inputRejected("artifact_identity_mismatch", "evidenceArtifactRoot") };
     }
-    const inspected = inspectPathWithoutLinks(REPOSITORY_ROOT, requestedRoot);
+    const inspected = inspectPathWithoutLinks(requestedPublishRoot, requestedRoot);
     if (inspected.reasonCode) {
       return { rejection: inputRejected(inspected.reasonCode, "evidenceArtifactRoot") };
     }
-    const controlledRoot = realpathSync(CONTROLLED_OUTPUT_ROOT);
+    const controlledRoot = realpathSync(requestedPublishRoot);
     const resolvedRoot = realpathSync(requestedRoot);
     if (!containedChild(controlledRoot, resolvedRoot) || !statSync(resolvedRoot).isDirectory()) {
       return { rejection: inputRejected("artifact_identity_mismatch", "evidenceArtifactRoot") };
@@ -343,6 +345,7 @@ export function loadF6ArtifactBundle({
   f3ArtifactRoot,
   f4ArtifactRoot,
   f5ArtifactRoot,
+  publishRoot,
   selectedWorksheetNames,
   evidenceArtifactRoot,
   imageObservationArtifact,
@@ -454,7 +457,7 @@ export function loadF6ArtifactBundle({
   ].some((artifact) => artifact !== undefined);
   let evidenceRoot;
   if (evidenceArtifactRoot !== undefined || hasOptionalEvidence) {
-    const validatedRoot = validatedEvidenceRoot(evidenceArtifactRoot);
+    const validatedRoot = validatedEvidenceRoot(evidenceArtifactRoot, publishRoot);
     if (validatedRoot.rejection) return validatedRoot.rejection;
     evidenceRoot = validatedRoot.filePath;
   }

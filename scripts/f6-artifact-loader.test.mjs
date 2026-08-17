@@ -33,7 +33,6 @@ import { loadF6ArtifactBundle } from "./f6-artifact-loader.mjs";
 const roots = [];
 const WORKBOOK_HASH = F6_FIXTURE_WORKBOOK_HASH;
 const RUN_ID = F6_FIXTURE_RUN_ID;
-const CONTROLLED_OUTPUT_ROOT = path.join(process.cwd(), "test", "demo-output");
 const MAX_JSON_BYTES = 10 * 1024 * 1024;
 
 function fileSymlinksAvailable() {
@@ -533,9 +532,9 @@ function installV2Evidence(bundle) {
 
 function setupEvidenceRoot(bundle) {
   if (bundle.evidenceArtifactRoot) return bundle.evidenceArtifactRoot;
-  mkdirSync(CONTROLLED_OUTPUT_ROOT, { recursive: true });
-  const evidenceArtifactRoot = mkdtempSync(path.join(CONTROLLED_OUTPUT_ROOT, "f6-evidence-"));
-  roots.push(evidenceArtifactRoot);
+  const evidenceParent = path.join(bundle.publishRoot, "inputs");
+  mkdirSync(evidenceParent, { recursive: true });
+  const evidenceArtifactRoot = mkdtempSync(path.join(evidenceParent, "evidence-"));
   bundle.evidenceArtifactRoot = evidenceArtifactRoot;
   return evidenceArtifactRoot;
 }
@@ -792,9 +791,9 @@ describe("F6 optional governed evidence", () => {
     expectRejected(loadF6ArtifactBundle(traversalBundle), "artifact_identity_mismatch", "cost.json");
   });
 
-  it("rejects an evidence root outside the repository controlled output boundary", () => {
+  it("rejects an evidence root outside the publish root", () => {
     const bundle = setupBundle();
-    bundle.evidenceArtifactRoot = path.join(rootPath(bundle), "evidence");
+    bundle.evidenceArtifactRoot = path.join(bundle.root, "outside-evidence");
     mkdirSync(bundle.evidenceArtifactRoot);
 
     expectRejected(loadF6ArtifactBundle(bundle), "artifact_identity_mismatch", "evidenceArtifactRoot");
@@ -825,25 +824,21 @@ describe("F6 optional governed evidence", () => {
 
   it("rejects an evidence root that is itself a junction", () => {
     const bundle = setupBundle();
-    mkdirSync(CONTROLLED_OUTPUT_ROOT, { recursive: true });
-    const outside = path.join(rootPath(bundle), "outside-evidence");
+    const outside = path.join(bundle.root, "outside-evidence");
     mkdirSync(outside);
-    const rootLink = path.join(CONTROLLED_OUTPUT_ROOT, `f6-root-link-${path.basename(rootPath(bundle))}`);
-    roots.push(rootLink);
+    const rootLink = path.join(bundle.publishRoot, "evidence-link");
     symlinkSync(outside, rootLink, "junction");
     bundle.evidenceArtifactRoot = rootLink;
 
     expectRejected(loadF6ArtifactBundle(bundle), "artifact_identity_mismatch", "evidenceArtifactRoot");
   });
 
-  it("rejects a junction between the controlled output root and the evidence root", () => {
+  it("rejects a junction between the publish root and the evidence root", () => {
     const bundle = setupBundle();
-    mkdirSync(CONTROLLED_OUTPUT_ROOT, { recursive: true });
-    const outside = path.join(rootPath(bundle), "outside-parent");
+    const outside = path.join(bundle.root, "outside-parent");
     const nested = path.join(outside, "evidence");
     mkdirSync(nested, { recursive: true });
-    const parentLink = path.join(CONTROLLED_OUTPUT_ROOT, `f6-parent-link-${path.basename(rootPath(bundle))}`);
-    roots.push(parentLink);
+    const parentLink = path.join(bundle.publishRoot, "evidence-parent-link");
     symlinkSync(outside, parentLink, "junction");
     bundle.evidenceArtifactRoot = path.join(parentLink, "evidence");
 
