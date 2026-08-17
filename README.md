@@ -38,8 +38,8 @@ Phase 0 建立面向产品路线图的本地优先、可审计 TypeScript 工程
 仅为 `guidance-exceeded`、`within-guidance` 或 `unknown`，不声明能力紧度或可制造性。该快照
 保留来源文件 hash、工作表和单元格范围。解读规则快照只包含审核后的通用 `internal` 子集，
 不包含 worked examples 或计算器；原始能力矩阵、TA 模板与规则工作簿仍不进入 Git。根 F5 已按
-`f5-data-interpretation-request-v1` / `f5-data-interpretation-result-v1` 阶段性启用；F6 仍为
-`unavailable`，发布规则依赖本身不表示推荐能力已经启用。F1 仅接受受控 `confidential` `.xlsx` 字节，创建只读
+`f5-data-interpretation-request-v1` / `f5-data-interpretation-result-v1` 已启用；F6 也已通过独立治理门启用
+`f6-optimization-v1` 本地 workflow。F1 仅接受受控 `confidential` `.xlsx` 字节，创建只读
 worksheet catalog，并从 catalog 确认的 worksheet 依据语义表头提取因子表、公式及缓存值、嵌入图片元数据，
 图片字节只可由 workbook hash 与唯一 image hash 共同验证后读取。F1 不计算公式、不换算单位、
 不执行 OCR、渲染、风险解释、行动建议或 workbook 写回，也不调用外部服务、不跟踪或导出原始
@@ -54,7 +54,8 @@ F2.1-F2.4 继续提供严格完整性阻断、非阻断一致性信号、受限�
 Worker 仅用于发布黄金回归，不在生产热路径中。F3 已启用 `drawing-governance-v2` 本地治理核心、
 JSON/Markdown workflow 和宿主注入的 Surface MCP adapter；真实 Comment 0 写入仍需 capability、
 策略审批及逐次用户确认。根 F5 直接消费 F0/F1/F3/F4 受控工件，提供能力、规格、贡献和证据受限的
-公差链解读；F5.1 作为历史 internal compatible core 保留，F6 和 F7 保持不可用。F5 不自动发布
+公差链解读；F5.1 作为历史 internal compatible core 保留。F6 在 F5 后消费 F2/F3/F4/F5 受控工件，负责
+options、reverse solve、RSS apportionment、feasibility、impact ranking 与 F5+F6 联合报告；F7 仍不可用。F5/F6 不自动发布
 ADO、不回写 workbook；F8 仅限用于受治理 Skill 运行时验收的匿名 `public` fixture。
 
 - [Phase 0 设计](docs/superpowers/specs/2026-07-22-ai-assist-agent-foundation-design.md)
@@ -83,6 +84,8 @@ ADO、不回写 workbook；F8 仅限用于受治理 Skill 运行时验收的匿�
 - [F2 Artifact 报告实施计划](docs/superpowers/plans/2026-08-03-f2-artifact-report-redesign.md)
 - [F4 计算引擎设计](docs/superpowers/specs/2026-07-30-f4-calculation-engine-design.md)
 - [F4 计算引擎实施计划](docs/superpowers/plans/2026-07-30-f4-calculation-engine.md)
+- [F6 优化与 F5+F6 联合工程报告设计](docs/superpowers/specs/2026-08-14-f6-optimization-and-composed-report-design.md)
+- [F6 优化与 F5+F6 联合工程报告实施计划](docs/superpowers/plans/2026-08-14-f6-optimization-and-composed-report.md)
 - [系统架构](docs/01-architecture.md) 与 [Feature Register](docs/governance/feature-register.md)
 - [数据分类](docs/governance/data-classification.md) 与 [开发协作标准](docs/governance/development-standard.md)
 - [Phase 0 验收](docs/governance/phase-0-acceptance.md)
@@ -94,9 +97,10 @@ ADO、不回写 workbook；F8 仅限用于受治理 Skill 运行时验收的匿�
 **Objective evidence provider + verifiable decision support** — not a black-box adviser.
 Every statement is tagged **FACT** (computed) / **RULE** (threshold check) → asserted, or
 **SIGNAL** (needs engineering judgment) / **OPTION** (parallel path) → flagged only. Options are
-presented in parallel and **not ranked**; the final judgment stays with the engineer. When evidence
-is insufficient (e.g. the assembly datum face), the agent **stops and asks** instead of guessing
-(fail-closed).
+presented by F5 in parallel and **not ranked**. F6 separately generates governed optimization options
+and deterministically ranks supported options by impact; neither workflow makes the final engineering
+judgment. When evidence is insufficient (e.g. the assembly datum face), the agent **stops and asks**
+instead of guessing (fail-closed).
 
 ---
 
@@ -176,12 +180,12 @@ matches the template exactly.
 1. **Loop validity** — closed loop? same datum chain? **assembly datum face / stack start** clear? (if uncertain → clarification card)
 2. **Capability vs Spec** — RSS σ / Cpk (`<1` FAIL · `1–1.33` risk · `≥1.33` PASS); spec window `<6σ` physically infeasible?
 3. **Top contributors** — ranked by % contribution; Top 2–3 with cause (large tol / mid-stack amplification / direct single-direction effect)
-4. **Structural risk (delegated F6)** — cross-domain datum chain (ME/PCBA/Glass), non-geometric variables, and over-long stacks; F5 does not synthesize this section while F6 is unavailable.
-5. **Options (delegated F6)** — parallel quantified improvement paths remain an F6 responsibility; F5 does not rank, recommend, or invent them.
+4. **Structural risk (delegated F6)** — cross-domain datum chain (ME/PCBA/Glass), non-geometric variables, and over-long stacks; F5 records the delegation and F6 evaluates only supported evidence.
+5. **Options (delegated F6)** — quantified improvement paths are generated and ranked by F6; F5 does not rank, recommend, or invent them.
 
 F5 directly consumes F0/F1/F3/F4 artifacts; workbook entry first passes the F2 gate. Historical `f5-image-observation-v1` artifacts remain read-only compatible, while new image mode creates only v2. Each selected worksheet must contain exactly the five scopes `tolerance_loop_closure`, `datum_chain`, `assembly_datum_face`, `stack_start`, and `direction`, with a snapshot of all active factor rows preserving original/mapped fields and source-cell provenance. Confidence-gated visual evidence may produce an image `FACT`; image-plus-text assessment produces only an ME-review-required `image_text_context_review` `SIGNAL`. Direction mapping requires structured `linkedVisualLabels`, never free-text inference.
 
-V2 is validated all-or-nothing. An observation-only failure discards the whole v2 and continues deterministic F5 with clarification; baseline identity or required-image errors fail closed. V2 is immutable, UUID-scoped, created once, and read back before invocation. The loader validates its exact content against the schema, workbook/worksheet identity and selected set, snapshot/source provenance, carried `imageReference` identity, and the physical F1 image SHA-256. The observation artifact has no pre-existing digest to validate; after acceptance, the workflow runner computes and records its SHA-256 in `Feature5-Run-Summary`. The existing detailed F5 report still delegates sections 4-5 to F6; the separate F6 design does not mean F6 is implemented.
+V2 is validated all-or-nothing. An observation-only failure discards the whole v2 and continues deterministic F5 with clarification; baseline identity or required-image errors fail closed. V2 is immutable, UUID-scoped, created once, and read back before invocation. The loader validates its exact content against the schema, workbook/worksheet identity and selected set, snapshot/source provenance, carried `imageReference` identity, and the physical F1 image SHA-256. The observation artifact has no pre-existing digest to validate; after acceptance, the workflow runner computes and records its SHA-256 in `Feature5-Run-Summary`. F6 accepts the governed F5 v1 baseline and optional v2 image-observation evidence without changing the existing detailed F5 report or its delegation markers.
 
 ---
 
@@ -258,6 +262,16 @@ The workflow executes Task 1.1-1.7 with real workbook inputs and emits a final r
 - Skill 入口为“使用F5分析报告”。该入口不自动发布 ADO、不回写 workbook。`approved-knowledge-base` 与 `approved-me-review` 是 Feature 发布/启用批准，当前 F5 `available` 表示部署已批准，不是每次运行的交互输入。
 - 运行时 ME review 由 `requiresEngineeringReview` SIGNAL、clarification/assumption 和不生成缺少受控证据支持的最终 RULE 门禁。V2 observation 校验失败时整件丢弃并继续 deterministic F5；baseline identity/hash 或必需 physical image 错误仍 fail closed。
 - 每次运行输出到 `test/demo-output/f5-runs/<workbook-safe-name>/<UTC-run-id>/`，包含 `Feature5-Report.json`、`Feature5-Report.md`、`Feature5-Run-Summary.json` 和 `manifest.json`；可选输入 artifact 为 `Feature5-Image-Observations.json`。
+
+## Feature 6 Governed Optimization Workflow
+
+- F6 在完成 F5 后运行。直接 CLI：`npm run workflow:f6 -- "<f2-root>" "<f3-root>" "<f4-root>" "<f5-root>" --worksheet "Analysis-A"`；四个 root 顺序固定，`--worksheet` 至少一个、可重复且 trim 后唯一。可选证据为 `--supplier-capability`、`--datum-strategy`、`--cost`、`--image-observations`，且必须来自同一受控 evidence 目录。
+- App CLI：`node apps/cli/dist/index.js feature6 --root "." --f2-artifacts "<f2-root>" --f3-artifacts "<f3-root>" --f4-artifacts "<f4-root>" --f5-artifacts "<f5-root>" --worksheet "Analysis-A"`，支持相同四类 evidence options。它只执行仓库内 trusted runner，并固定把结果写入 `test/demo-output/f6-runs/<F5-root-name>/<UTC-run-id>/`；app CLI 不接受自定义 output root。
+- F5 owns baseline FACT/RULE/SIGNAL、clarification 和可选 v2 evidence；F6 owns deterministic options、reverse solve、RSS apportionment、feasibility、impact ranking 和 composed report。Top 1 固定收紧 20%，Top 3 固定各收紧 30%，都保持原 tolerance-band center；mean-shift 始终要求 engineering review，reverse solve 与四类 RSS policy 均须回到 F4 kernel 验证。
+- Supplier/datum/cost 都是 evidence-limited。缺失或不匹配时输出 `insufficient_evidence`；只有全部 supported ranked options 都具备受控正成本时才计算 ROI，否则显示 `Highest Impact Action` 与 `ROI: not_computed`，不得改称 Highest ROI。
+- 每次成功或部分成功 run 原子生成六个 artifact：`Feature6-Optimization.json/.md`、`Feature6-Composed-Report.json/.md`、`Feature6-Run-Summary.json` 和 `manifest.json`。联合报告包含 workbook summary 和每个 ready worksheet 的十个固定 sections；F2 blocked worksheet 仅进入 workbook Input Validation，不生成 capability 或 optimization 数值。
+- 所有输入/输出均为 `confidential`、只读源 workbook；无 ADO、网络或 workbook write。Artifact identity/hash、schema、workbook/worksheet association、受控 publish boundary、staging identity 与提交后 file identity 任一失败均 fail closed。
+- 历史 `comparison-request-v1` / `comparison-result-v1` placeholder 仍单独返回 `feature_not_available`；这不代表真实 `f6-optimization-v1` workflow 不可用。治理边界以 [Feature Register](docs/governance/feature-register.md) 为准。
 
 - `test/` and all `*.xlsx` (confidential templates / sample data) are **git-ignored**.
 - Internal `*.html` design reports are **git-ignored** and not committed.

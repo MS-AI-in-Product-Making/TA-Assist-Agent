@@ -47,7 +47,7 @@ exact content against schema、workbook/worksheet identity 与 selected set、sn
 `imageReference` identity，并重新校验物理 F1 image SHA-256。Observation artifact 不存在可预先校验的自身
 digest；接受后由 workflow runner 计算其 SHA-256 并记录到 `Feature5-Run-Summary`。Observation-only 失败整件
 回退到 deterministic F5，baseline identity 错误 fail closed。
-F6 和 F7 仍为 `unavailable`，并返回 `feature_not_available`；F8 仅提供匿名
+F6 已作为 F5 后的本地 `f6-optimization-v1` workflow 启用，消费 F2/F3/F4/F5 受控工件并生成独立优化结果与 F5+F6 联合报告；F7 仍为 `unavailable`。历史 F6 comparison placeholder 继续单独返回 `feature_not_available`；F8 仅提供匿名
 `public` fixture 的受治理 Skill 运行时验收，不包含外部 Adapter、模型、ADO、SharePoint 或 UI 行为。
 
 | 文档 | 内容 |
@@ -79,8 +79,8 @@ F6 和 F7 仍为 `unavailable`，并返回 `feature_not_available`；F8 仅提�
 | [F5 Workbook 完整编排实施计划](superpowers/plans/2026-08-12-f5-workbook-end-to-end-orchestration.md) | F3/F5 skill 合同、文档回归和真实 workbook 验收步骤 |
 | [F5 图文联合图片观察 v2 设计](superpowers/specs/2026-08-12-f5-contextual-image-observations-design.md) | v1 只读兼容、五项 scope、全 active-row snapshot 与 visual/context evidence 分层 |
 | [F5 图文联合图片观察 v2 实施计划](superpowers/plans/2026-08-14-f5-contextual-image-observations-v2.md) | v2 contracts、loader 校验、报告、Skill protocol 与回归任务 |
-| [F6 优化与 F5+F6 联合工程报告设计](superpowers/specs/2026-08-14-f6-optimization-and-composed-report-design.md) | F6 独立设计；不改变当前 F5 详细报告 delegation，也不表示 F6 已实现 |
-| [F6 优化与 F5+F6 联合工程报告实施计划](superpowers/plans/2026-08-14-f6-optimization-and-composed-report.md) | F6 后续实施任务与 availability gate；当前仍为 `feature_not_available` |
+| [F6 优化与 F5+F6 联合工程报告设计](superpowers/specs/2026-08-14-f6-optimization-and-composed-report-design.md) | 已实现 F6 的 ownership、确定性方案、证据门、联合报告与兼容边界 |
+| [F6 优化与 F5+F6 联合工程报告实施计划](superpowers/plans/2026-08-14-f6-optimization-and-composed-report.md) | 已完成 contracts、solver、workflow、CLI、governance 与验收任务；Task 11 记录文档和预验收 |
 | [F4 计算引擎设计](superpowers/specs/2026-07-30-f4-calculation-engine-design.md) | 方法推荐、Excel 一致计算、What-if、隐私与黄金回归边界 |
 | [F4 计算引擎实施计划](superpowers/plans/2026-07-30-f4-calculation-engine.md) | F4 契约、kernel、服务、回归、治理和质量门 |
 | [系统架构](01-architecture.md) | 产品架构与后续业务能力边界 |
@@ -92,6 +92,8 @@ F6 和 F7 仍为 `unavailable`，并返回 `feature_not_available`；F8 仅提�
 单 workbook 先执行 prompt phase：`npm run workflow:f2:excel -- "test/<workbook.xlsx>"`。用户选择至少一个 worksheet 后，使用 prompt 返回的 hash 执行 confirm phase：`npm run workflow:f2:excel -- "test/<workbook.xlsx>" --worksheets "Analysis-A,Analysis-B" --workbook-hash "<sha256>" --confirm`。confirmed run 在独立受控目录中依次生成并验证 F1/F2 artifacts；F3/F5 不得跳过该握手。
 
 F2 任一模块验收必须运行完整 `F0 -> F1 artifacts -> F2` 链路。
+
+F6 在 F5 后运行。直接入口为 `npm run workflow:f6 -- "<f2-root>" "<f3-root>" "<f4-root>" "<f5-root>" --worksheet "<name>"`；app CLI 使用 `feature6 --root ... --f2-artifacts ... --f3-artifacts ... --f4-artifacts ... --f5-artifacts ... --worksheet ...`，并固定发布到 `test/demo-output/f6-runs/<F5-root-name>/<UTC-run-id>/`。可选 evidence 为 supplier capability、datum strategy、cost 和 image observations。完整参数、六件套 artifact、identity/hash/atomic gates，以及 confidential/read-only/no ADO/network/workbook-write 边界见 [Feature Register](governance/feature-register.md)。
 
 ## Shared Conventions
 

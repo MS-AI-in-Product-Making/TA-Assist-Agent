@@ -175,22 +175,23 @@ The result must include a quick, easy-to-scan TA risk summary.
 - Show a clarification card and explicit assumption log when the assembly datum face, stack start, subsystem classification, or other required evidence is missing.
 - Hold only the conclusions that depend on the unanswered question; continue analysis for evidence that is already sufficient.
 - Support `workflow:f5` and the trigger phrase `使用F5分析报告`; never auto-publish to ADO or write back to the workbook.
-- Retain F5.1 as an internal compatible core, not as the only available F5 entry. Keep the existing detailed F5 report and F6 delegation unchanged; the separate F6 spec and plan do not mean F6 is implemented.
+- Retain F5.1 as an internal compatible core, not as the only available F5 entry. Keep the existing detailed F5 report and its controlled delegation unchanged; the available F6 workflow consumes that delegation without ranking F5 `OPTION` statements.
 
 ### F6 - Tolerance / Dimension-Chain Optimization
 
-**Feature:** Present quantified ways to improve a risk without ranking or forcing an engineering recommendation.
+**Feature:** Run a governed optimization workflow after F5, quantify comparable options, and preserve the ME review decision.
 
-**Tasks:** Adjust mean / adjust tolerance range
+**Tasks:**
 
-- Own report section 4, structural risks, and section 5, parallel improvement options; F5 shows these as delegated while F6 is unavailable.
-- Detect nominal offset and show the Cpk improvement from mean-shift centering.
-- Rank tolerance changes using contribution-weighted leverage and estimate the relative cost impact.
-- Apportion the required RSS sigma reduction across the top two or three contributors.
-- Run what-if calculations for tightening or loosening an individual factor and show the Cpk change.
-- Generate two or three parallel reverse-solve options: single-point tighten, combined top-contributor tighten, and center plus tighten.
-- Check each option against the Capability Library; show a red warning when the required tolerance is not process-achievable and mark T0 as feasibility unknown.
-- Apply CTS/CTF rules: CTF may show a specification-versus-yield trade-off; CTS must not loosen the specification.
+- Accept exact F2/F3/F4/F5 artifact roots, one or more unique worksheet selections, and optional supplier capability, datum strategy, cost, and image-observation evidence. The app CLI uses the trusted repository runner and fixes output under `test/demo-output/f6-runs/<F5-root-name>/<UTC-run-id>/`.
+- Keep ownership explicit: F5 owns baseline facts/rules/signals, clarifications, and v1/v2-compatible evidence; F6 owns scenario options, reverse solve, RSS apportionment, feasibility, impact ranking, and the F5+F6 composed report.
+- Calculate deterministic Top-1 -20% and frozen Top-3 -30% tolerance-band scenarios while preserving each original band center. Mean-shift centering is always `requires_engineering_review`.
+- Reverse-solve target Cpk for a single factor, top three, RSS apportionment, and centering-plus-tighten, then verify every option through the F4 kernel. Support proportional-to-contribution, equal-allocation-among-top-N, bounded-by-capability, and residual-after-centering policies.
+- Treat supplier capability, datum strategy, and cost as evidence-limited. Missing or mismatched support is `insufficient_evidence`, not an estimated result.
+- Rank deterministic supported options as Highest Impact. Compute ROI only when all supported ranked options have known positive governed cost; otherwise report `ROI: not_computed` and never relabel Highest Impact as Highest ROI.
+- Produce an optimization report plus a composed workbook summary and ten fixed sections per ready worksheet. F2-blocked worksheets appear only in workbook Input Validation and receive no capability or optimization numbers.
+- Atomically publish exactly six confidential artifacts: optimization JSON/Markdown, composed-report JSON/Markdown, run summary, and manifest. Keep source workbooks read-only; perform no ADO, network, or workbook write. Fail closed on schema, identity/hash, association, controlled-root, staging, atomic-commit, or committed-file identity failure.
+- Preserve `comparison-request-v1` / `comparison-result-v1` as a separate legacy placeholder returning `feature_not_available`; do not confuse it with the available `f6-optimization-v1` workflow. See the [Feature Register](governance/feature-register.md).
 
 ---
 
