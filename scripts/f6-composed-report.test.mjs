@@ -41,6 +41,7 @@ function report() {
         findingCode: "f2_input_blocked",
         severity: "Critical",
         message: "Missing required image | <img src=x onerror=alert(1)>",
+        affectsCapabilityData: false,
         evidenceReferences: [REFERENCE],
       }],
     }],
@@ -73,6 +74,7 @@ function report() {
           findingCode: "unsupported_assumption",
           severity: "Major",
           message: "Assumption requires review.",
+          affectsCapabilityData: false,
           evidenceReferences: [REFERENCE],
         }],
         capabilityAssessment: {

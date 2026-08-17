@@ -116,9 +116,10 @@ function requirementViolation(findings: ReadyF6Worksheet["inputFindings"]): bool
 function worksheetStatus(
   worksheet: ReadyF6Worksheet,
   confirmedRequirementViolation: boolean,
+  missingCapabilityData: boolean,
 ): "PASS" | "FAIL" | "RISK" {
   if (confirmedRequirementViolation) return "FAIL";
-  if (worksheet.status === "calculation_failed") return "RISK";
+  if (missingCapabilityData) return "RISK";
   if (worksheet.baselineMetrics.cpk < 1) return "FAIL";
   const assessedCategories = new Set(worksheet.risks.map(({ category }) => category));
   if (FIXED_RISK_CATEGORIES.some((category) => !assessedCategories.has(category))) return "RISK";
@@ -248,7 +249,8 @@ function buildWorksheet(
   const f2Reference = provenance.f2Reference;
   const evidenceReferences = uniqueReferences([f2Reference, f4Reference, f5Reference]);
   const confirmedRequirementViolation = requirementViolation(f6Worksheet.inputFindings);
-  const status = worksheetStatus(f6Worksheet, confirmedRequirementViolation);
+  const missingCapabilityData = f6Worksheet.inputFindings.some(({ affectsCapabilityData }) => affectsCapabilityData);
+  const status = worksheetStatus(f6Worksheet, confirmedRequirementViolation, missingCapabilityData);
   const contributors = f5Worksheet.sections.majorContributors.items.slice(0, 5);
   const top1Concentration = contributors[0]?.contributionPercent ?? 0;
   const top3Concentration = contributors.slice(0, 3).reduce((total, contributor) => total + contributor.contributionPercent, 0);
@@ -319,7 +321,7 @@ function buildWorksheet(
     status,
     targetCapability: structuredClone(f6Worksheet.targetCapability),
     confirmedRequirementViolation,
-    missingCapabilityData: f6Worksheet.status === "calculation_failed",
+    missingCapabilityData,
     evidenceReferences,
     sections: {
       executiveSummary: [
@@ -444,6 +446,7 @@ export function createF6ComposedEngineeringReport(input: F6ComposedEngineeringRe
           ...worksheet.missingFieldSummary.map(({ field }) => field),
           ...worksheet.systemSpecificationIssues.map(({ field }) => field),
         ].join(", ") || "controlled validation failure"}.`,
+        affectsCapabilityData: true,
         evidenceReferences: [structuredClone(f6Result.provenance.f2Reference)],
       }],
     }));

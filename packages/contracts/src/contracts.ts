@@ -6327,6 +6327,7 @@ export const f6InputFindingSchema = z.object({
   findingCode: z.string().min(1),
   severity: z.enum(["Critical", "Major", "Minor"]),
   message: z.string().min(1),
+  affectsCapabilityData: z.boolean(),
   evidenceReferences: z.array(f6ArtifactReferenceSchema),
 }).strict();
 
@@ -7118,6 +7119,7 @@ const f6ReportFindingSchema = z.object({
   findingCode: z.string().min(1),
   severity: z.enum(["Critical", "Major", "Minor"]),
   message: z.string().min(1),
+  affectsCapabilityData: z.boolean(),
   evidenceReferences: f6ReportEvidenceReferencesSchema,
 }).strict();
 

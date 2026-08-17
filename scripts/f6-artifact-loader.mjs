@@ -278,12 +278,14 @@ function f2Findings(worksheet, f2Reference) {
       findingCode: `missing_required_field:${field}`,
       severity: "Critical",
       message: `Required field ${field} is unavailable.`,
+      affectsCapabilityData: true,
       evidenceReferences: [f2Reference],
     })),
     ...row.missingIdentifiers.map((field) => ({
       findingCode: `missing_identifier:${field}`,
       severity: "Major",
       message: `Governed identifier ${field} is unavailable.`,
+      affectsCapabilityData: false,
       evidenceReferences: [f2Reference],
     })),
   ]);
@@ -296,6 +298,7 @@ function blockedValidation(worksheet, f2Reference) {
       findingCode: "tolerance_path_image_unavailable",
       severity: "Critical",
       message: "Tolerance-path image evidence is unavailable.",
+      affectsCapabilityData: false,
       evidenceReferences: [f2Reference],
     });
   }
@@ -304,6 +307,7 @@ function blockedValidation(worksheet, f2Reference) {
       findingCode: `system_specification:${issue.field}:${issue.reasonCode}`,
       severity: "Critical",
       message: `System specification ${issue.field} is unavailable.`,
+      affectsCapabilityData: true,
       evidenceReferences: [f2Reference],
     });
   }
@@ -312,6 +316,7 @@ function blockedValidation(worksheet, f2Reference) {
       findingCode: "f2_worksheet_blocked",
       severity: "Critical",
       message: "F2 validation blocked this worksheet.",
+      affectsCapabilityData: true,
       evidenceReferences: [f2Reference],
     });
   }

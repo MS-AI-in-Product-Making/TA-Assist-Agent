@@ -341,8 +341,24 @@ describe("createF6ComposedEngineeringReport", () => {
     expect(failed.overallStatus).toBe("FAIL");
   });
 
-  it("treats missing capability and open High risk as RISK", () => {
-    const missing = createF6ComposedEngineeringReport(bundle([["Analysis-A", 0.12]], undefined, true));
+  it("preserves verified baseline capability when every controlled option calculation fails", () => {
+    const report = createF6ComposedEngineeringReport(bundle([["Analysis-A", 0.12]], undefined, true));
+
+    expect(report.overallStatus).toBe("FAIL");
+    expect(report.worksheets[0]).toMatchObject({ status: "FAIL", missingCapabilityData: false });
+    expect(report.worksheets[0]!.sections.capabilityAssessment.metrics.cpk).toBeGreaterThan(0);
+  });
+
+  it("treats an input finding that affects capability data as RISK", () => {
+    const missingInput = bundle([["Analysis-A", 1]]);
+    missingInput.f6Result.worksheets[0]!.inputFindings = [{
+      findingCode: "missing_capability_input",
+      severity: "Critical",
+      message: "A capability input is unavailable.",
+      affectsCapabilityData: true,
+      evidenceReferences: [missingInput.f6Result.provenance.f2Reference],
+    }];
+    const missing = createF6ComposedEngineeringReport(missingInput);
     expect(missing.worksheets[0]).toMatchObject({ status: "RISK", missingCapabilityData: true });
 
     const openRiskInput = bundle([["Analysis-A", 1]]);

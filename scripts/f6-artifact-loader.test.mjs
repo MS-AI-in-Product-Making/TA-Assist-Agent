@@ -487,6 +487,7 @@ describe("F6 governed bundle validation", () => {
       worksheetName: "Blocked-A",
       findings: expect.arrayContaining([expect.objectContaining({
         severity: "Critical",
+        affectsCapabilityData: false,
         evidenceReferences: [result.sourceReferences.f2],
       })]),
     }]);

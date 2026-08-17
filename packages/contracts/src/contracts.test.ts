@@ -4875,7 +4875,7 @@ describe("F5.1 objective interpretation contracts", () => {
             f4CalculationIndex: 1,
             baselineIdentity,
             status: "input_rejected",
-            inputFindings: [{ findingCode: "missing", severity: "Critical", message: "Input is missing.", evidenceReferences: [] }],
+            inputFindings: [{ findingCode: "missing", severity: "Critical", message: "Input is missing.", affectsCapabilityData: true, evidenceReferences: [] }],
             options: [], risks: [], clarifications: [],
           }],
           summary: { worksheetCount: 1, completedWorksheetCount: 0, partiallyCompletedWorksheetCount: 0, calculationFailedWorksheetCount: 0, inputRejectedWorksheetCount: 1, completedOptionCount: 0, calculationFailedOptionCount: 0, insufficientEvidenceOptionCount: 0 },
@@ -4970,7 +4970,7 @@ describe("F5.1 objective interpretation contracts", () => {
         const clarification = { clarificationId: "clarify-1", reasonCode: "missing", requiredInputs: ["input"], questionForReviewer: "Provide input?", evidenceReferences: [] };
         const rejectedWorksheet = {
           worksheetName: "Analysis-A", f4CalculationIndex: 1, baselineIdentity, status: "input_rejected",
-          inputFindings: [{ findingCode: "missing", severity: "Critical", message: "Input is missing.", evidenceReferences: [] }],
+          inputFindings: [{ findingCode: "missing", severity: "Critical", message: "Input is missing.", affectsCapabilityData: true, evidenceReferences: [] }],
           options: [], risks: [risk], clarifications: [clarification],
         };
         const rejectedResult = {
@@ -5222,7 +5222,7 @@ describe("F5.1 objective interpretation contracts", () => {
           contractVersion: "v1", outputClassification: "confidential", reportVersion: "f6-composed-report-v1",
           workbook: f6Request.workbook, overallStatus: "RISK",
           workbookExecutiveSummary: ["Overall RISK because one worksheet is blocked."],
-          blockedWorksheets: [{ worksheetName: "Blocked", findings: [{ findingCode: "missing_nominal", severity: "Critical", message: "Nominal is missing.", evidenceReferences: [reference("Feature2-Report.json")] }] }],
+          blockedWorksheets: [{ worksheetName: "Blocked", findings: [{ findingCode: "missing_nominal", severity: "Critical", message: "Nominal is missing.", affectsCapabilityData: true, evidenceReferences: [reference("Feature2-Report.json")] }] }],
           worksheets: [{
             worksheetName: "Analysis-A", status: "PASS", evidenceReferences,
             targetCapability: { targetCpk: 1.33, targetSigmaLevel: 4, source: "worksheet" },
