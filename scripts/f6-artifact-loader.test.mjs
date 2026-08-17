@@ -15,6 +15,24 @@ const roots = [];
 const WORKBOOK_HASH = "a".repeat(64);
 const IMAGE_HASH = "b".repeat(64);
 const RUN_ID = "f4-run-1";
+const CONTROLLED_OUTPUT_ROOT = path.join(process.cwd(), "test", "demo-output");
+
+function fileSymlinksAvailable() {
+  const probeRoot = mkdtempSync(path.join(tmpdir(), "f6-symlink-probe-"));
+  try {
+    const target = path.join(probeRoot, "target.json");
+    writeFileSync(target, "{}", "utf8");
+    symlinkSync(target, path.join(probeRoot, "link.json"), "file");
+    return true;
+  } catch (error) {
+    if (["EACCES", "EPERM", "UNKNOWN"].includes(error?.code)) return false;
+    throw error;
+  } finally {
+    rmSync(probeRoot, { recursive: true, force: true });
+  }
+}
+
+const FILE_SYMLINKS_AVAILABLE = fileSymlinksAvailable();
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
@@ -349,10 +367,12 @@ describe("F6 governed bundle validation", () => {
   });
 
   it.each([
+    [undefined, "undefined"],
+    ["Analysis-A", "non-array"],
     [[], "empty"],
     [["Analysis-A", "Analysis-A"], "duplicate"],
     [["Unknown"], "unknown"],
-  ])("rejects %s worksheet selection", (selectedWorksheetNames) => {
+  ])("rejects %s worksheet selection (%s)", (selectedWorksheetNames) => {
     const bundle = setupBundle();
     bundle.selectedWorksheetNames = selectedWorksheetNames;
 
@@ -535,8 +555,9 @@ function createV2ObservationArtifact(bundle) {
 
 function installV2Evidence(bundle) {
   const artifact = createV2ObservationArtifact(bundle);
-  const imageObservationArtifact = path.join(rootPath(bundle), "evidence", "observations.json");
-  writeJson(imageObservationArtifact, artifact);
+  const evidenceArtifactRoot = setupEvidenceRoot(bundle);
+  const imageObservationArtifact = "observations.json";
+  writeJson(path.join(evidenceArtifactRoot, imageObservationArtifact), artifact);
   const f5 = createF5DataInterpretation({
     contractVersion: "v1",
     inputClassification: "confidential",
@@ -557,10 +578,19 @@ function installV2Evidence(bundle) {
   return artifact;
 }
 
+function setupEvidenceRoot(bundle) {
+  if (bundle.evidenceArtifactRoot) return bundle.evidenceArtifactRoot;
+  mkdirSync(CONTROLLED_OUTPUT_ROOT, { recursive: true });
+  const evidenceArtifactRoot = mkdtempSync(path.join(CONTROLLED_OUTPUT_ROOT, "f6-evidence-"));
+  roots.push(evidenceArtifactRoot);
+  bundle.evidenceArtifactRoot = evidenceArtifactRoot;
+  return evidenceArtifactRoot;
+}
+
 function writeOptional(bundle, fileName, value) {
-  const filePath = path.join(rootPath(bundle), "evidence", fileName);
+  const filePath = path.join(setupEvidenceRoot(bundle), fileName);
   writeJson(filePath, value);
-  return filePath;
+  return fileName;
 }
 
 describe("F6 optional governed evidence", () => {
@@ -574,6 +604,15 @@ describe("F6 optional governed evidence", () => {
     expect(result.request).not.toHaveProperty("costEvidence");
   });
 
+  it("validates a supplied evidence root even when optional evidence is absent", () => {
+    const bundle = setupBundle();
+    setupEvidenceRoot(bundle);
+
+    const result = loadF6ArtifactBundle(bundle);
+
+    expect(result.status, JSON.stringify(result)).toBe("accepted");
+  });
+
   it("accepts exact F5 v2 evidence without promoting ambiguous unreviewed observations", () => {
     const bundle = setupBundle();
     const artifact = installV2Evidence(bundle);
@@ -583,8 +622,9 @@ describe("F6 optional governed evidence", () => {
     expect(result.status, JSON.stringify(result)).toBe("accepted");
     expect(result.request.imageObservationReference).toEqual({
       artifact: "observations.json",
-      contentHash: sha256(bundle.imageObservationArtifact),
+      contentHash: sha256(path.join(bundle.evidenceArtifactRoot, bundle.imageObservationArtifact)),
     });
+    expect(path.isAbsolute(result.sourceReferences.imageObservation.artifact)).toBe(false);
     expect(result.request.worksheets[0].f5Worksheet.observationVersion).toBe("f5-image-observation-v2");
     expect(artifact.worksheets[0].observations.every(({ visualObservation }) =>
       visualObservation.reviewStatus === "unreviewed")).toBe(true);
@@ -593,7 +633,7 @@ describe("F6 optional governed evidence", () => {
   it("rejects supplied F5 v2 evidence that does not exactly match the F5 report", () => {
     const bundle = setupBundle();
     installV2Evidence(bundle);
-    rewriteJson(bundle.imageObservationArtifact, (artifact) => {
+    rewriteJson(path.join(bundle.evidenceArtifactRoot, bundle.imageObservationArtifact), (artifact) => {
       artifact.worksheets[0].contextSnapshot.dimensionDescription = "Other loop";
     });
 
@@ -607,7 +647,8 @@ describe("F6 optional governed evidence", () => {
     ["costArtifact"],
   ])("rejects an explicitly supplied missing %s", (field) => {
     const bundle = setupBundle();
-    bundle[field] = path.join(rootPath(bundle), "evidence", `${field}.json`);
+    setupEvidenceRoot(bundle);
+    bundle[field] = `${field}.json`;
 
     expectRejected(loadF6ArtifactBundle(bundle), "artifact_missing", `${field}.json`);
   });
@@ -619,9 +660,9 @@ describe("F6 optional governed evidence", () => {
     ["costArtifact"],
   ])("rejects malformed supplied %s", (field) => {
     const bundle = setupBundle();
-    bundle[field] = path.join(rootPath(bundle), "evidence", `${field}.json`);
-    mkdirSync(path.dirname(bundle[field]), { recursive: true });
-    writeFileSync(bundle[field], "{", "utf8");
+    setupEvidenceRoot(bundle);
+    bundle[field] = `${field}.json`;
+    writeFileSync(path.join(bundle.evidenceArtifactRoot, bundle[field]), "{", "utf8");
 
     expectRejected(loadF6ArtifactBundle(bundle), "artifact_contract_invalid", `${field}.json`);
   });
@@ -647,6 +688,7 @@ describe("F6 optional governed evidence", () => {
     expect(result.status, JSON.stringify(result)).toBe("accepted");
     expect(result.request.supplierCapabilityEvidence).toEqual([evidence]);
     expect(result.request.worksheets[0].supplierBindings).toEqual([]);
+    expect(path.isAbsolute(result.sourceReferences.supplierCapability.artifact)).toBe(false);
   });
 
   it("loads strict datum evidence bound to existing selected source rows", () => {
@@ -671,6 +713,7 @@ describe("F6 optional governed evidence", () => {
 
     expect(result.status, JSON.stringify(result)).toBe("accepted");
     expect(result.request.datumEvidence).toEqual([evidence]);
+    expect(path.isAbsolute(result.sourceReferences.datumStrategy.artifact)).toBe(false);
   });
 
   it("loads cost evidence only when its ROI reference matches F4", () => {
@@ -692,6 +735,7 @@ describe("F6 optional governed evidence", () => {
 
     expect(result.status, JSON.stringify(result)).toBe("accepted");
     expect(result.request.costEvidence).toEqual(evidence);
+    expect(path.isAbsolute(result.sourceReferences.cost.artifact)).toBe(false);
   });
 
   it("rejects governed evidence whose source basename or ROI reference drifts", () => {
@@ -738,10 +782,92 @@ describe("F6 optional governed evidence", () => {
     expectRejected(loadF6ArtifactBundle(bundle), "artifact_identity_mismatch", "datum.json");
   });
 
-  it("rejects optional path traversal and a root artifact symlink outside its root", () => {
+  it("requires an evidence root when optional evidence is supplied", () => {
+    const bundle = setupBundle();
+    bundle.costArtifact = "cost.json";
+
+    expectRejected(loadF6ArtifactBundle(bundle), "artifact_contract_invalid", "evidenceArtifactRoot");
+  });
+
+  it("rejects an empty optional evidence path", () => {
+    const bundle = setupBundle();
+    setupEvidenceRoot(bundle);
+    bundle.costArtifact = "";
+
+    expectRejected(loadF6ArtifactBundle(bundle), "artifact_contract_invalid", "artifact.json");
+  });
+
+  it("rejects absolute and traversal optional evidence paths", () => {
+    const absoluteBundle = setupBundle();
+    setupEvidenceRoot(absoluteBundle);
+    absoluteBundle.costArtifact = path.join(absoluteBundle.evidenceArtifactRoot, "cost.json");
+    expectRejected(loadF6ArtifactBundle(absoluteBundle), "artifact_identity_mismatch", "cost.json");
+
     const traversalBundle = setupBundle();
-    traversalBundle.costArtifact = `${rootPath(traversalBundle)}${path.sep}evidence${path.sep}..${path.sep}cost.json`;
+    setupEvidenceRoot(traversalBundle);
+    traversalBundle.costArtifact = `nested${path.sep}..${path.sep}cost.json`;
     expectRejected(loadF6ArtifactBundle(traversalBundle), "artifact_identity_mismatch", "cost.json");
+  });
+
+  it("rejects an evidence root outside the repository controlled output boundary", () => {
+    const bundle = setupBundle();
+    bundle.evidenceArtifactRoot = path.join(rootPath(bundle), "evidence");
+    mkdirSync(bundle.evidenceArtifactRoot);
+
+    expectRejected(loadF6ArtifactBundle(bundle), "artifact_identity_mismatch", "evidenceArtifactRoot");
+  });
+
+  it("rejects a junction in an optional evidence parent path", () => {
+    const bundle = setupBundle();
+    const evidenceRoot = setupEvidenceRoot(bundle);
+    const outside = path.join(rootPath(bundle), "outside-evidence");
+    mkdirSync(outside);
+    writeFileSync(path.join(outside, "cost.json"), "{}", "utf8");
+    symlinkSync(outside, path.join(evidenceRoot, "linked"), "junction");
+    bundle.costArtifact = path.join("linked", "cost.json");
+
+    expectRejected(loadF6ArtifactBundle(bundle), "artifact_identity_mismatch", "cost.json");
+  });
+
+  it.runIf(FILE_SYMLINKS_AVAILABLE)("rejects a final optional evidence file symlink", () => {
+    const bundle = setupBundle();
+    const evidenceRoot = setupEvidenceRoot(bundle);
+    const outside = path.join(rootPath(bundle), "outside-cost.json");
+    writeFileSync(outside, "{}", "utf8");
+    symlinkSync(outside, path.join(evidenceRoot, "cost.json"), "file");
+    bundle.costArtifact = "cost.json";
+
+    expectRejected(loadF6ArtifactBundle(bundle), "artifact_identity_mismatch", "cost.json");
+  });
+
+  it("rejects an evidence root that is itself a junction", () => {
+    const bundle = setupBundle();
+    mkdirSync(CONTROLLED_OUTPUT_ROOT, { recursive: true });
+    const outside = path.join(rootPath(bundle), "outside-evidence");
+    mkdirSync(outside);
+    const rootLink = path.join(CONTROLLED_OUTPUT_ROOT, `f6-root-link-${path.basename(rootPath(bundle))}`);
+    roots.push(rootLink);
+    symlinkSync(outside, rootLink, "junction");
+    bundle.evidenceArtifactRoot = rootLink;
+
+    expectRejected(loadF6ArtifactBundle(bundle), "artifact_identity_mismatch", "evidenceArtifactRoot");
+  });
+
+  it("rejects a junction between the controlled output root and the evidence root", () => {
+    const bundle = setupBundle();
+    mkdirSync(CONTROLLED_OUTPUT_ROOT, { recursive: true });
+    const outside = path.join(rootPath(bundle), "outside-parent");
+    const nested = path.join(outside, "evidence");
+    mkdirSync(nested, { recursive: true });
+    const parentLink = path.join(CONTROLLED_OUTPUT_ROOT, `f6-parent-link-${path.basename(rootPath(bundle))}`);
+    roots.push(parentLink);
+    symlinkSync(outside, parentLink, "junction");
+    bundle.evidenceArtifactRoot = path.join(parentLink, "evidence");
+
+    expectRejected(loadF6ArtifactBundle(bundle), "artifact_identity_mismatch", "evidenceArtifactRoot");
+  });
+
+  it("rejects a root artifact symlink outside its root", () => {
 
     const symlinkBundle = setupBundle();
     const outside = path.join(rootPath(symlinkBundle), "outside-f2");

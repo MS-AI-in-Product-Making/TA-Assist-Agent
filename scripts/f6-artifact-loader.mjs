@@ -27,6 +27,8 @@ const ARTIFACTS = Object.freeze({
   f5: "Feature5-Report.json",
 });
 const MAX_JSON_BYTES = 10 * 1024 * 1024;
+const REPOSITORY_ROOT = path.resolve(process.cwd());
+const CONTROLLED_OUTPUT_ROOT = path.join(REPOSITORY_ROOT, "test", "demo-output");
 
 function inputRejected(reasonCode, artifactReference) {
   return { status: "inputRejected", reasonCode, artifactReference };
@@ -83,20 +85,71 @@ function readArtifact(root, artifactReference, schema) {
   }
 }
 
-function readOptionalArtifact(filePath, schema) {
-  const artifactReference = path.basename(String(filePath)) || "artifact.json";
-  if (typeof filePath !== "string" || filePath.length === 0) {
+function containedChild(root, candidate) {
+  const relation = path.relative(root, candidate);
+  return relation.length > 0
+    && relation.split(path.sep)[0] !== ".."
+    && !path.isAbsolute(relation);
+}
+
+function inspectPathWithoutLinks(root, candidate) {
+  try {
+    if (lstatSync(root).isSymbolicLink()) return { reasonCode: "artifact_identity_mismatch" };
+    const relation = path.relative(root, candidate);
+    let current = root;
+    for (const segment of relation.split(path.sep).filter(Boolean)) {
+      current = path.join(current, segment);
+      if (lstatSync(current).isSymbolicLink()) return { reasonCode: "artifact_identity_mismatch" };
+    }
+    return {};
+  } catch (error) {
+    return { reasonCode: ioReason(error) };
+  }
+}
+
+function validatedEvidenceRoot(evidenceArtifactRoot) {
+  if (typeof evidenceArtifactRoot !== "string" || evidenceArtifactRoot.trim().length === 0) {
+    return { rejection: inputRejected("artifact_contract_invalid", "evidenceArtifactRoot") };
+  }
+  try {
+    const requestedRoot = path.resolve(evidenceArtifactRoot);
+    if (!containedChild(CONTROLLED_OUTPUT_ROOT, requestedRoot)) {
+      return { rejection: inputRejected("artifact_identity_mismatch", "evidenceArtifactRoot") };
+    }
+    const inspected = inspectPathWithoutLinks(REPOSITORY_ROOT, requestedRoot);
+    if (inspected.reasonCode) {
+      return { rejection: inputRejected(inspected.reasonCode, "evidenceArtifactRoot") };
+    }
+    const controlledRoot = realpathSync(CONTROLLED_OUTPUT_ROOT);
+    const resolvedRoot = realpathSync(requestedRoot);
+    if (!containedChild(controlledRoot, resolvedRoot) || !statSync(resolvedRoot).isDirectory()) {
+      return { rejection: inputRejected("artifact_identity_mismatch", "evidenceArtifactRoot") };
+    }
+    return { filePath: resolvedRoot };
+  } catch (error) {
+    return { rejection: inputRejected(ioReason(error), "evidenceArtifactRoot") };
+  }
+}
+
+function readOptionalArtifact(evidenceRoot, relativePath, schema) {
+  const artifactReference = path.basename(String(relativePath)) || "artifact.json";
+  if (typeof relativePath !== "string" || relativePath.trim().length === 0) {
     return { rejection: inputRejected("artifact_contract_invalid", artifactReference) };
   }
-  if (filePath.split(/[\\/]/).includes("..")) {
+  if (path.isAbsolute(relativePath) || relativePath.split(/[\\/]/).includes("..")) {
     return { rejection: inputRejected("artifact_identity_mismatch", artifactReference) };
   }
   try {
-    const resolved = path.resolve(filePath);
-    if (lstatSync(resolved).isSymbolicLink()) {
+    const candidate = path.resolve(evidenceRoot, relativePath);
+    if (!containedChild(evidenceRoot, candidate)) {
       return { rejection: inputRejected("artifact_identity_mismatch", artifactReference) };
     }
-    const realPath = realpathSync(resolved);
+    const inspected = inspectPathWithoutLinks(evidenceRoot, candidate);
+    if (inspected.reasonCode) return { rejection: inputRejected(inspected.reasonCode, artifactReference) };
+    const realPath = realpathSync(candidate);
+    if (!containedChild(evidenceRoot, realPath)) {
+      return { rejection: inputRejected("artifact_identity_mismatch", artifactReference) };
+    }
     const stat = statSync(realPath);
     if (!stat.isFile() || stat.size > MAX_JSON_BYTES) {
       return { rejection: inputRejected("artifact_contract_invalid", artifactReference) };
@@ -114,13 +167,12 @@ function readOptionalArtifact(filePath, schema) {
 }
 
 function exactUniqueSelection(selectedWorksheetNames, readyNames) {
-  const selection = selectedWorksheetNames === undefined ? readyNames : selectedWorksheetNames;
-  if (!Array.isArray(selection)
-    || selection.length === 0
-    || selection.some((name) => typeof name !== "string" || name.length === 0)
-    || new Set(selection).size !== selection.length
-    || selection.some((name) => !readyNames.includes(name))) return undefined;
-  return selection;
+  if (!Array.isArray(selectedWorksheetNames)
+    || selectedWorksheetNames.length === 0
+    || selectedWorksheetNames.some((name) => typeof name !== "string" || name.length === 0)
+    || new Set(selectedWorksheetNames).size !== selectedWorksheetNames.length
+    || selectedWorksheetNames.some((name) => !readyNames.includes(name))) return undefined;
+  return selectedWorksheetNames;
 }
 
 function indexExactlyOnce(records, selection) {
@@ -205,6 +257,7 @@ export function loadF6ArtifactBundle({
   f4ArtifactRoot,
   f5ArtifactRoot,
   selectedWorksheetNames,
+  evidenceArtifactRoot,
   imageObservationArtifact,
   supplierCapabilityArtifact,
   datumStrategyArtifact,
@@ -294,8 +347,20 @@ export function loadF6ArtifactBundle({
   }
 
   const optionalRequestFields = {};
+  const hasOptionalEvidence = [
+    imageObservationArtifact,
+    supplierCapabilityArtifact,
+    datumStrategyArtifact,
+    costArtifact,
+  ].some((artifact) => artifact !== undefined);
+  let evidenceRoot;
+  if (evidenceArtifactRoot !== undefined || hasOptionalEvidence) {
+    const validatedRoot = validatedEvidenceRoot(evidenceArtifactRoot);
+    if (validatedRoot.rejection) return validatedRoot.rejection;
+    evidenceRoot = validatedRoot.filePath;
+  }
   if (imageObservationArtifact !== undefined) {
-    const loaded = readOptionalArtifact(imageObservationArtifact, f5ImageObservationArtifactSchema);
+    const loaded = readOptionalArtifact(evidenceRoot, imageObservationArtifact, f5ImageObservationArtifactSchema);
     if (loaded.rejection) return loaded.rejection;
     const observation = loaded.value;
     const observationByName = indexExactlyOnce(observation.worksheets, selection);
@@ -348,7 +413,7 @@ export function loadF6ArtifactBundle({
   }
 
   if (supplierCapabilityArtifact !== undefined) {
-    const loaded = readOptionalArtifact(supplierCapabilityArtifact, f6SupplierCapabilityEvidenceSchema);
+    const loaded = readOptionalArtifact(evidenceRoot, supplierCapabilityArtifact, f6SupplierCapabilityEvidenceSchema);
     if (loaded.rejection) return loaded.rejection;
     if (loaded.value.source !== loaded.reference.artifact) {
       return inputRejected("artifact_identity_mismatch", loaded.reference.artifact);
@@ -358,7 +423,7 @@ export function loadF6ArtifactBundle({
   }
 
   if (datumStrategyArtifact !== undefined) {
-    const loaded = readOptionalArtifact(datumStrategyArtifact, f6DatumEvidenceSchema);
+    const loaded = readOptionalArtifact(evidenceRoot, datumStrategyArtifact, f6DatumEvidenceSchema);
     if (loaded.rejection) return loaded.rejection;
     const requestWorksheet = requestWorksheets.find(({ worksheetName }) => worksheetName === loaded.value.worksheetName);
     const sourceKeys = new Set(requestWorksheet?.baselineCalculation.factors.map(
@@ -374,7 +439,7 @@ export function loadF6ArtifactBundle({
   }
 
   if (costArtifact !== undefined) {
-    const loaded = readOptionalArtifact(costArtifact, f6CostEvidenceSchema);
+    const loaded = readOptionalArtifact(evidenceRoot, costArtifact, f6CostEvidenceSchema);
     if (loaded.rejection) return loaded.rejection;
     if (loaded.value.source !== loaded.reference.artifact
       || !isDeepStrictEqual(loaded.value.roiCalculationReference, f4Loaded.reference)) {
