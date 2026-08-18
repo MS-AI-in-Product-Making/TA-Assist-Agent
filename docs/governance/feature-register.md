@@ -155,15 +155,16 @@ F0 解读规则范围与维护边界见 [F0 TA 结果解读规则库设计](../s
   可选 `--supplier-capability`、`--datum-strategy`、`--cost` 与 `--image-observations` 只接受同一受控 evidence
   目录中的治理工件。supplier capability 与 datum strategy 缺少绑定证据时不得输出已验证可行性；cost 证据缺失、
   身份不一致或未覆盖候选方案时，ROI 必须保持 `not_computed`，不得据此排序或推荐。所有输入、日志、错误、manifest
-  与摘要必须遵守 `confidential` 隐私边界，不得泄露 child-process、原始路径或工程值。该 workflow 不写回 workbook、
+  与摘要必须遵守 `confidential` 隐私边界，不得泄露 child-process、原始路径或工程值。该确定性 workflow 不写回 workbook、
   不发布 ADO、不执行网络或其他外部写入；相关能力缺失或输出为 `failed`、无效 JSON、多个 JSON 文档时 fail closed。
   历史 `createComparisonPlaceholder`、`comparison-request-v1` 与 `comparison-result-v1` 仅为兼容 API，继续返回
   `status: feature_not_available`，不得将该 placeholder 的不可用状态解释为优化 workflow 不可用。
   Agent Skill 入口“使用F6分析报告”受 `f6-skill-contract-check`、`f0-f6-real-workbook-flow` 和
   `f6-composed-report-check` 治理。该入口由 agent 负责 workbook 与 two worksheet confirmations，按 F0-F6
   顺序调用既有确定性 runners；显式 `feature6` CLI 仍只消费 F2-F5 roots 和精确 worksheet set，不得伪装成交互式
-  orchestrator。Skill 使用 local-only F3，展示 F1-F6 output ledger，并在缺少 evidence 时保留
-  `insufficient_evidence` / `not_computed`，不得自动发布 ADO。
+  orchestrator。Skill 必须执行并验证 current-run F3；只有 `governance_required` 可进入复用 F3 完整双确认协议的
+  optional ADO publishing gate，发布 never automatic or implicit。Skill 展示 F1-F6 output ledger，并在缺少 evidence 时保留
+  `insufficient_evidence` / `not_computed`。ADO gate 的终态只记录发布结果，不改变已验证的 F3 分析结果或 worksheet scope。
 - F8 的 `available` 仅允许匿名 `public` Skill fixture 在 runner 中通过输入分类、
   Feature 状态和策略门检查后执行纯函数或显式注入的 mock adapter。`workflow-request-v1`
   入口只接受 `workflowId: "public-smoke"`，并固定执行 `public-echo` 与

@@ -18,6 +18,7 @@ type Command = "smoke" | "inspect" | "export" | "purge-plan" | "purge" | "featur
 
 interface CliDependencies {
   readonly cwd: () => string;
+  readonly runFeature1?: typeof runFeature1WorkflowCommand;
   readonly runFeature2: typeof runFeature2WorkflowCommand;
   readonly runFeature3?: typeof runFeature3WorkflowCommand;
   readonly runFeature5?: typeof runFeature5WorkflowCommand;
@@ -27,7 +28,7 @@ interface CliDependencies {
 export async function executeCli(argv: readonly string[], dependencies: CliDependencies = { cwd: () => process.cwd(), runFeature2: runFeature2WorkflowCommand }): Promise<CliResult> {
   try {
     if (argv.length === 1 && isFeature1Phrase(argv[0])) {
-      const stdout = await runFeature1WorkflowCommand(process.cwd());
+      const stdout = await (dependencies.runFeature1 ?? runFeature1WorkflowCommand)(dependencies.cwd());
       return { exitCode: 0, stdout: `${stdout}\n`, stderr: "" };
     }
     if (isFeature2Phrase(argv[0])) {
@@ -75,7 +76,7 @@ async function executeCommand(parsed: ReturnType<typeof parseArguments>, depende
     case "purge":
       return runPurgeCommand(parsed.rootDir, parsed.runId, parsed.confirmationToken);
     case "feature1":
-      return runFeature1WorkflowCommand(parsed.rootDir);
+      return (dependencies.runFeature1 ?? runFeature1WorkflowCommand)(parsed.rootDir);
     case "feature2":
       return dependencies.runFeature2(parsed.rootDir, parsed.workbookPath, parsed.worksheetSelection);
     case "feature3":

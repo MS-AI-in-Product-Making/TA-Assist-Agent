@@ -7,6 +7,11 @@ argument-hint: "[<ta-workbook-path> | <f6-output-dir>]"
 
 # F6 Analysis
 
+References:
+
+- [F3 analysis and ADO publishing protocol](../f3-analysis/SKILL.md)
+- [F3 ADO publishing reference](../f3-analysis/references/ado-publishing.md)
+
 ## Purpose
 
 Run or present the complete governed TA analysis through F6. In workbook mode the agent owns interaction and sequencing while repository workflow commands remain deterministic executors. The user does not assemble commands manually, but must supply the workbook and answer the governed worksheet and optional-evidence questions.
@@ -50,11 +55,27 @@ Make an **F3/F4/F5/F6 scope call** with `vscode_askQuestions` (`multiSelect: tru
 
 No F3, F4, F5, or F6 execution may begin before the second selection succeeds. The exact downstream worksheet set is reused by F3, F5, and F6.
 
-### Phase W4 - Run local F3
+### Phase W4 - Run and validate current F3
 
-Run F3 once with one repeated `--worksheet` argument per downstream worksheet. F3 is local analysis only. Do not publish to ADO, ask for an ADO target, write an ADO reminder, or invoke an ADO tool. `governance_required` is a valid nonfailed result and must remain visible as a governance signal.
+F6 workbook mode must execute F3 for the current confirmed run once with `npm run workflow:f3 -- <f2-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...]`, using one repeated `--worksheet` argument per downstream worksheet. Never reuse a historical F3 root, an F3 root supplied by the user, or an output selected from another run. The deterministic F3 repository runner remains local and network-free.
 
-Validate the exact worksheet set, workbook hash, image references, table IDs, source rows, and factor identities against F1/F2. The `F3` output is the validated F3 root and `Feature3-Report.json`.
+Read and validate the newly generated `Feature3-Report.json` before any publishing decision. Validate the exact worksheet set, workbook hash, image references, table IDs, source rows, and factor identities against the current F1/F2 artifacts. `governance_required` is a valid nonfailed analysis result and must remain visible as a governance signal. The `F3` output is the validated current-run F3 root and report.
+
+Only `governance_required` enters W4A. A completed F3 skips W4A and proceeds directly to W5. Any failed, malformed, identity-mismatched, historical, or unvalidated F3 result stops the run.
+
+### Phase W4A - Govern optional F3 ADO publishing
+
+This phase is an optional external side effect after the current F3 analysis has passed validation. Never publish automatically or implicitly. Load and follow the complete [F3 analysis and ADO publishing protocol](../f3-analysis/SKILL.md), its [F3 ADO publishing reference](../f3-analysis/references/ado-publishing.md), and exactly Phases 2 through 6 of that skill; do not copy, weaken, reorder, or bypass those rules.
+
+Make F3 `Question call 1` with exactly these choices:
+
+- `Create a new ADO work item`
+- `Use an existing ADO work item`
+- `Do not publish to ADO`
+
+Surface MCP entity calls may start only after Question call 1 selects a publishing mode. The `Do not publish to ADO` branch records the F3 `not_requested` local fallback and proceeds to W5. Create and existing modes must use the F3 protocol's organization/project/target validation, capability gate, complete deterministic preview, and separate `Question call 2` with the exact `Confirm write` choice. Credentials, tokens, verification codes, and MFA responses never pass through chat or tool arguments.
+
+After `Confirm write`, use only the qualified Surface MCP channel, write exactly once, then read back exactly once and verify the complete body and hash under the F3 protocol. Authentication failure, unavailable capability, unsupported comment body, user-declined write, or write verification failure must use the corresponding governed F3 local fallback with no retry. W4A outcome does not change the validated F3 analysis result or its worksheet scope; after the protocol records a terminal `not_requested`, `updated`, `blocked`, or `failed` publishing outcome, continue deterministic analysis at W5. An invalid or unverifiable local fallback artifact stops the run.
 
 ### Phase W5 - Run F4
 
@@ -97,7 +118,7 @@ Present one concise run ledger containing:
 - F0 output: validated controlled versions and no standalone workflow artifact.
 - `F1` output: status, root, report, selected worksheet count, and workbook hash.
 - `F2` output: status, root, report, ready worksheets, and blocked worksheets with sanitized reasons.
-- `F3` output: status, root, report, governance-complete and governance-required counts.
+- `F3` output: status, root, report, governance-complete and governance-required counts, plus the optional ADO publishing outcome and sanitized work item reference when one was validated.
 - `F4` output: status, root, calculation/report paths, and accepted downstream calculation count.
 - `F5` output: status, root, report paths, image mode (`v2` or `not_evaluated`), and clarification count.
 - `F6` output: status, root, six artifact paths, completed/failed/evidence-gated option counts, ROI status, overall report status, and blocked worksheet section.
@@ -122,13 +143,15 @@ If validation succeeds, present the validated F6 report without rerunning F0, F1
 
 The two F2 commands are separate gates and must not be merged, omitted, or reordered. Do not add an F4 worksheet flag. Workbook mode always supplies the exact downstream worksheet set to F3, F5, and F6. Only W9 may append the four documented optional F6 evidence pairs to the final allowed command.
 
+W4A does not add F3 ADO commands to this local runner list. When W4A is entered, the referenced F3 skill is the authoritative allowlist for its local reminder commands and Surface MCP operations. F6 must not invent, duplicate, or broaden that allowlist.
+
 ## Safety boundaries
 
 - Never request or expose credentials.
-- No REST, browser network, shell HTTP, curl, or Invoke-WebRequest.
+- No REST, browser network, shell HTTP, curl, or Invoke-WebRequest for ADO.
 - Never modify the source workbook.
-- F3 is local analysis only.
-- Do not publish to ADO or perform any implicit ADO access.
+- F3 and F6 repository runners remain deterministic and network-free.
+- Never publish automatically or implicitly; optional ADO publishing is available only through W4A and the complete F3 protocol.
 - Treat all inputs and outputs as confidential.
 - Validate canonical containment, linked-path ancestry, artifact identity, contracts, manifests, and hashes before use.
 - Run commands only in the documented phase order.
