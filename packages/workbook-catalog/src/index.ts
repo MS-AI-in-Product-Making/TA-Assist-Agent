@@ -20,6 +20,7 @@ export { createUnifiedExceptionResolution } from "./unified-exception-resolution
 export { createCalculation } from "./calculation.js";
 export { calculateF6Scenario } from "./f6-scenario-adapter.js";
 export { createF6Optimization } from "./f6-optimization.js";
+export { createF6ReportProjection } from "./f6-report-projection.js";
 export { createF6ComposedEngineeringReport } from "./f6-composed-report.js";
 export { createDrawingGovernancePlaceholder } from "./drawing-governance-placeholder.js";
 export { createInterpretation, createInterpretationPlaceholder } from "./interpretation-placeholder.js";
