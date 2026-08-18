@@ -193,22 +193,41 @@ it("rejects creating a run through a redirected managed hierarchy", async () => 
 });
 
 it("runs Feature 1 workflow via explicit feature1 command", async () => {
-  const repoRoot = process.cwd();
-  const result = await executeCli(["feature1", "--root", repoRoot]);
+  const roots: string[] = [];
+  const runFeature1 = async (rootDir: string) => {
+    roots.push(rootDir);
+    return "Feature 1 workflow completed.\nreport: feature1-validation/latest.md";
+  };
+  const result = await executeCli(["feature1", "--root", "repo-root"], {
+    cwd: () => "ignored",
+    runFeature1,
+    runFeature2: async () => "unused",
+  });
 
   expect(result.exitCode).toBe(0);
   expect(result.stderr).toBe("");
   expect(result.stdout).toContain("Feature 1 workflow completed.");
   expect(result.stdout).toContain("feature1-validation/latest.md");
-}, 120_000);
+  expect(roots).toEqual(["repo-root"]);
+});
 
 it("runs Feature 1 workflow via phrase alias", async () => {
-  const result = await executeCli(["用feature 1来解析报告"]);
+  const roots: string[] = [];
+  const runFeature1 = async (rootDir: string) => {
+    roots.push(rootDir);
+    return "Feature 1 workflow completed.";
+  };
+  const result = await executeCli(["用feature 1来解析报告"], {
+    cwd: () => "phrase-root",
+    runFeature1,
+    runFeature2: async () => "unused",
+  });
 
   expect(result.exitCode).toBe(0);
   expect(result.stderr).toBe("");
   expect(result.stdout).toContain("Feature 1 workflow completed.");
-}, 120_000);
+  expect(roots).toEqual(["phrase-root"]);
+});
 
 it("routes explicit Feature 2 command with one workbook", async () => {
   const runFeature2 = async (rootDir: string, workbookPath: string, selection: { mode: string }) => `selection: ${selection.mode}\nrunRoot: ${rootDir}/runs\nworkbook: ${workbookPath}`;
