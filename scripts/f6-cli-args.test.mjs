@@ -13,6 +13,8 @@ describe("parseF6CliArgs", () => {
       "--datum-strategy", "evidence/datum.json",
       "--cost", "evidence/cost.json",
       "--image-observations", "evidence/observations.json",
+      "--analysis-context", "evidence/context.json",
+      "--optimization-targets", "evidence/targets.json",
     ])).toEqual({
       f2ArtifactRoot: "f2 run",
       f3ArtifactRoot: "f3 run",
@@ -23,6 +25,8 @@ describe("parseF6CliArgs", () => {
       datumStrategyArtifact: "evidence/datum.json",
       costArtifact: "evidence/cost.json",
       imageObservationArtifact: "evidence/observations.json",
+      analysisContextArtifact: "evidence/context.json",
+      optimizationTargetsArtifact: "evidence/targets.json",
     });
   });
 
@@ -37,6 +41,8 @@ describe("parseF6CliArgs", () => {
       datumStrategyArtifact: undefined,
       costArtifact: undefined,
       imageObservationArtifact: undefined,
+      analysisContextArtifact: undefined,
+      optimizationTargetsArtifact: undefined,
     });
   });
 
@@ -55,7 +61,7 @@ describe("parseF6CliArgs", () => {
     expect(() => parseF6CliArgs([...ROOTS, "extra"])).toThrow(/unexpected argument/i);
   });
 
-  it.each(["--worksheet", "--supplier-capability", "--datum-strategy", "--cost", "--image-observations"])(
+  it.each(["--worksheet", "--supplier-capability", "--datum-strategy", "--cost", "--image-observations", "--analysis-context", "--optimization-targets"])(
     "rejects a missing value for %s",
     (option) => expect(() => parseF6CliArgs([...ROOTS, option])).toThrow(/requires/i),
   );
@@ -65,7 +71,7 @@ describe("parseF6CliArgs", () => {
       .toThrow(/duplicate/i);
   });
 
-  it.each(["--supplier-capability", "--datum-strategy", "--cost", "--image-observations"])(
+  it.each(["--supplier-capability", "--datum-strategy", "--cost", "--image-observations", "--analysis-context", "--optimization-targets"])(
     "rejects duplicate singleton option %s",
     (option) => expect(() => parseF6CliArgs([...ROOTS, option, "a.json", option, "b.json"]))
       .toThrow(/duplicate/i),
