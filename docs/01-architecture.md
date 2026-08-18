@@ -50,7 +50,7 @@ flowchart TB
         M1["Prompt · Data cleansing (F2)<br/>required-field check + DIM ID/PN completeness<br/>vs Lib 1: tolerance range + distribution"]
         M2["Assign · Method recommendation (F4)<br/>&lt;4 WC · 4-10 RSS · &gt;10 notify DM for 3D VA<br/>both WC / RSS computed"]
         M3["Interpret · Sections 1-3 (F5)<br/>loop validity · capability vs specification · top contributors<br/>FACT/RULE cite F0 · SIGNAL/OPTION remain governed"]
-        M4["Delegate · Sections 4-5 (F6)<br/>structural risks · parallel improvement options<br/>F5 does not synthesize unavailable F6 results"]
+        M4["Optimize after F5 (F6)<br/>deterministic options · reverse solve · RSS apportionment<br/>feasibility · impact ranking · composed report"]
     end
     subgraph LOOP["8 Closed Loop (F7)"]
         CL["Ingest measured yield / Cpk by DIM ID<br/>manual import from centralized store (SharePoint / platform)<br/>real gap vs initial estimate · upgrade Lib 1 T3 -&gt; T1"]
@@ -117,13 +117,17 @@ flowchart TB
 | 5 DIM ID linking | **F3** | Link each factor to a drawing dimension and produce a drawing-governance list | Part Number currently equals Drawing Number. The formal key is `(Drawing Number, DIM ID)`; the same DIM ID may occur on different drawings, while duplicates on one drawing are conflicts. A one-digit numeric DIM ID is `suspected_invalid` and does not block TA. |
 | 5b ADO governance | **F3** | Optional ADO link, owner assignment, Comment 0 update, and local-list fallback | F3 uses only Surface MCP. Every write follows `prepare -> confirm -> execute`; without ADO or required capabilities, the same confidential list is saved locally and TA continues. F3 does not read dates, evaluate deadline proximity, or run a scheduler. |
 | 6 Calculation engine | F4 | One-dimensional calculation, fully consistent with Excel formulas | Validates only user-filled fields |
-| 7 Output modes | F2/F4/F5/F6 | Cleansing, method recommendation, objective interpretation, and delegated optimization | `<4` recommends WC; `4-10` recommends RSS; `>10` notifies DM for 3D VA while the engine still computes WC/RSS. The five-section report assigns sections 1-3 to F5 and delegates sections 4-5 to F6. |
+| 7 Output modes | F2/F4/F5/F6 | Cleansing, method recommendation, objective interpretation, and governed optimization | `<4` recommends WC; `4-10` recommends RSS; `>10` notifies DM for 3D VA while the engine still computes WC/RSS. F5 owns baseline evidence and delegates its last two sections; F6 owns options, reverse solve, RSS apportionment, feasibility, impact ranking, and the composed report. |
 | 8 Closed loop | **F7** | Backfill measured Cpk by DIM ID, compare the real gap, and feed back into F0 | Manual import from a centralized store (SharePoint / platform) at first; auto-capture and write-back come later |
 | 9 Interaction & output | **F8** | Read-only evidence pane, citable dialogue, structured report | Includes the Loop image; traceable and reproducible item by item |
 
-### F5 governance boundary
+### F5 and F6 governance boundary
 
-F5 directly consumes controlled F0/F1/F3/F4 artifacts; a workbook-started run must first pass the F2 handoff gate. The supported entry points are `workflow:f5`, `使用F5分析报告`, and `use F5 analysis report`. F0 rules retain version and scope, and F1 remains the sole physical owner of worksheet images. A missing F1 image reference or physical image fails the worksheet closed. With a verified image, skipped or unavailable observation mode continues deterministic interpretation as `not_evaluated`; an observation is not drawing truth and remains confidence-tagged and ME review-gated. F5 emits only `FACT`, `RULE`, `SIGNAL`, and unranked `OPTION` statements, records explicit assumptions and clarifications, never auto-publishes to ADO, and never writes back to the workbook. Sections 4 and 5 remain `delegated_to_f6`; while F6 is `unavailable`, the current run returns `feature_not_available` for that future optional path, performs no optimization calculation, and saves no optimization evidence.
+F5 directly consumes controlled F0/F1/F3/F4 artifacts; a workbook-started run must first pass the F2 handoff gate. It owns baseline `FACT`/`RULE`/`SIGNAL`, clarifications, and optional v2 image evidence, while retaining v1 read-only compatibility. Sections 4 and 5 remain `delegated_to_f6` in the detailed F5 report.
+
+F6 then binds exact F2/F3/F4/F5 roots and selected worksheets. It generates top-1 -20% and top-3 -30% band-center-preserving scenarios, review-gated mean centering, target-Cpk reverse solves, four governed RSS allocation policies, feasibility, Highest Impact, and cost-gated ROI. Supplier, datum, or cost claims without bound evidence remain `insufficient_evidence`; ROI is computed only when every supported ranked option has known positive governed cost. The composed report has a workbook summary and ten sections per ready worksheet; blocked worksheets appear only in workbook Input Validation.
+
+The direct CLI and trusted app CLI publish six run-scoped artifacts under the controlled publish root. All artifacts are `confidential`; inputs stay read-only, with no ADO, network, or workbook write. Schema, workbook/worksheet association, identity/hash, staging boundary, atomic rename, and committed-file identity gates fail closed. The legacy comparison placeholder remains `feature_not_available` as a separate compatibility API; the governed optimization workflow is `available` per the [Feature Register](governance/feature-register.md).
 
 > **Out of scope for now:** automatic extraction of drawing truth, DM-owned 3D variation analysis, automatic capture of measured data, and automatically writing suggested specs back into Excel.
 

@@ -3,6 +3,7 @@ import { isFeature1Phrase, runFeature1WorkflowCommand } from "./commands/feature
 import { isFeature2Phrase, runFeature2WorkflowCommand, type Feature2WorksheetSelectionArgs } from "./commands/feature2.js";
 import { isFeature3Phrase, runFeature3WorkflowCommand } from "./commands/feature3.js";
 import { isFeature5Phrase, runFeature5WorkflowCommand, type Feature5CommandOptions } from "./commands/feature5.js";
+import { runFeature6WorkflowCommand, type Feature6CommandOptions } from "./commands/feature6.js";
 import { runInspectCommand } from "./commands/inspect.js";
 import { runPurgeCommand, runPurgePlanCommand } from "./commands/purge.js";
 import { runSmokeCommand } from "./commands/smoke.js";
@@ -13,13 +14,14 @@ export interface CliResult {
   stderr: string;
 }
 
-type Command = "smoke" | "inspect" | "export" | "purge-plan" | "purge" | "feature1" | "feature2" | "feature3" | "feature5";
+type Command = "smoke" | "inspect" | "export" | "purge-plan" | "purge" | "feature1" | "feature2" | "feature3" | "feature5" | "feature6";
 
 interface CliDependencies {
   readonly cwd: () => string;
   readonly runFeature2: typeof runFeature2WorkflowCommand;
   readonly runFeature3?: typeof runFeature3WorkflowCommand;
   readonly runFeature5?: typeof runFeature5WorkflowCommand;
+  readonly runFeature6?: typeof runFeature6WorkflowCommand;
 }
 
 export async function executeCli(argv: readonly string[], dependencies: CliDependencies = { cwd: () => process.cwd(), runFeature2: runFeature2WorkflowCommand }): Promise<CliResult> {
@@ -82,6 +84,15 @@ async function executeCommand(parsed: ReturnType<typeof parseArguments>, depende
       return (dependencies.runFeature5 ?? runFeature5WorkflowCommand)(
         parsed.rootDir, parsed.f1ArtifactRoot, parsed.f3ArtifactRoot, parsed.f4ArtifactRoot, parsed.options,
       );
+    case "feature6":
+      return (dependencies.runFeature6 ?? runFeature6WorkflowCommand)(
+        parsed.rootDir,
+        parsed.f2ArtifactRoot,
+        parsed.f3ArtifactRoot,
+        parsed.f4ArtifactRoot,
+        parsed.f5ArtifactRoot,
+        parsed.options,
+      );
   }
 }
 
@@ -94,24 +105,32 @@ function parseArguments(argv: readonly string[]):
   | { command: "feature1"; rootDir: string }
   | { command: "feature2"; rootDir: string; workbookPath: string; worksheetSelection: Feature2WorksheetSelectionArgs }
   | { command: "feature3"; rootDir: string; f2ArtifactRoot: string }
-  | { command: "feature5"; rootDir: string; f1ArtifactRoot: string; f3ArtifactRoot: string; f4ArtifactRoot: string; options: Feature5CommandOptions } {
+  | { command: "feature5"; rootDir: string; f1ArtifactRoot: string; f3ArtifactRoot: string; f4ArtifactRoot: string; options: Feature5CommandOptions }
+  | { command: "feature6"; rootDir: string; f2ArtifactRoot: string; f3ArtifactRoot: string; f4ArtifactRoot: string; f5ArtifactRoot: string; options: Feature6CommandOptions } {
   const [command, ...flags] = argv;
   if (!isCommand(command)) {
     throw new Error("validation_error: command is invalid");
   }
   const values = new Map<string, string | boolean>();
+  const worksheetValues: string[] = [];
   for (let index = 0; index < flags.length; index += 1) {
     const flag = flags[index];
     if (flag === "--confirm-confidential" || flag === "--confirm") {
       setOnce(values, flag, true);
       continue;
     }
-    if (flag !== "--root" && flag !== "--run-id" && flag !== "--confirmation-token" && flag !== "--workbook" && flag !== "--f2-artifacts" && flag !== "--f1-artifacts" && flag !== "--f3-artifacts" && flag !== "--f4-artifacts" && flag !== "--worksheets" && flag !== "--workbook-hash" && flag !== "--image-observations") {
+    if (flag !== "--root" && flag !== "--run-id" && flag !== "--confirmation-token" && flag !== "--workbook" && flag !== "--f2-artifacts" && flag !== "--f1-artifacts" && flag !== "--f3-artifacts" && flag !== "--f4-artifacts" && flag !== "--f5-artifacts" && flag !== "--worksheets" && flag !== "--worksheet" && flag !== "--workbook-hash" && flag !== "--image-observations" && flag !== "--supplier-capability" && flag !== "--datum-strategy" && flag !== "--cost") {
       throw new Error("validation_error: unknown option");
     }
     const value = flags[index + 1];
     if (typeof value !== "string" || value.startsWith("--")) {
       throw new Error("validation_error: option value is missing");
+    }
+    if (flag === "--worksheet") {
+      worksheetValues.push(value);
+      values.set(flag, true);
+      index += 1;
+      continue;
     }
     setOnce(values, flag, value);
     index += 1;
@@ -177,6 +196,33 @@ function parseArguments(argv: readonly string[]):
     };
     return { command, rootDir, f1ArtifactRoot, f3ArtifactRoot, f4ArtifactRoot, options };
   }
+  if (command === "feature6") {
+    rejectUnexpected(values, [
+      "--root", "--f2-artifacts", "--f3-artifacts", "--f4-artifacts", "--f5-artifacts", "--worksheet",
+      "--supplier-capability", "--datum-strategy", "--cost", "--image-observations",
+    ]);
+    const f2ArtifactRoot = requiredString(values, "--f2-artifacts", "Feature 6");
+    const f3ArtifactRoot = requiredString(values, "--f3-artifacts", "Feature 6");
+    const f4ArtifactRoot = requiredString(values, "--f4-artifacts", "Feature 6");
+    const f5ArtifactRoot = requiredString(values, "--f5-artifacts", "Feature 6");
+    const selectedWorksheetNames = worksheetValues.map((name) => name.trim());
+    if (selectedWorksheetNames.length === 0 || selectedWorksheetNames.some((name) => name.length === 0)
+      || new Set(selectedWorksheetNames).size !== selectedWorksheetNames.length) {
+      throw new Error("validation_error: Feature 6 requires unique worksheet names");
+    }
+    const supplierCapabilityPath = optionalPath(values, "--supplier-capability", "Feature 6");
+    const datumStrategyPath = optionalPath(values, "--datum-strategy", "Feature 6");
+    const costPath = optionalPath(values, "--cost", "Feature 6");
+    const imageObservationsPath = optionalPath(values, "--image-observations", "Feature 6");
+    const options: Feature6CommandOptions = {
+      selectedWorksheetNames,
+      ...(supplierCapabilityPath === undefined ? {} : { supplierCapabilityPath }),
+      ...(datumStrategyPath === undefined ? {} : { datumStrategyPath }),
+      ...(costPath === undefined ? {} : { costPath }),
+      ...(imageObservationsPath === undefined ? {} : { imageObservationsPath }),
+    };
+    return { command, rootDir, f2ArtifactRoot, f3ArtifactRoot, f4ArtifactRoot, f5ArtifactRoot, options };
+  }
   const runId = values.get("--run-id");
   if (typeof runId !== "string" || !isUuid(runId)) {
     throw new Error("validation_error: --run-id must be a UUID");
@@ -206,19 +252,20 @@ function isCommand(value: string | undefined): value is Command {
     || value === "feature1"
     || value === "feature2"
     || value === "feature3"
-    || value === "feature5";
+    || value === "feature5"
+    || value === "feature6";
 }
 
-function requiredString(values: ReadonlyMap<string, string | boolean>, key: string): string {
+function requiredString(values: ReadonlyMap<string, string | boolean>, key: string, featureName = "Feature 5"): string {
   const value = values.get(key);
-  if (typeof value !== "string" || value.trim().length === 0) throw new Error(`validation_error: Feature 5 ${key} is required`);
+  if (typeof value !== "string" || value.trim().length === 0) throw new Error(`validation_error: ${featureName} ${key} is required`);
   return value.trim();
 }
 
-function optionalPath(values: ReadonlyMap<string, string | boolean>, key: string): string | undefined {
+function optionalPath(values: ReadonlyMap<string, string | boolean>, key: string, featureName = "Feature 5"): string | undefined {
   const value = values.get(key);
   if (value === undefined) return undefined;
-  if (typeof value !== "string" || value.trim().length === 0) throw new Error(`validation_error: Feature 5 ${key} must not be blank`);
+  if (typeof value !== "string" || value.trim().length === 0) throw new Error(`validation_error: ${featureName} ${key} must not be blank`);
   return value.trim();
 }
 

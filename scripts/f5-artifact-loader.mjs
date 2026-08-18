@@ -292,6 +292,63 @@ function sameImageReference(left, right) {
     && left.worksheetName === right.worksheetName;
 }
 
+function stableValue(value) {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.keys(value).sort().map((key) => [key, stableValue(value[key])]),
+    );
+  }
+  return value;
+}
+
+function sameStableValue(left, right) {
+  return JSON.stringify(stableValue(left)) === JSON.stringify(stableValue(right));
+}
+
+function buildExpectedContextSnapshot(f1Worksheet, f3Worksheet, tableId) {
+  const f1Table = f1Worksheet.factorTables.find((table) => table.tableId === tableId);
+  if (!f1Table) return undefined;
+  const f1BySourceRow = new Map(f1Table.rows.map((row) => [row.sourceRow, row]));
+  const rows = [];
+  for (const row of [...f3Worksheet.rows].sort(
+    (left, right) => left.source.sourceRow - right.source.sourceRow,
+  )) {
+    const f1Row = f1BySourceRow.get(row.source.sourceRow);
+    if (row.source.tableId !== tableId
+      || !f1Row
+      || f1Row.actualFields.partName !== row.partSubsystem
+      || f1Row.actualFields.factorName !== row.factorDescription) {
+      return undefined;
+    }
+    rows.push({
+      tableId: row.source.tableId,
+      sourceRow: row.source.sourceRow,
+      partName: f1Row.actualFields.partName,
+      partSubsystem: row.partSubsystem,
+      partCategory: row.partCategory,
+      factorName: f1Row.actualFields.factorName,
+      factorDescription: row.factorDescription,
+      nominal: row.nominal,
+      upperTolerance: row.upperTolerance,
+      lowerTolerance: row.lowerTolerance,
+      sigmaLevel: row.sigmaLevel,
+      sourceCells: row.source.sourceCells,
+    });
+  }
+  return {
+    dimensionDescription: f3Worksheet.toleranceLoopDescription,
+    rows,
+  };
+}
+
+function sameWorksheetSet(worksheets, selection) {
+  const names = worksheets.map(({ worksheetName }) => worksheetName);
+  return names.length === selection.length
+    && new Set(names).size === names.length
+    && names.every((name) => selection.includes(name));
+}
+
 function selectedNames(selectedWorksheetNames, calculations) {
   const calculationNames = calculations.map(({ worksheetSelection }) => worksheetSelection.worksheetName);
   const names = selectedWorksheetNames === undefined ? calculationNames : selectedWorksheetNames;
@@ -370,32 +427,6 @@ export function loadF5ArtifactBundle({
     f4.calculations.map((calculationResult) => [calculationResult.worksheetSelection.worksheetName, calculationResult]),
   );
 
-  let observationArtifact;
-  let observationReference;
-  if (imageObservationArtifact !== undefined) {
-    observationReference = safeReference(imageObservationArtifact);
-    const observationLoaded = readAndParse(
-      path.resolve(imageObservationArtifact),
-      observationReference,
-      f5ImageObservationArtifactSchema,
-    );
-    if (observationLoaded.rejection) return observationLoaded.rejection;
-    observationArtifact = observationLoaded.value;
-    if (observationArtifact.workbookContentHash !== workbook.contentHash) {
-      return inputRejected("artifact_identity_mismatch", observationReference);
-    }
-    const selectedWorksheetSet = new Set(selection);
-    if (observationArtifact.worksheets.some(({ worksheetName }) => (
-      !selectedWorksheetSet.has(worksheetName)
-      || !calculationByWorksheet.has(worksheetName)
-    ))) {
-      return inputRejected("artifact_identity_mismatch", observationReference);
-    }
-  }
-  const observationByWorksheet = new Map(
-    (observationArtifact?.worksheets ?? []).map((worksheet) => [worksheet.worksheetName, worksheet]),
-  );
-
   const acceptedWorksheets = [];
   const rejectedWorksheets = [];
   for (const worksheetName of selection) {
@@ -403,7 +434,6 @@ export function loadF5ArtifactBundle({
     const f3Worksheet = f3Worksheets.get(worksheetName);
     const calculationResult = calculationByWorksheet.get(worksheetName);
     const imageReference = imageReferences.get(worksheetName);
-    const observation = observationByWorksheet.get(worksheetName);
     if (worksheetErrors.has(worksheetName) || !f1Worksheet || !f3Worksheet || !calculationResult) {
       rejectedWorksheets.push(worksheetRejection(
         worksheetName,
@@ -423,15 +453,13 @@ export function loadF5ArtifactBundle({
     const governanceImagesMatch = f3Worksheet.rows.every(
       (row) => sameImageReference(row.imageReference, imageReference),
     );
-    const observationMatches = observation === undefined
-      || sameImageReference(observation.imageReference, imageReference);
 
     const requestWorksheet = {
       worksheetName,
       imageReference,
       governanceRows: f3Worksheet.rows,
       calculationResult,
-      imageObservations: observation?.observations ?? [],
+      imageObservations: [],
     };
     const singleWorksheetRequest = f5DataInterpretationRequestSchema.safeParse({
       contractVersion: "v1",
@@ -440,7 +468,7 @@ export function loadF5ArtifactBundle({
       knowledgeBaseVersion: "interpretation-rules-v1",
       worksheets: [requestWorksheet],
     });
-    if (!imageReference || !table || !factorsExistInF1 || !governanceImagesMatch || !observationMatches || !singleWorksheetRequest.success) {
+    if (!imageReference || !table || !factorsExistInF1 || !governanceImagesMatch || !singleWorksheetRequest.success) {
       rejectedWorksheets.push(worksheetRejection(worksheetName));
     } else {
       acceptedWorksheets.push(singleWorksheetRequest.data.worksheets[0]);
@@ -451,22 +479,123 @@ export function loadF5ArtifactBundle({
     const rejection = highestPriorityRejection(rejectedWorksheets);
     return inputRejected(rejection.reasonCode, rejection.artifactReference);
   }
-  const request = f5DataInterpretationRequestSchema.parse({
+  const baselineRequest = f5DataInterpretationRequestSchema.parse({
     contractVersion: "v1",
     inputClassification: "confidential",
     workbook: { fileName: workbook.fileName, contentHash: workbook.contentHash },
     knowledgeBaseVersion: "interpretation-rules-v1",
     worksheets: acceptedWorksheets,
   });
-  return {
+
+  const acceptedResult = (request, extras = {}) => ({
     status: "accepted",
     request,
     rejectedWorksheets,
     worksheetOrder: [...selection],
-    sourceReferences: {
-      ...SOURCE_REFERENCES,
-      ...(observationReference ? { observation: observationReference } : {}),
-    },
-    ...(observationArtifact ? { observationArtifact } : {}),
-  };
+    sourceReferences: SOURCE_REFERENCES,
+    ...extras,
+  });
+  if (imageObservationArtifact === undefined) return acceptedResult(baselineRequest);
+
+  const observationReference = safeReference(imageObservationArtifact);
+  const observationFallback = (reasonCode) => acceptedResult(baselineRequest, {
+    observationFallback: { reasonCode, artifactReference: observationReference },
+  });
+  const observationJson = readJson(path.resolve(imageObservationArtifact), observationReference);
+  if (observationJson.rejection) {
+    return observationFallback(observationJson.rejection.reasonCode);
+  }
+  const observationParsed = f5ImageObservationArtifactSchema.safeParse(observationJson.value);
+  if (!observationParsed.success) {
+    return observationFallback("artifact_contract_invalid");
+  }
+
+  const observationArtifact = observationParsed.data;
+  if (observationArtifact.observationVersion === "f5-image-observation-v2") {
+    if (observationArtifact.workbookContentHash !== workbook.contentHash
+      || !sameWorksheetSet(observationArtifact.worksheets, selection)) {
+      return observationFallback("artifact_identity_mismatch");
+    }
+
+    const observationByWorksheet = new Map(
+      observationArtifact.worksheets.map((worksheet) => [worksheet.worksheetName, worksheet]),
+    );
+    const baselineByWorksheet = new Map(
+      baselineRequest.worksheets.map((worksheet) => [worksheet.worksheetName, worksheet]),
+    );
+    const enrichedWorksheets = [];
+    for (const worksheetName of selection) {
+      const baselineWorksheet = baselineByWorksheet.get(worksheetName);
+      const observation = observationByWorksheet.get(worksheetName);
+      const f1Worksheet = f1Worksheets.get(worksheetName);
+      const f3Worksheet = f3Worksheets.get(worksheetName);
+      const calculationResult = calculationByWorksheet.get(worksheetName);
+      const imageReference = imageReferences.get(worksheetName);
+      const expectedSnapshot = f1Worksheet && f3Worksheet && calculationResult
+        ? buildExpectedContextSnapshot(
+          f1Worksheet,
+          f3Worksheet,
+          calculationResult.worksheetSelection.tableId,
+        )
+        : undefined;
+      if (!baselineWorksheet
+        || !observation
+        || !expectedSnapshot
+        || !sameImageReference(observation.imageReference, imageReference)
+        || !sameStableValue(observation.contextSnapshot, expectedSnapshot)) {
+        return observationFallback("artifact_identity_mismatch");
+      }
+      enrichedWorksheets.push({
+        ...baselineWorksheet,
+        observationVersion: observationArtifact.observationVersion,
+        contextSnapshot: observation.contextSnapshot,
+        imageObservations: observation.observations,
+      });
+    }
+    return acceptedResult(
+      { ...baselineRequest, worksheets: enrichedWorksheets },
+      {
+        sourceReferences: { ...SOURCE_REFERENCES, observation: observationReference },
+        observationArtifact,
+      },
+    );
+  }
+
+  if (observationArtifact.workbookContentHash !== workbook.contentHash) {
+    return inputRejected("artifact_identity_mismatch", observationReference);
+  }
+  const selectedWorksheetSet = new Set(selection);
+  if (observationArtifact.worksheets.some(({ worksheetName }) => (
+    !selectedWorksheetSet.has(worksheetName)
+    || !calculationByWorksheet.has(worksheetName)
+  ))) {
+    return inputRejected("artifact_identity_mismatch", observationReference);
+  }
+  const observationByWorksheet = new Map(
+    observationArtifact.worksheets.map((worksheet) => [worksheet.worksheetName, worksheet]),
+  );
+  const v1AcceptedWorksheets = [];
+  for (const worksheet of baselineRequest.worksheets) {
+    const observation = observationByWorksheet.get(worksheet.worksheetName);
+    if (observation && !sameImageReference(observation.imageReference, worksheet.imageReference)) {
+      rejectedWorksheets.push(worksheetRejection(worksheet.worksheetName));
+      continue;
+    }
+    v1AcceptedWorksheets.push({
+      ...worksheet,
+      imageObservations: observation?.observations ?? [],
+    });
+  }
+  if (v1AcceptedWorksheets.length === 0) {
+    const rejection = highestPriorityRejection(rejectedWorksheets);
+    return inputRejected(rejection.reasonCode, rejection.artifactReference);
+  }
+  const request = f5DataInterpretationRequestSchema.parse({
+    ...baselineRequest,
+    worksheets: v1AcceptedWorksheets,
+  });
+  return acceptedResult(request, {
+    sourceReferences: { ...SOURCE_REFERENCES, observation: observationReference },
+    observationArtifact,
+  });
 }

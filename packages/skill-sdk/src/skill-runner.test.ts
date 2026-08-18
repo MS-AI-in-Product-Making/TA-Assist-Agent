@@ -171,7 +171,30 @@ it("does not execute a trusted Skill for an unavailable Feature", async () => {
     trusted: true,
     manifest: {
       ...publicEchoSkill.manifest,
-      skillId: "f6-skill",
+      skillId: "f7-skill",
+      featureId: "F7",
+      permissions: [],
+    },
+    async execute() {
+      executed = true;
+      return {};
+    },
+  });
+
+  await expect(
+    runRegisteredSkill({ skillId: "f7-skill" }, registry),
+  ).rejects.toMatchObject({ code: "feature_not_available" });
+  expect(executed).toBe(false);
+});
+
+it("does not treat F6 as unavailable", async () => {
+  const registry = new SkillRegistry();
+  let executed = false;
+  registry.register({
+    trusted: true,
+    manifest: {
+      ...publicEchoSkill.manifest,
+      skillId: "f6-test-skill",
       featureId: "F6",
       permissions: [],
     },
@@ -182,9 +205,9 @@ it("does not execute a trusted Skill for an unavailable Feature", async () => {
   });
 
   await expect(
-    runRegisteredSkill({ skillId: "f6-skill" }, registry),
-  ).rejects.toMatchObject({ code: "feature_not_available" });
-  expect(executed).toBe(false);
+    runRegisteredSkill({ skillId: "f6-test-skill" }, registry),
+  ).resolves.toMatchObject({ skillId: "f6-test-skill" });
+  expect(executed).toBe(true);
 });
 
 it("runs the actual public echo Skill through a named mock adapter", async () => {

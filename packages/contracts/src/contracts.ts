@@ -4379,6 +4379,16 @@ export const f5StructuralScopeSchema = z.enum([
   "long_dimension_chain",
 ]);
 
+const f5CoreStructuralScopes = [
+  "tolerance_loop_closure",
+  "datum_chain",
+  "assembly_datum_face",
+  "stack_start",
+  "direction",
+] as const;
+
+export const f5CoreStructuralScopeSchema = z.enum(f5CoreStructuralScopes);
+
 export const f5EvidenceStatusSchema = z.enum([
   "supported",
   "needs_review",
@@ -4435,26 +4445,451 @@ const f5ImageObservationWorksheetSchema = z.object({
   }
 });
 
-export const f5ImageObservationArtifactSchema = z.object({
+const f5ImageObservationWorksheetsV1Schema = z.array(f5ImageObservationWorksheetSchema).min(1)
+  .superRefine((worksheets, context) => {
+    const worksheetNames = worksheets.map(({ worksheetName }) => worksheetName);
+    if (new Set(worksheetNames).size !== worksheetNames.length) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet names must be unique" });
+    }
+  });
+
+export const f5ImageObservationArtifactV1Schema = z.object({
   contractVersion: contractVersionSchema,
   inputClassification: z.literal("confidential"),
   observationVersion: z.literal("f5-image-observation-v1"),
   workbookContentHash: sha256Schema,
-  worksheets: z.array(f5ImageObservationWorksheetSchema).min(1),
-}).strict().superRefine((artifact, context) => {
-  const worksheetNames = artifact.worksheets.map(({ worksheetName }) => worksheetName);
-  if (new Set(worksheetNames).size !== worksheetNames.length) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet names must be unique", path: ["worksheets"] });
+  worksheets: f5ImageObservationWorksheetsV1Schema,
+}).strict();
+
+export const f5ContextSnapshotRowV2Schema = z.object({
+  tableId: z.string().min(1),
+  sourceRow: z.number().int().positive(),
+  partName: z.string().min(1).nullable(),
+  partSubsystem: z.string().min(1).nullable(),
+  partCategory: z.string().min(1).nullable(),
+  factorName: z.string().min(1).nullable(),
+  factorDescription: z.string().min(1).nullable(),
+  nominal: z.number().finite().nullable(),
+  upperTolerance: z.number().finite().nullable(),
+  lowerTolerance: z.number().finite().nullable(),
+  sigmaLevel: z.number().finite().positive().nullable(),
+  sourceCells: z.record(z.string(), z.string().min(1)),
+}).strict();
+
+const f5SnapshotRowKey = ({ tableId, sourceRow }: { tableId: string; sourceRow: number }): string => (
+  `${tableId}\u0000${sourceRow}`
+);
+
+export const f5ContextSnapshotV2Schema = z.object({
+  dimensionDescription: z.string().min(1),
+  rows: z.array(f5ContextSnapshotRowV2Schema).min(1),
+}).strict().superRefine((snapshot, context) => {
+  const rowKeys = snapshot.rows.map(f5SnapshotRowKey);
+  if (new Set(rowKeys).size !== rowKeys.length) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "context snapshot row keys must be unique",
+      path: ["rows"],
+    });
   }
 });
 
-const f5DataInterpretationRequestWorksheetSchema = z.object({
+function validateF5ContextSnapshotGovernanceRows(
+  snapshot: z.infer<typeof f5ContextSnapshotV2Schema>,
+  governanceRows: ReadonlyArray<z.infer<typeof f3GovernanceRowSchema>>,
+  context: z.RefinementCtx,
+): Set<string> {
+  const snapshotRowKeys = new Set(snapshot.rows.map(f5SnapshotRowKey));
+  const governanceRowByKey = new Map(governanceRows.map((row) => [
+    f5SnapshotRowKey(row.source),
+    row,
+  ]));
+  const governanceDimensionDescriptions = new Set(
+    governanceRows.map(({ dimensionDescription }) => dimensionDescription),
+  );
+  if (governanceDimensionDescriptions.size !== 1
+    || !governanceDimensionDescriptions.has(snapshot.dimensionDescription)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "context snapshot dimensionDescription must match every F3 governance row",
+      path: ["contextSnapshot", "dimensionDescription"],
+    });
+  }
+  const mappedFields = [
+    "partSubsystem",
+    "partCategory",
+    "factorDescription",
+    "nominal",
+    "upperTolerance",
+    "lowerTolerance",
+    "sigmaLevel",
+  ] as const;
+
+  snapshot.rows.forEach((snapshotRow, snapshotRowIndex) => {
+    const governanceRow = governanceRowByKey.get(f5SnapshotRowKey(snapshotRow));
+    if (governanceRow === undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "context snapshot row must match an F3 governance row",
+        path: ["contextSnapshot", "rows", snapshotRowIndex],
+      });
+      return;
+    }
+    if (snapshotRow.partName !== snapshotRow.partSubsystem) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "context snapshot partName must match partSubsystem",
+        path: ["contextSnapshot", "rows", snapshotRowIndex, "partName"],
+      });
+    }
+    if (snapshotRow.factorName !== snapshotRow.factorDescription) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "context snapshot factorName must match factorDescription",
+        path: ["contextSnapshot", "rows", snapshotRowIndex, "factorName"],
+      });
+    }
+    for (const field of mappedFields) {
+      if (snapshotRow[field] !== governanceRow[field]) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `context snapshot ${field} must match the F3 governance row`,
+          path: ["contextSnapshot", "rows", snapshotRowIndex, field],
+        });
+      }
+    }
+    const snapshotSourceCellEntries = Object.entries(snapshotRow.sourceCells);
+    const governanceSourceCellEntries = Object.entries(governanceRow.source.sourceCells);
+    const governanceSourceCellByField = new Map(governanceSourceCellEntries);
+    if (snapshotSourceCellEntries.length !== governanceSourceCellEntries.length
+      || snapshotSourceCellEntries.some(([field, sourceCell]) => governanceSourceCellByField.get(field) !== sourceCell)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "context snapshot sourceCells must match the F3 governance row",
+        path: ["contextSnapshot", "rows", snapshotRowIndex, "sourceCells"],
+      });
+    }
+  });
+  governanceRows.forEach((governanceRow, governanceRowIndex) => {
+    if (!snapshotRowKeys.has(f5SnapshotRowKey(governanceRow.source))) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "F3 governance row requires a matching context snapshot row",
+        path: ["governanceRows", governanceRowIndex, "source"],
+      });
+    }
+  });
+
+  return snapshotRowKeys;
+}
+
+export const f5VisualObservationV2Schema = z.object({
+  observedValue: z.enum(["visible", "not_visible", "ambiguous"]),
+  confidence: z.enum(["high", "medium", "low"]),
+  visibleBasis: z.string().min(1).max(500),
+  visibleLabels: z.array(z.string().min(1)).superRefine((labels, context) => {
+    if (new Set(labels).size !== labels.length) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "visible labels must be unique" });
+    }
+  }),
+  reviewStatus: z.enum(["unreviewed", "confirmed", "rejected"]),
+  confirmedBy: controlledReferenceSchema.optional(),
+  confirmedAt: z.string().datetime().optional(),
+}).strict().superRefine(validateF5ObservationConfirmation);
+
+const f5LinkedSourceRowV2Schema = z.object({
+  tableId: z.string().min(1),
+  sourceRow: z.number().int().positive(),
+}).strict();
+
+const f5LinkedVisualLabelV2Schema = z.object({
+  label: z.string().min(1),
+  tableId: z.string().min(1),
+  sourceRow: z.number().int().positive(),
+}).strict();
+
+export const f5ContextualSignalV2Schema = z.object({
+  signalValue: z.enum([
+    "indicated_consistent",
+    "indicated_conflict",
+    "ambiguous",
+    "insufficient_evidence",
+  ]),
+  textBasis: z.string().min(1),
+  linkedSourceRows: z.array(f5LinkedSourceRowV2Schema),
+  linkedVisualLabels: z.array(f5LinkedVisualLabelV2Schema),
+  requiresEngineeringReview: z.literal(true),
+}).strict();
+
+export const f5ContextualObservationV2Schema = z.object({
+  scope: f5CoreStructuralScopeSchema,
+  visualObservation: f5VisualObservationV2Schema,
+  contextualSignal: f5ContextualSignalV2Schema,
+}).strict();
+
+function validateF5ContextualSignalSemantics(
+  scope: z.infer<typeof f5CoreStructuralScopeSchema>,
+  contextualSignal: z.infer<typeof f5ContextualSignalV2Schema>,
+  context: z.RefinementCtx,
+  path: Array<string | number>,
+): void {
+  const hasVisualLabels = contextualSignal.linkedVisualLabels.length > 0;
+  const hasSourceRows = contextualSignal.linkedSourceRows.length > 0;
+  const hasIndicatedConclusion = contextualSignal.signalValue === "indicated_consistent"
+    || contextualSignal.signalValue === "indicated_conflict";
+
+  if (scope !== "direction" && hasVisualLabels) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "linked visual labels are only supported for direction observations",
+      path: [...path, "linkedVisualLabels"],
+    });
+  }
+
+  if (scope !== "direction") return;
+
+  if (hasIndicatedConclusion && (!hasVisualLabels || !hasSourceRows)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "indicated direction conclusions require linked visual labels and source rows",
+      path: [...path, !hasVisualLabels ? "linkedVisualLabels" : "linkedSourceRows"],
+    });
+  }
+  if (!hasVisualLabels && hasSourceRows) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "direction without linked visual labels must not link source rows",
+      path: [...path, "linkedSourceRows"],
+    });
+  }
+  if (!hasVisualLabels && hasIndicatedConclusion) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "direction without linked visual labels must be ambiguous or insufficient_evidence",
+      path: [...path, "signalValue"],
+    });
+  }
+}
+
+function validateF5ContextualObservationEvidence(
+  observation: z.infer<typeof f5ContextualObservationV2Schema>,
+  context: z.RefinementCtx,
+  path: Array<string | number>,
+): void {
+  const { contextualSignal, visualObservation } = observation;
+  const hasVisualLabels = contextualSignal.linkedVisualLabels.length > 0;
+  validateF5ContextualSignalSemantics(
+    observation.scope,
+    contextualSignal,
+    context,
+    [...path, "contextualSignal"],
+  );
+
+  if (observation.scope === "direction") {
+    if (hasVisualLabels && visualObservation.observedValue !== "visible") {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "direction linked visual labels require a visible visual observation",
+        path: [...path, "visualObservation", "observedValue"],
+      });
+    }
+    const visibleLabelSet = new Set(visualObservation.visibleLabels);
+    contextualSignal.linkedVisualLabels.forEach((linkedVisualLabel, linkedLabelIndex) => {
+      if (!visibleLabelSet.has(linkedVisualLabel.label)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "direction linked visual labels must reference structured visible labels",
+          path: [...path, "contextualSignal", "linkedVisualLabels", linkedLabelIndex, "label"],
+        });
+      }
+    });
+  }
+
+  if (visualObservation.observedValue === "visible") return;
+
+  if (observation.scope === "stack_start") {
+    if (contextualSignal.linkedSourceRows.length > 0) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "stack_start without a visible marker must not link source rows",
+        path: [...path, "contextualSignal", "linkedSourceRows"],
+      });
+    }
+    if (contextualSignal.signalValue !== "ambiguous"
+      && contextualSignal.signalValue !== "insufficient_evidence") {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "stack_start without a visible marker must be ambiguous or insufficient_evidence",
+        path: [...path, "contextualSignal", "signalValue"],
+      });
+    }
+  }
+
+  if (observation.scope === "assembly_datum_face"
+    && contextualSignal.signalValue === "indicated_consistent") {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "assembly_datum_face without a visible marked face cannot be indicated_consistent",
+      path: [...path, "contextualSignal", "signalValue"],
+    });
+  }
+
+}
+
+function validateF5ContextualSignalRowKeySets(
+  scope: z.infer<typeof f5CoreStructuralScopeSchema>,
+  contextualSignal: z.infer<typeof f5ContextualSignalV2Schema>,
+  context: z.RefinementCtx,
+  path: Array<string | number>,
+): void {
+  const linkedSourceRowKeys = contextualSignal.linkedSourceRows.map(f5SnapshotRowKey);
+  const linkedVisualLabelKeys = contextualSignal.linkedVisualLabels.map(f5SnapshotRowKey);
+
+  if (new Set(linkedSourceRowKeys).size !== linkedSourceRowKeys.length) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "linked source row keys must be unique",
+      path: [...path, "linkedSourceRows"],
+    });
+  }
+  if (new Set(linkedVisualLabelKeys).size !== linkedVisualLabelKeys.length) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "linked visual label row keys must be unique",
+      path: [...path, "linkedVisualLabels"],
+    });
+  }
+
+  if (scope === "direction" && (linkedSourceRowKeys.length > 0 || linkedVisualLabelKeys.length > 0)) {
+    const linkedSourceRowKeySet = new Set(linkedSourceRowKeys);
+    const linkedVisualLabelKeySet = new Set(linkedVisualLabelKeys);
+    if (linkedSourceRowKeySet.size !== linkedVisualLabelKeySet.size
+      || [...linkedSourceRowKeySet].some((rowKey) => !linkedVisualLabelKeySet.has(rowKey))) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "linked visual label row keys must exactly match linked source row keys",
+        path: [...path, "linkedVisualLabels"],
+      });
+    }
+  }
+}
+
+function validateF5ContextualSignalLinks(
+  scope: z.infer<typeof f5CoreStructuralScopeSchema>,
+  contextualSignal: z.infer<typeof f5ContextualSignalV2Schema>,
+  snapshotRowKeys: Set<string>,
+  context: z.RefinementCtx,
+  path: Array<string | number>,
+): void {
+  contextualSignal.linkedSourceRows.forEach((linkedSourceRow, linkedRowIndex) => {
+    if (!snapshotRowKeys.has(f5SnapshotRowKey(linkedSourceRow))) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "linked source rows must refer to context snapshot rows",
+        path: [...path, "linkedSourceRows", linkedRowIndex],
+      });
+    }
+  });
+  contextualSignal.linkedVisualLabels.forEach((linkedVisualLabel, linkedLabelIndex) => {
+    if (!snapshotRowKeys.has(f5SnapshotRowKey(linkedVisualLabel))) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "linked visual labels must refer to context snapshot rows",
+        path: [...path, "linkedVisualLabels", linkedLabelIndex],
+      });
+    }
+  });
+  validateF5ContextualSignalRowKeySets(scope, contextualSignal, context, path);
+}
+
+export const f5ContextualObservationWorksheetV2Schema = z.object({
+  worksheetName: z.string().min(1),
+  imageReference: f1ImageReferenceSchema,
+  contextSnapshot: f5ContextSnapshotV2Schema,
+  observations: z.array(f5ContextualObservationV2Schema).length(f5CoreStructuralScopes.length),
+}).strict().superRefine((worksheet, context) => {
+  if (worksheet.imageReference.worksheetName !== worksheet.worksheetName) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "image reference worksheet must match the containing worksheet",
+      path: ["imageReference", "worksheetName"],
+    });
+  }
+
+  const scopes = worksheet.observations.map(({ scope }) => scope);
+  if (new Set(scopes).size !== f5CoreStructuralScopes.length) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "observations must contain each core structural scope exactly once",
+      path: ["observations"],
+    });
+  }
+
+  const snapshotRowKeys = new Set(worksheet.contextSnapshot.rows.map(f5SnapshotRowKey));
+  worksheet.observations.forEach((observation, observationIndex) => {
+    validateF5ContextualObservationEvidence(observation, context, ["observations", observationIndex]);
+    const { contextualSignal } = observation;
+    validateF5ContextualSignalLinks(
+      observation.scope,
+      contextualSignal,
+      snapshotRowKeys,
+      context,
+      ["observations", observationIndex, "contextualSignal"],
+    );
+    if (contextualSignal.linkedSourceRows.length === 0
+      && contextualSignal.signalValue !== "ambiguous"
+      && contextualSignal.signalValue !== "insufficient_evidence") {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "unlinked contextual signals must be ambiguous or insufficient_evidence",
+        path: ["observations", observationIndex, "contextualSignal", "signalValue"],
+      });
+    }
+  });
+});
+
+const f5ContextualObservationWorksheetsV2Schema = z.array(f5ContextualObservationWorksheetV2Schema).min(1)
+  .superRefine((worksheets, context) => {
+    const worksheetNames = worksheets.map(({ worksheetName }) => worksheetName);
+    if (new Set(worksheetNames).size !== worksheetNames.length) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet names must be unique" });
+    }
+  });
+
+export const f5ImageObservationArtifactV2Schema = z.object({
+  contractVersion: contractVersionSchema,
+  inputClassification: z.literal("confidential"),
+  observationVersion: z.literal("f5-image-observation-v2"),
+  workbookContentHash: sha256Schema,
+  worksheets: f5ContextualObservationWorksheetsV2Schema,
+}).strict();
+
+export const f5ImageObservationArtifactSchema = z.discriminatedUnion("observationVersion", [
+  f5ImageObservationArtifactV1Schema,
+  f5ImageObservationArtifactV2Schema,
+]);
+
+const f5DataInterpretationRequestWorksheetBaseSchema = z.object({
   worksheetName: z.string().min(1),
   imageReference: f1ImageReferenceSchema,
   governanceRows: z.array(f3GovernanceRowSchema),
   calculationResult: calculationCompletedResultSchema,
+});
+
+const f5DataInterpretationRequestWorksheetV1Schema = f5DataInterpretationRequestWorksheetBaseSchema.extend({
   imageObservations: z.array(f5ImageObservationSchema).max(100),
-}).strict().superRefine((worksheet, context) => {
+}).strict();
+
+const f5DataInterpretationRequestWorksheetV2Schema = f5DataInterpretationRequestWorksheetBaseSchema.extend({
+  observationVersion: z.literal("f5-image-observation-v2"),
+  contextSnapshot: f5ContextSnapshotV2Schema,
+  imageObservations: z.array(f5ContextualObservationV2Schema).length(f5CoreStructuralScopes.length),
+}).strict();
+
+const f5DataInterpretationRequestWorksheetSchema = z.union([
+  f5DataInterpretationRequestWorksheetV1Schema,
+  f5DataInterpretationRequestWorksheetV2Schema,
+]).superRefine((worksheet, context) => {
   const { worksheetName, imageReference, calculationResult } = worksheet;
   if (imageReference.worksheetName !== worksheetName) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "image worksheet must match worksheetName", path: ["imageReference", "worksheetName"] });
@@ -4507,8 +4942,40 @@ const f5DataInterpretationRequestWorksheetSchema = z.object({
   });
 
   const observationScopes = worksheet.imageObservations.map(({ scope }) => scope);
-  if (new Set(observationScopes).size !== observationScopes.length) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: "image observation scope must be unique", path: ["imageObservations"] });
+  const expectedScopeCount = "observationVersion" in worksheet ? f5CoreStructuralScopes.length : observationScopes.length;
+  if (new Set(observationScopes).size !== expectedScopeCount) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "image observations must contain the required scopes exactly once",
+      path: ["imageObservations"],
+    });
+  }
+
+  if ("observationVersion" in worksheet) {
+    const snapshotRowKeys = validateF5ContextSnapshotGovernanceRows(
+      worksheet.contextSnapshot,
+      worksheet.governanceRows,
+      context,
+    );
+    worksheet.imageObservations.forEach((observation, observationIndex) => {
+      validateF5ContextualObservationEvidence(observation, context, ["imageObservations", observationIndex]);
+      validateF5ContextualSignalLinks(
+        observation.scope,
+        observation.contextualSignal,
+        snapshotRowKeys,
+        context,
+        ["imageObservations", observationIndex, "contextualSignal"],
+      );
+      if (observation.contextualSignal.linkedSourceRows.length === 0
+        && observation.contextualSignal.signalValue !== "ambiguous"
+        && observation.contextualSignal.signalValue !== "insufficient_evidence") {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "unlinked contextual signals must be ambiguous or insufficient_evidence",
+          path: ["imageObservations", observationIndex, "contextualSignal", "signalValue"],
+        });
+      }
+    });
   }
 });
 
@@ -4517,6 +4984,9 @@ export const f5DataInterpretationRequestSchema = z.object({
   inputClassification: z.literal("confidential"),
   workbook: z.object({ fileName: workbookCatalogFileNameSchema, contentHash: sha256Schema }).strict(),
   knowledgeBaseVersion: z.literal("interpretation-rules-v1"),
+  observationFallback: z.object({
+    reasonCode: z.literal("enhanced_observation_rejected"),
+  }).strict().optional(),
   worksheets: z.array(f5DataInterpretationRequestWorksheetSchema).min(1),
 }).strict().superRefine((request, context) => {
   const worksheetNames = request.worksheets.map(({ worksheetName }) => worksheetName);
@@ -4524,6 +4994,27 @@ export const f5DataInterpretationRequestSchema = z.object({
     context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet names must be unique", path: ["worksheets"] });
   }
   request.worksheets.forEach((worksheet, worksheetIndex) => {
+    if (request.observationFallback !== undefined) {
+      if (worksheet.imageObservations.length > 0) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "observation fallback requires empty image observations",
+          path: ["worksheets", worksheetIndex, "imageObservations"],
+        });
+      }
+      if ("observationVersion" in worksheet) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "observation fallback must not include an observation version",
+          path: ["worksheets", worksheetIndex, "observationVersion"],
+        });
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "observation fallback must not include a context snapshot",
+          path: ["worksheets", worksheetIndex, "contextSnapshot"],
+        });
+      }
+    }
     if (worksheet.calculationResult.workbookContentHash !== request.workbook.contentHash) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: "calculation workbook hash must match request workbook", path: ["worksheets", worksheetIndex, "calculationResult", "workbookContentHash"] });
     }
@@ -4543,6 +5034,7 @@ const f5RootImageFactStatementSchema = z.object({
     imageReference: f1ImageReferenceSchema,
     confidence: z.enum(["high", "medium", "low"]),
     visibleBasis: z.string().min(1).max(500),
+    visibleLabels: z.array(z.string().min(1)).optional(),
     reviewStatus: z.enum(["unreviewed", "confirmed", "rejected"]),
     confirmedBy: controlledReferenceSchema.optional(),
     confirmedAt: z.string().datetime().optional(),
@@ -4578,12 +5070,70 @@ const f5RootObservationEvidenceSchema = z.object({
   imageReference: f1ImageReferenceSchema,
   confidence: z.enum(["high", "medium", "low"]),
   visibleBasis: z.string().min(1).max(500),
+  visibleLabels: z.array(z.string().min(1)).optional(),
+  reviewStatus: z.enum(["unreviewed", "confirmed", "rejected"]),
+  confirmedBy: controlledReferenceSchema.optional(),
+  confirmedAt: z.string().datetime().optional(),
+}).strict().superRefine(validateF5ObservationConfirmation);
+
+const f5RootContextVisualEvidenceSchema = z.object({
+  observedValue: z.enum(["visible", "not_visible", "ambiguous"]),
+  imageReference: f1ImageReferenceSchema,
+  confidence: z.enum(["high", "medium", "low"]),
+  visibleBasis: z.string().min(1).max(500),
+  visibleLabels: z.array(z.string().min(1)).superRefine((labels, context) => {
+    if (new Set(labels).size !== labels.length) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "visible labels must be unique" });
+    }
+  }),
   reviewStatus: z.enum(["unreviewed", "confirmed", "rejected"]),
   confirmedBy: controlledReferenceSchema.optional(),
   confirmedAt: z.string().datetime().optional(),
 }).strict().superRefine(validateF5ObservationConfirmation);
 
 const f5RootSignalStatementSchema = z.union([
+  z.object({
+    statementId: z.string().min(1),
+    type: z.literal("SIGNAL"),
+    section: z.literal("tolerance-chain-validity"),
+    content: z.object({
+      signalKind: z.literal("image_text_context_review"),
+      scope: f5CoreStructuralScopeSchema,
+      signalValue: z.enum([
+        "indicated_consistent",
+        "indicated_conflict",
+        "ambiguous",
+        "insufficient_evidence",
+      ]),
+      textBasis: z.string().min(1),
+      linkedSourceRows: z.array(f5LinkedSourceRowV2Schema),
+      linkedVisualLabels: z.array(f5LinkedVisualLabelV2Schema),
+      visualEvidence: f5RootContextVisualEvidenceSchema,
+      requiresEngineeringReview: z.literal(true),
+    }).strict().superRefine((content, context) => {
+      validateF5ContextualSignalSemantics(content.scope, content, context, []);
+      validateF5ContextualSignalRowKeySets(content.scope, content, context, []);
+      if (content.scope === "direction" && content.linkedVisualLabels.length > 0) {
+        if (content.visualEvidence.observedValue !== "visible") {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "direction linked visual labels require visible SIGNAL evidence",
+            path: ["visualEvidence", "observedValue"],
+          });
+        }
+        const visibleLabelSet = new Set(content.visualEvidence.visibleLabels);
+        content.linkedVisualLabels.forEach((linkedVisualLabel, linkedLabelIndex) => {
+          if (!visibleLabelSet.has(linkedVisualLabel.label)) {
+            context.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: "context labels must reference visible labels in the same SIGNAL",
+              path: ["linkedVisualLabels", linkedLabelIndex, "label"],
+            });
+          }
+        });
+      }
+    }),
+  }).strict(),
   z.object({
     statementId: z.string().min(1),
     type: z.literal("SIGNAL"),
@@ -4724,12 +5274,47 @@ const f5CompletedWorksheetResultSchema = z.object({
   imageReference: f1ImageReferenceSchema,
   governanceRows: z.array(f3GovernanceRowSchema),
   calculationResult: calculationCompletedResultSchema,
+  observationVersion: z.literal("f5-image-observation-v2").optional(),
+  contextSnapshot: f5ContextSnapshotV2Schema.optional(),
   status: z.literal("completed"),
   sections: f5ResultSectionsSchema,
   statements: z.array(f5RootInterpretationStatementSchema),
   clarifications: z.array(f5ClarificationSchema),
   assumptions: z.array(f5AssumptionSchema),
 }).strict().superRefine((worksheet, context) => {
+  if ((worksheet.observationVersion === undefined) !== (worksheet.contextSnapshot === undefined)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "completed v2 worksheet results require observationVersion and contextSnapshot together",
+      path: [worksheet.observationVersion === undefined ? "observationVersion" : "contextSnapshot"],
+    });
+  }
+  const contextSignalScopes: Array<z.infer<typeof f5CoreStructuralScopeSchema>> = [];
+  worksheet.statements.forEach((statement) => {
+    if (statement.type === "SIGNAL"
+      && "signalKind" in statement.content
+      && statement.content.signalKind === "image_text_context_review") {
+      contextSignalScopes.push(statement.content.scope);
+    }
+  });
+  if (worksheet.observationVersion === "f5-image-observation-v2") {
+    const uniqueContextSignalScopes = new Set(contextSignalScopes);
+    if (contextSignalScopes.length !== f5CoreStructuralScopes.length
+      || uniqueContextSignalScopes.size !== f5CoreStructuralScopes.length
+      || f5CoreStructuralScopes.some((scope) => !uniqueContextSignalScopes.has(scope))) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "completed v2 worksheet results require exactly one image-text context SIGNAL for each core scope",
+        path: ["statements"],
+      });
+    }
+  } else if (contextSignalScopes.length > 0) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "image-text context SIGNALs require a completed v2 worksheet result",
+      path: ["statements"],
+    });
+  }
   const legacyStatements: Array<z.infer<typeof interpretationStatementSchema>> = [];
   worksheet.statements.forEach((statement) => {
     if (statement.type === "FACT" && statement.content.provenanceKind === "image_observation") return;
@@ -4777,6 +5362,34 @@ const f5CompletedWorksheetResultSchema = z.object({
       governanceRowBySource.set(key, row);
     }
   });
+  if (worksheet.observationVersion === "f5-image-observation-v2" && worksheet.contextSnapshot !== undefined) {
+    const snapshotRowKeys = validateF5ContextSnapshotGovernanceRows(
+      worksheet.contextSnapshot,
+      worksheet.governanceRows,
+      context,
+    );
+    worksheet.statements.forEach((statement, statementIndex) => {
+      if (statement.type !== "SIGNAL" || !("signalKind" in statement.content)
+        || statement.content.signalKind !== "image_text_context_review") return;
+      validateF5ContextualSignalLinks(
+        statement.content.scope,
+        statement.content,
+        snapshotRowKeys,
+        context,
+        ["statements", statementIndex, "content"],
+      );
+      const imageReference = statement.content.visualEvidence.imageReference;
+      if (imageReference.worksheetName !== worksheet.imageReference.worksheetName
+        || imageReference.relativePath !== worksheet.imageReference.relativePath
+        || imageReference.contentHash !== worksheet.imageReference.contentHash) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "context SIGNAL image must match the worksheet image",
+          path: ["statements", statementIndex, "content", "visualEvidence", "imageReference"],
+        });
+      }
+    });
+  }
   const factorSourceKeys = new Set<string>();
   worksheet.calculationResult.factors.forEach((factor, factorIndex) => {
     const key = sourceKey(factor.source);
@@ -4909,6 +5522,15 @@ const f5CompletedWorksheetResultSchema = z.object({
         }
         return;
       }
+      if (statement.type === "SIGNAL" && "signalKind" in statement.content
+        && statement.content.signalKind === "image_text_context_review") {
+        if (statement.content.scope !== item.scope) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "tolerance context SIGNAL scope must match item scope", path: [...itemPath, "relatedStatementIds", referenceIndex] });
+        } else {
+          hasSameScopeEvidence = true;
+        }
+        return;
+      }
       context.addIssue({ code: z.ZodIssueCode.custom, message: "tolerance item statements must be structural evidence", path: [...itemPath, "relatedStatementIds", referenceIndex] });
     });
     let hasSameScopeClarification = false;
@@ -4950,8 +5572,9 @@ const f5CompletedWorksheetResultSchema = z.object({
     const hasUsableObservationEvidence = worksheet.statements.some((statement) => (
       statement.type === "SIGNAL"
       && "signalKind" in statement.content
-      && statement.content.signalKind === "structural_evidence_review"
-      && statement.content.observationEvidence?.some(({ reviewStatus }) => reviewStatus !== "rejected")
+      && (statement.content.signalKind === "image_text_context_review"
+        || (statement.content.signalKind === "structural_evidence_review"
+          && statement.content.observationEvidence?.some(({ reviewStatus }) => reviewStatus !== "rejected")))
     ));
     if (toleranceStatus === "supported" || !hasUsableObservationEvidence) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: `${toleranceStatus} tolerance validity requires usable image evidence`, path: ["sections", "toleranceChainValidity", "status"] });
@@ -4961,7 +5584,8 @@ const f5CompletedWorksheetResultSchema = z.object({
     const structuralSignals = worksheet.statements.map((statement, statementIndex) => ({ statement, statementIndex })).filter(({ statement }) => (
       statement.type === "SIGNAL"
       && "signalKind" in statement.content
-      && statement.content.signalKind === "structural_evidence_review"
+      && (statement.content.signalKind === "structural_evidence_review"
+        || statement.content.signalKind === "image_text_context_review")
     ));
     if (structuralSignals.length === 0) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: "needs_review tolerance validity requires a structural review SIGNAL", path: ["sections", "toleranceChainValidity", "status"] });
@@ -5491,6 +6115,1216 @@ export type CalculationRequest = z.infer<typeof calculationRequestSchema>;
 export type CalculationResult = z.infer<typeof calculationResultSchema>;
 export type CalculationMethod = z.infer<typeof calculationMethodSchema>;
 export type CalculationCriticality = z.infer<typeof calculationCriticalitySchema>;
+const f6RelativeArtifactPathSchema = z.string().min(1).max(500).superRefine((value, context) => {
+  if (/^(?:[A-Za-z]:|[\\/])/.test(value) || value.includes("\\")) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "artifact references must be relative POSIX paths" });
+  }
+  if (value.split("/").some((segment) => segment === "" || segment === "." || segment === "..")) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "artifact references must not contain empty or traversal segments" });
+  }
+});
+
+const f6ArtifactReferenceSchema = z.object({
+  artifact: f6RelativeArtifactPathSchema,
+  contentHash: sha256Schema,
+}).strict();
+
+const f6F4ReferenceSchema = f6ArtifactReferenceSchema.extend({
+  runId: z.string().min(1),
+  calculationVersion: z.literal("excel-ta-v1"),
+}).strict();
+
+const f6F5ReferenceSchema = f6ArtifactReferenceSchema.extend({
+  interpretationVersion: z.literal("f5-data-interpretation-v1"),
+}).strict();
+
+export const f6OptionKindSchema = z.enum([
+  "reduce_top_contributor_20",
+  "reduce_top_3_contributors_30",
+  "mean_shift_centering",
+  "reverse_solve_single_factor",
+  "reverse_solve_top_3",
+  "rss_apportionment",
+  "centering_plus_tighten",
+  "improve_supplier_capability",
+  "tighten_datum_strategy",
+  "requirement_change",
+]);
+
+export const f6MetricsSchema = z.object({
+  mean: z.number().finite(),
+  rssSigma: z.number().finite().nonnegative(),
+  cp: z.number().finite(),
+  cpk: z.number().finite(),
+  yield: z.number().finite().min(0).max(1),
+  dpm: z.number().finite().nonnegative(),
+}).strict();
+
+export const f6ToleranceChangeSchema = z.object({
+  worksheetName: z.string().min(1),
+  tableId: z.string().min(1),
+  sourceRow: z.number().int().positive(),
+  originalLowerTolerance: z.number().finite(),
+  originalUpperTolerance: z.number().finite(),
+  resultingLowerTolerance: z.number().finite(),
+  resultingUpperTolerance: z.number().finite(),
+  originalBand: z.number().finite().nonnegative(),
+  resultingBand: z.number().finite().nonnegative(),
+  bandCenter: z.number().finite(),
+}).strict().superRefine((change, context) => {
+  const originalBand = change.originalUpperTolerance - change.originalLowerTolerance;
+  const resultingBand = change.resultingUpperTolerance - change.resultingLowerTolerance;
+  const originalCenter = (change.originalUpperTolerance + change.originalLowerTolerance) / 2;
+  const resultingCenter = (change.resultingUpperTolerance + change.resultingLowerTolerance) / 2;
+  const nearlyEqual = (left: number, right: number) => Math.abs(left - right) <= 1e-12 * Math.max(1, Math.abs(left), Math.abs(right));
+  if (!nearlyEqual(change.originalBand, originalBand)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "originalBand must match the original tolerance bounds", path: ["originalBand"] });
+  }
+  if (!nearlyEqual(change.resultingBand, resultingBand)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "resultingBand must match the resulting tolerance bounds", path: ["resultingBand"] });
+  }
+  if (!nearlyEqual(change.bandCenter, originalCenter) || !nearlyEqual(change.bandCenter, resultingCenter)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "bandCenter must be preserved by the tolerance change", path: ["bandCenter"] });
+  }
+});
+
+export const f6ControlledScenarioSchema = z.object({
+  scenarioId: z.string().min(1),
+  optionKind: f6OptionKindSchema,
+  factorOverrides: z.array(calculationFactorOverrideSchema).max(100),
+  systemSpecification: calculationScenarioSystemSpecificationSchema.optional(),
+}).strict().superRefine((scenario, context) => {
+  if (scenario.factorOverrides.length === 0 && scenario.systemSpecification === undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "controlled scenario requires at least one override" });
+  }
+});
+
+export const f6FeasibilityAssessmentSchema = z.object({
+  status: z.enum(["supported", "requires_engineering_review", "insufficient_evidence", "not_supported"]),
+  reasonCodes: z.array(z.string().min(1)),
+  evidenceReferences: z.array(f6RelativeArtifactPathSchema),
+}).strict();
+
+export const f6ReverseSolveResultSchema = z.object({
+  targetCpk: z.number().finite().positive(),
+  targetRssSigma: z.number().finite().nonnegative(),
+  strategy: z.enum(["single-factor", "top-3", "rss-apportionment", "centering-plus-tighten"]),
+  toleranceChanges: z.array(f6ToleranceChangeSchema),
+  residualError: z.number().finite().nonnegative(),
+}).strict();
+
+export const f6ApportionmentResultSchema = z.object({
+  policy: z.enum(["proportional-to-contribution", "equal-allocation-among-top-N", "bounded-by-capability", "residual-after-centering"]),
+  targetRssSigma: z.number().finite().nonnegative(),
+  allocations: z.array(z.object({
+    tableId: z.string().min(1),
+    sourceRow: z.number().int().positive(),
+    targetSigma: z.number().finite().nonnegative(),
+    targetTolerance: z.number().finite().nonnegative(),
+  }).strict()),
+  residualError: z.number().finite().nonnegative(),
+  feasibility: f6FeasibilityAssessmentSchema,
+}).strict().superRefine((result, context) => {
+  const seen = new Set<string>();
+  result.allocations.forEach((allocation, index) => {
+    const key = `${allocation.tableId}\u0000${allocation.sourceRow}`;
+    if (seen.has(key)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "allocation source keys must be unique", path: ["allocations", index] });
+    }
+    seen.add(key);
+  });
+});
+
+export const f6CapabilityBoundSchema = z.object({
+  tableId: z.string().min(1),
+  sourceRow: z.number().int().positive(),
+  minimumToleranceBand: z.number().finite().nonnegative(),
+  maximumToleranceBand: z.number().finite().nonnegative(),
+  evidenceReference: f6RelativeArtifactPathSchema,
+}).strict().refine((bound) => bound.minimumToleranceBand <= bound.maximumToleranceBand, {
+  message: "minimumToleranceBand must not exceed maximumToleranceBand",
+  path: ["minimumToleranceBand"],
+});
+
+const f6VersionedEvidenceFields = {
+  source: f6RelativeArtifactPathSchema,
+  effectiveVersion: z.string().min(1),
+  contentHash: sha256Schema,
+};
+
+export const f6SupplierCapabilityEvidenceSchema = z.object({
+  evidenceVersion: z.literal("supplier-capability-v1"),
+  supplierReference: z.string().min(1),
+  processFamily: z.string().min(1),
+  partCategory: z.string().min(1),
+  capabilityTier: capabilityTierSchema,
+  achievableToleranceBand: z.number().finite().nonnegative(),
+  distribution: distributionSchema,
+  ...f6VersionedEvidenceFields,
+}).strict();
+
+export const f6DatumEvidenceSchema = z.object({
+  evidenceVersion: z.literal("datum-strategy-v1"),
+  worksheetName: z.string().min(1),
+  datumFace: z.string().min(1),
+  stackStart: z.string().min(1),
+  factorDirections: z.array(z.object({
+    tableId: z.string().min(1),
+    sourceRow: z.number().int().positive(),
+    direction: z.union([z.literal(-1), z.literal(1)]),
+  }).strict()).min(1),
+  datumChainEdges: z.array(z.object({ from: z.string().min(1), to: z.string().min(1) }).strict()).min(1),
+  crossSubsystemRelations: z.array(z.string().min(1)),
+  drawingEvidence: z.array(f6RelativeArtifactPathSchema).min(1),
+  reviewStatus: z.literal("confirmed"),
+  ...f6VersionedEvidenceFields,
+}).strict().superRefine((evidence, context) => {
+  const seen = new Set<string>();
+  evidence.factorDirections.forEach((direction, index) => {
+    const key = `${direction.tableId}\u0000${direction.sourceRow}`;
+    if (seen.has(key)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "factor direction source keys must be unique", path: ["factorDirections", index] });
+    }
+    seen.add(key);
+  });
+});
+
+const validateF6GovernedEvidenceIdentities = (
+  evidenceCollections: ReadonlyArray<readonly ["supplierCapabilityEvidence" | "datumEvidence", ReadonlyArray<{ source: string; contentHash: string }> | undefined]>,
+  context: z.RefinementCtx,
+): void => {
+  evidenceCollections.forEach(([field, records]) => {
+    const seen = new Set<string>();
+    records?.forEach((record, index) => {
+      const identity = `${record.source}\u0000${record.contentHash}`;
+      if (seen.has(identity)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: `${field} governed identities must be unique`, path: [field, index] });
+      }
+      seen.add(identity);
+    });
+  });
+};
+
+export const f6CostEvidenceSchema = z.object({
+  evidenceVersion: z.literal("cost-model-v1"),
+  model: z.string().min(1),
+  unit: z.string().min(1),
+  optionCosts: z.array(z.object({ optionKind: f6OptionKindSchema, cost: z.number().finite().nonnegative() }).strict()).min(1),
+  roiPolicyVersion: z.literal("f6-delta-cpk-per-cost-v1"),
+  roiCalculationReference: f6ArtifactReferenceSchema,
+  ...f6VersionedEvidenceFields,
+}).strict().superRefine((evidence, context) => {
+  const seen = new Set<string>();
+  evidence.optionCosts.forEach(({ optionKind }, index) => {
+    if (seen.has(optionKind)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "cost evidence option kinds must be unique", path: ["optionCosts", index, "optionKind"] });
+    }
+    seen.add(optionKind);
+  });
+});
+
+const f6InputFindingBaseShape = {
+  findingCode: z.string().min(1),
+  severity: z.enum(["Critical", "Major", "Minor"]),
+  message: z.string().min(1),
+  evidenceReferences: z.array(f6ArtifactReferenceSchema),
+};
+const f6CapabilityImpactTrueSchema = z.literal(true).transform((value): boolean => value);
+const f6CapabilityImpactFalseSchema = z.literal(false).transform((value): boolean => value);
+
+export const f6InputFindingSchema = z.discriminatedUnion("findingKind", [
+  z.object({
+    ...f6InputFindingBaseShape,
+    findingKind: z.literal("validation_abnormality"),
+    affectsCapabilityData: z.boolean(),
+  }).strict(),
+  z.object({
+    ...f6InputFindingBaseShape,
+    findingKind: z.literal("confirmed_requirement_violation"),
+    affectsCapabilityData: f6CapabilityImpactTrueSchema,
+  }).strict(),
+  z.object({
+    ...f6InputFindingBaseShape,
+    findingKind: z.literal("governance_gap"),
+    affectsCapabilityData: f6CapabilityImpactFalseSchema,
+  }).strict(),
+  z.object({
+    ...f6InputFindingBaseShape,
+    findingKind: z.literal("optimization_failure"),
+    affectsCapabilityData: f6CapabilityImpactFalseSchema,
+  }).strict(),
+]);
+
+export const f6RiskSchema = z.object({
+  riskId: z.string().min(1),
+  category: z.enum(["Product", "Manufacturing", "Assembly", "Supplier", "Customer Experience"]),
+  rating: z.enum(["Low", "Medium", "High", "Critical"]),
+  status: z.enum(["open", "closed"]),
+  reason: z.string().min(1),
+  evidenceReferences: z.array(f6ArtifactReferenceSchema).min(1),
+}).strict();
+
+export const f6RecommendationSchema = z.object({
+  recommendationId: z.string().min(1),
+  optionId: z.string().min(1).optional(),
+  text: z.string().min(1),
+  evidenceReferences: z.array(f6ArtifactReferenceSchema).min(1),
+}).strict();
+
+export const f6ClarificationSchema = z.object({
+  clarificationId: z.string().min(1),
+  reasonCode: z.string().min(1),
+  requiredInputs: z.array(z.string().min(1)).min(1),
+  questionForReviewer: z.string().min(1),
+  evidenceReferences: z.array(f6ArtifactReferenceSchema),
+}).strict();
+
+export const f6TargetCapabilitySchema = z.object({
+  targetCpk: z.number().finite().positive(),
+  targetSigmaLevel: z.number().finite().positive(),
+  source: z.enum(["worksheet", "controlled_default"]),
+}).strict();
+
+const f6NearlyEqual = (left: number, right: number): boolean =>
+  Math.abs(left - right) <= 1e-12 * Math.max(1, Math.abs(left), Math.abs(right));
+
+const f6EvidenceScopeSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("supplier"),
+    supplierReference: z.string().min(1),
+    processFamily: z.string().min(1),
+    partCategory: z.string().min(1),
+    evidenceReference: f6ArtifactReferenceSchema,
+  }).strict(),
+  z.object({
+    kind: z.literal("datum"),
+    worksheetName: z.string().min(1),
+    factorSources: z.array(z.object({
+      tableId: z.string().min(1),
+      sourceRow: z.number().int().positive(),
+      direction: z.union([z.literal(-1), z.literal(1)]),
+    }).strict()).min(1),
+    evidenceReference: f6ArtifactReferenceSchema,
+  }).strict(),
+]);
+
+const f6CompletedOptionSchema = z.object({
+  status: z.literal("completed"),
+  optionId: z.string().min(1),
+  optionKind: f6OptionKindSchema,
+  baselineMetrics: f6MetricsSchema,
+  resultMetrics: f6MetricsSchema,
+  deltaCpk: z.number().finite(),
+  deltaCp: z.number().finite(),
+  deltaRssSigma: z.number().finite(),
+  deltaDpm: z.number().finite(),
+  deltaYield: z.number().finite(),
+  factorOverrides: z.array(calculationFactorOverrideSchema),
+  toleranceChanges: z.array(f6ToleranceChangeSchema),
+  reverseSolve: f6ReverseSolveResultSchema.optional(),
+  apportionment: f6ApportionmentResultSchema.optional(),
+  feasibility: f6FeasibilityAssessmentSchema,
+  evidenceReferences: z.array(f6ArtifactReferenceSchema),
+  evidenceScope: f6EvidenceScopeSchema.optional(),
+  relativeCost: z.union([z.number().finite().nonnegative(), z.literal("insufficient_evidence")]),
+  roiScore: z.union([z.number().finite(), z.literal("not_computed")]),
+  impactRank: z.number().int().positive().nullable(),
+  scenarioEvidence: z.object({
+    scenarioId: z.string().min(1),
+    calculation: calculationCompletedResultSchema,
+  }).strict(),
+  closedRiskIds: z.array(z.string().min(1)),
+}).strict();
+
+const f6CalculationFailedOptionSchema = z.object({
+  status: z.literal("calculation_failed"),
+  optionId: z.string().min(1),
+  optionKind: f6OptionKindSchema,
+  reasonCode: z.string().min(1),
+  evidenceReferences: z.array(f6ArtifactReferenceSchema),
+  impactRank: z.null(),
+}).strict();
+
+const f6InsufficientEvidenceOptionSchema = z.object({
+  status: z.literal("insufficient_evidence"),
+  optionId: z.string().min(1),
+  optionKind: z.enum(["improve_supplier_capability", "tighten_datum_strategy"]),
+  predictedImprovement: z.literal("insufficient_evidence"),
+  requiredInputs: z.array(z.string().min(1)).min(1),
+  evidenceReferences: z.array(f6ArtifactReferenceSchema),
+  feasibility: f6FeasibilityAssessmentSchema.optional(),
+  evidenceScope: f6EvidenceScopeSchema.optional(),
+  relativeCost: z.literal("insufficient_evidence"),
+  roiScore: z.literal("not_computed"),
+  impactRank: z.null(),
+}).strict();
+
+export const f6OptionSchema = z.discriminatedUnion("status", [
+  f6CompletedOptionSchema,
+  f6CalculationFailedOptionSchema,
+  f6InsufficientEvidenceOptionSchema,
+]).superRefine((option, context) => {
+  if (option.status === "calculation_failed") return;
+  const expectedScopeKind = option.optionKind === "improve_supplier_capability"
+    ? "supplier"
+    : option.optionKind === "tighten_datum_strategy"
+      ? "datum"
+      : undefined;
+  if (expectedScopeKind === undefined && option.evidenceScope !== undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "evidenceScope is forbidden for this option kind", path: ["evidenceScope"] });
+  } else if (expectedScopeKind !== undefined
+    && option.evidenceScope !== undefined
+    && option.evidenceScope.kind !== expectedScopeKind) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: `${expectedScopeKind} evidenceScope is required for this option kind`, path: ["evidenceScope"] });
+  } else if (option.status === "completed" && expectedScopeKind !== undefined && option.evidenceScope === undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: `${expectedScopeKind} evidenceScope is required for this option kind`, path: ["evidenceScope"] });
+  }
+  if (option.status === "insufficient_evidence") {
+    if (option.evidenceReferences.length === 0 && option.evidenceScope !== undefined) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "evidenceScope is forbidden without evidenceReferences", path: ["evidenceScope"] });
+    } else if (option.evidenceScope !== undefined
+      && !option.evidenceReferences.some((reference) =>
+        reference.artifact === option.evidenceScope!.evidenceReference.artifact
+        && reference.contentHash === option.evidenceScope!.evidenceReference.contentHash)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "evidenceScope reference must be included in evidenceReferences", path: ["evidenceScope", "evidenceReference"] });
+    }
+  }
+  if (option.evidenceScope?.kind === "datum") {
+    const seen = new Set<string>();
+    option.evidenceScope.factorSources.forEach((source, index) => {
+      const key = `${source.tableId}\u0000${source.sourceRow}`;
+      if (seen.has(key)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "datum evidence scope factor sources must be unique", path: ["evidenceScope", "factorSources", index] });
+      }
+      seen.add(key);
+    });
+  }
+  if (option.status !== "completed") return;
+  const expectedDeltas = {
+    deltaCpk: option.resultMetrics.cpk - option.baselineMetrics.cpk,
+    deltaCp: option.resultMetrics.cp - option.baselineMetrics.cp,
+    deltaRssSigma: option.resultMetrics.rssSigma - option.baselineMetrics.rssSigma,
+    deltaDpm: option.resultMetrics.dpm - option.baselineMetrics.dpm,
+    deltaYield: option.resultMetrics.yield - option.baselineMetrics.yield,
+  };
+  for (const [field, expected] of Object.entries(expectedDeltas) as Array<[keyof typeof expectedDeltas, number]>) {
+    if (!f6NearlyEqual(option[field], expected)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: `${field} must equal result minus baseline`, path: [field] });
+    }
+  }
+});
+
+export const f6SupplierBindingSchema = z.object({
+  tableId: z.string().min(1),
+  sourceRow: z.number().int().positive(),
+  evidenceReference: f6ArtifactReferenceSchema,
+}).strict();
+
+export const f6WorksheetInputSchema = z.object({
+  worksheetName: z.string().min(1),
+  f4CalculationIndex: z.number().int().positive(),
+  baselineCalculationRequest: calculationRequestSchema,
+  baselineCalculation: calculationCompletedResultSchema,
+  f5Worksheet: f5CompletedWorksheetResultSchema,
+  f3GovernanceRows: z.array(f3GovernanceRowSchema),
+  f2Findings: z.array(f6InputFindingSchema),
+  supplierBindings: z.array(f6SupplierBindingSchema),
+}).strict().superRefine((worksheet, context) => {
+  if (worksheet.baselineCalculationRequest.scenarioOverrides.length !== 0) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline calculation request must not contain scenarios", path: ["baselineCalculationRequest", "scenarioOverrides"] });
+  }
+  if (worksheet.baselineCalculationRequest.worksheetSelection.worksheetName !== worksheet.worksheetName) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline request worksheet must match worksheetName", path: ["baselineCalculationRequest", "worksheetSelection", "worksheetName"] });
+  }
+  if (worksheet.baselineCalculationRequest.worksheetSelection.tableId !== worksheet.baselineCalculation.worksheetSelection.tableId) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline request table must match baseline calculation", path: ["baselineCalculationRequest", "worksheetSelection", "tableId"] });
+  }
+  if (worksheet.baselineCalculationRequest.projectReference !== worksheet.baselineCalculation.projectReference
+    || worksheet.baselineCalculationRequest.runReference !== worksheet.baselineCalculation.runReference) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline request project and run identities must match baseline calculation", path: ["baselineCalculationRequest"] });
+  }
+  if (worksheet.baselineCalculationRequest.worksheetAnalysisAssets.workbook.contentHash !== worksheet.baselineCalculation.workbookContentHash) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline request workbook must match baseline calculation", path: ["baselineCalculationRequest", "worksheetAnalysisAssets", "workbook", "contentHash"] });
+  }
+  if (worksheet.baselineCalculation.worksheetSelection.worksheetName !== worksheet.worksheetName) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline worksheet must match worksheetName", path: ["baselineCalculation", "worksheetSelection", "worksheetName"] });
+  }
+  if (worksheet.f5Worksheet.worksheetName !== worksheet.worksheetName) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "F5 worksheet must match worksheetName", path: ["f5Worksheet", "worksheetName"] });
+  }
+  if (worksheet.f5Worksheet.calculationResult.workbookContentHash !== worksheet.baselineCalculation.workbookContentHash) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "F5 and baseline workbook hashes must match", path: ["f5Worksheet", "calculationResult", "workbookContentHash"] });
+  }
+  if (worksheet.f5Worksheet.calculationResult.runReference !== worksheet.baselineCalculation.runReference) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "F5 and baseline run references must match", path: ["f5Worksheet", "calculationResult", "runReference"] });
+  }
+  if (JSON.stringify(worksheet.f3GovernanceRows) !== JSON.stringify(worksheet.f5Worksheet.governanceRows)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "F3 governance rows must match the F5 worksheet", path: ["f3GovernanceRows"] });
+  }
+  const baselineSourceKeys = new Set(worksheet.baselineCalculation.factors.map(({ source }) => `${source.tableId}\u0000${source.sourceRow}`));
+  const governanceSourceKeys = new Set(worksheet.f3GovernanceRows.map(({ source }) => `${source.tableId}\u0000${source.sourceRow}`));
+  const bindingSourceKeys = new Set<string>();
+  worksheet.supplierBindings.forEach((binding, index) => {
+    const sourceKey = `${binding.tableId}\u0000${binding.sourceRow}`;
+    if (bindingSourceKeys.has(sourceKey)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "supplier binding source keys must be unique", path: ["supplierBindings", index] });
+    }
+    bindingSourceKeys.add(sourceKey);
+    if (!baselineSourceKeys.has(sourceKey) || !governanceSourceKeys.has(sourceKey)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "supplier binding source must exist in baseline factors and F3 governance rows", path: ["supplierBindings", index] });
+    }
+  });
+});
+
+export const f6OptimizationRequestSchema = z.object({
+  contractVersion: contractVersionSchema,
+  inputClassification: z.literal("confidential"),
+  workbook: z.object({ fileName: workbookCatalogFileNameSchema, contentHash: sha256Schema }).strict(),
+  selectedWorksheetNames: z.array(z.string().min(1)).min(1),
+  f2Reference: f6ArtifactReferenceSchema,
+  f3Reference: f6ArtifactReferenceSchema,
+  f4Reference: f6F4ReferenceSchema,
+  f5Reference: f6F5ReferenceSchema,
+  f0Versions: z.object({
+    knowledgeBaseVersion: z.literal("v1"),
+    capabilityVersion: z.string().min(1),
+    interpretationVersion: z.literal("interpretation-rules-v1"),
+  }).strict(),
+  scenarioPolicyVersion: z.literal("f6-scenario-policy-v1"),
+  imageObservationReference: f6ArtifactReferenceSchema.optional(),
+  supplierCapabilityEvidence: z.array(f6SupplierCapabilityEvidenceSchema).optional(),
+  datumEvidence: z.array(f6DatumEvidenceSchema).optional(),
+  costEvidence: f6CostEvidenceSchema.optional(),
+  worksheets: z.array(f6WorksheetInputSchema).min(1),
+}).strict().superRefine((request, context) => {
+  const selected = request.selectedWorksheetNames;
+  const selectedSet = new Set<string>();
+  selected.forEach((name, index) => {
+    if (selectedSet.has(name)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "selected worksheet names must be unique", path: ["selectedWorksheetNames", index] });
+    }
+    selectedSet.add(name);
+  });
+  const worksheetNameSet = new Set<string>();
+  request.worksheets.forEach(({ worksheetName }, index) => {
+    if (worksheetNameSet.has(worksheetName)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet input names must be unique", path: ["worksheets", index, "worksheetName"] });
+    }
+    worksheetNameSet.add(worksheetName);
+  });
+  if (selectedSet.size !== worksheetNameSet.size || [...selectedSet].some((name) => !worksheetNameSet.has(name))) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "selected worksheet names must exactly match worksheet inputs", path: ["selectedWorksheetNames"] });
+  }
+  validateF6GovernedEvidenceIdentities([
+    ["supplierCapabilityEvidence", request.supplierCapabilityEvidence],
+    ["datumEvidence", request.datumEvidence],
+  ], context);
+  request.worksheets.forEach((worksheet, index) => {
+    if (worksheet.baselineCalculation.workbookContentHash !== request.workbook.contentHash) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline workbook hash must match request workbook", path: ["worksheets", index, "baselineCalculation", "workbookContentHash"] });
+    }
+    const expectedRunReference = `${request.f4Reference.runId}-${worksheet.f4CalculationIndex}`;
+    if (worksheet.baselineCalculation.runReference !== expectedRunReference
+      || worksheet.baselineCalculationRequest.runReference !== expectedRunReference) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline run must derive from the F4 reference and calculation index", path: ["worksheets", index, "baselineCalculation", "runReference"] });
+    }
+    worksheet.supplierBindings.forEach((binding, bindingIndex) => {
+      const matchingEvidence = (request.supplierCapabilityEvidence ?? []).filter((evidence) =>
+        evidence.source === binding.evidenceReference.artifact
+        && evidence.contentHash === binding.evidenceReference.contentHash);
+      if (matchingEvidence.length !== 1) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "supplier binding must resolve to exactly one governed evidence record",
+          path: ["worksheets", index, "supplierBindings", bindingIndex, "evidenceReference"],
+        });
+        return;
+      }
+      const governanceRow = worksheet.f3GovernanceRows.find(({ source }) =>
+        source.tableId === binding.tableId && source.sourceRow === binding.sourceRow);
+      if (governanceRow !== undefined && matchingEvidence[0]!.partCategory !== governanceRow.partCategory) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "bound supplier evidence partCategory must match the F3 governance row",
+          path: ["worksheets", index, "supplierBindings", bindingIndex, "evidenceReference"],
+        });
+      }
+    });
+  });
+});
+
+const f6HighestImpactActionSchema = z.object({
+  optionId: z.string().min(1),
+  rationale: z.string().min(1),
+}).strict();
+
+const f6BaselineFactorIdentitySchema = calculationFactorResultSchema.omit({ trace: true });
+
+export const f6BaselineIdentitySchema = z.object({
+  projectReference: controlledCalculationReferenceSchema,
+  runReference: controlledCalculationReferenceSchema,
+  calculationVersion: z.literal("excel-ta-v1"),
+  workbookContentHash: sha256Schema,
+  worksheetName: z.string().min(1),
+  tableId: z.string().min(1),
+  factorCount: z.number().int().positive(),
+  factors: z.array(f6BaselineFactorIdentitySchema).min(1),
+  system: calculationSystemResultSchema,
+  capability: calculationCapabilityResultSchema,
+}).strict().superRefine((identity, context) => {
+  if (identity.factorCount !== identity.factors.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "factorCount must match baseline identity factors", path: ["factorCount"] });
+  }
+  const sourceKeys = new Set<string>();
+  identity.factors.forEach((factor, index) => {
+    if (factor.source.worksheetName !== identity.worksheetName || factor.source.tableId !== identity.tableId) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "factor source must match baseline worksheet and table", path: ["factors", index, "source"] });
+    }
+    const key = `${factor.source.worksheetName}\u0000${factor.source.tableId}\u0000${factor.source.sourceRow}`;
+    if (sourceKeys.has(key)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline factor source keys must be unique", path: ["factors", index, "source"] });
+    }
+    sourceKeys.add(key);
+  });
+});
+
+const f6ReadyWorksheetFields = {
+  worksheetName: z.string().min(1),
+  f4CalculationIndex: z.number().int().positive(),
+  baselineIdentity: f6BaselineIdentitySchema,
+  baselineMetrics: f6MetricsSchema,
+  targetCapability: f6TargetCapabilitySchema,
+  inputFindings: z.array(f6InputFindingSchema),
+  options: z.array(f6OptionSchema).min(1),
+  risks: z.array(f6RiskSchema),
+  recommendations: z.array(f6RecommendationSchema),
+  highestImpactAction: f6HighestImpactActionSchema.optional(),
+  roiStatus: z.enum(["computed", "not_computed"]),
+  clarifications: z.array(f6ClarificationSchema),
+};
+
+const f6FixedReportOptionKinds = [
+  "reduce_top_contributor_20",
+  "reduce_top_3_contributors_30",
+  "improve_supplier_capability",
+  "tighten_datum_strategy",
+] as const;
+
+const validateF6ReadyWorksheet = (
+  worksheet: {
+    status: "completed" | "partially_completed" | "calculation_failed";
+    options: Array<z.infer<typeof f6OptionSchema>>;
+    recommendations: Array<z.infer<typeof f6RecommendationSchema>>;
+    highestImpactAction?: z.infer<typeof f6HighestImpactActionSchema> | undefined;
+    roiStatus: "computed" | "not_computed";
+  },
+  context: z.RefinementCtx,
+): void => {
+  const failedCount = worksheet.options.filter(({ status }) => status === "calculation_failed").length;
+  const completedCount = worksheet.options.filter(({ status }) => status === "completed").length;
+  f6FixedReportOptionKinds.forEach((optionKind) => {
+    if (worksheet.options.filter((option) => option.optionKind === optionKind).length !== 1) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: `worksheet requires exactly one ${optionKind} option`, path: ["options"] });
+    }
+  });
+  if (worksheet.status === "completed" && failedCount > 0) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "completed worksheet must not contain calculation_failed options", path: ["status"] });
+  }
+  if (worksheet.status === "partially_completed" && (failedCount === 0 || completedCount === 0)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "partially_completed requires completed and calculation_failed options", path: ["status"] });
+  }
+  if (worksheet.status === "calculation_failed") {
+    if (failedCount === 0 || completedCount > 0) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "calculation_failed requires at least one failed option and no completed options", path: ["status"] });
+    }
+    if (worksheet.recommendations.length > 0 || worksheet.highestImpactAction !== undefined) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "calculation_failed forbids recommendations and highest impact action", path: ["recommendations"] });
+    }
+    if (worksheet.roiStatus !== "not_computed") {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "calculation_failed requires ROI to remain uncomputed", path: ["roiStatus"] });
+    }
+  }
+};
+
+const f6CompletedWorksheetResultSchema = z.object({
+  status: z.literal("completed"),
+  ...f6ReadyWorksheetFields,
+}).strict().superRefine(validateF6ReadyWorksheet);
+
+const f6PartiallyCompletedWorksheetResultSchema = z.object({
+  status: z.literal("partially_completed"),
+  ...f6ReadyWorksheetFields,
+}).strict().superRefine(validateF6ReadyWorksheet);
+
+const f6CalculationFailedWorksheetResultSchema = z.object({
+  status: z.literal("calculation_failed"),
+  ...f6ReadyWorksheetFields,
+}).strict().superRefine(validateF6ReadyWorksheet);
+
+const f6InputRejectedWorksheetResultSchema = z.object({
+  worksheetName: z.string().min(1),
+  f4CalculationIndex: z.number().int().positive(),
+  baselineIdentity: f6BaselineIdentitySchema,
+  status: z.literal("input_rejected"),
+  inputFindings: z.array(f6InputFindingSchema).min(1),
+  options: z.array(z.never()).length(0),
+  risks: z.array(f6RiskSchema),
+  clarifications: z.array(f6ClarificationSchema),
+}).strict();
+
+export const f6WorksheetResultSchema = z.union([
+  f6CompletedWorksheetResultSchema,
+  f6PartiallyCompletedWorksheetResultSchema,
+  f6CalculationFailedWorksheetResultSchema,
+  f6InputRejectedWorksheetResultSchema,
+]);
+
+export const f6SummarySchema = z.object({
+  worksheetCount: z.number().int().nonnegative(),
+  completedWorksheetCount: z.number().int().nonnegative(),
+  partiallyCompletedWorksheetCount: z.number().int().nonnegative(),
+  calculationFailedWorksheetCount: z.number().int().nonnegative(),
+  inputRejectedWorksheetCount: z.number().int().nonnegative(),
+  completedOptionCount: z.number().int().nonnegative(),
+  calculationFailedOptionCount: z.number().int().nonnegative(),
+  insufficientEvidenceOptionCount: z.number().int().nonnegative(),
+}).strict();
+
+export const f6ProvenanceSchema = z.object({
+  f2Reference: f6ArtifactReferenceSchema,
+  f3Reference: f6ArtifactReferenceSchema,
+  f4Reference: f6F4ReferenceSchema,
+  f5Reference: f6F5ReferenceSchema,
+  f0Versions: z.object({
+    knowledgeBaseVersion: z.literal("v1"),
+    capabilityVersion: z.string().min(1),
+    interpretationVersion: z.literal("interpretation-rules-v1"),
+  }).strict(),
+  scenarioPolicyVersion: z.literal("f6-scenario-policy-v1"),
+  imageObservationReference: f6ArtifactReferenceSchema.optional(),
+  supplierCapabilityEvidence: z.array(f6SupplierCapabilityEvidenceSchema).optional(),
+  datumEvidence: z.array(f6DatumEvidenceSchema).optional(),
+  costEvidence: f6CostEvidenceSchema.optional(),
+}).strict().superRefine((provenance, context) => {
+  validateF6GovernedEvidenceIdentities([
+    ["supplierCapabilityEvidence", provenance.supplierCapabilityEvidence],
+    ["datumEvidence", provenance.datumEvidence],
+  ], context);
+});
+
+export const f6OptimizationResultSchema = z.object({
+  contractVersion: contractVersionSchema,
+  outputClassification: z.literal("confidential"),
+  featureId: z.literal("F6"),
+  status: z.enum(["completed", "partially_completed", "calculation_failed", "input_rejected"]),
+  optimizationVersion: z.literal("f6-optimization-v1"),
+  workbook: z.object({ fileName: workbookCatalogFileNameSchema, contentHash: sha256Schema }).strict(),
+  worksheets: z.array(f6WorksheetResultSchema).min(1),
+  summary: f6SummarySchema,
+  provenance: f6ProvenanceSchema,
+}).strict().superRefine((result, context) => {
+  const worksheetNames = new Set<string>();
+  result.worksheets.forEach(({ worksheetName }, index) => {
+    if (worksheetNames.has(worksheetName)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet result names must be unique", path: ["worksheets", index, "worksheetName"] });
+    }
+    worksheetNames.add(worksheetName);
+  });
+  const statusCounts = {
+    completed: result.worksheets.filter(({ status }) => status === "completed").length,
+    partially_completed: result.worksheets.filter(({ status }) => status === "partially_completed").length,
+    calculation_failed: result.worksheets.filter(({ status }) => status === "calculation_failed").length,
+    input_rejected: result.worksheets.filter(({ status }) => status === "input_rejected").length,
+  };
+  const options = result.worksheets.flatMap((worksheet) => worksheet.options);
+  const summaryChecks: Array<[keyof z.infer<typeof f6SummarySchema>, number]> = [
+    ["worksheetCount", result.worksheets.length],
+    ["completedWorksheetCount", statusCounts.completed],
+    ["partiallyCompletedWorksheetCount", statusCounts.partially_completed],
+    ["calculationFailedWorksheetCount", statusCounts.calculation_failed],
+    ["inputRejectedWorksheetCount", statusCounts.input_rejected],
+    ["completedOptionCount", options.filter(({ status }) => status === "completed").length],
+    ["calculationFailedOptionCount", options.filter(({ status }) => status === "calculation_failed").length],
+    ["insufficientEvidenceOptionCount", options.filter(({ status }) => status === "insufficient_evidence").length],
+  ];
+  summaryChecks.forEach(([field, expected]) => {
+    if (result.summary[field] !== expected) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: `${field} must match worksheet results`, path: ["summary", field] });
+    }
+  });
+  const expectedStatus = statusCounts.input_rejected === result.worksheets.length
+    ? "input_rejected"
+    : statusCounts.calculation_failed === result.worksheets.length
+      ? "calculation_failed"
+      : statusCounts.partially_completed > 0 || statusCounts.calculation_failed > 0 || statusCounts.input_rejected > 0
+      ? "partially_completed"
+      : "completed";
+  if (result.status !== expectedStatus) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "root status must match worksheet statuses", path: ["status"] });
+  }
+  result.worksheets.forEach((worksheet, worksheetIndex) => {
+    if (worksheet.baselineIdentity.worksheetName !== worksheet.worksheetName) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline identity worksheet must match worksheet result", path: ["worksheets", worksheetIndex, "baselineIdentity", "worksheetName"] });
+    }
+    if (worksheet.baselineIdentity.workbookContentHash !== result.workbook.contentHash) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline identity workbook must match result workbook", path: ["worksheets", worksheetIndex, "baselineIdentity", "workbookContentHash"] });
+    }
+    if (worksheet.baselineIdentity.calculationVersion !== result.provenance.f4Reference.calculationVersion) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline calculation version must match F4 provenance", path: ["worksheets", worksheetIndex, "baselineIdentity", "calculationVersion"] });
+    }
+    const expectedRunReference = `${result.provenance.f4Reference.runId}-${worksheet.f4CalculationIndex}`;
+    if (worksheet.baselineIdentity.runReference !== expectedRunReference) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline run must derive from F4 provenance and calculation index", path: ["worksheets", worksheetIndex, "baselineIdentity", "runReference"] });
+    }
+    const validateUniqueField = <T>(
+      records: readonly T[],
+      field: keyof T,
+      collection: "options" | "risks" | "recommendations" | "clarifications",
+    ): void => {
+      const seen = new Set<unknown>();
+      records.forEach((record, recordIndex) => {
+        const value = record[field];
+        if (seen.has(value)) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: `${String(field)} must be unique per worksheet`, path: ["worksheets", worksheetIndex, collection, recordIndex, String(field)] });
+        }
+        seen.add(value);
+      });
+    };
+    validateUniqueField(worksheet.risks, "riskId", "risks");
+    validateUniqueField(worksheet.clarifications, "clarificationId", "clarifications");
+    if (worksheet.status === "input_rejected") return;
+    if (worksheet.targetCapability.source === "controlled_default"
+      && (worksheet.targetCapability.targetCpk !== 1.33 || worksheet.targetCapability.targetSigmaLevel !== 4)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "controlled default target must be Cpk 1.33 at sigma level 4", path: ["worksheets", worksheetIndex, "targetCapability"] });
+    }
+    validateUniqueField(worksheet.options, "optionId", "options");
+    validateUniqueField(worksheet.recommendations, "recommendationId", "recommendations");
+    const seenRanks = new Set<number>();
+    worksheet.options.forEach((option, optionIndex) => {
+      if (option.status !== "completed" || option.impactRank === null) return;
+      const impactRank = option.impactRank;
+      if (seenRanks.has(impactRank)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "nonnull impactRank must be unique per worksheet", path: ["worksheets", worksheetIndex, "options", optionIndex, "impactRank"] });
+      }
+      seenRanks.add(impactRank);
+    });
+
+    const optionById = new Map(worksheet.options.map((option) => [option.optionId, option]));
+    worksheet.recommendations.forEach((recommendation, recommendationIndex) => {
+      const option = recommendation.optionId === undefined ? undefined : optionById.get(recommendation.optionId);
+      if (recommendation.optionId !== undefined
+        && (option?.status !== "completed" || option.feasibility.status !== "supported")) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "recommendations may reference only completed supported options", path: ["worksheets", worksheetIndex, "recommendations", recommendationIndex, "optionId"] });
+      }
+    });
+    const highestImpactOption = worksheet.highestImpactAction === undefined
+      ? undefined
+      : optionById.get(worksheet.highestImpactAction.optionId);
+    if (worksheet.highestImpactAction !== undefined
+      && (highestImpactOption?.status !== "completed" || highestImpactOption.feasibility.status !== "supported")) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "highest impact action must reference a completed supported option", path: ["worksheets", worksheetIndex, "highestImpactAction", "optionId"] });
+    }
+    const costEvidence = result.provenance.costEvidence;
+    if (costEvidence === undefined && worksheet.roiStatus !== "not_computed") {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "ROI must not be computed without controlled cost evidence", path: ["worksheets", worksheetIndex, "roiStatus"] });
+    }
+    if (worksheet.roiStatus === "computed") {
+      const rankedSupportedOptions = worksheet.options.filter((option): option is z.infer<typeof f6CompletedOptionSchema> =>
+        option.status === "completed" && option.feasibility.status === "supported" && option.impactRank !== null);
+      if (rankedSupportedOptions.length === 0) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "computed ROI requires a ranked supported completed option", path: ["worksheets", worksheetIndex, "roiStatus"] });
+      }
+      rankedSupportedOptions.forEach((option) => {
+        const optionIndex = worksheet.options.indexOf(option);
+        if (typeof option.relativeCost !== "number" || option.relativeCost <= 0 || typeof option.roiScore !== "number") {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "computed ROI requires positive matching cost evidence and numeric option values", path: ["worksheets", worksheetIndex, "options", optionIndex] });
+        }
+      });
+    }
+    worksheet.options.forEach((option, optionIndex) => {
+      if (option.status === "calculation_failed") return;
+      const referencesEvidence = (evidence: { source: string; contentHash: string }): boolean =>
+        option.evidenceReferences.some((reference) =>
+          reference.artifact === evidence.source && reference.contentHash === evidence.contentHash);
+      if (option.optionKind === "improve_supplier_capability"
+        && option.evidenceScope === undefined
+        && (result.provenance.supplierCapabilityEvidence ?? []).some(referencesEvidence)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "supplier evidenceScope is required when governed supplier evidence is referenced", path: ["worksheets", worksheetIndex, "options", optionIndex, "evidenceScope"] });
+      }
+      if (option.optionKind === "tighten_datum_strategy"
+        && option.evidenceScope === undefined
+        && (result.provenance.datumEvidence ?? []).some(referencesEvidence)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "datum evidenceScope is required when governed datum evidence is referenced", path: ["worksheets", worksheetIndex, "options", optionIndex, "evidenceScope"] });
+      }
+      if (option.optionKind === "improve_supplier_capability" && option.evidenceScope?.kind === "supplier") {
+        const scope = option.evidenceScope;
+        const matches = (result.provenance.supplierCapabilityEvidence ?? []).filter((evidence) =>
+          evidence.source === scope.evidenceReference.artifact
+          && evidence.contentHash === scope.evidenceReference.contentHash
+          && evidence.supplierReference === scope.supplierReference
+          && evidence.processFamily === scope.processFamily
+          && evidence.partCategory === scope.partCategory);
+        if (matches.length !== 1) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "supplier option evidenceScope must match exactly one governed evidence entry", path: ["worksheets", worksheetIndex, "options", optionIndex, "evidenceScope"] });
+        }
+      }
+      if (option.optionKind === "tighten_datum_strategy" && option.evidenceScope?.kind === "datum") {
+        const scope = option.evidenceScope;
+        if (scope.worksheetName !== worksheet.worksheetName) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "datum option evidenceScope worksheet must match the parent worksheet", path: ["worksheets", worksheetIndex, "options", optionIndex, "evidenceScope", "worksheetName"] });
+        }
+        const matches = (result.provenance.datumEvidence ?? []).filter((evidence) => {
+          if (evidence.source !== scope.evidenceReference.artifact
+            || evidence.contentHash !== scope.evidenceReference.contentHash
+            || evidence.worksheetName !== scope.worksheetName) return false;
+          const evidenceSources = new Set(evidence.factorDirections.map(({ tableId, sourceRow, direction }) => `${tableId}\u0000${sourceRow}\u0000${direction}`));
+          return scope.factorSources.length === evidenceSources.size
+            && scope.factorSources.every(({ tableId, sourceRow, direction }) => evidenceSources.has(`${tableId}\u0000${sourceRow}\u0000${direction}`));
+        });
+        if (matches.length !== 1) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "datum option evidenceScope must match exactly one governed evidence entry", path: ["worksheets", worksheetIndex, "options", optionIndex, "evidenceScope"] });
+        }
+      }
+      if (option.status !== "completed") return;
+      const closedRiskIds = new Set(option.closedRiskIds);
+      if (closedRiskIds.size !== option.closedRiskIds.length) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "closedRiskIds must be unique", path: ["worksheets", worksheetIndex, "options", optionIndex, "closedRiskIds"] });
+      }
+      option.closedRiskIds.forEach((riskId, riskIndex) => {
+        const risk = worksheet.risks.find((candidate) => candidate.riskId === riskId);
+        if (risk === undefined) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "closedRiskIds must identify parent worksheet risks", path: ["worksheets", worksheetIndex, "options", optionIndex, "closedRiskIds", riskIndex] });
+        } else if (risk.rating !== "High" && risk.rating !== "Critical") {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "closedRiskIds may identify only High or Critical risks", path: ["worksheets", worksheetIndex, "options", optionIndex, "closedRiskIds", riskIndex] });
+        } else if (risk.status !== "closed"
+          && !(risk.riskId.endsWith(":f5:capability-below-target")
+            && option.resultMetrics.cpk >= worksheet.targetCapability.targetCpk)) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "open risks require explicit option closure evidence", path: ["worksheets", worksheetIndex, "options", optionIndex, "closedRiskIds", riskIndex] });
+        }
+      });
+      if (option.scenarioEvidence.scenarioId !== option.optionId) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "scenario evidence must match optionId", path: ["worksheets", worksheetIndex, "options", optionIndex, "scenarioEvidence", "scenarioId"] });
+      }
+      const scenarioCalculation = option.scenarioEvidence.calculation;
+      if (scenarioCalculation.workbookContentHash !== result.workbook.contentHash) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "scenario evidence workbook must match result workbook", path: ["worksheets", worksheetIndex, "options", optionIndex, "scenarioEvidence", "calculation", "workbookContentHash"] });
+      }
+      if (scenarioCalculation.runReference !== `${result.provenance.f4Reference.runId}-${worksheet.f4CalculationIndex}`) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "scenario evidence run must derive from F4 provenance and calculation index", path: ["worksheets", worksheetIndex, "options", optionIndex, "scenarioEvidence", "calculation", "runReference"] });
+      }
+      if (scenarioCalculation.worksheetSelection.worksheetName !== worksheet.worksheetName) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "scenario evidence worksheet must match parent worksheet", path: ["worksheets", worksheetIndex, "options", optionIndex, "scenarioEvidence", "calculation", "worksheetSelection", "worksheetName"] });
+      }
+      const scenarioBaselineMetrics = {
+        mean: scenarioCalculation.system.mean,
+        rssSigma: scenarioCalculation.system.rssSigma,
+        cp: scenarioCalculation.capability.cp,
+        cpk: scenarioCalculation.capability.cpk,
+        yield: scenarioCalculation.capability.yield,
+        dpm: scenarioCalculation.capability.totalDpm,
+      };
+      for (const field of ["mean", "rssSigma", "cp", "cpk", "yield", "dpm"] as const) {
+        if (!f6NearlyEqual(option.baselineMetrics[field], scenarioBaselineMetrics[field])) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "scenario evidence baseline must match option baseline metrics", path: ["worksheets", worksheetIndex, "options", optionIndex, "scenarioEvidence", "calculation", field] });
+        }
+      }
+      if (scenarioCalculation.scenarios.length !== 1) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "scenario evidence calculation must contain exactly one scenario", path: ["worksheets", worksheetIndex, "options", optionIndex, "scenarioEvidence", "calculation", "scenarios"] });
+      }
+      const matchingScenarios = option.scenarioEvidence.calculation.scenarios.filter(({ scenarioId }) => scenarioId === option.optionId);
+      if (matchingScenarios.length !== 1) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "scenario evidence calculation must contain the option scenario exactly once", path: ["worksheets", worksheetIndex, "options", optionIndex, "scenarioEvidence", "calculation", "scenarios"] });
+      } else {
+        const scenario = matchingScenarios[0]!;
+        if (scenario.baselineRunReference !== scenarioCalculation.runReference) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "scenario baseline run must match scenario calculation run", path: ["worksheets", worksheetIndex, "options", optionIndex, "scenarioEvidence", "calculation", "scenarios", 0, "baselineRunReference"] });
+        }
+        const expectedOverrideFactors = option.factorOverrides.map(({ worksheetName, tableId, sourceRow, ...fields }) => ({
+          source: { worksheetName, tableId, sourceRow },
+          fields: Object.keys(fields).sort(),
+        }));
+        const actualOverrideFactors = scenario.overrides.factors.map(({ source, fields }) => ({
+          source,
+          fields: [...fields].sort(),
+        }));
+        if (JSON.stringify(actualOverrideFactors) !== JSON.stringify(expectedOverrideFactors)) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "scenario overrides must match option factor overrides", path: ["worksheets", worksheetIndex, "options", optionIndex, "scenarioEvidence", "calculation", "scenarios", 0, "overrides", "factors"] });
+        }
+        const scenarioMetrics = {
+          mean: scenario.calculation.system.mean,
+          rssSigma: scenario.calculation.system.rssSigma,
+          cp: scenario.calculation.capability.cp,
+          cpk: scenario.calculation.capability.cpk,
+          yield: scenario.calculation.capability.yield,
+          dpm: scenario.calculation.capability.totalDpm,
+        };
+        for (const field of ["mean", "rssSigma", "cp", "cpk", "yield", "dpm"] as const) {
+          if (!f6NearlyEqual(option.resultMetrics[field], scenarioMetrics[field])) {
+            context.addIssue({ code: z.ZodIssueCode.custom, message: "resultMetrics must match scenario evidence calculation", path: ["worksheets", worksheetIndex, "options", optionIndex, "resultMetrics", field] });
+          }
+        }
+        const scenarioDeltas = {
+          deltaCpk: scenario.deltas.cpk,
+          deltaRssSigma: scenario.deltas.rssSigma,
+          deltaDpm: scenario.deltas.totalDpm,
+          deltaYield: scenario.deltas.yield,
+        };
+        for (const field of ["deltaCpk", "deltaRssSigma", "deltaDpm", "deltaYield"] as const) {
+          if (!f6NearlyEqual(option[field], scenarioDeltas[field])) {
+            context.addIssue({ code: z.ZodIssueCode.custom, message: "option deltas must match scenario evidence deltas", path: ["worksheets", worksheetIndex, "options", optionIndex, field] });
+          }
+        }
+      }
+      for (const field of ["mean", "rssSigma", "cp", "cpk", "yield", "dpm"] as const) {
+        if (!f6NearlyEqual(option.baselineMetrics[field], worksheet.baselineMetrics[field])) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "option baseline metrics must match the parent worksheet", path: ["worksheets", worksheetIndex, "options", optionIndex, "baselineMetrics", field] });
+        }
+      }
+      option.factorOverrides.forEach((override, overrideIndex) => {
+        if (override.worksheetName !== worksheet.worksheetName) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "factor override worksheet must match the parent worksheet", path: ["worksheets", worksheetIndex, "options", optionIndex, "factorOverrides", overrideIndex, "worksheetName"] });
+        }
+      });
+      option.toleranceChanges.forEach((change, changeIndex) => {
+        if (change.worksheetName !== worksheet.worksheetName) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "tolerance change worksheet must match the parent worksheet", path: ["worksheets", worksheetIndex, "options", optionIndex, "toleranceChanges", changeIndex, "worksheetName"] });
+        }
+      });
+      option.reverseSolve?.toleranceChanges.forEach((change, changeIndex) => {
+        if (change.worksheetName !== worksheet.worksheetName) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "reverse-solve tolerance change worksheet must match the parent worksheet", path: ["worksheets", worksheetIndex, "options", optionIndex, "reverseSolve", "toleranceChanges", changeIndex, "worksheetName"] });
+        }
+      });
+      if (worksheet.roiStatus === "not_computed" && option.roiScore !== "not_computed") {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "not-computed ROI requires every completed option ROI score to remain uncomputed", path: ["worksheets", worksheetIndex, "options", optionIndex, "roiScore"] });
+      }
+      if (typeof option.relativeCost === "number") {
+        const matchingCosts = costEvidence?.optionCosts.filter(({ optionKind }) => optionKind === option.optionKind) ?? [];
+        if (matchingCosts.length !== 1 || !f6NearlyEqual(option.relativeCost, matchingCosts[0]!.cost)) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "numeric relative cost must match exactly one governed cost evidence entry", path: ["worksheets", worksheetIndex, "options", optionIndex, "relativeCost"] });
+        }
+        if (costEvidence !== undefined) {
+          const requiredReferences = [
+            { artifact: costEvidence.source, contentHash: costEvidence.contentHash },
+            costEvidence.roiCalculationReference,
+          ];
+          if (requiredReferences.some((required) => !option.evidenceReferences.some((reference) =>
+            reference.artifact === required.artifact && reference.contentHash === required.contentHash))) {
+            context.addIssue({ code: z.ZodIssueCode.custom, message: "numeric cost and ROI require cost source and calculation lineage", path: ["worksheets", worksheetIndex, "options", optionIndex, "evidenceReferences"] });
+          }
+        }
+      } else if (worksheet.roiStatus !== "not_computed") {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "insufficient relative cost is allowed only when ROI is not computed", path: ["worksheets", worksheetIndex, "options", optionIndex, "relativeCost"] });
+      }
+      if (typeof option.roiScore === "number") {
+        if (typeof option.relativeCost !== "number" || option.relativeCost <= 0) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "numeric ROI requires positive governed cost", path: ["worksheets", worksheetIndex, "options", optionIndex, "roiScore"] });
+        } else {
+          const expectedRoi = Math.max(option.deltaCpk, 0) / option.relativeCost;
+          if (!f6NearlyEqual(option.roiScore, expectedRoi)) {
+            context.addIssue({ code: z.ZodIssueCode.custom, message: "ROI score must equal governed positive delta Cpk per cost", path: ["worksheets", worksheetIndex, "options", optionIndex, "roiScore"] });
+          }
+        }
+      }
+    });
+    if (worksheet.roiStatus === "computed") {
+      const rankedSupported = worksheet.options.filter((option): option is z.infer<typeof f6CompletedOptionSchema> =>
+        option.status === "completed" && option.feasibility.status === "supported" && option.impactRank !== null);
+      if (rankedSupported.length === 0 || rankedSupported.some((option) =>
+        typeof option.relativeCost !== "number" || option.relativeCost <= 0 || typeof option.roiScore !== "number")) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "computed ROI requires positive cost and score for every ranked supported option", path: ["worksheets", worksheetIndex, "roiStatus"] });
+      }
+    }
+  });
+});
+
+const f6ReportEvidenceReferencesSchema = z.array(f6ArtifactReferenceSchema).min(1);
+const f6ReportFindingSchema = f6InputFindingSchema.refine(
+  (finding) => finding.evidenceReferences.length > 0,
+  { message: "report findings require evidence", path: ["evidenceReferences"] },
+);
+
+export const f6BlockedWorksheetReportSchema = z.object({
+  worksheetName: z.string().min(1),
+  findings: z.array(f6ReportFindingSchema).min(1),
+}).strict();
+
+const f6ComposedSectionsSchema = z.object({
+  executiveSummary: z.array(z.string().min(1)).max(5),
+  requirementReview: z.object({
+    ctq: z.string().min(1), nominal: z.number().finite(), lowerSpecLimit: z.number().finite(), upperSpecLimit: z.number().finite(),
+    specWidth: z.number().finite().nonnegative(), assessment: z.string().min(1), riskLevel: z.enum(["Low", "Medium", "High", "Critical"]),
+    evidenceReferences: f6ReportEvidenceReferencesSchema,
+  }).strict().refine((review) => review.upperSpecLimit > review.lowerSpecLimit && Math.abs(review.specWidth - (review.upperSpecLimit - review.lowerSpecLimit)) <= 1e-12, {
+    message: "requirement specification bounds and width must be consistent",
+  }),
+  inputValidation: z.array(f6ReportFindingSchema),
+  capabilityAssessment: z.object({
+    metrics: f6MetricsSchema, oosRate: z.number().finite().min(0).max(1), oosPpm: z.number().finite().nonnegative(),
+    findings: z.array(z.string().min(1)).max(3), evidenceReferences: f6ReportEvidenceReferencesSchema,
+  }).strict().superRefine((assessment, context) => {
+    const nearlyEqual = (left: number, right: number): boolean => Math.abs(left - right) <= 1e-9 * Math.max(1, Math.abs(left), Math.abs(right));
+    if (!nearlyEqual(assessment.oosRate, 1 - assessment.metrics.yield)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "oosRate must equal 1 - yield", path: ["oosRate"] });
+    }
+    if (!nearlyEqual(assessment.oosPpm, assessment.metrics.dpm)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "oosPpm must equal dpm", path: ["oosPpm"] });
+    }
+  }),
+  contributorAnalysis: z.object({
+    topContributors: z.array(z.object({ factorName: z.string().min(1), contributionPercent: z.number().finite().min(0).max(100), tableId: z.string().min(1), sourceRow: z.number().int().positive() }).strict()).max(5),
+    top1Concentration: z.number().finite().min(0).max(100), top3Concentration: z.number().finite().min(0).max(100),
+    concentrationAssessment: z.enum(["concentrated", "distributed"]), policyVersion: z.literal("f6-contributor-policy-v1"), evidenceReferences: f6ReportEvidenceReferencesSchema,
+  }).strict(),
+  rootCauseAnalysis: z.object({
+    factBasedFindings: z.array(z.string().min(1)), ruleFindings: z.array(z.string().min(1)),
+    optionFindings: z.array(z.string().min(1)), signals: z.array(z.string().min(1)),
+    evidenceStatus: z.enum(["supported", "insufficient_evidence"]), evidenceReferences: f6ReportEvidenceReferencesSchema,
+  }).strict(),
+  riskAssessment: z.array(z.union([
+    z.object({
+      category: z.enum(["Product", "Manufacturing", "Assembly", "Supplier", "Customer Experience"]),
+      rating: z.enum(["Low", "Medium", "High", "Critical"]), status: z.enum(["open", "closed"]), reason: z.string().min(1), evidenceReferences: f6ReportEvidenceReferencesSchema,
+    }).strict(),
+    z.object({
+      category: z.enum(["Product", "Manufacturing", "Assembly", "Supplier", "Customer Experience"]),
+      rating: z.literal("insufficient_evidence"), status: z.literal("insufficient_evidence"), reason: z.string().min(1), evidenceReferences: f6ReportEvidenceReferencesSchema,
+    }).strict(),
+  ])).superRefine((risks, context) => {
+    for (const category of ["Product", "Manufacturing", "Assembly", "Supplier", "Customer Experience"] as const) {
+      if (!risks.some((risk) => risk.category === category)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: `risk assessment requires ${category}`, path: [] });
+      }
+    }
+  }),
+  recommendations: z.array(z.discriminatedUnion("kind", [
+    z.object({
+      kind: z.literal("verified_option"), recommendationId: z.string().min(1), optionId: z.string().min(1),
+      text: z.string().min(1), expectedBenefit: z.string().min(1), evidenceReferences: f6ReportEvidenceReferencesSchema,
+    }).strict(),
+    z.object({
+      kind: z.literal("evidence_closure"), recommendationId: z.string().min(1), clarificationId: z.string().min(1),
+      text: z.string().min(1), expectedBenefit: z.string().min(1), evidenceReferences: f6ReportEvidenceReferencesSchema,
+    }).strict(),
+  ])),
+  whatIfAnalysis: z.object({
+    options: z.array(z.union([
+      z.object({ optionKind: z.enum(["reduce_top_contributor_20", "reduce_top_3_contributors_30"]), status: z.literal("completed"), summary: z.string().min(1), predictedImprovement: z.number().finite(), evidenceReferences: f6ReportEvidenceReferencesSchema }).strict(),
+      z.object({ optionKind: z.enum(["improve_supplier_capability", "tighten_datum_strategy"]), status: z.literal("completed"), summary: z.string().min(1), predictedImprovement: z.number().finite(), governedEvidenceReference: f6RelativeArtifactPathSchema, evidenceStatus: z.literal("confirmed"), evidenceReferences: f6ReportEvidenceReferencesSchema }).strict(),
+      z.object({ optionKind: f6OptionKindSchema, status: z.literal("calculation_failed"), summary: z.string().min(1), reasonCode: z.string().min(1), evidenceReferences: f6ReportEvidenceReferencesSchema }).strict(),
+      z.object({ optionKind: z.enum(["improve_supplier_capability", "tighten_datum_strategy"]), status: z.literal("insufficient_evidence"), summary: z.string().min(1), predictedImprovement: z.literal("insufficient_evidence"), requiredInputs: z.array(z.string().min(1)).min(1), evidenceReferences: f6ReportEvidenceReferencesSchema }).strict(),
+    ])).length(4).superRefine((options, context) => {
+      const expectedKinds = ["reduce_top_contributor_20", "reduce_top_3_contributors_30", "improve_supplier_capability", "tighten_datum_strategy"] as const;
+      options.forEach((option, index) => {
+        if (option.optionKind !== expectedKinds[index]) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "what-if rows must contain the four controlled options in report order", path: [index, "optionKind"] });
+        }
+      });
+    }),
+    highestImpactAction: z.string().min(1), roiStatus: z.enum(["computed", "not_computed"]), evidenceReferences: f6ReportEvidenceReferencesSchema,
+  }).strict(),
+  finalConclusion: z.array(z.string().min(1)).max(10),
+}).strict();
+
+export const f6ComposedWorksheetReportSchema = z.object({
+  worksheetName: z.string().min(1),
+  status: z.enum(["PASS", "FAIL", "RISK"]),
+  targetCapability: f6TargetCapabilitySchema,
+  confirmedRequirementViolation: z.boolean(),
+  missingCapabilityData: z.literal(false),
+  evidenceReferences: f6ReportEvidenceReferencesSchema,
+  sections: f6ComposedSectionsSchema,
+}).strict().superRefine((worksheet, context) => {
+  const cpk = worksheet.sections.capabilityAssessment.metrics.cpk;
+  const hasConfirmedRequirementViolation = worksheet.sections.inputValidation.some(({ findingKind }) =>
+    findingKind === "confirmed_requirement_violation");
+  if (worksheet.confirmedRequirementViolation !== hasConfirmedRequirementViolation) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "confirmedRequirementViolation must match input validation findings", path: ["confirmedRequirementViolation"] });
+  }
+  const hasOpenHighRisk = worksheet.sections.riskAssessment.some((risk) => risk.status === "open" && (risk.rating === "High" || risk.rating === "Critical"));
+  const hasInsufficientRiskEvidence = worksheet.sections.riskAssessment.some((risk) => risk.status === "insufficient_evidence");
+  const hasOptimizationFailure = worksheet.sections.inputValidation.some(({ findingKind }) => findingKind === "optimization_failure")
+    || worksheet.sections.whatIfAnalysis.options.some(({ status }) => status === "calculation_failed");
+  const expectedStatus = worksheet.confirmedRequirementViolation
+    ? "FAIL"
+    : cpk < 1
+      ? "FAIL"
+      : cpk < worksheet.targetCapability.targetCpk || hasOptimizationFailure || hasOpenHighRisk || hasInsufficientRiskEvidence
+        ? "RISK"
+        : "PASS";
+  if (worksheet.status !== expectedStatus) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet status must be derived from capability, requirement, and open risk evidence", path: ["status"] });
+  }
+});
+
+export const f6ComposedEngineeringReportSchema = z.object({
+  contractVersion: contractVersionSchema,
+  outputClassification: z.literal("confidential"),
+  reportVersion: z.literal("f6-composed-report-v1"),
+  workbook: z.object({ fileName: workbookCatalogFileNameSchema, contentHash: sha256Schema }).strict(),
+  overallStatus: z.enum(["PASS", "FAIL", "RISK"]),
+  workbookExecutiveSummary: z.array(z.string().min(1)).max(5),
+  blockedWorksheets: z.array(f6BlockedWorksheetReportSchema),
+  worksheets: z.array(f6ComposedWorksheetReportSchema),
+}).strict().superRefine((report, context) => {
+  if (report.blockedWorksheets.length + report.worksheets.length === 0) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "report requires at least one blocked or ready worksheet", path: ["worksheets"] });
+  }
+  const blockedNames = new Set<string>();
+  report.blockedWorksheets.forEach(({ worksheetName }, index) => {
+    if (blockedNames.has(worksheetName)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "blocked worksheet identities must be unique", path: ["blockedWorksheets", index, "worksheetName"] });
+    }
+    blockedNames.add(worksheetName);
+  });
+  const worksheetNames = new Set<string>();
+  report.worksheets.forEach(({ worksheetName }, index) => {
+    if (worksheetNames.has(worksheetName)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "ready worksheet identities must be unique", path: ["worksheets", index, "worksheetName"] });
+    }
+    if (blockedNames.has(worksheetName)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "blocked and ready worksheet identities must be disjoint", path: ["worksheets", index, "worksheetName"] });
+    }
+    worksheetNames.add(worksheetName);
+  });
+  const statuses = report.worksheets.map(({ status }) => status);
+  const expectedStatus = statuses.includes("FAIL")
+    ? "FAIL"
+    : statuses.includes("RISK") || report.blockedWorksheets.length > 0
+      ? "RISK"
+      : "PASS";
+  if (report.overallStatus !== expectedStatus) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "overallStatus must match the worst worksheet status", path: ["overallStatus"] });
+  }
+});
+
+export type F6OptionKind = z.infer<typeof f6OptionKindSchema>;
+export type F6Metrics = z.infer<typeof f6MetricsSchema>;
+export type F6ToleranceChange = z.infer<typeof f6ToleranceChangeSchema>;
+export type F6ControlledScenario = z.infer<typeof f6ControlledScenarioSchema>;
+export type F6ReverseSolveResult = z.infer<typeof f6ReverseSolveResultSchema>;
+export type F6ApportionmentResult = z.infer<typeof f6ApportionmentResultSchema>;
+export type F6CapabilityBound = z.infer<typeof f6CapabilityBoundSchema>;
+export type F6FeasibilityAssessment = z.infer<typeof f6FeasibilityAssessmentSchema>;
+export type F6SupplierCapabilityEvidence = z.infer<typeof f6SupplierCapabilityEvidenceSchema>;
+export type F6DatumEvidence = z.infer<typeof f6DatumEvidenceSchema>;
+export type F6CostEvidence = z.infer<typeof f6CostEvidenceSchema>;
+export type F6InputFinding = z.infer<typeof f6InputFindingSchema>;
+export type F6Risk = z.infer<typeof f6RiskSchema>;
+export type F6Recommendation = z.infer<typeof f6RecommendationSchema>;
+export type F6Clarification = z.infer<typeof f6ClarificationSchema>;
+export type F6TargetCapability = z.infer<typeof f6TargetCapabilitySchema>;
+export type F6Option = z.infer<typeof f6OptionSchema>;
+export type F6WorksheetInput = z.infer<typeof f6WorksheetInputSchema>;
+export type F6OptimizationRequest = z.infer<typeof f6OptimizationRequestSchema>;
+export type F6WorksheetResult = z.infer<typeof f6WorksheetResultSchema>;
+export type F6Summary = z.infer<typeof f6SummarySchema>;
+export type F6Provenance = z.infer<typeof f6ProvenanceSchema>;
+export type F6OptimizationResult = z.infer<typeof f6OptimizationResultSchema>;
+export type F6BlockedWorksheetReport = z.infer<typeof f6BlockedWorksheetReportSchema>;
+export type F6ComposedWorksheetReport = z.infer<typeof f6ComposedWorksheetReportSchema>;
+export type F6ComposedEngineeringReport = z.infer<typeof f6ComposedEngineeringReportSchema>;
+
 export type CalculationScenarioOverride = z.infer<typeof calculationScenarioOverrideSchema>;
 export type CalculationRecommendation = z.infer<typeof calculationRecommendationSchema>;
 export type CalculationFactorSource = z.infer<typeof calculationFactorSourceSchema>;
@@ -5508,6 +7342,15 @@ export type DrawingGovernanceRequest = z.infer<typeof drawingGovernanceRequestSc
 export type DrawingGovernanceResult = z.infer<typeof drawingGovernanceResultSchema>;
 export type InterpretationRequest = z.infer<typeof interpretationRequestSchema>;
 export type InterpretationResult = z.infer<typeof interpretationResultSchema>;
+export type F5CoreStructuralScope = z.infer<typeof f5CoreStructuralScopeSchema>;
+export type F5ContextSnapshotRowV2 = z.infer<typeof f5ContextSnapshotRowV2Schema>;
+export type F5ContextSnapshotV2 = z.infer<typeof f5ContextSnapshotV2Schema>;
+export type F5VisualObservationV2 = z.infer<typeof f5VisualObservationV2Schema>;
+export type F5ContextualSignalV2 = z.infer<typeof f5ContextualSignalV2Schema>;
+export type F5ContextualObservationV2 = z.infer<typeof f5ContextualObservationV2Schema>;
+export type F5ContextualObservationWorksheetV2 = z.infer<typeof f5ContextualObservationWorksheetV2Schema>;
+export type F5ImageObservationArtifactV1 = z.infer<typeof f5ImageObservationArtifactV1Schema>;
+export type F5ImageObservationArtifactV2 = z.infer<typeof f5ImageObservationArtifactV2Schema>;
 export type F5ImageObservationArtifact = z.infer<typeof f5ImageObservationArtifactSchema>;
 export type F5DataInterpretationRequest = z.infer<typeof f5DataInterpretationRequestSchema>;
 export type F5DataInterpretationResult = z.infer<typeof f5DataInterpretationResultSchema>;

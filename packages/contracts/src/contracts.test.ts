@@ -24,7 +24,21 @@ import {
   f4WorkflowCalculationResultSchema,
   f5DataInterpretationRequestSchema,
   f5DataInterpretationResultSchema,
+  f6ApportionmentResultSchema,
+  f6CapabilityBoundSchema,
+  f6ComposedEngineeringReportSchema,
+  f6ControlledScenarioSchema,
+  f6CostEvidenceSchema,
+  f6DatumEvidenceSchema,
+  f6FeasibilityAssessmentSchema,
+  f6InputFindingSchema,
+  f6OptimizationRequestSchema,
+  f6OptimizationResultSchema,
+  f6ReverseSolveResultSchema,
+  f6SupplierCapabilityEvidenceSchema,
+  f6ToleranceChangeSchema,
   f5ImageObservationArtifactSchema,
+  f5ImageObservationArtifactV2Schema,
   f5ObjectiveInterpretationCompletedResultSchema,
   f2InitialWorkflowRequestSchema,
   f2InitialWorkflowResultSchema,
@@ -1683,7 +1697,7 @@ describe("F5.1 objective interpretation contracts", () => {
     status: "completed" as const,
     calculationVersion: "excel-ta-v1" as const,
     projectReference: "controlled-project-reference",
-    runReference: "controlled-run-reference",
+    runReference: "controlled-run-reference-1",
     workbookContentHash: contentHash,
     worksheetSelection: {
       worksheetName: "Analysis-A",
@@ -2463,6 +2477,57 @@ describe("F5.1 objective interpretation contracts", () => {
         observations: [imageObservation],
       }],
     };
+    const coreScopes = [
+      "tolerance_loop_closure",
+      "datum_chain",
+      "assembly_datum_face",
+      "stack_start",
+      "direction",
+    ] as const;
+    const validV2 = {
+      contractVersion: "v1" as const,
+      inputClassification: "confidential" as const,
+      observationVersion: "f5-image-observation-v2" as const,
+      workbookContentHash: contentHash,
+      worksheets: [{
+        worksheetName: "Analysis-A",
+        imageReference,
+        contextSnapshot: {
+          dimensionDescription: "Device gap",
+          rows: [{
+            tableId: "table-a",
+            sourceRow: 14,
+            partName: "Bracket",
+            partSubsystem: "Bracket",
+            partCategory: "CNC",
+            factorName: "Bracket height",
+            factorDescription: "Bracket height",
+            nominal: 1,
+            upperTolerance: 0.1,
+            lowerTolerance: -0.1,
+            sigmaLevel: 4,
+            sourceCells: { factorName: "Analysis-A!G14", partName: "Analysis-A!H14" },
+          }],
+        },
+        observations: coreScopes.map((scope) => ({
+          scope,
+          visualObservation: {
+            observedValue: "ambiguous" as const,
+            confidence: "medium" as const,
+            visibleBasis: `Visible basis for ${scope}.`,
+            visibleLabels: scope === "direction" ? ["Bracket height"] : [],
+            reviewStatus: "unreviewed" as const,
+          },
+          contextualSignal: {
+            signalValue: "insufficient_evidence" as const,
+            textBasis: `Context basis for ${scope}.`,
+            linkedSourceRows: [],
+            linkedVisualLabels: [],
+            requiresEngineeringReview: true as const,
+          },
+        })),
+      }],
+    };
     const governanceRow = {
       factorInstanceId: "e".repeat(64),
       drawingDimensionKey: "f".repeat(64),
@@ -2506,6 +2571,76 @@ describe("F5.1 objective interpretation contracts", () => {
         imageObservations: [imageObservation],
       }],
     };
+
+    it("accepts a clean enhanced-observation fallback with no image observations", () => {
+      const fallbackRequest = structuredClone(rootRequest);
+      fallbackRequest.worksheets[0]!.imageObservations = [];
+
+      expect(f5DataInterpretationRequestSchema.safeParse({
+        ...fallbackRequest,
+        observationFallback: { reasonCode: "enhanced_observation_rejected" },
+      }).success).toBe(true);
+      expect(f5DataInterpretationRequestSchema.safeParse({
+        ...fallbackRequest,
+        observationFallback: { reasonCode: "unvalidated_reason" },
+      }).success).toBe(false);
+    });
+
+    it("rejects fallback combined with v1 image observations", () => {
+      const parsed = f5DataInterpretationRequestSchema.safeParse({
+        ...rootRequest,
+        observationFallback: { reasonCode: "enhanced_observation_rejected" },
+      });
+
+      expect(parsed.success).toBe(false);
+      if (!parsed.success) {
+        expect(parsed.error.issues.map(({ path }) => path)).toContainEqual([
+          "worksheets", 0, "imageObservations",
+        ]);
+      }
+    });
+
+    const contextualRootRequest = () => {
+      const request = structuredClone(rootRequest) as unknown as Record<string, unknown>;
+      const worksheet = (request.worksheets as Array<Record<string, unknown>>)[0]!;
+      const snapshot = structuredClone(validV2.worksheets[0]!.contextSnapshot);
+      const snapshotRow = snapshot.rows[0]!;
+      const row = rootRequest.worksheets[0]!.governanceRows[0]!;
+      Object.assign(snapshotRow, {
+        tableId: row.source.tableId,
+        sourceRow: row.source.sourceRow,
+        partName: row.partSubsystem,
+        partSubsystem: row.partSubsystem,
+        partCategory: row.partCategory,
+        factorName: row.factorDescription,
+        factorDescription: row.factorDescription,
+        nominal: row.nominal,
+        upperTolerance: row.upperTolerance,
+        lowerTolerance: row.lowerTolerance,
+        sigmaLevel: row.sigmaLevel,
+        sourceCells: structuredClone(row.source.sourceCells),
+      });
+      snapshot.dimensionDescription = row.dimensionDescription;
+      worksheet.observationVersion = validV2.observationVersion;
+      worksheet.contextSnapshot = snapshot;
+      worksheet.imageObservations = structuredClone(validV2.worksheets[0]!.observations);
+      return request;
+    };
+
+    it("rejects fallback combined with v2 worksheet fields and observations", () => {
+      const request = contextualRootRequest();
+      request.observationFallback = { reasonCode: "enhanced_observation_rejected" };
+
+      const parsed = f5DataInterpretationRequestSchema.safeParse(request);
+
+      expect(parsed.success).toBe(false);
+      if (!parsed.success) {
+        const paths = parsed.error.issues.map(({ path }) => path);
+        expect(paths).toContainEqual(["worksheets", 0, "observationVersion"]);
+        expect(paths).toContainEqual(["worksheets", 0, "contextSnapshot"]);
+        expect(paths).toContainEqual(["worksheets", 0, "imageObservations"]);
+      }
+    });
     const rootRule = {
       statementId: "root-rule-performance",
       type: "RULE" as const,
@@ -2585,6 +2720,7 @@ describe("F5.1 objective interpretation contracts", () => {
         imageReference,
         confidence: "high" as const,
         visibleBasis: "The controlled worksheet image visibly identifies the stack start.",
+        visibleLabels: [] as string[],
         reviewStatus: "unreviewed" as const,
       },
     };
@@ -2745,6 +2881,282 @@ describe("F5.1 objective interpretation contracts", () => {
       }
     });
 
+    it("preserves historical v1 and accepts valid v2 through its schema and the version union", () => {
+      expect(f5ImageObservationArtifactSchema.parse(observationArtifact)).toEqual(observationArtifact);
+      expect(f5ImageObservationArtifactV2Schema.parse(validV2)).toEqual(validV2);
+      expect(f5ImageObservationArtifactSchema.parse(validV2)).toEqual(validV2);
+      expect(f5ImageObservationArtifactSchema.safeParse({
+        ...validV2,
+        observationVersion: "f5-image-observation-v3",
+      }).success).toBe(false);
+    });
+
+    it("requires exactly one of every core scope in each v2 worksheet", () => {
+      const worksheet = validV2.worksheets[0]!;
+      expect(f5ImageObservationArtifactV2Schema.safeParse({
+        ...validV2,
+        worksheets: [{ ...worksheet, observations: worksheet.observations.slice(1) }],
+      }).success).toBe(false);
+      expect(f5ImageObservationArtifactV2Schema.safeParse({
+        ...validV2,
+        worksheets: [{
+          ...worksheet,
+          observations: [...worksheet.observations.slice(0, -1), worksheet.observations[0]],
+        }],
+      }).success).toBe(false);
+    });
+
+    it("rejects duplicate v2 worksheets and duplicate snapshot row keys", () => {
+      const worksheet = validV2.worksheets[0]!;
+      expect(f5ImageObservationArtifactV2Schema.safeParse({
+        ...validV2,
+        worksheets: [worksheet, worksheet],
+      }).success).toBe(false);
+      expect(f5ImageObservationArtifactV2Schema.safeParse({
+        ...validV2,
+        worksheets: [{
+          ...worksheet,
+          contextSnapshot: {
+            ...worksheet.contextSnapshot,
+            rows: [worksheet.contextSnapshot.rows[0], worksheet.contextSnapshot.rows[0]],
+          },
+        }],
+      }).success).toBe(false);
+    });
+
+    it("requires sourceCells and keeps contextual links within the snapshot", () => {
+      const missingSourceCells = structuredClone(validV2);
+      delete (missingSourceCells.worksheets[0]!.contextSnapshot.rows[0] as { sourceCells?: unknown }).sourceCells;
+      expect(f5ImageObservationArtifactV2Schema.safeParse(missingSourceCells).success).toBe(false);
+
+      const outsideSnapshot = structuredClone(validV2);
+      outsideSnapshot.worksheets[0]!.observations[0]!.contextualSignal.linkedSourceRows = [{
+        tableId: "table-a",
+        sourceRow: 99,
+      }];
+      expect(f5ImageObservationArtifactV2Schema.safeParse(outsideSnapshot).success).toBe(false);
+    });
+
+    it.each([
+      "tolerance_loop_closure",
+      "datum_chain",
+      "assembly_datum_face",
+      "stack_start",
+    ] as const)("accepts %s linked rows without visual labels", (scope) => {
+      const artifact = structuredClone(validV2);
+      const worksheet = artifact.worksheets[0]!;
+      const snapshotRow = worksheet.contextSnapshot.rows[0]!;
+      const observation = worksheet.observations.find((candidate) => candidate.scope === scope)!;
+      observation.visualObservation.observedValue = "visible";
+      observation.contextualSignal.signalValue = "indicated_consistent";
+      observation.contextualSignal.linkedSourceRows = [{
+        tableId: snapshotRow.tableId,
+        sourceRow: snapshotRow.sourceRow,
+      }];
+
+      expect(observation.contextualSignal.linkedVisualLabels).toEqual([]);
+      expect(f5ImageObservationArtifactV2Schema.safeParse(artifact).success).toBe(true);
+    });
+
+    it("rejects duplicate and outside-snapshot non-direction linked rows", () => {
+      const createLinkedDatumChain = () => {
+        const artifact = structuredClone(validV2);
+        const worksheet = artifact.worksheets[0]!;
+        const snapshotRow = worksheet.contextSnapshot.rows[0]!;
+        const observation = worksheet.observations.find(({ scope }) => scope === "datum_chain")!;
+        observation.visualObservation.observedValue = "visible";
+        observation.contextualSignal.signalValue = "indicated_consistent";
+        observation.contextualSignal.linkedSourceRows = [{
+          tableId: snapshotRow.tableId,
+          sourceRow: snapshotRow.sourceRow,
+        }];
+        return { artifact, observation };
+      };
+
+      const duplicate = createLinkedDatumChain();
+      duplicate.observation.contextualSignal.linkedSourceRows.push(
+        structuredClone(duplicate.observation.contextualSignal.linkedSourceRows[0]!),
+      );
+      expect(f5ImageObservationArtifactV2Schema.safeParse(duplicate.artifact).success).toBe(false);
+
+      const outsideSnapshot = createLinkedDatumChain();
+      outsideSnapshot.observation.contextualSignal.linkedSourceRows[0]!.sourceRow = 99;
+      expect(f5ImageObservationArtifactV2Schema.safeParse(outsideSnapshot.artifact).success).toBe(false);
+    });
+
+    it("restricts unlinked contextual signals and always requires engineering review", () => {
+      const unlinkedConclusion = structuredClone(validV2);
+      unlinkedConclusion.worksheets[0]!.observations[0]!.contextualSignal.signalValue = "indicated_consistent" as "insufficient_evidence";
+      expect(f5ImageObservationArtifactV2Schema.safeParse(unlinkedConclusion).success).toBe(false);
+
+      const reviewDisabled = structuredClone(validV2);
+      reviewDisabled.worksheets[0]!.observations[0]!.contextualSignal.requiresEngineeringReview = false as true;
+      expect(f5ImageObservationArtifactV2Schema.safeParse(reviewDisabled).success).toBe(false);
+    });
+
+    it("requires visible core markers before consistency or source-row linkage", () => {
+      const worksheet = validV2.worksheets[0]!;
+      const snapshotRow = worksheet.contextSnapshot.rows[0]!;
+
+      for (const scope of ["stack_start", "assembly_datum_face"] as const) {
+        const artifact = structuredClone(validV2);
+        const observation = artifact.worksheets[0]!.observations.find((candidate) => candidate.scope === scope)!;
+        observation.visualObservation.observedValue = "not_visible";
+        observation.contextualSignal.signalValue = "indicated_consistent";
+        observation.contextualSignal.linkedSourceRows = [{ tableId: snapshotRow.tableId, sourceRow: snapshotRow.sourceRow }];
+        expect(f5ImageObservationArtifactV2Schema.safeParse(artifact).success).toBe(false);
+      }
+
+      const directionWithoutVisibleLabel = structuredClone(validV2);
+      const direction = directionWithoutVisibleLabel.worksheets[0]!.observations.find(
+        (observation) => observation.scope === "direction",
+      )!;
+      direction.visualObservation.observedValue = "ambiguous";
+      direction.contextualSignal.signalValue = "ambiguous";
+      direction.contextualSignal.linkedSourceRows = [{ tableId: snapshotRow.tableId, sourceRow: snapshotRow.sourceRow }];
+      expect(f5ImageObservationArtifactV2Schema.safeParse(directionWithoutVisibleLabel).success).toBe(false);
+    });
+
+    it("requires structured visible label evidence for direction links and conclusions", () => {
+      const artifact = structuredClone(validV2);
+      const worksheet = artifact.worksheets[0]!;
+      const snapshotRow = worksheet.contextSnapshot.rows[0]!;
+      const direction = worksheet.observations.find((observation) => observation.scope === "direction")!;
+      direction.visualObservation.observedValue = "visible";
+      direction.visualObservation.visibleLabels = ["Bracket height"];
+      direction.contextualSignal.signalValue = "indicated_consistent";
+      direction.contextualSignal.linkedSourceRows = [{
+        tableId: snapshotRow.tableId,
+        sourceRow: snapshotRow.sourceRow,
+      }];
+
+      expect(f5ImageObservationArtifactV2Schema.safeParse(artifact).success).toBe(false);
+
+      direction.contextualSignal.linkedVisualLabels = [{
+        label: "Bracket height",
+        tableId: snapshotRow.tableId,
+        sourceRow: snapshotRow.sourceRow,
+      }];
+      expect(f5ImageObservationArtifactV2Schema.safeParse(artifact).success).toBe(true);
+    });
+
+    it("rejects mismatched, duplicate, and outside-snapshot direction label references", () => {
+      const createLinkedDirection = () => {
+        const artifact = structuredClone(validV2);
+        const worksheet = artifact.worksheets[0]!;
+        const snapshotRow = worksheet.contextSnapshot.rows[0]!;
+        const direction = worksheet.observations.find((observation) => observation.scope === "direction")!;
+        direction.visualObservation.observedValue = "visible";
+        direction.visualObservation.visibleLabels = ["Bracket height"];
+        direction.contextualSignal.signalValue = "indicated_consistent";
+        direction.contextualSignal.linkedSourceRows = [{
+          tableId: snapshotRow.tableId,
+          sourceRow: snapshotRow.sourceRow,
+        }];
+        direction.contextualSignal.linkedVisualLabels = [{
+          label: "Bracket height",
+          tableId: snapshotRow.tableId,
+          sourceRow: snapshotRow.sourceRow,
+        }];
+        return { artifact, direction };
+      };
+
+      const mismatched = createLinkedDirection();
+      mismatched.direction.contextualSignal.linkedVisualLabels[0]!.sourceRow = 99;
+      expect(f5ImageObservationArtifactV2Schema.safeParse(mismatched.artifact).success).toBe(false);
+
+      const duplicate = createLinkedDirection();
+      duplicate.direction.contextualSignal.linkedVisualLabels.push(
+        structuredClone(duplicate.direction.contextualSignal.linkedVisualLabels[0]!),
+      );
+      expect(f5ImageObservationArtifactV2Schema.safeParse(duplicate.artifact).success).toBe(false);
+
+      const outsideSnapshot = createLinkedDirection();
+      outsideSnapshot.direction.contextualSignal.linkedSourceRows[0]!.sourceRow = 99;
+      outsideSnapshot.direction.contextualSignal.linkedVisualLabels[0]!.sourceRow = 99;
+      expect(f5ImageObservationArtifactV2Schema.safeParse(outsideSnapshot.artifact).success).toBe(false);
+    });
+
+    it("rejects invented or duplicate structured direction labels", () => {
+      const artifact = structuredClone(validV2);
+      const worksheet = artifact.worksheets[0]!;
+      const snapshotRow = worksheet.contextSnapshot.rows[0]!;
+      const direction = worksheet.observations.find(({ scope }) => scope === "direction")!;
+      direction.visualObservation.observedValue = "visible";
+      direction.visualObservation.visibleLabels = ["Bracket height"];
+      direction.contextualSignal.signalValue = "indicated_consistent";
+      direction.contextualSignal.linkedSourceRows = [{
+        tableId: snapshotRow.tableId,
+        sourceRow: snapshotRow.sourceRow,
+      }];
+      direction.contextualSignal.linkedVisualLabels = [{
+        label: "Invented label",
+        tableId: snapshotRow.tableId,
+        sourceRow: snapshotRow.sourceRow,
+      }];
+      expect(f5ImageObservationArtifactV2Schema.safeParse(artifact).success).toBe(false);
+
+      direction.contextualSignal.linkedVisualLabels[0]!.label = "Bracket height";
+      direction.visualObservation.visibleLabels.push("Bracket height");
+      expect(f5ImageObservationArtifactV2Schema.safeParse(artifact).success).toBe(false);
+    });
+
+    it("rejects visual label evidence for non-direction scopes", () => {
+      const artifact = structuredClone(validV2);
+      const worksheet = artifact.worksheets[0]!;
+      const snapshotRow = worksheet.contextSnapshot.rows[0]!;
+      const stackStart = worksheet.observations.find((observation) => observation.scope === "stack_start")!;
+      stackStart.contextualSignal.linkedVisualLabels = [{
+        label: "Stack start",
+        tableId: snapshotRow.tableId,
+        sourceRow: snapshotRow.sourceRow,
+      }];
+
+      expect(f5ImageObservationArtifactV2Schema.safeParse(artifact).success).toBe(false);
+    });
+
+    it("requires both v2 confirmation fields and forbids them for other review statuses", () => {
+      const confirmed = structuredClone(validV2);
+      confirmed.worksheets[0]!.observations[0]!.visualObservation = {
+        ...confirmed.worksheets[0]!.observations[0]!.visualObservation,
+        reviewStatus: "confirmed",
+        confirmedBy: "controlled-reviewer",
+        confirmedAt: "2026-08-11T08:00:00.000Z",
+      } as typeof confirmed.worksheets[0]["observations"][number]["visualObservation"];
+      expect(f5ImageObservationArtifactV2Schema.safeParse(confirmed).success).toBe(true);
+
+      for (const field of ["confirmedBy", "confirmedAt"] as const) {
+        const missingField = structuredClone(confirmed);
+        delete (missingField.worksheets[0]!.observations[0]!.visualObservation as Record<string, unknown>)[field];
+        expect(f5ImageObservationArtifactV2Schema.safeParse(missingField).success).toBe(false);
+      }
+
+      const unreviewed = structuredClone(confirmed);
+      unreviewed.worksheets[0]!.observations[0]!.visualObservation.reviewStatus = "unreviewed";
+      expect(f5ImageObservationArtifactV2Schema.safeParse(unreviewed).success).toBe(false);
+    });
+
+    it("rejects v2 image identity mismatches and strict unknown fields", () => {
+      const worksheet = validV2.worksheets[0]!;
+      expect(f5ImageObservationArtifactV2Schema.safeParse({
+        ...validV2,
+        worksheets: [{
+          ...worksheet,
+          imageReference: { ...worksheet.imageReference, worksheetName: "Analysis-B" },
+        }],
+      }).success).toBe(false);
+      expect(f5ImageObservationArtifactV2Schema.safeParse({
+        ...validV2,
+        worksheets: [{
+          ...worksheet,
+          contextSnapshot: {
+            ...worksheet.contextSnapshot,
+            rows: [{ ...worksheet.contextSnapshot.rows[0], unexpected: true }],
+          },
+        }],
+      }).success).toBe(false);
+    });
+
     it("rejects duplicate or mismatched observation worksheets, scopes, and paths", () => {
       expect(f5ImageObservationArtifactSchema.safeParse({
         ...observationArtifact,
@@ -2788,6 +3200,151 @@ describe("F5.1 objective interpretation contracts", () => {
       for (const mutation of mutations) {
         expect(f5DataInterpretationRequestSchema.safeParse({ ...rootRequest, ...mutation }).success).toBe(false);
       }
+    });
+
+    it("accepts the loader v2 request shape while preserving the v1 request shape", () => {
+      const v2Request = contextualRootRequest();
+
+      expect(f5DataInterpretationRequestSchema.parse(rootRequest)).toEqual(rootRequest);
+      expect(f5DataInterpretationRequestSchema.parse(v2Request)).toEqual(v2Request);
+
+      const incompleteV2 = structuredClone(v2Request) as Record<string, unknown>;
+      delete ((incompleteV2.worksheets as Array<Record<string, unknown>>)[0]!).contextSnapshot;
+      expect(f5DataInterpretationRequestSchema.safeParse(incompleteV2).success).toBe(false);
+    });
+
+    it("requires the v2 request snapshot and governance rows to have the same row keys", () => {
+      const missingRow = contextualRootRequest();
+      const missingSnapshot = ((missingRow.worksheets as Array<Record<string, unknown>>)[0]!
+        .contextSnapshot as { rows: unknown[] });
+      missingSnapshot.rows = [];
+      expect(f5DataInterpretationRequestSchema.safeParse(missingRow).success).toBe(false);
+
+      const extraRow = contextualRootRequest();
+      const extraSnapshot = ((extraRow.worksheets as Array<Record<string, unknown>>)[0]!
+        .contextSnapshot as { rows: Array<Record<string, unknown>> });
+      extraSnapshot.rows.push({ ...structuredClone(extraSnapshot.rows[0]!), sourceRow: 99 });
+      expect(f5DataInterpretationRequestSchema.safeParse(extraRow).success).toBe(false);
+    });
+
+    it.each([
+      ["partName", "changed original part"],
+      ["partSubsystem", "changed subsystem"],
+      ["partCategory", "changed category"],
+      ["factorName", "changed original factor"],
+      ["factorDescription", "changed factor"],
+      ["nominal", 999],
+      ["upperTolerance", 999],
+      ["lowerTolerance", -999],
+      ["sigmaLevel", 999],
+      ["sourceCells", { factorName: "Analysis-A!Z99" }],
+    ] as const)("rejects v2 request snapshot %s changes", (field, value) => {
+      const request = contextualRootRequest();
+      const snapshot = ((request.worksheets as Array<Record<string, unknown>>)[0]!
+        .contextSnapshot as { rows: Array<Record<string, unknown>> });
+      snapshot.rows[0]![field] = value;
+
+      expect(f5DataInterpretationRequestSchema.safeParse(request).success).toBe(false);
+    });
+
+    it("rejects v2 request snapshot dimension provenance changes", () => {
+      const request = contextualRootRequest();
+      const snapshot = ((request.worksheets as Array<Record<string, unknown>>)[0]!
+        .contextSnapshot as { dimensionDescription: string });
+      snapshot.dimensionDescription = "Changed dimension";
+
+      expect(f5DataInterpretationRequestSchema.safeParse(request).success).toBe(false);
+    });
+
+    it("accepts strict image-text context review root signals", () => {
+      const result = completedResultWithContextSignals(coreScopes);
+      const worksheet = result.worksheets[0]!;
+      const contextSignal = worksheet.statements.find((statement) => (
+        statement.type === "SIGNAL"
+        && "signalKind" in statement.content
+        && statement.content.signalKind === "image_text_context_review"
+        && statement.content.scope === "direction"
+      ))!;
+
+      expect(f5DataInterpretationResultSchema.safeParse(result).success).toBe(true);
+
+      const reviewDisabled = structuredClone(result);
+      const parsedSignal = reviewDisabled.worksheets[0]!.statements.find(
+        ({ statementId }) => statementId === contextSignal.statementId,
+      )! as typeof contextSignal;
+      parsedSignal.content.requiresEngineeringReview = false as true;
+      expect(f5DataInterpretationResultSchema.safeParse(reviewDisabled).success).toBe(false);
+    });
+
+    it.each([
+      {
+        name: "mismatched linked row-key sets",
+        mutate: (signal: {
+          content: {
+            linkedSourceRows: Array<{ tableId: string; sourceRow: number }>;
+            linkedVisualLabels: Array<{ label: string; tableId: string; sourceRow: number }>;
+          };
+        }) => {
+          signal.content.linkedVisualLabels[0]!.sourceRow = 3;
+        },
+      },
+      {
+        name: "duplicate linked visual label row keys",
+        mutate: (signal: {
+          content: { linkedVisualLabels: Array<{ label: string; tableId: string; sourceRow: number }> };
+        }) => {
+          signal.content.linkedVisualLabels.push({ label: "duplicate", tableId: "table-a", sourceRow: 2 });
+        },
+      },
+      {
+        name: "duplicate linked source row keys",
+        mutate: (signal: {
+          content: { linkedSourceRows: Array<{ tableId: string; sourceRow: number }> };
+        }) => {
+          signal.content.linkedSourceRows.push({ tableId: "table-a", sourceRow: 2 });
+        },
+      },
+      {
+        name: "linked visual labels on a non-direction scope",
+        mutate: (signal: { content: { scope: string; signalValue: string } }) => {
+          signal.content.scope = "datum_chain";
+          signal.content.signalValue = "ambiguous";
+        },
+      },
+      {
+        name: "an indicated direction without linked evidence",
+        mutate: (signal: {
+          content: {
+            linkedSourceRows: Array<{ tableId: string; sourceRow: number }>;
+            linkedVisualLabels: Array<{ label: string; tableId: string; sourceRow: number }>;
+          };
+        }) => {
+          signal.content.linkedSourceRows = [];
+          signal.content.linkedVisualLabels = [];
+        },
+      },
+    ])("rejects $name in public image-text context review results", ({ mutate }) => {
+      const result = structuredClone(rootResult);
+      const worksheet = result.worksheets[0]!;
+      const contextSignal = {
+        statementId: "f5-context-signal-direction",
+        type: "SIGNAL" as const,
+        section: "tolerance-chain-validity" as const,
+        content: {
+          signalKind: "image_text_context_review" as const,
+          scope: "direction" as string,
+          signalValue: "indicated_consistent" as string,
+          textBasis: "The visible direction label aligns with the factor description.",
+          linkedSourceRows: [{ tableId: "table-a", sourceRow: 2 }],
+          linkedVisualLabels: [{ label: "Bracket height", tableId: "table-a", sourceRow: 2 }],
+          requiresEngineeringReview: true as const,
+        },
+      };
+      worksheet.statements.push(contextSignal as typeof worksheet.statements[number]);
+      result.summary.statementCount += 1;
+      mutate(contextSignal);
+
+      expect(f5DataInterpretationResultSchema.safeParse(result).success).toBe(false);
     });
 
     it("requires unique and exactly matching F4/F3 source key sets at precise paths", () => {
@@ -2844,6 +3401,251 @@ describe("F5.1 objective interpretation contracts", () => {
       });
       expect(f5DataInterpretationResultSchema.safeParse({ ...rootResult, outputClassification: "public" }).success).toBe(false);
       expect(f5DataInterpretationResultSchema.safeParse({ ...rootResult, unexpected: true }).success).toBe(false);
+    });
+
+    function completedResultWithContextSignals(
+      scopes: ReadonlyArray<(typeof coreScopes)[number]>,
+      contextual = true,
+    ) {
+      const result = structuredClone(rootResult);
+      const worksheet = result.worksheets[0]!;
+      if (contextual) {
+        worksheet.observationVersion = "f5-image-observation-v2";
+        worksheet.contextSnapshot = {
+          dimensionDescription: worksheet.governanceRows[0]!.dimensionDescription,
+          rows: worksheet.governanceRows.map((row) => ({
+            tableId: row.source.tableId,
+            sourceRow: row.source.sourceRow,
+            partName: row.partSubsystem,
+            partSubsystem: row.partSubsystem,
+            partCategory: row.partCategory,
+            factorName: row.factorDescription,
+            factorDescription: row.factorDescription,
+            nominal: row.nominal,
+            upperTolerance: row.upperTolerance,
+            lowerTolerance: row.lowerTolerance,
+            sigmaLevel: row.sigmaLevel,
+            sourceCells: structuredClone(row.source.sourceCells),
+          })),
+        };
+      }
+      const contextSignals = scopes.map((scope, index) => ({
+        statementId: `f5-context-signal-${scope}-${index}`,
+        type: "SIGNAL" as const,
+        section: "tolerance-chain-validity" as const,
+        content: {
+          signalKind: "image_text_context_review" as const,
+          scope,
+          signalValue: "ambiguous" as const,
+          textBasis: `Image and worksheet context require review for ${scope}.`,
+          linkedSourceRows: [],
+          linkedVisualLabels: [],
+          visualEvidence: {
+            observedValue: "ambiguous" as const,
+            confidence: "medium" as const,
+            visibleBasis: `Visible evidence requires review for ${scope}.`,
+            visibleLabels: [],
+            reviewStatus: "unreviewed" as const,
+            imageReference: structuredClone(imageReference),
+          },
+          requiresEngineeringReview: true as const,
+        },
+      }));
+      worksheet.statements.push(...contextSignals);
+      result.summary.statementCount += contextSignals.length;
+      return result;
+    }
+
+    it("requires observationVersion and contextSnapshot together on completed v2 worksheet results", () => {
+      const v2Result = completedResultWithContextSignals(coreScopes);
+
+      expect(f5DataInterpretationResultSchema.safeParse(v2Result).success).toBe(true);
+
+      const withoutSnapshot = structuredClone(v2Result) as Record<string, unknown>;
+      delete ((withoutSnapshot.worksheets as Array<Record<string, unknown>>)[0]!).contextSnapshot;
+      expect(f5DataInterpretationResultSchema.safeParse(withoutSnapshot).success).toBe(false);
+
+      const withoutVersion = structuredClone(v2Result) as Record<string, unknown>;
+      delete ((withoutVersion.worksheets as Array<Record<string, unknown>>)[0]!).observationVersion;
+      expect(f5DataInterpretationResultSchema.safeParse(withoutVersion).success).toBe(false);
+    });
+
+    it("rejects completed v2 worksheet results with zero or incomplete context signals", () => {
+      expect(f5DataInterpretationResultSchema.safeParse(
+        completedResultWithContextSignals([]),
+      ).success).toBe(false);
+      expect(f5DataInterpretationResultSchema.safeParse(
+        completedResultWithContextSignals(coreScopes.slice(0, -1)),
+      ).success).toBe(false);
+    });
+
+    it("rejects completed v2 worksheet results with duplicate or extra context signals", () => {
+      expect(f5DataInterpretationResultSchema.safeParse(
+        completedResultWithContextSignals([
+          ...coreScopes.slice(0, -1),
+          "stack_start",
+        ]),
+      ).success).toBe(false);
+      expect(f5DataInterpretationResultSchema.safeParse(
+        completedResultWithContextSignals([...coreScopes, "direction"]),
+      ).success).toBe(false);
+    });
+
+    it("accepts exactly five completed v2 context signals with the exact core scopes", () => {
+      expect(f5DataInterpretationResultSchema.safeParse(
+        completedResultWithContextSignals(coreScopes),
+      ).success).toBe(true);
+    });
+
+    it("binds completed v2 snapshot provenance to governance rows while preserving original text provenance", () => {
+      const validResult = completedResultWithContextSignals(coreScopes);
+      const snapshot = validResult.worksheets[0]!.contextSnapshot!;
+
+      expect(snapshot.dimensionDescription).toBe(governanceRow.dimensionDescription);
+      expect(snapshot.rows[0]!.partName).toBe(governanceRow.partSubsystem);
+      expect(snapshot.rows[0]!.factorName).toBe(governanceRow.factorDescription);
+      expect(f5DataInterpretationResultSchema.safeParse(validResult).success).toBe(true);
+
+      const missingRow = structuredClone(validResult);
+      missingRow.worksheets[0]!.contextSnapshot!.rows = [];
+      expect(f5DataInterpretationResultSchema.safeParse(missingRow).success).toBe(false);
+
+      const extraRow = structuredClone(validResult);
+      extraRow.worksheets[0]!.contextSnapshot!.rows.push({
+        ...structuredClone(extraRow.worksheets[0]!.contextSnapshot!.rows[0]!),
+        sourceRow: 99,
+      });
+      expect(f5DataInterpretationResultSchema.safeParse(extraRow).success).toBe(false);
+    });
+
+    it.each([
+      ["partName", (result: ReturnType<typeof completedResultWithContextSignals>) => {
+        result.worksheets[0]!.contextSnapshot!.rows[0]!.partName = "changed original part";
+      }],
+      ["partSubsystem", (result: ReturnType<typeof completedResultWithContextSignals>) => {
+        result.worksheets[0]!.contextSnapshot!.rows[0]!.partSubsystem = "changed subsystem";
+      }],
+      ["partCategory", (result: ReturnType<typeof completedResultWithContextSignals>) => {
+        result.worksheets[0]!.contextSnapshot!.rows[0]!.partCategory = "changed category";
+      }],
+      ["factorName", (result: ReturnType<typeof completedResultWithContextSignals>) => {
+        result.worksheets[0]!.contextSnapshot!.rows[0]!.factorName = "changed original factor";
+      }],
+      ["factorDescription", (result: ReturnType<typeof completedResultWithContextSignals>) => {
+        result.worksheets[0]!.contextSnapshot!.rows[0]!.factorDescription = "changed factor";
+      }],
+      ["nominal", (result: ReturnType<typeof completedResultWithContextSignals>) => {
+        result.worksheets[0]!.contextSnapshot!.rows[0]!.nominal = 999;
+      }],
+      ["upperTolerance", (result: ReturnType<typeof completedResultWithContextSignals>) => {
+        result.worksheets[0]!.contextSnapshot!.rows[0]!.upperTolerance = 999;
+      }],
+      ["lowerTolerance", (result: ReturnType<typeof completedResultWithContextSignals>) => {
+        result.worksheets[0]!.contextSnapshot!.rows[0]!.lowerTolerance = -999;
+      }],
+      ["sigmaLevel", (result: ReturnType<typeof completedResultWithContextSignals>) => {
+        result.worksheets[0]!.contextSnapshot!.rows[0]!.sigmaLevel = 999;
+      }],
+      ["sourceCells", (result: ReturnType<typeof completedResultWithContextSignals>) => {
+        result.worksheets[0]!.contextSnapshot!.rows[0]!.sourceCells = { factorName: "Analysis-A!Z99" };
+      }],
+    ] as const)("rejects completed v2 snapshot %s changes", (_field, mutate) => {
+      const result = completedResultWithContextSignals(coreScopes);
+      mutate(result);
+
+      expect(f5DataInterpretationResultSchema.safeParse(result).success).toBe(false);
+    });
+
+    it("rejects completed v2 snapshot dimension provenance changes", () => {
+      const result = completedResultWithContextSignals(coreScopes);
+      result.worksheets[0]!.contextSnapshot!.dimensionDescription = "Changed dimension";
+
+      expect(f5DataInterpretationResultSchema.safeParse(result).success).toBe(false);
+    });
+
+    it("rejects completed v2 context SIGNAL links outside the bound snapshot", () => {
+      const result = completedResultWithContextSignals(coreScopes);
+      const direction = result.worksheets[0]!.statements.find((statement) => (
+        statement.type === "SIGNAL"
+        && "signalKind" in statement.content
+        && statement.content.signalKind === "image_text_context_review"
+        && statement.content.scope === "direction"
+      ))!;
+      if (direction.type !== "SIGNAL" || !("linkedSourceRows" in direction.content)) {
+        throw new Error("Expected direction context SIGNAL fixture.");
+      }
+      direction.content.linkedSourceRows = [{ tableId: "table-a", sourceRow: 99 }];
+      direction.content.linkedVisualLabels = [{ label: "outside", tableId: "table-a", sourceRow: 99 }];
+
+      expect(f5DataInterpretationResultSchema.safeParse(result).success).toBe(false);
+    });
+
+    it("binds completed v2 direction context labels to the same SIGNAL visual evidence", () => {
+      const createLinkedResult = () => {
+        const result = completedResultWithContextSignals(coreScopes);
+        const worksheet = result.worksheets[0]!;
+        const directionSignal = worksheet.statements.find((statement) => (
+          statement.type === "SIGNAL"
+          && "signalKind" in statement.content
+          && statement.content.signalKind === "image_text_context_review"
+          && statement.content.scope === "direction"
+        ))!;
+        if (directionSignal.type !== "SIGNAL" || !("linkedSourceRows" in directionSignal.content)) {
+          throw new Error("Expected direction context SIGNAL fixture.");
+        }
+        directionSignal.content.signalValue = "indicated_consistent";
+        directionSignal.content.linkedSourceRows = [{ tableId: "table-a", sourceRow: 2 }];
+        directionSignal.content.linkedVisualLabels = [{
+          label: "factor-1",
+          tableId: "table-a",
+          sourceRow: 2,
+        }];
+        Object.assign(directionSignal.content, {
+          visualEvidence: {
+            observedValue: "visible",
+            confidence: "medium",
+            visibleBasis: "The direction label is visible in the controlled worksheet image.",
+            visibleLabels: ["factor-1"],
+            reviewStatus: "unreviewed",
+            imageReference: structuredClone(imageReference),
+          },
+        });
+        return { result, directionSignal };
+      };
+
+      const valid = createLinkedResult();
+      expect(f5DataInterpretationResultSchema.safeParse(valid.result).success).toBe(true);
+
+      const invented = createLinkedResult();
+      invented.directionSignal.content.linkedVisualLabels[0]!.label = "invented";
+      expect(f5DataInterpretationResultSchema.safeParse(invented.result).success).toBe(false);
+
+      const imageMismatch = createLinkedResult();
+      const mismatchedEvidence = imageMismatch.directionSignal.content as unknown as {
+        visualEvidence: { imageReference: { contentHash: string } };
+      };
+      mismatchedEvidence.visualEvidence.imageReference.contentHash = "0".repeat(64);
+      expect(f5DataInterpretationResultSchema.safeParse(imageMismatch.result).success).toBe(false);
+
+      const malformedConfirmation = createLinkedResult();
+      const malformedEvidence = malformedConfirmation.directionSignal.content as unknown as {
+        visualEvidence: { reviewStatus: string };
+      };
+      malformedEvidence.visualEvidence.reviewStatus = "confirmed";
+      expect(f5DataInterpretationResultSchema.safeParse(malformedConfirmation.result).success).toBe(false);
+
+      const nonvisibleDirection = createLinkedResult();
+      const nonvisibleEvidence = nonvisibleDirection.directionSignal.content as unknown as {
+        visualEvidence: { observedValue: string };
+      };
+      nonvisibleEvidence.visualEvidence.observedValue = "ambiguous";
+      expect(f5DataInterpretationResultSchema.safeParse(nonvisibleDirection.result).success).toBe(false);
+    });
+
+    it("forbids orphan image-text context signals on completed non-v2 worksheet results", () => {
+      expect(f5DataInterpretationResultSchema.safeParse(
+        completedResultWithContextSignals(["direction"], false),
+      ).success).toBe(false);
     });
 
     it.each(toleranceItems.map(({ scope }) => scope))(
@@ -3507,6 +4309,1121 @@ describe("F5.1 objective interpretation contracts", () => {
           assumptionCount: 0,
         },
       }).success).toBe(false);
+    });
+
+    describe("F6 optimization and composed report contracts", () => {
+      const reference = (artifact: string) => ({ artifact, contentHash: "a".repeat(64) });
+      const baselineCalculationRequest = {
+        contractVersion: "v1" as const,
+        inputClassification: "confidential" as const,
+        projectReference: calculationCompletedResult.projectReference,
+        runReference: calculationCompletedResult.runReference,
+        worksheetAnalysisAssets: {
+          contractVersion: "v1" as const,
+          workbook: { classification: "confidential" as const, contentHash: calculationCompletedResult.workbookContentHash, catalogContractVersion: "v1" },
+          worksheets: [{
+            worksheetName: "Analysis-A", toleranceLoopDescription: "controlled",
+            factorTables: [{
+              tableId: "table-a", headerRow: 1, dataRange: { startRow: 2, endRow: 2 },
+              columns: [
+                { semanticField: "factorName" as const, headerText: "Factor", sourceColumn: "J" },
+                { semanticField: "nominalValue" as const, headerText: "Nominal", sourceColumn: "K" },
+                { semanticField: "upperTolerance" as const, headerText: "Upper", sourceColumn: "L" },
+                { semanticField: "lowerTolerance" as const, headerText: "Lower", sourceColumn: "M" },
+                { semanticField: "longTermSafetyFactor" as const, headerText: "LTSF", sourceColumn: "N" },
+                { semanticField: "standardDeviation" as const, headerText: "Sigma", sourceColumn: "O" },
+                { semanticField: "distribution" as const, headerText: "Distribution", sourceColumn: "P" },
+                { semanticField: "unit" as const, headerText: "Unit", sourceColumn: "Q" },
+              ],
+              rows: [{ sourceRow: 2, fields: {
+                factorName: { status: "available" as const, rawText: "Feature-A", sourceCell: "Analysis-A!J2" },
+                nominalValue: { status: "available" as const, rawText: "12.45", sourceCell: "Analysis-A!K2", numericValue: 12.45, unit: "mm" },
+                upperTolerance: { status: "available" as const, rawText: "0.2", sourceCell: "Analysis-A!L2", numericValue: 0.2, unit: "mm" },
+                lowerTolerance: { status: "available" as const, rawText: "-0.2", sourceCell: "Analysis-A!M2", numericValue: -0.2, unit: "mm" },
+                longTermSafetyFactor: { status: "available" as const, rawText: "1", sourceCell: "Analysis-A!N2", numericValue: 1, unit: "mm" },
+                standardDeviation: { status: "available" as const, rawText: "4", sourceCell: "Analysis-A!O2", numericValue: 4, unit: "mm" },
+                distribution: { status: "available" as const, rawText: "normal", sourceCell: "Analysis-A!P2" },
+                unit: { status: "available" as const, rawText: "mm", sourceCell: "Analysis-A!Q2" },
+              } }],
+            }],
+            formulaCells: [], imageAssets: [],
+          }],
+        },
+        requiredFieldCheck: {
+          contractVersion: "v1" as const, inputClassification: "confidential" as const,
+          workbookContentHash: calculationCompletedResult.workbookContentHash, status: "readyForNextCheck" as const,
+          blockingIssues: [], advisoryIssues: [],
+          summary: { worksheetsChecked: 1, factorTablesChecked: 1, factorRowsChecked: 1, blockingIssueCount: 0, advisoryIssueCount: 0 },
+        },
+        exceptionResolution: {
+          contractVersion: "v1" as const, inputClassification: "confidential" as const,
+          workbookContentHash: calculationCompletedResult.workbookContentHash, knowledgeBaseVersion: "v1" as const,
+          status: "readyToContinue" as const, readyToContinue: true, acceptedExceptions: [], pendingExceptions: [],
+          summary: { actionableSignalCount: 0, acceptedExceptionCount: 0, pendingExceptionCount: 0, invalidCandidateCount: 0 },
+        },
+        worksheetSelection: calculationCompletedResult.worksheetSelection,
+        systemSpecification: {
+          designNominal: calculationCompletedResult.system.designNominal,
+          lowerSpecLimit: calculationCompletedResult.capability.lowerSpecLimit,
+          upperSpecLimit: calculationCompletedResult.capability.upperSpecLimit,
+          targetSigmaLevel: calculationCompletedResult.capability.targetSigmaLevel,
+          targetCpk: calculationCompletedResult.capability.targetCpk,
+          additionalMeanShift: calculationCompletedResult.system.additionalMeanShift,
+        },
+        criticality: calculationCompletedResult.recommendation.criticality,
+        scenarioOverrides: [],
+      };
+      const validF6WorksheetInput = {
+        worksheetName: "Analysis-A",
+        f4CalculationIndex: 1,
+        baselineCalculationRequest,
+        baselineCalculation: calculationCompletedResult,
+        f5Worksheet: rootResult.worksheets[0],
+        f3GovernanceRows: [governanceRow],
+        f2Findings: [],
+        supplierBindings: [],
+      };
+      const f6Request = {
+        contractVersion: "v1",
+        inputClassification: "confidential",
+        workbook: { fileName: "Demo.xlsx", contentHash: calculationCompletedResult.workbookContentHash },
+        selectedWorksheetNames: ["Analysis-A"],
+        f2Reference: reference("Feature2-Report.json"),
+        f3Reference: reference("Feature3-Report.json"),
+        f4Reference: { ...reference("Feature4-Calculation.json"), runId: "controlled-run-reference", calculationVersion: "excel-ta-v1" },
+        f5Reference: { ...reference("Feature5-Report.json"), interpretationVersion: "f5-data-interpretation-v1" },
+        f0Versions: {
+          knowledgeBaseVersion: "v1",
+          capabilityVersion: "internal-v1",
+          interpretationVersion: "interpretation-rules-v1",
+        },
+        scenarioPolicyVersion: "f6-scenario-policy-v1",
+        worksheets: [validF6WorksheetInput],
+      };
+      const metrics = {
+        mean: calculationCompletedResult.system.mean,
+        rssSigma: calculationCompletedResult.system.rssSigma,
+        cp: calculationCompletedResult.capability.cp,
+        cpk: calculationCompletedResult.capability.cpk,
+        yield: calculationCompletedResult.capability.yield,
+        dpm: calculationCompletedResult.capability.totalDpm,
+      };
+      const baselineIdentity = {
+        projectReference: calculationCompletedResult.projectReference,
+        runReference: calculationCompletedResult.runReference,
+        calculationVersion: calculationCompletedResult.calculationVersion,
+        workbookContentHash: calculationCompletedResult.workbookContentHash,
+        worksheetName: calculationCompletedResult.worksheetSelection.worksheetName,
+        tableId: calculationCompletedResult.worksheetSelection.tableId,
+        factorCount: calculationCompletedResult.factorCount,
+        factors: calculationCompletedResult.factors.map((factor) => {
+          const identity: Partial<typeof factor> = structuredClone(factor);
+          delete identity.trace;
+          return identity;
+        }),
+        system: calculationCompletedResult.system,
+        capability: calculationCompletedResult.capability,
+      };
+      const feasibility = { status: "supported", reasonCodes: ["within_capability_bound"], evidenceReferences: ["supplier-capability.json"] };
+      const roiCalculationReference = reference("calculations/roi-policy-v2.json");
+      const costEvidence = {
+        evidenceVersion: "cost-model-v1", model: "relative-cost", unit: "USD",
+        optionCosts: [
+          { optionKind: "reduce_top_contributor_20", cost: 100 },
+          { optionKind: "reduce_top_3_contributors_30", cost: 200 },
+        ],
+        roiPolicyVersion: "f6-delta-cpk-per-cost-v1", roiCalculationReference,
+        source: "cost-model.json", effectiveVersion: "FY26", contentHash: "a".repeat(64),
+      };
+      const supplierEvidence = {
+        evidenceVersion: "supplier-capability-v1", supplierReference: "supplier-a", processFamily: "cnc", partCategory: "CNC",
+        capabilityTier: "T1", achievableToleranceBand: 0.3, distribution: "normal",
+        source: "supplier-capability.json", effectiveVersion: "2026-Q3", contentHash: "b".repeat(64),
+      };
+      const datumEvidence = {
+        evidenceVersion: "datum-strategy-v1", worksheetName: "Analysis-A", datumFace: "A", stackStart: "A",
+        factorDirections: [{ tableId: "table-a", sourceRow: 2, direction: 1 }],
+        datumChainEdges: [{ from: "A", to: "B" }], crossSubsystemRelations: ["bracket-to-frame"],
+        drawingEvidence: ["drawing-a.pdf"], reviewStatus: "confirmed",
+        source: "datum-review.json", effectiveVersion: "v1", contentHash: "c".repeat(64),
+      };
+      const completedOption = {
+        status: "completed",
+        optionId: "top-contributor-20",
+        optionKind: "reduce_top_contributor_20",
+        baselineMetrics: metrics,
+        resultMetrics: metrics,
+        deltaCpk: 0,
+        deltaCp: 0,
+        deltaRssSigma: 0,
+        deltaDpm: 0,
+        deltaYield: 0,
+        factorOverrides: [{ worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 2, upperTolerance: 0.16, lowerTolerance: -0.16 }],
+        toleranceChanges: [{
+          worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 2,
+          originalLowerTolerance: -0.2, originalUpperTolerance: 0.2,
+          resultingLowerTolerance: -0.16, resultingUpperTolerance: 0.16,
+          originalBand: 0.4, resultingBand: 0.32, bandCenter: 0,
+        }],
+        feasibility,
+        evidenceReferences: [reference("Feature4-Calculation.json")],
+        relativeCost: "insufficient_evidence",
+        roiScore: "not_computed",
+        impactRank: 1,
+        scenarioEvidence: {
+          scenarioId: "top-contributor-20",
+          calculation: {
+            ...calculationCompletedResult,
+            scenarios: [{
+              scenarioId: "top-contributor-20",
+              baselineRunReference: calculationCompletedResult.runReference,
+              calculation: {
+                factorCount: calculationCompletedResult.factorCount,
+                recommendation: calculationCompletedResult.recommendation,
+                factors: calculationCompletedResult.factors,
+                system: calculationCompletedResult.system,
+                capability: calculationCompletedResult.capability,
+                traceRecords: calculationCompletedResult.traceRecords,
+              },
+              overrides: {
+                factors: [{
+                  source: calculationCompletedResult.factors[0]!.source,
+                  fields: ["upperTolerance" as const, "lowerTolerance" as const],
+                }],
+              },
+              deltas: { mean: 0, rssSigma: 0, worstCaseUpper: 0, worstCaseLower: 0, cpk: 0, totalDpm: 0, yield: 0 },
+            }],
+          },
+        },
+        closedRiskIds: [],
+      };
+      const scenarioEvidenceFor = (scenarioId: string) => ({
+        ...completedOption.scenarioEvidence,
+        scenarioId,
+        calculation: {
+          ...completedOption.scenarioEvidence.calculation,
+          scenarios: completedOption.scenarioEvidence.calculation.scenarios.map((scenario) => ({ ...scenario, scenarioId })),
+        },
+      });
+      const topThreeOption = {
+        ...completedOption,
+        optionId: "top-three-30",
+        optionKind: "reduce_top_3_contributors_30",
+        impactRank: null,
+        scenarioEvidence: scenarioEvidenceFor("top-three-30"),
+      };
+      const supplierInsufficientOption = {
+        status: "insufficient_evidence",
+        optionId: "supplier-evidence-gap",
+        optionKind: "improve_supplier_capability",
+        predictedImprovement: "insufficient_evidence",
+        requiredInputs: ["confirmed_supplier_capability_evidence"],
+        evidenceReferences: [],
+        relativeCost: "insufficient_evidence",
+        roiScore: "not_computed",
+        impactRank: null,
+      };
+      const datumInsufficientOption = {
+        ...supplierInsufficientOption,
+        optionId: "datum-evidence-gap",
+        optionKind: "tighten_datum_strategy",
+        requiredInputs: ["confirmed_datum_chain_evidence", "engineering_review"],
+      };
+      const fixedReportOptions = [completedOption, topThreeOption, supplierInsufficientOption, datumInsufficientOption];
+      const fixedOptionsWith = (...replacements: object[]) => fixedReportOptions.map((option) =>
+        replacements.find((replacement) => (replacement as { optionKind?: string }).optionKind === option.optionKind) ?? option);
+      const f6Result = {
+        contractVersion: "v1",
+        outputClassification: "confidential",
+        featureId: "F6",
+        status: "completed",
+        optimizationVersion: "f6-optimization-v1",
+        workbook: f6Request.workbook,
+        worksheets: [{
+          worksheetName: "Analysis-A",
+          f4CalculationIndex: 1,
+          baselineIdentity,
+          status: "completed",
+          baselineMetrics: metrics,
+          targetCapability: { targetCpk: 1.33, targetSigmaLevel: 4, source: "worksheet" },
+          inputFindings: [],
+          options: fixedReportOptions,
+          risks: [],
+          recommendations: [{ recommendationId: "recommend-top", optionId: completedOption.optionId, text: "Apply the verified top contributor tolerance change.", evidenceReferences: [reference("scenarios/top-contributor-20.json")] }],
+          highestImpactAction: { optionId: completedOption.optionId, rationale: "Largest verified capability improvement." },
+          roiStatus: "not_computed",
+          clarifications: [],
+        }],
+        summary: { worksheetCount: 1, completedWorksheetCount: 1, partiallyCompletedWorksheetCount: 0, calculationFailedWorksheetCount: 0, inputRejectedWorksheetCount: 0, completedOptionCount: 2, calculationFailedOptionCount: 0, insufficientEvidenceOptionCount: 2 },
+        provenance: {
+          f2Reference: f6Request.f2Reference, f3Reference: f6Request.f3Reference,
+          f4Reference: f6Request.f4Reference, f5Reference: f6Request.f5Reference,
+          f0Versions: f6Request.f0Versions, scenarioPolicyVersion: f6Request.scenarioPolicyVersion,
+        },
+      };
+
+      it("accepts strict F6 requests and binds workbook and worksheet identities", () => {
+        expect(f6OptimizationRequestSchema.parse(f6Request)).toEqual(f6Request);
+        expect(f6OptimizationRequestSchema.safeParse({ ...f6Request, inputClassification: "public" }).success).toBe(false);
+        expect(f6OptimizationRequestSchema.safeParse({ ...f6Request, f2Reference: reference("C:\\absolute\\Feature2-Report.json") }).success).toBe(false);
+        expect(f6OptimizationRequestSchema.safeParse({ ...f6Request, selectedWorksheetNames: ["Analysis-A", "Analysis-A"] }).success).toBe(false);
+        expect(f6OptimizationRequestSchema.safeParse({ ...f6Request, workbook: { ...f6Request.workbook, contentHash: "0".repeat(64) } }).success).toBe(false);
+        expect(f6OptimizationRequestSchema.safeParse({
+          ...f6Request,
+          worksheets: [{ ...validF6WorksheetInput, baselineCalculationRequest: { ...baselineCalculationRequest, runReference: "tampered-run" } }],
+        }).success).toBe(false);
+        expect(f6OptimizationRequestSchema.safeParse({
+          ...f6Request,
+          worksheets: [{ ...validF6WorksheetInput, f4CalculationIndex: 2 }],
+        }).success).toBe(false);
+      });
+
+      it("binds every F6 input finding kind to capability impact semantics", () => {
+        const finding = {
+          findingCode: "arbitrary-code",
+          severity: "Major",
+          message: "A governed identifier is unavailable.",
+          evidenceReferences: [],
+        };
+
+        for (const candidate of [
+          { ...finding, findingKind: "validation_abnormality", affectsCapabilityData: false },
+          { ...finding, findingKind: "validation_abnormality", affectsCapabilityData: true },
+          { ...finding, findingKind: "governance_gap", affectsCapabilityData: false },
+          { ...finding, findingKind: "optimization_failure", affectsCapabilityData: false },
+          { ...finding, findingKind: "confirmed_requirement_violation", affectsCapabilityData: true },
+        ] as const) {
+          expect(f6InputFindingSchema.parse(candidate)).toEqual(candidate);
+        }
+        for (const candidate of [
+          { ...finding, findingKind: "governance_gap", affectsCapabilityData: true },
+          { ...finding, findingKind: "optimization_failure", affectsCapabilityData: true },
+          { ...finding, findingKind: "confirmed_requirement_violation", affectsCapabilityData: false },
+        ] as const) {
+          expect(f6InputFindingSchema.safeParse(candidate).success).toBe(false);
+        }
+        expect(f6InputFindingSchema.safeParse({ ...finding, findingKind: undefined, affectsCapabilityData: false }).success).toBe(false);
+        expect(f6InputFindingSchema.safeParse({ ...finding, findingKind: "requirement_violation", affectsCapabilityData: false }).success).toBe(false);
+      });
+
+      it("rejects duplicate governed evidence identities in requests at the second record", () => {
+        for (const [field, evidence] of [
+          ["supplierCapabilityEvidence", supplierEvidence],
+          ["datumEvidence", datumEvidence],
+        ] as const) {
+          const parsed = f6OptimizationRequestSchema.safeParse({ ...f6Request, [field]: [evidence, { ...evidence }] });
+          expect(parsed.success, field).toBe(false);
+          if (!parsed.success) expect(parsed.error.issues.map(({ path }) => path)).toContainEqual([field, 1]);
+        }
+      });
+
+      it("requires unique supplier bindings that resolve to one governed evidence record", () => {
+        const evidenceReference = { artifact: supplierEvidence.source, contentHash: supplierEvidence.contentHash };
+        const binding = { tableId: "table-a", sourceRow: 2, evidenceReference };
+        const boundRequest = {
+          ...f6Request,
+          supplierCapabilityEvidence: [supplierEvidence],
+          worksheets: [{ ...validF6WorksheetInput, supplierBindings: [binding] }],
+        };
+
+        expect(f6OptimizationRequestSchema.parse(boundRequest)).toEqual(boundRequest);
+        expect(f6OptimizationRequestSchema.safeParse({
+          ...f6Request,
+          worksheets: [{ ...validF6WorksheetInput, supplierBindings: undefined }],
+        }).success).toBe(false);
+
+        for (const supplierBindings of [
+          [binding, binding],
+          [{ ...binding, sourceRow: 99 }],
+          [{ ...binding, evidenceReference: { ...evidenceReference, contentHash: "f".repeat(64) } }],
+        ]) {
+          expect(f6OptimizationRequestSchema.safeParse({
+            ...boundRequest,
+            worksheets: [{ ...validF6WorksheetInput, supplierBindings }],
+          }).success).toBe(false);
+        }
+        expect(f6OptimizationRequestSchema.safeParse({
+          ...boundRequest,
+          supplierCapabilityEvidence: [{ ...supplierEvidence, partCategory: "mismatched-category" }],
+        }).success).toBe(false);
+      });
+
+      it("accepts strict solver DTOs and versioned supplier, datum, and cost evidence", () => {
+        expect(f6ToleranceChangeSchema.parse(completedOption.toleranceChanges[0])).toEqual(completedOption.toleranceChanges[0]);
+        expect(f6ControlledScenarioSchema.safeParse({ scenarioId: "scenario-1", optionKind: "reduce_top_contributor_20", factorOverrides: completedOption.factorOverrides }).success).toBe(true);
+        expect(f6ReverseSolveResultSchema.safeParse({ targetCpk: 1.33, targetRssSigma: 0.04, strategy: "single-factor", toleranceChanges: completedOption.toleranceChanges, residualError: 0 }).success).toBe(true);
+        expect(f6CapabilityBoundSchema.safeParse({ tableId: "table-a", sourceRow: 2, minimumToleranceBand: 0.1, maximumToleranceBand: 0.4, evidenceReference: "supplier-capability.json" }).success).toBe(true);
+        expect(f6FeasibilityAssessmentSchema.parse(feasibility)).toEqual(feasibility);
+        expect(f6ApportionmentResultSchema.safeParse({ policy: "bounded-by-capability", targetRssSigma: 0.04, allocations: [{ tableId: "table-a", sourceRow: 2, targetSigma: 0.04, targetTolerance: 0.16 }], residualError: 0, feasibility }).success).toBe(true);
+        expect(f6SupplierCapabilityEvidenceSchema.safeParse(supplierEvidence).success).toBe(true);
+        expect(f6DatumEvidenceSchema.safeParse(datumEvidence).success).toBe(true);
+        expect(f6CostEvidenceSchema.safeParse(costEvidence).success).toBe(true);
+        expect(f6DatumEvidenceSchema.safeParse({ ...datumEvidence, worksheetName: "" }).success).toBe(false);
+        expect(f6CostEvidenceSchema.safeParse({ ...costEvidence, roiPolicyVersion: "legacy-roi-policy" }).success).toBe(false);
+      });
+
+      it("rejects duplicate solver and governed evidence source identities at precise paths", () => {
+        const duplicateAllocation = f6ApportionmentResultSchema.safeParse({
+          policy: "bounded-by-capability", targetRssSigma: 0.04,
+          allocations: [
+            { tableId: "table-a", sourceRow: 2, targetSigma: 0.04, targetTolerance: 0.16 },
+            { tableId: "table-a", sourceRow: 2, targetSigma: 0.03, targetTolerance: 0.12 },
+          ],
+          residualError: 0, feasibility,
+        });
+        expect(duplicateAllocation.success).toBe(false);
+        if (!duplicateAllocation.success) expect(duplicateAllocation.error.issues.map(({ path }) => path)).toContainEqual(["allocations", 1]);
+
+        const duplicateDirection = f6DatumEvidenceSchema.safeParse({ evidenceVersion: "datum-strategy-v1", worksheetName: "Analysis-A", datumFace: "A", stackStart: "A", factorDirections: [{ tableId: "table-a", sourceRow: 2, direction: 1 }, { tableId: "table-a", sourceRow: 2, direction: -1 }], datumChainEdges: [{ from: "A", to: "B" }], crossSubsystemRelations: [], drawingEvidence: ["drawing-a.pdf"], reviewStatus: "confirmed", source: "datum-review.json", effectiveVersion: "v1", contentHash: "a".repeat(64) });
+        expect(duplicateDirection.success).toBe(false);
+        if (!duplicateDirection.success) expect(duplicateDirection.error.issues.map(({ path }) => path)).toContainEqual(["factorDirections", 1]);
+
+        const duplicateCost = f6CostEvidenceSchema.safeParse({ ...costEvidence, optionCosts: [{ optionKind: "reduce_top_contributor_20", cost: 100 }, { optionKind: "reduce_top_contributor_20", cost: 120 }] });
+        expect(duplicateCost.success).toBe(false);
+        if (!duplicateCost.success) expect(duplicateCost.error.issues.map(({ path }) => path)).toContainEqual(["optionCosts", 1, "optionKind"]);
+      });
+
+      it("enforces strict option branches and result status summaries", () => {
+        expect(f6OptimizationResultSchema.parse(f6Result)).toEqual(f6Result);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], baselineIdentity: { ...baselineIdentity, projectReference: "other-project" } }],
+        }).success).toBe(true);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], baselineIdentity: { ...baselineIdentity, worksheetName: "Other" } }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], baselineIdentity: { ...baselineIdentity, workbookContentHash: "f".repeat(64) } }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], baselineIdentity: { ...baselineIdentity, runReference: "other-run" } }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({ ...f6Result, summary: { ...f6Result.summary, completedOptionCount: 0 } }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({ ...f6Result, worksheets: [{ ...f6Result.worksheets[0], options: [{ ...completedOption, deltaCpk: 0.7 }] }] }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({ ...f6Result, worksheets: [{ ...f6Result.worksheets[0], status: "input_rejected", options: [completedOption] }] }).success).toBe(false);
+        const failedOption = { status: "calculation_failed", optionId: "failed", optionKind: "reduce_top_3_contributors_30", reasonCode: "f4_calculation_failed", evidenceReferences: [], impactRank: null };
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          status: "partially_completed",
+          worksheets: [{ ...f6Result.worksheets[0], status: "partially_completed", options: fixedOptionsWith(failedOption) }],
+          summary: { ...f6Result.summary, partiallyCompletedWorksheetCount: 1, completedWorksheetCount: 0, completedOptionCount: 1, calculationFailedOptionCount: 1 },
+        }).success).toBe(true);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], options: [{ ...failedOption, resultMetrics: metrics }] }],
+        }).success).toBe(false);
+        const insufficientOption = { status: "insufficient_evidence", optionId: "supplier", optionKind: "improve_supplier_capability", predictedImprovement: "insufficient_evidence", requiredInputs: ["supplier capability study"], evidenceReferences: [], relativeCost: "insufficient_evidence", roiScore: "not_computed", impactRank: null };
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], options: fixedOptionsWith(insufficientOption) }],
+        }).success).toBe(true);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], options: [{ ...completedOption, relativeCost: 0, roiScore: 0 }] }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], options: [{ ...completedOption, scenarioEvidence: { ...completedOption.scenarioEvidence, scenarioId: "other" } }] }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], options: [{ ...completedOption, resultMetrics: { ...completedOption.resultMetrics, cpk: completedOption.resultMetrics.cpk + 1 }, deltaCpk: 1 }] }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], options: [{ ...completedOption, closedRiskIds: ["missing-risk"] }] }],
+        }).success).toBe(false);
+        const lowRisk = {
+          riskId: "low-risk", category: "Product", rating: "Low", status: "open",
+          reason: "Low governed risk.", evidenceReferences: [f6Request.f5Reference],
+        } as const;
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], risks: [lowRisk], options: [{ ...completedOption, closedRiskIds: [lowRisk.riskId] }] }],
+        }).success).toBe(false);
+        const structuralRisk = {
+          riskId: "structural-risk", category: "Manufacturing", rating: "High", status: "open",
+          reason: "Structural governance remains open.", evidenceReferences: [f6Request.f3Reference],
+        } as const;
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], risks: [structuralRisk], options: [{ ...completedOption, closedRiskIds: [structuralRisk.riskId] }] }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{
+            ...f6Result.worksheets[0],
+            risks: [{ ...structuralRisk, status: "closed" }],
+            options: fixedOptionsWith({ ...completedOption, closedRiskIds: [structuralRisk.riskId] }),
+          }],
+        }).success).toBe(true);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], options: [{
+            ...completedOption,
+            scenarioEvidence: {
+              ...completedOption.scenarioEvidence,
+              calculation: {
+                ...completedOption.scenarioEvidence.calculation,
+                scenarios: [
+                  ...completedOption.scenarioEvidence.calculation.scenarios,
+                  { ...completedOption.scenarioEvidence.calculation.scenarios[0], scenarioId: "extra-scenario" },
+                ],
+              },
+            },
+          }] }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], options: [{
+            ...completedOption,
+            scenarioEvidence: {
+              ...completedOption.scenarioEvidence,
+              calculation: { ...completedOption.scenarioEvidence.calculation, runReference: "other-run" },
+            },
+          }] }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], options: [{
+            ...completedOption,
+            scenarioEvidence: {
+              ...completedOption.scenarioEvidence,
+              calculation: {
+                ...completedOption.scenarioEvidence.calculation,
+                worksheetSelection: { ...completedOption.scenarioEvidence.calculation.worksheetSelection, worksheetName: "Other" },
+              },
+            },
+          }] }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], options: [{
+            ...completedOption,
+            scenarioEvidence: {
+              ...completedOption.scenarioEvidence,
+              calculation: {
+                ...completedOption.scenarioEvidence.calculation,
+                scenarios: completedOption.scenarioEvidence.calculation.scenarios.map((scenario) => ({
+                  ...scenario,
+                  overrides: { ...scenario.overrides, factors: [] },
+                })),
+              },
+            },
+          }] }],
+        }).success).toBe(false);
+      });
+
+      it("requires exactly one option for each fixed report What-If kind", () => {
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], options: fixedReportOptions.slice(0, 3) }],
+          summary: { ...f6Result.summary, insufficientEvidenceOptionCount: 1 },
+        }).success).toBe(false);
+
+        const duplicateFixedKind = {
+          ...completedOption,
+          optionId: "top-contributor-20-duplicate",
+          impactRank: 2,
+          scenarioEvidence: scenarioEvidenceFor("top-contributor-20-duplicate"),
+        };
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], options: [...fixedReportOptions, duplicateFixedKind] }],
+          summary: { ...f6Result.summary, completedOptionCount: 3 },
+        }).success).toBe(false);
+      });
+
+      it("allows recommendation references only to completed supported options", () => {
+        const reviewOnlyOption = {
+          ...completedOption,
+          feasibility: {
+            status: "requires_engineering_review",
+            reasonCodes: ["mean_shift_physical_constraint_unverified"],
+            evidenceReferences: [f6Request.f4Reference.artifact, f6Request.f5Reference.artifact],
+          },
+        };
+
+        expect(f6OptimizationResultSchema.safeParse(f6Result).success).toBe(true);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], options: [reviewOnlyOption], highestImpactAction: undefined }],
+        }).success).toBe(false);
+      });
+
+      it("allows highest impact references only to completed supported options", () => {
+        const reviewOnlyOption = {
+          ...completedOption,
+          feasibility: {
+            status: "requires_engineering_review",
+            reasonCodes: ["mean_shift_physical_constraint_unverified"],
+            evidenceReferences: [f6Request.f4Reference.artifact, f6Request.f5Reference.artifact],
+          },
+        };
+
+        expect(f6OptimizationResultSchema.safeParse(f6Result).success).toBe(true);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], options: [reviewOnlyOption], recommendations: [] }],
+        }).success).toBe(false);
+      });
+
+      it("binds every completed option baseline and worksheet identity to its parent worksheet", () => {
+        const tamperedOptions = [
+          { ...completedOption, baselineMetrics: { ...completedOption.baselineMetrics, mean: completedOption.baselineMetrics.mean + 1 } },
+          { ...completedOption, factorOverrides: [{ ...completedOption.factorOverrides[0], worksheetName: "Analysis-B" }] },
+          { ...completedOption, toleranceChanges: [{ ...completedOption.toleranceChanges[0], worksheetName: "Analysis-B" }] },
+          {
+            ...completedOption,
+            reverseSolve: {
+              targetCpk: 1.33,
+              targetRssSigma: 0.04,
+              strategy: "single-factor",
+              toleranceChanges: [{ ...completedOption.toleranceChanges[0], worksheetName: "Analysis-B" }],
+              residualError: 0,
+            },
+          },
+        ];
+        for (const option of tamperedOptions) {
+          expect(f6OptimizationResultSchema.safeParse({
+            ...f6Result,
+            worksheets: [{ ...f6Result.worksheets[0], options: [option] }],
+          }).success).toBe(false);
+        }
+      });
+
+      it("rejects duplicate governed evidence identities in input-rejected results at the second record", () => {
+        const rejectedResult = {
+          ...f6Result,
+          status: "input_rejected",
+          worksheets: [{
+            worksheetName: "Analysis-A",
+            f4CalculationIndex: 1,
+            baselineIdentity,
+            status: "input_rejected",
+            inputFindings: [{ findingCode: "missing", findingKind: "validation_abnormality", severity: "Critical", message: "Input is missing.", affectsCapabilityData: true, evidenceReferences: [] }],
+            options: [], risks: [], clarifications: [],
+          }],
+          summary: { worksheetCount: 1, completedWorksheetCount: 0, partiallyCompletedWorksheetCount: 0, calculationFailedWorksheetCount: 0, inputRejectedWorksheetCount: 1, completedOptionCount: 0, calculationFailedOptionCount: 0, insufficientEvidenceOptionCount: 0 },
+        };
+        for (const [field, evidence] of [
+          ["supplierCapabilityEvidence", supplierEvidence],
+          ["datumEvidence", datumEvidence],
+        ] as const) {
+          const parsed = f6OptimizationResultSchema.safeParse({
+            ...rejectedResult,
+            provenance: { ...rejectedResult.provenance, [field]: [evidence, { ...evidence }] },
+          });
+          expect(parsed.success, field).toBe(false);
+          if (!parsed.success) expect(parsed.error.issues.map(({ path }) => path)).toContainEqual(["provenance", field, 1]);
+        }
+      });
+
+      it("requires partially completed worksheets to contain both completed and failed options", () => {
+        const failedOption = { status: "calculation_failed", optionId: "failed", optionKind: "reduce_top_3_contributors_30", reasonCode: "f4_calculation_failed", evidenceReferences: [], impactRank: null };
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          status: "partially_completed",
+          worksheets: [{ ...f6Result.worksheets[0], status: "partially_completed", options: [failedOption] }],
+          summary: { ...f6Result.summary, completedWorksheetCount: 0, partiallyCompletedWorksheetCount: 1, completedOptionCount: 0, calculationFailedOptionCount: 1 },
+        }).success).toBe(false);
+      });
+
+      it("accepts calculation-failed worksheets only when all retained numeric options failed", () => {
+        const failedOption = { status: "calculation_failed", optionId: "failed", optionKind: "reduce_top_3_contributors_30", reasonCode: "f4_calculation_failed", evidenceReferences: [], impactRank: null };
+        const insufficientOption = { status: "insufficient_evidence", optionId: "supplier", optionKind: "improve_supplier_capability", predictedImprovement: "insufficient_evidence", requiredInputs: ["supplier capability study"], evidenceReferences: [], relativeCost: "insufficient_evidence", roiScore: "not_computed", impactRank: null };
+        const failedTopContributor = { ...failedOption, optionId: "failed-top", optionKind: "reduce_top_contributor_20" };
+        const failedWorksheet = {
+          ...f6Result.worksheets[0],
+          status: "calculation_failed",
+          options: fixedOptionsWith(failedTopContributor, failedOption, insufficientOption),
+          recommendations: [],
+          highestImpactAction: undefined,
+          roiStatus: "not_computed",
+        };
+        const failedResult = {
+          ...f6Result,
+          status: "calculation_failed",
+          worksheets: [failedWorksheet],
+          summary: {
+            worksheetCount: 1,
+            completedWorksheetCount: 0,
+            partiallyCompletedWorksheetCount: 0,
+            calculationFailedWorksheetCount: 1,
+            inputRejectedWorksheetCount: 0,
+            completedOptionCount: 0,
+            calculationFailedOptionCount: 2,
+            insufficientEvidenceOptionCount: 2,
+          },
+        };
+
+        expect(f6OptimizationResultSchema.safeParse(failedResult).success).toBe(true);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...failedResult,
+          worksheets: [{ ...failedWorksheet, options: [completedOption, failedOption] }],
+          summary: { ...failedResult.summary, completedOptionCount: 1 },
+        }).success).toBe(false);
+      });
+
+      it("rejects duplicate per-worksheet identities and ranks at precise paths", () => {
+        const duplicateCases = [
+          { field: "options", value: [completedOption, { ...completedOption, optionKind: "reduce_top_3_contributors_30", impactRank: 2 }] },
+          { field: "risks", value: [{ riskId: "risk-1", category: "Manufacturing", rating: "Low", status: "open", reason: "One", evidenceReferences: [reference("risk.json")] }, { riskId: "risk-1", category: "Supplier", rating: "Medium", status: "open", reason: "Two", evidenceReferences: [reference("risk.json")] }] },
+          { field: "recommendations", value: [f6Result.worksheets[0].recommendations[0], { ...f6Result.worksheets[0].recommendations[0], text: "Duplicate." }] },
+          { field: "clarifications", value: [{ clarificationId: "clarify-1", reasonCode: "missing", requiredInputs: ["input"], questionForReviewer: "Question?", evidenceReferences: [] }, { clarificationId: "clarify-1", reasonCode: "missing-2", requiredInputs: ["input"], questionForReviewer: "Another?", evidenceReferences: [] }] },
+        ] as const;
+        for (const { field, value } of duplicateCases) {
+          const parsed = f6OptimizationResultSchema.safeParse({
+            ...f6Result,
+            worksheets: [{ ...f6Result.worksheets[0], [field]: value }],
+            summary: field === "options" ? { ...f6Result.summary, completedOptionCount: 2 } : f6Result.summary,
+          });
+          expect(parsed.success, field).toBe(false);
+          if (!parsed.success) expect(parsed.error.issues.some(({ path }) => path[0] === "worksheets" && path[2] === field)).toBe(true);
+        }
+
+        const duplicateRank = f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], options: [completedOption, { ...completedOption, optionId: "top-three-30", optionKind: "reduce_top_3_contributors_30" }] }],
+          summary: { ...f6Result.summary, completedOptionCount: 2 },
+        });
+        expect(duplicateRank.success).toBe(false);
+        if (!duplicateRank.success) expect(duplicateRank.error.issues.map(({ path }) => path)).toContainEqual(["worksheets", 0, "options", 1, "impactRank"]);
+      });
+
+      it("enforces duplicate risk and clarification identities for input-rejected worksheets", () => {
+        const risk = { riskId: "risk-1", category: "Manufacturing", rating: "High", status: "open", reason: "Input is incomplete.", evidenceReferences: [reference("finding.json")] };
+        const clarification = { clarificationId: "clarify-1", reasonCode: "missing", requiredInputs: ["input"], questionForReviewer: "Provide input?", evidenceReferences: [] };
+        const rejectedWorksheet = {
+          worksheetName: "Analysis-A", f4CalculationIndex: 1, baselineIdentity, status: "input_rejected",
+          inputFindings: [{ findingCode: "missing", findingKind: "validation_abnormality", severity: "Critical", message: "Input is missing.", affectsCapabilityData: true, evidenceReferences: [] }],
+          options: [], risks: [risk], clarifications: [clarification],
+        };
+        const rejectedResult = {
+          ...f6Result, status: "input_rejected", worksheets: [rejectedWorksheet],
+          summary: { worksheetCount: 1, completedWorksheetCount: 0, partiallyCompletedWorksheetCount: 0, calculationFailedWorksheetCount: 0, inputRejectedWorksheetCount: 1, completedOptionCount: 0, calculationFailedOptionCount: 0, insufficientEvidenceOptionCount: 0 },
+        };
+        expect(f6OptimizationResultSchema.safeParse({ ...rejectedResult, worksheets: [{ ...rejectedWorksheet, risks: [risk, { ...risk }] }] }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({ ...rejectedResult, worksheets: [{ ...rejectedWorksheet, clarifications: [clarification, { ...clarification }] }] }).success).toBe(false);
+      });
+
+      it("binds computed ROI values to governed cost and calculation provenance", () => {
+        const costReferences = [reference(costEvidence.source), costEvidence.roiCalculationReference];
+        const costedTopThreeOption = {
+          ...topThreeOption,
+          evidenceReferences: [...topThreeOption.evidenceReferences, ...costReferences],
+          relativeCost: 200,
+          roiScore: 0,
+        };
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], roiStatus: "computed" }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          provenance: { ...f6Result.provenance, costEvidence },
+          worksheets: [{ ...f6Result.worksheets[0], roiStatus: "computed", options: fixedOptionsWith({ ...completedOption, evidenceReferences: [...completedOption.evidenceReferences, ...costReferences], relativeCost: 100, roiScore: 0 }, costedTopThreeOption) }],
+        }).success).toBe(true);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          provenance: { ...f6Result.provenance, costEvidence },
+          worksheets: [{ ...f6Result.worksheets[0], roiStatus: "computed", options: [{ ...completedOption, relativeCost: 101, roiScore: 0.006 }] }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          provenance: { ...f6Result.provenance, costEvidence },
+          worksheets: [{ ...f6Result.worksheets[0], roiStatus: "computed" }],
+        }).success).toBe(false);
+        const withoutPolicy = Object.fromEntries(Object.entries(costEvidence).filter(([key]) => key !== "roiPolicyVersion"));
+        const withoutReference = Object.fromEntries(Object.entries(costEvidence).filter(([key]) => key !== "roiCalculationReference"));
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          provenance: { ...f6Result.provenance, costEvidence: withoutPolicy },
+          worksheets: [{ ...f6Result.worksheets[0], roiStatus: "computed", options: [{ ...completedOption, relativeCost: 100, roiScore: 0.006 }] }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          provenance: { ...f6Result.provenance, costEvidence: withoutReference },
+          worksheets: [{ ...f6Result.worksheets[0], roiStatus: "computed", options: [{ ...completedOption, relativeCost: 100, roiScore: 0.006 }] }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          provenance: { ...f6Result.provenance, costEvidence },
+          worksheets: [{ ...f6Result.worksheets[0], roiStatus: "computed", options: [{ ...completedOption, relativeCost: 100, roiScore: 0 }] }],
+        }).success).toBe(false);
+      });
+
+      it("enforces ROI status and governed costs for every completed option", () => {
+        const costReferences = [reference(costEvidence.source), costEvidence.roiCalculationReference];
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          provenance: { ...f6Result.provenance, costEvidence },
+          worksheets: [{ ...f6Result.worksheets[0], options: fixedOptionsWith({ ...completedOption, evidenceReferences: [...completedOption.evidenceReferences, ...costReferences], relativeCost: 100, roiScore: "not_computed" }) }],
+        }).success).toBe(true);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          provenance: { ...f6Result.provenance, costEvidence },
+          worksheets: [{ ...f6Result.worksheets[0], options: [{ ...completedOption, relativeCost: 100, roiScore: 0.006 }] }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          provenance: { ...f6Result.provenance, costEvidence },
+          worksheets: [{ ...f6Result.worksheets[0], options: [{ ...completedOption, relativeCost: 101, roiScore: "not_computed" }] }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], options: [{ ...completedOption, relativeCost: 100, roiScore: "not_computed" }] }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          provenance: { ...f6Result.provenance, costEvidence },
+          worksheets: [{ ...f6Result.worksheets[0], options: fixedOptionsWith({ ...completedOption, relativeCost: "insufficient_evidence", roiScore: "not_computed" }) }],
+        }).success).toBe(true);
+      });
+
+      it("binds completed supplier and datum options to exact governed evidence scopes", () => {
+        const supplierScope = {
+          kind: "supplier", supplierReference: supplierEvidence.supplierReference,
+          processFamily: supplierEvidence.processFamily, partCategory: supplierEvidence.partCategory,
+          evidenceReference: { artifact: supplierEvidence.source, contentHash: supplierEvidence.contentHash },
+        };
+        const supplierOption = {
+          ...completedOption,
+          optionId: "supplier",
+          optionKind: "improve_supplier_capability",
+          impactRank: null,
+          evidenceScope: supplierScope,
+          scenarioEvidence: scenarioEvidenceFor("supplier"),
+        };
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result, provenance: { ...f6Result.provenance, supplierCapabilityEvidence: [supplierEvidence] },
+          worksheets: [{ ...f6Result.worksheets[0], options: fixedOptionsWith(supplierOption), recommendations: [], highestImpactAction: undefined }],
+          summary: { ...f6Result.summary, completedOptionCount: 3, insufficientEvidenceOptionCount: 1 },
+        }).success).toBe(true);
+        for (const supplierCapabilityEvidence of [[], [{ ...supplierEvidence, supplierReference: "supplier-b" }], [supplierEvidence, { ...supplierEvidence }]]) {
+          expect(f6OptimizationResultSchema.safeParse({
+            ...f6Result, provenance: { ...f6Result.provenance, supplierCapabilityEvidence },
+            worksheets: [{ ...f6Result.worksheets[0], options: [supplierOption], recommendations: [], highestImpactAction: undefined }],
+          }).success).toBe(false);
+        }
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result, provenance: { ...f6Result.provenance, supplierCapabilityEvidence: [supplierEvidence] },
+          worksheets: [{ ...f6Result.worksheets[0], options: [{ ...supplierOption, evidenceScope: { ...supplierScope, evidenceReference: reference("unrelated.json") } }], recommendations: [], highestImpactAction: undefined }],
+        }).success).toBe(false);
+
+        const exactDatumEvidence = {
+          ...datumEvidence,
+          factorDirections: [
+            { tableId: "table-a", sourceRow: 2, direction: 1 },
+            { tableId: "table-b", sourceRow: 3, direction: -1 },
+          ],
+        };
+        const datumScope = {
+          kind: "datum",
+          worksheetName: exactDatumEvidence.worksheetName,
+          factorSources: exactDatumEvidence.factorDirections,
+          evidenceReference: { artifact: exactDatumEvidence.source, contentHash: exactDatumEvidence.contentHash },
+        };
+        const datumOption = {
+          ...completedOption,
+          optionId: "datum",
+          optionKind: "tighten_datum_strategy",
+          impactRank: null,
+          evidenceScope: datumScope,
+          scenarioEvidence: scenarioEvidenceFor("datum"),
+        };
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result, provenance: { ...f6Result.provenance, datumEvidence: [exactDatumEvidence] },
+          worksheets: [{ ...f6Result.worksheets[0], options: fixedOptionsWith(datumOption), recommendations: [], highestImpactAction: undefined }],
+          summary: { ...f6Result.summary, completedOptionCount: 3, insufficientEvidenceOptionCount: 1 },
+        }).success).toBe(true);
+        for (const evidenceScope of [
+          { ...datumScope, factorSources: [{ tableId: "table-a", sourceRow: 2, direction: -1 }, datumScope.factorSources[1]] },
+          { ...datumScope, factorSources: [datumScope.factorSources[0]] },
+          { ...datumScope, factorSources: [...datumScope.factorSources, { tableId: "table-c", sourceRow: 4, direction: 1 }] },
+          { ...datumScope, factorSources: [datumScope.factorSources[0], { ...datumScope.factorSources[0] }] },
+          { ...datumScope, evidenceReference: reference("unrelated.json") },
+        ]) {
+          expect(f6OptimizationResultSchema.safeParse({
+            ...f6Result, provenance: { ...f6Result.provenance, datumEvidence: [exactDatumEvidence] },
+            worksheets: [{ ...f6Result.worksheets[0], options: [{ ...datumOption, evidenceScope }], recommendations: [], highestImpactAction: undefined }],
+          }).success).toBe(false);
+        }
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          provenance: { ...f6Result.provenance, datumEvidence: [{ ...exactDatumEvidence, factorDirections: [...exactDatumEvidence.factorDirections, { tableId: "table-c", sourceRow: 4, direction: 1 }] }] },
+          worksheets: [{ ...f6Result.worksheets[0], options: [datumOption], recommendations: [], highestImpactAction: undefined }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result, provenance: { ...f6Result.provenance, datumEvidence: [] },
+          worksheets: [{ ...f6Result.worksheets[0], options: [datumOption], recommendations: [], highestImpactAction: undefined }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          worksheets: [{ ...f6Result.worksheets[0], options: [{ ...completedOption, evidenceScope: supplierScope }] }],
+        }).success).toBe(false);
+      });
+
+      it("requires exact governed scopes when insufficient options reference evidence", () => {
+        const insufficientOption = {
+          status: "insufficient_evidence",
+          optionId: "supplier-insufficient",
+          optionKind: "improve_supplier_capability",
+          predictedImprovement: "insufficient_evidence",
+          requiredInputs: ["supplier capability study"],
+          evidenceReferences: [],
+          relativeCost: "insufficient_evidence",
+          roiScore: "not_computed",
+          impactRank: null,
+        } as const;
+        const supplierScope = {
+          kind: "supplier" as const,
+          supplierReference: supplierEvidence.supplierReference,
+          processFamily: supplierEvidence.processFamily,
+          partCategory: supplierEvidence.partCategory,
+          evidenceReference: { artifact: supplierEvidence.source, contentHash: supplierEvidence.contentHash },
+        };
+        const datumScope = {
+          kind: "datum" as const,
+          worksheetName: datumEvidence.worksheetName,
+          factorSources: datumEvidence.factorDirections,
+          evidenceReference: { artifact: datumEvidence.source, contentHash: datumEvidence.contentHash },
+        };
+        const supplierReference = supplierScope.evidenceReference;
+        const datumReference = datumScope.evidenceReference;
+        const parseInsufficient = (option: object, provenance: object = {}) => f6OptimizationResultSchema.safeParse({
+          ...f6Result,
+          provenance: { ...f6Result.provenance, ...provenance },
+          worksheets: [{ ...f6Result.worksheets[0], options: fixedOptionsWith(option) }],
+        });
+
+        expect(parseInsufficient(insufficientOption).success).toBe(true);
+        expect(parseInsufficient(
+          { ...insufficientOption, evidenceReferences: [supplierReference], evidenceScope: supplierScope },
+          { supplierCapabilityEvidence: [supplierEvidence] },
+        ).success).toBe(true);
+        expect(parseInsufficient(
+          { ...insufficientOption, optionId: "datum-insufficient", optionKind: "tighten_datum_strategy", evidenceReferences: [datumReference], evidenceScope: datumScope },
+          { datumEvidence: [datumEvidence] },
+        ).success).toBe(true);
+
+        expect(parseInsufficient(
+          { ...insufficientOption, evidenceReferences: [supplierReference] },
+          { supplierCapabilityEvidence: [supplierEvidence] },
+        ).success).toBe(false);
+        expect(parseInsufficient(
+          { ...insufficientOption, evidenceReferences: [reference("other.json")], evidenceScope: supplierScope },
+          { supplierCapabilityEvidence: [supplierEvidence] },
+        ).success).toBe(false);
+        expect(parseInsufficient(
+          { ...insufficientOption, evidenceScope: supplierScope },
+          { supplierCapabilityEvidence: [supplierEvidence] },
+        ).success).toBe(false);
+
+        expect(parseInsufficient(
+          { ...insufficientOption, evidenceReferences: [datumReference], evidenceScope: datumScope },
+          { datumEvidence: [datumEvidence] },
+        ).success).toBe(false);
+        expect(parseInsufficient(
+          { ...insufficientOption, optionId: "datum-insufficient", optionKind: "tighten_datum_strategy", evidenceReferences: [supplierReference], evidenceScope: supplierScope },
+          { supplierCapabilityEvidence: [supplierEvidence] },
+        ).success).toBe(false);
+        expect(parseInsufficient(
+          { ...insufficientOption, evidenceReferences: [supplierReference], evidenceScope: { ...supplierScope, evidenceReference: reference("unrelated.json") } },
+          { supplierCapabilityEvidence: [supplierEvidence] },
+        ).success).toBe(false);
+        expect(parseInsufficient(
+          { ...insufficientOption, evidenceReferences: [supplierReference], evidenceScope: { ...supplierScope, supplierReference: "unrelated-supplier" } },
+          { supplierCapabilityEvidence: [supplierEvidence] },
+        ).success).toBe(false);
+        expect(parseInsufficient(
+          { ...insufficientOption, optionId: "datum-insufficient", optionKind: "tighten_datum_strategy", evidenceReferences: [datumReference], evidenceScope: { ...datumScope, factorSources: [{ ...datumScope.factorSources[0], direction: -1 }] } },
+          { datumEvidence: [datumEvidence] },
+        ).success).toBe(false);
+      });
+
+      it("accepts the fixed ten-section composed report and enforces bullet limits", () => {
+        const evidenceReferences = [reference("Feature5-Report.json"), reference("Feature6-Optimization.json")];
+        const report = {
+          contractVersion: "v1", outputClassification: "confidential", reportVersion: "f6-composed-report-v1",
+          workbook: f6Request.workbook, overallStatus: "RISK",
+          workbookExecutiveSummary: ["Overall RISK because one worksheet is blocked."],
+          blockedWorksheets: [{ worksheetName: "Blocked", findings: [{ findingCode: "missing_nominal", findingKind: "validation_abnormality", severity: "Critical", message: "Nominal is missing.", affectsCapabilityData: true, evidenceReferences: [reference("Feature2-Report.json")] }] }],
+          worksheets: [{
+            worksheetName: "Analysis-A", status: "PASS", evidenceReferences,
+            targetCapability: { targetCpk: 1.33, targetSigmaLevel: 4, source: "worksheet" },
+            confirmedRequirementViolation: false, missingCapabilityData: false,
+            sections: {
+              executiveSummary: ["Cpk 2.4 exceeds the 1.33 target."],
+              requirementReview: { ctq: "Anonymous device gap", nominal: 12.5, lowerSpecLimit: 12.1, upperSpecLimit: 12.9, specWidth: 0.8, assessment: "Requirement is understood.", riskLevel: "Low", evidenceReferences },
+              inputValidation: [],
+              capabilityAssessment: { metrics, oosRate: 1 - metrics.yield, oosPpm: metrics.dpm, findings: ["Capability exceeds target."], evidenceReferences },
+              contributorAnalysis: { topContributors: [{ factorName: "Feature-A", contributionPercent: 100, tableId: "table-a", sourceRow: 2 }], top1Concentration: 100, top3Concentration: 100, concentrationAssessment: "concentrated", policyVersion: "f6-contributor-policy-v1", evidenceReferences },
+              rootCauseAnalysis: { factBasedFindings: ["Feature-A dominates RSS sigma."], ruleFindings: [], optionFindings: [], signals: [], evidenceStatus: "supported", evidenceReferences },
+              riskAssessment: ["Product", "Manufacturing", "Assembly", "Supplier", "Customer Experience"].map((category) => ({
+                category, rating: "Low" as const, status: "open" as const, reason: "Governed assessment found no elevated risk.", evidenceReferences,
+              })),
+              recommendations: [{ kind: "verified_option", recommendationId: "recommend-top", text: "Apply the verified top contributor option.", expectedBenefit: "Improve Cpk.", optionId: completedOption.optionId, evidenceReferences }],
+              whatIfAnalysis: { options: [
+                { optionKind: "reduce_top_contributor_20", status: "completed", summary: "Cpk improves by 0.6.", predictedImprovement: 0.6, evidenceReferences },
+                { optionKind: "reduce_top_3_contributors_30", status: "completed", summary: "Top three contributors were recalculated.", predictedImprovement: 0.4, evidenceReferences },
+                { optionKind: "improve_supplier_capability", status: "insufficient_evidence", summary: "Supplier capability evidence is required.", predictedImprovement: "insufficient_evidence", requiredInputs: ["supplier capability study"], evidenceReferences },
+                { optionKind: "tighten_datum_strategy", status: "insufficient_evidence", summary: "Reviewed datum evidence is required.", predictedImprovement: "insufficient_evidence", requiredInputs: ["confirmed datum review"], evidenceReferences },
+              ], highestImpactAction: "Apply top contributor tightening.", roiStatus: "not_computed", evidenceReferences },
+              finalConclusion: ["The current design reaches the target capability."],
+            },
+          }],
+        };
+        expect(f6ComposedEngineeringReportSchema.parse(report)).toEqual(report);
+        expect(f6ComposedEngineeringReportSchema.safeParse({
+          ...report,
+          worksheets: [{ ...report.worksheets[0], missingCapabilityData: true, status: "RISK" }],
+        }).success).toBe(false);
+        expect(f6ComposedEngineeringReportSchema.safeParse({ ...report, blockedWorksheets: [], worksheets: [] }).success).toBe(false);
+        expect(f6ComposedEngineeringReportSchema.safeParse({ ...report, workbookExecutiveSummary: Array(6).fill("bullet") }).success).toBe(false);
+        expect(f6ComposedEngineeringReportSchema.safeParse({ ...report, worksheets: [{ ...report.worksheets[0], sections: { ...report.worksheets[0].sections, executiveSummary: Array(6).fill("bullet") } }] }).success).toBe(false);
+        expect(f6ComposedEngineeringReportSchema.safeParse({ ...report, worksheets: [{ ...report.worksheets[0], sections: { ...report.worksheets[0].sections, finalConclusion: Array(11).fill("bullet") } }] }).success).toBe(false);
+        expect(f6ComposedEngineeringReportSchema.safeParse({
+          ...report,
+          overallStatus: "FAIL",
+          blockedWorksheets: [],
+          worksheets: [{ ...report.worksheets[0], status: "FAIL", confirmedRequirementViolation: true }],
+        }).success).toBe(false);
+        expect(f6ComposedEngineeringReportSchema.safeParse({
+          ...report,
+          blockedWorksheets: [],
+          worksheets: [{
+            ...report.worksheets[0],
+            sections: {
+              ...report.worksheets[0].sections,
+              inputValidation: [{
+                findingCode: "requirement_violation",
+                findingKind: "confirmed_requirement_violation",
+                severity: "Critical",
+                message: "A governed requirement is violated.",
+                affectsCapabilityData: true,
+                evidenceReferences,
+              }],
+            },
+          }],
+        }).success).toBe(false);
+        expect(f6ComposedEngineeringReportSchema.safeParse({
+          ...report,
+          worksheets: [{
+            ...report.worksheets[0],
+            sections: { ...report.worksheets[0].sections, riskAssessment: report.worksheets[0].sections.riskAssessment.slice(0, 4) },
+          }],
+        }).success).toBe(false);
+
+        const insufficientRiskEvidence = structuredClone(report);
+        insufficientRiskEvidence.blockedWorksheets = [];
+        insufficientRiskEvidence.overallStatus = "RISK";
+        insufficientRiskEvidence.worksheets[0]!.status = "RISK";
+        insufficientRiskEvidence.worksheets[0]!.sections.riskAssessment[4] = {
+          category: "Customer Experience", rating: "insufficient_evidence", status: "insufficient_evidence",
+          reason: "Missing evidence-backed risk assessment for this area.", evidenceReferences,
+        };
+        expect(f6ComposedEngineeringReportSchema.safeParse(insufficientRiskEvidence).success).toBe(true);
+        insufficientRiskEvidence.overallStatus = "PASS";
+        insufficientRiskEvidence.worksheets[0]!.status = "PASS";
+        expect(f6ComposedEngineeringReportSchema.safeParse(insufficientRiskEvidence).success).toBe(false);
+
+        const duplicateBlocked = f6ComposedEngineeringReportSchema.safeParse({
+          ...report,
+          blockedWorksheets: [report.blockedWorksheets[0], { ...report.blockedWorksheets[0] }],
+        });
+        expect(duplicateBlocked.success).toBe(false);
+        if (!duplicateBlocked.success) expect(duplicateBlocked.error.issues.map(({ path }) => path)).toContainEqual(["blockedWorksheets", 1, "worksheetName"]);
+
+        const duplicateReady = f6ComposedEngineeringReportSchema.safeParse({
+          ...report,
+          worksheets: [report.worksheets[0], { ...report.worksheets[0] }],
+        });
+        expect(duplicateReady.success).toBe(false);
+        if (!duplicateReady.success) expect(duplicateReady.error.issues.map(({ path }) => path)).toContainEqual(["worksheets", 1, "worksheetName"]);
+
+        const crossSet = f6ComposedEngineeringReportSchema.safeParse({
+          ...report,
+          worksheets: [{ ...report.worksheets[0], worksheetName: report.blockedWorksheets[0].worksheetName }],
+        });
+        expect(crossSet.success).toBe(false);
+        if (!crossSet.success) expect(crossSet.error.issues.map(({ path }) => path)).toContainEqual(["worksheets", 0, "worksheetName"]);
+
+        const statusCases = [
+          { cpk: 0.99, targetCpk: 1.33, violation: false, missing: false, rating: "Low", expected: "FAIL" },
+          { cpk: 2, targetCpk: 1.33, violation: true, missing: false, rating: "Low", expected: "FAIL" },
+          { cpk: 1.1, targetCpk: 1.33, violation: false, missing: false, rating: "Low", expected: "RISK" },
+          { cpk: 2, targetCpk: 1.33, violation: false, missing: false, rating: "High", expected: "RISK" },
+          { cpk: 1.33, targetCpk: 1.33, violation: false, missing: false, rating: "Low", expected: "PASS" },
+        ] as const;
+        for (const scenario of statusCases) {
+          const worksheet = structuredClone(report.worksheets[0]);
+          worksheet.status = scenario.expected;
+          worksheet.targetCapability.targetCpk = scenario.targetCpk;
+          worksheet.confirmedRequirementViolation = scenario.violation;
+          if (scenario.violation) {
+            worksheet.sections.inputValidation = [{
+              findingCode: "requirement_violation",
+              findingKind: "confirmed_requirement_violation",
+              severity: "Critical",
+              message: "A governed requirement is violated.",
+              affectsCapabilityData: true,
+              evidenceReferences,
+            }];
+          }
+          worksheet.missingCapabilityData = scenario.missing;
+          worksheet.sections.capabilityAssessment.metrics.cpk = scenario.cpk;
+          worksheet.sections.riskAssessment[0]!.rating = scenario.rating;
+          const candidate = { ...report, overallStatus: scenario.expected, blockedWorksheets: [], worksheets: [worksheet] };
+          expect(f6ComposedEngineeringReportSchema.safeParse(candidate).success, JSON.stringify(scenario)).toBe(true);
+          expect(f6ComposedEngineeringReportSchema.safeParse({ ...candidate, overallStatus: "PASS", worksheets: [{ ...worksheet, status: "PASS" }] }).success, `tampered ${JSON.stringify(scenario)}`).toBe(scenario.expected === "PASS");
+        }
+
+        for (const field of ["yield", "dpm", "oosRate", "oosPpm"] as const) {
+          const worksheet = structuredClone(report.worksheets[0]);
+          if (field === "yield") worksheet.sections.capabilityAssessment.metrics.yield = 0.5;
+          else if (field === "dpm") worksheet.sections.capabilityAssessment.metrics.dpm = 50;
+          else worksheet.sections.capabilityAssessment[field] += 0.01;
+          expect(f6ComposedEngineeringReportSchema.safeParse({ ...report, worksheets: [worksheet] }).success, field).toBe(false);
+        }
+
+        const toleranceWorksheet = structuredClone(report.worksheets[0]);
+        toleranceWorksheet.sections.capabilityAssessment.oosRate += 5e-13;
+        toleranceWorksheet.sections.capabilityAssessment.oosPpm += 5e-10;
+        expect(f6ComposedEngineeringReportSchema.safeParse({ ...report, worksheets: [toleranceWorksheet] }).success).toBe(true);
+
+        const malformedWhatIf = structuredClone(report);
+        Object.assign(malformedWhatIf.worksheets[0]!.sections.whatIfAnalysis.options[2]!, { status: "insufficient_evidence", predictedImprovement: 0.2, requiredInputs: [] });
+        expect(f6ComposedEngineeringReportSchema.safeParse(malformedWhatIf).success).toBe(false);
+
+        const failedWhatIf = structuredClone(report);
+        failedWhatIf.worksheets[0]!.sections.whatIfAnalysis.options[0] = { optionKind: "reduce_top_contributor_20", status: "calculation_failed", summary: "Calculation failed.", reasonCode: "f4_calculation_failed", evidenceReferences };
+        failedWhatIf.worksheets[0]!.status = "RISK";
+        failedWhatIf.overallStatus = "RISK";
+        expect(f6ComposedEngineeringReportSchema.safeParse(failedWhatIf).success).toBe(true);
+
+        const governedWhatIf = structuredClone(report);
+        governedWhatIf.worksheets[0]!.sections.whatIfAnalysis.options[2] = { optionKind: "improve_supplier_capability", status: "completed", summary: "Supplier scenario completed.", predictedImprovement: 0.2, governedEvidenceReference: "supplier-capability.json", evidenceStatus: "confirmed", evidenceReferences };
+        governedWhatIf.worksheets[0]!.sections.whatIfAnalysis.options[3] = { optionKind: "tighten_datum_strategy", status: "completed", summary: "Datum scenario completed.", predictedImprovement: 0.1, governedEvidenceReference: "datum-review.json", evidenceStatus: "confirmed", evidenceReferences };
+        expect(f6ComposedEngineeringReportSchema.safeParse(governedWhatIf).success).toBe(true);
+
+        const genericRecommendation = structuredClone(report);
+        genericRecommendation.worksheets[0]!.sections.recommendations = [{
+          text: "Generic recommendation.",
+          evidenceReferences,
+        }];
+        expect(f6ComposedEngineeringReportSchema.safeParse(genericRecommendation).success).toBe(false);
+      });
+
+      it("preserves the legacy feature_not_available comparison contracts", () => {
+        const legacyRequest = { contractVersion: "v1", inputClassification: "confidential", projectReference: "project", runReference: "run", worksheetReferences: ["Analysis-A"] };
+        const legacyResult = { contractVersion: "v1", outputClassification: "confidential", featureId: "F6", status: "feature_not_available", projectReference: "project", runReference: "run", worksheetReferences: ["Analysis-A"], requiredPrerequisites: ["approved-knowledge-base"] };
+        expect(comparisonRequestSchema.parse(legacyRequest)).toEqual(legacyRequest);
+        expect(comparisonResultSchema.parse(legacyResult)).toEqual(legacyResult);
+      });
     });
   });
 });

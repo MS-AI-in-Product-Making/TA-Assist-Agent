@@ -1,10 +1,16 @@
+import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 import { createRunStore, openRunStore } from "@ai-assist/memory";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { formatF4Status } from "./commands/smoke.js";
 import { executeCli } from "./index.js";
+
+const execFileAsync = promisify(execFile);
 
 async function createTemporaryRoot(): Promise<string> {
   return mkdtemp(join(tmpdir(), "ai-assist-cli-"));
@@ -262,6 +268,138 @@ it("routes explicit Feature 5 command with three artifact roots and options", as
     selectedWorksheetNames: ["Overview", "Details"],
     imageObservationsPath: "observations.json",
   }]]);
+});
+
+it("routes explicit Feature 6 with four artifact roots, repeated worksheets, and optional evidence", async () => {
+  const calls: unknown[] = [];
+  const runFeature6 = async (...args: unknown[]) => {
+    calls.push(args);
+    return "Feature 6 workflow completed.\nf6: runs/demo/f6\nstatus: completed";
+  };
+  const result = await executeCli([
+    "feature6", "--root", " repo ",
+    "--f2-artifacts", " f2 ",
+    "--f3-artifacts", " f3 ",
+    "--f4-artifacts", " f4 ",
+    "--f5-artifacts", " f5 ",
+    "--worksheet", " Overview ",
+    "--worksheet", " Details ",
+    "--supplier-capability", " supplier.json ",
+    "--datum-strategy", " datum.json ",
+    "--cost", " cost.json ",
+    "--image-observations", " images.json ",
+  ], { cwd: () => "ignored", runFeature2: async () => "unused", runFeature6 });
+
+  expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+  expect(calls).toEqual([["repo", "f2", "f3", "f4", "f5", {
+    selectedWorksheetNames: ["Overview", "Details"],
+    supplierCapabilityPath: "supplier.json",
+    datumStrategyPath: "datum.json",
+    costPath: "cost.json",
+    imageObservationsPath: "images.json",
+  }]]);
+});
+
+it("runs Feature 6 through the default wrapper and fixed repository runner", async () => {
+  const repoRoot = process.cwd();
+  const fixtureId = randomUUID();
+  const f5Stem = `f5-cli-${fixtureId}`;
+  const fixtureRoot = join(repoRoot, "test", "demo-output", `.feature6-cli-${fixtureId}`);
+  const inputsRoot = join(fixtureRoot, "inputs");
+  const outputRoot = join(repoRoot, "test", "demo-output", "f6-runs", f5Stem);
+  const fixtureModule = pathToFileURL(join(repoRoot, "scripts", "f6-artifact-test-fixture.mjs")).href;
+  const setupCode = `
+import { cpSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { createF6ArtifactBundleFixture } from ${JSON.stringify(fixtureModule)};
+const [targetRoot, f5Stem] = process.argv.slice(1);
+const bundle = createF6ArtifactBundleFixture({ worksheetNames: ["Analysis-A"] });
+for (const [source, target] of [
+  [bundle.f2ArtifactRoot, join(targetRoot, "f2")],
+  [bundle.f3ArtifactRoot, join(targetRoot, "f3")],
+  [bundle.f4ArtifactRoot, join(targetRoot, "f4")],
+  [bundle.f5ArtifactRoot, join(targetRoot, f5Stem)],
+]) cpSync(source, target, { recursive: true });
+rmSync(bundle.root, { recursive: true, force: true });
+`;
+
+  try {
+    await mkdir(inputsRoot, { recursive: true });
+    await execFileAsync(process.execPath, ["--input-type=module", "-e", setupCode, inputsRoot, f5Stem], {
+      cwd: repoRoot,
+      encoding: "utf8",
+    });
+    vi.stubEnv("AI_TVA_F6_OUTPUT_ROOT", join(tmpdir(), "forbidden-f6-output"));
+    vi.stubEnv("AI_TVA_F6_PUBLISH_ROOT", tmpdir());
+
+    const result = await executeCli([
+      "feature6", "--root", repoRoot,
+      "--f2-artifacts", join(inputsRoot, "f2"),
+      "--f3-artifacts", join(inputsRoot, "f3"),
+      "--f4-artifacts", join(inputsRoot, "f4"),
+      "--f5-artifacts", join(inputsRoot, f5Stem),
+      "--worksheet", "Analysis-A",
+    ]);
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+    expect(result.stdout).toContain("Feature 6 workflow completed.");
+    expect(result.stdout).toMatch(new RegExp(`f6: test/demo-output/f6-runs/${f5Stem}/[^\\r\\n]+`));
+    expect(result.stdout).not.toContain(tmpdir());
+  } finally {
+    vi.unstubAllEnvs();
+    await rm(fixtureRoot, { recursive: true, force: true });
+    await rm(outputRoot, { recursive: true, force: true });
+  }
+}, 120_000);
+
+it("requires exactly four Feature 6 artifact flags and at least one worksheet", async () => {
+  const runFeature6 = async () => "unused";
+  const dependencies = { cwd: () => "repo", runFeature2: async () => "unused", runFeature6 };
+  const complete = [
+    "feature6", "--root", "repo",
+    "--f2-artifacts", "f2", "--f3-artifacts", "f3", "--f4-artifacts", "f4", "--f5-artifacts", "f5",
+    "--worksheet", "Overview",
+  ];
+
+  for (const flag of ["--f2-artifacts", "--f3-artifacts", "--f4-artifacts", "--f5-artifacts", "--worksheet"]) {
+    const args = [...complete];
+    args.splice(args.indexOf(flag), 2);
+    await expect(executeCli(args, dependencies)).resolves.toMatchObject({ exitCode: 2, stdout: "" });
+  }
+  await expect(executeCli([...complete, "--f2-artifacts", "other"], dependencies))
+    .resolves.toMatchObject({ exitCode: 2, stderr: expect.stringContaining("duplicate option") });
+});
+
+it("rejects blank, missing, and duplicate-after-trim Feature 6 values", async () => {
+  const dependencies = { cwd: () => "repo", runFeature2: async () => "unused", runFeature6: async () => "unused" };
+  const complete = [
+    "feature6", "--root", "repo",
+    "--f2-artifacts", "f2", "--f3-artifacts", "f3", "--f4-artifacts", "f4", "--f5-artifacts", "f5",
+    "--worksheet", "Overview",
+  ];
+
+  for (const flag of ["--root", "--f2-artifacts", "--f3-artifacts", "--f4-artifacts", "--f5-artifacts", "--worksheet"]) {
+    const args = [...complete];
+    args[args.indexOf(flag) + 1] = "   ";
+    await expect(executeCli(args, dependencies)).resolves.toMatchObject({ exitCode: 2, stdout: "" });
+  }
+  await expect(executeCli([...complete, "--worksheet", " Overview "], dependencies))
+    .resolves.toMatchObject({ exitCode: 2, stderr: expect.stringContaining("unique worksheet") });
+  await expect(executeCli([...complete, "--cost"], dependencies))
+    .resolves.toMatchObject({ exitCode: 2, stderr: expect.stringContaining("option value is missing") });
+  await expect(executeCli([...complete, "--cost", "   "], dependencies))
+    .resolves.toMatchObject({ exitCode: 2, stdout: "" });
+});
+
+it("keeps Feature 6 flags command-specific and provides no phrase alias", async () => {
+  const dependencies = { cwd: () => "repo", runFeature2: async () => "unused", runFeature6: async () => "unused" };
+
+  await expect(executeCli([
+    "feature5", "--root", "repo", "--f1-artifacts", "f1", "--f3-artifacts", "f3", "--f4-artifacts", "f4",
+    "--supplier-capability", "supplier.json",
+  ], dependencies)).resolves.toMatchObject({ exitCode: 2, stdout: "" });
+  await expect(executeCli(["use f6 analysis report"], dependencies))
+    .resolves.toMatchObject({ exitCode: 2, stdout: "", stderr: expect.stringContaining("command is invalid") });
 });
 
 it("trims Feature 5 root, artifact, and image-observation paths consistently", async () => {

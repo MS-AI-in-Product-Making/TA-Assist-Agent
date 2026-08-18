@@ -9,6 +9,13 @@ import { renderF5Report } from "./f5-report.mjs";
 
 const CONTENT_HASH = "a".repeat(64);
 const IMAGE_HASH = "b".repeat(64);
+const CORE_SCOPES = [
+  "tolerance_loop_closure",
+  "datum_chain",
+  "assembly_datum_face",
+  "stack_start",
+  "direction",
+];
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -116,7 +123,13 @@ function observation(overrides = {}) {
   };
 }
 
-function completedReport({ observations = [], factorName, governanceGap = false } = {}) {
+function completedReport({
+  observations = [],
+  factorName,
+  governanceGap = false,
+  contextual = false,
+  contextualConfidences = CORE_SCOPES.map(() => "high"),
+} = {}) {
   const calculationResult = createCalculation(calculationRequest(factorName));
   if (calculationResult.status !== "completed") throw new Error("Expected completed calculation fixture.");
   const imageReference = {
@@ -129,7 +142,7 @@ function completedReport({ observations = [], factorName, governanceGap = false 
     factorInstanceId: String(index + 1).padStart(64, "0"),
     drawingDimensionKey: String(index + 11).padStart(64, "0"),
     deviceLevelDim: `device-dim-${index + 1}`,
-    dimensionDescription: `dimension-${index + 1}`,
+    dimensionDescription: "dimension-1",
     partCategory: "controlled-category",
     partSubsystem: "controlled-subsystem",
     drawingNumber: index === 0 ? "DRAW|1" : `DRAW-${index + 1}`,
@@ -143,20 +156,72 @@ function completedReport({ observations = [], factorName, governanceGap = false 
     qualitySignals: [],
     governanceStatus: governanceGap && index === 0 ? "needs_governance" : "complete",
     imageReference,
-    source: { ...factor.source, sourceCells: {} },
+    source: {
+      ...factor.source,
+      sourceCells: {
+        partName: `Analysis-A!I${factor.source.sourceRow}`,
+        factorName: `Analysis-A!A${factor.source.sourceRow}`,
+        nominalValue: `Analysis-A!B${factor.source.sourceRow}`,
+        upperTolerance: `Analysis-A!C${factor.source.sourceRow}`,
+        lowerTolerance: `Analysis-A!D${factor.source.sourceRow}`,
+        standardDeviation: `Analysis-A!F${factor.source.sourceRow}`,
+      },
+    },
   }));
+  const contextualObservations = CORE_SCOPES.map((scope, index) => ({
+    scope,
+    visualObservation: {
+      observedValue: "visible",
+      confidence: contextualConfidences[index],
+      visibleBasis: `Visible marker for ${scope}.`,
+      visibleLabels: scope === "direction" ? ["direction-label"] : [],
+      reviewStatus: "unreviewed",
+    },
+    contextualSignal: {
+      signalValue: scope === "direction" && contextualConfidences[index] === "high"
+        ? "indicated_consistent"
+        : "ambiguous",
+      textBasis: `Image and worksheet context require review for ${scope}.`,
+      linkedSourceRows: scope === "direction" && contextualConfidences[index] === "high"
+        ? [{ tableId: governanceRows[0].source.tableId, sourceRow: governanceRows[0].source.sourceRow }]
+        : [],
+      linkedVisualLabels: scope === "direction" && contextualConfidences[index] === "high"
+        ? [{ label: "direction-label", tableId: governanceRows[0].source.tableId, sourceRow: governanceRows[0].source.sourceRow }]
+        : [],
+      requiresEngineeringReview: true,
+    },
+  }));
+  const contextSnapshot = {
+    dimensionDescription: governanceRows[0].dimensionDescription,
+    rows: governanceRows.map((row) => ({
+      tableId: row.source.tableId,
+      sourceRow: row.source.sourceRow,
+      partName: row.partSubsystem,
+      partSubsystem: row.partSubsystem,
+      partCategory: row.partCategory,
+      factorName: row.factorDescription,
+      factorDescription: row.factorDescription,
+      nominal: row.nominal,
+      upperTolerance: row.upperTolerance,
+      lowerTolerance: row.lowerTolerance,
+      sigmaLevel: row.sigmaLevel,
+      sourceCells: row.source.sourceCells,
+    })).reverse(),
+  };
+  const worksheet = {
+    worksheetName: "Analysis-A",
+    imageReference,
+    governanceRows,
+    calculationResult,
+    imageObservations: contextual ? contextualObservations : observations,
+    ...(contextual ? { observationVersion: "f5-image-observation-v2", contextSnapshot } : {}),
+  };
   return createF5DataInterpretation({
     contractVersion: "v1",
     inputClassification: "confidential",
     workbook: { fileName: "Anonymous.xlsx", contentHash: CONTENT_HASH },
     knowledgeBaseVersion: "interpretation-rules-v1",
-    worksheets: [{
-      worksheetName: "Analysis-A",
-      imageReference,
-      governanceRows,
-      calculationResult,
-      imageObservations: observations,
-    }],
+    worksheets: [worksheet],
   });
 }
 
@@ -196,6 +261,12 @@ function chapter(markdown, heading, nextHeading) {
   return markdown.slice(start, end);
 }
 
+function section(markdown, heading, nextHeading) {
+  const start = markdown.indexOf(heading);
+  const end = nextHeading === undefined ? markdown.length : markdown.indexOf(nextHeading, start + heading.length);
+  return markdown.slice(start, end < 0 ? markdown.length : end);
+}
+
 function toleranceStatusReport(status) {
   if (status === "not_evaluated") return completedReport();
   if (status === "needs_review") return completedReport({ observations: [observation()] });
@@ -230,6 +301,174 @@ function toleranceStatusReport(status) {
 }
 
 describe("renderF5Report", () => {
+  it("uses the v2 observation version discriminator to render all v2 evidence layers", () => {
+    const report = completedReport({ contextual: true });
+    expect(report.worksheets[0].observationVersion).toBe("f5-image-observation-v2");
+
+    const markdown = chapter(
+      renderF5Report(report),
+      "## 1. 公差链有效性",
+      "## 2. 能力与规格对比",
+    );
+
+    for (const heading of [
+      "#### 五项状态矩阵",
+      "#### Visual FACT",
+      "#### Worksheet context SIGNAL",
+      "#### 分析上下文快照",
+    ]) {
+      expect(markdown).toContain(heading);
+    }
+  });
+
+  it("renders v2 scope matrix, isolated visual FACTs, and contextual SIGNALs", () => {
+    const markdown = chapter(
+      renderF5Report(completedReport({ contextual: true })),
+      "## 1. 公差链有效性",
+      "## 2. 能力与规格对比",
+    );
+
+    expect(markdown).toContain("五项状态矩阵");
+    expect(markdown).toContain("Visual FACT");
+    expect(markdown).toContain("Worksheet context SIGNAL");
+    expect(markdown).toContain("图文联合提示，非工程结论");
+    const matrix = section(markdown, "#### 五项状态矩阵", "#### Visual FACT");
+    for (const scope of CORE_SCOPES) {
+      expect(matrix.match(new RegExp(`\\| ${scope} \\|`, "g"))).toHaveLength(1);
+    }
+
+    const visualFacts = section(markdown, "#### Visual FACT", "#### Worksheet context SIGNAL");
+    for (const label of ["observedValue", "confidence", "reviewStatus", "image", "visibleBasis", "visibleLabels"]) {
+      expect(visualFacts).toContain(label);
+    }
+    expect(visualFacts).toContain("direction-label");
+    expect(visualFacts).not.toMatch(/textBasis|context snapshot/i);
+
+    const contextSignals = section(markdown, "#### Worksheet context SIGNAL", "#### 分析上下文快照");
+    for (const label of ["signalValue", "textBasis", "linkedSourceRows", "linkedVisualLabels", "requiresEngineeringReview"]) {
+      expect(contextSignals).toContain(label);
+    }
+    expect(contextSignals).toContain("direction-label");
+    expect(contextSignals).toContain("table-a:2");
+  });
+
+  it("renders every v2 context snapshot row in source order with original, mapped, numeric, and source-cell fields", () => {
+    const report = clone(completedReport({ contextual: true }));
+    report.worksheets[0].governanceRows.reverse();
+    const markdown = chapter(
+      renderF5Report(report),
+      "## 1. 公差链有效性",
+      "## 2. 能力与规格对比",
+    );
+    const snapshot = section(markdown, "#### 分析上下文快照", "#### 澄清卡片");
+
+    for (const label of [
+      "dimensionDescription",
+      "partName",
+      "partSubsystem",
+      "partCategory",
+      "factorName",
+      "factorDescription",
+      "nominal",
+      "upperTolerance",
+      "lowerTolerance",
+      "sigmaLevel",
+      "sourceCells",
+    ]) {
+      expect(snapshot).toContain(label);
+    }
+    for (const sourceRow of [2, 3, 4, 5]) expect(snapshot).toContain(`| table-a | ${sourceRow} |`);
+    expect(snapshot.indexOf("| table-a | 2 |")).toBeLessThan(snapshot.indexOf("| table-a | 3 |"));
+    expect(snapshot.indexOf("| table-a | 3 |")).toBeLessThan(snapshot.indexOf("| table-a | 4 |"));
+    expect(snapshot.indexOf("| table-a | 4 |")).toBeLessThan(snapshot.indexOf("| table-a | 5 |"));
+    expect(snapshot).toContain("| table-a | 2 | controlled-subsystem | controlled-subsystem | controlled-category | factor|one | factor|one | 0 | 1 | -1 | 2 |".replaceAll("factor|one", "factor\\|one"));
+    expect(snapshot).toContain("Analysis-A\\!A2");
+    expect(markdown).not.toMatch(/[A-Za-z]:[\\/]/);
+  });
+
+  it("escapes and redacts adversarial v2 context text without leaking raw unsafe payloads", () => {
+    const report = clone(completedReport({ contextual: true }));
+    const worksheet = report.worksheets[0];
+    const row = worksheet.contextSnapshot.rows[0];
+    const governanceRow = worksheet.governanceRows.find((candidate) => (
+      candidate.source.tableId === row.tableId && candidate.source.sourceRow === row.sourceRow
+    ));
+    const directionSignal = worksheet.statements.find((statement) => (
+      statement.type === "SIGNAL"
+      && statement.content.signalKind === "image_text_context_review"
+      && statement.content.scope === "direction"
+    ));
+    const directionFact = worksheet.statements.find((statement) => (
+      statement.type === "FACT"
+      && statement.content.provenanceKind === "image_observation"
+      && statement.content.scope === "direction"
+    ));
+    const unsafeMapped = "<script>mapped()</script>|[mapped](javascript:alert(1))";
+    const unsafeOriginal = "# injected-heading|<img src=x onerror=alert(1)>";
+    const unsafePath = "C:\\private\\context\\source.xlsx!A2";
+
+    governanceRow.partSubsystem = unsafeMapped;
+    row.partSubsystem = unsafeMapped;
+    row.partName = unsafeMapped;
+    governanceRow.factorDescription = unsafeOriginal;
+    row.factorName = unsafeOriginal;
+    row.factorDescription = unsafeOriginal;
+    const unsafeDimension = "<b>dimension</b> C:\\private\\dimension.txt";
+    worksheet.contextSnapshot.dimensionDescription = unsafeDimension;
+    for (const candidate of worksheet.governanceRows) candidate.dimensionDescription = unsafeDimension;
+    governanceRow.source.sourceCells = { factorName: unsafePath };
+    row.sourceCells = { factorName: unsafePath };
+    directionSignal.content.textBasis = "<script>signal()</script>|C:\\private\\signal.txt";
+    const unsafeLabel = "![label](javascript:alert(3))|<svg>";
+    directionSignal.content.linkedVisualLabels[0].label = unsafeLabel;
+    directionSignal.content.visualEvidence.visibleLabels = [unsafeLabel];
+    directionFact.content.visibleLabels = [unsafeLabel];
+
+    const markdown = renderF5Report(report);
+
+    expect(markdown).toContain("&lt;script&gt;mapped\\(\\)&lt;/script&gt;\\|");
+    expect(markdown).toContain("[redacted-local-path]");
+    expect(markdown).not.toMatch(/<\/?(?:script|img|svg|b)\b/i);
+    expect(markdown).not.toMatch(/!?\[[^\]]*\]\(javascript:/i);
+    expect(markdown).not.toContain(unsafePath);
+    expect(markdown).not.toContain("C:\\private\\");
+    expect(markdown).not.toMatch(/^# injected-heading$/m);
+  });
+
+  it("renders a controlled Visual FACT empty state for valid v2 medium and low observations", () => {
+    const markdown = chapter(
+      renderF5Report(completedReport({
+        contextual: true,
+        contextualConfidences: ["medium", "low", "medium", "low", "medium"],
+      })),
+      "## 1. 公差链有效性",
+      "## 2. 能力与规格对比",
+    );
+
+    const matrix = section(markdown, "#### 五项状态矩阵", "#### Visual FACT");
+    expect(matrix.match(/^\| (?:tolerance_loop_closure|datum_chain|assembly_datum_face|stack_start|direction) \|/gm)).toHaveLength(5);
+    const visualFacts = section(markdown, "#### Visual FACT", "#### Worksheet context SIGNAL");
+    expect(visualFacts).toContain("无满足 FACT gate 的视觉观察");
+    expect(markdown).toContain("#### Worksheet context SIGNAL");
+    expect(markdown).toContain("#### 分析上下文快照");
+  });
+
+  it("preserves v1 rendering and keeps no-v2 fallback clarifications", () => {
+    const legacy = renderF5Report(completedReport({ observations: [observation()] }));
+    expect(legacy).toContain("- SIGNAL `f5-signal-structural-evidence-review-stack_start`：需要 ME 评审");
+    expect(legacy).not.toContain("五项状态矩阵");
+    expect(legacy).not.toContain("Worksheet context SIGNAL");
+
+    const fallback = chapter(
+      renderF5Report(completedReport()),
+      "## 1. 公差链有效性",
+      "## 2. 能力与规格对比",
+    );
+    expect(fallback).toContain("not_evaluated");
+    expect(fallback).toContain("drawing_evidence_not_evaluated");
+    expect(fallback).toContain("questionForReviewer");
+  });
+
   it("renders the five fixed chapters in order with chapter-scoped FACT and RULE provenance", () => {
     const markdown = renderF5Report(completedReport({ observations: [observation({ confidence: "high" })] }));
     const headings = [

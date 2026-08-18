@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createComparisonPlaceholder } from "../../workbook-catalog/src/comparison-placeholder.js";
 import { evaluatePolicy, getFeatureStatus } from "./index.js";
 
 describe("policy gate", () => {
@@ -323,25 +324,50 @@ describe("policy gate", () => {
     });
   });
 
-  it("keeps F6 unavailable with its established comparison contracts", () => {
-    const feature = getFeatureStatus("F6");
-
-    expect(feature).toMatchObject({
+  it("reports F6 as the available governed optimization workflow", () => {
+    expect(getFeatureStatus("F6")).toEqual({
       featureId: "F6",
       title: "可比较的方案选项",
-      status: "unavailable",
-      inputContractId: "comparison-request-v1",
-      outputContractId: "comparison-result-v1",
+      status: "available",
+      dependsOn: [
+        "f2-user-report-v1",
+        "drawing-governance-v2",
+        "calculation-service-v1",
+        "f5-data-interpretation-v1",
+        "f6-optimization-v1",
+      ],
+      inputContractId: "f6-optimization-request-v1",
+      outputContractId: "f6-optimization-result-v1",
       maximumClassification: "confidential",
-      acceptanceChecks: ["anonymous-comparison-fixture"],
+      acceptanceChecks: [
+        "anonymous-f6-optimization-fixture",
+        "f6-artifact-association-check",
+        "f6-optimization-contract-check",
+        "f6-privacy-check",
+        "f6-no-write-network-check",
+        "f6-supplier-datum-evidence-gate-check",
+        "f6-roi-gate-check",
+        "f6-skill-contract-check",
+        "f0-f6-real-workbook-flow",
+        "f6-composed-report-check",
+      ],
       externalPrerequisites: ["approved-knowledge-base"],
       disableBehavior: "return feature_not_available",
     });
-    expect(feature?.dependsOn).toEqual(expect.arrayContaining([
-      "knowledge-base-v1",
-      "comparison-engine-v1",
-      "interpretation-rules-v1",
-    ]));
+  });
+
+  it("keeps the legacy F6 comparison placeholder compatible and unavailable", () => {
+    expect(createComparisonPlaceholder({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      projectReference: "controlled-project-reference",
+      runReference: "controlled-run-reference",
+      worksheetReferences: ["controlled-worksheet-reference"],
+    })).toMatchObject({
+      featureId: "F6",
+      status: "feature_not_available",
+      requiredPrerequisites: ["approved-knowledge-base"],
+    });
   });
 
   it("keeps F7 unavailable with its established Cpk contracts", () => {
@@ -359,7 +385,7 @@ describe("policy gate", () => {
     });
   });
 
-  it.each(["F6", "F7"])(
+  it.each(["F7"])(
     "keeps %s unavailable",
     (featureId) => {
       expect(getFeatureStatus(featureId)).toMatchObject({

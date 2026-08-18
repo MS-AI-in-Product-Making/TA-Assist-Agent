@@ -18,6 +18,9 @@ export { createCalculationRequestFromF4Handoff, createF4Handoff } from "./f4-han
 export { createF3DrawingGovernance } from "./f3-drawing-governance.js";
 export { createUnifiedExceptionResolution } from "./unified-exception-resolution.js";
 export { createCalculation } from "./calculation.js";
+export { calculateF6Scenario } from "./f6-scenario-adapter.js";
+export { createF6Optimization } from "./f6-optimization.js";
+export { createF6ComposedEngineeringReport } from "./f6-composed-report.js";
 export { createDrawingGovernancePlaceholder } from "./drawing-governance-placeholder.js";
 export { createInterpretation, createInterpretationPlaceholder } from "./interpretation-placeholder.js";
 export { createF5DataInterpretation } from "./f5-data-interpretation.js";

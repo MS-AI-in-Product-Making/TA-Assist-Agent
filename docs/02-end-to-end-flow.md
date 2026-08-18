@@ -11,7 +11,23 @@ F1 is the sole producer and physical owner of worksheet image evidence. F2 store
 
 F5 directly consumes the controlled F0 rule snapshot plus F1, F3, and F4 artifacts. When the entry is a workbook, F2 is a mandatory upstream gate before those artifacts may enter F5. The supported entries are `workflow:f5` and the phrase `使用F5分析报告`. The fixed report presents five sections: F5 owns loop validity, capability versus specification, and top contributors; structural risks and parallel improvement options are delegated to F6.
 
-F1 remains the sole physical owner of each worksheet image. A missing F1 `imageReference` or physical image fails that worksheet closed. When the image and reference are verified but observation mode is unavailable, skipped, or produces no artifact, F5 continues deterministic interpretation with image evidence marked `not_evaluated` and an explicit clarification. Any observation is visible evidence, not drawing truth; it carries confidence and remains subject to ME review. F5 emits only `FACT`, `RULE`, `SIGNAL`, and unranked `OPTION`, preserves each F0 rule version and scope, and records assumptions without silently treating them as facts. It neither auto-publishes to ADO nor writes back to the workbook.
+Historical `f5-image-observation-v1` artifacts remain read-only compatible; new image-mode runs create only `f5-image-observation-v2`. For every selected worksheet, v2 records exactly `tolerance_loop_closure`, `datum_chain`, `assembly_datum_face`, `stack_start`, and `direction`, plus a context snapshot of all active factor rows. The snapshot preserves original `partName`/`factorName`, mapped `partSubsystem`/`factorDescription`, numeric inputs, and source-cell provenance.
+
+Purely visual, confidence-gated evidence may produce an image `FACT`. Image-plus-text assessment produces only an `image_text_context_review` `SIGNAL` with `requiresEngineeringReview: true`; direction-to-row mapping requires structured `linkedVisualLabels` and never free-text inference. V2 validation is all-or-nothing across the selected worksheet set, five scopes, image hashes, snapshot rows, and provenance. An observation-only failure discards the whole v2 artifact and continues deterministic F5 with clarification; baseline F1/F3/F4 identity or required-image errors fail closed.
+
+F1 remains the sole physical image owner. New v2 artifacts are immutable, created once in UUID-scoped locations, and read back before invocation. The F5 loader validates their exact content against the schema, workbook/worksheet identity and selected set, snapshot/source provenance, carried `imageReference` identity, and the physical F1 image SHA-256. No pre-existing observation artifact digest exists; after acceptance, the workflow runner computes and records its SHA-256 in `Feature5-Run-Summary`. F5 emits only `FACT`, `RULE`, `SIGNAL`, and unranked `OPTION`, preserves F0 rule version and scope, and neither auto-publishes to ADO nor writes back to the workbook. Its existing detailed report and delegation to F6 are unchanged; the available F6 workflow accepts the governed F5 v1 baseline and optional v2 observation evidence.
+
+### F6 Governed Optimization Contract
+
+The agent Skill phrase `使用F6分析报告` starts the governed workbook sequence `F0 -> F1 -> F2 -> F3 -> F4 -> F5 -> F6`; users do not assemble commands manually. The Skill preserves two worksheet confirmations: the first fixes F1/F2 parsing scope against the workbook hash, and the second chooses the exact downstream set only from F2-ready worksheets with valid F1 image provenance. Downstream execution uses local-only F3 with no ADO publishing, then F4, F5, and F6 in order. New image mode creates only immutable `f5-image-observation-v2` evidence.
+
+After validation, the Skill presents an F1-F6 output ledger plus the controlled F0 version disclosure. A phase is complete only after contract, containment, identity, manifest, and recorded hashes pass. Missing supplier or datum evidence keeps options at `insufficient_evidence`; missing governed cost coverage keeps ROI at `not_computed`. An existing F6 artifact entry validates and presents the six-file run without rerunning upstream phases.
+
+After F5, F6 binds exact F2/F3/F4/F5 artifact roots and one or more unique `--worksheet` selections. Direct CLI roots are positional; the app CLI names them with `--f2-artifacts` through `--f5-artifacts` and fixes output under `test/demo-output/f6-runs/<F5-root-name>/<UTC-run-id>/`. Both support optional `--supplier-capability`, `--datum-strategy`, `--cost`, and `--image-observations` evidence.
+
+F6 owns options, reverse solving, RSS apportionment, feasibility, impact ranking, and the composed report; F5 owns baseline interpretation and evidence. Top-1 reduces the baseline top contributor band by 20%; Top-3 reduces each frozen baseline top-three band by 30%; both preserve each original band center. Mean centering always requires engineering review. Reverse solves and the proportional, equal-top-N, capability-bounded, and residual-after-centering RSS policies are verified through the F4 kernel.
+
+Supplier, datum, and cost behavior is evidence-limited. Missing or mismatched support is `insufficient_evidence`; ROI remains `not_computed` unless all supported ranked options have known positive governed cost. Highest Impact is therefore distinct from ROI. F6 atomically publishes six confidential artifacts: optimization JSON/Markdown, composed-report JSON/Markdown, run summary, and manifest. The composed report contains a workbook summary and ten sections per ready worksheet; an F2-blocked worksheet appears only in workbook Input Validation. Source workbooks remain read-only and F6 performs no ADO, network, or workbook write. Identity, hash, association, schema, controlled-root, staging, atomic, and post-commit identity gates fail closed.
 
 ## Flow Diagram
 
@@ -60,8 +76,9 @@ flowchart TB
     L --> M3["Top contributors (F5)"]
     L --> M4["Structural risks (delegated F6)<br>Not synthesized by F5"]
     L --> M5["Parallel improvement options (delegated F6)<br>Not synthesized by F5"]
-    M4 -. Future optional path .-> M6["Optimization (F6 · inactive)<br>F6 is unavailable and returns feature_not_available<br>No optimization calculation runs and no optimization evidence is saved for the current run"]
-    M5 -. Future optional path .-> M6
+    M4 --> M6["Governed optimization after F5 (F6)<br>options · reverse solve · RSS apportionment<br>feasibility · Highest Impact · cost-gated ROI"]
+    M5 --> M6
+    M6 --> N
     M1 --> N["User view (F8)<br>Read-only evidence pane, cited report, and Loop images<br>Traceable and reproducible"]
     M2 --> N
     M3 --> N
@@ -135,7 +152,7 @@ flowchart TB
 | ADO governance | Whether a grouped missing-item list has an ADO work item | Reuse the upload-stage ADO choice. With ADO, the user confirms a reminder and the list is added to Comment 0; otherwise, save the list locally. Current F3 provides no scheduler, no milestone timer, no date-triggered reminder, and no F4 calculation/handoff mutation. |
 | Method recommendation | Factor count | `<4` recommends WC; `4-10` recommends RSS; `>10` notifies the DM team for 3D VA. The core engine always calculates both WC and RSS. |
 | Evidence sufficiency | Whether the required F1 image exists and datum-face, stack-start, or cross-subsystem evidence is ambiguous | Missing physical image/reference fails the worksheet closed. Skipped optional observation produces `not_evaluated`; ambiguity creates an assumption and clarification that pause only dependent conclusions. |
-| Optimization and versioning | Whether design or capability changes are needed | Current F5 behavior is limited to `delegated_to_f6`. Invoking F6 returns `feature_not_available`; F5 does not generate centering, contribution, tolerance, or specification options or provide real-time feedback. Future F6 capability will generate those options and provide real-time feedback. Future roadmap: any ADO date/milestone/version persistence intent remains outside current F3 scope. |
+| Optimization and versioning | Whether design or capability changes are needed | F5 remains `delegated_to_f6`; the available F6 workflow generates deterministic centering/tolerance/reverse/RSS options from bound F2-F5 evidence. Supplier/datum/cost gaps remain explicit, and the legacy comparison placeholder alone returns `feature_not_available`. Future roadmap: any ADO date/milestone/version persistence remains outside current F3 scope. |
 | Measured data feedback | Whether measured Cpk is available after optimization | Compare estimated and actual capability, output actual tolerance range and optimization report, and upgrade the capability-library entry; otherwise retain the baseline report. |
 
 ## F3 Governed ADO Publishing Contract

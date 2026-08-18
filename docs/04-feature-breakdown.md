@@ -163,30 +163,35 @@ The result must include a quick, easy-to-scan TA risk summary.
 - Consume controlled F0/F1/F3/F4 artifacts directly; workbook entry must first pass the F2 gate.
 - Use four statement types: `FACT` for computed or directly observed evidence, `RULE` for an applicable F0 rule, `SIGNAL` for items needing engineering attention, and `OPTION` for unranked alternatives.
 - Generate sections 1-3 of the five-section report: loop validity, capability versus specification, and top contributors. Delegate structural risks and parallel options to F6.
-- Check loop closure only from governed evidence. F1 is the sole physical image owner; missing image provenance fails closed, while skipped optional observation is `not_evaluated` plus clarification.
-- Treat every image observation as confidence-tagged visible evidence rather than drawing truth; structural use remains gated by ME review.
+- Keep historical `f5-image-observation-v1` artifacts read-only compatible; create only v2 from new image-mode runs.
+- For every selected worksheet, require exactly one observation for each of `tolerance_loop_closure`, `datum_chain`, `assembly_datum_face`, `stack_start`, and `direction`.
+- Snapshot all active factor rows with original and mapped part/factor fields, numeric inputs, and source-cell provenance.
+- Keep visual evidence in confidence-gated image `FACT`s and image-plus-text assessment in `image_text_context_review` `SIGNAL`s requiring ME review. Direction mapping uses structured `linkedVisualLabels`; free-text inference is prohibited.
+- Validate v2 all-or-nothing. Observation-only failure discards the entire v2 and continues deterministic F5 with clarification; baseline identity and required-image errors fail closed.
+- Create v2 once in an immutable UUID-scoped location and read it back before invocation. The F5 loader validates exact content against the schema, workbook/worksheet identity and selected set, snapshot/source provenance, carried `imageReference` identity, and the physical F1 image SHA-256. No pre-existing observation artifact digest exists; after acceptance, the workflow runner computes and records its SHA-256 in `Feature5-Run-Summary`.
 - Evaluate RSS sigma, Cpk, and spec-window feasibility using the Rules Library.
 - Order the top contributors by governed F4 contribution and explain only measurable causes supported by source evidence.
 - Cite the F0 knowledge-base entry, rule version, and applicable scope for every `RULE` or capability conclusion.
 - Show a clarification card and explicit assumption log when the assembly datum face, stack start, subsystem classification, or other required evidence is missing.
 - Hold only the conclusions that depend on the unanswered question; continue analysis for evidence that is already sufficient.
 - Support `workflow:f5` and the trigger phrase `使用F5分析报告`; never auto-publish to ADO or write back to the workbook.
-- Retain F5.1 as an internal compatible core, not as the only available F5 entry.
+- Retain F5.1 as an internal compatible core, not as the only available F5 entry. Keep the existing detailed F5 report and its controlled delegation unchanged; the available F6 workflow consumes that delegation without ranking F5 `OPTION` statements.
 
 ### F6 - Tolerance / Dimension-Chain Optimization
 
-**Feature:** Present quantified ways to improve a risk without ranking or forcing an engineering recommendation.
+**Feature:** Run a governed optimization workflow after F5, quantify comparable options, and preserve the ME review decision.
 
-**Tasks:** Adjust mean / adjust tolerance range
+**Tasks:**
 
-- Own report section 4, structural risks, and section 5, parallel improvement options; F5 shows these as delegated while F6 is unavailable.
-- Detect nominal offset and show the Cpk improvement from mean-shift centering.
-- Rank tolerance changes using contribution-weighted leverage and estimate the relative cost impact.
-- Apportion the required RSS sigma reduction across the top two or three contributors.
-- Run what-if calculations for tightening or loosening an individual factor and show the Cpk change.
-- Generate two or three parallel reverse-solve options: single-point tighten, combined top-contributor tighten, and center plus tighten.
-- Check each option against the Capability Library; show a red warning when the required tolerance is not process-achievable and mark T0 as feasibility unknown.
-- Apply CTS/CTF rules: CTF may show a specification-versus-yield trade-off; CTS must not loosen the specification.
+- Accept exact F2/F3/F4/F5 artifact roots, one or more unique worksheet selections, and optional supplier capability, datum strategy, cost, and image-observation evidence. The app CLI uses the trusted repository runner and fixes output under `test/demo-output/f6-runs/<F5-root-name>/<UTC-run-id>/`.
+- Keep ownership explicit: F5 owns baseline facts/rules/signals, clarifications, and v1/v2-compatible evidence; F6 owns scenario options, reverse solve, RSS apportionment, feasibility, impact ranking, and the F5+F6 composed report.
+- Calculate deterministic Top-1 -20% and frozen Top-3 -30% tolerance-band scenarios while preserving each original band center. Mean-shift centering is always `requires_engineering_review`.
+- Reverse-solve target Cpk for a single factor, top three, RSS apportionment, and centering-plus-tighten, then verify every option through the F4 kernel. Support proportional-to-contribution, equal-allocation-among-top-N, bounded-by-capability, and residual-after-centering policies.
+- Treat supplier capability, datum strategy, and cost as evidence-limited. Missing or mismatched support is `insufficient_evidence`, not an estimated result.
+- Rank deterministic supported options as Highest Impact. Compute ROI only when all supported ranked options have known positive governed cost; otherwise report `ROI: not_computed` and never relabel Highest Impact as Highest ROI.
+- Produce an optimization report plus a composed workbook summary and ten fixed sections per ready worksheet. F2-blocked worksheets appear only in workbook Input Validation and receive no capability or optimization numbers.
+- Atomically publish exactly six confidential artifacts: optimization JSON/Markdown, composed-report JSON/Markdown, run summary, and manifest. Keep source workbooks read-only; perform no ADO, network, or workbook write. Fail closed on schema, identity/hash, association, controlled-root, staging, atomic-commit, or committed-file identity failure.
+- Preserve `comparison-request-v1` / `comparison-result-v1` as a separate legacy placeholder returning `feature_not_available`; do not confuse it with the available `f6-optimization-v1` workflow. See the [Feature Register](governance/feature-register.md).
 
 ---
 
