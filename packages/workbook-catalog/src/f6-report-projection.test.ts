@@ -79,9 +79,9 @@ describe("createF6ReportProjection", () => {
     expect(threeSigma?.range.lower).toBeCloseTo(-0.1852081728298996);
     expect(threeSigma?.range.upper).toBeCloseTo(0.08520817282989961);
     expect(result.margins.statistical.minimumMargin).toBeCloseTo(-0.03520817282989961);
-    expect(result.margins.worstCase.minimumMargin).toBeCloseTo(-0.4);
-    expect(result.margins.worstCase.lowerBound).toBe(-0.45);
-    expect(result.margins.worstCase.upperBound).toBe(0.45);
+    expect(result.margins.worstCase.minimumMargin).toBeCloseTo(-0.35);
+    expect(result.margins.worstCase.lowerBound).toBeCloseTo(-0.5);
+    expect(result.margins.worstCase.upperBound).toBeCloseTo(0.4);
     expect(result.formulaChecks.map(({ formulaId }) => formulaId)).toContain("rss-v1");
     expect(result.formulaChecks.map(({ formulaId }) => formulaId)).toContain("worst-case-v1");
   });

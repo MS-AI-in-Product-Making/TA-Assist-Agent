@@ -277,12 +277,20 @@ describe("renderF6Report V2", () => {
   }
 
   it("renders predictive baseline, RSS/WC separation, and candidate-only optimization in Chinese", () => {
-    const markdown = renderF6ReportV2(resultV2());
+    const input = resultV2();
+    input.worksheets[0].baselineMetrics.mean = 1.507;
+    input.worksheets[0].baselineMetrics.rssSigma = 0.134;
+    input.worksheets[0].baselineMetrics.worstCaseLower = -1.21;
+    input.worksheets[0].baselineMetrics.worstCaseUpper = 1.21;
+    input.worksheets[0].targetCapability.targetSigmaLevel = 4;
+
+    const markdown = renderF6ReportV2(input);
 
     expect(markdown).toContain("# Feature 6 公差优化报告 V2");
     expect(markdown).toContain("预测性能力指标");
     expect(markdown).toContain("RSS 1σ");
-    expect(markdown).toContain("Worst Case 下限");
+    expect(markdown).toContain("RSS 4σ 范围：0.971 mm ～ 2.043 mm");
+    expect(markdown).toContain("Worst Case 绝对范围：0.297 mm ～ 2.717 mm");
     expect(markdown).toContain("【数据缺口 Missing】");
     expect(markdown).toContain("未提供受控优化目标");
     expect(markdown).not.toMatch(/20%|30%|Predicted Improvement/);

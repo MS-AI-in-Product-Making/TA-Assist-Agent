@@ -167,6 +167,11 @@ export function renderF6Report(result, options = {}) {
   ];
   for (const worksheet of parsed.worksheets) {
     const metrics = worksheet.baselineMetrics;
+    const targetSigmaLevel = worksheet.targetCapability.targetSigmaLevel;
+    const rssLower = metrics.mean - targetSigmaLevel * metrics.rssSigma;
+    const rssUpper = metrics.mean + targetSigmaLevel * metrics.rssSigma;
+    const worstCaseLower = metrics.mean + metrics.worstCaseLower;
+    const worstCaseUpper = metrics.mean + metrics.worstCaseUpper;
     lines.push(
       "",
       `## Worksheet：${cell(worksheet.worksheetName)}`,
@@ -175,8 +180,8 @@ export function renderF6Report(result, options = {}) {
       "",
       `- ${evidenceLabel("CALCULATED")} Mean：${formatEngineering(metrics.mean, "mm", 3)}`,
       `- ${evidenceLabel("CALCULATED")} RSS 1σ：${formatEngineering(metrics.rssSigma, "mm", 3)}`,
-      `- ${evidenceLabel("CALCULATED")} Worst Case 下限：${formatEngineering(metrics.worstCaseLower, "mm", 3)}`,
-      `- ${evidenceLabel("CALCULATED")} Worst Case 上限：${formatEngineering(metrics.worstCaseUpper, "mm", 3)}`,
+      `- ${evidenceLabel("CALCULATED")} RSS ${targetSigmaLevel}σ 范围：${formatEngineering(rssLower, "mm", 3)} ～ ${formatEngineering(rssUpper, "mm", 3)}`,
+      `- ${evidenceLabel("CALCULATED")} Worst Case 绝对范围：${formatEngineering(worstCaseLower, "mm", 3)} ～ ${formatEngineering(worstCaseUpper, "mm", 3)}`,
       `- 预测性能力指标 Cpk：${metrics.cpk.toFixed(3)} ratio` ,
       `- 模型预测 Yield：${metrics.yield === null ? "不适用" : formatPercent(metrics.yield * 100, 2)}`,
       "- 限制：上述 Cpk/Yield 来自设计公差模型，不等同于实测量产能力。",

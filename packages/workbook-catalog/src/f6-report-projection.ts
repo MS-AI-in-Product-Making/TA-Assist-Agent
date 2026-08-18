@@ -231,8 +231,10 @@ export function createF6ReportProjection(input: {
     ?? { sigmaLevel: calculation.capability.targetSigmaLevel, range: { lower: mean - calculation.capability.targetSigmaLevel * rssSigma, upper: mean + calculation.capability.targetSigmaLevel * rssSigma, unit }, formulaCheckId: "statistical-bound-v1" };
   const statisticalLowerMargin = selectedRange.range.lower - calculation.capability.lowerSpecLimit;
   const statisticalUpperMargin = calculation.capability.upperSpecLimit - selectedRange.range.upper;
-  const worstCaseLowerMargin = calculation.system.worstCaseLower - calculation.capability.lowerSpecLimit;
-  const worstCaseUpperMargin = calculation.capability.upperSpecLimit - calculation.system.worstCaseUpper;
+  const worstCaseLowerBound = mean + calculation.system.worstCaseLower;
+  const worstCaseUpperBound = mean + calculation.system.worstCaseUpper;
+  const worstCaseLowerMargin = worstCaseLowerBound - calculation.capability.lowerSpecLimit;
+  const worstCaseUpperMargin = calculation.capability.upperSpecLimit - worstCaseUpperBound;
 
   const calculatedMean = calculation.factors.reduce((sum, factor) => sum + factor.mean, 0) + calculation.system.additionalMeanShift;
   const calculatedRss = Math.hypot(...calculation.factors.map(({ sigma }) => sigma));
@@ -257,8 +259,8 @@ export function createF6ReportProjection(input: {
         formulaReferences: [{ outputField: "system.rssSigma", formulaId: "statistical-margin-v1", formulaVersion: "f6-report-projection-v1" }],
       },
       worstCase: {
-        lowerBound: calculation.system.worstCaseLower,
-        upperBound: calculation.system.worstCaseUpper,
+        lowerBound: worstCaseLowerBound,
+        upperBound: worstCaseUpperBound,
         lowerMargin: worstCaseLowerMargin,
         upperMargin: worstCaseUpperMargin,
         minimumMargin: Math.min(worstCaseLowerMargin, worstCaseUpperMargin),

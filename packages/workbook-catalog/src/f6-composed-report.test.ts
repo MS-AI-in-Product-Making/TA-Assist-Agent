@@ -658,6 +658,38 @@ describe("createF6ComposedEngineeringReport V2", () => {
     expect(worksheet.status).toBe("FAIL");
   });
 
+  it("normalizes floating-point drift in cumulative contributor percentages", () => {
+    const input = structuredClone(bundleV2());
+    const worksheet = input.f5Report.worksheets[0];
+    if (worksheet?.status !== "completed") throw new Error("fixture worksheet must be completed");
+    worksheet.calculationResult.factors[0]!.contribution = 0.1;
+    worksheet.calculationResult.factors[1]!.contribution = 0.9000000000000001;
+    for (const contributor of worksheet.sections.majorContributors.items) {
+      contributor.contributionPercent = worksheet.calculationResult.factors[contributor.factorIndex]!.contribution * 100;
+    }
+    worksheet.sections.majorContributors.items.sort((left, right) => (
+      right.contributionPercent - left.contributionPercent || left.factorIndex - right.factorIndex
+    ));
+    for (const statement of worksheet.statements) {
+      if (statement.type === "FACT" && "metric" in statement.content
+        && statement.content.metric === "factor_contribution") {
+        const contributor = worksheet.sections.majorContributors.items.find(
+          ({ factorReference }) => factorReference === statement.content.factorReference,
+        );
+        if (contributor !== undefined) statement.content.contributionPercent = contributor.contributionPercent;
+      }
+    }
+    expect(worksheet.calculationResult.factors.reduce(
+      (total, factor) => total + factor.contribution * 100,
+      0,
+    )).toBeGreaterThan(100);
+
+    const report = createF6ComposedEngineeringReportV2(input);
+    const contributors = report.worksheets[0]!.sections.contributorAnalysis.contributors;
+
+    expect(contributors.at(-1)!.cumulativePercent).toBe(100);
+  });
+
   it("keeps a passing predictive baseline conditional when P1 context gaps remain", () => {
     const report = createF6ComposedEngineeringReportV2(bundleV2(1));
 
