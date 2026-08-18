@@ -40,6 +40,8 @@ export interface Feature6CommandOptions {
   readonly datumStrategyPath?: string;
   readonly costPath?: string;
   readonly imageObservationsPath?: string;
+  readonly analysisContextPath?: string;
+  readonly optimizationTargetsPath?: string;
 }
 
 function feature6Error(
@@ -227,6 +229,8 @@ export async function runFeature6WorkflowCommand(
     ["--datum-strategy", optionalPath(options.datumStrategyPath, "datum strategy")],
     ["--cost", optionalPath(options.costPath, "cost")],
     ["--image-observations", optionalPath(options.imageObservationsPath, "image observations")],
+    ["--analysis-context", optionalPath(options.analysisContextPath, "analysis context")],
+    ["--optimization-targets", optionalPath(options.optimizationTargetsPath, "optimization targets")],
   ] as const) {
     if (value !== undefined) args.push(flag, value);
   }

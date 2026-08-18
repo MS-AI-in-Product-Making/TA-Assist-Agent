@@ -93,6 +93,8 @@ console.log(JSON.stringify({ status: "partially_completed", outputDirectory: "te
       datumStrategyPath: "evidence/datum.json",
       costPath: "evidence/cost.json",
       imageObservationsPath: "evidence/images.json",
+      analysisContextPath: "evidence/context.json",
+      optimizationTargetsPath: "evidence/targets.json",
     } as const;
 
     const result = await runFeature6WorkflowCommand(
@@ -108,6 +110,8 @@ console.log(JSON.stringify({ status: "partially_completed", outputDirectory: "te
         "--datum-strategy", "evidence/datum.json",
         "--cost", "evidence/cost.json",
         "--image-observations", "evidence/images.json",
+        "--analysis-context", "evidence/context.json",
+        "--optimization-targets", "evidence/targets.json",
       ],
       cwd: setup.rootDir,
     });

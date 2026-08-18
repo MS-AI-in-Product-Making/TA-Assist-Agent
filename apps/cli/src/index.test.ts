@@ -307,6 +307,8 @@ it("routes explicit Feature 6 with four artifact roots, repeated worksheets, and
     "--datum-strategy", " datum.json ",
     "--cost", " cost.json ",
     "--image-observations", " images.json ",
+    "--analysis-context", " context.json ",
+    "--optimization-targets", " targets.json ",
   ], { cwd: () => "ignored", runFeature2: async () => "unused", runFeature6 });
 
   expect(result).toMatchObject({ exitCode: 0, stderr: "" });
@@ -316,6 +318,8 @@ it("routes explicit Feature 6 with four artifact roots, repeated worksheets, and
     datumStrategyPath: "datum.json",
     costPath: "cost.json",
     imageObservationsPath: "images.json",
+    analysisContextPath: "context.json",
+    optimizationTargetsPath: "targets.json",
   }]]);
 });
 
