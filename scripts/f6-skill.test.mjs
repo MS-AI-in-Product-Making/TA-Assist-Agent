@@ -72,7 +72,8 @@ describe("F6 analysis skill contract", () => {
       "### Phase W1 - Generate F1 worksheet selection",
       "### Phase W2 - Confirm and run F1 plus F2",
       "### Phase W3 - Select ready downstream worksheets",
-      "### Phase W4 - Run local F3",
+      "### Phase W4 - Run and validate current F3",
+      "### Phase W4A - Govern optional F3 ADO publishing",
       "### Phase W5 - Run F4",
       "### Phase W6 - Evaluate optional F5 v2 image evidence",
       "### Phase W7 - Run and validate F5",
@@ -86,6 +87,40 @@ describe("F6 analysis skill contract", () => {
     expect(skill).toContain("No complete F1, F2, F3, F4, F5, or F6 execution may begin before the first selection succeeds");
     expect(skill).toContain("No F3, F4, F5, or F6 execution may begin before the second selection succeeds");
     expect(skill).toContain("The exact downstream worksheet set is reused by F3, F5, and F6");
+  });
+
+  it("requires current-run F3 execution before the optional ADO gate and F4", () => {
+    const skill = readSkill();
+    expectOrdered(skill, [
+      "npm run workflow:f3 -- <f2-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...]",
+      "Feature3-Report.json",
+      "`governance_required`",
+      "### Phase W4A - Govern optional F3 ADO publishing",
+      "### Phase W5 - Run F4",
+    ]);
+    expect(skill).toContain("must execute F3 for the current confirmed run");
+    expect(skill).toContain("Never reuse a historical F3 root");
+    expect(skill).toContain("Only `governance_required` enters W4A");
+    expect(skill).toContain("A completed F3 skips W4A");
+  });
+
+  it("reuses the governed F3 ADO protocol without automatic or implicit writes", () => {
+    const skill = readSkill();
+    expect(skill).toContain("[F3 analysis and ADO publishing protocol](../f3-analysis/SKILL.md)");
+    expect(skill).toContain("[F3 ADO publishing reference](../f3-analysis/references/ado-publishing.md)");
+    for (const marker of [
+      "Create a new ADO work item",
+      "Use an existing ADO work item",
+      "Do not publish to ADO",
+      "Question call 1",
+      "Question call 2",
+      "Confirm write",
+      "Surface MCP",
+      "write exactly once",
+      "read back",
+    ]) expect(skill).toContain(marker);
+    expect(skill).toContain("Never publish automatically or implicitly");
+    expect(skill).toContain("W4A outcome does not change the validated F3 analysis result");
   });
 
   it("requires immutable F5 v2 observations and evidence-gated F6 options", () => {
@@ -119,14 +154,14 @@ describe("F6 analysis skill contract", () => {
     expect(skill).toContain("contract, containment, identity, manifest, and recorded hashes");
   });
 
-  it("keeps the orchestration confidential, local-only, and fail closed", () => {
+  it("keeps deterministic runners local and the optional ADO adapter fail closed", () => {
     const skill = readSkill();
     for (const rule of [
       "Never request or expose credentials",
-      "No REST, browser network, shell HTTP, curl, or Invoke-WebRequest",
+      "No REST, browser network, shell HTTP, curl, or Invoke-WebRequest for ADO",
       "Never modify the source workbook",
-      "F3 is local analysis only",
-      "Do not publish to ADO",
+      "F3 and F6 repository runners remain deterministic and network-free",
+      "Never publish automatically or implicitly",
       "Treat all inputs and outputs as confidential",
       "Stop on command failure or validation failure",
       "Do not continue from a historical or partial run",
@@ -144,7 +179,10 @@ describe("F6 analysis skill contract", () => {
     for (const markdown of [documents.readme, documents.englishFlow, documents.chineseFlow]) {
       expect(markdown).toContain("F0 -> F1 -> F2 -> F3 -> F4 -> F5 -> F6");
       expect(markdown).toContain("two worksheet confirmations");
-      expect(markdown).toContain("local-only F3");
+      expect(markdown).toContain("current-run F3");
+      expect(markdown).toContain("governance_required");
+      expect(markdown).toContain("optional ADO publishing gate");
+      expect(markdown).toContain("never automatic or implicit");
       expect(markdown).toContain("f5-image-observation-v2");
       expect(markdown).toContain("insufficient_evidence");
       expect(markdown).toContain("not_computed");

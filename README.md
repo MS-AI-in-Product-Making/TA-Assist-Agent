@@ -265,14 +265,14 @@ The workflow executes Task 1.1-1.7 with real workbook inputs and emits a final r
 
 ## Feature 6 Governed Optimization Workflow
 
-- Agent Skill 入口为“使用F6分析报告”。用户无需手工拼接命令；agent 在取得 TA workbook 后按 `F0 -> F1 -> F2 -> F3 -> F4 -> F5 -> F6` 执行，保留 two worksheet confirmations：第一次确认 F1/F2 解析范围，第二次只从 F2 ready 且 F1 图片有效的 worksheets 中确认 F3/F4/F5/F6 范围。该入口始终使用 local-only F3，不发布 ADO；新图片评估只创建 immutable `f5-image-observation-v2`。
+- Agent Skill 入口为“使用F6分析报告”。用户无需手工拼接命令；agent 在取得 TA workbook 后按 `F0 -> F1 -> F2 -> F3 -> F4 -> F5 -> F6` 执行，保留 two worksheet confirmations：第一次确认 F1/F2 解析范围，第二次只从 F2 ready 且 F1 图片有效的 worksheets 中确认 F3/F4/F5/F6 范围。Workbook mode 必须执行并验证 current-run F3；仅当结果为 `governance_required` 时进入复用 F3 双确认协议的 optional ADO publishing gate，发布 never automatic or implicit。新图片评估只创建 immutable `f5-image-observation-v2`。
 - Skill 完成后展示 F1-F6 output ledger，并单独披露 F0 的 `v1`、`internal-v1`、`interpretation-rules-v1` 版本；F0 没有虚构的独立 workflow artifact。每个 Feature 的 contract、identity、manifest 和 hash 必须验证后才标记完成。已有 F6 output directory 或 `Feature6-Composed-Report.json` 走 read-and-validate 快速路径，不重跑上游。
 - F6 在完成 F5 后运行。直接 CLI：`npm run workflow:f6 -- "<f2-root>" "<f3-root>" "<f4-root>" "<f5-root>" --worksheet "Analysis-A"`；四个 root 顺序固定，`--worksheet` 至少一个、可重复且 trim 后唯一。可选证据为 `--supplier-capability`、`--datum-strategy`、`--cost`、`--image-observations`，且必须来自同一受控 evidence 目录。
 - App CLI：`node apps/cli/dist/index.js feature6 --root "." --f2-artifacts "<f2-root>" --f3-artifacts "<f3-root>" --f4-artifacts "<f4-root>" --f5-artifacts "<f5-root>" --worksheet "Analysis-A"`，支持相同四类 evidence options。它只执行仓库内 trusted runner，并固定把结果写入 `test/demo-output/f6-runs/<F5-root-name>/<UTC-run-id>/`；app CLI 不接受自定义 output root。
 - F5 owns baseline FACT/RULE/SIGNAL、clarification 和可选 v2 evidence；F6 owns deterministic options、reverse solve、RSS apportionment、feasibility、impact ranking 和 composed report。Top 1 固定收紧 20%，Top 3 固定各收紧 30%，都保持原 tolerance-band center；mean-shift 始终要求 engineering review，reverse solve 与四类 RSS policy 均须回到 F4 kernel 验证。
 - Supplier/datum/cost 都是 evidence-limited。缺失或不匹配时输出 `insufficient_evidence`；只有全部 supported ranked options 都具备受控正成本时才计算 ROI，否则显示 `Highest Impact Action` 与 `ROI: not_computed`，不得改称 Highest ROI。
 - 每次成功或部分成功 run 原子生成六个 artifact：`Feature6-Optimization.json/.md`、`Feature6-Composed-Report.json/.md`、`Feature6-Run-Summary.json` 和 `manifest.json`。联合报告包含 workbook summary 和每个 ready worksheet 的十个固定 sections；F2 blocked worksheet 仅进入 workbook Input Validation，不生成 capability 或 optimization 数值。
-- 所有输入/输出均为 `confidential`、只读源 workbook；无 ADO、网络或 workbook write。Artifact identity/hash、schema、workbook/worksheet association、受控 publish boundary、staging identity 与提交后 file identity 任一失败均 fail closed。
+- 所有输入/输出均为 `confidential`，源 workbook 只读。F3/F6 repository runners 和直接 CLI 无 ADO、网络或 workbook write；可选 ADO side effect 只存在于 agent 的受治理 publishing gate。Artifact identity/hash、schema、workbook/worksheet association、受控 publish boundary、staging identity 与提交后 file identity任一失败均 fail closed。
 - 历史 `comparison-request-v1` / `comparison-result-v1` placeholder 仍单独返回 `feature_not_available`；这不代表真实 `f6-optimization-v1` workflow 不可用。治理边界以 [Feature Register](docs/governance/feature-register.md) 为准。
 
 - `test/` and all `*.xlsx` (confidential templates / sample data) are **git-ignored**.
