@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { f6ComposedEngineeringReportSchema } from "../packages/contracts/dist/contracts.js";
-import { renderComposedEngineeringReport } from "./f6-composed-report.mjs";
+import { f6LegacyComposedEngineeringReportSchema as f6ComposedEngineeringReportSchema } from "../packages/contracts/dist/contracts.js";
+import { renderComposedEngineeringReport as renderComposedEngineeringReportV2, renderLegacyComposedEngineeringReport as renderComposedEngineeringReport } from "./f6-composed-report.mjs";
 
 const HASH = "a".repeat(64);
 const REFERENCE = { artifact: "Feature5-Report.json", contentHash: HASH };
@@ -291,5 +291,66 @@ describe("renderComposedEngineeringReport", () => {
 
     expect(() => renderComposedEngineeringReport(input))
       .toThrow("Invalid F6 composed engineering report.");
+  });
+});
+
+describe("renderComposedEngineeringReport V2", () => {
+  function reportV2() {
+    const base = (sectionId, status = "SUPPORTED") => ({ sectionId, status, evidenceIds: [] });
+    const quantity = (value) => ({ value, unit: "mm" });
+    const range = (lower, upper) => ({ lower, upper, unit: "mm" });
+    const statistical = { sigmaLevel: 3, lowerBound: -0.15, upperBound: 0.15, lowerMargin: 0, upperMargin: 0, minimumMargin: 0, formulaReferences: [] };
+    const worstCase = { lowerBound: -0.2, upperBound: 0.2, lowerMargin: -0.05, upperMargin: -0.05, minimumMargin: -0.05, formulaReferences: [] };
+    const gap = { gapId: "gap-context", priority: "P1", blocksFinalDecision: false, missingInformation: "Operating conditions were not provided.", affectedSections: ["operatingConditions"], suggestedSource: "Analysis Context", responsibleRole: "Design engineering role", verificationMethod: "Confirm operating conditions.", evidenceReferences: [] };
+    const sections = {
+      executiveSummary: { ...base("executive_summary"), analysisObject: null, mean: quantity(0), rssSigma: quantity(0.05), statisticalRange: range(-0.15, 0.15), worstCaseRange: range(-0.2, 0.2), minimumMargin: quantity(-0.05), predictiveCpk: 1.1, topContributors: [], primaryRisks: [], decision: "CONDITIONAL_PASS", actionRequired: true },
+      objectiveAndRequirements: { ...base("objective_and_requirements", "PARTIAL"), analysisObject: null, target: quantity(0), lsl: quantity(-0.15), usl: quantity(0.15), targetCpk: 1, requirementIds: [], functionalBoundary: null, passFailCriteria: null },
+      operatingConditions: { ...base("operating_conditions", "INSUFFICIENT_EVIDENCE"), conditions: [] },
+      inputIntegrity: { ...base("input_integrity", "PARTIAL"), rating: "PARTIALLY_COMPLETE", factors: [], findings: [] },
+      toleranceLoopDefinition: { ...base("tolerance_loop_definition", "INSUFFICIENT_EVIDENCE"), start: null, end: null, responseDirection: null, terms: [], equation: null, reviewRequired: true },
+      calculationSelfCheck: { ...base("calculation_self_check"), meanCheck: null, rssCheck: null, rangeChecks: [], worstCaseCheck: null },
+      statisticalResults: { ...base("statistical_results"), mean: quantity(0), adjustedMean: quantity(0), meanShift: quantity(0), rssSigma: quantity(0.05), ranges: [{ sigmaLevel: 3, range: range(-0.15, 0.15), formulaCheckId: "statistical-bound-v1" }], worstCase: range(-0.2, 0.2), formulaChecks: [] },
+      specificationAndMargins: { ...base("specification_and_margins"), specification: { target: quantity(0), lsl: quantity(-0.15), usl: quantity(0.15), targetCpk: 1 }, assessment: { statistical, worstCase }, interferenceStatus: "UNKNOWN" },
+      capabilityAssessment: { ...base("capability_assessment"), basis: "PREDICTIVE_TOLERANCE_MODEL", cp: 1.2, lowerCpk: 1.1, upperCpk: 1.2, cpk: 1.1, lowerZ: 3.3, upperZ: 3.6, predictedDpm: 500, predictedYield: 0.9995, targetCpk: 1, result: "PASS", limitations: ["Predictive model, not measured production capability."] },
+      contributorAnalysis: { ...base("contributor_analysis"), contributors: [], interpretationLimit: "High contribution is not root-cause proof." },
+      sensitivityAndOptimization: { ...base("sensitivity_and_optimization", "PARTIAL"), sensitivities: [], targets: [], options: [], highestImpactAction: null, roiStatus: "NOT_COMPUTED" },
+      riskAssessment: { ...base("risk_assessment", "PARTIAL"), risks: [] },
+      engineeringRecommendations: { ...base("engineering_recommendations", "PARTIAL"), mandatoryActions: [], validationActions: [], conditionalOptimizations: [] },
+      designIntentReview: { ...base("design_intent_review", "PARTIAL"), checks: [] },
+      dataGaps: { ...base("data_gaps", "PARTIAL"), gaps: [gap] },
+      finalConclusion: { ...base("final_conclusion"), summary: "Predictive baseline passes with open conditions.", decision: "CONDITIONAL_PASS", basis: ["Predictive Cpk meets target."], limitations: [gap.missingInformation], nextActions: [gap.verificationMethod], baselineDecision: "PASS" },
+    };
+    return {
+      contractVersion: "v1",
+      outputClassification: "confidential",
+      reportVersion: "f6-composed-report-v2",
+      workbook: { fileName: "Anonymous.xlsx", contentHash: HASH },
+      overallStatus: "CONDITIONAL_PASS",
+      workbookSummary: { scope: { selectedWorksheetNames: ["Analysis-A"], excludedWorksheetNames: [] }, worksheetStatuses: [{ worksheetName: "Analysis-A", status: "CONDITIONAL_PASS" }], worstSupportedFinding: { worksheetName: "Analysis-A", baselineDecision: "PASS", reason: "Predictive baseline passes." }, blockingGapCount: 0, actionRequired: true },
+      blockedWorksheets: [],
+      worksheets: [{ worksheetName: "Analysis-A", tableId: "table-a", status: "CONDITIONAL_PASS", baselineDecision: "PASS", dataGaps: [gap], decisionInputs: { blockingP0GapIds: [], conditionalP1GapIds: [gap.gapId], supportedFailureEvidenceIds: [], openHighRiskIds: [] }, sections, evidenceIndex: [] }],
+    };
+  }
+
+  it("renders the sixteen Chinese chapters in fixed order with separated RSS, WC, Margin and predictive capability", () => {
+    const markdown = renderComposedEngineeringReportV2(reportV2());
+    const headings = [
+      "## 1. 执行摘要 Executive Summary", "## 2. 分析目标与功能要求", "## 3. 分析工况与适用边界",
+      "## 4. 输入数据与完整性检查", "## 5. 公差链定义 Tolerance Loop Definition", "## 6. Loop 一致性与计算自检",
+      "## 7. 统计分析结果", "## 8. 规格符合性与 Margin 评估", "## 9. 制程能力评估 Capability Assessment",
+      "## 10. 变异贡献分析 Contributor Analysis", "## 11. 敏感度与优化收益分析", "## 12. 风险评估",
+      "## 13. 工程建议", "## 14. 设计意图审查 Design Intent Review", "## 15. 数据缺口与待确认事项", "## 16. 最终结论",
+    ];
+    let previous = -1;
+    for (const heading of headings) {
+      const index = markdown.indexOf(heading);
+      expect(index, heading).toBeGreaterThan(previous);
+      previous = index;
+    }
+    expect(markdown).toContain("RSS 1σ");
+    expect(markdown).toContain("Worst Case Margin");
+    expect(markdown).toContain("预测性能力指标");
+    expect(markdown).toContain("P1");
+    expect(markdown).not.toContain("Requirement Review");
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { f6OptimizationResultSchema } from "../packages/contracts/dist/contracts.js";
-import { renderF6Report } from "./f6-report.mjs";
+import { f6LegacyOptimizationResultSchema as f6OptimizationResultSchema } from "../packages/contracts/dist/contracts.js";
+import { renderF6Report as renderF6ReportV2, renderLegacyF6Report as renderF6Report } from "./f6-report.mjs";
 
 const HASH = "a".repeat(64);
 
@@ -227,5 +227,65 @@ describe("renderF6Report", () => {
   it("is deterministic and rejects invalid structured input generically", () => {
     expect(renderF6Report(clone(result()))).toBe(renderF6Report(result()));
     expect(() => renderF6Report({ featureId: "F6", secret: "do-not-echo" })).toThrow("Invalid F6 result.");
+  });
+});
+
+describe("renderF6Report V2", () => {
+  function resultV2() {
+    const notProvided = { outcome: "NOT_PROVIDED" };
+    const baselineMetrics = { mean: 0, rssSigma: 0.05, worstCaseLower: -0.2, worstCaseUpper: 0.2, cp: 1, cpk: 0.9, yield: 0.99, dpm: 10000 };
+    return {
+      contractVersion: "v1",
+      outputClassification: "confidential",
+      featureId: "F6",
+      optimizationVersion: "f6-optimization-v2",
+      runStatus: "COMPLETED",
+      workbook: { fileName: "Anonymous.xlsx", contentHash: HASH },
+      provenance: {
+        f2Reference: { artifact: "Feature2-Report.json", contentHash: HASH },
+        f3Reference: { artifact: "Feature3-Report.json", contentHash: HASH },
+        f4Reference: { artifact: "Feature4-Calculation.json", contentHash: HASH },
+        f5Reference: { artifact: "Feature5-Report.json", contentHash: HASH },
+        supplierCapabilityDecision: notProvided,
+        datumStrategyDecision: notProvided,
+        costDecision: notProvided,
+        analysisContextDecision: notProvided,
+        optimizationTargetsDecision: notProvided,
+      },
+      worksheets: [{
+        worksheetName: "Analysis-A",
+        tableId: "table-a",
+        runStatus: "COMPLETED",
+        baselineIdentity: { calculationVersion: "excel-ta-v1", projectReference: "project-a", runReference: "run-a", workbookContentHash: HASH, worksheetName: "Analysis-A", tableId: "table-a" },
+        baselineMetrics,
+        targetCapability: { targetCpk: 1, targetSigmaLevel: 3, source: "WORKSHEET" },
+        options: [{
+          optionId: "Analysis-A:candidate",
+          status: "candidate",
+          reasonCode: "target_not_provided",
+          candidateFactors: [{ worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 14, factorName: "Factor A", unit: "mm" }],
+          requiredInputs: ["optimization_target"],
+          calculationMethod: "Provide a governed target and rerun through F4.",
+          baselineMetrics,
+          impactRank: null,
+        }],
+        highestImpactAction: null,
+        findings: [], risks: [], recommendations: [], clarifications: [],
+      }],
+      summary: { worksheetCount: 1, completedWorksheetCount: 1, partiallyCompletedWorksheetCount: 0, inputRejectedWorksheetCount: 0, candidateOptionCount: 1, completedOptionCount: 0, insufficientEvidenceOptionCount: 0, calculationFailedOptionCount: 0 },
+    };
+  }
+
+  it("renders predictive baseline, RSS/WC separation, and candidate-only optimization in Chinese", () => {
+    const markdown = renderF6ReportV2(resultV2());
+
+    expect(markdown).toContain("# Feature 6 公差优化报告 V2");
+    expect(markdown).toContain("预测性能力指标");
+    expect(markdown).toContain("RSS 1σ");
+    expect(markdown).toContain("Worst Case 下限");
+    expect(markdown).toContain("【数据缺口 Missing】");
+    expect(markdown).toContain("未提供受控优化目标");
+    expect(markdown).not.toMatch(/20%|30%|Predicted Improvement/);
+    expect(markdown).not.toContain("0.899999999999");
   });
 });

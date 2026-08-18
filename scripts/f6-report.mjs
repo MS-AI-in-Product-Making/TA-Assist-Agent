@@ -1,5 +1,6 @@
-import { f6OptimizationResultSchema } from "../packages/contracts/dist/contracts.js";
+import { f6LegacyOptimizationResultSchema, f6OptimizationResultSchema } from "../packages/contracts/dist/contracts.js";
 import { cell } from "./f6-markdown-sanitizer.mjs";
+import { evidenceLabel, formatEngineering, formatPercent } from "./engineering-format.mjs";
 
 function optionName(kind) {
   return {
@@ -99,11 +100,11 @@ function renderRejectedWorksheet(lines, worksheet) {
   }
 }
 
-export function renderF6Report(result, options = {}) {
+export function renderLegacyF6Report(result, options = {}) {
   void options;
   let parsed;
   try {
-    parsed = f6OptimizationResultSchema.parse(result);
+    parsed = f6LegacyOptimizationResultSchema.parse(result);
   } catch {
     throw new Error("Invalid F6 result.");
   }
@@ -121,6 +122,77 @@ export function renderF6Report(result, options = {}) {
     lines.push("");
     if (worksheet.status === "input_rejected") renderRejectedWorksheet(lines, worksheet);
     else renderReadyWorksheet(lines, worksheet);
+  }
+  return `${lines.join("\n").trimEnd()}\n`;
+}
+
+function renderV2Option(lines, option) {
+  if (option.status === "candidate") {
+    lines.push(
+      `| ${cell(option.optionId)} | 候选项 | ${evidenceLabel("MISSING")} 未提供受控优化目标 | ${cell(option.requiredInputs.join(", "))} |`,
+    );
+    return;
+  }
+  if (option.status === "completed") {
+    lines.push(
+      `| ${cell(option.optionId)} | 已重算 | Cpk ${option.resultMetrics.cpk.toFixed(3)} ratio；RSS ${formatEngineering(option.resultMetrics.rssSigma, "mm", 3)} | ${cell(option.feasibility.status)} |`,
+    );
+    return;
+  }
+  if (option.status === "insufficient_evidence") {
+    lines.push(`| ${cell(option.optionId)} | 证据不足 | ${evidenceLabel("MISSING")} | ${cell(option.requiredInputs.join(", "))} |`);
+    return;
+  }
+  lines.push(`| ${cell(option.optionId)} | 计算失败 | 无量化结果 | ${cell(option.reasonCode)} |`);
+}
+
+export function renderF6Report(result, options = {}) {
+  void options;
+  let parsed;
+  try {
+    parsed = f6OptimizationResultSchema.parse(result);
+  } catch {
+    throw new Error("Invalid F6 result.");
+  }
+  const lines = [
+    "# Feature 6 公差优化报告 V2",
+    "",
+    "## Workbook 执行摘要",
+    "",
+    `- 运行状态：${cell(parsed.runStatus)}`,
+    `- Workbook：${cell(parsed.workbook.fileName)}`,
+    `- Worksheet 数量：${parsed.summary.worksheetCount}`,
+    `- 已完成量化方案：${parsed.summary.completedOptionCount}`,
+    `- 候选方案：${parsed.summary.candidateOptionCount}`,
+  ];
+  for (const worksheet of parsed.worksheets) {
+    const metrics = worksheet.baselineMetrics;
+    lines.push(
+      "",
+      `## Worksheet：${cell(worksheet.worksheetName)}`,
+      "",
+      "### 1. Baseline 计算",
+      "",
+      `- ${evidenceLabel("CALCULATED")} Mean：${formatEngineering(metrics.mean, "mm", 3)}`,
+      `- ${evidenceLabel("CALCULATED")} RSS 1σ：${formatEngineering(metrics.rssSigma, "mm", 3)}`,
+      `- ${evidenceLabel("CALCULATED")} Worst Case 下限：${formatEngineering(metrics.worstCaseLower, "mm", 3)}`,
+      `- ${evidenceLabel("CALCULATED")} Worst Case 上限：${formatEngineering(metrics.worstCaseUpper, "mm", 3)}`,
+      `- 预测性能力指标 Cpk：${metrics.cpk.toFixed(3)} ratio` ,
+      `- 模型预测 Yield：${metrics.yield === null ? "不适用" : formatPercent(metrics.yield * 100, 2)}`,
+      "- 限制：上述 Cpk/Yield 来自设计公差模型，不等同于实测量产能力。",
+      "",
+      "### 2. Optimization Targets 与重算结果",
+      "",
+      "| Option ID | 状态 | 结果 | 限制/所需输入 |",
+      "|---|---|---|---|",
+    );
+    for (const option of worksheet.options) renderV2Option(lines, option);
+    lines.push(
+      "",
+      `- Highest Impact Action：${worksheet.highestImpactAction === null ? "未提供受支持的量化方案" : cell(worksheet.highestImpactAction.optionId)}`,
+      `- Optimization Targets decision：${cell(parsed.provenance.optimizationTargetsDecision.outcome)}`,
+      `- Analysis Context decision：${cell(parsed.provenance.analysisContextDecision.outcome)}`,
+    );
   }
   return `${lines.join("\n").trimEnd()}\n`;
 }

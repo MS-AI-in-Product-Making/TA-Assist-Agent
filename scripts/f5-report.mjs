@@ -1,6 +1,7 @@
 import { existsSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { f5DataInterpretationResultSchema } from "../packages/contracts/dist/contracts.js";
+import { evidenceLabel } from "./engineering-format.mjs";
 
 const WINDOWS_ABSOLUTE_PATH_PATTERN = /[A-Za-z]:[\\/][^;|\r\n<>"'`]+/g;
 const UNC_PATH_PATTERN = /\\\\[^;|\r\n<>"'`]+/g;
@@ -471,6 +472,10 @@ export function renderF5Report(report, { outputRoot, f1ArtifactRoot, publishRoot
     "",
     `根状态：${code(parsed.status)}`,
     `Worksheet 数量：${parsed.summary.worksheetCount}`,
+    "",
+    "证据分类：",
+    ...["INPUT_FACT", "CALCULATED", "DERIVED", "ASSUMPTION", "INFERENCE", "MISSING"]
+      .map((type) => `- ${evidenceLabel(type)}`),
   ];
   for (const chapter of CHAPTERS) {
     lines.push("", chapter.title, "");
