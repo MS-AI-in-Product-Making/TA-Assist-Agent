@@ -468,6 +468,37 @@ describe("F6 real artifact full flow", () => {
       composedReportJsonSha256: artifactHash(path.join(runRoot, "Feature6-Composed-Report.json")),
       composedReportMarkdownSha256: artifactHash(path.join(runRoot, "Feature6-Composed-Report.md")),
     });
+    const f4 = readJson(bundle.paths.f4);
+    const optimization = readJson(path.join(runRoot, "Feature6-Optimization.json"));
+    const composed = readJson(path.join(runRoot, "Feature6-Composed-Report.json"));
+    const worksheet = composed.worksheets.find(({ worksheetName }) => worksheetName === "Analysis-A");
+    const calculation = f4.calculations.find(({ worksheetSelection }) =>
+      worksheetSelection.worksheetName === "Analysis-A");
+    const gapIds = worksheet.dataGaps.map(({ gapId }) => gapId);
+
+    expect(worksheet.sections.statisticalResults.rssSigma.value).toBe(calculation.system.rssSigma);
+    expect(worksheet.sections.statisticalResults.worstCase).toEqual({
+      lower: calculation.system.worstCaseLower,
+      upper: calculation.system.worstCaseUpper,
+      unit: calculation.factors[0].unit,
+    });
+    expect(worksheet.sections.capabilityAssessment.cpk).toBe(calculation.capability.cpk);
+    expect(optimization.worksheets.every(({ options }) =>
+      options.every(({ status }) => status === "candidate"))).toBe(true);
+    expect(worksheet.sections.objectiveAndRequirements.analysisObject).toBeNull();
+    expect(worksheet.sections.operatingConditions.conditions).toEqual([]);
+    expect(worksheet.sections.toleranceLoopDefinition).toMatchObject({
+      start: null,
+      end: null,
+      equation: null,
+      terms: [],
+    });
+    expect(gapIds).toEqual(expect.arrayContaining([
+      "Analysis-A:analysis-object",
+      "Analysis-A:operating-conditions",
+      "Analysis-A:loop-definition",
+      "Analysis-A:optimization-targets",
+    ]));
     expect(readJson(path.join(runRoot, "manifest.json"))).toEqual({
       contractVersion: "v1",
       featureId: "F6",
