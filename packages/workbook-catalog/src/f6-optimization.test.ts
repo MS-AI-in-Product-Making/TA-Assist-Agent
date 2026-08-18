@@ -9,7 +9,8 @@ import { createCalculation } from "./calculation.js";
 import { createF5DataInterpretation } from "./f5-data-interpretation.js";
 import { calculateF6Scenario } from "./f6-scenario-adapter.js";
 import {
-  createF6Optimization,
+  createF6Optimization as createF6OptimizationV2,
+  createLegacyF6Optimization as createF6Optimization,
   rankCompletedOptions,
   selectHighestSupportedCompletedOption,
 } from "./f6-optimization.js";
@@ -1170,7 +1171,84 @@ describe("createF6Optimization", () => {
   });
 
   it("exports only the public orchestrator and no private optimization helpers", () => {
-    expect(packageRoot.createF6Optimization).toBe(createF6Optimization);
+    expect(typeof createF6Optimization).toBe("function");
     expect(Object.keys(packageRoot).filter((key) => key.toLowerCase().includes("optimization"))).toEqual(["createF6Optimization"]);
+  });
+});
+
+describe("createF6Optimization V2", () => {
+  const notProvidedInputs = {
+    inputDecisions: {
+      analysisContext: { outcome: "NOT_PROVIDED" as const },
+      optimizationTargets: { outcome: "NOT_PROVIDED" as const },
+    },
+  };
+
+  it("returns one unranked candidate and no quantified scenario without targets", () => {
+    const result = createF6OptimizationV2(request(), notProvidedInputs);
+    const worksheet = result.worksheets[0]!;
+
+    expect(result.optimizationVersion).toBe("f6-optimization-v2");
+    expect(result.runStatus).toBe("COMPLETED");
+    expect(worksheet.runStatus).toBe("COMPLETED");
+    expect(worksheet.options).toEqual([
+      expect.objectContaining({ status: "candidate", reasonCode: "target_not_provided", impactRank: null }),
+    ]);
+    expect(worksheet.highestImpactAction).toBeNull();
+    expect(result.summary).toMatchObject({ candidateOptionCount: 1, completedOptionCount: 0 });
+  });
+
+  it("scales an asymmetric tolerance band around its center and recalculates through F4", () => {
+    const input = request();
+    const baseline = input.worksheets[0]!.baselineCalculation;
+    const baselineFactor = baseline.factors[0]!;
+    const factor = {
+      worksheetName: baselineFactor.source.worksheetName,
+      tableId: baselineFactor.source.tableId,
+      sourceRow: baselineFactor.source.sourceRow,
+      factorName: baselineFactor.factorName,
+      unit: baselineFactor.unit,
+    };
+    const targets = {
+      contractVersion: "v1" as const,
+      inputClassification: "confidential" as const,
+      targetVersion: "f6-optimization-targets-v1" as const,
+      workbookContentHash: input.workbook.contentHash,
+      worksheets: [{
+        worksheetName: input.worksheets[0]!.worksheetName,
+        tableId: baseline.worksheetSelection.tableId,
+        baselineIdentity: {
+          calculationVersion: baseline.calculationVersion,
+          projectReference: baseline.projectReference,
+          runReference: baseline.runReference,
+          workbookContentHash: baseline.workbookContentHash,
+          worksheetName: baseline.worksheetSelection.worksheetName,
+          tableId: baseline.worksheetSelection.tableId,
+        },
+        targets: [{ targetId: "ratio-target", targetType: "improvement_ratio" as const, factor, ratio: 0.2, appliesTo: "tolerance_band" as const }],
+      }],
+    };
+    const result = createF6OptimizationV2(input, {
+      optimizationTargets: targets,
+      inputDecisions: {
+        analysisContext: { outcome: "NOT_PROVIDED" },
+        optimizationTargets: { outcome: "CALLER_AUTHORIZED", artifactReference: { artifact: "targets.json", contentHash: "c".repeat(64) } },
+      },
+    });
+    const option = result.worksheets[0]!.options[0];
+
+    expect(option).toMatchObject({ status: "completed", targetId: "ratio-target" });
+    if (option?.status !== "completed") throw new Error("expected completed option");
+    expect(option.scenarioEvidence.factorOverrides[0]).toMatchObject({
+      factor,
+      upperTolerance: 2.1,
+      lowerTolerance: -1.1,
+    });
+    expect(option.resultMetrics.rssSigma).toBeLessThan(option.baselineMetrics.rssSigma);
+    expect(result.provenance.optimizationTargetsDecision.outcome).toBe("CALLER_AUTHORIZED");
+  });
+
+  it("exports only the V2 optimizer from the package entrypoint", () => {
+    expect(packageRoot.createF6Optimization).toBe(createF6OptimizationV2);
   });
 });

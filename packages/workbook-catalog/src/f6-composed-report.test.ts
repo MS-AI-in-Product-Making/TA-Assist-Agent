@@ -8,7 +8,7 @@ import {
 } from "@ai-assist/contracts";
 import { createCalculation } from "./calculation.js";
 import { createF5DataInterpretation } from "./f5-data-interpretation.js";
-import { createF6Optimization } from "./f6-optimization.js";
+import { createLegacyF6Optimization as createF6Optimization } from "./f6-optimization.js";
 import { calculateF6Scenario } from "./f6-scenario-adapter.js";
 import * as packageRoot from "./index.js";
 import { createF6ComposedEngineeringReport } from "./f6-composed-report.js";
