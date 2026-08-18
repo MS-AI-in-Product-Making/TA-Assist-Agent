@@ -12,7 +12,7 @@ const allowedCommands = [
   "npm run workflow:f4 -- --f2-report <f2-output-dir>/Feature2-Report.json",
   "npm run workflow:f5 -- <f1-output-dir> <f3-output-dir> <f4-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...]",
   "npm run workflow:f5 -- <f1-output-dir> <f3-output-dir> <f4-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] --image-observations <artifact-path>",
-  "npm run workflow:f6 -- <f2-output-dir> <f3-output-dir> <f4-output-dir> <f5-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...]",
+  "npm run workflow:f6 -- <f2-output-dir> <f3-output-dir> <f4-output-dir> <f5-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] [--analysis-context <artifact-path>] [--optimization-targets <artifact-path>]",
 ];
 
 function readSkill() {
@@ -77,7 +77,10 @@ describe("F6 analysis skill contract", () => {
       "### Phase W5 - Run F4",
       "### Phase W6 - Evaluate optional F5 v2 image evidence",
       "### Phase W7 - Run and validate F5",
-      "### Phase W8 - Collect optional F6 evidence",
+      "### Phase W8A - Collect optional TA Analysis Context",
+      "Confirm analysis context",
+      "### Phase W8B - Collect optional Optimization Targets",
+      "Confirm optimization targets",
       "### Phase W9 - Run and validate F6",
       "### Phase W10 - Present every Feature output",
     ]);
@@ -87,6 +90,25 @@ describe("F6 analysis skill contract", () => {
     expect(skill).toContain("No complete F1, F2, F3, F4, F5, or F6 execution may begin before the first selection succeeds");
     expect(skill).toContain("No F3, F4, F5, or F6 execution may begin before the second selection succeeds");
     expect(skill).toContain("The exact downstream worksheet set is reused by F3, F5, and F6");
+  });
+
+  it("governs context and targets with separate confirmations before any scenario", () => {
+    const skill = readSkill();
+    expectOrdered(skill, [
+      "Collect optional TA Analysis Context",
+      "Confirm analysis context",
+      "Collect optional Optimization Targets",
+      "Confirm optimization targets",
+      "### Phase W9 - Run and validate F6",
+    ]);
+    expect(skill).toContain("two separate `vscode_askQuestions` calls");
+    expect(skill).toContain("Declined analysis context omits `--analysis-context`");
+    expect(skill).toContain("Declined optimization targets omit `--optimization-targets`");
+    expect(skill).toContain("No optimization scenario may be generated before target confirmation");
+    expect(skill).toContain("`CALLER_AUTHORIZED`, `DECLINED`, `REJECTED`, or `NOT_PROVIDED`");
+    expect(skill).toContain("must not be combined with the F3 ADO confirmation");
+    expect(skill).toContain("f6-composed-report-v2");
+    expect(skill).not.toContain("reduce_top_contributor_20");
   });
 
   it("requires current-run F3 execution before the optional ADO gate and F4", () => {
@@ -123,7 +145,7 @@ describe("F6 analysis skill contract", () => {
     expect(skill).toContain("W4A outcome does not change the validated F3 analysis result");
   });
 
-  it("requires immutable F5 v2 observations and evidence-gated F6 options", () => {
+  it("requires immutable F5 v2 observations and target-gated F6 scenarios", () => {
     const skill = readSkill();
     expect(skill).toContain("New image mode creates only `f5-image-observation-v2`");
     expect(skill).toContain("all active factor rows");
@@ -134,12 +156,10 @@ describe("F6 analysis skill contract", () => {
       "stack_start",
       "direction",
     ]) expect(skill).toContain(`\`${scope}\``);
-    expect(skill).toContain("supplier capability");
-    expect(skill).toContain("datum strategy");
-    expect(skill).toContain("cost evidence");
-    expect(skill).toContain("`insufficient_evidence`");
-    expect(skill).toContain("`not_computed`");
-    expect(skill).toContain("Do not promote missing evidence into a recommendation or ROI");
+    expect(skill).toContain("f6-analysis-context-v1");
+    expect(skill).toContain("f6-optimization-targets-v1");
+    expect(skill).toContain("candidate-only");
+    expect(skill).toContain("Do not invent default percentage scenarios");
   });
 
   it("validates every Feature output and supports an existing F6 artifact fast path", () => {
