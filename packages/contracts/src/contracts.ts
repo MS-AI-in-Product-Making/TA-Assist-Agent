@@ -7077,7 +7077,7 @@ export const f6ProvenanceSchema = z.object({
   ], context);
 });
 
-export const f6OptimizationResultSchema = z.object({
+export const f6LegacyOptimizationResultSchema = z.object({
   contractVersion: contractVersionSchema,
   outputClassification: z.literal("confidential"),
   featureId: z.literal("F6"),
@@ -7403,6 +7403,234 @@ export const f6OptimizationResultSchema = z.object({
   });
 });
 
+const f6MetricsV2Schema = z.object({
+  mean: z.number().finite(),
+  rssSigma: z.number().finite().nonnegative(),
+  worstCaseLower: z.number().finite(),
+  worstCaseUpper: z.number().finite(),
+  cp: z.number().finite(),
+  cpk: z.number().finite(),
+  yield: z.number().finite().min(0).max(1).nullable(),
+  dpm: z.number().finite().nonnegative().nullable(),
+}).strict().superRefine((metrics, context) => {
+  if (metrics.worstCaseUpper < metrics.worstCaseLower) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "worstCaseUpper must not be below worstCaseLower", path: ["worstCaseUpper"] });
+  }
+});
+
+const f6CandidateOptionV2Schema = z.object({
+  optionId: z.string().min(1),
+  status: z.literal("candidate"),
+  reasonCode: z.literal("target_not_provided"),
+  candidateFactors: z.array(f6FactorIdentitySchema).min(1),
+  requiredInputs: z.array(z.string().min(1)).min(1),
+  calculationMethod: z.string().min(1),
+  baselineMetrics: f6MetricsV2Schema,
+  impactRank: z.null(),
+}).strict();
+
+const f6ScenarioEvidenceV2Schema = z.object({
+  targetId: z.string().min(1),
+  baselineIdentity: f6InputBaselineIdentitySchema,
+  factorOverrides: z.array(z.object({
+    factor: f6FactorIdentitySchema,
+    upperTolerance: z.number().finite().optional(),
+    lowerTolerance: z.number().finite().optional(),
+    sigma: z.number().finite().positive().optional(),
+  }).strict().refine((override) => override.upperTolerance !== undefined
+    || override.lowerTolerance !== undefined
+    || override.sigma !== undefined, { message: "factor override requires at least one numeric field" })).min(1),
+  calculationReference: f6ArtifactReferenceSchema,
+  formulaReferences: z.array(f6V2FormulaReferenceSchema),
+}).strict();
+
+const f6CompletedOptionV2Schema = z.object({
+  optionId: z.string().min(1),
+  status: z.literal("completed"),
+  targetId: z.string().min(1),
+  baselineMetrics: f6MetricsV2Schema,
+  resultMetrics: f6MetricsV2Schema,
+  scenarioEvidence: f6ScenarioEvidenceV2Schema,
+  feasibility: f6FeasibilityAssessmentSchema,
+  evidenceReferences: z.array(f6ArtifactReferenceSchema),
+  impactRank: z.number().int().positive().nullable(),
+}).strict();
+
+const f6InsufficientEvidenceOptionV2Schema = z.object({
+  optionId: z.string().min(1),
+  status: z.literal("insufficient_evidence"),
+  targetId: z.string().min(1).optional(),
+  requiredInputs: z.array(z.string().min(1)).min(1),
+  baselineMetrics: f6MetricsV2Schema,
+  evidenceReferences: z.array(f6ArtifactReferenceSchema),
+  impactRank: z.null(),
+}).strict();
+
+const f6CalculationFailedOptionV2Schema = z.object({
+  optionId: z.string().min(1),
+  status: z.literal("calculation_failed"),
+  targetId: z.string().min(1),
+  reasonCode: z.string().min(1),
+  baselineMetrics: f6MetricsV2Schema,
+  evidenceReferences: z.array(f6ArtifactReferenceSchema),
+  impactRank: z.null(),
+}).strict();
+
+export const f6OptionV2Schema = z.discriminatedUnion("status", [
+  f6CandidateOptionV2Schema,
+  f6CompletedOptionV2Schema,
+  f6InsufficientEvidenceOptionV2Schema,
+  f6CalculationFailedOptionV2Schema,
+]);
+
+const f6TargetCapabilityV2Schema = z.object({
+  targetCpk: z.number().finite().positive(),
+  targetSigmaLevel: z.number().finite().positive(),
+  source: z.enum(["WORKSHEET", "CONTROLLED_DEFAULT"]),
+}).strict();
+
+const f6HighestImpactActionV2Schema = z.object({
+  optionId: z.string().min(1),
+  impactRank: z.number().int().positive(),
+}).strict();
+
+const f6OptimizationWorksheetV2Schema = z.object({
+  worksheetName: z.string().min(1),
+  tableId: z.string().min(1),
+  runStatus: z.enum(["COMPLETED", "PARTIALLY_COMPLETED", "INPUT_REJECTED"]),
+  baselineIdentity: f6InputBaselineIdentitySchema,
+  baselineMetrics: f6MetricsV2Schema,
+  targetCapability: f6TargetCapabilityV2Schema,
+  options: z.array(f6OptionV2Schema),
+  highestImpactAction: f6HighestImpactActionV2Schema.nullable(),
+  findings: z.array(f6InputFindingSchema),
+  risks: z.array(f6RiskSchema),
+  recommendations: z.array(f6RecommendationSchema),
+  clarifications: z.array(f6ClarificationSchema),
+}).strict().superRefine((worksheet, context) => {
+  if (worksheet.baselineIdentity.worksheetName !== worksheet.worksheetName
+    || worksheet.baselineIdentity.tableId !== worksheet.tableId) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline identity must match worksheet and table", path: ["baselineIdentity"] });
+  }
+  const optionIds = new Set<string>();
+  worksheet.options.forEach((option, index) => {
+    if (optionIds.has(option.optionId)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "option IDs must be unique per worksheet", path: ["options", index, "optionId"] });
+    }
+    optionIds.add(option.optionId);
+    if (option.status === "completed" && option.scenarioEvidence.targetId !== option.targetId) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "scenario targetId must match option targetId", path: ["options", index, "scenarioEvidence", "targetId"] });
+    }
+    for (const field of ["mean", "rssSigma", "worstCaseLower", "worstCaseUpper", "cp", "cpk"] as const) {
+      if (!f6NearlyEqual(option.baselineMetrics[field], worksheet.baselineMetrics[field])) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "option baseline metrics must match worksheet baseline", path: ["options", index, "baselineMetrics", field] });
+      }
+    }
+    for (const field of ["yield", "dpm"] as const) {
+      if (option.baselineMetrics[field] !== worksheet.baselineMetrics[field]) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "option baseline metrics must match worksheet baseline", path: ["options", index, "baselineMetrics", field] });
+      }
+    }
+  });
+  const failedCount = worksheet.options.filter(({ status }) => status === "calculation_failed").length;
+  if (worksheet.runStatus === "COMPLETED" && failedCount > 0) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "completed worksheet must not contain failed options", path: ["runStatus"] });
+  }
+  if (worksheet.runStatus === "PARTIALLY_COMPLETED" && failedCount === 0) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "partially completed worksheet requires a failed option", path: ["runStatus"] });
+  }
+  if (worksheet.runStatus === "INPUT_REJECTED" && (worksheet.options.length > 0 || worksheet.findings.length === 0)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "input rejected worksheet requires findings and no options", path: ["runStatus"] });
+  }
+  const completedById = new Map(worksheet.options
+    .filter((option): option is z.infer<typeof f6CompletedOptionV2Schema> => option.status === "completed")
+    .map((option) => [option.optionId, option]));
+  if (worksheet.highestImpactAction !== null) {
+    const option = completedById.get(worksheet.highestImpactAction.optionId);
+    if (option === undefined || option.feasibility.status !== "supported" || option.impactRank !== worksheet.highestImpactAction.impactRank) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "highest impact action must reference a ranked supported completed option", path: ["highestImpactAction"] });
+    }
+  }
+  worksheet.recommendations.forEach((recommendation, index) => {
+    if (recommendation.optionId === undefined) return;
+    const option = completedById.get(recommendation.optionId);
+    if (option === undefined || option.feasibility.status !== "supported") {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "recommendations may reference only supported completed options", path: ["recommendations", index, "optionId"] });
+    }
+  });
+});
+
+const f6OptimizationSummaryV2Schema = z.object({
+  worksheetCount: z.number().int().nonnegative(),
+  completedWorksheetCount: z.number().int().nonnegative(),
+  partiallyCompletedWorksheetCount: z.number().int().nonnegative(),
+  inputRejectedWorksheetCount: z.number().int().nonnegative(),
+  candidateOptionCount: z.number().int().nonnegative(),
+  completedOptionCount: z.number().int().nonnegative(),
+  insufficientEvidenceOptionCount: z.number().int().nonnegative(),
+  calculationFailedOptionCount: z.number().int().nonnegative(),
+}).strict();
+
+const f6ProvenanceV2Schema = z.object({
+  f2Reference: f6ArtifactReferenceSchema,
+  f3Reference: f6ArtifactReferenceSchema,
+  f4Reference: f6ArtifactReferenceSchema,
+  f5Reference: f6ArtifactReferenceSchema,
+  imageObservationReference: f6ArtifactReferenceSchema.optional(),
+  supplierCapabilityDecision: f6InputDecisionSchema,
+  datumStrategyDecision: f6InputDecisionSchema,
+  costDecision: f6InputDecisionSchema,
+  analysisContextDecision: f6InputDecisionSchema,
+  optimizationTargetsDecision: f6InputDecisionSchema,
+}).strict();
+
+export const f6OptimizationResultSchema = z.object({
+  contractVersion: contractVersionSchema,
+  outputClassification: z.literal("confidential"),
+  featureId: z.literal("F6"),
+  optimizationVersion: z.literal("f6-optimization-v2"),
+  runStatus: z.enum(["COMPLETED", "PARTIALLY_COMPLETED", "INPUT_REJECTED"]),
+  workbook: z.object({ fileName: workbookCatalogFileNameSchema, contentHash: sha256Schema }).strict(),
+  provenance: f6ProvenanceV2Schema,
+  worksheets: z.array(f6OptimizationWorksheetV2Schema).min(1),
+  summary: f6OptimizationSummaryV2Schema,
+}).strict().superRefine((result, context) => {
+  const worksheetNames = new Set<string>();
+  result.worksheets.forEach((worksheet, index) => {
+    if (worksheetNames.has(worksheet.worksheetName)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet names must be unique", path: ["worksheets", index, "worksheetName"] });
+    }
+    worksheetNames.add(worksheet.worksheetName);
+    if (worksheet.baselineIdentity.workbookContentHash !== result.workbook.contentHash) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet baseline workbook must match root workbook", path: ["worksheets", index, "baselineIdentity", "workbookContentHash"] });
+    }
+  });
+  const options = result.worksheets.flatMap(({ options }) => options);
+  const expectedCounts = {
+    worksheetCount: result.worksheets.length,
+    completedWorksheetCount: result.worksheets.filter(({ runStatus }) => runStatus === "COMPLETED").length,
+    partiallyCompletedWorksheetCount: result.worksheets.filter(({ runStatus }) => runStatus === "PARTIALLY_COMPLETED").length,
+    inputRejectedWorksheetCount: result.worksheets.filter(({ runStatus }) => runStatus === "INPUT_REJECTED").length,
+    candidateOptionCount: options.filter(({ status }) => status === "candidate").length,
+    completedOptionCount: options.filter(({ status }) => status === "completed").length,
+    insufficientEvidenceOptionCount: options.filter(({ status }) => status === "insufficient_evidence").length,
+    calculationFailedOptionCount: options.filter(({ status }) => status === "calculation_failed").length,
+  };
+  for (const [field, expected] of Object.entries(expectedCounts) as Array<[keyof typeof expectedCounts, number]>) {
+    if (result.summary[field] !== expected) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: `${field} must match worksheet results`, path: ["summary", field] });
+    }
+  }
+  const expectedStatus = expectedCounts.inputRejectedWorksheetCount === result.worksheets.length
+    ? "INPUT_REJECTED"
+    : expectedCounts.partiallyCompletedWorksheetCount > 0 || expectedCounts.inputRejectedWorksheetCount > 0
+      ? "PARTIALLY_COMPLETED"
+      : "COMPLETED";
+  if (result.runStatus !== expectedStatus) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "root runStatus must match worksheet statuses", path: ["runStatus"] });
+  }
+});
+
 const f6ReportEvidenceReferencesSchema = z.array(f6ArtifactReferenceSchema).min(1);
 const f6ReportFindingSchema = f6InputFindingSchema.refine(
   (finding) => finding.evidenceReferences.length > 0,
@@ -7585,12 +7813,15 @@ export type F6Recommendation = z.infer<typeof f6RecommendationSchema>;
 export type F6Clarification = z.infer<typeof f6ClarificationSchema>;
 export type F6TargetCapability = z.infer<typeof f6TargetCapabilitySchema>;
 export type F6Option = z.infer<typeof f6OptionSchema>;
+export type F6OptionV2 = z.infer<typeof f6OptionV2Schema>;
 export type F6WorksheetInput = z.infer<typeof f6WorksheetInputSchema>;
 export type F6OptimizationRequest = z.infer<typeof f6OptimizationRequestSchema>;
 export type F6WorksheetResult = z.infer<typeof f6WorksheetResultSchema>;
 export type F6Summary = z.infer<typeof f6SummarySchema>;
 export type F6Provenance = z.infer<typeof f6ProvenanceSchema>;
-export type F6OptimizationResult = z.infer<typeof f6OptimizationResultSchema>;
+export type F6LegacyOptimizationResult = z.infer<typeof f6LegacyOptimizationResultSchema>;
+export type F6OptimizationResultV2 = z.infer<typeof f6OptimizationResultSchema>;
+export type F6OptimizationResult = F6LegacyOptimizationResult;
 export type F6BlockedWorksheetReport = z.infer<typeof f6BlockedWorksheetReportSchema>;
 export type F6ComposedWorksheetReport = z.infer<typeof f6ComposedWorksheetReportSchema>;
 export type F6ComposedEngineeringReport = z.infer<typeof f6ComposedEngineeringReportSchema>;

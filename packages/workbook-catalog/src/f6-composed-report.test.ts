@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   f6ComposedEngineeringReportSchema,
-  f6OptimizationResultSchema,
+  f6LegacyOptimizationResultSchema as f6OptimizationResultSchema,
   type CalculationRequest,
   type F2UserReport,
   type F5DataInterpretationResult,

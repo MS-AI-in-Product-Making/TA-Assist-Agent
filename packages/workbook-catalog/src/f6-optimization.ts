@@ -1,7 +1,7 @@
 import {
   calculationRequestSchema,
+  f6LegacyOptimizationResultSchema,
   f6OptimizationRequestSchema,
-  f6OptimizationResultSchema,
   type CalculationCompletedResult,
   type CalculationFactorResult,
   type CalculationRequest,
@@ -650,7 +650,7 @@ export function createF6Optimization(input: unknown, dependencies: OptimizationD
         || summary.inputRejectedWorksheetCount > 0
         ? "partially_completed"
         : "completed";
-  return immutable(f6OptimizationResultSchema.parse({
+  return immutable(f6LegacyOptimizationResultSchema.parse({
     contractVersion: request.contractVersion,
     outputClassification: "confidential",
     featureId: "F6",

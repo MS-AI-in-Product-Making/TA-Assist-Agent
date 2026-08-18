@@ -33,6 +33,7 @@ import {
   f6DatumEvidenceSchema,
   f6FeasibilityAssessmentSchema,
   f6InputFindingSchema,
+  f6LegacyOptimizationResultSchema,
   f6OptimizationRequestSchema,
   f6OptimizationResultSchema,
   f6OptimizationTargetsSchema,
@@ -4458,7 +4459,132 @@ describe("F5.1 objective interpretation contracts", () => {
       });
     });
 
+    describe("F6 optimization result v2", () => {
+      const artifactReference = (artifact: string) => ({ artifact, contentHash: "a".repeat(64) });
+      const baselineIdentity = {
+        calculationVersion: "excel-ta-v1" as const,
+        projectReference: "project-a",
+        runReference: "run-a",
+        workbookContentHash: "b".repeat(64),
+        worksheetName: "Analysis-A",
+        tableId: "table-a",
+      };
+      const metrics = {
+        mean: 0,
+        rssSigma: 0.05,
+        worstCaseLower: -0.2,
+        worstCaseUpper: 0.2,
+        cp: 1,
+        cpk: 0.9,
+        yield: 0.99,
+        dpm: 10000,
+      };
+      const factor = {
+        worksheetName: "Analysis-A",
+        tableId: "table-a",
+        sourceRow: 14,
+        factorName: "Factor A",
+        unit: "mm",
+      };
+      const candidate = {
+        optionId: "Analysis-A:candidate",
+        status: "candidate" as const,
+        reasonCode: "target_not_provided" as const,
+        candidateFactors: [factor],
+        requiredInputs: ["optimization_target"],
+        calculationMethod: "Provide a governed target and rerun through F4.",
+        baselineMetrics: metrics,
+        impactRank: null,
+      };
+      const notProvided = { outcome: "NOT_PROVIDED" as const };
+      const resultV2 = {
+        contractVersion: "v1" as const,
+        outputClassification: "confidential" as const,
+        featureId: "F6" as const,
+        optimizationVersion: "f6-optimization-v2" as const,
+        runStatus: "COMPLETED" as const,
+        workbook: { fileName: "Demo.xlsx", contentHash: "b".repeat(64) },
+        provenance: {
+          f2Reference: artifactReference("Feature2-Report.json"),
+          f3Reference: artifactReference("Feature3-Report.json"),
+          f4Reference: artifactReference("Feature4-Calculation.json"),
+          f5Reference: artifactReference("Feature5-Report.json"),
+          supplierCapabilityDecision: notProvided,
+          datumStrategyDecision: notProvided,
+          costDecision: notProvided,
+          analysisContextDecision: notProvided,
+          optimizationTargetsDecision: notProvided,
+        },
+        worksheets: [{
+          worksheetName: "Analysis-A",
+          tableId: "table-a",
+          runStatus: "COMPLETED" as const,
+          baselineIdentity,
+          baselineMetrics: metrics,
+          targetCapability: { targetCpk: 1, targetSigmaLevel: 3, source: "WORKSHEET" as const },
+          options: [candidate],
+          highestImpactAction: null,
+          findings: [],
+          risks: [],
+          recommendations: [],
+          clarifications: [],
+        }],
+        summary: {
+          worksheetCount: 1,
+          completedWorksheetCount: 1,
+          partiallyCompletedWorksheetCount: 0,
+          inputRejectedWorksheetCount: 0,
+          candidateOptionCount: 1,
+          completedOptionCount: 0,
+          insufficientEvidenceOptionCount: 0,
+          calculationFailedOptionCount: 0,
+        },
+      };
+
+      it("accepts a candidate-only completed V2 result and rejects V1", () => {
+        expect(f6OptimizationResultSchema.parse(resultV2)).toEqual(resultV2);
+        expect(f6OptimizationResultSchema.safeParse({ ...resultV2, optimizationVersion: "f6-optimization-v1" }).success).toBe(false);
+      });
+
+      it("enforces option branch fields, unique IDs, and summary counts", () => {
+        expect(f6OptimizationResultSchema.safeParse({
+          ...resultV2,
+          worksheets: [{
+            ...resultV2.worksheets[0],
+            options: [{ ...candidate, resultMetrics: metrics }],
+          }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...resultV2,
+          worksheets: [{ ...resultV2.worksheets[0], options: [candidate, { ...candidate }] }],
+          summary: { ...resultV2.summary, candidateOptionCount: 2 },
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...resultV2,
+          summary: { ...resultV2.summary, candidateOptionCount: 0 },
+        }).success).toBe(false);
+      });
+
+      it("allows highest impact and recommendations only for supported completed options", () => {
+        expect(f6OptimizationResultSchema.safeParse({
+          ...resultV2,
+          worksheets: [{
+            ...resultV2.worksheets[0],
+            highestImpactAction: { optionId: candidate.optionId, impactRank: 1 },
+          }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...resultV2,
+          worksheets: [{
+            ...resultV2.worksheets[0],
+            recommendations: [{ recommendationId: "recommend-candidate", optionId: candidate.optionId, text: "Apply candidate.", evidenceReferences: [] }],
+          }],
+        }).success).toBe(false);
+      });
+    });
+
     describe("F6 optimization and composed report contracts", () => {
+      const f6OptimizationResultSchema = f6LegacyOptimizationResultSchema;
       const reference = (artifact: string) => ({ artifact, contentHash: "a".repeat(64) });
       const baselineCalculationRequest = {
         contractVersion: "v1" as const,

@@ -2,7 +2,7 @@ import {
   f2UserReportSchema,
   f5DataInterpretationResultSchema,
   f6ComposedEngineeringReportSchema,
-  f6OptimizationResultSchema,
+  f6LegacyOptimizationResultSchema,
   type F2UserReport,
   type F5DataInterpretationResult,
   type F6ComposedEngineeringReport,
@@ -410,7 +410,7 @@ export function createF6ComposedEngineeringReport(input: F6ComposedEngineeringRe
     throw new Error("Invalid F5 report.");
   }
   try {
-    f6Result = f6OptimizationResultSchema.parse(input.f6Result);
+    f6Result = f6LegacyOptimizationResultSchema.parse(input.f6Result);
   } catch {
     throw new Error("Invalid F6 result.");
   }

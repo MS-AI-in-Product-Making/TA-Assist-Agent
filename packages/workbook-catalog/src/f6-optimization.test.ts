@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  f6OptimizationResultSchema,
+  f6LegacyOptimizationResultSchema as f6OptimizationResultSchema,
   type CalculationRequest,
   type F6OptimizationRequest,
 } from "@ai-assist/contracts";
