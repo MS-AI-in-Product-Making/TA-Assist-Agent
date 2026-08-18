@@ -19,6 +19,10 @@ F1 remains the sole physical image owner. New v2 artifacts are immutable, create
 
 ### F6 Governed Optimization Contract
 
+The agent Skill phrase `使用F6分析报告` starts the governed workbook sequence `F0 -> F1 -> F2 -> F3 -> F4 -> F5 -> F6`; users do not assemble commands manually. The Skill preserves two worksheet confirmations: the first fixes F1/F2 parsing scope against the workbook hash, and the second chooses the exact downstream set only from F2-ready worksheets with valid F1 image provenance. Downstream execution uses local-only F3 with no ADO publishing, then F4, F5, and F6 in order. New image mode creates only immutable `f5-image-observation-v2` evidence.
+
+After validation, the Skill presents an F1-F6 output ledger plus the controlled F0 version disclosure. A phase is complete only after contract, containment, identity, manifest, and recorded hashes pass. Missing supplier or datum evidence keeps options at `insufficient_evidence`; missing governed cost coverage keeps ROI at `not_computed`. An existing F6 artifact entry validates and presents the six-file run without rerunning upstream phases.
+
 After F5, F6 binds exact F2/F3/F4/F5 artifact roots and one or more unique `--worksheet` selections. Direct CLI roots are positional; the app CLI names them with `--f2-artifacts` through `--f5-artifacts` and fixes output under `test/demo-output/f6-runs/<F5-root-name>/<UTC-run-id>/`. Both support optional `--supplier-capability`, `--datum-strategy`, `--cost`, and `--image-observations` evidence.
 
 F6 owns options, reverse solving, RSS apportionment, feasibility, impact ranking, and the composed report; F5 owns baseline interpretation and evidence. Top-1 reduces the baseline top contributor band by 20%; Top-3 reduces each frozen baseline top-three band by 30%; both preserve each original band center. Mean centering always requires engineering review. Reverse solves and the proportional, equal-top-N, capability-bounded, and residual-after-centering RSS policies are verified through the F4 kernel.
