@@ -651,6 +651,8 @@ describe("f3-analysis skill contract", () => {
       expect(contract).toContain("exactly one new comment");
       expect(contract).toContain("SHA-256");
       expect(contract).toContain("write_verification_failed");
+      expect(contract.match(/`top: 200`/g)).toHaveLength(2);
+      expect(contract.match(/Never pass a `top` value greater than `200`/g)).toHaveLength(2);
     }
 
     expect(reference).toContain('"op": "add"');

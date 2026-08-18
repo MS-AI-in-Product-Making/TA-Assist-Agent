@@ -56,7 +56,7 @@ Channel priority:
 1. A direct comment create/update tool with an explicit full-body string field.
 2. Surface `mcp_surface_mcp_p_update_work_item` only when its schema supports `requestBody[]` items with `op`, `path`, string `value`, and `add`.
 
-For either channel, call `mcp_surface_mcp_p_list_work_item_comments` once before preview and snapshot existing comment IDs. If body capability is missing, do not call Surface comment write. Body capability is missing only when neither route qualifies; use local fallback reason: surface_mcp_comment_body_unsupported.
+For either channel, call `mcp_surface_mcp_p_list_work_item_comments` once before preview with `top: 200` and snapshot existing comment IDs from the returned page. Never pass a `top` value greater than `200`. If body capability is missing, do not call Surface comment write. Body capability is missing only when neither route qualifies; use local fallback reason: surface_mcp_comment_body_unsupported.
 
 ## English payload contract
 
@@ -89,7 +89,7 @@ const requestBody = [{
 }];
 ```
 
-Do not add any other JSON Patch operation. Never derive `path` from user input. After the single write, read back with `mcp_surface_mcp_p_list_work_item_comments` exactly once and require exactly one new comment whose work item ID matches and whose comment format `html` is reported. Require 11 headers and the expected factor row count. Compare ADO-safe canonical HTML by applying `normalizeAdoHistoryHtmlForVerification` to the confirmed and readback bodies; canonical HTML text and SHA-256 must match. This canonicalizer may remove only trailing line endings and ADO-injected whitespace immediately before `h2`, `p`, `li`, `ul`, `th`, or `td` closing tags. Any other write error, structure difference, text difference, or hash mismatch is `write_verification_failed`; do not retry. Raw Markdown must never be sent to `System.History`.
+Do not add any other JSON Patch operation. Never derive `path` from user input. After the single write, read back with `mcp_surface_mcp_p_list_work_item_comments` exactly once using `top: 200`. Never pass a `top` value greater than `200`. Require exactly one new comment whose work item ID matches and whose comment format `html` is reported. Require 11 headers and the expected factor row count. Compare ADO-safe canonical HTML by applying `normalizeAdoHistoryHtmlForVerification` to the confirmed and readback bodies; canonical HTML text and SHA-256 must match. This canonicalizer may remove only trailing line endings and ADO-injected whitespace immediately before `h2`, `p`, `li`, `ul`, `th`, or `td` closing tags. Any other write error, structure difference, text difference, or hash mismatch is `write_verification_failed`; do not retry. Raw Markdown must never be sent to `System.History`.
 
 ## Confirmation and write policy
 
