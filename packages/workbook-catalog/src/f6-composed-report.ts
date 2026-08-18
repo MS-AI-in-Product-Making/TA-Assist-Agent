@@ -1,7 +1,7 @@
 import {
   f2UserReportSchema,
   f5DataInterpretationResultSchema,
-  f6ComposedEngineeringReportSchema,
+  f6LegacyComposedEngineeringReportSchema as f6ComposedEngineeringReportSchema,
   f6LegacyOptimizationResultSchema,
   type F2UserReport,
   type F5DataInterpretationResult,

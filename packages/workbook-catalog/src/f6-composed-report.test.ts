@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  f6ComposedEngineeringReportSchema,
+  f6LegacyComposedEngineeringReportSchema as f6ComposedEngineeringReportSchema,
   f6LegacyOptimizationResultSchema as f6OptimizationResultSchema,
   type CalculationRequest,
   type F2UserReport,

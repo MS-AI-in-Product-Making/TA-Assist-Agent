@@ -33,6 +33,7 @@ import {
   f6DatumEvidenceSchema,
   f6FeasibilityAssessmentSchema,
   f6InputFindingSchema,
+  f6LegacyComposedEngineeringReportSchema,
   f6LegacyOptimizationResultSchema,
   f6OptimizationRequestSchema,
   f6OptimizationResultSchema,
@@ -4583,8 +4584,148 @@ describe("F5.1 objective interpretation contracts", () => {
       });
     });
 
+    describe("F6 composed report v2", () => {
+      const quantity = (value: number) => ({ value, unit: "mm" });
+      const range = (lower: number, upper: number) => ({ lower, upper, unit: "mm" });
+      const section = <SectionId extends string>(sectionId: SectionId, status = "SUPPORTED" as const) => ({
+        sectionId,
+        status,
+        evidenceIds: ["evidence-baseline"],
+      });
+      const factor = { worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 14, factorName: "Factor A", unit: "mm" };
+      const contributor = { rank: 1, factor, sigma: quantity(0.05), contributionPercent: 100, cumulativePercent: 100, evidenceId: "evidence-baseline", confidence: "HIGH" as const };
+      const candidate = {
+        optionId: "Analysis-A:candidate",
+        status: "candidate" as const,
+        reasonCode: "target_not_provided" as const,
+        candidateFactors: [factor],
+        requiredInputs: ["optimization_target"],
+        calculationMethod: "Provide a governed target and rerun through F4.",
+        baselineMetrics: { mean: 0, rssSigma: 0.05, worstCaseLower: -0.2, worstCaseUpper: 0.2, cp: 1, cpk: 0.9, yield: 0.99, dpm: 10000 },
+        impactRank: null,
+      };
+      const formulaReference = { outputField: "system.rssSigma", formulaId: "rss-v1", formulaVersion: "excel-ta-v1" };
+      const formulaCheck = {
+        ...formulaReference,
+        expression: "sigma_RSS = sqrt(sum(sigma_i^2))",
+        inputs: [{ name: "Factor A sigma", value: 0.05, unit: "mm", source: "Analysis-A!T14" }],
+        result: quantity(0.05),
+        sourceCells: ["Analysis-A!T14"],
+        recomputable: true as const,
+      };
+      const consistencyCheck = {
+        checkId: "mean-check",
+        calculated: quantity(0),
+        reported: quantity(0),
+        difference: quantity(0),
+        tolerance: quantity(0.01),
+        toleranceBasis: "input resolution",
+        result: "PASS" as const,
+        formulaCheckIds: ["system.mean"],
+      };
+      const margins = {
+        statistical: { sigmaLevel: 3, lowerBound: -0.15, upperBound: 0.15, lowerMargin: 0, upperMargin: 0, minimumMargin: 0, formulaReferences: [formulaReference] },
+        worstCase: { lowerBound: -0.2, upperBound: 0.2, lowerMargin: -0.05, upperMargin: -0.05, minimumMargin: -0.05, formulaReferences: [formulaReference] },
+      };
+      const sections = {
+        executiveSummary: { ...section("executive_summary"), analysisObject: null, mean: quantity(0), rssSigma: quantity(0.05), statisticalRange: range(-0.15, 0.15), worstCaseRange: range(-0.2, 0.2), minimumMargin: quantity(-0.05), predictiveCpk: 0.9, topContributors: [contributor], primaryRisks: ["Cpk below target."], decision: "FAIL" as const, actionRequired: true },
+        objectiveAndRequirements: { ...section("objective_and_requirements"), analysisObject: null, target: quantity(0), lsl: quantity(-0.15), usl: quantity(0.15), targetCpk: 1, requirementIds: [], functionalBoundary: null, passFailCriteria: null },
+        operatingConditions: { ...section("operating_conditions", "INSUFFICIENT_EVIDENCE" as const), conditions: [] },
+        inputIntegrity: { ...section("input_integrity"), rating: "PARTIALLY_COMPLETE" as const, factors: [{ factor, partName: "Part A", drawingNumber: null, dimId: null, nominal: quantity(0), mean: quantity(0), upperTolerance: quantity(0.2), lowerTolerance: quantity(-0.2), distribution: "normal", sigmaLevel: 4, sigma: quantity(0.05), longTermSafetyFactor: 1, sourceCells: { factorName: "Analysis-A!G14" }, evidenceId: "evidence-baseline", confidence: "HIGH" as const, notes: [] }], findings: [] },
+        toleranceLoopDefinition: { ...section("tolerance_loop_definition", "INSUFFICIENT_EVIDENCE" as const), start: null, end: null, responseDirection: null, terms: [], equation: null, reviewRequired: true },
+        calculationSelfCheck: { ...section("calculation_self_check"), meanCheck: consistencyCheck, rssCheck: { ...consistencyCheck, checkId: "rss-check" }, rangeChecks: [], worstCaseCheck: { ...consistencyCheck, checkId: "wc-check" } },
+        statisticalResults: { ...section("statistical_results"), mean: quantity(0), adjustedMean: quantity(0), meanShift: quantity(0), rssSigma: quantity(0.05), ranges: [{ sigmaLevel: 3, range: range(-0.15, 0.15), formulaCheckId: "statistical-bound-v1" }], worstCase: range(-0.2, 0.2), formulaChecks: [formulaCheck] },
+        specificationAndMargins: { ...section("specification_and_margins"), specification: { target: quantity(0), lsl: quantity(-0.15), usl: quantity(0.15), targetCpk: 1 }, assessment: margins, interferenceStatus: "UNKNOWN" as const },
+        capabilityAssessment: { ...section("capability_assessment"), basis: "PREDICTIVE_TOLERANCE_MODEL" as const, cp: 1, lowerCpk: 0.9, upperCpk: 0.9, cpk: 0.9, lowerZ: 2.7, upperZ: 2.7, predictedDpm: 6940, predictedYield: 0.98612, targetCpk: 1, result: "FAIL" as const, limitations: ["Predictive model, not measured production capability."] },
+        contributorAnalysis: { ...section("contributor_analysis"), contributors: [contributor], interpretationLimit: "High contribution is not root-cause proof." },
+        sensitivityAndOptimization: { ...section("sensitivity_and_optimization", "PARTIAL" as const), sensitivities: [{ factor, responseCoefficient: null, directionStatement: "Loop direction is unconfirmed.", evidenceId: "evidence-baseline", reviewRequired: true }], targets: [], options: [candidate], highestImpactAction: null, roiStatus: "NOT_COMPUTED" as const },
+        riskAssessment: { ...section("risk_assessment"), risks: [{ riskId: "risk-cpk", category: "PRODUCT", rating: "HIGH" as const, trigger: "Predictive Cpk below target.", evidenceIds: ["evidence-baseline"], confidence: "HIGH" as const, currentMargin: quantity(-0.05), verificationMethod: "Review specification and measured capability." }] },
+        engineeringRecommendations: { ...section("engineering_recommendations"), mandatoryActions: [{ actionId: "action-cpk", targetFactor: null, targetRiskId: "risk-cpk", rationale: "Close supported capability failure.", quantifiedBenefit: null, validationRequired: "Provide governed optimization target.", sideEffects: [], evidenceIds: ["evidence-baseline"] }], validationActions: [], conditionalOptimizations: [] },
+        designIntentReview: { ...section("design_intent_review"), checks: [{ checkId: "check-margin", topic: "Margin", status: "NEEDS_REVIEW" as const, finding: "Worst-case margin is negative.", evidenceIds: ["evidence-baseline"], gapId: null }] },
+        dataGaps: { ...section("data_gaps", "PARTIAL" as const), gaps: [] },
+        finalConclusion: { ...section("final_conclusion"), summary: "Predictive Cpk is below target.", decision: "FAIL" as const, basis: ["Cpk 0.9 < 1.0"], limitations: ["No measured process data."], nextActions: ["Provide governed optimization target."], baselineDecision: "FAIL" as const },
+      };
+      const evidence = {
+        evidenceId: "evidence-baseline",
+        evidenceType: "CALCULATED" as const,
+        confidence: "HIGH" as const,
+        status: "SUPPORTED" as const,
+        description: "F4 governed baseline.",
+        artifactReferences: [{ artifact: "Feature4-Calculation.json", contentHash: "b".repeat(64) }],
+        sourceRows: [{ worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 14 }],
+        formulaReferences: [{ outputField: "capability.cpk", formulaId: "cpk-v1", formulaVersion: "excel-ta-v1" }],
+        affectsFinalDecision: true,
+        limitations: [],
+      };
+      const worksheet = {
+        worksheetName: "Analysis-A",
+        tableId: "table-a",
+        status: "FAIL" as const,
+        baselineDecision: "FAIL" as const,
+        dataGaps: [],
+        decisionInputs: { blockingP0GapIds: [], conditionalP1GapIds: [], supportedFailureEvidenceIds: [evidence.evidenceId], openHighRiskIds: ["risk-cpk"] },
+        sections,
+        evidenceIndex: [evidence],
+      };
+      const reportV2 = {
+        contractVersion: "v1" as const,
+        outputClassification: "confidential" as const,
+        reportVersion: "f6-composed-report-v2" as const,
+        workbook: { fileName: "Demo.xlsx", contentHash: "a".repeat(64) },
+        overallStatus: "FAIL" as const,
+        workbookSummary: {
+          scope: { selectedWorksheetNames: ["Analysis-A"], excludedWorksheetNames: [] },
+          worksheetStatuses: [{ worksheetName: "Analysis-A", status: "FAIL" as const }],
+          worstSupportedFinding: { worksheetName: "Analysis-A", baselineDecision: "FAIL" as const, reason: "Cpk below target." },
+          blockingGapCount: 0,
+          actionRequired: true,
+        },
+        blockedWorksheets: [],
+        worksheets: [worksheet],
+      };
+
+      it("accepts the strict sixteen-section report and rejects V1", () => {
+        expect(f6ComposedEngineeringReportSchema.parse(reportV2)).toEqual(reportV2);
+        expect(f6ComposedEngineeringReportSchema.safeParse({ ...reportV2, reportVersion: "f6-composed-report-v1" }).success).toBe(false);
+      });
+
+      it("requires every section, rejects unknown sections, and enforces canonical P0 status", () => {
+        const { finalConclusion: _missing, ...missingSection } = sections;
+        expect(f6ComposedEngineeringReportSchema.safeParse({
+          ...reportV2,
+          worksheets: [{ ...worksheet, sections: missingSection }],
+        }).success).toBe(false);
+        expect(f6ComposedEngineeringReportSchema.safeParse({
+          ...reportV2,
+          worksheets: [{ ...worksheet, sections: { ...sections, legacySection: {} } }],
+        }).success).toBe(false);
+        const p0Gap = { gapId: "gap-spec", priority: "P0" as const, blocksFinalDecision: true as const, missingInformation: "Specification missing.", affectedSections: ["specificationAndMargins"], suggestedSource: "Requirement", responsibleRole: "Design engineer", verificationMethod: "Confirm LSL and USL.", evidenceReferences: [] };
+        expect(f6ComposedEngineeringReportSchema.safeParse({
+          ...reportV2,
+          worksheets: [{
+            ...worksheet,
+            dataGaps: [p0Gap],
+            decisionInputs: { ...worksheet.decisionInputs, blockingP0GapIds: [p0Gap.gapId] },
+            sections: { ...sections, dataGaps: { ...sections.dataGaps, gaps: [p0Gap] } },
+          }],
+        }).success).toBe(false);
+      });
+
+      it("rejects low-confidence evidence as a supported failure and summary drift", () => {
+        expect(f6ComposedEngineeringReportSchema.safeParse({
+          ...reportV2,
+          worksheets: [{ ...worksheet, evidenceIndex: [{ ...evidence, confidence: "LOW" }] }],
+        }).success).toBe(false);
+        expect(f6ComposedEngineeringReportSchema.safeParse({
+          ...reportV2,
+          workbookSummary: { ...reportV2.workbookSummary, blockingGapCount: 1 },
+        }).success).toBe(false);
+      });
+    });
+
     describe("F6 optimization and composed report contracts", () => {
       const f6OptimizationResultSchema = f6LegacyOptimizationResultSchema;
+      const f6ComposedEngineeringReportSchema = f6LegacyComposedEngineeringReportSchema;
       const reference = (artifact: string) => ({ artifact, contentHash: "a".repeat(64) });
       const baselineCalculationRequest = {
         contractVersion: "v1" as const,
