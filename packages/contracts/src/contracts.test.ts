@@ -25,6 +25,7 @@ import {
   f5DataInterpretationRequestSchema,
   f5DataInterpretationResultSchema,
   f6ApportionmentResultSchema,
+  f6AnalysisContextSchema,
   f6CapabilityBoundSchema,
   f6ComposedEngineeringReportSchema,
   f6ControlledScenarioSchema,
@@ -34,6 +35,7 @@ import {
   f6InputFindingSchema,
   f6OptimizationRequestSchema,
   f6OptimizationResultSchema,
+  f6OptimizationTargetsSchema,
   f6ReverseSolveResultSchema,
   f6SupplierCapabilityEvidenceSchema,
   f6ToleranceChangeSchema,
@@ -4309,6 +4311,151 @@ describe("F5.1 objective interpretation contracts", () => {
           assumptionCount: 0,
         },
       }).success).toBe(false);
+    });
+
+    describe("F6 V2 input contracts", () => {
+      const factorIdentity = {
+        worksheetName: "Analysis-A",
+        tableId: "table-a",
+        sourceRow: 14,
+        factorName: "Bracket height",
+        unit: "mm",
+      };
+      const baselineIdentity = {
+        calculationVersion: "excel-ta-v1" as const,
+        projectReference: "project-a",
+        runReference: "run-a",
+        workbookContentHash: "a".repeat(64),
+        worksheetName: "Analysis-A",
+        tableId: "table-a",
+      };
+      const evidence = {
+        artifactReference: { artifact: "Feature4-Calculation.json", contentHash: "b".repeat(64) },
+        worksheetName: "Analysis-A",
+        sourceRows: [{ worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 14 }],
+      };
+      const targets = {
+        contractVersion: "v1" as const,
+        inputClassification: "confidential" as const,
+        targetVersion: "f6-optimization-targets-v1" as const,
+        workbookContentHash: "a".repeat(64),
+        worksheets: [{
+          worksheetName: "Analysis-A",
+          tableId: "table-a",
+          baselineIdentity,
+          targets: [{
+            targetId: "target-factor-a",
+            targetType: "improvement_ratio" as const,
+            factor: factorIdentity,
+            ratio: 0.2,
+            appliesTo: "tolerance_band" as const,
+          }],
+        }],
+      };
+      const analysisContext = {
+        contractVersion: "v1" as const,
+        inputClassification: "confidential" as const,
+        contextVersion: "f6-analysis-context-v1" as const,
+        workbookContentHash: "a".repeat(64),
+        projectName: "Project A",
+        worksheets: [{
+          worksheetName: "Analysis-A",
+          tableId: "table-a",
+          baselineIdentity,
+          analysisObject: {
+            kind: "GAP" as const,
+            name: "Bracket gap",
+            physicalMeaning: "Clearance between bracket and cover.",
+            measurementDirection: "Z",
+            positiveDirectionDefinition: "Increasing clearance.",
+            negativeDirectionDefinition: "Increasing interference.",
+            evidence,
+          },
+          functionalRequirements: {
+            requirementIds: ["REQ-1"],
+            functionalBoundary: "No interference.",
+            passFailCriteria: "LSL and USL must be met.",
+            evidence: [evidence],
+          },
+          operatingConditions: [{
+            conditionId: "condition-assembly",
+            category: "ASSEMBLY" as const,
+            description: "Nominal static assembly.",
+            evidence,
+          }],
+          correlationRequirement: { mode: "INDEPENDENT" as const, evidence },
+          loopDefinition: {
+            start: "Bracket datum",
+            end: "Cover surface",
+            responseDirection: "Z",
+            factors: [{ factor: factorIdentity, sign: 1 as const }],
+            evidence: [evidence],
+          },
+        }],
+      };
+
+      it("accepts strict identity-bound Optimization Targets and Analysis Context", () => {
+        expect(f6OptimizationTargetsSchema.parse(targets)).toEqual(targets);
+        expect(f6AnalysisContextSchema.parse(analysisContext)).toEqual(analysisContext);
+      });
+
+      it("rejects invalid target ratios, duplicate IDs, and factor identity drift", () => {
+        const worksheet = targets.worksheets[0];
+        const target = worksheet.targets[0];
+        expect(f6OptimizationTargetsSchema.safeParse({
+          ...targets,
+          worksheets: [{ ...worksheet, targets: [{ ...target, ratio: 1 }] }],
+        }).success).toBe(false);
+        expect(f6OptimizationTargetsSchema.safeParse({
+          ...targets,
+          worksheets: [{ ...worksheet, targets: [target, { ...target }] }],
+        }).success).toBe(false);
+        expect(f6OptimizationTargetsSchema.safeParse({
+          ...targets,
+          worksheets: [{
+            ...worksheet,
+            targets: [{ ...target, factor: { ...target.factor, worksheetName: "Analysis-B" } }],
+          }],
+        }).success).toBe(false);
+      });
+
+      it("rejects empty system targets, unbound context evidence, public data, and unknown keys", () => {
+        const worksheet = targets.worksheets[0];
+        expect(f6OptimizationTargetsSchema.safeParse({
+          ...targets,
+          worksheets: [{
+            ...worksheet,
+            targets: [{
+              targetId: "system-target",
+              targetType: "system_target",
+              systemIdentity: {
+                baselineIdentity,
+                designNominal: 0,
+                mean: 0,
+                rssSigma: 0.05,
+                lowerSpecLimit: -0.1,
+                upperSpecLimit: 0.1,
+                targetCpk: 1,
+                traceReferences: [],
+              },
+              target: {},
+              apportionment: { policy: "PROPORTIONAL", selectedFactors: [factorIdentity] },
+            }],
+          }],
+        }).success).toBe(false);
+        expect(f6AnalysisContextSchema.safeParse({
+          ...analysisContext,
+          worksheets: [{
+            ...analysisContext.worksheets[0],
+            analysisObject: {
+              ...analysisContext.worksheets[0].analysisObject,
+              evidence: { ...evidence, worksheetName: "Analysis-B" },
+            },
+          }],
+        }).success).toBe(false);
+        expect(f6OptimizationTargetsSchema.safeParse({ ...targets, inputClassification: "public" }).success).toBe(false);
+        expect(f6AnalysisContextSchema.safeParse({ ...analysisContext, unknown: true }).success).toBe(false);
+      });
     });
 
     describe("F6 optimization and composed report contracts", () => {
