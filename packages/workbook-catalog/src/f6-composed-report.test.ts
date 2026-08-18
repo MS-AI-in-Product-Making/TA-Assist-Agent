@@ -8,10 +8,16 @@ import {
 } from "@ai-assist/contracts";
 import { createCalculation } from "./calculation.js";
 import { createF5DataInterpretation } from "./f5-data-interpretation.js";
-import { createLegacyF6Optimization as createF6Optimization } from "./f6-optimization.js";
+import {
+  createF6Optimization as createF6OptimizationV2,
+  createLegacyF6Optimization as createF6Optimization,
+} from "./f6-optimization.js";
 import { calculateF6Scenario } from "./f6-scenario-adapter.js";
 import * as packageRoot from "./index.js";
-import { createF6ComposedEngineeringReport } from "./f6-composed-report.js";
+import {
+  createF6ComposedEngineeringReport as createF6ComposedEngineeringReportV2,
+  createLegacyF6ComposedEngineeringReport as createF6ComposedEngineeringReport,
+} from "./f6-composed-report.js";
 
 const HASH = "a".repeat(64);
 const IMAGE_HASH = "b".repeat(64);
@@ -219,7 +225,7 @@ function bundle(specifications: Array<[string, number]>, blockedWorksheetName?: 
       imageObservations: [],
     })),
   });
-  const generatedF6Result = createF6Optimization({
+  const f6Request = {
     contractVersion: "v1",
     inputClassification: "confidential",
     workbook: { fileName: "Anonymous.xlsx", contentHash: HASH },
@@ -240,7 +246,8 @@ function bundle(specifications: Array<[string, number]>, blockedWorksheetName?: 
       f2Findings: [],
       supplierBindings: [],
     })),
-  }, failOptions ? {
+  };
+  const generatedF6Result = createF6Optimization(f6Request, failOptions ? {
     calculateScenario() {
       throw { code: "controlled_calculation_failed" };
     },
@@ -315,7 +322,7 @@ function bundle(specifications: Array<[string, number]>, blockedWorksheetName?: 
     adoEvents: [],
     summary: summary(readyWorksheets.length, blockedWorksheets.length),
   };
-  return { f2Report, f5Report, f6Result };
+  return { f2Report, f5Report, f6Result, f6Request };
 }
 
 describe("createF6ComposedEngineeringReport", () => {
@@ -617,6 +624,57 @@ describe("createF6ComposedEngineeringReport", () => {
   });
 
   it("exports the governed service from the package root", () => {
-    expect(packageRoot.createF6ComposedEngineeringReport).toBe(createF6ComposedEngineeringReport);
+    expect(typeof createF6ComposedEngineeringReport).toBe("function");
+  });
+});
+
+describe("createF6ComposedEngineeringReport V2", () => {
+  function bundleV2(specificationLimit = 0.12, blockedWorksheetName?: string) {
+    const base = bundle([["Analysis-A", specificationLimit]], blockedWorksheetName);
+    const f6Result = createF6OptimizationV2(base.f6Request, {
+      inputDecisions: {
+        analysisContext: { outcome: "NOT_PROVIDED" },
+        optimizationTargets: { outcome: "NOT_PROVIDED" },
+      },
+    });
+    return { f2Report: base.f2Report, f5Report: base.f5Report, f6Result };
+  }
+
+  it("builds the strict sixteen-section report without inferring missing context", () => {
+    const report = createF6ComposedEngineeringReportV2(bundleV2());
+    const worksheet = report.worksheets[0]!;
+
+    expect(report.reportVersion).toBe("f6-composed-report-v2");
+    expect(Object.keys(worksheet.sections)).toEqual([
+      "executiveSummary", "objectiveAndRequirements", "operatingConditions", "inputIntegrity",
+      "toleranceLoopDefinition", "calculationSelfCheck", "statisticalResults", "specificationAndMargins",
+      "capabilityAssessment", "contributorAnalysis", "sensitivityAndOptimization", "riskAssessment",
+      "engineeringRecommendations", "designIntentReview", "dataGaps", "finalConclusion",
+    ]);
+    expect(worksheet.sections.objectiveAndRequirements.analysisObject).toBeNull();
+    expect(worksheet.sections.operatingConditions.conditions).toEqual([]);
+    expect(worksheet.sections.toleranceLoopDefinition.equation).toBeNull();
+    expect(worksheet.baselineDecision).toBe("FAIL");
+    expect(worksheet.status).toBe("FAIL");
+  });
+
+  it("keeps a passing predictive baseline conditional when P1 context gaps remain", () => {
+    const report = createF6ComposedEngineeringReportV2(bundleV2(1));
+
+    expect(report.worksheets[0]!.baselineDecision).toBe("PASS");
+    expect(report.worksheets[0]!.status).toBe("CONDITIONAL_PASS");
+    expect(report.worksheets[0]!.dataGaps.some(({ priority }) => priority === "P1")).toBe(true);
+  });
+
+  it("makes an in-scope blocked worksheet drive workbook INCOMPLETE", () => {
+    const report = createF6ComposedEngineeringReportV2(bundleV2(1, "Blocked-Sheet"));
+
+    expect(report.blockedWorksheets).toHaveLength(1);
+    expect(report.blockedWorksheets[0]).toMatchObject({ worksheetName: "Blocked-Sheet", status: "INCOMPLETE" });
+    expect(report.overallStatus).toBe("INCOMPLETE");
+  });
+
+  it("exports only the V2 composed builder from the package entrypoint", () => {
+    expect(packageRoot.createF6ComposedEngineeringReport).toBe(createF6ComposedEngineeringReportV2);
   });
 });
