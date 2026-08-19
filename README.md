@@ -204,6 +204,41 @@ Deferred until there is a proven need; each can be merged into the product later
 
 ## Repository Notes
 
+## F7 Phase 1 (Experimental Local Workflow)
+
+- F7 Phase 1 is experimental, local-only, single-user, confidential, and ephemeral.
+- F7 governance remains unavailable; cpk placeholder unchanged.
+- API loopback endpoint: `127.0.0.1:4317`
+- Web loopback endpoint: `127.0.0.1:5177`
+- Local session budget is max 8 sessions; restart to clear all in-memory state.
+
+Local commands:
+
+- `npm run build -- --force`
+- `npm run dev:f7`
+
+Current Phase 1 capability boundary:
+
+- Uses direct Excel interim adapter for worksheet import and factor evidence extraction.
+- Only Normal baseline supported.
+- Requires explicit worksheet/coefficient/unit confirmations.
+- Supports measured/baseline mix by factor.
+- Data not uploaded; no remote persistence.
+- Phase 1 ready means input evidence ready only.
+- `phase_1_ready` means input evidence ready only.
+
+Explicit exclusions in Phase 1:
+
+- no capability/Cp/Cpk/Pp/Ppk
+- no fit
+- no distribution fit
+- no Monte Carlo
+- no recommendation
+- no write-back and no workbook writeback
+- no upload and no remote persistence
+- no ADO publishing
+- no F0 writes
+
 ## Dual Markdown Export (A=Actual, D=Display)
 
 For worksheet evidence review, use the reusable dual-track exporter:
