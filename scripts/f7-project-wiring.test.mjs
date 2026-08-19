@@ -32,7 +32,7 @@ describe("f7 project wiring", () => {
     const apiIndexPath = path.join(rootDir, "apps/f7-local-api/src/index.ts");
     const apiMainPath = path.join(rootDir, "apps/f7-local-api/src/main.ts");
     expect(fs.existsSync(apiIndexPath)).toBe(true);
-    expect(fs.existsSync(apiMainPath)).toBe(false);
+    expect(fs.existsSync(apiMainPath)).toBe(true);
 
     const webPackage = readJson("apps/f7-web/package.json");
     expect(webPackage.name).toBe("@ai-assist/f7-web");
