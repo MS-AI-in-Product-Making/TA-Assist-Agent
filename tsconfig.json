@@ -2,6 +2,7 @@
   "files": [],
   "references": [
     { "path": "./apps/cli" },
+    { "path": "./apps/f7-local-api" },
     { "path": "./packages/contracts" },
     { "path": "./packages/knowledge-base" },
     { "path": "./packages/workbook-catalog" },

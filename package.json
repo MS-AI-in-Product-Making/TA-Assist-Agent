@@ -8,8 +8,12 @@
   ],
   "scripts": {
     "build": "tsc -b",
+    "dev:f7": "concurrently --kill-others-on-fail --names api,web \"npm run dev:f7:api\" \"npm run dev:f7:web\"",
+    "dev:f7:api": "npm run dev --workspace @ai-assist/f7-local-api",
+    "dev:f7:web": "npm run dev --workspace @ai-assist/f7-web",
+    "build:f7:web": "npm run build --workspace @ai-assist/f7-web",
     "lint": "eslint .",
-    "test": "npm run build -- --force && vitest run --workspace vitest.workspace.ts",
+    "test": "npm run build -- --force && vitest run",
     "check:repository": "node scripts/verify-repository.mjs",
     "verify:f4-excel-regression": "pwsh -NoProfile -File scripts/verify-f4-excel-regression.ps1",
     "export:dual-md": "pwsh -NoProfile -File scripts/export-excel-dual-grid.ps1",
@@ -29,9 +33,13 @@
   "devDependencies": {
     "@eslint/js": "^9.0.0",
     "@types/node": "^24.0.0",
+    "concurrently": "^9.0.0",
     "eslint": "^9.0.0",
+    "eslint-plugin-vue": "^10.0.0",
+    "tsx": "^4.0.0",
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.0.0",
+    "vue-eslint-parser": "^10.0.0",
     "vitest": "^3.0.0",
     "xlsx": "^0.18.5"
   }
