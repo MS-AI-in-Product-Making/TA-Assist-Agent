@@ -223,6 +223,33 @@ function marginResult(minimumMargin) {
   return minimumMargin >= 0 ? "PASS" : "FAIL";
 }
 
+function scenarioInputText(input) {
+  if (input === null) return "n/a";
+  const nominal = quantityText(input.nominal, 6);
+  const upper = input.upperTolerance === null ? "n/a" : quantityText(input.upperTolerance, 6);
+  const lower = input.lowerTolerance === null ? "n/a" : quantityText(input.lowerTolerance, 6);
+  return `${nominal} / ${upper} / ${lower}`;
+}
+
+function scenarioMetricText(metrics, minimumMargin) {
+  const yieldText = metrics.yield === null ? "n/a" : formatPercent(metrics.yield * 100, 2);
+  return `RSS ${signedNumber(metrics.rssSigma, 6)}; Cpk ${signedNumber(metrics.cpk, 3)}; Margin ${signedNumber(minimumMargin, 3)}; Yield ${yieldText}`;
+}
+
+function scenarioDeltaText(deltas) {
+  const yieldDelta = deltas.yield === null ? "n/a" : signedNumber(deltas.yield, 6);
+  return `ΔRSS ${signedNumber(deltas.rssSigma, 6)}; ΔCpk ${signedNumber(deltas.cpk, 3)}; ΔMargin ${signedNumber(deltas.minimumMargin, 3)}; ΔYield ${yieldDelta}`;
+}
+
+function scenarioTargetLabel(row) {
+  const factor = row.factor === null ? "system target" : `${row.factor.factorName} [row ${row.factor.sourceRow}]`;
+  if (row.apportionment !== null) {
+    const selected = row.apportionment.selectedFactors.map((item) => `${item.factorName}(row ${item.sourceRow})`).join(", ");
+    return `${factor}; ${row.targetType}; ${row.apportionment.policy}; ${selected}`;
+  }
+  return `${factor}; ${row.targetType}`;
+}
+
 function findFormula(formulas, outputField, formulaId) {
   return formulas.find((formula) => formula.outputField === outputField)
     ?? formulas.find((formula) => formula.formulaId === formulaId)
@@ -442,8 +469,34 @@ function renderWorksheetV2(lines, worksheet, options) {
   for (const contributor of sections.contributorAnalysis.contributors) lines.push(`| ${contributor.rank} | ${cell(contributor.factor.factorName)} | ${quantityText(contributor.sigma)} | ${formatPercent(contributor.contributionPercent)} | ${formatPercent(contributor.cumulativePercent)} |`);
   lines.push(`- 限制：${cell(sections.contributorAnalysis.interpretationLimit)}`);
   pushSection(lines, 11, "敏感度与优化收益分析");
-  if (sections.sensitivityAndOptimization.options.length === 0) lines.push(`- ${evidenceLabel("MISSING")} 未提供受控优化目标，不量化改善收益。`);
-  for (const option of sections.sensitivityAndOptimization.options) lines.push(`- Option ${cell(option.optionId)}：${cell(option.status)}`);
+  if ((sections.sensitivityAndOptimization.scenarioComparisons ?? []).length > 0) {
+    lines.push(
+      "| Scenario | Factor/Target | Baseline Nominal/+Tol/-Tol | Adjusted Nominal/+Tol/-Tol | RSS | Cpk | Minimum Margin | Yield | Delta |",
+      "|---|---|---|---|---|---|---|---|---|",
+    );
+    for (const row of sections.sensitivityAndOptimization.scenarioComparisons ?? []) {
+      const yieldValue = row.scenarioMetrics.yield === null ? "n/a" : formatPercent(row.scenarioMetrics.yield * 100, 2);
+      lines.push(
+        `| ${cell(row.optionId)} | ${cell(scenarioTargetLabel(row))} | ${cell(scenarioInputText(row.baselineInput))} | ${cell(scenarioInputText(row.adjustedInput))} | ${signedNumber(row.scenarioMetrics.rssSigma, 6)} | ${signedNumber(row.scenarioMetrics.cpk, 3)} | ${signedNumber(row.scenarioMinimumMargin, 3)} | ${cell(yieldValue)} | ${cell(scenarioDeltaText(row.deltas))} |`,
+      );
+    }
+  } else {
+    if (sections.sensitivityAndOptimization.options.length === 0) lines.push(`- ${evidenceLabel("MISSING")} 未提供受控优化目标，不量化改善收益。`);
+    for (const option of sections.sensitivityAndOptimization.options) {
+      if (option.status === "candidate") {
+        const factors = option.candidateFactors.map((factor) => `${factor.factorName}(row ${factor.sourceRow})`).join(", ");
+        lines.push(`- Candidate ${cell(option.optionId)}：${cell(option.reasonCode)}；候选因子：${cell(factors)}；required inputs：${cell(option.requiredInputs.join(", "))}`);
+      } else {
+        lines.push(`- Option ${cell(option.optionId)}：${cell(option.status)}`);
+      }
+    }
+  }
+  if (sections.sensitivityAndOptimization.targets.length > 0) {
+    lines.push("", "- Governed targets:");
+    for (const target of sections.sensitivityAndOptimization.targets) {
+      lines.push(`  - ${cell(target.targetId)} / ${cell(target.targetType)}`);
+    }
+  }
   pushSection(lines, 12, "风险评估");
   if (sections.riskAssessment.risks.length === 0) lines.push("- 当前没有受支持的风险结论；未覆盖项保持 Unknown。");
   for (const risk of sections.riskAssessment.risks) lines.push(`- ${cell(risk.category)} / ${cell(risk.rating)}：${cell(risk.trigger)}；Confidence ${cell(risk.confidence)}`);
@@ -452,6 +505,16 @@ function renderWorksheetV2(lines, worksheet, options) {
   pushSection(lines, 14, "设计意图审查 Design Intent Review");
   for (const check of sections.designIntentReview.checks) lines.push(`- ${cell(check.topic)}：${cell(check.status)}；${cell(check.finding)}`);
   pushSection(lines, 15, "数据缺口与待确认事项");
+  if ((sections.dataGaps.actionPlan ?? []).length > 0) {
+    lines.push(
+      "| Priority | Action | Scope | Owner | Required evidence | Blocks decision | Verification |",
+      "|---|---|---|---|---|---|---|",
+    );
+    for (const action of sections.dataGaps.actionPlan ?? []) {
+      lines.push(`| ${cell(action.priority)} | ${cell(action.action)} | ${cell(action.scope.join("; "))} | ${cell(action.owner)} | ${cell(action.requiredEvidence.join("; "))} | ${cell(action.blocksDecision ? "yes" : "no")} | ${cell(action.verification)} |`);
+    }
+    lines.push("");
+  }
   for (const priority of ["P0", "P1", "P2"]) for (const gap of worksheet.dataGaps.filter((candidate) => candidate.priority === priority)) lines.push(`- ${priority} / ${cell(gap.gapId)}：${cell(gap.missingInformation)}；验证：${cell(gap.verificationMethod)}`);
   pushSection(lines, 16, "最终结论");
   const conclusion = sections.finalConclusion;

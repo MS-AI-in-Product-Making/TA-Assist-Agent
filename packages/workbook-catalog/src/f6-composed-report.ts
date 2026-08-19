@@ -498,6 +498,10 @@ interface F6ComposedEngineeringReportV2Input {
 type V2Calculation = CompletedF5Worksheet["calculationResult"];
 type V2Worksheet = F6OptimizationResultV2["worksheets"][number];
 type V2AcceptedF2Report = Exclude<F2UserReport, { status: "inputRejected" }>;
+type V2CompletedOption = Extract<V2Worksheet["options"][number], { status: "completed" }>;
+type V2ActionPlanRow = NonNullable<F6ComposedEngineeringReportV2["worksheets"][number]["sections"]["dataGaps"]["actionPlan"]>[number];
+
+const DECISION_PRIORITY = { P0: 0, P1: 1, P2: 2 } as const;
 type V2F2ReadyWorksheet = Extract<V2AcceptedF2Report["worksheets"][number], { status: "ready" }>;
 type V2SectionKey = keyof F6ComposedEngineeringReportV2["worksheets"][number]["sections"];
 type V2DecisionStatus = F6ComposedEngineeringReportV2["worksheets"][number]["status"];
@@ -551,6 +555,75 @@ function assertV2Baseline(calculation: V2Calculation, worksheet: V2Worksheet): v
   }
 }
 
+function decisionArtifactReference(decision: F6OptimizationResultV2["provenance"]["optimizationTargetsDecision"]) {
+  if ((decision.outcome === "CALLER_AUTHORIZED" || decision.outcome === "CONFIRMED" || decision.outcome === "DECLINED")
+    && "artifactReference" in decision) {
+    return decision.artifactReference;
+  }
+  if (decision.outcome === "REJECTED" && decision.artifactReference !== undefined) return decision.artifactReference;
+  return undefined;
+}
+
+function scenarioTargetType(option: V2CompletedOption): "factor_tolerance" | "factor_sigma" | "improvement_ratio" | "system_target" {
+  if (option.targetContext !== undefined) return option.targetContext.targetType;
+  if (option.scenarioEvidence.factorOverrides.length > 1) return "system_target";
+  const [override] = option.scenarioEvidence.factorOverrides;
+  if (override?.sigma !== undefined) return "factor_sigma";
+  return "factor_tolerance";
+}
+
+function calculateMinimumMargin(
+  metrics: Pick<V2CompletedOption["baselineMetrics"], "mean" | "rssSigma">,
+  specification: Pick<V2Calculation["capability"], "lowerSpecLimit" | "upperSpecLimit" | "targetSigmaLevel">,
+): number {
+  const lower = metrics.mean - specification.targetSigmaLevel * metrics.rssSigma;
+  const upper = metrics.mean + specification.targetSigmaLevel * metrics.rssSigma;
+  return Math.min(specification.upperSpecLimit - upper, lower - specification.lowerSpecLimit);
+}
+
+function actionPlanFromGaps(gaps: F6ComposedEngineeringReportV2["worksheets"][number]["dataGaps"]): V2ActionPlanRow[] {
+  const grouped = new Map<string, V2ActionPlanRow>();
+  for (const gap of gaps) {
+    const key = `${gap.priority}\u0000${gap.missingInformation}\u0000${gap.responsibleRole}\u0000${gap.verificationMethod}`;
+    const sourceRowMatch = gap.gapId.match(/:(\d+)$/u);
+    const sourceRows = sourceRowMatch === null ? [] : [Number(sourceRowMatch[1])];
+    const existing = grouped.get(key);
+    if (existing === undefined) {
+      grouped.set(key, {
+        priority: gap.priority,
+        action: gap.missingInformation,
+        scope: [...new Set(gap.affectedSections.map((section) => String(section)))],
+        owner: gap.responsibleRole,
+        requiredEvidence: [gap.suggestedSource],
+        blocksDecision: gap.blocksFinalDecision,
+        verification: gap.verificationMethod,
+        gapIds: [gap.gapId],
+        evidenceReferences: uniqueReferences(gap.evidenceReferences),
+      });
+      if (sourceRows.length > 0) {
+        const rowText = `source rows: ${sourceRows.sort((left, right) => left - right).join(", ")}`;
+        grouped.get(key)!.scope.push(rowText);
+      }
+      continue;
+    }
+    const scopeCore = new Set(existing.scope.filter((entry) => !entry.startsWith("source rows:")));
+    for (const section of gap.affectedSections) scopeCore.add(String(section));
+    const existingRows = existing.scope
+      .filter((entry) => entry.startsWith("source rows:"))
+      .flatMap((entry) => entry.replace("source rows:", "").split(",").map((value) => Number(value.trim())).filter((value) => Number.isFinite(value)));
+    const mergedRows = [...new Set([...existingRows, ...sourceRows])].sort((left, right) => left - right);
+    existing.scope = [...scopeCore];
+    if (mergedRows.length > 0) existing.scope.push(`source rows: ${mergedRows.join(", ")}`);
+    existing.requiredEvidence = [...new Set([...existing.requiredEvidence, gap.suggestedSource])];
+    existing.blocksDecision = existing.blocksDecision || gap.blocksFinalDecision;
+    existing.gapIds = [...new Set([...existing.gapIds, gap.gapId])];
+    existing.evidenceReferences = uniqueReferences([...existing.evidenceReferences, ...gap.evidenceReferences]);
+  }
+  return [...grouped.values()].sort((left, right) => DECISION_PRIORITY[left.priority] - DECISION_PRIORITY[right.priority]
+    || left.action.localeCompare(right.action)
+    || left.owner.localeCompare(right.owner));
+}
+
 function buildV2Worksheet(
   f2Worksheet: V2F2ReadyWorksheet,
   f5Worksheet: CompletedF5Worksheet,
@@ -565,6 +638,8 @@ function buildV2Worksheet(
   const unit = calculation.factors[0]!.unit;
   const projection = createF6ReportProjection({ calculation, inputResolution: 1e-12 });
   const baselineEvidenceId = `${f6Worksheet.worksheetName}:f4-baseline`;
+  const targetDecisionReference = decisionArtifactReference(f6Result.provenance.optimizationTargetsDecision);
+  const targetEvidenceId = `${f6Worksheet.worksheetName}:optimization-targets`;
   const evidenceIndex: F6ComposedEngineeringReportV2["worksheets"][number]["evidenceIndex"] = [{
     evidenceId: baselineEvidenceId,
     evidenceType: "CALCULATED",
@@ -577,6 +652,20 @@ function buildV2Worksheet(
     affectsFinalDecision: calculation.capability.status === "FAIL",
     limitations: ["Predictive tolerance model; not measured production capability."],
   }];
+  if (targetDecisionReference !== undefined) {
+    evidenceIndex.push({
+      evidenceId: targetEvidenceId,
+      evidenceType: "INPUT_FACT",
+      confidence: "HIGH",
+      status: "SUPPORTED",
+      description: "Caller-authorized optimization targets artifact.",
+      artifactReferences: [structuredClone(targetDecisionReference)],
+      sourceRows: [],
+      formulaReferences: [],
+      affectsFinalDecision: false,
+      limitations: [],
+    });
+  }
   const p1 = (gapId: string, missingInformation: string, affectedSections: V2SectionKey[], verificationMethod: string) => ({
     gapId,
     priority: "P1" as const,
@@ -623,7 +712,7 @@ function buildV2Worksheet(
     f5Worksheet.governanceRows.map((row) => [sourceKey(row.source.tableId, row.source.sourceRow), row]),
   );
   for (const row of projectedF2Rows) {
-    if (row.actualFields.drawingNumber === null) dataGaps.push(p2(`${f6Worksheet.worksheetName}:drawing:${row.sourceRow}`, `Drawing Number is missing for source row ${row.sourceRow}.`, ["inputIntegrity", "designIntentReview"], "Confirm the governed drawing identity."));
+    if (row.actualFields.drawingNumber === null) dataGaps.push(p2(`${f6Worksheet.worksheetName}:drawing:${row.sourceRow}`, "Drawing Number is missing.", ["inputIntegrity", "designIntentReview"], "Confirm the governed drawing identity."));
   }
   const blockingP0GapIds = dataGaps.filter(({ priority }) => priority === "P0").map(({ gapId }) => gapId);
   const conditionalP1GapIds = dataGaps.filter(({ priority }) => priority === "P1").map(({ gapId }) => gapId);
@@ -750,6 +839,7 @@ function buildV2Worksheet(
       signedEquationAuthorized,
     };
   const sections: F6ComposedEngineeringReportV2["worksheets"][number]["sections"] = {
+
     executiveSummary: { ...v2Section("executive_summary", [baselineEvidenceId]), analysisObject: contextObject?.name ?? null, mean: v2Quantity(calculation.system.mean, unit), rssSigma: v2Quantity(calculation.system.rssSigma, unit), statisticalRange: v2Range(targetRange.range.lower, targetRange.range.upper, unit), worstCaseRange: v2Range(projection.margins.worstCase.lowerBound, projection.margins.worstCase.upperBound, unit), minimumMargin: v2Quantity(Math.min(projection.margins.statistical.minimumMargin, projection.margins.worstCase.minimumMargin), unit), predictiveCpk: calculation.capability.cpk, topContributors: contributors.slice(0, 5), primaryRisks: risks.map(({ trigger }) => trigger), decision: status, actionRequired: status !== "PASS" },
     objectiveAndRequirements: { ...v2Section("objective_and_requirements", [baselineEvidenceId], contextObject === undefined ? "PARTIAL" : "SUPPORTED"), analysisObject: contextObject === undefined ? null : { kind: contextObject.kind, name: contextObject.name, physicalMeaning: contextObject.physicalMeaning, measurementDirection: contextObject.measurementDirection, positiveDirectionDefinition: contextObject.positiveDirectionDefinition, negativeDirectionDefinition: contextObject.negativeDirectionDefinition }, analysisCharacteristic, target: v2Quantity(calculation.system.designNominal, unit), lsl: v2Quantity(calculation.capability.lowerSpecLimit, unit), usl: v2Quantity(calculation.capability.upperSpecLimit, unit), targetCpk: calculation.capability.targetCpk, requirementIds: analysisContext?.functionalRequirements?.requirementIds ?? [], functionalBoundary: analysisContext?.functionalRequirements?.functionalBoundary ?? null, passFailCriteria: analysisContext?.functionalRequirements?.passFailCriteria ?? null },
     operatingConditions: { ...v2Section("operating_conditions", [], analysisContext?.operatingConditions.length ? "SUPPORTED" : "INSUFFICIENT_EVIDENCE"), conditions: (analysisContext?.operatingConditions ?? []).map((condition) => ({ conditionId: condition.conditionId, category: condition.category, description: condition.description, evidenceId: baselineEvidenceId })) },
@@ -768,11 +858,106 @@ function buildV2Worksheet(
     specificationAndMargins: { ...v2Section("specification_and_margins", [baselineEvidenceId]), specification: { target: v2Quantity(calculation.system.designNominal, unit), lsl: v2Quantity(calculation.capability.lowerSpecLimit, unit), usl: v2Quantity(calculation.capability.upperSpecLimit, unit), targetCpk: calculation.capability.targetCpk }, assessment: { statistical: marginDto(projection.margins.statistical), worstCase: marginDto(projection.margins.worstCase) }, interferenceStatus: "UNKNOWN" as const },
     capabilityAssessment: { ...v2Section("capability_assessment", [baselineEvidenceId]), basis: "PREDICTIVE_TOLERANCE_MODEL" as const, cp: calculation.capability.cp, lowerCpk: calculation.capability.lowerCpk, upperCpk: calculation.capability.upperCpk, cpk: calculation.capability.cpk, lowerZ: calculation.capability.lowerZ, upperZ: calculation.capability.upperZ, predictedDpm: calculation.factors.every(({ input }) => input.distribution === "normal") ? calculation.capability.totalDpm : null, predictedYield: calculation.factors.every(({ input }) => input.distribution === "normal") ? calculation.capability.yield : null, targetCpk: calculation.capability.targetCpk, result: calculation.capability.status, limitations: ["Predictive tolerance model; not measured production capability."] },
     contributorAnalysis: { ...v2Section("contributor_analysis", [baselineEvidenceId]), contributors, interpretationLimit: "High contribution is not proof of root cause, nonconformance, or supplier capability failure." },
-    sensitivityAndOptimization: { ...v2Section("sensitivity_and_optimization", [], f6Worksheet.options.some(({ status: optionStatus }) => optionStatus === "completed") ? "SUPPORTED" : "PARTIAL"), sensitivities: calculation.factors.map((factor) => ({ factor: v2FactorIdentity(factor), responseCoefficient: analysisContext?.loopDefinition?.factors.find(({ factor: identity }) => identity.sourceRow === factor.source.sourceRow)?.sign ?? null, directionStatement: analysisContext?.loopDefinition === undefined ? "Loop direction is unconfirmed." : "Controlled Loop direction.", evidenceId: baselineEvidenceId, reviewRequired: analysisContext?.loopDefinition === undefined })), targets: [], options: structuredClone(f6Worksheet.options), highestImpactAction: f6Worksheet.highestImpactAction?.optionId ?? null, roiStatus: "NOT_COMPUTED" as const },
+    sensitivityAndOptimization: {
+      ...v2Section("sensitivity_and_optimization", [], f6Worksheet.options.some(({ status: optionStatus }) => optionStatus === "completed") ? "SUPPORTED" : "PARTIAL"),
+      sensitivities: calculation.factors.map((factor) => ({ factor: v2FactorIdentity(factor), responseCoefficient: analysisContext?.loopDefinition?.factors.find(({ factor: identity }) => identity.sourceRow === factor.source.sourceRow)?.sign ?? null, directionStatement: analysisContext?.loopDefinition === undefined ? "Loop direction is unconfirmed." : "Controlled Loop direction.", evidenceId: baselineEvidenceId, reviewRequired: analysisContext?.loopDefinition === undefined })),
+      targets: (() => {
+        const targetRows = f6Worksheet.options
+          .filter((option): option is Exclude<V2Worksheet["options"][number], { status: "candidate" }> => option.status !== "candidate")
+          .filter((option) => option.targetContext !== undefined)
+          .map((option) => {
+            const target = option.targetContext!;
+            const apportionment = target.targetType === "system_target"
+              ? {
+                policy: target.apportionment.policy,
+                selectedFactors: structuredClone(target.apportionment.selectedFactors),
+              }
+              : null;
+            const targetValue = target.targetType === "factor_tolerance"
+              ? { upperTolerance: target.upperTolerance, lowerTolerance: target.lowerTolerance, unit: target.unit }
+              : target.targetType === "factor_sigma"
+                ? { sigma: target.sigma, unit: target.unit }
+                : target.targetType === "improvement_ratio"
+                  ? { ratio: target.ratio, appliesTo: target.appliesTo }
+                  : "targetCpk" in target.target
+                    ? { targetCpk: target.target.targetCpk }
+                    : { targetRssSigma: target.target.targetRssSigma, unit: target.target.unit };
+            return {
+              targetId: target.targetId,
+              targetType: target.targetType,
+              factor: "factor" in target ? structuredClone(target.factor) : null,
+              targetValue,
+              evidenceId: targetDecisionReference === undefined ? baselineEvidenceId : targetEvidenceId,
+              apportionment,
+            };
+          });
+        const dedup = new Map(targetRows.map((row) => [row.targetId, row]));
+        return [...dedup.values()];
+      })(),
+      scenarioComparisons: f6Worksheet.options
+        .filter((option): option is V2CompletedOption => option.status === "completed")
+        .map((option) => {
+          const targetType = scenarioTargetType(option);
+          const primaryOverride = option.scenarioEvidence.factorOverrides[0];
+          const factor = targetType === "system_target" ? null : structuredClone(option.targetContext?.targetType === "system_target"
+            ? primaryOverride?.factor ?? null
+            : option.targetContext?.factor ?? primaryOverride?.factor ?? null);
+          const baselineFactor = factor === null
+            ? undefined
+            : calculation.factors.find(({ source }) => source.worksheetName === factor.worksheetName
+              && source.tableId === factor.tableId && source.sourceRow === factor.sourceRow);
+          const baselineInput = baselineFactor === undefined
+            ? null
+            : {
+              nominal: v2Quantity(baselineFactor.input.nominalValue, baselineFactor.unit),
+              upperTolerance: v2Quantity(baselineFactor.input.upperTolerance, baselineFactor.unit),
+              lowerTolerance: v2Quantity(baselineFactor.input.lowerTolerance, baselineFactor.unit),
+              sigma: v2Quantity(baselineFactor.sigma, baselineFactor.unit),
+            };
+          const adjustedInput = baselineFactor === undefined || primaryOverride === undefined || targetType === "system_target"
+            ? null
+            : {
+              nominal: v2Quantity(baselineFactor.input.nominalValue, baselineFactor.unit),
+              upperTolerance: primaryOverride.upperTolerance === undefined ? null : v2Quantity(primaryOverride.upperTolerance, baselineFactor.unit),
+              lowerTolerance: primaryOverride.lowerTolerance === undefined ? null : v2Quantity(primaryOverride.lowerTolerance, baselineFactor.unit),
+              sigma: primaryOverride.sigma === undefined ? null : v2Quantity(primaryOverride.sigma, baselineFactor.unit),
+            };
+          const baselineMinimumMargin = calculateMinimumMargin(option.baselineMetrics, calculation.capability);
+          const scenarioMinimumMargin = calculateMinimumMargin(option.resultMetrics, calculation.capability);
+          return {
+            optionId: option.optionId,
+            targetId: option.targetId,
+            targetType,
+            factor,
+            baselineInput,
+            adjustedInput,
+            baselineMetrics: structuredClone(option.baselineMetrics),
+            scenarioMetrics: structuredClone(option.resultMetrics),
+            baselineMinimumMargin,
+            scenarioMinimumMargin,
+            deltas: {
+              rssSigma: option.resultMetrics.rssSigma - option.baselineMetrics.rssSigma,
+              cpk: option.resultMetrics.cpk - option.baselineMetrics.cpk,
+              minimumMargin: scenarioMinimumMargin - baselineMinimumMargin,
+              yield: option.baselineMetrics.yield === null || option.resultMetrics.yield === null ? null : option.resultMetrics.yield - option.baselineMetrics.yield,
+            },
+            roiStatus: "NOT_COMPUTED" as const,
+            apportionment: option.targetContext?.targetType === "system_target"
+              ? {
+                policy: option.targetContext.apportionment.policy,
+                selectedFactors: structuredClone(option.targetContext.apportionment.selectedFactors),
+              }
+              : null,
+          };
+        }),
+      options: structuredClone(f6Worksheet.options),
+      highestImpactAction: f6Worksheet.highestImpactAction?.optionId ?? null,
+      roiStatus: "NOT_COMPUTED" as const,
+    },
     riskAssessment: { ...v2Section("risk_assessment", [baselineEvidenceId]), risks },
     engineeringRecommendations: { ...v2Section("engineering_recommendations", [baselineEvidenceId]), mandatoryActions: calculation.capability.status === "FAIL" ? [{ actionId: `${f6Worksheet.worksheetName}:capability-action`, targetFactor: null, targetRiskId: `${f6Worksheet.worksheetName}:capability`, rationale: "Close the supported predictive capability failure.", quantifiedBenefit: null, validationRequired: "Provide a governed target and validate through F4.", sideEffects: [], evidenceIds: [baselineEvidenceId] }] : [], validationActions: dataGaps.map((gap) => ({ actionId: `close:${gap.gapId}`, targetFactor: null, targetRiskId: null, rationale: gap.missingInformation, quantifiedBenefit: null, validationRequired: gap.verificationMethod, sideEffects: [], evidenceIds: [] })), conditionalOptimizations: [] },
     designIntentReview: { ...v2Section("design_intent_review", [baselineEvidenceId], "PARTIAL"), checks: [{ checkId: `${f6Worksheet.worksheetName}:margin`, topic: "Margin", status: projection.margins.statistical.minimumMargin < 0 || projection.margins.worstCase.minimumMargin < 0 ? "NEEDS_REVIEW" as const : "SUPPORTED" as const, finding: `Statistical minimum margin ${projection.margins.statistical.minimumMargin}; WC minimum margin ${projection.margins.worstCase.minimumMargin}.`, evidenceIds: [baselineEvidenceId], gapId: null }] },
-    dataGaps: { ...v2Section("data_gaps", [], dataGaps.length > 0 ? "PARTIAL" : "SUPPORTED"), gaps: structuredClone(dataGaps) },
+    dataGaps: { ...v2Section("data_gaps", [], dataGaps.length > 0 ? "PARTIAL" : "SUPPORTED"), gaps: structuredClone(dataGaps), actionPlan: actionPlanFromGaps(dataGaps) },
     finalConclusion: { ...v2Section("final_conclusion", [baselineEvidenceId]), summary: `Predictive Cpk ${calculation.capability.cpk} versus target ${calculation.capability.targetCpk}.`, decision: status, basis: calculation.capability.status === "FAIL" ? ["Predictive Cpk is below the governed target."] : ["Predictive baseline meets the governed target."], limitations: dataGaps.map(({ missingInformation }) => missingInformation), nextActions: dataGaps.map(({ verificationMethod }) => verificationMethod), baselineDecision },
   };
   return {

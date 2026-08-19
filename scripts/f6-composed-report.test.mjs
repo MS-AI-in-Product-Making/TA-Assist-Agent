@@ -550,11 +550,83 @@ describe("renderComposedEngineeringReport V2", () => {
       specificationAndMargins: { ...base("specification_and_margins"), specification: { target: quantity(0), lsl: quantity(-0.15), usl: quantity(0.15), targetCpk: 1 }, assessment: { statistical, worstCase }, interferenceStatus: "UNKNOWN" },
       capabilityAssessment: { ...base("capability_assessment"), basis: "PREDICTIVE_TOLERANCE_MODEL", cp: 1.2, lowerCpk: 1.1, upperCpk: 1.2, cpk: 1.1, lowerZ: 3.3, upperZ: 3.6, predictedDpm: 500, predictedYield: 0.9995, targetCpk: 1, result: "PASS", limitations: ["Predictive model, not measured production capability."] },
       contributorAnalysis: { ...base("contributor_analysis"), contributors: [], interpretationLimit: "High contribution is not root-cause proof." },
-      sensitivityAndOptimization: { ...base("sensitivity_and_optimization", "PARTIAL"), sensitivities: [], targets: [], options: [], highestImpactAction: null, roiStatus: "NOT_COMPUTED" },
+      sensitivityAndOptimization: {
+        ...base("sensitivity_and_optimization", "PARTIAL"),
+        sensitivities: [],
+        targets: [
+          { targetId: "scenario-a", targetType: "factor_tolerance", factor: { worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 2, factorName: "factor-1", unit: "mm" }, targetValue: { upperTolerance: 0.05, lowerTolerance: -0.05, unit: "mm" }, evidenceId: "target-evidence", apportionment: null },
+          { targetId: "scenario-b", targetType: "improvement_ratio", factor: { worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 3, factorName: "factor-2", unit: "mm" }, targetValue: { ratio: 0.2, appliesTo: "tolerance_band" }, evidenceId: "target-evidence", apportionment: null },
+          { targetId: "scenario-c", targetType: "system_target", factor: null, targetValue: { targetCpk: 1.5 }, evidenceId: "target-evidence", apportionment: { policy: "EQUAL_SELECTED", selectedFactors: [{ worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 2, factorName: "factor-1", unit: "mm" }, { worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 3, factorName: "factor-2", unit: "mm" }] } },
+        ],
+        scenarioComparisons: [
+          {
+            optionId: "Analysis-A:scenario-a",
+            targetId: "scenario-a",
+            targetType: "factor_tolerance",
+            factor: { worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 2, factorName: "factor-1", unit: "mm" },
+            baselineInput: { nominal: { value: 0, unit: "mm" }, upperTolerance: { value: 0.2, unit: "mm" }, lowerTolerance: { value: -0.2, unit: "mm" }, sigma: { value: 0.05, unit: "mm" } },
+            adjustedInput: { nominal: { value: 0, unit: "mm" }, upperTolerance: { value: 0.05, unit: "mm" }, lowerTolerance: { value: -0.05, unit: "mm" }, sigma: null },
+            baselineMetrics: { mean: 0, rssSigma: 0.05, worstCaseLower: -0.2, worstCaseUpper: 0.2, cp: 1.2, cpk: 1.1, yield: 0.9995, dpm: 500 },
+            scenarioMetrics: { mean: 0, rssSigma: 0.04, worstCaseLower: -0.1, worstCaseUpper: 0.1, cp: 1.4, cpk: 1.3, yield: 0.9997, dpm: 300 },
+            baselineMinimumMargin: -0.05,
+            scenarioMinimumMargin: 0.01,
+            deltas: { rssSigma: -0.01, cpk: 0.2, minimumMargin: 0.06, yield: 0.0002 },
+            roiStatus: "NOT_COMPUTED",
+            apportionment: null,
+          },
+          {
+            optionId: "Analysis-A:scenario-b",
+            targetId: "scenario-b",
+            targetType: "improvement_ratio",
+            factor: { worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 3, factorName: "factor-2", unit: "mm" },
+            baselineInput: { nominal: { value: 0, unit: "mm" }, upperTolerance: { value: 0.2, unit: "mm" }, lowerTolerance: { value: -0.2, unit: "mm" }, sigma: { value: 0.05, unit: "mm" } },
+            adjustedInput: { nominal: { value: 0, unit: "mm" }, upperTolerance: { value: 0.08, unit: "mm" }, lowerTolerance: { value: -0.08, unit: "mm" }, sigma: null },
+            baselineMetrics: { mean: 0, rssSigma: 0.05, worstCaseLower: -0.2, worstCaseUpper: 0.2, cp: 1.2, cpk: 1.1, yield: 0.9995, dpm: 500 },
+            scenarioMetrics: { mean: 0, rssSigma: 0.035, worstCaseLower: -0.08, worstCaseUpper: 0.08, cp: 1.5, cpk: 1.35, yield: 0.9998, dpm: 200 },
+            baselineMinimumMargin: -0.05,
+            scenarioMinimumMargin: 0.03,
+            deltas: { rssSigma: -0.015, cpk: 0.25, minimumMargin: 0.08, yield: 0.0003 },
+            roiStatus: "NOT_COMPUTED",
+            apportionment: null,
+          },
+          {
+            optionId: "Analysis-A:scenario-c",
+            targetId: "scenario-c",
+            targetType: "system_target",
+            factor: null,
+            baselineInput: null,
+            adjustedInput: null,
+            baselineMetrics: { mean: 0, rssSigma: 0.05, worstCaseLower: -0.2, worstCaseUpper: 0.2, cp: 1.2, cpk: 1.1, yield: 0.9995, dpm: 500 },
+            scenarioMetrics: { mean: 0, rssSigma: 0.03, worstCaseLower: -0.07, worstCaseUpper: 0.07, cp: 1.7, cpk: 1.5, yield: 0.9999, dpm: 100 },
+            baselineMinimumMargin: -0.05,
+            scenarioMinimumMargin: 0.04,
+            deltas: { rssSigma: -0.02, cpk: 0.4, minimumMargin: 0.09, yield: 0.0004 },
+            roiStatus: "NOT_COMPUTED",
+            apportionment: { policy: "EQUAL_SELECTED", selectedFactors: [{ worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 2, factorName: "factor-1", unit: "mm" }, { worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 3, factorName: "factor-2", unit: "mm" }] },
+          },
+        ],
+        options: [],
+        highestImpactAction: "Analysis-A:scenario-c",
+        roiStatus: "NOT_COMPUTED",
+      },
       riskAssessment: { ...base("risk_assessment", "PARTIAL"), risks: [] },
       engineeringRecommendations: { ...base("engineering_recommendations", "PARTIAL"), mandatoryActions: [], validationActions: [], conditionalOptimizations: [] },
       designIntentReview: { ...base("design_intent_review", "PARTIAL"), checks: [] },
-      dataGaps: { ...base("data_gaps", "PARTIAL"), gaps: [gap] },
+      dataGaps: {
+        ...base("data_gaps", "PARTIAL"),
+        gaps: [gap],
+        actionPlan: [{
+          priority: "P1",
+          action: "Operating conditions were not provided.",
+          scope: ["operatingConditions", "source rows: 2, 3"],
+          owner: "Design engineering role",
+          requiredEvidence: ["Analysis Context"],
+          blocksDecision: false,
+          verification: "Confirm operating conditions.",
+          gapIds: ["gap-context"],
+          evidenceReferences: [],
+        }],
+      },
       finalConclusion: { ...base("final_conclusion"), summary: "Predictive baseline passes with open conditions.", decision: "CONDITIONAL_PASS", basis: ["Predictive Cpk meets target."], limitations: [gap.missingInformation], nextActions: [gap.verificationMethod], baselineDecision: "PASS" },
     };
     return {
@@ -617,6 +689,19 @@ describe("renderComposedEngineeringReport V2", () => {
     expect(markdown).toContain("F1 tolerance-path image");
     expect(markdown).toContain("SIGNAL");
     expect(markdown).toContain("不能生成 signed equation");
+  });
+
+  it("renders governed scenario rows and a deduplicated action-plan table", () => {
+    const markdown = renderComposedEngineeringReportV2(reportV2());
+
+    expect(markdown).toContain("| Scenario | Factor/Target | Baseline Nominal/+Tol/-Tol | Adjusted Nominal/+Tol/-Tol | RSS | Cpk | Minimum Margin | Yield | Delta |");
+    expect(markdown).toContain("Analysis-A:scenario-a");
+    expect(markdown).toContain("Analysis-A:scenario-b");
+    expect(markdown).toContain("Analysis-A:scenario-c");
+    expect(markdown).toContain(String.raw`EQUAL\_SELECTED`);
+    expect(markdown).toContain("| Priority | Action | Scope | Owner | Required evidence | Blocks decision | Verification |");
+    expect(markdown).toContain("Operating conditions were not provided.");
+    expect(markdown).toContain("source rows: 2, 3");
   });
 
   it("renders 未提供 when analysisCharacteristic is absent", () => {

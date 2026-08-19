@@ -276,6 +276,108 @@ describe("renderF6Report V2", () => {
     };
   }
 
+  function governedResultV2() {
+    const input = resultV2();
+    const worksheet = input.worksheets[0];
+    const baseline = worksheet.baselineMetrics;
+    input.provenance.optimizationTargetsDecision = {
+      outcome: "CALLER_AUTHORIZED",
+      artifactReference: { artifact: "Feature6-Optimization-Targets.json", contentHash: "6".repeat(64) },
+    };
+    worksheet.options = [
+      {
+        optionId: "Analysis-A:scenario-a",
+        status: "completed",
+        targetId: "scenario-a",
+        baselineMetrics: structuredClone(baseline),
+        resultMetrics: { ...structuredClone(baseline), rssSigma: baseline.rssSigma * 0.9, cpk: baseline.cpk + 0.12, yield: Math.min(1, baseline.yield + 0.001), dpm: Math.max(0, baseline.dpm - 10) },
+        scenarioEvidence: {
+          targetId: "scenario-a",
+          baselineIdentity: structuredClone(worksheet.baselineIdentity),
+          factorOverrides: [{ factor: { worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 14, factorName: "Factor A", unit: "mm" }, upperTolerance: 0.05, lowerTolerance: -0.05 }],
+          calculationReference: structuredClone(input.provenance.f4Reference),
+          formulaReferences: [{ outputField: "capability.cpk", formulaId: "cpk-v1", formulaVersion: "excel-ta-v1" }],
+        },
+        feasibility: { status: "supported", reasonCodes: ["caller_provided_target"], evidenceReferences: ["Feature6-Optimization-Targets.json"] },
+        evidenceReferences: [structuredClone(input.provenance.f4Reference)],
+        impactRank: 1,
+        targetContext: { targetId: "scenario-a", targetType: "factor_tolerance", factor: { worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 14, factorName: "Factor A", unit: "mm" }, upperTolerance: 0.05, lowerTolerance: -0.05, unit: "mm" },
+      },
+      {
+        optionId: "Analysis-A:scenario-b",
+        status: "completed",
+        targetId: "scenario-b",
+        baselineMetrics: structuredClone(baseline),
+        resultMetrics: { ...structuredClone(baseline), rssSigma: baseline.rssSigma * 0.8, cpk: baseline.cpk + 0.2, yield: Math.min(1, baseline.yield + 0.002), dpm: Math.max(0, baseline.dpm - 20) },
+        scenarioEvidence: {
+          targetId: "scenario-b",
+          baselineIdentity: structuredClone(worksheet.baselineIdentity),
+          factorOverrides: [{ factor: { worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 15, factorName: "Factor B", unit: "mm" }, upperTolerance: 0.08, lowerTolerance: -0.08 }],
+          calculationReference: structuredClone(input.provenance.f4Reference),
+          formulaReferences: [{ outputField: "capability.cpk", formulaId: "cpk-v1", formulaVersion: "excel-ta-v1" }],
+        },
+        feasibility: { status: "supported", reasonCodes: ["caller_provided_target"], evidenceReferences: ["Feature6-Optimization-Targets.json"] },
+        evidenceReferences: [structuredClone(input.provenance.f4Reference)],
+        impactRank: 2,
+        targetContext: { targetId: "scenario-b", targetType: "improvement_ratio", factor: { worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 15, factorName: "Factor B", unit: "mm" }, ratio: 0.2, appliesTo: "tolerance_band" },
+      },
+      {
+        optionId: "Analysis-A:scenario-c",
+        status: "completed",
+        targetId: "scenario-c",
+        baselineMetrics: structuredClone(baseline),
+        resultMetrics: { ...structuredClone(baseline), rssSigma: baseline.rssSigma * 0.75, cpk: baseline.cpk + 0.3, yield: Math.min(1, baseline.yield + 0.003), dpm: Math.max(0, baseline.dpm - 30) },
+        scenarioEvidence: {
+          targetId: "scenario-c",
+          baselineIdentity: structuredClone(worksheet.baselineIdentity),
+          factorOverrides: [
+            { factor: { worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 14, factorName: "Factor A", unit: "mm" }, upperTolerance: 0.07, lowerTolerance: -0.07 },
+            { factor: { worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 15, factorName: "Factor B", unit: "mm" }, upperTolerance: 0.07, lowerTolerance: -0.07 },
+          ],
+          calculationReference: structuredClone(input.provenance.f4Reference),
+          formulaReferences: [{ outputField: "capability.cpk", formulaId: "cpk-v1", formulaVersion: "excel-ta-v1" }],
+        },
+        feasibility: { status: "supported", reasonCodes: ["caller_provided_target"], evidenceReferences: ["Feature6-Optimization-Targets.json"] },
+        evidenceReferences: [structuredClone(input.provenance.f4Reference)],
+        impactRank: 3,
+        targetContext: {
+          targetId: "scenario-c",
+          targetType: "system_target",
+          systemIdentity: {
+            baselineIdentity: structuredClone(worksheet.baselineIdentity),
+            designNominal: 0,
+            mean: 0,
+            rssSigma: 0.1,
+            lowerSpecLimit: -0.5,
+            upperSpecLimit: 0.5,
+            targetCpk: 1.33333333333333,
+            traceReferences: [{ outputField: "capability.cpk", formulaId: "cpk-v1", formulaVersion: "excel-ta-v1" }],
+          },
+          target: { targetCpk: 1.5 },
+          apportionment: {
+            policy: "EQUAL_SELECTED",
+            selectedFactors: [
+              { worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 14, factorName: "Factor A", unit: "mm" },
+              { worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 15, factorName: "Factor B", unit: "mm" },
+            ],
+          },
+        },
+      },
+    ];
+    worksheet.highestImpactAction = { optionId: "Analysis-A:scenario-c", impactRank: 3 };
+    input.summary = {
+      worksheetCount: 1,
+      completedWorksheetCount: 1,
+      partiallyCompletedWorksheetCount: 0,
+      inputRejectedWorksheetCount: 0,
+      candidateOptionCount: 0,
+      completedOptionCount: 3,
+      insufficientEvidenceOptionCount: 0,
+      calculationFailedOptionCount: 0,
+    };
+    return input;
+  }
+
   it("renders predictive baseline, RSS/WC separation, and candidate-only optimization in Chinese", () => {
     const input = resultV2();
     input.worksheets[0].baselineMetrics.mean = 1.507;
@@ -296,5 +398,17 @@ describe("renderF6Report V2", () => {
     expect(markdown).toContain("不等同于实测量产能力");
     expect(markdown).not.toMatch(/20%|30%|Predicted Improvement/);
     expect(markdown).not.toContain("0.899999999999");
+  });
+
+  it("renders governed optimization targets and three scenario rows", () => {
+    const markdown = renderF6ReportV2(governedResultV2());
+
+    expect(markdown).toContain("Optimization Targets 与重算结果");
+    expect(markdown).toContain("| Scenario | Target | Baseline vs Adjusted | RSS/Cpk/Margin/Yield | Delta |");
+    expect(markdown).toContain("scenario-a");
+    expect(markdown).toContain("scenario-b");
+    expect(markdown).toContain("scenario-c");
+    expect(markdown).toContain(String.raw`EQUAL\_SELECTED`);
+    expect(markdown).toContain(String.raw`CALLER\_AUTHORIZED`);
   });
 });

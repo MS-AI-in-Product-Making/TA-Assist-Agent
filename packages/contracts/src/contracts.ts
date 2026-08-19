@@ -7451,6 +7451,7 @@ const f6CompletedOptionV2Schema = z.object({
   baselineMetrics: f6MetricsV2Schema,
   resultMetrics: f6MetricsV2Schema,
   scenarioEvidence: f6ScenarioEvidenceV2Schema,
+  targetContext: f6OptimizationTargetSchema.optional(),
   feasibility: f6FeasibilityAssessmentSchema,
   evidenceReferences: z.array(f6ArtifactReferenceSchema),
   impactRank: z.number().int().positive().nullable(),
@@ -7460,6 +7461,7 @@ const f6InsufficientEvidenceOptionV2Schema = z.object({
   optionId: z.string().min(1),
   status: z.literal("insufficient_evidence"),
   targetId: z.string().min(1).optional(),
+  targetContext: f6OptimizationTargetSchema.optional(),
   requiredInputs: z.array(z.string().min(1)).min(1),
   baselineMetrics: f6MetricsV2Schema,
   evidenceReferences: z.array(f6ArtifactReferenceSchema),
@@ -7470,6 +7472,7 @@ const f6CalculationFailedOptionV2Schema = z.object({
   optionId: z.string().min(1),
   status: z.literal("calculation_failed"),
   targetId: z.string().min(1),
+  targetContext: f6OptimizationTargetSchema.optional(),
   reasonCode: z.string().min(1),
   baselineMetrics: f6MetricsV2Schema,
   evidenceReferences: z.array(f6ArtifactReferenceSchema),
@@ -7520,6 +7523,9 @@ const f6OptimizationWorksheetV2Schema = z.object({
     optionIds.add(option.optionId);
     if (option.status === "completed" && option.scenarioEvidence.targetId !== option.targetId) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: "scenario targetId must match option targetId", path: ["options", index, "scenarioEvidence", "targetId"] });
+    }
+    if (option.status !== "candidate" && option.targetContext !== undefined && option.targetContext.targetId !== option.targetId) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "target context targetId must match option targetId", path: ["options", index, "targetContext", "targetId"] });
     }
     for (const field of ["mean", "rssSigma", "worstCaseLower", "worstCaseUpper", "cp", "cpk"] as const) {
       if (!f6NearlyEqual(option.baselineMetrics[field], worksheet.baselineMetrics[field])) {
@@ -7974,15 +7980,71 @@ const f6CapabilitySectionV2Schema = z.object({
 }).strict();
 const f6ContributorSectionV2Schema = z.object({ sectionId: z.literal("contributor_analysis"), ...f6SectionBaseShape, contributors: z.array(f6ContributorRowV2Schema), interpretationLimit: z.string().min(1) }).strict();
 const f6SensitivityRowV2Schema = z.object({ factor: f6FactorIdentitySchema, responseCoefficient: z.number().finite().nullable(), directionStatement: z.string().min(1), evidenceId: z.string().min(1), reviewRequired: z.boolean() }).strict();
-const f6OptimizationTargetSummaryV2Schema = z.object({ targetId: z.string().min(1), targetType: z.string().min(1), factor: f6FactorIdentitySchema.nullable(), targetValue: z.union([f6QuantityV2Schema, z.number().finite()]), evidenceId: z.string().min(1) }).strict();
-const f6OptimizationSectionV2Schema = z.object({ sectionId: z.literal("sensitivity_and_optimization"), ...f6SectionBaseShape, sensitivities: z.array(f6SensitivityRowV2Schema), targets: z.array(f6OptimizationTargetSummaryV2Schema), options: z.array(f6OptionV2Schema), highestImpactAction: z.string().min(1).nullable(), roiStatus: z.enum(["COMPUTED", "NOT_COMPUTED"]) }).strict();
+const f6OptimizationTargetSummaryV2Schema = z.object({
+  targetId: z.string().min(1),
+  targetType: z.enum(["factor_tolerance", "factor_sigma", "improvement_ratio", "system_target"]),
+  factor: f6FactorIdentitySchema.nullable(),
+  targetValue: z.union([
+    z.object({ upperTolerance: z.number().finite(), lowerTolerance: z.number().finite(), unit: z.string().min(1) }).strict(),
+    z.object({ sigma: z.number().finite().positive(), unit: z.string().min(1) }).strict(),
+    z.object({ ratio: z.number().finite().gt(0).lt(1), appliesTo: z.enum(["tolerance_band", "sigma"]) }).strict(),
+    z.object({ targetCpk: z.number().finite().positive() }).strict(),
+    z.object({ targetRssSigma: z.number().finite().positive(), unit: z.string().min(1) }).strict(),
+  ]),
+  evidenceId: z.string().min(1),
+  apportionment: z.object({
+    policy: z.enum(["PROPORTIONAL", "EQUAL_SELECTED", "CAPABILITY_BOUNDED"]),
+    selectedFactors: z.array(f6FactorIdentitySchema).min(1),
+  }).strict().nullable(),
+}).strict();
+const f6ScenarioInputV2Schema = z.object({
+  nominal: f6QuantityV2Schema,
+  upperTolerance: f6QuantityV2Schema.nullable(),
+  lowerTolerance: f6QuantityV2Schema.nullable(),
+  sigma: f6QuantityV2Schema.nullable(),
+}).strict();
+const f6ScenarioComparisonRowV2Schema = z.object({
+  optionId: z.string().min(1),
+  targetId: z.string().min(1),
+  targetType: z.enum(["factor_tolerance", "factor_sigma", "improvement_ratio", "system_target"]),
+  factor: f6FactorIdentitySchema.nullable(),
+  baselineInput: f6ScenarioInputV2Schema.nullable(),
+  adjustedInput: f6ScenarioInputV2Schema.nullable(),
+  baselineMetrics: f6MetricsV2Schema,
+  scenarioMetrics: f6MetricsV2Schema,
+  baselineMinimumMargin: z.number().finite(),
+  scenarioMinimumMargin: z.number().finite(),
+  deltas: z.object({
+    rssSigma: z.number().finite(),
+    cpk: z.number().finite(),
+    minimumMargin: z.number().finite(),
+    yield: z.number().finite().nullable(),
+  }).strict(),
+  roiStatus: z.enum(["COMPUTED", "NOT_COMPUTED"]),
+  apportionment: z.object({
+    policy: z.enum(["PROPORTIONAL", "EQUAL_SELECTED", "CAPABILITY_BOUNDED"]),
+    selectedFactors: z.array(f6FactorIdentitySchema).min(1),
+  }).strict().nullable(),
+}).strict();
+const f6OptimizationSectionV2Schema = z.object({ sectionId: z.literal("sensitivity_and_optimization"), ...f6SectionBaseShape, sensitivities: z.array(f6SensitivityRowV2Schema), targets: z.array(f6OptimizationTargetSummaryV2Schema), scenarioComparisons: z.array(f6ScenarioComparisonRowV2Schema).optional(), options: z.array(f6OptionV2Schema), highestImpactAction: z.string().min(1).nullable(), roiStatus: z.enum(["COMPUTED", "NOT_COMPUTED"]) }).strict();
 const f6RiskSectionV2Schema = z.object({ sectionId: z.literal("risk_assessment"), ...f6SectionBaseShape, risks: z.array(f6RiskRowV2Schema) }).strict();
 const f6RecommendationSectionV2Schema = z.object({ sectionId: z.literal("engineering_recommendations"), ...f6SectionBaseShape, mandatoryActions: z.array(f6ActionRowV2Schema), validationActions: z.array(f6ActionRowV2Schema), conditionalOptimizations: z.array(f6ActionRowV2Schema) }).strict();
 const f6DesignIntentSectionV2Schema = z.object({
   sectionId: z.literal("design_intent_review"), ...f6SectionBaseShape,
   checks: z.array(z.object({ checkId: z.string().min(1), topic: z.string().min(1), status: z.enum(["SUPPORTED", "NEEDS_REVIEW", "INSUFFICIENT_EVIDENCE", "NOT_APPLICABLE"]), finding: z.string().min(1), evidenceIds: z.array(z.string().min(1)), gapId: z.string().min(1).nullable() }).strict()),
 }).strict();
-const f6DataGapSectionV2Schema = z.object({ sectionId: z.literal("data_gaps"), ...f6SectionBaseShape, gaps: z.array(f6DataGapV2Schema) }).strict();
+const f6ActionPlanRowV2Schema = z.object({
+  priority: z.enum(["P0", "P1", "P2"]),
+  action: z.string().min(1),
+  scope: z.array(z.string().min(1)).min(1),
+  owner: z.string().min(1),
+  requiredEvidence: z.array(z.string().min(1)).min(1),
+  blocksDecision: z.boolean(),
+  verification: z.string().min(1),
+  gapIds: z.array(z.string().min(1)).min(1),
+  evidenceReferences: z.array(f6ArtifactReferenceSchema),
+}).strict();
+const f6DataGapSectionV2Schema = z.object({ sectionId: z.literal("data_gaps"), ...f6SectionBaseShape, gaps: z.array(f6DataGapV2Schema), actionPlan: z.array(f6ActionPlanRowV2Schema).optional() }).strict();
 const f6FinalConclusionSectionV2Schema = z.object({ sectionId: z.literal("final_conclusion"), ...f6SectionBaseShape, summary: z.string().min(1), decision: f6EngineeringDecisionStatusSchema, basis: z.array(z.string().min(1)), limitations: z.array(z.string().min(1)), nextActions: z.array(z.string().min(1)), baselineDecision: z.enum(["PASS", "FAIL", "NOT_COMPUTABLE"]) }).strict();
 
 const f6EngineeringSectionsV2Schema = z.object({

@@ -146,6 +146,22 @@ function renderV2Option(lines, option) {
   lines.push(`| ${cell(option.optionId)} | 计算失败 | 无量化结果 | ${cell(option.reasonCode)} |`);
 }
 
+function v2TargetLabel(option) {
+  if (option.targetContext === undefined) return option.targetId ?? option.optionId;
+  if (option.targetContext.targetType === "system_target") {
+    return `${option.targetContext.targetId} (${option.targetContext.targetType}; ${option.targetContext.apportionment.policy})`;
+  }
+  return `${option.targetContext.targetId} (${option.targetContext.targetType})`;
+}
+
+function v2AdjustedLabel(option) {
+  const override = option.scenarioEvidence?.factorOverrides?.[0];
+  if (override === undefined) return "n/a";
+  const upper = override.upperTolerance === undefined ? "n/a" : formatEngineering(override.upperTolerance, override.factor.unit, 3);
+  const lower = override.lowerTolerance === undefined ? "n/a" : formatEngineering(override.lowerTolerance, override.factor.unit, 3);
+  return `${override.factor.factorName}: +Tol ${upper} / -Tol ${lower}`;
+}
+
 export function renderF6Report(result, options = {}) {
   void options;
   let parsed;
@@ -188,10 +204,29 @@ export function renderF6Report(result, options = {}) {
       "",
       "### 2. Optimization Targets 与重算结果",
       "",
-      "| Option ID | 状态 | 结果 | 限制/所需输入 |",
-      "|---|---|---|---|",
     );
-    for (const option of worksheet.options) renderV2Option(lines, option);
+    const completedOptions = worksheet.options.filter((option) => option.status === "completed");
+    if (completedOptions.length > 0) {
+      lines.push(
+        "| Scenario | Target | Baseline vs Adjusted | RSS/Cpk/Margin/Yield | Delta |",
+        "|---|---|---|---|---|",
+      );
+      for (const option of completedOptions) {
+        const baseline = option.baselineMetrics;
+        const resultMetrics = option.resultMetrics;
+        const baselineYield = baseline.yield === null ? "n/a" : formatPercent(baseline.yield * 100, 2);
+        const scenarioYield = resultMetrics.yield === null ? "n/a" : formatPercent(resultMetrics.yield * 100, 2);
+        const deltaYield = baseline.yield === null || resultMetrics.yield === null ? "n/a" : Number(resultMetrics.yield - baseline.yield).toFixed(6);
+        lines.push(`| ${cell(option.optionId)} | ${cell(v2TargetLabel(option))} | ${cell(`baseline unavailable in optimization artifact; adjusted ${v2AdjustedLabel(option)}`)} | ${cell(`RSS ${resultMetrics.rssSigma.toFixed(6)}; Cpk ${resultMetrics.cpk.toFixed(3)}; Margin n/a; Yield ${scenarioYield}`)} | ${cell(`ΔRSS ${(resultMetrics.rssSigma - baseline.rssSigma).toFixed(6)}; ΔCpk ${(resultMetrics.cpk - baseline.cpk).toFixed(3)}; ΔMargin n/a; ΔYield ${deltaYield}`)} |`);
+        lines.push(`|  |  |  | ${cell(`Baseline RSS ${baseline.rssSigma.toFixed(6)}; Baseline Cpk ${baseline.cpk.toFixed(3)}; Baseline Yield ${baselineYield}`)} |  |`);
+      }
+    } else {
+      lines.push(
+        "| Option ID | 状态 | 结果 | 限制/所需输入 |",
+        "|---|---|---|---|",
+      );
+      for (const option of worksheet.options) renderV2Option(lines, option);
+    }
     lines.push(
       "",
       `- Highest Impact Action：${worksheet.highestImpactAction === null ? "未提供受支持的量化方案" : cell(worksheet.highestImpactAction.optionId)}`,

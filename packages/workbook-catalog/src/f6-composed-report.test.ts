@@ -685,6 +685,120 @@ describe("createF6ComposedEngineeringReport V2", () => {
     return { f2Report: base.f2Report, f5Report: base.f5Report, f6Result };
   }
 
+  function withGovernedTargetsFixture() {
+    const input = structuredClone(bundleV2(1));
+    const worksheet = input.f6Result.worksheets[0]!;
+    const baseline = structuredClone(worksheet.baselineMetrics);
+    const factorA = { worksheetName: "Analysis-A", tableId: "table-Analysis-A", sourceRow: 2, factorName: "factor-1", unit: "mm" };
+    const factorB = { worksheetName: "Analysis-A", tableId: "table-Analysis-A", sourceRow: 3, factorName: "factor-2", unit: "mm" };
+    const factorC = { worksheetName: "Analysis-A", tableId: "table-Analysis-A", sourceRow: 2, factorName: "factor-1", unit: "mm" };
+    input.f6Result.provenance.optimizationTargetsDecision = {
+      outcome: "CALLER_AUTHORIZED",
+      artifactReference: { artifact: "Feature6-Optimization-Targets.json", contentHash: "6".repeat(64) },
+    };
+    (worksheet.options as Array<Record<string, unknown>>) = [
+      {
+        optionId: "Analysis-A:scenario-a",
+        status: "completed",
+        targetId: "scenario-a",
+        baselineMetrics: structuredClone(baseline),
+        resultMetrics: { ...structuredClone(baseline), rssSigma: baseline.rssSigma * 0.9, cpk: baseline.cpk + 0.12, yield: Math.min(1, baseline.yield + 0.001), dpm: Math.max(0, baseline.dpm - 10) },
+        scenarioEvidence: {
+          targetId: "scenario-a",
+          baselineIdentity: structuredClone(worksheet.baselineIdentity),
+          factorOverrides: [{ factor: factorA, upperTolerance: 0.05, lowerTolerance: -0.05 }],
+          calculationReference: structuredClone(input.f6Result.provenance.f4Reference),
+          formulaReferences: [{ outputField: "capability.cpk", formulaId: "cpk-v1", formulaVersion: "excel-ta-v1" }],
+        },
+        feasibility: { status: "supported", reasonCodes: ["caller_provided_target"], evidenceReferences: ["Feature6-Optimization-Targets.json"] },
+        evidenceReferences: [structuredClone(input.f6Result.provenance.f4Reference)],
+        impactRank: 1,
+        targetContext: {
+          targetId: "scenario-a",
+          targetType: "factor_tolerance",
+          factor: factorA,
+          upperTolerance: 0.05,
+          lowerTolerance: -0.05,
+          unit: "mm",
+        },
+      },
+      {
+        optionId: "Analysis-A:scenario-b",
+        status: "completed",
+        targetId: "scenario-b",
+        baselineMetrics: structuredClone(baseline),
+        resultMetrics: { ...structuredClone(baseline), rssSigma: baseline.rssSigma * 0.8, cpk: baseline.cpk + 0.2, yield: Math.min(1, baseline.yield + 0.002), dpm: Math.max(0, baseline.dpm - 20) },
+        scenarioEvidence: {
+          targetId: "scenario-b",
+          baselineIdentity: structuredClone(worksheet.baselineIdentity),
+          factorOverrides: [{ factor: factorB, upperTolerance: 0.08, lowerTolerance: -0.08 }],
+          calculationReference: structuredClone(input.f6Result.provenance.f4Reference),
+          formulaReferences: [{ outputField: "capability.cpk", formulaId: "cpk-v1", formulaVersion: "excel-ta-v1" }],
+        },
+        feasibility: { status: "supported", reasonCodes: ["caller_provided_target"], evidenceReferences: ["Feature6-Optimization-Targets.json"] },
+        evidenceReferences: [structuredClone(input.f6Result.provenance.f4Reference)],
+        impactRank: 2,
+        targetContext: {
+          targetId: "scenario-b",
+          targetType: "improvement_ratio",
+          factor: factorB,
+          ratio: 0.2,
+          appliesTo: "tolerance_band",
+        },
+      },
+      {
+        optionId: "Analysis-A:scenario-c",
+        status: "completed",
+        targetId: "scenario-c",
+        baselineMetrics: structuredClone(baseline),
+        resultMetrics: { ...structuredClone(baseline), rssSigma: baseline.rssSigma * 0.75, cpk: baseline.cpk + 0.3, yield: Math.min(1, baseline.yield + 0.003), dpm: Math.max(0, baseline.dpm - 30) },
+        scenarioEvidence: {
+          targetId: "scenario-c",
+          baselineIdentity: structuredClone(worksheet.baselineIdentity),
+          factorOverrides: [
+            { factor: factorA, upperTolerance: 0.07, lowerTolerance: -0.07 },
+            { factor: factorB, upperTolerance: 0.07, lowerTolerance: -0.07 },
+            { factor: factorC, upperTolerance: 0.07, lowerTolerance: -0.07 },
+          ],
+          calculationReference: structuredClone(input.f6Result.provenance.f4Reference),
+          formulaReferences: [{ outputField: "capability.cpk", formulaId: "cpk-v1", formulaVersion: "excel-ta-v1" }],
+        },
+        feasibility: { status: "supported", reasonCodes: ["caller_provided_target"], evidenceReferences: ["Feature6-Optimization-Targets.json"] },
+        evidenceReferences: [structuredClone(input.f6Result.provenance.f4Reference)],
+        impactRank: 3,
+        targetContext: {
+          targetId: "scenario-c",
+          targetType: "system_target",
+          systemIdentity: {
+            baselineIdentity: structuredClone(worksheet.baselineIdentity),
+            designNominal: 0,
+            mean: 0,
+            rssSigma: 0.1,
+            lowerSpecLimit: -1,
+            upperSpecLimit: 1,
+            targetCpk: 1.33333333333333,
+            traceReferences: [{ outputField: "capability.cpk", formulaId: "cpk-v1", formulaVersion: "excel-ta-v1" }],
+          },
+          target: { targetCpk: 1.5 },
+          apportionment: { policy: "EQUAL_SELECTED", selectedFactors: [factorA, factorB, factorC] },
+        },
+      },
+    ];
+    worksheet.highestImpactAction = { optionId: "Analysis-A:scenario-c", impactRank: 3 };
+    worksheet.runStatus = "COMPLETED";
+    input.f6Result.summary = {
+      worksheetCount: 1,
+      completedWorksheetCount: 1,
+      partiallyCompletedWorksheetCount: 0,
+      inputRejectedWorksheetCount: 0,
+      candidateOptionCount: 0,
+      completedOptionCount: 3,
+      insufficientEvidenceOptionCount: 0,
+      calculationFailedOptionCount: 0,
+    };
+    return input;
+  }
+
   it("builds the strict sixteen-section report without inferring missing context", () => {
     const report = createF6ComposedEngineeringReportV2(bundleV2());
     const worksheet = report.worksheets[0]!;
@@ -842,6 +956,53 @@ describe("createF6ComposedEngineeringReport V2", () => {
     expect(report.worksheets[0]!.baselineDecision).toBe("PASS");
     expect(report.worksheets[0]!.status).toBe("CONDITIONAL_PASS");
     expect(report.worksheets[0]!.dataGaps.some(({ priority }) => priority === "P1")).toBe(true);
+  });
+
+  it("projects three governed targets and scenario comparison rows without recalculating solver output", () => {
+    const report = createF6ComposedEngineeringReportV2(withGovernedTargetsFixture());
+    const optimization = report.worksheets[0]!.sections.sensitivityAndOptimization;
+
+    expect(optimization.targets).toHaveLength(3);
+    expect(optimization.targets.map(({ targetId }) => targetId)).toEqual(["scenario-a", "scenario-b", "scenario-c"]);
+    expect(optimization.targets.map(({ targetType }) => targetType)).toEqual([
+      "factor_tolerance",
+      "improvement_ratio",
+      "system_target",
+    ]);
+    expect(optimization.scenarioComparisons).toHaveLength(3);
+    expect(optimization.scenarioComparisons?.every(({ baselineMetrics, scenarioMetrics }) => (
+      baselineMetrics.cpk <= scenarioMetrics.cpk
+    ))).toBe(true);
+    expect(optimization.targets.find(({ targetId }) => targetId === "scenario-c")).toMatchObject({
+      targetValue: { targetCpk: 1.5 },
+      apportionment: { policy: "EQUAL_SELECTED" },
+    });
+  });
+
+  it("preserves candidate-only mode with target_not_provided and no quantified scenario rows", () => {
+    const report = createF6ComposedEngineeringReportV2(bundleV2());
+    const optimization = report.worksheets[0]!.sections.sensitivityAndOptimization;
+
+    expect(optimization.options).toHaveLength(1);
+    expect(optimization.options[0]).toMatchObject({
+      status: "candidate",
+      reasonCode: "target_not_provided",
+    });
+    expect(optimization.targets).toEqual([]);
+    expect(optimization.scenarioComparisons).toEqual([]);
+    expect(optimization.roiStatus).toBe("NOT_COMPUTED");
+  });
+
+  it("builds deduplicated action-plan rows while preserving canonical worksheet dataGaps", () => {
+    const input = bundleV2(1, undefined, { missingDrawingAndDimIds: true });
+    const report = createF6ComposedEngineeringReportV2(input);
+    const worksheet = report.worksheets[0]!;
+
+    expect(worksheet.dataGaps.filter(({ gapId }) => gapId.includes(":drawing:")).length).toBeGreaterThan(1);
+    expect(worksheet.sections.dataGaps.gaps).toEqual(worksheet.dataGaps);
+    expect(worksheet.sections.dataGaps.actionPlan?.length).toBeLessThan(worksheet.dataGaps.length);
+    const drawingAction = worksheet.sections.dataGaps.actionPlan?.find(({ action }) => action.includes("Drawing Number is missing"));
+    expect(drawingAction?.scope.some((item) => item.includes("source rows"))).toBe(true);
   });
 
   it("makes an in-scope blocked worksheet drive workbook INCOMPLETE", () => {
