@@ -38,7 +38,11 @@ npm test
 
 ## 4. F4 数值兼容比较
 
-与改造前 `test/demo-output/f4-runs/f2/2026-08-19T01-35-13-655Z/Feature4-Calculation.json` 比较，下列字段逐 worksheet 完全相同：
+改造前与改造后 artifacts 的来源 SHA、比较方法和逐 worksheet 数值已固化在仓库内证据：
+
+- `docs/governance/evidence/f3-f5-f6-report-readability-f4-baseline.json`
+
+该证据记录旧 artifact SHA-256 `03f124af3e8f95cdef8903344b28c70bf617a1b3d5786756eb21f80ffefa70c6`、新 artifact SHA-256 `978b339db276065721f370476759a0f431a247351d1c4d4c6f63afba8c958e1d`，以及以下逐 worksheet 精确比较字段：
 
 - factor `tableId/sourceRow/factorName`；
 - factor mean、sigma、contribution；
@@ -61,7 +65,7 @@ npm test
 `Feature6-Composed-Report.md` 已验证包含：
 
 - `Target 4σ statistical range`，不再把 1σ 误标为目标范围；
-- Mean/RSS/4σ 的公式和数值代入；
+- `Formula：Mean ± 4 × RSS 1σ` 和对应 `Substitution` 数值代入；
 - LSL、USL、Target Cpk、CpkL/CpkU/Cpk 公式；
 - Target 4σ Margin 与 Worst-case Margin 分离；
 - `F4 基线复算与数值一致性检查`；

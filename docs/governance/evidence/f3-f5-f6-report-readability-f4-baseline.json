@@ -1,0 +1,51 @@
+{
+  "contractVersion": "v1",
+  "evidenceType": "f4-baseline-comparison",
+  "workbookContentHash": "8805a128b6163b80afda55b3747dfeae58abeb100f40d9bb91ab6ec14d0a3742",
+  "oldArtifactSha256": "03f124af3e8f95cdef8903344b28c70bf617a1b3d5786756eb21f80ffefa70c6",
+  "newArtifactSha256": "978b339db276065721f370476759a0f431a247351d1c4d4c6f63afba8c958e1d",
+  "comparisonMethod": "Exact comparison of factor tableId/sourceRow/factorName/mean/sigma/contribution, system mean/rssSigma/worstCaseLower/worstCaseUpper, and capability lowerSpecLimit/upperSpecLimit/targetSigmaLevel/targetCpk/cp/cpk/yield/totalDpm.",
+  "allEqual": true,
+  "worksheets": [
+    {
+      "worksheetName": "Keycap_step",
+      "tableId": "fe6b9d889ac379ca",
+      "factorIdentityHash": "0a6f43c1b6c1f2a14da9f5f0e94d058d3d04f9c25c839f6fe9e6a78eb8c1bd38",
+      "system": { "mean": 1.17, "rssSigma": 0.08019507466172719, "worstCaseLower": -0.47, "worstCaseUpper": 0.47 },
+      "capability": { "lowerSpecLimit": 0.87, "upperSpecLimit": 1.47, "targetSigmaLevel": 4, "targetCpk": 1.33333333333333, "cp": 1.2469593727770996, "cpk": 1.2469593727770993, "yield": 0.9998166215622495, "totalDpm": 183.3784377505143 },
+      "equal": true
+    },
+    {
+      "worksheetName": "Keycap_E_gap_X",
+      "tableId": "9f31844e1f3da033",
+      "factorIdentityHash": "19e5dc58e47b572da86e59982c7b5495137f75c7dd901cb2fb5253c617ada39c",
+      "system": { "mean": 0.3499999999999659, "rssSigma": 0.07336765295414595, "worstCaseLower": -0.545, "worstCaseUpper": 0.545 },
+      "capability": { "lowerSpecLimit": 0.1, "upperSpecLimit": 0.6, "targetSigmaLevel": 4, "targetCpk": 1.33333333333333, "cp": 1.1358320728266424, "cpk": 1.1358320728264875, "yield": 0.9993443818301919, "totalDpm": 655.6181698080809 },
+      "equal": true
+    },
+    {
+      "worksheetName": "Keycap_F_gap_Y",
+      "tableId": "2556cd3dc52b03a3",
+      "factorIdentityHash": "aea3191ecbb8ef133ef0cbacdf6e7e165238b9e9d965f2d32922a937da038e34",
+      "system": { "mean": 0.35000000000000675, "rssSigma": 0.07229477851131436, "worstCaseLower": -0.495, "worstCaseUpper": 0.495 },
+      "capability": { "lowerSpecLimit": 0.1, "upperSpecLimit": 0.6, "targetSigmaLevel": 4, "targetCpk": 1.33333333333333, "cp": 1.1526881339057067, "cpk": 1.1526881339056756, "yield": 0.9994559286906244, "totalDpm": 544.0713093756156 },
+      "equal": true
+    },
+    {
+      "worksheetName": "HDMI_tongue_to_Bucket_Slot_Y",
+      "tableId": "9713cd9f705707ea",
+      "factorIdentityHash": "a6d9509e5590a0d3861944f77f86807a6bd4d177c5ba2d7cede865f978ae0145",
+      "system": { "mean": -7.105427357601002e-15, "rssSigma": 0.05227599090404696, "worstCaseLower": -0.535, "worstCaseUpper": 0.535 },
+      "capability": { "lowerSpecLimit": -0.22, "upperSpecLimit": 0.22, "targetSigmaLevel": 4, "targetCpk": 1.33333333333333, "cp": 1.4028109666622544, "cpk": 1.402810966662209, "yield": 0.9999742852135074, "totalDpm": 25.71478649260328 },
+      "equal": true
+    },
+    {
+      "worksheetName": "AJ_GAP",
+      "tableId": "28395e06c18f2854",
+      "factorIdentityHash": "484d959f2c833202933e23018a91cd510f2ccdb6e8c0b495e309d7ecc01f3c79",
+      "system": { "mean": 0.050000000000000266, "rssSigma": 0.023749421045574988, "worstCaseLower": -0.10500000000000001, "worstCaseUpper": 0.10500000000000001 },
+      "capability": { "lowerSpecLimit": 0, "upperSpecLimit": 0.1, "targetSigmaLevel": 4, "targetCpk": 1.33333333333333, "cp": 0.7017714930685442, "cpk": 0.7017714930685405, "yield": 0.9647360574384448, "totalDpm": 35263.94256155519 },
+      "equal": true
+    }
+  ]
+}
