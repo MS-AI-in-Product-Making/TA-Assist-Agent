@@ -11,6 +11,8 @@ const OPTIONAL_PATHS = Object.freeze({
   "--datum-strategy": "datumStrategyArtifact",
   "--cost": "costArtifact",
   "--image-observations": "imageObservationArtifact",
+  "--analysis-context": "analysisContextArtifact",
+  "--optimization-targets": "optimizationTargetsArtifact",
 });
 
 export function parseF6CliArgs(args = []) {

@@ -1,14 +1,23 @@
 import {
   calculationRequestSchema,
+  f6AnalysisContextSchema,
+  f6LegacyOptimizationResultSchema,
   f6OptimizationRequestSchema,
   f6OptimizationResultSchema,
+  f6OptimizationTargetsSchema,
   type CalculationCompletedResult,
   type CalculationFactorResult,
   type CalculationRequest,
   type F6ControlledScenario,
+  type F6AnalysisContext,
+  type F6FactorIdentity,
+  type F6InputDecision,
   type F6OptimizationRequest,
   type F6OptimizationResult,
+  type F6OptimizationResultV2,
+  type F6OptimizationTargets,
   type F6Option,
+  type F6OptionV2,
   type F6OptionKind,
   type F6SupplierCapabilityEvidence,
   type F6ToleranceChange,
@@ -623,7 +632,7 @@ function optimizeWorksheet(
   return result;
 }
 
-export function createF6Optimization(input: unknown, dependencies: OptimizationDependencies = {}): F6OptimizationResult {
+export function createLegacyF6Optimization(input: unknown, dependencies: OptimizationDependencies = {}): F6OptimizationResult {
   const request = f6OptimizationRequestSchema.parse(input);
   const calculateScenario = dependencies.calculateScenario ?? calculateF6Scenario;
   const baselineRequests = request.worksheets.map((worksheet) =>
@@ -650,7 +659,7 @@ export function createF6Optimization(input: unknown, dependencies: OptimizationD
         || summary.inputRejectedWorksheetCount > 0
         ? "partially_completed"
         : "completed";
-  return immutable(f6OptimizationResultSchema.parse({
+  return immutable(f6LegacyOptimizationResultSchema.parse({
     contractVersion: request.contractVersion,
     outputClassification: "confidential",
     featureId: "F6",
@@ -671,5 +680,335 @@ export function createF6Optimization(input: unknown, dependencies: OptimizationD
       ...(request.datumEvidence === undefined ? {} : { datumEvidence: request.datumEvidence }),
       ...(request.costEvidence === undefined ? {} : { costEvidence: request.costEvidence }),
     },
+  }));
+}
+
+interface F6OptimizationV2Inputs {
+  readonly analysisContext?: F6AnalysisContext;
+  readonly optimizationTargets?: F6OptimizationTargets;
+  readonly inputDecisions: {
+    readonly analysisContext: F6InputDecision;
+    readonly optimizationTargets: F6InputDecision;
+  };
+}
+
+function artifactReference(reference: { readonly artifact: string; readonly contentHash: string }) {
+  return { artifact: reference.artifact, contentHash: reference.contentHash };
+}
+
+function metricsV2(calculation: Pick<CalculationCompletedResult, "system" | "capability">) {
+  return {
+    mean: calculation.system.mean,
+    rssSigma: calculation.system.rssSigma,
+    worstCaseLower: calculation.system.worstCaseLower,
+    worstCaseUpper: calculation.system.worstCaseUpper,
+    cp: calculation.capability.cp,
+    cpk: calculation.capability.cpk,
+    yield: calculation.capability.yield,
+    dpm: calculation.capability.totalDpm,
+  };
+}
+
+function inputBaselineIdentity(calculation: CalculationCompletedResult) {
+  return {
+    calculationVersion: calculation.calculationVersion,
+    projectReference: calculation.projectReference,
+    runReference: calculation.runReference,
+    workbookContentHash: calculation.workbookContentHash,
+    worksheetName: calculation.worksheetSelection.worksheetName,
+    tableId: calculation.worksheetSelection.tableId,
+  };
+}
+
+function factorIdentity(factor: CalculationFactorResult): F6FactorIdentity {
+  return {
+    worksheetName: factor.source.worksheetName,
+    tableId: factor.source.tableId,
+    sourceRow: factor.source.sourceRow,
+    factorName: factor.factorName,
+    unit: factor.unit,
+  };
+}
+
+function authorizedDecision(decision: F6InputDecision): boolean {
+  return decision.outcome === "CONFIRMED" || decision.outcome === "CALLER_AUTHORIZED";
+}
+
+function evidenceFromDecision(decision: F6InputDecision) {
+  return "artifactReference" in decision && decision.artifactReference !== undefined
+    ? [structuredClone(decision.artifactReference)]
+    : [];
+}
+
+function requestEvidenceDecision(evidence: { readonly source: string; readonly contentHash: string } | undefined): F6InputDecision {
+  return evidence === undefined
+    ? { outcome: "NOT_PROVIDED" }
+    : { outcome: "CALLER_AUTHORIZED", artifactReference: { artifact: evidence.source, contentHash: evidence.contentHash } };
+}
+
+function exactFactor(
+  calculation: CalculationCompletedResult,
+  identity: F6FactorIdentity,
+): CalculationFactorResult {
+  const matches = calculation.factors.filter((factor) => equivalent(factorIdentity(factor), identity));
+  if (matches.length !== 1) throw new Error("Optimization target factor identity does not match the governed baseline.");
+  return matches[0]!;
+}
+
+function overrideForTolerance(
+  factor: CalculationFactorResult,
+  lowerTolerance: number,
+  upperTolerance: number,
+) {
+  return {
+    worksheetName: factor.source.worksheetName,
+    tableId: factor.source.tableId,
+    sourceRow: factor.source.sourceRow,
+    lowerTolerance,
+    upperTolerance,
+  };
+}
+
+function scaledOverride(factor: CalculationFactorResult, scale: number) {
+  if (!(scale > 0) || !Number.isFinite(scale)) throw new Error("Optimization target scale must be finite and positive.");
+  const scaled = scaleToleranceBandAroundCenter({
+    lowerTolerance: factor.input.lowerTolerance,
+    upperTolerance: factor.input.upperTolerance,
+    scale,
+  });
+  return overrideForTolerance(factor, scaled.lowerTolerance, scaled.upperTolerance);
+}
+
+function scenarioForTarget(
+  worksheet: F6OptimizationRequest["worksheets"][number],
+  target: F6OptimizationTargets["worksheets"][number]["targets"][number],
+): { readonly scenario?: F6ControlledScenario; readonly v2Overrides?: F6OptionV2 extends infer _Option ? Array<{ factor: F6FactorIdentity; lowerTolerance?: number; upperTolerance?: number; sigma?: number }> : never; readonly insufficientInputs?: readonly string[] } {
+  const calculation = worksheet.baselineCalculation;
+  let overrides: ReturnType<typeof overrideForTolerance>[];
+  if (target.targetType === "factor_tolerance") {
+    const factor = exactFactor(calculation, target.factor);
+    overrides = [overrideForTolerance(factor, target.lowerTolerance, target.upperTolerance)];
+  } else if (target.targetType === "factor_sigma") {
+    const factor = exactFactor(calculation, target.factor);
+    overrides = [scaledOverride(factor, target.sigma / factor.sigma)];
+  } else if (target.targetType === "improvement_ratio") {
+    const factor = exactFactor(calculation, target.factor);
+    overrides = [scaledOverride(factor, 1 - target.ratio)];
+  } else {
+    if (target.apportionment.policy === "CAPABILITY_BOUNDED") {
+      return { insufficientInputs: ["supplier_capability_bounds"] };
+    }
+    const targetRssSigma = "targetCpk" in target.target
+      ? solveTargetRssSigma({
+        mean: calculation.system.mean,
+        lowerSpecLimit: calculation.capability.lowerSpecLimit,
+        upperSpecLimit: calculation.capability.upperSpecLimit,
+        targetCpk: target.target.targetCpk,
+      })
+      : target.target.targetRssSigma;
+    const selectedFactors = target.apportionment.selectedFactors.map((identity) => exactFactor(calculation, identity));
+    const allocation = apportionRssTolerance({
+      factors: calculation.factors,
+      targetRssSigma,
+      policy: target.apportionment.policy === "PROPORTIONAL"
+        ? "proportional-to-contribution"
+        : "equal-allocation-among-top-N",
+      selectedSources: selectedFactors.map(({ source }) => source),
+    });
+    if (allocation.feasibility.status !== "supported") {
+      return { insufficientInputs: allocation.feasibility.reasonCodes };
+    }
+    overrides = allocation.allocations.map((entry) => {
+      const factor = calculation.factors.find(({ source }) => source.tableId === entry.tableId && source.sourceRow === entry.sourceRow);
+      if (factor === undefined || !(factor.halfTolerance > 0)) throw new Error("RSS allocation factor is unavailable.");
+      return scaledOverride(factor, entry.targetTolerance / factor.halfTolerance);
+    });
+  }
+  const scenarioId = `${worksheet.worksheetName}:${target.targetId}`;
+  return {
+    scenario: { scenarioId, optionKind: "requirement_change", factorOverrides: overrides },
+    v2Overrides: overrides.map((override) => {
+      const factor = calculation.factors.find(({ source }) => source.worksheetName === override.worksheetName
+        && source.tableId === override.tableId && source.sourceRow === override.sourceRow)!;
+      return {
+        factor: factorIdentity(factor),
+        lowerTolerance: override.lowerTolerance,
+        upperTolerance: override.upperTolerance,
+      };
+    }),
+  };
+}
+
+function targetOption(
+  request: F6OptimizationRequest,
+  worksheet: F6OptimizationRequest["worksheets"][number],
+  baselineRequest: CalculationRequest,
+  target: F6OptimizationTargets["worksheets"][number]["targets"][number],
+  targetsDecision: F6InputDecision,
+  calculateScenario: typeof calculateF6Scenario,
+): F6OptionV2 {
+  const baselineMetrics = metricsV2(worksheet.baselineCalculation);
+  const optionId = `${worksheet.worksheetName}:${target.targetId}`;
+  const evidenceReferences = evidenceFromDecision(targetsDecision);
+  try {
+    const built = scenarioForTarget(worksheet, target);
+    if (built.insufficientInputs !== undefined) {
+      return { optionId, status: "insufficient_evidence", targetId: target.targetId, requiredInputs: [...built.insufficientInputs], baselineMetrics, evidenceReferences, impactRank: null };
+    }
+    if (built.scenario === undefined || built.v2Overrides === undefined) throw new Error("Optimization scenario was not generated.");
+    const calculation = calculateScenario({ baselineRequest, scenario: built.scenario });
+    const scenario = calculation.scenarios.find(({ scenarioId }) => scenarioId === built.scenario!.scenarioId);
+    if (scenario === undefined) throw new Error("Optimization scenario result is unavailable.");
+    return {
+      optionId,
+      status: "completed",
+      targetId: target.targetId,
+      baselineMetrics,
+      resultMetrics: {
+        mean: scenario.calculation.system.mean,
+        rssSigma: scenario.calculation.system.rssSigma,
+        worstCaseLower: scenario.calculation.system.worstCaseLower,
+        worstCaseUpper: scenario.calculation.system.worstCaseUpper,
+        cp: scenario.calculation.capability.cp,
+        cpk: scenario.calculation.capability.cpk,
+        yield: scenario.calculation.capability.yield,
+        dpm: scenario.calculation.capability.totalDpm,
+      },
+      scenarioEvidence: {
+        targetId: target.targetId,
+        baselineIdentity: inputBaselineIdentity(worksheet.baselineCalculation),
+        factorOverrides: built.v2Overrides,
+        calculationReference: artifactReference(request.f4Reference),
+        formulaReferences: scenario.calculation.traceRecords.map(({ outputField, formulaId, formulaVersion }) => ({ outputField, formulaId, formulaVersion })),
+      },
+      feasibility: { status: "supported", reasonCodes: ["caller_provided_target"], evidenceReferences: evidenceReferences.map(({ artifact }) => artifact) },
+      evidenceReferences,
+      impactRank: null,
+    };
+  } catch (error) {
+    return {
+      optionId,
+      status: "calculation_failed",
+      targetId: target.targetId,
+      reasonCode: error instanceof Error ? error.message : "calculation_failed",
+      baselineMetrics,
+      evidenceReferences,
+      impactRank: null,
+    };
+  }
+}
+
+function rankV2Options(options: readonly F6OptionV2[]): F6OptionV2[] {
+  const rankedIds = options
+    .filter((option): option is Extract<F6OptionV2, { status: "completed" }> => option.status === "completed" && option.feasibility.status === "supported")
+    .sort((left, right) => (right.resultMetrics.cpk - right.baselineMetrics.cpk) - (left.resultMetrics.cpk - left.baselineMetrics.cpk)
+      || left.optionId.localeCompare(right.optionId))
+    .map(({ optionId }) => optionId);
+  const rankById = new Map(rankedIds.map((optionId, index) => [optionId, index + 1]));
+  return options.map((option) => option.status === "completed" ? { ...option, impactRank: rankById.get(option.optionId) ?? null } : option);
+}
+
+export function createF6Optimization(
+  input: unknown,
+  inputs: F6OptimizationV2Inputs,
+  dependencies: OptimizationDependencies = {},
+): F6OptimizationResultV2 {
+  const request = f6OptimizationRequestSchema.parse(input);
+  const analysisContext = inputs.analysisContext === undefined ? undefined : f6AnalysisContextSchema.parse(inputs.analysisContext);
+  const optimizationTargets = inputs.optimizationTargets === undefined ? undefined : f6OptimizationTargetsSchema.parse(inputs.optimizationTargets);
+  if ((analysisContext !== undefined) !== authorizedDecision(inputs.inputDecisions.analysisContext)) {
+    throw new Error("Analysis Context decision does not match the provided artifact.");
+  }
+  if ((optimizationTargets !== undefined) !== authorizedDecision(inputs.inputDecisions.optimizationTargets)) {
+    throw new Error("Optimization Targets decision does not match the provided artifact.");
+  }
+  if (analysisContext !== undefined && analysisContext.workbookContentHash !== request.workbook.contentHash) {
+    throw new Error("Analysis Context workbook identity does not match the F6 request.");
+  }
+  if (optimizationTargets !== undefined && optimizationTargets.workbookContentHash !== request.workbook.contentHash) {
+    throw new Error("Optimization Targets workbook identity does not match the F6 request.");
+  }
+  const calculateScenario = dependencies.calculateScenario ?? calculateF6Scenario;
+  const baselineRequests = request.worksheets.map((worksheet) => verifiedBaselineRequest(worksheet.baselineCalculationRequest, worksheet.baselineCalculation));
+  const worksheets = request.worksheets.map((worksheet, index) => {
+    const baseline = worksheet.baselineCalculation;
+    const targetWorksheet = optimizationTargets?.worksheets.find((candidate) => candidate.worksheetName === worksheet.worksheetName
+      && candidate.tableId === baseline.worksheetSelection.tableId);
+    let options: F6OptionV2[];
+    if (targetWorksheet === undefined) {
+      options = [{
+        optionId: `${worksheet.worksheetName}:candidate`,
+        status: "candidate",
+        reasonCode: "target_not_provided",
+        candidateFactors: baseline.factors.map(factorIdentity),
+        requiredInputs: ["optimization_target"],
+        calculationMethod: "Provide a governed target and rerun through F4.",
+        baselineMetrics: metricsV2(baseline),
+        impactRank: null,
+      }];
+    } else {
+      if (!equivalent(targetWorksheet.baselineIdentity, inputBaselineIdentity(baseline))) {
+        throw new Error("Optimization Targets baseline identity does not match the governed F4 baseline.");
+      }
+      options = targetWorksheet.targets.map((target) => targetOption(
+        request, worksheet, baselineRequests[index]!, target, inputs.inputDecisions.optimizationTargets, calculateScenario,
+      ));
+    }
+    const ranked = rankV2Options(options);
+    const highest = ranked.find((option) => option.status === "completed" && option.impactRank === 1);
+    const failed = ranked.filter(({ status }) => status === "calculation_failed").length;
+    return {
+      worksheetName: worksheet.worksheetName,
+      tableId: baseline.worksheetSelection.tableId,
+      runStatus: failed > 0 ? "PARTIALLY_COMPLETED" as const : "COMPLETED" as const,
+      baselineIdentity: inputBaselineIdentity(baseline),
+      baselineMetrics: metricsV2(baseline),
+      targetCapability: { targetCpk: baseline.capability.targetCpk, targetSigmaLevel: baseline.capability.targetSigmaLevel, source: "WORKSHEET" as const },
+      options: ranked,
+      highestImpactAction: highest?.status === "completed" && highest.impactRank !== null
+        ? { optionId: highest.optionId, impactRank: highest.impactRank }
+        : null,
+      findings: structuredClone(worksheet.f2Findings),
+      risks: [],
+      recommendations: ranked
+        .filter((option): option is Extract<F6OptionV2, { status: "completed" }> => option.status === "completed" && option.feasibility.status === "supported")
+        .map((option) => ({ recommendationId: `recommend:${option.optionId}`, optionId: option.optionId, text: `Review governed target ${option.targetId}.`, evidenceReferences: structuredClone(option.evidenceReferences) })),
+      clarifications: ranked.some(({ status }) => status === "candidate")
+        ? [{ clarificationId: `${worksheet.worksheetName}:optimization-target`, reasonCode: "optimization_target_required", requiredInputs: ["optimization_target"], questionForReviewer: "Provide a governed optimization target.", evidenceReferences: [] }]
+        : [],
+    };
+  });
+  const options = worksheets.flatMap(({ options }) => options);
+  const summary = {
+    worksheetCount: worksheets.length,
+    completedWorksheetCount: worksheets.filter(({ runStatus }) => runStatus === "COMPLETED").length,
+    partiallyCompletedWorksheetCount: worksheets.filter(({ runStatus }) => runStatus === "PARTIALLY_COMPLETED").length,
+    inputRejectedWorksheetCount: 0,
+    candidateOptionCount: options.filter(({ status }) => status === "candidate").length,
+    completedOptionCount: options.filter(({ status }) => status === "completed").length,
+    insufficientEvidenceOptionCount: options.filter(({ status }) => status === "insufficient_evidence").length,
+    calculationFailedOptionCount: options.filter(({ status }) => status === "calculation_failed").length,
+  };
+  return immutable(f6OptimizationResultSchema.parse({
+    contractVersion: request.contractVersion,
+    outputClassification: "confidential",
+    featureId: "F6",
+    optimizationVersion: "f6-optimization-v2",
+    runStatus: summary.partiallyCompletedWorksheetCount > 0 ? "PARTIALLY_COMPLETED" : "COMPLETED",
+    workbook: request.workbook,
+    provenance: {
+      f2Reference: artifactReference(request.f2Reference),
+      f3Reference: artifactReference(request.f3Reference),
+      f4Reference: artifactReference(request.f4Reference),
+      f5Reference: artifactReference(request.f5Reference),
+      ...(request.imageObservationReference === undefined ? {} : { imageObservationReference: artifactReference(request.imageObservationReference) }),
+      supplierCapabilityDecision: requestEvidenceDecision(request.supplierCapabilityEvidence?.[0]),
+      datumStrategyDecision: requestEvidenceDecision(request.datumEvidence?.[0]),
+      costDecision: requestEvidenceDecision(request.costEvidence),
+      analysisContextDecision: inputs.inputDecisions.analysisContext,
+      optimizationTargetsDecision: inputs.inputDecisions.optimizationTargets,
+    },
+    worksheets,
+    summary,
   }));
 }

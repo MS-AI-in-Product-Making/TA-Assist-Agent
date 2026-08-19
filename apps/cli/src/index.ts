@@ -120,7 +120,7 @@ function parseArguments(argv: readonly string[]):
       setOnce(values, flag, true);
       continue;
     }
-    if (flag !== "--root" && flag !== "--run-id" && flag !== "--confirmation-token" && flag !== "--workbook" && flag !== "--f2-artifacts" && flag !== "--f1-artifacts" && flag !== "--f3-artifacts" && flag !== "--f4-artifacts" && flag !== "--f5-artifacts" && flag !== "--worksheets" && flag !== "--worksheet" && flag !== "--workbook-hash" && flag !== "--image-observations" && flag !== "--supplier-capability" && flag !== "--datum-strategy" && flag !== "--cost") {
+    if (flag !== "--root" && flag !== "--run-id" && flag !== "--confirmation-token" && flag !== "--workbook" && flag !== "--f2-artifacts" && flag !== "--f1-artifacts" && flag !== "--f3-artifacts" && flag !== "--f4-artifacts" && flag !== "--f5-artifacts" && flag !== "--worksheets" && flag !== "--worksheet" && flag !== "--workbook-hash" && flag !== "--image-observations" && flag !== "--supplier-capability" && flag !== "--datum-strategy" && flag !== "--cost" && flag !== "--analysis-context" && flag !== "--optimization-targets") {
       throw new Error("validation_error: unknown option");
     }
     const value = flags[index + 1];
@@ -201,6 +201,7 @@ function parseArguments(argv: readonly string[]):
     rejectUnexpected(values, [
       "--root", "--f2-artifacts", "--f3-artifacts", "--f4-artifacts", "--f5-artifacts", "--worksheet",
       "--supplier-capability", "--datum-strategy", "--cost", "--image-observations",
+      "--analysis-context", "--optimization-targets",
     ]);
     const f2ArtifactRoot = requiredString(values, "--f2-artifacts", "Feature 6");
     const f3ArtifactRoot = requiredString(values, "--f3-artifacts", "Feature 6");
@@ -215,12 +216,16 @@ function parseArguments(argv: readonly string[]):
     const datumStrategyPath = optionalPath(values, "--datum-strategy", "Feature 6");
     const costPath = optionalPath(values, "--cost", "Feature 6");
     const imageObservationsPath = optionalPath(values, "--image-observations", "Feature 6");
+    const analysisContextPath = optionalPath(values, "--analysis-context", "Feature 6");
+    const optimizationTargetsPath = optionalPath(values, "--optimization-targets", "Feature 6");
     const options: Feature6CommandOptions = {
       selectedWorksheetNames,
       ...(supplierCapabilityPath === undefined ? {} : { supplierCapabilityPath }),
       ...(datumStrategyPath === undefined ? {} : { datumStrategyPath }),
       ...(costPath === undefined ? {} : { costPath }),
       ...(imageObservationsPath === undefined ? {} : { imageObservationsPath }),
+      ...(analysisContextPath === undefined ? {} : { analysisContextPath }),
+      ...(optimizationTargetsPath === undefined ? {} : { optimizationTargetsPath }),
     };
     return { command, rootDir, f2ArtifactRoot, f3ArtifactRoot, f4ArtifactRoot, f5ArtifactRoot, options };
   }

@@ -10,9 +10,11 @@ The strict lifecycle is:
 
 After the publishing-mode question returns create or existing mode, discover the configured `surface-mcp` tools. If they are unavailable, fail closed with local reason `surface_mcp_unavailable`.
 
-The first Surface MCP call must be a read-only organization listing. This call starts the connection and triggers VS Code native authentication when required. Tell the user to finish sign-in in the VS Code or browser authentication surface, then wait for the tool call to return. Do not retry automatically.
+The first Surface MCP call must be a read-only organization listing. This call starts the connection and triggers VS Code native authentication when required. Tell the user to finish sign-in in the VS Code or browser authentication surface, then wait for the tool call to return. Never retry automatically.
 
-If authentication is cancelled, denied, or fails, stop all entity and write calls and use local reason `surface_mcp_authentication_failed`. Never request or receive passwords, PATs, tokens, verification codes, or MFA responses through chat, questions, CLI arguments, or terminal relay. Credentials remain owned by VS Code and Surface MCP.
+Browser authorization completion can race the first read-only call. Only when that first call returns `401`, `Unauthorized`, or `Bearer token required`, make a dedicated `vscode_askQuestions` call with the exact affirmative choice `Confirm authentication completed`. If the user confirms, make exactly one additional read-only organization listing. This is a user-authorized connection check only: it is not publishing consent, it does not validate an ADO target, and it permits no mutation or write. No other automatic or repeated retry is allowed.
+
+If the user does not select `Confirm authentication completed`, authentication is cancelled or denied, or the one additional read-only organization listing fails authentication, stop all entity and write calls and use local reason `surface_mcp_authentication_failed`. Never request or receive passwords, PATs, tokens, verification codes, or MFA responses through chat, questions, CLI arguments, or terminal relay. Credentials remain owned by VS Code and Surface MCP.
 
 Connection and authentication failures occur before target validation and must not persist a work item reference.
 

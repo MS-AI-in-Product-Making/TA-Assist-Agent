@@ -97,6 +97,69 @@ describe("loadF6ArtifactBundle", () => {
     expect(JSON.stringify(result)).not.toContain(rootPath(bundle));
   });
 
+  it("loads identity-bound Analysis Context and Optimization Targets with caller-authorized decisions", () => {
+    const bundle = setupBundle();
+    const baseline = loadF6ArtifactBundle(bundle);
+    expect(baseline.status).toBe("accepted");
+    const worksheet = baseline.request.worksheets[0];
+    const calculation = worksheet.baselineCalculation;
+    const factor = calculation.factors[0];
+    const factorIdentity = {
+      worksheetName: factor.source.worksheetName,
+      tableId: factor.source.tableId,
+      sourceRow: factor.source.sourceRow,
+      factorName: factor.factorName,
+      unit: factor.unit,
+    };
+    const baselineIdentity = {
+      calculationVersion: calculation.calculationVersion,
+      projectReference: calculation.projectReference,
+      runReference: calculation.runReference,
+      workbookContentHash: calculation.workbookContentHash,
+      worksheetName: calculation.worksheetSelection.worksheetName,
+      tableId: calculation.worksheetSelection.tableId,
+    };
+    const evidenceArtifactRoot = setupEvidenceRoot(bundle);
+    bundle.analysisContextArtifact = "context.json";
+    bundle.optimizationTargetsArtifact = "targets.json";
+    const evidence = {
+      artifactReference: { artifact: "Feature4-Calculation.json", contentHash: sha256(bundle.paths.f4) },
+      worksheetName: worksheet.worksheetName,
+      sourceRows: [{ worksheetName: worksheet.worksheetName, tableId: factor.source.tableId, sourceRow: factor.source.sourceRow }],
+    };
+    writeJson(path.join(evidenceArtifactRoot, bundle.analysisContextArtifact), {
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      contextVersion: "f6-analysis-context-v1",
+      workbookContentHash: WORKBOOK_HASH,
+      worksheets: [{
+        worksheetName: worksheet.worksheetName,
+        tableId: calculation.worksheetSelection.tableId,
+        baselineIdentity,
+        analysisObject: { kind: "GAP", name: "Gap A", physicalMeaning: "Controlled clearance.", measurementDirection: "Z", positiveDirectionDefinition: "Increasing clearance.", negativeDirectionDefinition: "Increasing interference.", evidence },
+        operatingConditions: [],
+        correlationRequirement: { mode: "NOT_PROVIDED" },
+      }],
+    });
+    writeJson(path.join(evidenceArtifactRoot, bundle.optimizationTargetsArtifact), {
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      targetVersion: "f6-optimization-targets-v1",
+      workbookContentHash: WORKBOOK_HASH,
+      worksheets: [{ worksheetName: worksheet.worksheetName, tableId: calculation.worksheetSelection.tableId, baselineIdentity, targets: [{ targetId: "target-a", targetType: "improvement_ratio", factor: factorIdentity, ratio: 0.2, appliesTo: "tolerance_band" }] }],
+    });
+
+    const result = loadF6ArtifactBundle(bundle);
+
+    expect(result.status, JSON.stringify(result)).toBe("accepted");
+    expect(result.analysisContext.contextVersion).toBe("f6-analysis-context-v1");
+    expect(result.optimizationTargets.targetVersion).toBe("f6-optimization-targets-v1");
+    expect(result.inputDecisions.analysisContext.outcome).toBe("CALLER_AUTHORIZED");
+    expect(result.inputDecisions.optimizationTargets.outcome).toBe("CALLER_AUTHORIZED");
+    expect(result.sourceReferences.analysisContext.contentHash).toBe(sha256(path.join(evidenceArtifactRoot, bundle.analysisContextArtifact)));
+    expect(result.sourceReferences.optimizationTargets.contentHash).toBe(sha256(path.join(evidenceArtifactRoot, bundle.optimizationTargetsArtifact)));
+  });
+
   it("closes each descriptor exactly once after a normal bounded read", () => {
     const bundle = setupBundle();
     let closeCalls = 0;

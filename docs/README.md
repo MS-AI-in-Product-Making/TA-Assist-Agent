@@ -47,7 +47,7 @@ exact content against schema、workbook/worksheet identity 与 selected set、sn
 `imageReference` identity，并重新校验物理 F1 image SHA-256。Observation artifact 不存在可预先校验的自身
 digest；接受后由 workflow runner 计算其 SHA-256 并记录到 `Feature5-Run-Summary`。Observation-only 失败整件
 回退到 deterministic F5，baseline identity 错误 fail closed。
-F6 已作为 F5 后的本地 `f6-optimization-v1` workflow 启用，消费 F2/F3/F4/F5 受控工件并生成独立优化结果与 F5+F6 联合报告；F7 仍为 `unavailable`。历史 F6 comparison placeholder 继续单独返回 `feature_not_available`；F8 仅提供匿名
+F6 已作为 F5 后的本地 `f6-optimization-v2` / `f6-composed-report-v2` workflow 启用，消费 F2/F3/F4/F5 受控工件并生成 target-driven 优化结果与16章联合报告；F7 仍为 `unavailable`。历史 F6 comparison placeholder 继续单独返回 `feature_not_available`；F8 仅提供匿名
 `public` fixture 的受治理 Skill 运行时验收，不包含外部 Adapter、模型、ADO、SharePoint 或 UI 行为。
 
 | 文档 | 内容 |

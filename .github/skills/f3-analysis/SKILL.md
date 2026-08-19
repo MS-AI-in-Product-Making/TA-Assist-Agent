@@ -70,11 +70,12 @@ Surface MCP entity calls may start only after Question call 1 returns
 	- `npm run workflow:f3:ado-reminder -- <f3-dir> --status blocked --reason-code surface_mcp_unavailable`
 4. The first Surface MCP call must be a read-only organization listing. Use it to connect the server and trigger VS Code native authentication when required.
 5. Before the call, tell the user to complete any VS Code or browser sign-in prompt there and never send credentials in chat.
-6. Wait for the tool call to return before continuing. Do not retry automatically.
-7. If the user cancels authentication, consent is denied, or authentication fails, do not make further entity or write calls. Run exact local fallback:
+6. Wait for the tool call to return before continuing. Never retry automatically.
+7. A first-call `401`, `Unauthorized`, or `Bearer token required` response may race browser authorization completion. In that case only, make a dedicated `vscode_askQuestions` call with the exact affirmative choice `Confirm authentication completed`. If confirmed, make exactly one additional read-only organization listing. This confirmation is not publishing consent and permits no entity mutation or write.
+8. If the user does not select `Confirm authentication completed`, cancels or denies authentication, or the one additional read-only organization listing fails authentication, do not make further entity or write calls. Run exact local fallback:
 	- `npm run workflow:f3:ado-reminder -- <f3-dir> --status blocked --reason-code surface_mcp_authentication_failed`
-8. Never request passwords, PATs, tokens, verification codes, or MFA responses through chat, `vscode_askQuestions`, CLI arguments, or terminal input relay.
-9. Connection or authentication failures happen before target validation. Do not include a work item reference in either fallback.
+9. Never request passwords, PATs, tokens, verification codes, or MFA responses through chat, `vscode_askQuestions`, CLI arguments, or terminal input relay.
+10. Connection or authentication failures happen before target validation. Do not include a work item reference in either fallback.
 
 ## Phase 4 - Surface validation flow
 

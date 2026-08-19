@@ -97,17 +97,25 @@ Run F5 with the current F1, F3, and F4 roots and one repeated `--worksheet` per 
 
 Validate `Feature5-Report.json`, run summary, manifest, output containment, source identities, worksheet set, classifications, and recorded hashes. The `F5` output is the validated F5 root and all published F5 artifacts.
 
-### Phase W8 - Collect optional F6 evidence
+### Phase W8A - Collect optional TA Analysis Context
 
-Ask whether governed supplier capability, datum strategy, or cost evidence should be supplied. Each supplied path must be an existing, contained, non-linked JSON artifact accepted by the corresponding F6 schema and bound to the same workbook and factor identities. Omitted or rejected evidence is not a workflow failure.
+Collect at most one optional `f6-analysis-context-v1` artifact. Require an existing, contained, non-linked JSON file accepted by the current schema and bound to the same workbook and selected worksheet identities. Invalid input is `REJECTED`; absent input is `NOT_PROVIDED`. Do not infer a context artifact from workbook prose, images, historical runs, or free-form chat.
 
-Without valid supplier capability or datum strategy evidence, the corresponding options remain `insufficient_evidence`. Without valid cost evidence, ROI remains `not_computed`. Do not promote missing evidence into a recommendation or ROI. Image observations use the immutable copy published by the current F5 run when available.
+For a valid supplied artifact, show a complete sanitized preview and make a dedicated `vscode_askQuestions` call with the exact affirmative choice `Confirm analysis context`. Record confirmation as `CALLER_AUTHORIZED`; record a declined confirmation as `DECLINED`. Declined analysis context omits `--analysis-context` and continues with explicit context gaps.
+
+### Phase W8B - Collect optional Optimization Targets
+
+Collect at most one optional `f6-optimization-targets-v1` artifact after W8A is terminal. Require an existing, contained, non-linked JSON file accepted by the current schema and bound to the same baseline workbook, worksheet, factor, unit, and calculation identities. Invalid input is `REJECTED`; absent input is `NOT_PROVIDED`.
+
+For a valid supplied artifact, show every target, policy, selected factor, value, ratio, and unit in a complete sanitized preview. Make a second dedicated `vscode_askQuestions` call with the exact affirmative choice `Confirm optimization targets`. Record confirmation as `CALLER_AUTHORIZED`; record a declined confirmation as `DECLINED`. Declined optimization targets omit `--optimization-targets` and continue in candidate-only mode.
+
+W8A and W8B use two separate `vscode_askQuestions` calls. Neither call may be merged with the other, and each must not be combined with the F3 ADO confirmation. No optimization scenario may be generated before target confirmation. Only caller-authorized targets may create a quantified scenario; without them, emit candidate-only options. Do not invent default percentage scenarios. Preserve each decision as `CALLER_AUTHORIZED`, `DECLINED`, `REJECTED`, or `NOT_PROVIDED` in Optimization, run summary, manifest, and the final ledger.
 
 ### Phase W9 - Run and validate F6
 
-Run F6 with the current F2, F3, F4, and F5 roots and one repeated `--worksheet` per downstream worksheet. The base allowed command may append only these controlled optional pairs after the worksheet arguments: `--supplier-capability <artifact-path>`, `--datum-strategy <artifact-path>`, `--cost <artifact-path>`, and `--image-observations <artifact-path>`.
+Run F6 with the current F2, F3, F4, and F5 roots and one repeated `--worksheet` per downstream worksheet. Append `--analysis-context <artifact-path>` only after W8A caller authorization and `--optimization-targets <artifact-path>` only after W8B caller authorization. The loader may also consume the current F5 immutable image observation copy and governed supplier, datum, or cost evidence when already supplied by the controlled workflow.
 
-Validate `Feature6-Optimization.json` with `f6OptimizationResultSchema` and `Feature6-Composed-Report.json` with `f6ComposedEngineeringReportSchema`. Validate the run summary, manifest, six-file output set, exact downstream worksheet set, F2 blocked worksheet placement, input provenance hashes, output hashes, option counts, evidence gates, and ROI gates.
+Validate `Feature6-Optimization.json` as `f6-optimization-v2` with `f6OptimizationResultSchema` and `Feature6-Composed-Report.json` as `f6-composed-report-v2` with `f6ComposedEngineeringReportSchema`. Validate the run summary, manifest, six-file output set, exact downstream worksheet set, F2 blocked worksheet placement, input decisions, input provenance hashes, output hashes, option counts, evidence gates, and ROI gates. Reject current-entry v1 artifacts as unsupported rather than converting or presenting them.
 
 The `F6` output is the validated F6 root, optimization JSON/Markdown, composed-report JSON/Markdown, run summary, and manifest.
 
@@ -121,7 +129,7 @@ Present one concise run ledger containing:
 - `F3` output: status, root, report, governance-complete and governance-required counts, plus the optional ADO publishing outcome and sanitized work item reference when one was validated.
 - `F4` output: status, root, calculation/report paths, and accepted downstream calculation count.
 - `F5` output: status, root, report paths, image mode (`v2` or `not_evaluated`), and clarification count.
-- `F6` output: status, root, six artifact paths, completed/failed/evidence-gated option counts, ROI status, overall report status, and blocked worksheet section.
+- `F6` output: status, root, six artifact paths, Context/Targets decision outcomes and controlled hashes, candidate/completed/failed option counts, four-state report status (`PASS`, `CONDITIONAL_PASS`, `FAIL`, or `INCOMPLETE`), and blocked worksheet section.
 
 Do not report a phase as completed until its contract, containment, identity, manifest, and recorded hashes have passed. Keep FACT, RULE, SIGNAL, OPTION, assumptions, clarifications, risks, and evidence-gated options distinct.
 
@@ -139,9 +147,9 @@ If validation succeeds, present the validated F6 report without rerunning F0, F1
 - `npm run workflow:f4 -- --f2-report <f2-output-dir>/Feature2-Report.json`
 - `npm run workflow:f5 -- <f1-output-dir> <f3-output-dir> <f4-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...]`
 - `npm run workflow:f5 -- <f1-output-dir> <f3-output-dir> <f4-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] --image-observations <artifact-path>`
-- `npm run workflow:f6 -- <f2-output-dir> <f3-output-dir> <f4-output-dir> <f5-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...]`
+- `npm run workflow:f6 -- <f2-output-dir> <f3-output-dir> <f4-output-dir> <f5-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] [--analysis-context <artifact-path>] [--optimization-targets <artifact-path>]`
 
-The two F2 commands are separate gates and must not be merged, omitted, or reordered. Do not add an F4 worksheet flag. Workbook mode always supplies the exact downstream worksheet set to F3, F5, and F6. Only W9 may append the four documented optional F6 evidence pairs to the final allowed command.
+The two F2 commands are separate gates and must not be merged, omitted, or reordered. Do not add an F4 worksheet flag. Workbook mode always supplies the exact downstream worksheet set to F3, F5, and F6. Only W9 may append the two documented, separately authorized V2 input pairs to the final allowed command.
 
 W4A does not add F3 ADO commands to this local runner list. When W4A is entered, the referenced F3 skill is the authoritative allowlist for its local reminder commands and Surface MCP operations. F6 must not invent, duplicate, or broaden that allowlist.
 

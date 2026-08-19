@@ -17,7 +17,6 @@ import {
   createComparisonPlaceholder,
   createF6Optimization,
 } from "../packages/workbook-catalog/dist/index.js";
-import { calculateF6Scenario } from "../packages/workbook-catalog/dist/f6-scenario-adapter.js";
 import {
   createF6ArtifactBundleFixture,
   fixtureFileSha256,
@@ -202,6 +201,50 @@ describe("runF6FullValidation", () => {
       f5Report: { f5: true },
       f6Result: context.optimization,
     });
+    expect(context.deps.createOptimization).toHaveBeenCalledWith({ request: true }, {
+      inputDecisions: {
+        analysisContext: { outcome: "NOT_PROVIDED" },
+        optimizationTargets: { outcome: "NOT_PROVIDED" },
+      },
+    });
+  });
+
+  it("passes V2 optional inputs and records identical input decisions in summary and manifest", () => {
+    const context = setup();
+    const inputDecisions = {
+      analysisContext: { outcome: "CALLER_AUTHORIZED", artifactReference: { artifact: "context.json", contentHash: "e".repeat(64) } },
+      optimizationTargets: { outcome: "CALLER_AUTHORIZED", artifactReference: { artifact: "targets.json", contentHash: "f".repeat(64) } },
+    };
+    const analysisContext = { contextVersion: "f6-analysis-context-v1" };
+    const optimizationTargets = { targetVersion: "f6-optimization-targets-v1" };
+    context.deps.loadBundle.mockReturnValue({
+      ...context.deps.loadBundle(),
+      analysisContext,
+      optimizationTargets,
+      inputDecisions,
+      sourceReferences: {
+        ...context.deps.loadBundle().sourceReferences,
+        analysisContext: inputDecisions.analysisContext.artifactReference,
+        optimizationTargets: inputDecisions.optimizationTargets.artifactReference,
+      },
+    });
+
+    runF6FullValidation({}, context.deps);
+
+    expect(context.deps.createOptimization).toHaveBeenCalledWith(
+      { request: true },
+      { analysisContext, optimizationTargets, inputDecisions },
+    );
+    expect(context.deps.createComposedReport).toHaveBeenCalledWith({
+      f2Report: { f2: true },
+      f5Report: { f5: true },
+      f6Result: context.optimization,
+      analysisContext,
+    });
+    const summary = readJson(path.join(context.runRoot, "Feature6-Run-Summary.json"));
+    const manifest = readJson(path.join(context.runRoot, "manifest.json"));
+    expect(summary.inputDecisions).toEqual(inputDecisions);
+    expect(manifest.inputDecisions).toEqual(inputDecisions);
   });
 
   it("hashes the exact four serialized report contents", () => {
@@ -425,11 +468,46 @@ describe("F6 real artifact full flow", () => {
       composedReportJsonSha256: artifactHash(path.join(runRoot, "Feature6-Composed-Report.json")),
       composedReportMarkdownSha256: artifactHash(path.join(runRoot, "Feature6-Composed-Report.md")),
     });
+    const f4 = readJson(bundle.paths.f4);
+    const optimization = readJson(path.join(runRoot, "Feature6-Optimization.json"));
+    const composed = readJson(path.join(runRoot, "Feature6-Composed-Report.json"));
+    const worksheet = composed.worksheets.find(({ worksheetName }) => worksheetName === "Analysis-A");
+    const calculation = f4.calculations.find(({ worksheetSelection }) =>
+      worksheetSelection.worksheetName === "Analysis-A");
+    const gapIds = worksheet.dataGaps.map(({ gapId }) => gapId);
+
+    expect(worksheet.sections.statisticalResults.rssSigma.value).toBe(calculation.system.rssSigma);
+    expect(worksheet.sections.statisticalResults.worstCase).toEqual({
+      lower: calculation.system.worstCaseLower,
+      upper: calculation.system.worstCaseUpper,
+      unit: calculation.factors[0].unit,
+    });
+    expect(worksheet.sections.capabilityAssessment.cpk).toBe(calculation.capability.cpk);
+    expect(optimization.worksheets.every(({ options }) =>
+      options.every(({ status }) => status === "candidate"))).toBe(true);
+    expect(worksheet.sections.objectiveAndRequirements.analysisObject).toBeNull();
+    expect(worksheet.sections.operatingConditions.conditions).toEqual([]);
+    expect(worksheet.sections.toleranceLoopDefinition).toMatchObject({
+      start: null,
+      end: null,
+      equation: null,
+      terms: [],
+    });
+    expect(gapIds).toEqual(expect.arrayContaining([
+      "Analysis-A:analysis-object",
+      "Analysis-A:operating-conditions",
+      "Analysis-A:loop-definition",
+      "Analysis-A:optimization-targets",
+    ]));
     expect(readJson(path.join(runRoot, "manifest.json"))).toEqual({
       contractVersion: "v1",
       featureId: "F6",
       status: "completed",
       runId: "2026-08-17T01-02-03-456Z",
+      inputDecisions: {
+        analysisContext: { outcome: "NOT_PROVIDED" },
+        optimizationTargets: { outcome: "NOT_PROVIDED" },
+      },
       artifacts: {
         optimizationJson: "Feature6-Optimization.json",
         optimizationMarkdown: "Feature6-Optimization.md",
@@ -539,21 +617,18 @@ describe("F6 real artifact full flow", () => {
     const optimization = readJson(path.join(runRoot, "Feature6-Optimization.json"));
     const summary = readJson(path.join(runRoot, "Feature6-Run-Summary.json"));
     const worksheet = optimization.worksheets[0];
-    const optionsByKind = new Map(worksheet.options.map((option) => [option.optionKind, option]));
 
     expect(result.status).toBe("completed");
     expect(readdirSync(runRoot)).toHaveLength(6);
-    expect(optionsByKind.get("improve_supplier_capability")).toMatchObject({
-      status: "insufficient_evidence",
-      predictedImprovement: "insufficient_evidence",
+    expect(optimization.optimizationVersion).toBe("f6-optimization-v2");
+    expect(worksheet.options).toEqual([
+      expect.objectContaining({ status: "candidate", reasonCode: "target_not_provided", impactRank: null }),
+    ]);
+    expect(worksheet.highestImpactAction).toBeNull();
+    expect(summary.inputDecisions).toEqual({
+      analysisContext: { outcome: "NOT_PROVIDED" },
+      optimizationTargets: { outcome: "NOT_PROVIDED" },
     });
-    expect(optionsByKind.get("tighten_datum_strategy")).toMatchObject({
-      status: "insufficient_evidence",
-      predictedImprovement: "insufficient_evidence",
-    });
-    expect(worksheet.roiStatus).toBe("not_computed");
-    expect(worksheet.options.filter(({ status }) => status === "completed").every(({ roiScore }) =>
-      roiScore === "not_computed")).toBe(true);
     expect(summary.hashes).toEqual({
       optimizationJsonSha256: artifactHash(path.join(runRoot, "Feature6-Optimization.json")),
       optimizationMarkdownSha256: artifactHash(path.join(runRoot, "Feature6-Optimization.md")),
@@ -594,34 +669,20 @@ describe("F6 real artifact full flow", () => {
     });
   });
 
-  it("retains other options and all report artifacts when one real scenario calculation fails", () => {
+  it("does not invoke scenario calculation or quantify improvement without targets", () => {
     const bundle = createRealBundle();
-    const { result, runRoot } = runRealF6(bundle, "one-option-failed", {
-      createOptimization(request) {
-        return createF6Optimization(request, {
-          calculateScenario(input) {
-            if (input.scenario.optionKind === "reduce_top_contributor_20") {
-              throw { code: "controlled_calculation_failed", privateValue: "DO-NOT-LEAK" };
-            }
-            return calculateF6Scenario(input);
-          },
-        });
+    const calculateScenario = vi.fn(() => { throw new Error("scenario must not run"); });
+    const { result, runRoot } = runRealF6(bundle, "no-target-no-scenario", {
+      createOptimization(request, inputs) {
+        return createF6Optimization(request, inputs, { calculateScenario });
       },
     });
     const optimization = readJson(path.join(runRoot, "Feature6-Optimization.json"));
-    const composed = readJson(path.join(runRoot, "Feature6-Composed-Report.json"));
-    const worksheet = optimization.worksheets[0];
 
-    expect(result.status).toBe("partially_completed");
+    expect(result.status).toBe("completed");
     expect(readdirSync(runRoot)).toHaveLength(6);
-    expect(worksheet.options.find(({ optionKind }) => optionKind === "reduce_top_contributor_20")).toMatchObject({
-      status: "calculation_failed",
-      reasonCode: "controlled_calculation_failed",
-    });
-    expect(worksheet.options.filter(({ status }) => status === "completed")).toHaveLength(6);
-    expect(composed.worksheets[0].sections.whatIfAnalysis.options.find(({ optionKind }) =>
-      optionKind === "reduce_top_contributor_20")).toMatchObject({ status: "calculation_failed" });
-    expect(JSON.stringify({ optimization, composed })).not.toContain("DO-NOT-LEAK");
+    expect(calculateScenario).not.toHaveBeenCalled();
+    expect(optimization.worksheets[0].options[0]).toMatchObject({ status: "candidate" });
   });
 
   it.each([
@@ -652,34 +713,4 @@ describe("F6 real artifact full flow", () => {
     });
   });
 
-  it("publishes a calculation_failed optimization when every real scenario calculation fails", () => {
-    const bundle = createRealBundle();
-    const { result, runRoot } = runRealF6(bundle, "all-options-failed", {
-      createOptimization(request) {
-        return createF6Optimization(request, {
-          calculateScenario() {
-            throw { code: "controlled_calculation_failed" };
-          },
-        });
-      },
-    });
-    const optimization = readJson(path.join(runRoot, "Feature6-Optimization.json"));
-
-    expect(result.status).toBe("calculation_failed");
-    expect(readdirSync(runRoot)).toHaveLength(6);
-    expect(optimization).toMatchObject({
-      status: "calculation_failed",
-      summary: {
-        completedOptionCount: 0,
-        calculationFailedOptionCount: 7,
-        insufficientEvidenceOptionCount: 2,
-      },
-    });
-    expect(optimization.worksheets[0].options.filter(({ status }) =>
-      status === "calculation_failed")).toHaveLength(7);
-    expect(readJson(path.join(runRoot, "manifest.json"))).toMatchObject({
-      status: "calculation_failed",
-      artifacts: { optimizationJson: "Feature6-Optimization.json" },
-    });
-  });
 });

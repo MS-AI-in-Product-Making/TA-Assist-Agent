@@ -1,5 +1,6 @@
-import { f6ComposedEngineeringReportSchema } from "../packages/contracts/dist/contracts.js";
+import { f6ComposedEngineeringReportSchema, f6LegacyComposedEngineeringReportSchema } from "../packages/contracts/dist/contracts.js";
 import { cell } from "./f6-markdown-sanitizer.mjs";
+import { evidenceLabel, formatEngineering, formatPercent } from "./engineering-format.mjs";
 
 function scenarioName(kind) {
   return {
@@ -179,6 +180,91 @@ function renderWorksheet(lines, worksheet) {
   renderFinalConclusion(lines, sections.finalConclusion);
 }
 
+export function renderLegacyComposedEngineeringReport(report, options = {}) {
+  void options;
+  let parsed;
+  try {
+    parsed = f6LegacyComposedEngineeringReportSchema.parse(report);
+  } catch {
+    throw new Error("Invalid F6 composed engineering report.");
+  }
+  const lines = ["# F5 + F6 联合工程报告", ""];
+  renderWorkbook(lines, parsed);
+  for (const worksheet of parsed.worksheets) renderWorksheet(lines, worksheet);
+  return `${lines.join("\n").trimEnd()}\n`;
+}
+
+function quantityText(quantity, decimals = 3) {
+  return quantity === null ? "未提供" : formatEngineering(quantity.value, quantity.unit, decimals);
+}
+
+function rangeText(range, decimals = 3) {
+  return range === null ? "未提供" : `${range.lower.toFixed(decimals)} ～ ${range.upper.toFixed(decimals)} ${range.unit}`;
+}
+
+function pushSection(lines, number, title) {
+  lines.push("", `## ${number}. ${title}`, "");
+}
+
+function renderWorksheetV2(lines, worksheet) {
+  const sections = worksheet.sections;
+  lines.push("", `# Worksheet：${cell(worksheet.worksheetName)}`, "");
+  pushSection(lines, 1, "执行摘要 Executive Summary");
+  lines.push(
+    `- 最终判定：${cell(worksheet.status)}`,
+    `- 分析对象：${cell(sections.executiveSummary.analysisObject ?? "未提供")}`,
+    `- Mean Response：${quantityText(sections.executiveSummary.mean)}`,
+    `- RSS 1σ：${quantityText(sections.executiveSummary.rssSigma)}`,
+    `- 统计范围：${rangeText(sections.executiveSummary.statisticalRange)}`,
+    `- Worst Case范围：${rangeText(sections.executiveSummary.worstCaseRange)}`,
+    `- Minimum Margin：${quantityText(sections.executiveSummary.minimumMargin)}`,
+    `- 预测性能力指标 Cpk：${sections.executiveSummary.predictiveCpk?.toFixed(3) ?? "未提供"} ratio`,
+  );
+  pushSection(lines, 2, "分析目标与功能要求");
+  const objective = sections.objectiveAndRequirements;
+  lines.push(`- 分析对象：${cell(objective.analysisObject?.name ?? "未提供")}`, `- Target：${quantityText(objective.target)}`, `- LSL：${quantityText(objective.lsl)}`, `- USL：${quantityText(objective.usl)}`, `- Target Cpk：${objective.targetCpk?.toFixed(3) ?? "未提供"} ratio`);
+  pushSection(lines, 3, "分析工况与适用边界");
+  if (sections.operatingConditions.conditions.length === 0) lines.push(`- ${evidenceLabel("MISSING")} 未提供受控工况。`);
+  for (const condition of sections.operatingConditions.conditions) lines.push(`- ${cell(condition.category)}：${cell(condition.description)}`);
+  pushSection(lines, 4, "输入数据与完整性检查");
+  lines.push(`- 完整性评级：${cell(sections.inputIntegrity.rating)}`, "", "| Factor | Mean | +Tol | -Tol | Distribution | 1σ | Confidence |", "|---|---:|---:|---:|---|---:|---|");
+  for (const factor of sections.inputIntegrity.factors) lines.push(`| ${cell(factor.factor.factorName)} | ${quantityText(factor.mean)} | ${quantityText(factor.upperTolerance)} | ${quantityText(factor.lowerTolerance)} | ${cell(factor.distribution)} | ${quantityText(factor.sigma)} | ${cell(factor.confidence)} |`);
+  pushSection(lines, 5, "公差链定义 Tolerance Loop Definition");
+  lines.push(`- Loop起点：${cell(sections.toleranceLoopDefinition.start ?? "未提供")}`, `- Loop终点：${cell(sections.toleranceLoopDefinition.end ?? "未提供")}`, `- 完整公式：${cell(sections.toleranceLoopDefinition.equation ?? "Loop方向待工程师确认")}`);
+  pushSection(lines, 6, "Loop 一致性与计算自检");
+  for (const check of [sections.calculationSelfCheck.meanCheck, sections.calculationSelfCheck.rssCheck, sections.calculationSelfCheck.worstCaseCheck].filter(Boolean)) lines.push(`- ${cell(check.checkId)}：${cell(check.result)}；Difference ${quantityText(check.difference)}；Tolerance ${quantityText(check.tolerance)}`);
+  pushSection(lines, 7, "统计分析结果");
+  const stats = sections.statisticalResults;
+  lines.push(`- ${evidenceLabel("CALCULATED")} Mean：${quantityText(stats.mean)}`, `- RSS 1σ：${quantityText(stats.rssSigma)}`, `- Worst Case：${rangeText(stats.worstCase)}`);
+  for (const statisticalRange of stats.ranges) lines.push(`- ${statisticalRange.sigmaLevel}σ Range：${rangeText(statisticalRange.range)}`);
+  for (const formula of stats.formulaChecks) lines.push(`- 公式 ${cell(formula.formulaId)}：${cell(formula.expression)}；Output ${quantityText(formula.result)}`);
+  pushSection(lines, 8, "规格符合性与 Margin 评估");
+  const margin = sections.specificationAndMargins.assessment;
+  lines.push(`- Statistical Margin：Lower ${margin.statistical.lowerMargin.toFixed(3)} ${sections.specificationAndMargins.specification.lsl.unit}；Upper ${margin.statistical.upperMargin.toFixed(3)} ${sections.specificationAndMargins.specification.usl.unit}；Minimum ${margin.statistical.minimumMargin.toFixed(3)} ${sections.specificationAndMargins.specification.lsl.unit}`, `- Worst Case Margin：Lower ${margin.worstCase.lowerMargin.toFixed(3)} ${sections.specificationAndMargins.specification.lsl.unit}；Upper ${margin.worstCase.upperMargin.toFixed(3)} ${sections.specificationAndMargins.specification.usl.unit}；Minimum ${margin.worstCase.minimumMargin.toFixed(3)} ${sections.specificationAndMargins.specification.lsl.unit}`);
+  pushSection(lines, 9, "制程能力评估 Capability Assessment");
+  const capability = sections.capabilityAssessment;
+  lines.push(`- 能力基础：${cell(capability.basis)}`, `- Cp：${capability.cp.toFixed(3)} ratio`, `- Cpk：${capability.cpk.toFixed(3)} ratio`, `- Target Cpk：${capability.targetCpk.toFixed(3)} ratio`, `- 模型预测 Yield：${capability.predictedYield === null ? "不适用" : formatPercent(capability.predictedYield * 100, 2)}`, "- 说明：预测性能力指标不等同于经过程数据验证的量产能力。" );
+  pushSection(lines, 10, "变异贡献分析 Contributor Analysis");
+  lines.push("| Rank | Factor | 1σ | Contribution | Cumulative |", "|---:|---|---:|---:|---:|");
+  for (const contributor of sections.contributorAnalysis.contributors) lines.push(`| ${contributor.rank} | ${cell(contributor.factor.factorName)} | ${quantityText(contributor.sigma)} | ${formatPercent(contributor.contributionPercent)} | ${formatPercent(contributor.cumulativePercent)} |`);
+  lines.push(`- 限制：${cell(sections.contributorAnalysis.interpretationLimit)}`);
+  pushSection(lines, 11, "敏感度与优化收益分析");
+  if (sections.sensitivityAndOptimization.options.length === 0) lines.push(`- ${evidenceLabel("MISSING")} 未提供受控优化目标，不量化改善收益。`);
+  for (const option of sections.sensitivityAndOptimization.options) lines.push(`- Option ${cell(option.optionId)}：${cell(option.status)}`);
+  pushSection(lines, 12, "风险评估");
+  if (sections.riskAssessment.risks.length === 0) lines.push("- 当前没有受支持的风险结论；未覆盖项保持 Unknown。");
+  for (const risk of sections.riskAssessment.risks) lines.push(`- ${cell(risk.category)} / ${cell(risk.rating)}：${cell(risk.trigger)}；Confidence ${cell(risk.confidence)}`);
+  pushSection(lines, 13, "工程建议");
+  for (const action of [...sections.engineeringRecommendations.mandatoryActions, ...sections.engineeringRecommendations.validationActions, ...sections.engineeringRecommendations.conditionalOptimizations]) lines.push(`- ${cell(action.rationale)}；验证：${cell(action.validationRequired)}`);
+  pushSection(lines, 14, "设计意图审查 Design Intent Review");
+  for (const check of sections.designIntentReview.checks) lines.push(`- ${cell(check.topic)}：${cell(check.status)}；${cell(check.finding)}`);
+  pushSection(lines, 15, "数据缺口与待确认事项");
+  for (const priority of ["P0", "P1", "P2"]) for (const gap of worksheet.dataGaps.filter((candidate) => candidate.priority === priority)) lines.push(`- ${priority} / ${cell(gap.gapId)}：${cell(gap.missingInformation)}；验证：${cell(gap.verificationMethod)}`);
+  pushSection(lines, 16, "最终结论");
+  const conclusion = sections.finalConclusion;
+  lines.push(`- 最终判定：${cell(conclusion.decision)}`, `- Baseline判定：${cell(conclusion.baselineDecision)}`, `- ${cell(conclusion.summary)}`, "- 下一步行动：", ...conclusion.nextActions.map((action, index) => `  ${index + 1}. ${cell(action)}`));
+}
+
 export function renderComposedEngineeringReport(report, options = {}) {
   void options;
   let parsed;
@@ -187,8 +273,16 @@ export function renderComposedEngineeringReport(report, options = {}) {
   } catch {
     throw new Error("Invalid F6 composed engineering report.");
   }
-  const lines = ["# F5 + F6 联合工程报告", ""];
-  renderWorkbook(lines, parsed);
-  for (const worksheet of parsed.worksheets) renderWorksheet(lines, worksheet);
+  const lines = [
+    "# F5 + F6 联合公差分析报告 V2",
+    "",
+    "## Workbook 执行摘要",
+    "",
+    `- Overall Status：${cell(parsed.overallStatus)}`,
+    `- Worksheets：${parsed.workbookSummary.worksheetStatuses.length}`,
+    `- P0 Blocking Gaps：${parsed.workbookSummary.blockingGapCount}`,
+  ];
+  for (const blocked of parsed.blockedWorksheets) lines.push(`- Blocked Worksheet ${cell(blocked.worksheetName)}：INCOMPLETE`);
+  for (const worksheet of parsed.worksheets) renderWorksheetV2(lines, worksheet);
   return `${lines.join("\n").trimEnd()}\n`;
 }

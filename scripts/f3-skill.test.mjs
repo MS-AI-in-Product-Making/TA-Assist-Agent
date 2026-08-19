@@ -403,8 +403,12 @@ describe("f3-analysis skill contract", () => {
     expect(skill.indexOf(validationPhase)).toBeGreaterThan(skill.indexOf(readOnlyTrigger));
     expect(skill).toContain("VS Code native authentication");
     expect(skill).toContain("Wait for the tool call to return");
+    expect(skill).toContain("Confirm authentication completed");
+    expect(skill).toContain("exactly one additional read-only organization listing");
+    expect(skill).toContain("Never retry automatically");
     expect(skill).toContain("Never request passwords, PATs, tokens, verification codes, or MFA responses");
     expect(reference).toContain("configured -> connected -> authenticated -> entity validated");
+    expect(reference).toContain("authorization completion can race the first read-only call");
   });
 
   it("documents validated create/existing/no-publish flows and exact fallback command", () => {

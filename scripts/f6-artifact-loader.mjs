@@ -9,9 +9,11 @@ import {
   f4WorkflowCalculationResultSchema,
   f5DataInterpretationResultSchema,
   f5ImageObservationArtifactSchema,
+  f6AnalysisContextSchema,
   f6CostEvidenceSchema,
   f6DatumEvidenceSchema,
   f6OptimizationRequestSchema,
+  f6OptimizationTargetsSchema,
   f6SupplierCapabilityEvidenceSchema,
 } from "../packages/contracts/dist/contracts.js";
 import { createCalculation } from "../packages/workbook-catalog/dist/calculation.js";
@@ -352,6 +354,8 @@ export function loadF6ArtifactBundle({
   supplierCapabilityArtifact,
   datumStrategyArtifact,
   costArtifact,
+  analysisContextArtifact,
+  optimizationTargetsArtifact,
 }, hooks) {
   const governedRoots = [
     [f2ArtifactRoot, ARTIFACTS.f2],
@@ -468,6 +472,8 @@ export function loadF6ArtifactBundle({
     supplierCapabilityArtifact,
     datumStrategyArtifact,
     costArtifact,
+    analysisContextArtifact,
+    optimizationTargetsArtifact,
   ].some((artifact) => artifact !== undefined);
   let evidenceRoot;
   if (evidenceArtifactRoot !== undefined || hasOptionalEvidence) {
@@ -565,6 +571,71 @@ export function loadF6ArtifactBundle({
     sourceReferences.cost = loaded.reference;
   }
 
+  let analysisContext;
+  let optimizationTargets;
+  const inputDecisions = {
+    analysisContext: { outcome: "NOT_PROVIDED" },
+    optimizationTargets: { outcome: "NOT_PROVIDED" },
+  };
+  const baselineIdentityFor = (requestWorksheet) => ({
+    calculationVersion: requestWorksheet.baselineCalculation.calculationVersion,
+    projectReference: requestWorksheet.baselineCalculation.projectReference,
+    runReference: requestWorksheet.baselineCalculation.runReference,
+    workbookContentHash: requestWorksheet.baselineCalculation.workbookContentHash,
+    worksheetName: requestWorksheet.baselineCalculation.worksheetSelection.worksheetName,
+    tableId: requestWorksheet.baselineCalculation.worksheetSelection.tableId,
+  });
+  const factorIdentityFor = (factor) => ({
+    worksheetName: factor.source.worksheetName,
+    tableId: factor.source.tableId,
+    sourceRow: factor.source.sourceRow,
+    factorName: factor.factorName,
+    unit: factor.unit,
+  });
+  const exactBaseline = (records) => records.length === requestWorksheets.length && records.every((record) => {
+    const requestWorksheet = requestWorksheets.find(({ worksheetName }) => worksheetName === record.worksheetName);
+    return requestWorksheet !== undefined
+      && record.tableId === requestWorksheet.baselineCalculation.worksheetSelection.tableId
+      && isDeepStrictEqual(record.baselineIdentity, baselineIdentityFor(requestWorksheet));
+  });
+  if (analysisContextArtifact !== undefined) {
+    const loaded = readOptionalArtifact(evidenceRoot, analysisContextArtifact, f6AnalysisContextSchema, hooks);
+    if (loaded.rejection) return loaded.rejection;
+    if (loaded.value.workbookContentHash !== workbook.contentHash || !exactBaseline(loaded.value.worksheets)) {
+      return inputRejected("artifact_identity_mismatch", loaded.reference.artifact);
+    }
+    for (const worksheet of loaded.value.worksheets) {
+      const requestWorksheet = requestWorksheets.find(({ worksheetName }) => worksheetName === worksheet.worksheetName);
+      const factors = requestWorksheet.baselineCalculation.factors.map(factorIdentityFor);
+      if ((worksheet.loopDefinition?.factors ?? []).some(({ factor }) => !factors.some((candidate) => isDeepStrictEqual(candidate, factor)))) {
+        return inputRejected("artifact_identity_mismatch", loaded.reference.artifact);
+      }
+    }
+    analysisContext = loaded.value;
+    inputDecisions.analysisContext = { outcome: "CALLER_AUTHORIZED", artifactReference: loaded.reference };
+    sourceReferences.analysisContext = loaded.reference;
+  }
+  if (optimizationTargetsArtifact !== undefined) {
+    const loaded = readOptionalArtifact(evidenceRoot, optimizationTargetsArtifact, f6OptimizationTargetsSchema, hooks);
+    if (loaded.rejection) return loaded.rejection;
+    if (loaded.value.workbookContentHash !== workbook.contentHash || !exactBaseline(loaded.value.worksheets)) {
+      return inputRejected("artifact_identity_mismatch", loaded.reference.artifact);
+    }
+    for (const worksheet of loaded.value.worksheets) {
+      const requestWorksheet = requestWorksheets.find(({ worksheetName }) => worksheetName === worksheet.worksheetName);
+      const factors = requestWorksheet.baselineCalculation.factors.map(factorIdentityFor);
+      for (const target of worksheet.targets) {
+        const identities = target.targetType === "system_target" ? target.apportionment.selectedFactors : [target.factor];
+        if (identities.some((identity) => !factors.some((candidate) => isDeepStrictEqual(candidate, identity)))) {
+          return inputRejected("artifact_identity_mismatch", loaded.reference.artifact);
+        }
+      }
+    }
+    optimizationTargets = loaded.value;
+    inputDecisions.optimizationTargets = { outcome: "CALLER_AUTHORIZED", artifactReference: loaded.reference };
+    sourceReferences.optimizationTargets = loaded.reference;
+  }
+
   const request = f6OptimizationRequestSchema.safeParse({
     contractVersion: "v1",
     inputClassification: "confidential",
@@ -593,5 +664,8 @@ export function loadF6ArtifactBundle({
       .filter(({ status }) => status === "blocked")
       .map((worksheet) => blockedValidation(worksheet, sourceReferences.f2)),
     sourceReferences,
+    analysisContext,
+    optimizationTargets,
+    inputDecisions,
   };
 }

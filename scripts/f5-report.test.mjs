@@ -301,6 +301,16 @@ function toleranceStatusReport(status) {
 }
 
 describe("renderF5Report", () => {
+  it("declares the governed bilingual evidence taxonomy without changing F5 ownership", () => {
+    const markdown = renderF5Report(completedReport());
+
+    for (const label of [
+      "【输入事实 Fact】", "【计算结果 Calculated】", "【数学推导 Derived】",
+      "【工程假设 Assumption】", "【工程推断 Inference】", "【数据缺口 Missing】",
+    ]) expect(markdown).toContain(label);
+    expect(markdown).not.toContain("ROI ranking");
+  });
+
   it("uses the v2 observation version discriminator to render all v2 evidence layers", () => {
     const report = completedReport({ contextual: true });
     expect(report.worksheets[0].observationVersion).toBe("f5-image-observation-v2");

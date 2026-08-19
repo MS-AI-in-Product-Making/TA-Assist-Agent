@@ -224,13 +224,14 @@ function safeSources(sourceReferences = {}) {
   }]));
 }
 
-function manifest(layout, status, artifacts, reasonCode) {
+function manifest(layout, status, artifacts, reasonCode, inputDecisions) {
   return {
     contractVersion: "v1",
     featureId: "F6",
     status,
     runId: layout.runId,
     ...(reasonCode === undefined ? {} : { reasonCode }),
+    ...(inputDecisions === undefined ? {} : { inputDecisions }),
     artifacts,
   };
 }
@@ -251,6 +252,8 @@ function loaderOptions(parsed) {
     "datumStrategyArtifact",
     "costArtifact",
     "imageObservationArtifact",
+    "analysisContextArtifact",
+    "optimizationTargetsArtifact",
   ];
   const paths = fields.map((field) => parsed[field]).filter((value) => value !== undefined);
   if (paths.length === 0) return parsed;
@@ -315,12 +318,22 @@ export function runF6FullValidation(options = {}, dependencyOverrides = {}) {
       return failedResult(layout, paths, artifacts, "input_rejected", boundary, staging, dependencies);
     }
     failureStage = "optimization";
-    const optimization = dependencies.createOptimization(loaded.request);
+    const persistedInputDecisions = loaded.inputDecisions;
+    const inputDecisions = persistedInputDecisions ?? {
+      analysisContext: { outcome: "NOT_PROVIDED" },
+      optimizationTargets: { outcome: "NOT_PROVIDED" },
+    };
+    const optimization = dependencies.createOptimization(loaded.request, {
+      ...(loaded.analysisContext === undefined ? {} : { analysisContext: loaded.analysisContext }),
+      ...(loaded.optimizationTargets === undefined ? {} : { optimizationTargets: loaded.optimizationTargets }),
+      inputDecisions,
+    });
     failureStage = "report";
     const composedReport = dependencies.createComposedReport({
       f2Report: loaded.f2Report,
       f5Report: loaded.f5Report,
       f6Result: optimization,
+      ...(loaded.analysisContext === undefined ? {} : { analysisContext: loaded.analysisContext }),
     });
     const contents = {
       optimizationJson: json(optimization),
@@ -328,11 +341,15 @@ export function runF6FullValidation(options = {}, dependencyOverrides = {}) {
       composedReportJson: json(composedReport),
       composedReportMarkdown: dependencies.renderComposedReport(composedReport, { outputRoot: layout.runRoot }),
     };
+    const workflowStatus = optimization.runStatus === undefined
+      ? optimization.status
+      : optimization.runStatus.toLowerCase();
     const summary = {
       contractVersion: "v1",
       featureId: "F6",
-      status: optimization.status,
+      status: workflowStatus,
       sources: safeSources(loaded.sourceReferences),
+      inputDecisions,
       counts: optimization.summary,
       hashes: Object.fromEntries(Object.entries(contents).map(([key, content]) => [`${key}Sha256`, sha256(content)])),
     };
@@ -344,9 +361,9 @@ export function runF6FullValidation(options = {}, dependencyOverrides = {}) {
     }
     atomicWrite(paths.runSummary, json(summary), boundary, staging, dependencies);
     artifacts.runSummary = layout.runSummaryJsonName;
-    atomicWrite(paths.manifest, json(manifest(layout, optimization.status, artifacts)), boundary, staging, dependencies);
+    atomicWrite(paths.manifest, json(manifest(layout, workflowStatus, artifacts, undefined, persistedInputDecisions)), boundary, staging, dependencies);
     return {
-      status: optimization.status,
+      status: workflowStatus,
       outputDirectory: layout.runRoot,
       optimizationJsonPath: paths.optimizationJson,
       optimizationMdPath: paths.optimizationMarkdown,
