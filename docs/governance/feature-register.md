@@ -116,7 +116,8 @@ F0 解读规则范围与维护边界见 [F0 TA 结果解读规则库设计](../s
   `write_verification_failed` 并写本地 `Feature3-ADO-Reminder.md`；Bodyless direct comment schemas may use the
   schema-qualified Surface MCP `System.History` channel. Direct comments use `confirmedMarkdownBody`; System.History
   uses `confirmedHistoryHtml` from `Feature3-ADO-History.html`, and one write must produce exactly one new comment with
-  comment format `html`, 11 headers, the expected factor row count, and matching ADO-safe canonical HTML body/hash.
+  comment format `html`, one 11-header payload, counted rows marked `data-f3-factor-row=true`, excluded rows marked
+  `data-f3-group-row=true`, matching ADO-safe canonical HTML body/hash, and unchanged `top: 200` readback scope.
   两种正文通道都不合格时必须阻断并拒绝空评论；
   Never use Azure DevOps MCP/REST/browser/shell HTTP；no scheduler/milestone timer，且 no F4 calculation/handoff impact。
 - F4 的 `available` 只接受 F1/F2 已验证且内容哈希绑定的 `confidential` 结构化证据。计算版本为
