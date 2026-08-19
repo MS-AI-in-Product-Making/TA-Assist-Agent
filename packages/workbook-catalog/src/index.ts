@@ -28,7 +28,13 @@ export { createF5DataInterpretation } from "./f5-data-interpretation.js";
 export { createComparisonPlaceholder } from "./comparison-placeholder.js";
 export { createCpkPlaceholder } from "./cpk-placeholder.js";
 export { normalizeF7Factor } from "./f7-factor-normalization.js";
+export { createF7WorkbookImport, extractF7FactorCandidates, confirmF7FactorSetup } from "./f7-excel-adapter.js";
 export type { F7FactorNormalizationInput, F7FactorNormalizationResult } from "./f7-factor-normalization.js";
+export type {
+	F7WorkbookImportResult,
+	F7FactorCandidateExtractionResult,
+	F7FactorSetupResult,
+} from "./f7-excel-adapter.js";
 export type {
 	CapabilityValidationRequest,
 	CapabilityValidationResult,
