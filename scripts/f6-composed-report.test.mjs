@@ -299,17 +299,82 @@ describe("renderComposedEngineeringReport V2", () => {
     const base = (sectionId, status = "SUPPORTED") => ({ sectionId, status, evidenceIds: [] });
     const quantity = (value) => ({ value, unit: "mm" });
     const range = (lower, upper) => ({ lower, upper, unit: "mm" });
-    const statistical = { sigmaLevel: 3, lowerBound: -0.15, upperBound: 0.15, lowerMargin: 0, upperMargin: 0, minimumMargin: 0, formulaReferences: [] };
+    const statistical = { sigmaLevel: 4, lowerBound: -0.2, upperBound: 0.2, lowerMargin: -0.05, upperMargin: -0.05, minimumMargin: -0.05, formulaReferences: [] };
     const worstCase = { lowerBound: -0.2, upperBound: 0.2, lowerMargin: -0.05, upperMargin: -0.05, minimumMargin: -0.05, formulaReferences: [] };
     const gap = { gapId: "gap-context", priority: "P1", blocksFinalDecision: false, missingInformation: "Operating conditions were not provided.", affectedSections: ["operatingConditions"], suggestedSource: "Analysis Context", responsibleRole: "Design engineering role", verificationMethod: "Confirm operating conditions.", evidenceReferences: [] };
     const sections = {
-      executiveSummary: { ...base("executive_summary"), analysisObject: null, mean: quantity(0), rssSigma: quantity(0.05), statisticalRange: range(-0.15, 0.15), worstCaseRange: range(-0.2, 0.2), minimumMargin: quantity(-0.05), predictiveCpk: 1.1, topContributors: [], primaryRisks: [], decision: "CONDITIONAL_PASS", actionRequired: true },
+      executiveSummary: { ...base("executive_summary"), analysisObject: null, mean: quantity(0), rssSigma: quantity(0.05), statisticalRange: range(-0.2, 0.2), worstCaseRange: range(-0.2, 0.2), minimumMargin: quantity(-0.05), predictiveCpk: 1.1, topContributors: [], primaryRisks: [], decision: "CONDITIONAL_PASS", actionRequired: true },
       objectiveAndRequirements: { ...base("objective_and_requirements", "PARTIAL"), analysisObject: null, target: quantity(0), lsl: quantity(-0.15), usl: quantity(0.15), targetCpk: 1, requirementIds: [], functionalBoundary: null, passFailCriteria: null },
       operatingConditions: { ...base("operating_conditions", "INSUFFICIENT_EVIDENCE"), conditions: [] },
       inputIntegrity: { ...base("input_integrity", "PARTIAL"), rating: "PARTIALLY_COMPLETE", factors: [], findings: [] },
       toleranceLoopDefinition: { ...base("tolerance_loop_definition", "INSUFFICIENT_EVIDENCE"), start: null, end: null, responseDirection: null, terms: [], equation: null, reviewRequired: true },
       calculationSelfCheck: { ...base("calculation_self_check"), meanCheck: null, rssCheck: null, rangeChecks: [], worstCaseCheck: null },
-      statisticalResults: { ...base("statistical_results"), mean: quantity(0), adjustedMean: quantity(0), meanShift: quantity(0), rssSigma: quantity(0.05), ranges: [{ sigmaLevel: 3, range: range(-0.15, 0.15), formulaCheckId: "statistical-bound-v1" }], worstCase: range(-0.2, 0.2), formulaChecks: [] },
+      statisticalResults: {
+        ...base("statistical_results"),
+        mean: quantity(0),
+        adjustedMean: quantity(0),
+        meanShift: quantity(0),
+        rssSigma: quantity(0.05),
+        ranges: [{ sigmaLevel: 4, range: range(-0.2, 0.2), formulaCheckId: "statistical-bound-v1" }],
+        worstCase: range(-0.2, 0.2),
+        formulaChecks: [
+          {
+            outputField: "statistical_range_target_4sigma",
+            formulaId: "statistical-bound-v1",
+            formulaVersion: "v1",
+            expression: "Mean ± 4 × RSS 1σ",
+            inputs: [
+              { name: "Mean", value: 0, unit: "mm", source: "system.mean" },
+              { name: "RSS 1σ", value: 0.05, unit: "mm", source: "system.rssSigma" },
+              { name: "N", value: 4, unit: "sigma", source: "target.sigmaLevel" },
+            ],
+            result: { value: 0.2, unit: "mm" },
+            sourceCells: ["T41"],
+            recomputable: true,
+          },
+          {
+            outputField: "capability.lowerCpk",
+            formulaId: "cpk-lower-v1",
+            formulaVersion: "v1",
+            expression: "CpkL = (Mean - LSL) / (3 × RSS 1σ)",
+            inputs: [
+              { name: "Mean", value: 0, unit: "mm", source: "system.mean" },
+              { name: "LSL", value: -0.15, unit: "mm", source: "capability.lowerSpecLimit" },
+              { name: "RSS 1σ", value: 0.05, unit: "mm", source: "system.rssSigma" },
+            ],
+            result: { value: 1, unit: "ratio" },
+            sourceCells: ["T55"],
+            recomputable: true,
+          },
+          {
+            outputField: "capability.upperCpk",
+            formulaId: "cpk-upper-v1",
+            formulaVersion: "v1",
+            expression: "CpkU = (USL - Mean) / (3 × RSS 1σ)",
+            inputs: [
+              { name: "USL", value: 0.15, unit: "mm", source: "capability.upperSpecLimit" },
+              { name: "Mean", value: 0, unit: "mm", source: "system.mean" },
+              { name: "RSS 1σ", value: 0.05, unit: "mm", source: "system.rssSigma" },
+            ],
+            result: { value: 1, unit: "ratio" },
+            sourceCells: ["T56"],
+            recomputable: true,
+          },
+          {
+            outputField: "capability.cpk",
+            formulaId: "cpk-v1",
+            formulaVersion: "v1",
+            expression: "Cpk = min(CpkL, CpkU)",
+            inputs: [
+              { name: "CpkL", value: 1, unit: "ratio", source: "capability.lowerCpk" },
+              { name: "CpkU", value: 1, unit: "ratio", source: "capability.upperCpk" },
+            ],
+            result: { value: 1, unit: "ratio" },
+            sourceCells: ["T57"],
+            recomputable: true,
+          },
+        ],
+      },
       specificationAndMargins: { ...base("specification_and_margins"), specification: { target: quantity(0), lsl: quantity(-0.15), usl: quantity(0.15), targetCpk: 1 }, assessment: { statistical, worstCase }, interferenceStatus: "UNKNOWN" },
       capabilityAssessment: { ...base("capability_assessment"), basis: "PREDICTIVE_TOLERANCE_MODEL", cp: 1.2, lowerCpk: 1.1, upperCpk: 1.2, cpk: 1.1, lowerZ: 3.3, upperZ: 3.6, predictedDpm: 500, predictedYield: 0.9995, targetCpk: 1, result: "PASS", limitations: ["Predictive model, not measured production capability."] },
       contributorAnalysis: { ...base("contributor_analysis"), contributors: [], interpretationLimit: "High contribution is not root-cause proof." },
@@ -350,6 +415,17 @@ describe("renderComposedEngineeringReport V2", () => {
     expect(markdown).toContain("RSS 1σ");
     expect(markdown).toContain("Worst Case Margin");
     expect(markdown).toContain("预测性能力指标");
+    expect(markdown).toContain("Target 4σ statistical range");
+    expect(markdown).toContain("Mean ± 4 × RSS 1σ");
+    expect(markdown).toContain("Target 4σ Minimum Margin");
+    expect(markdown).toContain("Worst-case Minimum Margin");
+    expect(markdown).toContain("负值表示评估范围超出 Spec");
+    expect(markdown).toContain("CpkL = (Mean - LSL) / (3 × RSS 1σ)");
+    expect(markdown).toContain("CpkU = (USL - Mean) / (3 × RSS 1σ)");
+    expect(markdown).toContain("Cpk = min(CpkL, CpkU)");
+    expect(markdown).toMatch(/LSL.*USL.*Target Cpk/s);
+    expect(markdown).toContain("PREDICTIVE_TOLERANCE_MODEL");
+    expect(markdown).toContain("不是量产实测 Cpk");
     expect(markdown).toContain("P1");
     expect(markdown).not.toContain("Requirement Review");
   });

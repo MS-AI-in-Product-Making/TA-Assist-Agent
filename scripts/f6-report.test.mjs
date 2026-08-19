@@ -293,6 +293,7 @@ describe("renderF6Report V2", () => {
     expect(markdown).toContain("Worst Case 绝对范围：0.297 mm ～ 2.717 mm");
     expect(markdown).toContain("【数据缺口 Missing】");
     expect(markdown).toContain("未提供受控优化目标");
+    expect(markdown).toContain("不等同于实测量产能力");
     expect(markdown).not.toMatch(/20%|30%|Predicted Improvement/);
     expect(markdown).not.toContain("0.899999999999");
   });

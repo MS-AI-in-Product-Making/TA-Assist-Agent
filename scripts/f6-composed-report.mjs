@@ -202,6 +202,24 @@ function rangeText(range, decimals = 3) {
   return range === null ? "未提供" : `${range.lower.toFixed(decimals)} ～ ${range.upper.toFixed(decimals)} ${range.unit}`;
 }
 
+function signedNumber(value, decimals = 6) {
+  return Number(value).toFixed(decimals).replace(/\.0+$|(?<=\.[0-9]*?)0+$/u, "");
+}
+
+function formulaInput(formula, name) {
+  return formula.inputs.find((input) => input.name === name);
+}
+
+function marginResult(minimumMargin) {
+  return minimumMargin >= 0 ? "PASS" : "FAIL";
+}
+
+function findFormula(formulas, outputField, formulaId) {
+  return formulas.find((formula) => formula.outputField === outputField)
+    ?? formulas.find((formula) => formula.formulaId === formulaId)
+    ?? null;
+}
+
 function pushSection(lines, number, title) {
   lines.push("", `## ${number}. ${title}`, "");
 }
@@ -236,14 +254,62 @@ function renderWorksheetV2(lines, worksheet) {
   pushSection(lines, 7, "统计分析结果");
   const stats = sections.statisticalResults;
   lines.push(`- ${evidenceLabel("CALCULATED")} Mean：${quantityText(stats.mean)}`, `- RSS 1σ：${quantityText(stats.rssSigma)}`, `- Worst Case：${rangeText(stats.worstCase)}`);
-  for (const statisticalRange of stats.ranges) lines.push(`- ${statisticalRange.sigmaLevel}σ Range：${rangeText(statisticalRange.range)}`);
-  for (const formula of stats.formulaChecks) lines.push(`- 公式 ${cell(formula.formulaId)}：${cell(formula.expression)}；Output ${quantityText(formula.result)}`);
+  const targetRange = stats.ranges[0] ?? null;
+  if (targetRange) {
+    const sigmaLevel = targetRange.sigmaLevel;
+    const statisticalFormula = findFormula(stats.formulaChecks, targetRange.formulaCheckId, targetRange.formulaCheckId);
+    lines.push(`- Target ${sigmaLevel}σ statistical range：${rangeText(targetRange.range)}`);
+    if (statisticalFormula) {
+      const meanInput = formulaInput(statisticalFormula, "Mean");
+      const rssInput = formulaInput(statisticalFormula, "RSS 1σ");
+      if (meanInput && rssInput) {
+        lines.push(
+          `- Formula：Mean ± ${sigmaLevel} × RSS 1σ`,
+          `- Substitution：Mean ± ${sigmaLevel} × RSS 1σ = ${signedNumber(meanInput.value)} ± ${sigmaLevel} × ${signedNumber(rssInput.value)} = ${signedNumber(targetRange.range.lower)} ～ ${signedNumber(targetRange.range.upper)} ${targetRange.range.unit}`,
+        );
+      }
+    }
+  }
   pushSection(lines, 8, "规格符合性与 Margin 评估");
   const margin = sections.specificationAndMargins.assessment;
-  lines.push(`- Statistical Margin：Lower ${margin.statistical.lowerMargin.toFixed(3)} ${sections.specificationAndMargins.specification.lsl.unit}；Upper ${margin.statistical.upperMargin.toFixed(3)} ${sections.specificationAndMargins.specification.usl.unit}；Minimum ${margin.statistical.minimumMargin.toFixed(3)} ${sections.specificationAndMargins.specification.lsl.unit}`, `- Worst Case Margin：Lower ${margin.worstCase.lowerMargin.toFixed(3)} ${sections.specificationAndMargins.specification.lsl.unit}；Upper ${margin.worstCase.upperMargin.toFixed(3)} ${sections.specificationAndMargins.specification.usl.unit}；Minimum ${margin.worstCase.minimumMargin.toFixed(3)} ${sections.specificationAndMargins.specification.lsl.unit}`);
+  const specification = sections.specificationAndMargins.specification;
+  const targetSigmaLevel = targetRange?.sigmaLevel ?? margin.statistical.sigmaLevel;
+  lines.push(
+    `- LSL：${quantityText(specification.lsl)}；USL：${quantityText(specification.usl)}；Target Cpk：${specification.targetCpk.toFixed(3)} ratio`,
+    `- Target ${targetSigmaLevel}σ Minimum Margin：${signedNumber(margin.statistical.minimumMargin, 3)} ${specification.lsl.unit} (${marginResult(margin.statistical.minimumMargin)})`,
+    `- Worst Case Margin：${signedNumber(margin.worstCase.lowerMargin, 3)} / ${signedNumber(margin.worstCase.upperMargin, 3)} ${specification.lsl.unit}`,
+    `- Worst-case Minimum Margin：${signedNumber(margin.worstCase.minimumMargin, 3)} ${specification.lsl.unit} (${marginResult(margin.worstCase.minimumMargin)})`,
+    "- 负值表示评估范围超出 Spec。",
+  );
   pushSection(lines, 9, "制程能力评估 Capability Assessment");
   const capability = sections.capabilityAssessment;
-  lines.push(`- 能力基础：${cell(capability.basis)}`, `- Cp：${capability.cp.toFixed(3)} ratio`, `- Cpk：${capability.cpk.toFixed(3)} ratio`, `- Target Cpk：${capability.targetCpk.toFixed(3)} ratio`, `- 模型预测 Yield：${capability.predictedYield === null ? "不适用" : formatPercent(capability.predictedYield * 100, 2)}`, "- 说明：预测性能力指标不等同于经过程数据验证的量产能力。" );
+  const lowerCpkFormula = findFormula(stats.formulaChecks, "capability.lowerCpk", "cpk-lower-v1");
+  const upperCpkFormula = findFormula(stats.formulaChecks, "capability.upperCpk", "cpk-upper-v1");
+  const cpkFormula = findFormula(stats.formulaChecks, "capability.cpk", "cpk-v1");
+  lines.push(
+    `- 能力基础：${capability.basis}`,
+    `- Cp：${capability.cp.toFixed(3)} ratio`,
+    `- Cpk：${capability.cpk.toFixed(3)} ratio`,
+    `- Target Cpk：${capability.targetCpk.toFixed(3)} ratio`,
+    `- 模型预测 Yield：${capability.predictedYield === null ? "不适用" : formatPercent(capability.predictedYield * 100, 2)}`,
+    "- 说明：该 Cpk 基于公差预测模型，不是量产实测 Cpk。",
+  );
+  if (lowerCpkFormula && upperCpkFormula && cpkFormula) {
+    const lowerMean = formulaInput(lowerCpkFormula, "Mean");
+    const lowerLsl = formulaInput(lowerCpkFormula, "LSL");
+    const lowerRss = formulaInput(lowerCpkFormula, "RSS 1σ");
+    const upperUsl = formulaInput(upperCpkFormula, "USL");
+    const upperMean = formulaInput(upperCpkFormula, "Mean");
+    const upperRss = formulaInput(upperCpkFormula, "RSS 1σ");
+    const cpkLower = formulaInput(cpkFormula, "CpkL");
+    const cpkUpper = formulaInput(cpkFormula, "CpkU");
+    lines.push("- CpkL = (Mean - LSL) / (3 × RSS 1σ)");
+    if (lowerMean && lowerLsl && lowerRss) lines.push(`- 代入：(${signedNumber(lowerMean.value)} - ${signedNumber(lowerLsl.value)}) / (3 × ${signedNumber(lowerRss.value)}) = ${signedNumber(lowerCpkFormula.result.value, 3)}`);
+    lines.push("- CpkU = (USL - Mean) / (3 × RSS 1σ)");
+    if (upperUsl && upperMean && upperRss) lines.push(`- 代入：(${signedNumber(upperUsl.value)} - ${signedNumber(upperMean.value)}) / (3 × ${signedNumber(upperRss.value)}) = ${signedNumber(upperCpkFormula.result.value, 3)}`);
+    lines.push("- Cpk = min(CpkL, CpkU)");
+    if (cpkLower && cpkUpper) lines.push(`- 代入：min(${signedNumber(cpkLower.value, 3)}, ${signedNumber(cpkUpper.value, 3)}) = ${signedNumber(cpkFormula.result.value, 3)}`);
+  }
   pushSection(lines, 10, "变异贡献分析 Contributor Analysis");
   lines.push("| Rank | Factor | 1σ | Contribution | Cumulative |", "|---:|---|---:|---:|---:|");
   for (const contributor of sections.contributorAnalysis.contributors) lines.push(`| ${contributor.rank} | ${cell(contributor.factor.factorName)} | ${quantityText(contributor.sigma)} | ${formatPercent(contributor.contributionPercent)} | ${formatPercent(contributor.cumulativePercent)} |`);
