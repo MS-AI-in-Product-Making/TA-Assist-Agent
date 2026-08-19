@@ -805,7 +805,7 @@ function buildV2Worksheet(
   contributors.forEach((row, index) => {
     cumulative += row.contributionPercent;
     row.rank = index + 1;
-    row.cumulativePercent = cumulative > 100 && cumulative - 100 <= Number.EPSILON * 100 ? 100 : cumulative;
+    row.cumulativePercent = cumulative > 100 && cumulative - 100 <= 1e-9 ? 100 : cumulative;
   });
   const targetRange = projection.statisticalRanges.find(({ sigmaLevel }) => sigmaLevel === calculation.capability.targetSigmaLevel)!;
   const consistencyDto = (check: typeof projection.selfChecks.mean) => ({

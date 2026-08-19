@@ -1064,11 +1064,21 @@ describe("createF6ComposedEngineeringReport V2", () => {
   });
 
   it("normalizes floating-point drift in cumulative contributor percentages", () => {
-    const input = structuredClone(bundleV2());
+    const input = structuredClone(bundleV2(1, undefined, { factorCount: 7 }));
     const worksheet = input.f5Report.worksheets[0];
     if (worksheet?.status !== "completed") throw new Error("fixture worksheet must be completed");
-    worksheet.calculationResult.factors[0]!.contribution = 0.1;
-    worksheet.calculationResult.factors[1]!.contribution = 0.9000000000000001;
+    const contributions = [
+      0.008795736815041968,
+      0.004730151798311457,
+      0.0014073178904067142,
+      0.003909216362240874,
+      0.949883846236072,
+      0.015636865448963495,
+      0.015636865448963495,
+    ];
+    worksheet.calculationResult.factors.forEach((factor, index) => {
+      factor.contribution = contributions[index]!;
+    });
     for (const contributor of worksheet.sections.majorContributors.items) {
       contributor.contributionPercent = worksheet.calculationResult.factors[contributor.factorIndex]!.contribution * 100;
     }

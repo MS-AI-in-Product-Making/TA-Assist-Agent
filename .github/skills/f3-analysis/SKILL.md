@@ -115,6 +115,8 @@ Surface MCP entity calls may start only after Question call 1 returns
 1. Preview contract:
 	- deterministic English preview.
 	- exact 11 columns.
+	- group all rows globally by `Part / Subsystem` across worksheets; do not create worksheet-level groups.
+	- preserve worksheet identity in `Device Level Dim`, `Dimension Description`, and validated row provenance.
 	- no model rewriting records.
 	- Use the fixed F3 reminder title and payload contract from the protocol reference.
 	- direct comment channel uses `confirmedMarkdownBody` from `Feature3-ADO-Reminder.md`.

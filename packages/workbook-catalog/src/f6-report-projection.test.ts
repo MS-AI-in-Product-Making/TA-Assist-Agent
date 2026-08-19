@@ -86,6 +86,18 @@ describe("createF6ReportProjection", () => {
     expect(result.formulaChecks.map(({ formulaId }) => formulaId)).toContain("worst-case-v1");
   });
 
+  it("includes a non-standard target sigma range required by the composed report", () => {
+    const input = structuredClone(calculation());
+    input.capability.targetSigmaLevel = 4.5;
+
+    const result = createF6ReportProjection({ calculation: input, inputResolution: 0.01 });
+    const targetRange = result.statisticalRanges.find(({ sigmaLevel }) => sigmaLevel === 4.5);
+
+    expect(targetRange?.range.lower).toBeCloseTo(-0.2528122592448494);
+    expect(targetRange?.range.upper).toBeCloseTo(0.1528122592448494);
+    expect(result.margins.statistical.sigmaLevel).toBe(4.5);
+  });
+
   it("fails closed when a required F4 trace is missing", () => {
     const baseline = calculation();
     const input = {

@@ -91,26 +91,17 @@ function partSubsystemLabel(value) {
   return text;
 }
 
-function groupedWorksheetRows(worksheets) {
+function groupedPartSubsystemRows(worksheets) {
   const groups = [];
+  const bySubsystem = new Map();
   for (const worksheet of worksheets) {
-    const bySubsystem = new Map();
-    const subsystemOrder = [];
     for (const row of worksheet.rows) {
       const subsystem = partSubsystemLabel(row.partSubsystem);
       if (!bySubsystem.has(subsystem)) {
         bySubsystem.set(subsystem, []);
-        subsystemOrder.push(subsystem);
+        groups.push({ subsystem, rows: bySubsystem.get(subsystem) });
       }
       bySubsystem.get(subsystem).push(row);
-    }
-
-    for (const subsystem of subsystemOrder) {
-      groups.push({
-        worksheetName: worksheet.worksheetName,
-        subsystem,
-        rows: bySubsystem.get(subsystem),
-      });
     }
   }
   return groups;
@@ -122,7 +113,7 @@ export function renderF3AdoReminder(report) {
     throw new Error("Cannot render ADO reminder for input_rejected report.");
   }
 
-  const groups = groupedWorksheetRows(parsed.worksheets);
+  const groups = groupedPartSubsystemRows(parsed.worksheets);
   const lines = [
     "## F3 DIM ID / Drawing Governance Reminder",
     "",
@@ -136,13 +127,8 @@ export function renderF3AdoReminder(report) {
     "",
   ];
 
-  let previousWorksheet;
   for (const group of groups) {
-    if (group.worksheetName !== previousWorksheet) {
-      lines.push(`### Worksheet: ${cell(group.worksheetName)}`);
-      previousWorksheet = group.worksheetName;
-    }
-    lines.push(`#### Part / Subsystem: ${cell(group.subsystem)} (${group.rows.length} factors)`);
+    lines.push(`### Part / Subsystem: ${cell(group.subsystem)} (${group.rows.length} factors)`);
     lines.push(ADO_TABLE_HEADER);
     lines.push(ADO_TABLE_SEPARATOR);
     for (const row of group.rows) {
@@ -160,11 +146,11 @@ export function renderF3AdoHistoryHtml(report) {
     throw new Error("Cannot render ADO history HTML for input_rejected report.");
   }
 
-  const groups = groupedWorksheetRows(parsed.worksheets);
+  const groups = groupedPartSubsystemRows(parsed.worksheets);
   const header = `<thead><tr>${ADO_HTML_TABLE_HEADERS.map((name) => `<th>${htmlCell(name)}</th>`).join("")}</tr></thead>`;
   const bodyRows = [];
   for (const group of groups) {
-    bodyRows.push(`<tr data-f3-group-row="true"><td colspan="11">${htmlCell(`Worksheet: ${group.worksheetName} | Part / Subsystem: ${group.subsystem} (${group.rows.length} factors)`)}</td></tr>`);
+    bodyRows.push(`<tr data-f3-group-row="true"><td colspan="11">${htmlCell(`Part / Subsystem: ${group.subsystem} (${group.rows.length} factors)`)}</td></tr>`);
     for (const row of group.rows) {
       bodyRows.push(`<tr data-f3-factor-row="true">${[
         row.deviceLevelDim,

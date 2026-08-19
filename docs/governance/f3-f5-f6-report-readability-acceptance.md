@@ -84,8 +84,9 @@ npm test
 
 - `<th>`：`11`
 - `data-f3-factor-row="true"`：`28`
-- `data-f3-group-row="true"`：`13`
-- 分组层级：Worksheet → Part / Subsystem
+- `data-f3-group-row="true"`：等于全部 factor rows 中规范化后唯一 `Part / Subsystem` 的数量
+- 分组层级：跨 Worksheet 的全局 Part / Subsystem；同名 subsystem 合并为一个分组
+- Worksheet 身份继续保留在固定 11 列数据和受控 source provenance 中，不生成 Worksheet 分组行
 - factor rows 与原报告数量相同；group rows 不计入 factor count。
 - 单次 payload、canonical full-body/hash、`top: 200`、单次写入/回读协议保持不变。
 

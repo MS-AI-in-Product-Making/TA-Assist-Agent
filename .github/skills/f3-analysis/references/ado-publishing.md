@@ -68,6 +68,8 @@ Exact table header:
 
 | Device Level Dim | Dimension Description | Part / Subsystem | Drawing Number | Dim ID | Factor Description | Nominal | Upper Tolerance (+) | Lower Tolerance (-) | σ Level | Governance issue |
 
+Group the complete payload globally by `Part / Subsystem` across all selected worksheets. Do not emit worksheet-level groups. Rows from different worksheets with the same normalized Part / Subsystem belong to one group; preserve their worksheet identity in the fixed table columns and source-bound records. Use `(missing Part / Subsystem)` for missing or blank values.
+
 Governance issue mappings:
 
 - drawing_number_missing -> Drawing Number missing

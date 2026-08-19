@@ -122,7 +122,7 @@ describe("governanceIssue", () => {
 });
 
 describe("renderF3AdoReminder", () => {
-  it("groups markdown rows by worksheet and Part / Subsystem while preserving factor uniqueness", () => {
+  it("groups markdown rows globally by Part / Subsystem while preserving factor uniqueness", () => {
     const report = acceptedReportWithWorksheets([
       {
         worksheetName: "Analysis-A",
@@ -137,20 +137,20 @@ describe("renderF3AdoReminder", () => {
         worksheetName: "Analysis-B",
         toleranceLoopDescription: "Anonymous device gap B",
         rows: [
-          worksheetRow("Analysis-B", "4".repeat(64), 21, "(missing)", "Factor-B1"),
+          worksheetRow("Analysis-B", "4".repeat(64), 21, "Bracket", "Factor-B1"),
+          worksheetRow("Analysis-B", "5".repeat(64), 22, "(missing)", "Factor-B2"),
         ],
       },
     ]);
 
     const markdown = renderF3AdoReminder(report);
 
-    expect(markdown).toContain("### Worksheet: Analysis-A");
-    expect(markdown).toContain("#### Part / Subsystem: Bracket (2 factors)");
-    expect(markdown).toContain("#### Part / Subsystem: Panel (1 factors)");
-    expect(markdown).toContain("### Worksheet: Analysis-B");
-    expect(markdown).toContain("#### Part / Subsystem: (missing Part / Subsystem) (1 factors)");
+    expect(markdown).not.toContain("Worksheet:");
+    expect(markdown).toContain("### Part / Subsystem: Bracket (3 factors)");
+    expect(markdown).toContain("### Part / Subsystem: Panel (1 factors)");
+    expect(markdown).toContain("### Part / Subsystem: (missing Part / Subsystem) (1 factors)");
 
-    for (const factorName of ["Factor-A1", "Factor-A2", "Factor-A3", "Factor-B1"]) {
+    for (const factorName of ["Factor-A1", "Factor-A2", "Factor-A3", "Factor-B1", "Factor-B2"]) {
       expect(markdown.split(factorName)).toHaveLength(2);
     }
   });
@@ -231,7 +231,7 @@ describe("renderF3AdoReminder", () => {
 });
 
 describe("renderF3AdoHistoryHtml", () => {
-  it("renders one 11-column header and grouped tbody rows with marked factor rows", () => {
+  it("renders one 11-column header with global Part / Subsystem groups and marked factor rows", () => {
     const report = acceptedReportWithWorksheets([
       {
         worksheetName: "Analysis-A",
@@ -246,7 +246,8 @@ describe("renderF3AdoHistoryHtml", () => {
         worksheetName: "Analysis-B",
         toleranceLoopDescription: "Anonymous device gap B",
         rows: [
-          worksheetRow("Analysis-B", "4".repeat(64), 21, "(missing)", "Factor-B1"),
+          worksheetRow("Analysis-B", "4".repeat(64), 21, "Bracket", "Factor-B1"),
+          worksheetRow("Analysis-B", "5".repeat(64), 22, "(missing)", "Factor-B2"),
         ],
       },
     ]);
@@ -255,17 +256,18 @@ describe("renderF3AdoHistoryHtml", () => {
 
     expect(html.match(/<thead>/g)).toHaveLength(1);
     expect(html.match(/<th>/g)).toHaveLength(11);
-    expect(html).toContain("<tr data-f3-group-row=\"true\"><td colspan=\"11\">Worksheet: Analysis-A | Part / Subsystem: Bracket (2 factors)</td></tr>");
-    expect(html).toContain("<tr data-f3-group-row=\"true\"><td colspan=\"11\">Worksheet: Analysis-B | Part / Subsystem: (missing Part / Subsystem) (1 factors)</td></tr>");
+    expect(html).not.toContain("Worksheet:");
+    expect(html).toContain("<tr data-f3-group-row=\"true\"><td colspan=\"11\">Part / Subsystem: Bracket (3 factors)</td></tr>");
+    expect(html).toContain("<tr data-f3-group-row=\"true\"><td colspan=\"11\">Part / Subsystem: (missing Part / Subsystem) (1 factors)</td></tr>");
 
     const factorRowMatches = html.match(/<tr data-f3-factor-row=\"true\">/g) ?? [];
     expect(factorRowMatches).toHaveLength(report.summary.factorCount);
 
-    const analysisAIndex = html.indexOf("Worksheet: Analysis-A | Part / Subsystem: Bracket (2 factors)");
-    const panelIndex = html.indexOf("Worksheet: Analysis-A | Part / Subsystem: Panel (1 factors)");
-    const analysisBIndex = html.indexOf("Worksheet: Analysis-B | Part / Subsystem: (missing Part / Subsystem) (1 factors)");
-    expect(analysisAIndex).toBeLessThan(panelIndex);
-    expect(panelIndex).toBeLessThan(analysisBIndex);
+    const bracketIndex = html.indexOf("Part / Subsystem: Bracket (3 factors)");
+    const panelIndex = html.indexOf("Part / Subsystem: Panel (1 factors)");
+    const missingIndex = html.indexOf("Part / Subsystem: (missing Part / Subsystem) (1 factors)");
+    expect(bracketIndex).toBeLessThan(panelIndex);
+    expect(panelIndex).toBeLessThan(missingIndex);
   });
 
   it("renders a deterministic 11-column HTML table with every record", () => {
