@@ -642,6 +642,37 @@ describe("renderF5Report", () => {
     expect(markdown).not.toContain(temporaryRoot);
   });
 
+  it("renders clickable summary image links only for contained roots and keeps safe fallback otherwise", () => {
+    const temporaryRoot = mkdtempSync(path.join(tmpdir(), "f5-report-summary-"));
+    const f1ArtifactRoot = path.join(temporaryRoot, "f1");
+    const outputRoot = path.join(temporaryRoot, "f5");
+    const imagePath = path.join(f1ArtifactRoot, "artifacts", "analysis-a.png");
+    mkdirSync(path.dirname(imagePath), { recursive: true });
+    mkdirSync(outputRoot, { recursive: true });
+    writeFileSync(imagePath, "controlled-image", "utf8");
+
+    const report = completedReport({ observations: [observation({ confidence: "high" })] });
+    const withContainedRoots = renderF5Report(report, { outputRoot, f1ArtifactRoot, publishRoot: temporaryRoot });
+    const summaryWithContainedRoots = engineeringSummary(withContainedRoots);
+
+    expect(summaryWithContainedRoots).toContain("[F1 图片](../f1/artifacts/analysis-a.png)");
+    expect(summaryWithContainedRoots).toContain("- image evidence: [F1 图片](../f1/artifacts/analysis-a.png)");
+    expect(summaryWithContainedRoots).not.toContain("\\[F1 图片\\]\\(");
+    expect(summaryWithContainedRoots).not.toContain(temporaryRoot);
+
+    const withoutPublishRoot = renderF5Report(report, { outputRoot, f1ArtifactRoot });
+    const summaryWithoutPublishRoot = engineeringSummary(withoutPublishRoot);
+    expect(summaryWithoutPublishRoot).toContain("F1 图片证据链接不可用");
+    expect(summaryWithoutPublishRoot).not.toContain("[F1 图片](");
+    expect(summaryWithoutPublishRoot).not.toContain(temporaryRoot);
+
+    const escapingRoots = renderF5Report(report, { outputRoot, f1ArtifactRoot, publishRoot: outputRoot });
+    const summaryEscapingRoots = engineeringSummary(escapingRoots);
+    expect(summaryEscapingRoots).toContain("F1 图片证据链接不可用");
+    expect(summaryEscapingRoots).not.toContain("[F1 图片](");
+    expect(summaryEscapingRoots).not.toContain(temporaryRoot);
+  });
+
   it("does not publish relative image links without a common controlled publish root", () => {
     const f1RunRoot = mkdtempSync(path.join(tmpdir(), "f5-report-f1-run-"));
     const f5RunRoot = mkdtempSync(path.join(tmpdir(), "f5-report-f5-run-"));

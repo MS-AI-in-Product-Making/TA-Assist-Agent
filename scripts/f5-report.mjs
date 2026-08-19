@@ -530,7 +530,7 @@ function renderWorksheetSummaryRow(lines, worksheet, options) {
   }
   const cpk = capabilityMetricValue(worksheet, "cpk");
   const targetCpk = capabilityMetricValue(worksheet, "target_cpk");
-  lines.push(`| ${cell(worksheet.worksheetName)} | ${cell(worksheet.status)} | ${cell(cpk)} | ${cell(targetCpk)} | ${cell(topContributorName(worksheet))} | ${cell(imageLink(worksheet.imageReference, options))} | ${cell(`missing=${governanceMissingCount(worksheet)}`)} | ${cell(worksheetNextStep(worksheet))} |`);
+  lines.push(`| ${cell(worksheet.worksheetName)} | ${cell(worksheet.status)} | ${cell(cpk)} | ${cell(targetCpk)} | ${cell(topContributorName(worksheet))} | ${imageLink(worksheet.imageReference, options)} | ${cell(`missing=${governanceMissingCount(worksheet)}`)} | ${cell(worksheetNextStep(worksheet))} |`);
 }
 
 function renderWorksheetCompactCard(lines, worksheet, options) {
@@ -563,7 +563,7 @@ function renderWorksheetCompactCard(lines, worksheet, options) {
   lines.push(
     "",
     `- status: ${code(worksheet.status)}`,
-    `- image evidence: ${inline(imageLink(worksheet.imageReference, options))}`,
+    `- image evidence: ${imageLink(worksheet.imageReference, options)}`,
     `- capability/spec: cpk=${inline(cpk)}; target_cpk=${inline(targetCpk)}`,
     `- top contributors: ${inline(topContributor)}`,
     `- high-confidence visual FACT: ${highConfidenceFacts}`,
