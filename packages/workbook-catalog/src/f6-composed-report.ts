@@ -500,6 +500,7 @@ type V2Worksheet = F6OptimizationResultV2["worksheets"][number];
 type V2AcceptedF2Report = Exclude<F2UserReport, { status: "inputRejected" }>;
 type V2CompletedOption = Extract<V2Worksheet["options"][number], { status: "completed" }>;
 type V2ActionPlanRow = NonNullable<F6ComposedEngineeringReportV2["worksheets"][number]["sections"]["dataGaps"]["actionPlan"]>[number];
+type V2ProcessGuidance = NonNullable<F6ComposedEngineeringReportV2["worksheets"][number]["sections"]["inputIntegrity"]["factors"][number]["processGuidance"]>;
 
 const DECISION_PRIORITY = { P0: 0, P1: 1, P2: 2 } as const;
 type V2F2ReadyWorksheet = Extract<V2AcceptedF2Report["worksheets"][number], { status: "ready" }>;
@@ -525,6 +526,50 @@ function v2FactorIdentity(factor: V2Calculation["factors"][number]) {
     sourceRow: factor.source.sourceRow,
     factorName: factor.factorName,
     unit: factor.unit,
+  };
+}
+
+function projectProcessGuidance(
+  row: V2F2ReadyWorksheet["rows"][number] | undefined,
+): V2ProcessGuidance | undefined {
+  if (row === undefined) return undefined;
+  if ((row.capabilityStatus === "internal_within_guidance" || row.capabilityStatus === "internal_guidance_exceeded")
+    && row.f0KnowledgeBaseVersion === "internal-v1"
+    && row.recommendation?.kind === "internal-guidance") {
+    return {
+      status: row.capabilityStatus === "internal_within_guidance" ? "within-guidance" : "guidance-exceeded",
+      capabilityVersion: row.f0KnowledgeBaseVersion,
+      assessedTotalBand: row.recommendation.assessedTotalBand,
+      maximumRecommendedTotalBand: row.recommendation.maximumRecommendedTotalBand,
+      matchedEntryId: row.recommendation.matchedEntryId,
+      fallbackApplied: row.recommendation.fallbackApplied,
+      evidence: structuredClone(row.recommendation.evidence),
+      f0InformationReason: null,
+    };
+  }
+  if (row.capabilityStatus === "f0_information_insufficient"
+    && row.f0KnowledgeBaseVersion === "internal-v1"
+    && row.f0InformationReason !== undefined) {
+    return {
+      status: "unknown",
+      capabilityVersion: row.f0KnowledgeBaseVersion,
+      assessedTotalBand: null,
+      maximumRecommendedTotalBand: null,
+      matchedEntryId: null,
+      fallbackApplied: null,
+      evidence: null,
+      f0InformationReason: row.f0InformationReason,
+    };
+  }
+  return {
+    status: "not_applicable",
+    capabilityVersion: null,
+    assessedTotalBand: null,
+    maximumRecommendedTotalBand: null,
+    matchedEntryId: null,
+    fallbackApplied: null,
+    evidence: null,
+    f0InformationReason: null,
   };
 }
 
@@ -740,7 +785,9 @@ function buildV2Worksheet(
       upperTolerance: v2Quantity(factor.input.upperTolerance, unit), lowerTolerance: v2Quantity(factor.input.lowerTolerance, unit),
       distribution: factor.input.distribution, sigmaLevel: factor.input.sigmaLevel, sigma: v2Quantity(factor.sigma, unit),
       longTermSafetyFactor: factor.input.longTermSafetyFactor, sourceCells: structuredClone(governance?.source.sourceCells ?? f2Row?.sourceCells ?? {}),
-      evidenceId: baselineEvidenceId, confidence: "HIGH" as const, notes: [] as string[], rank: index + 1,
+      evidenceId: baselineEvidenceId, confidence: "HIGH" as const, notes: [] as string[],
+      processGuidance: projectProcessGuidance(f2Row),
+      rank: index + 1,
     };
   });
   const contributors = [...factorRows]

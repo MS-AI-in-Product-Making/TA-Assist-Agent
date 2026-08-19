@@ -250,6 +250,18 @@ function scenarioTargetLabel(row) {
   return `${factor}; ${row.targetType}`;
 }
 
+function processGuidanceLine(factor) {
+  const guidance = factor.processGuidance;
+  if (guidance === undefined) return null;
+  if (guidance.status === "within-guidance" || guidance.status === "guidance-exceeded") {
+    return `${factor.factor.factorName} [row ${factor.factor.sourceRow}] ${guidance.status}; RULE: F0 ${guidance.capabilityVersion}; assessedTotalBand=${guidance.assessedTotalBand}; maximumRecommendedTotalBand=${guidance.maximumRecommendedTotalBand}; matchedEntryId=${guidance.matchedEntryId}; fallbackApplied=${guidance.fallbackApplied}`;
+  }
+  if (guidance.status === "unknown") {
+    return `${factor.factor.factorName} [row ${factor.factor.sourceRow}] unknown; INSUFFICIENT_EVIDENCE: ${guidance.f0InformationReason}`;
+  }
+  return `${factor.factor.factorName} [row ${factor.factor.sourceRow}] not_applicable`;
+}
+
 function findFormula(formulas, outputField, formulaId) {
   return formulas.find((formula) => formula.outputField === outputField)
     ?? formulas.find((formula) => formula.formulaId === formulaId)
@@ -338,6 +350,13 @@ function renderWorksheetV2(lines, worksheet, options) {
   pushSection(lines, 4, "输入数据与完整性检查");
   lines.push(`- 完整性评级：${cell(sections.inputIntegrity.rating)}`, "", "| Factor | Mean | +Tol | -Tol | Distribution | 1σ | Confidence |", "|---|---:|---:|---:|---|---:|---|");
   for (const factor of sections.inputIntegrity.factors) lines.push(`| ${cell(factor.factor.factorName)} | ${quantityText(factor.mean)} | ${quantityText(factor.upperTolerance)} | ${quantityText(factor.lowerTolerance)} | ${cell(factor.distribution)} | ${quantityText(factor.sigma)} | ${cell(factor.confidence)} |`);
+  const processGuidanceLines = sections.inputIntegrity.factors
+    .map(processGuidanceLine)
+    .filter((line) => line !== null);
+  if (processGuidanceLines.length > 0) {
+    lines.push("", "- F0 process guidance:");
+    for (const line of processGuidanceLines) lines.push(`  - ${cell(line)}`);
+  }
   if (sections.inputIntegrity.governanceSummary) {
     const summary = sections.inputIntegrity.governanceSummary;
     lines.push(

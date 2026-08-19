@@ -713,6 +713,67 @@ describe("renderComposedEngineeringReport V2", () => {
     expect(markdown).toContain("分析特性：未提供");
   });
 
+  it("renders F0 process guidance labels with RULE only for matched internal guidance", () => {
+    const input = reportV2();
+    const factor = (name, sourceRow, processGuidance) => ({
+      factor: { worksheetName: "Analysis-A", tableId: "table-a", sourceRow, factorName: name, unit: "mm" },
+      partName: null,
+      drawingNumber: `DWG-${sourceRow}`,
+      dimId: `DIM-${sourceRow}`,
+      nominal: { value: 0, unit: "mm" },
+      mean: { value: 0, unit: "mm" },
+      upperTolerance: { value: 0.2, unit: "mm" },
+      lowerTolerance: { value: -0.2, unit: "mm" },
+      distribution: "normal",
+      sigmaLevel: 4,
+      sigma: { value: 0.05, unit: "mm" },
+      longTermSafetyFactor: 1,
+      sourceCells: {},
+      evidenceId: "evidence-baseline",
+      confidence: "HIGH",
+      notes: [],
+      processGuidance,
+    });
+    input.worksheets[0].sections.inputIntegrity.factors = [
+      factor("factor-1", 2, {
+        status: "within-guidance",
+        capabilityVersion: "internal-v1",
+        assessedTotalBand: 0.2,
+        maximumRecommendedTotalBand: 0.2,
+        matchedEntryId: "cnc-linear-6",
+        fallbackApplied: false,
+        evidence: { sourceFileHash: "c".repeat(64), sheetName: "ISO 2768-1 Class m", sourceRange: "A6:F6" },
+        f0InformationReason: null,
+      }),
+      factor("factor-2", 3, {
+        status: "unknown",
+        capabilityVersion: "internal-v1",
+        assessedTotalBand: null,
+        maximumRecommendedTotalBand: null,
+        matchedEntryId: null,
+        fallbackApplied: null,
+        evidence: null,
+        f0InformationReason: "missing_process_context",
+      }),
+      factor("factor-3", 4, {
+        status: "not_applicable",
+        capabilityVersion: null,
+        assessedTotalBand: null,
+        maximumRecommendedTotalBand: null,
+        matchedEntryId: null,
+        fallbackApplied: null,
+        evidence: null,
+        f0InformationReason: null,
+      }),
+    ];
+
+    const markdown = renderComposedEngineeringReportV2(input);
+
+    expect(markdown).toContain("RULE: F0 internal-v1");
+    expect(markdown).toContain(String.raw`INSUFFICIENT\_EVIDENCE: missing\_process\_context`);
+    expect(markdown).not.toContain("RULE: F0 null");
+  });
+
   it("renders contained image links and falls back safely when roots are absent, escaping, or missing", ({ skip }) => {
     const base = path.join(tmpdir(), `f6-render-${Date.now()}-${Math.random().toString(16).slice(2)}`);
     const publishRoot = path.join(base, "publish");

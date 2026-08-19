@@ -918,6 +918,150 @@ describe("createF6ComposedEngineeringReport V2", () => {
     expect(worksheet.sections.toleranceLoopDefinition.loopEvidence?.factorDescriptions.every(({ sourceRow }) => sourceRow !== 99)).toBe(true);
   });
 
+  it("projects matched internal process guidance from the exact F2 row identity", () => {
+    const input = structuredClone(bundleV2(1));
+    const f2Worksheet = input.f2Report.worksheets.find(({ worksheetName }) => worksheetName === "Analysis-A");
+    if (f2Worksheet?.status !== "ready") throw new Error("fixture worksheet must be ready");
+    const row = f2Worksheet.rows.find(({ sourceRow }) => sourceRow === 2);
+    if (row === undefined) throw new Error("fixture row must exist");
+    row.capabilityStatus = "internal_within_guidance";
+    row.f0KnowledgeBaseVersion = "internal-v1";
+    row.recommendation = {
+      kind: "internal-guidance",
+      assessedTotalBand: 0.4,
+      maximumRecommendedTotalBand: 0.5,
+      unit: "mm",
+      matchedEntryId: "cnc-linear-6",
+      fallbackApplied: false,
+      evidence: {
+        sourceFileHash: "c".repeat(64),
+        sheetName: "ISO 2768-1 Class m",
+        sourceRange: "A6:F6",
+      },
+    };
+    input.f2Report.summary.nonF0ProcessCategoryCount -= 1;
+    input.f2Report.summary.internalWithinGuidanceCount += 1;
+
+    const report = createF6ComposedEngineeringReportV2(input);
+    const factor = report.worksheets[0]!.sections.inputIntegrity.factors.find(({ factor }) =>
+      factor.tableId === "table-Analysis-A" && factor.sourceRow === 2);
+
+    expect(factor?.processGuidance).toEqual({
+      status: "within-guidance",
+      capabilityVersion: "internal-v1",
+      assessedTotalBand: 0.4,
+      maximumRecommendedTotalBand: 0.5,
+      matchedEntryId: "cnc-linear-6",
+      fallbackApplied: false,
+      evidence: {
+        sourceFileHash: "c".repeat(64),
+        sheetName: "ISO 2768-1 Class m",
+        sourceRange: "A6:F6",
+      },
+      f0InformationReason: null,
+    });
+  });
+
+  it("projects missing_process_context as unknown process guidance without inferring values", () => {
+    const input = structuredClone(bundleV2(1));
+    const f2Worksheet = input.f2Report.worksheets.find(({ worksheetName }) => worksheetName === "Analysis-A");
+    if (f2Worksheet?.status !== "ready") throw new Error("fixture worksheet must be ready");
+    const row = f2Worksheet.rows.find(({ sourceRow }) => sourceRow === 2);
+    if (row === undefined) throw new Error("fixture row must exist");
+    row.capabilityStatus = "f0_information_insufficient";
+    row.f0KnowledgeBaseVersion = "internal-v1";
+    row.f0InformationReason = "missing_process_context";
+    delete row.recommendation;
+    input.f2Report.summary.nonF0ProcessCategoryCount -= 1;
+    input.f2Report.summary.f0InformationInsufficientCount += 1;
+
+    const report = createF6ComposedEngineeringReportV2(input);
+    const factor = report.worksheets[0]!.sections.inputIntegrity.factors.find(({ factor }) =>
+      factor.tableId === "table-Analysis-A" && factor.sourceRow === 2);
+
+    expect(factor?.processGuidance).toEqual({
+      status: "unknown",
+      capabilityVersion: "internal-v1",
+      assessedTotalBand: null,
+      maximumRecommendedTotalBand: null,
+      matchedEntryId: null,
+      fallbackApplied: null,
+      evidence: null,
+      f0InformationReason: "missing_process_context",
+    });
+  });
+
+  it("uses worksheet/table/source-row identity and ignores contaminated F2 rows", () => {
+    const input = structuredClone(bundleV2(1));
+    const f2Worksheet = input.f2Report.worksheets.find(({ worksheetName }) => worksheetName === "Analysis-A");
+    if (f2Worksheet?.status !== "ready") throw new Error("fixture worksheet must be ready");
+    const contaminated = structuredClone(f2Worksheet.rows[0]!);
+    contaminated.tableId = "table-contaminated";
+    contaminated.capabilityStatus = "internal_within_guidance";
+    contaminated.f0KnowledgeBaseVersion = "internal-v1";
+    contaminated.recommendation = {
+      kind: "internal-guidance",
+      assessedTotalBand: 0.1,
+      maximumRecommendedTotalBand: 0.1,
+      unit: "mm",
+      matchedEntryId: "bad-cross-row",
+      fallbackApplied: true,
+      evidence: {
+        sourceFileHash: "d".repeat(64),
+        sheetName: "contaminated",
+        sourceRange: "A1:F1",
+      },
+    };
+    f2Worksheet.rows.push(contaminated);
+    input.f2Report.summary.factorRowCount += 1;
+    input.f2Report.summary.internalWithinGuidanceCount += 1;
+
+    const report = createF6ComposedEngineeringReportV2(input);
+    const factor = report.worksheets[0]!.sections.inputIntegrity.factors.find(({ factor }) =>
+      factor.tableId === "table-Analysis-A" && factor.sourceRow === 2);
+
+    expect(factor?.processGuidance?.status).toBe("not_applicable");
+    expect(factor?.processGuidance?.matchedEntryId).toBeNull();
+  });
+
+  it("does not turn guidance-exceeded into risk, decision, target, or action changes", () => {
+    const control = createF6ComposedEngineeringReportV2(bundleV2(1));
+    const input = structuredClone(bundleV2(1));
+    const f2Worksheet = input.f2Report.worksheets.find(({ worksheetName }) => worksheetName === "Analysis-A");
+    if (f2Worksheet?.status !== "ready") throw new Error("fixture worksheet must be ready");
+    const row = f2Worksheet.rows.find(({ sourceRow }) => sourceRow === 2);
+    if (row === undefined) throw new Error("fixture row must exist");
+    row.capabilityStatus = "internal_guidance_exceeded";
+    row.f0KnowledgeBaseVersion = "internal-v1";
+    row.recommendation = {
+      kind: "internal-guidance",
+      assessedTotalBand: 0.4,
+      maximumRecommendedTotalBand: 0.2,
+      unit: "mm",
+      matchedEntryId: "cnc-linear-6",
+      fallbackApplied: false,
+      evidence: {
+        sourceFileHash: "e".repeat(64),
+        sheetName: "ISO 2768-1 Class m",
+        sourceRange: "A6:F6",
+      },
+    };
+    input.f2Report.summary.nonF0ProcessCategoryCount -= 1;
+    input.f2Report.summary.internalGuidanceExceededCount += 1;
+
+    const report = createF6ComposedEngineeringReportV2(input);
+    const worksheet = report.worksheets[0]!;
+    const baseline = control.worksheets[0]!;
+
+    expect(worksheet.sections.inputIntegrity.factors[0]?.processGuidance?.status).toBe("guidance-exceeded");
+    expect(worksheet.status).toBe(baseline.status);
+    expect(worksheet.baselineDecision).toBe(baseline.baselineDecision);
+    expect(worksheet.sections.riskAssessment.risks).toEqual(baseline.sections.riskAssessment.risks);
+    expect(worksheet.sections.sensitivityAndOptimization.targets).toEqual(baseline.sections.sensitivityAndOptimization.targets);
+    expect(worksheet.sections.sensitivityAndOptimization.options).toEqual(baseline.sections.sensitivityAndOptimization.options);
+    expect(worksheet.sections.engineeringRecommendations).toEqual(baseline.sections.engineeringRecommendations);
+  });
+
   it("normalizes floating-point drift in cumulative contributor percentages", () => {
     const input = structuredClone(bundleV2());
     const worksheet = input.f5Report.worksheets[0];

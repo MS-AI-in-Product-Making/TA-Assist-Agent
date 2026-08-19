@@ -7873,12 +7873,56 @@ const f6MarginSideV2Schema = z.object({
   formulaReferences: z.array(f6FormulaReferenceV2Schema),
 }).strict();
 const f6MarginAssessmentV2Schema = z.object({ statistical: f6MarginSideV2Schema, worstCase: f6MarginSideV2Schema }).strict();
+const f6ProcessGuidanceStatusV2Schema = z.enum(["within-guidance", "guidance-exceeded", "unknown", "not_applicable"]);
+const f6ProcessGuidanceEvidenceV2Schema = z.object({
+  sourceFileHash: sha256Schema,
+  sheetName: z.string().min(1),
+  sourceRange: z.string().regex(/^[A-Z]+[1-9]\d*:[A-Z]+[1-9]\d*$/),
+}).strict();
+const f6ProcessGuidanceV2Schema = z.object({
+  status: f6ProcessGuidanceStatusV2Schema,
+  capabilityVersion: z.enum(["internal-v1"]).nullable(),
+  assessedTotalBand: z.number().finite().positive().nullable(),
+  maximumRecommendedTotalBand: z.number().finite().positive().nullable(),
+  matchedEntryId: z.string().min(1).nullable(),
+  fallbackApplied: z.boolean().nullable(),
+  evidence: f6ProcessGuidanceEvidenceV2Schema.nullable(),
+  f0InformationReason: z.enum(["missing_process_context", "invalid_total_band", "guidance_unknown"]).nullable(),
+}).strict().superRefine((guidance, context) => {
+  const hasMatchedPayload = guidance.assessedTotalBand !== null
+    || guidance.maximumRecommendedTotalBand !== null
+    || guidance.matchedEntryId !== null
+    || guidance.fallbackApplied !== null
+    || guidance.evidence !== null;
+  if (guidance.status === "within-guidance" || guidance.status === "guidance-exceeded") {
+    if (guidance.capabilityVersion === null
+      || guidance.assessedTotalBand === null
+      || guidance.maximumRecommendedTotalBand === null
+      || guidance.matchedEntryId === null
+      || guidance.fallbackApplied === null
+      || guidance.evidence === null
+      || guidance.f0InformationReason !== null) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "matched internal guidance must include recommendation payload only", path: ["status"] });
+    }
+    return;
+  }
+  if (guidance.status === "unknown") {
+    if (guidance.capabilityVersion === null || guidance.f0InformationReason === null || hasMatchedPayload) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "unknown guidance must include only capabilityVersion and f0InformationReason", path: ["status"] });
+    }
+    return;
+  }
+  if (guidance.capabilityVersion !== null || guidance.f0InformationReason !== null || hasMatchedPayload) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "not_applicable guidance must keep projection fields null", path: ["status"] });
+  }
+});
 const f6InputFactorRowV2Schema = z.object({
   factor: f6FactorIdentitySchema, partName: z.string().min(1).nullable(), drawingNumber: z.string().min(1).nullable(), dimId: z.string().min(1).nullable(),
   nominal: f6QuantityV2Schema, mean: f6QuantityV2Schema, upperTolerance: f6QuantityV2Schema, lowerTolerance: f6QuantityV2Schema,
   distribution: z.string().min(1), sigmaLevel: z.number().finite().positive(), sigma: f6QuantityV2Schema,
   longTermSafetyFactor: z.number().finite().positive(), sourceCells: z.record(z.string().min(1)),
   evidenceId: z.string().min(1), confidence: f6ConfidenceV2Schema, notes: z.array(z.string().min(1)),
+  processGuidance: f6ProcessGuidanceV2Schema.optional(),
 }).strict();
 const f6IntegrityFindingV2Schema = z.object({ findingId: z.string().min(1), field: z.string().min(1), status: z.enum(["VALID", "MISSING", "CONFLICT", "NOT_APPLICABLE"]), message: z.string().min(1), gapId: z.string().min(1).nullable() }).strict();
 const f6LoopTermV2Schema = z.object({ factor: f6FactorIdentitySchema, sign: z.union([z.literal(1), z.literal(-1)]), physicalMeaning: z.string().min(1).nullable(), evidenceId: z.string().min(1) }).strict();

@@ -4689,6 +4689,52 @@ describe("F5.1 objective interpretation contracts", () => {
         expect(f6ComposedEngineeringReportSchema.safeParse({ ...reportV2, reportVersion: "f6-composed-report-v1" }).success).toBe(false);
       });
 
+      it("accepts strict per-factor processGuidance projection and rejects inconsistent combinations", () => {
+        const withGuidance = structuredClone(reportV2);
+        withGuidance.worksheets[0]!.sections.inputIntegrity.factors[0]!.processGuidance = {
+          status: "within-guidance",
+          capabilityVersion: "internal-v1",
+          assessedTotalBand: 0.2,
+          maximumRecommendedTotalBand: 0.2,
+          matchedEntryId: "cnc-linear-6",
+          fallbackApplied: false,
+          evidence: {
+            sourceFileHash: "d".repeat(64),
+            sheetName: "ISO 2768-1 Class m",
+            sourceRange: "A6:F6",
+          },
+          f0InformationReason: null,
+        };
+        expect(f6ComposedEngineeringReportSchema.safeParse(withGuidance).success).toBe(true);
+
+        const unknown = structuredClone(withGuidance);
+        unknown.worksheets[0]!.sections.inputIntegrity.factors[0]!.processGuidance = {
+          status: "unknown",
+          capabilityVersion: "internal-v1",
+          assessedTotalBand: null,
+          maximumRecommendedTotalBand: null,
+          matchedEntryId: null,
+          fallbackApplied: null,
+          evidence: null,
+          f0InformationReason: "missing_process_context",
+        };
+        expect(f6ComposedEngineeringReportSchema.safeParse(unknown).success).toBe(true);
+
+        const inconsistentMatched = structuredClone(withGuidance);
+        inconsistentMatched.worksheets[0]!.sections.inputIntegrity.factors[0]!.processGuidance = {
+          ...withGuidance.worksheets[0]!.sections.inputIntegrity.factors[0]!.processGuidance,
+          evidence: null,
+        };
+        expect(f6ComposedEngineeringReportSchema.safeParse(inconsistentMatched).success).toBe(false);
+
+        const inconsistentUnknown = structuredClone(unknown);
+        inconsistentUnknown.worksheets[0]!.sections.inputIntegrity.factors[0]!.processGuidance = {
+          ...unknown.worksheets[0]!.sections.inputIntegrity.factors[0]!.processGuidance,
+          assessedTotalBand: 0.2,
+        };
+        expect(f6ComposedEngineeringReportSchema.safeParse(inconsistentUnknown).success).toBe(false);
+      });
+
       it("requires every section, rejects unknown sections, and enforces canonical P0 status", () => {
         const { finalConclusion: _missing, ...missingSection } = sections;
         expect(f6ComposedEngineeringReportSchema.safeParse({
