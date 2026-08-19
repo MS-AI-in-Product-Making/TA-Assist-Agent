@@ -581,17 +581,24 @@ function calculateMinimumMargin(
   return Math.min(specification.upperSpecLimit - upper, lower - specification.lowerSpecLimit);
 }
 
+function normalizeGapActionForPlan(missingInformation: string): string {
+  return /^Drawing Number is missing for source row \d+\.$/u.test(missingInformation)
+    ? "Drawing Number is missing."
+    : missingInformation;
+}
+
 function actionPlanFromGaps(gaps: F6ComposedEngineeringReportV2["worksheets"][number]["dataGaps"]): V2ActionPlanRow[] {
   const grouped = new Map<string, V2ActionPlanRow>();
   for (const gap of gaps) {
-    const key = `${gap.priority}\u0000${gap.missingInformation}\u0000${gap.responsibleRole}\u0000${gap.verificationMethod}`;
+    const normalizedAction = normalizeGapActionForPlan(gap.missingInformation);
+    const key = `${gap.priority}\u0000${normalizedAction}\u0000${gap.responsibleRole}\u0000${gap.verificationMethod}`;
     const sourceRowMatch = gap.gapId.match(/:(\d+)$/u);
     const sourceRows = sourceRowMatch === null ? [] : [Number(sourceRowMatch[1])];
     const existing = grouped.get(key);
     if (existing === undefined) {
       grouped.set(key, {
         priority: gap.priority,
-        action: gap.missingInformation,
+        action: normalizedAction,
         scope: [...new Set(gap.affectedSections.map((section) => String(section)))],
         owner: gap.responsibleRole,
         requiredEvidence: [gap.suggestedSource],
@@ -712,7 +719,7 @@ function buildV2Worksheet(
     f5Worksheet.governanceRows.map((row) => [sourceKey(row.source.tableId, row.source.sourceRow), row]),
   );
   for (const row of projectedF2Rows) {
-    if (row.actualFields.drawingNumber === null) dataGaps.push(p2(`${f6Worksheet.worksheetName}:drawing:${row.sourceRow}`, "Drawing Number is missing.", ["inputIntegrity", "designIntentReview"], "Confirm the governed drawing identity."));
+    if (row.actualFields.drawingNumber === null) dataGaps.push(p2(`${f6Worksheet.worksheetName}:drawing:${row.sourceRow}`, `Drawing Number is missing for source row ${row.sourceRow}.`, ["inputIntegrity", "designIntentReview"], "Confirm the governed drawing identity."));
   }
   const blockingP0GapIds = dataGaps.filter(({ priority }) => priority === "P0").map(({ gapId }) => gapId);
   const conditionalP1GapIds = dataGaps.filter(({ priority }) => priority === "P1").map(({ gapId }) => gapId);

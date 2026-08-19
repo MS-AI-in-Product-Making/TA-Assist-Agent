@@ -997,12 +997,19 @@ describe("createF6ComposedEngineeringReport V2", () => {
     const input = bundleV2(1, undefined, { missingDrawingAndDimIds: true });
     const report = createF6ComposedEngineeringReportV2(input);
     const worksheet = report.worksheets[0]!;
+    const drawingGaps = worksheet.dataGaps.filter(({ gapId }) => gapId.includes(":drawing:"));
 
-    expect(worksheet.dataGaps.filter(({ gapId }) => gapId.includes(":drawing:")).length).toBeGreaterThan(1);
+    expect(drawingGaps.length).toBeGreaterThan(1);
+    expect(drawingGaps.every(({ gapId, missingInformation }) => {
+      const sourceRow = Number(gapId.split(":").at(-1));
+      return missingInformation === `Drawing Number is missing for source row ${sourceRow}.`;
+    })).toBe(true);
     expect(worksheet.sections.dataGaps.gaps).toEqual(worksheet.dataGaps);
     expect(worksheet.sections.dataGaps.actionPlan?.length).toBeLessThan(worksheet.dataGaps.length);
-    const drawingAction = worksheet.sections.dataGaps.actionPlan?.find(({ action }) => action.includes("Drawing Number is missing"));
+    const drawingAction = worksheet.sections.dataGaps.actionPlan?.find(({ action }) => action === "Drawing Number is missing.");
     expect(drawingAction?.scope.some((item) => item.includes("source rows"))).toBe(true);
+    expect(drawingAction?.gapIds).toEqual(expect.arrayContaining(drawingGaps.map(({ gapId }) => gapId)));
+    expect(drawingAction?.gapIds.length).toBe(drawingGaps.length);
   });
 
   it("makes an in-scope blocked worksheet drive workbook INCOMPLETE", () => {
