@@ -750,6 +750,35 @@ describe("createF6ComposedEngineeringReport V2", () => {
     expect(worksheet.sections.objectiveAndRequirements.analysisObject).toBeNull();
   });
 
+  it("does not infer analysis characteristic from worksheet name when governed tolerance loop description is missing or blank", () => {
+    const missing = structuredClone(bundleV2(0.12, undefined, {
+      factorCount: 2,
+      toleranceLoopDescription: "DIM829, Audio Jack to C bucket Gap",
+    }));
+    const missingWorksheet = missing.f2Report.worksheets.find(({ worksheetName }) => worksheetName === "Analysis-A");
+    if (missingWorksheet?.status !== "ready") throw new Error("fixture worksheet must be ready");
+    delete missingWorksheet.toleranceLoopDescription;
+
+    const blank = structuredClone(bundleV2(0.12, undefined, {
+      factorCount: 2,
+      toleranceLoopDescription: "DIM829, Audio Jack to C bucket Gap",
+    }));
+    const blankWorksheet = blank.f2Report.worksheets.find(({ worksheetName }) => worksheetName === "Analysis-A");
+    if (blankWorksheet?.status !== "ready") throw new Error("fixture worksheet must be ready");
+    blankWorksheet.toleranceLoopDescription = "   ";
+
+    const missingReport = createF6ComposedEngineeringReportV2(missing);
+    const blankReport = createF6ComposedEngineeringReportV2(blank);
+
+    expect(missingReport.worksheets[0]!.sections.objectiveAndRequirements.analysisCharacteristic).toBeUndefined();
+    expect(missingReport.worksheets[0]!.sections.objectiveAndRequirements.analysisCharacteristic).not.toBe("Analysis-A");
+    expect(missingReport.worksheets[0]!.sections.toleranceLoopDefinition.loopEvidence).toBeUndefined();
+
+    expect(blankReport.worksheets[0]!.sections.objectiveAndRequirements.analysisCharacteristic).toBeUndefined();
+    expect(blankReport.worksheets[0]!.sections.objectiveAndRequirements.analysisCharacteristic).not.toBe("Analysis-A");
+    expect(blankReport.worksheets[0]!.sections.toleranceLoopDefinition.loopEvidence).toBeUndefined();
+  });
+
   it("projects governance completeness and loop factor descriptions only from exact worksheet/table/source rows", () => {
     const input = structuredClone(bundleV2(0.12, undefined, {
       factorCount: 2,

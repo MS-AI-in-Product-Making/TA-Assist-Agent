@@ -676,7 +676,11 @@ function buildV2Worksheet(
     currentMargin: v2Quantity(projection.margins.statistical.minimumMargin, unit), verificationMethod: "Review specification and measured process capability.",
   }] : [];
   const contextObject = analysisContext?.analysisObject;
-  const analysisCharacteristic = f2Worksheet.toleranceLoopDescription ?? f6Worksheet.worksheetName;
+  const toleranceLoopDescription = typeof f2Worksheet.toleranceLoopDescription === "string"
+    && f2Worksheet.toleranceLoopDescription.trim().length > 0
+    ? f2Worksheet.toleranceLoopDescription
+    : undefined;
+  const analysisCharacteristic = toleranceLoopDescription;
   const drawingMissingRows = new Set<number>();
   const dimMissingRows = new Set<number>();
   for (const factor of calculation.factors) {
@@ -723,26 +727,28 @@ function buildV2Worksheet(
     }];
   });
   const signedEquationAuthorized = analysisContext?.loopDefinition !== undefined;
-  const loopEvidence = {
-    imageReference: structuredClone(f5Worksheet.imageReference),
-    toleranceLoopDescription: analysisCharacteristic,
-    factorDescriptions: [...calculation.factors]
-      .sort((left, right) => left.source.sourceRow - right.source.sourceRow
-        || left.source.tableId.localeCompare(right.source.tableId))
-      .map((factor) => {
-        const factorSourceKey = sourceKey(factor.source.tableId, factor.source.sourceRow);
-        const governance = governanceBySource.get(factorSourceKey);
-        return {
-          tableId: factor.source.tableId,
-          sourceRow: factor.source.sourceRow,
-          factorDescription: governance?.factorDescription ?? factor.factorName,
-        };
-      }),
-    visualFacts,
-    contextSignals,
-    requiresEngineeringReview: !signedEquationAuthorized || contextSignals.some(({ requiresEngineeringReview }) => requiresEngineeringReview),
-    signedEquationAuthorized,
-  };
+  const loopEvidence = toleranceLoopDescription === undefined
+    ? undefined
+    : {
+      imageReference: structuredClone(f5Worksheet.imageReference),
+      toleranceLoopDescription,
+      factorDescriptions: [...calculation.factors]
+        .sort((left, right) => left.source.sourceRow - right.source.sourceRow
+          || left.source.tableId.localeCompare(right.source.tableId))
+        .map((factor) => {
+          const factorSourceKey = sourceKey(factor.source.tableId, factor.source.sourceRow);
+          const governance = governanceBySource.get(factorSourceKey);
+          return {
+            tableId: factor.source.tableId,
+            sourceRow: factor.source.sourceRow,
+            factorDescription: governance?.factorDescription ?? factor.factorName,
+          };
+        }),
+      visualFacts,
+      contextSignals,
+      requiresEngineeringReview: !signedEquationAuthorized || contextSignals.some(({ requiresEngineeringReview }) => requiresEngineeringReview),
+      signedEquationAuthorized,
+    };
   const sections: F6ComposedEngineeringReportV2["worksheets"][number]["sections"] = {
     executiveSummary: { ...v2Section("executive_summary", [baselineEvidenceId]), analysisObject: contextObject?.name ?? null, mean: v2Quantity(calculation.system.mean, unit), rssSigma: v2Quantity(calculation.system.rssSigma, unit), statisticalRange: v2Range(targetRange.range.lower, targetRange.range.upper, unit), worstCaseRange: v2Range(projection.margins.worstCase.lowerBound, projection.margins.worstCase.upperBound, unit), minimumMargin: v2Quantity(Math.min(projection.margins.statistical.minimumMargin, projection.margins.worstCase.minimumMargin), unit), predictiveCpk: calculation.capability.cpk, topContributors: contributors.slice(0, 5), primaryRisks: risks.map(({ trigger }) => trigger), decision: status, actionRequired: status !== "PASS" },
     objectiveAndRequirements: { ...v2Section("objective_and_requirements", [baselineEvidenceId], contextObject === undefined ? "PARTIAL" : "SUPPORTED"), analysisObject: contextObject === undefined ? null : { kind: contextObject.kind, name: contextObject.name, physicalMeaning: contextObject.physicalMeaning, measurementDirection: contextObject.measurementDirection, positiveDirectionDefinition: contextObject.positiveDirectionDefinition, negativeDirectionDefinition: contextObject.negativeDirectionDefinition }, analysisCharacteristic, target: v2Quantity(calculation.system.designNominal, unit), lsl: v2Quantity(calculation.capability.lowerSpecLimit, unit), usl: v2Quantity(calculation.capability.upperSpecLimit, unit), targetCpk: calculation.capability.targetCpk, requirementIds: analysisContext?.functionalRequirements?.requirementIds ?? [], functionalBoundary: analysisContext?.functionalRequirements?.functionalBoundary ?? null, passFailCriteria: analysisContext?.functionalRequirements?.passFailCriteria ?? null },

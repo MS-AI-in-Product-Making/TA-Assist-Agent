@@ -619,6 +619,15 @@ describe("renderComposedEngineeringReport V2", () => {
     expect(markdown).toContain("不能生成 signed equation");
   });
 
+  it("renders 未提供 when analysisCharacteristic is absent", () => {
+    const input = reportV2();
+    delete input.worksheets[0].sections.objectiveAndRequirements.analysisCharacteristic;
+
+    const markdown = renderComposedEngineeringReportV2(input);
+
+    expect(markdown).toContain("分析特性：未提供");
+  });
+
   it("renders contained image links and falls back safely when roots are absent, escaping, or missing", ({ skip }) => {
     const base = path.join(tmpdir(), `f6-render-${Date.now()}-${Math.random().toString(16).slice(2)}`);
     const publishRoot = path.join(base, "publish");
