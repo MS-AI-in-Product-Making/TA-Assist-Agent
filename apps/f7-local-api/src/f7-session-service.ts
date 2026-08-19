@@ -147,6 +147,7 @@ export function createF7SessionService(dependencies: {
         workbookContentHash: importResult.workbook.contentHash,
       },
       selectedWorksheetNames: [],
+      worksheetOptions: importResult.prompt.options,
       factors: [],
     });
 
@@ -178,6 +179,7 @@ export function createF7SessionService(dependencies: {
       ...current.snapshot,
       status: "factor_setup",
       selectedWorksheetNames: [extraction.worksheetName],
+      worksheetOptions: current.importResult.prompt.options,
       factors: extraction.candidates.map((factorCandidate) => ({ factorCandidate })),
     });
 

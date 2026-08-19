@@ -103,6 +103,9 @@ describe("createF7SessionService", () => {
     const snapshot = service.importWorkbook(importRequest(workbookBytes));
     expect(snapshot.sessionId).toBe("s-1");
     expect(snapshot.status).toBe("worksheet_selection");
+    expect(snapshot.worksheetOptions.length).toBeGreaterThan(0);
+    expect(snapshot.worksheetOptions[0]?.worksheetName).toBe("Anonymous_TA");
+    expect(snapshot.worksheetOptions[0]?.selectionIndex).toBe(1);
     expect(snapshot.workbook.workbookContentHash).toBe(createHash("sha256").update(workbookBytes).digest("hex"));
     expect(JSON.stringify(snapshot)).not.toContain("workbookBytes");
     expect(f7SessionSnapshotSchema.safeParse(snapshot).success).toBe(true);
@@ -152,6 +155,8 @@ describe("createF7SessionService", () => {
     });
 
     expect(next.status).toBe("factor_setup");
+    expect(next.worksheetOptions.length).toBeGreaterThan(0);
+    expect(next.worksheetOptions[0]?.worksheetName).toBe("Anonymous_TA");
     expect(next.factors.length).toBeGreaterThan(0);
     for (const factor of next.factors) {
       expect(factor.setup).toBeUndefined();

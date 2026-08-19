@@ -30,6 +30,20 @@ import {
 const SHA256 = "a".repeat(64);
 const SHA256_2 = "b".repeat(64);
 
+const WORKSHEET_OPTIONS = [
+  {
+    selectionIndex: 1,
+    worksheetName: "Analysis-A",
+    toleranceLoopDescription: "Loop A",
+    worksheetKind: "analysis" as const,
+    source: {
+      summarySheet: "Auto Summary" as const,
+      summaryRow: 10,
+      worksheetAnchor: "Analysis-A!A1",
+    },
+  },
+] as const;
+
 describe("F7 phase 1 factor contracts", () => {
   it("requires confidential snapshot classification and rejects public", () => {
     const baseSnapshot = {
@@ -42,6 +56,7 @@ describe("F7 phase 1 factor contracts", () => {
         workbookContentHash: SHA256,
       },
       selectedWorksheetNames: ["Analysis-A"],
+      worksheetOptions: WORKSHEET_OPTIONS,
       factors: [],
     } as const;
 
@@ -451,8 +466,66 @@ describe("F7 request/result strict wrappers", () => {
       workbookContentHash: SHA256,
     },
     selectedWorksheetNames: ["Analysis-A"],
+    worksheetOptions: WORKSHEET_OPTIONS,
     factors: [],
   } as const;
+
+  it("requires strict worksheetOptions with controlled fields and unique names/indexes", () => {
+    const withWorksheetOptions = {
+      ...sessionSnapshot,
+      worksheetOptions: [
+        {
+          selectionIndex: 1,
+          worksheetName: "Analysis-A",
+          toleranceLoopDescription: "Loop A",
+          worksheetKind: "analysis",
+          source: {
+            summarySheet: "Auto Summary",
+            summaryRow: 10,
+            worksheetAnchor: "Analysis-A!A1",
+          },
+        },
+      ],
+    };
+
+    expect(f7SessionSnapshotSchema.safeParse(withWorksheetOptions).success).toBe(true);
+    expect(
+      f7SessionSnapshotSchema.safeParse({
+        ...sessionSnapshot,
+        worksheetOptions: undefined,
+      }).success,
+    ).toBe(false);
+    expect(
+      f7SessionSnapshotSchema.safeParse({
+        ...withWorksheetOptions,
+        worksheetOptions: [],
+      }).success,
+    ).toBe(false);
+    expect(
+      f7SessionSnapshotSchema.safeParse({
+        ...withWorksheetOptions,
+        worksheetOptions: [
+          withWorksheetOptions.worksheetOptions[0],
+          {
+            ...withWorksheetOptions.worksheetOptions[0],
+            selectionIndex: 2,
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      f7SessionSnapshotSchema.safeParse({
+        ...withWorksheetOptions,
+        worksheetOptions: [
+          withWorksheetOptions.worksheetOptions[0],
+          {
+            ...withWorksheetOptions.worksheetOptions[0],
+            worksheetName: "Analysis-B",
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
 
   it("keeps all new input/output schemas strict", () => {
     expect(
@@ -715,6 +788,7 @@ describe("F7 request/result strict wrappers", () => {
         workbookContentHash: SHA256,
       },
       selectedWorksheetNames: ["Analysis-A"],
+      worksheetOptions: WORKSHEET_OPTIONS,
       factors: [
         {
           factorCandidate: {
@@ -863,6 +937,7 @@ describe("F7 request/result strict wrappers", () => {
         workbookContentHash: SHA256,
       },
       selectedWorksheetNames: ["Analysis-A"],
+      worksheetOptions: WORKSHEET_OPTIONS,
       factors: [baseState],
     };
 

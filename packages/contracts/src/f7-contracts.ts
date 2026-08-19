@@ -1,5 +1,7 @@
 import { z } from "zod";
 import {
+  workbookCatalogAnalysisSourceSchema,
+  worksheetKindSchema,
   worksheetSelectionConfirmationSchema,
 } from "./contracts.js";
 import type {
@@ -350,6 +352,16 @@ export const f7SessionStatusSchema = z.enum([
   "phase_1_ready",
 ]);
 
+export const f7WorksheetOptionSchema = z
+  .object({
+    selectionIndex: z.number().int().positive(),
+    worksheetName: z.string().min(1),
+    toleranceLoopDescription: z.string().min(1),
+    worksheetKind: worksheetKindSchema,
+    source: workbookCatalogAnalysisSourceSchema,
+  })
+  .strict();
+
 const f7SessionFactorStateSchema = z
   .object({
     factorCandidate: f7FactorCandidateSchema,
@@ -438,9 +450,29 @@ export const f7SessionSnapshotSchema = z
       })
       .strict(),
     selectedWorksheetNames: z.array(z.string().min(1)),
+    worksheetOptions: z.array(f7WorksheetOptionSchema).min(1),
     factors: z.array(f7SessionFactorStateSchema),
   })
-  .strict();
+  .strict()
+  .superRefine((snapshot, context) => {
+    const worksheetNames = snapshot.worksheetOptions.map((option) => option.worksheetName);
+    if (new Set(worksheetNames).size !== worksheetNames.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "worksheet option names must be unique",
+        path: ["worksheetOptions"],
+      });
+    }
+
+    const selectionIndexes = snapshot.worksheetOptions.map((option) => option.selectionIndex);
+    if (new Set(selectionIndexes).size !== selectionIndexes.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "worksheet option indexes must be unique",
+        path: ["worksheetOptions"],
+      });
+    }
+  });
 
 export const f7WorkbookImportRequestSchema = z
   .object({
@@ -565,15 +597,29 @@ export const f7SessionRouteParamsSchema = z
 
 export type F7FactorCandidate = z.infer<typeof f7FactorCandidateSchema>;
 export type F7FactorSetupConfirmation = z.infer<typeof f7FactorSetupConfirmationSchema>;
+export type F7LoopCoefficient = z.infer<typeof f7LoopCoefficientSchema>;
 export type F7FactorSourceMode = z.infer<typeof f7FactorSourceModeSchema>;
+export type F7MeasurementStructure = z.infer<typeof f7MeasurementStructureSchema>;
+export type F7MsaStatus = z.infer<typeof f7MsaStatusSchema>;
+export type F7ExclusionReason = z.infer<typeof f7ExclusionReasonSchema>;
 export type F7FactorInput = z.infer<typeof f7FactorInputSchema>;
 export type F7FactorEvidence = z.infer<typeof f7FactorEvidenceSchema>;
+export type F7MeasurementDataset = z.infer<typeof f7MeasurementDatasetSchema>;
+export type F7DatasetValidationIssue = z.infer<typeof f7DatasetValidationIssueSchema>;
 export type F7MeasurementPasteResult = z.infer<typeof f7MeasurementPasteResultSchema>;
 export type F7DatasetValidationResult = z.infer<typeof f7DatasetValidationResultSchema>;
 export type F7WorkbookImportRequest = z.infer<typeof f7WorkbookImportRequestSchema>;
 export type F7MeasurementPasteRequest = z.infer<typeof f7MeasurementPasteRequestSchema>;
 export type F7MeasurementDispositionRequest = z.infer<typeof f7MeasurementDispositionRequestSchema>;
 export type F7SessionSnapshot = z.infer<typeof f7SessionSnapshotSchema>;
+export type F7WorksheetOption = z.infer<typeof f7WorksheetOptionSchema>;
+export type F7WorkbookImportRouteRequest = z.infer<typeof f7WorkbookImportRouteRequestSchema>;
+export type F7WorksheetConfirmRouteRequest = z.infer<typeof f7WorksheetConfirmRouteRequestSchema>;
+export type F7FactorConfirmRouteRequest = z.infer<typeof f7FactorConfirmRouteRequestSchema>;
+export type F7FactorModeRouteRequest = z.infer<typeof f7FactorModeRouteRequestSchema>;
+export type F7MeasurementPasteRouteRequest = z.infer<typeof f7MeasurementPasteRouteRequestSchema>;
+export type F7MeasurementDispositionRouteRequest = z.infer<typeof f7MeasurementDispositionRouteRequestSchema>;
+export type F7SessionRouteParams = z.infer<typeof f7SessionRouteParamsSchema>;
 
 export interface F7SessionService {
   importWorkbook(request: F7WorkbookImportRequest): F7SessionSnapshot;

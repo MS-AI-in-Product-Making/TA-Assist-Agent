@@ -232,6 +232,7 @@ describe("f7 local server", () => {
       },
     });
     expect(importResult.status).toBe(200);
+    expect(((importResult.json as { worksheetOptions?: unknown }).worksheetOptions as unknown[] | undefined)?.length).toBeGreaterThan(0);
     const imported = importResult.json as { sessionId: string; workbook: { workbookContentHash: string } };
 
     const getResult = await httpJson({
@@ -265,6 +266,27 @@ describe("f7 local server", () => {
       },
     });
     const importJson = imported.json as { sessionId: string; workbook: { workbookContentHash: string } };
+
+    const worksheetRejected = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/workbook/worksheet-confirm",
+      body: {
+        sessionId: importJson.sessionId,
+        confirmation: {
+          workbookContentHash: importJson.workbook.workbookContentHash,
+          selectedWorksheetNames: ["Not_In_Options"],
+          confirmed: true,
+        },
+      },
+    });
+    expect(worksheetRejected.status).toBe(400);
+    expect(worksheetRejected.json).toEqual({
+      code: "validation_error",
+      summary: "F7 factor extraction request is invalid.",
+      suggestedAction: "Provide a supported confidential F7 workbook request and explicit confirmations.",
+      affectedInputReferences: ["f7-excel-adapter"],
+    });
 
     const worksheet = await httpJson({
       port: address.port,
