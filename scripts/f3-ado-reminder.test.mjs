@@ -68,6 +68,48 @@ function acceptedReport(rows) {
   };
 }
 
+function acceptedReportWithWorksheets(worksheets) {
+  const allRows = worksheets.flatMap((worksheet) => worksheet.rows);
+  return {
+    contractVersion: "v1",
+    modelVersion: "drawing-governance-v2",
+    outputClassification: "confidential",
+    featureId: "F3",
+    status: allRows.some((row) => row.governanceStatus !== "complete")
+      ? "governance_required"
+      : "completed",
+    artifactRoot: "controlled/f1",
+    workbook: { fileName: "Anonymous.xlsx", contentHash: "a".repeat(64) },
+    worksheets,
+    ado: { status: "not_requested" },
+    summary: {
+      worksheetCount: worksheets.length,
+      factorCount: allRows.length,
+      completeCount: allRows.filter((row) => row.governanceStatus === "complete").length,
+      governanceRequiredCount: allRows.filter((row) => row.governanceStatus !== "complete").length,
+      duplicateConflictCount: allRows.filter((row) => row.qualitySignals.includes("duplicate_conflict")).length,
+    },
+  };
+}
+
+function worksheetRow(worksheetName, factorInstanceId, sourceRow, partSubsystem, factorDescription) {
+  return baseRow({
+    factorInstanceId,
+    partSubsystem,
+    factorDescription,
+    source: {
+      ...baseRow().source,
+      worksheetName,
+      sourceRow,
+    },
+    imageReference: {
+      ...baseRow().imageReference,
+      worksheetName,
+      relativePath: `worksheets/${worksheetName}/tolerance-path.png`,
+    },
+  });
+}
+
 describe("governanceIssue", () => {
   it("maps all governance signals and complete fallback", () => {
     expect(governanceIssue(baseRow({ qualitySignals: ["drawing_number_missing"] }))).toBe("Drawing Number missing");
@@ -80,6 +122,39 @@ describe("governanceIssue", () => {
 });
 
 describe("renderF3AdoReminder", () => {
+  it("groups markdown rows by worksheet and Part / Subsystem while preserving factor uniqueness", () => {
+    const report = acceptedReportWithWorksheets([
+      {
+        worksheetName: "Analysis-A",
+        toleranceLoopDescription: "Anonymous device gap A",
+        rows: [
+          worksheetRow("Analysis-A", "1".repeat(64), 11, "Bracket", "Factor-A1"),
+          worksheetRow("Analysis-A", "2".repeat(64), 12, "Panel", "Factor-A2"),
+          worksheetRow("Analysis-A", "3".repeat(64), 13, "Bracket", "Factor-A3"),
+        ],
+      },
+      {
+        worksheetName: "Analysis-B",
+        toleranceLoopDescription: "Anonymous device gap B",
+        rows: [
+          worksheetRow("Analysis-B", "4".repeat(64), 21, "(missing)", "Factor-B1"),
+        ],
+      },
+    ]);
+
+    const markdown = renderF3AdoReminder(report);
+
+    expect(markdown).toContain("### Worksheet: Analysis-A");
+    expect(markdown).toContain("#### Part / Subsystem: Bracket (2 factors)");
+    expect(markdown).toContain("#### Part / Subsystem: Panel (1 factors)");
+    expect(markdown).toContain("### Worksheet: Analysis-B");
+    expect(markdown).toContain("#### Part / Subsystem: (missing Part / Subsystem) (1 factors)");
+
+    for (const factorName of ["Factor-A1", "Factor-A2", "Factor-A3", "Factor-B1"]) {
+      expect(markdown.split(factorName)).toHaveLength(2);
+    }
+  });
+
   it("renders deterministic English reminder with exact 11-column table header and all records", () => {
     const rows = [
       baseRow({ qualitySignals: ["drawing_number_missing"], governanceStatus: "needs_governance" }),
@@ -156,6 +231,43 @@ describe("renderF3AdoReminder", () => {
 });
 
 describe("renderF3AdoHistoryHtml", () => {
+  it("renders one 11-column header and grouped tbody rows with marked factor rows", () => {
+    const report = acceptedReportWithWorksheets([
+      {
+        worksheetName: "Analysis-A",
+        toleranceLoopDescription: "Anonymous device gap A",
+        rows: [
+          worksheetRow("Analysis-A", "1".repeat(64), 11, "Bracket", "Factor-A1"),
+          worksheetRow("Analysis-A", "2".repeat(64), 12, "Panel", "Factor-A2"),
+          worksheetRow("Analysis-A", "3".repeat(64), 13, "Bracket", "Factor-A3"),
+        ],
+      },
+      {
+        worksheetName: "Analysis-B",
+        toleranceLoopDescription: "Anonymous device gap B",
+        rows: [
+          worksheetRow("Analysis-B", "4".repeat(64), 21, "(missing)", "Factor-B1"),
+        ],
+      },
+    ]);
+
+    const html = renderF3AdoHistoryHtml(report);
+
+    expect(html.match(/<thead>/g)).toHaveLength(1);
+    expect(html.match(/<th>/g)).toHaveLength(11);
+    expect(html).toContain("<tr data-f3-group-row=\"true\"><td colspan=\"11\">Worksheet: Analysis-A | Part / Subsystem: Bracket (2 factors)</td></tr>");
+    expect(html).toContain("<tr data-f3-group-row=\"true\"><td colspan=\"11\">Worksheet: Analysis-B | Part / Subsystem: (missing Part / Subsystem) (1 factors)</td></tr>");
+
+    const factorRowMatches = html.match(/<tr data-f3-factor-row=\"true\">/g) ?? [];
+    expect(factorRowMatches).toHaveLength(report.summary.factorCount);
+
+    const analysisAIndex = html.indexOf("Worksheet: Analysis-A | Part / Subsystem: Bracket (2 factors)");
+    const panelIndex = html.indexOf("Worksheet: Analysis-A | Part / Subsystem: Panel (1 factors)");
+    const analysisBIndex = html.indexOf("Worksheet: Analysis-B | Part / Subsystem: (missing Part / Subsystem) (1 factors)");
+    expect(analysisAIndex).toBeLessThan(panelIndex);
+    expect(panelIndex).toBeLessThan(analysisBIndex);
+  });
+
   it("renders a deterministic 11-column HTML table with every record", () => {
     const rows = [
       baseRow({ factorDescription: "A&B <critical> \"quoted\" 'single'\nnext", qualitySignals: ["drawing_number_missing"], governanceStatus: "needs_governance" }),
@@ -169,7 +281,7 @@ describe("renderF3AdoHistoryHtml", () => {
     expect(html).toContain("<table>");
     expect(html).toContain("<thead><tr><th>Device Level Dim</th>");
     expect(html.match(/<th>/g)).toHaveLength(11);
-    expect(html.match(/<tbody><tr>|<\/tr><tr>/g)).toHaveLength(3);
+    expect(html.match(/<tr data-f3-factor-row=\"true\">/g)).toHaveLength(3);
     expect(html).toContain("<td>A&amp;B &lt;critical&gt; &quot;quoted&quot; &#39;single&#39;<br>next</td>");
     expect(html).not.toContain("A&B <critical>");
     expect(html).toContain("Drawing Number missing");

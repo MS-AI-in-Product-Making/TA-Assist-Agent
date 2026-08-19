@@ -647,7 +647,9 @@ describe("f3-analysis skill contract", () => {
       expect(contract).toContain("comment format `html`");
       expect(contract).toContain("ADO-safe canonical HTML");
       expect(contract).toContain("canonical HTML text and SHA-256");
-      expect(contract).toContain("11 headers and the expected factor row count");
+      expect(contract).toContain("11 headers and the expected marked factor row count");
+      expect(contract).toContain("data-f3-factor-row=\"true\"");
+      expect(contract).toContain("data-f3-group-row=\"true\"");
       expect(contract).toContain("exactly one new comment");
       expect(contract).toContain("SHA-256");
       expect(contract).toContain("write_verification_failed");
