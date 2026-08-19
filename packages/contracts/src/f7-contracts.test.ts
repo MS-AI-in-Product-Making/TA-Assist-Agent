@@ -2,12 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
   cpkRequestSchema,
   cpkResultSchema,
+  f7CandidateEligibilitySchema,
   f7AnalysisRequestSchema,
   f7AnalysisResultSchema,
   f7FactorCandidateSchema,
   f7FactorConfirmRouteRequestSchema,
   f7FactorEvidenceSchema,
   f7FactorInputSchema,
+  f7DatasetValidationIssueSchema,
+  f7DatasetValidationReasonSchema,
+  f7DatasetValidationResultSchema,
   f7FactorModeRouteRequestSchema,
   f7FactorSetupConfirmationSchema,
   f7LoopCoefficientSchema,
@@ -180,6 +184,92 @@ describe("F7 phase 1 factor contracts", () => {
 });
 
 describe("F7 measurement dataset contracts", () => {
+  it("enforces exact dataset validation reason enums, issue shape, and candidate eligibility statuses", () => {
+    const exactReasons = [
+      "subgroup_too_small",
+      "ordered_sequence_invalid",
+      "sample_count_below_minimum",
+      "exploratory_only",
+      "fit_uncertainty",
+      "unit_mismatch",
+      "specification_missing",
+      "non_finite_measurement",
+      "duplicate_measurement",
+      "msa_evidence_missing",
+      "mixed_batch_conditions",
+      "outlier_candidate",
+      "invalid_rows_rejected",
+    ] as const;
+
+    for (const reason of exactReasons) {
+      expect(f7DatasetValidationReasonSchema.safeParse(reason).success).toBe(true);
+    }
+
+    expect(f7DatasetValidationReasonSchema.safeParse("invalid_row").success).toBe(false);
+    expect(f7DatasetValidationReasonSchema.safeParse("distribution_unsupported").success).toBe(false);
+
+    expect(
+      f7DatasetValidationIssueSchema.safeParse({
+        reason: "invalid_rows_rejected",
+        factorId: SHA256,
+        rowNumbers: [3, 7, 9],
+      }).success,
+    ).toBe(true);
+    expect(
+      f7DatasetValidationIssueSchema.safeParse({
+        reason: "invalid_rows_rejected",
+        factorId: SHA256,
+        rowNumber: 3,
+      }).success,
+    ).toBe(false);
+    expect(
+      f7DatasetValidationIssueSchema.safeParse({
+        reason: "invalid_rows_rejected",
+        factorId: SHA256,
+        rowNumbers: [7, 3],
+      }).success,
+    ).toBe(false);
+
+    expect(
+      f7CandidateEligibilitySchema.safeParse({
+        normal: "eligible",
+        lognormal: "eligible",
+        weibull: "ineligible_nonpositive",
+        gamma: "eligible",
+        uniform: "eligible_with_boundary_warning",
+      }).success,
+    ).toBe(true);
+    expect(
+      f7CandidateEligibilitySchema.safeParse({
+        normal: "unknown",
+        lognormal: "eligible",
+        weibull: "eligible",
+        gamma: "eligible",
+        uniform: "eligible",
+      }).success,
+    ).toBe(false);
+
+    expect(
+      f7DatasetValidationResultSchema.safeParse({
+        status: "ready",
+        blockingIssues: [],
+        advisoryIssues: [
+          {
+            reason: "fit_uncertainty",
+            factorId: SHA256,
+          },
+        ],
+        candidateEligibility: {
+          normal: "eligible",
+          lognormal: "eligible",
+          weibull: "eligible",
+          gamma: "eligible",
+          uniform: "eligible_with_boundary_warning",
+        },
+      }).success,
+    ).toBe(true);
+  });
+
   it("enforces ordered dataset structure, lowercase hash, count reconciliation and disposition rules", () => {
     const dataset = {
       factorId: SHA256,

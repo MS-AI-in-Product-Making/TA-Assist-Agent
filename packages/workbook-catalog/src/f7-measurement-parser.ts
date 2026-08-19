@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   createTypedError,
+  f7MeasurementDatasetSchema,
   f7ObservationSchema,
   f7MeasurementPasteResultSchema,
   type F7MeasurementPasteResult,
@@ -34,6 +35,7 @@ type HeaderParseResult =
   | { kind: "invalid"; rowNumber: number };
 
 type RejectionReason = "non_finite_value" | "invalid_row" | "missing_value";
+type F7Observation = z.infer<typeof f7ObservationSchema>;
 
 function validationError(): Error {
   return createTypedError({
@@ -152,14 +154,14 @@ function parseInvariantNumber(valueLiteral: string): { ok: true; value: number }
 function createBaseValidation() {
   return {
     status: "ready" as const,
-    blockingIssues: [] as Array<{ reason: "non_finite_value" | "invalid_row" | "missing_value" | "duplicate_row" | "row_overlap" | "count_mismatch" | "insufficient_observations" | "distribution_unsupported"; factorId?: string; rowNumber?: number }>,
-    advisoryIssues: [] as Array<{ reason: "non_finite_value" | "invalid_row" | "missing_value" | "duplicate_row" | "row_overlap" | "count_mismatch" | "insufficient_observations" | "distribution_unsupported"; factorId?: string; rowNumber?: number }>,
+    blockingIssues: [] as Array<{ reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected"; factorId?: string; rowNumbers?: number[] }>,
+    advisoryIssues: [] as Array<{ reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected"; factorId?: string; rowNumbers?: number[] }>,
     candidateEligibility: {
-      normal: "unknown" as const,
-      lognormal: "unknown" as const,
-      weibull: "unknown" as const,
-      gamma: "unknown" as const,
-      uniform: "unknown" as const,
+      normal: "eligible" as const,
+      lognormal: "eligible" as const,
+      weibull: "eligible" as const,
+      gamma: "eligible" as const,
+      uniform: "eligible_with_boundary_warning" as const,
     },
   };
 }
@@ -185,7 +187,7 @@ function canonicalNumberString(value: number): string {
   return String(normalizeNegativeZero(value));
 }
 
-function computeContentHash(dataset: {
+export function hashF7MeasurementDatasetContent(dataset: {
   readonly factorId: string;
   readonly unit: string;
   readonly structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
@@ -193,15 +195,7 @@ function computeContentHash(dataset: {
   readonly importedAt: string;
   readonly msaStatus: "available" | "not_available" | "unknown";
   readonly missingRowCount: number;
-  readonly observations: ReadonlyArray<{
-    readonly value: number;
-    readonly originalRow: number;
-    readonly disposition: "included";
-    readonly sequence?: string;
-    readonly timestamp?: string;
-    readonly subgroup?: string;
-    readonly batch?: string;
-  }>;
+  readonly observations: ReadonlyArray<F7Observation>;
   readonly rejectionSummaries: ReadonlyArray<{ readonly rowNumber: number; readonly reason: RejectionReason }>;
 }): string {
   const chunks: Buffer[] = [];
@@ -239,6 +233,21 @@ function computeContentHash(dataset: {
     pushPresenceString(chunks, observation.subgroup);
     pushString(chunks, "batch");
     pushPresenceString(chunks, observation.batch);
+    if (observation.disposition === "excluded") {
+      pushString(chunks, "reason");
+      pushString(chunks, observation.reason);
+      pushString(chunks, "operatorReference");
+      pushString(chunks, observation.operatorReference);
+      pushString(chunks, "confirmed");
+      pushString(chunks, observation.confirmed ? "1" : "0");
+    } else {
+      pushString(chunks, "reason");
+      pushString(chunks, "0");
+      pushString(chunks, "operatorReference");
+      pushString(chunks, "0");
+      pushString(chunks, "confirmed");
+      pushString(chunks, "0");
+    }
   }
 
   pushString(chunks, "rejections");
@@ -260,7 +269,7 @@ function buildBlockedResult(factorId: string, rowNumber: number): F7MeasurementP
     validation: {
       ...createBaseValidation(),
       status: "blocked" as const,
-      blockingIssues: [{ reason: "invalid_row" as const, factorId, rowNumber }],
+      blockingIssues: [{ reason: "invalid_rows_rejected" as const, factorId, rowNumbers: [rowNumber] }],
     },
   };
 
@@ -406,7 +415,7 @@ export function parseF7MeasurementPaste(request: {
     analyzedCount: observations.length,
   };
 
-  const contentHash = computeContentHash(datasetWithoutHash);
+  const contentHash = hashF7MeasurementDatasetContent(datasetWithoutHash);
 
   const result = {
     status: "ready" as const,
@@ -419,5 +428,6 @@ export function parseF7MeasurementPaste(request: {
   };
 
   const parsedResult = f7MeasurementPasteResultSchema.parse(result);
+  f7MeasurementDatasetSchema.parse(parsedResult.dataset);
   return deepFreeze(structuredClone(parsedResult));
 }

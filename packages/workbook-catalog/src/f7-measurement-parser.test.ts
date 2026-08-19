@@ -170,7 +170,7 @@ describe("parseF7MeasurementPaste", () => {
     expect(mixedHeaderResult.status).toBe("blocked");
     expect(mixedHeaderResult.dataset).toBeUndefined();
     expect(mixedHeaderResult.validation.blockingIssues).toEqual([
-      { reason: "invalid_row", factorId: FACTOR_ID, rowNumber: 1 },
+      { reason: "invalid_rows_rejected", factorId: FACTOR_ID, rowNumbers: [1] },
     ]);
   });
 
@@ -180,11 +180,11 @@ describe("parseF7MeasurementPaste", () => {
 
     expect(unknownHeader.status).toBe("blocked");
     expect(unknownHeader.validation.blockingIssues).toEqual([
-      { reason: "invalid_row", factorId: FACTOR_ID, rowNumber: 1 },
+      { reason: "invalid_rows_rejected", factorId: FACTOR_ID, rowNumbers: [1] },
     ]);
     expect(duplicateHeader.status).toBe("blocked");
     expect(duplicateHeader.validation.blockingIssues).toEqual([
-      { reason: "invalid_row", factorId: FACTOR_ID, rowNumber: 1 },
+      { reason: "invalid_rows_rejected", factorId: FACTOR_ID, rowNumbers: [1] },
     ]);
   });
 
@@ -197,25 +197,25 @@ describe("parseF7MeasurementPaste", () => {
     expect(pipeHeader.status).toBe("blocked");
     expect(pipeHeader.dataset).toBeUndefined();
     expect(pipeHeader.validation.blockingIssues).toEqual([
-      { reason: "invalid_row", factorId: FACTOR_ID, rowNumber: 1 },
+      { reason: "invalid_rows_rejected", factorId: FACTOR_ID, rowNumbers: [1] },
     ]);
 
     expect(uppercaseWhitespacePipeHeader.status).toBe("blocked");
     expect(uppercaseWhitespacePipeHeader.dataset).toBeUndefined();
     expect(uppercaseWhitespacePipeHeader.validation.blockingIssues).toEqual([
-      { reason: "invalid_row", factorId: FACTOR_ID, rowNumber: 1 },
+      { reason: "invalid_rows_rejected", factorId: FACTOR_ID, rowNumbers: [1] },
     ]);
 
     expect(missingRequiredValueSequence.status).toBe("blocked");
     expect(missingRequiredValueSequence.dataset).toBeUndefined();
     expect(missingRequiredValueSequence.validation.blockingIssues).toEqual([
-      { reason: "invalid_row", factorId: FACTOR_ID, rowNumber: 1 },
+      { reason: "invalid_rows_rejected", factorId: FACTOR_ID, rowNumbers: [1] },
     ]);
 
     expect(missingRequiredValueTimestamp.status).toBe("blocked");
     expect(missingRequiredValueTimestamp.dataset).toBeUndefined();
     expect(missingRequiredValueTimestamp.validation.blockingIssues).toEqual([
-      { reason: "invalid_row", factorId: FACTOR_ID, rowNumber: 1 },
+      { reason: "invalid_rows_rejected", factorId: FACTOR_ID, rowNumbers: [1] },
     ]);
   });
 

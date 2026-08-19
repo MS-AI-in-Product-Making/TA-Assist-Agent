@@ -31,6 +31,18 @@ const uniquePositiveRowsSchema = z
     }
   });
 
+const sortedUniquePositiveRowsSchema = uniquePositiveRowsSchema.superRefine((rowNumbers, context) => {
+  for (let index = 1; index < rowNumbers.length; index += 1) {
+    if (rowNumbers[index - 1]! > rowNumbers[index]!) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "rowNumbers must be sorted ascending",
+      });
+      return;
+    }
+  }
+});
+
 const requireLowerSpecLessThanUpperSpec = (
   value: { lowerSpecLimit: number; upperSpecLimit: number },
   context: z.RefinementCtx,
@@ -271,34 +283,42 @@ export const f7FactorInputSchema = z.discriminatedUnion("mode", [
     .strict(),
 ]);
 
-export const f7DatasetValidationIssueReasonSchema = z.enum([
-  "non_finite_value",
-  "invalid_row",
-  "missing_value",
-  "duplicate_row",
-  "row_overlap",
-  "count_mismatch",
-  "insufficient_observations",
-  "distribution_unsupported",
+export const f7DatasetValidationReasonSchema = z.enum([
+  "subgroup_too_small",
+  "ordered_sequence_invalid",
+  "sample_count_below_minimum",
+  "exploratory_only",
+  "fit_uncertainty",
+  "unit_mismatch",
+  "specification_missing",
+  "non_finite_measurement",
+  "duplicate_measurement",
+  "msa_evidence_missing",
+  "mixed_batch_conditions",
+  "outlier_candidate",
+  "invalid_rows_rejected",
 ]);
+
+// Backward-compatible export name retained for existing imports.
+export const f7DatasetValidationIssueReasonSchema = f7DatasetValidationReasonSchema;
 
 export const f7DatasetValidationIssueSchema = z
   .object({
-    reason: f7DatasetValidationIssueReasonSchema,
+    reason: f7DatasetValidationReasonSchema,
     factorId: sha256LowerSchema.optional(),
-    rowNumber: z.number().int().positive().optional(),
+    rowNumbers: sortedUniquePositiveRowsSchema.optional(),
   })
   .strict();
 
-export const f7CandidateEligibilityFlagSchema = z.enum(["eligible", "ineligible", "unknown"]);
+export const f7CandidateEligibilityFlagSchema = z.enum(["eligible", "ineligible_nonpositive"]);
 
 export const f7CandidateEligibilitySchema = z
   .object({
-    normal: f7CandidateEligibilityFlagSchema,
+    normal: z.literal("eligible"),
     lognormal: f7CandidateEligibilityFlagSchema,
     weibull: f7CandidateEligibilityFlagSchema,
     gamma: f7CandidateEligibilityFlagSchema,
-    uniform: f7CandidateEligibilityFlagSchema,
+    uniform: z.literal("eligible_with_boundary_warning"),
   })
   .strict();
 
