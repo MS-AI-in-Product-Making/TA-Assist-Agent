@@ -67,6 +67,8 @@ export interface F6ReportProjection {
     readonly mean: ProjectionConsistencyCheck;
     readonly rss: ProjectionConsistencyCheck;
     readonly worstCase: ProjectionConsistencyCheck;
+    readonly worstCaseUpper: ProjectionConsistencyCheck;
+    readonly worstCaseLower: ProjectionConsistencyCheck;
     readonly ranges: readonly ProjectionConsistencyCheck[];
   };
 }
@@ -271,6 +273,22 @@ export function createF6ReportProjection(input: {
       mean: comparison("mean", calculatedMean, calculation.system.mean, inputResolution, unit, ["system.mean"]),
       rss: comparison("rss", calculatedRss, calculation.system.rssSigma, inputResolution, unit, ["system.rssSigma"]),
       worstCase: comparison("worst-case", worstCaseDifference, 0, inputResolution, unit, ["system.worstCaseUpper", "system.worstCaseLower"]),
+      worstCaseUpper: comparison(
+        "worst-case-upper",
+        calculatedWorstCaseUpper,
+        calculation.system.worstCaseUpper,
+        inputResolution,
+        unit,
+        ["system.worstCaseUpper"],
+      ),
+      worstCaseLower: comparison(
+        "worst-case-lower",
+        calculatedWorstCaseLower,
+        calculation.system.worstCaseLower,
+        inputResolution,
+        unit,
+        ["system.worstCaseLower"],
+      ),
       ranges: statisticalRanges.map(({ sigmaLevel }) => comparison(`range-${sigmaLevel}`, mean + sigmaLevel * rssSigma, mean + sigmaLevel * calculation.system.rssSigma, inputResolution, unit, ["system.mean", "system.rssSigma"])),
     },
   });

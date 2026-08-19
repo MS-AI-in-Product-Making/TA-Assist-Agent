@@ -103,6 +103,16 @@ describe("createF6ReportProjection", () => {
     expect(result.selfChecks.mean.result).toBe("PASS");
     expect(result.selfChecks.rss.result).toBe("PASS");
     expect(result.selfChecks.worstCase.result).toBe("PASS");
+    expect(result.selfChecks.worstCaseUpper).toMatchObject({ checkId: "worst-case-upper", result: "PASS" });
+    expect(result.selfChecks.worstCaseLower).toMatchObject({ checkId: "worst-case-lower", result: "PASS" });
+    expect(result.selfChecks.worstCaseUpper.calculated.value)
+      .toBeCloseTo(result.selfChecks.worstCaseUpper.reported.value);
+    expect(result.selfChecks.worstCaseLower.calculated.value)
+      .toBeCloseTo(result.selfChecks.worstCaseLower.reported.value);
+    expect(result.selfChecks.worstCaseUpper.tolerance.value).toBe(0.01);
+    expect(result.selfChecks.worstCaseLower.tolerance.value).toBe(0.01);
+    expect(result.selfChecks.worstCaseUpper.toleranceBasis).toBe("input resolution");
+    expect(result.selfChecks.worstCaseLower.toleranceBasis).toBe("input resolution");
     expect(Object.isFrozen(result)).toBe(true);
     expect(Object.isFrozen(result.formulaChecks)).toBe(true);
     expect(() => createF6ReportProjection({ calculation: calculation(), inputResolution: 0 }))

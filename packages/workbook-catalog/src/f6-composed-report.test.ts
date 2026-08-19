@@ -656,6 +656,12 @@ describe("createF6ComposedEngineeringReport V2", () => {
     expect(worksheet.sections.toleranceLoopDefinition.equation).toBeNull();
     expect(worksheet.baselineDecision).toBe("FAIL");
     expect(worksheet.status).toBe("FAIL");
+    expect(worksheet.sections.calculationSelfCheck.worstCaseUpperCheck).toMatchObject({ checkId: "worst-case-upper", result: "PASS" });
+    expect(worksheet.sections.calculationSelfCheck.worstCaseLowerCheck).toMatchObject({ checkId: "worst-case-lower", result: "PASS" });
+    expect(worksheet.sections.calculationSelfCheck.worstCaseUpperCheck?.tolerance.value).toBe(1e-12);
+    expect(worksheet.sections.calculationSelfCheck.worstCaseLowerCheck?.tolerance.value).toBe(1e-12);
+    expect(worksheet.sections.calculationSelfCheck.worstCaseUpperCheck?.toleranceBasis).toBe("input resolution");
+    expect(worksheet.sections.calculationSelfCheck.worstCaseLowerCheck?.toleranceBasis).toBe("input resolution");
   });
 
   it("normalizes floating-point drift in cumulative contributor percentages", () => {

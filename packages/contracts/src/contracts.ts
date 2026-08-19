@@ -7904,7 +7904,7 @@ const f6OperatingConditionsSectionV2Schema = z.object({
 }).strict();
 const f6InputIntegritySectionV2Schema = z.object({ sectionId: z.literal("input_integrity"), ...f6SectionBaseShape, rating: z.enum(["COMPLETE", "PARTIALLY_COMPLETE", "INSUFFICIENT"]), factors: z.array(f6InputFactorRowV2Schema), findings: z.array(f6IntegrityFindingV2Schema) }).strict();
 const f6LoopDefinitionSectionV2Schema = z.object({ sectionId: z.literal("tolerance_loop_definition"), ...f6SectionBaseShape, start: z.string().min(1).nullable(), end: z.string().min(1).nullable(), responseDirection: z.string().min(1).nullable(), terms: z.array(f6LoopTermV2Schema), equation: z.string().min(1).nullable(), reviewRequired: z.boolean() }).strict();
-const f6SelfCheckSectionV2Schema = z.object({ sectionId: z.literal("calculation_self_check"), ...f6SectionBaseShape, meanCheck: f6ConsistencyCheckV2Schema.nullable(), rssCheck: f6ConsistencyCheckV2Schema.nullable(), rangeChecks: z.array(f6ConsistencyCheckV2Schema), worstCaseCheck: f6ConsistencyCheckV2Schema.nullable() }).strict();
+const f6SelfCheckSectionV2Schema = z.object({ sectionId: z.literal("calculation_self_check"), ...f6SectionBaseShape, meanCheck: f6ConsistencyCheckV2Schema.nullable(), rssCheck: f6ConsistencyCheckV2Schema.nullable(), rangeChecks: z.array(f6ConsistencyCheckV2Schema), worstCaseCheck: f6ConsistencyCheckV2Schema.nullable(), worstCaseUpperCheck: f6ConsistencyCheckV2Schema.optional(), worstCaseLowerCheck: f6ConsistencyCheckV2Schema.optional() }).strict();
 const f6StatisticalResultsSectionV2Schema = z.object({
   sectionId: z.literal("statistical_results"), ...f6SectionBaseShape, mean: f6QuantityV2Schema, adjustedMean: f6QuantityV2Schema,
   meanShift: f6QuantityV2Schema, rssSigma: f6QuantityV2Schema,

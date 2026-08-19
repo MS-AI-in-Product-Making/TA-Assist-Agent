@@ -308,7 +308,60 @@ describe("renderComposedEngineeringReport V2", () => {
       operatingConditions: { ...base("operating_conditions", "INSUFFICIENT_EVIDENCE"), conditions: [] },
       inputIntegrity: { ...base("input_integrity", "PARTIAL"), rating: "PARTIALLY_COMPLETE", factors: [], findings: [] },
       toleranceLoopDefinition: { ...base("tolerance_loop_definition", "INSUFFICIENT_EVIDENCE"), start: null, end: null, responseDirection: null, terms: [], equation: null, reviewRequired: true },
-      calculationSelfCheck: { ...base("calculation_self_check"), meanCheck: null, rssCheck: null, rangeChecks: [], worstCaseCheck: null },
+      calculationSelfCheck: {
+        ...base("calculation_self_check"),
+        meanCheck: {
+          checkId: "mean",
+          calculated: { value: 0, unit: "mm" },
+          reported: { value: 0, unit: "mm" },
+          difference: { value: 0, unit: "mm" },
+          tolerance: { value: 1e-12, unit: "mm" },
+          toleranceBasis: "input resolution",
+          result: "PASS",
+          formulaCheckIds: ["system.mean"],
+        },
+        rssCheck: {
+          checkId: "rss",
+          calculated: { value: 0.05, unit: "mm" },
+          reported: { value: 0.05, unit: "mm" },
+          difference: { value: 0, unit: "mm" },
+          tolerance: { value: 1e-12, unit: "mm" },
+          toleranceBasis: "input resolution",
+          result: "PASS",
+          formulaCheckIds: ["system.rssSigma"],
+        },
+        rangeChecks: [],
+        worstCaseCheck: {
+          checkId: "worst-case",
+          calculated: { value: 0, unit: "mm" },
+          reported: { value: 0, unit: "mm" },
+          difference: { value: 0, unit: "mm" },
+          tolerance: { value: 1e-12, unit: "mm" },
+          toleranceBasis: "input resolution",
+          result: "PASS",
+          formulaCheckIds: ["system.worstCaseUpper", "system.worstCaseLower"],
+        },
+        worstCaseUpperCheck: {
+          checkId: "worst-case-upper",
+          calculated: { value: 0.2, unit: "mm" },
+          reported: { value: 0.2, unit: "mm" },
+          difference: { value: 0, unit: "mm" },
+          tolerance: { value: 1e-12, unit: "mm" },
+          toleranceBasis: "input resolution",
+          result: "PASS",
+          formulaCheckIds: ["system.worstCaseUpper"],
+        },
+        worstCaseLowerCheck: {
+          checkId: "worst-case-lower",
+          calculated: { value: -0.2, unit: "mm" },
+          reported: { value: -0.2, unit: "mm" },
+          difference: { value: 0, unit: "mm" },
+          tolerance: { value: 1e-12, unit: "mm" },
+          toleranceBasis: "input resolution",
+          result: "PASS",
+          formulaCheckIds: ["system.worstCaseLower"],
+        },
+      },
       statisticalResults: {
         ...base("statistical_results"),
         mean: quantity(0),
@@ -494,6 +547,11 @@ describe("renderComposedEngineeringReport V2", () => {
     expect(markdown).toContain("PREDICTIVE_TOLERANCE_MODEL");
     expect(markdown).toContain("不是量产实测 Cpk");
     expect(markdown).toContain("P1");
+    expect(markdown).toContain("F4 基线复算与数值一致性检查");
+    expect(markdown).toContain("F6 recomputed");
+    expect(markdown).toContain("F4 reported");
+    expect(markdown).toContain("1e-12 mm");
+    expect(markdown).not.toContain("Tolerance 0.000 mm");
     expect(markdown).not.toContain("Requirement Review");
   });
 });

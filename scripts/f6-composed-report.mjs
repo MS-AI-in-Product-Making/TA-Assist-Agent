@@ -198,6 +198,12 @@ function quantityText(quantity, decimals = 3) {
   return quantity === null ? "未提供" : formatEngineering(quantity.value, quantity.unit, decimals);
 }
 
+function thresholdText(quantity) {
+  if (quantity === null) return "未提供";
+  if (Math.abs(quantity.value) < 0.001) return `${quantity.value.toExponential()} ${quantity.unit}`;
+  return quantityText(quantity, 6);
+}
+
 function rangeText(range, decimals = 3) {
   return range === null ? "未提供" : `${range.lower.toFixed(decimals)} ～ ${range.upper.toFixed(decimals)} ${range.unit}`;
 }
@@ -251,7 +257,27 @@ function renderWorksheetV2(lines, worksheet) {
   pushSection(lines, 5, "公差链定义 Tolerance Loop Definition");
   lines.push(`- Loop起点：${cell(sections.toleranceLoopDefinition.start ?? "未提供")}`, `- Loop终点：${cell(sections.toleranceLoopDefinition.end ?? "未提供")}`, `- 完整公式：${cell(sections.toleranceLoopDefinition.equation ?? "Loop方向待工程师确认")}`);
   pushSection(lines, 6, "Loop 一致性与计算自检");
-  for (const check of [sections.calculationSelfCheck.meanCheck, sections.calculationSelfCheck.rssCheck, sections.calculationSelfCheck.worstCaseCheck].filter(Boolean)) lines.push(`- ${cell(check.checkId)}：${cell(check.result)}；Difference ${quantityText(check.difference)}；Tolerance ${quantityText(check.tolerance)}`);
+  const consistencyChecks = [
+    sections.calculationSelfCheck.meanCheck,
+    sections.calculationSelfCheck.rssCheck,
+    sections.calculationSelfCheck.worstCaseUpperCheck ?? null,
+    sections.calculationSelfCheck.worstCaseLowerCheck ?? null,
+    sections.calculationSelfCheck.worstCaseCheck,
+  ].filter(Boolean);
+  for (const check of consistencyChecks) lines.push(`- ${cell(check.checkId)}：${cell(check.result)}；Difference ${quantityText(check.difference)}；Tolerance ${thresholdText(check.tolerance)}`);
+  lines.push(
+    "",
+    "#### F4 基线复算与数值一致性检查",
+    "",
+    "| Check ID | F6 recomputed | F4 reported | Abs difference | Threshold | Basis | Result |",
+    "|---|---:|---:|---:|---:|---|---|",
+  );
+  for (const check of consistencyChecks) {
+    const absoluteDifference = { value: Math.abs(check.difference.value), unit: check.difference.unit };
+    lines.push(
+      `| ${cell(check.checkId)} | ${quantityText(check.calculated, 6)} | ${quantityText(check.reported, 6)} | ${quantityText(absoluteDifference, 6)} | ${thresholdText(check.tolerance)} | ${cell(check.toleranceBasis)} | ${cell(check.result)} |`,
+    );
+  }
   pushSection(lines, 7, "统计分析结果");
   const stats = sections.statisticalResults;
   lines.push(`- ${evidenceLabel("CALCULATED")} Mean：${quantityText(stats.mean)}`, `- RSS 1σ：${quantityText(stats.rssSigma)}`, `- Worst Case：${rangeText(stats.worstCase)}`);
