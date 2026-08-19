@@ -315,12 +315,45 @@ describe("renderComposedEngineeringReport V2", () => {
         adjustedMean: quantity(0),
         meanShift: quantity(0),
         rssSigma: quantity(0.05),
-        ranges: [{ sigmaLevel: 4, range: range(-0.2, 0.2), formulaCheckId: "statistical-bound-v1" }],
+        ranges: [
+          { sigmaLevel: 1, range: range(-0.05, 0.05), formulaCheckId: "statistical-bound-1sigma-v1" },
+          { sigmaLevel: 3, range: range(-0.15, 0.15), formulaCheckId: "statistical-bound-3sigma-v1" },
+          { sigmaLevel: 4, range: range(-0.2, 0.2), formulaCheckId: "statistical-bound-4sigma-v1" },
+          { sigmaLevel: 6, range: range(-0.3, 0.3), formulaCheckId: "statistical-bound-6sigma-v1" },
+        ],
         worstCase: range(-0.2, 0.2),
         formulaChecks: [
           {
+            outputField: "statistical_range_target_1sigma",
+            formulaId: "statistical-bound-1sigma-v1",
+            formulaVersion: "v1",
+            expression: "Mean ± 1 × RSS 1σ",
+            inputs: [
+              { name: "Mean", value: 0, unit: "mm", source: "system.mean" },
+              { name: "RSS 1σ", value: 0.05, unit: "mm", source: "system.rssSigma" },
+              { name: "N", value: 1, unit: "sigma", source: "target.sigmaLevel" },
+            ],
+            result: { value: 0.05, unit: "mm" },
+            sourceCells: ["T40"],
+            recomputable: true,
+          },
+          {
+            outputField: "statistical_range_target_3sigma",
+            formulaId: "statistical-bound-3sigma-v1",
+            formulaVersion: "v1",
+            expression: "Mean ± 3 × RSS 1σ",
+            inputs: [
+              { name: "Mean", value: 0, unit: "mm", source: "system.mean" },
+              { name: "RSS 1σ", value: 0.05, unit: "mm", source: "system.rssSigma" },
+              { name: "N", value: 3, unit: "sigma", source: "target.sigmaLevel" },
+            ],
+            result: { value: 0.15, unit: "mm" },
+            sourceCells: ["T40"],
+            recomputable: true,
+          },
+          {
             outputField: "statistical_range_target_4sigma",
-            formulaId: "statistical-bound-v1",
+            formulaId: "statistical-bound-4sigma-v1",
             formulaVersion: "v1",
             expression: "Mean ± 4 × RSS 1σ",
             inputs: [
@@ -330,6 +363,35 @@ describe("renderComposedEngineeringReport V2", () => {
             ],
             result: { value: 0.2, unit: "mm" },
             sourceCells: ["T41"],
+            recomputable: true,
+          },
+          {
+            outputField: "statistical_range_target_6sigma",
+            formulaId: "statistical-bound-6sigma-v1",
+            formulaVersion: "v1",
+            expression: "Mean ± 6 × RSS 1σ",
+            inputs: [
+              { name: "Mean", value: 0, unit: "mm", source: "system.mean" },
+              { name: "RSS 1σ", value: 0.05, unit: "mm", source: "system.rssSigma" },
+              { name: "N", value: 6, unit: "sigma", source: "target.sigmaLevel" },
+            ],
+            result: { value: 0.3, unit: "mm" },
+            sourceCells: ["T42"],
+            recomputable: true,
+          },
+          {
+            outputField: "margin.statistical.minimumMargin",
+            formulaId: "margin-statistical-min-v1",
+            formulaVersion: "v1",
+            expression: "min(USL - UpperBound, LowerBound - LSL)",
+            inputs: [
+              { name: "USL", value: 0.15, unit: "mm", source: "capability.upperSpecLimit" },
+              { name: "UpperBound", value: 0.2, unit: "mm", source: "statistical.upperBound" },
+              { name: "LowerBound", value: -0.2, unit: "mm", source: "statistical.lowerBound" },
+              { name: "LSL", value: -0.15, unit: "mm", source: "capability.lowerSpecLimit" },
+            ],
+            result: { value: -0.05, unit: "mm" },
+            sourceCells: ["T49"],
             recomputable: true,
           },
           {
@@ -423,6 +485,11 @@ describe("renderComposedEngineeringReport V2", () => {
     expect(markdown).toContain("CpkL = (Mean - LSL) / (3 × RSS 1σ)");
     expect(markdown).toContain("CpkU = (USL - Mean) / (3 × RSS 1σ)");
     expect(markdown).toContain("Cpk = min(CpkL, CpkU)");
+    expect(markdown).toContain("1σ statistical range");
+    expect(markdown).toContain("3σ statistical range");
+    expect(markdown).toContain("6σ statistical range");
+    expect(markdown).toContain("margin.statistical.minimumMargin");
+    expect(markdown).toContain(String.raw`min\(USL - UpperBound, LowerBound - LSL\)`);
     expect(markdown).toMatch(/LSL.*USL.*Target Cpk/s);
     expect(markdown).toContain("PREDICTIVE_TOLERANCE_MODEL");
     expect(markdown).toContain("不是量产实测 Cpk");

@@ -203,7 +203,8 @@ function rangeText(range, decimals = 3) {
 }
 
 function signedNumber(value, decimals = 6) {
-  return Number(value).toFixed(decimals).replace(/\.0+$|(?<=\.[0-9]*?)0+$/u, "");
+  const fixed = Number(value).toFixed(decimals);
+  return fixed.replace(/(\.\d*?[1-9])0+$/u, "$1").replace(/\.0+$/u, "");
 }
 
 function formulaInput(formula, name) {
@@ -254,7 +255,17 @@ function renderWorksheetV2(lines, worksheet) {
   pushSection(lines, 7, "统计分析结果");
   const stats = sections.statisticalResults;
   lines.push(`- ${evidenceLabel("CALCULATED")} Mean：${quantityText(stats.mean)}`, `- RSS 1σ：${quantityText(stats.rssSigma)}`, `- Worst Case：${rangeText(stats.worstCase)}`);
-  const targetRange = stats.ranges[0] ?? null;
+  const targetSigmaLevel = sections.specificationAndMargins.assessment.statistical.sigmaLevel;
+  const targetRange = stats.ranges.find((range) => range.sigmaLevel === targetSigmaLevel) ?? null;
+  for (const range of stats.ranges) {
+    lines.push(`- ${range.sigmaLevel}σ statistical range：${rangeText(range.range)} (formulaCheckId: ${cell(range.formulaCheckId)})`);
+  }
+  for (const formula of stats.formulaChecks) {
+    const value = formula.result.unit === "ratio"
+      ? signedNumber(formula.result.value, 3)
+      : signedNumber(formula.result.value);
+    lines.push(`- FormulaCheck ${cell(formula.outputField)} [${cell(formula.formulaId)}]：${cell(formula.expression)} = ${value} ${cell(formula.result.unit)}`);
+  }
   if (targetRange) {
     const sigmaLevel = targetRange.sigmaLevel;
     const statisticalFormula = findFormula(stats.formulaChecks, targetRange.formulaCheckId, targetRange.formulaCheckId);
@@ -273,7 +284,6 @@ function renderWorksheetV2(lines, worksheet) {
   pushSection(lines, 8, "规格符合性与 Margin 评估");
   const margin = sections.specificationAndMargins.assessment;
   const specification = sections.specificationAndMargins.specification;
-  const targetSigmaLevel = targetRange?.sigmaLevel ?? margin.statistical.sigmaLevel;
   lines.push(
     `- LSL：${quantityText(specification.lsl)}；USL：${quantityText(specification.usl)}；Target Cpk：${specification.targetCpk.toFixed(3)} ratio`,
     `- Target ${targetSigmaLevel}σ Minimum Margin：${signedNumber(margin.statistical.minimumMargin, 3)} ${specification.lsl.unit} (${marginResult(margin.statistical.minimumMargin)})`,
