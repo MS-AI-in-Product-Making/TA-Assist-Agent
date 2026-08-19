@@ -29,6 +29,7 @@ export { createComparisonPlaceholder } from "./comparison-placeholder.js";
 export { createCpkPlaceholder } from "./cpk-placeholder.js";
 export { normalizeF7Factor } from "./f7-factor-normalization.js";
 export { createF7WorkbookImport, extractF7FactorCandidates, confirmF7FactorSetup } from "./f7-excel-adapter.js";
+export { parseF7MeasurementPaste } from "./f7-measurement-parser.js";
 export type { F7FactorNormalizationInput, F7FactorNormalizationResult } from "./f7-factor-normalization.js";
 export type {
 	F7WorkbookImportResult,
