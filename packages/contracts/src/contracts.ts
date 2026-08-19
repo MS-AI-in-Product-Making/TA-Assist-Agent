@@ -7895,6 +7895,7 @@ const f6ExecutiveSummarySectionV2Schema = z.object({
 }).strict();
 const f6ObjectiveSectionV2Schema = z.object({
   sectionId: z.literal("objective_and_requirements"), ...f6SectionBaseShape, analysisObject: f6AnalysisObjectV2Schema.nullable(),
+  analysisCharacteristic: z.string().min(1).optional(),
   target: f6QuantityV2Schema.nullable(), lsl: f6QuantityV2Schema.nullable(), usl: f6QuantityV2Schema.nullable(), targetCpk: z.number().finite().positive().nullable(),
   requirementIds: z.array(z.string().min(1)), functionalBoundary: z.string().min(1).nullable(), passFailCriteria: z.string().min(1).nullable(),
 }).strict();
@@ -7902,8 +7903,57 @@ const f6OperatingConditionsSectionV2Schema = z.object({
   sectionId: z.literal("operating_conditions"), ...f6SectionBaseShape,
   conditions: z.array(z.object({ conditionId: z.string().min(1), category: z.string().min(1), description: z.string().min(1), evidenceId: z.string().min(1) }).strict()),
 }).strict();
-const f6InputIntegritySectionV2Schema = z.object({ sectionId: z.literal("input_integrity"), ...f6SectionBaseShape, rating: z.enum(["COMPLETE", "PARTIALLY_COMPLETE", "INSUFFICIENT"]), factors: z.array(f6InputFactorRowV2Schema), findings: z.array(f6IntegrityFindingV2Schema) }).strict();
-const f6LoopDefinitionSectionV2Schema = z.object({ sectionId: z.literal("tolerance_loop_definition"), ...f6SectionBaseShape, start: z.string().min(1).nullable(), end: z.string().min(1).nullable(), responseDirection: z.string().min(1).nullable(), terms: z.array(f6LoopTermV2Schema), equation: z.string().min(1).nullable(), reviewRequired: z.boolean() }).strict();
+const f6GovernanceSummaryV2Schema = z.object({
+  factorCount: z.number().int().nonnegative(),
+  drawingNumberMissingCount: z.number().int().nonnegative(),
+  dimIdMissingCount: z.number().int().nonnegative(),
+  affectedSourceRows: z.array(z.number().int().positive()),
+}).strict();
+const f6InputIntegritySectionV2Schema = z.object({
+  sectionId: z.literal("input_integrity"),
+  ...f6SectionBaseShape,
+  rating: z.enum(["COMPLETE", "PARTIALLY_COMPLETE", "INSUFFICIENT"]),
+  factors: z.array(f6InputFactorRowV2Schema),
+  findings: z.array(f6IntegrityFindingV2Schema),
+  governanceSummary: f6GovernanceSummaryV2Schema.optional(),
+}).strict();
+const f6LoopEvidenceV2Schema = z.object({
+  imageReference: f1ImageReferenceSchema,
+  toleranceLoopDescription: z.string().min(1),
+  factorDescriptions: z.array(z.object({
+    tableId: z.string().min(1),
+    sourceRow: z.number().int().positive(),
+    factorDescription: z.string().min(1),
+  }).strict()),
+  visualFacts: z.array(z.object({
+    statementId: z.string().min(1),
+    scope: z.string().min(1),
+    observedValue: z.enum(["visible", "not_visible", "ambiguous"]),
+    confidence: z.enum(["high", "medium", "low"]),
+    reviewStatus: z.enum(["unreviewed", "confirmed", "rejected"]),
+    visibleBasis: z.string().min(1),
+  }).strict()),
+  contextSignals: z.array(z.object({
+    statementId: z.string().min(1),
+    scope: z.string().min(1),
+    signalValue: z.enum(["indicated_consistent", "indicated_conflict", "ambiguous", "insufficient_evidence"]),
+    textBasis: z.string().min(1),
+    requiresEngineeringReview: z.literal(true),
+  }).strict()),
+  requiresEngineeringReview: z.boolean(),
+  signedEquationAuthorized: z.boolean(),
+}).strict();
+const f6LoopDefinitionSectionV2Schema = z.object({
+  sectionId: z.literal("tolerance_loop_definition"),
+  ...f6SectionBaseShape,
+  start: z.string().min(1).nullable(),
+  end: z.string().min(1).nullable(),
+  responseDirection: z.string().min(1).nullable(),
+  terms: z.array(f6LoopTermV2Schema),
+  equation: z.string().min(1).nullable(),
+  reviewRequired: z.boolean(),
+  loopEvidence: f6LoopEvidenceV2Schema.optional(),
+}).strict();
 const f6SelfCheckSectionV2Schema = z.object({ sectionId: z.literal("calculation_self_check"), ...f6SectionBaseShape, meanCheck: f6ConsistencyCheckV2Schema.nullable(), rssCheck: f6ConsistencyCheckV2Schema.nullable(), rangeChecks: z.array(f6ConsistencyCheckV2Schema), worstCaseCheck: f6ConsistencyCheckV2Schema.nullable(), worstCaseUpperCheck: f6ConsistencyCheckV2Schema.optional(), worstCaseLowerCheck: f6ConsistencyCheckV2Schema.optional() }).strict();
 const f6StatisticalResultsSectionV2Schema = z.object({
   sectionId: z.literal("statistical_results"), ...f6SectionBaseShape, mean: f6QuantityV2Schema, adjustedMean: f6QuantityV2Schema,

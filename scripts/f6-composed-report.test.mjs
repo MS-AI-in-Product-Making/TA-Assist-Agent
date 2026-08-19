@@ -1,3 +1,6 @@
+import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { f6LegacyComposedEngineeringReportSchema as f6ComposedEngineeringReportSchema } from "../packages/contracts/dist/contracts.js";
 import { renderComposedEngineeringReport as renderComposedEngineeringReportV2, renderLegacyComposedEngineeringReport as renderComposedEngineeringReport } from "./f6-composed-report.mjs";
@@ -304,10 +307,64 @@ describe("renderComposedEngineeringReport V2", () => {
     const gap = { gapId: "gap-context", priority: "P1", blocksFinalDecision: false, missingInformation: "Operating conditions were not provided.", affectedSections: ["operatingConditions"], suggestedSource: "Analysis Context", responsibleRole: "Design engineering role", verificationMethod: "Confirm operating conditions.", evidenceReferences: [] };
     const sections = {
       executiveSummary: { ...base("executive_summary"), analysisObject: null, mean: quantity(0), rssSigma: quantity(0.05), statisticalRange: range(-0.2, 0.2), worstCaseRange: range(-0.2, 0.2), minimumMargin: quantity(-0.05), predictiveCpk: 1.1, topContributors: [], primaryRisks: [], decision: "CONDITIONAL_PASS", actionRequired: true },
-      objectiveAndRequirements: { ...base("objective_and_requirements", "PARTIAL"), analysisObject: null, target: quantity(0), lsl: quantity(-0.15), usl: quantity(0.15), targetCpk: 1, requirementIds: [], functionalBoundary: null, passFailCriteria: null },
+      objectiveAndRequirements: { ...base("objective_and_requirements", "PARTIAL"), analysisObject: null, analysisCharacteristic: "DIM829, Audio Jack to C bucket Gap", target: quantity(0), lsl: quantity(-0.15), usl: quantity(0.15), targetCpk: 1, requirementIds: [], functionalBoundary: null, passFailCriteria: null },
       operatingConditions: { ...base("operating_conditions", "INSUFFICIENT_EVIDENCE"), conditions: [] },
-      inputIntegrity: { ...base("input_integrity", "PARTIAL"), rating: "PARTIALLY_COMPLETE", factors: [], findings: [] },
-      toleranceLoopDefinition: { ...base("tolerance_loop_definition", "INSUFFICIENT_EVIDENCE"), start: null, end: null, responseDirection: null, terms: [], equation: null, reviewRequired: true },
+      inputIntegrity: {
+        ...base("input_integrity", "PARTIAL"),
+        rating: "PARTIALLY_COMPLETE",
+        factors: [],
+        findings: [],
+        governanceSummary: {
+          factorCount: 3,
+          drawingNumberMissingCount: 3,
+          dimIdMissingCount: 3,
+          affectedSourceRows: [2, 3, 4],
+        },
+      },
+      toleranceLoopDefinition: {
+        ...base("tolerance_loop_definition", "INSUFFICIENT_EVIDENCE"),
+        start: null,
+        end: null,
+        responseDirection: null,
+        terms: [],
+        equation: null,
+        reviewRequired: true,
+        loopEvidence: {
+          imageReference: {
+            artifact: "f1",
+            worksheetName: "Analysis-A",
+            relativePath: "images/Analysis-A.png",
+            contentHash: "b".repeat(64),
+          },
+          toleranceLoopDescription: "DIM829, Audio Jack to C bucket Gap",
+          factorDescriptions: [
+            { tableId: "table-a", sourceRow: 2, factorDescription: "factor-1" },
+            { tableId: "table-a", sourceRow: 3, factorDescription: "factor-2" },
+            { tableId: "table-a", sourceRow: 4, factorDescription: "factor-3" },
+          ],
+          visualFacts: [
+            {
+              statementId: "fact-visual-1",
+              scope: "direction",
+              observedValue: "visible",
+              confidence: "high",
+              reviewStatus: "unreviewed",
+              visibleBasis: "Arrow and labels are visible.",
+            },
+          ],
+          contextSignals: [
+            {
+              statementId: "signal-context-1",
+              scope: "direction",
+              signalValue: "ambiguous",
+              textBasis: "Context rows are not fully mapped.",
+              requiresEngineeringReview: true,
+            },
+          ],
+          requiresEngineeringReview: true,
+          signedEquationAuthorized: false,
+        },
+      },
       calculationSelfCheck: {
         ...base("calculation_self_check"),
         meanCheck: {
@@ -553,5 +610,56 @@ describe("renderComposedEngineeringReport V2", () => {
     expect(markdown).toContain("1e-12 mm");
     expect(markdown).not.toContain("Tolerance 0.000 mm");
     expect(markdown).not.toContain("Requirement Review");
+    expect(markdown).toContain("分析特性：DIM829, Audio Jack to C bucket Gap");
+    expect(markdown).toContain("结构化工程定义：未提供");
+    expect(markdown).toContain("Drawing Number 缺失：3/3");
+    expect(markdown).toContain("DIM ID 缺失：3/3");
+    expect(markdown).toContain("F1 tolerance-path image");
+    expect(markdown).toContain("SIGNAL");
+    expect(markdown).toContain("不能生成 signed equation");
+  });
+
+  it("renders contained image links and falls back safely when roots are absent, escaping, or missing", ({ skip }) => {
+    const base = path.join(tmpdir(), `f6-render-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+    const publishRoot = path.join(base, "publish");
+    const outputRoot = path.join(publishRoot, "f6", "run");
+    const f1ArtifactRoot = path.join(publishRoot, "f1");
+    const imagePath = path.join(f1ArtifactRoot, "images", "Analysis-A.png");
+    const outsideRoot = path.join(base, "outside");
+    mkdirSync(path.dirname(imagePath), { recursive: true });
+    mkdirSync(outputRoot, { recursive: true });
+    writeFileSync(imagePath, "png");
+
+    try {
+      const markdownWithLink = renderComposedEngineeringReportV2(reportV2(), { outputRoot, f1ArtifactRoot, publishRoot });
+      expect(markdownWithLink).toMatch(/\[F1 图片\]\([^)]*images\/Analysis-A\.png\)/);
+      expect(markdownWithLink).not.toMatch(/[A-Za-z]:[\\/]/);
+
+      const markdownWithoutRoots = renderComposedEngineeringReportV2(reportV2(), { outputRoot });
+      expect(markdownWithoutRoots).toContain("F1 图片证据链接不可用");
+
+      const junctionPath = path.join(f1ArtifactRoot, "images");
+      rmSync(junctionPath, { recursive: true, force: true });
+      mkdirSync(outsideRoot, { recursive: true });
+      writeFileSync(path.join(outsideRoot, "Analysis-A.png"), "outside");
+      try {
+        symlinkSync(outsideRoot, junctionPath, "junction");
+      } catch (error) {
+        if (process.platform === "win32" && error?.code === "EPERM") skip();
+        throw error;
+      }
+      const markdownEscaping = renderComposedEngineeringReportV2(reportV2(), { outputRoot, f1ArtifactRoot, publishRoot });
+      expect(markdownEscaping).toContain("F1 图片证据链接不可用");
+      expect(markdownEscaping).not.toContain("[F1 图片](");
+      expect(markdownEscaping).not.toContain(outsideRoot);
+
+      const missing = reportV2();
+      missing.worksheets[0].sections.toleranceLoopDefinition.loopEvidence.imageReference.relativePath = "images/missing.png";
+      const markdownMissing = renderComposedEngineeringReportV2(missing, { outputRoot, f1ArtifactRoot, publishRoot });
+      expect(markdownMissing).toContain("F1 图片证据链接不可用");
+      expect(markdownMissing).not.toContain("images/missing.png");
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
   });
 });

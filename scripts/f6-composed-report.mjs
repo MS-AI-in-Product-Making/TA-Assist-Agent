@@ -1,3 +1,5 @@
+import { existsSync, realpathSync } from "node:fs";
+import path from "node:path";
 import { f6ComposedEngineeringReportSchema, f6LegacyComposedEngineeringReportSchema } from "../packages/contracts/dist/contracts.js";
 import { cell } from "./f6-markdown-sanitizer.mjs";
 import { evidenceLabel, formatEngineering, formatPercent } from "./engineering-format.mjs";
@@ -227,11 +229,59 @@ function findFormula(formulas, outputField, formulaId) {
     ?? null;
 }
 
+function isContained(root, candidate) {
+  const relative = path.relative(root, candidate);
+  return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative));
+}
+
+function encodeRelativeHref(relativePath) {
+  return relativePath
+    .split(/[\\/]/)
+    .map((segment) => segment === "." || segment === ".."
+      ? segment
+      : encodeURIComponent(segment).replace(/[!'()*]/g, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`))
+    .join("/");
+}
+
+function imageHref(imageReference, { outputRoot, f1ArtifactRoot, publishRoot }) {
+  if (typeof outputRoot !== "string" || outputRoot.length === 0
+    || typeof f1ArtifactRoot !== "string" || f1ArtifactRoot.length === 0
+    || typeof publishRoot !== "string" || publishRoot.length === 0) {
+    return undefined;
+  }
+
+  try {
+    const controlledPublishRoot = realpathSync(publishRoot);
+    const controlledRoot = realpathSync(f1ArtifactRoot);
+    const controlledOutputRoot = realpathSync(outputRoot);
+    const lexicalTarget = path.resolve(controlledRoot, imageReference.relativePath);
+    if (!isContained(controlledRoot, lexicalTarget) || !existsSync(lexicalTarget)) {
+      throw new Error("invalid image target");
+    }
+    const controlledTarget = realpathSync(lexicalTarget);
+    if (!isContained(controlledRoot, controlledTarget)) throw new Error("invalid image target");
+    if (!isContained(controlledPublishRoot, controlledOutputRoot)
+      || !isContained(controlledPublishRoot, controlledTarget)) {
+      throw new Error("image link escapes publish root");
+    }
+    const relative = path.relative(controlledOutputRoot, controlledTarget);
+    if (path.isAbsolute(relative)) throw new Error("invalid relative image link");
+    return encodeRelativeHref(relative);
+  } catch {
+    return undefined;
+  }
+}
+
+function imageLink(imageReference, options) {
+  const href = imageHref(imageReference, options);
+  return href === undefined ? "F1 图片证据链接不可用" : `[F1 图片](${href})`;
+}
+
 function pushSection(lines, number, title) {
   lines.push("", `## ${number}. ${title}`, "");
 }
 
-function renderWorksheetV2(lines, worksheet) {
+function renderWorksheetV2(lines, worksheet, options) {
   const sections = worksheet.sections;
   lines.push("", `# Worksheet：${cell(worksheet.worksheetName)}`, "");
   pushSection(lines, 1, "执行摘要 Executive Summary");
@@ -247,15 +297,56 @@ function renderWorksheetV2(lines, worksheet) {
   );
   pushSection(lines, 2, "分析目标与功能要求");
   const objective = sections.objectiveAndRequirements;
-  lines.push(`- 分析对象：${cell(objective.analysisObject?.name ?? "未提供")}`, `- Target：${quantityText(objective.target)}`, `- LSL：${quantityText(objective.lsl)}`, `- USL：${quantityText(objective.usl)}`, `- Target Cpk：${objective.targetCpk?.toFixed(3) ?? "未提供"} ratio`);
+  lines.push(
+    `- 分析特性：${cell(objective.analysisCharacteristic ?? "未提供")}`,
+    `- 结构化工程定义：${cell(objective.analysisObject?.name ?? "未提供")}`,
+    `- Target：${quantityText(objective.target)}`,
+    `- LSL：${quantityText(objective.lsl)}`,
+    `- USL：${quantityText(objective.usl)}`,
+    `- Target Cpk：${objective.targetCpk?.toFixed(3) ?? "未提供"} ratio`,
+  );
   pushSection(lines, 3, "分析工况与适用边界");
   if (sections.operatingConditions.conditions.length === 0) lines.push(`- ${evidenceLabel("MISSING")} 未提供受控工况。`);
   for (const condition of sections.operatingConditions.conditions) lines.push(`- ${cell(condition.category)}：${cell(condition.description)}`);
   pushSection(lines, 4, "输入数据与完整性检查");
   lines.push(`- 完整性评级：${cell(sections.inputIntegrity.rating)}`, "", "| Factor | Mean | +Tol | -Tol | Distribution | 1σ | Confidence |", "|---|---:|---:|---:|---|---:|---|");
   for (const factor of sections.inputIntegrity.factors) lines.push(`| ${cell(factor.factor.factorName)} | ${quantityText(factor.mean)} | ${quantityText(factor.upperTolerance)} | ${quantityText(factor.lowerTolerance)} | ${cell(factor.distribution)} | ${quantityText(factor.sigma)} | ${cell(factor.confidence)} |`);
+  if (sections.inputIntegrity.governanceSummary) {
+    const summary = sections.inputIntegrity.governanceSummary;
+    lines.push(
+      "",
+      `- Drawing Number 缺失：${summary.drawingNumberMissingCount}/${summary.factorCount}`,
+      `- DIM ID 缺失：${summary.dimIdMissingCount}/${summary.factorCount}`,
+      `- 影响 source rows：${summary.affectedSourceRows.length > 0 ? summary.affectedSourceRows.join(", ") : "无"}`,
+    );
+  }
   pushSection(lines, 5, "公差链定义 Tolerance Loop Definition");
   lines.push(`- Loop起点：${cell(sections.toleranceLoopDefinition.start ?? "未提供")}`, `- Loop终点：${cell(sections.toleranceLoopDefinition.end ?? "未提供")}`, `- 完整公式：${cell(sections.toleranceLoopDefinition.equation ?? "Loop方向待工程师确认")}`);
+  const loopEvidence = sections.toleranceLoopDefinition.loopEvidence;
+  if (loopEvidence) {
+    lines.push(
+      `- F1 tolerance-path image：${imageLink(loopEvidence.imageReference, options)}`,
+      `- tolerance loop description：${cell(loopEvidence.toleranceLoopDescription)}`,
+      "- factor descriptions：",
+      ...loopEvidence.factorDescriptions.map((row) => `  - Row ${row.sourceRow} [${cell(row.tableId)}] ${cell(row.factorDescription)}`),
+    );
+    if (loopEvidence.visualFacts.length > 0) {
+      lines.push("- Visual FACT：");
+      for (const fact of loopEvidence.visualFacts) {
+        lines.push(`  - FACT ${cell(fact.statementId)}：${cell(fact.scope)} / ${cell(fact.observedValue)} / ${cell(fact.confidence)} / ${cell(fact.reviewStatus)}；${cell(fact.visibleBasis)}`);
+      }
+    }
+    if (loopEvidence.contextSignals.length > 0) {
+      lines.push("- Context SIGNAL：");
+      for (const signal of loopEvidence.contextSignals) {
+        lines.push(`  - SIGNAL ${cell(signal.statementId)}：${cell(signal.scope)} / ${cell(signal.signalValue)}；${cell(signal.textBasis)}`);
+      }
+    }
+    lines.push(`- ME review required：${cell(loopEvidence.requiresEngineeringReview)}`);
+    if (!loopEvidence.signedEquationAuthorized) {
+      lines.push("- 图片显示尺寸链方向和标签，但尚未建立视觉标签到 factor/source row 的受治理映射，因此不能生成 signed equation。");
+    }
+  }
   pushSection(lines, 6, "Loop 一致性与计算自检");
   const consistencyChecks = [
     sections.calculationSelfCheck.meanCheck,
@@ -368,7 +459,6 @@ function renderWorksheetV2(lines, worksheet) {
 }
 
 export function renderComposedEngineeringReport(report, options = {}) {
-  void options;
   let parsed;
   try {
     parsed = f6ComposedEngineeringReportSchema.parse(report);
@@ -385,6 +475,6 @@ export function renderComposedEngineeringReport(report, options = {}) {
     `- P0 Blocking Gaps：${parsed.workbookSummary.blockingGapCount}`,
   ];
   for (const blocked of parsed.blockedWorksheets) lines.push(`- Blocked Worksheet ${cell(blocked.worksheetName)}：INCOMPLETE`);
-  for (const worksheet of parsed.worksheets) renderWorksheetV2(lines, worksheet);
+  for (const worksheet of parsed.worksheets) renderWorksheetV2(lines, worksheet, options);
   return `${lines.join("\n").trimEnd()}\n`;
 }

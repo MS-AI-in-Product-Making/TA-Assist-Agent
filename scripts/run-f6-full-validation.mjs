@@ -339,7 +339,11 @@ export function runF6FullValidation(options = {}, dependencyOverrides = {}) {
       optimizationJson: json(optimization),
       optimizationMarkdown: dependencies.renderOptimization(optimization, { outputRoot: layout.runRoot }),
       composedReportJson: json(composedReport),
-      composedReportMarkdown: dependencies.renderComposedReport(composedReport, { outputRoot: layout.runRoot }),
+      composedReportMarkdown: dependencies.renderComposedReport(composedReport, {
+        outputRoot: layout.runRoot,
+        f1ArtifactRoot: loaded.f2Report.artifactRoot,
+        publishRoot: layout.publishRoot,
+      }),
     };
     const workflowStatus = optimization.runStatus === undefined
       ? optimization.status

@@ -610,7 +610,19 @@ function buildV2Worksheet(
       verificationMethod: "Run a governed covariance model; do not substitute independent RSS.", evidenceReferences: [],
     });
   }
-  for (const row of f2Worksheet.rows) {
+  const sourceKey = (tableId: string, sourceRow: number): string => `${tableId}\u0000${sourceRow}`;
+  const projectedSourceKeys = new Set(
+    calculation.factors.map((factor) => sourceKey(factor.source.tableId, factor.source.sourceRow)),
+  );
+  const projectedF2Rows = f2Worksheet.rows.filter((row) =>
+    projectedSourceKeys.has(sourceKey(row.tableId, row.sourceRow)));
+  const f2RowBySource = new Map(
+    projectedF2Rows.map((row) => [sourceKey(row.tableId, row.sourceRow), row]),
+  );
+  const governanceBySource = new Map(
+    f5Worksheet.governanceRows.map((row) => [sourceKey(row.source.tableId, row.source.sourceRow), row]),
+  );
+  for (const row of projectedF2Rows) {
     if (row.actualFields.drawingNumber === null) dataGaps.push(p2(`${f6Worksheet.worksheetName}:drawing:${row.sourceRow}`, `Drawing Number is missing for source row ${row.sourceRow}.`, ["inputIntegrity", "designIntentReview"], "Confirm the governed drawing identity."));
   }
   const blockingP0GapIds = dataGaps.filter(({ priority }) => priority === "P0").map(({ gapId }) => gapId);
@@ -622,8 +634,9 @@ function buildV2Worksheet(
     : supportedFailureEvidenceIds.length > 0 ? "FAIL"
       : conditionalP1GapIds.length > 0 || openHighRiskIds.length > 0 ? "CONDITIONAL_PASS" : "PASS";
   const factorRows = calculation.factors.map((factor, index) => {
-    const f2Row = f2Worksheet.rows.find(({ tableId, sourceRow }) => tableId === factor.source.tableId && sourceRow === factor.source.sourceRow);
-    const governance = f5Worksheet.governanceRows.find(({ source }) => source.tableId === factor.source.tableId && source.sourceRow === factor.source.sourceRow);
+    const factorSourceKey = sourceKey(factor.source.tableId, factor.source.sourceRow);
+    const f2Row = f2RowBySource.get(factorSourceKey);
+    const governance = governanceBySource.get(factorSourceKey);
     return {
       factor: v2FactorIdentity(factor), partName: governance?.partSubsystem ?? null,
       drawingNumber: governance?.drawingNumber ?? null, dimId: governance?.dimId ?? null,
@@ -663,12 +676,79 @@ function buildV2Worksheet(
     currentMargin: v2Quantity(projection.margins.statistical.minimumMargin, unit), verificationMethod: "Review specification and measured process capability.",
   }] : [];
   const contextObject = analysisContext?.analysisObject;
+  const analysisCharacteristic = f2Worksheet.toleranceLoopDescription ?? f6Worksheet.worksheetName;
+  const drawingMissingRows = new Set<number>();
+  const dimMissingRows = new Set<number>();
+  for (const factor of calculation.factors) {
+    const factorSourceKey = sourceKey(factor.source.tableId, factor.source.sourceRow);
+    const f2Row = f2RowBySource.get(factorSourceKey);
+    const governance = governanceBySource.get(factorSourceKey);
+    if (f2Row?.actualFields.drawingNumber === null || governance?.drawingNumber === null) {
+      drawingMissingRows.add(factor.source.sourceRow);
+    }
+    if (f2Row?.actualFields.dimCharacteristicId === null || governance?.dimId === null) {
+      dimMissingRows.add(factor.source.sourceRow);
+    }
+  }
+  const affectedSourceRows = [...new Set([...drawingMissingRows, ...dimMissingRows])].sort((left, right) => left - right);
+  const governanceSummary = {
+    factorCount: calculation.factors.length,
+    drawingNumberMissingCount: drawingMissingRows.size,
+    dimIdMissingCount: dimMissingRows.size,
+    affectedSourceRows,
+  };
+  const visualFacts = f5Worksheet.statements.flatMap((statement) => {
+    if (statement.type !== "FACT" || statement.section !== "tolerance-chain-validity") return [];
+    const { content } = statement;
+    if (!("provenanceKind" in content) || content.provenanceKind !== "image_observation") return [];
+    return [{
+      statementId: statement.statementId,
+      scope: content.scope,
+      observedValue: content.observedValue,
+      confidence: content.confidence,
+      reviewStatus: content.reviewStatus,
+      visibleBasis: content.visibleBasis,
+    }];
+  });
+  const contextSignals = f5Worksheet.statements.flatMap((statement) => {
+    if (statement.type !== "SIGNAL" || statement.section !== "tolerance-chain-validity") return [];
+    const { content } = statement;
+    if (!("signalKind" in content) || content.signalKind !== "image_text_context_review") return [];
+    return [{
+      statementId: statement.statementId,
+      scope: content.scope,
+      signalValue: content.signalValue,
+      textBasis: content.textBasis,
+      requiresEngineeringReview: content.requiresEngineeringReview,
+    }];
+  });
+  const signedEquationAuthorized = analysisContext?.loopDefinition !== undefined;
+  const loopEvidence = {
+    imageReference: structuredClone(f5Worksheet.imageReference),
+    toleranceLoopDescription: analysisCharacteristic,
+    factorDescriptions: [...calculation.factors]
+      .sort((left, right) => left.source.sourceRow - right.source.sourceRow
+        || left.source.tableId.localeCompare(right.source.tableId))
+      .map((factor) => {
+        const factorSourceKey = sourceKey(factor.source.tableId, factor.source.sourceRow);
+        const governance = governanceBySource.get(factorSourceKey);
+        return {
+          tableId: factor.source.tableId,
+          sourceRow: factor.source.sourceRow,
+          factorDescription: governance?.factorDescription ?? factor.factorName,
+        };
+      }),
+    visualFacts,
+    contextSignals,
+    requiresEngineeringReview: !signedEquationAuthorized || contextSignals.some(({ requiresEngineeringReview }) => requiresEngineeringReview),
+    signedEquationAuthorized,
+  };
   const sections: F6ComposedEngineeringReportV2["worksheets"][number]["sections"] = {
     executiveSummary: { ...v2Section("executive_summary", [baselineEvidenceId]), analysisObject: contextObject?.name ?? null, mean: v2Quantity(calculation.system.mean, unit), rssSigma: v2Quantity(calculation.system.rssSigma, unit), statisticalRange: v2Range(targetRange.range.lower, targetRange.range.upper, unit), worstCaseRange: v2Range(projection.margins.worstCase.lowerBound, projection.margins.worstCase.upperBound, unit), minimumMargin: v2Quantity(Math.min(projection.margins.statistical.minimumMargin, projection.margins.worstCase.minimumMargin), unit), predictiveCpk: calculation.capability.cpk, topContributors: contributors.slice(0, 5), primaryRisks: risks.map(({ trigger }) => trigger), decision: status, actionRequired: status !== "PASS" },
-    objectiveAndRequirements: { ...v2Section("objective_and_requirements", [baselineEvidenceId], contextObject === undefined ? "PARTIAL" : "SUPPORTED"), analysisObject: contextObject === undefined ? null : { kind: contextObject.kind, name: contextObject.name, physicalMeaning: contextObject.physicalMeaning, measurementDirection: contextObject.measurementDirection, positiveDirectionDefinition: contextObject.positiveDirectionDefinition, negativeDirectionDefinition: contextObject.negativeDirectionDefinition }, target: v2Quantity(calculation.system.designNominal, unit), lsl: v2Quantity(calculation.capability.lowerSpecLimit, unit), usl: v2Quantity(calculation.capability.upperSpecLimit, unit), targetCpk: calculation.capability.targetCpk, requirementIds: analysisContext?.functionalRequirements?.requirementIds ?? [], functionalBoundary: analysisContext?.functionalRequirements?.functionalBoundary ?? null, passFailCriteria: analysisContext?.functionalRequirements?.passFailCriteria ?? null },
+    objectiveAndRequirements: { ...v2Section("objective_and_requirements", [baselineEvidenceId], contextObject === undefined ? "PARTIAL" : "SUPPORTED"), analysisObject: contextObject === undefined ? null : { kind: contextObject.kind, name: contextObject.name, physicalMeaning: contextObject.physicalMeaning, measurementDirection: contextObject.measurementDirection, positiveDirectionDefinition: contextObject.positiveDirectionDefinition, negativeDirectionDefinition: contextObject.negativeDirectionDefinition }, analysisCharacteristic, target: v2Quantity(calculation.system.designNominal, unit), lsl: v2Quantity(calculation.capability.lowerSpecLimit, unit), usl: v2Quantity(calculation.capability.upperSpecLimit, unit), targetCpk: calculation.capability.targetCpk, requirementIds: analysisContext?.functionalRequirements?.requirementIds ?? [], functionalBoundary: analysisContext?.functionalRequirements?.functionalBoundary ?? null, passFailCriteria: analysisContext?.functionalRequirements?.passFailCriteria ?? null },
     operatingConditions: { ...v2Section("operating_conditions", [], analysisContext?.operatingConditions.length ? "SUPPORTED" : "INSUFFICIENT_EVIDENCE"), conditions: (analysisContext?.operatingConditions ?? []).map((condition) => ({ conditionId: condition.conditionId, category: condition.category, description: condition.description, evidenceId: baselineEvidenceId })) },
-    inputIntegrity: { ...v2Section("input_integrity", [baselineEvidenceId], "PARTIAL"), rating: dataGaps.some(({ priority }) => priority === "P0") ? "INSUFFICIENT" as const : dataGaps.length > 0 ? "PARTIALLY_COMPLETE" as const : "COMPLETE" as const, factors: factorRows.map(({ rank: _rank, ...row }) => row), findings: dataGaps.map((gap) => ({ findingId: `finding:${gap.gapId}`, field: gap.affectedSections[0]!, status: "MISSING" as const, message: gap.missingInformation, gapId: gap.gapId })) },
-    toleranceLoopDefinition: { ...v2Section("tolerance_loop_definition", [], analysisContext?.loopDefinition === undefined ? "INSUFFICIENT_EVIDENCE" : "SUPPORTED"), start: analysisContext?.loopDefinition?.start ?? null, end: analysisContext?.loopDefinition?.end ?? null, responseDirection: analysisContext?.loopDefinition?.responseDirection ?? null, terms: (analysisContext?.loopDefinition?.factors ?? []).map(({ factor, sign }) => ({ factor: structuredClone(factor), sign, physicalMeaning: null, evidenceId: baselineEvidenceId })), equation: analysisContext?.loopDefinition === undefined ? null : analysisContext.loopDefinition.factors.map(({ factor, sign }) => `${sign === 1 ? "+" : "-"}${factor.factorName}`).join(" "), reviewRequired: analysisContext?.loopDefinition === undefined },
+    inputIntegrity: { ...v2Section("input_integrity", [baselineEvidenceId], "PARTIAL"), rating: dataGaps.some(({ priority }) => priority === "P0") ? "INSUFFICIENT" as const : dataGaps.length > 0 ? "PARTIALLY_COMPLETE" as const : "COMPLETE" as const, factors: factorRows.map(({ rank: _rank, ...row }) => row), findings: dataGaps.map((gap) => ({ findingId: `finding:${gap.gapId}`, field: gap.affectedSections[0]!, status: "MISSING" as const, message: gap.missingInformation, gapId: gap.gapId })), governanceSummary },
+    toleranceLoopDefinition: { ...v2Section("tolerance_loop_definition", [], analysisContext?.loopDefinition === undefined ? "INSUFFICIENT_EVIDENCE" : "SUPPORTED"), start: analysisContext?.loopDefinition?.start ?? null, end: analysisContext?.loopDefinition?.end ?? null, responseDirection: analysisContext?.loopDefinition?.responseDirection ?? null, terms: (analysisContext?.loopDefinition?.factors ?? []).map(({ factor, sign }) => ({ factor: structuredClone(factor), sign, physicalMeaning: null, evidenceId: baselineEvidenceId })), equation: analysisContext?.loopDefinition === undefined ? null : analysisContext.loopDefinition.factors.map(({ factor, sign }) => `${sign === 1 ? "+" : "-"}${factor.factorName}`).join(" "), reviewRequired: analysisContext?.loopDefinition === undefined, loopEvidence },
     calculationSelfCheck: {
       ...v2Section("calculation_self_check", [baselineEvidenceId]),
       meanCheck: consistencyDto(projection.selfChecks.mean),

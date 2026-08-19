@@ -34,7 +34,13 @@ function number(rawText: string, sourceCell: string, numericValue: number) {
   return { status: "available" as const, rawText, sourceCell, numericValue, unit: "mm" };
 }
 
-function calculationRequest(worksheetName: string, specificationLimit: number): CalculationRequest {
+function calculationRequest(
+  worksheetName: string,
+  specificationLimit: number,
+  options: { factorCount?: number; toleranceLoopDescription?: string } = {},
+): CalculationRequest {
+  const factorCount = options.factorCount ?? 2;
+  const toleranceLoopDescription = options.toleranceLoopDescription ?? `Loop ${worksheetName}`;
   return {
     contractVersion: "v1",
     inputClassification: "confidential",
@@ -45,7 +51,7 @@ function calculationRequest(worksheetName: string, specificationLimit: number): 
       workbook: { classification: "confidential", contentHash: HASH, catalogContractVersion: "v1" },
       worksheets: [{
         worksheetName,
-        toleranceLoopDescription: `Loop ${worksheetName}`,
+        toleranceLoopDescription,
         factorTables: [{
           tableId: `table-${worksheetName}`,
           headerRow: 1,
@@ -60,7 +66,8 @@ function calculationRequest(worksheetName: string, specificationLimit: number): 
             { semanticField: "distribution", headerText: "Distribution", sourceColumn: "G" },
             { semanticField: "unit", headerText: "Unit", sourceColumn: "H" },
           ],
-          rows: [1, 2].map((factor, index) => {
+          rows: Array.from({ length: factorCount }, (_value, index) => {
+            const factor = index + 1;
             const sourceRow = index + 2;
             return {
               sourceRow,
@@ -115,7 +122,10 @@ function calculationRequest(worksheetName: string, specificationLimit: number): 
   };
 }
 
-function governanceRows(worksheetName: string, calculation: ReturnType<typeof createCalculation>) {
+function governanceRows(
+  worksheetName: string,
+  calculation: ReturnType<typeof createCalculation>,
+) {
   if (calculation.status !== "completed") throw new Error("fixture calculation failed");
   const imageReference = {
     artifact: "f1" as const,
@@ -145,7 +155,7 @@ function governanceRows(worksheetName: string, calculation: ReturnType<typeof cr
   }));
 }
 
-function f2Row(worksheetName: string, sourceRow: number) {
+function f2Row(worksheetName: string, sourceRow: number, missingDrawingAndDimIds = false) {
   return {
     worksheetName,
     tableId: `table-${worksheetName}`,
@@ -153,8 +163,8 @@ function f2Row(worksheetName: string, sourceRow: number) {
     actualFields: {
       factorName: `factor-${sourceRow - 1}`,
       partName: "Part",
-      drawingNumber: `DRAW-${sourceRow - 1}`,
-      dimCharacteristicId: `DIM-${sourceRow - 1}`,
+      drawingNumber: missingDrawingAndDimIds ? null : `DRAW-${sourceRow - 1}`,
+      dimCharacteristicId: missingDrawingAndDimIds ? null : `DIM-${sourceRow - 1}`,
       partCategory: "CNC",
       nominalValue: 0,
       upperTolerance: 0.2,
@@ -170,7 +180,7 @@ function f2Row(worksheetName: string, sourceRow: number) {
     },
     sourceCells: {},
     missingRequiredFields: [],
-    missingIdentifiers: [],
+    missingIdentifiers: missingDrawingAndDimIds ? ["dimCharacteristicId"] : [],
     capabilityStatus: "non_f0_process_category" as const,
     adoReminderRequested: false,
   };
@@ -186,12 +196,17 @@ function f2Specification(worksheetName: string, specificationLimit: number) {
   };
 }
 
-function summary(readyCount: number, blockedCount: number) {
+function summary(
+  readyCount: number,
+  blockedCount: number,
+  factorCount = 2,
+  missingDimIdCount = 0,
+) {
   return {
     worksheetsChecked: readyCount + blockedCount,
     blockedWorksheetCount: blockedCount,
     readyWorksheetCount: readyCount,
-    factorRowCount: readyCount * 2 + blockedCount,
+    factorRowCount: readyCount * factorCount + blockedCount,
     rowsWithRequiredMissing: 0,
     requiredMissingFieldCount: 0,
     missingImageWorksheetCount: blockedCount,
@@ -199,17 +214,30 @@ function summary(readyCount: number, blockedCount: number) {
     internalGuidanceExceededCount: 0,
     f0InformationInsufficientCount: 0,
     publicLibraryMatchCount: 0,
-    nonF0ProcessCategoryCount: readyCount * 2 + blockedCount,
+    nonF0ProcessCategoryCount: readyCount * factorCount + blockedCount,
     unableToCheckCount: 0,
     publicToleranceDifferenceCount: 0,
     publicDistributionDifferenceCount: 0,
-    missingDimIdCount: 0,
+    missingDimIdCount,
     missingPartNumberCount: 0,
   };
 }
 
-function bundle(specifications: Array<[string, number]>, blockedWorksheetName?: string, failOptions = false) {
-  const calculations = specifications.map(([name, limit]) => createCalculation(calculationRequest(name, limit)));
+function bundle(
+  specifications: Array<[string, number]>,
+  blockedWorksheetName?: string,
+  failOptions = false,
+  options: {
+    factorCount?: number;
+    toleranceLoopDescription?: string;
+    missingDrawingAndDimIds?: boolean;
+  } = {},
+) {
+  const factorCount = options.factorCount ?? 2;
+  const calculations = specifications.map(([name, limit]) => createCalculation(calculationRequest(name, limit, {
+    factorCount,
+    toleranceLoopDescription: options.toleranceLoopDescription,
+  })));
   if (calculations.some(({ status }) => status !== "completed")) throw new Error("fixture calculation failed");
   const rows = calculations.map((calculation, index) => governanceRows(specifications[index]![0], calculation));
   const f5Report = createF5DataInterpretation({
@@ -239,7 +267,10 @@ function bundle(specifications: Array<[string, number]>, blockedWorksheetName?: 
     worksheets: calculations.map((calculation, index) => ({
       worksheetName: specifications[index]![0],
       f4CalculationIndex: index + 1,
-      baselineCalculationRequest: calculationRequest(specifications[index]![0], specifications[index]![1]),
+        baselineCalculationRequest: calculationRequest(specifications[index]![0], specifications[index]![1], {
+          factorCount,
+          toleranceLoopDescription: options.toleranceLoopDescription,
+        }),
       baselineCalculation: calculation,
       f5Worksheet: f5Report.worksheets[index],
       f3GovernanceRows: rows[index],
@@ -274,12 +305,13 @@ function bundle(specifications: Array<[string, number]>, blockedWorksheetName?: 
   }
   const readyWorksheets = specifications.map(([worksheetName, limit]) => ({
     worksheetName,
-    toleranceLoopDescription: `Loop ${worksheetName}`,
+    toleranceLoopDescription: options.toleranceLoopDescription ?? `Loop ${worksheetName}`,
     status: "ready" as const,
     tolerancePathImageStatus: "available" as const,
     systemSpecification: f2Specification(worksheetName, limit),
     systemSpecificationIssues: [],
-    rows: [f2Row(worksheetName, 2), f2Row(worksheetName, 3)],
+    rows: Array.from({ length: factorCount }, (_value, index) =>
+      f2Row(worksheetName, index + 2, options.missingDrawingAndDimIds ?? false)),
     missingFieldSummary: [],
   }));
   const blockedWorksheets = blockedWorksheetName === undefined ? [] : [{
@@ -320,7 +352,12 @@ function bundle(specifications: Array<[string, number]>, blockedWorksheetName?: 
       factors: [],
     })),
     adoEvents: [],
-    summary: summary(readyWorksheets.length, blockedWorksheets.length),
+    summary: summary(
+      readyWorksheets.length,
+      blockedWorksheets.length,
+      factorCount,
+      options.missingDrawingAndDimIds ? readyWorksheets.length * factorCount : 0,
+    ),
   };
   return { f2Report, f5Report, f6Result, f6Request };
 }
@@ -629,8 +666,16 @@ describe("createF6ComposedEngineeringReport", () => {
 });
 
 describe("createF6ComposedEngineeringReport V2", () => {
-  function bundleV2(specificationLimit = 0.12, blockedWorksheetName?: string) {
-    const base = bundle([["Analysis-A", specificationLimit]], blockedWorksheetName);
+  function bundleV2(
+    specificationLimit = 0.12,
+    blockedWorksheetName?: string,
+    options: {
+      factorCount?: number;
+      toleranceLoopDescription?: string;
+      missingDrawingAndDimIds?: boolean;
+    } = {},
+  ) {
+    const base = bundle([["Analysis-A", specificationLimit]], blockedWorksheetName, false, options);
     const f6Result = createF6OptimizationV2(base.f6Request, {
       inputDecisions: {
         analysisContext: { outcome: "NOT_PROVIDED" },
@@ -662,6 +707,72 @@ describe("createF6ComposedEngineeringReport V2", () => {
     expect(worksheet.sections.calculationSelfCheck.worstCaseLowerCheck?.tolerance.value).toBe(1e-12);
     expect(worksheet.sections.calculationSelfCheck.worstCaseUpperCheck?.toleranceBasis).toBe("input resolution");
     expect(worksheet.sections.calculationSelfCheck.worstCaseLowerCheck?.toleranceBasis).toBe("input resolution");
+  });
+
+  it("projects analysis characteristic, governance completeness, and unsigned loop evidence without analysis context", () => {
+    const input = structuredClone(bundleV2(0.12, undefined, {
+      factorCount: 3,
+      toleranceLoopDescription: "DIM829, Audio Jack to C bucket Gap",
+      missingDrawingAndDimIds: true,
+    }));
+    const inputWorksheet = input.f5Report.worksheets[0];
+    if (inputWorksheet?.status !== "completed") throw new Error("fixture worksheet must be completed");
+    inputWorksheet.calculationResult.factors[0]!.contribution = 0.34;
+    inputWorksheet.calculationResult.factors[1]!.contribution = 0.33;
+    inputWorksheet.calculationResult.factors[2]!.contribution = 0.33;
+    for (const contributor of inputWorksheet.sections.majorContributors.items) {
+      contributor.contributionPercent = inputWorksheet.calculationResult.factors[contributor.factorIndex]!.contribution * 100;
+    }
+    inputWorksheet.sections.majorContributors.items.sort((left, right) => (
+      right.contributionPercent - left.contributionPercent || left.factorIndex - right.factorIndex
+    ));
+    for (const statement of inputWorksheet.statements) {
+      if (statement.type === "FACT" && "metric" in statement.content
+        && statement.content.metric === "factor_contribution") {
+        const contributor = inputWorksheet.sections.majorContributors.items.find(
+          ({ factorReference }) => factorReference === statement.content.factorReference,
+        );
+        if (contributor !== undefined) statement.content.contributionPercent = contributor.contributionPercent;
+      }
+    }
+
+    const report = createF6ComposedEngineeringReportV2(input);
+    const worksheet = report.worksheets[0]!;
+
+    expect(worksheet.sections.objectiveAndRequirements.analysisCharacteristic)
+      .toBe("DIM829, Audio Jack to C bucket Gap");
+    expect(worksheet.sections.inputIntegrity.governanceSummary).toMatchObject({
+      factorCount: 3,
+      drawingNumberMissingCount: 3,
+      dimIdMissingCount: 3,
+    });
+    expect(worksheet.sections.toleranceLoopDefinition.loopEvidence?.signedEquationAuthorized).toBe(false);
+    expect(worksheet.sections.objectiveAndRequirements.analysisObject).toBeNull();
+  });
+
+  it("projects governance completeness and loop factor descriptions only from exact worksheet/table/source rows", () => {
+    const input = structuredClone(bundleV2(0.12, undefined, {
+      factorCount: 2,
+      toleranceLoopDescription: "DIM829, Audio Jack to C bucket Gap",
+    }));
+    const f2Worksheet = input.f2Report.worksheets.find(({ worksheetName }) => worksheetName === "Analysis-A");
+    if (f2Worksheet?.status !== "ready") throw new Error("fixture worksheet must be ready");
+    f2Worksheet.rows.push(f2Row("Analysis-A", 99, true));
+    input.f2Report.summary.factorRowCount += 1;
+    input.f2Report.summary.nonF0ProcessCategoryCount += 1;
+    input.f2Report.summary.missingDimIdCount += 1;
+
+    const report = createF6ComposedEngineeringReportV2(input);
+    const worksheet = report.worksheets[0]!;
+
+    expect(worksheet.sections.inputIntegrity.governanceSummary).toMatchObject({
+      factorCount: 2,
+      drawingNumberMissingCount: 0,
+      dimIdMissingCount: 0,
+      affectedSourceRows: [],
+    });
+    expect(worksheet.sections.toleranceLoopDefinition.loopEvidence?.factorDescriptions).toHaveLength(2);
+    expect(worksheet.sections.toleranceLoopDefinition.loopEvidence?.factorDescriptions.every(({ sourceRow }) => sourceRow !== 99)).toBe(true);
   });
 
   it("normalizes floating-point drift in cumulative contributor percentages", () => {
