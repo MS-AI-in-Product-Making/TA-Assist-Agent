@@ -27,6 +27,8 @@ export { createInterpretation, createInterpretationPlaceholder } from "./interpr
 export { createF5DataInterpretation } from "./f5-data-interpretation.js";
 export { createComparisonPlaceholder } from "./comparison-placeholder.js";
 export { createCpkPlaceholder } from "./cpk-placeholder.js";
+export { normalizeF7Factor } from "./f7-factor-normalization.js";
+export type { F7FactorNormalizationInput, F7FactorNormalizationResult } from "./f7-factor-normalization.js";
 export type {
 	CapabilityValidationRequest,
 	CapabilityValidationResult,
