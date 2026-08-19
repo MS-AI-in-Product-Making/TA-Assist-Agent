@@ -250,6 +250,20 @@ function scenarioTargetLabel(row) {
   return `${factor}; ${row.targetType}`;
 }
 
+function nonCompletedScenarioOptionText(option) {
+  if (option.status === "candidate") {
+    const factors = option.candidateFactors.map((factor) => `${factor.factorName}(row ${factor.sourceRow})`).join(", ");
+    return `Candidate ${option.optionId}: status=candidate; reason=${option.reasonCode}; required inputs=${option.requiredInputs.join(", ")}; candidate factors=${factors}`;
+  }
+  if (option.status === "insufficient_evidence") {
+    return `Option ${option.optionId}: status=insufficient_evidence; required inputs=${option.requiredInputs.join(", ")}`;
+  }
+  if (option.status === "calculation_failed") {
+    return `Option ${option.optionId}: status=calculation_failed; reason=${option.reasonCode}`;
+  }
+  return `Option ${option.optionId}: status=${option.status}`;
+}
+
 function processGuidanceLine(factor) {
   const guidance = factor.processGuidance;
   if (guidance === undefined) return null;
@@ -498,6 +512,14 @@ function renderWorksheetV2(lines, worksheet, options) {
       lines.push(
         `| ${cell(row.optionId)} | ${cell(scenarioTargetLabel(row))} | ${cell(scenarioInputText(row.baselineInput))} | ${cell(scenarioInputText(row.adjustedInput))} | ${signedNumber(row.scenarioMetrics.rssSigma, 6)} | ${signedNumber(row.scenarioMetrics.cpk, 3)} | ${signedNumber(row.scenarioMinimumMargin, 3)} | ${cell(yieldValue)} | ${cell(scenarioDeltaText(row.deltas))} |`,
       );
+    }
+    const nonCompletedOptions = sections.sensitivityAndOptimization.options
+      .filter((option) => option.status !== "completed");
+    if (nonCompletedOptions.length > 0) {
+      lines.push("", "- 非完成项：");
+      for (const option of nonCompletedOptions) {
+        lines.push(`  - ${cell(nonCompletedScenarioOptionText(option))}`);
+      }
     }
   } else {
     if (sections.sensitivityAndOptimization.options.length === 0) lines.push(`- ${evidenceLabel("MISSING")} 未提供受控优化目标，不量化改善收益。`);

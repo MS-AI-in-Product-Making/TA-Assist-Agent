@@ -15,6 +15,7 @@ import {
 import { calculateF6Scenario } from "./f6-scenario-adapter.js";
 import * as packageRoot from "./index.js";
 import {
+  actionPlanFromGaps,
   createF6ComposedEngineeringReport as createF6ComposedEngineeringReportV2,
   createLegacyF6ComposedEngineeringReport as createF6ComposedEngineeringReport,
 } from "./f6-composed-report.js";
@@ -1154,6 +1155,95 @@ describe("createF6ComposedEngineeringReport V2", () => {
     expect(drawingAction?.scope.some((item) => item.includes("source rows"))).toBe(true);
     expect(drawingAction?.gapIds).toEqual(expect.arrayContaining(drawingGaps.map(({ gapId }) => gapId)));
     expect(drawingAction?.gapIds.length).toBe(drawingGaps.length);
+  });
+
+  it("keeps same action/owner/verification split when suggestedSource differs", () => {
+    const gaps = [
+      {
+        gapId: "Analysis-A:operating-conditions",
+        priority: "P1",
+        blocksFinalDecision: false,
+        missingInformation: "Operating conditions were not provided.",
+        affectedSections: ["operatingConditions"],
+        suggestedSource: "Analysis Context",
+        responsibleRole: "Design engineering role",
+        verificationMethod: "Confirm operating conditions.",
+        evidenceReferences: [],
+      },
+      {
+        gapId: "Analysis-A:operating-conditions:measured",
+        priority: "P1",
+        blocksFinalDecision: false,
+        missingInformation: "Operating conditions were not provided.",
+        affectedSections: ["operatingConditions"],
+        suggestedSource: "Measured evidence package",
+        responsibleRole: "Design engineering role",
+        verificationMethod: "Confirm operating conditions.",
+        evidenceReferences: [],
+      },
+    ];
+
+    const plan = actionPlanFromGaps(gaps as any, new Map([
+      ["Analysis-A:operating-conditions", [2]],
+      ["Analysis-A:operating-conditions:measured", [3]],
+    ]));
+
+    expect(plan).toHaveLength(2);
+    expect(plan.map((row) => row.requiredEvidence[0]).sort()).toEqual([
+      "Analysis Context",
+      "Measured evidence package",
+    ]);
+    expect(plan.every((row) => row.scope.some((scope) => scope.startsWith("source rows:")))).toBe(true);
+  });
+
+  it("never infers source rows from unusual non-row gap IDs and keeps drawing-row scopes complete", () => {
+    const gaps = [
+      {
+        gapId: "Analysis-A:drawing:2",
+        priority: "P2",
+        blocksFinalDecision: false,
+        missingInformation: "Drawing Number is missing for source row 2.",
+        affectedSections: ["inputIntegrity", "designIntentReview"],
+        suggestedSource: "Governed TA Analysis Context or measured evidence",
+        responsibleRole: "Design or manufacturing engineering role",
+        verificationMethod: "Confirm the governed drawing identity.",
+        evidenceReferences: [],
+      },
+      {
+        gapId: "Analysis-A:drawing:3",
+        priority: "P2",
+        blocksFinalDecision: false,
+        missingInformation: "Drawing Number is missing for source row 3.",
+        affectedSections: ["inputIntegrity", "designIntentReview"],
+        suggestedSource: "Governed TA Analysis Context or measured evidence",
+        responsibleRole: "Design or manufacturing engineering role",
+        verificationMethod: "Confirm the governed drawing identity.",
+        evidenceReferences: [],
+      },
+      {
+        gapId: "Analysis-A:operating-conditions:999",
+        priority: "P1",
+        blocksFinalDecision: false,
+        missingInformation: "Operating conditions were not provided.",
+        affectedSections: ["operatingConditions"],
+        suggestedSource: "Analysis Context",
+        responsibleRole: "Design engineering role",
+        verificationMethod: "Confirm operating conditions.",
+        evidenceReferences: [],
+      },
+    ];
+
+    const plan = actionPlanFromGaps(gaps as any, new Map([
+      ["Analysis-A:drawing:2", [2]],
+      ["Analysis-A:drawing:3", [3]],
+    ]));
+
+    const drawingAction = plan.find((row) => row.action === "Drawing Number is missing.");
+    expect(drawingAction?.scope).toEqual(expect.arrayContaining(["source rows: 2, 3"]));
+
+    const operatingAction = plan.find((row) => row.action === "Operating conditions were not provided.");
+    expect(operatingAction).toBeDefined();
+    expect(operatingAction?.scope.some((scope) => scope.startsWith("source rows:"))).toBe(false);
   });
 
   it("makes an in-scope blocked worksheet drive workbook INCOMPLETE", () => {

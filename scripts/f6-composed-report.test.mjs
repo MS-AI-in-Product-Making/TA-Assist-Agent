@@ -704,6 +704,56 @@ describe("renderComposedEngineeringReport V2", () => {
     expect(markdown).toContain("source rows: 2, 3");
   });
 
+  it("keeps completed scenarios in table and still renders every non-completed option", () => {
+    const input = reportV2();
+    const optimization = input.worksheets[0].sections.sensitivityAndOptimization;
+    const baseline = optimization.scenarioComparisons[0].baselineMetrics;
+    const factor = optimization.targets[0].factor;
+    if (factor === null) throw new Error("fixture factor must exist");
+
+    optimization.options = [
+      {
+        optionId: "Analysis-A:candidate-mixed",
+        status: "candidate",
+        reasonCode: "target_not_provided",
+        candidateFactors: [factor],
+        requiredInputs: ["optimization_target"],
+        calculationMethod: "Provide a governed target and rerun through F4.",
+        baselineMetrics: baseline,
+        impactRank: null,
+      },
+      {
+        optionId: "Analysis-A:insufficient-mixed",
+        status: "insufficient_evidence",
+        targetId: "scenario-d",
+        requiredInputs: ["confirmed_supplier_capability_evidence"],
+        baselineMetrics: baseline,
+        evidenceReferences: [],
+        impactRank: null,
+      },
+      {
+        optionId: "Analysis-A:failed-mixed",
+        status: "calculation_failed",
+        targetId: "scenario-e",
+        reasonCode: "f4_calculation_failed",
+        baselineMetrics: baseline,
+        evidenceReferences: [],
+        impactRank: null,
+      },
+    ];
+
+    const markdown = renderComposedEngineeringReportV2(input);
+
+    expect(markdown).toContain("| Scenario | Factor/Target | Baseline Nominal/+Tol/-Tol | Adjusted Nominal/+Tol/-Tol | RSS | Cpk | Minimum Margin | Yield | Delta |");
+    expect(markdown).toContain("Analysis-A:scenario-a");
+    expect(markdown).toContain("Analysis-A:scenario-b");
+    expect(markdown).toContain("Analysis-A:scenario-c");
+    expect(markdown).toContain("非完成项");
+    expect(markdown).toContain(String.raw`status=candidate; reason=target\_not\_provided; required inputs=optimization\_target`);
+    expect(markdown).toContain(String.raw`status=insufficient\_evidence; required inputs=confirmed\_supplier\_capability\_evidence`);
+    expect(markdown).toContain(String.raw`status=calculation\_failed; reason=f4\_calculation\_failed`);
+  });
+
   it("renders 未提供 when analysisCharacteristic is absent", () => {
     const input = reportV2();
     delete input.worksheets[0].sections.objectiveAndRequirements.analysisCharacteristic;

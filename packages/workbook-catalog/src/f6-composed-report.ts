@@ -632,13 +632,16 @@ function normalizeGapActionForPlan(missingInformation: string): string {
     : missingInformation;
 }
 
-function actionPlanFromGaps(gaps: F6ComposedEngineeringReportV2["worksheets"][number]["dataGaps"]): V2ActionPlanRow[] {
+export function actionPlanFromGaps(
+  gaps: F6ComposedEngineeringReportV2["worksheets"][number]["dataGaps"],
+  sourceRowsByGapId: ReadonlyMap<string, readonly number[]> = new Map(),
+): V2ActionPlanRow[] {
   const grouped = new Map<string, V2ActionPlanRow>();
   for (const gap of gaps) {
     const normalizedAction = normalizeGapActionForPlan(gap.missingInformation);
-    const key = `${gap.priority}\u0000${normalizedAction}\u0000${gap.responsibleRole}\u0000${gap.verificationMethod}`;
-    const sourceRowMatch = gap.gapId.match(/:(\d+)$/u);
-    const sourceRows = sourceRowMatch === null ? [] : [Number(sourceRowMatch[1])];
+    const key = `${gap.priority}\u0000${normalizedAction}\u0000${gap.responsibleRole}\u0000${gap.verificationMethod}\u0000${gap.suggestedSource}`;
+    const sourceRows = [...new Set((sourceRowsByGapId.get(gap.gapId) ?? []).filter((value) => Number.isInteger(value) && value > 0))]
+      .sort((left, right) => left - right);
     const existing = grouped.get(key);
     if (existing === undefined) {
       grouped.set(key, {
@@ -734,6 +737,7 @@ function buildV2Worksheet(
     priority: "P2" as const,
   });
   const dataGaps: F6ComposedEngineeringReportV2["worksheets"][number]["dataGaps"] = [];
+  const dataGapSourceRowsById = new Map<string, readonly number[]>();
   if (analysisContext?.analysisObject === undefined) dataGaps.push(p2(`${f6Worksheet.worksheetName}:analysis-object`, "Structured analysis object was not provided.", ["objectiveAndRequirements"], "Provide f6-analysis-context-v1 analysisObject."));
   if (analysisContext === undefined || analysisContext.operatingConditions.length === 0) dataGaps.push(p1(`${f6Worksheet.worksheetName}:operating-conditions`, "Operating conditions were not provided.", ["operatingConditions", "riskAssessment"], "Confirm assembly, load, temperature and test conditions."));
   if (analysisContext?.loopDefinition === undefined) dataGaps.push(p1(`${f6Worksheet.worksheetName}:loop-definition`, "Loop start, end and signed direction were not provided.", ["toleranceLoopDefinition", "calculationSelfCheck"], "Provide identity-bound signed Loop factors."));
@@ -764,7 +768,11 @@ function buildV2Worksheet(
     f5Worksheet.governanceRows.map((row) => [sourceKey(row.source.tableId, row.source.sourceRow), row]),
   );
   for (const row of projectedF2Rows) {
-    if (row.actualFields.drawingNumber === null) dataGaps.push(p2(`${f6Worksheet.worksheetName}:drawing:${row.sourceRow}`, `Drawing Number is missing for source row ${row.sourceRow}.`, ["inputIntegrity", "designIntentReview"], "Confirm the governed drawing identity."));
+    if (row.actualFields.drawingNumber === null) {
+      const gapId = `${f6Worksheet.worksheetName}:drawing:${row.sourceRow}`;
+      dataGaps.push(p2(gapId, `Drawing Number is missing for source row ${row.sourceRow}.`, ["inputIntegrity", "designIntentReview"], "Confirm the governed drawing identity."));
+      dataGapSourceRowsById.set(gapId, [row.sourceRow]);
+    }
   }
   const blockingP0GapIds = dataGaps.filter(({ priority }) => priority === "P0").map(({ gapId }) => gapId);
   const conditionalP1GapIds = dataGaps.filter(({ priority }) => priority === "P1").map(({ gapId }) => gapId);
@@ -1011,7 +1019,7 @@ function buildV2Worksheet(
     riskAssessment: { ...v2Section("risk_assessment", [baselineEvidenceId]), risks },
     engineeringRecommendations: { ...v2Section("engineering_recommendations", [baselineEvidenceId]), mandatoryActions: calculation.capability.status === "FAIL" ? [{ actionId: `${f6Worksheet.worksheetName}:capability-action`, targetFactor: null, targetRiskId: `${f6Worksheet.worksheetName}:capability`, rationale: "Close the supported predictive capability failure.", quantifiedBenefit: null, validationRequired: "Provide a governed target and validate through F4.", sideEffects: [], evidenceIds: [baselineEvidenceId] }] : [], validationActions: dataGaps.map((gap) => ({ actionId: `close:${gap.gapId}`, targetFactor: null, targetRiskId: null, rationale: gap.missingInformation, quantifiedBenefit: null, validationRequired: gap.verificationMethod, sideEffects: [], evidenceIds: [] })), conditionalOptimizations: [] },
     designIntentReview: { ...v2Section("design_intent_review", [baselineEvidenceId], "PARTIAL"), checks: [{ checkId: `${f6Worksheet.worksheetName}:margin`, topic: "Margin", status: projection.margins.statistical.minimumMargin < 0 || projection.margins.worstCase.minimumMargin < 0 ? "NEEDS_REVIEW" as const : "SUPPORTED" as const, finding: `Statistical minimum margin ${projection.margins.statistical.minimumMargin}; WC minimum margin ${projection.margins.worstCase.minimumMargin}.`, evidenceIds: [baselineEvidenceId], gapId: null }] },
-    dataGaps: { ...v2Section("data_gaps", [], dataGaps.length > 0 ? "PARTIAL" : "SUPPORTED"), gaps: structuredClone(dataGaps), actionPlan: actionPlanFromGaps(dataGaps) },
+    dataGaps: { ...v2Section("data_gaps", [], dataGaps.length > 0 ? "PARTIAL" : "SUPPORTED"), gaps: structuredClone(dataGaps), actionPlan: actionPlanFromGaps(dataGaps, dataGapSourceRowsById) },
     finalConclusion: { ...v2Section("final_conclusion", [baselineEvidenceId]), summary: `Predictive Cpk ${calculation.capability.cpk} versus target ${calculation.capability.targetCpk}.`, decision: status, basis: calculation.capability.status === "FAIL" ? ["Predictive Cpk is below the governed target."] : ["Predictive baseline meets the governed target."], limitations: dataGaps.map(({ missingInformation }) => missingInformation), nextActions: dataGaps.map(({ verificationMethod }) => verificationMethod), baselineDecision },
   };
   return {
