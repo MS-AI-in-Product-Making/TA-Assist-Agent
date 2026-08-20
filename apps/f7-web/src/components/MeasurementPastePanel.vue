@@ -31,6 +31,7 @@ const form = reactive({
   msaStatus: "unknown" as F7MsaStatus,
   text: "",
   dispositionRows: "",
+  dispositionAction: "EXCLUDE" as "EXCLUDE" | "RESTORE",
   dispositionReason: "OUTLIER" as F7ExclusionReason,
   dispositionOperatorReference: "",
 });
@@ -40,6 +41,20 @@ const dispositionRowsError = ref("");
 const measuredFactors = computed(() => props.session.factors.filter((factor) => factor.sourceMode === "MEASURED" && factor.evidence));
 
 const selectedFactor = computed(() => measuredFactors.value.find((factor) => factor.evidence?.factorId === form.selectedFactorId));
+
+const selectedDataset = computed(() => selectedFactor.value?.measurementPasteResult?.dataset);
+
+const excludedRows = computed(() => selectedDataset.value?.observations
+  .filter((observation) => observation.disposition === "excluded")
+  .map((observation) => observation.originalRow)
+  .sort((left, right) => left - right) ?? []);
+
+const includedRows = computed(() => selectedDataset.value?.observations
+  .filter((observation) => observation.disposition !== "excluded")
+  .map((observation) => observation.originalRow)
+  .sort((left, right) => left - right) ?? []);
+
+const dispositionButtonText = computed(() => form.dispositionAction === "RESTORE" ? "Confirm restoration" : "Confirm exclusion");
 
 function submitPaste(): void {
   if (props.busy || !form.selectedFactorId || !form.sourceReference.trim() || !form.text.trim()) return;
@@ -79,12 +94,31 @@ function submitDisposition(): void {
     dispositionRowsError.value = "Enter valid positive integer row numbers";
     return;
   }
+
+  if (form.dispositionAction === "RESTORE") {
+    const excludedSet = new Set(excludedRows.value);
+    const invalidRows = rows.filter((row) => !excludedSet.has(row));
+    if (invalidRows.length > 0) {
+      dispositionRowsError.value = `Selected rows are not currently excluded: ${invalidRows.join(", ")}`;
+      return;
+    }
+  }
+
+  if (form.dispositionAction === "EXCLUDE") {
+    const includedSet = new Set(includedRows.value);
+    const invalidRows = rows.filter((row) => !includedSet.has(row));
+    if (invalidRows.length > 0) {
+      dispositionRowsError.value = `Selected rows are not currently included: ${invalidRows.join(", ")}`;
+      return;
+    }
+  }
+
   dispositionRowsError.value = "";
   if (props.busy || !form.selectedFactorId || !form.dispositionOperatorReference.trim()) return;
   emit("disposition", {
     factorId: form.selectedFactorId,
     rowNumbers: rows,
-    action: "EXCLUDE",
+    action: form.dispositionAction,
     reason: form.dispositionReason,
     operatorReference: form.dispositionOperatorReference.trim(),
   });
@@ -136,6 +170,20 @@ function submitDisposition(): void {
     <p class="subtle">
       Original row count: {{ selectedFactor?.measurementPasteResult?.dataset?.originalRowCount ?? "-" }}
     </p>
+    <p class="subtle">
+      Currently excluded rows: {{ excludedRows.length > 0 ? excludedRows.join(", ") : "-" }}
+    </p>
+    <fieldset>
+      <legend>Disposition action</legend>
+      <label>
+        <input v-model="form.dispositionAction" type="radio" name="disposition-action" value="EXCLUDE">
+        EXCLUDE
+      </label>
+      <label>
+        <input v-model="form.dispositionAction" type="radio" name="disposition-action" value="RESTORE">
+        RESTORE
+      </label>
+    </fieldset>
     <div class="form-grid">
       <label>
         Row numbers
@@ -158,7 +206,7 @@ function submitDisposition(): void {
       </label>
     </div>
     <button type="button" class="warn-button" :disabled="busy" @click="submitDisposition">
-      Confirm exclusion
+      {{ dispositionButtonText }}
     </button>
   </section>
 </template>

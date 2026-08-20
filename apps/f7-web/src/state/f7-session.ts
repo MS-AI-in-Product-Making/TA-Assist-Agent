@@ -52,6 +52,15 @@ function toUiError(error: unknown): F7UiError {
   };
 }
 
+function prerequisiteNotReadyError(summary = "Import a workbook before continuing."): F7UiError {
+  return {
+    code: "prerequisite_not_ready",
+    summary,
+    suggestedAction: "Import and confirm a workbook.",
+    affectedInputReferences: ["f7-session"],
+  };
+}
+
 export function createF7SessionStore(client: F7Client) {
   const session = ref<F7SessionSnapshot | null>(null);
   const busyAction = ref<BusyAction | null>(null);
@@ -98,12 +107,7 @@ export function createF7SessionStore(client: F7Client) {
       await runAction("confirmWorksheet", async () => {
         const current = session.value;
         if (!current) {
-          throw {
-            code: "missing_session",
-            summary: "No active session is loaded.",
-            suggestedAction: "Import a workbook before confirming a worksheet.",
-            affectedInputReferences: ["f7-web-session"],
-          } satisfies F7UiError;
+          throw prerequisiteNotReadyError("Import a workbook before continuing.");
         }
         session.value = await client.confirmWorksheet({
           sessionId: current.sessionId,
@@ -120,7 +124,7 @@ export function createF7SessionStore(client: F7Client) {
     }>): Promise<void> {
       await runAction("confirmFactors", async () => {
         const current = session.value;
-        if (!current) throw new Error("missing session");
+        if (!current) throw prerequisiteNotReadyError();
         session.value = await client.confirmFactors({
           sessionId: current.sessionId,
           confirmations: confirmations.map((confirmation) => ({ ...confirmation, confirmed: true as const })),
@@ -130,7 +134,7 @@ export function createF7SessionStore(client: F7Client) {
     async setFactorMode(factorId: string, mode: F7SourceMode): Promise<void> {
       await runAction("setFactorMode", async () => {
         const current = session.value;
-        if (!current) throw new Error("missing session");
+        if (!current) throw prerequisiteNotReadyError();
         session.value = await client.setFactorMode({
           sessionId: current.sessionId,
           factorId,
@@ -147,7 +151,7 @@ export function createF7SessionStore(client: F7Client) {
     }): Promise<void> {
       await runAction("pasteMeasurements", async () => {
         const current = session.value;
-        if (!current) throw new Error("missing session");
+        if (!current) throw prerequisiteNotReadyError();
         session.value = await client.pasteMeasurements({
           sessionId: current.sessionId,
           factorId: request.factorId,
@@ -167,7 +171,7 @@ export function createF7SessionStore(client: F7Client) {
     }): Promise<void> {
       await runAction("applyMeasurementDisposition", async () => {
         const current = session.value;
-        if (!current) throw new Error("missing session");
+        if (!current) throw prerequisiteNotReadyError();
         session.value = await client.applyMeasurementDisposition({
           sessionId: current.sessionId,
           factorId: request.factorId,
@@ -182,7 +186,7 @@ export function createF7SessionStore(client: F7Client) {
     async refreshSession(): Promise<void> {
       await runAction("refreshSession", async () => {
         const current = session.value;
-        if (!current) throw new Error("missing session");
+        if (!current) throw prerequisiteNotReadyError();
         session.value = await client.getSession(current.sessionId);
       });
     },

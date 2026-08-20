@@ -401,9 +401,12 @@ describe("F7 workbench shell", () => {
               structure: "UNORDERED_SAMPLE",
               sourceReference: "p1",
               msaStatus: "available",
-              observations: [{ originalRow: 1, value: 1.1, disposition: "included" }],
+              observations: [
+                { originalRow: 1, value: 1.1, disposition: "included" },
+                { originalRow: 2, value: 1.2, disposition: "included" },
+              ],
               originalRowCount: 24,
-              analyzedCount: 1,
+              analyzedCount: 2,
             },
             validation: { status: "ready", blockingIssues: [], advisoryIssues: [] },
           },
@@ -419,14 +422,14 @@ describe("F7 workbench shell", () => {
 
     const rowInput = wrapper.get("input[placeholder='e.g. 5,8,10']");
     const operatorInput = wrapper.findAll("input[type='text']")[2];
-    await rowInput.setValue("5,8");
+    await rowInput.setValue("1");
     await wrapper.findAll("select")[3]?.setValue("OUTLIER");
     await operatorInput?.setValue("op-9");
     await wrapper.get("button.warn-button").trigger("click");
     expect(client.applyMeasurementDisposition).toHaveBeenCalledWith({
       sessionId: "session-01",
       factorId: HASH_C,
-      rowNumbers: [5, 8],
+      rowNumbers: [1],
       action: "EXCLUDE",
       reason: "OUTLIER",
       operatorReference: "op-9",
@@ -449,9 +452,12 @@ describe("F7 workbench shell", () => {
               structure: "UNORDERED_SAMPLE",
               sourceReference: "p1",
               msaStatus: "available",
-              observations: [{ originalRow: 1, value: 1.1, disposition: "included" }],
+              observations: [
+                { originalRow: 1, value: 1.1, disposition: "included" },
+                { originalRow: 2, value: 1.2, disposition: "included" },
+              ],
               originalRowCount: 24,
-              analyzedCount: 1,
+              analyzedCount: 2,
             },
             validation: { status: "ready", blockingIssues: [], advisoryIssues: [] },
           },
@@ -464,7 +470,7 @@ describe("F7 workbench shell", () => {
     await uploadWorkbook(wrapper);
 
     await wrapper.get("select").setValue(HASH_C);
-    await wrapper.get("input[placeholder='e.g. 5,8,10']").setValue("8,5,8");
+    await wrapper.get("input[placeholder='e.g. 5,8,10']").setValue("2,1,2");
     await wrapper.findAll("select")[3]?.setValue("OUTLIER");
     await wrapper.findAll("input[type='text']")[2]?.setValue("op-9");
     await wrapper.get("button.warn-button").trigger("click");
@@ -472,7 +478,7 @@ describe("F7 workbench shell", () => {
     expect(client.applyMeasurementDisposition).toHaveBeenCalledWith({
       sessionId: "session-01",
       factorId: HASH_C,
-      rowNumbers: [5, 8],
+      rowNumbers: [1, 2],
       action: "EXCLUDE",
       reason: "OUTLIER",
       operatorReference: "op-9",
@@ -516,6 +522,101 @@ describe("F7 workbench shell", () => {
     await wrapper.get("button.warn-button").trigger("click");
 
     expect(wrapper.text()).toContain("Enter valid positive integer row numbers");
+    expect(client.applyMeasurementDisposition).not.toHaveBeenCalled();
+  });
+
+  it("7d) disposition supports RESTORE with same confirmation payload fields", async () => {
+    const withExcluded = createSnapshot({
+      ...measurementEntrySnapshot(),
+      factors: [
+        {
+          ...measurementEntrySnapshot().factors[0]!,
+          measurementPasteResult: {
+            status: "ready",
+            factorId: HASH_C,
+            dataset: {
+              factorId: HASH_C,
+              unit: "mm",
+              structure: "UNORDERED_SAMPLE",
+              sourceReference: "p1",
+              msaStatus: "available",
+              observations: [
+                { originalRow: 1, value: 1.1, disposition: "included" },
+                { originalRow: 2, value: 1.2, disposition: "excluded", reason: "OUTLIER" },
+                { originalRow: 3, value: 1.3, disposition: "excluded", reason: "OTHER" },
+              ],
+              originalRowCount: 24,
+              analyzedCount: 1,
+            },
+            validation: { status: "ready", blockingIssues: [], advisoryIssues: [] },
+          },
+          datasetValidation: { status: "ready", blockingIssues: [], advisoryIssues: [] },
+        },
+      ],
+    });
+    const client = createMockClient(withExcluded, { importWorkbook: withExcluded });
+    const wrapper = mount(App, { props: { client } });
+    await uploadWorkbook(wrapper);
+
+    await wrapper.get("select").setValue(HASH_C);
+    expect(wrapper.text()).toContain("Currently excluded rows: 2, 3");
+    await wrapper.get("input[type='radio'][name='disposition-action'][value='RESTORE']").setValue(true);
+    await wrapper.get("input[placeholder='e.g. 5,8,10']").setValue("3,2");
+    await wrapper.findAll("select")[3]?.setValue("OUTLIER");
+    await wrapper.findAll("input[type='text']")[2]?.setValue("op-9");
+    await wrapper.get("button.warn-button").trigger("click");
+
+    expect(client.applyMeasurementDisposition).toHaveBeenCalledWith({
+      sessionId: "session-01",
+      factorId: HASH_C,
+      rowNumbers: [2, 3],
+      action: "RESTORE",
+      reason: "OUTLIER",
+      operatorReference: "op-9",
+      confirmed: true,
+    });
+  });
+
+  it("7e) restore rejects rows that are not currently excluded and does not call client", async () => {
+    const withIncludedOnly = createSnapshot({
+      ...measurementEntrySnapshot(),
+      factors: [
+        {
+          ...measurementEntrySnapshot().factors[0]!,
+          measurementPasteResult: {
+            status: "ready",
+            factorId: HASH_C,
+            dataset: {
+              factorId: HASH_C,
+              unit: "mm",
+              structure: "UNORDERED_SAMPLE",
+              sourceReference: "p1",
+              msaStatus: "available",
+              observations: [
+                { originalRow: 1, value: 1.1, disposition: "included" },
+                { originalRow: 2, value: 1.2, disposition: "included" },
+              ],
+              originalRowCount: 24,
+              analyzedCount: 2,
+            },
+            validation: { status: "ready", blockingIssues: [], advisoryIssues: [] },
+          },
+          datasetValidation: { status: "ready", blockingIssues: [], advisoryIssues: [] },
+        },
+      ],
+    });
+    const client = createMockClient(withIncludedOnly, { importWorkbook: withIncludedOnly });
+    const wrapper = mount(App, { props: { client } });
+    await uploadWorkbook(wrapper);
+
+    await wrapper.get("select").setValue(HASH_C);
+    await wrapper.get("input[type='radio'][name='disposition-action'][value='RESTORE']").setValue(true);
+    await wrapper.get("input[placeholder='e.g. 5,8,10']").setValue("1");
+    await wrapper.findAll("select")[3]?.setValue("OUTLIER");
+    await wrapper.findAll("input[type='text']")[2]?.setValue("op-9");
+    await wrapper.get("button.warn-button").trigger("click");
+
+    expect(wrapper.text()).toContain("Selected rows are not currently excluded: 1");
     expect(client.applyMeasurementDisposition).not.toHaveBeenCalled();
   });
 
@@ -628,5 +729,16 @@ describe("F7 workbench shell", () => {
     await vi.waitFor(() => {
       expect(wrapper.text()).not.toContain("F7 request is invalid.");
     });
+  });
+
+  it("12) missing session actions surface controlled prerequisite error without native text", async () => {
+    const client = createMockClient(createSnapshot({ status: "worksheet_selection" }));
+    const wrapper = mount(App, { props: { client } });
+
+    await (wrapper.vm as unknown as { onConfirmWorksheet: (name: string) => Promise<void> }).onConfirmWorksheet("Anonymous_TA");
+
+    expect(wrapper.text()).toContain("Import a workbook before continuing.");
+    expect(wrapper.text()).not.toContain("Session is not available");
+    expect(wrapper.text()).not.toContain("missing session");
   });
 });
