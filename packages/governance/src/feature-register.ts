@@ -331,7 +331,7 @@ const featureRegister: ReadonlyMap<string, FeatureRegistration> = new Map([
         "f6-optimization-v2",
       ],
       inputContractId: "f6-analysis-context-v1",
-      outputContractId: "f6-composed-report-v2",
+      outputContractId: "f6-optimization-v2",
       maximumClassification: "confidential",
       acceptanceChecks: [
         "anonymous-f6-optimization-fixture",
@@ -343,7 +343,7 @@ const featureRegister: ReadonlyMap<string, FeatureRegistration> = new Map([
         "f6-roi-gate-check",
         "f6-skill-contract-check",
         "f0-f6-real-workbook-flow",
-        "f6-composed-report-check",
+        "f6-final-report-check",
       ],
       externalPrerequisites: ["approved-knowledge-base"],
       disableBehavior: "return feature_not_available",

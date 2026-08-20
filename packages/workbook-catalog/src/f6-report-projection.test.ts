@@ -86,7 +86,7 @@ describe("createF6ReportProjection", () => {
     expect(result.formulaChecks.map(({ formulaId }) => formulaId)).toContain("worst-case-v1");
   });
 
-  it("includes a non-standard target sigma range required by the composed report", () => {
+  it("includes a nonstandard target sigma range required by the final report", () => {
     const input = structuredClone(calculation());
     input.capability.targetSigmaLevel = 4.5;
 

@@ -1,3 +1,5 @@
+/* global Buffer */
+
 import path from "node:path";
 
 export const FEATURE1_WORKBOOK_READ_OPTIONS = {
@@ -18,7 +20,7 @@ function parseRelationships(xml) {
   for (const tagMatch of xml.matchAll(/<Relationship\b[^>]*>/gi)) {
     const tag = tagMatch[0];
     const attrs = {};
-    for (const attrMatch of tag.matchAll(/([A-Za-z_:][A-Za-z0-9_:.\-]*)="([^"]*)"/g)) {
+    for (const attrMatch of tag.matchAll(/([A-Za-z_:][A-Za-z0-9_:.-]*)="([^"]*)"/g)) {
       attrs[attrMatch[1]] = attrMatch[2];
     }
     rows.push({

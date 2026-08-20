@@ -105,8 +105,7 @@ export function resolveFeature6OutputLayout(parsed, outputRoot, now = () => new 
     publishRoot: normalizedResultPath(controlledPublishRoot),
     optimizationJsonName: "Feature6-Optimization.json",
     optimizationMdName: "Feature6-Optimization.md",
-    composedReportJsonName: "Feature6-Composed-Report.json",
-    composedReportMdName: "Feature6-Composed-Report.md",
+    finalReportMdName: "Feature6-Report.md",
     runSummaryJsonName: "Feature6-Run-Summary.json",
     manifestName: "manifest.json",
   };

@@ -75,6 +75,10 @@ describe("loadF6ArtifactBundle", () => {
     expect(result.status, JSON.stringify(result)).toBe("accepted");
     expect(result.blockedWorksheets).toEqual([]);
     expect(result.request.selectedWorksheetNames).toEqual(["Analysis-A"]);
+    expect(result.request.reportScope).toEqual({
+      worksheetNames: ["Analysis-A"],
+      blockedWorksheetNames: [],
+    });
     expect(result.request.f0Versions).toEqual({
       knowledgeBaseVersion: "v1",
       capabilityVersion: "internal-v1",
@@ -88,6 +92,9 @@ describe("loadF6ArtifactBundle", () => {
     );
     expect(result.f2Report).toEqual(JSON.parse(readFileSync(bundle.paths.f2, "utf8")));
     expect(result.f5Report).toEqual(JSON.parse(readFileSync(bundle.paths.f5, "utf8")));
+    expect(result.f3Report).toEqual(readJson(bundle.paths.f3));
+    expect(result.f4Report).toEqual(readJson(bundle.paths.f4));
+    expect(result.f3Report.workbook.contentHash).toBe(result.request.workbook.contentHash);
     expect(result.sourceReferences).toEqual({
       f2: { artifact: "Feature2-Report.json", contentHash: sha256(bundle.paths.f2) },
       f3: { artifact: "Feature3-Report.json", contentHash: sha256(bundle.paths.f3) },
@@ -331,6 +338,10 @@ describe("F6 governed bundle validation", () => {
 
     expect(result.status, JSON.stringify(result)).toBe("accepted");
     expect(result.request.selectedWorksheetNames).toEqual(["Analysis-A"]);
+    expect(result.request.reportScope).toEqual({
+      worksheetNames: ["Analysis-A", "Blocked-A"],
+      blockedWorksheetNames: ["Blocked-A"],
+    });
     expect(result.request.worksheets.map(({ worksheetName }) => worksheetName)).toEqual(["Analysis-A"]);
     expect(result.blockedWorksheets[0].findings).toEqual(expect.arrayContaining([
       expect.objectContaining({ findingKind: "validation_abnormality", findingCode: "tolerance_path_image_unavailable" }),

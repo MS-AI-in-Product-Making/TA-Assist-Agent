@@ -32,7 +32,7 @@ Feature Register 是 Phase 0 对 F0-F8 的唯一可查询能力清单。它提�
 | F4 | 方法推荐与 Excel 一致性计算 | `available` | `worksheet-analysis-assets-v1`, `required-field-check-v1`, `exception-resolution-v1`, `calculation-service-v1`; `approved-windows-excel-worker` | `calculation-request-v1` / `calculation-result-v1` | `confidential` | `anonymous-calculation-kernel-fixture`, `approved-template-regression`, `calculation-privacy-check` | `return feature_not_available` |
 | F5 | 客观结果解释 | `available` | `interpretation-rules-v1`, `worksheet-analysis-assets-v1`, `drawing-governance-v2`, `calculation-service-v1`; `approved-knowledge-base`, `approved-me-review` | `f5-data-interpretation-request-v1` / `f5-data-interpretation-result-v1` | `confidential` | `f5-artifact-association-check`, `f5-rule-traceability-check`, `f5-clarification-gate-check`, `f5-skill-contract-check` | `return feature_not_available` |
 | F5.1 | 客观结果解读 | `available` | `calculation-service-v1`, `knowledge-base-v1`, `interpretation-rules-v1`, `objective-interpretation-v1`; `approved-knowledge-base` | `interpretation-request-v1` / `interpretation-result-v1` | `confidential` | `anonymous-interpretation-fixture`, `interpretation-rule-traceability-check`, `interpretation-privacy-check` | `return feature_not_available` |
-| F6 | 可比较的方案选项 | `available` | `f2-user-report-v1`, `drawing-governance-v2`, `calculation-service-v1`, `f5-data-interpretation-v1`, `f6-analysis-context-v1`, `f6-optimization-targets-v1`, `f6-optimization-v2`; `approved-knowledge-base` | `f6-analysis-context-v1` / `f6-composed-report-v2` | `confidential` | `anonymous-f6-optimization-fixture`, `f6-artifact-association-check`, `f6-optimization-contract-check`, `f6-privacy-check`, `f6-no-write-network-check`, `f6-supplier-datum-evidence-gate-check`, `f6-roi-gate-check`, `f6-skill-contract-check`, `f0-f6-real-workbook-flow`, `f6-composed-report-check` | `return feature_not_available` |
+| F6 | 可比较的方案选项 | `available` | `f2-user-report-v1`, `drawing-governance-v2`, `calculation-service-v1`, `f5-data-interpretation-v1`, `f6-analysis-context-v1`, `f6-optimization-targets-v1`, `f6-optimization-v2`; `approved-knowledge-base` | `f6-analysis-context-v1` / `f6-optimization-v2` | `confidential` | `anonymous-f6-optimization-fixture`, `f6-artifact-association-check`, `f6-optimization-contract-check`, `f6-privacy-check`, `f6-no-write-network-check`, `f6-supplier-datum-evidence-gate-check`, `f6-roi-gate-check`, `f6-skill-contract-check`, `f0-f6-real-workbook-flow`, `f6-final-report-check` | `return feature_not_available` |
 | F7 | 实测 Cpk 闭环 | `unavailable` | `measurement-store-v1`, `dim-id-service-v1`; `approved-measurement-store`, `canonical-dim-id-policy` | `cpk-request-v1` / `cpk-result-v1` | `confidential` | `anonymous-cpk-fixture` | `return feature_not_available` |
 | F8 | TA 工作流编排 | `available` | `orchestrator-v1`, `skill-runtime-v1`; `approved-skill-manifests` | `workflow-request-v1` / `workflow-result-v1` | `public` | `anonymous-workflow-fixture`, `anonymous-governed-skill` | `return feature_not_available` |
 
@@ -148,7 +148,7 @@ F0 解读规则范围与维护边界见 [F0 TA 结果解读规则库设计](../s
   确定性 FACT 并返回规则不适用或 3D 跟进澄清。F5.1 不判断图纸、公差链、基准链、装配基准面、
   堆叠方向或跨子系统结构风险，也不提供完整澄清流程；调用方应通过根 F5 合同取得完整受治理报告，
   不得把 F5.1 描述为唯一可用 F5 入口。
-- F6 的 `available` 仅覆盖当前本地 `f6-optimization-v2` / `f6-composed-report-v2` workflow。应用入口为
+- F6 的 `available` 仅覆盖当前本地 `f6-optimization-v2` workflow 和最终报告输出。应用入口为
   `node apps/cli/dist/index.js feature6 --root "<repository-root>" --f2-artifacts "<f2-root>" --f3-artifacts "<f3-root>" --f4-artifacts "<f4-root>" --f5-artifacts "<f5-root>" --worksheet "<worksheet-name>"`；
   `--worksheet` 可重复且至少一次，worksheet 名称必须 trim 后非空且唯一。四个 artifact root 必须分别包含
   `Feature2-Report.json`、`Feature3-Report.json`、`Feature4-Calculation.json` 和 `Feature5-Report.json`，并通过
@@ -161,11 +161,11 @@ F0 解读规则范围与维护边界见 [F0 TA 结果解读规则库设计](../s
   历史 `createComparisonPlaceholder`、`comparison-request-v1` 与 `comparison-result-v1` 仅为兼容 API，继续返回
   `status: feature_not_available`，不得将该 placeholder 的不可用状态解释为优化 workflow 不可用。
   Agent Skill 入口“使用F6分析报告”受 `f6-skill-contract-check`、`f0-f6-real-workbook-flow` 和
-  `f6-composed-report-check` 治理。该入口由 agent 负责 workbook 与 two worksheet confirmations，按 F0-F6
+  `f6-final-report-check` 治理。该入口由 agent 负责 workbook 与 two worksheet confirmations，按 F0-F6
   顺序调用既有确定性 runners；显式 `feature6` CLI 仍只消费 F2-F5 roots 和精确 worksheet set，不得伪装成交互式
   orchestrator。Skill 必须执行并验证 current-run F3；只有 `governance_required` 可进入复用 F3 完整双确认协议的
   optional ADO publishing gate，发布 never automatic or implicit。Skill 展示 F1-F6 output ledger，并在缺少 evidence 时保留
-  `insufficient_evidence` / `not_computed`。F6 六文件联合报告固定为16章并使用 `PASS`、`CONDITIONAL_PASS`、`FAIL`、`INCOMPLETE` 四态。ADO gate 的终态只记录发布结果，不改变已验证的 F3 分析结果或 worksheet scope。当前入口对历史 V1 F6 artifact 返回受控 unsupported-version，不自动转换或展示。
+  `insufficient_evidence` / `not_computed`。F6 原子发布 `Feature6-Report.md`、`Feature6-Optimization.json/.md`、`Feature6-Run-Summary.json` 和 `manifest.json`；Run Summary 保存结构化 Workbook/Worksheet dispositions，最终报告使用 `PASS`、`CONDITIONAL_PASS`、`FAIL`、`INCOMPLETE` 四态。ADO gate 的终态只记录发布结果，不改变已验证的 F3 分析结果或 worksheet scope。当前入口对历史 V1 F6 artifact 返回受控 unsupported-version，不自动转换或展示。
 - F8 的 `available` 仅允许匿名 `public` Skill fixture 在 runner 中通过输入分类、
   Feature 状态和策略门检查后执行纯函数或显式注入的 mock adapter。`workflow-request-v1`
   入口只接受 `workflowId: "public-smoke"`，并固定执行 `public-echo` 与

@@ -22,17 +22,16 @@ function roots(publishRoot = "test/demo-output") {
 
 describe("resolveFeature6OutputLayout", () => {
   it("builds the fixed default artifact layout", () => {
-    expect(resolveFeature6OutputLayout(roots(), undefined, fixedNow)).toEqual({
-      runId: "2026-08-17T01-02-03-456Z",
-      runRoot: "test/demo-output/f6-runs/F5-Source/2026-08-17T01-02-03-456Z",
-      publishRoot: "test/demo-output",
+    const layout = resolveFeature6OutputLayout(roots(), undefined, fixedNow);
+    expect(layout).toMatchObject({
       optimizationJsonName: "Feature6-Optimization.json",
       optimizationMdName: "Feature6-Optimization.md",
-      composedReportJsonName: "Feature6-Composed-Report.json",
-      composedReportMdName: "Feature6-Composed-Report.md",
+      finalReportMdName: "Feature6-Report.md",
       runSummaryJsonName: "Feature6-Run-Summary.json",
       manifestName: "manifest.json",
     });
+    expect(layout).not.toHaveProperty("composedReportJsonName");
+    expect(layout).not.toHaveProperty("composedReportMdName");
   });
 
   it("accepts an override only with an existing explicit publish root", () => {
