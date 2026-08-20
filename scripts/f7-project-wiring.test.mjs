@@ -61,6 +61,8 @@ describe("f7 project wiring", () => {
 
     const [nodeProject, webProject] = projects;
     expect(nodeProject?.test?.name).toBe("node");
+    expect(nodeProject?.test?.testTimeout).toBe(60_000);
+    expect(nodeProject?.test?.maxWorkers).toBe(4);
     expect(nodeProject?.test?.include).toEqual([
       "apps/**/*.test.ts",
       "scripts/**/*.test.mjs",
@@ -79,5 +81,9 @@ describe("f7 project wiring", () => {
 
     const workspaceConfigPath = path.join(rootDir, "vitest.workspace.ts");
     expect(fs.existsSync(workspaceConfigPath)).toBe(false);
+
+    const eslintConfigModule = await import(pathToFileURL(path.join(rootDir, "eslint.config.mjs")).href);
+    const ignoreConfig = eslintConfigModule.default.find((entry) => Array.isArray(entry.ignores));
+    expect(ignoreConfig?.ignores).toContain("**/.worktrees/**");
   });
 });

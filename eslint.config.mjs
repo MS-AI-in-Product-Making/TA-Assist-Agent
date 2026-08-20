@@ -5,7 +5,7 @@ import vueParser from "vue-eslint-parser";
 
 export default [
   {
-    ignores: ["**/node_modules/**", "**/dist/**", "**/coverage/**", "**/runtime/**", "**/exports/**", "**/.tmp/**"],
+    ignores: ["**/node_modules/**", "**/dist/**", "**/coverage/**", "**/runtime/**", "**/exports/**", "**/.tmp/**", "**/.worktrees/**"],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
