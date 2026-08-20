@@ -153,6 +153,7 @@ function request(worksheetName = "Analysis-A"): F6OptimizationRequest {
     inputClassification: "confidential",
     workbook: { fileName: "Anonymous.xlsx", contentHash: HASH },
     selectedWorksheetNames: [worksheetName],
+    reportScope: { worksheetNames: [worksheetName], blockedWorksheetNames: [] },
     f2Reference: { artifact: "f2/result.json", contentHash: HASH },
     f3Reference: { artifact: "f3/result.json", contentHash: HASH },
     f4Reference: { artifact: "f4/result.json", contentHash: HASH, runId: "run", calculationVersion: "excel-ta-v1" },
@@ -573,6 +574,7 @@ describe("createF6Optimization", () => {
     const input = request();
     const second = request("Analysis-B");
     input.selectedWorksheetNames = ["Analysis-A", "Analysis-B"];
+    input.reportScope.worksheetNames = ["Analysis-A", "Analysis-B"];
     input.worksheets.push(second.worksheets[0]!);
     const result = createF6Optimization(input, {
       calculateScenario: (scenarioInput) => {
@@ -611,6 +613,7 @@ describe("createF6Optimization", () => {
     const input = request();
     const second = request("Analysis-B");
     input.selectedWorksheetNames.push("Analysis-B");
+    input.reportScope.worksheetNames.push("Analysis-B");
     input.worksheets.push(second.worksheets[0]!);
     const selectedTable = input.worksheets[1]!.baselineCalculationRequest.worksheetAnalysisAssets.worksheets[0]!.factorTables[0]!;
     selectedTable.rows[0]!.fields.standardDeviation.numericValue = 3;
@@ -1045,6 +1048,7 @@ describe("createF6Optimization", () => {
     const input = request();
     const second = request("Analysis-B");
     input.selectedWorksheetNames.push("Analysis-B");
+    input.reportScope.worksheetNames.push("Analysis-B");
     input.worksheets.push(second.worksheets[0]!);
     input.datumEvidence = input.worksheets.map((worksheet, index) => ({
       evidenceVersion: "datum-strategy-v1" as const,
@@ -1190,6 +1194,7 @@ describe("createF6Optimization V2", () => {
 
     expect(result.optimizationVersion).toBe("f6-optimization-v2");
     expect(result.runStatus).toBe("COMPLETED");
+    expect(result.provenance.reportScope).toEqual({ worksheetNames: ["Analysis-A"], blockedWorksheetNames: [] });
     expect(worksheet.runStatus).toBe("COMPLETED");
     expect(worksheet.options).toEqual([
       expect.objectContaining({ status: "candidate", reasonCode: "target_not_provided", impactRank: null }),

@@ -62,7 +62,7 @@ npm test
 
 ## 5. F6 报告验收
 
-`Feature6-Composed-Report.md` 已验证包含：
+`Feature6-Report.md` 已验证包含：
 
 - `Target 4σ statistical range`，不再把 1σ 误标为目标范围；
 - `Formula：Mean ± 4 × RSS 1σ` 和对应 `Substitution` 数值代入；
@@ -120,5 +120,5 @@ npm test
 - F4 baseline calculation：未改变。
 - F3 ADO：分组增强，写入/回读治理不变。
 - F5 JSON/schema：未改变；Markdown 可读性增强。
-- F6 V2：仅增加 optional/derived 展示字段，旧 artifacts 兼容。
+- F6：当前契约原子发布 `Feature6-Report.md`、`Feature6-Optimization.json/.md`、`Feature6-Run-Summary.json` 和 `manifest.json`；结构化 Workbook/Worksheet dispositions 由 Run Summary 保存。
 - 自动化和真实工作簿验收：通过。

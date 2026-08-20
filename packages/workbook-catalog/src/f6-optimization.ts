@@ -673,6 +673,7 @@ export function createLegacyF6Optimization(input: unknown, dependencies: Optimiz
       f3Reference: request.f3Reference,
       f4Reference: request.f4Reference,
       f5Reference: request.f5Reference,
+      reportScope: request.reportScope,
       f0Versions: request.f0Versions,
       scenarioPolicyVersion: request.scenarioPolicyVersion,
       ...(request.imageObservationReference === undefined ? {} : { imageObservationReference: request.imageObservationReference }),
@@ -782,7 +783,7 @@ function scaledOverride(factor: CalculationFactorResult, scale: number) {
 function scenarioForTarget(
   worksheet: F6OptimizationRequest["worksheets"][number],
   target: F6OptimizationTargets["worksheets"][number]["targets"][number],
-): { readonly scenario?: F6ControlledScenario; readonly v2Overrides?: F6OptionV2 extends infer _Option ? Array<{ factor: F6FactorIdentity; lowerTolerance?: number; upperTolerance?: number; sigma?: number }> : never; readonly insufficientInputs?: readonly string[] } {
+): { readonly scenario?: F6ControlledScenario; readonly v2Overrides?: Array<{ factor: F6FactorIdentity; lowerTolerance?: number; upperTolerance?: number; sigma?: number }>; readonly insufficientInputs?: readonly string[] } {
   const calculation = worksheet.baselineCalculation;
   let overrides: ReturnType<typeof overrideForTolerance>[];
   if (target.targetType === "factor_tolerance") {
@@ -1001,7 +1002,11 @@ export function createF6Optimization(
       f3Reference: artifactReference(request.f3Reference),
       f4Reference: artifactReference(request.f4Reference),
       f5Reference: artifactReference(request.f5Reference),
+      reportScope: structuredClone(request.reportScope),
       ...(request.imageObservationReference === undefined ? {} : { imageObservationReference: artifactReference(request.imageObservationReference) }),
+      ...(request.supplierCapabilityReference === undefined ? {} : { supplierCapabilityReference: artifactReference(request.supplierCapabilityReference) }),
+      ...(request.datumStrategyReference === undefined ? {} : { datumStrategyReference: artifactReference(request.datumStrategyReference) }),
+      ...(request.costReference === undefined ? {} : { costReference: artifactReference(request.costReference) }),
       supplierCapabilityDecision: requestEvidenceDecision(request.supplierCapabilityEvidence?.[0]),
       datumStrategyDecision: requestEvidenceDecision(request.datumEvidence?.[0]),
       costDecision: requestEvidenceDecision(request.costEvidence),

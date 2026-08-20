@@ -1,3 +1,5 @@
+/* global structuredClone */
+
 import { describe, expect, it } from "vitest";
 import { f6LegacyOptimizationResultSchema as f6OptimizationResultSchema } from "../packages/contracts/dist/contracts.js";
 import { renderF6Report as renderF6ReportV2, renderLegacyF6Report as renderF6Report } from "./f6-report.mjs";
@@ -134,6 +136,10 @@ function result() {
       f3Reference: { artifact: "Feature3-Report.json", contentHash: HASH },
       f4Reference: { artifact: "Feature4-Calculation.json", contentHash: HASH, runId: "run-1", calculationVersion: "excel-ta-v1" },
       f5Reference: { artifact: "Feature5-Report.json", contentHash: HASH, interpretationVersion: "f5-data-interpretation-v1" },
+      reportScope: {
+        worksheetNames: ["Analysis|<script>[x](javascript:alert(1))"],
+        blockedWorksheetNames: [],
+      },
       f0Versions: { knowledgeBaseVersion: "v1", capabilityVersion: "internal-v1", interpretationVersion: "interpretation-rules-v1" },
       scenarioPolicyVersion: "f6-scenario-policy-v1",
     },
@@ -246,6 +252,10 @@ describe("renderF6Report V2", () => {
         f3Reference: { artifact: "Feature3-Report.json", contentHash: HASH },
         f4Reference: { artifact: "Feature4-Calculation.json", contentHash: HASH },
         f5Reference: { artifact: "Feature5-Report.json", contentHash: HASH },
+        reportScope: {
+          worksheetNames: ["Analysis-A"],
+          blockedWorksheetNames: [],
+        },
         supplierCapabilityDecision: notProvided,
         datumStrategyDecision: notProvided,
         costDecision: notProvided,

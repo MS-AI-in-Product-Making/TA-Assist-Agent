@@ -23,7 +23,7 @@ F0 is controlled capability and rule consumption, not a standalone artifact runn
 Choose exactly one mode from the supplied path:
 
 - **Entry mode 1 - TA workbook**: the input is one `.xlsx` TA workbook. Follow W0-W10 in order.
-- **Entry mode 2 - Existing F6 artifact**: the input is an F6 output directory or `Feature6-Composed-Report.json`. Follow the existing-artifact protocol only.
+- **Entry mode 2 - Existing F6 artifact**: the input is an F6 output directory or `Feature6-Optimization.json`. Follow the existing-artifact protocol only.
 
 If the trigger phrase contains no path, ask for one workbook or one existing F6 artifact path. Do not infer a workbook from editor state, previous runs, similarly named files, or historical artifacts. Resolve canonical paths and reject ambiguous, missing, out-of-root, linked-out, or identity-mismatched inputs.
 
@@ -115,9 +115,9 @@ W8A and W8B use two separate `vscode_askQuestions` calls. Neither call may be me
 
 Run F6 with the current F2, F3, F4, and F5 roots and one repeated `--worksheet` per downstream worksheet. Append `--analysis-context <artifact-path>` only after W8A caller authorization and `--optimization-targets <artifact-path>` only after W8B caller authorization. The loader may also consume the current F5 immutable image observation copy and governed supplier, datum, or cost evidence when already supplied by the controlled workflow.
 
-Validate `Feature6-Optimization.json` as `f6-optimization-v2` with `f6OptimizationResultSchema` and `Feature6-Composed-Report.json` as `f6-composed-report-v2` with `f6ComposedEngineeringReportSchema`. Validate the run summary, manifest, six-file output set, exact downstream worksheet set, F2 blocked worksheet placement, input decisions, input provenance hashes, output hashes, option counts, evidence gates, and ROI gates. Reject current-entry v1 artifacts as unsupported rather than converting or presenting them.
+Validate `Feature6-Optimization.json` as `f6-optimization-v2` with `f6OptimizationResultSchema` and validate the hash-bound `Feature6-Report.md` only through the recorded SHA-256 before presentation. Validate the run summary, manifest, five-file output set, exact downstream worksheet set, F2 blocked worksheet placement, input decisions, input provenance hashes, output hashes, option counts, evidence gates, ROI gates, and `reportSummary`. Require Optimization worksheet names to be a unique subset of `reportSummary` worksheet names. Any `reportSummary` worksheet not present in Optimization is blocked `FAIL`; reportSummary extras with any other disposition are blocked FAIL. The exact full report scope comes from the validated run summary and manifest, not from Optimization alone. Reject current-entry v1 artifacts as unsupported rather than converting or presenting them. Never parse Markdown to derive disposition.
 
-The `F6` output is the validated F6 root, optimization JSON/Markdown, composed-report JSON/Markdown, run summary, and manifest.
+The `F6` output is the validated F6 root, optimization JSON/Markdown, final report Markdown, run summary, and manifest.
 
 ### Phase W10 - Present every Feature output
 
@@ -129,13 +129,15 @@ Present one concise run ledger containing:
 - `F3` output: status, root, report, governance-complete and governance-required counts, plus the optional ADO publishing outcome and sanitized work item reference when one was validated.
 - `F4` output: status, root, calculation/report paths, and accepted downstream calculation count.
 - `F5` output: status, root, report paths, image mode (`v2` or `not_evaluated`), and clarification count.
-- `F6` output: status, root, six artifact paths, Context/Targets decision outcomes and controlled hashes, candidate/completed/failed option counts, four-state report status (`PASS`, `CONDITIONAL_PASS`, `FAIL`, or `INCOMPLETE`), and blocked worksheet section.
+- `F6` output: status, root, five artifact paths, Context/Targets decision outcomes and controlled hashes, candidate/completed/failed option counts, four-state report status (`PASS`, `CONDITIONAL_PASS`, `FAIL`, or `INCOMPLETE`), and blocked worksheet section.
 
 Do not report a phase as completed until its contract, containment, identity, manifest, and recorded hashes have passed. Keep FACT, RULE, SIGNAL, OPTION, assumptions, clarifications, risks, and evidence-gated options distinct.
 
 ## Entry mode 2 - Existing F6 artifact
 
-Resolve the supplied F6 directory or `Feature6-Composed-Report.json` beneath the controlled publish root. Validate the composed report against `f6ComposedEngineeringReportSchema`, the optimization result against `f6OptimizationResultSchema`, and verify the run summary, manifest, six expected files, workbook/worksheet identities, source provenance hashes, output hashes, classifications, blocked worksheet placement, and evidence/ROI gates.
+Resolve the supplied F6 directory or `Feature6-Optimization.json` beneath the controlled publish root. Validate exactly the five-file artifact set: `Feature6-Report.md`, `Feature6-Optimization.json`, `Feature6-Optimization.md`, `Feature6-Run-Summary.json`, and `manifest.json`. Validate `Feature6-Optimization.json` against `f6OptimizationResultSchema`, then verify the manifest artifact map, the required run-summary and manifest input decision ledgers, the three recorded content hashes, workbook/worksheet identities, exact source provenance basename/hash bindings, classifications, blocked worksheet placement, evidence/ROI gates, and `reportSummary` consistency.
+
+The `reportSummary.worksheetDispositions` entries must use unique worksheet names and use only `PASS`, `CONDITIONAL_PASS`, `INCOMPLETE`, or `FAIL`. Optimization worksheet names must be a unique subset of reportSummary worksheet names. Any reportSummary worksheet not present in Optimization is blocked FAIL; reportSummary extras with any other disposition are blocked FAIL. The exact full report scope comes from the validated run summary and manifest, not from Optimization alone. Compute the expected workbook disposition by calling the exported Task 3 `worstDisposition` policy on those worksheet dispositions; do not duplicate the ranking table in the existing-artifact validator. If `reportSummary.workbookDisposition` differs, reject with `report_summary_invalid`. If any of the three recorded content hashes differs from the actual artifact bytes, reject with `artifact_hash_mismatch`. Never parse `Feature6-Report.md` to derive disposition; present it only after its SHA-256 has been verified.
 
 If validation succeeds, present the validated F6 report without rerunning F0, F1, F2, F3, F4, F5, or F6. Do not recreate observations or evidence. If any check fails, stop without presenting untrusted content.
 

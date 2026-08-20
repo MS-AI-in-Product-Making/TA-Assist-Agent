@@ -47,7 +47,7 @@ exact content against schema、workbook/worksheet identity 与 selected set、sn
 `imageReference` identity，并重新校验物理 F1 image SHA-256。Observation artifact 不存在可预先校验的自身
 digest；接受后由 workflow runner 计算其 SHA-256 并记录到 `Feature5-Run-Summary`。Observation-only 失败整件
 回退到 deterministic F5，baseline identity 错误 fail closed。
-F6 已作为 F5 后的本地 `f6-optimization-v2` / `f6-composed-report-v2` workflow 启用，消费 F2/F3/F4/F5 受控工件并生成 target-driven 优化结果与16章联合报告；F7 仍为 `unavailable`。历史 F6 comparison placeholder 继续单独返回 `feature_not_available`；F8 仅提供匿名
+F6 已作为 F5 后的本地 `f6-optimization-v2` workflow 启用，消费 F2/F3/F4/F5 受控工件并原子发布 `Feature6-Report.md`、`Feature6-Optimization.json/.md`、`Feature6-Run-Summary.json` 和 `manifest.json`；Run Summary 保存结构化 Workbook/Worksheet dispositions；F7 仍为 `unavailable`。历史 F6 comparison placeholder 继续单独返回 `feature_not_available`；F8 仅提供匿名
 `public` fixture 的受治理 Skill 运行时验收，不包含外部 Adapter、模型、ADO、SharePoint 或 UI 行为。
 
 | 文档 | 内容 |
@@ -79,8 +79,8 @@ F6 已作为 F5 后的本地 `f6-optimization-v2` / `f6-composed-report-v2` work
 | [F5 Workbook 完整编排实施计划](superpowers/plans/2026-08-12-f5-workbook-end-to-end-orchestration.md) | F3/F5 skill 合同、文档回归和真实 workbook 验收步骤 |
 | [F5 图文联合图片观察 v2 设计](superpowers/specs/2026-08-12-f5-contextual-image-observations-design.md) | v1 只读兼容、五项 scope、全 active-row snapshot 与 visual/context evidence 分层 |
 | [F5 图文联合图片观察 v2 实施计划](superpowers/plans/2026-08-14-f5-contextual-image-observations-v2.md) | v2 contracts、loader 校验、报告、Skill protocol 与回归任务 |
-| [F6 优化与 F5+F6 联合工程报告设计](superpowers/specs/2026-08-14-f6-optimization-and-composed-report-design.md) | 已实现 F6 的 ownership、确定性方案、证据门、联合报告与兼容边界 |
-| [F6 优化与 F5+F6 联合工程报告实施计划](superpowers/plans/2026-08-14-f6-optimization-and-composed-report.md) | 已完成 contracts、solver、workflow、CLI、governance 与验收任务；Task 11 记录文档和预验收 |
+| [F6 最终公差分析报告模板接入设计](superpowers/specs/2026-08-20-f6-final-report-template-design.md) | 五文件输出契约、最终报告模板、Run Summary dispositions 与既有 artifact 快速验证 |
+| [F6 最终公差分析报告模板接入实施计划](superpowers/plans/2026-08-20-f6-final-report-template.md) | final report projection、runner wiring、旧报告 runtime 退役、文档迁移与最终验证 |
 | [F4 计算引擎设计](superpowers/specs/2026-07-30-f4-calculation-engine-design.md) | 方法推荐、Excel 一致计算、What-if、隐私与黄金回归边界 |
 | [F4 计算引擎实施计划](superpowers/plans/2026-07-30-f4-calculation-engine.md) | F4 契约、kernel、服务、回归、治理和质量门 |
 | [系统架构](01-architecture.md) | 产品架构与后续业务能力边界 |

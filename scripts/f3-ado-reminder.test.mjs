@@ -260,7 +260,7 @@ describe("renderF3AdoHistoryHtml", () => {
     expect(html).toContain("<tr data-f3-group-row=\"true\"><td colspan=\"11\">Part / Subsystem: Bracket (3 factors)</td></tr>");
     expect(html).toContain("<tr data-f3-group-row=\"true\"><td colspan=\"11\">Part / Subsystem: (missing Part / Subsystem) (1 factors)</td></tr>");
 
-    const factorRowMatches = html.match(/<tr data-f3-factor-row=\"true\">/g) ?? [];
+    const factorRowMatches = html.match(/<tr data-f3-factor-row="true">/g) ?? [];
     expect(factorRowMatches).toHaveLength(report.summary.factorCount);
 
     const bracketIndex = html.indexOf("Part / Subsystem: Bracket (3 factors)");
@@ -283,7 +283,7 @@ describe("renderF3AdoHistoryHtml", () => {
     expect(html).toContain("<table>");
     expect(html).toContain("<thead><tr><th>Device Level Dim</th>");
     expect(html.match(/<th>/g)).toHaveLength(11);
-    expect(html.match(/<tr data-f3-factor-row=\"true\">/g)).toHaveLength(3);
+    expect(html.match(/<tr data-f3-factor-row="true">/g)).toHaveLength(3);
     expect(html).toContain("<td>A&amp;B &lt;critical&gt; &quot;quoted&quot; &#39;single&#39;<br>next</td>");
     expect(html).not.toContain("A&B <critical>");
     expect(html).toContain("Drawing Number missing");

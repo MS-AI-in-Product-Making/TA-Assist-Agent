@@ -14,12 +14,11 @@ import {
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  createF6ComposedEngineeringReport,
   createF6Optimization,
 } from "../packages/workbook-catalog/dist/index.js";
 import { parseF6CliArgs } from "./f6-cli-args.mjs";
 import { loadF6ArtifactBundle } from "./f6-artifact-loader.mjs";
-import { renderComposedEngineeringReport } from "./f6-composed-report.mjs";
+import { createF6FinalReportProjection } from "./f6-final-report.mjs";
 import { resolveFeature6OutputLayout } from "./f6-output-layout.mjs";
 import { renderF6Report } from "./f6-report.mjs";
 
@@ -210,11 +209,17 @@ function outputPaths(layout) {
   return {
     optimizationJson: path.join(layout.runRoot, layout.optimizationJsonName),
     optimizationMarkdown: path.join(layout.runRoot, layout.optimizationMdName),
-    composedReportJson: path.join(layout.runRoot, layout.composedReportJsonName),
-    composedReportMarkdown: path.join(layout.runRoot, layout.composedReportMdName),
+    finalReportMarkdown: path.join(layout.runRoot, layout.finalReportMdName),
     runSummary: path.join(layout.runRoot, layout.runSummaryJsonName),
     manifest: path.join(layout.runRoot, layout.manifestName),
   };
+}
+
+function generatedAtFromRunId(runId) {
+  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z$/.exec(String(runId));
+  if (match === null) return String(runId);
+  const [, date, hour, minute, second, millisecond] = match;
+  return `${date}T${hour}:${minute}:${second}.${millisecond}Z`;
 }
 
 function safeSources(sourceReferences = {}) {
@@ -231,7 +236,7 @@ function manifest(layout, status, artifacts, reasonCode, inputDecisions) {
     status,
     runId: layout.runId,
     ...(reasonCode === undefined ? {} : { reasonCode }),
-    ...(inputDecisions === undefined ? {} : { inputDecisions }),
+    inputDecisions,
     artifacts,
   };
 }
@@ -280,9 +285,8 @@ function normalizeDependencies(overrides = {}) {
     )),
     loadBundle: overrides.loadBundle ?? loadF6ArtifactBundle,
     createOptimization: overrides.createOptimization ?? createF6Optimization,
-    createComposedReport: overrides.createComposedReport ?? createF6ComposedEngineeringReport,
+    createFinalReport: overrides.createFinalReport ?? createF6FinalReportProjection,
     renderOptimization: overrides.renderOptimization ?? renderF6Report,
-    renderComposedReport: overrides.renderComposedReport ?? renderComposedEngineeringReport,
     mkdir: overrides.mkdir ?? mkdirSync,
     randomUUID: overrides.randomUUID ?? randomUUID,
     realpath: overrides.realpath ?? realpathSync,
@@ -329,21 +333,23 @@ export function runF6FullValidation(options = {}, dependencyOverrides = {}) {
       inputDecisions,
     });
     failureStage = "report";
-    const composedReport = dependencies.createComposedReport({
+    const finalReport = dependencies.createFinalReport({
       f2Report: loaded.f2Report,
+      f3Report: loaded.f3Report,
+      f4Report: loaded.f4Report,
       f5Report: loaded.f5Report,
-      f6Result: optimization,
+      f6Optimization: optimization,
+      generatedAt: generatedAtFromRunId(layout.runId),
       ...(loaded.analysisContext === undefined ? {} : { analysisContext: loaded.analysisContext }),
+    }, {
+      outputRoot: layout.runRoot,
+      f1ArtifactRoot: loaded.f2Report.artifactRoot,
+      publishRoot: layout.publishRoot,
     });
     const contents = {
       optimizationJson: json(optimization),
       optimizationMarkdown: dependencies.renderOptimization(optimization, { outputRoot: layout.runRoot }),
-      composedReportJson: json(composedReport),
-      composedReportMarkdown: dependencies.renderComposedReport(composedReport, {
-        outputRoot: layout.runRoot,
-        f1ArtifactRoot: loaded.f2Report.artifactRoot,
-        publishRoot: layout.publishRoot,
-      }),
+      finalReportMarkdown: finalReport.markdown,
     };
     const workflowStatus = optimization.runStatus === undefined
       ? optimization.status
@@ -356,23 +362,23 @@ export function runF6FullValidation(options = {}, dependencyOverrides = {}) {
       inputDecisions,
       counts: optimization.summary,
       hashes: Object.fromEntries(Object.entries(contents).map(([key, content]) => [`${key}Sha256`, sha256(content)])),
+      reportSummary: finalReport.reportSummary,
     };
 
     failureStage = "output";
-    for (const key of ["optimizationJson", "optimizationMarkdown", "composedReportJson", "composedReportMarkdown"]) {
+    for (const key of ["optimizationJson", "optimizationMarkdown", "finalReportMarkdown"]) {
       atomicWrite(paths[key], contents[key], boundary, staging, dependencies);
       artifacts[key] = path.basename(paths[key]);
     }
     atomicWrite(paths.runSummary, json(summary), boundary, staging, dependencies);
     artifacts.runSummary = layout.runSummaryJsonName;
-    atomicWrite(paths.manifest, json(manifest(layout, workflowStatus, artifacts, undefined, persistedInputDecisions)), boundary, staging, dependencies);
+    atomicWrite(paths.manifest, json(manifest(layout, workflowStatus, artifacts, undefined, inputDecisions)), boundary, staging, dependencies);
     return {
       status: workflowStatus,
       outputDirectory: layout.runRoot,
       optimizationJsonPath: paths.optimizationJson,
       optimizationMdPath: paths.optimizationMarkdown,
-      composedReportJsonPath: paths.composedReportJson,
-      composedReportMdPath: paths.composedReportMarkdown,
+      finalReportMdPath: paths.finalReportMarkdown,
       runSummaryPath: paths.runSummary,
       manifestPath: paths.manifest,
       summary: optimization.summary,
