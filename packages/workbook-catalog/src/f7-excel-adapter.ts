@@ -109,6 +109,21 @@ function columnNumber(column: string): number {
   return result;
 }
 
+function columnName(index: number): string {
+  let current = index;
+  let result = "";
+  while (current > 0) {
+    const digit = (current - 1) % 26;
+    result = String.fromCharCode(65 + digit) + result;
+    current = Math.floor((current - 1) / 26);
+  }
+  return result;
+}
+
+function nextColumn(column: string): string {
+  return columnName(columnNumber(column) + 1);
+}
+
 function cellText(cell: OoxmlCell): string {
   if (cell.formula) {
     const cached = cell.cachedValue?.trim();
@@ -172,32 +187,109 @@ function cellAt(map: ReadonlyMap<string, OoxmlCell>, row: number, column: string
   return map.get(`${column}${row}`);
 }
 
-function specFromLabel(worksheet: OoxmlWorksheet, map: ReadonlyMap<string, OoxmlCell>, labels: readonly string[]): { readonly value: number; readonly reference: string } | undefined {
-  const normalizedLabels = new Set(labels.map((label) => normalizeLabel(label)));
-  const labelCells = worksheet.cells.filter((cell) => normalizedLabels.has(normalizeLabel(cell.value)));
-  if (labelCells.length !== 1) return undefined;
-  const label = labelCells[0]!;
-  const labelAddress = cellAddress(label.reference);
-  if (!labelAddress) return undefined;
-  const candidates = worksheet.cells
-    .filter((cell) => {
-      const address = cellAddress(cell.reference);
-      return address?.row === labelAddress.row
-        && address.column !== labelAddress.column
-        && columnNumber(address.column) > columnNumber(labelAddress.column)
-        && cellText(cell).length > 0;
-    })
-    .sort((left, right) => {
-      const leftColumn = cellAddress(left.reference)?.column;
-      const rightColumn = cellAddress(right.reference)?.column;
-      if (!leftColumn || !rightColumn) return 0;
-      return columnNumber(leftColumn) - columnNumber(rightColumn);
+type SpecBound = "lower" | "upper";
+
+type SpecLabelStrength = "strong" | "weak";
+
+type SpecLabelEntry = {
+  readonly kind: SpecBound;
+  readonly strength: SpecLabelStrength;
+  readonly row: number;
+  readonly column: string;
+  readonly labelReference: string;
+  readonly valueReference: string;
+  readonly value: number;
+};
+
+type SpecPairSelection = {
+  readonly lower: { readonly value: number; readonly reference: string };
+  readonly upper: { readonly value: number; readonly reference: string };
+};
+
+function normalizeSpecLabel(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ");
+}
+
+function labelKind(normalized: string): { readonly kind: SpecBound; readonly strength: SpecLabelStrength } | undefined {
+  if (normalized === "lower spec limit" || normalized === "lower specification limit") {
+    return { kind: "lower", strength: "strong" };
+  }
+  if (normalized === "upper spec limit" || normalized === "upper specification limit") {
+    return { kind: "upper", strength: "strong" };
+  }
+  if (normalized === "lsl") return { kind: "lower", strength: "weak" };
+  if (normalized === "usl") return { kind: "upper", strength: "weak" };
+  return undefined;
+}
+
+function collectSpecLabelEntries(
+  worksheet: OoxmlWorksheet,
+  map: ReadonlyMap<string, OoxmlCell>,
+  factorEndRow: number,
+): readonly SpecLabelEntry[] {
+  const entries: SpecLabelEntry[] = [];
+  for (const cell of worksheet.cells) {
+    const normalized = normalizeSpecLabel(cellText(cell));
+    const kind = labelKind(normalized);
+    if (!kind) continue;
+    const address = cellAddress(cell.reference);
+    if (!address || address.row <= factorEndRow) continue;
+    const valueCell = cellAt(map, address.row, nextColumn(address.column));
+    const numeric = finiteNumberFromCell(valueCell);
+    if (!valueCell || numeric === undefined) continue;
+    entries.push({
+      ...kind,
+      row: address.row,
+      column: address.column,
+      labelReference: cell.reference,
+      valueReference: valueCell.reference,
+      value: numeric,
     });
-  const cell = candidates[0];
-  const numeric = finiteNumberFromCell(cell);
-  if (!cell || numeric === undefined) return undefined;
-  if (!map.has(cell.reference)) return undefined;
-  return { value: numeric, reference: `${worksheet.name}!${cell.reference}` };
+  }
+  return entries;
+}
+
+function selectSpecPair(
+  worksheet: OoxmlWorksheet,
+  entries: readonly SpecLabelEntry[],
+): SpecPairSelection | { readonly reasonCode: "missing_two_sided_specification" | "ambiguous_two_sided_specification" | "invalid_two_sided_specification" } {
+  const hasStrong = entries.some((entry) => entry.strength === "strong");
+  const eligible = hasStrong ? entries.filter((entry) => entry.strength === "strong") : entries;
+
+  const upperByKey = new Map<string, SpecLabelEntry>();
+  for (const entry of eligible) {
+    if (entry.kind === "upper") upperByKey.set(`${entry.column}:${entry.row}`, entry);
+  }
+
+  const pairs = eligible
+    .filter((entry) => entry.kind === "lower")
+    .map((lower) => ({
+      lower,
+      upper: upperByKey.get(`${lower.column}:${lower.row + 1}`),
+    }))
+    .filter((pair): pair is { readonly lower: SpecLabelEntry; readonly upper: SpecLabelEntry } => pair.upper !== undefined);
+
+  if (pairs.length === 0) return { reasonCode: "missing_two_sided_specification" };
+
+  const earliestLowerRow = Math.min(...pairs.map((pair) => pair.lower.row));
+  const earliestPairs = pairs.filter((pair) => pair.lower.row === earliestLowerRow);
+  if (earliestPairs.length !== 1) return { reasonCode: "ambiguous_two_sided_specification" };
+
+  const chosen = earliestPairs[0]!;
+  if (!(chosen.lower.value < chosen.upper.value)) {
+    return { reasonCode: "invalid_two_sided_specification" };
+  }
+
+  return {
+    lower: {
+      value: chosen.lower.value,
+      reference: `${worksheet.name}!${chosen.lower.valueReference}`,
+    },
+    upper: {
+      value: chosen.upper.value,
+      reference: `${worksheet.name}!${chosen.upper.valueReference}`,
+    },
+  };
 }
 
 function requireWorksheet(worksheetName: string, workbookBytes: Uint8Array): OoxmlWorksheet {
@@ -324,15 +416,26 @@ export function extractF7FactorCandidates(request: {
   if (!factorColumn || !meanColumn || !sigmaColumn || !distributionColumn) throw adapterError(EXTRACTION_SUMMARY);
 
   const cellsByCoordinate = worksheetCellByCoordinate(worksheet);
-  const lowerSpec = specFromLabel(worksheet, cellsByCoordinate, ["lsl", "lower spec limit", "lower specification limit"]);
-  const upperSpec = specFromLabel(worksheet, cellsByCoordinate, ["usl", "upper spec limit", "upper specification limit"]);
-  if (!lowerSpec || !upperSpec) throw adapterError(EXTRACTION_SUMMARY, "validation_error", { reasonCode: "missing_two_sided_specification" });
-
-  const candidates: F7FactorCandidate[] = [];
+  const factorRows: number[] = [];
   for (let row = headerRow + 1; row <= 1000; row += 1) {
     const factorCell = cellAt(cellsByCoordinate, row, factorColumn);
     const factorName = factorCell ? cellText(factorCell).trim() : "";
     if (factorName.length === 0) break;
+    factorRows.push(row);
+  }
+  if (factorRows.length === 0) throw adapterError(EXTRACTION_SUMMARY);
+  const factorEndRow = factorRows[factorRows.length - 1]!;
+
+  const specEntries = collectSpecLabelEntries(worksheet, cellsByCoordinate, factorEndRow);
+  const selectedSpec = selectSpecPair(worksheet, specEntries);
+  if ("reasonCode" in selectedSpec) {
+    throw adapterError(EXTRACTION_SUMMARY, "validation_error", { reasonCode: selectedSpec.reasonCode });
+  }
+
+  const candidates: F7FactorCandidate[] = [];
+  for (const row of factorRows) {
+    const factorCell = cellAt(cellsByCoordinate, row, factorColumn);
+    const factorName = factorCell ? cellText(factorCell).trim() : "";
 
     const meanCell = cellAt(cellsByCoordinate, row, meanColumn);
     const sigmaCell = cellAt(cellsByCoordinate, row, sigmaColumn);
@@ -357,16 +460,16 @@ export function extractF7FactorCandidates(request: {
         distribution: `${worksheetName}!${distributionCell.reference}`,
         excelSignedMean: `${worksheetName}!${meanCell!.reference}`,
         standardDeviation: `${worksheetName}!${sigmaCell!.reference}`,
-        lowerSpecLimit: lowerSpec.reference,
-        upperSpecLimit: upperSpec.reference,
+        lowerSpecLimit: selectedSpec.lower.reference,
+        upperSpecLimit: selectedSpec.upper.reference,
       },
       factorCandidateId: buildCandidateId(workbookContentHash, worksheetName, tableId, row),
       factorName,
       excelSignedMean,
       standardDeviation,
       distribution: "Normal" as const,
-      lowerSpecLimit: lowerSpec.value,
-      upperSpecLimit: upperSpec.value,
+      lowerSpecLimit: selectedSpec.lower.value,
+      upperSpecLimit: selectedSpec.upper.value,
     };
     const parsedCandidate = f7FactorCandidateSchema.safeParse(candidate);
     if (!parsedCandidate.success) throw adapterError(EXTRACTION_SUMMARY);

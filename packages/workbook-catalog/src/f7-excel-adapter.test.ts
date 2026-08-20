@@ -41,7 +41,7 @@ function formulaCell(reference: string, formula: string, cachedValue: string): s
   return `<c r="${reference}" t="n"><f>${formula}</f><v>${cachedValue}</v></c>`;
 }
 
-function sheetRows(options: { readonly startRow?: number; readonly headerRow?: number; readonly distributionOverride?: string; readonly duplicateFactorHeader?: boolean; readonly includeUpperSpec?: boolean; readonly includeSecondFactorTable?: boolean; readonly markerInCell?: string; readonly formulaCachedInFirstFactor?: boolean } = {}): string {
+function sheetRows(options: { readonly startRow?: number; readonly headerRow?: number; readonly distributionOverride?: string; readonly duplicateFactorHeader?: boolean; readonly includeUpperSpec?: boolean; readonly includeSecondFactorTable?: boolean; readonly markerInCell?: string; readonly formulaCachedInFirstFactor?: boolean; readonly specRowsXml?: string; readonly tailRowsXml?: string } = {}): string {
   const headerRow = options.headerRow ?? 13;
   const start = options.startRow ?? headerRow + 1;
   const factors = [
@@ -67,15 +67,16 @@ function sheetRows(options: { readonly startRow?: number; readonly headerRow?: n
     return `<row r="${row}">${cell(`G${row}`, index === 0 && options.markerInCell ? options.markerInCell : factor[0])}${cell(`L${row}`, "0")}${cell(`M${row}`, "0")}${cell(`N${row}`, "0")}${cell(`O${row}`, "1")}${cell(`P${row}`, "0")}${cell(`Q${row}`, distribution)}${meanCell}${cell(`S${row}`, factor[4])}${sigmaCell}</row>`;
   }).join("");
 
-  const specRows = `<row r="54">${cell("O54", "LSL")}${cell("P54", "-0.15")}</row><row r="55">${cell("O55", "USL")}${options.includeUpperSpec === false ? "" : cell("P55", "0.05")}</row>`;
+  const specRows = options.specRowsXml
+    ?? `<row r="54">${cell("O54", "LSL")}${cell("P54", "-0.15")}</row><row r="55">${cell("O55", "USL")}${options.includeUpperSpec === false ? "" : cell("P55", "0.05")}</row>`;
   const secondHeader = options.includeSecondFactorTable
     ? `<row r="113">${cell("G113", "Factor Description (TA Loop)")}${cell("L113", "Design Nominal")}</row><row r="114">${cell("G114", "Other")}${cell("R114", "0.1")}${cell("Q114", "Normal")}${cell("T114", "0.01")}</row>`
     : "";
 
-  return `<row r="11">${cell("G11", "Tolerance Loop Description")}${cell("H11", "Anonymous loop")}</row>${header}${dataRows}${specRows}${secondHeader}`;
+  return `<row r="11">${cell("G11", "Tolerance Loop Description")}${cell("H11", "Anonymous loop")}</row>${header}${dataRows}${specRows}${secondHeader}${options.tailRowsXml ?? ""}`;
 }
 
-function buildWorkbook(options: { readonly startRow?: number; readonly headerRow?: number; readonly distributionOverride?: string; readonly duplicateFactorHeader?: boolean; readonly includeUpperSpec?: boolean; readonly includeSecondWorksheet?: boolean; readonly includeSecondFactorTable?: boolean; readonly markerInCell?: string; readonly formulaCachedInFirstFactor?: boolean } = {}): Uint8Array {
+function buildWorkbook(options: { readonly startRow?: number; readonly headerRow?: number; readonly distributionOverride?: string; readonly duplicateFactorHeader?: boolean; readonly includeUpperSpec?: boolean; readonly includeSecondWorksheet?: boolean; readonly includeSecondFactorTable?: boolean; readonly markerInCell?: string; readonly formulaCachedInFirstFactor?: boolean; readonly specRowsXml?: string; readonly tailRowsXml?: string } = {}): Uint8Array {
   const workbookXml = options.includeSecondWorksheet
     ? `<?xml version="1.0"?><workbook xmlns="${NS}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Title Page" sheetId="1" r:id="rId1"/><sheet name="Auto Summary" sheetId="2" r:id="rId2"/><sheet name="Anonymous_TA" sheetId="3" r:id="rId3"/><sheet name="Anonymous_TA_2" sheetId="4" r:id="rId4"/></sheets></workbook>`
     : `<?xml version="1.0"?><workbook xmlns="${NS}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Title Page" sheetId="1" r:id="rId1"/><sheet name="Auto Summary" sheetId="2" r:id="rId2"/><sheet name="Anonymous_TA" sheetId="3" r:id="rId3"/></sheets></workbook>`;
@@ -377,6 +378,130 @@ describe("F7 interim excel adapter", () => {
       expect(typedErrorSchema.safeParse(error).success).toBe(true);
       expect(error).toMatchObject({ reasonCode: "baseline_sampler_not_defined" });
     }
+  });
+
+  it("RED: chooses the earliest adjacent strong lower/upper specification pair after factor rows", () => {
+    const workbookBytes = buildWorkbook({
+      specRowsXml: [
+        `<row r="54">${cell("O54", "*Lower Spec Limit ►")}${cell("P54", "-0.15")}</row>`,
+        `<row r="55">${cell("O55", "*Upper Spec Limit ►")}${cell("P55", "0.05")}</row>`,
+        `<row r="62">${cell("O62", "*Lower Spec Limit ►")}${cell("P62", "-0.25")}</row>`,
+        `<row r="63">${cell("O63", "*Upper Spec Limit ►")}${cell("P63", ".15")}</row>`,
+      ].join(""),
+      tailRowsXml: [
+        `<row r="134">${cell("AO134", "LSL")}${cell("AH134", "USL")}</row>`,
+        `<row r="145">${cell("AO145", "LSL")}${cell("AH145", "USL")}</row>`,
+      ].join(""),
+    });
+    const imported = importWorkbook(workbookBytes);
+
+    const extracted = extractF7FactorCandidates({
+      workbookBytes,
+      importResult: imported,
+      confirmation: {
+        workbookContentHash: imported.workbook.contentHash,
+        selectedWorksheetNames: ["Anonymous_TA"],
+        confirmed: true,
+      },
+    });
+
+    expect(extracted.candidates.every((candidate) => candidate.lowerSpecLimit === -0.15 && candidate.upperSpecLimit === 0.05)).toBe(true);
+    expect(extracted.candidates.every((candidate) => candidate.sourceCells.lowerSpecLimit === "Anonymous_TA!P54" && candidate.sourceCells.upperSpecLimit === "Anonymous_TA!P55")).toBe(true);
+  });
+
+  it("RED: chooses earliest structurally valid strong pair even when moved to a different row/column", () => {
+    const workbookBytes = buildWorkbook({
+      specRowsXml: [
+        `<row r="40">${cell("J40", "*Lower Specification Limit ►")}${cell("K40", "-0.11")}</row>`,
+        `<row r="41">${cell("J41", "*Upper Specification Limit ►")}${cell("K41", "0.09")}</row>`,
+        `<row r="54">${cell("O54", "*Lower Spec Limit ►")}${cell("P54", "-0.15")}</row>`,
+        `<row r="55">${cell("O55", "*Upper Spec Limit ►")}${cell("P55", "0.05")}</row>`,
+      ].join(""),
+    });
+    const imported = importWorkbook(workbookBytes);
+    const extracted = extractF7FactorCandidates({
+      workbookBytes,
+      importResult: imported,
+      confirmation: {
+        workbookContentHash: imported.workbook.contentHash,
+        selectedWorksheetNames: ["Anonymous_TA"],
+        confirmed: true,
+      },
+    });
+
+    expect(extracted.candidates.every((candidate) => candidate.lowerSpecLimit === -0.11 && candidate.upperSpecLimit === 0.09)).toBe(true);
+    expect(extracted.candidates.every((candidate) => candidate.sourceCells.lowerSpecLimit === "Anonymous_TA!K40" && candidate.sourceCells.upperSpecLimit === "Anonymous_TA!K41")).toBe(true);
+  });
+
+  it("RED: fails with controlled ambiguity when multiple columns share the same earliest lower-row pair", () => {
+    const workbookBytes = buildWorkbook({
+      specRowsXml: [
+        `<row r="54">${cell("O54", "*Lower Spec Limit ►")}${cell("P54", "-0.15")}${cell("Q54", "*Lower Spec Limit ►")}${cell("R54", "-0.2")}</row>`,
+        `<row r="55">${cell("O55", "*Upper Spec Limit ►")}${cell("P55", "0.05")}${cell("Q55", "*Upper Spec Limit ►")}${cell("R55", "0.1")}</row>`,
+      ].join(""),
+    });
+    const imported = importWorkbook(workbookBytes);
+    expect(() => extractF7FactorCandidates({
+      workbookBytes,
+      importResult: imported,
+      confirmation: {
+        workbookContentHash: imported.workbook.contentHash,
+        selectedWorksheetNames: ["Anonymous_TA"],
+        confirmed: true,
+      },
+    })).toThrow("F7 factor extraction request is invalid.");
+  });
+
+  it("RED: fail-closed when earliest strong pair bounds are invalid even if a later valid pair exists", () => {
+    const workbookBytes = buildWorkbook({
+      specRowsXml: [
+        `<row r="54">${cell("O54", "*Lower Spec Limit ►")}${cell("P54", "0.2")}</row>`,
+        `<row r="55">${cell("O55", "*Upper Spec Limit ►")}${cell("P55", "0.1")}</row>`,
+        `<row r="62">${cell("O62", "*Lower Spec Limit ►")}${cell("P62", "-0.25")}</row>`,
+        `<row r="63">${cell("O63", "*Upper Spec Limit ►")}${cell("P63", "0.15")}</row>`,
+      ].join(""),
+    });
+    const imported = importWorkbook(workbookBytes);
+    expect(() => extractF7FactorCandidates({
+      workbookBytes,
+      importResult: imported,
+      confirmation: {
+        workbookContentHash: imported.workbook.contentHash,
+        selectedWorksheetNames: ["Anonymous_TA"],
+        confirmed: true,
+      },
+    })).toThrow("F7 factor extraction request is invalid.");
+  });
+
+  it("RED: supports anonymous real-like structure with repeated strong and report labels", () => {
+    const workbookBytes = buildWorkbook({
+      headerRow: 13,
+      startRow: 14,
+      specRowsXml: [
+        `<row r="54">${cell("O54", "*Lower Spec Limit ►")}${cell("P54", "-0.15")}</row>`,
+        `<row r="55">${cell("O55", "*Upper Spec Limit ►")}${cell("P55", "0.05")}</row>`,
+        `<row r="62">${cell("O62", "*Lower Spec Limit ►")}${cell("P62", "-0.25")}</row>`,
+        `<row r="63">${cell("O63", "*Upper Spec Limit ►")}${cell("P63", ".15")}</row>`,
+      ].join(""),
+      tailRowsXml: [
+        `<row r="134">${cell("AO134", "LSL")}${cell("AH134", "USL")}</row>`,
+        `<row r="145">${cell("AO145", "LSL")}${cell("AH145", "USL")}</row>`,
+      ].join(""),
+    });
+    const imported = importWorkbook(workbookBytes);
+    const extracted = extractF7FactorCandidates({
+      workbookBytes,
+      importResult: imported,
+      confirmation: {
+        workbookContentHash: imported.workbook.contentHash,
+        selectedWorksheetNames: ["Anonymous_TA"],
+        confirmed: true,
+      },
+    });
+
+    expect(extracted.candidates.length).toBe(7);
+    expect(extracted.candidates[0]?.sourceCells.lowerSpecLimit).toBe("Anonymous_TA!P54");
+    expect(extracted.candidates[0]?.sourceCells.upperSpecLimit).toBe("Anonymous_TA!P55");
   });
 
   it("propagates archive safety rejection and does not leak cell values in typed errors", () => {
