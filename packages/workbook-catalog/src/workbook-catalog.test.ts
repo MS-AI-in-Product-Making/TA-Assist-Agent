@@ -159,6 +159,18 @@ describe("workbook catalog", () => {
     expect(workbookCatalogResultSchema.safeParse(result).success).toBe(true);
   });
 
+  it("records every workbook worksheet without widening the TA analysis list", () => {
+    const result = createWorkbookCatalog(request(catalogWorkbook()));
+
+    expect(result.workbook.worksheetInventory).toEqual([
+      { worksheetName: "Title Page", worksheetIndex: 0, visibility: "visible", worksheetKind: "title_page", isTaAnalysis: false, sourcePart: "xl/worksheets/sheet1.xml" },
+      { worksheetName: "Auto Summary", worksheetIndex: 1, visibility: "visible", worksheetKind: "summary", isTaAnalysis: false, sourcePart: "xl/worksheets/sheet2.xml" },
+      { worksheetName: "Analysis-A", worksheetIndex: 2, visibility: "visible", worksheetKind: "analysis", isTaAnalysis: true, sourcePart: "xl/worksheets/sheet3.xml" },
+      { worksheetName: "Analysis-B", worksheetIndex: 3, visibility: "visible", worksheetKind: "analysis", isTaAnalysis: true, sourcePart: "xl/worksheets/sheet4.xml" },
+    ]);
+    expect(result.analyses.map(({ worksheetName }) => worksheetName)).toEqual(["Analysis-A", "Analysis-B"]);
+  });
+
   it("scans supported TA worksheets when Auto Summary has no analysis rows", () => {
     const result = createWorkbookCatalog(request(catalogWorkbook({ emptySummary: true })));
 

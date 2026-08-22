@@ -6672,6 +6672,9 @@ describe("workbook catalog contracts", () => {
           sourceCell: "Title Page!B6",
         },
       },
+      worksheetInventory: [
+        { worksheetName: "Auto Summary", worksheetIndex: 0, visibility: "visible", worksheetKind: "analysis", isTaAnalysis: true, sourcePart: "xl/worksheets/sheet1.xml" },
+      ],
     },
     analyses: [
       {
@@ -6692,6 +6695,18 @@ describe("workbook catalog contracts", () => {
 
   it("accepts an approved confidential workbook catalog result", () => {
     expect(workbookCatalogResultSchema.parse(confidentialResult)).toEqual(confidentialResult);
+  });
+
+  it.each([
+    ["a non-contiguous worksheet index", [{ ...confidentialResult.workbook.worksheetInventory[0], worksheetIndex: 1 }]],
+    ["a duplicate worksheet name", [...confidentialResult.workbook.worksheetInventory, { ...confidentialResult.workbook.worksheetInventory[0], worksheetIndex: 1, sourcePart: "xl/worksheets/sheet2.xml" }]],
+    ["a duplicate source part", [...confidentialResult.workbook.worksheetInventory, { ...confidentialResult.workbook.worksheetInventory[0], worksheetName: "Analysis-B", worksheetIndex: 1 }]],
+    ["an inconsistent TA marker", [{ ...confidentialResult.workbook.worksheetInventory[0], isTaAnalysis: false }]],
+  ])("rejects a result with %s", (_description, worksheetInventory) => {
+    expect(workbookCatalogResultSchema.safeParse({
+      ...confidentialResult,
+      workbook: { ...confidentialResult.workbook, worksheetInventory },
+    }).success).toBe(false);
   });
 
   it.each([
@@ -6786,6 +6801,9 @@ describe("worksheet analysis asset contracts", () => {
         revision: "A",
         date: { value: "2026-07-24", sourceCell: "Title Page!B6" },
       },
+      worksheetInventory: [
+        { worksheetName: "Analysis", worksheetIndex: 0, visibility: "visible", worksheetKind: "analysis", isTaAnalysis: true, sourcePart: "xl/worksheets/sheet1.xml" },
+      ],
     },
     analyses: [
       {
@@ -7583,6 +7601,9 @@ describe("worksheet selection view contracts", () => {
         revision: "A",
         date: { value: "2026-07-24", sourceCell: "Title Page!B6" },
       },
+      worksheetInventory: [
+        { worksheetName: "Analysis-A", worksheetIndex: 0, visibility: "visible", worksheetKind: "analysis", isTaAnalysis: true, sourcePart: "xl/worksheets/sheet1.xml" },
+      ],
     },
     analyses: [
       {

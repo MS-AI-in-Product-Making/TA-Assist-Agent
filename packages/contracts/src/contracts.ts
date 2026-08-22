@@ -394,6 +394,42 @@ export const workbookCatalogAnalysisSchema = z
   })
   .strict();
 
+export const workbookWorksheetKindSchema = z.enum([
+  "title_page",
+  "summary",
+  "analysis",
+  "example_or_template",
+  "other",
+]);
+
+export const workbookWorksheetInventorySchema = z.array(z.object({
+  worksheetName: z.string().min(1),
+  worksheetIndex: z.number().int().nonnegative(),
+  visibility: z.enum(["visible", "hidden", "veryHidden"]),
+  worksheetKind: workbookWorksheetKindSchema,
+  isTaAnalysis: z.boolean(),
+  sourcePart: z.string().regex(/^xl\/worksheets\/[^/]+\.xml$/),
+}).strict()).min(1).superRefine((worksheets, context) => {
+  const names = new Set<string>();
+  const sourceParts = new Set<string>();
+  worksheets.forEach((worksheet, index) => {
+    if (worksheet.worksheetIndex !== index) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet indexes must be contiguous and ordered", path: [index, "worksheetIndex"] });
+    }
+    if (names.has(worksheet.worksheetName)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet names must be unique", path: [index, "worksheetName"] });
+    }
+    if (sourceParts.has(worksheet.sourcePart)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet source parts must be unique", path: [index, "sourcePart"] });
+    }
+    if (worksheet.isTaAnalysis !== (worksheet.worksheetKind === "analysis" || worksheet.worksheetKind === "example_or_template")) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "TA analysis marker must match worksheet kind", path: [index, "isTaAnalysis"] });
+    }
+    names.add(worksheet.worksheetName);
+    sourceParts.add(worksheet.sourcePart);
+  });
+});
+
 export const workbookCatalogResultSchema = z
   .object({
     contractVersion: contractVersionSchema,
@@ -409,6 +445,7 @@ export const workbookCatalogResultSchema = z
             date: workbookCatalogDateSchema,
           })
           .strict(),
+        worksheetInventory: workbookWorksheetInventorySchema,
       })
       .strict(),
     analyses: z.array(workbookCatalogAnalysisSchema).min(1),

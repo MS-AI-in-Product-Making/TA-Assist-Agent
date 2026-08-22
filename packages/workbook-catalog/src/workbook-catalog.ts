@@ -217,6 +217,26 @@ export function createWorkbookCatalog(request: unknown): WorkbookCatalogResult {
       ...scanAnalyses.filter((analysis) => !summaryWorksheetNames.has(analysis.worksheetName)),
     ];
     if (analyses.length === 0) throw catalogError(REQUEST_SUMMARY, "auto-summary");
+    const scannedWorksheetNames = new Set(scanAnalyses.map((analysis) => analysis.worksheetName));
+    const worksheetInventory = workbook.worksheetInventory.map((worksheet) => {
+      const worksheetKind = worksheet.worksheetName === "Title Page"
+        ? "title_page" as const
+        : worksheet.worksheetName === "Auto Summary"
+          ? "summary" as const
+          : summaryWorksheetNames.has(worksheet.worksheetName)
+            ? "analysis" as const
+            : scannedWorksheetNames.has(worksheet.worksheetName)
+              ? "example_or_template" as const
+              : "other" as const;
+      return {
+        worksheetName: worksheet.worksheetName,
+        worksheetIndex: worksheet.worksheetIndex,
+        visibility: worksheet.visibility,
+        worksheetKind,
+        isTaAnalysis: worksheetKind === "analysis" || worksheetKind === "example_or_template",
+        sourcePart: worksheet.partName,
+      };
+    });
     const result = workbookCatalogResultSchema.safeParse({
       contractVersion: "v1",
       workbook: {
@@ -228,6 +248,7 @@ export function createWorkbookCatalog(request: unknown): WorkbookCatalogResult {
           revision: nonempty(titleValue(titlePage, "revision").value)!,
           date: catalogDate(titleValue(titlePage, "date")),
         },
+        worksheetInventory,
       },
       analyses,
     });

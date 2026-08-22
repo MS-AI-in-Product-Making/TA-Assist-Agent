@@ -6,7 +6,9 @@ import { MAX_XML_PART_BYTES, readSafeZip } from "./zip-security.js";
 export interface OoxmlCell { readonly reference: string; readonly value: string; readonly formula?: string; readonly cachedValue?: string; }
 export interface OoxmlImage { readonly contentHash: string; readonly mediaType: string; readonly byteLength: number; readonly sourcePart: string; readonly drawingSourcePart: string; readonly anchor?: { readonly from: string; readonly to: string }; readonly bytes: Uint8Array; }
 export interface OoxmlWorksheet { readonly name: string; readonly partName: string; readonly cells: readonly OoxmlCell[]; readonly images: readonly OoxmlImage[]; }
-export interface OoxmlWorkbook { readonly worksheets: ReadonlyMap<string, OoxmlWorksheet>; readonly worksheetNames: ReadonlySet<string>; }
+export type OoxmlWorksheetVisibility = "visible" | "hidden" | "veryHidden";
+export interface OoxmlWorksheetInfo { readonly worksheetName: string; readonly worksheetIndex: number; readonly visibility: OoxmlWorksheetVisibility; readonly relationshipId: string; readonly partName: string; }
+export interface OoxmlWorkbook { readonly worksheets: ReadonlyMap<string, OoxmlWorksheet>; readonly worksheetNames: ReadonlySet<string>; readonly worksheetInventory: readonly OoxmlWorksheetInfo[]; }
 export interface OoxmlCellWindow { readonly maxRow: number; readonly maxColumn: string; }
 export interface OoxmlReadOptions { readonly skipInvalidWorksheets?: boolean; }
 
@@ -396,13 +398,23 @@ export function readOoxmlWorkbook(bytes: Uint8Array, worksheetNames?: readonly s
     const worksheetDomBudget = cellWindow ? { maxNodes: MAX_WINDOW_DOM_NODES_PER_PART, maxDepth: MAX_DOM_DEPTH } : undefined;
     const requestedWorksheets = worksheetNames ? new Set(worksheetNames) : undefined;
     const workbookWorksheetNames = new Set<string>();
+    const worksheetInventory: OoxmlWorksheetInfo[] = [];
     for (const sheet of onlyChildren(sheetsElement, family.spreadsheetml, "sheet")) {
       const name = sheet.getAttribute("name");
       const relationshipId = sheet.getAttributeNS(family.officeRelationships, "id");
       const relationship = relationshipId ? relationshipTargets.get(relationshipId) : undefined;
       const partName = relationship?.type === family.worksheetRelationshipType ? relationship.target : undefined;
-      if (!name || worksheets.has(name) || !partName || !parts.has(partName)) throw archiveError();
+      const state = sheet.getAttribute("state") || "visible";
+      if (!name || workbookWorksheetNames.has(name) || !relationshipId || !partName || !parts.has(partName)
+        || (state !== "visible" && state !== "hidden" && state !== "veryHidden")) throw archiveError();
       workbookWorksheetNames.add(name);
+      worksheetInventory.push({
+        worksheetName: name,
+        worksheetIndex: worksheetInventory.length,
+        visibility: state,
+        relationshipId,
+        partName,
+      });
       if (requestedWorksheets && !requestedWorksheets.has(name)) continue;
       try {
         const worksheet = parseXml(parts.get(partName)!, worksheetDomBudget);
@@ -416,7 +428,7 @@ export function readOoxmlWorkbook(bytes: Uint8Array, worksheetNames?: readonly s
         if (!options?.skipInvalidWorksheets) throw error;
       }
     }
-    return { worksheets, worksheetNames: workbookWorksheetNames };
+    return { worksheets, worksheetNames: workbookWorksheetNames, worksheetInventory };
   } catch (error) {
     if (error instanceof Error && (error as { summary?: string }).summary === ARCHIVE_SUMMARY) throw error;
     throw archiveError();
