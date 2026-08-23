@@ -4039,7 +4039,12 @@ export const f2ArtifactInputSchema = z.object({
   contractVersion: contractVersionSchema,
   inputClassification: z.literal("confidential"),
   artifactRoot: z.string().min(1),
-  workbook: z.object({ fileName: z.string().min(1), contentHash: sha256Schema, f1GeneratedAt: z.string().datetime() }).strict(),
+  workbook: z.object({
+    fileName: z.string().min(1),
+    contentHash: sha256Schema,
+    f1GeneratedAt: z.string().datetime(),
+    revision: z.string().trim().min(1).nullable().optional(),
+  }).strict(),
   worksheets: z.array(z.object({
     worksheetName: z.string().min(1),
     toleranceLoopDescription: z.string().min(1).optional(),
@@ -4234,7 +4239,12 @@ const f2AcceptedReportSchema = z.object({
   contractVersion: contractVersionSchema,
   inputClassification: z.literal("confidential"),
   status: z.enum(["blocked", "partiallyBlocked", "completed"]),
-  workbook: z.object({ fileName: z.string().min(1), contentHash: sha256Schema, f1GeneratedAt: z.string().datetime() }).strict(),
+  workbook: z.object({
+    fileName: z.string().min(1),
+    contentHash: sha256Schema,
+    f1GeneratedAt: z.string().datetime(),
+    revision: z.string().trim().min(1).nullable().optional(),
+  }).strict(),
   knowledgeBaseVersions: z.tuple([knowledgeBaseVersionSchema, internalToleranceGuidanceVersionSchema]),
   mappingRuleVersion: z.literal("v1"),
   artifactRoot: z.string().min(1),

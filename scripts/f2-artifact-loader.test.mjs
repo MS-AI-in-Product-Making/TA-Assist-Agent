@@ -130,6 +130,19 @@ describe("loadF1ArtifactBundle", () => {
     });
   });
 
+  it("propagates the F1 Title Page revision into the canonical workbook identity", () => {
+    const { root } = createBundle({ artifactContractVersion: "f1-semantic-v2" });
+    const reportPath = path.join(root, "Feature1-Report.json");
+    const report = JSON.parse(readFileSync(reportPath, "utf8"));
+    report.workbooks[0].workbook.metadata = { revision: "D" };
+    writeFileSync(reportPath, JSON.stringify(report));
+
+    const loaded = loadF1ArtifactBundle(root);
+
+    expect(loaded.status).toBe("accepted");
+    expect(loaded.input.workbook.revision).toBe("D");
+  });
+
   it("rejects a v2 artifact without a system specification source label", () => {
     const { root } = createBundle({ artifactContractVersion: "f1-semantic-v2" });
     const worksheetPath = path.join(root, "sheets/anonymous.xlsx/json/Analysis-A.json");
