@@ -26,7 +26,6 @@ import { formatEngineering, formatPercent } from "./engineering-format.mjs";
 import { safeText } from "./f6-markdown-sanitizer.mjs";
 
 const NOT_PROVIDED = "NOT_PROVIDED";
-const NOT_EVALUATED = "NOT_EVALUATED";
 const INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE";
 const NA = "N/A";
 
@@ -391,16 +390,6 @@ function factorGovernanceBySource(f3Worksheet) {
   ]));
 }
 
-function formulaTrace(calculation, outputField) {
-  return calculation.traceRecords.find((trace) => trace.outputField === outputField);
-}
-
-function formulaReference(trace) {
-  return trace === undefined
-    ? NA
-    : `${clean(trace.formulaId)} / ${clean(trace.formulaVersion)}; ${clean(trace.sourceCells.join(", "))}`;
-}
-
 function controlledVersions({ f2Report, f4Report, f5Report }) {
   return [
     `public=${clean(f2Report.knowledgeBaseVersions?.[0], NA)}`,
@@ -414,16 +403,6 @@ function reviewStatus(analysisContext) {
   return clean(analysisContext?.reviewedBy ?? analysisContext?.reviewer ?? analysisContext?.review?.reviewedBy, "PENDING");
 }
 
-function projectName(analysisContext) {
-  return clean(analysisContext?.projectName ?? analysisContext?.project?.name, NOT_PROVIDED);
-}
-
-function imageEvaluation(f5Worksheet) {
-  return f5Worksheet?.statements?.some((statement) => (
-    statement.type === "FACT" && statement.content.provenanceKind === "image_observation"
-  )) ? "evaluated_v2" : NOT_EVALUATED;
-}
-
 function f1ImageReference(f3Worksheet) {
   const reference = f3Worksheet?.rows?.[0]?.imageReference;
   if (reference === undefined) return NA;
@@ -431,11 +410,16 @@ function f1ImageReference(f3Worksheet) {
 }
 
 function primaryFinding(context) {
-  if (context.disposition === "PASS") return "No blocking issue in governed evidence";
-  if (context.f2Worksheet.status !== "ready") return "输入或计算链被阻断";
-  if (context.disposition === "INCOMPLETE") return "受支持数值证据未达到工程要求";
-  if (context.disposition === "CONDITIONAL_PASS") return "治理或工程复核尚未关闭";
+  if (context.disposition === "PASS") return "数值、输入和工程复核均已通过。";
+  if (context.f2Worksheet.status !== "ready") return "缺少必填输入、图片或有效计算，当前 worksheet 无法完成分析。";
+  if (context.disposition === "INCOMPLETE") return "计算已完成，但 CpkL、CpkU 或规格范围未达到 worksheet 要求。";
+  if (context.disposition === "CONDITIONAL_PASS") return "数值达到要求，但仍需补齐 Drawing Number、DIM ID 或完成图像与工程复核。";
   return INSUFFICIENT_EVIDENCE;
+}
+
+function reportTimestamp(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? NOT_PROVIDED : date.toISOString().slice(0, 19).replace("T", " ");
 }
 
 function requiredAction(context) {
@@ -453,14 +437,11 @@ function renderDocumentControl(context) {
     "",
     "| Field | Value | Source |",
     "|---|---|---|",
-    row(["Project", projectName(context.analysisContext), `Confirmed analysis context or ${NOT_PROVIDED}`]),
     row(["Source Workbook", clean(context.f2Report.workbook.fileName), "F1/F2 workbook identity"]),
     row(["Workbook Revision", clean(context.f2Report.workbook.revision, NA), "F1 workbook metadata"]),
-    row(["Workbook Hash", clean(context.f2Report.workbook.contentHash), "F1-F5 artifact identity"]),
     row(["Selected Worksheet Count", clean(context.f2Report.worksheets.length), "F2 selected scope"]),
     row(["Ready / Blocked Worksheet Count", `${readyCount} / ${blockedCount}`, "F2 handoff status"]),
-    row(["Report Generated At", clean(context.generatedAt, NOT_PROVIDED), "Report runtime"]),
-    row(["Controlled Versions", controlledVersions(context), "Artifact metadata"]),
+    row(["Report Generated At", reportTimestamp(context.generatedAt), "Report runtime"]),
     row(["Reviewed By", reviewStatus(context.analysisContext), "Explicit review record or PENDING"]),
   ];
 }
@@ -481,6 +462,13 @@ function renderWorkbookOverview(context) {
       dispositionText(worksheet.disposition),
     ]));
   }
+  lines.push(
+    "",
+    "- PASS：数值、输入和工程复核均已通过。",
+    "- CONDITIONAL_PASS：数值达到要求，但仍需补齐标识或完成工程复核。",
+    "- INCOMPLETE：计算链有效，但数值结果未达到明确工程要求。",
+    "- FAIL：输入、图片或计算链被阻断，当前无法形成完整分析。",
+  );
   return lines;
 }
 
@@ -488,20 +476,19 @@ function renderExecutiveSummary(worksheet) {
   const calculation = worksheet.f4Calculation;
   const top = calculation === undefined ? undefined : topFactor(calculation);
   const topContributor = top === undefined ? NA : `${clean(top.factorName)} (${percentText(top.contribution)})`;
-  const characteristic = worksheet.f3Worksheet?.rows?.[0]?.dimensionDescription ?? worksheet.f2Worksheet.toleranceLoopDescription;
+  const characteristic = worksheet.f2Worksheet.toleranceLoopDescription;
   return [
     "## 3.1 执行摘要",
     "",
     "| Item | Result | Evidence |",
     "|---|---|---|",
-    row(["Characteristic", clean(characteristic), "F2/F3"]),
+    row(["Tolerance Loop Description", clean(characteristic), "F2/F3"]),
     row(["Final Disposition", dispositionText(worksheet.disposition), "F2-F5 governed evidence"]),
-    row(["Primary Finding", clean(primaryFinding(worksheet)), "F2-F5 evidence"]),
     row(["Top Contributor", topContributor, "F4 contribution result"]),
     row(["Required Action", clean(requiredAction(worksheet)), "F5 clarification / engineering review"]),
     "",
     "**一句话结论：**  ",
-    `${dispositionText(worksheet.disposition)}：${clean(primaryFinding(worksheet))}；首要贡献因子 ${topContributor}。贡献率不等于已确认的物理根因。`,
+    `${clean(primaryFinding(worksheet))} 首要贡献因子为 ${topContributor}，请按 Required Action 完成下一步；贡献率不等于已确认的物理根因。`,
   ];
 }
 
@@ -514,7 +501,7 @@ function renderRequirements(worksheet) {
     "",
     "| Requirement | Value | Source |",
     "|---|---:|---|",
-    row(["Target", `${clean(specValue(specification, "target"), NA)} ${clean(unit)}`, `F2 ${sourceCell(specification, "target")}`]),
+    row(["Design Nominal", engineeringText(calculation?.system?.designNominal, unit), "F4 system.designNominal"]),
     row(["LSL", engineeringText(specValue(specification, "lowerSpecLimit"), unit), `F2 ${sourceCell(specification, "lowerSpecLimit")}`]),
     row(["USL", engineeringText(specValue(specification, "upperSpecLimit"), unit), `F2 ${sourceCell(specification, "upperSpecLimit")}`]),
     row(["Target Cpk", numberText(calculation?.capability?.targetCpk), "F2/F4 capability.targetCpk"]),
@@ -523,20 +510,14 @@ function renderRequirements(worksheet) {
 }
 
 function renderToleranceImage(worksheet) {
-  const evaluation = imageEvaluation(worksheet.f5Worksheet);
-  const imageFacts = worksheet.f5Worksheet?.statements?.filter((statement) => (
-    statement.type === "FACT" && statement.content.provenanceKind === "image_observation"
-  )) ?? [];
-  const imageEvidence = imageFacts.length === 0
-    ? NOT_EVALUATED
-    : imageFacts.map((statement) => `${statement.content.scope}: ${statement.content.visibleBasis}`).join("; ");
+  const relativePath = worksheet.f3Worksheet?.rows?.[0]?.imageReference?.relativePath;
+  const link = typeof relativePath === "string" && !relativePath.includes("..") && !/^[A-Za-z]:|^[/\\]/.test(relativePath)
+    ? `<${encodeURI(relativePath.replace(/\\/g, "/"))}>`
+    : undefined;
   return [
-    "## 3.4 尺寸链堆叠图",
+    "## 3.3 Tolerance Path Image",
     "",
-    `- Tolerance Path Image：${f1ImageReference(worksheet.f3Worksheet)}`,
-    `- Image Evaluation：${evaluation}`,
-    `- Engineering Review：${evaluation === NOT_EVALUATED || worksheet.disposition === "CONDITIONAL_PASS" ? "required" : "not_required"}`,
-    `- Image Evidence：${clean(imageEvidence, NOT_EVALUATED)}`,
+    link === undefined ? NA : `[Open tolerance path image](${link})`,
   ];
 }
 
@@ -544,9 +525,9 @@ function renderInputs(worksheet) {
   const calculation = worksheet.f4Calculation;
   const governanceBySource = factorGovernanceBySource(worksheet.f3Worksheet);
   const lines = [
-    "## 3.5 输入数据",
+    "## 3.4 输入数据",
     "",
-    "| Row | Factor Description (TA Loop) | Drawing Number | DIM ID | Physical Nominal | Physical Mean | +Tol | -Tol | Distribution | Sigma Level | 1σ | Source |",
+    "| Row | Factor Description (TA Loop) | Drawing Number | DIM ID | Design Nominal | Mean | +Tol | -Tol | Distribution | Sigma Level | 1σ | Source |",
     "|---:|---|---|---|---:|---:|---:|---:|---|---:|---:|---|",
   ];
 
@@ -572,9 +553,6 @@ function renderInputs(worksheet) {
   const missingDrawing = governanceRows.filter((item) => !item.drawingNumber).length;
   const missingDim = governanceRows.filter((item) => !item.dimId).length;
   const missingDistribution = calculation.factors.filter((factor) => !factor.input.distribution).length;
-  const complete = governanceRows.filter((item) => item.governanceStatus === "complete").length;
-  const review = governanceRows.length - complete;
-
   lines.push(
     "",
     "### 输入完整性",
@@ -583,34 +561,9 @@ function renderInputs(worksheet) {
     `- Drawing Number 缺失：${missingDrawing}`,
     `- DIM ID 缺失：${missingDim}`,
     `- Distribution 缺失：${missingDistribution}`,
-    `- F3 Governance：${complete} complete / ${review} review required`,
     `- 阻塞计算的问题：${worksheet.f2Worksheet.missingFieldSummary?.length ? clean(worksheet.f2Worksheet.missingFieldSummary.join("; ")) : "None"}`,
   );
   return lines;
-}
-
-function renderMethods(worksheet, analysisContext) {
-  const calculation = worksheet.f4Calculation;
-  const rssTrace = formulaTrace(calculation, "system.rssSigma");
-  return [
-    "## 3.6 模型假设与计算方法",
-    "",
-    "| Assumption / Method | Applied Value | Evidence | Validation Status |",
-    "|---|---|---|---|",
-    row(["Calculation model", clean(calculation.recommendation.method), `F4 ${formulaReference(rssTrace)}`, "SUPPORTED"]),
-    row(["Factor independence / correlation", clean(analysisContext?.factorCorrelation, NOT_PROVIDED), "Confirmed analysis context", analysisContext?.factorCorrelation ? "SUPPORTED" : NOT_PROVIDED]),
-    row(["Direction and sign convention", clean(analysisContext?.directionConvention, NOT_PROVIDED), "F3/F5 evidence", analysisContext?.directionConvention ? "SUPPORTED" : NOT_PROVIDED]),
-    row(["Long-term safety factor", clean(calculation.factors.map((factor) => factor.input.longTermSafetyFactor).join("; "), NA), "F2/F4 source row", "SUPPORTED"]),
-    row(["Image interpretation", imageEvaluation(worksheet.f5Worksheet), "F1/F5 image identity", imageEvaluation(worksheet.f5Worksheet) === NOT_EVALUATED ? NOT_EVALUATED : "SUPPORTED"]),
-    row(["Nonlinear / contact effects", clean(analysisContext?.nonlinearContactEffects, NOT_PROVIDED), "Confirmed analysis context", analysisContext?.nonlinearContactEffects ? "SUPPORTED" : NOT_PROVIDED]),
-    "",
-    `使用的 RSS 公式：\`${clean(rssTrace?.formulaId, NA)}\``,
-    "",
-    `- Formula ID / Version：${clean(rssTrace?.formulaId, NA)} / ${clean(rssTrace?.formulaVersion, NA)}`,
-    `- Formula Self-Check：${rssTrace === undefined ? INSUFFICIENT_EVIDENCE : "SUPPORTED"}`,
-    "- Numerical Tolerance：N/A",
-    "- 未由现有证据确认的方法或假设不得补写。",
-  ];
 }
 
 function renderResults(worksheet) {
@@ -628,7 +581,7 @@ function renderResults(worksheet) {
     ...projection.selfChecks.ranges,
   ];
   return [
-    "## 3.7 结果与规格符合性",
+    "## 3.5 结果与规格符合性",
     "",
     "| Metric | Lower | Upper | Minimum Margin | Result | Source |",
     "|---|---:|---:|---:|---|---|",
@@ -658,7 +611,7 @@ function renderContributors(worksheet) {
   const sortedFactors = [...worksheet.f4Calculation.factors].sort((left, right) => right.contribution - left.contribution);
   let cumulative = 0;
   const lines = [
-    "## 3.8 贡献与敏感度",
+    "## 3.6 贡献与敏感度",
     "",
     "| Rank | Factor | 1σ | Variance Contribution | Cumulative | Evidence |",
     "|---:|---|---:|---:|---:|---|",
@@ -681,6 +634,45 @@ function renderContributors(worksheet) {
   return lines;
 }
 
+function renderOptimize(worksheet) {
+  const options = worksheet.f6Worksheet.options.filter((option) => (
+    option.status === "completed" && option.optionSource === "BUILT_IN_POLICY" && option.policyContext !== undefined
+  ));
+  if (options.length === 0) return [];
+  const unit = worksheet.f4Calculation.factors[0]?.unit ?? "unit";
+  const lines = [
+    "## 3.7 Optimize",
+    "",
+    `- Policy：${clean(options[0].policyContext.policyId)}`,
+    "- 仅收紧 baseline Top contributors 的 tolerance band；保持各公差带中心不变。",
+    "",
+    "| Scenario | CpkL | CpkU | Cpk | RSS 1σ | Worst-Case Range | Capability |",
+    "|---|---:|---:|---:|---:|---|---|",
+    row([
+      "Baseline",
+      numberText(options[0].baselineMetrics.lowerCpk),
+      numberText(options[0].baselineMetrics.upperCpk),
+      numberText(options[0].baselineMetrics.cpk),
+      engineeringText(options[0].baselineMetrics.rssSigma, unit),
+      `${engineeringText(options[0].baselineMetrics.worstCaseLower, unit)} ～ ${engineeringText(options[0].baselineMetrics.worstCaseUpper, unit)}`,
+      clean(options[0].baselineMetrics.capabilityStatus, NA),
+    ]),
+  ];
+  for (const option of options) {
+    lines.push(row([
+      clean(option.policyContext.optionCode),
+      numberText(option.resultMetrics.lowerCpk),
+      numberText(option.resultMetrics.upperCpk),
+      numberText(option.resultMetrics.cpk),
+      engineeringText(option.resultMetrics.rssSigma, unit),
+      `${engineeringText(option.resultMetrics.worstCaseLower, unit)} ～ ${engineeringText(option.resultMetrics.worstCaseUpper, unit)}`,
+      clean(option.resultMetrics.capabilityStatus, NA),
+    ]));
+  }
+  lines.push("", "- 限制：以上结果来自设计公差模型重算，不等于供应商实测能力。");
+  return lines;
+}
+
 function renderBlockedWorksheet(worksheet) {
   return [
     `# 3. Worksheet：${clean(worksheet.worksheetName)}`,
@@ -690,10 +682,10 @@ function renderBlockedWorksheet(worksheet) {
     "| Item | Result | Evidence |",
     "|---|---|---|",
     row(["Final Disposition", dispositionText(worksheet.disposition), "F2 readiness evidence"]),
-    row(["Primary Finding", "输入或计算链被阻断", "F2 blocked handoff"]),
+    row(["Key Finding", primaryFinding(worksheet), "F2 blocked handoff"]),
     row(["Required Action", clean(requiredAction(worksheet)), "F2 missing inputs"]),
     "",
-    "## 3.5 输入数据",
+    "## 3.4 输入数据",
     "",
     "| Worksheet | Status | Evidence |",
     "|---|---|---|",
@@ -701,7 +693,8 @@ function renderBlockedWorksheet(worksheet) {
   ];
 }
 
-function renderReadyWorksheet(worksheet, context) {
+function renderReadyWorksheet(worksheet) {
+  const optimize = renderOptimize(worksheet);
   return [
     `# 3. Worksheet：${clean(worksheet.worksheetName)}`,
     "",
@@ -713,11 +706,10 @@ function renderReadyWorksheet(worksheet, context) {
     "",
     ...renderInputs(worksheet),
     "",
-    ...renderMethods(worksheet, context.analysisContext),
-    "",
     ...renderResults(worksheet),
     "",
     ...renderContributors(worksheet),
+    ...(optimize.length === 0 ? [] : ["", ...optimize]),
   ];
 }
 
@@ -765,7 +757,7 @@ function renderMarkdown(context) {
     lines.push(
       "",
       ...(worksheet.f2Worksheet.status === "ready" && worksheet.f4Calculation !== undefined
-        ? renderReadyWorksheet(worksheet, context)
+        ? renderReadyWorksheet(worksheet)
         : renderBlockedWorksheet(worksheet)),
     );
   }

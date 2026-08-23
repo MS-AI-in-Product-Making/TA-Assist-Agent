@@ -498,7 +498,7 @@ describe("F6 real artifact full flow", () => {
       ]),
     }));
     expect(finalMarkdown).toContain("Analysis-A");
-    expect(finalMarkdown).toContain("NOT_PROVIDED");
+    expect(finalMarkdown).toContain("2026-08-17 01:02:03");
     expect(finalMarkdown).not.toContain(deprecatedF6ReportArtifactName);
     expect(cliResult.finalReportMdPath).toBe(path.join(runRoot, "Feature6-Report.md"));
     expect(cliResult).not.toHaveProperty("composedReportJsonPath");

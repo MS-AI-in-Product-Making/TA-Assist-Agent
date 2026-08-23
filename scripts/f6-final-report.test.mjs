@@ -206,8 +206,8 @@ describe("createF6FinalReportProjection policy", () => {
       "FAIL",
     ]);
     expect(projection.reportSummary.workbookDisposition).toBe("FAIL");
-    expect(projection.markdown).toContain("| Analysis-A | Loop Analysis-A | No blocking issue in governed evidence | PASS |");
-    expect(projection.markdown).toContain("| Blocked-A | Loop Blocked-A | 输入或计算链被阻断 | FAIL |");
+    expect(projection.markdown).toContain("| Analysis-A | Loop Analysis-A | 数值、输入和工程复核均已通过。 | PASS |");
+    expect(projection.markdown).toContain("| Blocked-A | Loop Blocked-A | 缺少必填输入、图片或有效计算，当前 worksheet 无法完成分析。 | FAIL |");
   });
 
   it("maps explicit open F5 evidence to conditional pass", () => {
@@ -221,7 +221,7 @@ describe("createF6FinalReportProjection policy", () => {
     expect(projection.reportSummary.worksheetDispositions).toEqual([
       expect.objectContaining({ worksheetName: "Analysis-A", disposition: "CONDITIONAL_PASS" }),
     ]);
-    expect(projection.markdown).toContain("| Analysis-A | Loop Analysis-A | 治理或工程复核尚未关闭 | CONDITIONAL_PASS |");
+    expect(projection.markdown).toContain("| Analysis-A | Loop Analysis-A | 数值达到要求，但仍需补齐 Drawing Number、DIM ID 或完成图像与工程复核。 | CONDITIONAL_PASS |");
   });
 
   it("keeps supported structural SIGNALs on pass", () => {
@@ -236,8 +236,8 @@ describe("createF6FinalReportProjection policy", () => {
       "PASS",
       "PASS",
     ]);
-    expect(projection.markdown).toContain("| Analysis-A | Loop Analysis-A | No blocking issue in governed evidence | PASS |");
-    expect(projection.markdown).toContain("| Analysis-B | Loop Analysis-B | No blocking issue in governed evidence | PASS |");
+    expect(projection.markdown).toContain("| Analysis-A | Loop Analysis-A | 数值、输入和工程复核均已通过。 | PASS |");
+    expect(projection.markdown).toContain("| Analysis-B | Loop Analysis-B | 数值、输入和工程复核均已通过。 | PASS |");
   });
 
   it("fails closed when F5 completed worksheets drift from readyNames", () => {
@@ -396,25 +396,72 @@ describe("createF6FinalReportProjection policy", () => {
 });
 
 describe("createF6FinalReportProjection final report template", () => {
-  it("renders the approved section structure without legacy-report artifacts or duplicate detailed metrics", () => {
+  it("renders the revised document control and continuous worksheet structure", () => {
     const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"], f5Variant: "supported" });
-    const { markdown } = createF6FinalReportProjection(inputs);
+    inputs.f2Report.workbook.revision = "D";
+    const { markdown } = createF6FinalReportProjection({ ...inputs, generatedAt: "2026-08-20T11:25:45.098Z" });
 
     expect(markdown).toContain("# 1. 文档控制 Document Control");
+    expect(markdown).toContain("| Workbook Revision | D | F1 workbook metadata |");
+    expect(markdown).toContain("| Report Generated At | 2026-08-20 11:25:45 | Report runtime |");
+    expect(markdown).not.toContain("| Project |");
+    expect(markdown).not.toContain("| Workbook Hash |");
+    expect(markdown).not.toContain("| Controlled Versions |");
     expect(markdown).toContain("# 2. Workbook 决策总览");
+    expect(markdown).toContain("CONDITIONAL_PASS：数值达到要求，但仍需补齐标识或完成工程复核。");
     expect(markdown).toContain("# 3. Worksheet：Analysis-A");
     expect(markdown).toContain("## 3.1 执行摘要");
+    expect(markdown).toContain("| Tolerance Loop Description |");
+    expect(markdown).not.toContain("| Primary Finding |");
     expect(markdown).toContain("## 3.2 分析目标与要求");
-    expect(markdown).toContain("## 3.4 尺寸链堆叠图");
-    expect(markdown).toContain("## 3.5 输入数据");
-    expect(markdown).toContain("## 3.6 模型假设与计算方法");
-    expect(markdown).toContain("## 3.7 结果与规格符合性");
-    expect(markdown).toContain("## 3.8 贡献与敏感度");
+    expect(markdown).toContain("| Design Nominal |");
+    expect(markdown).toContain("## 3.3 Tolerance Path Image");
+    expect(markdown).toContain("[Open tolerance path image](<");
+    expect(markdown).not.toContain("Image Evaluation");
+    expect(markdown).toContain("## 3.4 输入数据");
+    expect(markdown).toContain("Design Nominal | Mean");
+    expect(markdown).not.toContain("F3 Governance");
+    expect(markdown).not.toContain("模型假设与计算方法");
+    expect(markdown).toContain("## 3.5 结果与规格符合性");
+    expect(markdown).toContain("## 3.6 贡献与敏感度");
+    expect(markdown).not.toContain("## 3.7 Optimize");
     expect(markdown).toContain("# 4. Appendix: Reference Traceability");
-    expect(markdown).not.toContain("3.9");
     expect(markdown).not.toContain(deprecatedF6ReportArtifactName);
     expect(markdown.match(/Predictive Cpk \|/g)).toHaveLength(1);
     expect(markdown.match(/RSS 1σ/g)).toHaveLength(1);
+  });
+
+  it("renders Optimize only when built-in policy options exist", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"], f5Variant: "supported" });
+    const worksheet = inputs.f6Optimization.worksheets[0];
+    const calculation = inputs.f4Report.calculations[0];
+    const factor = calculation.factors[0];
+    worksheet.options = ["OP1", "OP2", "OP3"].map((optionCode, index) => ({
+      optionId: `Analysis-A:builtin-top3:${optionCode}`,
+      status: "completed",
+      optionSource: "BUILT_IN_POLICY",
+      targetId: `f6-top3-tolerance-policy-v1:${optionCode}`,
+      policyContext: {
+        policyId: "f6-top3-tolerance-policy-v1",
+        optionCode,
+        trigger: { lowerCpk: 0.9, upperCpk: 2, targetCpk: 1.33, failedSides: ["lowerCpk"] },
+        selectedFactorCount: 1,
+        reductions: [{ factor: { worksheetName: "Analysis-A", tableId: factor.source.tableId, sourceRow: factor.source.sourceRow, factorName: factor.factorName, unit: factor.unit }, rank: 1, reductionRatio: [0.25, 0.2, 0.4][index], scale: [0.75, 0.8, 0.6][index] }],
+      },
+      baselineMetrics: { ...worksheet.baselineMetrics, lowerCpk: 0.9, upperCpk: 2, capabilityStatus: "FAIL" },
+      resultMetrics: { ...worksheet.baselineMetrics, cpk: 1 + index / 10, lowerCpk: 1 + index / 10, upperCpk: 2.1, capabilityStatus: index === 2 ? "PASS" : "FAIL" },
+      scenarioEvidence: { targetId: `f6-top3-tolerance-policy-v1:${optionCode}`, baselineIdentity: worksheet.baselineIdentity, factorOverrides: [{ factor: { worksheetName: "Analysis-A", tableId: factor.source.tableId, sourceRow: factor.source.sourceRow, factorName: factor.factorName, unit: factor.unit }, lowerTolerance: factor.input.lowerTolerance, upperTolerance: factor.input.upperTolerance }], calculationReference: inputs.f6Optimization.provenance.f4Reference, formulaReferences: [] },
+      feasibility: { status: "supported", reasonCodes: ["built_in_policy"], evidenceReferences: [] }, evidenceReferences: [], impactRank: index + 1,
+    }));
+    worksheet.baselineMetrics = worksheet.options[0].baselineMetrics;
+    worksheet.highestImpactAction = { optionId: worksheet.options[0].optionId, impactRank: 1 };
+    inputs.f6Optimization.summary = recountF6Summary(inputs.f6Optimization.worksheets);
+
+    const { markdown } = createF6FinalReportProjection(inputs);
+
+    expect(markdown).toContain("## 3.7 Optimize");
+    expect(markdown).toContain("| Scenario | CpkL | CpkU | Cpk | RSS 1σ | Worst-Case Range | Capability |");
+    expect(markdown).toContain("f6-top3-tolerance-policy-v1");
   });
 
   it("renders all factor rows in the worksheet body and keeps blocked worksheets evidence-only", () => {
@@ -438,25 +485,22 @@ describe("createF6FinalReportProjection final report template", () => {
 
     const { markdown } = createF6FinalReportProjection(inputs);
 
-    expect(markdown).toContain("NOT_PROVIDED");
-    expect(markdown).toContain("NOT_EVALUATED");
+    expect(markdown).toContain("| Workbook Revision | N/A |");
     expect(markdown).toContain("PENDING");
     expect(markdown).toContain("不等于已确认的物理根因");
   });
 
   it("sanitizes unsafe evidence text before rendering markdown", () => {
     const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"], f5Variant: "supported" });
-    const imageFact = inputs.f5Report.worksheets[0].statements.find((statement) => (
-      statement.type === "FACT" && statement.content.provenanceKind === "image_observation"
-    ));
-    expect(imageFact).toBeDefined();
-    imageFact.content.visibleBasis = "Observed from C:\\private\\fixture<script>.xlsx";
+    const unsafeDescription = "Loop | injected\n<script>";
+    inputs.f2Report.worksheets[0].toleranceLoopDescription = unsafeDescription;
+    inputs.f2Report.f4Handoffs[0].toleranceLoopDescription = unsafeDescription;
+    inputs.f3Report.worksheets[0].toleranceLoopDescription = unsafeDescription;
 
     const { markdown } = createF6FinalReportProjection(inputs);
 
-    expect(markdown).toContain("[redacted-local-path]");
+    expect(markdown).toContain("Loop \\| injected");
     expect(markdown).not.toContain("<script>");
-    expect(markdown).not.toContain("C:\\private\\");
   });
 
   it("uses governed F6 projection ranges and margins but renders range results as N/A", () => {

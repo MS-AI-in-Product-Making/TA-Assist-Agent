@@ -147,6 +147,9 @@ function renderV2Option(lines, option) {
 }
 
 function v2TargetLabel(option) {
+  if (option.policyContext !== undefined) {
+    return `${option.policyContext.policyId} (${option.policyContext.optionCode})`;
+  }
   if (option.targetContext === undefined) return option.targetId ?? option.optionId;
   if (option.targetContext.targetType === "system_target") {
     return `${option.targetContext.targetId} (${option.targetContext.targetType}; ${option.targetContext.apportionment.policy})`;
@@ -155,11 +158,13 @@ function v2TargetLabel(option) {
 }
 
 function v2AdjustedLabel(option) {
-  const override = option.scenarioEvidence?.factorOverrides?.[0];
-  if (override === undefined) return "n/a";
-  const upper = override.upperTolerance === undefined ? "n/a" : formatEngineering(override.upperTolerance, override.factor.unit, 3);
-  const lower = override.lowerTolerance === undefined ? "n/a" : formatEngineering(override.lowerTolerance, override.factor.unit, 3);
-  return `${override.factor.factorName}: +Tol ${upper} / -Tol ${lower}`;
+  const overrides = option.scenarioEvidence?.factorOverrides ?? [];
+  if (overrides.length === 0) return "n/a";
+  return overrides.map((override) => {
+    const upper = override.upperTolerance === undefined ? "n/a" : formatEngineering(override.upperTolerance, override.factor.unit, 3);
+    const lower = override.lowerTolerance === undefined ? "n/a" : formatEngineering(override.lowerTolerance, override.factor.unit, 3);
+    return `${override.factor.factorName}: +Tol ${upper} / -Tol ${lower}`;
+  }).join("; ");
 }
 
 export function renderF6Report(result, options = {}) {
