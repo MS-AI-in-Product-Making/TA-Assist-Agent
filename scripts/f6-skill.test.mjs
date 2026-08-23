@@ -105,7 +105,7 @@ describe("F6 analysis skill contract", () => {
     expect(skill).toContain("two separate `vscode_askQuestions` calls");
     expect(skill).toContain("Declined analysis context omits `--analysis-context`");
     expect(skill).toContain("Declined optimization targets omit `--optimization-targets`");
-    expect(skill).toContain("No optimization scenario may be generated before target confirmation");
+    expect(skill).toContain("Caller-target optimization scenarios may not be generated before target confirmation");
     expect(skill).toContain("`CALLER_AUTHORIZED`, `DECLINED`, `REJECTED`, or `NOT_PROVIDED`");
     expect(skill).toContain("must not be combined with the F3 ADO confirmation");
     expect(skill).toContain("f6-optimization-v2");
@@ -159,8 +159,13 @@ describe("F6 analysis skill contract", () => {
     ]) expect(skill).toContain(`\`${scope}\``);
     expect(skill).toContain("f6-analysis-context-v1");
     expect(skill).toContain("f6-optimization-targets-v1");
-    expect(skill).toContain("candidate-only");
-    expect(skill).toContain("Do not invent default percentage scenarios");
+    expect(skill).toContain("f6-top3-tolerance-policy-v1");
+    expect(skill).toContain("CpkL");
+    expect(skill).toContain("CpkU");
+    expect(skill).toContain("OP1");
+    expect(skill).toContain("OP2");
+    expect(skill).toContain("OP3");
+    expect(skill).toContain("No other automatic percentage scenario is permitted");
   });
 
   it("validates every Feature output and supports an existing F6 artifact fast path", () => {

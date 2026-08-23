@@ -154,7 +154,7 @@ F0 解读规则范围与维护边界见 [F0 TA 结果解读规则库设计](../s
   `Feature2-Report.json`、`Feature3-Report.json`、`Feature4-Calculation.json` 和 `Feature5-Report.json`，并通过
   artifact identity、内容 hash、schema、workbook 与 worksheet association 门禁；不得扫描目录猜测输入。
   可选 `f6-analysis-context-v1` 与 `f6-optimization-targets-v1` 分别经过 `Confirm analysis context` 和
-  `Confirm optimization targets` 独立确认后，才可追加 `--analysis-context` 与 `--optimization-targets`。两次确认不得互相合并或与 F3 ADO 确认合并；无 confirmed targets 时只输出 candidate，不生成默认百分比 scenario。supplier capability 与 datum strategy 缺少绑定证据时不得输出已验证可行性；cost 证据缺失、
+  `Confirm optimization targets` 独立确认后，才可追加 `--analysis-context` 与 `--optimization-targets`。两次确认不得互相合并或与 F3 ADO 确认合并；caller-target scenario 仍要求 confirmed targets。唯一自动例外为 `f6-top3-tolerance-policy-v1`：仅当 CpkL 或 CpkU 低于 worksheet Target Cpk 时，按固定 OP1（25%/10%/10%）、OP2（20%/15%/15%）、OP3（40%/5%/5%）收紧 baseline Top 3 tolerance bands，并通过 F4 完整重算；不得生成其他自动百分比 scenario。supplier capability 与 datum strategy 缺少绑定证据时不得输出已验证可行性；cost 证据缺失、
   身份不一致或未覆盖候选方案时，ROI 必须保持 `not_computed`，不得据此排序或推荐。所有输入、日志、错误、manifest
   与摘要必须遵守 `confidential` 隐私边界，不得泄露 child-process、原始路径或工程值。该确定性 workflow 不写回 workbook、
   不发布 ADO、不执行网络或其他外部写入；相关能力缺失或输出为 `failed`、无效 JSON、多个 JSON 文档时 fail closed。
