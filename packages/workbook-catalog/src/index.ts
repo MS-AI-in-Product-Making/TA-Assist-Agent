@@ -7,6 +7,8 @@ export { extractResponseSummarySystemSpecification } from "./response-summary.js
 export type { WorksheetSystemSpecification } from "./response-summary.js";
 export { createWorksheetSelectionPrompt, createWorksheetSelectionView, validateWorksheetSelectionConfirmation } from "./worksheet-selection.js";
 export { createWorksheetAnalysisAssets, createWorksheetAnalysisAssetsParallel, readWorksheetImageAsset } from "./worksheet-analysis-assets.js";
+export { createWorkbookSheetAssets } from "./workbook-sheet-assets.js";
+export type { WorkbookSheetAsset, WorkbookSheetAssetsRequest, WorkbookSheetAssetsResult } from "./workbook-sheet-assets.js";
 export { createSemanticTableDetection } from "./semantic-table-detection.js";
 export { createRequiredFieldCheck } from "./required-field-check.js";
 export { createCapabilityValidation } from "./capability-validation.js";

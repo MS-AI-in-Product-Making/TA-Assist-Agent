@@ -445,7 +445,7 @@ export const workbookCatalogResultSchema = z
             date: workbookCatalogDateSchema,
           })
           .strict(),
-        worksheetInventory: workbookWorksheetInventorySchema,
+        worksheetInventory: workbookWorksheetInventorySchema.optional(),
       })
       .strict(),
     analyses: z.array(workbookCatalogAnalysisSchema).min(1),
