@@ -26,7 +26,15 @@ function number(rawText: string, sourceCell: string, numericValue: number) {
   return { status: "available" as const, rawText, sourceCell, numericValue, unit: "mm" };
 }
 
-function calculationRequest(worksheetName = "Analysis-A"): CalculationRequest {
+function calculationRequest(
+  worksheetName = "Analysis-A",
+  specification: { readonly lowerSpecLimit: number; readonly upperSpecLimit: number; readonly targetCpk: number; readonly targetSigmaLevel: number } = {
+    lowerSpecLimit: -10,
+    upperSpecLimit: 10,
+    targetCpk: 1.33,
+    targetSigmaLevel: 4,
+  },
+): CalculationRequest {
   const tolerances = [[-1.5, 2.5], [-1, 1], [-0.75, 0.75], [-0.5, 0.5]] as const;
   const rows = tolerances.map(([lower, upper], index) => {
     const row = index + 2;
@@ -98,10 +106,10 @@ function calculationRequest(worksheetName = "Analysis-A"): CalculationRequest {
     worksheetSelection: { worksheetName, tableId: "table-a" },
     systemSpecification: {
       designNominal: 0,
-      lowerSpecLimit: -10,
-      upperSpecLimit: 10,
-      targetSigmaLevel: 4,
-      targetCpk: 1.33,
+      lowerSpecLimit: specification.lowerSpecLimit,
+      upperSpecLimit: specification.upperSpecLimit,
+      targetSigmaLevel: specification.targetSigmaLevel,
+      targetCpk: specification.targetCpk,
       additionalMeanShift: 0,
     },
     criticality: "none",
@@ -109,8 +117,11 @@ function calculationRequest(worksheetName = "Analysis-A"): CalculationRequest {
   };
 }
 
-function request(worksheetName = "Analysis-A"): F6OptimizationRequest {
-  const baselineRequest = calculationRequest(worksheetName);
+function request(
+  worksheetName = "Analysis-A",
+  specification?: { readonly lowerSpecLimit: number; readonly upperSpecLimit: number; readonly targetCpk: number; readonly targetSigmaLevel: number },
+): F6OptimizationRequest {
+  const baselineRequest = calculationRequest(worksheetName, specification);
   const calculation = createCalculation(baselineRequest);
   if (calculation.status !== "completed") throw new Error("fixture calculation failed");
   const imageReference = {
@@ -1188,19 +1199,107 @@ describe("createF6Optimization V2", () => {
     },
   };
 
-  it("returns one unranked candidate and no quantified scenario without targets", () => {
-    const result = createF6OptimizationV2(request(), notProvidedInputs);
+  it("generates governed OP1 OP2 OP3 scenarios when either side Cpk is below the worksheet target", () => {
+    const result = createF6OptimizationV2(
+      request("Analysis-A", { lowerSpecLimit: -10, upperSpecLimit: 10, targetCpk: 10, targetSigmaLevel: 30 }),
+      notProvidedInputs,
+    );
     const worksheet = result.worksheets[0]!;
 
     expect(result.optimizationVersion).toBe("f6-optimization-v2");
     expect(result.runStatus).toBe("COMPLETED");
     expect(result.provenance.reportScope).toEqual({ worksheetNames: ["Analysis-A"], blockedWorksheetNames: [] });
     expect(worksheet.runStatus).toBe("COMPLETED");
-    expect(worksheet.options).toEqual([
-      expect.objectContaining({ status: "candidate", reasonCode: "target_not_provided", impactRank: null }),
+    expect(worksheet.options.map(({ optionId }) => optionId)).toEqual([
+      "Analysis-A:builtin-top3:OP1",
+      "Analysis-A:builtin-top3:OP2",
+      "Analysis-A:builtin-top3:OP3",
     ]);
-    expect(worksheet.highestImpactAction).toBeNull();
-    expect(result.summary).toMatchObject({ candidateOptionCount: 1, completedOptionCount: 0 });
+    expect(worksheet.options.every(({ status }) => status === "completed")).toBe(true);
+    const contexts = worksheet.options.map((option) => option.status === "completed" ? option.policyContext : undefined);
+    expect(contexts.map((context) => context?.reductions.map(({ reductionRatio }) => reductionRatio))).toEqual([
+      [0.25, 0.1, 0.1],
+      [0.2, 0.15, 0.15],
+      [0.4, 0.05, 0.05],
+    ]);
+    expect(contexts.map((context) => context?.reductions.map(({ factor }) => factor))).toEqual([
+      contexts[0]?.reductions.map(({ factor }) => factor),
+      contexts[0]?.reductions.map(({ factor }) => factor),
+      contexts[0]?.reductions.map(({ factor }) => factor),
+    ]);
+    expect(worksheet.options.every((option) => option.status !== "completed" || (option.resultMetrics.lowerCpk !== undefined && option.resultMetrics.upperCpk !== undefined))).toBe(true);
+    expect(result.summary).toMatchObject({ candidateOptionCount: 0, completedOptionCount: 3 });
+  });
+
+  it("keeps candidate-only behavior when both side Cpk values meet the worksheet target", () => {
+    const input = request("Analysis-A", { lowerSpecLimit: -20, upperSpecLimit: 20, targetCpk: 1.33, targetSigmaLevel: 4 });
+
+    const result = createF6OptimizationV2(input, notProvidedInputs);
+
+    expect(result.worksheets[0]!.options).toEqual([
+      expect.objectContaining({ status: "candidate", reasonCode: "target_not_provided" }),
+    ]);
+  });
+
+  it("isolates one built-in calculation failure and continues the remaining options", () => {
+    const input = request("Analysis-A", { lowerSpecLimit: -10, upperSpecLimit: 10, targetCpk: 10, targetSigmaLevel: 30 });
+    const calculateScenario = vi.fn((scenarioInput) => {
+      if (scenarioInput.scenario.scenarioId.endsWith(":OP2")) throw new Error("controlled_policy_failure");
+      return calculateF6Scenario(scenarioInput);
+    });
+
+    const result = createF6OptimizationV2(input, notProvidedInputs, { calculateScenario });
+
+    expect(result.worksheets[0]!.options.map(({ status }) => status)).toEqual(["completed", "calculation_failed", "completed"]);
+    expect(result.worksheets[0]!.runStatus).toBe("PARTIALLY_COMPLETED");
+    expect(result.summary).toMatchObject({ completedOptionCount: 2, calculationFailedOptionCount: 1 });
+  });
+
+  it("keeps built-in and caller-authorized options in separate stable namespaces", () => {
+    const input = request("Analysis-A", { lowerSpecLimit: -10, upperSpecLimit: 10, targetCpk: 10, targetSigmaLevel: 30 });
+    const baseline = input.worksheets[0]!.baselineCalculation;
+    const baselineFactor = baseline.factors[0]!;
+    const factor = {
+      worksheetName: baselineFactor.source.worksheetName,
+      tableId: baselineFactor.source.tableId,
+      sourceRow: baselineFactor.source.sourceRow,
+      factorName: baselineFactor.factorName,
+      unit: baselineFactor.unit,
+    };
+    const targets = {
+      contractVersion: "v1" as const,
+      inputClassification: "confidential" as const,
+      targetVersion: "f6-optimization-targets-v1" as const,
+      workbookContentHash: input.workbook.contentHash,
+      worksheets: [{
+        worksheetName: input.worksheets[0]!.worksheetName,
+        tableId: baseline.worksheetSelection.tableId,
+        baselineIdentity: {
+          calculationVersion: baseline.calculationVersion,
+          projectReference: baseline.projectReference,
+          runReference: baseline.runReference,
+          workbookContentHash: baseline.workbookContentHash,
+          worksheetName: baseline.worksheetSelection.worksheetName,
+          tableId: baseline.worksheetSelection.tableId,
+        },
+        targets: [{ targetId: "caller-ratio", targetType: "improvement_ratio" as const, factor, ratio: 0.2, appliesTo: "tolerance_band" as const }],
+      }],
+    };
+
+    const result = createF6OptimizationV2(input, {
+      optimizationTargets: targets,
+      inputDecisions: {
+        analysisContext: { outcome: "NOT_PROVIDED" },
+        optimizationTargets: { outcome: "CALLER_AUTHORIZED", artifactReference: { artifact: "targets.json", contentHash: "c".repeat(64) } },
+      },
+    });
+
+    expect(result.worksheets[0]!.options.map(({ optionId }) => optionId)).toEqual([
+      "Analysis-A:builtin-top3:OP1",
+      "Analysis-A:builtin-top3:OP2",
+      "Analysis-A:builtin-top3:OP3",
+      "Analysis-A:caller-ratio",
+    ]);
   });
 
   it("scales an asymmetric tolerance band around its center and recalculates through F4", () => {
