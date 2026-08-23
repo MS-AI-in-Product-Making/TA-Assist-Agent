@@ -4576,6 +4576,66 @@ describe("F5.1 objective interpretation contracts", () => {
         }).success).toBe(false);
       });
 
+      it("accepts a governed built-in OP1 option and rejects a changed reduction matrix", () => {
+        const factors = [factor, { ...factor, sourceRow: 15, factorName: "Factor B" }, { ...factor, sourceRow: 16, factorName: "Factor C" }];
+        const policyContext = {
+          policyId: "f6-top3-tolerance-policy-v1" as const,
+          optionCode: "OP1" as const,
+          trigger: { lowerCpk: 0.9, upperCpk: 1.8, targetCpk: 1, failedSides: ["lowerCpk" as const] },
+          selectedFactorCount: 3,
+          reductions: factors.map((policyFactor, index) => ({
+            factor: policyFactor,
+            rank: index + 1,
+            reductionRatio: index === 0 ? 0.25 : 0.1,
+            scale: index === 0 ? 0.75 : 0.9,
+          })),
+        };
+        const option = {
+          optionId: "Analysis-A:builtin-top3:OP1",
+          status: "completed" as const,
+          optionSource: "BUILT_IN_POLICY" as const,
+          targetId: "f6-top3-tolerance-policy-v1:OP1",
+          policyContext,
+          baselineMetrics: { ...metrics, lowerCpk: 0.9, upperCpk: 1.8, capabilityStatus: "FAIL" as const },
+          resultMetrics: { ...metrics, cpk: 1.1, lowerCpk: 1.1, upperCpk: 2, capabilityStatus: "PASS" as const },
+          scenarioEvidence: {
+            targetId: "f6-top3-tolerance-policy-v1:OP1",
+            baselineIdentity,
+            factorOverrides: factors.map((policyFactor) => ({ factor: policyFactor, upperTolerance: 0.1, lowerTolerance: -0.1 })),
+            calculationReference: artifactReference("Feature4-Calculation.json"),
+            formulaReferences: [],
+          },
+          feasibility: { status: "supported" as const, reasonCodes: ["built_in_policy"], evidenceReferences: [] },
+          evidenceReferences: [],
+          impactRank: 1,
+        };
+        const builtInResult = {
+          ...resultV2,
+          worksheets: [{
+            ...resultV2.worksheets[0],
+            baselineMetrics: option.baselineMetrics,
+            options: [option],
+            highestImpactAction: { optionId: option.optionId, impactRank: 1 },
+          }],
+          summary: { ...resultV2.summary, candidateOptionCount: 0, completedOptionCount: 1 },
+        };
+
+        expect(f6OptimizationResultSchema.safeParse(builtInResult).success).toBe(true);
+        expect(f6OptimizationResultSchema.safeParse({
+          ...builtInResult,
+          worksheets: [{
+            ...builtInResult.worksheets[0],
+            options: [{
+              ...option,
+              policyContext: {
+                ...policyContext,
+                reductions: [{ ...policyContext.reductions[0], reductionRatio: 0.2 }, ...policyContext.reductions.slice(1)],
+              },
+            }],
+          }],
+        }).success).toBe(false);
+      });
+
       it("allows highest impact and recommendations only for supported completed options", () => {
         expect(f6OptimizationResultSchema.safeParse({
           ...resultV2,

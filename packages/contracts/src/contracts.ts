@@ -7501,6 +7501,9 @@ const f6MetricsV2Schema = z.object({
   worstCaseUpper: z.number().finite(),
   cp: z.number().finite(),
   cpk: z.number().finite(),
+  lowerCpk: z.number().finite().optional(),
+  upperCpk: z.number().finite().optional(),
+  capabilityStatus: z.enum(["PASS", "FAIL"]).optional(),
   yield: z.number().finite().min(0).max(1).nullable(),
   dpm: z.number().finite().nonnegative().nullable(),
 }).strict().superRefine((metrics, context) => {
@@ -7535,10 +7538,30 @@ const f6ScenarioEvidenceV2Schema = z.object({
   formulaReferences: z.array(f6V2FormulaReferenceSchema),
 }).strict();
 
+const f6BuiltInPolicyContextSchema = z.object({
+  policyId: z.literal("f6-top3-tolerance-policy-v1"),
+  optionCode: z.enum(["OP1", "OP2", "OP3"]),
+  trigger: z.object({
+    lowerCpk: z.number().finite(),
+    upperCpk: z.number().finite(),
+    targetCpk: z.number().finite().positive(),
+    failedSides: z.array(z.enum(["lowerCpk", "upperCpk"])).min(1).max(2),
+  }).strict(),
+  selectedFactorCount: z.number().int().min(1).max(3),
+  reductions: z.array(z.object({
+    factor: f6FactorIdentitySchema,
+    rank: z.number().int().min(1).max(3),
+    reductionRatio: z.number().finite().positive().lt(1),
+    scale: z.number().finite().positive().lt(1),
+  }).strict()).min(1).max(3),
+}).strict();
+
 const f6CompletedOptionV2Schema = z.object({
   optionId: z.string().min(1),
   status: z.literal("completed"),
   targetId: z.string().min(1),
+  optionSource: z.enum(["BUILT_IN_POLICY", "CALLER_TARGET"]).optional(),
+  policyContext: f6BuiltInPolicyContextSchema.optional(),
   baselineMetrics: f6MetricsV2Schema,
   resultMetrics: f6MetricsV2Schema,
   scenarioEvidence: f6ScenarioEvidenceV2Schema,
@@ -7563,6 +7586,8 @@ const f6CalculationFailedOptionV2Schema = z.object({
   optionId: z.string().min(1),
   status: z.literal("calculation_failed"),
   targetId: z.string().min(1),
+  optionSource: z.enum(["BUILT_IN_POLICY", "CALLER_TARGET"]).optional(),
+  policyContext: f6BuiltInPolicyContextSchema.optional(),
   targetContext: f6OptimizationTargetSchema.optional(),
   reasonCode: z.string().min(1),
   baselineMetrics: f6MetricsV2Schema,
@@ -7617,6 +7642,39 @@ const f6OptimizationWorksheetV2Schema = z.object({
     }
     if (option.status !== "candidate" && option.targetContext !== undefined && option.targetContext.targetId !== option.targetId) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: "target context targetId must match option targetId", path: ["options", index, "targetContext", "targetId"] });
+    }
+    if ((option.status === "completed" || option.status === "calculation_failed") && option.policyContext !== undefined) {
+      const policy = option.policyContext;
+      const expectedRatios = policy.optionCode === "OP1" ? [0.25, 0.1, 0.1]
+        : policy.optionCode === "OP2" ? [0.2, 0.15, 0.15]
+          : [0.4, 0.05, 0.05];
+      if (option.optionSource !== "BUILT_IN_POLICY"
+        || option.optionId !== `${worksheet.worksheetName}:builtin-top3:${policy.optionCode}`
+        || option.targetId !== `${policy.policyId}:${policy.optionCode}`) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "built-in policy option identity is invalid", path: ["options", index, "policyContext"] });
+      }
+      if (policy.selectedFactorCount !== policy.reductions.length
+        || new Set(policy.reductions.map(({ rank }) => rank)).size !== policy.reductions.length) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "built-in policy reductions must match selected factors and unique ranks", path: ["options", index, "policyContext", "reductions"] });
+      }
+      policy.reductions.forEach((reduction, reductionIndex) => {
+        const expectedRatio = expectedRatios[reduction.rank - 1];
+        if (reduction.rank !== reductionIndex + 1
+          || expectedRatio === undefined
+          || !f6NearlyEqual(reduction.reductionRatio, expectedRatio)
+          || !f6NearlyEqual(reduction.scale, 1 - reduction.reductionRatio)) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "built-in policy reduction matrix is invalid", path: ["options", index, "policyContext", "reductions", reductionIndex] });
+        }
+      });
+      const expectedFailedSides = [
+        ...(policy.trigger.lowerCpk < policy.trigger.targetCpk ? ["lowerCpk" as const] : []),
+        ...(policy.trigger.upperCpk < policy.trigger.targetCpk ? ["upperCpk" as const] : []),
+      ];
+      if (expectedFailedSides.length === 0
+        || policy.trigger.failedSides.length !== expectedFailedSides.length
+        || policy.trigger.failedSides.some((side, sideIndex) => side !== expectedFailedSides[sideIndex])) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "built-in policy trigger must match side capability", path: ["options", index, "policyContext", "trigger"] });
+      }
     }
     for (const field of ["mean", "rssSigma", "worstCaseLower", "worstCaseUpper", "cp", "cpk"] as const) {
       if (!f6NearlyEqual(option.baselineMetrics[field], worksheet.baselineMetrics[field])) {
