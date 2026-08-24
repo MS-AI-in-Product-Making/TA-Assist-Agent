@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 
@@ -51,6 +51,23 @@ interface WorkflowManifest {
   error?: { name: string; message: string };
 }
 
+interface SelectionRegistryEntry {
+  readonly runId: string;
+  readonly runRoot: string;
+  readonly manifestPath: string;
+  readonly promptPath: string;
+  readonly workbookPath: string;
+  readonly workbookContentHash: string;
+  readonly status: "selectionRequired" | "confirmed";
+}
+
+interface SelectionRegistry {
+  readonly contractVersion: "v1";
+  readonly selections: readonly SelectionRegistryEntry[];
+}
+
+const SELECTION_REGISTRY_FILE = "f2-selection-registry.json";
+
 function safeName(value: string): string {
   return value.replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, "-");
 }
@@ -73,6 +90,7 @@ function defaultExecuteStage({ command, args, cwd, env }: ExecuteStageRequest): 
 }
 
 function createLayout(managedOutputRoot: string, workbookPath: string, now: () => Date) {
+  ensureCreationPathIsPhysical(managedOutputRoot, "Feature 2 managed output root");
   const workbookName = safeName(path.basename(workbookPath, path.extname(workbookPath)));
   if (!workbookName) throw new Error("Feature 2 workbook output name is empty.");
   const startedAt = now().toISOString();
@@ -90,9 +108,55 @@ function createLayout(managedOutputRoot: string, workbookPath: string, now: () =
   };
 }
 
-function isContainedPath(parentPath: string, childPath: string): boolean {
-  const relative = path.relative(path.resolve(parentPath), path.resolve(childPath));
-  return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+function isWithinOrEqual(parentPath: string, childPath: string): boolean {
+  const relative = path.relative(parentPath, childPath);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function pathChain(value: string): string[] {
+  const absolute = path.resolve(value);
+  const root = path.parse(absolute).root;
+  const segments = path.relative(root, absolute).split(path.sep).filter(Boolean);
+  const chain = [root];
+  let current = root;
+  for (const segment of segments) {
+    current = path.join(current, segment);
+    chain.push(current);
+  }
+  return chain;
+}
+
+function ensureCreationPathIsPhysical(targetPath: string, label: string): string {
+  const chain = pathChain(targetPath);
+  for (const candidate of chain.slice(1)) {
+    if (!existsSync(candidate)) return path.resolve(targetPath);
+    const stats = lstatSync(candidate);
+    if (stats.isSymbolicLink()) throw new Error(`${label} is invalid.`);
+  }
+  const targetStats = lstatSync(path.resolve(targetPath));
+  if (targetStats.isSymbolicLink()) throw new Error(`${label} is invalid.`);
+  return path.resolve(targetPath);
+}
+
+function ensurePhysicalPath(targetPath: string, label: string, kind: "file" | "directory"): string {
+  const absolute = path.resolve(targetPath);
+  for (const candidate of pathChain(absolute).slice(1)) {
+    if (!existsSync(candidate)) throw new Error(`${label} is missing.`);
+    const stats = lstatSync(candidate);
+    if (stats.isSymbolicLink()) throw new Error(`${label} is invalid.`);
+  }
+  const targetStats = lstatSync(absolute);
+  if (targetStats.isSymbolicLink()) throw new Error(`${label} is invalid.`);
+  if (kind === "file" && !targetStats.isFile()) throw new Error(`${label} is invalid.`);
+  if (kind === "directory" && !targetStats.isDirectory()) throw new Error(`${label} is invalid.`);
+  return realpathSync(absolute);
+}
+
+function ensureContainedPhysicalPath(rootPath: string, targetPath: string, label: string, kind: "file" | "directory"): string {
+  const rootRealPath = ensurePhysicalPath(rootPath, "Feature 2 managed output root", "directory");
+  const targetRealPath = ensurePhysicalPath(targetPath, label, kind);
+  if (!isWithinOrEqual(rootRealPath, targetRealPath)) throw new Error(`${label} must stay inside the managed output root.`);
+  return targetRealPath;
 }
 
 function throwIfAborted(context: RunContext, stage: string): void {
@@ -106,8 +170,45 @@ function throwIfAborted(context: RunContext, stage: string): void {
 function validateWorkbook(repositoryRoot: string, workbookPath: string): string {
   const workbook = path.resolve(repositoryRoot, workbookPath);
   if (path.extname(workbook).toLowerCase() !== ".xlsx") throw new Error("Feature 2 Excel workflow requires exactly one .xlsx workbook.");
-  if (!existsSync(workbook) || !statSync(workbook).isFile()) throw new Error(`Feature 2 workbook does not exist: ${workbookPath}`);
+  if (!existsSync(workbook)) throw new Error(`Feature 2 workbook does not exist: ${workbookPath}`);
+  const workbookStats = lstatSync(workbook);
+  if (!workbookStats.isFile() || workbookStats.isSymbolicLink()) throw new Error(`Feature 2 workbook does not exist: ${workbookPath}`);
   return workbook;
+}
+
+function selectionRegistryPath(managedOutputRoot: string): string {
+  return path.join(path.resolve(managedOutputRoot), SELECTION_REGISTRY_FILE);
+}
+
+function loadSelectionRegistry(managedOutputRoot: string): SelectionRegistry {
+  const registryPath = selectionRegistryPath(managedOutputRoot);
+  if (!existsSync(registryPath)) return { contractVersion: "v1", selections: [] };
+  const parsed = JSON.parse(readFileSync(registryPath, "utf8")) as SelectionRegistry;
+  if (parsed.contractVersion !== "v1" || !Array.isArray(parsed.selections)) throw new Error("Feature 2 selection registry is invalid.");
+  return parsed;
+}
+
+function persistSelectionRegistry(managedOutputRoot: string, registry: SelectionRegistry): void {
+  mkdirSync(path.resolve(managedOutputRoot), { recursive: true });
+  writeFileSync(selectionRegistryPath(managedOutputRoot), `${JSON.stringify(registry, null, 2)}\n`, "utf8");
+}
+
+function upsertSelectionRegistryEntry(managedOutputRoot: string, entry: SelectionRegistryEntry): void {
+  const registry = loadSelectionRegistry(managedOutputRoot);
+  const selections = registry.selections.filter((candidate) => candidate.runId !== entry.runId);
+  selections.push(entry);
+  persistSelectionRegistry(managedOutputRoot, { contractVersion: "v1", selections });
+}
+
+function updateSelectionRegistryStatus(managedOutputRoot: string, runId: string, status: SelectionRegistryEntry["status"]): void {
+  const registry = loadSelectionRegistry(managedOutputRoot);
+  let changed = false;
+  const selections = registry.selections.map((entry) => {
+    if (entry.runId !== runId || entry.status === status) return entry;
+    changed = true;
+    return { ...entry, status };
+  });
+  if (changed) persistSelectionRegistry(managedOutputRoot, { contractVersion: "v1", selections });
 }
 
 function selectionReferenceFor(layout: { runId: string; runRoot: string; manifestPath: string }, promptPath: string): F1F2SelectionReference {
@@ -152,22 +253,74 @@ function parseManifest(manifestPath: string): WorkflowManifest {
   return JSON.parse(readFileSync(manifestPath, "utf8")) as WorkflowManifest;
 }
 
+function explicitSelectionReference(request: F1F2ConfirmedRequest): F1F2SelectionReference | undefined {
+  return request.selectionReference;
+}
+
+function registrySelectionReference(
+  request: F1F2ConfirmedRequest,
+  context: RunContext,
+  workbook: string,
+): F1F2SelectionReference {
+  const registry = loadSelectionRegistry(context.managedOutputRoot);
+  const matches = registry.selections.filter((entry) => entry.status === "selectionRequired"
+    && entry.workbookPath === workbook
+    && entry.workbookContentHash === request.workbookContentHash);
+
+  if (matches.length === 0) throw new Error("Feature 2 pending selection was not found.");
+
+  const stale = [] as SelectionRegistryEntry[];
+  const valid = [] as SelectionRegistryEntry[];
+  for (const entry of matches) {
+    try {
+      ensureContainedPhysicalPath(context.managedOutputRoot, entry.manifestPath, "Feature 2 selection manifest", "file");
+      const manifest = parseManifest(entry.manifestPath);
+      const promptPath = manifest.selection.promptPath;
+      if (manifest.status !== "selectionRequired" || manifest.selection.status !== "selectionRequired"
+        || typeof promptPath !== "string" || promptPath !== entry.promptPath) {
+        stale.push(entry);
+        continue;
+      }
+      ensurePhysicalPath(promptPath, "Feature 2 selection prompt path", "file");
+      valid.push(entry);
+    } catch {
+      stale.push(entry);
+    }
+  }
+
+  if (stale.length > 0) throw new Error("Feature 2 pending selection registry contains stale candidates.");
+  if (valid.length !== 1) throw new Error("Feature 2 pending selection is ambiguous.");
+  const candidate = valid[0]!;
+  return {
+    runId: candidate.runId,
+    runRoot: candidate.runRoot,
+    manifestPath: candidate.manifestPath,
+    promptPath: candidate.promptPath,
+  };
+}
+
+function resolveSelectionReference(
+  request: F1F2ConfirmedRequest,
+  context: RunContext,
+  workbook: string,
+): F1F2SelectionReference {
+  return explicitSelectionReference(request) ?? registrySelectionReference(request, context, workbook);
+}
+
 function loadSelectionRun(
   request: F1F2ConfirmedRequest,
   context: RunContext,
   workbook: string,
 ): { manifest: WorkflowManifest; promptPath: string; prompt: ReturnType<typeof worksheetSelectionPromptSchema.parse> } {
-  const { selectionReference } = request;
-  if (!isContainedPath(context.managedOutputRoot, selectionReference.manifestPath)) {
-    throw new Error("Feature 2 selection reference must stay inside the managed output root.");
-  }
+  const selectionReference = resolveSelectionReference(request, context, workbook);
+  ensureContainedPhysicalPath(context.managedOutputRoot, selectionReference.manifestPath, "Feature 2 selection manifest", "file");
   const manifest = parseManifest(selectionReference.manifestPath);
   if (manifest.contractVersion !== "v1") throw new Error("Feature 2 selection manifest contract version mismatch.");
   if (manifest.runId !== selectionReference.runId || manifest.runRoot !== selectionReference.runRoot) {
     throw new Error("Feature 2 selection reference identity mismatch.");
   }
   if (manifest.repositoryRoot !== context.repositoryRoot) throw new Error("Feature 2 selection manifest repository mismatch.");
-  if (!isContainedPath(context.managedOutputRoot, manifest.runRoot)) throw new Error("Feature 2 selection run root is outside the managed output root.");
+  const realRunRoot = ensureContainedPhysicalPath(context.managedOutputRoot, manifest.runRoot, "Feature 2 selection run root", "directory");
   if (manifest.workbookPath !== workbook) throw new Error("Feature 2 selection workbook identity mismatch.");
   if (manifest.status !== "selectionRequired" || manifest.selection.status !== "selectionRequired") {
     throw new Error("Feature 2 selection reference is stale.");
@@ -176,7 +329,8 @@ function loadSelectionRun(
   if (typeof promptPath !== "string" || promptPath !== selectionReference.promptPath) {
     throw new Error("Feature 2 selection prompt identity mismatch.");
   }
-  if (!isContainedPath(manifest.runRoot, promptPath)) throw new Error("Feature 2 selection prompt path is invalid.");
+  const realPromptPath = ensurePhysicalPath(promptPath, "Feature 2 selection prompt path", "file");
+  if (!isWithinOrEqual(realRunRoot, realPromptPath)) throw new Error("Feature 2 selection prompt path is invalid.");
   const prompt = worksheetSelectionPromptSchema.parse(JSON.parse(readFileSync(promptPath, "utf8")));
   if (prompt.workbook.contentHash !== request.workbookContentHash) {
     throw new Error("Feature 2 selection workbookContentHash mismatch.");
@@ -212,7 +366,6 @@ function runStage(
       cwd: context.repositoryRoot,
       env: { ...process.env, [outputVariable]: outputRoot },
     }) ?? {};
-    throwIfAborted(context, stage);
     writeFileSync(path.join(validationRoot, `${stage}.stdout.log`), result.stdout ?? "", "utf8");
     writeFileSync(path.join(validationRoot, `${stage}.stderr.log`), result.stderr ?? "", "utf8");
     manifest.stages[stage] = { ...manifest.stages[stage], status: "completed", completedAt: now().toISOString() };
@@ -249,6 +402,7 @@ export function runF1F2Selection(
     const workbook = validateWorkbook(context.repositoryRoot, request.workbookPath);
     const layout = createLayout(context.managedOutputRoot, workbook, now);
     mkdirSync(layout.validationRoot, { recursive: true });
+    ensureContainedPhysicalPath(context.managedOutputRoot, layout.runRoot, "Feature 2 selection run root", "directory");
     const manifest = initialManifest(context.repositoryRoot, workbook, layout, undefined);
     persistManifest(manifest, layout.manifestPath, now);
     runStage(
@@ -268,6 +422,15 @@ export function runF1F2Selection(
     manifest.selection = { status: "selectionRequired", promptPath, workbookContentHash: prompt.workbook.contentHash, selectedWorksheetNames: [] };
     manifest.status = "selectionRequired";
     persistManifest(manifest, layout.manifestPath, now);
+    upsertSelectionRegistryEntry(context.managedOutputRoot, {
+      runId: layout.runId,
+      runRoot: layout.runRoot,
+      manifestPath: layout.manifestPath,
+      promptPath,
+      workbookPath: workbook,
+      workbookContentHash: prompt.workbook.contentHash,
+      status: "selectionRequired",
+    });
     return {
       featureId: "F2",
       status: "selectionRequired",
@@ -296,7 +459,6 @@ export function runF1F2Confirmed(
   const executeStage = dependencies.executeStage ?? defaultExecuteStage;
   const now = request.now ?? (() => new Date());
   try {
-    if (request.selectionReference === undefined) throw new Error("Feature 2 confirmation requires a selection reference.");
     const workbook = validateWorkbook(context.repositoryRoot, request.workbookPath);
     const confirmation = worksheetSelectionConfirmationSchema.parse({
       workbookContentHash: request.workbookContentHash,
@@ -310,9 +472,10 @@ export function runF1F2Confirmed(
       f1Root: manifest.outputs.f1Root,
       f2Root: manifest.outputs.f2Root,
       validationRoot: manifest.outputs.validationRoot,
-      manifestPath: request.selectionReference.manifestPath,
+      manifestPath: path.resolve(manifest.runRoot, "manifest.json"),
     };
     mkdirSync(layout.validationRoot, { recursive: true });
+    ensureContainedPhysicalPath(context.managedOutputRoot, layout.runRoot, "Feature 2 selection run root", "directory");
     manifest.selection = {
       status: "confirmed",
       promptPath,
@@ -321,6 +484,7 @@ export function runF1F2Confirmed(
     };
     manifest.status = "running";
     persistManifest(manifest, layout.manifestPath, now);
+    updateSelectionRegistryStatus(context.managedOutputRoot, layout.runId, "confirmed");
     runStage(
       context,
       manifest,
@@ -354,7 +518,6 @@ export function runF1F2Confirmed(
       now,
     );
 
-    throwIfAborted(context, "validation");
     manifest.stages.validation = { status: "running", startedAt: now().toISOString() };
     persistManifest(manifest, layout.manifestPath, now);
     const reportPath = path.join(layout.f2Root, "Feature2-Report.json");

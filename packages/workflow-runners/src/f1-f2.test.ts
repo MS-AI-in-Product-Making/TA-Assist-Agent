@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -46,6 +46,12 @@ function selectionPrompt() {
       worksheetKind: "analysis",
       source: { summarySheet: "Auto Summary", summaryRow: 10, worksheetAnchor: "Analysis-A!A1" },
     }],
+  };
+}
+
+function selectionManifest(selection: ReturnType<typeof runF1F2Selection>) {
+  return JSON.parse(readFileSync(selection.manifestPath, "utf8")) as {
+    selection: { promptPath?: string };
   };
 }
 
@@ -265,5 +271,178 @@ describe("runF1F2Confirmed", () => {
       code: "internal_error",
       summary: "Workflow runner failed unexpectedly.",
     }));
+  });
+
+  it("resolves an unambiguous pending selection from the managed registry without an explicit selection reference", async () => {
+    const setup = setupRepo();
+    const executeStage = vi.fn(({ stage, env, args }) => {
+      if (stage === "f1-selection") {
+        mkdirSync(env.AI_TVA_F1_OUTPUT_ROOT, { recursive: true });
+        writeFileSync(path.join(env.AI_TVA_F1_OUTPUT_ROOT, "Feature1-Selection.json"), JSON.stringify(selectionPrompt()));
+        return { stdout: "selection complete", stderr: "" };
+      }
+      if (stage === "f1") {
+        mkdirSync(env.AI_TVA_F1_OUTPUT_ROOT, { recursive: true });
+        writeFileSync(path.join(env.AI_TVA_F1_OUTPUT_ROOT, "Feature1-Report.json"), "{}");
+        return { stdout: "f1 complete", stderr: "" };
+      }
+
+      mkdirSync(env.AI_TVA_F2_OUTPUT_ROOT, { recursive: true });
+      writeFileSync(path.join(env.AI_TVA_F2_OUTPUT_ROOT, "Feature2-Report.json"), JSON.stringify(validF2Report(args[1])));
+      return { stdout: "f2 complete", stderr: "" };
+    });
+
+    const selection = runF1F2Selection({ workbookPath: setup.workbookPath, now: fixedNow }, context(setup.repositoryRoot), { executeStage });
+
+    const result = runF1F2Confirmed({
+      workbookPath: setup.workbookPath,
+      workbookContentHash: HASH,
+      selectedWorksheetNames: ["Analysis-A"],
+      now: fixedNow,
+    }, context(setup.repositoryRoot), { executeStage });
+
+    expect(result.runRoot).toBe(selection.runRoot);
+    expect(executeStage.mock.calls.map(([request]) => request.stage)).toEqual(["f1-selection", "f1", "f2"]);
+  });
+
+  it("rejects ambiguous pending selections when more than one candidate matches the workbook hash", async () => {
+    const setup = setupRepo();
+    const executeStage = vi.fn(({ env }) => {
+      mkdirSync(env.AI_TVA_F1_OUTPUT_ROOT, { recursive: true });
+      writeFileSync(path.join(env.AI_TVA_F1_OUTPUT_ROOT, "Feature1-Selection.json"), JSON.stringify(selectionPrompt()));
+      return { stdout: "selection complete", stderr: "" };
+    });
+
+    const first = runF1F2Selection({ workbookPath: setup.workbookPath, now: fixedNow }, context(setup.repositoryRoot), { executeStage });
+    const second = runF1F2Selection({ workbookPath: setup.workbookPath, now: () => new Date("2026-08-05T01:02:04.000Z") }, context(setup.repositoryRoot), { executeStage });
+
+    expect(() => runF1F2Confirmed({
+      workbookPath: setup.workbookPath,
+      workbookContentHash: HASH,
+      selectedWorksheetNames: ["Analysis-A"],
+      now: fixedNow,
+    }, context(setup.repositoryRoot), { executeStage })).toThrow(expect.objectContaining({ code: "evidence_mismatch" }));
+    expect(first.runRoot).not.toBe(second.runRoot);
+  });
+
+  it("rejects stale registry candidates whose prompt path no longer resolves", async () => {
+    const setup = setupRepo();
+    const executeStage = vi.fn(({ env }) => {
+      mkdirSync(env.AI_TVA_F1_OUTPUT_ROOT, { recursive: true });
+      writeFileSync(path.join(env.AI_TVA_F1_OUTPUT_ROOT, "Feature1-Selection.json"), JSON.stringify(selectionPrompt()));
+      return { stdout: "selection complete", stderr: "" };
+    });
+
+    const selection = runF1F2Selection({ workbookPath: setup.workbookPath, now: fixedNow }, context(setup.repositoryRoot), { executeStage });
+    const manifest = selectionManifest(selection);
+    rmSync(manifest.selection.promptPath ?? "", { force: true });
+
+    expect(() => runF1F2Confirmed({
+      workbookPath: setup.workbookPath,
+      workbookContentHash: HASH,
+      selectedWorksheetNames: ["Analysis-A"],
+      now: fixedNow,
+    }, context(setup.repositoryRoot), { executeStage })).toThrow(expect.objectContaining({ code: "evidence_mismatch" }));
+  });
+
+  it("rejects a managed output junction that redirects selection lookup outside the controlled root", ({ skip }) => {
+    if (process.platform !== "win32") skip();
+
+    const setup = setupRepo();
+    const outside = mkdtempSync(path.join(tmpdir(), "workflow-runners-f2-outside-"));
+    cleanup.push(outside);
+    mkdirSync(path.join(setup.repositoryRoot, "managed-output"), { recursive: true });
+    rmSync(path.join(setup.repositoryRoot, "managed-output"), { recursive: true, force: true });
+    try {
+      symlinkSync(outside, path.join(setup.repositoryRoot, "managed-output"), "junction");
+    } catch {
+      skip();
+    }
+
+    expect(() => runF1F2Selection({ workbookPath: setup.workbookPath, now: fixedNow }, context(setup.repositoryRoot))).toThrow(/managed output|invalid|root/i);
+  });
+
+  it("stops before starting F2 when cancellation is observed after F1 commits", () => {
+    const setup = setupRepo();
+    const controller = new AbortController();
+    const executeStage = vi.fn(({ stage, env, args }) => {
+      if (stage === "f1-selection") {
+        mkdirSync(env.AI_TVA_F1_OUTPUT_ROOT, { recursive: true });
+        writeFileSync(path.join(env.AI_TVA_F1_OUTPUT_ROOT, "Feature1-Selection.json"), JSON.stringify(selectionPrompt()));
+        return { stdout: "selection complete", stderr: "" };
+      }
+      if (stage === "f1") {
+        mkdirSync(env.AI_TVA_F1_OUTPUT_ROOT, { recursive: true });
+        writeFileSync(path.join(env.AI_TVA_F1_OUTPUT_ROOT, "Feature1-Report.json"), "{}");
+        controller.abort();
+        return { stdout: "f1 complete", stderr: "" };
+      }
+      mkdirSync(env.AI_TVA_F2_OUTPUT_ROOT, { recursive: true });
+      writeFileSync(path.join(env.AI_TVA_F2_OUTPUT_ROOT, "Feature2-Report.json"), JSON.stringify(validF2Report(args[1])));
+      return { stdout: "f2 complete", stderr: "" };
+    });
+
+    const selection = runF1F2Selection({ workbookPath: setup.workbookPath, now: fixedNow }, {
+      ...context(setup.repositoryRoot),
+      signal: controller.signal,
+    }, { executeStage });
+
+    expect(() => runF1F2Confirmed({
+      workbookPath: setup.workbookPath,
+      workbookContentHash: HASH,
+      selectedWorksheetNames: ["Analysis-A"],
+      selectionReference: selection.selectionReference,
+      now: fixedNow,
+    }, {
+      ...context(setup.repositoryRoot),
+      signal: controller.signal,
+    }, { executeStage })).toThrow(expect.objectContaining({ code: "transient_error" }));
+    expect(executeStage.mock.calls.map(([request]) => request.stage)).toEqual(["f1-selection", "f1"]);
+    expect(readFileSync(path.join(selection.f1Root, "Feature1-Report.json"), "utf8")).toBe("{}");
+  });
+
+  it("returns a completed result when cancellation flips after F2 side effects commit", () => {
+    const setup = setupRepo();
+    const controller = new AbortController();
+    const emit = vi.fn();
+    const executeStage = vi.fn(({ stage, env, args }) => {
+      if (stage === "f1-selection") {
+        mkdirSync(env.AI_TVA_F1_OUTPUT_ROOT, { recursive: true });
+        writeFileSync(path.join(env.AI_TVA_F1_OUTPUT_ROOT, "Feature1-Selection.json"), JSON.stringify(selectionPrompt()));
+        return { stdout: "selection complete", stderr: "" };
+      }
+      if (stage === "f1") {
+        mkdirSync(env.AI_TVA_F1_OUTPUT_ROOT, { recursive: true });
+        writeFileSync(path.join(env.AI_TVA_F1_OUTPUT_ROOT, "Feature1-Report.json"), "{}");
+        return { stdout: "f1 complete", stderr: "" };
+      }
+
+      mkdirSync(env.AI_TVA_F2_OUTPUT_ROOT, { recursive: true });
+      writeFileSync(path.join(env.AI_TVA_F2_OUTPUT_ROOT, "Feature2-Report.json"), JSON.stringify(validF2Report(args[1])));
+      controller.abort();
+      return { stdout: "f2 complete", stderr: "" };
+    });
+
+    const selection = runF1F2Selection({ workbookPath: setup.workbookPath, now: fixedNow }, {
+      ...context(setup.repositoryRoot),
+      signal: controller.signal,
+      emit,
+    }, { executeStage });
+
+    const result = runF1F2Confirmed({
+      workbookPath: setup.workbookPath,
+      workbookContentHash: HASH,
+      selectedWorksheetNames: ["Analysis-A"],
+      selectionReference: selection.selectionReference,
+      now: fixedNow,
+    }, {
+      ...context(setup.repositoryRoot),
+      signal: controller.signal,
+      emit,
+    }, { executeStage });
+
+    expect(result.status).toBe("completed");
+    expect(executeStage.mock.calls.map(([request]) => request.stage)).toEqual(["f1-selection", "f1", "f2"]);
+    expect(emit).toHaveBeenCalledWith(expect.objectContaining({ kind: "artifact_written", featureId: "F2", stage: "validation" }));
   });
 });

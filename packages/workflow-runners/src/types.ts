@@ -63,7 +63,7 @@ export interface F1F2ConfirmedRequest {
   readonly workbookPath: string;
   readonly workbookContentHash: string;
   readonly selectedWorksheetNames: readonly string[];
-  readonly selectionReference: F1F2SelectionReference;
+  readonly selectionReference?: F1F2SelectionReference;
   readonly now?: () => Date;
 }
 

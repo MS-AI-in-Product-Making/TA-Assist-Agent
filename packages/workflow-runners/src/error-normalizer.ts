@@ -6,8 +6,8 @@ export interface NormalizeRunnerErrorOptions {
 }
 
 const ABORT_PATTERN = /(aborterror|aborted|cancelled|canceled|signal already aborted)/i;
-const EVIDENCE_PATTERN = /(manifest|hash|identity|stale_worksheet_selection|workbookcontenthash|content hash|downstream scope|scope mismatch|artifact root mismatch|evidence mismatch|version mismatch)/i;
-const VALIDATION_PATTERN = /(requires|unsupported|missing|invalid|unsafe|does not exist|exactly one|empty|unknown option|unexpected argument)/i;
+const EVIDENCE_PATTERN = /(manifest|hash|identity|stale_worksheet_selection|workbookcontenthash|content hash|downstream scope|scope mismatch|artifact root mismatch|evidence mismatch|version mismatch|pending selection|stale candidates|ambiguous)/i;
+const VALIDATION_PATTERN = /(requires|unsupported|missing|invalid|unsafe|does not exist|exactly one|empty|unknown option|unexpected argument|not found)/i;
 const DEPENDENCY_PATTERN = /(cannot find module|enoent|spawn .* enoent|not installed)/i;
 const TRANSIENT_PATTERN = /(timed out|econnreset|eai_again|temporar(?:y|ily)|try again)/i;
 

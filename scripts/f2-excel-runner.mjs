@@ -68,17 +68,24 @@ if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === imp
       flags.set(flag, value);
       index += 1;
     }
-    const confirmationCount = Number(flags.has("--confirm")) + Number(flags.has("--workbook-hash")) + Number(flags.has("--worksheets")) + Number(flags.has("--selection-manifest"));
-    if (confirmationCount !== 0 && confirmationCount !== 4) throw new Error("Feature 2 confirmation parameters must be provided together.");
-    const worksheetSelection = confirmationCount === 4
+    const hasCoreConfirmation = flags.has("--confirm") || flags.has("--workbook-hash") || flags.has("--worksheets");
+    if (hasCoreConfirmation && (!flags.has("--confirm") || !flags.has("--workbook-hash") || !flags.has("--worksheets"))) {
+      throw new Error("Feature 2 confirmation parameters must be provided together.");
+    }
+    if (!hasCoreConfirmation && flags.has("--selection-manifest")) throw new Error("Feature 2 confirmation parameters must be provided together.");
+    const worksheetSelection = hasCoreConfirmation
         ? {
             workbookContentHash: flags.get("--workbook-hash"),
             selectedWorksheetNames: flags.get("--worksheets").split(",").map((name) => name.trim()).filter(Boolean),
-            selectionReference: {
-              ...JSON.parse(readFileSync(flags.get("--selection-manifest"), "utf8")),
-              manifestPath: flags.get("--selection-manifest"),
-              promptPath: JSON.parse(readFileSync(flags.get("--selection-manifest"), "utf8")).selection.promptPath,
-            },
+            ...(flags.has("--selection-manifest")
+              ? {
+                  selectionReference: {
+                    ...JSON.parse(readFileSync(flags.get("--selection-manifest"), "utf8")),
+                    manifestPath: flags.get("--selection-manifest"),
+                    promptPath: JSON.parse(readFileSync(flags.get("--selection-manifest"), "utf8")).selection.promptPath,
+                  },
+                }
+              : {}),
             confirmed: true,
           }
         : undefined;

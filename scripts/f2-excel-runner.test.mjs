@@ -1,12 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { runF2ExcelWorkflow } from "./f2-excel-runner.mjs";
 
 const cleanup = [];
 const fixedNow = () => new Date("2026-08-05T01:02:03.000Z");
 const HASH = "a".repeat(64);
+const runnerPath = fileURLToPath(new URL("./f2-excel-runner.mjs", import.meta.url));
 
 afterEach(() => {
   for (const target of cleanup.splice(0)) rmSync(target, { recursive: true, force: true });
@@ -226,13 +229,112 @@ describe("runF2ExcelWorkflow", () => {
     expect(JSON.parse(readFileSync(path.join(runRoot, "manifest.json"), "utf8"))).toMatchObject({ status: "failed", stages: { f1: { status: "completed" }, f2: { status: "failed" }, validation: { status: "pending" } } });
   });
 
-  it("requires a selection reference for confirmation", () => {
+  it("requires an existing pending selection before confirmation", () => {
     const setupResult = setup();
 
     expect(() => runF2ExcelWorkflow({
       ...setupResult,
       now: fixedNow,
       worksheetSelection: { workbookContentHash: HASH, selectedWorksheetNames: ["Analysis-A"], confirmed: true },
-    })).toThrow(/selection reference/i);
+    })).toThrow(expect.objectContaining({ code: "evidence_mismatch" }));
+  });
+
+  it("accepts the documented README confirmation command without a selection manifest flag", () => {
+    const setupResult = setup();
+    const repositoryRoot = setupResult.repositoryRoot;
+    const managedOutputRoot = path.join(repositoryRoot, "test", "demo-output");
+    const selectionRoot = path.join(repositoryRoot, "test", "demo-output", "f2-runs", "Demo", "2026-08-05T01-02-03-000Z");
+    mkdirSync(path.join(repositoryRoot, "scripts"), { recursive: true });
+    mkdirSync(path.join(selectionRoot, "f1"), { recursive: true });
+    mkdirSync(path.join(selectionRoot, "f2"), { recursive: true });
+    mkdirSync(path.join(selectionRoot, "validation"), { recursive: true });
+    writeFileSync(path.join(repositoryRoot, "scripts", "run-f1-full-validation.mjs"), `
+import { mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
+
+const outputRoot = process.env.AI_TVA_F1_OUTPUT_ROOT;
+mkdirSync(outputRoot, { recursive: true });
+writeFileSync(path.join(outputRoot, "Feature1-Report.json"), "{}");
+`, "utf8");
+    writeFileSync(path.join(repositoryRoot, "scripts", "run-f2-full-validation.mjs"), `
+import { mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
+
+const outputRoot = process.env.AI_TVA_F2_OUTPUT_ROOT;
+mkdirSync(outputRoot, { recursive: true });
+writeFileSync(path.join(outputRoot, "Feature2-Report.json"), ${JSON.stringify(JSON.stringify(validF2Report(path.join(selectionRoot, "f1"))))});
+`, "utf8");
+    writeFileSync(path.join(selectionRoot, "f1", "Feature1-Selection.json"), JSON.stringify({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      status: "selectionRequired",
+      workbook: { fileName: "Demo.xlsx", contentHash: HASH },
+      options: [{
+        selectionIndex: 1,
+        worksheetName: "Analysis-A",
+        toleranceLoopDescription: "First loop",
+        worksheetKind: "analysis",
+        source: { summarySheet: "Auto Summary", summaryRow: 10, worksheetAnchor: "Analysis-A!A1" },
+      }],
+    }));
+    writeFileSync(path.join(selectionRoot, "manifest.json"), `${JSON.stringify({
+      contractVersion: "v1",
+      runId: "2026-08-05T01-02-03-000Z",
+      status: "selectionRequired",
+      workbookPath: setupResult.workbookPath,
+      repositoryRoot,
+      runRoot: selectionRoot,
+      startedAt: "2026-08-05T01:02:03.000Z",
+      updatedAt: "2026-08-05T01:02:03.000Z",
+      outputs: {
+        f1Root: path.join(selectionRoot, "f1"),
+        f2Root: path.join(selectionRoot, "f2"),
+        validationRoot: path.join(selectionRoot, "validation"),
+      },
+      selection: {
+        status: "selectionRequired",
+        promptPath: path.join(selectionRoot, "f1", "Feature1-Selection.json"),
+        workbookContentHash: HASH,
+        selectedWorksheetNames: [],
+      },
+      stages: {
+        "f1-selection": { status: "completed" },
+        f1: { status: "pending" },
+        f2: { status: "pending" },
+        validation: { status: "pending" },
+      },
+    }, null, 2)}\n`);
+    writeFileSync(path.join(managedOutputRoot, "f2-selection-registry.json"), `${JSON.stringify({
+      contractVersion: "v1",
+      selections: [{
+        runId: "2026-08-05T01-02-03-000Z",
+        runRoot: selectionRoot,
+        manifestPath: path.join(selectionRoot, "manifest.json"),
+        promptPath: path.join(selectionRoot, "f1", "Feature1-Selection.json"),
+        workbookPath: setupResult.workbookPath,
+        workbookContentHash: HASH,
+        status: "selectionRequired",
+      }],
+    }, null, 2)}\n`);
+
+    const output = execFileSync(process.execPath, [
+      runnerPath,
+      setupResult.workbookPath,
+      "--worksheets",
+      "Analysis-A",
+      "--workbook-hash",
+      HASH,
+      "--confirm",
+    ], {
+      cwd: repositoryRoot,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        AI_TVA_F1_OUTPUT_ROOT: path.join(selectionRoot, "f1"),
+        AI_TVA_F2_OUTPUT_ROOT: path.join(selectionRoot, "f2"),
+      },
+    });
+
+    expect(JSON.parse(output)).toMatchObject({ status: "completed", runRoot: selectionRoot });
   });
 });
