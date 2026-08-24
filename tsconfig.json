@@ -4,6 +4,7 @@
     { "path": "./apps/cli" },
     { "path": "./packages/contracts" },
     { "path": "./packages/conversation" },
+    { "path": "./packages/agent-runtime" },
     { "path": "./packages/workbench" },
     { "path": "./packages/knowledge-base" },
     { "path": "./packages/workbook-catalog" },
