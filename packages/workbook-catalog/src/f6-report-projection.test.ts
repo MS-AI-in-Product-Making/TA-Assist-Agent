@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CalculationCompletedResult } from "@ai-assist/contracts";
 import * as packageRoot from "./index.js";
 import { createF6ReportProjection } from "./f6-report-projection.js";
+import { worstDisposition } from "./f6-report-policy.js";
 
 function calculation(): CalculationCompletedResult {
   const factor = (sourceRow: number, name: string, mean: number, upperTolerance: number, lowerTolerance: number, sigma: number) => ({
@@ -133,5 +134,15 @@ describe("createF6ReportProjection", () => {
 
   it("exports the projection adapter from the package entrypoint", () => {
     expect(packageRoot.createF6ReportProjection).toBe(createF6ReportProjection);
+  });
+});
+
+describe("worstDisposition", () => {
+  it("returns the worst ranked disposition", () => {
+    expect(worstDisposition(["PASS", "INCOMPLETE", "FAIL"])).toBe("FAIL");
+  });
+
+  it("treats unknown dispositions as failed", () => {
+    expect(worstDisposition(["PASS", "UNEXPECTED"])).toBe("UNEXPECTED");
   });
 });

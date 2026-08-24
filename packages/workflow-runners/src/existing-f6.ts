@@ -10,8 +10,7 @@ import {
 import path from "node:path";
 
 import { f6OptimizationResultSchema } from "@ai-assist/contracts";
-// @ts-expect-error Task 3 exposes this policy from the governed script layer.
-import { worstDisposition } from "../../../scripts/f6-final-report.mjs";
+import { worstDisposition } from "@ai-assist/workbook-catalog";
 
 import type { ExistingF6ValidationRequest, ExistingF6ValidationResult } from "./types.js";
 

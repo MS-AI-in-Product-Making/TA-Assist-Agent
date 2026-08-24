@@ -1,11 +1,9 @@
 import { randomUUID } from "node:crypto";
 import {
   closeSync,
-  existsSync,
   lstatSync,
   mkdirSync,
   openSync,
-  readFileSync,
   realpathSync,
   renameSync,
   rmdirSync,
@@ -94,10 +92,6 @@ function normalizeOptimizationResult(result) {
   return result;
 }
 
-function normalizeF6FailureReason(reasonCode) {
-  return reasonCode === "report_failed" ? "workflow_output_failed" : reasonCode;
-}
-
 function isUnsafeFailureOutput(result) {
   if (typeof result?.outputDirectory !== "string") return true;
   try {
@@ -109,32 +103,15 @@ function isUnsafeFailureOutput(result) {
 }
 
 function normalizeF6Result(result) {
-  if (result?.status !== "failed") return result;
-  const reasonCode = normalizeF6FailureReason(result.reasonCode);
-  const manifestPath = typeof result.manifestPath === "string" ? result.manifestPath : undefined;
-  if (manifestPath && existsSync(manifestPath)) {
-    try {
-      const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-      if (manifest.reasonCode !== reasonCode) {
-        writeFileSync(manifestPath, `${JSON.stringify({ ...manifest, reasonCode }, null, 2)}\n`, "utf8");
-      }
-    } catch {
-      return { status: "failed", reasonCode };
-    }
-  }
-  if (!manifestPath || !existsSync(manifestPath) || isUnsafeFailureOutput(result)) {
-    return { status: "failed", reasonCode };
-  }
-  return {
-    ...result,
-    reasonCode,
-  };
+  if (result?.status !== "failed" || !isUnsafeFailureOutput(result)) return result;
+  return { status: "failed", reasonCode: result.reasonCode };
 }
 
 export function runF6FullValidation(options = {}, dependencyOverrides = {}) {
   const dependencies = normalizeDependencies(dependencyOverrides);
   const parsed = dependencies.parseArgs(options.args ?? []);
   try {
+    const layout = dependencies.resolveLayout(parsed, options);
     return normalizeF6Result(runF6Optimization({
       f2ArtifactRoot: parsed.f2ArtifactRoot,
       f3ArtifactRoot: parsed.f3ArtifactRoot,
@@ -154,7 +131,7 @@ export function runF6FullValidation(options = {}, dependencyOverrides = {}) {
       signal: new globalThis.AbortController().signal,
       emit: () => {},
     }, {
-      resolveOutputLayout: () => dependencies.resolveLayout(parsed, options),
+      resolveOutputLayout: () => layout,
       loadBundle: (request) => dependencies.loadBundle(loaderOptions({
         f2ArtifactRoot: request.f2ArtifactRoot,
         f3ArtifactRoot: request.f3ArtifactRoot,
@@ -167,7 +144,7 @@ export function runF6FullValidation(options = {}, dependencyOverrides = {}) {
         imageObservationArtifact: request.imageObservationsPath,
         analysisContextArtifact: request.analysisContextPath,
         optimizationTargetsArtifact: request.optimizationTargetsPath,
-        publishRoot: dependencies.resolveLayout(parsed, options).publishRoot,
+        publishRoot: layout.publishRoot,
       })),
       createOptimization: (...args) => normalizeOptimizationResult(dependencies.createOptimization(...args)),
       createFinalReport: dependencies.createFinalReport,
