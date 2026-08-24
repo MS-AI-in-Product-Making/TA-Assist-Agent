@@ -89,6 +89,32 @@ describe("SessionStore", () => {
     }
   });
 
+  it("rejects terminal attempt results without a snapshot transition", async () => {
+    const rootDir = await createTempRoot();
+    const store = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+    try {
+      await store.applyCommand(commandAt(0, COMMAND_ID), acceptWorkbook);
+
+      await expect(store.recordAttemptResult({
+        attemptId: ATTEMPT_ID,
+        status: "completed",
+        result: { ok: true },
+      })).rejects.toMatchObject({
+        code: "validation_error",
+      });
+
+      expect(await store.readSnapshot()).toMatchObject({
+        revision: 1,
+        activeAttempt: { attemptId: ATTEMPT_ID, status: "running" },
+      });
+      expect(readStageAttemptRows(rootDir)).toEqual([
+        expect.objectContaining({ attempt_id: ATTEMPT_ID, status: "running", result_json: null }),
+      ]);
+    } finally {
+      await store.close();
+    }
+  });
+
   it("rolls back malformed or wrong-session drafts before persisting side tables", async () => {
     const rootDir = await createTempRoot();
     const store = await createSessionStore({ rootDir, sessionId: SESSION_ID });
@@ -122,6 +148,115 @@ describe("SessionStore", () => {
       expect(readStageAttemptRows(rootDir)).toEqual([
         expect.objectContaining({ attempt_id: ATTEMPT_ID, status: "running", result_json: null }),
       ]);
+    } finally {
+      await store.close();
+    }
+  });
+
+  it("clears persisted scenario drafts when applyCommand snapshot omits them", async () => {
+    const rootDir = await createTempRoot();
+    const store = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+    try {
+      await store.applyCommand(commandAt(0, COMMAND_ID), (snapshot) => ({
+        snapshot: snapshotWithAttempt({
+          revision: snapshot.revision,
+          state: "f1_f2_running",
+          activeAttempt: {
+            attemptId: ATTEMPT_ID,
+            stage: "f1_f2_running",
+            status: "running",
+            commandId: COMMAND_ID,
+            startedAt: "2026-08-24T00:00:00.000Z",
+          },
+          scenarioDrafts: [scenarioDraft("draft-001")],
+        }),
+      }));
+
+      expect(readScenarioDraftRows(rootDir).map((row) => row.draft_id)).toEqual(["draft-001"]);
+
+      const cleared = await store.applyCommand(commandAt(1, "command-omit-drafts"), (snapshot) => ({
+        snapshot: snapshotWithAttempt({
+          revision: snapshot.revision,
+          state: "review_required",
+          activeAttempt: null,
+        }),
+      }));
+
+      expect(cleared.scenarioDrafts).toBeUndefined();
+      expect(readScenarioDraftRows(rootDir)).toEqual([]);
+    } finally {
+      await store.close();
+    }
+  });
+
+  it("preserves scenario drafts only when the next snapshot explicitly includes them", async () => {
+    const rootDir = await createTempRoot();
+    const store = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+    try {
+      const persistedDraft = scenarioDraft("draft-keep");
+      await store.applyCommand(commandAt(0, COMMAND_ID), (snapshot) => ({
+        snapshot: snapshotWithAttempt({
+          revision: snapshot.revision,
+          state: "f1_f2_running",
+          activeAttempt: {
+            attemptId: ATTEMPT_ID,
+            stage: "f1_f2_running",
+            status: "running",
+            commandId: COMMAND_ID,
+            startedAt: "2026-08-24T00:00:00.000Z",
+          },
+          scenarioDrafts: [persistedDraft],
+        }),
+      }));
+
+      const nextSnapshot = await store.applyCommand(commandAt(1, "command-preserve-drafts"), (snapshot) => ({
+        snapshot: snapshotWithAttempt({
+          revision: snapshot.revision,
+          state: "review_required",
+          activeAttempt: null,
+          scenarioDrafts: [persistedDraft],
+        }),
+      }));
+
+      expect(nextSnapshot.scenarioDrafts).toEqual([persistedDraft]);
+      expect(readScenarioDraftRows(rootDir).map((row) => row.draft_id)).toEqual(["draft-keep"]);
+    } finally {
+      await store.close();
+    }
+  });
+
+  it("clears persisted scenario drafts when recordAttemptResult snapshot omits them", async () => {
+    const rootDir = await createTempRoot();
+    const store = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+    try {
+      await store.applyCommand(commandAt(0, COMMAND_ID), (snapshot) => ({
+        snapshot: snapshotWithAttempt({
+          revision: snapshot.revision,
+          state: "f1_f2_running",
+          activeAttempt: {
+            attemptId: ATTEMPT_ID,
+            stage: "f1_f2_running",
+            status: "running",
+            commandId: COMMAND_ID,
+            startedAt: "2026-08-24T00:00:00.000Z",
+          },
+          scenarioDrafts: [scenarioDraft("draft-attempt")],
+        }),
+      }));
+
+      const receipt = await store.recordAttemptResult({
+        attemptId: ATTEMPT_ID,
+        status: "completed",
+        result: { ok: true },
+        snapshot: snapshotWithAttempt({
+          revision: 1,
+          state: "review_required",
+          activeAttempt: null,
+        }),
+      });
+
+      expect(receipt.snapshot.scenarioDrafts).toBeUndefined();
+      expect(readScenarioDraftRows(rootDir)).toEqual([]);
     } finally {
       await store.close();
     }
@@ -248,6 +383,7 @@ function snapshotWithAttempt(options: {
     startedAt: string;
     endedAt?: string;
   } | null;
+  scenarioDrafts?: Array<ReturnType<typeof scenarioDraft>>;
 }) {
   return {
     contractVersion: "f8-session-snapshot-v1",
@@ -257,6 +393,21 @@ function snapshotWithAttempt(options: {
     state: options.state,
     activeAttempt: options.activeAttempt,
     priorRunReferences: [],
+    ...(options.scenarioDrafts === undefined ? {} : { scenarioDrafts: options.scenarioDrafts }),
+  };
+}
+
+function scenarioDraft(draftId: string) {
+  return {
+    contractVersion: "f8-scenario-draft-v1",
+    draftId,
+    sessionId: SESSION_ID,
+    worksheetName: "Sheet1",
+    inputRevision: 1,
+    status: "draft" as const,
+    mode: "WHAT_IF" as const,
+    nominalValue: 1,
+    updatedAt: "2026-08-24T02:00:00.000Z",
   };
 }
 

@@ -31,6 +31,7 @@ export type {
 type F8SessionCommand = ReturnType<typeof f8SessionCommandSchema.parse>;
 type F8SessionEvent = ReturnType<typeof f8SessionEventSchema.parse>;
 type F8SessionSnapshot = ReturnType<typeof f8SessionSnapshotSchema.parse>;
+type F8ScenarioDraft = NonNullable<F8SessionSnapshot["scenarioDrafts"]>[number];
 
 type StageAttempt = NonNullable<F8SessionSnapshot["activeAttempt"]>;
 
@@ -98,6 +99,11 @@ interface SessionRow {
 interface CommandRow {
   readonly command_json: string;
   readonly result_json: string | null;
+}
+
+interface PreparedSnapshotTransition {
+  readonly snapshot: F8SessionSnapshot;
+  readonly scenarioDrafts: readonly F8ScenarioDraft[];
 }
 
 export async function createSessionStore(options: SessionStoreOptions): Promise<SessionStore> {
@@ -348,8 +354,8 @@ class SqliteSessionStore implements SessionStore {
 
     const currentSnapshot = this.readCommittedSnapshot();
     const mutation = await reducer(currentSnapshot, command);
-    const nextSnapshot = normalizeSnapshot(currentSnapshot, mutation.snapshot);
-    const scenarioDrafts = resolveScenarioDrafts(this.sessionId, nextSnapshot.scenarioDrafts, mutation.scenarioDrafts);
+    const snapshotTransition = prepareSnapshotTransition(currentSnapshot, mutation.snapshot, mutation.scenarioDrafts);
+    const nextSnapshot = snapshotTransition.snapshot;
     const artifactReferenceOps = normalizeArtifactReferenceOps(
       this.sessionId,
       mutation.artifactReferences,
@@ -430,35 +436,18 @@ class SqliteSessionStore implements SessionStore {
 
       persistEvents(this.insertEventStatement, events);
       persistActiveAttempt(this.upsertStageAttemptStatement, nextSnapshot.activeAttempt, this.sessionId);
-      if (scenarioDrafts !== undefined) {
-        replaceScenarioDrafts(
-          this.deleteScenarioDraftsStatement,
-          this.insertScenarioDraftStatement,
-          this.sessionId,
-          scenarioDrafts,
-          stringifyJson,
-        );
-      }
-
-      if (artifactReferenceOps !== undefined) {
-        applyArtifactReferenceOps(
-          this.upsertArtifactRefStatement,
-          this.deleteArtifactRefStatement,
-          this.sessionId,
-          artifactReferenceOps,
-          stringifyJson,
-        );
-      }
-
-      if (hostActionOps !== undefined) {
-        applyHostActionOps(
-          this.upsertHostActionStatement,
-          this.deleteHostActionStatement,
-          this.sessionId,
-          hostActionOps,
-          stringifyJson,
-        );
-      }
+      persistSideTables({
+        deleteScenarioDraftsStatement: this.deleteScenarioDraftsStatement,
+        insertScenarioDraftStatement: this.insertScenarioDraftStatement,
+        upsertArtifactRefStatement: this.upsertArtifactRefStatement,
+        deleteArtifactRefStatement: this.deleteArtifactRefStatement,
+        upsertHostActionStatement: this.upsertHostActionStatement,
+        deleteHostActionStatement: this.deleteHostActionStatement,
+        sessionId: this.sessionId,
+        scenarioDrafts: snapshotTransition.scenarioDrafts,
+        artifactReferenceOps,
+        hostActionOps,
+      });
 
       this.updateCommandResultStatement.run(
         resultJson,
@@ -483,11 +472,9 @@ class SqliteSessionStore implements SessionStore {
     }
 
     const timestamp = result.endedAt ?? new Date().toISOString();
-    const nextSnapshot = result.snapshot === undefined
-      ? currentSnapshot
-      : normalizeSnapshot(currentSnapshot, result.snapshot);
+    const snapshotTransition = prepareAttemptResultTransition(currentSnapshot, result);
+    const nextSnapshot = snapshotTransition?.snapshot ?? currentSnapshot;
     validateAttemptResultSnapshot(currentSnapshot, result, nextSnapshot);
-    const scenarioDrafts = resolveScenarioDrafts(this.sessionId, nextSnapshot.scenarioDrafts, result.scenarioDrafts);
     const artifactReferenceOps = normalizeArtifactReferenceOps(
       this.sessionId,
       result.artifactReferences,
@@ -548,35 +535,18 @@ class SqliteSessionStore implements SessionStore {
         persistEvents(this.insertEventStatement, events);
       }
 
-      if (scenarioDrafts !== undefined) {
-        replaceScenarioDrafts(
-          this.deleteScenarioDraftsStatement,
-          this.insertScenarioDraftStatement,
-          this.sessionId,
-          scenarioDrafts,
-          stringifyJson,
-        );
-      }
-
-      if (artifactReferenceOps !== undefined) {
-        applyArtifactReferenceOps(
-          this.upsertArtifactRefStatement,
-          this.deleteArtifactRefStatement,
-          this.sessionId,
-          artifactReferenceOps,
-          stringifyJson,
-        );
-      }
-
-      if (hostActionOps !== undefined) {
-        applyHostActionOps(
-          this.upsertHostActionStatement,
-          this.deleteHostActionStatement,
-          this.sessionId,
-          hostActionOps,
-          stringifyJson,
-        );
-      }
+      persistSideTables({
+        deleteScenarioDraftsStatement: this.deleteScenarioDraftsStatement,
+        insertScenarioDraftStatement: this.insertScenarioDraftStatement,
+        upsertArtifactRefStatement: this.upsertArtifactRefStatement,
+        deleteArtifactRefStatement: this.deleteArtifactRefStatement,
+        upsertHostActionStatement: this.upsertHostActionStatement,
+        deleteHostActionStatement: this.deleteHostActionStatement,
+        sessionId: this.sessionId,
+        scenarioDrafts: snapshotTransition?.scenarioDrafts,
+        artifactReferenceOps,
+        hostActionOps,
+      });
 
       this.database.exec("COMMIT");
       return { accepted: true, snapshot: nextSnapshot };
@@ -635,6 +605,87 @@ function normalizeSnapshot(currentSnapshot: F8SessionSnapshot, candidateSnapshot
     sessionId: currentSnapshot.sessionId,
     revision: currentSnapshot.revision + 1,
   });
+}
+
+function prepareSnapshotTransition(
+  currentSnapshot: F8SessionSnapshot,
+  candidateSnapshot: F8SessionSnapshot,
+  compatibilityScenarioDrafts: F8SessionSnapshot["scenarioDrafts"],
+): PreparedSnapshotTransition {
+  const normalizedSnapshot = normalizeSnapshot(currentSnapshot, candidateSnapshot);
+  const authoritativeDrafts = resolveAuthoritativeScenarioDrafts(
+    currentSnapshot.sessionId,
+    normalizedSnapshot.scenarioDrafts,
+    compatibilityScenarioDrafts,
+  );
+
+  return {
+    snapshot: withScenarioDrafts(normalizedSnapshot, authoritativeDrafts),
+    scenarioDrafts: authoritativeDrafts,
+  };
+}
+
+function prepareAttemptResultTransition(
+  currentSnapshot: F8SessionSnapshot,
+  result: SessionAttemptResultRecord,
+): PreparedSnapshotTransition | undefined {
+  if (result.snapshot === undefined) {
+    if (isTerminalAttemptStatus(result.status)) {
+      throw createTypedError({
+        code: "validation_error",
+        summary: `Attempt result for ${result.attemptId} requires a snapshot transition for terminal status ${result.status}.`,
+        suggestedAction: "Provide the next snapshot that clears the active attempt or marks the same attemptId terminal in the same transaction.",
+        affectedInputReferences: [result.attemptId],
+      });
+    }
+
+    if (result.scenarioDrafts !== undefined) {
+      throw createTypedError({
+        code: "validation_error",
+        summary: `Attempt result for ${result.attemptId} cannot replace scenario drafts without a snapshot transition.`,
+        suggestedAction: "Provide a snapshot transition whose scenarioDrafts field is authoritative for the next revision.",
+        affectedInputReferences: [result.attemptId],
+      });
+    }
+
+    return undefined;
+  }
+
+  return prepareSnapshotTransition(currentSnapshot, result.snapshot, result.scenarioDrafts);
+}
+
+function resolveAuthoritativeScenarioDrafts(
+  sessionId: string,
+  snapshotDrafts: F8SessionSnapshot["scenarioDrafts"],
+  compatibilityDrafts: F8SessionSnapshot["scenarioDrafts"],
+): readonly F8ScenarioDraft[] {
+  const normalizedSnapshotDrafts = resolveScenarioDrafts(sessionId, snapshotDrafts, undefined) ?? [];
+  const normalizedCompatibilityDrafts = resolveScenarioDrafts(sessionId, undefined, compatibilityDrafts);
+
+  if (normalizedCompatibilityDrafts !== undefined
+    && normalizedSnapshotDrafts.length > 0
+    && stableStringify(normalizedCompatibilityDrafts) !== stableStringify(normalizedSnapshotDrafts)) {
+    throw createTypedError({
+      code: "validation_error",
+      summary: `Scenario drafts for session ${sessionId} must not disagree between snapshot and compatibility payloads.`,
+      suggestedAction: "Provide one authoritative draft list, or keep both copies byte-equivalent.",
+      affectedInputReferences: [sessionId],
+    });
+  }
+
+  return normalizedCompatibilityDrafts ?? normalizedSnapshotDrafts;
+}
+
+function withScenarioDrafts(
+  snapshot: F8SessionSnapshot,
+  scenarioDrafts: readonly F8ScenarioDraft[],
+): F8SessionSnapshot {
+  const { scenarioDrafts: _scenarioDrafts, ...baseSnapshot } = snapshot;
+  return f8SessionSnapshotSchema.parse(
+    scenarioDrafts.length === 0
+      ? baseSnapshot
+      : { ...baseSnapshot, scenarioDrafts },
+  );
 }
 
 function createCommandAcceptedEvent(
@@ -712,6 +763,49 @@ function persistActiveAttempt(
   );
 }
 
+function persistSideTables(options: {
+  deleteScenarioDraftsStatement: StatementSync;
+  insertScenarioDraftStatement: StatementSync;
+  upsertArtifactRefStatement: StatementSync;
+  deleteArtifactRefStatement: StatementSync;
+  upsertHostActionStatement: StatementSync;
+  deleteHostActionStatement: StatementSync;
+  sessionId: string;
+  scenarioDrafts: readonly F8ScenarioDraft[] | undefined;
+  artifactReferenceOps: SessionDeltaOperations<SessionArtifactReference> | undefined;
+  hostActionOps: SessionDeltaOperations<SessionHostActionRecord> | undefined;
+}): void {
+  if (options.scenarioDrafts !== undefined) {
+    replaceScenarioDrafts(
+      options.deleteScenarioDraftsStatement,
+      options.insertScenarioDraftStatement,
+      options.sessionId,
+      options.scenarioDrafts,
+      stringifyJson,
+    );
+  }
+
+  if (options.artifactReferenceOps !== undefined) {
+    applyArtifactReferenceOps(
+      options.upsertArtifactRefStatement,
+      options.deleteArtifactRefStatement,
+      options.sessionId,
+      options.artifactReferenceOps,
+      stringifyJson,
+    );
+  }
+
+  if (options.hostActionOps !== undefined) {
+    applyHostActionOps(
+      options.upsertHostActionStatement,
+      options.deleteHostActionStatement,
+      options.sessionId,
+      options.hostActionOps,
+      stringifyJson,
+    );
+  }
+}
+
 function validateAttemptResultSnapshot(
   currentSnapshot: F8SessionSnapshot,
   result: SessionAttemptResultRecord,
@@ -752,6 +846,10 @@ function validateAttemptResultSnapshot(
       affectedInputReferences: [result.attemptId],
     });
   }
+}
+
+function isTerminalAttemptStatus(status: SessionAttemptResultRecord["status"]): status is "completed" | "failed" | "cancelled" {
+  return status === "completed" || status === "failed" || status === "cancelled";
 }
 
 function parseSnapshotJson(value: string): F8SessionSnapshot {
