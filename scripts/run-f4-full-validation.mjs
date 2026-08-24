@@ -1,9 +1,9 @@
 import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { runF4Calculation } from "../packages/workflow-runners/dist/index.js";
 import {
-  f4ExcelComparisonResultSchema,
-  f4WorkflowCalculationResultSchema,
+  createTypedError,
 } from "../packages/contracts/dist/contracts.js";
 import { loadF4Handoffs } from "./f4-artifact-loader.mjs";
 import { calculateF4Workflow } from "./f4-calculation-workflow.mjs";
@@ -37,23 +37,6 @@ function outputPaths(layout) {
   };
 }
 
-function completedManifest(layout, calculationResult, comparisonResult) {
-  return {
-    contractVersion: "v1",
-    featureId: "F4",
-    status: "completed",
-    runId: calculationResult.runId,
-    generatedAt: calculationResult.generatedAt,
-    calculationStatus: calculationResult.status,
-    comparisonStatus: comparisonResult?.status ?? "not_requested",
-    artifacts: {
-      calculation: layout.calculationJsonName,
-      report: layout.reportMdName,
-      ...(comparisonResult ? { comparison: layout.comparisonJsonName } : {}),
-    },
-  };
-}
-
 function failedManifest(layout, reasonCode) {
   return {
     contractVersion: "v1",
@@ -65,55 +48,6 @@ function failedManifest(layout, reasonCode) {
     comparisonStatus: "not_started",
     artifacts: {},
   };
-}
-
-function reasonCodeForLoadedResult(loaded) {
-  if (loaded && typeof loaded.reasonCode === "string") return loaded.reasonCode;
-  return "f2_input_rejected";
-}
-
-function validateCalculationAssociation(layout, loaded, calculationResult) {
-  if (calculationResult.runId !== layout.runId
-    || calculationResult.source.artifactReference !== loaded.reportPath
-    || calculationResult.source.workbookFileName !== loaded.workbook?.fileName
-    || calculationResult.source.workbookContentHash !== loaded.workbook?.contentHash) {
-    throw new Error("F4 calculation association is invalid.");
-  }
-
-  const expectedSelections = new Set();
-  for (const handoff of loaded.handoffs ?? []) {
-    const tableIds = new Set(handoff?.factors?.map((factor) => factor.tableId));
-    if (typeof handoff?.worksheetName !== "string" || tableIds.size !== 1) {
-      throw new Error("F4 calculation association is invalid.");
-    }
-    expectedSelections.add(`${handoff.worksheetName}\0${[...tableIds][0]}`);
-  }
-  const actualSelections = new Set(calculationResult.calculations.map((calculation) => (
-    `${calculation.worksheetSelection.worksheetName}\0${calculation.worksheetSelection.tableId}`
-  )));
-  if (expectedSelections.size !== actualSelections.size
-    || [...expectedSelections].some((selection) => !actualSelections.has(selection))) {
-    throw new Error("F4 calculation association is invalid.");
-  }
-}
-
-function validateComparisonAssociation(calculationResult, comparisonResult) {
-  if (comparisonResult.runId !== calculationResult.runId) {
-    throw new Error("F4 comparison association is invalid.");
-  }
-  if (comparisonResult.status !== "passed" && comparisonResult.status !== "mismatch") return;
-  if (comparisonResult.source.workbookContentHash !== calculationResult.source.workbookContentHash) {
-    throw new Error("F4 comparison association is invalid.");
-  }
-
-  const calculationWorksheets = new Set(
-    calculationResult.calculations.map((item) => item.worksheetSelection.worksheetName),
-  );
-  const comparisonWorksheets = new Set(comparisonResult.worksheets.map((item) => item.worksheetName));
-  if (calculationWorksheets.size !== comparisonWorksheets.size
-    || [...calculationWorksheets].some((worksheetName) => !comparisonWorksheets.has(worksheetName))) {
-    throw new Error("F4 comparison association is invalid.");
-  }
 }
 
 function normalizeDependencies(overrides = {}) {
@@ -137,79 +71,40 @@ function normalizeDependencies(overrides = {}) {
 export function runF4FullValidation(options = {}, dependencyOverrides = {}) {
   const dependencies = normalizeDependencies(dependencyOverrides);
   const args = options.args ?? [];
-  const layout = dependencies.resolveLayout(args);
-  const paths = outputPaths(layout);
-  dependencies.mkdir(path.dirname(layout.runRoot), { recursive: true });
-  dependencies.mkdir(layout.runRoot);
-
-  let calculationWritten = false;
-  let comparisonWritten = false;
-  let reportWritten = false;
-  let comparisonResult;
   try {
-    const loaded = dependencies.loadHandoffs(layout.f2ReportPath);
-    if (loaded?.status !== "accepted") {
-      const reasonCode = reasonCodeForLoadedResult(loaded);
-      atomicWrite(paths.manifestPath, json(failedManifest(layout, reasonCode)), dependencies);
-      return { status: "failed", reasonCode, outputDirectory: layout.runRoot, manifestPath: paths.manifestPath };
-    }
-
-    const calculationResult = f4WorkflowCalculationResultSchema.parse(dependencies.calculateWorkflow(loaded, {
-      runId: layout.runId,
+    return runF4Calculation({
+      artifactRoot: "",
+      workbookPath: undefined,
       generatedAt: options.generatedAt,
-    }));
-    validateCalculationAssociation(layout, loaded, calculationResult);
-    atomicWrite(paths.calculationJsonPath, json(calculationResult), dependencies);
-    calculationWritten = true;
-
-    if (layout.workbookPath) {
-      const mappings = calculationResult.calculations.map((calculation) => ({
-        worksheetName: calculation.worksheetSelection.worksheetName,
-        mapping: dependencies.buildMapping({ workbookPath: layout.workbookPath, calculation }),
-      }));
-      comparisonResult = f4ExcelComparisonResultSchema.parse(dependencies.compareWithExcel({
-        workbookPath: layout.workbookPath,
-        calculationResult,
-        mappings,
-      }));
-      validateComparisonAssociation(calculationResult, comparisonResult);
-      atomicWrite(paths.comparisonJsonPath, json(comparisonResult), dependencies);
-      comparisonWritten = true;
-    }
-
-    const markdown = dependencies.renderReport(calculationResult, { comparisonResult });
-    atomicWrite(paths.reportMdPath, markdown, dependencies);
-    reportWritten = true;
-    const manifest = completedManifest(layout, calculationResult, comparisonResult);
-    atomicWrite(paths.manifestPath, json(manifest), dependencies);
-
-    return {
-      status: "completed",
-      outputDirectory: layout.runRoot,
-      calculationJsonPath: paths.calculationJsonPath,
-      reportMdPath: paths.reportMdPath,
-      manifestPath: paths.manifestPath,
-      ...(comparisonResult ? {
-        comparisonJsonPath: paths.comparisonJsonPath,
-        comparisonStatus: comparisonResult.status,
-      } : {}),
-      summary: calculationResult.summary,
-    };
-  } catch {
-    const reasonCode = calculationWritten ? "workflow_output_failed" : "calculation_failed";
-    const manifest = {
-      ...failedManifest(layout, reasonCode),
-      ...(calculationWritten ? {
-        calculationStatus: "completed",
-        comparisonStatus: comparisonWritten ? comparisonResult.status : "not_started",
-        artifacts: {
-          calculation: layout.calculationJsonName,
-          ...(comparisonWritten ? { comparison: layout.comparisonJsonName } : {}),
-          ...(reportWritten ? { report: layout.reportMdName } : {}),
-        },
-      } : {}),
-    };
-    atomicWrite(paths.manifestPath, json(manifest), dependencies);
+    }, {
+      repositoryRoot: process.cwd(),
+      managedOutputRoot: process.env.AI_TVA_F4_OUTPUT_ROOT ?? process.cwd(),
+      attemptId: "f4-cli",
+      signal: new globalThis.AbortController().signal,
+      emit: () => {},
+    }, {
+      resolveOutputLayout: () => dependencies.resolveLayout(args),
+      loadHandoffs: dependencies.loadHandoffs,
+      calculateWorkflow: dependencies.calculateWorkflow,
+      buildMapping: dependencies.buildMapping,
+      compareWithExcel: dependencies.compareWithExcel,
+      renderReport: dependencies.renderReport,
+      mkdir: dependencies.mkdir,
+      writeFile: dependencies.writeFile,
+      rename: dependencies.rename,
+      rm: dependencies.rm,
+    });
+  } catch (error) {
+    if (error?.code === "EEXIST") throw error;
+    const layout = dependencies.resolveLayout(args);
+    const paths = outputPaths(layout);
+    const typed = error?.code === undefined ? createTypedError({
+      code: "internal_error",
+      summary: "Feature 4 workflow execution failed.",
+      affectedInputReferences: ["feature4-workflow"],
+    }) : error;
+    const reasonCode = typed.code === "validation_error" ? "invalid_arguments_or_output_root" : "calculation_failed";
+    atomicWrite(paths.manifestPath, json(failedManifest(layout, reasonCode)), dependencies);
     return { status: "failed", reasonCode, outputDirectory: layout.runRoot, manifestPath: paths.manifestPath };
   }
 }
