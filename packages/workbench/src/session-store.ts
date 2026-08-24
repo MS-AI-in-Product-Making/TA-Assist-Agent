@@ -3,15 +3,31 @@ import { DatabaseSync, StatementSync } from "node:sqlite";
 
 import {
   createTypedError,
-  f8ScenarioDraftSchema,
   f8SessionCommandSchema,
   f8SessionEventSchema,
   f8SessionSnapshotSchema,
 } from "@ai-assist/contracts";
 
 import { resolveManagedWorkbenchPaths } from "./managed-paths.js";
+import { CREATE_SESSION_STORE_SCHEMA_SQL } from "./session-store-schema.js";
+import {
+  applyArtifactReferenceOps,
+  applyHostActionOps,
+  normalizeArtifactReferenceOps,
+  normalizeHostActionOps,
+  replaceScenarioDrafts,
+  resolveScenarioDrafts,
+  type SessionArtifactReference,
+  type SessionDeltaOperations,
+  type SessionHostActionRecord,
+} from "./session-store-side-tables.js";
 
-type F8ScenarioDraft = ReturnType<typeof f8ScenarioDraftSchema.parse>;
+export type {
+  SessionArtifactReference,
+  SessionDeltaOperations,
+  SessionHostActionRecord,
+} from "./session-store-side-tables.js";
+
 type F8SessionCommand = ReturnType<typeof f8SessionCommandSchema.parse>;
 type F8SessionEvent = ReturnType<typeof f8SessionEventSchema.parse>;
 type F8SessionSnapshot = ReturnType<typeof f8SessionSnapshotSchema.parse>;
@@ -30,38 +46,14 @@ export interface SessionStoreOptions {
   readonly testHooks?: SessionStoreTestHooks;
 }
 
-export interface SessionArtifactReference {
-  readonly artifactId: string;
-  readonly sessionId: string;
-  readonly inputRevision: number;
-  readonly kind: string;
-  readonly relativePath: string;
-  readonly contentHash?: string;
-  readonly manifestHash?: string;
-  readonly metadata?: Record<string, unknown>;
-}
-
-export interface SessionHostActionRecord {
-  readonly actionId: string;
-  readonly sessionId: string;
-  readonly status: "pending" | "claimed" | "completed" | "blocked" | "failed";
-  readonly request?: unknown;
-  readonly claim?: unknown;
-  readonly result?: unknown;
-  readonly expiresAt?: string;
-  readonly leaseId?: string;
-  readonly leaseExpiresAt?: string;
-  readonly expectedRevision?: number;
-  readonly confirmationHash?: string;
-  readonly expectedTargetVersion?: string;
-}
-
 export interface SessionCommandMutation {
   readonly snapshot: F8SessionSnapshot;
   readonly events?: readonly F8SessionEvent[];
   readonly artifactReferences?: readonly SessionArtifactReference[];
-  readonly scenarioDrafts?: readonly F8ScenarioDraft[];
+  readonly artifactReferenceOps?: SessionDeltaOperations<SessionArtifactReference>;
+  readonly scenarioDrafts?: F8SessionSnapshot["scenarioDrafts"];
   readonly hostActions?: readonly SessionHostActionRecord[];
+  readonly hostActionOps?: SessionDeltaOperations<SessionHostActionRecord>;
 }
 
 export type SessionCommandReducer = (
@@ -78,8 +70,10 @@ export interface SessionAttemptResultRecord {
   readonly runReference?: string;
   readonly manifestHash?: string;
   readonly artifactReferences?: readonly SessionArtifactReference[];
-  readonly scenarioDrafts?: readonly F8ScenarioDraft[];
+  readonly artifactReferenceOps?: SessionDeltaOperations<SessionArtifactReference>;
+  readonly scenarioDrafts?: F8SessionSnapshot["scenarioDrafts"];
   readonly hostActions?: readonly SessionHostActionRecord[];
+  readonly hostActionOps?: SessionDeltaOperations<SessionHostActionRecord>;
   readonly endedAt?: string;
 }
 
@@ -105,88 +99,6 @@ interface CommandRow {
   readonly command_json: string;
   readonly result_json: string | null;
 }
-
-const CREATE_SCHEMA_SQL = `
-CREATE TABLE IF NOT EXISTS sessions (
-  session_id TEXT PRIMARY KEY,
-  revision INTEGER NOT NULL,
-  snapshot_json TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-) STRICT;
-
-CREATE TABLE IF NOT EXISTS commands (
-  command_id TEXT PRIMARY KEY,
-  session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
-  expected_revision INTEGER NOT NULL,
-  command_json TEXT NOT NULL,
-  result_json TEXT,
-  committed_revision INTEGER,
-  created_at TEXT NOT NULL,
-  committed_at TEXT
-) STRICT;
-
-CREATE TABLE IF NOT EXISTS events (
-  event_id TEXT PRIMARY KEY,
-  session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
-  revision INTEGER NOT NULL,
-  kind TEXT NOT NULL,
-  event_json TEXT NOT NULL,
-  created_at TEXT NOT NULL
-) STRICT;
-
-CREATE INDEX IF NOT EXISTS events_by_session_revision ON events(session_id, revision, created_at);
-
-CREATE TABLE IF NOT EXISTS stage_attempts (
-  attempt_id TEXT PRIMARY KEY,
-  session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
-  stage TEXT NOT NULL,
-  status TEXT NOT NULL,
-  command_id TEXT,
-  run_reference TEXT,
-  manifest_hash TEXT,
-  artifact_refs_json TEXT,
-  result_json TEXT,
-  started_at TEXT NOT NULL,
-  ended_at TEXT
-) STRICT;
-
-CREATE INDEX IF NOT EXISTS stage_attempts_by_session ON stage_attempts(session_id, started_at);
-
-CREATE TABLE IF NOT EXISTS artifact_refs (
-  artifact_id TEXT PRIMARY KEY,
-  session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
-  input_revision INTEGER NOT NULL,
-  kind TEXT NOT NULL,
-  relative_path TEXT NOT NULL,
-  content_hash TEXT,
-  manifest_hash TEXT,
-  metadata_json TEXT
-) STRICT;
-
-CREATE TABLE IF NOT EXISTS scenario_drafts (
-  draft_id TEXT PRIMARY KEY,
-  session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
-  draft_json TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-) STRICT;
-
-CREATE TABLE IF NOT EXISTS host_actions (
-  action_id TEXT PRIMARY KEY,
-  session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
-  status TEXT NOT NULL,
-  request_json TEXT,
-  claim_json TEXT,
-  result_json TEXT,
-  expires_at TEXT,
-  lease_id TEXT,
-  lease_expires_at TEXT,
-  expected_revision INTEGER,
-  confirmation_hash TEXT,
-  expected_target_version TEXT,
-  updated_at TEXT NOT NULL
-) STRICT;
-`;
 
 export async function createSessionStore(options: SessionStoreOptions): Promise<SessionStore> {
   const store = await initializeStore(options);
@@ -223,7 +135,7 @@ async function initializeStore(options: SessionStoreOptions): Promise<SqliteSess
     database.exec("PRAGMA journal_mode = WAL;");
     database.exec("PRAGMA synchronous = FULL;");
     database.exec("PRAGMA foreign_keys = ON;");
-    database.exec(CREATE_SCHEMA_SQL);
+    database.exec(CREATE_SESSION_STORE_SCHEMA_SQL);
   } catch (error) {
     database.close();
     throw error;
@@ -255,13 +167,13 @@ class SqliteSessionStore implements SessionStore {
 
   private readonly insertScenarioDraftStatement;
 
-  private readonly deleteArtifactRefsStatement;
+  private readonly deleteArtifactRefStatement;
 
-  private readonly insertArtifactRefStatement;
+  private readonly upsertArtifactRefStatement;
 
-  private readonly deleteHostActionsStatement;
+  private readonly deleteHostActionStatement;
 
-  private readonly insertHostActionStatement;
+  private readonly upsertHostActionStatement;
 
   constructor(
     private readonly database: DatabaseSync,
@@ -335,13 +247,21 @@ class SqliteSessionStore implements SessionStore {
       INSERT INTO scenario_drafts(draft_id, session_id, draft_json, updated_at)
       VALUES (?, ?, ?, ?)
     `);
-    this.deleteArtifactRefsStatement = this.database.prepare("DELETE FROM artifact_refs WHERE session_id = ?");
-    this.insertArtifactRefStatement = this.database.prepare(`
+    this.deleteArtifactRefStatement = this.database.prepare("DELETE FROM artifact_refs WHERE artifact_id = ? AND session_id = ?");
+    this.upsertArtifactRefStatement = this.database.prepare(`
       INSERT INTO artifact_refs(artifact_id, session_id, input_revision, kind, relative_path, content_hash, manifest_hash, metadata_json)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(artifact_id) DO UPDATE SET
+        session_id = excluded.session_id,
+        input_revision = excluded.input_revision,
+        kind = excluded.kind,
+        relative_path = excluded.relative_path,
+        content_hash = excluded.content_hash,
+        manifest_hash = excluded.manifest_hash,
+        metadata_json = excluded.metadata_json
     `);
-    this.deleteHostActionsStatement = this.database.prepare("DELETE FROM host_actions WHERE session_id = ?");
-    this.insertHostActionStatement = this.database.prepare(`
+    this.deleteHostActionStatement = this.database.prepare("DELETE FROM host_actions WHERE action_id = ? AND session_id = ?");
+    this.upsertHostActionStatement = this.database.prepare(`
       INSERT INTO host_actions(
         action_id,
         session_id,
@@ -357,6 +277,19 @@ class SqliteSessionStore implements SessionStore {
         expected_target_version,
         updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(action_id) DO UPDATE SET
+        session_id = excluded.session_id,
+        status = excluded.status,
+        request_json = excluded.request_json,
+        claim_json = excluded.claim_json,
+        result_json = excluded.result_json,
+        expires_at = excluded.expires_at,
+        lease_id = excluded.lease_id,
+        lease_expires_at = excluded.lease_expires_at,
+        expected_revision = excluded.expected_revision,
+        confirmation_hash = excluded.confirmation_hash,
+        expected_target_version = excluded.expected_target_version,
+        updated_at = excluded.updated_at
     `);
   }
 
@@ -416,6 +349,17 @@ class SqliteSessionStore implements SessionStore {
     const currentSnapshot = this.readCommittedSnapshot();
     const mutation = await reducer(currentSnapshot, command);
     const nextSnapshot = normalizeSnapshot(currentSnapshot, mutation.snapshot);
+    const scenarioDrafts = resolveScenarioDrafts(this.sessionId, nextSnapshot.scenarioDrafts, mutation.scenarioDrafts);
+    const artifactReferenceOps = normalizeArtifactReferenceOps(
+      this.sessionId,
+      mutation.artifactReferences,
+      mutation.artifactReferenceOps,
+    );
+    const hostActionOps = normalizeHostActionOps(
+      this.sessionId,
+      mutation.hostActions,
+      mutation.hostActionOps,
+    );
     const revision = nextSnapshot.revision;
     const timestamp = new Date().toISOString();
     const resultJson = stringifyJson(nextSnapshot);
@@ -486,14 +430,34 @@ class SqliteSessionStore implements SessionStore {
 
       persistEvents(this.insertEventStatement, events);
       persistActiveAttempt(this.upsertStageAttemptStatement, nextSnapshot.activeAttempt, this.sessionId);
-      persistScenarioDrafts(this.deleteScenarioDraftsStatement, this.insertScenarioDraftStatement, this.sessionId, mutation.scenarioDrafts ?? nextSnapshot.scenarioDrafts ?? []);
-
-      if (mutation.artifactReferences !== undefined) {
-        persistArtifactReferences(this.deleteArtifactRefsStatement, this.insertArtifactRefStatement, this.sessionId, mutation.artifactReferences);
+      if (scenarioDrafts !== undefined) {
+        replaceScenarioDrafts(
+          this.deleteScenarioDraftsStatement,
+          this.insertScenarioDraftStatement,
+          this.sessionId,
+          scenarioDrafts,
+          stringifyJson,
+        );
       }
 
-      if (mutation.hostActions !== undefined) {
-        persistHostActions(this.deleteHostActionsStatement, this.insertHostActionStatement, this.sessionId, mutation.hostActions);
+      if (artifactReferenceOps !== undefined) {
+        applyArtifactReferenceOps(
+          this.upsertArtifactRefStatement,
+          this.deleteArtifactRefStatement,
+          this.sessionId,
+          artifactReferenceOps,
+          stringifyJson,
+        );
+      }
+
+      if (hostActionOps !== undefined) {
+        applyHostActionOps(
+          this.upsertHostActionStatement,
+          this.deleteHostActionStatement,
+          this.sessionId,
+          hostActionOps,
+          stringifyJson,
+        );
       }
 
       this.updateCommandResultStatement.run(
@@ -522,6 +486,18 @@ class SqliteSessionStore implements SessionStore {
     const nextSnapshot = result.snapshot === undefined
       ? currentSnapshot
       : normalizeSnapshot(currentSnapshot, result.snapshot);
+    validateAttemptResultSnapshot(currentSnapshot, result, nextSnapshot);
+    const scenarioDrafts = resolveScenarioDrafts(this.sessionId, nextSnapshot.scenarioDrafts, result.scenarioDrafts);
+    const artifactReferenceOps = normalizeArtifactReferenceOps(
+      this.sessionId,
+      result.artifactReferences,
+      result.artifactReferenceOps,
+    );
+    const hostActionOps = normalizeHostActionOps(
+      this.sessionId,
+      result.hostActions,
+      result.hostActionOps,
+    );
     const events = normalizeEvents(this.sessionId, nextSnapshot.revision, result.events ?? []);
 
     this.database.exec("BEGIN IMMEDIATE");
@@ -572,16 +548,34 @@ class SqliteSessionStore implements SessionStore {
         persistEvents(this.insertEventStatement, events);
       }
 
-      if (result.scenarioDrafts !== undefined) {
-        persistScenarioDrafts(this.deleteScenarioDraftsStatement, this.insertScenarioDraftStatement, this.sessionId, result.scenarioDrafts);
+      if (scenarioDrafts !== undefined) {
+        replaceScenarioDrafts(
+          this.deleteScenarioDraftsStatement,
+          this.insertScenarioDraftStatement,
+          this.sessionId,
+          scenarioDrafts,
+          stringifyJson,
+        );
       }
 
-      if (result.artifactReferences !== undefined) {
-        persistArtifactReferences(this.deleteArtifactRefsStatement, this.insertArtifactRefStatement, this.sessionId, result.artifactReferences);
+      if (artifactReferenceOps !== undefined) {
+        applyArtifactReferenceOps(
+          this.upsertArtifactRefStatement,
+          this.deleteArtifactRefStatement,
+          this.sessionId,
+          artifactReferenceOps,
+          stringifyJson,
+        );
       }
 
-      if (result.hostActions !== undefined) {
-        persistHostActions(this.deleteHostActionsStatement, this.insertHostActionStatement, this.sessionId, result.hostActions);
+      if (hostActionOps !== undefined) {
+        applyHostActionOps(
+          this.upsertHostActionStatement,
+          this.deleteHostActionStatement,
+          this.sessionId,
+          hostActionOps,
+          stringifyJson,
+        );
       }
 
       this.database.exec("COMMIT");
@@ -718,69 +712,46 @@ function persistActiveAttempt(
   );
 }
 
-function persistScenarioDrafts(
-  deleteStatement: StatementSync,
-  insertStatement: StatementSync,
-  sessionId: string,
-  drafts: readonly F8ScenarioDraft[],
+function validateAttemptResultSnapshot(
+  currentSnapshot: F8SessionSnapshot,
+  result: SessionAttemptResultRecord,
+  nextSnapshot: F8SessionSnapshot,
 ): void {
-  deleteStatement.run(sessionId);
-  drafts.forEach((draft) => {
-    insertStatement.run(
-      draft.draftId,
-      sessionId,
-      stringifyJson(draft),
-      draft.updatedAt ?? new Date().toISOString(),
-    );
-  });
-}
+  if (result.snapshot === undefined || currentSnapshot.activeAttempt === null) {
+    return;
+  }
 
-function persistArtifactReferences(
-  deleteStatement: StatementSync,
-  insertStatement: StatementSync,
-  sessionId: string,
-  references: readonly SessionArtifactReference[],
-): void {
-  deleteStatement.run(sessionId);
-  references.forEach((reference) => {
-    insertStatement.run(
-      reference.artifactId,
-      sessionId,
-      reference.inputRevision,
-      reference.kind,
-      reference.relativePath,
-      reference.contentHash ?? null,
-      reference.manifestHash ?? null,
-      reference.metadata === undefined ? null : stringifyJson(reference.metadata),
-    );
-  });
-}
+  const nextAttempt = nextSnapshot.activeAttempt;
+  if (nextAttempt === null) {
+    return;
+  }
 
-function persistHostActions(
-  deleteStatement: StatementSync,
-  insertStatement: StatementSync,
-  sessionId: string,
-  actions: readonly SessionHostActionRecord[],
-): void {
-  deleteStatement.run(sessionId);
-  const now = new Date().toISOString();
-  actions.forEach((action) => {
-    insertStatement.run(
-      action.actionId,
-      sessionId,
-      action.status,
-      action.request === undefined ? null : stringifyJson(action.request),
-      action.claim === undefined ? null : stringifyJson(action.claim),
-      action.result === undefined ? null : stringifyJson(action.result),
-      action.expiresAt ?? null,
-      action.leaseId ?? null,
-      action.leaseExpiresAt ?? null,
-      action.expectedRevision ?? null,
-      action.confirmationHash ?? null,
-      action.expectedTargetVersion ?? null,
-      now,
-    );
-  });
+  if (nextAttempt.attemptId !== currentSnapshot.activeAttempt.attemptId) {
+    throw createTypedError({
+      code: "validation_error",
+      summary: `Attempt result for ${result.attemptId} cannot switch the active attempt to ${nextAttempt.attemptId}.`,
+      suggestedAction: "Clear the active attempt or keep the same attemptId with a terminal status.",
+      affectedInputReferences: [result.attemptId, nextAttempt.attemptId],
+    });
+  }
+
+  if (nextAttempt.status === "running") {
+    throw createTypedError({
+      code: "validation_error",
+      summary: `Attempt result for ${result.attemptId} cannot keep the active attempt running.`,
+      suggestedAction: "Clear the active attempt or mark the same attemptId as completed, failed, or cancelled.",
+      affectedInputReferences: [result.attemptId],
+    });
+  }
+
+  if (result.status !== undefined && nextAttempt.status !== result.status) {
+    throw createTypedError({
+      code: "validation_error",
+      summary: `Attempt result for ${result.attemptId} must keep snapshot status ${nextAttempt.status} consistent with result status ${result.status}.`,
+      suggestedAction: "Provide a snapshot whose active attempt uses the same terminal status as the attempt result.",
+      affectedInputReferences: [result.attemptId],
+    });
+  }
 }
 
 function parseSnapshotJson(value: string): F8SessionSnapshot {

@@ -1,8 +1,10 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { resolveManagedWorkbenchPaths } from "./managed-paths.js";
 import { createSessionStore, openSessionStore } from "./session-store.js";
 
 const SESSION_ID = "session-001";
@@ -48,6 +50,136 @@ describe("SessionStore", () => {
     });
 
     await store.close();
+  });
+
+  it("rejects attempt results that switch to a different active attempt", async () => {
+    const rootDir = await createTempRoot();
+    const store = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+    try {
+      await store.applyCommand(commandAt(0, COMMAND_ID), acceptWorkbook);
+
+      await expect(store.recordAttemptResult({
+        attemptId: ATTEMPT_ID,
+        status: "completed",
+        result: { ok: true },
+        snapshot: snapshotWithAttempt({
+          revision: 1,
+          state: "f3_running",
+          activeAttempt: {
+            attemptId: "attempt-002",
+            stage: "f3_running",
+            status: "running",
+            commandId: "command-003",
+            startedAt: "2026-08-24T01:00:00.000Z",
+          },
+        }),
+      })).rejects.toMatchObject({
+        code: "validation_error",
+      });
+
+      expect(await store.readSnapshot()).toMatchObject({
+        revision: 1,
+        activeAttempt: { attemptId: ATTEMPT_ID, status: "running" },
+      });
+      expect(readStageAttemptRows(rootDir)).toEqual([
+        expect.objectContaining({ attempt_id: ATTEMPT_ID, status: "running", result_json: null }),
+      ]);
+    } finally {
+      await store.close();
+    }
+  });
+
+  it("rolls back malformed or wrong-session drafts before persisting side tables", async () => {
+    const rootDir = await createTempRoot();
+    const store = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+    try {
+      await store.applyCommand(commandAt(0, COMMAND_ID), acceptWorkbook);
+
+      await expect(store.recordAttemptResult({
+        attemptId: ATTEMPT_ID,
+        status: "completed",
+        result: { ok: false },
+        scenarioDrafts: [{
+          contractVersion: "f8-scenario-draft-v1",
+          draftId: "draft-wrong-session",
+          sessionId: "session-other",
+          worksheetName: "Sheet1",
+          inputRevision: 1,
+          status: "draft",
+          mode: "WHAT_IF",
+          nominalValue: 1,
+          updatedAt: "2026-08-24T02:00:00.000Z",
+        }],
+      })).rejects.toMatchObject({
+        code: "validation_error",
+      });
+
+      expect(await store.readSnapshot()).toMatchObject({
+        revision: 1,
+        activeAttempt: { attemptId: ATTEMPT_ID, status: "running" },
+      });
+      expect(readScenarioDraftRows(rootDir)).toEqual([]);
+      expect(readStageAttemptRows(rootDir)).toEqual([
+        expect.objectContaining({ attempt_id: ATTEMPT_ID, status: "running", result_json: null }),
+      ]);
+    } finally {
+      await store.close();
+    }
+  });
+
+  it("preserves side-table rows unless explicitly deleted", async () => {
+    const rootDir = await createTempRoot();
+    const store = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+    try {
+      await store.applyCommand(commandAt(0, COMMAND_ID), (snapshot) => ({
+        snapshot: snapshotWithAttempt({
+          revision: snapshot.revision,
+          state: "f1_f2_running",
+          activeAttempt: {
+            attemptId: ATTEMPT_ID,
+            stage: "f1_f2_running",
+            status: "running",
+            commandId: COMMAND_ID,
+            startedAt: "2026-08-24T00:00:00.000Z",
+          },
+        }),
+        artifactReferences: [artifactReference("artifact-keep")],
+        hostActions: [hostAction("action-keep")],
+      }));
+
+      await store.recordAttemptResult({
+        attemptId: ATTEMPT_ID,
+        status: "completed",
+        result: { ok: true },
+        snapshot: snapshotWithAttempt({
+          revision: 1,
+          state: "review_required",
+          activeAttempt: null,
+        }),
+      });
+
+      expect(readArtifactRefRows(rootDir).map((row) => row.artifact_id)).toEqual(["artifact-keep"]);
+      expect(readHostActionRows(rootDir).map((row) => row.action_id)).toEqual(["action-keep"]);
+
+      await store.applyCommand(commandAt(2, "command-003"), (snapshot) => ({
+        snapshot: snapshotWithAttempt({
+          revision: snapshot.revision,
+          state: "review_required",
+          activeAttempt: null,
+        }),
+        artifactReferenceOps: {
+          delete: ["artifact-keep"],
+        },
+        hostActionOps: {
+          delete: ["action-keep"],
+        },
+      }));
+
+      expect(readArtifactRefRows(rootDir)).toEqual([]);
+      expect(readHostActionRows(rootDir)).toEqual([]);
+    } finally {
+      await store.close();
+    }
   });
 
   it.each([
@@ -103,6 +235,106 @@ function commandAt(expectedRevision: number, commandId: string) {
       reason: "Resume after workbook validation",
     },
   };
+}
+
+function snapshotWithAttempt(options: {
+  revision: number;
+  state: string;
+  activeAttempt: {
+    attemptId: string;
+    stage: string;
+    status: string;
+    commandId?: string;
+    startedAt: string;
+    endedAt?: string;
+  } | null;
+}) {
+  return {
+    contractVersion: "f8-session-snapshot-v1",
+    sessionId: SESSION_ID,
+    revision: options.revision,
+    inputRevision: 0,
+    state: options.state,
+    activeAttempt: options.activeAttempt,
+    priorRunReferences: [],
+  };
+}
+
+function artifactReference(artifactId: string) {
+  return {
+    artifactId,
+    sessionId: SESSION_ID,
+    inputRevision: 1,
+    kind: "workbook",
+    relativePath: `artifacts/${artifactId}.json`,
+    contentHash: undefined,
+    manifestHash: undefined,
+    metadata: { source: artifactId },
+  };
+}
+
+function hostAction(actionId: string) {
+  return {
+    actionId,
+    sessionId: SESSION_ID,
+    status: "pending" as const,
+    request: {
+      contractVersion: "f8-host-action-request-v1",
+      actionId,
+      sessionId: SESSION_ID,
+      expectedRevision: 1,
+      kind: "surface_validate" as const,
+      expiresAt: "2026-08-24T03:00:00.000Z",
+    },
+  };
+}
+
+function readScenarioDraftRows(rootDir: string): Array<{ draft_id: string; draft_json: string }> {
+  const database = openDatabase(rootDir);
+  try {
+    return database.prepare("SELECT draft_id, draft_json FROM scenario_drafts ORDER BY draft_id").all() as Array<{
+      draft_id: string;
+      draft_json: string;
+    }>;
+  } finally {
+    database.close();
+  }
+}
+
+function readArtifactRefRows(rootDir: string): Array<{ artifact_id: string }> {
+  const database = openDatabase(rootDir);
+  try {
+    return database.prepare("SELECT artifact_id FROM artifact_refs ORDER BY artifact_id").all() as Array<{ artifact_id: string }>;
+  } finally {
+    database.close();
+  }
+}
+
+function readHostActionRows(rootDir: string): Array<{ action_id: string }> {
+  const database = openDatabase(rootDir);
+  try {
+    return database.prepare("SELECT action_id FROM host_actions ORDER BY action_id").all() as Array<{ action_id: string }>;
+  } finally {
+    database.close();
+  }
+}
+
+function readStageAttemptRows(rootDir: string): Array<{ attempt_id: string; status: string; result_json: string | null }> {
+  const database = openDatabase(rootDir);
+  try {
+    return database.prepare("SELECT attempt_id, status, result_json FROM stage_attempts ORDER BY attempt_id").all() as Array<{
+      attempt_id: string;
+      status: string;
+      result_json: string | null;
+    }>;
+  } finally {
+    database.close();
+  }
+}
+
+function openDatabase(rootDir: string): DatabaseSync {
+  const paths = resolveManagedWorkbenchPaths(rootDir);
+  return new DatabaseSync(paths.databasePath);
 }
 
 function acceptWorkbook(snapshot: {
