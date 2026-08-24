@@ -659,11 +659,20 @@ function resolveAuthoritativeScenarioDrafts(
   snapshotDrafts: F8SessionSnapshot["scenarioDrafts"],
   compatibilityDrafts: F8SessionSnapshot["scenarioDrafts"],
 ): readonly F8ScenarioDraft[] {
-  const normalizedSnapshotDrafts = resolveScenarioDrafts(sessionId, snapshotDrafts, undefined) ?? [];
+  const normalizedSnapshotDrafts = resolveScenarioDrafts(sessionId, snapshotDrafts, undefined);
   const normalizedCompatibilityDrafts = resolveScenarioDrafts(sessionId, undefined, compatibilityDrafts);
 
+  if (normalizedCompatibilityDrafts !== undefined && normalizedSnapshotDrafts === undefined) {
+    throw createTypedError({
+      code: "validation_error",
+      summary: `Scenario drafts for session ${sessionId} must be authored by the snapshot transition, not the compatibility payload.`,
+      suggestedAction: "Either omit compatibility scenarioDrafts when the next snapshot omits them, or provide the same draft list in the snapshot field.",
+      affectedInputReferences: [sessionId],
+    });
+  }
+
   if (normalizedCompatibilityDrafts !== undefined
-    && normalizedSnapshotDrafts.length > 0
+    && normalizedSnapshotDrafts !== undefined
     && stableStringify(normalizedCompatibilityDrafts) !== stableStringify(normalizedSnapshotDrafts)) {
     throw createTypedError({
       code: "validation_error",
@@ -673,7 +682,7 @@ function resolveAuthoritativeScenarioDrafts(
     });
   }
 
-  return normalizedCompatibilityDrafts ?? normalizedSnapshotDrafts;
+  return normalizedSnapshotDrafts ?? [];
 }
 
 function withScenarioDrafts(

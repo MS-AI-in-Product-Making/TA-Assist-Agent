@@ -262,6 +262,54 @@ describe("SessionStore", () => {
     }
   });
 
+  it("rejects compatibility scenario drafts when the next snapshot omits them", async () => {
+    const rootDir = await createTempRoot();
+    const store = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+    try {
+      const persistedDraft = scenarioDraft("draft-compat-override");
+      await store.applyCommand(commandAt(0, COMMAND_ID), (snapshot) => ({
+        snapshot: snapshotWithAttempt({
+          revision: snapshot.revision,
+          state: "f1_f2_running",
+          activeAttempt: {
+            attemptId: ATTEMPT_ID,
+            stage: "f1_f2_running",
+            status: "running",
+            commandId: COMMAND_ID,
+            startedAt: "2026-08-24T00:00:00.000Z",
+          },
+          scenarioDrafts: [persistedDraft],
+        }),
+      }));
+
+      await expect(store.recordAttemptResult({
+        attemptId: ATTEMPT_ID,
+        status: "completed",
+        result: { ok: true },
+        snapshot: snapshotWithAttempt({
+          revision: 1,
+          state: "review_required",
+          activeAttempt: null,
+        }),
+        scenarioDrafts: [persistedDraft],
+      })).rejects.toMatchObject({
+        code: "validation_error",
+      });
+
+      expect(await store.readSnapshot()).toMatchObject({
+        revision: 1,
+        activeAttempt: { attemptId: ATTEMPT_ID, status: "running" },
+        scenarioDrafts: [persistedDraft],
+      });
+      expect(readScenarioDraftRows(rootDir).map((row) => row.draft_id)).toEqual(["draft-compat-override"]);
+      expect(readStageAttemptRows(rootDir)).toEqual([
+        expect.objectContaining({ attempt_id: ATTEMPT_ID, status: "running", result_json: null }),
+      ]);
+    } finally {
+      await store.close();
+    }
+  });
+
   it("preserves side-table rows unless explicitly deleted", async () => {
     const rootDir = await createTempRoot();
     const store = await createSessionStore({ rootDir, sessionId: SESSION_ID });
