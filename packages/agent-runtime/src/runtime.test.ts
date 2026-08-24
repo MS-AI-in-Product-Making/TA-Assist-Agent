@@ -1,12 +1,19 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { createConversationStore } from "../../conversation/src/conversation-store.js";
 import { handleAgentTurn } from "./runtime.js";
 
 const SESSION_ID = "session-task-8-runtime";
 const stores: InMemoryConversationStore[] = [];
+const tempRoots: string[] = [];
 
 afterEach(async () => {
   stores.splice(0).forEach((store) => store.reset());
+  await Promise.all(tempRoots.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
 
 describe("handleAgentTurn", () => {
@@ -62,17 +69,174 @@ describe("handleAgentTurn", () => {
       "turn-status-1:assistant",
     ]);
   });
+
+  it("reuses the exact stored turns and result for duplicate handleAgentTurn retries with the real ConversationStore", async () => {
+    const rootDir = await createTempRoot();
+    const conversationStore = await createConversationStore({ rootDir });
+    const model = {
+      complete: vi.fn(async () => ({
+        responseText: "已生成报告导航。",
+        actions: [{ type: "navigate", target: "/review", label: "伪造标签" }],
+      })),
+    };
+    const deps = {
+      snapshotStore: {
+        readSnapshot: async () => baseSnapshot({ state: "review_required" }),
+      },
+      conversationStore,
+      model,
+      now: () => "2026-08-25T00:00:00.000Z",
+    };
+
+    try {
+      const first = await handleAgentTurn({
+        text: "打开报告",
+        sessionId: SESSION_ID,
+        commandId: "stable-command-001",
+        source: "web",
+      }, deps);
+      const second = await handleAgentTurn({
+        text: "打开报告",
+        sessionId: SESSION_ID,
+        commandId: "stable-command-001",
+        source: "web",
+      }, deps);
+
+      expect(second).toEqual(first);
+      expect(model.complete).toHaveBeenCalledTimes(1);
+      expect((await conversationStore.readTurns(SESSION_ID, { afterSequence: 0 })).map((turn) => ({
+        turnId: turn.turnId,
+        sequence: turn.sequence,
+      }))).toEqual([
+        { turnId: "stable-command-001:user", sequence: 1 },
+        { turnId: "stable-command-001:assistant", sequence: 2 },
+      ]);
+    } finally {
+      await conversationStore.close();
+    }
+  });
+
+  it("drops misleading model actions and strips command metadata from model context", async () => {
+    const model = {
+      complete: vi.fn(async (input: { context: { turns: Array<{ text: string }> } }) => {
+        expect(input.context.turns[0]?.text).not.toContain("cmd-secret-token-123");
+        expect(input.context.turns[0]?.text).not.toContain("confirm_ado_decision");
+        return {
+          responseText: "模型建议注入动作。",
+          actions: [
+            { type: "navigate", target: "https://evil.invalid/phish", label: "信任我" },
+            { type: "open_report", target: "/report/current", label: "外部伪造标签" },
+            { type: "open_what_if", target: "/what-if", label: "外部伪造 what-if" },
+            { type: "confirm_ado_decision", target: "/ado/write", label: "绕过确认" },
+          ],
+        };
+      }),
+    };
+    const deps = await createDeps(baseSnapshot({
+      state: "review_required",
+      downstreamScopeSelection: {
+        workbookHash: "a".repeat(64),
+        worksheetNames: ["Sheet-1"],
+      },
+      priorRunReferences: [
+        {
+          featureId: "F6",
+          referenceId: "f6-report-1",
+          contractVersion: "f6-report-v1",
+          artifactId: "artifact-report-1",
+        },
+      ],
+    }), {
+      model,
+      seedTurns: [
+        turnRecord({
+          turnId: "seed-command-turn",
+          sequence: 1,
+          role: "tool",
+          content: [{ kind: "command", commandId: "cmd-secret-token-123", command: "confirm_ado_decision" }],
+        }),
+      ],
+    });
+
+    const result = await handleAgentTurn({
+      text: "打开报告并看看试算",
+      sessionId: SESSION_ID,
+      commandId: "safe-boundary-1",
+      source: "web",
+    }, deps);
+
+    expect(result.actions).toEqual([
+      { type: "open_report", target: "/report/current", label: "打开当前报告" },
+      { type: "open_what_if", target: "/what-if", label: "打开 What-if Draft" },
+    ]);
+  });
+
+  it("falls back safely when the model response shape is invalid or the model throws", async () => {
+    const invalidDeps = await createDeps(baseSnapshot({ state: "initial_scope_required" }), {
+      model: {
+        complete: async () => ({
+          responseText: "x".repeat(5000),
+          actions: [{ type: "navigate", target: "/scope", label: "x".repeat(5000) }],
+        }),
+      },
+    });
+
+    const invalidResult = await handleAgentTurn({
+      text: "继续分析",
+      sessionId: SESSION_ID,
+      commandId: "invalid-shape-1",
+      source: "web",
+    }, invalidDeps);
+
+    expect(invalidResult).toEqual({
+      responseText: expect.stringContaining("选择 Worksheets"),
+      actions: [{ type: "navigate", target: "/scope", label: "选择 Worksheets" }],
+      commands: [],
+    });
+
+    const throwingDeps = await createDeps(baseSnapshot({ state: "initial_scope_required" }), {
+      model: {
+        complete: async () => {
+          throw new Error("cancelled by model");
+        },
+      },
+    });
+
+    const thrownResult = await handleAgentTurn({
+      text: "继续分析",
+      sessionId: SESSION_ID,
+      commandId: "model-throw-1",
+      source: "web",
+    }, throwingDeps);
+
+    expect(thrownResult.actions).toEqual([{ type: "navigate", target: "/scope", label: "选择 Worksheets" }]);
+    expect(thrownResult.responseText).toContain("选择 Worksheets");
+  });
 });
 
-async function createDeps(snapshot: ReturnType<typeof baseSnapshot>) {
+async function createDeps(
+  snapshot: ReturnType<typeof baseSnapshot>,
+  overrides?: {
+    readonly model?: {
+      complete: (input: { text: string; context: unknown; policy: unknown }) => Promise<{
+        responseText: string;
+        actions?: readonly Array<{ type: string; target: string; label: string }>;
+      }>;
+    };
+    readonly seedTurns?: readonly ReturnType<typeof turnRecord>[];
+  },
+) {
   const conversationStore = new InMemoryConversationStore();
   stores.push(conversationStore);
+  for (const seedTurn of overrides?.seedTurns ?? []) {
+    await conversationStore.appendTurn(seedTurn, `${seedTurn.turnId}:seed`);
+  }
   return {
     snapshotStore: {
       readSnapshot: async () => snapshot,
     },
     conversationStore,
-    model: {
+    model: overrides?.model ?? {
       complete: async () => ({
         responseText: "模型应被策略抑制为只读说明。",
       }),
@@ -102,12 +266,25 @@ class InMemoryConversationStore {
   async appendTurn(turn: ReturnType<typeof createTurnRecord>, commandId: string) {
     const existingByCommand = this.commandIds.get(commandId);
     if (existingByCommand !== undefined) {
+      if (JSON.stringify(existingByCommand) !== JSON.stringify(turn)) {
+        throw new Error(`Command ${commandId} already recorded a different turn.`);
+      }
       return existingByCommand;
     }
 
     const existingByTurn = this.turns.get(turn.turnId);
     if (existingByTurn !== undefined) {
+      if (JSON.stringify(existingByTurn) !== JSON.stringify(turn)) {
+        throw new Error(`Turn ${turn.turnId} already exists with a different command receipt.`);
+      }
       return existingByTurn;
+    }
+
+    const maxSequence = [...this.turns.values()]
+      .filter((candidate) => candidate.sessionId === turn.sessionId)
+      .reduce((current, candidate) => Math.max(current, candidate.sequence), 0);
+    if (turn.sequence <= maxSequence) {
+      throw new Error(`Turn ${turn.turnId} has sequence ${turn.sequence}, which is not greater than the current maximum ${maxSequence}.`);
     }
 
     this.turns.set(turn.turnId, turn);
@@ -127,6 +304,13 @@ class InMemoryConversationStore {
   }
 }
 
+function turnRecord(overrides: Partial<ReturnType<typeof createTurnRecord>>) {
+  return {
+    ...createTurnRecord(),
+    ...overrides,
+  };
+}
+
 function createTurnRecord() {
   return {
     contractVersion: "ta-conversation-turn-v1",
@@ -139,4 +323,10 @@ function createTurnRecord() {
     createdAt: "2026-08-25T00:00:00.000Z",
     relatedArtifactIds: [],
   };
+}
+
+async function createTempRoot(): Promise<string> {
+  const rootDir = await mkdtemp(join(tmpdir(), "agent-runtime-task-8-"));
+  tempRoots.push(rootDir);
+  return rootDir;
 }

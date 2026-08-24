@@ -6,6 +6,19 @@ import { createToolPolicy, type ToolPolicy } from "./tool-policy.js";
 
 type RuntimeSnapshot = ReturnType<typeof f8SessionSnapshotSchema.parse>;
 type RuntimeTurn = ReturnType<typeof conversationTurnSchemaType.parse>;
+type ModelActionCandidate = {
+	readonly type?: string;
+	readonly target?: string;
+	readonly label?: string;
+};
+
+type StoredResultReceipt = {
+	readonly actions: readonly AgentAction[];
+	readonly commands: readonly AgentCommand[];
+};
+
+const RECEIPT_PREFIX = "<!--ta-assist-receipt:";
+const RECEIPT_SUFFIX = "-->";
 
 export interface AgentTurnRequest {
 	readonly text: string;
@@ -47,7 +60,7 @@ export interface LanguageModelAdapter {
 		readonly policy: ToolPolicy;
 	}): Promise<{
 		readonly responseText: string;
-		readonly actions?: readonly AgentAction[];
+		readonly actions?: readonly ModelActionCandidate[];
 	}>;
 }
 
@@ -64,36 +77,42 @@ export async function handleAgentTurn(
 ): Promise<AgentTurnResult> {
 	const snapshot = await dependencies.snapshotStore.readSnapshot(request.sessionId);
 	const existingTurns = await dependencies.conversationStore.readTurns(request.sessionId, { afterSequence: 0 });
+	const storedResult = readStoredResult(existingTurns, request.commandId);
+	if (storedResult !== undefined) {
+		return storedResult;
+	}
+
 	const now = dependencies.now ?? (() => new Date().toISOString());
-
-	await dependencies.conversationStore.appendTurn(
-		createTurn({
-			turnId: `${request.commandId}:user`,
-			sessionId: request.sessionId,
-			sequence: existingTurns.length + 1,
-			source: request.source,
-			role: "user",
-			text: request.text,
-			createdAt: now(),
-		}),
-		`${request.commandId}:user`,
-	);
-
-	const turnsAfterUser = await dependencies.conversationStore.readTurns(request.sessionId, { afterSequence: 0 });
 	const intent = detectAgentIntent(request.text);
+	const existingUserTurn = existingTurns.find((turn) => turn.turnId === `${request.commandId}:user`);
+
+	if (existingUserTurn === undefined) {
+		await dependencies.conversationStore.appendTurn(
+			createTurn({
+				turnId: `${request.commandId}:user`,
+				sessionId: request.sessionId,
+				sequence: existingTurns.length + 1,
+				source: request.source,
+				role: "user",
+				text: request.text,
+				createdAt: now(),
+			}),
+			`${request.commandId}:user`,
+		);
+	}
+
+	const turnsAfterUser = existingUserTurn === undefined
+		? await dependencies.conversationStore.readTurns(request.sessionId, { afterSequence: 0 })
+		: existingTurns;
 	const context = buildAgentContext({ snapshot, turns: turnsAfterUser });
 	const policy = createToolPolicy({ state: snapshot.state, intent: intent.type });
 
 	const deterministic = buildDeterministicResponse(snapshot, intent.type, intent.wantsWrite);
 	const modelResponse = await maybeCompleteWithModel(intent.wantsWrite, dependencies.model, request.text, context, policy);
-	const resolved = {
-		responseText: sanitizeResponseText(modelResponse?.responseText ?? deterministic.responseText),
-		actions: sanitizeActions(modelResponse?.actions ?? deterministic.actions),
-		commands: [] as const,
-	};
+	const resolved = resolveTurnResult(snapshot, intent.type, deterministic, modelResponse);
 
 	await dependencies.conversationStore.appendTurn(
-		createTurn({
+		createAssistantTurn({
 			turnId: `${request.commandId}:assistant`,
 			sessionId: request.sessionId,
 			sequence: turnsAfterUser.length + 1,
@@ -101,6 +120,10 @@ export async function handleAgentTurn(
 			role: "assistant",
 			text: resolved.responseText,
 			createdAt: now(),
+			receipt: {
+				actions: resolved.actions,
+				commands: resolved.commands,
+			},
 		}),
 		`${request.commandId}:assistant`,
 	);
@@ -114,12 +137,34 @@ async function maybeCompleteWithModel(
 	text: string,
 	context: AgentContext,
 	policy: ToolPolicy,
-): Promise<{ readonly responseText: string; readonly actions?: readonly AgentAction[] } | undefined> {
+): Promise<{ readonly responseText: string; readonly actions?: readonly ModelActionCandidate[] } | undefined> {
 	if (wantsWrite || model === undefined || !policy.allowModelCompletion) {
 		return undefined;
 	}
 
-	return model.complete({ text, context, policy });
+	try {
+		return await model.complete({ text, context, policy });
+	} catch {
+		return undefined;
+	}
+}
+
+function resolveTurnResult(
+	snapshot: RuntimeSnapshot,
+	intent: string,
+	deterministic: AgentTurnResult,
+	modelResponse: { readonly responseText: string; readonly actions?: readonly ModelActionCandidate[] } | undefined,
+): AgentTurnResult {
+	if (modelResponse === undefined || !isSafeResponseText(modelResponse.responseText)) {
+		return deterministic;
+	}
+
+	const actions = sanitizeActions(snapshot, intent, modelResponse.actions, deterministic.actions);
+	return {
+		responseText: sanitizeResponseText(modelResponse.responseText),
+		actions,
+		commands: deterministic.commands,
+	};
 }
 
 function buildDeterministicResponse(
@@ -225,10 +270,158 @@ function createTurn(input: {
 	});
 }
 
+function createAssistantTurn(input: {
+	readonly turnId: string;
+	readonly sessionId: string;
+	readonly sequence: number;
+	readonly source: "web" | "vscode" | "cli" | "system";
+	readonly role: "user" | "assistant" | "tool";
+	readonly text: string;
+	readonly createdAt: string;
+	readonly receipt: StoredResultReceipt;
+}): RuntimeTurn {
+	return conversationTurnSchema.parse({
+		contractVersion: "ta-conversation-turn-v1",
+		turnId: input.turnId,
+		sessionId: input.sessionId,
+		sequence: input.sequence,
+		source: input.source,
+		role: input.role,
+		content: [
+			{ kind: "text", text: sanitizeResponseText(input.text) },
+			{ kind: "markdown", markdown: serializeReceipt(input.receipt) },
+		],
+		createdAt: input.createdAt,
+		relatedArtifactIds: [],
+	});
+}
+
 function sanitizeResponseText(text: string): string {
 	return text.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 1600);
 }
 
-function sanitizeActions(actions: readonly AgentAction[]): readonly AgentAction[] {
-	return actions.filter((action) => action.type === "navigate" || action.type === "open_report" || action.type === "open_what_if");
+function sanitizeActions(
+	snapshot: RuntimeSnapshot,
+	intent: string,
+	actions: readonly ModelActionCandidate[] | undefined,
+	fallbackActions: readonly AgentAction[],
+): readonly AgentAction[] {
+	if (actions === undefined || actions.length === 0) {
+		return fallbackActions;
+	}
+
+	const allowedByKey = new Map(allowedActionsFor(snapshot, intent).map((action) => [actionKey(action), action]));
+	const sanitized: AgentAction[] = [];
+	for (const candidate of actions) {
+		if (typeof candidate?.type !== "string" || typeof candidate?.target !== "string") {
+			continue;
+		}
+		const key = `${candidate.type}:${candidate.target}`;
+		const allowed = allowedByKey.get(key);
+		if (allowed !== undefined && !sanitized.some((action) => actionKey(action) === key)) {
+			sanitized.push(allowed);
+		}
+	}
+
+	return sanitized.length > 0 ? sanitized : fallbackActions;
+}
+
+function allowedActionsFor(snapshot: RuntimeSnapshot, intent: string): readonly AgentAction[] {
+	const pendingActions = projectPendingActions(snapshot.state);
+	const allowed: AgentAction[] = [];
+	const primary = selectPrimaryAction(snapshot.state, intent, pendingActions);
+	if (primary !== undefined) {
+		allowed.push(primary);
+	}
+
+	if (snapshot.state === "review_required") {
+		allowed.push({ type: "navigate", target: "/review", label: "完成评审" });
+	}
+
+	if (hasValidatedReport(snapshot)) {
+		allowed.push({ type: "open_report", target: "/report/current", label: "打开当前报告" });
+	}
+
+	if (hasWhatIfWorksheet(snapshot)) {
+		allowed.push({ type: "open_what_if", target: "/what-if", label: "打开 What-if Draft" });
+	}
+
+	return dedupeActions(allowed);
+}
+
+function hasValidatedReport(snapshot: RuntimeSnapshot): boolean {
+	return snapshot.priorRunReferences.some((reference) => reference.artifactId !== undefined);
+}
+
+function hasWhatIfWorksheet(snapshot: RuntimeSnapshot): boolean {
+	return snapshot.downstreamScopeSelection?.selectedWorksheetNames.length !== undefined
+		&& snapshot.downstreamScopeSelection.selectedWorksheetNames.length > 0;
+}
+
+function dedupeActions(actions: readonly AgentAction[]): readonly AgentAction[] {
+	const seen = new Set<string>();
+	const deduped: AgentAction[] = [];
+	for (const action of actions) {
+		const key = actionKey(action);
+		if (!seen.has(key)) {
+			seen.add(key);
+			deduped.push(action);
+		}
+	}
+	return deduped;
+}
+
+function actionKey(action: AgentAction): string {
+	return `${action.type}:${action.target}`;
+}
+
+function readStoredResult(turns: readonly RuntimeTurn[], commandId: string): AgentTurnResult | undefined {
+	const assistantTurn = turns.find((turn) => turn.turnId === `${commandId}:assistant`);
+	if (assistantTurn === undefined) {
+		return undefined;
+	}
+
+	const responseText = readAssistantResponseText(assistantTurn);
+	if (responseText.length === 0) {
+		return undefined;
+	}
+
+	return {
+		responseText,
+		...(readAssistantReceipt(assistantTurn) ?? { actions: [], commands: [] }),
+	};
+}
+
+function readAssistantResponseText(turn: RuntimeTurn): string {
+	return sanitizeResponseText(turn.content
+		.filter((part) => part.kind === "text")
+		.map((part) => part.text)
+		.join(" "));
+}
+
+function readAssistantReceipt(turn: RuntimeTurn): StoredResultReceipt | undefined {
+	const receiptPart = turn.content.find((part) => part.kind === "markdown" && part.markdown.startsWith(RECEIPT_PREFIX));
+	if (receiptPart === undefined || receiptPart.kind !== "markdown") {
+		return undefined;
+	}
+
+	const payload = receiptPart.markdown.slice(RECEIPT_PREFIX.length, receiptPart.markdown.length - RECEIPT_SUFFIX.length);
+	try {
+		const parsed = JSON.parse(payload) as StoredResultReceipt;
+		return {
+			actions: parsed.actions ?? [],
+			commands: parsed.commands ?? [],
+		};
+	} catch {
+		return undefined;
+	}
+	}
+
+function serializeReceipt(receipt: StoredResultReceipt): string {
+	return `${RECEIPT_PREFIX}${JSON.stringify(receipt)}${RECEIPT_SUFFIX}`;
+}
+
+function isSafeResponseText(text: string): boolean {
+	const sanitized = sanitizeResponseText(text);
+	return sanitized.length > 0 && sanitized.length <= 1600 && sanitized === text.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
 }
