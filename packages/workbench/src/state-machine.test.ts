@@ -1,5 +1,5 @@
 import { createTypedError } from "@ai-assist/contracts";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as workbench from "./index.js";
 
@@ -244,7 +244,7 @@ describe("workbench state machine", () => {
     });
   });
 
-  it("completes the review when F7 is unavailable without creating an F7 attempt", () => {
+  it("completes the review with an immutable F7 placeholder outcome and no F7 attempt", () => {
     const api = requireApi();
 
     const completed = api.reduceSessionCommand(
@@ -261,8 +261,47 @@ describe("workbench state machine", () => {
 
     expect(completed.state).toBe("completed");
     expect(completed.activeAttempt).toBeNull();
-    expect(completed.priorRunReferences).toEqual([]);
+    expect(completed.priorRunReferences).toEqual([
+      expect.objectContaining({
+        featureId: "F7",
+        referenceId: "f7-placeholder-input-0",
+        contractVersion: "f7-workbench-placeholder-v1",
+        runReference: `f7-placeholder:${SESSION_ID}:0`,
+      }),
+    ]);
   });
+
+  it("cannot enter F7 even when governance reports F7 as available", async () => {
+    const api = await importStateMachineWithGovernanceStatus("available");
+
+    const completed = api.reduceSessionCommand(
+      baseSnapshot({ state: "review_required", revision: 9 }),
+      {
+        contractVersion: "f8-session-command-v1",
+        sessionId: SESSION_ID,
+        commandId: "complete-review-available-001",
+        expectedRevision: 9,
+        command: "complete_review",
+        payload: { confirmed: true },
+      },
+    );
+
+    expect(completed.state).toBe("completed");
+    expect(completed.activeAttempt).toBeNull();
+    expect(completed.priorRunReferences).toEqual([
+      expect.objectContaining({
+        featureId: "F7",
+        referenceId: "f7-placeholder-input-0",
+        contractVersion: "f7-workbench-placeholder-v1",
+        runReference: `f7-placeholder:${SESSION_ID}:0`,
+      }),
+    ]);
+  });
+});
+
+afterEach(() => {
+  vi.doUnmock("@ai-assist/governance");
+  vi.resetModules();
 });
 
 function requireApi(): Required<WorkbenchExports> {
@@ -466,4 +505,24 @@ function snapshotWithSameHashHistoricalReference() {
       },
     ],
   });
+}
+
+async function importStateMachineWithGovernanceStatus(status: string): Promise<Required<WorkbenchExports>> {
+  vi.resetModules();
+  vi.doMock("@ai-assist/governance", () => ({
+    getFeatureStatus: (featureId: string) => featureId === "F7"
+      ? { featureId, status }
+      : { featureId, status: "available" },
+  }));
+  const api = await import("./index.js") as WorkbenchExports;
+
+  if (
+    typeof api.reduceSessionCommand !== "function"
+    || typeof api.acceptAttemptResult !== "function"
+    || typeof api.canRetryAttempt !== "function"
+  ) {
+    throw new Error("Expected workbench state-machine exports to be defined.");
+  }
+
+  return api as Required<WorkbenchExports>;
 }

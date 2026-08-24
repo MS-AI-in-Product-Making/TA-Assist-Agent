@@ -1,5 +1,4 @@
 import { f7PlaceholderStatusSchema } from "@ai-assist/contracts";
-import { getFeatureStatus } from "@ai-assist/governance";
 
 import { canRetryAttempt } from "./attempts.js";
 import { FEATURE_IDS, type F8SessionSnapshot, type F8SessionState } from "./commands.js";
@@ -38,17 +37,10 @@ export function projectActionQueue(snapshot: F8SessionSnapshot): ActionQueueItem
     case "cancelled":
       return retryQueue(snapshot);
     case "f7_import_required":
-      return isF7Available()
-        ? [{ featureId: "F7", action: "start_f7_import", blocking: true }]
-        : [];
     case "f7_preview_required":
-      return isF7Available()
-        ? [{ featureId: "F7", action: "start_f7_preview", blocking: true }]
-        : [];
     case "feedback_review_required":
-      return isF7Available()
-        ? [{ featureId: "F7", action: "complete_review", blocking: false }]
-        : [];
+    case "f7_running":
+      return [];
     case "workbook_validating":
     case "f0_validating":
     case "f1_f2_running":
@@ -57,7 +49,6 @@ export function projectActionQueue(snapshot: F8SessionSnapshot): ActionQueueItem
     case "f4_running":
     case "f5_running":
     case "f6_running":
-    case "f7_running":
       return [{ featureId: featureForState(snapshot.state), action: "cancel", blocking: false }];
     case "created":
     case "workbook_required":
@@ -76,26 +67,6 @@ export function projectFeatureLedger(snapshot: F8SessionSnapshot): FeatureLedger
 
   return FEATURE_IDS.map((featureId) => {
     if (featureId === "F7") {
-      if (isF7Available()) {
-        if (snapshot.state === "completed") {
-          return { featureId, status: "completed", actions: [] };
-        }
-
-        if (activeFeature === featureId) {
-          return {
-            featureId,
-            status: statusForActiveFeature(snapshot),
-            actions: queuedActions.filter((item) => item.featureId === featureId).map((item) => item.action),
-          };
-        }
-
-        return {
-          featureId,
-          status: completedFeatures.has(featureId) ? "completed" : "pending",
-          actions: queuedActions.filter((item) => item.featureId === featureId).map((item) => item.action),
-        };
-      }
-
       const placeholder = f7PlaceholderStatusSchema.parse({
         contractVersion: "f7-workbench-placeholder-v1",
         status: "feature_not_available",
@@ -216,10 +187,6 @@ function retryQueue(snapshot: F8SessionSnapshot): ActionQueueItem[] {
   }
 
   return [{ featureId: retryFeature, action: "retry", blocking: true }];
-}
-
-function isF7Available(): boolean {
-  return getFeatureStatus("F7")?.status === "available";
 }
 
 function featureForState(state: F8SessionState): typeof FEATURE_IDS[number] {

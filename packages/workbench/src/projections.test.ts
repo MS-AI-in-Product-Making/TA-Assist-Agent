@@ -150,13 +150,14 @@ describe("workbench projections", () => {
     });
   });
 
-  it("reflects F7 availability consistently when the feature is available", async () => {
+  it("keeps F7 non-executable even when governance reports it as available", async () => {
     const api = await importWorkbenchWithGovernanceStatus("available");
 
     const reviewLedger = api.projectFeatureLedger(baseSnapshot({ state: "review_required" }));
     expect(reviewLedger.find((entry) => entry.featureId === "F7")).toMatchObject({
       featureId: "F7",
-      status: "pending",
+      status: "feature_not_available",
+      lifecycle: "in_development",
       actions: [],
     });
     expect(api.projectActionQueue(baseSnapshot({ state: "review_required" }))).toContainEqual({
@@ -168,19 +169,31 @@ describe("workbench projections", () => {
     const importRequiredLedger = api.projectFeatureLedger(baseSnapshot({ state: "f7_import_required" }));
     expect(importRequiredLedger.find((entry) => entry.featureId === "F7")).toMatchObject({
       featureId: "F7",
-      status: "pending",
-      actions: ["start_f7_import"],
+      status: "feature_not_available",
+      lifecycle: "in_development",
+      actions: [],
     });
-    expect(api.projectActionQueue(baseSnapshot({ state: "f7_import_required" }))).toEqual([
-      { featureId: "F7", action: "start_f7_import", blocking: true },
-    ]);
+    expect(api.projectActionQueue(baseSnapshot({ state: "f7_import_required" }))).toEqual([]);
+
+    expect(api.projectActionQueue(baseSnapshot({ state: "f7_preview_required" }))).toEqual([]);
+
+    const feedbackLedger = api.projectFeatureLedger(baseSnapshot({ state: "feedback_review_required" }));
+    expect(feedbackLedger.find((entry) => entry.featureId === "F7")).toMatchObject({
+      featureId: "F7",
+      status: "feature_not_available",
+      lifecycle: "in_development",
+      actions: [],
+    });
+    expect(api.projectActionQueue(baseSnapshot({ state: "feedback_review_required" }))).toEqual([]);
 
     const runningLedger = api.projectFeatureLedger(runningSnapshot("f7_running"));
     expect(runningLedger.find((entry) => entry.featureId === "F7")).toMatchObject({
       featureId: "F7",
-      status: "running",
-      actions: ["cancel"],
+      status: "feature_not_available",
+      lifecycle: "in_development",
+      actions: [],
     });
+    expect(api.projectActionQueue(baseSnapshot({ state: "f7_running" }))).toEqual([]);
   });
 });
 

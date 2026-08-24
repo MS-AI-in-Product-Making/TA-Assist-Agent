@@ -1,5 +1,4 @@
 import { createTypedError, f8SessionSnapshotSchema } from "@ai-assist/contracts";
-import { getFeatureStatus } from "@ai-assist/governance";
 
 import {
   annotateSnapshot,
@@ -78,8 +77,9 @@ export function reduceSessionCommand(snapshotInput: F8SessionSnapshot, commandIn
       });
     case "complete_review":
       return nextSnapshot(snapshot, {
-        state: isF7Available() ? "f7_import_required" : "completed",
+        state: "completed",
         activeAttempt: null,
+        priorRunReferences: withF7PlaceholderOutcome(snapshot),
       });
     default:
       throw new Error(`Unhandled command: ${(command as F8SessionCommand).command}`);
@@ -275,6 +275,21 @@ function transitionWithAttempt(
   }), undefined);
 }
 
-function isF7Available(): boolean {
-  return getFeatureStatus("F7")?.status === "available";
+function withF7PlaceholderOutcome(snapshot: F8SessionSnapshot): F8SessionSnapshot["priorRunReferences"] {
+  const placeholderReferenceId = `f7-placeholder-input-${snapshot.inputRevision}`;
+  const placeholderRunReference = `f7-placeholder:${snapshot.sessionId}:${snapshot.inputRevision}`;
+
+  if (snapshot.priorRunReferences.some((reference) => reference.featureId === "F7" && reference.referenceId === placeholderReferenceId)) {
+    return snapshot.priorRunReferences;
+  }
+
+  return [
+    ...snapshot.priorRunReferences,
+    {
+      featureId: "F7",
+      referenceId: placeholderReferenceId,
+      contractVersion: "f7-workbench-placeholder-v1",
+      runReference: placeholderRunReference,
+    },
+  ];
 }
