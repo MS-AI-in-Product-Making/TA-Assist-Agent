@@ -262,18 +262,33 @@ export const conversationTurnSchema = z
   })
   .strict();
 
-export const hostActionRequestSchema = z
-  .object({
-    contractVersion: z.literal("f8-host-action-request-v1"),
-    actionId: nonEmptyStringSchema,
-    sessionId: nonEmptyStringSchema,
-    expectedRevision: z.number().int().nonnegative(),
-    kind: z.enum(["surface_validate", "surface_write", "model_request"]),
-    expiresAt: z.string().datetime(),
-    confirmationHash: sha256Schema.optional(),
-    expectedTargetVersion: nonEmptyStringSchema.optional(),
-  })
-  .strict();
+const hostActionRequestBaseSchema = {
+  contractVersion: z.literal("f8-host-action-request-v1"),
+  actionId: nonEmptyStringSchema,
+  sessionId: nonEmptyStringSchema,
+  expectedRevision: z.number().int().nonnegative(),
+  expiresAt: z.string().datetime(),
+} as const;
+
+export const hostActionRequestSchema = z.discriminatedUnion("kind", [
+  z.object({
+    ...hostActionRequestBaseSchema,
+    kind: z.literal("surface_validate"),
+    confirmationHash: sha256Schema,
+    expectedTargetVersion: nonEmptyStringSchema,
+  }).strict(),
+  z.object({
+    ...hostActionRequestBaseSchema,
+    kind: z.literal("surface_write"),
+    validationActionId: nonEmptyStringSchema,
+    confirmationHash: sha256Schema,
+    expectedTargetVersion: nonEmptyStringSchema,
+  }).strict(),
+  z.object({
+    ...hostActionRequestBaseSchema,
+    kind: z.literal("model_request"),
+  }).strict(),
+]);
 
 export const hostActionClaimSchema = z
   .object({
@@ -303,6 +318,7 @@ export const hostActionResultSchema = z
   .object({
     contractVersion: z.literal("f8-host-action-result-v1"),
     actionId: nonEmptyStringSchema,
+    hostInstanceId: nonEmptyStringSchema,
     leaseId: nonEmptyStringSchema,
     status: z.enum(["completed", "blocked", "failed"]),
     resultHash: sha256Schema,

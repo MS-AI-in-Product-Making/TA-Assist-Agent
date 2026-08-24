@@ -484,6 +484,8 @@ function hostAction(actionId: string) {
       expectedRevision: 1,
       kind: "surface_validate" as const,
       expiresAt: "2026-08-24T03:00:00.000Z",
+      confirmationHash: "a".repeat(64),
+      expectedTargetVersion: "comment-v1",
     },
   };
 }

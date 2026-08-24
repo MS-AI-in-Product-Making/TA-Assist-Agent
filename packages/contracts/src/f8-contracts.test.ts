@@ -77,8 +77,9 @@ describe("F8 session and host contracts", () => {
       actionId: "action-1",
       sessionId: SESSION_ID,
       expectedRevision: 4,
-      kind: "surface_validate",
+      kind: "surface_write",
       expiresAt: "2026-08-24T00:10:00.000Z",
+      validationActionId: "action-validate-1",
       confirmationHash: WORKBOOK_HASH,
       expectedTargetVersion: "f4-handoff-v1",
     };
@@ -94,6 +95,7 @@ describe("F8 session and host contracts", () => {
     const hostActionResult = {
       contractVersion: "f8-host-action-result-v1",
       actionId: "action-1",
+      hostInstanceId: "host-1",
       leaseId: "lease-1",
       status: "completed",
       resultHash: WORKBOOK_HASH,
@@ -103,6 +105,7 @@ describe("F8 session and host contracts", () => {
     const failedHostActionResult = {
       contractVersion: "f8-host-action-result-v1",
       actionId: "action-2",
+      hostInstanceId: "host-2",
       leaseId: "lease-2",
       status: "failed",
       resultHash: WORKBOOK_HASH,
@@ -157,8 +160,30 @@ describe("F8 session and host contracts", () => {
       }],
     })).toThrow();
     expect(() => hostActionRequestSchema.parse({ ...hostActionRequest, outputRoot: "C:/arbitrary" })).toThrow();
+    expect(() => hostActionRequestSchema.parse({
+      ...hostActionRequest,
+      validationActionId: undefined,
+    })).toThrow();
+    expect(() => hostActionRequestSchema.parse({
+      ...hostActionRequest,
+      kind: "surface_validate",
+      validationActionId: "action-validate-1",
+    })).toThrow();
+    expect(() => hostActionRequestSchema.parse({
+      contractVersion: "f8-host-action-request-v1",
+      actionId: "action-model",
+      sessionId: SESSION_ID,
+      expectedRevision: 4,
+      kind: "model_request",
+      expiresAt: "2026-08-24T00:10:00.000Z",
+      confirmationHash: WORKBOOK_HASH,
+    })).toThrow();
     expect(() => hostActionClaimSchema.parse({ ...hostActionClaim, outputRoot: "C:/arbitrary" })).toThrow();
     expect(() => hostActionResultSchema.parse({ ...hostActionResult, outputRoot: "C:/arbitrary" })).toThrow();
+    expect(() => hostActionResultSchema.parse({
+      ...hostActionResult,
+      hostInstanceId: undefined,
+    })).toThrow();
     expect(() => hostActionResultSchema.parse({
       ...failedHostActionResult,
       payload: {
