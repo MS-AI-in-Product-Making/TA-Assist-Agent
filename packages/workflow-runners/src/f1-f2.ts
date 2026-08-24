@@ -14,6 +14,7 @@ import type {
   F1F2ConfirmedRequest,
   F1F2ConfirmedResult,
   F1F2SelectionRequest,
+  F1F2SelectionReference,
   F1F2SelectionResult,
   RunContext,
 } from "./types.js";
@@ -45,7 +46,7 @@ interface WorkflowManifest {
   startedAt: string;
   updatedAt: string;
   outputs: { f1Root: string; f2Root: string; validationRoot: string };
-  selection: { status: string; selectedWorksheetNames: string[]; promptPath?: string };
+  selection: { status: string; selectedWorksheetNames: string[]; promptPath?: string; workbookContentHash?: string };
   stages: Record<string, Record<string, unknown>>;
   error?: { name: string; message: string };
 }
@@ -71,12 +72,12 @@ function defaultExecuteStage({ command, args, cwd, env }: ExecuteStageRequest): 
   return { stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
 }
 
-function createLayout(repositoryRoot: string, workbookPath: string, now: () => Date) {
+function createLayout(managedOutputRoot: string, workbookPath: string, now: () => Date) {
   const workbookName = safeName(path.basename(workbookPath, path.extname(workbookPath)));
   if (!workbookName) throw new Error("Feature 2 workbook output name is empty.");
   const startedAt = now().toISOString();
   const runId = startedAt.replace(/[:.]/g, "-");
-  const runRoot = path.join(repositoryRoot, "test", "demo-output", "f2-runs", workbookName, runId);
+  const runRoot = path.join(path.resolve(managedOutputRoot), "f2-runs", workbookName, runId);
   if (existsSync(runRoot)) throw new Error(`Feature 2 run already exists: ${runRoot}`);
   return {
     startedAt,
@@ -89,11 +90,33 @@ function createLayout(repositoryRoot: string, workbookPath: string, now: () => D
   };
 }
 
+function isContainedPath(parentPath: string, childPath: string): boolean {
+  const relative = path.relative(path.resolve(parentPath), path.resolve(childPath));
+  return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+}
+
+function throwIfAborted(context: RunContext, stage: string): void {
+  if (!context.signal.aborted) return;
+  throw normalizeRunnerError(new Error(`AbortError: signal already aborted before ${stage}.`), {
+    fallbackRunId: context.attemptId,
+    affectedInputReferences: [stage],
+  });
+}
+
 function validateWorkbook(repositoryRoot: string, workbookPath: string): string {
   const workbook = path.resolve(repositoryRoot, workbookPath);
   if (path.extname(workbook).toLowerCase() !== ".xlsx") throw new Error("Feature 2 Excel workflow requires exactly one .xlsx workbook.");
   if (!existsSync(workbook) || !statSync(workbook).isFile()) throw new Error(`Feature 2 workbook does not exist: ${workbookPath}`);
   return workbook;
+}
+
+function selectionReferenceFor(layout: { runId: string; runRoot: string; manifestPath: string }, promptPath: string): F1F2SelectionReference {
+  return {
+    runId: layout.runId,
+    runRoot: layout.runRoot,
+    manifestPath: layout.manifestPath,
+    promptPath,
+  };
 }
 
 function initialManifest(repositoryRoot: string, workbook: string, layout: ReturnType<typeof createLayout>, worksheetNames: readonly string[] | undefined): WorkflowManifest {
@@ -125,6 +148,46 @@ function persistManifest(manifest: WorkflowManifest, manifestPath: string, now: 
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 }
 
+function parseManifest(manifestPath: string): WorkflowManifest {
+  return JSON.parse(readFileSync(manifestPath, "utf8")) as WorkflowManifest;
+}
+
+function loadSelectionRun(
+  request: F1F2ConfirmedRequest,
+  context: RunContext,
+  workbook: string,
+): { manifest: WorkflowManifest; promptPath: string; prompt: ReturnType<typeof worksheetSelectionPromptSchema.parse> } {
+  const { selectionReference } = request;
+  if (!isContainedPath(context.managedOutputRoot, selectionReference.manifestPath)) {
+    throw new Error("Feature 2 selection reference must stay inside the managed output root.");
+  }
+  const manifest = parseManifest(selectionReference.manifestPath);
+  if (manifest.contractVersion !== "v1") throw new Error("Feature 2 selection manifest contract version mismatch.");
+  if (manifest.runId !== selectionReference.runId || manifest.runRoot !== selectionReference.runRoot) {
+    throw new Error("Feature 2 selection reference identity mismatch.");
+  }
+  if (manifest.repositoryRoot !== context.repositoryRoot) throw new Error("Feature 2 selection manifest repository mismatch.");
+  if (!isContainedPath(context.managedOutputRoot, manifest.runRoot)) throw new Error("Feature 2 selection run root is outside the managed output root.");
+  if (manifest.workbookPath !== workbook) throw new Error("Feature 2 selection workbook identity mismatch.");
+  if (manifest.status !== "selectionRequired" || manifest.selection.status !== "selectionRequired") {
+    throw new Error("Feature 2 selection reference is stale.");
+  }
+  const promptPath = manifest.selection.promptPath;
+  if (typeof promptPath !== "string" || promptPath !== selectionReference.promptPath) {
+    throw new Error("Feature 2 selection prompt identity mismatch.");
+  }
+  if (!isContainedPath(manifest.runRoot, promptPath)) throw new Error("Feature 2 selection prompt path is invalid.");
+  const prompt = worksheetSelectionPromptSchema.parse(JSON.parse(readFileSync(promptPath, "utf8")));
+  if (prompt.workbook.contentHash !== request.workbookContentHash) {
+    throw new Error("Feature 2 selection workbookContentHash mismatch.");
+  }
+  const availableNames = new Set(prompt.options.map((option) => option.worksheetName));
+  if (request.selectedWorksheetNames.length === 0 || request.selectedWorksheetNames.some((name) => !availableNames.has(name))) {
+    throw new Error("Feature 2 selected worksheet names do not match the selection prompt.");
+  }
+  return { manifest, promptPath, prompt };
+}
+
 function runStage(
   context: RunContext,
   manifest: WorkflowManifest,
@@ -137,6 +200,7 @@ function runStage(
   executeStage: (request: ExecuteStageRequest) => ExecuteStageResult,
   now: () => Date,
 ): void {
+  throwIfAborted(context, stage);
   manifest.stages[stage] = { status: "running", startedAt: now().toISOString() };
   persistManifest(manifest, manifestPath, now);
   context.emit({ kind: "stage_started", featureId: "F2", stage, timestamp: now().toISOString() });
@@ -148,6 +212,7 @@ function runStage(
       cwd: context.repositoryRoot,
       env: { ...process.env, [outputVariable]: outputRoot },
     }) ?? {};
+    throwIfAborted(context, stage);
     writeFileSync(path.join(validationRoot, `${stage}.stdout.log`), result.stdout ?? "", "utf8");
     writeFileSync(path.join(validationRoot, `${stage}.stderr.log`), result.stderr ?? "", "utf8");
     manifest.stages[stage] = { ...manifest.stages[stage], status: "completed", completedAt: now().toISOString() };
@@ -163,7 +228,7 @@ function runStage(
     manifest.error = details;
     persistManifest(manifest, manifestPath, now);
     context.emit({ kind: "stage_failed", featureId: "F2", stage, timestamp: now().toISOString(), detail: normalized.summary });
-    throw error;
+    throw normalized;
   }
 }
 
@@ -180,42 +245,47 @@ export function runF1F2Selection(
 ): F1F2SelectionResult {
   const executeStage = dependencies.executeStage ?? defaultExecuteStage;
   const now = request.now ?? (() => new Date());
-  const workbook = validateWorkbook(context.repositoryRoot, request.workbookPath);
-  const layout = createLayout(context.repositoryRoot, workbook, now);
-  mkdirSync(layout.validationRoot, { recursive: true });
-  const manifest = initialManifest(context.repositoryRoot, workbook, layout, undefined);
-  persistManifest(manifest, layout.manifestPath, now);
-  runStage(
-    context,
-    manifest,
-    layout.manifestPath,
-    layout.validationRoot,
-    "f1-selection",
-    ["scripts/run-f1-full-validation.mjs", workbook, "--selection-only"],
-    "AI_TVA_F1_OUTPUT_ROOT",
-    layout.f1Root,
-    executeStage,
-    now,
-  );
-  const promptPath = path.join(layout.f1Root, "Feature1-Selection.json");
-  const prompt = worksheetSelectionPromptSchema.parse(JSON.parse(readFileSync(promptPath, "utf8")));
-  manifest.selection = { status: "selectionRequired", promptPath, selectedWorksheetNames: [] };
-  manifest.status = "selectionRequired";
-  persistManifest(manifest, layout.manifestPath, now);
-  return {
-    featureId: "F2",
-    status: "selectionRequired",
-    prompt,
-    workbookContentHash: prompt.workbook.contentHash,
-    selectedWorksheetNames: [],
-    runId: layout.runId,
-    runRoot: layout.runRoot,
-    f1Root: layout.f1Root,
-    f2Root: layout.f2Root,
-    validationRoot: layout.validationRoot,
-    manifestPath: layout.manifestPath,
-    promptPath,
-  };
+  try {
+    const workbook = validateWorkbook(context.repositoryRoot, request.workbookPath);
+    const layout = createLayout(context.managedOutputRoot, workbook, now);
+    mkdirSync(layout.validationRoot, { recursive: true });
+    const manifest = initialManifest(context.repositoryRoot, workbook, layout, undefined);
+    persistManifest(manifest, layout.manifestPath, now);
+    runStage(
+      context,
+      manifest,
+      layout.manifestPath,
+      layout.validationRoot,
+      "f1-selection",
+      ["scripts/run-f1-full-validation.mjs", workbook, "--selection-only"],
+      "AI_TVA_F1_OUTPUT_ROOT",
+      layout.f1Root,
+      executeStage,
+      now,
+    );
+    const promptPath = path.join(layout.f1Root, "Feature1-Selection.json");
+    const prompt = worksheetSelectionPromptSchema.parse(JSON.parse(readFileSync(promptPath, "utf8")));
+    manifest.selection = { status: "selectionRequired", promptPath, workbookContentHash: prompt.workbook.contentHash, selectedWorksheetNames: [] };
+    manifest.status = "selectionRequired";
+    persistManifest(manifest, layout.manifestPath, now);
+    return {
+      featureId: "F2",
+      status: "selectionRequired",
+      prompt,
+      workbookContentHash: prompt.workbook.contentHash,
+      selectedWorksheetNames: [],
+      runId: layout.runId,
+      runRoot: layout.runRoot,
+      f1Root: layout.f1Root,
+      f2Root: layout.f2Root,
+      validationRoot: layout.validationRoot,
+      manifestPath: layout.manifestPath,
+      promptPath,
+      selectionReference: selectionReferenceFor(layout, promptPath),
+    };
+  } catch (error) {
+    throw normalizeRunnerError(error, { fallbackRunId: context.attemptId, affectedInputReferences: ["f1-selection"] });
+  }
 }
 
 export function runF1F2Confirmed(
@@ -225,70 +295,90 @@ export function runF1F2Confirmed(
 ): F1F2ConfirmedResult {
   const executeStage = dependencies.executeStage ?? defaultExecuteStage;
   const now = request.now ?? (() => new Date());
-  const workbook = validateWorkbook(context.repositoryRoot, request.workbookPath);
-  const confirmation = worksheetSelectionConfirmationSchema.parse({
-    workbookContentHash: request.workbookContentHash,
-    selectedWorksheetNames: [...request.selectedWorksheetNames],
-    confirmed: true,
-  });
-  const layout = createLayout(context.repositoryRoot, workbook, now);
-  mkdirSync(layout.validationRoot, { recursive: true });
-  const manifest = initialManifest(context.repositoryRoot, workbook, layout, confirmation.selectedWorksheetNames);
-  persistManifest(manifest, layout.manifestPath, now);
-  runStage(
-    context,
-    manifest,
-    layout.manifestPath,
-    layout.validationRoot,
-    "f1",
-    [
-      "scripts/run-f1-full-validation.mjs",
-      workbook,
-      "--workbook-hash",
-      confirmation.workbookContentHash,
-      "--worksheets",
-      confirmation.selectedWorksheetNames.join(","),
-      "--confirm",
-    ],
-    "AI_TVA_F1_OUTPUT_ROOT",
-    layout.f1Root,
-    executeStage,
-    now,
-  );
-  runStage(
-    context,
-    manifest,
-    layout.manifestPath,
-    layout.validationRoot,
-    "f2",
-    ["scripts/run-f2-full-validation.mjs", layout.f1Root],
-    "AI_TVA_F2_OUTPUT_ROOT",
-    layout.f2Root,
-    executeStage,
-    now,
-  );
+  try {
+    if (request.selectionReference === undefined) throw new Error("Feature 2 confirmation requires a selection reference.");
+    const workbook = validateWorkbook(context.repositoryRoot, request.workbookPath);
+    const confirmation = worksheetSelectionConfirmationSchema.parse({
+      workbookContentHash: request.workbookContentHash,
+      selectedWorksheetNames: [...request.selectedWorksheetNames],
+      confirmed: true,
+    });
+    const { manifest, promptPath } = loadSelectionRun(request, context, workbook);
+    const layout = {
+      runId: manifest.runId,
+      runRoot: manifest.runRoot,
+      f1Root: manifest.outputs.f1Root,
+      f2Root: manifest.outputs.f2Root,
+      validationRoot: manifest.outputs.validationRoot,
+      manifestPath: request.selectionReference.manifestPath,
+    };
+    mkdirSync(layout.validationRoot, { recursive: true });
+    manifest.selection = {
+      status: "confirmed",
+      promptPath,
+      workbookContentHash: confirmation.workbookContentHash,
+      selectedWorksheetNames: [...confirmation.selectedWorksheetNames],
+    };
+    manifest.status = "running";
+    persistManifest(manifest, layout.manifestPath, now);
+    runStage(
+      context,
+      manifest,
+      layout.manifestPath,
+      layout.validationRoot,
+      "f1",
+      [
+        "scripts/run-f1-full-validation.mjs",
+        workbook,
+        "--workbook-hash",
+        confirmation.workbookContentHash,
+        "--worksheets",
+        confirmation.selectedWorksheetNames.join(","),
+        "--confirm",
+      ],
+      "AI_TVA_F1_OUTPUT_ROOT",
+      layout.f1Root,
+      executeStage,
+      now,
+    );
+    runStage(
+      context,
+      manifest,
+      layout.manifestPath,
+      layout.validationRoot,
+      "f2",
+      ["scripts/run-f2-full-validation.mjs", layout.f1Root],
+      "AI_TVA_F2_OUTPUT_ROOT",
+      layout.f2Root,
+      executeStage,
+      now,
+    );
 
-  manifest.stages.validation = { status: "running", startedAt: now().toISOString() };
-  persistManifest(manifest, layout.manifestPath, now);
-  const reportPath = path.join(layout.f2Root, "Feature2-Report.json");
-  const report = parseCompletedReport(reportPath);
-  const validation = { status: "valid", validatedAt: now().toISOString(), reportPath, reportStatus: report.status };
-  writeFileSync(path.join(layout.validationRoot, "Feature2-Validation.json"), `${JSON.stringify(validation, null, 2)}\n`, "utf8");
-  manifest.stages.validation = { ...manifest.stages.validation, status: "completed", completedAt: now().toISOString() };
-  manifest.status = "completed";
-  persistManifest(manifest, layout.manifestPath, now);
-  context.emit({ kind: "artifact_written", featureId: "F2", stage: "validation", timestamp: now().toISOString(), path: reportPath });
-  return {
-    featureId: "F2",
-    status: "completed",
-    workbookContentHash: confirmation.workbookContentHash,
-    selectedWorksheetNames: [...confirmation.selectedWorksheetNames],
-    runId: layout.runId,
-    runRoot: layout.runRoot,
-    f1Root: layout.f1Root,
-    f2Root: layout.f2Root,
-    validationRoot: layout.validationRoot,
-    manifestPath: layout.manifestPath,
-    report,
-  };
+    throwIfAborted(context, "validation");
+    manifest.stages.validation = { status: "running", startedAt: now().toISOString() };
+    persistManifest(manifest, layout.manifestPath, now);
+    const reportPath = path.join(layout.f2Root, "Feature2-Report.json");
+    const report = parseCompletedReport(reportPath);
+    const validation = { status: "valid", validatedAt: now().toISOString(), reportPath, reportStatus: report.status };
+    writeFileSync(path.join(layout.validationRoot, "Feature2-Validation.json"), `${JSON.stringify(validation, null, 2)}\n`, "utf8");
+    manifest.stages.validation = { ...manifest.stages.validation, status: "completed", completedAt: now().toISOString() };
+    manifest.status = "completed";
+    persistManifest(manifest, layout.manifestPath, now);
+    context.emit({ kind: "artifact_written", featureId: "F2", stage: "validation", timestamp: now().toISOString(), path: reportPath });
+    return {
+      featureId: "F2",
+      status: "completed",
+      workbookContentHash: confirmation.workbookContentHash,
+      selectedWorksheetNames: [...confirmation.selectedWorksheetNames],
+      runId: layout.runId,
+      runRoot: layout.runRoot,
+      f1Root: layout.f1Root,
+      f2Root: layout.f2Root,
+      validationRoot: layout.validationRoot,
+      manifestPath: layout.manifestPath,
+      report,
+    };
+  } catch (error) {
+    throw normalizeRunnerError(error, { fallbackRunId: context.attemptId, affectedInputReferences: ["f1", "f2", "validation"] });
+  }
 }

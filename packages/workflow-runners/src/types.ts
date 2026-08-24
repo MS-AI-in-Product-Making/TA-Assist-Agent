@@ -36,6 +36,13 @@ export interface F1F2SelectionRequest {
   readonly now?: () => Date;
 }
 
+export interface F1F2SelectionReference {
+  readonly runId: string;
+  readonly runRoot: string;
+  readonly manifestPath: string;
+  readonly promptPath: string;
+}
+
 export interface F1F2SelectionResult {
   readonly featureId: "F2";
   readonly status: "selectionRequired";
@@ -49,12 +56,14 @@ export interface F1F2SelectionResult {
   readonly validationRoot: string;
   readonly manifestPath: string;
   readonly promptPath: string;
+  readonly selectionReference: F1F2SelectionReference;
 }
 
 export interface F1F2ConfirmedRequest {
   readonly workbookPath: string;
   readonly workbookContentHash: string;
   readonly selectedWorksheetNames: readonly string[];
+  readonly selectionReference: F1F2SelectionReference;
   readonly now?: () => Date;
 }
 

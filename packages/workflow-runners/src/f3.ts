@@ -10,6 +10,7 @@ import {
 } from "@ai-assist/contracts";
 import { createF3DrawingGovernance } from "@ai-assist/workbook-catalog";
 
+import { normalizeRunnerError } from "./error-normalizer.js";
 import type { F3AnalysisRequest, F3AnalysisResult, RunContext } from "./types.js";
 
 export interface F3Dependencies {
@@ -18,7 +19,7 @@ export interface F3Dependencies {
   readonly renderReport?: (report: DrawingGovernanceResultV2, options: { outputRoot: string }) => string;
   readonly renderAdoReminder?: (report: DrawingGovernanceResultV2) => string;
   readonly renderAdoHistoryHtml?: (report: DrawingGovernanceResultV2) => string;
-  readonly resolveOutputLayout?: (args: readonly string[], outputRoot?: string) => { outRoot: string; reportJsonName: string; reportMdName: string };
+  readonly resolveOutputLayout?: (args: readonly string[], managedOutputRoot: string) => { outRoot: string; reportJsonName: string; reportMdName: string };
   readonly writeOutputs?: (paths: { reportJsonPath: string; reportMdPath: string; reminderMdPath?: string; historyHtmlPath?: string }, report: DrawingGovernanceResultV2, rendered: { markdown: string; reminder?: string; historyHtml?: string }) => void;
 }
 
@@ -94,20 +95,19 @@ export function loadF2ArtifactBundle(artifactRoot: string, options: { selectedWo
   }
 }
 
-function outputRootOverride(value: string | undefined): string | undefined {
-  if (value === undefined) return undefined;
-  if (!value.trim() || value.split(/[\\/]+/).includes("..")) throw new Error("Feature 3 output root override is unsafe.");
-  return value;
+function throwIfAborted(context: RunContext, stage: string): void {
+  if (!context.signal.aborted) return;
+  throw normalizeRunnerError(new Error(`AbortError: signal already aborted before ${stage}.`), {
+    fallbackRunId: context.attemptId,
+    affectedInputReferences: [stage],
+  });
 }
 
-export function resolveFeature3OutputLayout(args: readonly string[], outputRoot?: string) {
-  const override = outputRootOverride(outputRoot);
+export function resolveFeature3OutputLayout(args: readonly string[], managedOutputRoot: string) {
   if (args.length !== 1) throw new Error("Feature 3 workflow requires exactly one Feature 2 artifact directory.");
   if (/\.xls[xm]?$/i.test(args[0] ?? "")) throw new Error("Feature 3 requires a Feature 2 artifact directory, not an Excel workbook.");
-  const artifactName = safeName(path.basename(path.normalize(args[0] ?? "")));
-  if (!artifactName) throw new Error("Feature 3 artifact output name is empty.");
   return {
-    outRoot: override ?? path.posix.join("test", "demo-output", "feature3-output", artifactName),
+    outRoot: path.resolve(managedOutputRoot),
     reportJsonName: "Feature3-Report.json",
     reportMdName: "Feature3-Report.md",
   };
@@ -210,41 +210,49 @@ export function runF3Analysis(
   const renderAdoHistoryHtml = dependencies.renderAdoHistoryHtml ?? renderF3AdoHistoryHtml;
   const resolveOutputLayout = dependencies.resolveOutputLayout ?? resolveFeature3OutputLayout;
   const writeOutputs = dependencies.writeOutputs ?? defaultWriteOutputs;
-  const outputLayout = resolveOutputLayout([request.artifactRoot], request.outputRoot);
-  const loaded = request.selectedWorksheetNames === undefined
-    ? loadBundle(request.artifactRoot)
-    : loadBundle(request.artifactRoot, { selectedWorksheetNames: request.selectedWorksheetNames });
-  const report = loaded.status === "accepted" ? createGovernance(loaded.request) : loaded.report;
-  mkdirSync(outputLayout.outRoot, { recursive: true });
-  const reportJsonPath = path.join(outputLayout.outRoot, outputLayout.reportJsonName);
-  const reportMdPath = path.join(outputLayout.outRoot, outputLayout.reportMdName);
-  const reminderMdPath = report.status === "input_rejected" ? undefined : path.join(outputLayout.outRoot, "Feature3-ADO-Reminder.md");
-  const historyHtmlPath = report.status === "input_rejected" ? undefined : path.join(outputLayout.outRoot, "Feature3-ADO-History.html");
-  writeOutputs(
-    {
+  try {
+    throwIfAborted(context, "load_bundle");
+    const outputLayout = resolveOutputLayout([request.artifactRoot], context.managedOutputRoot);
+    const loaded = request.selectedWorksheetNames === undefined
+      ? loadBundle(request.artifactRoot)
+      : loadBundle(request.artifactRoot, { selectedWorksheetNames: request.selectedWorksheetNames });
+    throwIfAborted(context, "create_governance");
+    const report = loaded.status === "accepted" ? createGovernance(loaded.request) : loaded.report;
+    throwIfAborted(context, "write_outputs");
+    mkdirSync(outputLayout.outRoot, { recursive: true });
+    const reportJsonPath = path.join(outputLayout.outRoot, outputLayout.reportJsonName);
+    const reportMdPath = path.join(outputLayout.outRoot, outputLayout.reportMdName);
+    const reminderMdPath = report.status === "input_rejected" ? undefined : path.join(outputLayout.outRoot, "Feature3-ADO-Reminder.md");
+    const historyHtmlPath = report.status === "input_rejected" ? undefined : path.join(outputLayout.outRoot, "Feature3-ADO-History.html");
+    writeOutputs(
+      {
+        reportJsonPath,
+        reportMdPath,
+        ...(reminderMdPath ? { reminderMdPath } : {}),
+        ...(historyHtmlPath ? { historyHtmlPath } : {}),
+      },
+      report,
+      {
+        markdown: renderReport(report, { outputRoot: outputLayout.outRoot }),
+        ...(reminderMdPath ? { reminder: renderAdoReminder(report) } : {}),
+        ...(historyHtmlPath ? { historyHtml: renderAdoHistoryHtml(report) } : {}),
+      },
+    );
+    throwIfAborted(context, "write_outputs");
+    context.emit({ kind: "artifact_written", featureId: "F3", stage: "report", timestamp: new Date().toISOString(), path: reportJsonPath });
+    return {
+      featureId: "F3",
+      status: report.status,
+      outputDirectory: outputLayout.outRoot,
       reportJsonPath,
       reportMdPath,
+      ...(request.selectedWorksheetNames ? { selectedWorksheetNames: [...request.selectedWorksheetNames] } : {}),
       ...(reminderMdPath ? { reminderMdPath } : {}),
       ...(historyHtmlPath ? { historyHtmlPath } : {}),
-    },
-    report,
-    {
-      markdown: renderReport(report, { outputRoot: outputLayout.outRoot }),
-      ...(reminderMdPath ? { reminder: renderAdoReminder(report) } : {}),
-      ...(historyHtmlPath ? { historyHtml: renderAdoHistoryHtml(report) } : {}),
-    },
-  );
-  context.emit({ kind: "artifact_written", featureId: "F3", stage: "report", timestamp: new Date().toISOString(), path: reportJsonPath });
-  return {
-    featureId: "F3",
-    status: report.status,
-    outputDirectory: outputLayout.outRoot,
-    reportJsonPath,
-    reportMdPath,
-    ...(request.selectedWorksheetNames ? { selectedWorksheetNames: [...request.selectedWorksheetNames] } : {}),
-    ...(reminderMdPath ? { reminderMdPath } : {}),
-    ...(historyHtmlPath ? { historyHtmlPath } : {}),
-    ...(report.status === "input_rejected" ? {} : { ado: report.ado }),
-    report,
-  };
+      ...(report.status === "input_rejected" ? {} : { ado: report.ado }),
+      report,
+    };
+  } catch (error) {
+    throw normalizeRunnerError(error, { fallbackRunId: context.attemptId, affectedInputReferences: ["load_bundle", "create_governance", "write_outputs"] });
+  }
 }

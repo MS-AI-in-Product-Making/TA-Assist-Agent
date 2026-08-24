@@ -105,6 +105,7 @@ describe("runF2ExcelWorkflow", () => {
     expect(result.status).toBe("selectionRequired");
     expect(executeStage.mock.calls.map(([request]) => request.stage)).toEqual(["f1-selection"]);
     expect(result.promptPath).toBe(path.join(result.f1Root, "Feature1-Selection.json"));
+    expect(result.selectionReference).toMatchObject({ manifestPath: result.manifestPath, promptPath: result.promptPath });
     expect(JSON.parse(readFileSync(result.manifestPath, "utf8"))).toMatchObject({
       status: "selectionRequired",
       selection: { status: "selectionRequired", promptPath: result.promptPath, selectedWorksheetNames: [] },
@@ -112,10 +113,25 @@ describe("runF2ExcelWorkflow", () => {
     });
   });
 
-  it("runs F1, F2, and validation after explicit confirmation", () => {
+  it("runs F1, F2, and validation after explicit confirmation in the original selection run", () => {
     const setupResult = setup();
     const executeStage = vi.fn(({ stage, args, env }) => {
-      if (stage === "f1") {
+      if (stage === "f1-selection") {
+        mkdirSync(env.AI_TVA_F1_OUTPUT_ROOT, { recursive: true });
+        writeFileSync(path.join(env.AI_TVA_F1_OUTPUT_ROOT, "Feature1-Selection.json"), JSON.stringify({
+          contractVersion: "v1",
+          inputClassification: "confidential",
+          status: "selectionRequired",
+          workbook: { fileName: "Demo.xlsx", contentHash: HASH },
+          options: [{
+            selectionIndex: 1,
+            worksheetName: "Analysis-A",
+            toleranceLoopDescription: "First loop",
+            worksheetKind: "analysis",
+            source: { summarySheet: "Auto Summary", summaryRow: 10, worksheetAnchor: "Analysis-A!A1" },
+          }],
+        }));
+      } else if (stage === "f1") {
         mkdirSync(env.AI_TVA_F1_OUTPUT_ROOT, { recursive: true });
         writeFileSync(path.join(env.AI_TVA_F1_OUTPUT_ROOT, "Feature1-Report.json"), "{}");
       } else {
@@ -125,16 +141,23 @@ describe("runF2ExcelWorkflow", () => {
       return { stdout: `${stage} complete`, stderr: "" };
     });
 
+    const selection = runF2ExcelWorkflow({ ...setupResult, now: fixedNow, executeStage });
+
     const result = runF2ExcelWorkflow({
       ...setupResult,
       now: fixedNow,
       executeStage,
-      worksheetSelection: { workbookContentHash: HASH, selectedWorksheetNames: ["Analysis-A"], confirmed: true },
+      worksheetSelection: {
+        workbookContentHash: HASH,
+        selectedWorksheetNames: ["Analysis-A"],
+        selectionReference: selection.selectionReference,
+        confirmed: true,
+      },
     });
 
-    expect(result.runRoot.replace(/\\/g, "/").endsWith("/Demo/2026-08-05T01-02-03-000Z")).toBe(true);
-    expect(executeStage.mock.calls.map(([request]) => request.stage)).toEqual(["f1", "f2"]);
-    expect(executeStage.mock.calls[0][0].args).toEqual([
+    expect(result.runRoot).toBe(selection.runRoot);
+    expect(executeStage.mock.calls.map(([request]) => request.stage)).toEqual(["f1-selection", "f1", "f2"]);
+    expect(executeStage.mock.calls[1][0].args).toEqual([
       "scripts/run-f1-full-validation.mjs",
       setupResult.workbookPath,
       "--workbook-hash",
@@ -155,6 +178,23 @@ describe("runF2ExcelWorkflow", () => {
   it("keeps the manifest and completed F1 output when F2 fails", () => {
     const setupResult = setup();
     const executeStage = ({ stage, env }) => {
+      if (stage === "f1-selection") {
+        mkdirSync(env.AI_TVA_F1_OUTPUT_ROOT, { recursive: true });
+        writeFileSync(path.join(env.AI_TVA_F1_OUTPUT_ROOT, "Feature1-Selection.json"), JSON.stringify({
+          contractVersion: "v1",
+          inputClassification: "confidential",
+          status: "selectionRequired",
+          workbook: { fileName: "Demo.xlsx", contentHash: HASH },
+          options: [{
+            selectionIndex: 1,
+            worksheetName: "Analysis-A",
+            toleranceLoopDescription: "First loop",
+            worksheetKind: "analysis",
+            source: { summarySheet: "Auto Summary", summaryRow: 10, worksheetAnchor: "Analysis-A!A1" },
+          }],
+        }));
+        return { stdout: "f1-selection complete", stderr: "" };
+      }
       if (stage === "f1") {
         mkdirSync(env.AI_TVA_F1_OUTPUT_ROOT, { recursive: true });
         writeFileSync(path.join(env.AI_TVA_F1_OUTPUT_ROOT, "Feature1-Report.json"), "{}");
@@ -163,15 +203,36 @@ describe("runF2ExcelWorkflow", () => {
       throw new Error("F2 failed");
     };
 
+    const selection = runF2ExcelWorkflow({ ...setupResult, now: fixedNow, executeStage });
+
     expect(() => runF2ExcelWorkflow({
       ...setupResult,
       now: fixedNow,
       executeStage,
-      worksheetSelection: { workbookContentHash: HASH, selectedWorksheetNames: ["Analysis-A"], confirmed: true },
-    })).toThrow("F2 failed");
+      worksheetSelection: {
+        workbookContentHash: HASH,
+        selectedWorksheetNames: ["Analysis-A"],
+        selectionReference: selection.selectionReference,
+        confirmed: true,
+      },
+    })).toThrow(expect.objectContaining({
+      name: "Error",
+      code: "internal_error",
+      summary: "Workflow runner failed unexpectedly.",
+    }));
 
     const runRoot = path.join(setupResult.repositoryRoot, "test", "demo-output", "f2-runs", "Demo", "2026-08-05T01-02-03-000Z");
     expect(readFileSync(path.join(runRoot, "f1", "Feature1-Report.json"), "utf8")).toBe("{}");
     expect(JSON.parse(readFileSync(path.join(runRoot, "manifest.json"), "utf8"))).toMatchObject({ status: "failed", stages: { f1: { status: "completed" }, f2: { status: "failed" }, validation: { status: "pending" } } });
+  });
+
+  it("requires a selection reference for confirmation", () => {
+    const setupResult = setup();
+
+    expect(() => runF2ExcelWorkflow({
+      ...setupResult,
+      now: fixedNow,
+      worksheetSelection: { workbookContentHash: HASH, selectedWorksheetNames: ["Analysis-A"], confirmed: true },
+    })).toThrow(/selection reference/i);
   });
 });

@@ -1,5 +1,6 @@
 import { loadInterpretationRules, loadInternalToleranceGuidance, loadKnowledgeBase } from "@ai-assist/knowledge-base";
 
+import { normalizeRunnerError } from "./error-normalizer.js";
 import type { F0ValidationResult, RunContext } from "./types.js";
 
 export interface F0Dependencies {
@@ -10,30 +11,45 @@ export interface F0Dependencies {
 
 const DEFAULT_VERSIONS = ["v1", "internal-v1", "interpretation-rules-v1"] as const;
 
-function versionOf(value: unknown, fallback: typeof DEFAULT_VERSIONS[number]): typeof DEFAULT_VERSIONS[number] {
-  if (typeof value === "object" && value !== null) {
-    const manifestValue = (value as { manifest?: { effectiveVersion?: unknown } }).manifest?.effectiveVersion;
-    if (manifestValue === fallback) return fallback;
-    const manifest = (value as { getKnowledgeBaseManifest?: () => { knowledgeBaseVersion?: unknown } }).getKnowledgeBaseManifest?.();
-    if (manifest?.knowledgeBaseVersion === fallback) return fallback;
+function validateExactVersion(value: unknown, expected: typeof DEFAULT_VERSIONS[number], label: string): void {
+  if (typeof value !== "object" || value === null) {
+    throw new Error(`F0 ${label} manifest is missing.`);
   }
-  return fallback;
+  const manifestValue = (value as { manifest?: { effectiveVersion?: unknown } }).manifest?.effectiveVersion;
+  if (manifestValue !== expected) {
+    throw new Error(`F0 ${label} version mismatch.`);
+  }
+}
+
+function throwIfAborted(context: RunContext, stage: string): void {
+  if (!context.signal.aborted) return;
+  throw normalizeRunnerError(new Error(`AbortError: signal already aborted before ${stage}.`), {
+    fallbackRunId: context.attemptId,
+    affectedInputReferences: [stage],
+  });
 }
 
 export function validateF0Capabilities(context: RunContext, dependencies: F0Dependencies = {}): F0ValidationResult {
-  context.emit({ kind: "stage_started", featureId: "F0", stage: "validate_capabilities", timestamp: new Date().toISOString() });
-  const knowledgeBase = (dependencies.loadKnowledgeBase ?? loadKnowledgeBase)({ version: "v1" });
-  const internal = (dependencies.loadInternalToleranceGuidance ?? loadInternalToleranceGuidance)({ version: "internal-v1" });
-  const interpretation = (dependencies.loadInterpretationRules ?? loadInterpretationRules)({ version: "interpretation-rules-v1" });
-  if (versionOf(knowledgeBase, "v1") !== "v1") throw new Error("F0 knowledge base version mismatch.");
-  if (versionOf(internal, "internal-v1") !== "internal-v1") throw new Error("F0 internal guidance version mismatch.");
-  if (versionOf(interpretation, "interpretation-rules-v1") !== "interpretation-rules-v1") throw new Error("F0 interpretation rules version mismatch.");
-  const result: F0ValidationResult = {
-    featureId: "F0",
-    status: "completed",
-    versions: DEFAULT_VERSIONS,
-    artifactRoot: undefined,
-  };
-  context.emit({ kind: "stage_completed", featureId: "F0", stage: "validate_capabilities", timestamp: new Date().toISOString() });
-  return result;
+  const stage = "validate_capabilities";
+  try {
+    throwIfAborted(context, stage);
+    context.emit({ kind: "stage_started", featureId: "F0", stage, timestamp: new Date().toISOString() });
+    const knowledgeBase = (dependencies.loadKnowledgeBase ?? loadKnowledgeBase)({ version: "v1" });
+    const internal = (dependencies.loadInternalToleranceGuidance ?? loadInternalToleranceGuidance)({ version: "internal-v1" });
+    const interpretation = (dependencies.loadInterpretationRules ?? loadInterpretationRules)({ version: "interpretation-rules-v1" });
+    validateExactVersion(knowledgeBase, "v1", "knowledge base");
+    validateExactVersion(internal, "internal-v1", "internal guidance");
+    validateExactVersion(interpretation, "interpretation-rules-v1", "interpretation rules");
+    throwIfAborted(context, stage);
+    const result: F0ValidationResult = {
+      featureId: "F0",
+      status: "completed",
+      versions: DEFAULT_VERSIONS,
+      artifactRoot: undefined,
+    };
+    context.emit({ kind: "stage_completed", featureId: "F0", stage, timestamp: new Date().toISOString() });
+    return result;
+  } catch (error) {
+    throw normalizeRunnerError(error, { fallbackRunId: context.attemptId, affectedInputReferences: [stage] });
+  }
 }
