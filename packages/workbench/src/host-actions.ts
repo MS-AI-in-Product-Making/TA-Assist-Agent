@@ -46,8 +46,24 @@ export interface HostActionStoreOptions {
   readonly now?: () => Date;
 }
 
+export interface HostActionRecord {
+  readonly actionId: string;
+  readonly sessionId: string;
+  readonly status: HostActionStatus;
+  readonly request: HostActionRequest;
+  readonly claim: HostActionClaim | undefined;
+  readonly result: HostActionResult | undefined;
+  readonly expiresAt: string;
+  readonly leaseId: string | undefined;
+  readonly leaseExpiresAt: string | undefined;
+  readonly expectedRevision: number;
+  readonly confirmationHash: string | undefined;
+  readonly expectedTargetVersion: string | undefined;
+}
+
 export interface HostActionStore {
   createHostAction(request: HostActionRequest): Promise<HostActionRequest>;
+  getHostAction(actionId: string): Promise<HostActionRecord>;
   claimHostAction(actionId: string, hostInstanceId: string): Promise<HostActionClaim>;
   completeHostAction(result: HostActionResult): Promise<HostActionResult>;
   expireHostAction(actionId: string, hostInstanceId: string, leaseId: string): Promise<HostActionResult>;
@@ -270,6 +286,13 @@ class SqliteHostActionStore implements HostActionStore {
     }
   }
 
+  async getHostAction(actionId: string): Promise<HostActionRecord> {
+    assertNonEmpty(actionId, "host action id");
+
+    const row = this.requireHostActionRow(actionId);
+    return toHostActionRecord(row, actionId);
+  }
+
   async completeHostAction(resultInput: HostActionResult): Promise<HostActionResult> {
     const result = hostActionResultSchema.parse(resultInput);
 
@@ -277,12 +300,6 @@ class SqliteHostActionStore implements HostActionStore {
     try {
       const row = this.requireHostActionRow(result.actionId);
       if (isTerminalStatus(row.status)) {
-        const storedResult = parseStoredResult(row, result.actionId);
-        if (stableStringify(storedResult) === stableStringify(result)) {
-          this.database.exec("COMMIT");
-          return storedResult;
-        }
-
         throw createTypedError({
           code: "policy_denied",
           summary: `Host action ${result.actionId} already reached terminal status ${row.status}.`,
@@ -366,13 +383,6 @@ class SqliteHostActionStore implements HostActionStore {
     try {
       const row = this.requireHostActionRow(actionId);
       if (isTerminalStatus(row.status)) {
-        const claim = parseStoredClaim(row, actionId);
-        const storedResult = parseStoredResult(row, actionId);
-        if (claim.hostInstanceId === hostInstanceId && claim.leaseId === leaseId) {
-          this.database.exec("COMMIT");
-          return storedResult;
-        }
-
         throw createTypedError({
           code: "policy_denied",
           summary: `Host action ${actionId} already reached terminal status ${row.status}.`,
@@ -543,6 +553,24 @@ function persistHostAction(
     action.actionId,
     action.sessionId,
   );
+}
+
+function toHostActionRecord(row: HostActionRow, actionId: string): HostActionRecord {
+  const request = parseStoredRequest(row, actionId);
+  return {
+    actionId,
+    sessionId: row.session_id,
+    status: row.status,
+    request,
+    claim: row.claim_json === null ? undefined : parseStoredClaim(row, actionId),
+    result: row.result_json === null ? undefined : parseStoredResult(row, actionId),
+    expiresAt: request.expiresAt,
+    leaseId: row.lease_id ?? undefined,
+    leaseExpiresAt: row.lease_expires_at ?? undefined,
+    expectedRevision: row.expected_revision ?? request.expectedRevision,
+    confirmationHash: row.confirmation_hash ?? undefined,
+    expectedTargetVersion: row.expected_target_version ?? undefined,
+  };
 }
 
 function readConfirmationHash(request: HostActionRequest): string | null {

@@ -1,10 +1,12 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createSessionStore, openSessionStore } from "./session-store.js";
 import { createHostActionStore } from "./host-actions.js";
+import { resolveManagedWorkbenchPaths } from "./managed-paths.js";
 
 const SESSION_ID = "session-host-actions";
 const WORKBOOK_HASH = "a".repeat(64);
@@ -16,7 +18,7 @@ afterEach(async () => {
 });
 
 describe("host action lease lifecycle", () => {
-  it("allows one host claim and rejects a second writer", async () => {
+  it("allows one host claim and rejects duplicate terminal completion mutations", async () => {
     const rootDir = await createTempRoot();
     const sessionStore = await createSessionStore({ rootDir, sessionId: SESSION_ID });
     await sessionStore.close();
@@ -37,11 +39,35 @@ describe("host action lease lifecycle", () => {
 
     await hostActions.completeHostAction(completedResult(claim, action.actionId));
 
-    await expect(hostActions.completeHostAction(completedResult(claim, action.actionId))).resolves.toMatchObject({
-      actionId: action.actionId,
-      hostInstanceId: "vscode-1",
-      leaseId: claim.leaseId,
-      status: "completed",
+    await expect(hostActions.completeHostAction(completedResult(claim, action.actionId))).rejects.toMatchObject({
+      code: "policy_denied",
+    });
+
+    await hostActions.close();
+  });
+
+  it("rejects duplicate terminal completion mutations after the session revision advances", async () => {
+    const rootDir = await createTempRoot();
+    const sessionStore = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+    await sessionStore.close();
+
+    const hostActions = await createHostActionStore({
+      rootDir,
+      sessionId: SESSION_ID,
+      leaseDurationMs: 60_000,
+      now: () => new Date("2026-08-24T00:00:00.000Z"),
+    });
+
+    const action = await hostActions.createHostAction(surfaceValidateRequest("action-validate-terminal-replay", {
+      expectedRevision: 0,
+    }));
+    const claim = await hostActions.claimHostAction(action.actionId, "vscode-1");
+    await hostActions.completeHostAction(completedResult(claim, action.actionId));
+
+    await advanceSessionRevision(rootDir, 0, "command-revision-terminal-replay");
+
+    await expect(hostActions.completeHostAction(completedResult(claim, action.actionId))).rejects.toMatchObject({
+      code: "policy_denied",
     });
 
     await hostActions.close();
@@ -252,6 +278,49 @@ describe("host action lease lifecycle", () => {
     await expect(hostActions.completeHostAction(completedResult(writeClaim, writeAction.actionId))).rejects.toMatchObject({
       code: "policy_denied",
     });
+    await expect(hostActions.expireHostAction(writeAction.actionId, "vscode-1", writeClaim.leaseId)).rejects.toMatchObject({
+      code: "policy_denied",
+    });
+
+    await hostActions.close();
+  });
+
+  it("returns terminal host action state through read-only getHostAction without changing stored rows", async () => {
+    const rootDir = await createTempRoot();
+    const sessionStore = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+    await sessionStore.close();
+
+    const hostActions = await createHostActionStore({
+      rootDir,
+      sessionId: SESSION_ID,
+      leaseDurationMs: 60_000,
+      now: () => new Date("2026-08-24T00:00:00.000Z"),
+    });
+
+    const action = await hostActions.createHostAction(surfaceValidateRequest("action-read-terminal-state"));
+    const claim = await hostActions.claimHostAction(action.actionId, "vscode-1");
+    const result = completedResult(claim, action.actionId);
+    await hostActions.completeHostAction(result);
+
+    const rowBeforeRead = readPersistedHostActionRow(rootDir, action.actionId);
+    const storedAction = await hostActions.getHostAction(action.actionId);
+    const rowAfterRead = readPersistedHostActionRow(rootDir, action.actionId);
+
+    expect(storedAction).toEqual({
+      actionId: action.actionId,
+      sessionId: SESSION_ID,
+      status: "completed",
+      request: action,
+      claim,
+      result,
+      expiresAt: action.expiresAt,
+      leaseId: claim.leaseId,
+      leaseExpiresAt: claim.leaseExpiresAt,
+      expectedRevision: action.expectedRevision,
+      confirmationHash: action.confirmationHash,
+      expectedTargetVersion: action.expectedTargetVersion,
+    });
+    expect(rowAfterRead).toEqual(rowBeforeRead);
 
     await hostActions.close();
   });
@@ -285,6 +354,24 @@ async function createTempRoot(): Promise<string> {
   const rootDir = await mkdtemp(join(tmpdir(), "f8-host-actions-"));
   tempRoots.push(rootDir);
   return rootDir;
+}
+
+function readPersistedHostActionRow(rootDir: string, actionId: string) {
+  const database = openDatabase(rootDir);
+  try {
+    return database.prepare(`
+      SELECT action_id, status, result_json, updated_at
+      FROM host_actions
+      WHERE action_id = ?
+    `).get(actionId) as {
+      action_id: string;
+      status: string;
+      result_json: string | null;
+      updated_at: string;
+    };
+  } finally {
+    database.close();
+  }
 }
 
 function surfaceValidateRequest(
@@ -393,4 +480,9 @@ async function advanceSessionRevision(rootDir: string, expectedRevision: number,
   } finally {
     await store.close();
   }
+}
+
+function openDatabase(rootDir: string): DatabaseSync {
+  const paths = resolveManagedWorkbenchPaths(rootDir);
+  return new DatabaseSync(paths.databasePath);
 }
