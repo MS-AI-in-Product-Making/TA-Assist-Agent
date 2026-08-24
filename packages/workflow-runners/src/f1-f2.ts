@@ -357,7 +357,8 @@ function registrySelectionReference(
   if (matches.length === 0) throw new Error("Feature 2 pending selection was not found.");
 
   const stale = [] as SelectionRegistryEntry[];
-  const valid = [] as SelectionRegistryEntry[];
+  const waiting = [] as SelectionRegistryEntry[];
+  const confirmed = [] as SelectionRegistryEntry[];
   for (const entry of matches) {
     try {
       ensureContainedPhysicalPath(context.managedOutputRoot, entry.manifestPath, "Feature 2 selection manifest", "file");
@@ -385,19 +386,27 @@ function registrySelectionReference(
           || execution === EXECUTION_STATUS.running
           || execution === EXECUTION_STATUS.failedRetryable
           || execution === EXECUTION_STATUS.completed);
-      if (!isWaitingForInitialConfirmation && !isRetryOrCompleted) {
-        stale.push(entry);
-        continue;
-      }
-      valid.push(entry);
+      if (isWaitingForInitialConfirmation) waiting.push(entry);
+      else if (isRetryOrCompleted) confirmed.push(entry);
+      else stale.push(entry);
     } catch {
       stale.push(entry);
     }
   }
 
+  if (waiting.length === 1) {
+    const candidate = waiting[0]!;
+    return {
+      runId: candidate.runId,
+      runRoot: candidate.runRoot,
+      manifestPath: candidate.manifestPath,
+      promptPath: candidate.promptPath,
+    };
+  }
+  if (waiting.length > 1) throw new Error("Feature 2 pending selection is ambiguous.");
   if (stale.length > 0) throw new Error("Feature 2 pending selection registry contains stale candidates.");
-  if (valid.length !== 1) throw new Error("Feature 2 pending selection is ambiguous.");
-  const candidate = valid[0]!;
+  if (confirmed.length !== 1) throw new Error("Feature 2 pending selection is ambiguous.");
+  const candidate = confirmed[0]!;
   return {
     runId: candidate.runId,
     runRoot: candidate.runRoot,
