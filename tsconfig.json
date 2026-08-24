@@ -3,6 +3,7 @@
   "references": [
     { "path": "./apps/cli" },
     { "path": "./packages/contracts" },
+    { "path": "./packages/conversation" },
     { "path": "./packages/workbench" },
     { "path": "./packages/knowledge-base" },
     { "path": "./packages/workbook-catalog" },
