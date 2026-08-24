@@ -126,6 +126,34 @@ describe("workbench state machine", () => {
     });
     expect(replaced.priorRunReferences).toEqual([
       expect.objectContaining({ featureId: "F4", referenceId: "f4-old" }),
+      expect.objectContaining({ featureId: "F5", referenceId: "f5-current" }),
+    ]);
+  });
+
+  it("preserves immutable prior run references even when a historical workbook shares the same hash", () => {
+    const api = requireApi();
+
+    const replaced = api.reduceSessionCommand(
+      snapshotWithSameHashHistoricalReference(),
+      {
+        contractVersion: "f8-session-command-v1",
+        sessionId: SESSION_ID,
+        commandId: "replace-same-hash-001",
+        expectedRevision: 14,
+        command: "replace_workbook",
+        payload: {
+          fileName: "replacement.xlsx",
+          workbookBytes: new Uint8Array([4, 5, 6]),
+          inputClassification: "confidential",
+          previousWorkbookHash: PREVIOUS_WORKBOOK_HASH,
+        },
+      },
+    );
+
+    expect(replaced.priorRunReferences).toEqual([
+      expect.objectContaining({ featureId: "F3", referenceId: "f3-historical-same-hash", workbookHash: PREVIOUS_WORKBOOK_HASH }),
+      expect.objectContaining({ featureId: "F4", referenceId: "f4-old", workbookHash: HISTORICAL_WORKBOOK_HASH }),
+      expect.objectContaining({ featureId: "F5", referenceId: "f5-current", workbookHash: PREVIOUS_WORKBOOK_HASH }),
     ]);
   });
 
@@ -176,6 +204,44 @@ describe("workbench state machine", () => {
     );
     expect(retried.state).toBe("f6_running");
     expect(retried.activeAttempt).toMatchObject({ status: "running", stage: "f6_running" });
+  });
+
+  it.each([
+    ["f3_running"],
+    ["f5_running"],
+    ["f6_running"],
+  ] as const)("preserves failed stage identity for %s", (stage) => {
+    const api = requireApi();
+
+    const failed = api.acceptAttemptResult(
+      runningSnapshot(stage),
+      failedAttemptResult(true),
+    );
+
+    expect(failed.state).toBe("failed");
+    expect(failed.activeAttempt).toMatchObject({
+      stage,
+      status: "failed",
+    });
+  });
+
+  it.each([
+    ["f3_running"],
+    ["f5_running"],
+    ["f6_running"],
+  ] as const)("preserves cancelled stage identity for %s", (stage) => {
+    const api = requireApi();
+
+    const cancelled = api.acceptAttemptResult(
+      runningSnapshot(stage),
+      cancelledAttemptResult(),
+    );
+
+    expect(cancelled.state).toBe("cancelled");
+    expect(cancelled.activeAttempt).toMatchObject({
+      stage,
+      status: "cancelled",
+    });
   });
 
   it("completes the review when F7 is unavailable without creating an F7 attempt", () => {
@@ -278,6 +344,15 @@ function failedAttemptResult(retryable: boolean) {
   };
 }
 
+function cancelledAttemptResult() {
+  return {
+    attemptId: "attempt-running",
+    status: "cancelled" as const,
+    result: { reason: "user_cancelled" },
+    endedAt: "2026-08-24T00:05:00.000Z",
+  };
+}
+
 function confirmAnalysisContextCommand(expectedRevision: number): SessionCommand {
   return analysisContextCommand(expectedRevision, "approve");
 }
@@ -327,6 +402,54 @@ function snapshotWithSelectionsAndHistory() {
       confirmed: true,
     },
     priorRunReferences: [
+      {
+        featureId: "F4" as const,
+        referenceId: "f4-old",
+        contractVersion: "f4-run-v1",
+        workbookHash: HISTORICAL_WORKBOOK_HASH,
+        runReference: "run-f4-old",
+      },
+      {
+        featureId: "F5" as const,
+        referenceId: "f5-current",
+        contractVersion: "f5-run-v1",
+        workbookHash: PREVIOUS_WORKBOOK_HASH,
+        runReference: "run-f5-current",
+      },
+    ],
+  });
+}
+
+function snapshotWithSameHashHistoricalReference() {
+  return baseSnapshot({
+    revision: 14,
+    inputRevision: 4,
+    state: "review_required",
+    activeAttempt: {
+      attemptId: "attempt-same-hash",
+      stage: "f6_running",
+      status: "running" as const,
+      commandId: "command-same-hash",
+      startedAt: "2026-08-24T00:00:00.000Z",
+    },
+    initialScopeSelection: {
+      workbookContentHash: PREVIOUS_WORKBOOK_HASH,
+      selectedWorksheetNames: ["Initial-B"],
+      confirmed: true,
+    },
+    downstreamScopeSelection: {
+      workbookContentHash: PREVIOUS_WORKBOOK_HASH,
+      selectedWorksheetNames: ["Downstream-B"],
+      confirmed: true,
+    },
+    priorRunReferences: [
+      {
+        featureId: "F3" as const,
+        referenceId: "f3-historical-same-hash",
+        contractVersion: "f3-run-v1",
+        workbookHash: PREVIOUS_WORKBOOK_HASH,
+        runReference: "run-f3-historical-same-hash",
+      },
       {
         featureId: "F4" as const,
         referenceId: "f4-old",

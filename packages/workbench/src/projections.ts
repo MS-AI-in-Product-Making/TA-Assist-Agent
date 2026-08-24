@@ -1,4 +1,5 @@
 import { f7PlaceholderStatusSchema } from "@ai-assist/contracts";
+import { getFeatureStatus } from "@ai-assist/governance";
 
 import { canRetryAttempt } from "./attempts.js";
 import { FEATURE_IDS, type F8SessionSnapshot, type F8SessionState } from "./commands.js";
@@ -33,11 +34,21 @@ export function projectActionQueue(snapshot: F8SessionSnapshot): ActionQueueItem
     case "review_required":
       return [{ featureId: "F6", action: "complete_review", blocking: false }];
     case "failed":
-      return canRetryAttempt(snapshot)
-        ? [{ featureId: featureForState(snapshot.activeAttempt?.stage ?? "f6_running"), action: "retry", blocking: true }]
-        : [];
+      return canRetryAttempt(snapshot) ? retryQueue(snapshot) : [];
     case "cancelled":
-      return [{ featureId: featureForState(snapshot.activeAttempt?.stage ?? "f6_running"), action: "retry", blocking: true }];
+      return retryQueue(snapshot);
+    case "f7_import_required":
+      return isF7Available()
+        ? [{ featureId: "F7", action: "start_f7_import", blocking: true }]
+        : [];
+    case "f7_preview_required":
+      return isF7Available()
+        ? [{ featureId: "F7", action: "start_f7_preview", blocking: true }]
+        : [];
+    case "feedback_review_required":
+      return isF7Available()
+        ? [{ featureId: "F7", action: "complete_review", blocking: false }]
+        : [];
     case "workbook_validating":
     case "f0_validating":
     case "f1_f2_running":
@@ -51,9 +62,6 @@ export function projectActionQueue(snapshot: F8SessionSnapshot): ActionQueueItem
     case "created":
     case "workbook_required":
     case "f0_validated":
-    case "f7_import_required":
-    case "f7_preview_required":
-    case "feedback_review_required":
     case "completed":
       return [];
     default:
@@ -62,10 +70,32 @@ export function projectActionQueue(snapshot: F8SessionSnapshot): ActionQueueItem
 }
 
 export function projectFeatureLedger(snapshot: F8SessionSnapshot): FeatureLedgerEntry[] {
-  const completedFeatures = completedFeaturesForState(snapshot.state);
+  const completedFeatures = completedFeaturesForSnapshot(snapshot);
+  const activeFeature = activeFeatureForSnapshot(snapshot);
+  const queuedActions = projectActionQueue(snapshot);
 
   return FEATURE_IDS.map((featureId) => {
     if (featureId === "F7") {
+      if (isF7Available()) {
+        if (snapshot.state === "completed") {
+          return { featureId, status: "completed", actions: [] };
+        }
+
+        if (activeFeature === featureId) {
+          return {
+            featureId,
+            status: statusForActiveFeature(snapshot),
+            actions: queuedActions.filter((item) => item.featureId === featureId).map((item) => item.action),
+          };
+        }
+
+        return {
+          featureId,
+          status: completedFeatures.has(featureId) ? "completed" : "pending",
+          actions: queuedActions.filter((item) => item.featureId === featureId).map((item) => item.action),
+        };
+      }
+
       const placeholder = f7PlaceholderStatusSchema.parse({
         contractVersion: "f7-workbench-placeholder-v1",
         status: "feature_not_available",
@@ -79,9 +109,12 @@ export function projectFeatureLedger(snapshot: F8SessionSnapshot): FeatureLedger
       };
     }
 
-    const runningFeature = runningFeatureForState(snapshot.state);
-    if (runningFeature === featureId) {
-      return { featureId, status: "running", actions: projectActionQueue(snapshot).map((item) => item.action) };
+    if (activeFeature === featureId) {
+      return {
+        featureId,
+        status: statusForActiveFeature(snapshot),
+        actions: queuedActions.filter((item) => item.featureId === featureId).map((item) => item.action),
+      };
     }
 
     if (completedFeatures.has(featureId)) {
@@ -90,6 +123,19 @@ export function projectFeatureLedger(snapshot: F8SessionSnapshot): FeatureLedger
 
     return { featureId, status: "pending", actions: [] };
   });
+}
+
+function completedFeaturesForSnapshot(snapshot: F8SessionSnapshot): ReadonlySet<typeof FEATURE_IDS[number]> {
+  if (snapshot.state === "failed" || snapshot.state === "cancelled") {
+    const failedFeature = attemptFeatureForSnapshot(snapshot);
+    if (failedFeature === undefined) {
+      return new Set<typeof FEATURE_IDS[number]>();
+    }
+
+    return completedFeaturesBefore(failedFeature);
+  }
+
+  return completedFeaturesForState(snapshot.state);
 }
 
 function completedFeaturesForState(state: F8SessionState): ReadonlySet<typeof FEATURE_IDS[number]> {
@@ -118,8 +164,62 @@ function completedFeaturesForState(state: F8SessionState): ReadonlySet<typeof FE
   return completed;
 }
 
-function runningFeatureForState(state: F8SessionState): typeof FEATURE_IDS[number] | undefined {
-  return featureForState(state);
+function completedFeaturesBefore(featureId: typeof FEATURE_IDS[number]): ReadonlySet<typeof FEATURE_IDS[number]> {
+  const completed = new Set<typeof FEATURE_IDS[number]>();
+  for (const candidate of FEATURE_IDS) {
+    if (candidate === featureId) {
+      break;
+    }
+    completed.add(candidate);
+  }
+
+  return completed;
+}
+
+function activeFeatureForSnapshot(snapshot: F8SessionSnapshot): typeof FEATURE_IDS[number] | undefined {
+  if (snapshot.state === "completed") {
+    return undefined;
+  }
+
+  if (snapshot.state === "failed" || snapshot.state === "cancelled") {
+    return attemptFeatureForSnapshot(snapshot);
+  }
+
+  return featureForState(snapshot.state);
+}
+
+function attemptFeatureForSnapshot(snapshot: F8SessionSnapshot): typeof FEATURE_IDS[number] | undefined {
+  const attemptStage = snapshot.activeAttempt?.stage;
+  if (attemptStage === undefined) {
+    return undefined;
+  }
+
+  return featureForState(attemptStage);
+}
+
+function statusForActiveFeature(snapshot: F8SessionSnapshot): string {
+  if (snapshot.state === "failed" || snapshot.state === "cancelled") {
+    return snapshot.state;
+  }
+
+  if (snapshot.state === "f7_import_required" || snapshot.state === "f7_preview_required" || snapshot.state === "feedback_review_required") {
+    return "pending";
+  }
+
+  return "running";
+}
+
+function retryQueue(snapshot: F8SessionSnapshot): ActionQueueItem[] {
+  const retryFeature = attemptFeatureForSnapshot(snapshot);
+  if (retryFeature === undefined) {
+    return [];
+  }
+
+  return [{ featureId: retryFeature, action: "retry", blocking: true }];
+}
+
+function isF7Available(): boolean {
+  return getFeatureStatus("F7")?.status === "available";
 }
 
 function featureForState(state: F8SessionState): typeof FEATURE_IDS[number] {
@@ -145,8 +245,6 @@ function featureForState(state: F8SessionState): typeof FEATURE_IDS[number] {
     case "optimization_targets_decision_required":
     case "f6_running":
     case "review_required":
-    case "failed":
-    case "cancelled":
       return "F6";
     case "f7_import_required":
     case "f7_preview_required":
@@ -154,6 +252,8 @@ function featureForState(state: F8SessionState): typeof FEATURE_IDS[number] {
     case "feedback_review_required":
     case "completed":
       return "F7";
+    case "failed":
+    case "cancelled":
     case "created":
     case "workbook_required":
     case "f0_validated":

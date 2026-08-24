@@ -154,20 +154,14 @@ function startWorkbookValidation(
   command: F8SessionCommand,
   replacingWorkbook: boolean,
 ): F8SessionSnapshot {
-  const currentWorkbookHash = snapshot.downstreamScopeSelection?.workbookContentHash
-    ?? snapshot.initialScopeSelection?.workbookContentHash;
-
   const nextInputRevision = snapshot.inputRevision + 1;
   const preservedDrafts = snapshot.scenarioDrafts?.filter((draft) => draft.inputRevision !== snapshot.inputRevision);
-  const preservedRunReferences = currentWorkbookHash === undefined
-    ? snapshot.priorRunReferences
-    : snapshot.priorRunReferences.filter((reference) => reference.workbookHash !== currentWorkbookHash);
 
   return transitionWithAttempt(snapshot, command, "f0_validating", {
     inputRevision: nextInputRevision,
     initialScopeSelection: undefined,
     downstreamScopeSelection: undefined,
-    priorRunReferences: preservedRunReferences,
+    priorRunReferences: snapshot.priorRunReferences,
     scenarioDrafts: preservedDrafts?.length ? preservedDrafts : undefined,
     ...(replacingWorkbook ? {} : {}),
   });
