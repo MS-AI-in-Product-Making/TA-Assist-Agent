@@ -229,6 +229,71 @@ describe("runF2ExcelWorkflow", () => {
     expect(JSON.parse(readFileSync(path.join(runRoot, "manifest.json"), "utf8"))).toMatchObject({ status: "failed", stages: { f1: { status: "completed" }, f2: { status: "failed" }, validation: { status: "pending" } } });
   });
 
+  it("allows a wrapper retry after F2 fails by resolving the same confirmed selection internally", () => {
+    const setupResult = setup();
+    const f1Payload = '{"artifact":"f1"}';
+    const executeStage = ({ stage, env }) => {
+      if (stage === "f1-selection") {
+        mkdirSync(env.AI_TVA_F1_OUTPUT_ROOT, { recursive: true });
+        writeFileSync(path.join(env.AI_TVA_F1_OUTPUT_ROOT, "Feature1-Selection.json"), JSON.stringify({
+          contractVersion: "v1",
+          inputClassification: "confidential",
+          status: "selectionRequired",
+          workbook: { fileName: "Demo.xlsx", contentHash: HASH },
+          options: [{
+            selectionIndex: 1,
+            worksheetName: "Analysis-A",
+            toleranceLoopDescription: "First loop",
+            worksheetKind: "analysis",
+            source: { summarySheet: "Auto Summary", summaryRow: 10, worksheetAnchor: "Analysis-A!A1" },
+          }],
+        }));
+        return { stdout: "f1-selection complete", stderr: "" };
+      }
+      if (stage === "f1") {
+        mkdirSync(env.AI_TVA_F1_OUTPUT_ROOT, { recursive: true });
+        writeFileSync(path.join(env.AI_TVA_F1_OUTPUT_ROOT, "Feature1-Report.json"), f1Payload);
+        return { stdout: "f1 complete", stderr: "" };
+      }
+      throw new Error("F2 failed");
+    };
+
+    runF2ExcelWorkflow({ ...setupResult, now: fixedNow, executeStage });
+
+    expect(() => runF2ExcelWorkflow({
+      ...setupResult,
+      now: fixedNow,
+      executeStage,
+      worksheetSelection: {
+        workbookContentHash: HASH,
+        selectedWorksheetNames: ["Analysis-A"],
+        confirmed: true,
+      },
+    })).toThrow();
+
+    const retryExecuteStage = vi.fn(({ stage, args, env }) => {
+      if (stage === "f1") throw new Error("wrapper retry should not rerun F1");
+      mkdirSync(env.AI_TVA_F2_OUTPUT_ROOT, { recursive: true });
+      writeFileSync(path.join(env.AI_TVA_F2_OUTPUT_ROOT, "Feature2-Report.json"), JSON.stringify(validF2Report(args[1])));
+      return { stdout: `${stage} complete`, stderr: "" };
+    });
+
+    const result = runF2ExcelWorkflow({
+      ...setupResult,
+      now: fixedNow,
+      executeStage: retryExecuteStage,
+      worksheetSelection: {
+        workbookContentHash: HASH,
+        selectedWorksheetNames: ["Analysis-A"],
+        confirmed: true,
+      },
+    });
+
+    expect(result.status).toBe("completed");
+    expect(retryExecuteStage.mock.calls.map(([request]) => request.stage)).toEqual(["f2"]);
+    expect(readFileSync(path.join(result.f1Root, "Feature1-Report.json"), "utf8")).toBe(f1Payload);
+  });
+
   it("requires an existing pending selection before confirmation", () => {
     const setupResult = setup();
 

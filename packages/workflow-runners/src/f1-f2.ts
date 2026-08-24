@@ -47,6 +47,7 @@ interface WorkflowManifest {
   updatedAt: string;
   outputs: { f1Root: string; f2Root: string; validationRoot: string };
   selection: { status: string; selectedWorksheetNames: string[]; promptPath?: string; workbookContentHash?: string };
+  execution?: { status: string; boundAt?: string; resumedAt?: string; completedAt?: string; failedAt?: string; error?: { name: string; message: string } };
   stages: Record<string, Record<string, unknown>>;
   error?: { name: string; message: string };
 }
@@ -58,7 +59,7 @@ interface SelectionRegistryEntry {
   readonly promptPath: string;
   readonly workbookPath: string;
   readonly workbookContentHash: string;
-  readonly status: "selectionRequired" | "confirmed";
+  readonly status: "selectionRequired" | "confirmed" | "completed";
 }
 
 interface SelectionRegistry {
@@ -67,6 +68,15 @@ interface SelectionRegistry {
 }
 
 const SELECTION_REGISTRY_FILE = "f2-selection-registry.json";
+const EXECUTION_STATUS = {
+  waitingConfirmation: "waiting_confirmation",
+  confirmedPendingExecution: "confirmed_pending_execution",
+  running: "running",
+  failedRetryable: "failed_retryable",
+  completed: "completed",
+} as const;
+
+type ExecutionStatus = (typeof EXECUTION_STATUS)[keyof typeof EXECUTION_STATUS];
 
 function safeName(value: string): string {
   return value.replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, "-");
@@ -74,6 +84,83 @@ function safeName(value: string): string {
 
 function errorDetails(error: unknown): { name: string; message: string } {
   return { name: error instanceof Error ? error.name : "Error", message: error instanceof Error ? error.message : String(error) };
+}
+
+function sameWorksheetSet(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((name) => right.includes(name));
+}
+
+function executionStatus(manifest: WorkflowManifest): ExecutionStatus {
+  const status = manifest.execution?.status;
+  if (status === EXECUTION_STATUS.waitingConfirmation
+    || status === EXECUTION_STATUS.confirmedPendingExecution
+    || status === EXECUTION_STATUS.running
+    || status === EXECUTION_STATUS.failedRetryable
+    || status === EXECUTION_STATUS.completed) {
+    return status;
+  }
+  if (manifest.status === "completed") return EXECUTION_STATUS.completed;
+  if (manifest.status === "failed" && manifest.selection.status === "confirmed") return EXECUTION_STATUS.failedRetryable;
+  if (manifest.status === "running" && manifest.selection.status === "confirmed") return EXECUTION_STATUS.running;
+  if (manifest.selection.status === "confirmed") return EXECUTION_STATUS.confirmedPendingExecution;
+  return EXECUTION_STATUS.waitingConfirmation;
+}
+
+function setExecutionStatus(
+  manifest: WorkflowManifest,
+  status: ExecutionStatus,
+  now: () => Date,
+  options: { readonly error?: { name: string; message: string }; readonly preserveError?: boolean } = {},
+): void {
+  const timestamp = now().toISOString();
+  const nextExecution = { ...(manifest.execution ?? {}), status };
+  if (status === EXECUTION_STATUS.confirmedPendingExecution && nextExecution.boundAt === undefined) nextExecution.boundAt = timestamp;
+  if (status === EXECUTION_STATUS.running) nextExecution.resumedAt = timestamp;
+  if (status === EXECUTION_STATUS.failedRetryable) nextExecution.failedAt = timestamp;
+  if (status === EXECUTION_STATUS.completed) nextExecution.completedAt = timestamp;
+  if (options.error) nextExecution.error = options.error;
+  else if (!options.preserveError) delete nextExecution.error;
+  manifest.execution = nextExecution;
+}
+
+function stageStatus(manifest: WorkflowManifest, stage: string): string {
+  return typeof manifest.stages[stage]?.status === "string" ? String(manifest.stages[stage]?.status) : "pending";
+}
+
+function featureArtifactPath(root: string, fileName: string): string {
+  return path.join(root, fileName);
+}
+
+function ensureStageArtifactAbsent(root: string, fileName: string, label: string): void {
+  const artifactPath = featureArtifactPath(root, fileName);
+  if (!existsSync(artifactPath)) return;
+  ensureContainedPhysicalPath(root, artifactPath, label, "file");
+  throw new Error(`${label} identity mismatch.`);
+}
+
+function ensureStageArtifactPresent(root: string, fileName: string, label: string): string {
+  const artifactPath = featureArtifactPath(root, fileName);
+  return ensureContainedPhysicalPath(root, artifactPath, label, "file");
+}
+
+function buildCompletedResult(
+  confirmation: ReturnType<typeof worksheetSelectionConfirmationSchema.parse>,
+  layout: { runId: string; runRoot: string; f1Root: string; f2Root: string; validationRoot: string; manifestPath: string },
+): F1F2ConfirmedResult {
+  const report = parseCompletedReport(ensureStageArtifactPresent(layout.f2Root, "Feature2-Report.json", "Feature 2 report"));
+  return {
+    featureId: "F2",
+    status: "completed",
+    workbookContentHash: confirmation.workbookContentHash,
+    selectedWorksheetNames: [...confirmation.selectedWorksheetNames],
+    runId: layout.runId,
+    runRoot: layout.runRoot,
+    f1Root: layout.f1Root,
+    f2Root: layout.f2Root,
+    validationRoot: layout.validationRoot,
+    manifestPath: layout.manifestPath,
+    report,
+  };
 }
 
 function defaultExecuteStage({ command, args, cwd, env }: ExecuteStageRequest): ExecuteStageResult {
@@ -235,6 +322,7 @@ function initialManifest(repositoryRoot: string, workbook: string, layout: Retur
       status: worksheetNames === undefined ? "pending" : "confirmed",
       selectedWorksheetNames: worksheetNames ? [...worksheetNames] : [],
     },
+    execution: { status: worksheetNames === undefined ? EXECUTION_STATUS.waitingConfirmation : EXECUTION_STATUS.confirmedPendingExecution },
     stages: {
       "f1-selection": { status: "pending" },
       f1: { status: "pending" },
@@ -263,8 +351,7 @@ function registrySelectionReference(
   workbook: string,
 ): F1F2SelectionReference {
   const registry = loadSelectionRegistry(context.managedOutputRoot);
-  const matches = registry.selections.filter((entry) => entry.status === "selectionRequired"
-    && entry.workbookPath === workbook
+  const matches = registry.selections.filter((entry) => entry.workbookPath === workbook
     && entry.workbookContentHash === request.workbookContentHash);
 
   if (matches.length === 0) throw new Error("Feature 2 pending selection was not found.");
@@ -276,12 +363,32 @@ function registrySelectionReference(
       ensureContainedPhysicalPath(context.managedOutputRoot, entry.manifestPath, "Feature 2 selection manifest", "file");
       const manifest = parseManifest(entry.manifestPath);
       const promptPath = manifest.selection.promptPath;
-      if (manifest.status !== "selectionRequired" || manifest.selection.status !== "selectionRequired"
-        || typeof promptPath !== "string" || promptPath !== entry.promptPath) {
+      if (typeof promptPath !== "string" || promptPath !== entry.promptPath) {
         stale.push(entry);
         continue;
       }
       ensurePhysicalPath(promptPath, "Feature 2 selection prompt path", "file");
+      const prompt = worksheetSelectionPromptSchema.parse(JSON.parse(readFileSync(promptPath, "utf8")));
+      const availableNames = prompt.options.map((option) => option.worksheetName);
+      const selectionStatus = manifest.selection.status;
+      const execution = executionStatus(manifest);
+      const requestMatchesPrompt = request.selectedWorksheetNames.length > 0
+        && request.selectedWorksheetNames.every((name) => availableNames.includes(name));
+      const requestMatchesConfirmed = selectionStatus === "confirmed"
+        && manifest.selection.workbookContentHash === request.workbookContentHash
+        && sameWorksheetSet(manifest.selection.selectedWorksheetNames, request.selectedWorksheetNames);
+      const isWaitingForInitialConfirmation = selectionStatus === "selectionRequired"
+        && execution === EXECUTION_STATUS.waitingConfirmation
+        && requestMatchesPrompt;
+      const isRetryOrCompleted = requestMatchesConfirmed
+        && (execution === EXECUTION_STATUS.confirmedPendingExecution
+          || execution === EXECUTION_STATUS.running
+          || execution === EXECUTION_STATUS.failedRetryable
+          || execution === EXECUTION_STATUS.completed);
+      if (!isWaitingForInitialConfirmation && !isRetryOrCompleted) {
+        stale.push(entry);
+        continue;
+      }
       valid.push(entry);
     } catch {
       stale.push(entry);
@@ -322,9 +429,6 @@ function loadSelectionRun(
   if (manifest.repositoryRoot !== context.repositoryRoot) throw new Error("Feature 2 selection manifest repository mismatch.");
   const realRunRoot = ensureContainedPhysicalPath(context.managedOutputRoot, manifest.runRoot, "Feature 2 selection run root", "directory");
   if (manifest.workbookPath !== workbook) throw new Error("Feature 2 selection workbook identity mismatch.");
-  if (manifest.status !== "selectionRequired" || manifest.selection.status !== "selectionRequired") {
-    throw new Error("Feature 2 selection reference is stale.");
-  }
   const promptPath = manifest.selection.promptPath;
   if (typeof promptPath !== "string" || promptPath !== selectionReference.promptPath) {
     throw new Error("Feature 2 selection prompt identity mismatch.");
@@ -338,6 +442,14 @@ function loadSelectionRun(
   const availableNames = new Set(prompt.options.map((option) => option.worksheetName));
   if (request.selectedWorksheetNames.length === 0 || request.selectedWorksheetNames.some((name) => !availableNames.has(name))) {
     throw new Error("Feature 2 selected worksheet names do not match the selection prompt.");
+  }
+  if (manifest.selection.status === "confirmed") {
+    if (manifest.selection.workbookContentHash !== request.workbookContentHash
+      || !sameWorksheetSet(manifest.selection.selectedWorksheetNames, request.selectedWorksheetNames)) {
+      throw new Error("Feature 2 confirmed selection identity mismatch.");
+    }
+  } else if (manifest.selection.status !== "selectionRequired") {
+    throw new Error("Feature 2 selection reference is stale.");
   }
   return { manifest, promptPath, prompt };
 }
@@ -355,6 +467,7 @@ function runStage(
   now: () => Date,
 ): void {
   throwIfAborted(context, stage);
+  setExecutionStatus(manifest, EXECUTION_STATUS.running, now, { preserveError: true });
   manifest.stages[stage] = { status: "running", startedAt: now().toISOString() };
   persistManifest(manifest, manifestPath, now);
   context.emit({ kind: "stage_started", featureId: "F2", stage, timestamp: now().toISOString() });
@@ -379,6 +492,7 @@ function runStage(
     manifest.stages[stage] = { ...manifest.stages[stage], status: "failed", failedAt: now().toISOString(), error: details };
     manifest.status = "failed";
     manifest.error = details;
+    setExecutionStatus(manifest, EXECUTION_STATUS.failedRetryable, now, { error: details });
     persistManifest(manifest, manifestPath, now);
     context.emit({ kind: "stage_failed", featureId: "F2", stage, timestamp: now().toISOString(), detail: normalized.summary });
     throw normalized;
@@ -421,6 +535,7 @@ export function runF1F2Selection(
     const prompt = worksheetSelectionPromptSchema.parse(JSON.parse(readFileSync(promptPath, "utf8")));
     manifest.selection = { status: "selectionRequired", promptPath, workbookContentHash: prompt.workbook.contentHash, selectedWorksheetNames: [] };
     manifest.status = "selectionRequired";
+    setExecutionStatus(manifest, EXECUTION_STATUS.waitingConfirmation, now);
     persistManifest(manifest, layout.manifestPath, now);
     upsertSelectionRegistryEntry(context.managedOutputRoot, {
       runId: layout.runId,
@@ -476,57 +591,81 @@ export function runF1F2Confirmed(
     };
     mkdirSync(layout.validationRoot, { recursive: true });
     ensureContainedPhysicalPath(context.managedOutputRoot, layout.runRoot, "Feature 2 selection run root", "directory");
-    manifest.selection = {
-      status: "confirmed",
-      promptPath,
-      workbookContentHash: confirmation.workbookContentHash,
-      selectedWorksheetNames: [...confirmation.selectedWorksheetNames],
-    };
-    manifest.status = "running";
-    persistManifest(manifest, layout.manifestPath, now);
-    updateSelectionRegistryStatus(context.managedOutputRoot, layout.runId, "confirmed");
-    runStage(
-      context,
-      manifest,
-      layout.manifestPath,
-      layout.validationRoot,
-      "f1",
-      [
-        "scripts/run-f1-full-validation.mjs",
-        workbook,
-        "--workbook-hash",
-        confirmation.workbookContentHash,
-        "--worksheets",
-        confirmation.selectedWorksheetNames.join(","),
-        "--confirm",
-      ],
-      "AI_TVA_F1_OUTPUT_ROOT",
-      layout.f1Root,
-      executeStage,
-      now,
-    );
-    runStage(
-      context,
-      manifest,
-      layout.manifestPath,
-      layout.validationRoot,
-      "f2",
-      ["scripts/run-f2-full-validation.mjs", layout.f1Root],
-      "AI_TVA_F2_OUTPUT_ROOT",
-      layout.f2Root,
-      executeStage,
-      now,
-    );
+    if (executionStatus(manifest) === EXECUTION_STATUS.completed || manifest.status === "completed") {
+      updateSelectionRegistryStatus(context.managedOutputRoot, layout.runId, "completed");
+      return buildCompletedResult(confirmation, layout);
+    }
+    if (manifest.selection.status === "selectionRequired") {
+      manifest.selection = {
+        status: "confirmed",
+        promptPath,
+        workbookContentHash: confirmation.workbookContentHash,
+        selectedWorksheetNames: [...confirmation.selectedWorksheetNames],
+      };
+      setExecutionStatus(manifest, EXECUTION_STATUS.confirmedPendingExecution, now);
+      manifest.status = "running";
+      persistManifest(manifest, layout.manifestPath, now);
+      updateSelectionRegistryStatus(context.managedOutputRoot, layout.runId, "confirmed");
+    }
+
+    const f1StageStatus = stageStatus(manifest, "f1");
+    if (f1StageStatus === "completed") {
+      ensureStageArtifactPresent(layout.f1Root, "Feature1-Report.json", "Feature 1 report");
+    } else {
+      ensureStageArtifactAbsent(layout.f1Root, "Feature1-Report.json", "Feature 1 report");
+      runStage(
+        context,
+        manifest,
+        layout.manifestPath,
+        layout.validationRoot,
+        "f1",
+        [
+          "scripts/run-f1-full-validation.mjs",
+          workbook,
+          "--workbook-hash",
+          confirmation.workbookContentHash,
+          "--worksheets",
+          confirmation.selectedWorksheetNames.join(","),
+          "--confirm",
+        ],
+        "AI_TVA_F1_OUTPUT_ROOT",
+        layout.f1Root,
+        executeStage,
+        now,
+      );
+    }
+
+    const f2StageStatus = stageStatus(manifest, "f2");
+    if (f2StageStatus === "completed") {
+      ensureStageArtifactPresent(layout.f2Root, "Feature2-Report.json", "Feature 2 report");
+    } else {
+      ensureStageArtifactAbsent(layout.f2Root, "Feature2-Report.json", "Feature 2 report");
+      runStage(
+        context,
+        manifest,
+        layout.manifestPath,
+        layout.validationRoot,
+        "f2",
+        ["scripts/run-f2-full-validation.mjs", layout.f1Root],
+        "AI_TVA_F2_OUTPUT_ROOT",
+        layout.f2Root,
+        executeStage,
+        now,
+      );
+    }
 
     manifest.stages.validation = { status: "running", startedAt: now().toISOString() };
     persistManifest(manifest, layout.manifestPath, now);
-    const reportPath = path.join(layout.f2Root, "Feature2-Report.json");
+    const reportPath = ensureStageArtifactPresent(layout.f2Root, "Feature2-Report.json", "Feature 2 report");
     const report = parseCompletedReport(reportPath);
     const validation = { status: "valid", validatedAt: now().toISOString(), reportPath, reportStatus: report.status };
     writeFileSync(path.join(layout.validationRoot, "Feature2-Validation.json"), `${JSON.stringify(validation, null, 2)}\n`, "utf8");
     manifest.stages.validation = { ...manifest.stages.validation, status: "completed", completedAt: now().toISOString() };
     manifest.status = "completed";
+    delete manifest.error;
+    setExecutionStatus(manifest, EXECUTION_STATUS.completed, now);
     persistManifest(manifest, layout.manifestPath, now);
+    updateSelectionRegistryStatus(context.managedOutputRoot, layout.runId, "completed");
     context.emit({ kind: "artifact_written", featureId: "F2", stage: "validation", timestamp: now().toISOString(), path: reportPath });
     return {
       featureId: "F2",

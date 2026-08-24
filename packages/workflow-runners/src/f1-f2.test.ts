@@ -49,6 +49,22 @@ function selectionPrompt() {
   };
 }
 
+function selectionPromptWithNames(worksheetNames: readonly string[]) {
+  return {
+    contractVersion: "v1",
+    inputClassification: "confidential",
+    status: "selectionRequired",
+    workbook: { fileName: "Demo.xlsx", contentHash: HASH },
+    options: worksheetNames.map((worksheetName, index) => ({
+      selectionIndex: index + 1,
+      worksheetName,
+      toleranceLoopDescription: `Loop ${index + 1}`,
+      worksheetKind: "analysis",
+      source: { summarySheet: "Auto Summary", summaryRow: 10 + index, worksheetAnchor: `${worksheetName}!A1` },
+    })),
+  };
+}
+
 function selectionManifest(selection: ReturnType<typeof runF1F2Selection>) {
   return JSON.parse(readFileSync(selection.manifestPath, "utf8")) as {
     selection: { promptPath?: string };
@@ -303,6 +319,176 @@ describe("runF1F2Confirmed", () => {
 
     expect(result.runRoot).toBe(selection.runRoot);
     expect(executeStage.mock.calls.map(([request]) => request.stage)).toEqual(["f1-selection", "f1", "f2"]);
+  });
+
+  it("retries from F1 when confirmation failed before F1 side effects", async () => {
+    const setup = setupRepo();
+    const executeStage = vi.fn(({ stage, env, args }) => {
+      if (stage === "f1-selection") {
+        mkdirSync(env.AI_TVA_F1_OUTPUT_ROOT, { recursive: true });
+        writeFileSync(path.join(env.AI_TVA_F1_OUTPUT_ROOT, "Feature1-Selection.json"), JSON.stringify(selectionPrompt()));
+        return { stdout: "selection complete", stderr: "" };
+      }
+      if (stage === "f1") throw new Error("F1 unavailable before writing artifacts");
+      mkdirSync(env.AI_TVA_F2_OUTPUT_ROOT, { recursive: true });
+      writeFileSync(path.join(env.AI_TVA_F2_OUTPUT_ROOT, "Feature2-Report.json"), JSON.stringify(validF2Report(args[1])));
+      return { stdout: "f2 complete", stderr: "" };
+    });
+
+    const selection = runF1F2Selection({ workbookPath: setup.workbookPath, now: fixedNow }, context(setup.repositoryRoot), { executeStage });
+
+    expect(() => runF1F2Confirmed({
+      workbookPath: setup.workbookPath,
+      workbookContentHash: HASH,
+      selectedWorksheetNames: ["Analysis-A"],
+      selectionReference: selection.selectionReference,
+      now: fixedNow,
+    }, context(setup.repositoryRoot), { executeStage })).toThrow();
+
+    const retryExecuteStage = vi.fn(({ stage, env, args }) => {
+      if (stage === "f1") {
+        mkdirSync(env.AI_TVA_F1_OUTPUT_ROOT, { recursive: true });
+        writeFileSync(path.join(env.AI_TVA_F1_OUTPUT_ROOT, "Feature1-Report.json"), "{}");
+        return { stdout: "f1 complete", stderr: "" };
+      }
+      mkdirSync(env.AI_TVA_F2_OUTPUT_ROOT, { recursive: true });
+      writeFileSync(path.join(env.AI_TVA_F2_OUTPUT_ROOT, "Feature2-Report.json"), JSON.stringify(validF2Report(args[1])));
+      return { stdout: "f2 complete", stderr: "" };
+    });
+
+    const result = runF1F2Confirmed({
+      workbookPath: setup.workbookPath,
+      workbookContentHash: HASH,
+      selectedWorksheetNames: ["Analysis-A"],
+      selectionReference: selection.selectionReference,
+      now: fixedNow,
+    }, context(setup.repositoryRoot), { executeStage: retryExecuteStage });
+
+    expect(result.status).toBe("completed");
+    expect(retryExecuteStage.mock.calls.map(([request]) => request.stage)).toEqual(["f1", "f2"]);
+  });
+
+  it("retries from F2 without overwriting completed F1 artifacts", async () => {
+    const setup = setupRepo();
+    const f1Payload = '{"artifact":"f1"}';
+    const executeStage = vi.fn(({ stage, env }) => {
+      if (stage === "f1-selection") {
+        mkdirSync(env.AI_TVA_F1_OUTPUT_ROOT, { recursive: true });
+        writeFileSync(path.join(env.AI_TVA_F1_OUTPUT_ROOT, "Feature1-Selection.json"), JSON.stringify(selectionPrompt()));
+        return { stdout: "selection complete", stderr: "" };
+      }
+      if (stage === "f1") {
+        mkdirSync(env.AI_TVA_F1_OUTPUT_ROOT, { recursive: true });
+        writeFileSync(path.join(env.AI_TVA_F1_OUTPUT_ROOT, "Feature1-Report.json"), f1Payload);
+        return { stdout: "f1 complete", stderr: "" };
+      }
+      throw new Error("F2 failed");
+    });
+
+    const selection = runF1F2Selection({ workbookPath: setup.workbookPath, now: fixedNow }, context(setup.repositoryRoot), { executeStage });
+
+    expect(() => runF1F2Confirmed({
+      workbookPath: setup.workbookPath,
+      workbookContentHash: HASH,
+      selectedWorksheetNames: ["Analysis-A"],
+      selectionReference: selection.selectionReference,
+      now: fixedNow,
+    }, context(setup.repositoryRoot), { executeStage })).toThrow();
+
+    const retryExecuteStage = vi.fn(({ stage, env, args }) => {
+      if (stage === "f1") throw new Error("retry should reuse completed F1");
+      mkdirSync(env.AI_TVA_F2_OUTPUT_ROOT, { recursive: true });
+      writeFileSync(path.join(env.AI_TVA_F2_OUTPUT_ROOT, "Feature2-Report.json"), JSON.stringify(validF2Report(args[1])));
+      return { stdout: "f2 complete", stderr: "" };
+    });
+
+    const result = runF1F2Confirmed({
+      workbookPath: setup.workbookPath,
+      workbookContentHash: HASH,
+      selectedWorksheetNames: ["Analysis-A"],
+      selectionReference: selection.selectionReference,
+      now: fixedNow,
+    }, context(setup.repositoryRoot), { executeStage: retryExecuteStage });
+
+    expect(result.status).toBe("completed");
+    expect(retryExecuteStage.mock.calls.map(([request]) => request.stage)).toEqual(["f2"]);
+    expect(readFileSync(path.join(result.f1Root, "Feature1-Report.json"), "utf8")).toBe(f1Payload);
+  });
+
+  it("returns the same structured result when confirmation is repeated after completion", async () => {
+    const setup = setupRepo();
+    const executeStage = vi.fn(({ stage, env, args }) => {
+      if (stage === "f1-selection") {
+        mkdirSync(env.AI_TVA_F1_OUTPUT_ROOT, { recursive: true });
+        writeFileSync(path.join(env.AI_TVA_F1_OUTPUT_ROOT, "Feature1-Selection.json"), JSON.stringify(selectionPrompt()));
+        return { stdout: "selection complete", stderr: "" };
+      }
+      if (stage === "f1") {
+        mkdirSync(env.AI_TVA_F1_OUTPUT_ROOT, { recursive: true });
+        writeFileSync(path.join(env.AI_TVA_F1_OUTPUT_ROOT, "Feature1-Report.json"), "{}");
+        return { stdout: "f1 complete", stderr: "" };
+      }
+      mkdirSync(env.AI_TVA_F2_OUTPUT_ROOT, { recursive: true });
+      writeFileSync(path.join(env.AI_TVA_F2_OUTPUT_ROOT, "Feature2-Report.json"), JSON.stringify(validF2Report(args[1])));
+      return { stdout: "f2 complete", stderr: "" };
+    });
+
+    const selection = runF1F2Selection({ workbookPath: setup.workbookPath, now: fixedNow }, context(setup.repositoryRoot), { executeStage });
+    const completed = runF1F2Confirmed({
+      workbookPath: setup.workbookPath,
+      workbookContentHash: HASH,
+      selectedWorksheetNames: ["Analysis-A"],
+      selectionReference: selection.selectionReference,
+      now: fixedNow,
+    }, context(setup.repositoryRoot), { executeStage });
+
+    const duplicateExecuteStage = vi.fn(() => {
+      throw new Error("duplicate confirm should be idempotent");
+    });
+
+    const duplicate = runF1F2Confirmed({
+      workbookPath: setup.workbookPath,
+      workbookContentHash: HASH,
+      selectedWorksheetNames: ["Analysis-A"],
+      selectionReference: selection.selectionReference,
+      now: fixedNow,
+    }, context(setup.repositoryRoot), { executeStage: duplicateExecuteStage });
+
+    expect(duplicate).toEqual(completed);
+    expect(duplicateExecuteStage).not.toHaveBeenCalled();
+  });
+
+  it("rejects changed confirmed worksheet sets after a retryable failure", async () => {
+    const setup = setupRepo();
+    const executeStage = vi.fn(({ stage, env }) => {
+      if (stage === "f1-selection") {
+        mkdirSync(env.AI_TVA_F1_OUTPUT_ROOT, { recursive: true });
+        writeFileSync(path.join(env.AI_TVA_F1_OUTPUT_ROOT, "Feature1-Selection.json"), JSON.stringify(selectionPromptWithNames(["Analysis-A", "Analysis-B"])));
+        return { stdout: "selection complete", stderr: "" };
+      }
+      throw new Error("F1 failed before artifacts");
+    });
+
+    const selection = runF1F2Selection({ workbookPath: setup.workbookPath, now: fixedNow }, context(setup.repositoryRoot), { executeStage });
+
+    expect(() => runF1F2Confirmed({
+      workbookPath: setup.workbookPath,
+      workbookContentHash: HASH,
+      selectedWorksheetNames: ["Analysis-A"],
+      selectionReference: selection.selectionReference,
+      now: fixedNow,
+    }, context(setup.repositoryRoot), { executeStage })).toThrow();
+
+    expect(() => runF1F2Confirmed({
+      workbookPath: setup.workbookPath,
+      workbookContentHash: HASH,
+      selectedWorksheetNames: ["Analysis-B"],
+      selectionReference: selection.selectionReference,
+      now: fixedNow,
+    }, context(setup.repositoryRoot), { executeStage })).toThrow(expect.objectContaining({
+      code: "evidence_mismatch",
+      retryable: false,
+    }));
   });
 
   it("rejects ambiguous pending selections when more than one candidate matches the workbook hash", async () => {
