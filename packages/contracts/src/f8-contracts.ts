@@ -5,6 +5,7 @@ import { typedErrorSchema } from "./errors.js";
 const nonEmptyStringSchema = z.string().min(1);
 const nonEmptyStringArraySchema = z.array(nonEmptyStringSchema);
 const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
+const f8TypedErrorSchema = typedErrorSchema.strict();
 
 export const f8SessionStateSchema = z.enum([
   "created",
@@ -232,7 +233,7 @@ const conversationCommandPartSchema = z
 const conversationErrorPartSchema = z
   .object({
     kind: z.literal("error"),
-    error: typedErrorSchema,
+    error: f8TypedErrorSchema,
   })
   .strict();
 
@@ -284,6 +285,20 @@ export const hostActionClaimSchema = z
   })
   .strict();
 
+const hostActionResultPayloadSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("completed"),
+  }).strict(),
+  z.object({
+    status: z.literal("blocked"),
+    reason: nonEmptyStringSchema.optional(),
+  }).strict(),
+  z.object({
+    status: z.literal("failed"),
+    error: f8TypedErrorSchema,
+  }).strict(),
+]);
+
 export const hostActionResultSchema = z
   .object({
     contractVersion: z.literal("f8-host-action-result-v1"),
@@ -291,9 +306,14 @@ export const hostActionResultSchema = z
     leaseId: nonEmptyStringSchema,
     status: z.enum(["completed", "blocked", "failed"]),
     resultHash: sha256Schema,
-    payload: z.unknown(),
+    payload: hostActionResultPayloadSchema,
   })
-  .strict();
+  .strict()
+  .superRefine((result, context) => {
+    if (result.status !== result.payload.status) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "host action result status must match payload status", path: ["payload", "status"] });
+    }
+  });
 
 const sessionSnapshotUpdatedEventSchema = z
   .object({
@@ -329,7 +349,7 @@ const sessionCommandRejectedEventSchema = z
     kind: z.literal("command_rejected"),
     timestamp: z.string().datetime(),
     commandId: nonEmptyStringSchema,
-    error: typedErrorSchema,
+    error: f8TypedErrorSchema,
   })
   .strict();
 
@@ -370,7 +390,7 @@ const sessionStageFailedEventSchema = z
     timestamp: z.string().datetime(),
     stage: f8SessionStateSchema,
     attemptId: nonEmptyStringSchema,
-    error: typedErrorSchema,
+    error: f8TypedErrorSchema,
   })
   .strict();
 

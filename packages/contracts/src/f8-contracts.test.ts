@@ -97,7 +97,26 @@ describe("F8 session and host contracts", () => {
       leaseId: "lease-1",
       status: "completed",
       resultHash: WORKBOOK_HASH,
-      payload: { ok: true },
+      payload: { status: "completed" },
+    };
+
+    const failedHostActionResult = {
+      contractVersion: "f8-host-action-result-v1",
+      actionId: "action-2",
+      leaseId: "lease-2",
+      status: "failed",
+      resultHash: WORKBOOK_HASH,
+      payload: {
+        status: "failed",
+        error: {
+          code: "internal_error",
+          runId: "00000000-0000-4000-8000-000000000001",
+          summary: "Host action failed.",
+          retryable: false,
+          suggestedAction: "Retry the host action.",
+          affectedInputReferences: [],
+        },
+      },
     };
 
     const draft = {
@@ -118,12 +137,39 @@ describe("F8 session and host contracts", () => {
     expect(hostActionRequestSchema.parse(hostActionRequest)).toEqual(hostActionRequest);
     expect(hostActionClaimSchema.parse(hostActionClaim)).toEqual(hostActionClaim);
     expect(hostActionResultSchema.parse(hostActionResult)).toEqual(hostActionResult);
+    expect(hostActionResultSchema.parse(failedHostActionResult)).toEqual(failedHostActionResult);
     expect(f8ScenarioDraftSchema.parse(draft)).toEqual(draft);
 
     expect(() => conversationTurnSchema.parse({ ...conversationTurn, outputRoot: "C:/arbitrary" })).toThrow();
+    expect(() => conversationTurnSchema.parse({
+      ...conversationTurn,
+      content: [{
+        kind: "error",
+        error: {
+          code: "policy_denied",
+          runId: "00000000-0000-4000-8000-000000000001",
+          summary: "Denied.",
+          retryable: false,
+          suggestedAction: "Review the policy.",
+          affectedInputReferences: [],
+          unexpected: true,
+        },
+      }],
+    })).toThrow();
     expect(() => hostActionRequestSchema.parse({ ...hostActionRequest, outputRoot: "C:/arbitrary" })).toThrow();
     expect(() => hostActionClaimSchema.parse({ ...hostActionClaim, outputRoot: "C:/arbitrary" })).toThrow();
     expect(() => hostActionResultSchema.parse({ ...hostActionResult, outputRoot: "C:/arbitrary" })).toThrow();
+    expect(() => hostActionResultSchema.parse({
+      ...failedHostActionResult,
+      payload: {
+        ...failedHostActionResult.payload,
+        error: { ...failedHostActionResult.payload.error, nested: "nope" },
+      },
+    })).toThrow();
+    expect(() => hostActionResultSchema.parse({
+      ...hostActionResult,
+      payload: { status: "completed", unexpected: true },
+    })).toThrow();
     expect(() => f8ScenarioDraftSchema.parse({ ...draft, outputRoot: "C:/arbitrary" })).toThrow();
   });
 });
