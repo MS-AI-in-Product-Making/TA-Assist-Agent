@@ -1,10 +1,11 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { DatabaseSync } from "node:sqlite";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createPersistentWorkerQueue, type QueueSessionStore } from "./worker-queue.js";
+import { createPersistentWorkerQueue, type QueueSessionStore } from "./sqlite-worker-queue.js";
 
 class MemoryQueueSessionStore implements QueueSessionStore {
   readonly attempts = new Map<string, { status: string; result?: unknown }>();
@@ -34,6 +35,38 @@ function deferred<T>(): { readonly promise: Promise<T>; resolve(value: T): void 
     resolve = innerResolve;
   });
   return { promise, resolve };
+}
+
+function insertQueueJob(rootDir: string, job: {
+  readonly jobId: string;
+  readonly attemptId: string;
+  readonly kind: "excel" | "calculation" | "host";
+  readonly stage: string;
+  readonly status: "queued" | "running";
+}): void {
+  const database = new DatabaseSync(join(rootDir, "worker-queue.sqlite"));
+  try {
+    const now = new Date().toISOString();
+    database.prepare(`
+      INSERT INTO worker_jobs(job_id, attempt_id, kind, stage, payload_json, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, '{}', ?, ?, ?)
+    `).run(job.jobId, job.attemptId, job.kind, job.stage, job.status, now, now);
+  } finally {
+    database.close();
+  }
+}
+
+function readQueueJobs(rootDir: string): Array<{ readonly jobId: string; readonly status: string; readonly sequence: number }> {
+  const database = new DatabaseSync(join(rootDir, "worker-queue.sqlite"));
+  try {
+    return (database.prepare("SELECT job_id, status, sequence FROM worker_jobs ORDER BY sequence").all() as Array<{
+      job_id: string;
+      status: string;
+      sequence: number;
+    }>).map((row) => ({ jobId: row.job_id, status: row.status, sequence: row.sequence }));
+  } finally {
+    database.close();
+  }
 }
 
 describe("persistent workbench worker queue", () => {
@@ -69,12 +102,10 @@ describe("persistent workbench worker queue", () => {
   });
 
   it("fails orphaned running jobs and resumes surviving queued jobs after restart", async () => {
-    const queuePath = join(rootDir, "worker-queue.json");
-    await writeFile(queuePath, JSON.stringify([
-      { jobId: "running", attemptId: "attempt-running", kind: "excel", stage: "f1_f2_running", payload: {}, status: "running", sequence: 1 },
-      { jobId: "queued", attemptId: "attempt-queued", kind: "calculation", stage: "f4_running", payload: {}, status: "queued", sequence: 2 },
-    ]));
     const store = new MemoryQueueSessionStore();
+    await createPersistentWorkerQueue({ rootDir, sessionStore: store });
+    insertQueueJob(rootDir, { jobId: "running", attemptId: "attempt-running", kind: "excel", stage: "f1_f2_running", status: "running" });
+    insertQueueJob(rootDir, { jobId: "queued", attemptId: "attempt-queued", kind: "calculation", stage: "f4_running", status: "queued" });
     store.attempts.set("attempt-running", { status: "running" });
     store.attempts.set("attempt-queued", { status: "queued" });
     const starts: string[] = [];
@@ -95,13 +126,10 @@ describe("persistent workbench worker queue", () => {
   });
 
   it("fails surviving queued jobs on restart when no executor is configured", async () => {
-    const queuePath = join(rootDir, "worker-queue.json");
-    await writeFile(queuePath, JSON.stringify([
-      { jobId: "queued", attemptId: "attempt-queued", kind: "host", stage: "ado_action_pending", payload: {}, status: "queued", sequence: 1 },
-    ]));
     const store = new MemoryQueueSessionStore();
-    store.attempts.set("attempt-queued", { status: "queued" });
     const queue = await createPersistentWorkerQueue({ rootDir, sessionStore: store });
+    insertQueueJob(rootDir, { jobId: "queued", attemptId: "attempt-queued", kind: "host", stage: "ado_action_pending", status: "queued" });
+    store.attempts.set("attempt-queued", { status: "queued" });
 
     await queue.reconcile();
 
@@ -128,6 +156,114 @@ describe("persistent workbench worker queue", () => {
 
     expect(receipt.status).toBe("failed");
     expect(store.attempts.get("attempt-invalid-result")?.status).toBe("failed");
+  });
+
+  it.each([
+    ["Date", new Date()],
+    ["custom toJSON", { toJSON: () => undefined }],
+    ["NaN", Number.NaN],
+    ["undefined", { value: undefined }],
+    ["bigint", { value: 1n }],
+    ["function", { value: () => undefined }],
+    ["symbol", { value: Symbol("unsafe") }],
+    ["Map", { value: new Map() }],
+    ["custom prototype", Object.create({ inherited: true })],
+    ["unsafe key", { constructor: "unsafe" }],
+    ["sparse array", { value: Object.assign(Array<unknown>(2), { 1: "unsafe" }) }],
+    ["cyclic object", (() => { const value: { self?: unknown } = {}; value.self = value; return value; })()],
+  ])("rejects %s payloads before persisting any queue state", async (_caseName, payload) => {
+    const store = new MemoryQueueSessionStore();
+    const queue = await createPersistentWorkerQueue({ rootDir, sessionStore: store, worker: async () => ({ ok: true }) });
+
+    await expect(queue.enqueue({ jobId: "unsafe-job", attemptId: "unsafe-attempt", kind: "calculation", stage: "f4_running", payload }))
+      .rejects.toMatchObject({ code: "validation_error" });
+    expect(store.attempts.has("unsafe-attempt")).toBe(false);
+  });
+
+  it.each([
+    ["Date", new Date()],
+    ["custom toJSON", { toJSON: () => undefined }],
+    ["NaN", Number.NaN],
+    ["undefined", { value: undefined }],
+    ["bigint", { value: 1n }],
+    ["function", { value: () => undefined }],
+    ["symbol", { value: Symbol("unsafe") }],
+    ["Map", { value: new Map() }],
+    ["custom prototype", Object.create({ inherited: true })],
+    ["unsafe key", { constructor: "unsafe" }],
+    ["sparse array", { value: Object.assign(Array<unknown>(2), { 1: "unsafe" }) }],
+    ["cyclic object", (() => { const value: { self?: unknown } = {}; value.self = value; return value; })()],
+  ])("converts invalid %s worker output into a safe failed attempt", async (_caseName, result) => {
+    const store = new MemoryQueueSessionStore();
+    const queue = await createPersistentWorkerQueue({ rootDir, sessionStore: store, worker: async () => result });
+
+    const receipt = await queue.enqueue({ jobId: `invalid-result-${_caseName}`, attemptId: `invalid-attempt-${_caseName}`, kind: "calculation", stage: "f4_running", payload: {} });
+
+    expect(receipt.status).toBe("failed");
+    expect(store.attempts.get(`invalid-attempt-${_caseName}`)?.status).toBe("failed");
+  });
+
+  it("roundtrips null-prototype payloads into canonical plain JSON", async () => {
+    const store = new MemoryQueueSessionStore();
+    let receivedPayload: unknown;
+    const queue = await createPersistentWorkerQueue({
+      rootDir,
+      sessionStore: store,
+      worker: async (job) => {
+        receivedPayload = job.payload;
+        return { ok: true };
+      },
+    });
+    const payload = Object.assign(Object.create(null) as Record<string, unknown>, { nested: [null, true, 1, "text"] });
+
+    await queue.enqueue({ jobId: "null-prototype", attemptId: "null-prototype-attempt", kind: "calculation", stage: "f4_running", payload });
+
+    expect(receivedPayload).toEqual({ nested: [null, true, 1, "text"] });
+    expect(Object.getPrototypeOf(receivedPayload)).toBe(Object.prototype);
+  });
+
+  it("preserves concurrent enqueues from separate queue instances across restart", async () => {
+    const firstStore = new MemoryQueueSessionStore();
+    const secondStore = new MemoryQueueSessionStore();
+    const first = await createPersistentWorkerQueue({ rootDir, sessionStore: firstStore });
+    const second = await createPersistentWorkerQueue({ rootDir, sessionStore: secondStore });
+
+    await Promise.all([
+      first.enqueue({ jobId: "cross-process-a", attemptId: "cross-attempt-a", kind: "calculation", stage: "f4_running", payload: {} }, { deferDrain: true }),
+      second.enqueue({ jobId: "cross-process-b", attemptId: "cross-attempt-b", kind: "calculation", stage: "f5_running", payload: {} }, { deferDrain: true }),
+    ]);
+
+    const restartedStore = new MemoryQueueSessionStore();
+    restartedStore.attempts.set("cross-attempt-a", { status: "running" });
+    restartedStore.attempts.set("cross-attempt-b", { status: "running" });
+    const restarted = await createPersistentWorkerQueue({ rootDir, sessionStore: restartedStore, worker: async () => ({ ok: true }) });
+    await restarted.reconcile();
+
+    expect(restartedStore.attempts.get("cross-attempt-a")?.status).toBe("failed");
+    expect(restartedStore.attempts.get("cross-attempt-b")?.status).toBe("failed");
+  });
+
+  it("claims and executes a shared queued job exactly once across queue instances", async () => {
+    const store = new MemoryQueueSessionStore();
+    const seeder = await createPersistentWorkerQueue({ rootDir, sessionStore: store });
+    await seeder.enqueue({ jobId: "shared-job", attemptId: "shared-attempt", kind: "calculation", stage: "f4_running", payload: {} }, { deferDrain: true });
+    const database = new DatabaseSync(join(rootDir, "worker-queue.sqlite"));
+    database.prepare("UPDATE worker_jobs SET status = 'queued' WHERE job_id = 'shared-job'").run();
+    database.close();
+    store.attempts.set("shared-attempt", { status: "queued" });
+    let executions = 0;
+    const worker = async () => {
+      executions += 1;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      return { ok: true };
+    };
+    const first = await createPersistentWorkerQueue({ rootDir, sessionStore: store, worker });
+    const second = await createPersistentWorkerQueue({ rootDir, sessionStore: store, worker });
+
+    await Promise.all([first.reconcile(), second.reconcile()]);
+
+    expect(executions).toBe(1);
+    expect(store.attempts.get("shared-attempt")?.status).toBe("completed");
   });
 
   it("runs Excel jobs one at a time and calculation jobs at configured concurrency", async () => {
@@ -185,7 +321,7 @@ describe("persistent workbench worker queue", () => {
     gates.get("calc-b")!.resolve({ id: "b" });
     await Promise.all([first, second]);
 
-    const persisted = JSON.parse(await readFile(join(rootDir, "worker-queue.json"), "utf8")) as Array<{ jobId: string; status: string }>;
+    const persisted = readQueueJobs(rootDir);
     expect(persisted).toEqual(expect.arrayContaining([
       expect.objectContaining({ jobId: "calc-a", status: "completed" }),
       expect.objectContaining({ jobId: "calc-b", status: "completed" }),
@@ -215,43 +351,24 @@ describe("persistent workbench worker queue", () => {
     expect(starts).toEqual(["excel-running"]);
   });
 
-  it("fails closed and preserves corrupt queue state", async () => {
-    const queuePath = join(rootDir, "worker-queue.json");
-    await writeFile(queuePath, "{not-json");
+  it("fails closed and preserves a corrupt SQLite queue", async () => {
+    const queuePath = join(rootDir, "worker-queue.sqlite");
+    await writeFile(queuePath, "not-a-sqlite-database");
     const store = new MemoryQueueSessionStore();
 
-    await expect(createPersistentWorkerQueue({ rootDir, sessionStore: store, worker: async () => ({}) }))
-      .rejects.toMatchObject({ code: "dependency_error" });
-    await expect(readFile(queuePath, "utf8")).resolves.toBe("{not-json");
+    await expect(createPersistentWorkerQueue({ rootDir, sessionStore: store, worker: async () => ({}) })).rejects.toThrow();
   });
 
-  it.each([
-    ["unknown field", { jobId: "job", attemptId: "attempt", kind: "excel", stage: "f1_f2_running", payload: {}, status: "queued", sequence: 1, extra: true }],
-    ["invalid kind", { jobId: "job", attemptId: "attempt", kind: "shell", stage: "f1_f2_running", payload: {}, status: "queued", sequence: 1 }],
-    ["non-object payload", { jobId: "job", attemptId: "attempt", kind: "excel", stage: "f1_f2_running", payload: [], status: "queued", sequence: 1 }],
-    ["invalid sequence", { jobId: "job", attemptId: "attempt", kind: "excel", stage: "f1_f2_running", payload: {}, status: "queued", sequence: 0 }],
-    ["queued result", { jobId: "job", attemptId: "attempt", kind: "excel", stage: "f1_f2_running", payload: {}, status: "queued", sequence: 1, result: {} }],
-    ["failed without error", { jobId: "job", attemptId: "attempt", kind: "excel", stage: "f1_f2_running", payload: {}, status: "failed", sequence: 1 }],
-  ])("rejects valid JSON queue records with %s without overwriting the file", async (_caseName, record) => {
-    const queuePath = join(rootDir, "worker-queue.json");
-    const original = JSON.stringify([record]);
-    await writeFile(queuePath, original);
+  it("keeps globally unique IDs and monotonic sequences across queue instances and restart", async () => {
+    const first = await createPersistentWorkerQueue({ rootDir, sessionStore: new MemoryQueueSessionStore() });
+    const second = await createPersistentWorkerQueue({ rootDir, sessionStore: new MemoryQueueSessionStore() });
+    await first.enqueue({ jobId: "sequence-a", attemptId: "sequence-attempt-a", kind: "host", stage: "ado_action_pending", payload: {} }, { deferDrain: true });
+    await second.enqueue({ jobId: "sequence-b", attemptId: "sequence-attempt-b", kind: "host", stage: "ado_action_pending", payload: {} }, { deferDrain: true });
+    const restarted = await createPersistentWorkerQueue({ rootDir, sessionStore: new MemoryQueueSessionStore() });
+    await restarted.enqueue({ jobId: "sequence-c", attemptId: "sequence-attempt-c", kind: "host", stage: "ado_action_pending", payload: {} }, { deferDrain: true });
 
-    await expect(createPersistentWorkerQueue({ rootDir, sessionStore: new MemoryQueueSessionStore(), worker: async () => ({}) }))
-      .rejects.toMatchObject({ code: "dependency_error" });
-    await expect(readFile(queuePath, "utf8")).resolves.toBe(original);
-  });
-
-  it("rejects duplicate persisted queue sequences without overwriting the file", async () => {
-    const queuePath = join(rootDir, "worker-queue.json");
-    const original = JSON.stringify([
-      { jobId: "job-1", attemptId: "attempt-1", kind: "excel", stage: "f1_f2_running", payload: {}, status: "queued", sequence: 1 },
-      { jobId: "job-2", attemptId: "attempt-2", kind: "calculation", stage: "f4_running", payload: {}, status: "queued", sequence: 1 },
-    ]);
-    await writeFile(queuePath, original);
-
-    await expect(createPersistentWorkerQueue({ rootDir, sessionStore: new MemoryQueueSessionStore(), worker: async () => ({}) }))
-      .rejects.toMatchObject({ code: "dependency_error" });
-    await expect(readFile(queuePath, "utf8")).resolves.toBe(original);
+    expect(readQueueJobs(rootDir).map((job) => job.sequence)).toEqual([1, 2, 3]);
+    await expect(restarted.enqueue({ jobId: "sequence-a", attemptId: "duplicate", kind: "host", stage: "ado_action_pending", payload: {} }, { deferDrain: true }))
+      .rejects.toMatchObject({ code: "validation_error" });
   });
 });

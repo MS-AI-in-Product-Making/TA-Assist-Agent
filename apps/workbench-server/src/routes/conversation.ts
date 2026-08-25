@@ -86,9 +86,6 @@ export const conversationRoutes: FastifyPluginAsync<{ readonly context: Workbenc
         if (closed || reply.raw.destroyed || reply.raw.writableEnded) finish();
       });
     };
-    unsubscribe = context.events.subscribe(sessionId, (event) => {
-      void write(formatSseEvent(event.eventName, sanitizeSsePayload(event.payload), event.id)).catch(() => cleanup());
-    });
     if (closed || request.raw.destroyed || reply.raw.destroyed) {
       cleanup();
       return reply;
@@ -101,6 +98,9 @@ export const conversationRoutes: FastifyPluginAsync<{ readonly context: Workbenc
         await write(formatSseEvent(event.eventName, sanitizeSsePayload(event.payload), event.id));
       }
     }
+    unsubscribe = context.events.subscribe(sessionId, (event) => {
+      void write(formatSseEvent(event.eventName, sanitizeSsePayload(event.payload), event.id)).catch(() => cleanup());
+    }, events.at(-1)?.id ?? lastEventId);
     if (!closed) {
       heartbeat = setInterval(() => {
         void write(": heartbeat\n\n").catch(() => cleanup());

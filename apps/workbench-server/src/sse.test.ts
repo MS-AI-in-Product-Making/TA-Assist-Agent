@@ -52,4 +52,24 @@ describe("SSE sanitization", () => {
     firstPublisher.close();
     secondPublisher.close();
   });
+
+  it("delivers an event published between replay and subscription exactly once", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "workbench-sse-"));
+    tempRoots.push(rootDir);
+    const sessionId = "22222222-2222-4222-8222-222222222222";
+    const session = await createSessionStore({ rootDir, sessionId });
+    await session.close();
+    const source = await createSqliteEventSource({ rootDir, pollIntervalMs: 5 });
+    source.publish(sessionId, "progress", { sequence: 1 });
+
+    const replay = source.replay(sessionId, "0");
+    source.publish(sessionId, "progress", { sequence: 2 });
+    const received: string[] = [];
+    const unsubscribe = source.subscribe(sessionId, (event) => received.push(event.id), replay.at(-1)?.id);
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect([...replay.map((event) => event.id), ...received]).toEqual(["1", "2"]);
+    unsubscribe();
+    source.close();
+  });
 });

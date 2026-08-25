@@ -22,7 +22,7 @@ import { conversationRoutes } from "./routes/conversation.js";
 import { filesRoutes } from "./routes/files.js";
 import { hostActionsRoutes } from "./routes/host-actions.js";
 import { sessionsRoutes } from "./routes/sessions.js";
-import { createPersistentWorkerQueue, type PersistentWorkerQueue, type QueueSessionStore, type StageJob } from "./worker-queue.js";
+import { createPersistentWorkerQueue, type PersistentWorkerQueue, type QueueSessionStore, type StageJob } from "./sqlite-worker-queue.js";
 import { createSqliteEventSource, type SqliteEventSource } from "./sse.js";
 
 type HostActionClaim = ReturnType<typeof hostActionClaimSchema.parse>;
@@ -72,7 +72,7 @@ export interface HostActionRegistry {
 export interface EventSource {
   publish(sessionId: string, eventName: string, payload: unknown): void;
   replay(sessionId: string, afterEventId: string | undefined): readonly StoredEvent[];
-  subscribe(sessionId: string, listener: (event: StoredEvent) => void): () => void;
+  subscribe(sessionId: string, listener: (event: StoredEvent) => void, afterEventId?: string): () => void;
 }
 
 export interface StoredEvent {

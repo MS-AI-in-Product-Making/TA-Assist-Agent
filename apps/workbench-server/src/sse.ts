@@ -12,7 +12,7 @@ export interface StoredSseEvent {
 export interface SqliteEventSource {
   publish(sessionId: string, eventName: string, payload: unknown): void;
   replay(sessionId: string, afterEventId: string | undefined): readonly StoredSseEvent[];
-  subscribe(sessionId: string, listener: (event: StoredSseEvent) => void): () => void;
+  subscribe(sessionId: string, listener: (event: StoredSseEvent) => void, afterEventId?: string): () => void;
   close(): void;
 }
 
@@ -117,12 +117,14 @@ class SqliteSseEventSource implements SqliteEventSource {
     return replay;
   }
 
-  subscribe(sessionId: string, listener: (event: StoredSseEvent) => void): () => void {
+  subscribe(sessionId: string, listener: (event: StoredSseEvent) => void, afterEventId?: string): () => void {
     const subscribers = this.subscribers.get(sessionId) ?? new Set<Subscriber>();
-    const latest = this.database.prepare("SELECT COALESCE(MAX(event_id), 0) AS event_id FROM session_sse_events WHERE session_id = ?").get(sessionId) as { event_id: number };
-    const subscriber: Subscriber = { listener, lastEventId: latest.event_id };
+    const requestedAfter = Number(afterEventId ?? 0);
+    const cursor = Number.isSafeInteger(requestedAfter) && requestedAfter >= 0 ? requestedAfter : 0;
+    const subscriber: Subscriber = { listener, lastEventId: cursor };
     subscribers.add(subscriber);
     this.subscribers.set(sessionId, subscribers);
+    for (const event of this.readEvents(sessionId, cursor)) this.deliverToSubscriber(subscriber, event);
     return () => {
       subscribers.delete(subscriber);
       if (subscribers.size === 0) this.subscribers.delete(sessionId);
