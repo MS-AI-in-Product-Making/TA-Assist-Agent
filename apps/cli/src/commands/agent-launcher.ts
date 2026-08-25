@@ -1,5 +1,6 @@
 import { startWorkbenchServer } from "@ai-assist/workbench-server";
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 
 import { runAgentCommand, type AgentCliRequest, type AgentLauncher } from "./agent.js";
 
@@ -43,7 +44,18 @@ function registerHostCredentialIpc(server: Awaited<ReturnType<typeof startWorkbe
 }
 
 function openBrowser(url: string): void {
-  const command = process.platform === "win32" ? "explorer.exe" : process.platform === "darwin" ? "open" : "xdg-open";
+  const command = resolveBrowserCommand(process.platform, existsSync);
   const child = spawn(command, [url], { detached: true, stdio: "ignore", windowsHide: true });
   child.unref();
+}
+
+export function resolveBrowserCommand(platform: NodeJS.Platform, exists: (path: string) => boolean): string {
+  if (platform !== "win32") return platform === "darwin" ? "open" : "xdg-open";
+  const candidates = [
+    "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+    "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
+    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+  ];
+  return candidates.find(exists) ?? "explorer.exe";
 }
