@@ -247,18 +247,47 @@ const conversationCommandPartSchema = z
   })
   .strict();
 
-const conversationToolActionSchema = z
-  .object({
-     type: z.enum(["navigate", "open_report", "open_what_if"]),
-    target: nonEmptyStringSchema,
-    label: nonEmptyStringSchema,
-  })
-  .strict();
+const conversationToolActionSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("navigate"),
+    target: z.enum([
+      "/scope",
+      "/scope/downstream",
+      "/ado/preview",
+      "/images/decision",
+      "/analysis/context",
+      "/optimization/targets",
+      "/review",
+      "/status",
+    ]),
+    label: z.enum([
+      "选择 Worksheets",
+      "确认下游 Worksheets",
+      "查看 ADO 预览",
+      "确认图片上下文",
+      "确认 Analysis Context",
+      "确认 Optimization Targets",
+      "完成评审",
+      "查看失败状态",
+      "查看运行状态",
+    ]),
+  }).strict(),
+  z.object({
+    type: z.literal("open_report"),
+    target: z.literal("/report/current"),
+    label: z.literal("打开当前报告"),
+  }).strict(),
+  z.object({
+    type: z.literal("open_what_if"),
+    target: z.literal("/what-if"),
+    label: z.literal("打开 What-if Draft"),
+  }).strict(),
+]);
 
 const conversationToolCommandSchema = z
   .object({
     id: nonEmptyStringSchema,
-    kind: nonEmptyStringSchema,
+    kind: z.enum(["model_request", "surface_validate", "surface_write"]),
   })
   .strict();
 

@@ -1,7 +1,7 @@
 import { conversationTurnSchema, type conversationTurnSchema as conversationTurnSchemaType, type f8SessionSnapshotSchema } from "@ai-assist/contracts";
 
 import { buildAgentContext, projectPendingActions, type AgentContext } from "./context-builder.js";
-import { detectAgentIntent } from "./intents.js";
+import { detectAgentIntent, type AgentIntentType } from "./intents.js";
 import { createToolPolicy, type ToolPolicy } from "./tool-policy.js";
 
 type RuntimeSnapshot = ReturnType<typeof f8SessionSnapshotSchema.parse>;
@@ -43,6 +43,11 @@ export interface AgentTurnResult {
 	readonly commands: readonly AgentCommand[];
 }
 
+type StoredActionCandidate = {
+	readonly type?: unknown;
+	readonly target?: unknown;
+};
+
 export interface SnapshotReader {
 	readSnapshot(sessionId?: string): Promise<RuntimeSnapshot>;
 }
@@ -76,7 +81,8 @@ export async function handleAgentTurn(
 ): Promise<AgentTurnResult> {
 	const snapshot = await dependencies.snapshotStore.readSnapshot(request.sessionId);
 	const existingTurns = await dependencies.conversationStore.readTurns(request.sessionId, { afterSequence: 0 });
-	const storedResult = readStoredResult(existingTurns, request.commandId);
+	const intent = detectAgentIntent(request.text);
+	const storedResult = readStoredResult(existingTurns, request.commandId, snapshot, intent.type);
 	if (storedResult !== undefined) {
 		return storedResult;
 	}
@@ -87,7 +93,7 @@ export async function handleAgentTurn(
 		return await inFlight;
 	}
 
-	const turnPromise = handleAgentTurnOnce(request, dependencies, snapshot, existingTurns);
+	const turnPromise = handleAgentTurnOnce(request, dependencies, snapshot, existingTurns, intent.type, intent.wantsWrite);
 	inFlightTurnResults.set(singleFlightKey, turnPromise);
 
 	try {
@@ -104,10 +110,11 @@ async function handleAgentTurnOnce(
 	dependencies: AgentRuntimeDependencies,
 	snapshot: RuntimeSnapshot,
 	existingTurns: readonly RuntimeTurn[],
+	intentType: AgentIntentType,
+	wantsWrite: boolean,
 ): Promise<AgentTurnResult> {
 
 	const now = dependencies.now ?? (() => new Date().toISOString());
-	const intent = detectAgentIntent(request.text);
 	const existingUserTurn = existingTurns.find((turn) => turn.turnId === `${request.commandId}:user`);
 
 	if (existingUserTurn === undefined) {
@@ -129,11 +136,11 @@ async function handleAgentTurnOnce(
 		? await dependencies.conversationStore.readTurns(request.sessionId, { afterSequence: 0 })
 		: existingTurns;
 	const context = buildAgentContext({ snapshot, turns: turnsAfterUser });
-	const policy = createToolPolicy({ state: snapshot.state, intent: intent.type });
+	const policy = createToolPolicy({ state: snapshot.state, intent: intentType });
 
-	const deterministic = buildDeterministicResponse(snapshot, intent.type, intent.wantsWrite);
-	const modelResponse = await maybeCompleteWithModel(intent.wantsWrite, dependencies.model, request.text, context, policy);
-	const resolved = resolveTurnResult(snapshot, intent.type, deterministic, modelResponse);
+	const deterministic = buildDeterministicResponse(snapshot, intentType, wantsWrite);
+	const modelResponse = await maybeCompleteWithModel(wantsWrite, dependencies.model, request.text, context, policy);
+	const resolved = resolveTurnResult(snapshot, intentType, deterministic, modelResponse);
 
 	await dependencies.conversationStore.appendTurn(
 		createAssistantTurn({
@@ -175,7 +182,7 @@ async function maybeCompleteWithModel(
 
 function resolveTurnResult(
 	snapshot: RuntimeSnapshot,
-	intent: string,
+	intent: AgentIntentType,
 	deterministic: AgentTurnResult,
 	modelResponse: { readonly responseText: string; readonly actions?: readonly ModelActionCandidate[] } | undefined,
 ): AgentTurnResult {
@@ -193,7 +200,7 @@ function resolveTurnResult(
 
 function buildDeterministicResponse(
 	snapshot: RuntimeSnapshot,
-	intent: string,
+	intent: AgentIntentType,
 	wantsWrite: boolean,
 ): AgentTurnResult {
 	const pendingActions = projectPendingActions(snapshot.state);
@@ -237,7 +244,7 @@ function buildDeterministicResponse(
 function selectPrimaryAction(
 	snapshot: RuntimeSnapshot,
 	state: RuntimeSnapshot["state"],
-	intent: string,
+	intent: AgentIntentType,
 	pendingActions: readonly { action: string }[],
 ): AgentAction | undefined {
 	if (state === "review_required" && intent === "open_report" && hasValidatedReport(snapshot)) {
@@ -327,7 +334,7 @@ function sanitizeResponseText(text: string): string {
 
 function sanitizeActions(
 	snapshot: RuntimeSnapshot,
-	intent: string,
+	intent: AgentIntentType,
 	actions: readonly ModelActionCandidate[] | undefined,
 	fallbackActions: readonly AgentAction[],
 ): readonly AgentAction[] {
@@ -351,7 +358,7 @@ function sanitizeActions(
 	return sanitized.length > 0 ? sanitized : fallbackActions;
 }
 
-function allowedActionsFor(snapshot: RuntimeSnapshot, intent: string): readonly AgentAction[] {
+function allowedActionsFor(snapshot: RuntimeSnapshot, intent: AgentIntentType): readonly AgentAction[] {
 	const pendingActions = projectPendingActions(snapshot.state);
 	const allowed: AgentAction[] = [];
 	const primary = selectPrimaryAction(snapshot, snapshot.state, intent, pendingActions);
@@ -401,7 +408,12 @@ function actionKey(action: AgentAction): string {
 	return `${action.type}:${action.target}`;
 }
 
-function readStoredResult(turns: readonly RuntimeTurn[], commandId: string): AgentTurnResult | undefined {
+function readStoredResult(
+	turns: readonly RuntimeTurn[],
+	commandId: string,
+	snapshot: RuntimeSnapshot,
+	intent: AgentIntentType,
+): AgentTurnResult | undefined {
 	const assistantTurn = turns.find((turn) => turn.turnId === `${commandId}:assistant`);
 	if (assistantTurn === undefined) {
 		return undefined;
@@ -414,7 +426,7 @@ function readStoredResult(turns: readonly RuntimeTurn[], commandId: string): Age
 
 	return {
 		responseText,
-		...(readAssistantReceipt(assistantTurn) ?? { actions: [], commands: [] }),
+		...(readAssistantReceipt(assistantTurn, snapshot, intent) ?? { actions: [], commands: [] }),
 	};
 }
 
@@ -425,16 +437,41 @@ function readAssistantResponseText(turn: RuntimeTurn): string {
 		.join(" "));
 }
 
-function readAssistantReceipt(turn: RuntimeTurn): StoredResultReceipt | undefined {
+function readAssistantReceipt(turn: RuntimeTurn, snapshot: RuntimeSnapshot, intent: AgentIntentType): StoredResultReceipt | undefined {
 	const receiptPart = turn.content.find((part) => part.kind === "tool_result");
 	if (receiptPart === undefined || receiptPart.kind !== "tool_result") {
 		return undefined;
 	}
 
 	return {
-		actions: receiptPart.actions,
-		commands: receiptPart.commands,
+		actions: canonicalizeStoredActions(snapshot, intent, receiptPart.actions),
+		commands: [],
 	};
+}
+
+function canonicalizeStoredActions(
+	snapshot: RuntimeSnapshot,
+	intent: AgentIntentType,
+	actions: readonly StoredActionCandidate[] | undefined,
+): readonly AgentAction[] {
+	if (actions === undefined || actions.length === 0) {
+		return [];
+	}
+
+	const allowedByKey = new Map(allowedActionsFor(snapshot, intent).map((action) => [actionKey(action), action]));
+	const canonical: AgentAction[] = [];
+	for (const candidate of actions) {
+		if (typeof candidate?.type !== "string" || typeof candidate?.target !== "string") {
+			continue;
+		}
+
+		const allowed = allowedByKey.get(`${candidate.type}:${candidate.target}`);
+		if (allowed !== undefined && !canonical.some((action) => actionKey(action) === actionKey(allowed))) {
+			canonical.push(allowed);
+		}
+	}
+
+	return canonical;
 }
 
 function isSafeResponseText(text: string): boolean {

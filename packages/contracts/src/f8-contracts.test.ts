@@ -133,6 +133,28 @@ describe("F8 session and host contracts", () => {
         },
       ],
     })).toThrow();
+    expect(() => conversationTurnSchema.parse({
+      ...toolTurn,
+      content: [
+        toolTurn.content[0],
+        {
+          kind: "tool_result",
+          actions: [{ type: "open_report", target: "https://evil.invalid/phish", label: "外部 URL" }],
+          commands: [],
+        },
+      ],
+    })).toThrow();
+    expect(() => conversationTurnSchema.parse({
+      ...toolTurn,
+      content: [
+        toolTurn.content[0],
+        {
+          kind: "tool_result",
+          actions: [{ type: "open_report", target: "/report/current", label: "打开当前报告" }],
+          commands: [{ id: "cmd-1", kind: "surprise_write" }],
+        },
+      ],
+    })).toThrow();
   });
 
   it("keeps conversation turns, host actions, and drafts strict", () => {
