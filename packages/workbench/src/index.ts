@@ -7,3 +7,4 @@ export * from "./state-machine.js";
 export * from "./projections.js";
 export * from "./review-projection.js";
 export * from "./review-context.js";
+export * from "./scenario-draft.js";

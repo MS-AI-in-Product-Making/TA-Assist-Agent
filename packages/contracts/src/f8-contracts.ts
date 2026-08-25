@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { worksheetSelectionConfirmationSchema, workbookCatalogFileNameSchema } from "./contracts.js";
+import { f6OptimizationTargetsSchema, worksheetSelectionConfirmationSchema, workbookCatalogFileNameSchema } from "./contracts.js";
 import { typedErrorSchema } from "./errors.js";
 
 const nonEmptyStringSchema = z.string().min(1);
@@ -61,6 +61,17 @@ const f8ScenarioDraftChangeSchema = z
     }
   });
 
+const f8WhatIfMetricsSchema = z.object({
+  mean: z.number().finite(),
+  rssSigma: z.number().finite().nonnegative(),
+  cp: z.number().finite(),
+  cpkL: z.number().finite(),
+  cpkU: z.number().finite(),
+  cpk: z.number().finite(),
+  statisticalMargin: z.number().finite(),
+  worstCaseMargin: z.number().finite(),
+}).strict();
+
 export const f8ScenarioDraftSchema = z
   .object({
     contractVersion: z.literal("f8-scenario-draft-v1"),
@@ -72,6 +83,16 @@ export const f8ScenarioDraftSchema = z
     mode: z.literal("WHAT_IF"),
     baselineWorkbookHash: sha256Schema.optional(),
     baselineRunReference: nonEmptyStringSchema.optional(),
+    calculationReference: nonEmptyStringSchema.optional(),
+    calculationMetrics: f8WhatIfMetricsSchema.optional(),
+    factorIdentity: z.object({
+      worksheetName: nonEmptyStringSchema,
+      tableId: nonEmptyStringSchema,
+      sourceRow: z.number().int().positive(),
+      factorName: nonEmptyStringSchema,
+      unit: nonEmptyStringSchema,
+    }).strict().optional(),
+    promotionPreview: f6OptimizationTargetsSchema.optional(),
     change: f8ScenarioDraftChangeSchema.optional(),
     nominalValue: z.number().finite().optional(),
     upperTolerance: z.number().finite().optional(),
@@ -89,6 +110,8 @@ export const f8ScenarioDraftSchema = z
       context.addIssue({ code: z.ZodIssueCode.custom, message: "scenario draft must include at least one editable field" });
     }
   });
+
+export type F8ScenarioDraft = z.infer<typeof f8ScenarioDraftSchema>;
 
 const f8PriorRunReferenceSchema = z
   .object({
@@ -213,6 +236,37 @@ const completeReviewPayloadSchema = z
   })
   .strict();
 
+const whatIfPatchSchema = z.object({
+  nominalValue: z.number().finite().optional(),
+  upperTolerance: z.number().finite().optional(),
+  lowerTolerance: z.number().finite().optional(),
+  additionalMeanShift: z.number().finite().optional(),
+}).strict().refine((patch) => Object.values(patch).some((value) => value !== undefined), "What-if patch must include one value.");
+
+const saveWhatIfDraftPublicPayloadSchema = z.object({
+  draftId: nonEmptyStringSchema,
+  worksheetName: nonEmptyStringSchema,
+  tableId: nonEmptyStringSchema,
+  sourceRow: z.number().int().positive(),
+  inputRevision: z.number().int().nonnegative(),
+  patch: whatIfPatchSchema,
+}).strict();
+
+export const f8WhatIfCalculationRequestSchema = saveWhatIfDraftPublicPayloadSchema;
+
+const saveWhatIfDraftInternalPayloadSchema = z.object({ draft: f8ScenarioDraftSchema }).strict();
+
+const confirmWhatIfPromotionPublicPayloadSchema = z.object({
+  draftId: nonEmptyStringSchema,
+  confirmed: z.literal(true),
+}).strict();
+
+const confirmWhatIfPromotionInternalPayloadSchema = z.object({
+  draftId: nonEmptyStringSchema,
+  confirmed: z.literal(true),
+  promotionPreview: f6OptimizationTargetsSchema,
+}).strict();
+
 const commandEnvelopeSchema = <T extends z.ZodTypeAny>(command: string, payloadSchema: T) => z
   .object({
     contractVersion: z.literal("f8-session-command-v1"),
@@ -236,6 +290,8 @@ export const f8SessionCommandSchema = z.discriminatedUnion("command", [
   commandEnvelopeSchema("retry", retryPayloadSchema),
   commandEnvelopeSchema("cancel", cancelPayloadSchema),
   commandEnvelopeSchema("complete_review", completeReviewPayloadSchema),
+  commandEnvelopeSchema("save_what_if_draft", saveWhatIfDraftInternalPayloadSchema),
+  commandEnvelopeSchema("confirm_what_if_tolerance_promotion", confirmWhatIfPromotionInternalPayloadSchema),
 ]);
 
 export const f8PublicSessionCommandSchema = z.discriminatedUnion("command", [
@@ -250,6 +306,8 @@ export const f8PublicSessionCommandSchema = z.discriminatedUnion("command", [
   commandEnvelopeSchema("retry", retryPayloadSchema),
   commandEnvelopeSchema("cancel", cancelPayloadSchema),
   commandEnvelopeSchema("complete_review", completeReviewPayloadSchema),
+  commandEnvelopeSchema("save_what_if_draft", saveWhatIfDraftPublicPayloadSchema),
+  commandEnvelopeSchema("confirm_what_if_tolerance_promotion", confirmWhatIfPromotionPublicPayloadSchema),
 ]);
 
 const conversationTextPartSchema = z
@@ -575,6 +633,7 @@ export const f8SessionSnapshotSchema = z
       context.addIssue({ code: z.ZodIssueCode.custom, message: "F7 prior run references require a runReference" });
     }
     const draftIds = new Set<string>();
+    let activeDraftCount = 0;
     snapshot.scenarioDrafts?.forEach((draft, index) => {
       if (draft.sessionId !== snapshot.sessionId) {
         context.addIssue({ code: z.ZodIssueCode.custom, message: "scenario drafts must belong to the snapshot session", path: ["scenarioDrafts", index, "sessionId"] });
@@ -583,7 +642,13 @@ export const f8SessionSnapshotSchema = z
         context.addIssue({ code: z.ZodIssueCode.custom, message: "scenario draft ids must be unique", path: ["scenarioDrafts", index, "draftId"] });
       }
       draftIds.add(draft.draftId);
+      if (!["promoted_to_f6_targets", "superseded", "deleted"].includes(draft.status)) {
+        activeDraftCount += 1;
+      }
     });
+    if (activeDraftCount > 1) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "session snapshots allow only one active WHAT_IF draft", path: ["scenarioDrafts"] });
+    }
   });
 
 export const f8SessionEventSchema = z.discriminatedUnion("kind", [

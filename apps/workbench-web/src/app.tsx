@@ -15,6 +15,8 @@ import { ActionQueue } from "./components/ActionQueue.js";
 import { ErrorPanel } from "./components/ErrorPanel.js";
 import { F7Placeholder } from "./components/F7Placeholder.js";
 import { WorksheetReview } from "./components/WorksheetReview.js";
+import { WhatIfEditor, type WhatIfBaseline, type WhatIfValues } from "./components/WhatIfEditor.js";
+import { PromotionPreview } from "./components/PromotionPreview.js";
 import type { WorkbenchApi } from "./api.js";
 import { useWorkbenchSession, type UseWorkbenchSessionResult } from "./use-session.js";
 import { projectActionQueue, projectFeatureLedger, type F8SessionSnapshot } from "./workbench-session.js";
@@ -33,6 +35,9 @@ export function App({ api, preloadedState, initialWorksheetOptions, downstreamWo
   const session = preloadedState === undefined ? liveSession : createPreloadedSession(liveSession, preloadedState);
   const [selectedReviewWorksheet, setSelectedReviewWorksheet] = useState<string>();
   const [selectedReviewFinding, setSelectedReviewFinding] = useState<string>();
+  const [whatIfOpen, setWhatIfOpen] = useState(false);
+  const [whatIfDraftId] = useState(() => globalThis.crypto.randomUUID());
+  const [whatIfFactorKey, setWhatIfFactorKey] = useState<string>();
 
   const initialOptions: WorksheetOption[] = initialWorksheetOptions !== undefined ? [...initialWorksheetOptions] : (session.snapshot?.worksheetCapabilities ?? []).map((capability) => ({
     worksheetName: capability.worksheetName,
@@ -56,6 +61,9 @@ export function App({ api, preloadedState, initialWorksheetOptions, downstreamWo
     }, { selectedWorksheetName: effectiveReviewWorksheet, selectedFindingId: selectedReviewFinding })
     : undefined;
   const f7Status = session.featureLedger.find((entry) => entry.featureId === "F7");
+  const whatIfBaselines = effectiveReviewWorksheet === undefined ? [] : createWhatIfBaselines(session.f4Report, effectiveReviewWorksheet);
+  const whatIfBaseline = whatIfBaselines.find((candidate) => `${candidate.tableId}\u0000${candidate.sourceRow}` === whatIfFactorKey) ?? whatIfBaselines[0];
+  const savedDraft = session.snapshot?.scenarioDrafts?.find((draft) => draft.status === "saved" && draft.worksheetName === effectiveReviewWorksheet);
 
   return (
     <main className="app-shell">
@@ -125,6 +133,43 @@ export function App({ api, preloadedState, initialWorksheetOptions, downstreamWo
             setSelectedReviewWorksheet(worksheetName);
             setSelectedReviewFinding(undefined);
           }} onSelectFinding={setSelectedReviewFinding} /> : null}
+          {session.snapshot?.state === "review_required" && whatIfBaseline !== undefined ? (
+            whatIfOpen ? <WhatIfEditor baseline={whatIfBaseline} factors={whatIfBaselines} onSelectFactor={setWhatIfFactorKey} api={{
+              async calculate(values) {
+                const patch = createWhatIfPatch(whatIfBaseline, values);
+                const draft = await session.api.calculateWhatIf(session.snapshot!.sessionId, {
+                  draftId: whatIfDraftId,
+                  worksheetName: whatIfBaseline.worksheetName,
+                  tableId: whatIfBaseline.tableId!,
+                  sourceRow: whatIfBaseline.sourceRow!,
+                  inputRevision: session.snapshot!.inputRevision,
+                  patch,
+                });
+                if (draft.calculationReference === undefined || draft.calculationMetrics === undefined) throw new Error("What-if calculation result is incomplete.");
+                return { status: "completed", calculationReference: draft.calculationReference, metrics: draft.calculationMetrics };
+              },
+              async save(_result, values) {
+                const patch = createWhatIfPatch(whatIfBaseline, values);
+                await session.submitCommand("save_what_if_draft", {
+                  draftId: whatIfDraftId,
+                  worksheetName: whatIfBaseline.worksheetName,
+                  tableId: whatIfBaseline.tableId!,
+                  sourceRow: whatIfBaseline.sourceRow!,
+                  inputRevision: session.snapshot!.inputRevision,
+                  patch,
+                });
+              },
+            }} /> : <button type="button" className="button button--primary" onClick={() => setWhatIfOpen(true)}>打开公差试算</button>
+          ) : null}
+          {session.snapshot?.state === "review_required" && savedDraft?.change !== undefined
+            && savedDraft.change.nominalValue === undefined && savedDraft.change.additionalMeanShift === undefined
+            && whatIfBaseline !== undefined ? <PromotionPreview changes={[{
+              factorName: whatIfBaseline.factorName,
+              baselineUpperTolerance: whatIfBaseline.upperTolerance,
+              baselineLowerTolerance: whatIfBaseline.lowerTolerance,
+              draftUpperTolerance: savedDraft.change.upperTolerance ?? whatIfBaseline.upperTolerance,
+              draftLowerTolerance: savedDraft.change.lowerTolerance ?? whatIfBaseline.lowerTolerance,
+            }]} onConfirm={() => session.submitCommand("confirm_what_if_tolerance_promotion", { draftId: savedDraft.draftId, confirmed: true })} /> : null}
           <ActionQueue items={session.actionQueue} />
           {f7Status !== undefined ? <F7Placeholder status={f7Status} /> : null}
         </section>
@@ -135,6 +180,43 @@ export function App({ api, preloadedState, initialWorksheetOptions, downstreamWo
       </div>
     </main>
   );
+}
+
+function createWhatIfBaselines(report: UseWorkbenchSessionResult["f4Report"], worksheetName: string): WhatIfBaseline[] {
+  const calculation = report?.calculations.find((candidate) => candidate.worksheetSelection.worksheetName === worksheetName);
+  if (calculation === undefined) return [];
+  const statisticalMargin = Math.min(calculation.system.mean - calculation.capability.lowerSpecLimit, calculation.capability.upperSpecLimit - calculation.system.mean);
+  const worstCaseMargin = Math.min(calculation.system.worstCaseLower - calculation.capability.lowerSpecLimit, calculation.capability.upperSpecLimit - calculation.system.worstCaseUpper);
+  return calculation.factors.map((factor) => ({
+    worksheetName,
+    tableId: factor.source.tableId,
+    sourceRow: factor.source.sourceRow,
+    factorName: factor.factorName,
+    nominalValue: factor.input.nominalValue,
+    upperTolerance: factor.input.upperTolerance,
+    lowerTolerance: factor.input.lowerTolerance,
+    additionalMeanShift: calculation.system.additionalMeanShift,
+    metrics: {
+      mean: calculation.system.mean,
+      rssSigma: calculation.system.rssSigma,
+      cp: calculation.capability.cp,
+      cpkL: calculation.capability.lowerCpk,
+      cpkU: calculation.capability.upperCpk,
+      cpk: calculation.capability.cpk,
+      statisticalMargin,
+      worstCaseMargin,
+    },
+  }));
+}
+
+function createWhatIfPatch(baseline: WhatIfBaseline, values: WhatIfValues): NonNullable<import("@ai-assist/contracts").F8ScenarioDraft["change"]> {
+  const patch: Partial<WhatIfValues> = {};
+  if (values.nominalValue !== baseline.nominalValue) patch.nominalValue = values.nominalValue;
+  if (values.upperTolerance !== baseline.upperTolerance) patch.upperTolerance = values.upperTolerance;
+  if (values.lowerTolerance !== baseline.lowerTolerance) patch.lowerTolerance = values.lowerTolerance;
+  if (values.additionalMeanShift !== baseline.additionalMeanShift) patch.additionalMeanShift = values.additionalMeanShift;
+  if (Object.keys(patch).length === 0) throw new Error("What-if values do not differ from baseline.");
+  return patch;
 }
 
 function collectReviewWorksheetNames(session: UseWorkbenchSessionResult): string[] {

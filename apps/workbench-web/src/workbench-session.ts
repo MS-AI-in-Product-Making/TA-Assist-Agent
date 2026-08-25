@@ -1,9 +1,10 @@
-import { createTypedError, f8SessionCommandSchema, f8SessionSnapshotSchema, f8SessionStateSchema, type TypedError } from "@ai-assist/contracts";
+import { createTypedError, f8PublicSessionCommandSchema, f8SessionCommandSchema, f8SessionSnapshotSchema, f8SessionStateSchema, type TypedError } from "@ai-assist/contracts";
 
 export type F8SessionCommand = ReturnType<typeof f8SessionCommandSchema.parse>;
+export type F8PublicSessionCommand = ReturnType<typeof f8PublicSessionCommandSchema.parse>;
 export type F8SessionSnapshot = ReturnType<typeof f8SessionSnapshotSchema.parse>;
 export type F8SessionState = ReturnType<typeof f8SessionStateSchema.parse>;
-export type F8CommandKind = F8SessionCommand["command"];
+export type F8CommandKind = F8PublicSessionCommand["command"];
 
 export const FEATURE_IDS = ["F0", "F1", "F2", "F3", "F4", "F5", "F6", "F7"] as const;
 

@@ -21,10 +21,12 @@ export const commandsRoutes: FastifyPluginAsync<{ readonly context: WorkbenchSer
       return reply.code(400).send({ error: "command_schema_rejected" });
     }
 
-    const parsed = f8SessionCommandSchema.safeParse(await createInternalCommand(publicCommand.data, context));
-    if (!parsed.success) return reply.code(400).send({ error: "command_schema_rejected" });
+    const receipt = await context.sessions.readCommandReceipt(sessionId, publicCommand.data.commandId);
+    if (receipt !== undefined) return reply.code(202).send(receipt);
 
     try {
+      const parsed = f8SessionCommandSchema.safeParse(await createInternalCommand(publicCommand.data, context));
+      if (!parsed.success) return reply.code(400).send({ error: "command_schema_rejected" });
       const snapshot = await context.sessions.applyCommand(parsed.data);
       await context.createPendingHostAction(snapshot, parsed.data);
       await context.enqueueActiveAttempt(snapshot);
@@ -41,6 +43,16 @@ async function createInternalCommand(command: ReturnType<typeof f8PublicSessionC
     if (typeof artifactId !== "string") return command;
     const managedWorkbook = await context.resolveManagedWorkbook(command.sessionId, artifactId);
     return { ...command, payload: { fileName: managedWorkbook.fileName, workbookBytes: managedWorkbook.workbookBytes, inputClassification: "confidential" } };
+  }
+  if (command.command === "save_what_if_draft") {
+    const payload = command.payload as { readonly draftId: string; readonly worksheetName: string; readonly tableId: string; readonly sourceRow: number; readonly inputRevision: number; readonly patch: { readonly nominalValue?: number; readonly upperTolerance?: number; readonly lowerTolerance?: number; readonly additionalMeanShift?: number } };
+    const draft = await context.calculateWhatIf(command.sessionId, payload);
+    return { ...command, payload: { draft: { ...draft, status: "saved" } } };
+  }
+  if (command.command === "confirm_what_if_tolerance_promotion") {
+    const payload = command.payload as { readonly draftId: string; readonly confirmed: true };
+    const { promotionPreview } = await context.createWhatIfPromotion(command.sessionId, payload.draftId);
+    return { ...command, payload: { ...payload, promotionPreview } };
   }
   return command;
 }

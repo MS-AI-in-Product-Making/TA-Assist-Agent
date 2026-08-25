@@ -103,6 +103,35 @@ describe("F8 session and host contracts", () => {
     expect(() => f8SessionEventSchema.parse({ ...event, outputRoot: "C:/arbitrary" })).toThrow();
   });
 
+  it("allows only one active WHAT_IF draft in a session snapshot", () => {
+    const draft = {
+      contractVersion: "f8-scenario-draft-v1",
+      draftId: "draft-a",
+      sessionId: SESSION_ID,
+      worksheetName: "AJ_GAP",
+      inputRevision: 2,
+      status: "draft",
+      mode: "WHAT_IF",
+      change: { upperTolerance: 0.04 },
+    } as const;
+    const snapshot = {
+      contractVersion: "f8-session-snapshot-v1",
+      sessionId: SESSION_ID,
+      revision: 4,
+      inputRevision: 2,
+      state: "review_required",
+      activeAttempt: null,
+      priorRunReferences: [],
+      scenarioDrafts: [draft, { ...draft, draftId: "draft-b", worksheetName: "B_STACK" }],
+    };
+
+    expect(() => f8SessionSnapshotSchema.parse(snapshot)).toThrow(/one active/i);
+    expect(f8SessionSnapshotSchema.parse({
+      ...snapshot,
+      scenarioDrafts: [draft, { ...draft, draftId: "draft-old", status: "superseded" }],
+    }).scenarioDrafts).toHaveLength(2);
+  });
+
   it("accepts typed artifact refs, worksheet capabilities, and strict tool receipts", () => {
     const snapshot = {
       contractVersion: "f8-session-snapshot-v1",

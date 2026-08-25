@@ -8,6 +8,7 @@ import {
   f2UserReportSchema,
   f8SessionEventSchema,
   f8SessionSnapshotSchema,
+  f8ScenarioDraftSchema,
   typedErrorSchema,
   type ConversationTurn,
   type DrawingGovernanceResultV2,
@@ -15,9 +16,10 @@ import {
   type F5DataInterpretationResult,
   type F6OptimizationResultV2,
   type F2UserReport,
+  type F8ScenarioDraft,
   type TypedError,
 } from "@ai-assist/contracts";
-import type { F8CommandKind, F8SessionCommand, F8SessionSnapshot } from "./workbench-session.js";
+import type { F8CommandKind, F8PublicSessionCommand, F8SessionSnapshot } from "./workbench-session.js";
 
 export interface BootstrapResult {
   readonly sessionId: string;
@@ -75,12 +77,13 @@ export interface WorkbenchApi {
   bootstrap(): Promise<BootstrapResult>;
   subscribe(sessionId: string, handlers: WorkbenchSubscriptionHandlers, lastEventId?: string): () => void;
   uploadWorkbook(sessionId: string, expectedRevision: number, file: File): Promise<{ readonly snapshot: F8SessionSnapshot; readonly workbookHash: string }>;
-  submitCommand<TPayload extends F8SessionCommand["payload"]>(
+  submitCommand<TPayload extends F8PublicSessionCommand["payload"]>(
     sessionId: string,
     expectedRevision: number,
     command: F8CommandKind,
     payload: TPayload,
   ): Promise<F8SessionSnapshot>;
+  calculateWhatIf(sessionId: string, input: { readonly draftId: string; readonly worksheetName: string; readonly tableId: string; readonly sourceRow: number; readonly inputRevision: number; readonly patch: NonNullable<F8ScenarioDraft["change"]> }): Promise<F8ScenarioDraft>;
   appendConversationTurn(turn: ConversationTurn): Promise<ConversationTurn>;
   loadArtifactJson(
     sessionId: string,
@@ -164,12 +167,21 @@ export function createWorkbenchApi(): WorkbenchApi {
         payload: {
           artifactId: upload.artifactId,
           inputClassification: "confidential",
-        } as F8SessionCommand["payload"],
+        } as F8PublicSessionCommand["payload"],
       });
       return { snapshot, workbookHash: upload.contentHash };
     },
     async submitCommand(sessionId, expectedRevision, command, payload) {
       return submitCommandInternal({ sessionId, expectedRevision, command, payload });
+    },
+    async calculateWhatIf(sessionId, input) {
+      const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/what-if/calculate`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: await mutationHeaders(),
+        body: JSON.stringify(input),
+      });
+      return f8ScenarioDraftSchema.parse(await parseJsonResponse(response));
     },
     async appendConversationTurn(turn) {
       const response = await fetch(`/api/sessions/${encodeURIComponent(turn.sessionId)}/conversation`, {
@@ -230,7 +242,7 @@ export function createWorkbenchApi(): WorkbenchApi {
     return data.turns.map((turn) => conversationTurnSchema.parse(turn));
   }
 
-  async function submitCommandInternal<TPayload extends F8SessionCommand["payload"]>(
+  async function submitCommandInternal<TPayload extends F8PublicSessionCommand["payload"]>(
     options: { readonly sessionId: string; readonly expectedRevision: number; readonly command: F8CommandKind; readonly payload: TPayload },
   ): Promise<F8SessionSnapshot> {
     const response = await fetch(`/api/sessions/${encodeURIComponent(options.sessionId)}/commands`, {

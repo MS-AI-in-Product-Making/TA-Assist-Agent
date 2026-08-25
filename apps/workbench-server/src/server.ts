@@ -9,10 +9,11 @@ import multipart from "@fastify/multipart";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 
 import type { ConversationTurn } from "@ai-assist/conversation";
-import type { hostActionClaimSchema, hostActionRequestSchema, hostActionResultSchema } from "@ai-assist/contracts";
-import { acceptAttemptResult, canonicalSelectedWorksheetSetHash, createSessionStore, openSessionStore, reduceSessionCommand, type F8SessionCommand, type F8SessionSnapshot, type ReviewContextIdentity, type SessionArtifactReference, type SessionDeltaOperations } from "@ai-assist/workbench";
+import type { F6OptimizationTargets, F8ScenarioDraft, hostActionClaimSchema, hostActionRequestSchema, hostActionResultSchema } from "@ai-assist/contracts";
+import { acceptAttemptResult, canonicalSelectedWorksheetSetHash, createSessionStore, createToleranceTargetsPreview, openSessionStore, reduceSessionCommand, type F8SessionCommand, type F8SessionSnapshot, type ReviewContextIdentity, type ScenarioBaseline, type SessionArtifactReference, type SessionDeltaOperations } from "@ai-assist/workbench";
 import { createTypedError } from "@ai-assist/contracts";
 import { createHostActionStore } from "@ai-assist/workbench";
+import { createF4WhatIfBaselineRequest, runF4WhatIfCalculation } from "@ai-assist/workflow-runners";
 
 interface RunnerArtifactReference {
   readonly artifactId: string;
@@ -30,6 +31,7 @@ import { conversationRoutes } from "./routes/conversation.js";
 import { filesRoutes } from "./routes/files.js";
 import { hostActionsRoutes } from "./routes/host-actions.js";
 import { sessionsRoutes } from "./routes/sessions.js";
+import { whatIfRoutes } from "./routes/what-if.js";
 import { createPersistentWorkerQueue, type PersistentWorkerQueue, type PersistentWorkerQueueOptions, type QueueSessionStore, type StageJob } from "./sqlite-worker-queue.js";
 import { createSqliteEventSource, type SqliteEventSource } from "./sse.js";
 
@@ -45,6 +47,12 @@ export interface StartWorkbenchServerOptions {
   readonly bootstrap?: BrowserBootstrapRendezvous;
   readonly runner?: (job: StageJob) => Promise<unknown>;
   readonly queueFactory?: (options: PersistentWorkerQueueOptions) => Promise<PersistentWorkerQueue>;
+  readonly whatIfService?: WhatIfService;
+}
+
+export interface WhatIfService {
+  calculate(snapshot: F8SessionSnapshot, input: { readonly draftId: string; readonly worksheetName: string; readonly tableId: string; readonly sourceRow: number; readonly inputRevision: number; readonly patch: NonNullable<F8ScenarioDraft["change"]> }): Promise<F8ScenarioDraft>;
+  createPromotionPreview(snapshot: F8SessionSnapshot, draft: F8ScenarioDraft): Promise<F6OptimizationTargets>;
 }
 
 export interface WorkbenchServer extends FastifyInstance {
@@ -67,6 +75,7 @@ export interface SessionRegistry {
   create(sessionId: string): Promise<F8SessionSnapshot>;
   read(sessionId: string): Promise<F8SessionSnapshot | undefined>;
   applyCommand(command: F8SessionCommand): Promise<F8SessionSnapshot>;
+  readCommandReceipt(sessionId: string, commandId: string): Promise<F8SessionSnapshot | undefined>;
 }
 
 export interface ConversationRegistry {
@@ -101,6 +110,8 @@ export interface WorkbenchServerContext {
   readonly artifacts: ArtifactRegistry;
   readonly events: EventSource;
   readonly queue: PersistentWorkerQueue;
+  calculateWhatIf(sessionId: string, input: { readonly draftId: string; readonly worksheetName: string; readonly tableId: string; readonly sourceRow: number; readonly inputRevision: number; readonly patch: NonNullable<F8ScenarioDraft["change"]> }): Promise<F8ScenarioDraft>;
+  createWhatIfPromotion(sessionId: string, draftId: string): Promise<{ readonly draft: F8ScenarioDraft; readonly promotionPreview: F6OptimizationTargets }>;
   resolveManagedWorkbook(sessionId: string, artifactId: string): Promise<{ readonly fileName: string; readonly workbookBytes: Uint8Array }>;
   createPendingHostAction(snapshot: F8SessionSnapshot, command: F8SessionCommand): Promise<void>;
   enqueueActiveAttempt(snapshot: F8SessionSnapshot): Promise<void>;
@@ -113,7 +124,7 @@ export async function buildWorkbenchServer(options: StartWorkbenchServerOptions)
   await mkdir(options.rootDir, { recursive: true });
 
   const auth = new WorkbenchAuth();
-  const context = await createWorkbenchServerContext(options.rootDir, auth, options.runner, options.queueFactory);
+  const context = await createWorkbenchServerContext(options.rootDir, auth, options.runner, options.queueFactory, options.whatIfService);
   const app = Fastify({ logger: false, bodyLimit: 1024 * 1024 }) as unknown as WorkbenchServer;
   const bootstrap = options.bootstrap ?? createBrowserBootstrapRendezvous();
 
@@ -181,6 +192,7 @@ export async function buildWorkbenchServer(options: StartWorkbenchServerOptions)
   await app.register(conversationRoutes, { context });
   await app.register(hostActionsRoutes, { context });
   await app.register(artifactsRoutes, { context });
+  await app.register(whatIfRoutes, { context });
   app.addHook("onClose", async () => {
     (context.events as SqliteEventSource).close();
   });
@@ -197,9 +209,10 @@ export async function startWorkbenchServer(options: StartWorkbenchServerOptions)
   return { server, url: `http://${LOOPBACK_HOST}:${port}/#bootstrap=${bootstrapNonce}`, bootstrapNonce };
 }
 
-async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth, runner: StartWorkbenchServerOptions["runner"], queueFactory: StartWorkbenchServerOptions["queueFactory"]): Promise<WorkbenchServerContext> {
+async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth, runner: StartWorkbenchServerOptions["runner"], queueFactory: StartWorkbenchServerOptions["queueFactory"], whatIfService: WhatIfService | undefined): Promise<WorkbenchServerContext> {
   const sessions = new StoreBackedSessionRegistry(rootDir);
   const artifacts = new FileBackedArtifactRegistry(rootDir);
+  const effectiveWhatIfService = whatIfService ?? createDefaultWhatIfService(rootDir);
   const queueOptions = {
     rootDir: join(rootDir, "runtime", "workbench"),
     sessionStore: new StoreBackedQueueSessionStore(rootDir, sessions),
@@ -216,6 +229,21 @@ async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth
     artifacts,
     events: await createSqliteEventSource({ rootDir }),
     queue,
+    async calculateWhatIf(sessionId, input) {
+      const snapshot = await sessions.read(sessionId);
+      if (snapshot === undefined || snapshot.state !== "review_required" || snapshot.inputRevision !== input.inputRevision) {
+        throw createTypedError({ code: "evidence_mismatch", summary: "What-if input revision is not current.", suggestedAction: "Refresh the review before recalculating.", affectedInputReferences: [sessionId, input.draftId] });
+      }
+      return effectiveWhatIfService.calculate(snapshot, input);
+    },
+    async createWhatIfPromotion(sessionId, draftId) {
+      const snapshot = await sessions.read(sessionId);
+      const draft = snapshot?.scenarioDrafts?.findLast((candidate) => candidate.draftId === draftId && candidate.status === "saved");
+      if (snapshot === undefined || draft?.status !== "saved") {
+        throw createTypedError({ code: "evidence_mismatch", summary: "Saved What-if draft is unavailable for promotion.", suggestedAction: "Save a current tolerance-only draft before promotion.", affectedInputReferences: [sessionId, draftId] });
+      }
+      return { draft, promotionPreview: await effectiveWhatIfService.createPromotionPreview(snapshot, draft) };
+    },
     async createPendingHostAction(snapshot, command) {
       if (snapshot.state !== "ado_action_pending" || command.command !== "confirm_ado_decision") return;
       const decision = (command.payload as { readonly decision: "create_new" | "use_existing" | "local_only" }).decision;
@@ -342,6 +370,19 @@ class StoreBackedSessionRegistry implements SessionRegistry {
       await store.close();
     }
   }
+
+  async readCommandReceipt(sessionId: string, commandId: string): Promise<F8SessionSnapshot | undefined> {
+    try {
+      const store = await openSessionStore({ rootDir: this.rootDir, sessionId });
+      try {
+        return (await store.readCommandReceipt(commandId)) ?? undefined;
+      } finally {
+        await store.close();
+      }
+    } catch {
+      return undefined;
+    }
+  }
 }
 
 class FileBackedConversationRegistry implements ConversationRegistry {
@@ -415,6 +456,118 @@ class FileBackedArtifactRegistry implements ArtifactRegistry {
   read(sessionId: string, artifactId: string): { readonly relativePath: string; readonly fileName: string; readonly classification: ArtifactClassification; readonly mimeType: string } | undefined {
     const artifact = readRegistry<Record<string, { readonly sessionId: string; readonly relativePath: string; readonly fileName: string; readonly classification: ArtifactClassification; readonly mimeType: string }>>(this.rootDir, "artifacts", sessionId)?.[artifactId];
     return artifact?.sessionId === sessionId ? artifact : undefined;
+  }
+}
+
+function createDefaultWhatIfService(rootDir: string): WhatIfService {
+  const loadBaseline = async (snapshot: F8SessionSnapshot, worksheetName: string) => {
+    const references = snapshot.artifactRefs ?? [];
+    const f2References = references.filter((reference) => reference.kind === "f2_report" && reference.revision === snapshot.inputRevision && reference.validated);
+    const f4References = references.filter((reference) => reference.kind === "f4_calculation" && reference.revision === snapshot.inputRevision && reference.validated);
+    if (f2References.length !== 1 || f4References.length !== 1) {
+      throw createTypedError({ code: "evidence_mismatch", summary: "What-if requires one current validated F2 and F4 artifact.", suggestedAction: "Rerun F2 through F4 for the current workbook revision.", affectedInputReferences: [snapshot.sessionId] });
+    }
+    const [f2Report, f4Result] = await Promise.all([
+      readSessionArtifactJson(rootDir, snapshot.sessionId, f2References[0]!.artifactId),
+      readSessionArtifactJson(rootDir, snapshot.sessionId, f4References[0]!.artifactId),
+    ]);
+    const baselineRequest = createF4WhatIfBaselineRequest({ f2Report, f4Result, worksheetName });
+    const worksheet = baselineRequest.worksheetAnalysisAssets.worksheets[0];
+    const table = worksheet?.factorTables.find((candidate) => candidate.tableId === baselineRequest.worksheetSelection.tableId);
+    if (worksheet?.worksheetName !== worksheetName || table === undefined) {
+      throw createTypedError({ code: "evidence_mismatch", summary: "What-if worksheet baseline is unavailable.", suggestedAction: "Select a worksheet with a validated F4 baseline.", affectedInputReferences: [worksheetName] });
+    }
+    return { baselineRequest, table };
+  };
+  return {
+    async calculate(snapshot, input) {
+      const { baselineRequest, table } = await loadBaseline(snapshot, input.worksheetName);
+      if (table.tableId !== input.tableId) throw new Error("What-if factor table identity does not match the governed baseline.");
+      const row = table.rows.find((candidate) => candidate.sourceRow === input.sourceRow);
+      if (row === undefined) throw new Error("What-if baseline has no factor row.");
+      const result = runF4WhatIfCalculation({
+        draftId: input.draftId,
+        baselineRequest,
+        factor: { worksheetName: input.worksheetName, tableId: table.tableId, sourceRow: row.sourceRow },
+        patch: compactWhatIfPatch(input.patch),
+      });
+      if (result.status !== "completed") {
+        throw createTypedError({ code: "calculation_not_possible", summary: "Signed direction evidence is required for nominal or mean-shift What-if calculation.", suggestedAction: "Use tolerance-only changes or provide governed signed direction evidence.", affectedInputReferences: [input.draftId] });
+      }
+      const factorName = availableTextValue(row.fields.factorName);
+      const unit = row.fields.unit?.status === "available" ? row.fields.unit.rawText : "mm";
+      if (typeof factorName !== "string" || factorName.length === 0) throw new Error("What-if factor identity is unavailable.");
+      return {
+        contractVersion: "f8-scenario-draft-v1", draftId: input.draftId, sessionId: snapshot.sessionId, worksheetName: input.worksheetName, inputRevision: snapshot.inputRevision, status: "calculated", mode: "WHAT_IF",
+        baselineWorkbookHash: baselineRequest.worksheetAnalysisAssets.workbook.contentHash, baselineRunReference: baselineRequest.runReference, change: input.patch,
+        calculationReference: result.calculationReference, calculationMetrics: result.metrics,
+        factorIdentity: { worksheetName: input.worksheetName, tableId: table.tableId, sourceRow: row.sourceRow, factorName, unit },
+      };
+    },
+    async createPromotionPreview(snapshot, draft) {
+      if (draft.factorIdentity === undefined) throw new Error("What-if factor identity is unavailable.");
+      const { baselineRequest, table } = await loadBaseline(snapshot, draft.worksheetName);
+      const row = table.rows.find((candidate) => candidate.sourceRow === draft.factorIdentity!.sourceRow);
+      const nominalValue = availableNumberValue(row?.fields.nominalValue);
+      const upperTolerance = availableNumberValue(row?.fields.upperTolerance);
+      const lowerTolerance = availableNumberValue(row?.fields.lowerTolerance);
+      if (row === undefined || nominalValue === undefined || upperTolerance === undefined || lowerTolerance === undefined) {
+        throw new Error("What-if baseline factor values are unavailable.");
+      }
+      const baseline: ScenarioBaseline = {
+        workbookContentHash: baselineRequest.worksheetAnalysisAssets.workbook.contentHash,
+        baselineRunReference: baselineRequest.runReference,
+        calculationVersion: "excel-ta-v1",
+        projectReference: baselineRequest.projectReference,
+        worksheetName: draft.worksheetName,
+        tableId: table.tableId,
+        factor: { ...draft.factorIdentity, nominalValue, upperTolerance, lowerTolerance, additionalMeanShift: baselineRequest.systemSpecification.additionalMeanShift },
+      };
+      return createToleranceTargetsPreview(draft, baseline);
+    },
+  };
+}
+
+function compactWhatIfPatch(patch: NonNullable<F8ScenarioDraft["change"]>): Parameters<typeof runF4WhatIfCalculation>[0]["patch"] {
+  return {
+    ...(patch.nominalValue === undefined ? {} : { nominalValue: patch.nominalValue }),
+    ...(patch.upperTolerance === undefined ? {} : { upperTolerance: patch.upperTolerance }),
+    ...(patch.lowerTolerance === undefined ? {} : { lowerTolerance: patch.lowerTolerance }),
+    ...(patch.additionalMeanShift === undefined ? {} : { additionalMeanShift: patch.additionalMeanShift }),
+  };
+}
+
+function availableTextValue(value: unknown): string | undefined {
+  const candidate = value as { readonly status?: unknown; readonly rawText?: unknown } | undefined;
+  return candidate?.status === "available" && typeof candidate.rawText === "string" && candidate.rawText.length > 0 ? candidate.rawText : undefined;
+}
+
+function availableNumberValue(value: unknown): number | undefined {
+  const candidate = value as { readonly status?: unknown; readonly numericValue?: unknown } | undefined;
+  return candidate?.status === "available" && typeof candidate.numericValue === "number" && Number.isFinite(candidate.numericValue) ? candidate.numericValue : undefined;
+}
+
+async function readSessionArtifactJson(rootDir: string, sessionId: string, artifactId: string): Promise<unknown> {
+  const store = await openSessionStore({ rootDir, sessionId });
+  let artifact: SessionArtifactReference | undefined;
+  try {
+    artifact = await store.readArtifactReference(artifactId);
+  } finally {
+    await store.close();
+  }
+  if (artifact === undefined || artifact.sessionId !== sessionId || artifact.contentHash === undefined) {
+    throw createTypedError({ code: "evidence_mismatch", summary: "Governed What-if source artifact is unavailable.", suggestedAction: "Rerun the current analysis before opening What-if.", affectedInputReferences: [artifactId] });
+  }
+  const handle = await open(resolve(rootDir, artifact.relativePath), "r");
+  try {
+    await assertOpenedFileContained(handle, rootDir, artifact.relativePath, basename(artifact.relativePath));
+    const bytes = await handle.readFile();
+    if (createHash("sha256").update(bytes).digest("hex") !== artifact.contentHash) {
+      throw createTypedError({ code: "evidence_mismatch", summary: "Governed What-if source artifact content hash changed.", suggestedAction: "Rerun the current analysis before opening What-if.", affectedInputReferences: [artifactId] });
+    }
+    return JSON.parse(bytes.toString("utf8")) as unknown;
+  } finally {
+    await handle.close();
   }
 }
 

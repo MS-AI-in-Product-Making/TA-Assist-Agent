@@ -59,6 +59,57 @@ async function immediateQueue(options: PersistentWorkerQueueOptions) {
 }
 
 describe("workbench server routes", () => {
+  it("calculates without persistence, then saves and independently promotes one What-if draft", async () => {
+    const rootDir = testRoot("workbench-server-what-if");
+    await rm(rootDir, { recursive: true, force: true });
+    const sessionId = "33333333-3333-4333-8333-333333333333";
+    const promotionPreview = {
+      contractVersion: "v1" as const, inputClassification: "confidential" as const, targetVersion: "f6-optimization-targets-v1" as const, workbookContentHash: "a".repeat(64),
+      worksheets: [{ worksheetName: "Analysis-A", tableId: "table-a", baselineIdentity: { calculationVersion: "excel-ta-v1" as const, projectReference: "project-a", runReference: "f4-run-a", workbookContentHash: "a".repeat(64), worksheetName: "Analysis-A", tableId: "table-a" }, targets: [{ targetId: "Analysis-A:table-a:2:tolerance", targetType: "factor_tolerance" as const, factor: { worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 2, factorName: "factor-a", unit: "mm" }, upperTolerance: 0.8, lowerTolerance: -1, unit: "mm" }] }],
+    };
+    const calculatedDraft = {
+      contractVersion: "f8-scenario-draft-v1" as const, draftId: "draft-a", sessionId, worksheetName: "Analysis-A", inputRevision: 1, status: "calculated" as const, mode: "WHAT_IF" as const,
+      baselineWorkbookHash: "a".repeat(64), baselineRunReference: "f4-run-a", calculationReference: "what-if:draft-a", change: { upperTolerance: 0.8 },
+      calculationMetrics: { mean: 0, rssSigma: 0.8, cp: 1.2, cpkL: 1.1, cpkU: 1.3, cpk: 1.1, statisticalMargin: 2, worstCaseMargin: 1 },
+    };
+    const whatIfService = { calculate: vi.fn(async () => calculatedDraft), createPromotionPreview: vi.fn(async () => promotionPreview) };
+    const server = await buildWorkbenchServer({ rootDir, whatIfService, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate(sessionId);
+      const store = await openSessionStore({ rootDir, sessionId });
+      try {
+        await store.applyCommand({ contractVersion: "f8-session-command-v1", sessionId, commandId: "seed-review", expectedRevision: 0, command: "upload_workbook", payload: { fileName: "book.xlsx", workbookBytes: new Uint8Array([80, 75, 3, 4]), inputClassification: "confidential" } }, async (snapshot) => ({ snapshot: { ...snapshot, revision: 1, inputRevision: 1, state: "review_required", activeAttempt: null } }));
+      } finally { await store.close(); }
+      const requestBody = { draftId: "draft-a", worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 2, inputRevision: 1, patch: { upperTolerance: 0.8 } };
+      const calculated = await server.inject({ method: "POST", url: `/api/sessions/${sessionId}/what-if/calculate`, headers: browser.headers, payload: requestBody });
+      expect(calculated.statusCode).toBe(200);
+      expect(calculated.json()).toMatchObject({ status: "calculated", calculationMetrics: { cpk: 1.1 } });
+      const calculatedStore = await openSessionStore({ rootDir, sessionId });
+      try {
+        expect((await calculatedStore.readSnapshot()).revision).toBe(1);
+      } finally {
+        await calculatedStore.close();
+      }
+
+      const saved = await server.inject({ method: "POST", url: `/api/sessions/${sessionId}/commands`, headers: browser.headers, payload: { contractVersion: "f8-session-command-v1", sessionId, commandId: "save-draft", expectedRevision: 1, command: "save_what_if_draft", payload: requestBody } });
+      expect(saved.statusCode).toBe(202);
+      expect(saved.json()).toMatchObject({ revision: 2, scenarioDrafts: [{ draftId: "draft-a", status: "saved" }] });
+      const promotionCommand = { contractVersion: "f8-session-command-v1", sessionId, commandId: "promote-draft", expectedRevision: 2, command: "confirm_what_if_tolerance_promotion", payload: { draftId: "draft-a", confirmed: true } };
+      const promoted = await server.inject({ method: "POST", url: `/api/sessions/${sessionId}/commands`, headers: browser.headers, payload: promotionCommand });
+      expect(promoted.statusCode).toBe(202);
+      expect(promoted.json()).toMatchObject({ revision: 3, scenarioDrafts: [{ status: "promoted_to_f6_targets", promotionPreview }] });
+      const replayed = await server.inject({ method: "POST", url: `/api/sessions/${sessionId}/commands`, headers: browser.headers, payload: promotionCommand });
+      expect(replayed.statusCode).toBe(202);
+      expect(replayed.json()).toEqual(promoted.json());
+      expect(whatIfService.calculate).toHaveBeenCalledTimes(2);
+      expect(whatIfService.calculate).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ tableId: "table-a", sourceRow: 2 }));
+      expect(whatIfService.createPromotionPreview).toHaveBeenCalledOnce();
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
   it("registers structured F4/F5/F6 results under one durable review context", async () => {
     const rootDir = testRoot("workbench-server-review-context-registration");
     await rm(rootDir, { recursive: true, force: true });

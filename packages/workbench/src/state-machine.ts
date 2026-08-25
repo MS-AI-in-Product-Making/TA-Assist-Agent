@@ -80,6 +80,10 @@ export function reduceSessionCommand(snapshotInput: F8SessionSnapshot, commandIn
         activeAttempt: null,
         priorRunReferences: withF7PlaceholderOutcome(snapshot),
       });
+    case "save_what_if_draft":
+      return reduceSaveWhatIfDraft(snapshot, command);
+    case "confirm_what_if_tolerance_promotion":
+      return reduceConfirmWhatIfPromotion(snapshot, command);
     default:
       throw new Error(`Unhandled command: ${(command as F8SessionCommand).command}`);
   }
@@ -312,5 +316,49 @@ function reduceConfirmAdoDecision(snapshot: F8SessionSnapshot, command: F8Sessio
         runReference: `f3-ado:not-requested:${snapshot.sessionId}:${snapshot.inputRevision}`,
       },
     ],
+  });
+}
+
+function reduceSaveWhatIfDraft(snapshot: F8SessionSnapshot, command: F8SessionCommand): F8SessionSnapshot {
+  const draft = (command.payload as { draft: NonNullable<F8SessionSnapshot["scenarioDrafts"]>[number] }).draft;
+  if (draft.sessionId !== snapshot.sessionId || draft.inputRevision !== snapshot.inputRevision) {
+    throw createTypedError({
+      code: "evidence_mismatch",
+      summary: "What-if draft does not match the current session input revision.",
+      suggestedAction: "Refresh the review and recalculate the draft.",
+      affectedInputReferences: [command.commandId, draft.draftId],
+    });
+  }
+  const historical = (snapshot.scenarioDrafts ?? []).filter((existing) => existing.draftId !== draft.draftId).map((existing) =>
+    ["promoted_to_f6_targets", "superseded", "deleted"].includes(existing.status)
+      ? existing
+      : { ...existing, status: "superseded" as const });
+  return nextSnapshot(snapshot, { state: "review_required", activeAttempt: null, scenarioDrafts: [...historical, draft] });
+}
+
+function reduceConfirmWhatIfPromotion(snapshot: F8SessionSnapshot, command: F8SessionCommand): F8SessionSnapshot {
+  const payload = command.payload as {
+    readonly draftId: string;
+    readonly promotionPreview: NonNullable<NonNullable<F8SessionSnapshot["scenarioDrafts"]>[number]["promotionPreview"]>;
+  };
+  const draft = snapshot.scenarioDrafts?.findLast((candidate) => candidate.draftId === payload.draftId && candidate.status === "saved");
+  const worksheet = payload.promotionPreview.worksheets[0];
+  if (draft?.status !== "saved" || worksheet === undefined
+    || payload.promotionPreview.workbookContentHash !== draft.baselineWorkbookHash
+    || worksheet.worksheetName !== draft.worksheetName
+    || worksheet.baselineIdentity.runReference !== draft.baselineRunReference) {
+    throw createTypedError({
+      code: "evidence_mismatch",
+      summary: "Optimization targets preview does not match the saved What-if draft lineage.",
+      suggestedAction: "Refresh the review and create a new promotion preview.",
+      affectedInputReferences: [command.commandId, payload.draftId],
+    });
+  }
+  return nextSnapshot(snapshot, {
+    state: "review_required",
+    activeAttempt: null,
+    scenarioDrafts: snapshot.scenarioDrafts?.map((candidate) => candidate.draftId === payload.draftId
+      ? { ...candidate, status: "promoted_to_f6_targets" as const, promotionPreview: payload.promotionPreview }
+      : candidate),
   });
 }

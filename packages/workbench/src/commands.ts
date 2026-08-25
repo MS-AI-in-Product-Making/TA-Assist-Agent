@@ -41,7 +41,7 @@ export const COMMAND_ALLOWLIST: Record<F8SessionState, readonly F8CommandKind[]>
   analysis_context_decision_required: ["confirm_analysis_context", "replace_workbook"],
   optimization_targets_decision_required: ["confirm_optimization_targets", "replace_workbook"],
   f6_running: ["cancel"],
-  review_required: ["complete_review", "replace_workbook"],
+  review_required: ["save_what_if_draft", "confirm_what_if_tolerance_promotion", "complete_review", "replace_workbook"],
   f7_import_required: ["replace_workbook"],
   f7_preview_required: ["replace_workbook"],
   f7_running: ["cancel"],

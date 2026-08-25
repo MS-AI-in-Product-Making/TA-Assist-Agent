@@ -31,7 +31,9 @@ type SessionCommand = {
     | "confirm_optimization_targets"
     | "retry"
     | "cancel"
-    | "complete_review";
+    | "complete_review"
+    | "save_what_if_draft"
+    | "confirm_what_if_tolerance_promotion";
   payload: Record<string, unknown>;
 };
 
@@ -78,6 +80,58 @@ describe("workbench state machine", () => {
       baseSnapshot({ state: "optimization_targets_decision_required" }),
       optimizationTargetsCommand(0),
     ).state).toBe("f6_running");
+  });
+
+  it("saves one What-if draft and requires a separate promotion confirmation", () => {
+    const api = requireApi();
+    const draft = {
+      contractVersion: "f8-scenario-draft-v1" as const,
+      draftId: "draft-a",
+      sessionId: SESSION_ID,
+      worksheetName: "Analysis-A",
+      inputRevision: 1,
+      status: "saved" as const,
+      mode: "WHAT_IF" as const,
+      baselineWorkbookHash: "a".repeat(64),
+      baselineRunReference: "f4-run-a",
+      calculationReference: "what-if:draft-a",
+      change: { upperTolerance: 0.8 },
+    };
+    const saved = api.reduceSessionCommand(baseSnapshot({ state: "review_required", inputRevision: 1 }), {
+      contractVersion: "f8-session-command-v1",
+      sessionId: SESSION_ID,
+      commandId: "save-draft",
+      expectedRevision: 0,
+      command: "save_what_if_draft",
+      payload: { draft },
+    });
+    expect(saved).toMatchObject({ state: "review_required", revision: 1, scenarioDrafts: [draft] });
+
+    const promotionPreview = {
+      contractVersion: "v1" as const,
+      inputClassification: "confidential" as const,
+      targetVersion: "f6-optimization-targets-v1" as const,
+      workbookContentHash: "a".repeat(64),
+      worksheets: [{
+        worksheetName: "Analysis-A",
+        tableId: "table-a",
+        baselineIdentity: { calculationVersion: "excel-ta-v1" as const, projectReference: "project-a", runReference: "f4-run-a", workbookContentHash: "a".repeat(64), worksheetName: "Analysis-A", tableId: "table-a" },
+        targets: [{ targetId: "Analysis-A:table-a:2:tolerance", targetType: "factor_tolerance" as const, factor: { worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 2, factorName: "factor-a", unit: "mm" }, upperTolerance: 0.8, lowerTolerance: -1, unit: "mm" }],
+      }],
+    };
+    const promoted = api.reduceSessionCommand(saved, {
+      contractVersion: "f8-session-command-v1",
+      sessionId: SESSION_ID,
+      commandId: "confirm-promotion",
+      expectedRevision: 1,
+      command: "confirm_what_if_tolerance_promotion",
+      payload: { draftId: "draft-a", confirmed: true, promotionPreview },
+    });
+    expect(promoted).toMatchObject({
+      state: "review_required",
+      revision: 2,
+      scenarioDrafts: [{ draftId: "draft-a", status: "promoted_to_f6_targets", promotionPreview }],
+    });
   });
 
   it("enters the ADO branch only for governance_required outcomes", () => {
