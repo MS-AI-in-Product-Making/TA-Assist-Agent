@@ -2,12 +2,18 @@ import {
   conversationTurnSchema,
   createTypedError,
   drawingGovernanceResultV2Schema,
+  f4WorkflowCalculationResultSchema,
+  f5DataInterpretationResultSchema,
+  f6OptimizationResultSchema,
   f2UserReportSchema,
   f8SessionEventSchema,
   f8SessionSnapshotSchema,
   typedErrorSchema,
   type ConversationTurn,
   type DrawingGovernanceResultV2,
+  type F4WorkflowCalculationResult,
+  type F5DataInterpretationResult,
+  type F6OptimizationResultV2,
   type F2UserReport,
   type TypedError,
 } from "@ai-assist/contracts";
@@ -76,7 +82,11 @@ export interface WorkbenchApi {
     payload: TPayload,
   ): Promise<F8SessionSnapshot>;
   appendConversationTurn(turn: ConversationTurn): Promise<ConversationTurn>;
-  loadArtifactJson(sessionId: string, artifactId: string, kind: "f2_report" | "f3_report"): Promise<F2UserReport | DrawingGovernanceResultV2 | undefined>;
+  loadArtifactJson(
+    sessionId: string,
+    artifactId: string,
+    kind: "f2_report" | "f3_report" | "f4_report" | "f5_report" | "f6_report",
+  ): Promise<F2UserReport | DrawingGovernanceResultV2 | F4WorkflowCalculationResult | F5DataInterpretationResult | F6OptimizationResultV2 | undefined>;
 }
 
 const SESSION_QUERY_KEY = "session";
@@ -179,7 +189,20 @@ export function createWorkbenchApi(): WorkbenchApi {
         return undefined;
       }
       const data = JSON.parse(await response.text()) as unknown;
-      return kind === "f2_report" ? f2UserReportSchema.parse(data) : drawingGovernanceResultV2Schema.parse(data);
+      switch (kind) {
+        case "f2_report":
+          return f2UserReportSchema.parse(data);
+        case "f3_report":
+          return drawingGovernanceResultV2Schema.parse(data);
+        case "f4_report":
+          return f4WorkflowCalculationResultSchema.parse(data);
+        case "f5_report":
+          return f5DataInterpretationResultSchema.parse(data);
+        case "f6_report":
+          return f6OptimizationResultSchema.parse(data);
+        default:
+          return undefined;
+      }
     },
   };
 

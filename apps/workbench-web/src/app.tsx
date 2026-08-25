@@ -1,5 +1,9 @@
-import type { ConversationTurn, F2UserReport } from "@ai-assist/contracts";
+import { useState } from "react";
 
+import type { ConversationTurn, F2UserReport } from "@ai-assist/contracts";
+import { projectWorksheetReview } from "../../../packages/workbench/src/review-projection.js";
+
+import { AnalysisProgress } from "./components/AnalysisProgress.js";
 import { ConversationPane } from "./components/ConversationPane.js";
 import { UploadPanel } from "./components/UploadPanel.js";
 import { WorksheetSelection, type WorksheetOption } from "./components/WorksheetSelection.js";
@@ -9,6 +13,8 @@ import { F3Governance } from "./components/F3Governance.js";
 import { AdoDecision } from "./components/AdoDecision.js";
 import { ActionQueue } from "./components/ActionQueue.js";
 import { ErrorPanel } from "./components/ErrorPanel.js";
+import { F7Placeholder } from "./components/F7Placeholder.js";
+import { WorksheetReview } from "./components/WorksheetReview.js";
 import type { WorkbenchApi } from "./api.js";
 import { useWorkbenchSession, type UseWorkbenchSessionResult } from "./use-session.js";
 import { projectActionQueue, projectFeatureLedger, type F8SessionSnapshot } from "./workbench-session.js";
@@ -25,6 +31,7 @@ export interface AppProps {
 export function App({ api, preloadedState, initialWorksheetOptions, downstreamWorksheetOptions }: AppProps) {
   const liveSession = useWorkbenchSession(api, { enabled: preloadedState === undefined });
   const session = preloadedState === undefined ? liveSession : createPreloadedSession(liveSession, preloadedState);
+  const [selectedReviewWorksheet, setSelectedReviewWorksheet] = useState<string>();
 
   const initialOptions: WorksheetOption[] = initialWorksheetOptions !== undefined ? [...initialWorksheetOptions] : (session.snapshot?.worksheetCapabilities ?? []).map((capability) => ({
     worksheetName: capability.worksheetName,
@@ -34,6 +41,20 @@ export function App({ api, preloadedState, initialWorksheetOptions, downstreamWo
   const downstreamOptions = downstreamWorksheetOptions !== undefined ? [...downstreamWorksheetOptions] : createDownstreamOptions(session.f2Report);
   const canSubmitInitialScope = session.pendingWorkbookHash !== undefined;
   const canSubmitDownstreamScope = session.snapshot?.initialScopeSelection?.workbookContentHash !== undefined;
+  const reviewWorksheetNames = collectReviewWorksheetNames(session);
+  const effectiveReviewWorksheet = selectedReviewWorksheet !== undefined && reviewWorksheetNames.includes(selectedReviewWorksheet)
+    ? selectedReviewWorksheet
+    : reviewWorksheetNames[0];
+  const review = session.snapshot !== undefined && effectiveReviewWorksheet !== undefined
+    ? projectWorksheetReview({
+      sessionId: session.snapshot.sessionId,
+      snapshot: session.snapshot,
+      f4Report: session.f4Report,
+      f5Report: session.f5Report,
+      f6Report: session.f6Report,
+    }, effectiveReviewWorksheet)
+    : undefined;
+  const f7Status = session.featureLedger.find((entry) => entry.featureId === "F7");
 
   return (
     <main className="app-shell">
@@ -65,6 +86,7 @@ export function App({ api, preloadedState, initialWorksheetOptions, downstreamWo
         <section className="layout-grid__primary">
           <UploadPanel disabled={session.loading} onUpload={session.uploadWorkbook} />
           <F0Status stateLabel={session.snapshot?.state ?? "loading"} entries={session.featureLedger} connected={session.connected} />
+          <AnalysisProgress entries={session.featureLedger} />
           <WorksheetSelection
             title="初始 Worksheet 选择"
             description="第一次选择基于本次受控 workbook 上传上下文。恢复到该阶段但没有本地 workbook hash 时，会保持阻塞。"
@@ -98,7 +120,9 @@ export function App({ api, preloadedState, initialWorksheetOptions, downstreamWo
               rationale: rationale.length === 0 ? undefined : rationale,
             })}
           />
+          {review !== undefined ? <WorksheetReview review={review} onSelectWorksheet={setSelectedReviewWorksheet} /> : null}
           <ActionQueue items={session.actionQueue} />
+          {f7Status !== undefined ? <F7Placeholder status={f7Status} /> : null}
         </section>
 
         <aside className="layout-grid__secondary">
@@ -107,6 +131,25 @@ export function App({ api, preloadedState, initialWorksheetOptions, downstreamWo
       </div>
     </main>
   );
+}
+
+function collectReviewWorksheetNames(session: UseWorkbenchSessionResult): string[] {
+  const names = new Set<string>();
+  for (const worksheet of session.f6Report?.worksheets ?? []) {
+    if (typeof worksheet.worksheetName === "string" && worksheet.worksheetName.length > 0) names.add(worksheet.worksheetName);
+  }
+  for (const worksheet of session.f5Report?.worksheets ?? []) {
+    if (typeof worksheet.worksheetName === "string" && worksheet.worksheetName.length > 0) names.add(worksheet.worksheetName);
+  }
+  for (const calculation of session.f4Report?.calculations ?? []) {
+    if (typeof calculation.worksheetSelection?.worksheetName === "string" && calculation.worksheetSelection.worksheetName.length > 0) {
+      names.add(calculation.worksheetSelection.worksheetName);
+    }
+  }
+  for (const worksheetName of session.snapshot?.downstreamScopeSelection?.selectedWorksheetNames ?? []) {
+    if (typeof worksheetName === "string" && worksheetName.length > 0) names.add(worksheetName);
+  }
+  return [...names];
 }
 
 function createDownstreamOptions(report: F2UserReport | undefined): WorksheetOption[] {

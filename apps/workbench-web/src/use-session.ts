@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { createTypedError, type ConversationTurn, type DrawingGovernanceResultV2, type F2UserReport, type TypedError } from "@ai-assist/contracts";
+import {
+  createTypedError,
+  type ConversationTurn,
+  type DrawingGovernanceResultV2,
+  type F2UserReport,
+  type F4WorkflowCalculationResult,
+  type F5DataInterpretationResult,
+  type F6OptimizationResultV2,
+  type TypedError,
+} from "@ai-assist/contracts";
 
 import { createWorkbenchApi, type WorkbenchApi } from "./api.js";
 import { projectActionQueue, projectFeatureLedger, type F8CommandKind, type F8SessionSnapshot } from "./workbench-session.js";
@@ -13,6 +22,9 @@ export interface UseWorkbenchSessionResult {
   readonly pendingWorkbookHash?: string;
   readonly f2Report?: F2UserReport;
   readonly f3Report?: DrawingGovernanceResultV2;
+  readonly f4Report?: F4WorkflowCalculationResult;
+  readonly f5Report?: F5DataInterpretationResult;
+  readonly f6Report?: F6OptimizationResultV2;
   readonly loading: boolean;
   readonly connected: boolean;
   readonly error?: TypedError;
@@ -37,6 +49,9 @@ export function useWorkbenchSession(apiOverride?: WorkbenchApi, options: UseWork
   const [pendingWorkbookHash, setPendingWorkbookHash] = useState<string>();
   const [f2Report, setF2Report] = useState<F2UserReport>();
   const [f3Report, setF3Report] = useState<DrawingGovernanceResultV2>();
+  const [f4Report, setF4Report] = useState<F4WorkflowCalculationResult>();
+  const [f5Report, setF5Report] = useState<F5DataInterpretationResult>();
+  const [f6Report, setF6Report] = useState<F6OptimizationResultV2>();
   const [loading, setLoading] = useState(true);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<TypedError>();
@@ -107,6 +122,9 @@ export function useWorkbenchSession(apiOverride?: WorkbenchApi, options: UseWork
     if (!enabled) {
       setF2Report(undefined);
       setF3Report(undefined);
+      setF4Report(undefined);
+      setF5Report(undefined);
+      setF6Report(undefined);
       return () => undefined;
     }
 
@@ -116,21 +134,33 @@ export function useWorkbenchSession(apiOverride?: WorkbenchApi, options: UseWork
       if (snapshot === undefined) {
         setF2Report(undefined);
         setF3Report(undefined);
+        setF4Report(undefined);
+        setF5Report(undefined);
+        setF6Report(undefined);
         return;
       }
 
       const refs = snapshot.artifactRefs ?? [];
       const f2Artifact = [...refs].reverse().find((artifact) => artifact.kind === "f2_report" && artifact.validated);
       const f3Artifact = [...refs].reverse().find((artifact) => artifact.kind === "f3_report" && artifact.validated);
+      const f4Artifact = [...refs].reverse().find((artifact) => artifact.kind === "f4_report" && artifact.validated);
+      const f5Artifact = [...refs].reverse().find((artifact) => artifact.kind === "f5_report" && artifact.validated);
+      const f6Artifact = [...refs].reverse().find((artifact) => artifact.kind === "f6_report" && artifact.validated);
 
       try {
-        const [nextF2, nextF3] = await Promise.all([
+        const [nextF2, nextF3, nextF4, nextF5, nextF6] = await Promise.all([
           f2Artifact === undefined ? Promise.resolve(undefined) : api.loadArtifactJson(snapshot.sessionId, f2Artifact.artifactId, "f2_report"),
           f3Artifact === undefined ? Promise.resolve(undefined) : api.loadArtifactJson(snapshot.sessionId, f3Artifact.artifactId, "f3_report"),
+          f4Artifact === undefined ? Promise.resolve(undefined) : api.loadArtifactJson(snapshot.sessionId, f4Artifact.artifactId, "f4_report"),
+          f5Artifact === undefined ? Promise.resolve(undefined) : api.loadArtifactJson(snapshot.sessionId, f5Artifact.artifactId, "f5_report"),
+          f6Artifact === undefined ? Promise.resolve(undefined) : api.loadArtifactJson(snapshot.sessionId, f6Artifact.artifactId, "f6_report"),
         ]);
         if (cancelled) return;
         setF2Report(nextF2 as F2UserReport | undefined);
         setF3Report(nextF3 as DrawingGovernanceResultV2 | undefined);
+        setF4Report(nextF4 as F4WorkflowCalculationResult | undefined);
+        setF5Report(nextF5 as F5DataInterpretationResult | undefined);
+        setF6Report(nextF6 as F6OptimizationResultV2 | undefined);
       } catch (artifactError) {
         if (cancelled) return;
         setError(toTypedError(artifactError, "受控 artifact 读取失败。", "刷新会话快照后重试。"));
@@ -154,6 +184,9 @@ export function useWorkbenchSession(apiOverride?: WorkbenchApi, options: UseWork
     pendingWorkbookHash,
     f2Report,
     f3Report,
+    f4Report,
+    f5Report,
+    f6Report,
     loading,
     connected,
     error,

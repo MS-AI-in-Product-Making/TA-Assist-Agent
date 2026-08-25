@@ -280,6 +280,58 @@ textarea {
   padding: 8px 0;
 }
 
+.review-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.review-pane {
+  min-height: 100%;
+}
+
+.review-card {
+  padding-top: 8px;
+  border-top: 1px solid rgba(201, 184, 160, 0.4);
+}
+
+.subheading {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+
+.compact-list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+}
+
+.token-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.token-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  background: white;
+}
+
+.review-finding-button {
+  width: 100%;
+  text-align: left;
+}
+
+.review-finding-button--active {
+  background: var(--accent-strong);
+  color: #f7f3ea;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -315,5 +367,9 @@ textarea {
   .ledger-item,
   .queue-item {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .review-grid {
+    grid-template-columns: 1fr;
   }
 }
