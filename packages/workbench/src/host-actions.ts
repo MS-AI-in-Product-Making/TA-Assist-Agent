@@ -278,6 +278,7 @@ class SqliteHostActionStore implements HostActionStore {
         hostInstanceId,
         leaseId: randomUUID(),
         leaseExpiresAt: toIso(leaseExpiresAt),
+        request,
       });
 
       persistHostAction(this.updateHostActionStatement, {

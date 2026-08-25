@@ -1,0 +1,52 @@
+{
+  "name": "@ai-assist/vscode-extension",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/extension.js",
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run --workspace ../../vitest.workspace.ts src"
+  },
+  "engines": {
+    "vscode": "^1.104.0"
+  },
+  "activationEvents": [
+    "onChatParticipant:ta-assist",
+    "onCommand:ta-assist.analyze",
+    "onCommand:ta-assist.resume",
+    "onCommand:ta-assist.workbench"
+    ,"onCommand:ta-assist.executeHostAction"
+  ],
+  "contributes": {
+    "commands": [
+      { "command": "ta-assist.analyze", "title": "TA Assist: Analyze Workbook" },
+      { "command": "ta-assist.resume", "title": "TA Assist: Resume Session" },
+      { "command": "ta-assist.workbench", "title": "TA Assist: Open Workbench" }
+      ,{ "command": "ta-assist.executeHostAction", "title": "TA Assist: Execute Surface Host Action" }
+    ],
+    "chatParticipants": [
+      {
+        "id": "ta-assist",
+        "name": "ta-assist",
+        "fullName": "TA Assist",
+        "description": "Resume and inspect governed TA workbook analysis.",
+        "commands": [
+          { "name": "analyze", "description": "Start TA analysis" },
+          { "name": "resume", "description": "Resume a TA session" },
+          { "name": "workbench", "description": "Open the TA Workbench" }
+        ]
+      }
+    ]
+  },
+  "dependencies": {
+    "@ai-assist/adapters": "0.1.0",
+    "@ai-assist/agent-runtime": "0.1.0",
+    "@ai-assist/contracts": "0.1.0",
+    "@ai-assist/conversation": "0.1.0",
+    "@ai-assist/workbench": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.104.0"
+  }
+}

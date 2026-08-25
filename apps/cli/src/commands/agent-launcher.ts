@@ -1,0 +1,49 @@
+import { startWorkbenchServer } from "@ai-assist/workbench-server";
+import { spawn } from "node:child_process";
+
+import { runAgentCommand, type AgentCliRequest, type AgentLauncher } from "./agent.js";
+
+export async function runDefaultAgentCommand(request: AgentCliRequest): Promise<string> {
+  return runAgentCommand(request, createLauncher());
+}
+
+function createLauncher(): AgentLauncher {
+  const start = async (rootDir: string) => {
+    const started = await startWorkbenchServer({ rootDir, port: 0 });
+    registerHostCredentialIpc(started.server);
+    openBrowser(started.url);
+    return { sessionId: "pending", url: new URL(started.url).origin };
+  };
+  const resume = async (rootDir: string, sessionId: string) => {
+    const started = await startWorkbenchServer({ rootDir, port: 0 });
+    registerHostCredentialIpc(started.server);
+    const origin = new URL(started.url).origin;
+    const url = `${origin}/?session=${encodeURIComponent(sessionId)}`;
+    openBrowser(url);
+    return { sessionId, url };
+  };
+  return {
+    analyze: start,
+    workbench: start,
+    resume,
+    status: resume,
+  };
+}
+
+function registerHostCredentialIpc(server: Awaited<ReturnType<typeof startWorkbenchServer>>["server"]): void {
+  if (typeof process.send !== "function") return;
+  process.on("message", (value: unknown) => {
+    const request = value as { readonly type?: unknown; readonly requestId?: unknown; readonly sessionId?: unknown; readonly actionId?: unknown; readonly hostInstanceId?: unknown; readonly scopes?: unknown };
+    if (request.type !== "issueHostBearer" || typeof request.requestId !== "string" || typeof request.sessionId !== "string" || typeof request.actionId !== "string" || typeof request.hostInstanceId !== "string" || !Array.isArray(request.scopes)) return;
+    const scopes = request.scopes.filter((scope): scope is "host-actions:claim" | "host-actions:result" => scope === "host-actions:claim" || scope === "host-actions:result");
+    if (scopes.length !== request.scopes.length || scopes.length === 0) return;
+    const token = server.issueHostBearer(request.sessionId, scopes, { actionId: request.actionId, hostInstanceId: request.hostInstanceId });
+    process.send?.({ type: "hostBearer", requestId: request.requestId, token });
+  });
+}
+
+function openBrowser(url: string): void {
+  const command = process.platform === "win32" ? "explorer.exe" : process.platform === "darwin" ? "open" : "xdg-open";
+  const child = spawn(command, [url], { detached: true, stdio: "ignore", windowsHide: true });
+  child.unref();
+}

@@ -56,6 +56,8 @@ export function reduceSessionCommand(snapshotInput: F8SessionSnapshot, commandIn
       return reduceConfirmDownstreamScope(snapshot, command);
     case "confirm_ado_decision":
       return reduceConfirmAdoDecision(snapshot, command);
+    case "accept_surface_write":
+      return transitionWithAttempt(snapshot, command, "f4_running");
     case "confirm_image_decision":
       return transitionWithAttempt(snapshot, command, "f5_running");
     case "confirm_analysis_context":

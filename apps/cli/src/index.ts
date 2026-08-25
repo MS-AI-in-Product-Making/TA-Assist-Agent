@@ -7,6 +7,8 @@ import { runFeature6WorkflowCommand, type Feature6CommandOptions } from "./comma
 import { runInspectCommand } from "./commands/inspect.js";
 import { runPurgeCommand, runPurgePlanCommand } from "./commands/purge.js";
 import { runSmokeCommand } from "./commands/smoke.js";
+import { runAgentCommand, type AgentCliRequest } from "./commands/agent.js";
+import { runDefaultAgentCommand } from "./commands/agent-launcher.js";
 
 export interface CliResult {
   exitCode: number;
@@ -14,15 +16,16 @@ export interface CliResult {
   stderr: string;
 }
 
-type Command = "smoke" | "inspect" | "export" | "purge-plan" | "purge" | "feature1" | "feature2" | "feature3" | "feature5" | "feature6";
+type Command = "smoke" | "inspect" | "export" | "purge-plan" | "purge" | "feature1" | "feature2" | "feature3" | "feature5" | "feature6" | "agent";
 
-interface CliDependencies {
+export interface CliDependencies {
   readonly cwd: () => string;
   readonly runFeature1?: typeof runFeature1WorkflowCommand;
   readonly runFeature2: typeof runFeature2WorkflowCommand;
   readonly runFeature3?: typeof runFeature3WorkflowCommand;
   readonly runFeature5?: typeof runFeature5WorkflowCommand;
   readonly runFeature6?: typeof runFeature6WorkflowCommand;
+  readonly runAgent?: (request: AgentCliRequest) => Promise<string>;
 }
 
 export async function executeCli(argv: readonly string[], dependencies: CliDependencies = { cwd: () => process.cwd(), runFeature2: runFeature2WorkflowCommand }): Promise<CliResult> {
@@ -94,6 +97,8 @@ async function executeCommand(parsed: ReturnType<typeof parseArguments>, depende
         parsed.f5ArtifactRoot,
         parsed.options,
       );
+    case "agent":
+      return (dependencies.runAgent ?? runDefaultAgentCommand)(parsed.request);
   }
 }
 
@@ -107,11 +112,14 @@ function parseArguments(argv: readonly string[]):
   | { command: "feature2"; rootDir: string; workbookPath: string; worksheetSelection: Feature2WorksheetSelectionArgs }
   | { command: "feature3"; rootDir: string; f2ArtifactRoot: string }
   | { command: "feature5"; rootDir: string; f1ArtifactRoot: string; f3ArtifactRoot: string; f4ArtifactRoot: string; options: Feature5CommandOptions }
-  | { command: "feature6"; rootDir: string; f2ArtifactRoot: string; f3ArtifactRoot: string; f4ArtifactRoot: string; f5ArtifactRoot: string; options: Feature6CommandOptions } {
-  const [command, ...flags] = argv;
+  | { command: "feature6"; rootDir: string; f2ArtifactRoot: string; f3ArtifactRoot: string; f4ArtifactRoot: string; f5ArtifactRoot: string; options: Feature6CommandOptions }
+  | { command: "agent"; request: AgentCliRequest } {
+  const [command, ...rawFlags] = argv;
   if (!isCommand(command)) {
     throw new Error("validation_error: command is invalid");
   }
+  const agentAction = command === "agent" ? rawFlags[0] : undefined;
+  const flags = command === "agent" ? rawFlags.slice(1) : rawFlags;
   const values = new Map<string, string | boolean>();
   const worksheetValues: string[] = [];
   for (let index = 0; index < flags.length; index += 1) {
@@ -120,7 +128,7 @@ function parseArguments(argv: readonly string[]):
       setOnce(values, flag, true);
       continue;
     }
-    if (flag !== "--root" && flag !== "--run-id" && flag !== "--confirmation-token" && flag !== "--workbook" && flag !== "--f2-artifacts" && flag !== "--f1-artifacts" && flag !== "--f3-artifacts" && flag !== "--f4-artifacts" && flag !== "--f5-artifacts" && flag !== "--worksheets" && flag !== "--worksheet" && flag !== "--workbook-hash" && flag !== "--image-observations" && flag !== "--supplier-capability" && flag !== "--datum-strategy" && flag !== "--cost" && flag !== "--analysis-context" && flag !== "--optimization-targets") {
+    if (flag !== "--root" && flag !== "--session" && flag !== "--run-id" && flag !== "--confirmation-token" && flag !== "--workbook" && flag !== "--f2-artifacts" && flag !== "--f1-artifacts" && flag !== "--f3-artifacts" && flag !== "--f4-artifacts" && flag !== "--f5-artifacts" && flag !== "--worksheets" && flag !== "--worksheet" && flag !== "--workbook-hash" && flag !== "--image-observations" && flag !== "--supplier-capability" && flag !== "--datum-strategy" && flag !== "--cost" && flag !== "--analysis-context" && flag !== "--optimization-targets") {
       throw new Error("validation_error: unknown option");
     }
     const value = flags[index + 1];
@@ -141,6 +149,17 @@ function parseArguments(argv: readonly string[]):
     throw new Error("validation_error: --root is required");
   }
   const rootDir = rootValue.trim();
+  if (command === "agent") {
+    const action = agentAction;
+    if (action !== "analyze" && action !== "resume" && action !== "status" && action !== "workbench") throw new Error("validation_error: agent action is invalid");
+    const sessionId = values.get("--session");
+    if (action === "resume" || action === "status") {
+      if (typeof sessionId !== "string" || sessionId.trim().length === 0) throw new Error("validation_error: --session is required");
+      return { command, request: { action, rootDir, sessionId: sessionId.trim() } };
+    }
+    if (sessionId !== undefined) throw new Error("validation_error: --session is not allowed for this agent action");
+    return { command, request: { action, rootDir } };
+  }
   if (command === "smoke") {
     rejectUnexpected(values, ["--root"]);
     return { command, rootDir };
@@ -258,6 +277,7 @@ function isCommand(value: string | undefined): value is Command {
     || value === "feature1"
     || value === "feature2"
     || value === "feature3"
+    || value === "agent"
     || value === "feature5"
     || value === "feature6";
 }

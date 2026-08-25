@@ -212,7 +212,7 @@ const confirmationDecisionPayloadSchema = z
 
 const adoDecisionPayloadSchema = z.discriminatedUnion("decision", [
   z.object({ decision: z.literal("create_new"), rationale: nonEmptyStringSchema.optional() }).strict(),
-  z.object({ decision: z.literal("use_existing"), rationale: nonEmptyStringSchema.optional() }).strict(),
+  z.object({ decision: z.literal("use_existing"), workItemReference: nonEmptyStringSchema, rationale: nonEmptyStringSchema.optional() }).strict(),
   z.object({ decision: z.literal("local_only"), rationale: nonEmptyStringSchema.optional() }).strict(),
 ]);
 
@@ -292,6 +292,7 @@ export const f8SessionCommandSchema = z.discriminatedUnion("command", [
   commandEnvelopeSchema("complete_review", completeReviewPayloadSchema),
   commandEnvelopeSchema("save_what_if_draft", saveWhatIfDraftInternalPayloadSchema),
   commandEnvelopeSchema("confirm_what_if_tolerance_promotion", confirmWhatIfPromotionInternalPayloadSchema),
+  commandEnvelopeSchema("accept_surface_write", z.object({ actionId: nonEmptyStringSchema }).strict()),
 ]);
 
 export const f8PublicSessionCommandSchema = z.discriminatedUnion("command", [
@@ -424,12 +425,39 @@ const hostActionRequestBaseSchema = {
   expiresAt: z.string().datetime(),
 } as const;
 
+const surfacePrepareRequestSchema = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("create"), title: nonEmptyStringSchema, nextContent: nonEmptyStringSchema, factorCount: z.number().int().nonnegative() }).strict(),
+  z.object({ mode: z.literal("existing"), workItemReference: nonEmptyStringSchema, nextContent: nonEmptyStringSchema, factorCount: z.number().int().nonnegative() }).strict(),
+]);
+
+const surfaceConfirmationSchema = z.object({
+  status: z.literal("confirmation_required"),
+  workItemReference: nonEmptyStringSchema,
+  ownerReference: nonEmptyStringSchema,
+  commentReference: nonEmptyStringSchema,
+  expectedVersion: nonEmptyStringSchema,
+  beforeContentHash: sha256Schema,
+  nextContent: nonEmptyStringSchema,
+  factorCount: z.number().int().nonnegative(),
+  confirmationHash: sha256Schema,
+  diff: z.array(z.object({ before: z.string().nullable(), after: z.string().nullable(), changed: z.boolean() }).strict()),
+}).strict();
+
+const surfaceUpdateReceiptSchema = z.object({
+  status: z.literal("updated"),
+  workItemReference: nonEmptyStringSchema,
+  commentReference: nonEmptyStringSchema,
+  version: nonEmptyStringSchema,
+  contentHash: sha256Schema,
+}).strict();
+
 export const hostActionRequestSchema = z.discriminatedUnion("kind", [
   z.object({
     ...hostActionRequestBaseSchema,
     kind: z.literal("surface_validate"),
     confirmationHash: sha256Schema,
     expectedTargetVersion: nonEmptyStringSchema,
+    prepareRequest: surfacePrepareRequestSchema,
   }).strict(),
   z.object({
     ...hostActionRequestBaseSchema,
@@ -437,6 +465,7 @@ export const hostActionRequestSchema = z.discriminatedUnion("kind", [
     validationActionId: nonEmptyStringSchema,
     confirmationHash: sha256Schema,
     expectedTargetVersion: nonEmptyStringSchema,
+    confirmation: surfaceConfirmationSchema,
   }).strict(),
   z.object({
     ...hostActionRequestBaseSchema,
@@ -451,12 +480,22 @@ export const hostActionClaimSchema = z
     hostInstanceId: nonEmptyStringSchema,
     leaseId: nonEmptyStringSchema,
     leaseExpiresAt: z.string().datetime(),
+    request: hostActionRequestSchema,
   })
-  .strict();
+  .strict()
+  .superRefine((claim, context) => {
+    if (claim.actionId !== claim.request.actionId) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "host action claim must bind the same actionId", path: ["request", "actionId"] });
+    }
+  });
 
 const hostActionResultPayloadSchema = z.discriminatedUnion("status", [
   z.object({
     status: z.literal("completed"),
+    outcome: z.union([
+      z.object({ kind: z.literal("surface_validation"), confirmation: surfaceConfirmationSchema }).strict(),
+      z.object({ kind: z.literal("surface_write"), receipt: surfaceUpdateReceiptSchema }).strict(),
+    ]).optional(),
   }).strict(),
   z.object({
     status: z.literal("blocked"),

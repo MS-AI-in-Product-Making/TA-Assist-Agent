@@ -16,7 +16,7 @@ export const conversationRoutes: FastifyPluginAsync<{ readonly context: Workbenc
       return reply.code(403).send({ error: "session_scope_rejected" });
     }
 
-    return { turns: context.conversation.read(sessionId) };
+    return { turns: await context.conversation.read(sessionId) };
   });
 
   app.post("/api/sessions/:sessionId/conversation", async (request, reply) => {
@@ -31,7 +31,7 @@ export const conversationRoutes: FastifyPluginAsync<{ readonly context: Workbenc
       return reply.code(400).send({ error: "conversation_schema_rejected" });
     }
 
-    return reply.code(201).send(context.conversation.append(parsed.data));
+    return reply.code(201).send(await context.conversation.append(parsed.data));
   });
 
   app.get("/api/sessions/:sessionId/events", async (request, reply) => {

@@ -419,6 +419,7 @@ function surfaceValidateRequest(
     expiresAt: overrides.expiresAt ?? "2026-08-24T00:05:00.000Z",
     confirmationHash: overrides.confirmationHash ?? WORKBOOK_HASH,
     expectedTargetVersion: overrides.expectedTargetVersion ?? "comment-v1",
+    prepareRequest: { mode: "create" as const, title: "TA Drawing Governance", nextContent: "next content", factorCount: 1 },
   };
 }
 
@@ -442,6 +443,7 @@ function surfaceWriteRequest(
     validationActionId: overrides.validationActionId ?? "action-validate-3",
     confirmationHash: overrides.confirmationHash ?? WORKBOOK_HASH,
     expectedTargetVersion: overrides.expectedTargetVersion ?? "comment-v1",
+    confirmation: surfaceConfirmation(overrides.confirmationHash ?? WORKBOOK_HASH),
   };
 }
 
@@ -462,7 +464,7 @@ function modelRequest(
 }
 
 function completedResult(
-  claim: { leaseId: string; hostInstanceId?: string },
+  claim: { leaseId: string; hostInstanceId?: string; request?: { kind: string; confirmationHash?: string } },
   actionId: string,
   overrides: Partial<{
     hostInstanceId: string;
@@ -476,9 +478,26 @@ function completedResult(
     leaseId: claim.leaseId,
     status: "completed" as const,
     resultHash: overrides.resultHash ?? WORKBOOK_HASH,
-    payload: {
-      status: "completed" as const,
-    },
+    payload: claim.request?.kind === "surface_validate"
+      ? { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation: surfaceConfirmation(claim.request.confirmationHash ?? WORKBOOK_HASH) } }
+      : claim.request?.kind === "surface_write"
+        ? { status: "completed" as const, outcome: { kind: "surface_write" as const, receipt: { status: "updated" as const, workItemReference: "WI-1", commentReference: "C0", version: "2", contentHash: WORKBOOK_HASH } } }
+        : { status: "completed" as const },
+  };
+}
+
+function surfaceConfirmation(confirmationHash: string) {
+  return {
+    status: "confirmation_required" as const,
+    workItemReference: "WI-1",
+    ownerReference: "owner-1",
+    commentReference: "C0",
+    expectedVersion: "1",
+    beforeContentHash: "b".repeat(64),
+    nextContent: "next content",
+    factorCount: 1,
+    confirmationHash,
+    diff: [{ before: "before", after: "next content", changed: true }],
   };
 }
 

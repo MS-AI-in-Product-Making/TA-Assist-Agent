@@ -124,9 +124,13 @@ export function App({ api, preloadedState, initialWorksheetOptions, downstreamWo
           <F3Governance report={session.f3Report} />
           <AdoDecision
             visible={session.snapshot?.state === "ado_decision_required" && session.f3Report?.status === "governance_required"}
-            onSubmit={(decision, rationale) => session.submitCommand("confirm_ado_decision", {
+            onSubmit={(decision, rationale, workItemReference) => session.submitCommand("confirm_ado_decision", decision === "use_existing" ? {
               decision,
-              rationale: rationale.length === 0 ? undefined : rationale,
+              workItemReference: workItemReference!,
+              ...(rationale.length === 0 ? {} : { rationale }),
+            } : {
+              decision,
+              ...(rationale.length === 0 ? {} : { rationale }),
             })}
           />
           {review !== undefined ? <WorksheetReview review={review} onSelectWorksheet={(worksheetName) => {

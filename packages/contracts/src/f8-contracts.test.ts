@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   f8SessionCommandSchema,
+  f8PublicSessionCommandSchema,
   f8SessionSnapshotSchema,
   f8SessionEventSchema,
   conversationTurnSchema,
@@ -58,6 +59,15 @@ describe("F8 session and host contracts", () => {
 
     expect(f8SessionCommandSchema.parse(command)).toEqual(command);
     expect(() => f8SessionCommandSchema.parse({ ...command, outputRoot: "C:/arbitrary" })).toThrow();
+  });
+
+  it("requires an explicit existing Work Item reference and keeps Surface write acceptance internal", () => {
+    const existing = { contractVersion: "f8-session-command-v1", sessionId: SESSION_ID, commandId: COMMAND_ID, expectedRevision: 3, command: "confirm_ado_decision", payload: { decision: "use_existing", workItemReference: "WI-123" } };
+    expect(f8SessionCommandSchema.parse(existing)).toEqual(existing);
+    expect(() => f8SessionCommandSchema.parse({ ...existing, payload: { decision: "use_existing" } })).toThrow();
+    const internal = { contractVersion: "f8-session-command-v1", sessionId: SESSION_ID, commandId: "host-result", expectedRevision: 4, command: "accept_surface_write", payload: { actionId: "ado-write-1" } };
+    expect(f8SessionCommandSchema.parse(internal).command).toBe("accept_surface_write");
+    expect(() => f8PublicSessionCommandSchema.parse(internal)).toThrow();
   });
 
   it("keeps the session snapshot and event surfaces strict", () => {
@@ -298,6 +308,18 @@ describe("F8 session and host contracts", () => {
       validationActionId: "action-validate-1",
       confirmationHash: WORKBOOK_HASH,
       expectedTargetVersion: "f4-handoff-v1",
+      confirmation: {
+        status: "confirmation_required",
+        workItemReference: "WI-1",
+        ownerReference: "owner-1",
+        commentReference: "C0",
+        expectedVersion: "1",
+        beforeContentHash: "b".repeat(64),
+        nextContent: "next content",
+        factorCount: 1,
+        confirmationHash: WORKBOOK_HASH,
+        diff: [{ before: "before", after: "next content", changed: true }],
+      },
     };
 
     const hostActionClaim = {
@@ -306,6 +328,7 @@ describe("F8 session and host contracts", () => {
       hostInstanceId: "host-1",
       leaseId: "lease-1",
       leaseExpiresAt: "2026-08-24T00:11:00.000Z",
+      request: hostActionRequest,
     };
 
     const hostActionResult = {

@@ -34,7 +34,7 @@ export const COMMAND_ALLOWLIST: Record<F8SessionState, readonly F8CommandKind[]>
   downstream_scope_required: ["confirm_downstream_scope", "replace_workbook"],
   f3_running: ["cancel"],
   ado_decision_required: ["confirm_ado_decision", "replace_workbook"],
-  ado_action_pending: ["cancel"],
+  ado_action_pending: ["accept_surface_write", "cancel"],
   f4_running: ["cancel"],
   image_decision_required: ["confirm_image_decision", "replace_workbook"],
   f5_running: ["cancel"],

@@ -3,6 +3,7 @@
   "references": [
     { "path": "./apps/cli" },
     { "path": "./apps/workbench-server" },
+    { "path": "./apps/vscode-extension" },
     { "path": "./packages/contracts" },
     { "path": "./packages/conversation" },
     { "path": "./packages/agent-runtime" },

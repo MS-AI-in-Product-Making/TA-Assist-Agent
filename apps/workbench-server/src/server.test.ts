@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import { get } from "node:http";
 
 import { buildWorkbenchServer } from "./server.js";
+import { createConversationStore } from "@ai-assist/conversation";
 import { openSessionStore, projectWorksheetReview, selectCompleteReviewContext } from "@ai-assist/workbench";
 import type { PersistentWorkerQueueOptions, StageJob } from "./sqlite-worker-queue.js";
 
@@ -59,6 +60,31 @@ async function immediateQueue(options: PersistentWorkerQueueOptions) {
 }
 
 describe("workbench server routes", () => {
+  it("persists Web turns in the shared TA ConversationStore", async () => {
+    const rootDir = testRoot("workbench-server-shared-conversation");
+    await rm(rootDir, { recursive: true, force: true });
+    const sessionId = "34343434-3434-4343-8343-343434343434";
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    let closed = false;
+    try {
+      const browser = await server.testAuthenticate(sessionId);
+      const turn = { contractVersion: "ta-conversation-turn-v1", turnId: "web-turn-1", sessionId, sequence: 1, source: "web", role: "user", content: [{ kind: "text", text: "继续分析" }], createdAt: "2026-08-25T00:00:00.000Z", relatedArtifactIds: [] };
+      const response = await server.inject({ method: "POST", url: `/api/sessions/${sessionId}/conversation`, headers: browser.headers, payload: turn });
+      expect(response.statusCode).toBe(201);
+      await server.close();
+      closed = true;
+      const conversation = await createConversationStore({ rootDir: join(rootDir, "runtime", "workbench") });
+      try {
+        await expect(conversation.readTurns(sessionId)).resolves.toEqual([turn]);
+      } finally {
+        await conversation.close();
+      }
+    } finally {
+      if (!closed) await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
   it("calculates without persistence, then saves and independently promotes one What-if draft", async () => {
     const rootDir = testRoot("workbench-server-what-if");
     await rm(rootDir, { recursive: true, force: true });
@@ -477,7 +503,9 @@ describe("workbench server routes", () => {
   it("keeps create/use ADO decisions pending for Task 13 Surface validation and independent Confirm write", async () => {
     const rootDir = testRoot("workbench-server-ado-host-action");
     await rm(rootDir, { recursive: true, force: true });
-    const server = await buildWorkbenchServer({ rootDir, runner: async () => ({ status: "worker-ran" }) });
+    const prepareRequest = { mode: "create" as const, title: "TA Drawing Governance", nextContent: "governed reminder", factorCount: 2 };
+    const runner = vi.fn(async () => ({ status: "worker-ran" }));
+    const server = await buildWorkbenchServer({ rootDir, runner, surfacePrepareService: { create: async () => prepareRequest } });
     try {
       const browser = await server.testAuthenticate("28282828-2828-4282-8282-282828282828");
       const session = await (await import("@ai-assist/workbench")).openSessionStore({ rootDir, sessionId: browser.sessionId });
@@ -489,7 +517,14 @@ describe("workbench server routes", () => {
           expectedRevision: 0,
           command: "upload_workbook",
           payload: { fileName: "book.xlsx", workbookBytes: new Uint8Array([80, 75, 3, 4]), inputClassification: "confidential" },
-        }, async (snapshot) => ({ snapshot: { ...snapshot, state: "ado_decision_required", revision: snapshot.revision + 1, activeAttempt: null } }));
+        }, async (snapshot) => ({ snapshot: {
+          ...snapshot,
+          state: "ado_decision_required",
+          revision: snapshot.revision + 1,
+          activeAttempt: null,
+          downstreamScopeSelection: { workbookContentHash: "a".repeat(64), selectedWorksheetNames: ["Analysis-A"], confirmed: true },
+          priorRunReferences: [{ featureId: "F2", referenceId: "f2-run-a", contractVersion: "v1", workbookHash: "a".repeat(64), runReference: "f2-baseline-a" }],
+        } }));
       } finally {
         await session.close();
       }
@@ -514,12 +549,43 @@ describe("workbench server routes", () => {
       expect(response.json()).not.toMatchObject({ state: "f4_running" });
       const actionId = `ado-validation:${browser.sessionId}:${response.json<{ revision: number }>().revision}`;
       const token = server.issueHostBearer(browser.sessionId, ["host-actions:claim"], { actionId, hostInstanceId: "host-a" });
-      expect((await server.inject({
+      const claimResponse = await server.inject({
         method: "POST",
         url: `/api/sessions/${browser.sessionId}/host-actions/${actionId}/claim`,
         headers: { host: "127.0.0.1:0", authorization: `Bearer ${token}` },
         payload: { hostInstanceId: "host-a" },
-      })).statusCode).toBe(200);
+      });
+      expect(claimResponse.statusCode).toBe(200);
+      expect(claimResponse.json()).toMatchObject({ request: { kind: "surface_validate", prepareRequest } });
+      const validationClaim = claimResponse.json<{ leaseId: string }>();
+      const missingOutcomePayload = { status: "completed" as const };
+      const validationResultToken = server.issueHostBearer(browser.sessionId, ["host-actions:result"], { actionId, hostInstanceId: "host-a" });
+      expect((await server.inject({ method: "POST", url: `/api/sessions/${browser.sessionId}/host-actions/${actionId}/result`, headers: { host: "127.0.0.1:0", authorization: `Bearer ${validationResultToken}` }, payload: { contractVersion: "f8-host-action-result-v1", actionId, hostInstanceId: "host-a", leaseId: validationClaim.leaseId, status: "completed", resultHash: createHash("sha256").update(JSON.stringify(missingOutcomePayload)).digest("hex"), payload: missingOutcomePayload } })).statusCode).toBe(400);
+      const confirmationHash = createHash("sha256").update(JSON.stringify(["WI-1", "C0", "1", prepareRequest.nextContent])).digest("hex");
+      const confirmation = {
+        status: "confirmation_required", workItemReference: "WI-1", ownerReference: "owner-1", commentReference: "C0", expectedVersion: "1",
+        beforeContentHash: "b".repeat(64), nextContent: prepareRequest.nextContent, factorCount: prepareRequest.factorCount,
+        confirmationHash, diff: [{ before: "before", after: prepareRequest.nextContent, changed: true }],
+      } as const;
+      const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };
+      expect((await server.inject({
+        method: "POST", url: `/api/sessions/${browser.sessionId}/host-actions/${actionId}/result`,
+        headers: { host: "127.0.0.1:0", authorization: `Bearer ${validationResultToken}` },
+        payload: { contractVersion: "f8-host-action-result-v1", actionId, hostInstanceId: "host-a", leaseId: validationClaim.leaseId, status: "completed", resultHash: createHash("sha256").update(JSON.stringify(validationPayload)).digest("hex"), payload: validationPayload },
+      })).statusCode).toBe(204);
+      expect((await server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}`, headers: browser.headers })).json()).toMatchObject({ state: "ado_action_pending" });
+
+      const writeActionId = `ado-write:${browser.sessionId}:${response.json<{ revision: number }>().revision}`;
+      const writeClaimToken = server.issueHostBearer(browser.sessionId, ["host-actions:claim"], { actionId: writeActionId, hostInstanceId: "host-a" });
+      const writeClaimResponse = await server.inject({ method: "POST", url: `/api/sessions/${browser.sessionId}/host-actions/${writeActionId}/claim`, headers: { host: "127.0.0.1:0", authorization: `Bearer ${writeClaimToken}` }, payload: { hostInstanceId: "host-a" } });
+      expect(writeClaimResponse.statusCode).toBe(200);
+      expect(writeClaimResponse.json()).toMatchObject({ request: { kind: "surface_write", validationActionId: actionId, confirmation } });
+      const writePayload = { status: "completed" as const, outcome: { kind: "surface_write" as const, receipt: { status: "updated" as const, workItemReference: "WI-1", commentReference: "C0", version: "2", contentHash: createHash("sha256").update(prepareRequest.nextContent).digest("hex") } } };
+      const writeResultToken = server.issueHostBearer(browser.sessionId, ["host-actions:result"], { actionId: writeActionId, hostInstanceId: "host-a" });
+      expect((await server.inject({ method: "POST", url: `/api/sessions/${browser.sessionId}/host-actions/${writeActionId}/result`, headers: { host: "127.0.0.1:0", authorization: `Bearer ${writeResultToken}` }, payload: { contractVersion: "f8-host-action-result-v1", actionId: writeActionId, hostInstanceId: "host-a", leaseId: writeClaimResponse.json<{ leaseId: string }>().leaseId, status: "completed", resultHash: createHash("sha256").update(JSON.stringify(writePayload)).digest("hex"), payload: writePayload } })).statusCode).toBe(204);
+      expect((await server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}`, headers: browser.headers })).json()).toMatchObject({ state: "image_decision_required", activeAttempt: null });
+      expect(runner).toHaveBeenCalledOnce();
+      expect(runner).toHaveBeenCalledWith(expect.objectContaining({ stage: "f4_running" }));
     } finally {
       await server.close();
       await rm(rootDir, { recursive: true, force: true });

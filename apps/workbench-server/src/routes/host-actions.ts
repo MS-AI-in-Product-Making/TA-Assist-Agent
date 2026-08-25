@@ -69,8 +69,72 @@ export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: Workbench
       return reply.code(400).send({ error: "host_action_result_integrity_rejected" });
     }
 
+    const action = await context.hostActions.read(sessionId, actionId);
+    const submittedOutcome = parsed.data.payload.status === "completed" ? parsed.data.payload.outcome : undefined;
+    if (parsed.data.status === "completed" && action?.kind === "surface_validate" && submittedOutcome?.kind !== "surface_validation") {
+      return reply.code(400).send({ error: "host_action_result_integrity_rejected" });
+    }
+    if (parsed.data.status === "completed" && action?.kind === "surface_write" && submittedOutcome?.kind !== "surface_write") {
+      return reply.code(400).send({ error: "host_action_result_integrity_rejected" });
+    }
+    if (action?.kind === "surface_validate" && submittedOutcome?.kind === "surface_validation") {
+      const confirmation = submittedOutcome.confirmation;
+      const expectedConfirmationHash = createHash("sha256").update(JSON.stringify([
+        confirmation.workItemReference,
+        confirmation.commentReference,
+        confirmation.expectedVersion,
+        confirmation.nextContent,
+      ])).digest("hex");
+      if (confirmation.confirmationHash !== expectedConfirmationHash
+        || confirmation.nextContent !== action.prepareRequest.nextContent
+        || confirmation.factorCount !== action.prepareRequest.factorCount) {
+        return reply.code(400).send({ error: "host_action_result_integrity_rejected" });
+      }
+    }
+    if (action?.kind === "surface_write" && submittedOutcome?.kind === "surface_write") {
+      const expectedContentHash = createHash("sha256").update(action.confirmation.nextContent).digest("hex");
+      if (submittedOutcome.receipt.contentHash !== expectedContentHash
+        || submittedOutcome.receipt.workItemReference !== action.confirmation.workItemReference
+        || submittedOutcome.receipt.commentReference !== action.confirmation.commentReference) {
+        return reply.code(400).send({ error: "host_action_result_integrity_rejected" });
+      }
+    }
     const completion = await context.hostActions.complete(sessionId, parsed.data);
-    if (completion === "accepted") return reply.code(204).send();
+    if (completion === "accepted") {
+      const outcome = parsed.data.payload.status === "completed" ? parsed.data.payload.outcome : undefined;
+      if (action?.kind === "surface_validate" && outcome?.kind === "surface_validation") {
+        const writeActionId = `ado-write:${sessionId}:${action.expectedRevision}`;
+        const created = await context.hostActions.create({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: writeActionId,
+          sessionId,
+          expectedRevision: action.expectedRevision,
+          kind: "surface_write",
+          validationActionId: action.actionId,
+          confirmationHash: outcome.confirmation.confirmationHash,
+          expectedTargetVersion: action.expectedTargetVersion,
+          confirmation: outcome.confirmation,
+          expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+        });
+        if (created === undefined) return reply.code(409).send({ error: "host_action_id_conflict" });
+      }
+      if (action?.kind === "surface_write" && outcome?.kind === "surface_write") {
+        const snapshot = await context.sessions.read(sessionId);
+        if (snapshot?.state !== "ado_action_pending" || snapshot.revision !== action.expectedRevision) {
+          return reply.code(409).send({ error: "host_action_session_stale" });
+        }
+        const next = await context.sessions.applyCommand({
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: `host-result:${actionId}`,
+          expectedRevision: snapshot.revision,
+          command: "accept_surface_write",
+          payload: { actionId },
+        });
+        await context.enqueueActiveAttempt(next);
+      }
+      return reply.code(204).send();
+    }
     if (completion === "duplicate") return reply.code(409).send({ error: "host_action_result_replayed" });
     return reply.code(400).send({ error: "host_action_result_integrity_rejected" });
   });

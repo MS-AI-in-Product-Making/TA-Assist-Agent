@@ -8,12 +8,12 @@ import cookie from "@fastify/cookie";
 import multipart from "@fastify/multipart";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 
-import type { ConversationTurn } from "@ai-assist/conversation";
-import type { F6OptimizationTargets, F8ScenarioDraft, hostActionClaimSchema, hostActionRequestSchema, hostActionResultSchema } from "@ai-assist/contracts";
+import { createConversationStore, type ConversationStore, type ConversationTurn } from "@ai-assist/conversation";
+import { drawingGovernanceResultV2Schema, type F6OptimizationTargets, type F8ScenarioDraft, type hostActionClaimSchema, type hostActionRequestSchema, type hostActionResultSchema } from "@ai-assist/contracts";
 import { acceptAttemptResult, canonicalSelectedWorksheetSetHash, createSessionStore, createToleranceTargetsPreview, openSessionStore, reduceSessionCommand, type F8SessionCommand, type F8SessionSnapshot, type ReviewContextIdentity, type ScenarioBaseline, type SessionArtifactReference, type SessionDeltaOperations } from "@ai-assist/workbench";
 import { createTypedError } from "@ai-assist/contracts";
 import { createHostActionStore } from "@ai-assist/workbench";
-import { createF4WhatIfBaselineRequest, runF4WhatIfCalculation } from "@ai-assist/workflow-runners";
+import { createF4WhatIfBaselineRequest, renderF3AdoReminder, runF4WhatIfCalculation } from "@ai-assist/workflow-runners";
 
 interface RunnerArtifactReference {
   readonly artifactId: string;
@@ -48,6 +48,11 @@ export interface StartWorkbenchServerOptions {
   readonly runner?: (job: StageJob) => Promise<unknown>;
   readonly queueFactory?: (options: PersistentWorkerQueueOptions) => Promise<PersistentWorkerQueue>;
   readonly whatIfService?: WhatIfService;
+  readonly surfacePrepareService?: SurfacePrepareService;
+}
+
+export interface SurfacePrepareService {
+  create(snapshot: F8SessionSnapshot, command: F8SessionCommand): Promise<Extract<HostActionRequest, { kind: "surface_validate" }>["prepareRequest"]>;
 }
 
 export interface WhatIfService {
@@ -79,14 +84,16 @@ export interface SessionRegistry {
 }
 
 export interface ConversationRegistry {
-  append(turn: ConversationTurn): ConversationTurn;
-  read(sessionId: string): readonly ConversationTurn[];
+  append(turn: ConversationTurn): Promise<ConversationTurn>;
+  read(sessionId: string): Promise<readonly ConversationTurn[]>;
+  close(): Promise<void>;
 }
 
 export interface HostActionRegistry {
   create(request: HostActionRequest): Promise<HostActionRequest | undefined>;
   claim(sessionId: string, actionId: string, hostInstanceId: string): Promise<HostActionClaim | undefined>;
   complete(sessionId: string, result: HostActionResult): Promise<"accepted" | "rejected" | "duplicate">;
+  read(sessionId: string, actionId: string): Promise<HostActionRequest | undefined>;
 }
 
 export interface EventSource {
@@ -124,7 +131,7 @@ export async function buildWorkbenchServer(options: StartWorkbenchServerOptions)
   await mkdir(options.rootDir, { recursive: true });
 
   const auth = new WorkbenchAuth();
-  const context = await createWorkbenchServerContext(options.rootDir, auth, options.runner, options.queueFactory, options.whatIfService);
+  const context = await createWorkbenchServerContext(options.rootDir, auth, options.runner, options.queueFactory, options.whatIfService, options.surfacePrepareService);
   const app = Fastify({ logger: false, bodyLimit: 1024 * 1024 }) as unknown as WorkbenchServer;
   const bootstrap = options.bootstrap ?? createBrowserBootstrapRendezvous();
 
@@ -195,6 +202,7 @@ export async function buildWorkbenchServer(options: StartWorkbenchServerOptions)
   await app.register(whatIfRoutes, { context });
   app.addHook("onClose", async () => {
     (context.events as SqliteEventSource).close();
+    await context.conversation.close();
   });
 
   return app;
@@ -209,7 +217,7 @@ export async function startWorkbenchServer(options: StartWorkbenchServerOptions)
   return { server, url: `http://${LOOPBACK_HOST}:${port}/#bootstrap=${bootstrapNonce}`, bootstrapNonce };
 }
 
-async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth, runner: StartWorkbenchServerOptions["runner"], queueFactory: StartWorkbenchServerOptions["queueFactory"], whatIfService: WhatIfService | undefined): Promise<WorkbenchServerContext> {
+async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth, runner: StartWorkbenchServerOptions["runner"], queueFactory: StartWorkbenchServerOptions["queueFactory"], whatIfService: WhatIfService | undefined, surfacePrepareService: SurfacePrepareService | undefined): Promise<WorkbenchServerContext> {
   const sessions = new StoreBackedSessionRegistry(rootDir);
   const artifacts = new FileBackedArtifactRegistry(rootDir);
   const effectiveWhatIfService = whatIfService ?? createDefaultWhatIfService(rootDir);
@@ -224,7 +232,7 @@ async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth
     rootDir,
     auth,
     sessions,
-    conversation: new FileBackedConversationRegistry(rootDir),
+    conversation: new SharedConversationRegistry(await createConversationStore({ rootDir: join(rootDir, "runtime", "workbench") })),
     hostActions: new SqliteHostActionRegistry(rootDir),
     artifacts,
     events: await createSqliteEventSource({ rootDir }),
@@ -248,8 +256,11 @@ async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth
       if (snapshot.state !== "ado_action_pending" || command.command !== "confirm_ado_decision") return;
       const decision = (command.payload as { readonly decision: "create_new" | "use_existing" | "local_only" }).decision;
       if (decision === "local_only") return;
+      const prepareRequest = surfacePrepareService === undefined
+        ? await createDefaultSurfacePrepareRequest(rootDir, snapshot, command)
+        : await surfacePrepareService.create(snapshot, command);
       const actionId = `ado-validation:${snapshot.sessionId}:${snapshot.revision}`;
-      const confirmationHash = createHash("sha256").update(JSON.stringify({ decision, inputRevision: snapshot.inputRevision })).digest("hex");
+      const confirmationHash = createHash("sha256").update(JSON.stringify(prepareRequest)).digest("hex");
       const created = await (new SqliteHostActionRegistry(rootDir)).create({
         contractVersion: "f8-host-action-request-v1",
         actionId,
@@ -258,6 +269,7 @@ async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth
         kind: "surface_validate",
         confirmationHash,
         expectedTargetVersion: "ado-decision-v1",
+        prepareRequest,
         expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
       });
       if (created === undefined) {
@@ -385,18 +397,19 @@ class StoreBackedSessionRegistry implements SessionRegistry {
   }
 }
 
-class FileBackedConversationRegistry implements ConversationRegistry {
-  constructor(private readonly rootDir: string) {}
+class SharedConversationRegistry implements ConversationRegistry {
+  constructor(private readonly store: ConversationStore) {}
 
-  append(turn: ConversationTurn): ConversationTurn {
-    const turns = [...this.read(turn.sessionId)];
-    turns.push(turn);
-    writeRegistry(this.rootDir, "conversation", turn.sessionId, turns);
-    return turn;
+  append(turn: ConversationTurn): Promise<ConversationTurn> {
+    return this.store.appendTurn(turn, `web:${turn.turnId}`);
   }
 
-  read(sessionId: string): readonly ConversationTurn[] {
-    return readRegistry<ConversationTurn[]>(this.rootDir, "conversation", sessionId) ?? [];
+  read(sessionId: string): Promise<readonly ConversationTurn[]> {
+    return this.store.readTurns(sessionId);
+  }
+
+  close(): Promise<void> {
+    return this.store.close();
   }
 }
 
@@ -441,6 +454,19 @@ class SqliteHostActionRegistry implements HostActionRegistry {
       }
     } catch (error) {
       return (error as { code?: unknown }).code === "policy_denied" ? "duplicate" : "rejected";
+    }
+  }
+
+  async read(sessionId: string, actionId: string): Promise<HostActionRequest | undefined> {
+    try {
+      const store = await createHostActionStore({ rootDir: this.rootDir, sessionId });
+      try {
+        return (await store.getHostAction(actionId)).request;
+      } finally {
+        await store.close();
+      }
+    } catch {
+      return undefined;
     }
   }
 }
@@ -526,6 +552,22 @@ function createDefaultWhatIfService(rootDir: string): WhatIfService {
       return createToleranceTargetsPreview(draft, baseline);
     },
   };
+}
+
+async function createDefaultSurfacePrepareRequest(
+  rootDir: string,
+  snapshot: F8SessionSnapshot,
+  command: F8SessionCommand,
+): Promise<Extract<HostActionRequest, { kind: "surface_validate" }>["prepareRequest"]> {
+  const f3References = snapshot.artifactRefs?.filter((reference) => reference.kind === "f3_report" && reference.revision === snapshot.inputRevision && reference.validated) ?? [];
+  if (f3References.length !== 1) throw reviewContextMismatch(snapshot, "Surface validation requires one current validated F3 report.");
+  const report = drawingGovernanceResultV2Schema.parse(await readSessionArtifactJson(rootDir, snapshot.sessionId, f3References[0]!.artifactId));
+  if (report.status === "input_rejected") throw reviewContextMismatch(snapshot, "Surface validation cannot use an input-rejected F3 report.");
+  const nextContent = renderF3AdoReminder(report);
+  const payload = command.payload as { readonly decision: "create_new" | "use_existing"; readonly workItemReference?: string };
+  return payload.decision === "create_new"
+    ? { mode: "create", title: `TA Drawing Governance - ${report.workbook.fileName}`, nextContent, factorCount: report.summary.factorCount }
+    : { mode: "existing", workItemReference: payload.workItemReference!, nextContent, factorCount: report.summary.factorCount };
 }
 
 function compactWhatIfPatch(patch: NonNullable<F8ScenarioDraft["change"]>): Parameters<typeof runF4WhatIfCalculation>[0]["patch"] {

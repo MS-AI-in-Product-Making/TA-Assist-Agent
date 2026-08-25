@@ -86,9 +86,14 @@ export function ensureWriteValidationMatches(
     throw createMissingValidationError(actionId, request.validationActionId);
   }
 
-  if (validationRequest.confirmationHash !== request.confirmationHash
-    || validationRequest.expectedTargetVersion !== request.expectedTargetVersion
-    || validationResult.resultHash !== request.confirmationHash) {
+  const outcome = validationResult.payload.status === "completed" ? validationResult.payload.outcome : undefined;
+  if (outcome?.kind !== "surface_validation") {
+    throw createMissingValidationError(actionId, request.validationActionId);
+  }
+
+  if (validationRequest.expectedTargetVersion !== request.expectedTargetVersion
+    || stableStringify(outcome.confirmation) !== stableStringify(request.confirmation)
+    || outcome.confirmation.confirmationHash !== request.confirmationHash) {
     throw createTypedError({
       code: "evidence_mismatch",
       summary: `Surface write action ${actionId} does not match validation action ${request.validationActionId}.`,
