@@ -1,10 +1,10 @@
-import { computed, readonly, ref } from "vue";
+import { computed, readonly, ref, shallowRef } from "vue";
 import type {
   F7Client,
   F7ExclusionReason,
-  F7LoopCoefficient,
   F7MeasurementStructure,
   F7MsaStatus,
+  F7ReportProjection,
   F7SessionSnapshot,
   F7SourceMode,
   F7UiError,
@@ -17,6 +17,10 @@ type BusyAction =
   | "setFactorMode"
   | "pasteMeasurements"
   | "applyMeasurementDisposition"
+  | "fitDistribution"
+  | "approveDistribution"
+  | "runMonteCarlo"
+  | "generateReport"
   | "refreshSession";
 
 function toUiError(error: unknown): F7UiError {
@@ -63,10 +67,16 @@ function prerequisiteNotReadyError(summary = "Import a workbook before continuin
 
 export function createF7SessionStore(client: F7Client) {
   const session = ref<F7SessionSnapshot | null>(null);
+  const report = shallowRef<F7ReportProjection | null>(null);
   const busyAction = ref<BusyAction | null>(null);
   const error = ref<F7UiError | null>(null);
 
   const isBusy = computed(() => busyAction.value !== null);
+
+  const commitMutationSnapshot = (snapshot: F7SessionSnapshot): void => {
+    session.value = snapshot;
+    report.value = null;
+  };
 
   const runAction = async <T>(name: BusyAction, operation: () => Promise<T>): Promise<T> => {
     if (busyAction.value !== null) {
@@ -92,6 +102,7 @@ export function createF7SessionStore(client: F7Client) {
 
   return {
     session: readonly(session),
+    report: readonly(report),
     busyAction: readonly(busyAction),
     error: readonly(error),
     isBusy: readonly(isBusy),
@@ -100,7 +111,7 @@ export function createF7SessionStore(client: F7Client) {
     },
     async importWorkbook(file: File): Promise<void> {
       await runAction("importWorkbook", async () => {
-        session.value = await client.importWorkbook({ file });
+        commitMutationSnapshot(await client.importWorkbook({ file }));
       });
     },
     async confirmWorksheet(selectedWorksheetName: string): Promise<void> {
@@ -109,37 +120,38 @@ export function createF7SessionStore(client: F7Client) {
         if (!current) {
           throw prerequisiteNotReadyError("Import a workbook before continuing.");
         }
-        session.value = await client.confirmWorksheet({
+        commitMutationSnapshot(await client.confirmWorksheet({
           sessionId: current.sessionId,
           workbookContentHash: current.workbook.workbookContentHash,
           selectedWorksheetName,
           confirmed: true,
-        });
+        }));
       });
     },
     async confirmFactors(confirmations: ReadonlyArray<{
       readonly factorCandidateId: string;
-      readonly loopCoefficient: F7LoopCoefficient;
-      readonly unit: string;
+      readonly designNominal: number;
+      readonly upperTolerance: number;
+      readonly lowerTolerance: number;
     }>): Promise<void> {
       await runAction("confirmFactors", async () => {
         const current = session.value;
         if (!current) throw prerequisiteNotReadyError();
-        session.value = await client.confirmFactors({
+        commitMutationSnapshot(await client.confirmFactors({
           sessionId: current.sessionId,
           confirmations: confirmations.map((confirmation) => ({ ...confirmation, confirmed: true as const })),
-        });
+        }));
       });
     },
     async setFactorMode(factorId: string, mode: F7SourceMode): Promise<void> {
       await runAction("setFactorMode", async () => {
         const current = session.value;
         if (!current) throw prerequisiteNotReadyError();
-        session.value = await client.setFactorMode({
+        commitMutationSnapshot(await client.setFactorMode({
           sessionId: current.sessionId,
           factorId,
           mode,
-        });
+        }));
       });
     },
     async pasteMeasurements(request: {
@@ -152,14 +164,14 @@ export function createF7SessionStore(client: F7Client) {
       await runAction("pasteMeasurements", async () => {
         const current = session.value;
         if (!current) throw prerequisiteNotReadyError();
-        session.value = await client.pasteMeasurements({
+        commitMutationSnapshot(await client.pasteMeasurements({
           sessionId: current.sessionId,
           factorId: request.factorId,
           structure: request.structure,
           sourceReference: request.sourceReference,
           msaStatus: request.msaStatus,
           text: request.text,
-        });
+        }));
       });
     },
     async applyMeasurementDisposition(request: {
@@ -172,7 +184,7 @@ export function createF7SessionStore(client: F7Client) {
       await runAction("applyMeasurementDisposition", async () => {
         const current = session.value;
         if (!current) throw prerequisiteNotReadyError();
-        session.value = await client.applyMeasurementDisposition({
+        commitMutationSnapshot(await client.applyMeasurementDisposition({
           sessionId: current.sessionId,
           factorId: request.factorId,
           rowNumbers: request.rowNumbers,
@@ -180,14 +192,57 @@ export function createF7SessionStore(client: F7Client) {
           reason: request.reason,
           operatorReference: request.operatorReference,
           confirmed: true,
-        });
+        }));
+      });
+    },
+    async fitDistribution(factorId: string): Promise<void> {
+      await runAction("fitDistribution", async () => {
+        const current = session.value;
+        if (!current) throw prerequisiteNotReadyError();
+        commitMutationSnapshot(await client.fitDistribution({
+          sessionId: current.sessionId,
+          factorId,
+        }));
+      });
+    },
+    async approveDistribution(factorId: string, family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform"): Promise<void> {
+      await runAction("approveDistribution", async () => {
+        const current = session.value;
+        if (!current) throw prerequisiteNotReadyError();
+        commitMutationSnapshot(await client.approveDistribution({
+          sessionId: current.sessionId,
+          factorId,
+          family,
+          confirmed: true,
+        }));
+      });
+    },
+    async runMonteCarlo(request: {
+      readonly lowerSpecLimit: number;
+      readonly upperSpecLimit: number;
+      readonly targetSigmaLevel: number;
+      readonly iterations: 10_000 | 100_000;
+      readonly runSeed: string;
+      readonly correlationMode: "INDEPENDENT";
+    }): Promise<void> {
+      await runAction("runMonteCarlo", async () => {
+        const current = session.value;
+        if (!current) throw prerequisiteNotReadyError();
+        commitMutationSnapshot(await client.runMonteCarlo({ sessionId: current.sessionId, ...request }));
+      });
+    },
+    async generateReport(): Promise<void> {
+      await runAction("generateReport", async () => {
+        const current = session.value;
+        if (!current) throw prerequisiteNotReadyError();
+        report.value = await client.generateReport({ sessionId: current.sessionId });
       });
     },
     async refreshSession(): Promise<void> {
       await runAction("refreshSession", async () => {
         const current = session.value;
         if (!current) throw prerequisiteNotReadyError();
-        session.value = await client.getSession(current.sessionId);
+        commitMutationSnapshot(await client.getSession(current.sessionId));
       });
     },
   };

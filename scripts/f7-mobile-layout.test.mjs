@@ -91,7 +91,7 @@ describe("f7 mobile layout css contract", () => {
 
   it("keeps workbench and layout containers width-contained", () => {
     const rootRule = extractRuleBody(css, ".workbench-root");
-    expectDeclaration(rootRule, "max-width", "1360px");
+    expectDeclaration(rootRule, "max-width", "1760px");
     expectDeclaration(rootRule, "width", "100%");
     expectDeclaration(rootRule, "min-width", "0");
 
@@ -120,7 +120,7 @@ describe("f7 mobile layout css contract", () => {
     expectDeclaration(tableScrollRule, "overscroll-behavior-inline", "contain");
 
     const tableRule = extractRuleBody(css, ".data-table");
-    expectDeclaration(tableRule, "min-width", "1050px");
+    expectDeclaration(tableRule, "min-width", "940px");
   });
 
   it("prevents viewport overflow at root and in mobile layout", () => {

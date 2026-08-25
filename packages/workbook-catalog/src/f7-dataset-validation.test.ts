@@ -22,6 +22,9 @@ function makeFactor(overrides: Partial<F7FactorEvidence> = {}): F7FactorEvidence
     factorName: "Gap",
     unit: "mm",
     unitSource: "user_confirmed",
+    designNominal: 1,
+    upperTolerance: 0.1,
+    lowerTolerance: -0.1,
     loopCoefficient: 1,
     physicalMean: 1,
     signedContributionMean: 1,
@@ -31,8 +34,8 @@ function makeFactor(overrides: Partial<F7FactorEvidence> = {}): F7FactorEvidence
       standardDeviation: 0.2,
       support: "REAL",
     },
-    lowerSpecLimit: 0,
-    upperSpecLimit: 10,
+    lowerSpecLimit: 0.9,
+    upperSpecLimit: 1.1,
     ...overrides,
   };
 }
@@ -365,7 +368,7 @@ describe("validateF7MeasurementDataset", () => {
     });
   });
 
-  it("adds advisories for duplicate included values, missing MSA evidence, and mixed batches", () => {
+  it("ignores MSA status while retaining duplicate and mixed-batch advisories", () => {
     const factor = makeFactor();
     const dataset = makeDataset({
       count: 50,
@@ -390,7 +393,7 @@ describe("validateF7MeasurementDataset", () => {
       factorId: FACTOR_ID,
       rowNumbers: [2, 3],
     });
-    expect(reasons(result.advisoryIssues)).toContain("msa_evidence_missing");
+    expect(reasons(result.advisoryIssues)).not.toContain("msa_evidence_missing");
     const mixedBatchIssue = issueByReason(result.advisoryIssues, "mixed_batch_conditions");
     expect(mixedBatchIssue).toBeDefined();
     expect(mixedBatchIssue?.rowNumbers).toEqual(expect.arrayContaining([2, 4]));

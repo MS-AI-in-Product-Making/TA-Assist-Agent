@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, type DeepReadonly } from "vue";
 import type { F7SessionSnapshot } from "../api/f7-client";
 
 const props = defineProps<{
-  readonly session: F7SessionSnapshot;
+  readonly session: DeepReadonly<F7SessionSnapshot>;
   readonly busy: boolean;
 }>();
 

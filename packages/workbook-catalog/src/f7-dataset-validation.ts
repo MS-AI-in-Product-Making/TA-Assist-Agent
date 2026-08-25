@@ -301,10 +301,6 @@ export function validateF7MeasurementDataset(input: {
     });
   }
 
-  if (dataset.msaStatus !== "available") {
-    advisoryIssues.push({ reason: "msa_evidence_missing", factorId: resolvedFactorId });
-  }
-
   const nonEmptyBatchObservations = included
     .filter((observation) => typeof observation.batch === "string" && observation.batch.trim().length > 0)
     .map((observation) => ({

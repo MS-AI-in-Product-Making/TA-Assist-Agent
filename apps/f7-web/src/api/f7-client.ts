@@ -1,12 +1,15 @@
 import type {
   F7DatasetValidationIssue as ContractF7DatasetValidationIssue,
+  F7DatasetValidationResult as ContractF7DatasetValidationResult,
+  F7DistributionApprovalRouteRequest,
+  F7DistributionFitResult as ContractF7DistributionFitResult,
+  F7DistributionFitRouteRequest,
   F7ExclusionReason as ContractF7ExclusionReason,
   F7FactorCandidate as ContractF7FactorCandidate,
   F7FactorConfirmRouteRequest,
   F7FactorEvidence as ContractF7FactorEvidence,
   F7FactorInput as ContractF7FactorInput,
   F7FactorModeRouteRequest,
-  F7FactorSetupConfirmation,
   F7FactorSourceMode,
   F7LoopCoefficient as ContractF7LoopCoefficient,
   F7MeasurementDataset as ContractF7MeasurementDataset,
@@ -14,12 +17,15 @@ import type {
   F7MeasurementPasteResult as ContractF7MeasurementPasteResult,
   F7MeasurementPasteRouteRequest,
   F7MeasurementStructure as ContractF7MeasurementStructure,
+  F7MonteCarloRunRouteRequest,
   F7MsaStatus as ContractF7MsaStatus,
+  F7ReportProjection as ContractF7ReportProjection,
   F7SessionRouteParams,
   F7SessionSnapshot as ContractF7SessionSnapshot,
   F7WorksheetConfirmRouteRequest,
   F7WorkbookImportRouteRequest,
 } from "@ai-assist/contracts";
+import { f7ReportProjectionSchema, f7SessionSnapshotSchema } from "@ai-assist/contracts";
 
 export type F7SessionStatus = ContractF7SessionSnapshot["status"];
 export type F7SourceMode = F7FactorSourceMode;
@@ -39,12 +45,12 @@ export type F7WorksheetOption = ContractF7SessionSnapshot["worksheetOptions"][nu
 
 export type F7FactorCandidate = Pick<
   ContractF7FactorCandidate,
-  "factorCandidateId" | "factorName" | "excelSignedMean" | "sourceCells" | "workbookUnitEvidence"
+  "factorCandidateId" | "factorName" | "excelSignedMean" | "designNominal" | "upperTolerance" | "lowerTolerance" | "sourceCells" | "workbookUnitEvidence"
 >;
 
 export type F7FactorEvidence = Pick<
   ContractF7FactorEvidence,
-  "factorCandidateId" | "factorId" | "factorName" | "unit" | "loopCoefficient" | "physicalMean" | "signedContributionMean" | "sourceCells"
+  "factorCandidateId" | "factorId" | "factorName" | "unit" | "designNominal" | "upperTolerance" | "lowerTolerance" | "loopCoefficient" | "physicalMean" | "signedContributionMean" | "sourceCells" | "lowerSpecLimit" | "upperSpecLimit"
 >;
 
 export type F7DatasetValidationIssue = Omit<
@@ -54,56 +60,23 @@ export type F7DatasetValidationIssue = Omit<
   readonly rowNumbers?: readonly number[];
 };
 
-export interface F7DatasetValidationResult {
-  readonly status: "ready" | "blocked";
-  readonly blockingIssues: readonly F7DatasetValidationIssue[];
-  readonly advisoryIssues: readonly F7DatasetValidationIssue[];
-}
+export type F7DatasetValidationResult = ContractF7DatasetValidationResult;
 
-type F7MeasurementObservation = Pick<
-  ContractF7MeasurementDataset["observations"][number],
-  "originalRow" | "value" | "disposition"
-> & {
-  readonly reason?: F7ExclusionReason;
-};
+export type F7DistributionFitCandidate = ContractF7DistributionFitResult["candidates"][number];
 
-export interface F7SessionSnapshot extends Omit<ContractF7SessionSnapshot, "selectedWorksheetNames" | "worksheetOptions" | "factors"> {
-  readonly selectedWorksheetNames: readonly string[];
-  readonly worksheetOptions: readonly F7WorksheetOption[];
-  readonly factors: readonly F7FactorState[];
-}
+export type F7DistributionFitResult = ContractF7DistributionFitResult;
 
-export type F7MeasurementDataset = Pick<
-  ContractF7MeasurementDataset,
-  "factorId" | "unit" | "structure" | "sourceReference" | "msaStatus" | "originalRowCount" | "analyzedCount"
-> & {
-  readonly observations: readonly F7MeasurementObservation[];
-};
+export type F7SessionSnapshot = ContractF7SessionSnapshot;
 
-type F7BaselineSampler = Extract<ContractF7FactorInput, { mode: "BASELINE_ASSUMPTION" }>["baselineSampler"];
+export type F7MeasurementDataset = ContractF7MeasurementDataset;
 
-export type F7FactorInput =
-  | { readonly mode: "MEASURED"; readonly dataset?: F7MeasurementDataset }
-  | { readonly mode: "BASELINE_ASSUMPTION"; readonly baselineSampler: F7BaselineSampler };
+export type F7FactorInput = ContractF7FactorInput;
 
-export type F7MeasurementPasteResult = Pick<ContractF7MeasurementPasteResult, "status" | "factorId"> & {
-  readonly dataset?: F7MeasurementDataset;
-  readonly validation: F7DatasetValidationResult;
-};
+export type F7MeasurementPasteResult = ContractF7MeasurementPasteResult;
 
-export interface F7FactorState {
-  readonly factorCandidate: F7FactorCandidate;
-  readonly setup?: F7FactorSetupConfirmation;
-  readonly evidence?: F7FactorEvidence;
-  readonly sourceMode?: F7SourceMode;
-  readonly input?: F7FactorInput;
-  readonly datasetValidation?: {
-    readonly status: "ready" | "blocked";
-    readonly blockingIssues: readonly F7DatasetValidationIssue[];
-    readonly advisoryIssues: readonly F7DatasetValidationIssue[];
-  };
-  readonly measurementPasteResult?: F7MeasurementPasteResult;
-}
+export type F7ReportProjection = ContractF7ReportProjection;
+
+export type F7FactorState = ContractF7SessionSnapshot["factors"][number];
 
 type WorksheetConfirmRequest = {
   readonly sessionId: string;
@@ -138,6 +111,20 @@ type ApplyMeasurementDispositionRequest = {
   readonly confirmed: F7MeasurementDispositionRouteRequest["body"]["confirmed"];
 };
 
+type FitDistributionRequest = {
+  readonly sessionId: string;
+  readonly factorId: F7DistributionFitRouteRequest["params"]["factorId"];
+};
+
+type ApproveDistributionRequest = {
+  readonly sessionId: string;
+  readonly factorId: F7DistributionApprovalRouteRequest["params"]["factorId"];
+  readonly family: F7DistributionApprovalRouteRequest["body"]["family"];
+  readonly confirmed: true;
+};
+
+type RunMonteCarloRequest = F7MonteCarloRunRouteRequest["body"];
+
 export interface F7Client {
   importWorkbook(request: { readonly file: File }): Promise<F7SessionSnapshot>;
   confirmWorksheet(request: WorksheetConfirmRequest): Promise<F7SessionSnapshot>;
@@ -145,6 +132,10 @@ export interface F7Client {
   setFactorMode(request: SetFactorModeRequest): Promise<F7SessionSnapshot>;
   pasteMeasurements(request: PasteMeasurementsRequest): Promise<F7SessionSnapshot>;
   applyMeasurementDisposition(request: ApplyMeasurementDispositionRequest): Promise<F7SessionSnapshot>;
+  fitDistribution(request: FitDistributionRequest): Promise<F7SessionSnapshot>;
+  approveDistribution(request: ApproveDistributionRequest): Promise<F7SessionSnapshot>;
+  runMonteCarlo(request: RunMonteCarloRequest): Promise<F7SessionSnapshot>;
+  generateReport(request: { readonly sessionId: string }): Promise<F7ReportProjection>;
   getSession(sessionId: F7SessionRouteParams["sessionId"]): Promise<F7SessionSnapshot>;
 }
 
@@ -216,18 +207,16 @@ async function parseJsonResponse(response: Response): Promise<unknown> {
 }
 
 export function createF7Client(baseUrl = ""): F7Client {
-  const isSnapshotShape = (value: unknown): value is F7SessionSnapshot => {
-    if (!value || typeof value !== "object") return false;
-    const recordValue = value as Record<string, unknown>;
-    return (
-      typeof recordValue.sessionId === "string"
-      && typeof recordValue.status === "string"
-      && Array.isArray(recordValue.worksheetOptions)
-      && Array.isArray(recordValue.factors)
-    );
+  const parseSnapshot = (value: unknown): F7SessionSnapshot | undefined => {
+    const parsed = f7SessionSnapshotSchema.safeParse(value);
+    return parsed.success ? parsed.data : undefined;
   };
 
-  const requestJson = async (path: string, init: RequestInit): Promise<F7SessionSnapshot> => {
+  const requestValidatedJson = async <T>(
+    path: string,
+    init: RequestInit,
+    parsePayload: (value: unknown) => T | undefined,
+  ): Promise<T> => {
     let response: Response;
     try {
       response = await fetch(`${baseUrl}${path}`, {
@@ -244,11 +233,15 @@ export function createF7Client(baseUrl = ""): F7Client {
     if (!response.ok) {
       throw mapErrorEnvelope(payload);
     }
-    if (!isSnapshotShape(payload)) {
+    const result = parsePayload(payload);
+    if (!result) {
       throw toGenericError();
     }
-    return payload;
+    return result;
   };
+
+  const requestJson = async (path: string, init: RequestInit): Promise<F7SessionSnapshot> =>
+    await requestValidatedJson(path, init, parseSnapshot);
 
   return {
     async importWorkbook({ file }) {
@@ -343,6 +336,46 @@ export function createF7Client(baseUrl = ""): F7Client {
       });
     },
 
+    async fitDistribution(request) {
+      const payload = {
+        sessionId: request.sessionId,
+      } satisfies F7DistributionFitRouteRequest["body"];
+
+      return await requestJson(`/f7/factors/${encodeURIComponent(request.factorId)}/distribution-fit`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    },
+
+    async approveDistribution(request) {
+      const payload = {
+        sessionId: request.sessionId,
+        family: request.family,
+        confirmed: request.confirmed,
+      } satisfies F7DistributionApprovalRouteRequest["body"];
+      return await requestJson(`/f7/factors/${encodeURIComponent(request.factorId)}/distribution-approval`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    },
+
+    async runMonteCarlo(request) {
+      return await requestJson("/f7/monte-carlo", {
+        method: "POST",
+        body: JSON.stringify(request satisfies F7MonteCarloRunRouteRequest["body"]),
+      });
+    },
+
+    async generateReport(request) {
+      return await requestValidatedJson("/f7/report", {
+        method: "POST",
+        body: JSON.stringify({ sessionId: request.sessionId }),
+      }, (value) => {
+        const parsed = f7ReportProjectionSchema.safeParse(value);
+        return parsed.success && parsed.data.sessionId === request.sessionId ? parsed.data : undefined;
+      });
+    },
+
     async getSession(sessionId) {
       let response: Response;
       try {
@@ -352,8 +385,9 @@ export function createF7Client(baseUrl = ""): F7Client {
       }
       const payload = await parseJsonResponse(response);
       if (!response.ok) throw mapErrorEnvelope(payload);
-      if (!isSnapshotShape(payload)) throw toGenericError();
-      return payload;
+      const snapshot = parseSnapshot(payload);
+      if (!snapshot) throw toGenericError();
+      return snapshot;
     },
   };
 }

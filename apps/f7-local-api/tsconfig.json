@@ -8,6 +8,8 @@
   },
   "references": [
     { "path": "../../packages/contracts" },
+    { "path": "../../packages/f7-statistics" },
+    { "path": "../../packages/f7-simulation" },
     { "path": "../../packages/workbook-catalog" }
   ],
   "include": ["src/**/*.ts"],

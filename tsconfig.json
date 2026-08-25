@@ -3,6 +3,8 @@
   "references": [
     { "path": "./apps/cli" },
     { "path": "./apps/f7-local-api" },
+    { "path": "./packages/f7-statistics" },
+    { "path": "./packages/f7-simulation" },
     { "path": "./packages/contracts" },
     { "path": "./packages/knowledge-base" },
     { "path": "./packages/workbook-catalog" },

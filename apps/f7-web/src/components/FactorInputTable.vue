@@ -1,49 +1,88 @@
 <script setup lang="ts">
-import { reactive } from "vue";
-import type { F7LoopCoefficient, F7SessionSnapshot, F7SourceMode } from "../api/f7-client";
+import { computed, reactive, type DeepReadonly } from "vue";
+import type { F7SessionSnapshot, F7SourceMode } from "../api/f7-client";
 
 const props = defineProps<{
-  readonly session: F7SessionSnapshot;
+  readonly session: DeepReadonly<F7SessionSnapshot>;
   readonly busy: boolean;
 }>();
 
 const emit = defineEmits<{
   confirmFactors: [
-    confirmations: ReadonlyArray<{ readonly factorCandidateId: string; readonly loopCoefficient: F7LoopCoefficient; readonly unit: string }>,
+    confirmations: ReadonlyArray<{
+      readonly factorCandidateId: string;
+      readonly designNominal: number;
+      readonly upperTolerance: number;
+      readonly lowerTolerance: number;
+    }>,
   ];
   setMode: [factorId: string, mode: F7SourceMode];
+  openMeasurement: [factorId: string];
 }>();
 
-const setupDraft = reactive<Record<string, { coefficient: F7LoopCoefficient; unit: string }>>({});
+interface FactorSpecificationDraft {
+  designNominal: number;
+  upperTolerance: number;
+  lowerTolerance: number;
+}
 
-function draftFor(candidateId: string, defaultCoefficient: F7LoopCoefficient, defaultUnit = ""): {
-  coefficient: F7LoopCoefficient;
-  unit: string;
-} {
+const setupDraft = reactive<Record<string, FactorSpecificationDraft>>({});
+
+function draftFor(
+  candidateId: string,
+  defaults: FactorSpecificationDraft,
+): FactorSpecificationDraft {
   if (!setupDraft[candidateId]) {
-    setupDraft[candidateId] = {
-      coefficient: defaultCoefficient,
-      unit: defaultUnit,
-    };
+    setupDraft[candidateId] = { ...defaults };
   }
   return setupDraft[candidateId]!;
+}
+
+function candidateDraft(factor: DeepReadonly<F7SessionSnapshot["factors"][number]>): FactorSpecificationDraft {
+  return draftFor(factor.factorCandidate.factorCandidateId, {
+    designNominal: factor.factorCandidate.designNominal,
+    upperTolerance: factor.factorCandidate.upperTolerance,
+    lowerTolerance: factor.factorCandidate.lowerTolerance,
+  });
+}
+
+function specificationError(draft: FactorSpecificationDraft): string {
+  if (!Number.isFinite(draft.designNominal) || draft.designNominal === 0) {
+    return "Design Nominal must be non-zero.";
+  }
+  if (!Number.isFinite(draft.upperTolerance) || draft.upperTolerance < 0) {
+    return "+Tolerance must be zero or positive.";
+  }
+  if (!Number.isFinite(draft.lowerTolerance) || draft.lowerTolerance > 0) {
+    return "-Tolerance must be zero or negative.";
+  }
+  if (draft.lowerTolerance >= draft.upperTolerance) {
+    return "-Tolerance must be less than +Tolerance.";
+  }
+  return "";
+}
+
+const setupIsValid = computed(() => props.session.factors.every((factor) => (
+  specificationError(candidateDraft(factor)) === ""
+)));
+
+function nominalClass(value: number): "nominal-negative" | "nominal-positive" | "" {
+  if (value < 0) return "nominal-negative";
+  if (value > 0) return "nominal-positive";
+  return "";
 }
 
 function submitSetup(): void {
   if (props.busy) return;
   const payload = props.session.factors.map((factor) => {
-    const draft = draftFor(
-      factor.factorCandidate.factorCandidateId,
-      factor.factorCandidate.excelSignedMean < 0 ? -1 : 1,
-      factor.factorCandidate.workbookUnitEvidence ?? "",
-    );
+    const draft = candidateDraft(factor);
     return {
       factorCandidateId: factor.factorCandidate.factorCandidateId,
-      loopCoefficient: draft.coefficient,
-      unit: draft.unit.trim(),
+      designNominal: draft.designNominal,
+      upperTolerance: draft.upperTolerance,
+      lowerTolerance: draft.lowerTolerance,
     };
   });
-  if (payload.some((entry) => entry.unit.length === 0)) return;
   emit("confirmFactors", payload);
 }
 
@@ -62,11 +101,9 @@ function onModeChange(factorId: string, event: Event): void {
         <thead>
           <tr>
             <th>Factor</th>
-            <th>Source Cells</th>
-            <th>Signed Mean</th>
-            <th>Coefficient</th>
-            <th>Unit</th>
-            <th>Physical Mean</th>
+            <th>Design Nominal</th>
+            <th>+Tolerance</th>
+            <th>-Tolerance</th>
             <th>Source Mode</th>
             <th>Sample Count</th>
             <th>Readiness</th>
@@ -78,70 +115,52 @@ function onModeChange(factorId: string, event: Event): void {
               <div>{{ factor.factorCandidate.factorName }}</div>
               <small class="subtle mono">{{ factor.factorCandidate.factorCandidateId.slice(0, 12) }}</small>
             </td>
-            <td class="mono">
-              <div v-for="(cell, key) in factor.factorCandidate.sourceCells" :key="`${factor.factorCandidate.factorCandidateId}-${key}`">
-                {{ key }}: {{ cell }}
-              </div>
-            </td>
-            <td>{{ factor.factorCandidate.excelSignedMean }}</td>
             <td>
-              <template v-if="!factor.setup">
-                <fieldset>
-                  <legend class="sr-only">{{ factor.factorCandidate.factorName }} Loop coefficient</legend>
-                  <label>
-                    <input
-                      :name="`coef-${factor.factorCandidate.factorCandidateId}`"
-                      type="radio"
-                      value="-1"
-                      :checked="draftFor(factor.factorCandidate.factorCandidateId, factor.factorCandidate.excelSignedMean < 0 ? -1 : 1).coefficient === -1"
-                      @change="draftFor(factor.factorCandidate.factorCandidateId, factor.factorCandidate.excelSignedMean < 0 ? -1 : 1).coefficient = -1"
-                    > -1
-                  </label>
-                  <label>
-                    <input
-                      :name="`coef-${factor.factorCandidate.factorCandidateId}`"
-                      type="radio"
-                      value="1"
-                      :checked="draftFor(factor.factorCandidate.factorCandidateId, factor.factorCandidate.excelSignedMean < 0 ? -1 : 1).coefficient === 1"
-                      @change="draftFor(factor.factorCandidate.factorCandidateId, factor.factorCandidate.excelSignedMean < 0 ? -1 : 1).coefficient = 1"
-                    > +1
-                  </label>
-                </fieldset>
-              </template>
-              <template v-else>
-                {{ factor.setup.loopCoefficient }}
-              </template>
+              <input
+                v-if="!factor.setup"
+                v-model.number="candidateDraft(factor).designNominal"
+                type="number"
+                step="any"
+                class="factor-spec-input"
+                :class="nominalClass(candidateDraft(factor).designNominal)"
+                :aria-label="`${factor.factorCandidate.factorName} Design Nominal`"
+                :disabled="busy"
+              >
+              <span v-else :class="nominalClass(factor.setup.designNominal)">{{ factor.setup.designNominal }}</span>
             </td>
             <td>
-              <template v-if="!factor.setup">
-                <label :for="`unit-${factor.factorCandidate.factorCandidateId}`" class="sr-only">Unit</label>
-                <input
-                  :id="`unit-${factor.factorCandidate.factorCandidateId}`"
-                  :value="draftFor(factor.factorCandidate.factorCandidateId, factor.factorCandidate.excelSignedMean < 0 ? -1 : 1, factor.factorCandidate.workbookUnitEvidence ?? '').unit"
-                  required
-                  @input="draftFor(factor.factorCandidate.factorCandidateId, factor.factorCandidate.excelSignedMean < 0 ? -1 : 1).unit = ($event.target as HTMLInputElement).value"
-                >
-              </template>
-              <template v-else>
-                {{ factor.evidence?.unit ?? factor.setup.unit }}
-              </template>
+              <input
+                v-if="!factor.setup"
+                v-model.number="candidateDraft(factor).upperTolerance"
+                type="number"
+                min="0"
+                step="any"
+                class="factor-spec-input"
+                :aria-label="`${factor.factorCandidate.factorName} +Tolerance`"
+                :disabled="busy"
+              >
+              <span v-else>{{ factor.setup.upperTolerance }}</span>
             </td>
-            <td>{{ factor.evidence?.physicalMean ?? "-" }}</td>
             <td>
-              <fieldset v-if="factor.evidence">
+              <input
+                v-if="!factor.setup"
+                v-model.number="candidateDraft(factor).lowerTolerance"
+                type="number"
+                max="0"
+                step="any"
+                class="factor-spec-input"
+                :aria-label="`${factor.factorCandidate.factorName} -Tolerance`"
+                :disabled="busy"
+              >
+              <span v-else>{{ factor.setup.lowerTolerance }}</span>
+              <small v-if="!factor.setup && specificationError(candidateDraft(factor))" class="factor-spec-error" role="alert">
+                {{ specificationError(candidateDraft(factor)) }}
+              </small>
+            </td>
+            <td>
+              <fieldset v-if="factor.evidence" class="source-mode-options">
                 <legend>Source mode</legend>
-                <label>
-                  <input
-                    :name="`mode-${factor.evidence.factorId}`"
-                    type="radio"
-                    value="MEASURED"
-                    :checked="factor.sourceMode === 'MEASURED'"
-                    :disabled="busy"
-                    @change="onModeChange(factor.evidence.factorId, $event)"
-                  >
-                  MEASURED
-                </label>
-                <label>
+                <label class="source-mode-option">
                   <input
                     :name="`mode-${factor.evidence.factorId}`"
                     type="radio"
@@ -152,7 +171,28 @@ function onModeChange(factorId: string, event: Event): void {
                   >
                   BASELINE_ASSUMPTION
                 </label>
+                <label class="source-mode-option">
+                  <input
+                    :name="`mode-${factor.evidence.factorId}`"
+                    type="radio"
+                    value="MEASURED"
+                    :checked="factor.sourceMode === 'MEASURED'"
+                    :disabled="busy"
+                    @change="onModeChange(factor.evidence.factorId, $event)"
+                  >
+                  MEASURED
+                </label>
               </fieldset>
+              <button
+                v-if="factor.sourceMode === 'MEASURED'"
+                type="button"
+                class="factor-workspace-button"
+                :data-open-measurement="factor.evidence?.factorId"
+                :disabled="busy"
+                @click="factor.evidence && emit('openMeasurement', factor.evidence.factorId)"
+              >
+                Open workspace
+              </button>
             </td>
             <td>{{ factor.measurementPasteResult?.dataset?.analyzedCount ?? "-" }}</td>
             <td>
@@ -166,9 +206,10 @@ function onModeChange(factorId: string, event: Event): void {
     </div>
     <button
       v-if="session.status === 'factor_setup'"
+      id="confirm-factor-setup"
       type="button"
       class="action-button"
-      :disabled="busy"
+      :disabled="busy || !setupIsValid"
       @click="submitSetup"
     >
       Confirm factor setup

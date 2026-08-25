@@ -12,7 +12,6 @@ import {
   type WorksheetSelectionPrompt,
 } from "@ai-assist/contracts";
 import { z } from "zod";
-import { normalizeF7Factor } from "./f7-factor-normalization.js";
 import { resolveFactorHeaderCluster, type FactorHeaderResolution, type HeaderCell } from "./factor-header-resolver.js";
 import { readOoxmlWorkbook, type OoxmlCell, type OoxmlWorksheet } from "./ooxml-reader.js";
 import { readSafeZip } from "./zip-security.js";
@@ -325,11 +324,10 @@ function buildCandidateId(workbookContentHash: string, worksheetName: string, ta
   ]);
 }
 
-function buildFactorId(candidateId: string, loopCoefficient: -1 | 1, unit: string): string {
+function buildFactorId(candidateId: string, loopCoefficient: -1 | 1): string {
   return sha256LengthPrefixed([
     candidateId,
     String(loopCoefficient),
-    unit.toLowerCase(),
   ]);
 }
 
@@ -410,6 +408,9 @@ export function extractF7FactorCandidates(request: {
   const { row: headerRow, resolution } = locateFactorHeader(worksheet);
   const tableId = `factor-table-${resolution.anchorColumn}${headerRow}`;
   const factorColumn = resolution.columns.factorName?.sourceColumn;
+  const nominalValueColumn = resolution.columns.nominalValue?.sourceColumn;
+  const upperToleranceColumn = resolution.columns.upperTolerance?.sourceColumn;
+  const lowerToleranceColumn = resolution.columns.lowerTolerance?.sourceColumn;
   const meanColumn = resolution.columns.mean?.sourceColumn;
   const sigmaColumn = resolution.columns.oneSigma?.sourceColumn ?? resolution.columns.standardDeviation?.sourceColumn;
   const distributionColumn = resolution.columns.distribution?.sourceColumn;
@@ -440,8 +441,14 @@ export function extractF7FactorCandidates(request: {
     const meanCell = cellAt(cellsByCoordinate, row, meanColumn);
     const sigmaCell = cellAt(cellsByCoordinate, row, sigmaColumn);
     const distributionCell = cellAt(cellsByCoordinate, row, distributionColumn);
+    const nominalValueCell = nominalValueColumn ? cellAt(cellsByCoordinate, row, nominalValueColumn) : undefined;
+    const upperToleranceCell = upperToleranceColumn ? cellAt(cellsByCoordinate, row, upperToleranceColumn) : undefined;
+    const lowerToleranceCell = lowerToleranceColumn ? cellAt(cellsByCoordinate, row, lowerToleranceColumn) : undefined;
     const excelSignedMean = finiteNumberFromCell(meanCell);
     const standardDeviation = finiteNumberFromCell(sigmaCell);
+    const nominalValue = finiteNumberFromCell(nominalValueCell);
+    const upperTolerance = finiteNumberFromCell(upperToleranceCell);
+    const lowerTolerance = finiteNumberFromCell(lowerToleranceCell);
     const distribution = distributionCell ? normalizeLabel(cellText(distributionCell)) : "";
     if (excelSignedMean === undefined || standardDeviation === undefined || standardDeviation <= 0 || !distributionCell) {
       throw adapterError(EXTRACTION_SUMMARY);
@@ -449,6 +456,34 @@ export function extractF7FactorCandidates(request: {
     if (distribution !== "normal") {
       throw adapterError(EXTRACTION_SUMMARY, "validation_error", { reasonCode: "baseline_sampler_not_defined" });
     }
+
+    const absoluteNominalValue = nominalValue === undefined ? undefined : Math.abs(nominalValue);
+    const factorLowerSpec = absoluteNominalValue !== undefined && lowerTolerance !== undefined
+      ? absoluteNominalValue + lowerTolerance
+      : undefined;
+    const factorUpperSpec = absoluteNominalValue !== undefined && upperTolerance !== undefined
+      ? absoluteNominalValue + upperTolerance
+      : undefined;
+    const hasFactorSpecification = factorLowerSpec !== undefined
+      && factorUpperSpec !== undefined
+      && factorLowerSpec < factorUpperSpec;
+    const lowerSpecLimit = hasFactorSpecification ? factorLowerSpec : selectedSpec.lower.value;
+    const upperSpecLimit = hasFactorSpecification ? factorUpperSpec : selectedSpec.upper.value;
+    const designNominal = hasFactorSpecification ? nominalValue : excelSignedMean;
+    const normalizedLowerTolerance = hasFactorSpecification ? lowerTolerance : lowerSpecLimit;
+    const normalizedUpperTolerance = hasFactorSpecification ? upperTolerance : upperSpecLimit;
+    const specificationSourceCells = hasFactorSpecification
+      ? {
+          nominalValue: `${worksheetName}!${nominalValueCell!.reference}`,
+          upperTolerance: `${worksheetName}!${upperToleranceCell!.reference}`,
+          lowerTolerance: `${worksheetName}!${lowerToleranceCell!.reference}`,
+          lowerSpecLimit: `${worksheetName}!${nominalValueCell!.reference}`,
+          upperSpecLimit: `${worksheetName}!${nominalValueCell!.reference}`,
+        }
+      : {
+          lowerSpecLimit: selectedSpec.lower.reference,
+          upperSpecLimit: selectedSpec.upper.reference,
+        };
 
     const candidate = {
       workbookContentHash,
@@ -460,16 +495,18 @@ export function extractF7FactorCandidates(request: {
         distribution: `${worksheetName}!${distributionCell.reference}`,
         excelSignedMean: `${worksheetName}!${meanCell!.reference}`,
         standardDeviation: `${worksheetName}!${sigmaCell!.reference}`,
-        lowerSpecLimit: selectedSpec.lower.reference,
-        upperSpecLimit: selectedSpec.upper.reference,
+        ...specificationSourceCells,
       },
       factorCandidateId: buildCandidateId(workbookContentHash, worksheetName, tableId, row),
       factorName,
       excelSignedMean,
+      designNominal,
+      upperTolerance: normalizedUpperTolerance,
+      lowerTolerance: normalizedLowerTolerance,
       standardDeviation,
       distribution: "Normal" as const,
-      lowerSpecLimit: selectedSpec.lower.value,
-      upperSpecLimit: selectedSpec.upper.value,
+      lowerSpecLimit,
+      upperSpecLimit,
     };
     const parsedCandidate = f7FactorCandidateSchema.safeParse(candidate);
     if (!parsedCandidate.success) throw adapterError(EXTRACTION_SUMMARY);
@@ -524,19 +561,18 @@ export function confirmF7FactorSetup(request: {
     const confirmation = confirmationById.get(candidate.factorCandidateId);
     if (!confirmation) throw adapterError(SETUP_SUMMARY);
 
-    const unit = normalizeUnit(confirmation.unit);
-    if (unit.length === 0) throw adapterError(SETUP_SUMMARY);
     const workbookUnitEvidence = candidate.workbookUnitEvidence ? normalizeUnit(candidate.workbookUnitEvidence) : undefined;
-    const unitSource = workbookUnitEvidence ? "workbook" : "user_confirmed";
-    if (workbookUnitEvidence && normalizeLabel(workbookUnitEvidence) !== normalizeLabel(unit)) {
-      throw adapterError(SETUP_SUMMARY);
-    }
+    const unit = workbookUnitEvidence ?? "unspecified";
+    const unitSource = workbookUnitEvidence ? "workbook" : "unspecified";
 
-    const normalized = normalizeF7Factor({
-      excelSignedMean: candidate.excelSignedMean,
-      loopCoefficient: confirmation.loopCoefficient,
-      standardDeviation: candidate.standardDeviation,
-    });
+    const loopCoefficient = Math.sign(confirmation.designNominal) as -1 | 1;
+    const physicalMean = Math.abs(confirmation.designNominal);
+    const lowerEndpoint = confirmation.designNominal + confirmation.lowerTolerance;
+    const upperEndpoint = confirmation.designNominal + confirmation.upperTolerance;
+    const lowerSpecLimit = lowerEndpoint <= 0 && upperEndpoint >= 0
+      ? 0
+      : Math.min(Math.abs(lowerEndpoint), Math.abs(upperEndpoint));
+    const upperSpecLimit = Math.max(Math.abs(lowerEndpoint), Math.abs(upperEndpoint));
 
     const evidence = {
       workbookContentHash: candidate.workbookContentHash,
@@ -545,21 +581,24 @@ export function confirmF7FactorSetup(request: {
       sourceRow: candidate.sourceRow,
       sourceCells: candidate.sourceCells,
       factorCandidateId: candidate.factorCandidateId,
-      factorId: buildFactorId(candidate.factorCandidateId, confirmation.loopCoefficient, unit),
+      factorId: buildFactorId(candidate.factorCandidateId, loopCoefficient),
       factorName: candidate.factorName,
       unit,
       unitSource,
-      loopCoefficient: confirmation.loopCoefficient,
-      physicalMean: normalized.physicalMean,
-      signedContributionMean: normalized.signedContributionMean,
+      designNominal: confirmation.designNominal,
+      upperTolerance: confirmation.upperTolerance,
+      lowerTolerance: confirmation.lowerTolerance,
+      loopCoefficient,
+      physicalMean,
+      signedContributionMean: confirmation.designNominal,
       baselineSampler: {
         samplerId: "NORMAL_LOCATION_SCALE_V1" as const,
-        physicalMean: normalized.physicalMean,
+        physicalMean,
         standardDeviation: candidate.standardDeviation,
         support: "REAL" as const,
       },
-      lowerSpecLimit: candidate.lowerSpecLimit,
-      upperSpecLimit: candidate.upperSpecLimit,
+      lowerSpecLimit,
+      upperSpecLimit,
     };
     const parsedEvidence = f7FactorEvidenceSchema.safeParse(evidence);
     if (!parsedEvidence.success) throw adapterError(SETUP_SUMMARY);

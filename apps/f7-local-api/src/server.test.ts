@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { request } from "node:http";
 import { Socket } from "node:net";
-import { createTypedError, typedErrorSchema, type F7SessionService } from "@ai-assist/contracts";
+import {
+  createTypedError,
+  f7ReportProjectionSchema,
+  typedErrorSchema,
+  type F7SessionService,
+} from "@ai-assist/contracts";
 import { createAnonymousWorkbookZip } from "../../../packages/workbook-catalog/src/test-support.js";
 import { createF7SessionService } from "./f7-session-service.js";
 import { createF7LocalServer, listenF7LocalServer } from "./server.js";
@@ -69,6 +74,10 @@ function createTypedErrorService(code: Parameters<typeof createTypedError>[0]["c
     setFactorMode: throwTyped,
     pasteMeasurements: throwTyped,
     applyMeasurementDisposition: throwTyped,
+    fitDistribution: throwTyped,
+    approveDistribution: throwTyped,
+    runMonteCarlo: throwTyped,
+    generateReport: throwTyped,
     getSession: throwTyped,
   };
 }
@@ -249,7 +258,7 @@ describe("f7 local server", () => {
     expect(JSON.stringify(events)).not.toContain(imported.sessionId);
   });
 
-  it("dispatches all seven routes with strict parsing and safe percent decoding", async () => {
+  it("dispatches all eleven routes with strict parsing and safe percent decoding", async () => {
     const service = createRealService();
     const server = createF7LocalServer({ service });
     openServers.push(server);
@@ -329,10 +338,11 @@ describe("f7 local server", () => {
       path: "/f7/factors/confirm",
       body: {
         sessionId: importJson.sessionId,
-        confirmations: factorSetup.factors.map((factor, index) => ({
+        confirmations: factorSetup.factors.map((factor) => ({
           factorCandidateId: factor.factorCandidate.factorCandidateId,
-          loopCoefficient: index < 2 ? -1 : 1,
-          unit: "mm",
+          designNominal: factor.factorCandidate.designNominal,
+          upperTolerance: factor.factorCandidate.upperTolerance,
+          lowerTolerance: factor.factorCandidate.lowerTolerance,
           confirmed: true,
         })),
       },
@@ -354,6 +364,35 @@ describe("f7 local server", () => {
       body: { sessionId: importJson.sessionId, mode: "MEASURED" },
     });
     expect(setMode.status).toBe(200);
+    for (const factor of configured.factors.slice(1)) {
+      const baselineFactorId = factor.evidence?.factorId;
+      if (!baselineFactorId) continue;
+      const baselineMode = await httpJson({
+        port: address.port,
+        method: "POST",
+        path: `/f7/factors/${encodeURIComponent(baselineFactorId)}/mode`,
+        body: { sessionId: importJson.sessionId, mode: "BASELINE_ASSUMPTION" },
+      });
+      expect(baselineMode.status).toBe(200);
+    }
+
+    const oversizedPaste = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: `/f7/factors/${encodedFactorPath}/measurements/paste`,
+      body: {
+        sessionId: importJson.sessionId,
+        structure: "UNORDERED_SAMPLE",
+        sourceReference: "oversized-paste-route",
+        msaStatus: "available",
+        text: Array.from({ length: 501 }, (_, index) => String(index + 1)).join("\n"),
+      },
+    });
+    expect(oversizedPaste.status).toBe(400);
+    expect(oversizedPaste.json).toMatchObject({
+      code: "validation_error",
+      affectedInputReferences: ["f7-session-service"],
+    });
 
     const paste = await httpJson({
       port: address.port,
@@ -369,6 +408,107 @@ describe("f7 local server", () => {
     });
     expect(paste.status).toBe(200);
 
+    const encodedFitFactorPath = `%${factorId.charCodeAt(0).toString(16)}${factorId.slice(1)}`;
+    const distributionFit = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: `/f7/factors/${encodedFitFactorPath}/distribution-fit`,
+      body: { sessionId: importJson.sessionId },
+    });
+    expect(distributionFit.status).toBe(200);
+    const routeFitResult = (distributionFit.json as {
+      factors: Array<{
+        distributionFitResult?: {
+          factorId: string;
+          sampleSize: number;
+          characteristicKind: string;
+          sampleDiagnostics: Record<string, number>;
+          selectionDecision: { methodId: string; proposedFinalFamily?: string };
+          candidates: Array<{
+            modelSpecification: string;
+            parameterCount: number;
+            bootstrap: { replicates: number; methodId: string; confidenceInterval: { level: number } };
+          }>;
+          recommendedFamily?: string;
+        };
+      }>;
+    }).factors[0]?.distributionFitResult;
+    expect(routeFitResult).toMatchObject({
+      factorId,
+      sampleSize: 20,
+      characteristicKind: "other",
+      sampleDiagnostics: {
+        mean: expect.any(Number),
+        median: expect.any(Number),
+      },
+      selectionDecision: {
+        methodId: "F7_MODEL_SELECTION_V1",
+        proposedFinalFamily: expect.any(String),
+      },
+      candidates: expect.arrayContaining([expect.objectContaining({
+        modelSpecification: expect.any(String),
+        parameterCount: expect.any(Number),
+        bootstrap: expect.objectContaining({
+          replicates: 10000,
+          methodId: "F7_BOOTSTRAP_V2",
+          confidenceInterval: expect.objectContaining({ level: 0.95 }),
+        }),
+      })]),
+    });
+    expect((distributionFit.json as {
+      factors: Array<{ distributionFitResult?: { recommendedFamily?: string } }>;
+    }).factors[0]?.distributionFitResult).not.toHaveProperty("recommendedFamily");
+    expect(routeFitResult).toEqual(service.getSession(importJson.sessionId).factors[0]?.distributionFitResult);
+
+    const distributionApproval = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: `/f7/factors/${encodedFactorPath}/distribution-approval`,
+      body: {
+        sessionId: importJson.sessionId,
+        family: routeFitResult?.selectionDecision.proposedFinalFamily,
+        confirmed: true,
+      },
+    });
+    expect(distributionApproval.status).toBe(200);
+
+    const monteCarlo = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/monte-carlo",
+      body: {
+        sessionId: importJson.sessionId,
+        lowerSpecLimit: -50,
+        upperSpecLimit: 50,
+        iterations: 10000,
+        runSeed: "d".repeat(64),
+        correlationMode: "INDEPENDENT",
+        targetSigmaLevel: 4,
+      },
+    });
+    expect(monteCarlo.status).toBe(200);
+    expect(monteCarlo.json).toMatchObject({
+      monteCarloResult: { methodId: "F7_MONTE_CARLO_V1", iterations: 10000, runSeed: "d".repeat(64) },
+    });
+
+    const report = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/report",
+      body: { sessionId: importJson.sessionId },
+    });
+    expect(report.status).toBe(200);
+    expect(report.headers["cache-control"]).toBe("no-store");
+    expect(f7ReportProjectionSchema.parse(report.json)).toEqual(report.json);
+
+    const reportWithUnknownKey = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/report",
+      body: { sessionId: importJson.sessionId, extra: true },
+    });
+    expectRequestEnvelope(reportWithUnknownKey, 400);
+
     const disposition = await httpJson({
       port: address.port,
       method: "POST",
@@ -383,6 +523,15 @@ describe("f7 local server", () => {
       },
     });
     expect(disposition.status).toBe(200);
+
+    const reportWithoutSimulation = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/report",
+      body: { sessionId: importJson.sessionId },
+    });
+    expect(reportWithoutSimulation.status).toBe(409);
+    expect(reportWithoutSimulation.json).toMatchObject({ code: "prerequisite_not_ready" });
 
     const malformedEncoded = await httpJson({
       port: address.port,
@@ -486,17 +635,27 @@ describe("f7 local server", () => {
         },
       },
     });
-    const setup = goodWorksheet.json as { factors: Array<{ factorCandidate: { factorCandidateId: string } }> };
+    const setup = goodWorksheet.json as {
+      factors: Array<{
+        factorCandidate: {
+          factorCandidateId: string;
+          designNominal: number;
+          upperTolerance: number;
+          lowerTolerance: number;
+        };
+      }>;
+    };
     const goodFactors = await httpJson({
       port: address.port,
       method: "POST",
       path: "/f7/factors/confirm",
       body: {
         sessionId: importJson.sessionId,
-        confirmations: setup.factors.map((factor, index) => ({
+        confirmations: setup.factors.map((factor) => ({
           factorCandidateId: factor.factorCandidate.factorCandidateId,
-          loopCoefficient: index < 2 ? -1 : 1,
-          unit: "mm",
+          designNominal: factor.factorCandidate.designNominal,
+          upperTolerance: factor.factorCandidate.upperTolerance,
+          lowerTolerance: factor.factorCandidate.lowerTolerance,
           confirmed: true,
         })),
       },
@@ -544,6 +703,14 @@ describe("f7 local server", () => {
       },
     });
     expectRequestEnvelope(dispositionBodyWithFactor, 400);
+
+    const fitBodyWithFactor = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: `/f7/factors/${encodeURIComponent(factorId)}/distribution-fit`,
+      body: { sessionId: importJson.sessionId, factorId },
+    });
+    expectRequestEnvelope(fitBodyWithFactor, 400);
   });
 
   it("enforces raw body limits and strict canonical base64 decode", async () => {
@@ -729,6 +896,29 @@ describe("f7 local server", () => {
     expect(response.closed).toBe(true);
   });
 
+  it("applies body-route transfer framing validation to POST /f7/report", async () => {
+    let reportCalls = 0;
+    const service = {
+      ...createTypedErrorService("prerequisite_not_ready"),
+      generateReport: () => {
+        reportCalls += 1;
+        throw new Error("unexpected dispatch");
+      },
+    } as F7SessionService;
+    const server = createF7LocalServer({ service });
+    openServers.push(server);
+    const address = await listenF7LocalServer(server, 0);
+
+    const response = await rawHttpRequest(
+      address.port,
+      "POST /f7/report HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nTransfer-Encoding: gzip\r\n\r\n{}",
+    );
+
+    expect(response.data).toContain("HTTP/1.1 400");
+    expect(response.closed).toBe(true);
+    expect(reportCalls).toBe(0);
+  });
+
   it("rejects CL plus TE ambiguity with deterministic 400 and close", async () => {
     let serviceCalls = 0;
     const service: F7SessionService = {
@@ -845,6 +1035,36 @@ describe("f7 local server", () => {
     expect(response.data).toContain("content-type: application/json; charset=utf-8");
   });
 
+  it("rejects malformed Distribution Fit method, path, and transfer framing", async () => {
+    const service = createRealService();
+    const server = createF7LocalServer({ service });
+    openServers.push(server);
+    const address = await listenF7LocalServer(server, 0);
+    const route = `/f7/factors/${"a".repeat(64)}/distribution-fit`;
+
+    const wrongMethod = await httpJson({
+      port: address.port,
+      method: "GET",
+      path: route,
+    });
+    expectRequestEnvelope(wrongMethod, 404);
+
+    const malformedPath = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: `${route}/extra`,
+      body: { sessionId: "session-fixed" },
+    });
+    expectRequestEnvelope(malformedPath, 404);
+
+    const malformedFraming = await rawHttpRequest(
+      address.port,
+      `POST ${route} HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nTransfer-Encoding: gzip\r\n\r\n{}`,
+    );
+    expect(malformedFraming.data).toContain("HTTP/1.1 400");
+    expect(malformedFraming.closed).toBe(true);
+  });
+
   it("maps typed service errors to stable status and controlled envelope", async () => {
     const policyService = createTypedErrorService("policy_denied");
     const policyServer = createF7LocalServer({ service: policyService });
@@ -912,6 +1132,22 @@ describe("f7 local server", () => {
       suggestedAction: "Retry the request. If the problem persists, restart the local API.",
       affectedInputReferences: ["f7-local-api"],
     });
+  });
+
+  it("maps a report prerequisite service error to HTTP 409", async () => {
+    const server = createF7LocalServer({ service: createTypedErrorService("prerequisite_not_ready") });
+    openServers.push(server);
+    const address = await listenF7LocalServer(server, 0);
+
+    const response = await httpJson({
+      port: address.port,
+      method: "POST",
+      path: "/f7/report",
+      body: { sessionId: "session-fixed" },
+    });
+
+    expect(response.status).toBe(409);
+    expect(response.json).toMatchObject({ code: "prerequisite_not_ready" });
   });
 
   it("returns 404 for unknown and excluded routes and has no CORS or OPTIONS support", async () => {

@@ -1,10 +1,14 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import {
+  f7DistributionApprovalRouteRequestSchema,
+  f7DistributionFitRouteRequestSchema,
   f7FactorConfirmRouteRequestSchema,
   f7FactorModeRouteRequestSchema,
   f7MeasurementDispositionRouteRequestSchema,
   f7MeasurementPasteRouteRequestSchema,
+  f7MonteCarloRunRouteRequestSchema,
+  f7ReportGenerateRouteRequestSchema,
   f7SessionRouteParamsSchema,
   f7WorkbookImportRouteRequestSchema,
   f7WorksheetConfirmRouteRequestSchema,
@@ -29,11 +33,17 @@ const ROUTE_KIND_FACTORS_CONFIRM = "f7.factors.confirm";
 const ROUTE_KIND_FACTOR_MODE = "f7.factors.mode";
 const ROUTE_KIND_MEASUREMENT_PASTE = "f7.factors.measurements.paste";
 const ROUTE_KIND_MEASUREMENT_DISPOSITION = "f7.factors.measurements.disposition";
+const ROUTE_KIND_DISTRIBUTION_FIT = "f7.factors.distribution-fit";
+const ROUTE_KIND_DISTRIBUTION_APPROVAL = "f7.factors.distribution-approval";
+const ROUTE_KIND_MONTE_CARLO = "f7.monte-carlo.run";
+const ROUTE_KIND_REPORT = "f7.report.generate";
 const ROUTE_KIND_SESSION_GET = "f7.session.get";
 
 const FACTOR_MODE_PATH = /^\/f7\/factors\/([^/]+)\/mode$/;
 const FACTOR_MEASUREMENT_PASTE_PATH = /^\/f7\/factors\/([^/]+)\/measurements\/paste$/;
 const FACTOR_MEASUREMENT_DISPOSITION_PATH = /^\/f7\/factors\/([^/]+)\/measurements\/disposition$/;
+const FACTOR_DISTRIBUTION_FIT_PATH = /^\/f7\/factors\/([^/]+)\/distribution-fit$/;
+const FACTOR_DISTRIBUTION_APPROVAL_PATH = /^\/f7\/factors\/([^/]+)\/distribution-approval$/;
 const SESSION_PATH = /^\/f7\/session\/([^/]+)$/;
 
 interface ErrorEnvelope {
@@ -111,6 +121,10 @@ function isBodyPostRoute(method: string, pathname: string): boolean {
   if (FACTOR_MODE_PATH.test(pathname)) return true;
   if (FACTOR_MEASUREMENT_PASTE_PATH.test(pathname)) return true;
   if (FACTOR_MEASUREMENT_DISPOSITION_PATH.test(pathname)) return true;
+  if (FACTOR_DISTRIBUTION_FIT_PATH.test(pathname)) return true;
+  if (FACTOR_DISTRIBUTION_APPROVAL_PATH.test(pathname)) return true;
+  if (pathname === "/f7/monte-carlo") return true;
+  if (pathname === "/f7/report") return true;
   return false;
 }
 
@@ -415,6 +429,57 @@ async function handleRequest(
     });
     writeJson(response, 200, snapshot);
     return { kind: ROUTE_KIND_MEASUREMENT_DISPOSITION, status: 200 };
+  }
+
+  const distributionFitPathMatch = FACTOR_DISTRIBUTION_FIT_PATH.exec(pathname);
+  if (method === "POST" && distributionFitPathMatch) {
+    const body = await readStrictJsonObject(request, JSON_ROUTE_LIMIT_BYTES);
+    const factorId = decodeURIComponentStrict(distributionFitPathMatch[1]!);
+    const routeRequest = f7DistributionFitRouteRequestSchema.safeParse({
+      params: { factorId },
+      body,
+    });
+    if (!routeRequest.success) rejectBadRequest();
+    const snapshot = service.fitDistribution({
+      sessionId: routeRequest.data.body.sessionId,
+      factorId: routeRequest.data.params.factorId,
+    });
+    writeJson(response, 200, snapshot);
+    return { kind: ROUTE_KIND_DISTRIBUTION_FIT, status: 200 };
+  }
+
+  const distributionApprovalPathMatch = FACTOR_DISTRIBUTION_APPROVAL_PATH.exec(pathname);
+  if (method === "POST" && distributionApprovalPathMatch) {
+    const body = await readStrictJsonObject(request, JSON_ROUTE_LIMIT_BYTES);
+    const factorId = decodeURIComponentStrict(distributionApprovalPathMatch[1]!);
+    const routeRequest = f7DistributionApprovalRouteRequestSchema.safeParse({ params: { factorId }, body });
+    if (!routeRequest.success) rejectBadRequest();
+    const snapshot = service.approveDistribution({
+      sessionId: routeRequest.data.body.sessionId,
+      factorId: routeRequest.data.params.factorId,
+      family: routeRequest.data.body.family,
+      confirmed: routeRequest.data.body.confirmed,
+    });
+    writeJson(response, 200, snapshot);
+    return { kind: ROUTE_KIND_DISTRIBUTION_APPROVAL, status: 200 };
+  }
+
+  if (method === "POST" && pathname === "/f7/monte-carlo") {
+    const body = await readStrictJsonObject(request, JSON_ROUTE_LIMIT_BYTES);
+    const routeRequest = f7MonteCarloRunRouteRequestSchema.safeParse({ body });
+    if (!routeRequest.success) rejectBadRequest();
+    const snapshot = service.runMonteCarlo(routeRequest.data.body);
+    writeJson(response, 200, snapshot);
+    return { kind: ROUTE_KIND_MONTE_CARLO, status: 200 };
+  }
+
+  if (method === "POST" && pathname === "/f7/report") {
+    const body = await readStrictJsonObject(request, JSON_ROUTE_LIMIT_BYTES);
+    const routeRequest = f7ReportGenerateRouteRequestSchema.safeParse({ body });
+    if (!routeRequest.success) rejectBadRequest();
+    const report = service.generateReport(routeRequest.data.body);
+    writeJson(response, 200, report);
+    return { kind: ROUTE_KIND_REPORT, status: 200 };
   }
 
   const sessionPathMatch = SESSION_PATH.exec(pathname);

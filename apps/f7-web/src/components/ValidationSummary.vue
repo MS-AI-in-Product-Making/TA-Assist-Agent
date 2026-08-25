@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed } from "vue";
-import type { F7DatasetValidationIssue, F7SessionSnapshot } from "../api/f7-client";
+import { computed, type DeepReadonly } from "vue";
+import type { F7SessionSnapshot } from "../api/f7-client";
 
 const props = defineProps<{
-  readonly session: F7SessionSnapshot;
+  readonly session: DeepReadonly<F7SessionSnapshot>;
 }>();
 
 const reasonLabels: Record<string, string> = {
@@ -25,7 +25,7 @@ const reasonLabels: Record<string, string> = {
 const blockingIssues = computed(() => props.session.factors.flatMap((factor) => factor.datasetValidation?.blockingIssues ?? []));
 const advisoryIssues = computed(() => props.session.factors.flatMap((factor) => factor.datasetValidation?.advisoryIssues ?? []));
 
-function issueLabel(issue: F7DatasetValidationIssue): string {
+function issueLabel(issue: { readonly reason: string }): string {
   return reasonLabels[issue.reason] ?? "Validation issue";
 }
 </script>

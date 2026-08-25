@@ -172,8 +172,9 @@ describe("f7 phase 1 flow", () => {
         sessionId: session.sessionId,
         confirmations: setupSnapshot.factors.map((factor) => ({
           factorCandidateId: factor.factorCandidate.factorCandidateId,
-          loopCoefficient: 1,
-          unit: "mm",
+          designNominal: Math.abs(factor.factorCandidate.designNominal),
+          upperTolerance: factor.factorCandidate.upperTolerance,
+          lowerTolerance: factor.factorCandidate.lowerTolerance,
           confirmed: true,
         })),
       },
@@ -185,9 +186,9 @@ describe("f7 phase 1 flow", () => {
     const factorA = confirmedSnapshot.factors[0]?.evidence;
     const factorB = confirmedSnapshot.factors[1]?.evidence;
     expect(factorA?.loopCoefficient).toBe(1);
-    expect(factorA?.unit).toBe("mm");
+    expect(factorA?.unit).toBe("unspecified");
     expect(factorB?.loopCoefficient).toBe(1);
-    expect(factorB?.unit).toBe("mm");
+    expect(factorB?.unit).toBe("unspecified");
     if (!factorA || !factorB) throw new Error("factor evidence is required");
 
     const setMeasured = await httpJson({

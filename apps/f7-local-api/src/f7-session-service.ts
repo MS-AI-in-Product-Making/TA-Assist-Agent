@@ -1,12 +1,19 @@
+import { createHash } from "node:crypto";
 import {
   createTypedError,
+  f7DistributionCharacteristicKindSchema,
+  f7DistributionApprovalRouteRequestSchema,
   f7FactorSetupConfirmationSchema,
   f7MeasurementDispositionRequestSchema,
   f7MeasurementPasteRequestSchema,
+  f7MonteCarloRunRouteRequestSchema,
+  f7ReportGenerateRouteRequestSchema,
   f7SessionSnapshotSchema,
   f7WorkbookImportRequestSchema,
   worksheetSelectionConfirmationSchema,
   type F7DatasetValidationResult,
+  type F7DistributionCharacteristicKind,
+  type F7DistributionCandidateFamily,
   type F7FactorInput,
   type F7FactorSetupConfirmation,
   type F7FactorSourceMode,
@@ -18,17 +25,28 @@ import {
   type F7WorkbookImportRequest,
   type WorksheetSelectionConfirmation,
 } from "@ai-assist/contracts";
+import { runF7MonteCarlo as runF7MonteCarloSimulation } from "@ai-assist/f7-simulation";
+import {
+  F7_DISTRIBUTION_FIT_MAX_OBSERVATIONS,
+  fitDistribution as fitDistributionDataset,
+} from "@ai-assist/f7-statistics";
 import {
   applyF7MeasurementDisposition,
   confirmF7FactorSetup,
   createF7WorkbookImport,
+  extractResponseSummarySystemSpecification,
   extractF7FactorCandidates,
   parseF7MeasurementPaste,
+  readOoxmlWorkbook,
   validateF7MeasurementDataset,
   type F7FactorCandidateExtractionResult,
   type F7WorkbookImportResult,
 } from "@ai-assist/workbook-catalog";
 import { z } from "zod";
+import {
+  createF7ReportProjection,
+  isF7ReportPrerequisiteError,
+} from "./f7-report.js";
 
 interface InternalSession {
   readonly workbookBytes: Uint8Array;
@@ -42,6 +60,8 @@ const PREREQUISITE_SUMMARY = "F7 session operation is not ready.";
 const NOT_FOUND_SUMMARY = "F7 session state was not found.";
 const INTERNAL_REFERENCE = "f7-session-service";
 const CAPACITY_SUMMARY = "F7 local session capacity is reached.";
+const DISTRIBUTION_FIT_SUMMARY = "F7 distribution fitting could not be calculated.";
+const SELECTED_WORKSHEET_SUMMARY = "F7 selected worksheet could not be read.";
 
 export const MAX_F7_LOCAL_SESSIONS = 8;
 
@@ -70,13 +90,40 @@ function fixedCapacityError(): Error {
   });
 }
 
+function fixedDistributionFitError(): Error {
+  return createTypedError({
+    code: "calculation_not_possible",
+    summary: DISTRIBUTION_FIT_SUMMARY,
+    suggestedAction: "Review the included measurements for finite variation and retry distribution fitting.",
+    affectedInputReferences: [INTERNAL_REFERENCE],
+  });
+}
+
+function distributionFitSeed(sessionId: string, factorId: string, datasetHash: string): string {
+  return createHash("sha256")
+    .update("F7_DISTRIBUTION_FIT_BOOTSTRAP_SEED_V1\0", "utf8")
+    .update(sessionId, "utf8")
+    .update(factorId, "utf8")
+    .update(datasetHash, "utf8")
+    .digest("hex");
+}
+
+function distributionCharacteristicKindForFactor(
+  _factorState: F7SessionSnapshot["factors"][number],
+): F7DistributionCharacteristicKind {
+  return f7DistributionCharacteristicKindSchema.enum.other;
+}
+
+function measurementRowCount(text: string): number {
+  return text.split(/\r\n|\n|\r/).filter((row) => row.trim().length > 0).length;
+}
+
 function cloneFrozenSnapshot(snapshot: F7SessionSnapshot): F7SessionSnapshot {
   return deepFreeze(structuredClone(snapshot));
 }
 
 function normalizeSnapshot(snapshot: F7SessionSnapshot): F7SessionSnapshot {
-  const parsed = f7SessionSnapshotSchema.parse(structuredClone(snapshot));
-  return deepFreeze(parsed);
+  return deepFreeze(f7SessionSnapshotSchema.parse(structuredClone(snapshot)));
 }
 
 function readyForPhaseOne(factors: F7SessionSnapshot["factors"]): boolean {
@@ -108,12 +155,14 @@ function normalizeNow(now: string): string {
 export function createF7SessionService(dependencies: {
   readonly createId: () => string;
   readonly now: () => string;
+  readonly createReportProjection?: typeof createF7ReportProjection;
 }): F7SessionService {
   if (typeof dependencies.createId !== "function" || typeof dependencies.now !== "function") {
     throw fixedError(SESSION_SUMMARY, "validation_error");
   }
 
   const sessions = new Map<string, InternalSession>();
+  const projectReport = dependencies.createReportProjection ?? createF7ReportProjection;
 
   const readSession = (sessionId: string): InternalSession => {
     const session = sessions.get(sessionId);
@@ -174,12 +223,25 @@ export function createF7SessionService(dependencies: {
       importResult: current.importResult,
       confirmation: parsedRequest.data.confirmation,
     });
+    const workbook = readOoxmlWorkbook(
+      current.workbookBytes,
+      [extraction.worksheetName],
+      false,
+      { maxRow: 1000, maxColumn: "BN" },
+    );
+    const selectedWorksheet = workbook.worksheets.get(extraction.worksheetName);
+    if (!selectedWorksheet) throw fixedError(SELECTED_WORKSHEET_SUMMARY, "internal_error");
+    const systemSpecification = extractResponseSummarySystemSpecification(
+      extraction.worksheetName,
+      selectedWorksheet.cells,
+    );
 
     const snapshot = normalizeSnapshot({
       ...current.snapshot,
       status: "factor_setup",
       selectedWorksheetNames: [extraction.worksheetName],
       worksheetOptions: current.importResult.prompt.options,
+      systemSpecification,
       factors: extraction.candidates.map((factorCandidate) => ({ factorCandidate })),
     });
 
@@ -286,6 +348,7 @@ export function createF7SessionService(dependencies: {
       ...current.snapshot,
       factors,
       status: computeMeasurementStatus({ ...current.snapshot, factors }),
+      monteCarloResult: undefined,
     });
 
     writeSession(parsedRequest.data.sessionId, {
@@ -311,6 +374,9 @@ export function createF7SessionService(dependencies: {
       },
     });
     if (!parsedRequest.success) throw fixedError(SESSION_SUMMARY, "validation_error");
+    if (measurementRowCount(parsedRequest.data.payload.text) > F7_DISTRIBUTION_FIT_MAX_OBSERVATIONS) {
+      throw fixedError(SESSION_SUMMARY, "validation_error");
+    }
 
     const current = readSession(parsedRequest.data.sessionId);
     if (current.snapshot.status !== "measurement_entry" && current.snapshot.status !== "phase_1_ready") {
@@ -368,6 +434,7 @@ export function createF7SessionService(dependencies: {
       ...current.snapshot,
       factors,
       status: computeMeasurementStatus({ ...current.snapshot, factors }),
+      monteCarloResult: undefined,
     });
 
     writeSession(parsedRequest.data.sessionId, {
@@ -443,6 +510,7 @@ export function createF7SessionService(dependencies: {
       ...current.snapshot,
       factors,
       status: computeMeasurementStatus({ ...current.snapshot, factors }),
+      monteCarloResult: undefined,
     });
 
     writeSession(parsedSession.data.sessionId, {
@@ -450,6 +518,178 @@ export function createF7SessionService(dependencies: {
       snapshot,
     });
     return cloneFrozenSnapshot(snapshot);
+  };
+
+  const fitDistribution = (request: { sessionId: string; factorId: string }): F7SessionSnapshot => {
+    const parsedRequest = z.object({
+      sessionId: z.string().min(1),
+      factorId: z.string().regex(/^[a-f0-9]{64}$/),
+    }).strict().safeParse(request);
+    if (!parsedRequest.success) throw fixedError(SESSION_SUMMARY, "validation_error");
+
+    const current = readSession(parsedRequest.data.sessionId);
+    if (current.snapshot.status !== "measurement_entry" && current.snapshot.status !== "phase_1_ready") {
+      throw fixedError(PREREQUISITE_SUMMARY, "prerequisite_not_ready");
+    }
+
+    let found = false;
+    const factors = current.snapshot.factors.map((factorState) => {
+      if (factorState.evidence?.factorId !== parsedRequest.data.factorId) return factorState;
+      found = true;
+      if (
+        factorState.sourceMode !== "MEASURED"
+        || factorState.input?.mode !== "MEASURED"
+        || factorState.input.dataset === undefined
+        || factorState.datasetValidation?.status !== "ready"
+        || factorState.measurementPasteResult?.status !== "ready"
+      ) {
+        throw fixedError(PREREQUISITE_SUMMARY, "prerequisite_not_ready");
+      }
+
+      const observations = factorState.input.dataset.observations
+        .filter((observation) => observation.disposition === "included")
+        .map((observation) => observation.value);
+      let distributionFitResult;
+      try {
+        distributionFitResult = fitDistributionDataset({
+          factorId: parsedRequest.data.factorId,
+          observations,
+          candidateEligibility: factorState.datasetValidation.candidateEligibility,
+          characteristicKind: distributionCharacteristicKindForFactor(factorState),
+          bootstrapSeed: distributionFitSeed(
+            parsedRequest.data.sessionId,
+            parsedRequest.data.factorId,
+            factorState.input.dataset.contentHash,
+          ),
+        });
+      } catch {
+        throw fixedDistributionFitError();
+      }
+      return { ...factorState, distributionFitResult, distributionApproval: undefined };
+    });
+
+    if (!found) throw fixedError(NOT_FOUND_SUMMARY, "validation_error");
+    const snapshot = normalizeSnapshot({ ...current.snapshot, factors, monteCarloResult: undefined });
+    writeSession(parsedRequest.data.sessionId, { ...current, snapshot });
+    return cloneFrozenSnapshot(snapshot);
+  };
+
+  const approveDistribution = (request: {
+    sessionId: string;
+    factorId: string;
+    family: F7DistributionCandidateFamily;
+    confirmed: true;
+  }): F7SessionSnapshot => {
+    const parsedRequest = f7DistributionApprovalRouteRequestSchema.safeParse({
+      params: { factorId: request.factorId },
+      body: { sessionId: request.sessionId, family: request.family, confirmed: request.confirmed },
+    });
+    if (!parsedRequest.success) throw fixedError(SESSION_SUMMARY, "validation_error");
+    const current = readSession(parsedRequest.data.body.sessionId);
+    let found = false;
+    const approvedAt = normalizeNow(dependencies.now());
+    const factors = current.snapshot.factors.map((factorState) => {
+      if (factorState.evidence?.factorId !== parsedRequest.data.params.factorId) return factorState;
+      found = true;
+      const fit = factorState.distributionFitResult;
+      const candidate = fit?.candidates.find((entry) => entry.family === parsedRequest.data.body.family);
+      if (fit?.selectionDecision.proposedFinalFamily !== parsedRequest.data.body.family
+        || candidate?.bootstrap.status !== "acceptable") {
+        throw fixedError(PREREQUISITE_SUMMARY, "prerequisite_not_ready");
+      }
+      return {
+        ...factorState,
+        distributionApproval: {
+          factorId: parsedRequest.data.params.factorId,
+          family: parsedRequest.data.body.family,
+          confirmed: true as const,
+          approvedAt,
+        },
+      };
+    });
+    if (!found) throw fixedError(NOT_FOUND_SUMMARY, "validation_error");
+    const snapshot = normalizeSnapshot({ ...current.snapshot, factors, monteCarloResult: undefined });
+    writeSession(parsedRequest.data.body.sessionId, { ...current, snapshot });
+    return cloneFrozenSnapshot(snapshot);
+  };
+
+  const runMonteCarlo = (request: Parameters<F7SessionService["runMonteCarlo"]>[0]): F7SessionSnapshot => {
+    const parsedRequest = f7MonteCarloRunRouteRequestSchema.safeParse({ body: request });
+    let requestBody;
+    if (parsedRequest.success) {
+      requestBody = parsedRequest.data.body;
+    } else {
+      const { targetSigmaLevel, ...legacyRequest } = request;
+      const parsedLegacyRequest = f7MonteCarloRunRouteRequestSchema.safeParse({ body: legacyRequest });
+      const parsedTargetSigmaLevel = z.number().finite().positive().safeParse(targetSigmaLevel);
+      if (!parsedLegacyRequest.success || !parsedTargetSigmaLevel.success) {
+        throw fixedError(SESSION_SUMMARY, "validation_error");
+      }
+      requestBody = { ...parsedLegacyRequest.data.body, targetSigmaLevel: parsedTargetSigmaLevel.data };
+    }
+    const current = readSession(requestBody.sessionId);
+    if (!readyForPhaseOne(current.snapshot.factors)) {
+      throw fixedError(PREREQUISITE_SUMMARY, "prerequisite_not_ready");
+    }
+    const factors = current.snapshot.factors.map((factorState) => {
+      const evidence = factorState.evidence;
+      if (!evidence || !factorState.sourceMode) throw fixedError(PREREQUISITE_SUMMARY, "prerequisite_not_ready");
+      if (factorState.sourceMode === "BASELINE_ASSUMPTION") {
+        return {
+          factorId: evidence.factorId,
+          coefficient: evidence.loopCoefficient,
+          sourceMode: factorState.sourceMode,
+          family: "normal" as const,
+          parameters: {
+            mean: evidence.baselineSampler.physicalMean,
+            standardDeviation: evidence.baselineSampler.standardDeviation,
+          },
+        };
+      }
+      const approval = factorState.distributionApproval;
+      const candidate = factorState.distributionFitResult?.candidates.find((entry) => entry.family === approval?.family);
+      if (!approval || !candidate || candidate.bootstrap.status !== "acceptable") {
+        throw fixedError(PREREQUISITE_SUMMARY, "prerequisite_not_ready");
+      }
+      return {
+        factorId: evidence.factorId,
+        coefficient: evidence.loopCoefficient,
+        sourceMode: factorState.sourceMode,
+        family: candidate.family,
+        parameters: candidate.parameters,
+      };
+    });
+    const simulationRequest = {
+      lowerSpecLimit: requestBody.lowerSpecLimit,
+      upperSpecLimit: requestBody.upperSpecLimit,
+      targetSigmaLevel: requestBody.targetSigmaLevel,
+      iterations: requestBody.iterations,
+      runSeed: requestBody.runSeed,
+      correlationMode: requestBody.correlationMode,
+      factors,
+    };
+    const monteCarloResult = runF7MonteCarloSimulation(simulationRequest);
+    const snapshot = normalizeSnapshot({ ...current.snapshot, monteCarloResult });
+    writeSession(requestBody.sessionId, { ...current, snapshot });
+    return cloneFrozenSnapshot(snapshot);
+  };
+
+  const generateReport = (request: Parameters<F7SessionService["generateReport"]>[0]) => {
+    const parsedRequest = f7ReportGenerateRouteRequestSchema.safeParse({ body: request });
+    if (!parsedRequest.success) throw fixedError(SESSION_SUMMARY, "validation_error");
+
+    const current = readSession(parsedRequest.data.body.sessionId);
+    if (current.snapshot.status !== "phase_1_ready" || current.snapshot.monteCarloResult === undefined) {
+      throw fixedError(PREREQUISITE_SUMMARY, "prerequisite_not_ready");
+    }
+    try {
+      return projectReport(current.snapshot, normalizeNow(dependencies.now()));
+    } catch (error) {
+      if (isF7ReportPrerequisiteError(error)) {
+        throw fixedError(PREREQUISITE_SUMMARY, "prerequisite_not_ready");
+      }
+      throw error;
+    }
   };
 
   const getSession = (sessionId: string): F7SessionSnapshot => {
@@ -465,6 +705,10 @@ export function createF7SessionService(dependencies: {
     setFactorMode,
     pasteMeasurements,
     applyMeasurementDisposition,
+    fitDistribution,
+    approveDistribution,
+    runMonteCarlo,
+    generateReport,
     getSession,
   });
 }

@@ -4,6 +4,72 @@ import { createF7Client } from "./f7-client";
 const HASH_A = "a".repeat(64);
 const HASH_B = "b".repeat(64);
 
+function wilsonScoreInterval(successes: number, trials: number): { lower: number; upper: number } {
+  const z = 1.959963984540054;
+  const zSquared = z * z;
+  const proportion = successes / trials;
+  const denominator = 1 + zSquared / trials;
+  const center = (proportion + zSquared / (2 * trials)) / denominator;
+  const margin = (z / denominator)
+    * Math.sqrt((proportion * (1 - proportion) + zSquared / (4 * trials)) / trials);
+  return { lower: Math.max(0, center - margin), upper: Math.min(1, center + margin) };
+}
+
+const distributionFitResult = {
+  factorId: HASH_B,
+  sampleSize: 32,
+  characteristicKind: "other",
+  candidates: [{
+    family: "normal",
+    modelSpecification: "normal_location_scale",
+    parameterCount: 2,
+    parameters: { mean: 1, standardDeviation: 0.1 },
+    logLikelihood: -10,
+    aic: 24,
+    aicc: 24 + 12 / 29,
+    bic: 2 * Math.log(32) + 20,
+    deltaAicc: 0,
+    deltaBic: 0,
+    ks: 0.1,
+    ad: 0.2,
+    qqPoints: [{ observed: 0.9, theoretical: 0.9 }, { observed: 1.1, theoretical: 1.1 }],
+    bootstrap: {
+      statisticId: "anderson_darling",
+      observedStatistic: 0.2,
+      comparisonDirection: "greater_than_or_equal",
+      refitEachReplicate: true,
+      extremeReplicateCount: 5000,
+      confidenceInterval: { level: 0.95, method: "wilson_score", ...wilsonScoreInterval(5000, 10000) },
+      pValue: 5001 / 10001,
+      replicates: 10000,
+      seed: HASH_A,
+      methodId: "F7_BOOTSTRAP_V2",
+      candidateMethodId: "F7_DISTRIBUTION_FIT_V1",
+      streamDigest: HASH_B,
+      status: "acceptable",
+    },
+    warnings: [],
+  }],
+  failedCandidates: [],
+  sampleDiagnostics: {
+    mean: 1,
+    median: 1,
+    skewness: 0,
+    coefficientOfVariation: 0.1,
+    meanMedianRelativeDifference: 0,
+    normalQqCurvature: 0,
+  },
+  selectionDecision: {
+    methodId: "F7_MODEL_SELECTION_V1",
+    status: "unique_preference",
+    numericBestFamily: "normal",
+    competitiveFamilies: ["normal"],
+    proposedFinalFamily: "normal",
+    confidence: "moderate",
+    reasonCodes: ["SINGLE_ACCEPTABLE_COMPETITOR", "SMALL_SAMPLE_UNCERTAINTY"],
+  },
+} as const;
+
 const validSnapshot = {
   contractId: "f7-analysis-result-v1",
   outputClassification: "confidential",
@@ -38,6 +104,9 @@ const validSnapshot = {
         factorCandidateId: HASH_B,
         factorName: "C-cover height",
         excelSignedMean: -1.94,
+        designNominal: -1.94,
+        upperTolerance: 0.1,
+        lowerTolerance: -0.1,
         standardDeviation: 0.2,
         distribution: "Normal",
         lowerSpecLimit: 0,
@@ -45,6 +114,107 @@ const validSnapshot = {
       },
     },
   ],
+} as const;
+
+const validReport = {
+  contractId: "f7-report-v1",
+  outputClassification: "confidential",
+  sessionId: "session-01",
+  generatedAt: "2026-08-25T08:00:00.000Z",
+  assessment: "MEETS_TARGET",
+  workbook: {
+    fileName: "demo.xlsx",
+    workbookContentHash: HASH_A,
+    worksheetName: "Anonymous_TA",
+  },
+  summary: {
+    mean: 0,
+    standardDeviation: 0.1,
+    yield: 0.99,
+    ppm: 10_000,
+    lowerSpecLimit: -0.5,
+    upperSpecLimit: 0.5,
+    targetSigmaLevel: 4,
+    cp: 5 / 3,
+    cpk: 5 / 3,
+    targetCpk: 4 / 3,
+  },
+  simulation: {
+    methodId: "F7_MONTE_CARLO_V1",
+    status: "complete",
+    lowerSpecLimit: -0.5,
+    upperSpecLimit: 0.5,
+    targetSigmaLevel: 4,
+    iterations: 10_000,
+    runSeed: HASH_A,
+    correlationMode: "INDEPENDENT",
+    mean: 0,
+    standardDeviation: 0.1,
+    quantiles: { p00135: -0.3, p01: -0.23, p05: -0.16, p50: 0, p95: 0.16, p99: 0.23, p99865: 0.3 },
+    inSpecCount: 9900,
+    outOfSpecCount: 100,
+    yield: 0.99,
+    outOfSpecProbability: 0.01,
+    ppm: 10_000,
+    histogram: {
+      methodId: "F7_HISTOGRAM_FD_V1",
+      bins: Array.from({ length: 20 }, (_, index) => ({
+        minimum: index - 10,
+        maximum: index - 9,
+        observedCount: index === 0 ? 10_000 : 0,
+      })),
+    },
+    normalFit: {
+      methodId: "F7_NORMAL_MOMENT_FIT_V1",
+      mean: 0,
+      standardDeviation: 0.1,
+      expectedBinCounts: Array.from({ length: 20 }, (_, index) => index === 0 ? 10_000 : 0),
+    },
+    capability: {
+      status: "available",
+      cp: 5 / 3,
+      lowerCpk: 5 / 3,
+      upperCpk: 5 / 3,
+      cpk: 5 / 3,
+      targetCpk: 4 / 3,
+      targetStatus: "meets_target",
+    },
+    normalModel: {
+      status: "available",
+      lowerTailDpm: 5_000,
+      upperTailDpm: 5_000,
+      totalDpm: 10_000,
+      expectedYield: 0.99,
+    },
+    factorManifest: [{ factorId: HASH_B, family: "normal", sourceMode: "MEASURED" }],
+  },
+  factors: [{
+    factorId: HASH_B,
+    factorName: "C-cover height",
+    loopCoefficient: 1,
+    sourceMode: "MEASURED",
+    approvedDistribution: "normal",
+    sourceReferences: ["Anonymous_TA!R15"],
+  }],
+  evidence: {
+    workbookContentHash: HASH_A,
+    worksheetName: "Anonymous_TA",
+    specificationSourceCells: {},
+    specificationInputOrigins: {
+      lowerSpecLimit: "manual_entry",
+      upperSpecLimit: "manual_entry",
+      targetSigmaLevel: "manual_entry",
+    },
+    methodIds: {
+      simulation: "F7_MONTE_CARLO_V1",
+      histogram: "F7_HISTOGRAM_FD_V1",
+      normalFit: "F7_NORMAL_MOMENT_FIT_V1",
+    },
+    seed: HASH_A,
+    iterations: 10_000,
+    factorManifest: [{ factorId: HASH_B, family: "normal", sourceMode: "MEASURED" }],
+  },
+  markdown: "# F7 Report\n",
 } as const;
 
 describe("createF7Client", () => {
@@ -59,7 +229,76 @@ describe("createF7Client", () => {
     vi.unstubAllGlobals();
   });
 
-  it("uses exact routes/methods for all seven APIs and JSON body rules", async () => {
+  it("generates a report through the exact JSON route, method, and body", async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify(validReport), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+
+    const report = await createF7Client("http://localhost:3017").generateReport({ sessionId: "session-01" });
+
+    expect(report).toEqual(validReport);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("http://localhost:3017/f7/report");
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sessionId: "session-01" }),
+    });
+  });
+
+  it("rejects an otherwise-valid report response containing an unknown field", async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ ...validReport, extra: true }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+
+    await expect(createF7Client().generateReport({ sessionId: "session-01" })).rejects.toEqual({
+      code: "request_failed",
+      summary: "Unable to complete the F7 workbench request.",
+      suggestedAction: "Retry the action. If the issue persists, restart the local API.",
+      affectedInputReferences: ["f7-web-client"],
+    });
+  });
+
+  it("rejects an otherwise-valid report response for a different session", async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({
+      ...validReport,
+      sessionId: "session-02",
+      markdown: "# Cross-session response must not leak\n",
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+
+    await expect(createF7Client().generateReport({ sessionId: "session-01" })).rejects.toEqual({
+      code: "request_failed",
+      summary: "Unable to complete the F7 workbench request.",
+      suggestedAction: "Retry the action. If the issue persists, restart the local API.",
+      affectedInputReferences: ["f7-web-client"],
+    });
+  });
+
+  it("maps report generation failures to the typed server error", async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({
+      code: "prerequisite_not_ready",
+      summary: "Run Monte Carlo before generating a report.",
+      suggestedAction: "Run Monte Carlo, then generate the report again.",
+      affectedInputReferences: ["session-01"],
+    }), {
+      status: 409,
+      headers: { "content-type": "application/json" },
+    }));
+
+    await expect(createF7Client().generateReport({ sessionId: "session-01" })).rejects.toEqual({
+      code: "prerequisite_not_ready",
+      summary: "Run Monte Carlo before generating a report.",
+      suggestedAction: "Run Monte Carlo, then generate the report again.",
+      affectedInputReferences: ["session-01"],
+    });
+  });
+
+  it("uses exact routes/methods for all eight APIs and JSON body rules", async () => {
     fetchMock.mockImplementation(async () => new Response(JSON.stringify(validSnapshot), {
       status: 200,
       headers: { "content-type": "application/json" },
@@ -75,7 +314,13 @@ describe("createF7Client", () => {
 
     await client.confirmFactors({
       sessionId: "s-1",
-      confirmations: [{ factorCandidateId: HASH_B, loopCoefficient: -1, unit: "mm", confirmed: true }],
+      confirmations: [{
+        factorCandidateId: HASH_B,
+        designNominal: -0.57,
+        upperTolerance: 0.05,
+        lowerTolerance: -0.05,
+        confirmed: true,
+      }],
     });
 
     await client.setFactorMode({
@@ -103,9 +348,14 @@ describe("createF7Client", () => {
       confirmed: true,
     });
 
+    await client.fitDistribution({
+      sessionId: "s-1",
+      factorId: "factor id/1",
+    });
+
     await client.getSession("session id/01");
 
-    expect(fetchMock).toHaveBeenCalledTimes(6);
+    expect(fetchMock).toHaveBeenCalledTimes(7);
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe("http://localhost:3017/f7/workbook/worksheet-confirm");
     expect((fetchMock.mock.calls[0]?.[1] as RequestInit).method).toBe("POST");
@@ -126,8 +376,12 @@ describe("createF7Client", () => {
     const dispositionBody = JSON.parse(((fetchMock.mock.calls[4]?.[1] as RequestInit).body as string));
     expect(dispositionBody.factorId).toBeUndefined();
 
-    expect(fetchMock.mock.calls[5]?.[0]).toBe("http://localhost:3017/f7/session/session%20id%2F01");
-    expect(fetchMock.mock.calls[5]?.[1]).toBeUndefined();
+    expect(fetchMock.mock.calls[5]?.[0]).toBe("http://localhost:3017/f7/factors/factor%20id%2F1/distribution-fit");
+    expect((fetchMock.mock.calls[5]?.[1] as RequestInit).method).toBe("POST");
+    expect(JSON.parse(((fetchMock.mock.calls[5]?.[1] as RequestInit).body as string))).toEqual({ sessionId: "s-1" });
+
+    expect(fetchMock.mock.calls[6]?.[0]).toBe("http://localhost:3017/f7/session/session%20id%2F01");
+    expect(fetchMock.mock.calls[6]?.[1]).toBeUndefined();
   });
 
   it("maps non-2xx JSON error envelope to controlled F7UiError fields", async () => {
@@ -189,6 +443,77 @@ describe("createF7Client", () => {
       code: "request_failed",
       summary: "Unable to complete the F7 workbench request.",
       suggestedAction: "Retry the action. If the issue persists, restart the local API.",
+      affectedInputReferences: ["f7-web-client"],
+    });
+  });
+
+  it("preserves a complete governed distribution fit payload after deep validation", async () => {
+    const expandedSnapshot = {
+      ...validSnapshot,
+      factors: [{ ...validSnapshot.factors[0], distributionFitResult }],
+    };
+    fetchMock.mockResolvedValue(new Response(JSON.stringify(expandedSnapshot), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+
+    const result = await createF7Client("http://localhost:3017").fitDistribution({
+      sessionId: "s-1",
+      factorId: HASH_B,
+    });
+
+    expect(result).toEqual(expandedSnapshot);
+  });
+
+  it("rejects an otherwise-valid distribution fit payload containing legacy recommendedFamily", async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({
+      ...validSnapshot,
+      factors: [
+        {
+          ...validSnapshot.factors[0],
+          distributionFitResult: {
+            ...distributionFitResult,
+            recommendedFamily: "normal",
+          },
+        },
+      ],
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+    const client = createF7Client("http://localhost:3017");
+
+    await expect(client.fitDistribution({ sessionId: "s-1", factorId: HASH_B })).rejects.toEqual({
+      code: "request_failed",
+      summary: "Unable to complete the F7 workbench request.",
+      suggestedAction: "Retry the action. If the issue persists, restart the local API.",
+      affectedInputReferences: ["f7-web-client"],
+    });
+  });
+
+  it("rejects an otherwise-valid distribution fit payload containing Bootstrap V1", async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({
+      ...validSnapshot,
+      factors: [{
+        ...validSnapshot.factors[0],
+        distributionFitResult: {
+          ...distributionFitResult,
+          candidates: [{
+            ...distributionFitResult.candidates[0],
+            bootstrap: { ...distributionFitResult.candidates[0].bootstrap, methodId: "F7_BOOTSTRAP_V1" },
+          }],
+        },
+      }],
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+
+    await expect(createF7Client("http://localhost:3017").fitDistribution({
+      sessionId: "s-1",
+      factorId: HASH_B,
+    })).rejects.toMatchObject({
+      code: "request_failed",
       affectedInputReferences: ["f7-web-client"],
     });
   });
