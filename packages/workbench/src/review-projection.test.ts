@@ -182,4 +182,116 @@ describe("projectWorksheetReview", () => {
       ruleEntryId: "performance-cpk-below-target",
     });
   });
+
+  it("rebinds evidence to the selected finding instead of retaining the first finding", () => {
+    const input = createReviewInput();
+    const result = projectWorksheetReview({
+      ...input,
+      f4Report: {
+        calculations: [{
+          ...input.f4Report!.calculations![0]!,
+          factors: [
+            input.f4Report!.calculations![0]!.factors![0]!,
+            {
+              ...input.f4Report!.calculations![0]!.factors![0]!,
+              factorName: "B stack to datum",
+              contribution: 0.24,
+              source: { worksheetName: "AJ_GAP", tableId: "table-aj-gap", sourceRow: 24 },
+              trace: { formulaIds: ["factor-b-v1"], sourceCells: ["AJ_GAP!J24"] },
+            },
+          ],
+        }],
+      },
+      f5Report: {
+        ...input.f5Report,
+        worksheets: [{
+          ...input.f5Report!.worksheets![0]!,
+          statements: [
+            ...input.f5Report!.worksheets![0]!.statements!,
+            {
+              statementId: "signal-b-stack",
+              type: "SIGNAL",
+              content: {
+                entryId: "signal-b-stack",
+                requiresEngineeringReview: true,
+                factorSourceRow: 24,
+              },
+            },
+          ],
+        }],
+      },
+    }, { selectedWorksheetName: "AJ_GAP", selectedFindingId: "signal-b-stack" });
+
+    expect(result.selectedFindingId).toBe("signal-b-stack");
+    expect(result.evidence).toMatchObject({
+      sourceRow: 24,
+      sourceCells: ["AJ_GAP!J24"],
+      formulaIds: ["cpk-v1"],
+    });
+  });
+
+  it("rejects same-name worksheet artifacts from a different review context", () => {
+    const input = createReviewInput();
+    const result = projectWorksheetReview({
+      ...input,
+      snapshot: {
+        ...input.snapshot,
+        artifactRefs: input.snapshot.artifactRefs!.map((artifact) => ({
+          ...artifact,
+          reviewContextId: artifact.kind === "f5_report" ? "context-rerun-b" : "context-rerun-a",
+          workbookContentHash: "c".repeat(64),
+          selectionHash: "d".repeat(64),
+        })),
+      },
+    }, { selectedWorksheetName: "AJ_GAP" });
+
+    expect(result.findings).toEqual([]);
+    expect(result.evidence).toBeUndefined();
+  });
 });
+
+function createReviewInput() {
+  return {
+    sessionId: "session-review-1",
+    snapshot: {
+      contractVersion: "f8-session-snapshot-v1",
+      sessionId: "session-review-1",
+      revision: 8,
+      inputRevision: 4,
+      state: "review_required",
+      activeAttempt: null,
+      priorRunReferences: [],
+      artifactRefs: [
+        { artifactId: "img-aj-gap", kind: "f1_image", revision: 1, validated: true },
+        { artifactId: "f4-report-aj-gap", kind: "f4_report", revision: 6, validated: true },
+        { artifactId: "f5-report-aj-gap", kind: "f5_report", revision: 7, validated: true },
+        { artifactId: "f6-report-aj-gap", kind: "f6_report", revision: 8, validated: true },
+      ],
+    },
+    f4Report: {
+      calculations: [{
+        worksheetSelection: { worksheetName: "AJ_GAP", tableId: "table-aj-gap" },
+        capability: { cpk: 1.02, status: "FAIL" },
+        traceRecords: [{ outputField: "capability.cpk", formulaId: "cpk-v1" }],
+        factors: [{
+          factorName: "AJ center to C-bucket",
+          contribution: 0.62,
+          source: { worksheetName: "AJ_GAP", tableId: "table-aj-gap", sourceRow: 15 },
+          trace: { formulaIds: ["factor-mean-v1"], sourceCells: ["AJ_GAP!J15", "AJ_GAP!K15", "AJ_GAP!L15"] },
+        }],
+      }],
+    },
+    f5Report: {
+      worksheets: [{
+        worksheetName: "AJ_GAP",
+        tableId: "table-aj-gap",
+        statements: [{
+          statementId: "signal-major-contribution",
+          type: "SIGNAL",
+          content: { entryId: "signal-major-contribution", requiresEngineeringReview: true },
+        }],
+      }],
+    },
+    f6Report: { worksheets: [{ worksheetName: "AJ_GAP", options: [] }] },
+  };
+}

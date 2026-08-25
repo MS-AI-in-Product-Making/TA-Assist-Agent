@@ -1,4 +1,4 @@
-import type { WorksheetReviewModel } from "../../../../packages/workbench/src/review-projection.js";
+import type { WorksheetReviewModel } from "@ai-assist/workbench";
 
 import { ConclusionPane } from "./ConclusionPane.js";
 import { EvidencePane } from "./EvidencePane.js";
@@ -26,13 +26,23 @@ export function WorksheetReview({ review, onSelectWorksheet, onSelectFinding }: 
               <h2 id="worksheet-queue-title">Worksheet Queue</h2>
             </div>
           </div>
-          <div className="choice-group" role="list">
-            {review.worksheets.map((worksheet) => (
+          <div className="choice-group" role="tablist" aria-label="Worksheet queue" aria-orientation="vertical">
+            {review.worksheets.map((worksheet, index) => (
               <button
                 key={worksheet.worksheetName}
                 type="button"
                 className={`button review-finding-button${worksheet.worksheetName === review.selectedWorksheetName ? " review-finding-button--active" : ""}`}
                 onClick={() => onSelectWorksheet?.(worksheet.worksheetName)}
+                onKeyDown={(event) => {
+                  const buttons = [...event.currentTarget.parentElement!.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+                  const targetIndex = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : event.key === "ArrowDown" ? (index + 1) % buttons.length : event.key === "ArrowUp" ? (index - 1 + buttons.length) % buttons.length : undefined;
+                  if (targetIndex !== undefined) { event.preventDefault(); buttons[targetIndex]?.focus(); onSelectWorksheet?.(review.worksheets[targetIndex]!.worksheetName); }
+                }}
+                role="tab"
+                id={`worksheet-tab-${index}`}
+                aria-controls="worksheet-review-panel"
+                aria-selected={worksheet.worksheetName === review.selectedWorksheetName}
+                tabIndex={worksheet.worksheetName === review.selectedWorksheetName ? 0 : -1}
               >
                 {worksheet.worksheetName} · {worksheet.status} · {worksheet.findingCount}
               </button>
@@ -41,6 +51,7 @@ export function WorksheetReview({ review, onSelectWorksheet, onSelectFinding }: 
         </section>
 
         <EvidencePane
+          id="worksheet-review-panel"
           evidence={review.evidence}
           analysisContext={review.analysisContext}
           optimizationTargets={review.optimizationTargets}

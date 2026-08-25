@@ -1,4 +1,4 @@
-import type { ReviewReportLink } from "../../../../packages/workbench/src/review-projection.js";
+import type { ReviewReportLink } from "@ai-assist/workbench";
 
 export interface ReportLinkProps {
   readonly sessionId: string;

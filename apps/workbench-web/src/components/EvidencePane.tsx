@@ -1,14 +1,15 @@
-import type { ReviewCard, ReviewEvidencePane } from "../../../../packages/workbench/src/review-projection.js";
+import type { ReviewCard, ReviewEvidencePane } from "@ai-assist/workbench";
 
 export interface EvidencePaneProps {
+  readonly id?: string;
   readonly evidence?: ReviewEvidencePane;
   readonly analysisContext?: ReviewCard;
   readonly optimizationTargets?: ReviewCard;
 }
 
-export function EvidencePane({ evidence, analysisContext, optimizationTargets }: EvidencePaneProps) {
+export function EvidencePane({ id, evidence, analysisContext, optimizationTargets }: EvidencePaneProps) {
   return (
-    <section className="panel review-pane" aria-labelledby="review-evidence-title">
+    <section id={id} className="panel review-pane" role="tabpanel" aria-labelledby="worksheet-queue-title review-evidence-title">
       <div className="panel__header">
         <div>
           <p className="eyebrow">Evidence</p>
@@ -19,13 +20,13 @@ export function EvidencePane({ evidence, analysisContext, optimizationTargets }:
         <div className="stack">
           <p><strong>Source Row {evidence.sourceRow}</strong></p>
           <div className="token-row" aria-label="source cells">
-            {evidence.sourceCells.map((cell) => <span key={cell} className="token-chip">{cell}</span>)}
+            {evidence.sourceCells.map((cell) => <button key={cell} type="button" className="token-chip" aria-current="true">{cell}</button>)}
           </div>
           <div className="token-row" aria-label="formula ids">
-            {evidence.formulaIds.map((formulaId) => <span key={formulaId} className="token-chip">{formulaId}</span>)}
+            {evidence.formulaIds.map((formulaId) => <button key={formulaId} type="button" className="token-chip">{formulaId}</button>)}
           </div>
-          {evidence.ruleEntryId !== undefined ? <p>F0 Rule: {evidence.ruleEntryId}</p> : null}
-          {evidence.imageArtifactId !== undefined ? <p>Image Artifact: {evidence.imageArtifactId}</p> : null}
+          {evidence.ruleEntryId !== undefined ? <button type="button">F0 Rule: {evidence.ruleEntryId}</button> : null}
+          {evidence.imageArtifactId !== undefined ? <button type="button">Image Artifact: {evidence.imageArtifactId}</button> : null}
           <div>
             <h3 className="subheading">Bound Factors</h3>
             <ul className="compact-list">

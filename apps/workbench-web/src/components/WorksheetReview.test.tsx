@@ -80,13 +80,17 @@ describe("WorksheetReview", () => {
     expect(screen.getByRole("heading", { name: "Worksheet Queue" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "Read-only Evidence" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "Finding and Action" })).toBeVisible();
+    expect(screen.getByRole("tablist", { name: "Worksheet queue" })).toBeVisible();
+    expect(screen.getByRole("tab", { name: /AJ_GAP/ })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("listbox", { name: "Engineering findings" })).toBeVisible();
     expect(screen.getByText("Source Row 15")).toBeVisible();
     expect(screen.getByText("AJ_GAP!J15")).toBeVisible();
     expect(screen.getByText("OP1 Centering")).toBeVisible();
     expect(screen.getByRole("link", { name: "下载当前报告" })).toHaveAttribute("href", "/api/sessions/session-review-1/artifacts/f6-report-aj-gap");
 
-    await user.click(screen.getByRole("button", { name: "Cpk below target" }));
+    await user.click(screen.getByRole("option", { name: "Cpk below target" }));
     expect(selected).toEqual(["finding-cpk"]);
+    expect(screen.getByRole("option", { name: "Cpk below target" })).toHaveAttribute("aria-selected", "true");
   });
 
   it("shows F7 as unavailable without measured values", () => {

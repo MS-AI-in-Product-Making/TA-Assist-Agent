@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import type { ReviewFinding } from "../../../../packages/workbench/src/review-projection.js";
+import type { ReviewFinding } from "@ai-assist/workbench";
 
 import { F6Options } from "./F6Options.js";
 import { ReportLink } from "./ReportLink.js";
@@ -36,12 +36,14 @@ export function ConclusionPane({ sessionId, findings, selectedFindingId, onSelec
       <div className="stack">
         <div>
           <h3 className="subheading">Findings</h3>
-          <div className="choice-group" role="list">
+          <div className="choice-group" role="listbox" aria-label="Engineering findings">
             {findings.map((finding) => (
               <button
                 key={finding.findingId}
                 type="button"
                 className={`button review-finding-button${finding.findingId === activeFinding?.findingId ? " review-finding-button--active" : ""}`}
+                role="option"
+                aria-selected={finding.findingId === activeFinding?.findingId}
                 onClick={() => {
                   setActiveFindingId(finding.findingId);
                   onSelectFinding?.(finding.findingId);

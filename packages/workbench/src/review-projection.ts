@@ -71,6 +71,11 @@ export interface WorksheetReviewModel {
   readonly report?: ReviewReportLink;
 }
 
+export interface ReviewSelection {
+  readonly selectedWorksheetName: string;
+  readonly selectedFindingId?: string;
+}
+
 interface ReviewProjectionInput {
   readonly sessionId: string;
   readonly snapshot: F8SessionSnapshot;
@@ -130,6 +135,7 @@ interface F5StatementLike {
   readonly content?: {
     readonly entryId?: string;
     readonly requiresEngineeringReview?: boolean;
+    readonly factorSourceRow?: number;
   };
 }
 
@@ -162,7 +168,19 @@ interface F6OptionLike {
   };
 }
 
-export function projectWorksheetReview(input: ReviewProjectionInput, worksheetName: string): WorksheetReviewModel {
+export function projectWorksheetReview(input: ReviewProjectionInput, selection: ReviewSelection | string): WorksheetReviewModel {
+  const { selectedWorksheetName: worksheetName, selectedFindingId } = typeof selection === "string"
+    ? { selectedWorksheetName: selection }
+    : selection;
+  if (!hasCompatibleReviewContext(input.snapshot)) {
+    return {
+      sessionId: input.sessionId,
+      worksheets: collectWorksheetNames(input).map((name) => ({ worksheetName: name, status: "completed", findingCount: 0 })),
+      selectedWorksheetName: worksheetName,
+      findings: [],
+      f6Options: [],
+    };
+  }
   const worksheetNames = collectWorksheetNames(input);
   const calculation = input.f4Report?.calculations?.find((item) => item.worksheetSelection?.worksheetName === worksheetName);
   const interpretation = input.f5Report?.worksheets?.find((item) => item.worksheetName === worksheetName);
@@ -170,8 +188,17 @@ export function projectWorksheetReview(input: ReviewProjectionInput, worksheetNa
   const dominantFactor = selectDominantFactor(calculation);
   const ruleStatement = interpretation?.statements?.find((statement) => statement.type === "RULE");
   const reviewSignals = (interpretation?.statements ?? []).filter((statement) => statement.type === "SIGNAL" && statement.content?.requiresEngineeringReview === true);
-  const findings = createFindings({ worksheetName, calculation, ruleStatement, reviewSignals, dominantFactor, optimization, imageArtifactId: latestValidatedArtifactId(input.snapshot, "f1_image") });
-  const selectedFinding = findings[0];
+  const imageArtifactId = latestValidatedArtifactId(input.snapshot, "f1_image");
+  const findings = createFindings({
+    worksheetName,
+    ...(calculation === undefined ? {} : { calculation }),
+    ...(ruleStatement === undefined ? {} : { ruleStatement }),
+    reviewSignals,
+    ...(dominantFactor === undefined ? {} : { dominantFactor }),
+    ...(optimization === undefined ? {} : { optimization }),
+    ...(imageArtifactId === undefined ? {} : { imageArtifactId }),
+  });
+  const selectedFinding = findings.find((finding) => finding.findingId === selectedFindingId) ?? findings[0];
 
   return {
     sessionId: input.sessionId,
@@ -181,30 +208,34 @@ export function projectWorksheetReview(input: ReviewProjectionInput, worksheetNa
       findingCount: name === worksheetName ? findings.length : countFindingsForWorksheet(input, name),
     })),
     selectedWorksheetName: worksheetName,
-    selectedFindingId: selectedFinding?.findingId,
+    ...(selectedFinding === undefined ? {} : { selectedFindingId: selectedFinding.findingId }),
     findings,
-    evidence: selectedFinding === undefined || dominantFactor === undefined ? undefined : {
-      worksheetName,
-      imageArtifactId: selectedFinding.evidence.imageArtifactId,
-      sourceRow: selectedFinding.evidence.sourceRow,
-      sourceCells: selectedFinding.evidence.sourceCells,
-      formulaIds: selectedFinding.evidence.formulaIds,
-      ruleEntryId: selectedFinding.evidence.ruleEntryId,
-      factors: (calculation?.factors ?? []).map((factor) => ({
-        factorName: factor.factorName ?? "Unnamed factor",
-        contribution: factor.contribution,
-        sourceRow: factor.source?.sourceRow ?? selectedFinding.evidence.sourceRow,
-      })),
-    },
-    analysisContext: createAnalysisContext(interpretation),
-    optimizationTargets: createOptimizationTargets(optimization),
+    ...(selectedFinding === undefined ? {} : { evidence: createEvidencePane(worksheetName, calculation, selectedFinding) }),
+    ...(createAnalysisContext(interpretation) === undefined ? {} : { analysisContext: createAnalysisContext(interpretation)! }),
+    ...(createOptimizationTargets(optimization) === undefined ? {} : { optimizationTargets: createOptimizationTargets(optimization)! }),
     f6Options: createOptionSummaries(optimization),
-    report: latestValidatedArtifactId(input.snapshot, "f6_report") === undefined
-      ? undefined
-      : {
+    ...(latestValidatedArtifactId(input.snapshot, "f6_report") === undefined ? {} : {
+      report: {
         artifactId: latestValidatedArtifactId(input.snapshot, "f6_report")!,
         label: "下载当前报告",
       },
+    }),
+  };
+}
+
+function createEvidencePane(worksheetName: string, calculation: CalculationLike | undefined, finding: ReviewFinding): ReviewEvidencePane {
+  return {
+    worksheetName,
+    ...(finding.evidence.imageArtifactId === undefined ? {} : { imageArtifactId: finding.evidence.imageArtifactId }),
+    sourceRow: finding.evidence.sourceRow,
+    sourceCells: finding.evidence.sourceCells,
+    formulaIds: finding.evidence.formulaIds,
+    ...(finding.evidence.ruleEntryId === undefined ? {} : { ruleEntryId: finding.evidence.ruleEntryId }),
+    factors: (calculation?.factors ?? []).map((factor) => ({
+      factorName: factor.factorName ?? "Unnamed factor",
+      ...(factor.contribution === undefined ? {} : { contribution: factor.contribution }),
+      sourceRow: factor.source?.sourceRow ?? finding.evidence.sourceRow,
+    })),
   };
 }
 
@@ -241,7 +272,7 @@ function createFindings(input: {
   readonly calculation?: CalculationLike;
   readonly ruleStatement?: F5StatementLike;
   readonly reviewSignals: readonly F5StatementLike[];
-  readonly dominantFactor?: CalculationLike["factors"][number];
+  readonly dominantFactor?: NonNullable<CalculationLike["factors"]>[number];
   readonly optimization?: F6WorksheetLike;
   readonly imageArtifactId?: string;
 }): ReviewFinding[] {
@@ -252,25 +283,31 @@ function createFindings(input: {
   const evidence: ReviewFindingEvidence = {
     sourceRow: input.dominantFactor.source.sourceRow,
     sourceCells: input.dominantFactor.trace?.sourceCells ?? [],
-    imageArtifactId: input.imageArtifactId,
     formulaIds: collectFormulaIds(input.calculation, input.dominantFactor),
-    ruleEntryId: input.ruleStatement?.content?.entryId,
+    ...(input.imageArtifactId === undefined ? {} : { imageArtifactId: input.imageArtifactId }),
+    ...(input.ruleStatement?.content?.entryId === undefined ? {} : { ruleEntryId: input.ruleStatement.content.entryId }),
   };
 
   const actionOption = createOptionSummaries(input.optimization)[0];
   const sourceFindings = input.reviewSignals.length > 0 ? input.reviewSignals : [input.ruleStatement].filter((value): value is F5StatementLike => value !== undefined);
 
-  return sourceFindings.map((statement, index) => ({
-    findingId: statement.statementId ?? statement.content?.entryId ?? `finding-${index + 1}`,
-    title: formatLabel(statement.content?.entryId ?? statement.statementId ?? "Engineering review"),
-    severity: (input.calculation?.capability?.status ?? "").toUpperCase() === "FAIL" ? "high" : "medium",
-    summary: createFindingSummary(statement, input.calculation?.capability?.cpk),
-    evidence,
-    action: actionOption === undefined ? undefined : {
-      title: actionOption.label,
-      summary: actionOption.summary,
-    },
-  }));
+  return sourceFindings.map((statement, index) => {
+    const boundFactor = statement.content?.factorSourceRow === undefined
+      ? input.dominantFactor
+      : input.calculation?.factors?.find((factor) => factor.source?.sourceRow === statement.content?.factorSourceRow) ?? input.dominantFactor;
+    return {
+      findingId: statement.statementId ?? statement.content?.entryId ?? `finding-${index + 1}`,
+      title: formatLabel(statement.content?.entryId ?? statement.statementId ?? "Engineering review"),
+      severity: (input.calculation?.capability?.status ?? "").toUpperCase() === "FAIL" ? "high" : "medium",
+      summary: createFindingSummary(statement, input.calculation?.capability?.cpk),
+      evidence: {
+        ...evidence,
+        sourceRow: boundFactor?.source?.sourceRow ?? evidence.sourceRow,
+        sourceCells: boundFactor?.trace?.sourceCells ?? evidence.sourceCells,
+      },
+      ...(actionOption === undefined ? {} : { action: { title: actionOption.label, summary: actionOption.summary } }),
+    };
+  });
 }
 
 function collectFormulaIds(calculation: CalculationLike | undefined, factor: NonNullable<CalculationLike["factors"]>[number]): string[] {
@@ -323,15 +360,18 @@ function createOptimizationTargets(worksheet: F6WorksheetLike | undefined): Revi
 }
 
 function createOptionSummaries(worksheet: F6WorksheetLike | undefined): ReviewOptionSummary[] {
-  return (worksheet?.options ?? []).map((option) => ({
-    optionId: option.optionId ?? option.label ?? "option",
-    label: option.label ?? option.title ?? option.policyContext?.optionCode ?? formatLabel(option.optionId ?? "option"),
-    status: option.status ?? "unknown",
-    deltaCpk: option.expectedMetrics?.deltaCpk
+  return (worksheet?.options ?? []).map((option) => {
+    const deltaCpk = option.expectedMetrics?.deltaCpk
       ?? calculateDelta(option.baselineMetrics?.cpk, option.resultMetrics?.cpk)
-      ?? calculateDelta(option.expectedMetrics?.baselineCpk, option.expectedMetrics?.scenarioCpk),
-    summary: option.summary ?? option.targetId ?? "Validated option summary unavailable.",
-  }));
+      ?? calculateDelta(option.expectedMetrics?.baselineCpk, option.expectedMetrics?.scenarioCpk);
+    return {
+      optionId: option.optionId ?? option.label ?? "option",
+      label: option.label ?? option.title ?? option.policyContext?.optionCode ?? formatLabel(option.optionId ?? "option"),
+      status: option.status ?? "unknown",
+      ...(deltaCpk === undefined ? {} : { deltaCpk }),
+      summary: option.summary ?? option.targetId ?? "Validated option summary unavailable.",
+    };
+  });
 }
 
 function calculateDelta(before: number | undefined, after: number | undefined): number | undefined {
@@ -344,4 +384,12 @@ function formatLabel(value: string): string {
     return value;
   }
   return normalized.replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function hasCompatibleReviewContext(snapshot: F8SessionSnapshot): boolean {
+  const contexts = (snapshot.artifactRefs ?? [])
+    .filter((artifact) => ["f1_image", "f3_report", "f4_report", "f5_report", "f6_report"].includes(artifact.kind))
+    .map((artifact) => (artifact as typeof artifact & { readonly reviewContextId?: unknown }).reviewContextId)
+    .filter((context): context is string => typeof context === "string" && context.length > 0);
+  return contexts.length === 0 || new Set(contexts).size === 1;
 }

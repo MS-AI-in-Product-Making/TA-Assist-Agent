@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import type { ConversationTurn, F2UserReport } from "@ai-assist/contracts";
-import { projectWorksheetReview } from "../../../packages/workbench/src/review-projection.js";
+import { projectWorksheetReview } from "@ai-assist/workbench";
 
 import { AnalysisProgress } from "./components/AnalysisProgress.js";
 import { ConversationPane } from "./components/ConversationPane.js";
@@ -32,6 +32,7 @@ export function App({ api, preloadedState, initialWorksheetOptions, downstreamWo
   const liveSession = useWorkbenchSession(api, { enabled: preloadedState === undefined });
   const session = preloadedState === undefined ? liveSession : createPreloadedSession(liveSession, preloadedState);
   const [selectedReviewWorksheet, setSelectedReviewWorksheet] = useState<string>();
+  const [selectedReviewFinding, setSelectedReviewFinding] = useState<string>();
 
   const initialOptions: WorksheetOption[] = initialWorksheetOptions !== undefined ? [...initialWorksheetOptions] : (session.snapshot?.worksheetCapabilities ?? []).map((capability) => ({
     worksheetName: capability.worksheetName,
@@ -52,7 +53,7 @@ export function App({ api, preloadedState, initialWorksheetOptions, downstreamWo
       f4Report: session.f4Report,
       f5Report: session.f5Report,
       f6Report: session.f6Report,
-    }, effectiveReviewWorksheet)
+    }, { selectedWorksheetName: effectiveReviewWorksheet, selectedFindingId: selectedReviewFinding })
     : undefined;
   const f7Status = session.featureLedger.find((entry) => entry.featureId === "F7");
 
@@ -120,7 +121,10 @@ export function App({ api, preloadedState, initialWorksheetOptions, downstreamWo
               rationale: rationale.length === 0 ? undefined : rationale,
             })}
           />
-          {review !== undefined ? <WorksheetReview review={review} onSelectWorksheet={setSelectedReviewWorksheet} /> : null}
+          {review !== undefined ? <WorksheetReview review={review} onSelectWorksheet={(worksheetName) => {
+            setSelectedReviewWorksheet(worksheetName);
+            setSelectedReviewFinding(undefined);
+          }} onSelectFinding={setSelectedReviewFinding} /> : null}
           <ActionQueue items={session.actionQueue} />
           {f7Status !== undefined ? <F7Placeholder status={f7Status} /> : null}
         </section>
