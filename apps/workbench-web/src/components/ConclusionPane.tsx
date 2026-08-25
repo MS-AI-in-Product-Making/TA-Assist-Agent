@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import type { ReviewFinding } from "@ai-assist/workbench";
+import type { ReviewFinding } from "@ai-assist/workbench/review";
 
 import { F6Options } from "./F6Options.js";
 import { ReportLink } from "./ReportLink.js";

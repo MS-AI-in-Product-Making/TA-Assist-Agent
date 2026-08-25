@@ -1,4 +1,4 @@
-import type { ReviewReportLink } from "@ai-assist/workbench";
+import type { ReviewReportLink } from "@ai-assist/workbench/review";
 
 export interface ReportLinkProps {
   readonly sessionId: string;

@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import type { ConversationTurn, F2UserReport } from "@ai-assist/contracts";
-import { projectWorksheetReview } from "@ai-assist/workbench";
+import { projectWorksheetReview } from "@ai-assist/workbench/review";
 
 import { AnalysisProgress } from "./components/AnalysisProgress.js";
 import { ConversationPane } from "./components/ConversationPane.js";

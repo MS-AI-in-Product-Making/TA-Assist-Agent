@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import type { WorksheetReviewModel } from "@ai-assist/workbench";
+import type { WorksheetReviewModel } from "@ai-assist/workbench/review";
 
 import { ConclusionPane } from "./ConclusionPane.js";
 import { EvidencePane } from "./EvidencePane.js";

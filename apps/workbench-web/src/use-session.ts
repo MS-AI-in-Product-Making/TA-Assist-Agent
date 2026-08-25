@@ -10,7 +10,7 @@ import {
   type F6OptimizationResultV2,
   type TypedError,
 } from "@ai-assist/contracts";
-import { selectCompleteReviewContext } from "@ai-assist/workbench";
+import { selectCompleteReviewContext } from "@ai-assist/workbench/review";
 
 import { createWorkbenchApi, type WorkbenchApi } from "./api.js";
 import { projectActionQueue, projectFeatureLedger, type F8CommandKind, type F8SessionSnapshot } from "./workbench-session.js";

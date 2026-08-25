@@ -1,4 +1,4 @@
-import type { ReviewOptionSummary } from "@ai-assist/workbench";
+import type { ReviewOptionSummary } from "@ai-assist/workbench/review";
 
 export interface F6OptionsProps {
   readonly options: readonly ReviewOptionSummary[];

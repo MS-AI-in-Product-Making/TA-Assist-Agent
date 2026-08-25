@@ -1,4 +1,5 @@
 import type { F8SessionSnapshot } from "./commands.js";
+import type { ReviewContextId } from "./review-context-types.js";
 
 export interface ReviewFindingEvidence {
   readonly sourceRow: number;
@@ -83,11 +84,11 @@ export interface ReviewContextArtifact {
   readonly kind: ReviewArtifactKind;
   readonly revision: number;
   readonly validated: boolean;
-  readonly reviewContextId: string;
+  readonly reviewContextId: ReviewContextId;
 }
 
 export interface CompleteReviewContext {
-  readonly reviewContextId: string;
+  readonly reviewContextId: ReviewContextId;
   readonly artifacts: ReadonlyMap<ReviewArtifactKind, ReviewContextArtifact>;
 }
 
@@ -289,7 +290,7 @@ function collectWorksheetNames(input: ReviewProjectionInput): string[] {
 
 export function selectCompleteReviewContext(snapshot: F8SessionSnapshot): CompleteReviewContext | undefined {
   const currentRevision = snapshot.revision;
-  const contexts = new Map<string, Map<ReviewArtifactKind, ReviewContextArtifact>>();
+  const contexts = new Map<ReviewContextId, Map<ReviewArtifactKind, ReviewContextArtifact>>();
   for (const artifact of snapshot.artifactRefs ?? []) {
     if (!isReviewArtifact(artifact) || !artifact.validated || artifact.revision !== currentRevision || artifact.reviewContextId === undefined) {
       continue;

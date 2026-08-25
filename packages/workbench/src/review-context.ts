@@ -1,17 +1,15 @@
 import { createHash } from "node:crypto";
 
-export interface ReviewContextIdentity {
-  readonly workbookHash: string;
-  readonly downstreamSelectionHash: string;
-  readonly baselineRunReference: string;
-}
+import type { ReviewContextId, ReviewContextIdentity } from "./review-context-types.js";
 
-export function createReviewContextId(identity: ReviewContextIdentity): string {
+export type { ReviewContextId, ReviewContextIdentity } from "./review-context-types.js";
+
+export function createReviewContextId(identity: ReviewContextIdentity): ReviewContextId {
   return createHash("sha256")
     .update(JSON.stringify({
       workbookHash: identity.workbookHash,
       downstreamSelectionHash: identity.downstreamSelectionHash,
       baselineRunReference: identity.baselineRunReference,
     }))
-    .digest("hex");
+    .digest("hex") as ReviewContextId;
 }

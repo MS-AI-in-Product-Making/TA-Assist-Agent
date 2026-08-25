@@ -1,4 +1,4 @@
-import type { ReviewCard, ReviewEvidencePane } from "@ai-assist/workbench";
+import type { ReviewCard, ReviewEvidencePane } from "@ai-assist/workbench/review";
 
 export interface EvidencePaneProps {
   readonly id?: string;
