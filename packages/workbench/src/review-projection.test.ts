@@ -15,10 +15,10 @@ describe("projectWorksheetReview", () => {
         activeAttempt: null,
         priorRunReferences: [],
         artifactRefs: [
-          { artifactId: "img-aj-gap", kind: "f1_image", revision: 1, validated: true },
-          { artifactId: "f4-report-aj-gap", kind: "f4_report", revision: 6, validated: true },
-          { artifactId: "f5-report-aj-gap", kind: "f5_report", revision: 7, validated: true },
-          { artifactId: "f6-report-aj-gap", kind: "f6_report", revision: 8, validated: true },
+          { artifactId: "img-aj-gap", kind: "f1_image", revision: 8, validated: true, reviewContextId: "context-review-1" },
+          { artifactId: "f4-report-aj-gap", kind: "f4_report", revision: 8, validated: true, reviewContextId: "context-review-1" },
+          { artifactId: "f5-report-aj-gap", kind: "f5_report", revision: 8, validated: true, reviewContextId: "context-review-1" },
+          { artifactId: "f6-report-aj-gap", kind: "f6_report", revision: 8, validated: true, reviewContextId: "context-review-1" },
         ],
       },
       f4Report: {
@@ -248,6 +248,85 @@ describe("projectWorksheetReview", () => {
     expect(result.findings).toEqual([]);
     expect(result.evidence).toBeUndefined();
   });
+
+  it("rejects review artifacts that omit the required review context id", () => {
+    const input = createReviewInput();
+    const result = projectWorksheetReview({
+      ...input,
+      snapshot: {
+        ...input.snapshot,
+        artifactRefs: input.snapshot.artifactRefs!.map((artifact) => {
+          const withoutContext = { ...artifact };
+          delete (withoutContext as { reviewContextId?: string }).reviewContextId;
+          return withoutContext;
+        }),
+      },
+    }, { selectedWorksheetName: "AJ_GAP" });
+
+    expect(result.findings).toEqual([]);
+    expect(result.evidence).toBeUndefined();
+  });
+
+  it("rejects a review context without every required current artifact", () => {
+    const input = createReviewInput();
+    const result = projectWorksheetReview({
+      ...input,
+      snapshot: {
+        ...input.snapshot,
+        artifactRefs: input.snapshot.artifactRefs!.filter((artifact) => artifact.kind !== "f5_report").map((artifact) => ({
+          ...artifact,
+          reviewContextId: "context-rerun-a",
+        })),
+      },
+    }, { selectedWorksheetName: "AJ_GAP" });
+
+    expect(result.findings).toEqual([]);
+    expect(result.evidence).toBeUndefined();
+  });
+
+  it("uses only the complete active-revision context when the worksheet is rerun", () => {
+    const input = createReviewInput();
+    const currentContext = "context-rerun-current";
+    const result = projectWorksheetReview({
+      ...input,
+      snapshot: {
+        ...input.snapshot,
+        artifactRefs: [
+          ...input.snapshot.artifactRefs!.map((artifact) => ({
+            ...artifact,
+            reviewContextId: "context-rerun-stale",
+            revision: 7,
+          })),
+          ...input.snapshot.artifactRefs!.map((artifact) => ({
+            ...artifact,
+            artifactId: `${artifact.artifactId}-current`,
+            reviewContextId: currentContext,
+            revision: 8,
+          })),
+        ],
+      },
+    }, { selectedWorksheetName: "AJ_GAP" });
+
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0]!.evidence.imageArtifactId).toBe("img-aj-gap-current");
+    expect(result.report?.artifactId).toBe("f6-report-aj-gap-current");
+  });
+
+  it("rejects same-context reports whose worksheet table identity is mixed", () => {
+    const input = createReviewInput();
+    const result = projectWorksheetReview({
+      ...input,
+      f6Report: {
+        worksheets: [{
+          ...input.f6Report!.worksheets![0]!,
+          baselineIdentity: { worksheetName: "AJ_GAP", tableId: "table-from-another-run" },
+        }],
+      },
+    }, { selectedWorksheetName: "AJ_GAP" });
+
+    expect(result.findings).toEqual([]);
+    expect(result.worksheets[0]?.status).toBe("evidence_mismatch");
+  });
 });
 
 function createReviewInput() {
@@ -262,10 +341,10 @@ function createReviewInput() {
       activeAttempt: null,
       priorRunReferences: [],
       artifactRefs: [
-        { artifactId: "img-aj-gap", kind: "f1_image", revision: 1, validated: true },
-        { artifactId: "f4-report-aj-gap", kind: "f4_report", revision: 6, validated: true },
-        { artifactId: "f5-report-aj-gap", kind: "f5_report", revision: 7, validated: true },
-        { artifactId: "f6-report-aj-gap", kind: "f6_report", revision: 8, validated: true },
+        { artifactId: "img-aj-gap", kind: "f1_image", revision: 8, validated: true, reviewContextId: "context-review-1" },
+        { artifactId: "f4-report-aj-gap", kind: "f4_report", revision: 8, validated: true, reviewContextId: "context-review-1" },
+        { artifactId: "f5-report-aj-gap", kind: "f5_report", revision: 8, validated: true, reviewContextId: "context-review-1" },
+        { artifactId: "f6-report-aj-gap", kind: "f6_report", revision: 8, validated: true, reviewContextId: "context-review-1" },
       ],
     },
     f4Report: {
@@ -292,6 +371,6 @@ function createReviewInput() {
         }],
       }],
     },
-    f6Report: { worksheets: [{ worksheetName: "AJ_GAP", options: [] }] },
+    f6Report: { worksheets: [{ worksheetName: "AJ_GAP", baselineIdentity: { worksheetName: "AJ_GAP", tableId: "table-aj-gap" }, options: [] }] },
   };
 }

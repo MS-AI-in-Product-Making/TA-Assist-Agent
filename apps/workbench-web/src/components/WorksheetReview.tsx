@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import type { WorksheetReviewModel } from "@ai-assist/workbench";
 
 import { ConclusionPane } from "./ConclusionPane.js";
@@ -10,6 +12,8 @@ export interface WorksheetReviewProps {
 }
 
 export function WorksheetReview({ review, onSelectWorksheet, onSelectFinding }: WorksheetReviewProps) {
+  const [evidenceDetail, setEvidenceDetail] = useState<string>();
+  const selectedTabId = worksheetTabId(review.selectedWorksheetName);
   return (
     <section className="panel" aria-labelledby="worksheet-review-title">
       <div className="panel__header">
@@ -39,7 +43,7 @@ export function WorksheetReview({ review, onSelectWorksheet, onSelectFinding }: 
                   if (targetIndex !== undefined) { event.preventDefault(); buttons[targetIndex]?.focus(); onSelectWorksheet?.(review.worksheets[targetIndex]!.worksheetName); }
                 }}
                 role="tab"
-                id={`worksheet-tab-${index}`}
+                id={worksheetTabId(worksheet.worksheetName)}
                 aria-controls="worksheet-review-panel"
                 aria-selected={worksheet.worksheetName === review.selectedWorksheetName}
                 tabIndex={worksheet.worksheetName === review.selectedWorksheetName ? 0 : -1}
@@ -52,9 +56,15 @@ export function WorksheetReview({ review, onSelectWorksheet, onSelectFinding }: 
 
         <EvidencePane
           id="worksheet-review-panel"
+          labelledBy={selectedTabId}
           evidence={review.evidence}
           analysisContext={review.analysisContext}
           optimizationTargets={review.optimizationTargets}
+          detail={evidenceDetail}
+          onFocusSource={(cell) => setEvidenceDetail(`Source evidence focused: ${cell}`)}
+          onShowFormula={(formulaId) => setEvidenceDetail(`Formula evidence: ${formulaId}`)}
+          onShowRule={(ruleEntryId) => setEvidenceDetail(`F0 rule evidence: ${ruleEntryId}`)}
+          onOpenArtifact={(artifactId) => setEvidenceDetail(`Authenticated artifact route: /api/sessions/${encodeURIComponent(review.sessionId)}/artifacts/${encodeURIComponent(artifactId)}`)}
         />
 
         <ConclusionPane
@@ -68,4 +78,8 @@ export function WorksheetReview({ review, onSelectWorksheet, onSelectFinding }: 
       </div>
     </section>
   );
+}
+
+function worksheetTabId(worksheetName: string): string {
+  return `worksheet-tab-${encodeURIComponent(worksheetName).replace(/%/g, "_")}`;
 }

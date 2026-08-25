@@ -365,6 +365,30 @@ describe("SessionStore", () => {
     }
   });
 
+  it("requires and persists a deterministic opaque review context for review artifacts", async () => {
+    const rootDir = await createTempRoot();
+    const store = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+    try {
+      await expect(store.applyCommand(commandAt(0, COMMAND_ID), (snapshot) => ({
+        snapshot: snapshotWithAttempt({ revision: snapshot.revision, state: "f1_f2_running", activeAttempt: { attemptId: ATTEMPT_ID, stage: "f1_f2_running", status: "running", commandId: COMMAND_ID, startedAt: "2026-08-24T00:00:00.000Z" } }),
+        artifactReferences: [{ ...artifactReference("f6-review"), kind: "f6_report" }],
+      }))).rejects.toMatchObject({ code: "validation_error" });
+
+      await store.applyCommand(commandAt(0, COMMAND_ID), (snapshot) => ({
+        snapshot: snapshotWithAttempt({ revision: snapshot.revision, state: "f1_f2_running", activeAttempt: { attemptId: ATTEMPT_ID, stage: "f1_f2_running", status: "running", commandId: COMMAND_ID, startedAt: "2026-08-24T00:00:00.000Z" } }),
+        artifactReferences: [{
+          ...artifactReference("f6-review"),
+          kind: "f6_report",
+          reviewContext: { workbookHash: "a".repeat(64), downstreamSelectionHash: "b".repeat(64), baselineRunReference: "run-1" },
+        }],
+      }));
+
+      expect(readArtifactRefMetadata(rootDir)).toEqual([expect.objectContaining({ reviewContextId: expect.stringMatching(/^[a-f0-9]{64}$/) })]);
+    } finally {
+      await store.close();
+    }
+  });
+
   it.each([
     "afterCommandInsert",
     "afterSnapshotUpdate",
@@ -562,4 +586,13 @@ function acceptWorkbook(snapshot: {
     },
     events: [],
   };
+}
+
+function readArtifactRefMetadata(rootDir: string): unknown[] {
+  const database = openDatabase(rootDir);
+  try {
+    return (database.prepare("SELECT metadata_json FROM artifact_refs ORDER BY artifact_id").all() as Array<{ metadata_json: string }>).map((row) => JSON.parse(row.metadata_json));
+  } finally {
+    database.close();
+  }
 }

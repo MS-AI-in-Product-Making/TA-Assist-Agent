@@ -2,6 +2,8 @@ import { StatementSync } from "node:sqlite";
 
 import { createTypedError, f8ScenarioDraftSchema } from "@ai-assist/contracts";
 
+import { createReviewContextId, type ReviewContextIdentity } from "./review-context.js";
+
 type F8ScenarioDraft = ReturnType<typeof f8ScenarioDraftSchema.parse>;
 
 export interface SessionArtifactReference {
@@ -13,7 +15,10 @@ export interface SessionArtifactReference {
   readonly contentHash?: string;
   readonly manifestHash?: string;
   readonly metadata?: Record<string, unknown>;
+  readonly reviewContext?: ReviewContextIdentity;
 }
+
+const REVIEW_ARTIFACT_KINDS = new Set(["f1_image", "f3_report", "f4_calculation", "f4_report", "f5_report", "f6_optimization", "f6_report"]);
 
 export interface SessionHostActionRecord {
   readonly actionId: string;
@@ -79,7 +84,15 @@ export function normalizeArtifactReferenceOps(
       ensureNonEmptyString(reference.kind, `artifact reference ${reference.artifactId} kind`);
       ensureNonEmptyString(reference.relativePath, `artifact reference ${reference.artifactId} relativePath`);
       ensureSessionOwnership(reference.sessionId, sessionId, `artifact reference ${reference.artifactId}`);
-      return reference;
+      if (!REVIEW_ARTIFACT_KINDS.has(reference.kind)) return reference;
+      if (reference.reviewContext === undefined) {
+        throw createSideTableValidationError(`Review artifact ${reference.artifactId} requires review context identity.`, reference.artifactId);
+      }
+      const reviewContextId = createReviewContextId(reference.reviewContext);
+      return {
+        ...reference,
+        metadata: { ...reference.metadata, reviewContextId },
+      };
     },
     (reference) => reference.artifactId,
     "artifact reference",

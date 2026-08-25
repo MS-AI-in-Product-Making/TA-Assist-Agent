@@ -10,6 +10,7 @@ import {
   type F6OptimizationResultV2,
   type TypedError,
 } from "@ai-assist/contracts";
+import { selectCompleteReviewContext } from "@ai-assist/workbench";
 
 import { createWorkbenchApi, type WorkbenchApi } from "./api.js";
 import { projectActionQueue, projectFeatureLedger, type F8CommandKind, type F8SessionSnapshot } from "./workbench-session.js";
@@ -142,10 +143,11 @@ export function useWorkbenchSession(apiOverride?: WorkbenchApi, options: UseWork
 
       const refs = snapshot.artifactRefs ?? [];
       const f2Artifact = [...refs].reverse().find((artifact) => artifact.kind === "f2_report" && artifact.validated);
-      const f3Artifact = [...refs].reverse().find((artifact) => artifact.kind === "f3_report" && artifact.validated);
-      const f4Artifact = [...refs].reverse().find((artifact) => artifact.kind === "f4_report" && artifact.validated);
-      const f5Artifact = [...refs].reverse().find((artifact) => artifact.kind === "f5_report" && artifact.validated);
-      const f6Artifact = [...refs].reverse().find((artifact) => artifact.kind === "f6_report" && artifact.validated);
+      const reviewContext = selectCompleteReviewContext(snapshot);
+      const f3Artifact = reviewContext?.artifacts.get("f3_report");
+      const f4Artifact = reviewContext?.artifacts.get("f4_report");
+      const f5Artifact = reviewContext?.artifacts.get("f5_report");
+      const f6Artifact = reviewContext?.artifacts.get("f6_report");
 
       try {
         const [nextF2, nextF3, nextF4, nextF5, nextF6] = await Promise.all([

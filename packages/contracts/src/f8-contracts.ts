@@ -101,15 +101,30 @@ const f8PriorRunReferenceSchema = z
   })
   .strict();
 
-const f8ArtifactRefSchema = z
+const f8ReviewArtifactKindSchema = z.enum(["f1_image", "f3_report", "f4_calculation", "f4_report", "f5_report", "f6_optimization", "f6_report"]);
+
+const f8ReviewArtifactRefSchema = z
   .object({
     artifactId: nonEmptyStringSchema,
-    kind: z.enum(["f1_image", "f2_report", "f3_report", "f4_report", "f5_report", "f6_report", "what_if_draft"]),
+    kind: f8ReviewArtifactKindSchema,
+    revision: z.number().int().nonnegative(),
+    validated: z.boolean(),
+    reviewContextId: sha256Schema,
+    sourceReferenceId: nonEmptyStringSchema.optional(),
+  })
+  .strict();
+
+const f8NonReviewArtifactRefSchema = z
+  .object({
+    artifactId: nonEmptyStringSchema,
+    kind: z.enum(["f2_report", "what_if_draft"]),
     revision: z.number().int().nonnegative(),
     validated: z.boolean(),
     sourceReferenceId: nonEmptyStringSchema.optional(),
   })
   .strict();
+
+const f8ArtifactRefSchema = z.union([f8ReviewArtifactRefSchema, f8NonReviewArtifactRefSchema]);
 
 const f8WorksheetCapabilitySchema = z
   .object({

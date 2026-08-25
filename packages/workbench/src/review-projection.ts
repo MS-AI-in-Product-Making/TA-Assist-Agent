@@ -76,6 +76,21 @@ export interface ReviewSelection {
   readonly selectedFindingId?: string;
 }
 
+export type ReviewArtifactKind = "f1_image" | "f3_report" | "f4_calculation" | "f4_report" | "f5_report" | "f6_optimization" | "f6_report";
+
+export interface ReviewContextArtifact {
+  readonly artifactId: string;
+  readonly kind: ReviewArtifactKind;
+  readonly revision: number;
+  readonly validated: boolean;
+  readonly reviewContextId: string;
+}
+
+export interface CompleteReviewContext {
+  readonly reviewContextId: string;
+  readonly artifacts: ReadonlyMap<ReviewArtifactKind, ReviewContextArtifact>;
+}
+
 interface ReviewProjectionInput {
   readonly sessionId: string;
   readonly snapshot: F8SessionSnapshot;
@@ -141,6 +156,10 @@ interface F5StatementLike {
 
 interface F6WorksheetLike {
   readonly worksheetName?: string;
+  readonly baselineIdentity?: {
+    readonly worksheetName?: string;
+    readonly tableId?: string;
+  };
   readonly runStatus?: string;
   readonly options?: readonly F6OptionLike[];
 }
@@ -172,7 +191,8 @@ export function projectWorksheetReview(input: ReviewProjectionInput, selection: 
   const { selectedWorksheetName: worksheetName, selectedFindingId } = typeof selection === "string"
     ? { selectedWorksheetName: selection }
     : selection;
-  if (!hasCompatibleReviewContext(input.snapshot)) {
+  const reviewContext = selectCompleteReviewContext(input.snapshot);
+  if (reviewContext === undefined) {
     return {
       sessionId: input.sessionId,
       worksheets: collectWorksheetNames(input).map((name) => ({ worksheetName: name, status: "completed", findingCount: 0 })),
@@ -185,10 +205,19 @@ export function projectWorksheetReview(input: ReviewProjectionInput, selection: 
   const calculation = input.f4Report?.calculations?.find((item) => item.worksheetSelection?.worksheetName === worksheetName);
   const interpretation = input.f5Report?.worksheets?.find((item) => item.worksheetName === worksheetName);
   const optimization = input.f6Report?.worksheets?.find((item) => item.worksheetName === worksheetName);
+  if (!hasMatchingWorksheetIdentity(worksheetName, calculation, interpretation, optimization)) {
+    return {
+      sessionId: input.sessionId,
+      worksheets: worksheetNames.map((name) => ({ worksheetName: name, status: "evidence_mismatch", findingCount: 0 })),
+      selectedWorksheetName: worksheetName,
+      findings: [],
+      f6Options: [],
+    };
+  }
   const dominantFactor = selectDominantFactor(calculation);
   const ruleStatement = interpretation?.statements?.find((statement) => statement.type === "RULE");
   const reviewSignals = (interpretation?.statements ?? []).filter((statement) => statement.type === "SIGNAL" && statement.content?.requiresEngineeringReview === true);
-  const imageArtifactId = latestValidatedArtifactId(input.snapshot, "f1_image");
+  const imageArtifactId = reviewContext.artifacts.get("f1_image")?.artifactId;
   const findings = createFindings({
     worksheetName,
     ...(calculation === undefined ? {} : { calculation }),
@@ -214,9 +243,9 @@ export function projectWorksheetReview(input: ReviewProjectionInput, selection: 
     ...(createAnalysisContext(interpretation) === undefined ? {} : { analysisContext: createAnalysisContext(interpretation)! }),
     ...(createOptimizationTargets(optimization) === undefined ? {} : { optimizationTargets: createOptimizationTargets(optimization)! }),
     f6Options: createOptionSummaries(optimization),
-    ...(latestValidatedArtifactId(input.snapshot, "f6_report") === undefined ? {} : {
+    ...(reviewContext.artifacts.get("f6_report") === undefined ? {} : {
       report: {
-        artifactId: latestValidatedArtifactId(input.snapshot, "f6_report")!,
+        artifactId: reviewContext.artifacts.get("f6_report")!.artifactId,
         label: "下载当前报告",
       },
     }),
@@ -258,13 +287,50 @@ function collectWorksheetNames(input: ReviewProjectionInput): string[] {
   return [...names];
 }
 
-function latestValidatedArtifactId(snapshot: F8SessionSnapshot, kind: "f1_image" | "f6_report"): string | undefined {
-  const match = [...(snapshot.artifactRefs ?? [])].reverse().find((artifact) => artifact.kind === kind && artifact.validated);
-  return match?.artifactId;
+export function selectCompleteReviewContext(snapshot: F8SessionSnapshot): CompleteReviewContext | undefined {
+  const currentRevision = snapshot.revision;
+  const contexts = new Map<string, Map<ReviewArtifactKind, ReviewContextArtifact>>();
+  for (const artifact of snapshot.artifactRefs ?? []) {
+    if (!isReviewArtifact(artifact) || !artifact.validated || artifact.revision !== currentRevision || artifact.reviewContextId === undefined) {
+      continue;
+    }
+    const context = contexts.get(artifact.reviewContextId) ?? new Map<ReviewArtifactKind, ReviewContextArtifact>();
+    context.set(artifact.kind, artifact);
+    contexts.set(artifact.reviewContextId, context);
+  }
+
+  const complete = [...contexts.entries()]
+    .filter(([, artifacts]) => ["f4_report", "f5_report", "f6_report"].every((kind) => artifacts.has(kind as ReviewArtifactKind)))
+    .sort(([left], [right]) => left.localeCompare(right));
+  if (complete.length !== 1) {
+    return undefined;
+  }
+
+  const [reviewContextId, artifacts] = complete[0]!;
+  return { reviewContextId, artifacts };
+}
+
+function isReviewArtifact(artifact: NonNullable<F8SessionSnapshot["artifactRefs"]>[number]): artifact is ReviewContextArtifact {
+  return ["f1_image", "f3_report", "f4_calculation", "f4_report", "f5_report", "f6_optimization", "f6_report"].includes(artifact.kind);
 }
 
 function selectDominantFactor(calculation: CalculationLike | undefined) {
   return [...(calculation?.factors ?? [])].sort((left, right) => (right.contribution ?? 0) - (left.contribution ?? 0))[0];
+}
+
+function hasMatchingWorksheetIdentity(
+  worksheetName: string,
+  calculation: CalculationLike | undefined,
+  interpretation: F5WorksheetLike | undefined,
+  optimization: F6WorksheetLike | undefined,
+): boolean {
+  const tableId = calculation?.worksheetSelection?.tableId;
+  if (calculation?.worksheetSelection?.worksheetName !== worksheetName || tableId === undefined) return false;
+  return interpretation?.worksheetName === worksheetName
+    && interpretation.tableId === tableId
+    && optimization?.worksheetName === worksheetName
+    && optimization.baselineIdentity?.worksheetName === worksheetName
+    && optimization.baselineIdentity?.tableId === tableId;
 }
 
 function createFindings(input: {
@@ -384,12 +450,4 @@ function formatLabel(value: string): string {
     return value;
   }
   return normalized.replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
-function hasCompatibleReviewContext(snapshot: F8SessionSnapshot): boolean {
-  const contexts = (snapshot.artifactRefs ?? [])
-    .filter((artifact) => ["f1_image", "f3_report", "f4_report", "f5_report", "f6_report"].includes(artifact.kind))
-    .map((artifact) => (artifact as typeof artifact & { readonly reviewContextId?: unknown }).reviewContextId)
-    .filter((context): context is string => typeof context === "string" && context.length > 0);
-  return contexts.length === 0 || new Set(contexts).size === 1;
 }

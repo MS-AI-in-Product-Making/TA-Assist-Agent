@@ -2,14 +2,20 @@ import type { ReviewCard, ReviewEvidencePane } from "@ai-assist/workbench";
 
 export interface EvidencePaneProps {
   readonly id?: string;
+  readonly labelledBy?: string;
   readonly evidence?: ReviewEvidencePane;
   readonly analysisContext?: ReviewCard;
   readonly optimizationTargets?: ReviewCard;
+  readonly detail?: string;
+  readonly onFocusSource?: (cell: string) => void;
+  readonly onShowFormula?: (formulaId: string) => void;
+  readonly onShowRule?: (ruleEntryId: string) => void;
+  readonly onOpenArtifact?: (artifactId: string) => void;
 }
 
-export function EvidencePane({ id, evidence, analysisContext, optimizationTargets }: EvidencePaneProps) {
+export function EvidencePane({ id, labelledBy, evidence, analysisContext, optimizationTargets, detail, onFocusSource, onShowFormula, onShowRule, onOpenArtifact }: EvidencePaneProps) {
   return (
-    <section id={id} className="panel review-pane" role="tabpanel" aria-labelledby="worksheet-queue-title review-evidence-title">
+    <section id={id} className="panel review-pane" role="tabpanel" aria-labelledby={labelledBy}>
       <div className="panel__header">
         <div>
           <p className="eyebrow">Evidence</p>
@@ -20,13 +26,14 @@ export function EvidencePane({ id, evidence, analysisContext, optimizationTarget
         <div className="stack">
           <p><strong>Source Row {evidence.sourceRow}</strong></p>
           <div className="token-row" aria-label="source cells">
-            {evidence.sourceCells.map((cell) => <button key={cell} type="button" className="token-chip" aria-current="true">{cell}</button>)}
+            {evidence.sourceCells.map((cell) => onFocusSource === undefined ? <span key={cell} className="token-chip">{cell}</span> : <button key={cell} type="button" className="token-chip" onClick={() => onFocusSource(cell)}>{cell}</button>)}
           </div>
           <div className="token-row" aria-label="formula ids">
-            {evidence.formulaIds.map((formulaId) => <button key={formulaId} type="button" className="token-chip">{formulaId}</button>)}
+            {evidence.formulaIds.map((formulaId) => onShowFormula === undefined ? <span key={formulaId} className="token-chip">{formulaId}</span> : <button key={formulaId} type="button" className="token-chip" onClick={() => onShowFormula(formulaId)}>{formulaId}</button>)}
           </div>
-          {evidence.ruleEntryId !== undefined ? <button type="button">F0 Rule: {evidence.ruleEntryId}</button> : null}
-          {evidence.imageArtifactId !== undefined ? <button type="button">Image Artifact: {evidence.imageArtifactId}</button> : null}
+          {evidence.ruleEntryId === undefined ? null : onShowRule === undefined ? <p>F0 Rule: {evidence.ruleEntryId}</p> : <button type="button" onClick={() => onShowRule(evidence.ruleEntryId!)}>F0 Rule: {evidence.ruleEntryId}</button>}
+          {evidence.imageArtifactId === undefined ? null : onOpenArtifact === undefined ? <p>Image Artifact: {evidence.imageArtifactId}</p> : <button type="button" onClick={() => onOpenArtifact(evidence.imageArtifactId!)}>Image Artifact: {evidence.imageArtifactId}</button>}
+          {detail === undefined ? null : <p role="status" className="support-text">{detail}</p>}
           <div>
             <h3 className="subheading">Bound Factors</h3>
             <ul className="compact-list">

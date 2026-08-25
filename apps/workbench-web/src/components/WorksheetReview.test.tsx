@@ -81,7 +81,10 @@ describe("WorksheetReview", () => {
     expect(screen.getByRole("heading", { name: "Read-only Evidence" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "Finding and Action" })).toBeVisible();
     expect(screen.getByRole("tablist", { name: "Worksheet queue" })).toBeVisible();
-    expect(screen.getByRole("tab", { name: /AJ_GAP/ })).toHaveAttribute("aria-selected", "true");
+    const selectedTab = screen.getByRole("tab", { name: /AJ_GAP/ });
+    expect(selectedTab).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", selectedTab.id);
+    expect(selectedTab).toHaveAttribute("aria-controls", screen.getByRole("tabpanel").id);
     expect(screen.getByRole("listbox", { name: "Engineering findings" })).toBeVisible();
     expect(screen.getByText("Source Row 15")).toBeVisible();
     expect(screen.getByText("AJ_GAP!J15")).toBeVisible();
@@ -91,6 +94,19 @@ describe("WorksheetReview", () => {
     await user.click(screen.getByRole("option", { name: "Cpk below target" }));
     expect(selected).toEqual(["finding-cpk"]);
     expect(screen.getByRole("option", { name: "Cpk below target" })).toHaveAttribute("aria-selected", "true");
+
+    await user.click(screen.getByRole("button", { name: "AJ_GAP!J15" }));
+    expect(screen.getByRole("status")).toHaveTextContent("Source evidence focused: AJ_GAP!J15");
+    await user.click(screen.getByRole("button", { name: "cpk-v1" }));
+    expect(screen.getByRole("status")).toHaveTextContent("Formula evidence: cpk-v1");
+    await user.click(screen.getByRole("button", { name: /F0 Rule/ }));
+    expect(screen.getByRole("status")).toHaveTextContent("F0 rule evidence: performance-cpk-below-target");
+    await user.click(screen.getByRole("button", { name: /Image Artifact/ }));
+    expect(screen.getByRole("status")).toHaveTextContent("/api/sessions/session-review-1/artifacts/img-aj-gap");
+
+    selectedTab.focus();
+    await user.keyboard("{ArrowDown}");
+    expect(screen.getByRole("tab", { name: /B_STACK/ })).toHaveFocus();
   });
 
   it("shows F7 as unavailable without measured values", () => {

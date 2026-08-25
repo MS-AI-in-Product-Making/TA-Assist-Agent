@@ -75,6 +75,7 @@ describe("F8 session and host contracts", () => {
           kind: "f6_report",
           revision: 4,
           validated: true,
+          reviewContextId: "a".repeat(64),
         },
       ],
       worksheetCapabilities: [
@@ -117,6 +118,7 @@ describe("F8 session and host contracts", () => {
           kind: "f6_report",
           revision: 6,
           validated: true,
+          reviewContextId: "b".repeat(64),
           sourceReferenceId: "f6-current",
         },
       ],
@@ -153,6 +155,14 @@ describe("F8 session and host contracts", () => {
       ...snapshot,
       artifactRefs: [{ artifactId: "artifact-report-2", revision: 6, validated: true }],
     })).toThrow();
+    expect(() => f8SessionSnapshotSchema.parse({
+      ...snapshot,
+      artifactRefs: [{ artifactId: "artifact-report-2", kind: "f6_report", revision: 6, validated: true }],
+    })).toThrow();
+    expect(f8SessionSnapshotSchema.parse({
+      ...snapshot,
+      artifactRefs: [{ artifactId: "artifact-f2", kind: "f2_report", revision: 6, validated: true }],
+    }).artifactRefs).toEqual([{ artifactId: "artifact-f2", kind: "f2_report", revision: 6, validated: true }]);
     expect(() => conversationTurnSchema.parse({
       ...toolTurn,
       content: [
