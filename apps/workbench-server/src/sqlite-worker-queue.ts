@@ -405,9 +405,14 @@ function isJsonSafe(value: unknown, ancestors: Set<object>): boolean {
   ancestors.add(value);
   try {
     if (Array.isArray(value)) {
-      if (Object.getOwnPropertySymbols(value).length > 0) return false;
-      const keys = Object.keys(value);
-      if (keys.length !== value.length || keys.some((key, index) => key !== String(index))) return false;
+      const ownKeys = Reflect.ownKeys(value);
+      const dataKeys = ownKeys.filter((key) => key !== "length");
+      if (dataKeys.length !== value.length
+        || dataKeys.some((key, index) => key !== String(index))) return false;
+      for (const key of dataKeys) {
+        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) return false;
+      }
       return value.every((item) => isJsonSafe(item, ancestors));
     }
     if (!isPlainObject(value) || Object.getOwnPropertySymbols(value).length > 0) return false;

@@ -171,6 +171,7 @@ describe("persistent workbench worker queue", () => {
     ["unsafe key", { constructor: "unsafe" }],
     ["sparse array", { value: Object.assign(Array<unknown>(2), { 1: "unsafe" }) }],
     ["cyclic object", (() => { const value: { self?: unknown } = {}; value.self = value; return value; })()],
+    ["array hidden toJSON", (() => { const value: unknown[] = [1]; Object.defineProperty(value, "toJSON", { value: () => undefined }); return { value }; })()],
   ])("rejects %s payloads before persisting any queue state", async (_caseName, payload) => {
     const store = new MemoryQueueSessionStore();
     const queue = await createPersistentWorkerQueue({ rootDir, sessionStore: store, worker: async () => ({ ok: true }) });
@@ -193,6 +194,7 @@ describe("persistent workbench worker queue", () => {
     ["unsafe key", { constructor: "unsafe" }],
     ["sparse array", { value: Object.assign(Array<unknown>(2), { 1: "unsafe" }) }],
     ["cyclic object", (() => { const value: { self?: unknown } = {}; value.self = value; return value; })()],
+    ["array hidden toJSON", (() => { const value: unknown[] = [1]; Object.defineProperty(value, "toJSON", { value: () => undefined }); return { value }; })()],
   ])("converts invalid %s worker output into a safe failed attempt", async (_caseName, result) => {
     const store = new MemoryQueueSessionStore();
     const queue = await createPersistentWorkerQueue({ rootDir, sessionStore: store, worker: async () => result });

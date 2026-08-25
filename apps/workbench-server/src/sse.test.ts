@@ -72,4 +72,29 @@ describe("SSE sanitization", () => {
     unsubscribe();
     source.close();
   });
+
+  it("emits truncation instead of losing events when retention rolls between replay and subscription", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "workbench-sse-"));
+    tempRoots.push(rootDir);
+    const sessionId = "33333333-3333-4333-8333-333333333333";
+    const session = await createSessionStore({ rootDir, sessionId });
+    await session.close();
+    const source = await createSqliteEventSource({ rootDir, maxEventsPerSession: 2, pollIntervalMs: 5 });
+    source.publish(sessionId, "progress", { sequence: 1 });
+    const initialReplay = source.replay(sessionId, "0");
+    source.publish(sessionId, "progress", { sequence: 2 });
+    source.publish(sessionId, "progress", { sequence: 3 });
+    source.publish(sessionId, "progress", { sequence: 4 });
+    const received: Array<{ readonly id: string; readonly eventName: string }> = [];
+    const unsubscribe = source.subscribe(sessionId, (event) => received.push({ id: event.id, eventName: event.eventName }), initialReplay.at(-1)?.id);
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(received).toEqual([
+      { id: "2", eventName: "replay_truncated" },
+      { id: "3", eventName: "progress" },
+      { id: "4", eventName: "progress" },
+    ]);
+    unsubscribe();
+    source.close();
+  });
 });

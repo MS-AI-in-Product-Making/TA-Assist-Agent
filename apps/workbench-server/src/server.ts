@@ -381,8 +381,7 @@ class StoreBackedQueueSessionStore implements QueueSessionStore {
     if (sessionId === undefined) return false;
     const current = await this.sessions.read(sessionId);
     if (current?.activeAttempt?.attemptId !== attemptId) return false;
-    await this.record(current, { result, status: "completed" });
-    return true;
+    return this.record(current, { result, status: "completed" });
   }
 
   async markDependencyFailure(attemptId: string, reason: string, job?: StageJob): Promise<void> {
@@ -396,15 +395,16 @@ class StoreBackedQueueSessionStore implements QueueSessionStore {
     });
   }
 
-  private async record(snapshot: F8SessionSnapshot, result: { readonly status: "completed" | "failed"; readonly result: unknown }): Promise<void> {
+  private async record(snapshot: F8SessionSnapshot, result: { readonly status: "completed" | "failed"; readonly result: unknown }): Promise<boolean> {
     const store = await openSessionStore({ rootDir: this.rootDir, sessionId: snapshot.sessionId });
     try {
-      await store.recordAttemptResult({
+      const receipt = await store.recordAttemptResult({
         attemptId: snapshot.activeAttempt!.attemptId,
         status: result.status,
         result: result.result,
         snapshot: acceptAttemptResult(snapshot, { attemptId: snapshot.activeAttempt!.attemptId, status: result.status, result: result.result }),
       });
+      return receipt.accepted;
     } finally {
       await store.close();
     }

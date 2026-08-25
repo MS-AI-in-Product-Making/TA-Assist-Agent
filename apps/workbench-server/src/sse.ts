@@ -124,7 +124,10 @@ class SqliteSseEventSource implements SqliteEventSource {
     const subscriber: Subscriber = { listener, lastEventId: cursor };
     subscribers.add(subscriber);
     this.subscribers.set(sessionId, subscribers);
-    for (const event of this.readEvents(sessionId, cursor)) this.deliverToSubscriber(subscriber, event);
+    // Re-read through the retention-aware path after registration. Events
+    // published while the caller was writing its initial replay are either
+    // delivered here or represented by a replay_truncated marker.
+    for (const event of this.replay(sessionId, String(cursor))) this.deliverToSubscriber(subscriber, event);
     return () => {
       subscribers.delete(subscriber);
       if (subscribers.size === 0) this.subscribers.delete(sessionId);
