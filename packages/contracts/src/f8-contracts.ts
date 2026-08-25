@@ -247,31 +247,15 @@ const conversationCommandPartSchema = z
   })
   .strict();
 
-const conversationToolActionSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("navigate"),
-    target: z.enum([
-      "/scope",
-      "/scope/downstream",
-      "/ado/preview",
-      "/images/decision",
-      "/analysis/context",
-      "/optimization/targets",
-      "/review",
-      "/status",
-    ]),
-    label: z.enum([
-      "选择 Worksheets",
-      "确认下游 Worksheets",
-      "查看 ADO 预览",
-      "确认图片上下文",
-      "确认 Analysis Context",
-      "确认 Optimization Targets",
-      "完成评审",
-      "查看失败状态",
-      "查看运行状态",
-    ]),
-  }).strict(),
+const conversationToolActionSchema = z.union([
+  z.object({ type: z.literal("navigate"), target: z.literal("/scope"), label: z.literal("选择 Worksheets") }).strict(),
+  z.object({ type: z.literal("navigate"), target: z.literal("/scope/downstream"), label: z.literal("确认下游 Worksheets") }).strict(),
+  z.object({ type: z.literal("navigate"), target: z.literal("/ado/preview"), label: z.literal("查看 ADO 预览") }).strict(),
+  z.object({ type: z.literal("navigate"), target: z.literal("/images/decision"), label: z.literal("确认图片上下文") }).strict(),
+  z.object({ type: z.literal("navigate"), target: z.literal("/analysis/context"), label: z.literal("确认 Analysis Context") }).strict(),
+  z.object({ type: z.literal("navigate"), target: z.literal("/optimization/targets"), label: z.literal("确认 Optimization Targets") }).strict(),
+  z.object({ type: z.literal("navigate"), target: z.literal("/review"), label: z.literal("完成评审") }).strict(),
+  z.object({ type: z.literal("navigate"), target: z.literal("/status"), label: z.literal("查看运行状态") }).strict(),
   z.object({
     type: z.literal("open_report"),
     target: z.literal("/report/current"),

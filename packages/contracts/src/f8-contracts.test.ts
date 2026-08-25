@@ -13,6 +13,37 @@ import {
 const SESSION_ID = "session-8d2a2d73-7f55-4f7d-8fa1-b4f6d2f66d31";
 const COMMAND_ID = "command-5a9fba33-2c18-4a74-9d4d-6f8b21efc01d";
 const WORKBOOK_HASH = "a".repeat(64);
+const CANONICAL_NAVIGATE_ACTIONS = [
+  { type: "navigate", target: "/scope", label: "选择 Worksheets" },
+  { type: "navigate", target: "/scope/downstream", label: "确认下游 Worksheets" },
+  { type: "navigate", target: "/ado/preview", label: "查看 ADO 预览" },
+  { type: "navigate", target: "/images/decision", label: "确认图片上下文" },
+  { type: "navigate", target: "/analysis/context", label: "确认 Analysis Context" },
+  { type: "navigate", target: "/optimization/targets", label: "确认 Optimization Targets" },
+  { type: "navigate", target: "/review", label: "完成评审" },
+  { type: "navigate", target: "/status", label: "查看运行状态" },
+] as const;
+
+function conversationTurnWithActions(actions: readonly unknown[]) {
+  return {
+    contractVersion: "ta-conversation-turn-v1",
+    turnId: "turn-actions-1",
+    sessionId: SESSION_ID,
+    sequence: 8,
+    source: "system",
+    role: "assistant",
+    content: [
+      { kind: "text", text: "动作已准备。" },
+      {
+        kind: "tool_result",
+        actions,
+        commands: [],
+      },
+    ],
+    createdAt: "2026-08-24T00:00:00.000Z",
+    relatedArtifactIds: [],
+  };
+}
 
 describe("F8 session and host contracts", () => {
   it("accepts an idempotent command and rejects unknown fields", () => {
@@ -155,6 +186,52 @@ describe("F8 session and host contracts", () => {
         },
       ],
     })).toThrow();
+  });
+
+  it("accepts only canonical navigate target and label pairs", () => {
+    for (const action of CANONICAL_NAVIGATE_ACTIONS) {
+      expect(conversationTurnSchema.parse(conversationTurnWithActions([action])).content[1]).toEqual({
+        kind: "tool_result",
+        actions: [action],
+        commands: [],
+      });
+    }
+
+    const representativeCrossPairs = CANONICAL_NAVIGATE_ACTIONS.map((action, index) => ({
+      ...action,
+      label: CANONICAL_NAVIGATE_ACTIONS[(index + 1) % CANONICAL_NAVIGATE_ACTIONS.length].label,
+    }));
+
+    for (const action of representativeCrossPairs) {
+      expect(() => conversationTurnSchema.parse(conversationTurnWithActions([action]))).toThrow();
+    }
+    expect(() => conversationTurnSchema.parse(conversationTurnWithActions([
+      { type: "navigate", target: "/status", label: "查看失败状态" },
+    ]))).toThrow();
+  });
+
+  it("keeps report and what-if actions as strict canonical objects", () => {
+    expect(conversationTurnSchema.parse(conversationTurnWithActions([
+      { type: "open_report", target: "/report/current", label: "打开当前报告" },
+    ])).content[1]).toEqual({
+      kind: "tool_result",
+      actions: [{ type: "open_report", target: "/report/current", label: "打开当前报告" }],
+      commands: [],
+    });
+    expect(conversationTurnSchema.parse(conversationTurnWithActions([
+      { type: "open_what_if", target: "/what-if", label: "打开 What-if Draft" },
+    ])).content[1]).toEqual({
+      kind: "tool_result",
+      actions: [{ type: "open_what_if", target: "/what-if", label: "打开 What-if Draft" }],
+      commands: [],
+    });
+
+    expect(() => conversationTurnSchema.parse(conversationTurnWithActions([
+      { type: "open_report", target: "/report/current", label: "打开 What-if Draft" },
+    ]))).toThrow();
+    expect(() => conversationTurnSchema.parse(conversationTurnWithActions([
+      { type: "open_what_if", target: "/what-if", label: "打开当前报告" },
+    ]))).toThrow();
   });
 
   it("keeps conversation turns, host actions, and drafts strict", () => {

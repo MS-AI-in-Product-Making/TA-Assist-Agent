@@ -272,7 +272,7 @@ function selectPrimaryAction(
 		case "complete_review":
 			return { type: "navigate", target: "/review", label: "完成评审" };
 		case "retry":
-			return { type: "navigate", target: "/status", label: "查看失败状态" };
+			return { type: "navigate", target: "/status", label: "查看运行状态" };
 		case "cancel":
 			return { type: "navigate", target: "/status", label: "查看运行状态" };
 		default:
