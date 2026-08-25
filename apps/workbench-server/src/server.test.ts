@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { rm } from "node:fs/promises";
+import { get } from "node:http";
 
 import { buildWorkbenchServer } from "./server.js";
 
@@ -50,7 +51,9 @@ describe("workbench server routes", () => {
   });
 
   it("requires scoped host bearer credentials for host action claim and result", async () => {
-    const server = await buildWorkbenchServer({ rootDir: ".tmp/workbench-server-host-actions" });
+    const rootDir = ".tmp/workbench-server-host-actions";
+    await rm(rootDir, { recursive: true, force: true });
+    const server = await buildWorkbenchServer({ rootDir });
     try {
       const browser = await server.testAuthenticate("11111111-1111-4111-8111-111111111111");
       const request = {
@@ -101,6 +104,7 @@ describe("workbench server routes", () => {
       expect(resultResponse.statusCode).toBe(204);
     } finally {
       await server.close();
+      await rm(rootDir, { recursive: true, force: true });
     }
   });
 
@@ -151,7 +155,7 @@ describe("workbench server routes", () => {
     }
   });
 
-  it("persists host action claims across restart and isolates duplicate action IDs by session", async () => {
+  it("rejects duplicate host action IDs in the same or another session without replacing terminal state", async () => {
     const rootDir = ".tmp/workbench-server-durable-host-actions";
     await rm(rootDir, { recursive: true, force: true });
     const first = await buildWorkbenchServer({ rootDir });
@@ -160,8 +164,7 @@ describe("workbench server routes", () => {
     try {
       const firstBrowser = await first.testAuthenticate(firstSessionId);
       const secondBrowser = await first.testAuthenticate(secondSessionId);
-      for (const browser of [firstBrowser, secondBrowser]) {
-        const response = await first.inject({
+      const create = async (browser: typeof firstBrowser) => first.inject({
           method: "POST",
           url: `/api/sessions/${browser.sessionId}/host-actions`,
           headers: browser.headers,
@@ -174,8 +177,9 @@ describe("workbench server routes", () => {
             expiresAt: new Date(Date.now() + 60_000).toISOString(),
           },
         });
-        expect(response.statusCode).toBe(201);
-      }
+      expect((await create(firstBrowser)).statusCode).toBe(201);
+      expect((await create(firstBrowser)).statusCode).toBe(409);
+      expect((await create(secondBrowser)).statusCode).toBe(409);
 
       const claimToken = first.issueHostBearer(firstSessionId, ["host-actions:claim"], { actionId: "shared-action", hostInstanceId: "host-a" });
       const claimResponse = await first.inject({
@@ -185,6 +189,24 @@ describe("workbench server routes", () => {
         payload: { hostInstanceId: "host-a" },
       });
       expect(claimResponse.statusCode).toBe(200);
+      const claim = claimResponse.json<{ leaseId: string }>();
+      const resultToken = first.issueHostBearer(firstSessionId, ["host-actions:result"], { actionId: "shared-action", hostInstanceId: "host-a" });
+      const payload = { status: "completed" };
+      expect((await first.inject({
+        method: "POST",
+        url: `/api/sessions/${firstSessionId}/host-actions/shared-action/result`,
+        headers: { host: "127.0.0.1:0", authorization: `Bearer ${resultToken}` },
+        payload: {
+          contractVersion: "f8-host-action-result-v1",
+          actionId: "shared-action",
+          hostInstanceId: "host-a",
+          leaseId: claim.leaseId,
+          status: "completed",
+          resultHash: createHash("sha256").update(JSON.stringify(payload)).digest("hex"),
+          payload,
+        },
+      })).statusCode).toBe(204);
+      expect((await create(firstBrowser)).statusCode).toBe(409);
     } finally {
       await first.close();
     }
@@ -199,15 +221,49 @@ describe("workbench server routes", () => {
         payload: { hostInstanceId: "host-a" },
       })).statusCode).toBe(409);
 
-      const isolatedToken = second.issueHostBearer(secondSessionId, ["host-actions:claim"], { actionId: "shared-action", hostInstanceId: "host-b" });
+      const replayResultToken = second.issueHostBearer(firstSessionId, ["host-actions:result"], { actionId: "shared-action", hostInstanceId: "host-a" });
       expect((await second.inject({
         method: "POST",
-        url: `/api/sessions/${secondSessionId}/host-actions/shared-action/claim`,
-        headers: { host: "127.0.0.1:0", authorization: `Bearer ${isolatedToken}` },
-        payload: { hostInstanceId: "host-b" },
-      })).statusCode).toBe(200);
+        url: `/api/sessions/${firstSessionId}/host-actions/shared-action/result`,
+        headers: { host: "127.0.0.1:0", authorization: `Bearer ${replayResultToken}` },
+        payload: {},
+      })).statusCode).toBe(400);
     } finally {
       await second.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps event IDs monotonic after retention rollover and marks an expired replay cursor", async () => {
+    const rootDir = ".tmp/workbench-server-event-rollover";
+    await rm(rootDir, { recursive: true, force: true });
+    const started = await (await import("./server.js")).startWorkbenchServer({ rootDir });
+    try {
+      const auth = await started.server.testAuthenticate("25252525-2525-4252-8252-252525252525");
+      for (let index = 1; index <= 301; index += 1) {
+        started.server.publishEventForTest(auth.sessionId, "progress", { index });
+      }
+
+      const response = await new Promise<import("node:http").IncomingMessage>((resolve, reject) => {
+        const request = get(`${started.url.replace(/\/#.*$/, "")}/api/sessions/${auth.sessionId}/events`, {
+          headers: { cookie: auth.headers.cookie, "last-event-id": "1" },
+        }, resolve);
+        request.once("error", reject);
+      });
+      let stream = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk: string) => { stream += chunk; });
+      await vi.waitFor(() => {
+        expect(stream).toContain("event: replay_truncated");
+        expect(stream).toContain("id: 301");
+      });
+
+      started.server.publishEventForTest(auth.sessionId, "progress", { index: 302 });
+      await vi.waitFor(() => expect(stream).toContain("id: 302"));
+      response.destroy();
+    } finally {
+      started.server.server.closeAllConnections();
+      await started.server.close();
       await rm(rootDir, { recursive: true, force: true });
     }
   });

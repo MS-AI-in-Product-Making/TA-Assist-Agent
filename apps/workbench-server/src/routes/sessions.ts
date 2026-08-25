@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { FastifyPluginAsync } from "fastify";
 
+import { SESSION_COOKIE_NAME } from "../auth.js";
 import type { WorkbenchServerContext } from "../server.js";
 
 export const sessionsRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServerContext }> = async (app, { context }) => {
@@ -13,7 +14,17 @@ export const sessionsRoutes: FastifyPluginAsync<{ readonly context: WorkbenchSer
 
     const sessionId = randomUUID();
     const snapshot = await context.sessions.create(sessionId);
-    return reply.code(201).send(snapshot);
+    const cookies = request.cookies as Record<string, string | undefined> | undefined;
+    const session = context.auth.rotateBrowserSession(cookies?.[SESSION_COOKIE_NAME], sessionId);
+    return reply
+      .setCookie(SESSION_COOKIE_NAME, session.cookieValue, {
+        httpOnly: true,
+        sameSite: "strict",
+        path: "/",
+        secure: false,
+      })
+      .code(201)
+      .send(snapshot);
   });
 
   app.get("/api/sessions/:sessionId", async (request, reply) => {

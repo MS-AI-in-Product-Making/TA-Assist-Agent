@@ -48,7 +48,7 @@ export class WorkbenchAuth {
 
   private readonly hostBearers = new Map<string, HostBearer>();
 
-  issueBrowserSession(sessionId = randomUUID()): TestAuthentication {
+  issueBrowserSession(sessionId: string = randomUUID()): TestAuthentication {
     const cookieValue = randomBytes(32).toString("base64url");
     const csrfToken = randomBytes(32).toString("base64url");
     this.browserSessions.set(cookieValue, { sessionId, csrfToken });
@@ -63,6 +63,11 @@ export class WorkbenchAuth {
         [CSRF_HEADER_NAME]: csrfToken,
       },
     };
+  }
+
+  rotateBrowserSession(cookieValue: string | undefined, sessionId: string): TestAuthentication {
+    if (cookieValue !== undefined) this.browserSessions.delete(cookieValue);
+    return this.issueBrowserSession(sessionId);
   }
 
   issueHostBearer(sessionId: string, scopes: readonly HostBearerScope[], options: HostBearerOptions = {}): string {

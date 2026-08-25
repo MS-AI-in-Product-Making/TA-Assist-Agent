@@ -53,7 +53,7 @@ export const conversationRoutes: FastifyPluginAsync<{ readonly context: Workbenc
     });
     reply.raw.flushHeaders();
     const lastEventId = typeof request.headers["last-event-id"] === "string" ? request.headers["last-event-id"] : undefined;
-    const events = context.events.replay(sessionId, lastEventId).slice(-256);
+    const events = context.events.replay(sessionId, lastEventId);
     let heartbeat: NodeJS.Timeout | undefined;
     let closed = false;
     let unsubscribe = (): void => undefined;

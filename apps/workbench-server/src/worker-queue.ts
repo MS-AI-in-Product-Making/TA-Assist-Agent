@@ -28,7 +28,7 @@ export interface QueueSessionStore {
 export interface PersistentWorkerQueueOptions {
   readonly rootDir: string;
   readonly sessionStore: QueueSessionStore;
-  readonly worker: (job: StageJob) => Promise<unknown>;
+  readonly worker?: (job: StageJob) => Promise<unknown>;
   readonly calculationConcurrency?: number;
 }
 
@@ -39,6 +39,8 @@ export interface EnqueueOptions {
 interface PersistedJob extends StageJob {
   status: QueueReceipt["status"];
   readonly sequence: number;
+  result?: unknown;
+  error?: { readonly code: "dependency_error"; readonly message: string };
 }
 
 export interface PersistentWorkerQueue {
@@ -76,9 +78,10 @@ class FileBackedWorkerQueue implements PersistentWorkerQueue {
   async load(): Promise<void> {
     try {
       const raw = await readFile(this.queuePath, "utf8");
-      const jobs = JSON.parse(raw) as PersistedJob[];
+      const jobs = parsePersistedJobs(JSON.parse(raw));
+      const sequences = new Set<number>();
       for (const job of jobs) {
-        if (!job.jobId || this.jobs.has(job.jobId)) {
+        if (this.jobs.has(job.jobId) || sequences.has(job.sequence)) {
           throw createTypedError({
             code: "dependency_error",
             summary: "Worker queue state is invalid.",
@@ -87,6 +90,7 @@ class FileBackedWorkerQueue implements PersistentWorkerQueue {
           });
         }
         this.jobs.set(job.jobId, job);
+        sequences.add(job.sequence);
         this.sequence = Math.max(this.sequence, job.sequence);
       }
     } catch (error) {
@@ -147,15 +151,32 @@ class FileBackedWorkerQueue implements PersistentWorkerQueue {
   }
 
   async reconcile(): Promise<void> {
+    const queuedJobIds: string[] = [];
     await this.serialize(async () => {
       for (const job of this.jobs.values()) {
         if (job.status === "running") {
           job.status = "failed";
-          await this.options.sessionStore.markDependencyFailure(job.attemptId, "Worker stopped before terminal callback; retry is required.", job);
+          const reason = "Worker stopped before terminal callback; retry is required.";
+          job.error = { code: "dependency_error", message: reason };
+          await this.options.sessionStore.markDependencyFailure(job.attemptId, reason, job);
+        } else if (job.status === "queued") {
+          if (this.options.worker === undefined) {
+            const reason = "No worker executor is configured; retry is required.";
+            job.status = "failed";
+            job.error = { code: "dependency_error", message: reason };
+            await this.options.sessionStore.markDependencyFailure(job.attemptId, reason, job);
+          } else {
+            queuedJobIds.push(job.jobId);
+          }
         }
       }
       await this.persist();
     });
+    if (queuedJobIds.length > 0) {
+      const drain = this.drain();
+      await drain;
+      await Promise.all(queuedJobIds.map((jobId) => this.waitForTerminal(jobId, drain)));
+    }
   }
 
   private async drain(): Promise<void> {
@@ -189,16 +210,24 @@ class FileBackedWorkerQueue implements PersistentWorkerQueue {
 
   private async runJob(job: PersistedJob): Promise<void> {
     try {
+      if (this.options.worker === undefined) throw new Error("worker executor unavailable");
       const result = await this.options.worker(job);
       await this.serialize(async () => {
         const accepted = await this.options.sessionStore.markAttemptResult(job.attemptId, result, "running", job);
         job.status = accepted ? "completed" : "failed";
+        if (accepted) {
+          job.result = result;
+        } else {
+          job.error = { code: "dependency_error", message: "Attempt result was rejected by the session store." };
+        }
         await this.persist();
       });
     } catch (error) {
       await this.serialize(async () => {
         job.status = "failed";
-        await this.options.sessionStore.markDependencyFailure(job.attemptId, "Worker failed.", job);
+        const reason = this.options.worker === undefined ? "No worker executor is configured; retry is required." : "Worker failed.";
+        job.error = { code: "dependency_error", message: reason };
+        await this.options.sessionStore.markDependencyFailure(job.attemptId, reason, job);
         await this.persist();
       });
     } finally {
@@ -280,4 +309,47 @@ class FileBackedWorkerQueue implements PersistentWorkerQueue {
   private get queuePath(): string {
     return join(this.options.rootDir, QUEUE_FILE);
   }
+}
+
+function parsePersistedJobs(value: unknown): PersistedJob[] {
+  if (!Array.isArray(value)) throw invalidQueueState();
+  return value.map((candidate) => {
+    if (!isRecord(candidate)) throw invalidQueueState();
+    const allowed = new Set(["jobId", "attemptId", "kind", "stage", "payload", "status", "sequence", "result", "error"]);
+    if (Object.keys(candidate).some((key) => !allowed.has(key))) throw invalidQueueState();
+    const { jobId, attemptId, kind, stage, payload, status, sequence, result, error } = candidate;
+    if (typeof jobId !== "string" || jobId.length === 0
+      || typeof attemptId !== "string" || attemptId.length === 0
+      || (kind !== "excel" && kind !== "calculation" && kind !== "host")
+      || typeof stage !== "string" || stage.length === 0
+      || !isRecord(payload)
+      || (status !== "queued" && status !== "running" && status !== "completed" && status !== "failed" && status !== "cancelled")
+      || !Number.isSafeInteger(sequence) || (sequence as number) < 1) {
+      throw invalidQueueState();
+    }
+    if ((status === "queued" || status === "running" || status === "cancelled") && ("result" in candidate || "error" in candidate)) throw invalidQueueState();
+    if (status === "completed" && (!("result" in candidate) || "error" in candidate)) throw invalidQueueState();
+    if (status === "failed" && (!("error" in candidate) || "result" in candidate || !isDependencyError(error))) throw invalidQueueState();
+    const job: PersistedJob = { jobId, attemptId, kind, stage, payload, status, sequence: sequence as number };
+    if (status === "completed") job.result = result;
+    if (status === "failed" && isDependencyError(error)) job.error = error;
+    return job;
+  });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isDependencyError(value: unknown): value is { readonly code: "dependency_error"; readonly message: string } {
+  return isRecord(value) && Object.keys(value).length === 2 && value.code === "dependency_error" && typeof value.message === "string" && value.message.length > 0;
+}
+
+function invalidQueueState(): Error {
+  return createTypedError({
+    code: "dependency_error",
+    summary: "Worker queue state is invalid.",
+    suggestedAction: "Preserve the queue file and repair it before restarting the workbench.",
+    affectedInputReferences: [QUEUE_FILE],
+  });
 }

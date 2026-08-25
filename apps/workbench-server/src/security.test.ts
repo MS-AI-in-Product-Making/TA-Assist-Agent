@@ -65,6 +65,72 @@ describe("workbench server security boundary", () => {
     }
   });
 
+  it("binds bootstrap, CSRF, session creation, commands, uploads, and SSE to one rotated browser session", async () => {
+    const rootDir = ".tmp/workbench-server-bootstrap-flow";
+    await rm(rootDir, { recursive: true, force: true });
+    const rendezvous = createBrowserBootstrapRendezvous();
+    const started = await startWorkbenchServer({ rootDir, bootstrap: rendezvous, runner: async () => ({ ok: true }) });
+    try {
+      const nonce = await rendezvous.issueBrowserBootstrap();
+      const bootstrapped = await started.server.inject({ method: "POST", url: "/api/bootstrap", headers: { host: "127.0.0.1:0" }, payload: { nonce } });
+      const launcherCookie = bootstrapped.cookies.find((candidate) => candidate.name === "ta_session")!;
+      const launcherHeaders = { host: "127.0.0.1:0", cookie: `ta_session=${launcherCookie.value}` };
+      const launcherCsrf = (await started.server.inject({ method: "GET", url: "/api/csrf", headers: launcherHeaders })).json<{ csrfToken: string }>().csrfToken;
+
+      const created = await started.server.inject({
+        method: "POST",
+        url: "/api/sessions",
+        headers: { ...launcherHeaders, "x-csrf-token": launcherCsrf },
+      });
+      expect(created.statusCode).toBe(201);
+      const session = created.json<{ sessionId: string }>();
+      const sessionCookie = created.cookies.find((candidate) => candidate.name === "ta_session")!;
+      expect(sessionCookie).toBeDefined();
+      if (sessionCookie === undefined) throw new Error("session cookie was not rotated");
+      expect(sessionCookie.value).not.toBe(launcherCookie.value);
+      const sessionHeaders = { host: "127.0.0.1:0", cookie: `ta_session=${sessionCookie.value}` };
+      const sessionCsrf = (await started.server.inject({ method: "GET", url: "/api/csrf", headers: sessionHeaders })).json<{ csrfToken: string }>().csrfToken;
+      const mutationHeaders = { ...sessionHeaders, "x-csrf-token": sessionCsrf };
+
+      expect((await started.server.inject({ method: "GET", url: `/api/sessions/${session.sessionId}`, headers: sessionHeaders })).statusCode).toBe(200);
+      expect((await started.server.inject({
+        method: "POST",
+        url: `/api/sessions/${session.sessionId}/commands`,
+        headers: mutationHeaders,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId: session.sessionId,
+          commandId: "bootstrap-upload",
+          expectedRevision: 0,
+          command: "upload_workbook",
+          payload: { fileName: "book.xlsx", workbookBytes: [1], inputClassification: "confidential" },
+        },
+      })).statusCode).toBe(202);
+
+      const form = new FormData();
+      form.set("kind", "workbook");
+      form.set("file", new Blob([createAnonymousWorkbookZip()], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), "book.xlsx");
+      expect((await started.server.inject({ method: "POST", url: `/api/sessions/${session.sessionId}/files`, headers: mutationHeaders, payload: form })).statusCode).toBe(201);
+
+      started.server.publishEventForTest(session.sessionId, "snapshot", { ready: true });
+      const events = await new Promise<import("node:http").IncomingMessage>((resolve, reject) => {
+        const request = get(`${started.url.replace(/\/#.*$/, "")}/api/sessions/${session.sessionId}/events`, { headers: { cookie: sessionHeaders.cookie } }, resolve);
+        request.once("error", reject);
+      });
+      let stream = "";
+      events.setEncoding("utf8");
+      events.on("data", (chunk: string) => { stream += chunk; });
+      await vi.waitFor(() => expect(stream).toContain('"ready":true'));
+      events.destroy();
+
+      expect((await started.server.inject({ method: "GET", url: `/api/sessions/${session.sessionId}`, headers: launcherHeaders })).statusCode).toBe(403);
+    } finally {
+      started.server.server.closeAllConnections();
+      await started.server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
   it("rejects stale and disallowed session commands through the public route", async () => {
     const rootDir = ".tmp/workbench-server-session-cas";
     await rm(rootDir, { recursive: true, force: true });
@@ -125,7 +191,9 @@ describe("workbench server security boundary", () => {
   });
 
   it("binds host bearer leases to session, action, host instance, expiry, and one terminal result", async () => {
-    const server = await buildWorkbenchServer({ rootDir: ".tmp/workbench-server-host-action-binding" });
+    const rootDir = ".tmp/workbench-server-host-action-binding";
+    await rm(rootDir, { recursive: true, force: true });
+    const server = await buildWorkbenchServer({ rootDir });
     try {
       const auth = await server.testAuthenticate("44444444-4444-4444-8444-444444444444");
       await server.inject({
@@ -183,6 +251,7 @@ describe("workbench server security boundary", () => {
       })).statusCode).toBe(409);
     } finally {
       await server.close();
+      await rm(rootDir, { recursive: true, force: true });
     }
   });
 

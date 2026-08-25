@@ -63,7 +63,7 @@ export interface ConversationRegistry {
 }
 
 export interface HostActionRegistry {
-  create(request: HostActionRequest): HostActionRequest;
+  create(request: HostActionRequest): HostActionRequest | undefined;
   claim(sessionId: string, actionId: string, hostInstanceId: string): HostActionClaim | undefined;
   complete(sessionId: string, result: HostActionResult): "accepted" | "rejected" | "duplicate";
 }
@@ -180,15 +180,7 @@ async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth
   const queue = await createPersistentWorkerQueue({
     rootDir: join(rootDir, "runtime", "workbench"),
     sessionStore: new StoreBackedQueueSessionStore(rootDir, sessions),
-    worker: async (job) => {
-      if (runner !== undefined) return runner(job);
-      throw createTypedError({
-        code: "dependency_error",
-        summary: "No workbench runner is configured.",
-        suggestedAction: "Configure a runner executor before starting analysis.",
-        affectedInputReferences: ["runner"],
-      });
-    },
+    ...(runner === undefined ? {} : { worker: runner }),
   });
   await queue.reconcile();
   return {
@@ -300,9 +292,23 @@ type StoredHostAction = { request: HostActionRequest; claim?: HostActionClaim; r
 class FileBackedHostActionRegistry implements HostActionRegistry {
   constructor(private readonly rootDir: string) {}
 
-  create(request: HostActionRequest): HostActionRequest {
+  create(request: HostActionRequest): HostActionRequest | undefined {
+    const claimsDirectory = join(this.rootDir, "runtime", "workbench", "registries", "host-action-claims");
+    mkdirSync(claimsDirectory, { recursive: true, mode: 0o700 });
+    const claimPath = join(claimsDirectory, `${createHash("sha256").update(request.actionId).digest("hex")}.json`);
+    try {
+      writeFileSync(claimPath, JSON.stringify({ actionId: request.actionId, sessionId: request.sessionId }), { encoding: "utf8", mode: 0o600, flag: "wx" });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") return undefined;
+      throw error;
+    }
     const actions = this.readActions(request.sessionId);
-    writeRegistry(this.rootDir, "host-actions", request.sessionId, { ...actions, [request.actionId]: { request } });
+    try {
+      writeRegistry(this.rootDir, "host-actions", request.sessionId, { ...actions, [request.actionId]: { request } });
+    } catch (error) {
+      rmSync(claimPath, { force: true });
+      throw error;
+    }
     return request;
   }
 
@@ -388,11 +394,15 @@ class MemoryEventSource implements EventSource {
 
   private readonly events = new Map<string, StoredEvent[]>();
 
+  private readonly nextSequences = new Map<string, number>();
+
   private readonly subscribers = new Map<string, Set<(event: StoredEvent) => void>>();
 
   publish(sessionId: string, eventName: string, payload: unknown): void {
     const events = this.events.get(sessionId) ?? [];
-    const event = { id: String(events.length + 1), eventName, payload };
+    const sequence = this.nextSequences.get(sessionId) ?? 1;
+    const event = { id: String(sequence), eventName, payload };
+    this.nextSequences.set(sessionId, sequence + 1);
     events.push(event);
     if (events.length > MemoryEventSource.MAX_EVENTS_PER_SESSION) events.splice(0, events.length - MemoryEventSource.MAX_EVENTS_PER_SESSION);
     this.events.set(sessionId, events);
@@ -402,8 +412,21 @@ class MemoryEventSource implements EventSource {
   }
 
   replay(sessionId: string, afterEventId: string | undefined): readonly StoredEvent[] {
+    const events = this.events.get(sessionId) ?? [];
     const afterId = Number(afterEventId ?? 0);
-    return (this.events.get(sessionId) ?? []).filter((event) => Number(event.id) > afterId);
+    if (afterEventId !== undefined && (!Number.isSafeInteger(afterId) || afterId < 0)) {
+      return [{ id: "0", eventName: "replay_truncated", payload: { reason: "invalid_last_event_id" } }, ...events];
+    }
+    const firstRetainedId = Number(events[0]?.id ?? 0);
+    const replay = events.filter((event) => Number(event.id) > afterId);
+    if (afterEventId !== undefined && firstRetainedId > 0 && afterId < firstRetainedId - 1) {
+      return [{
+        id: String(firstRetainedId - 1),
+        eventName: "replay_truncated",
+        payload: { requestedAfter: afterId, retainedFrom: firstRetainedId },
+      }, ...replay];
+    }
+    return replay;
   }
 
   subscribe(sessionId: string, listener: (event: StoredEvent) => void): () => void {

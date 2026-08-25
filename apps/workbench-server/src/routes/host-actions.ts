@@ -17,7 +17,10 @@ export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: Workbench
       return reply.code(400).send({ error: "host_action_schema_rejected" });
     }
 
-    return reply.code(201).send(context.hostActions.create(parsed.data));
+    const created = context.hostActions.create(parsed.data);
+    return created === undefined
+      ? reply.code(409).send({ error: "host_action_id_conflict" })
+      : reply.code(201).send(created);
   });
 
   app.post("/api/sessions/:sessionId/host-actions/:actionId/claim", async (request, reply) => {
