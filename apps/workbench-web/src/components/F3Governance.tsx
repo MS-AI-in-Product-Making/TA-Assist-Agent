@@ -21,6 +21,7 @@ export function F3Governance({ report }: F3GovernanceProps) {
       {report !== undefined && report.status !== "input_rejected" ? (
         <>
           <p className="support-text">Status: {report.status}. Governance required rows: {report.summary.governanceRequiredCount}</p>
+          <div className="table-scroll" tabIndex={0} aria-label="F3 governance table">
           <table className="data-table">
             <thead>
               <tr>
@@ -43,6 +44,7 @@ export function F3Governance({ report }: F3GovernanceProps) {
               ))}
             </tbody>
           </table>
+          </div>
         </>
       ) : null}
       {report?.status === "input_rejected" ? <p className="inline-alert">F3 输入被拒绝，需先修复上游 artifact。</p> : null}

@@ -11,7 +11,7 @@ export function ErrorPanel({ error, onDismiss }: ErrorPanelProps) {
   }
 
   return (
-    <section className="panel panel--error" aria-live="assertive">
+    <section className="panel panel--error" role="alert" aria-live="assertive" tabIndex={-1} ref={(element) => element?.focus()}>
       <div className="panel__header">
         <div>
           <p className="eyebrow">Safe error</p>

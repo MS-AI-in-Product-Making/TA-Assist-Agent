@@ -17,6 +17,7 @@ export function F2WorksheetStatus({ report }: F2WorksheetStatusProps) {
       {report !== undefined ? (
         <>
           <p className="support-text">Ready {report.summary.readyWorksheetCount} / Blocked {report.summary.blockedWorksheetCount}</p>
+          <div className="table-scroll" tabIndex={0} aria-label="F2 worksheet status table">
           <table className="data-table">
             <thead>
               <tr>
@@ -37,6 +38,7 @@ export function F2WorksheetStatus({ report }: F2WorksheetStatusProps) {
               ))}
             </tbody>
           </table>
+          </div>
         </>
       ) : null}
     </section>

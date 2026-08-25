@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { rm } from "node:fs/promises";
+import * as xlsx from "xlsx";
 
 import { buildWorkbenchServer } from "./server.js";
 
@@ -13,6 +15,43 @@ function multipartUpload(kind: string, fileName: string, mimeType: string, bytes
 }
 
 describe("workbench uploads", () => {
+  it("accepts a managed workbook reference instead of browser-provided bytes", async () => {
+    const rootDir = ".tmp/workbench-server-upload-managed-reference";
+    await rm(rootDir, { recursive: true, force: true });
+    const server = await buildWorkbenchServer({ rootDir, runner: async () => ({ status: "ok" }) });
+    try {
+      const auth = await server.testAuthenticate();
+      const form = multipartUpload("workbook", "large.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", createLargeWorkbook());
+      const upload = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${auth.sessionId}/files`,
+        headers: { ...auth.headers, ...form.headers },
+        payload: form.payload,
+      });
+
+      expect(upload.statusCode).toBe(201);
+      const response = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${auth.sessionId}/commands`,
+        headers: auth.headers,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId: auth.sessionId,
+          commandId: "managed-workbook-upload",
+          expectedRevision: 0,
+          command: "upload_workbook",
+          payload: { artifactId: upload.json<{ artifactId: string }>().artifactId, inputClassification: "confidential" },
+        },
+      });
+
+      expect(response.statusCode).toBe(202);
+      expect(response.json()).toMatchObject({ state: "initial_scope_required" });
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
   it("never accepts a client supplied output path", async () => {
     const server = await buildWorkbenchServer({ rootDir: ".tmp/workbench-server-upload-path" });
     try {
@@ -50,3 +89,12 @@ describe("workbench uploads", () => {
     }
   });
 });
+
+function createLargeWorkbook(): Uint8Array {
+  const workbook = xlsx.utils.book_new();
+  const rows = Array.from({ length: 40 }, (_, index) => [Array.from({ length: 32767 }, (_value, characterIndex) => String.fromCharCode(65 + ((index + characterIndex) % 26))).join("")]);
+  xlsx.utils.book_append_sheet(workbook, xlsx.utils.aoa_to_sheet(rows), "Large");
+  const bytes = xlsx.write(workbook, { type: "buffer", bookType: "xlsx", compression: false }) as Buffer;
+  expect(bytes.length).toBeGreaterThan(1_048_576);
+  return bytes;
+}

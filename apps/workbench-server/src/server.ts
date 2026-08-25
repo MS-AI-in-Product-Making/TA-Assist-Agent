@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { mkdir } from "node:fs/promises";
+import { mkdir, open, realpath } from "node:fs/promises";
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join, relative, resolve } from "node:path";
 
 import cookie from "@fastify/cookie";
 import multipart from "@fastify/multipart";
@@ -32,6 +32,7 @@ type HostActionResult = ReturnType<typeof hostActionResultSchema.parse>;
 export interface StartWorkbenchServerOptions {
   readonly rootDir: string;
   readonly port?: number;
+  readonly webAssetsRoot?: string;
   readonly bootstrap?: BrowserBootstrapRendezvous;
   readonly runner?: (job: StageJob) => Promise<unknown>;
 }
@@ -90,6 +91,7 @@ export interface WorkbenchServerContext {
   readonly artifacts: ArtifactRegistry;
   readonly events: EventSource;
   readonly queue: PersistentWorkerQueue;
+  resolveManagedWorkbook(sessionId: string, artifactId: string): Promise<{ readonly fileName: string; readonly workbookBytes: Uint8Array }>;
   enqueueActiveAttempt(snapshot: F8SessionSnapshot): Promise<void>;
   requireAuthenticated(request: FastifyRequest, reply: FastifyReply): AuthenticatedRequest | undefined;
   requireBrowserSession(request: FastifyRequest, reply: FastifyReply): AuthenticatedRequest | undefined;
@@ -129,6 +131,11 @@ export async function buildWorkbenchServer(options: StartWorkbenchServerOptions)
 
   app.get("/", async (_request, reply) => reply.type("text/html; charset=utf-8").send(renderBootstrapPage()));
   app.get("/bootstrap.js", async (_request, reply) => reply.type("application/javascript; charset=utf-8").send(renderBootstrapScript()));
+  const webAssets = options.webAssetsRoot === undefined ? undefined : await openWebAssets(options.webAssetsRoot);
+  if (webAssets !== undefined) {
+    app.get("/workbench.js", async (_request, reply) => reply.type("application/javascript; charset=utf-8").send(await webAssets.read("workbench.js")));
+    app.get("/workbench.css", async (_request, reply) => reply.type("text/css; charset=utf-8").send(await webAssets.read("workbench.css")));
+  }
   app.post("/api/bootstrap", async (request, reply) => {
     const nonce = (request.body as { readonly nonce?: unknown } | undefined)?.nonce;
     if (typeof nonce !== "string" || !(await bootstrap.consumeBrowserBootstrap(nonce))) {
@@ -181,6 +188,7 @@ export async function startWorkbenchServer(options: StartWorkbenchServerOptions)
 
 async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth, runner: StartWorkbenchServerOptions["runner"]): Promise<WorkbenchServerContext> {
   const sessions = new StoreBackedSessionRegistry(rootDir);
+  const artifacts = new FileBackedArtifactRegistry(rootDir);
   const queue = await createPersistentWorkerQueue({
     rootDir: join(rootDir, "runtime", "workbench"),
     sessionStore: new StoreBackedQueueSessionStore(rootDir, sessions),
@@ -193,7 +201,7 @@ async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth
     sessions,
     conversation: new FileBackedConversationRegistry(rootDir),
     hostActions: new SqliteHostActionRegistry(rootDir),
-    artifacts: new FileBackedArtifactRegistry(rootDir),
+    artifacts,
     events: await createSqliteEventSource({ rootDir }),
     queue,
     async enqueueActiveAttempt(snapshot) {
@@ -206,6 +214,31 @@ async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth
         stage: attempt.stage,
         payload: { sessionId: snapshot.sessionId },
       });
+    },
+    async resolveManagedWorkbook(sessionId, artifactId) {
+      const artifact = artifacts.read(sessionId, artifactId);
+      if (artifact === undefined || artifact.relativePath !== `uploads/${sessionId}/workbook/${artifactId}-${artifact.fileName}`) {
+        throw createTypedError({
+          code: "validation_error",
+          summary: "Managed workbook reference is unavailable.",
+          suggestedAction: "Upload the workbook again from this browser session.",
+          affectedInputReferences: [artifactId],
+        });
+      }
+      const rootRealPath = await realpath(rootDir);
+      const targetPath = resolve(rootDir, artifact.relativePath);
+      const targetRealPath = await realpath(targetPath);
+      if (relative(rootRealPath, targetRealPath).startsWith("..") || basename(targetRealPath) !== `${artifactId}-${artifact.fileName}`) {
+        throw createTypedError({ code: "policy_denied", summary: "Managed workbook reference was rejected.", suggestedAction: "Upload the workbook again.", affectedInputReferences: [artifactId] });
+      }
+      const handle = await open(targetRealPath, "r");
+      try {
+        const stats = await handle.stat();
+        if (!stats.isFile()) throw new Error("managed workbook is not a file");
+        return { fileName: artifact.fileName, workbookBytes: new Uint8Array(await handle.readFile()) };
+      } finally {
+        await handle.close();
+      }
     },
     requireAuthenticated(request, reply) {
       const authenticated = auth.authenticate(request);
@@ -413,4 +446,29 @@ class StoreBackedQueueSessionStore implements QueueSessionStore {
 
 function readSessionId(value: unknown): string | undefined {
   return typeof value === "object" && value !== null && "sessionId" in value && typeof value.sessionId === "string" ? value.sessionId : undefined;
+}
+
+interface OpenWebAssets {
+  read(name: "workbench.js" | "workbench.css"): Promise<string>;
+}
+
+async function openWebAssets(webAssetsRoot: string): Promise<OpenWebAssets> {
+  const rootRealPath = await realpath(webAssetsRoot);
+  return {
+    async read(name) {
+      const targetPath = join(rootRealPath, name);
+      const targetRealPath = await realpath(targetPath);
+      if (relative(rootRealPath, targetRealPath).startsWith("..") || basename(targetRealPath) !== name) {
+        throw new Error("web asset containment rejected");
+      }
+      const handle = await open(targetRealPath, "r");
+      try {
+        const stats = await handle.stat();
+        if (!stats.isFile()) throw new Error("web asset is not a file");
+        return await handle.readFile({ encoding: "utf8" });
+      } finally {
+        await handle.close();
+      }
+    },
+  };
 }

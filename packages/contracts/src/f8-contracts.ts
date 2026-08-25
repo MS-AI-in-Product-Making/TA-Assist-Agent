@@ -140,6 +140,13 @@ const workbookUploadPayloadSchema = z
   })
   .strict();
 
+const managedWorkbookUploadPayloadSchema = z
+  .object({
+    artifactId: nonEmptyStringSchema,
+    inputClassification: z.literal("confidential"),
+  })
+  .strict();
+
 const workbookReplacePayloadSchema = workbookUploadPayloadSchema.extend({
   previousWorkbookHash: sha256Schema,
 }).strict();
@@ -164,6 +171,12 @@ const confirmationDecisionPayloadSchema = z
     decisionReference: nonEmptyStringSchema.optional(),
   })
   .strict();
+
+const adoDecisionPayloadSchema = z.discriminatedUnion("decision", [
+  z.object({ decision: z.literal("create_new"), rationale: nonEmptyStringSchema.optional() }).strict(),
+  z.object({ decision: z.literal("use_existing"), rationale: nonEmptyStringSchema.optional() }).strict(),
+  z.object({ decision: z.literal("local_only"), rationale: nonEmptyStringSchema.optional() }).strict(),
+]);
 
 const retryPayloadSchema = z
   .object({
@@ -197,11 +210,11 @@ const commandEnvelopeSchema = <T extends z.ZodTypeAny>(command: string, payloadS
   .strict();
 
 export const f8SessionCommandSchema = z.discriminatedUnion("command", [
-  commandEnvelopeSchema("upload_workbook", workbookUploadPayloadSchema),
+  commandEnvelopeSchema("upload_workbook", z.union([workbookUploadPayloadSchema, managedWorkbookUploadPayloadSchema])),
   commandEnvelopeSchema("replace_workbook", workbookReplacePayloadSchema),
   commandEnvelopeSchema("confirm_initial_scope", worksheetScopePayloadSchema),
   commandEnvelopeSchema("confirm_downstream_scope", worksheetScopePayloadSchema),
-  commandEnvelopeSchema("confirm_ado_decision", confirmationDecisionPayloadSchema),
+  commandEnvelopeSchema("confirm_ado_decision", adoDecisionPayloadSchema),
   commandEnvelopeSchema("confirm_image_decision", confirmationDecisionPayloadSchema),
   commandEnvelopeSchema("confirm_analysis_context", confirmationDecisionPayloadSchema),
   commandEnvelopeSchema("confirm_optimization_targets", confirmationDecisionPayloadSchema),

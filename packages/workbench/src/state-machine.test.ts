@@ -4,7 +4,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import * as workbench from "./index.js";
 
 const SESSION_ID = "session-task-4";
-const WORKBOOK_HASH = "a".repeat(64);
 const PREVIOUS_WORKBOOK_HASH = "b".repeat(64);
 const HISTORICAL_WORKBOOK_HASH = "c".repeat(64);
 
@@ -93,6 +92,27 @@ describe("workbench state machine", () => {
       runningSnapshot("f3_running"),
       completedAttemptResult({ governance: { status: "governance_required" } }),
     ).state).toBe("ado_decision_required");
+  });
+
+  it("records local-only governance as not requested and proceeds directly to F4", () => {
+    const api = requireApi();
+    const result = api.reduceSessionCommand(
+      baseSnapshot({ state: "ado_decision_required", revision: 4 }),
+      {
+        contractVersion: "f8-session-command-v1",
+        sessionId: SESSION_ID,
+        commandId: "ado-local-only",
+        expectedRevision: 4,
+        command: "confirm_ado_decision",
+        payload: { decision: "local_only" },
+      },
+    );
+
+    expect(result.state).toBe("f4_running");
+    expect(result.activeAttempt).toMatchObject({ stage: "f4_running", status: "running" });
+    expect(result.priorRunReferences).toEqual([
+      expect.objectContaining({ featureId: "F3", referenceId: "ado-not-requested" }),
+    ]);
   });
 
   it("invalidates only the active input revision on replace_workbook while preserving immutable history", () => {

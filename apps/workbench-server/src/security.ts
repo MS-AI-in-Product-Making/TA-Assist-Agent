@@ -9,7 +9,7 @@ export function applySecurityHeaders(reply: FastifyReply): void {
   reply.header("x-frame-options", "DENY");
   reply.header("x-content-type-options", "nosniff");
   reply.header("referrer-policy", "no-referrer");
-  reply.header("content-security-policy", "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
+  reply.header("content-security-policy", "default-src 'self'; script-src 'self'; style-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
 }
 
 export function safeErrorResponse(error: unknown, fallbackCode: TypedErrorCode = "validation_error"): { readonly error: TypedError } {

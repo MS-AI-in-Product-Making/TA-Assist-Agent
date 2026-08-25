@@ -25,6 +25,30 @@ export interface WorkbenchSubscriptionHandlers {
   readonly onError: (error: TypedError) => void;
 }
 
+export interface ParsedSseEvent {
+  readonly id?: string;
+  readonly event: string;
+  readonly data: string;
+}
+
+export class SseEventParser {
+  private buffer = "";
+
+  push(chunk: string): readonly ParsedSseEvent[] {
+    this.buffer += chunk.replace(/\r\n/g, "\n");
+    const events: ParsedSseEvent[] = [];
+    let boundary = this.buffer.indexOf("\n\n");
+    while (boundary >= 0) {
+      const block = this.buffer.slice(0, boundary);
+      this.buffer = this.buffer.slice(boundary + 2);
+      const event = parseSseBlock(block);
+      if (event !== undefined) events.push(event);
+      boundary = this.buffer.indexOf("\n\n");
+    }
+    return events;
+  }
+}
+
 export interface WorkbenchApi {
   bootstrap(): Promise<BootstrapResult>;
   subscribe(sessionId: string, handlers: WorkbenchSubscriptionHandlers, lastEventId?: string): () => void;
@@ -55,74 +79,68 @@ export function createWorkbenchApi(): WorkbenchApi {
       return { sessionId: snapshot.sessionId, snapshot, conversation };
     },
     subscribe(sessionId, handlers, lastEventId) {
-      const source = new EventSource(`/api/sessions/${encodeURIComponent(sessionId)}/events`, { withCredentials: true });
-      const eventNames = [
-        "snapshot",
-        "snapshot_updated",
-        "command_accepted",
-        "command_rejected",
-        "stage_started",
-        "stage_completed",
-        "stage_failed",
-        "host_action_requested",
-        "host_action_claimed",
-        "host_action_resulted",
-        "scenario_draft_updated",
-      ];
-
-      const onEvent = (event: MessageEvent<string>) => {
-        try {
-          const payload = JSON.parse(event.data) as unknown;
-          const parsedSnapshot = f8SessionSnapshotSchema.safeParse(payload);
-          if (parsedSnapshot.success) {
-            handlers.onSnapshot(parsedSnapshot.data, event.lastEventId || undefined);
-            return;
+      const controller = new AbortController();
+      let cursor = lastEventId;
+      const run = async (): Promise<void> => {
+        while (!controller.signal.aborted) {
+          try {
+            const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/events`, {
+              credentials: "same-origin",
+              headers: cursor === undefined ? {} : { "last-event-id": cursor },
+              signal: controller.signal,
+            });
+            if (!response.ok || response.body === null) throw new Error(`SSE request rejected (${response.status}).`);
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            const parser = new SseEventParser();
+            while (!controller.signal.aborted) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              for (const event of parser.push(decoder.decode(value, { stream: true }))) {
+                if (event.id !== undefined) cursor = event.id;
+                if (event.event === "replay_truncated") {
+                  handlers.onSnapshot(await readSession(sessionId), cursor);
+                  continue;
+                }
+                deliverSsePayload(event, handlers);
+              }
+            }
+          } catch (error) {
+            if (controller.signal.aborted) return;
+            handlers.onError(normalizeError(error, "transient_error", "工作台事件流已中断。", "等待自动重连，或刷新工作台。"));
           }
-
-          const parsedEvent = f8SessionEventSchema.safeParse(payload);
-          if (parsedEvent.success && "snapshot" in parsedEvent.data && parsedEvent.data.snapshot !== undefined) {
-            handlers.onSnapshot(parsedEvent.data.snapshot, event.lastEventId || parsedEvent.data.eventId);
-          }
-        } catch (error) {
-          handlers.onError(normalizeError(error, "transient_error", "浏览器事件流解析失败。", "刷新工作台后重试。"));
+          if (!controller.signal.aborted) await delay(250, controller.signal);
         }
       };
-
-      for (const eventName of eventNames) {
-        source.addEventListener(eventName, onEvent as EventListener);
-      }
-
-      source.onerror = () => {
-        handlers.onError(createTypedError({
-          code: "transient_error",
-          summary: "工作台事件流已中断。",
-          retryable: true,
-          suggestedAction: "等待自动重连，或刷新工作台。",
-          affectedInputReferences: [sessionId, lastEventId ?? "stream"],
-        }));
-      };
-
+      void run();
       return () => {
-        for (const eventName of eventNames) {
-          source.removeEventListener(eventName, onEvent as EventListener);
-        }
-        source.close();
+        controller.abort();
       };
     },
     async uploadWorkbook(sessionId, expectedRevision, file) {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      const workbookHash = await hashWorkbookBytes(bytes);
+      const form = new FormData();
+      form.set("kind", "workbook");
+      form.set("file", file);
+      const uploadResponse = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/files`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "x-csrf-token": await readCsrfToken() },
+        body: form,
+      });
+      const upload = await parseJsonResponse(uploadResponse) as { readonly artifactId?: unknown; readonly contentHash?: unknown };
+      if (typeof upload.artifactId !== "string" || typeof upload.contentHash !== "string") {
+        throw createTypedError({ code: "validation_error", summary: "服务器未返回受管 workbook 引用。", suggestedAction: "重新上传 workbook。", affectedInputReferences: [sessionId] });
+      }
       const snapshot = await submitCommandInternal({
         sessionId,
         expectedRevision,
         command: "upload_workbook",
         payload: {
-          fileName: file.name,
-          workbookBytes: Array.from(bytes),
+          artifactId: upload.artifactId,
           inputClassification: "confidential",
-        },
+        } as F8SessionCommand["payload"],
       });
-      return { snapshot, workbookHash };
+      return { snapshot, workbookHash: upload.contentHash };
     },
     async submitCommand(sessionId, expectedRevision, command, payload) {
       return submitCommandInternal({ sessionId, expectedRevision, command, payload });
@@ -253,9 +271,48 @@ function normalizeError(
   });
 }
 
-async function hashWorkbookBytes(bytes: Uint8Array): Promise<string> {
-  const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+function parseSseBlock(block: string): ParsedSseEvent | undefined {
+  if (block.length === 0) return undefined;
+  let id: string | undefined;
+  let event = "message";
+  const data: string[] = [];
+  for (const line of block.split("\n")) {
+    if (line.startsWith(":")) continue;
+    const separator = line.indexOf(":");
+    const field = separator < 0 ? line : line.slice(0, separator);
+    const value = separator < 0 ? "" : line.slice(separator + 1).replace(/^ /, "");
+    if (field === "id") id = value;
+    if (field === "event") event = value;
+    if (field === "data") data.push(value);
+  }
+  return data.length === 0 ? undefined : { id, event, data: data.join("\n") };
+}
+
+function deliverSsePayload(event: ParsedSseEvent, handlers: WorkbenchSubscriptionHandlers): void {
+  try {
+    const payload = JSON.parse(event.data) as unknown;
+    const parsedSnapshot = f8SessionSnapshotSchema.safeParse(payload);
+    if (parsedSnapshot.success) {
+      handlers.onSnapshot(parsedSnapshot.data, event.id);
+      return;
+    }
+    const parsedEvent = f8SessionEventSchema.safeParse(payload);
+    if (parsedEvent.success && "snapshot" in parsedEvent.data && parsedEvent.data.snapshot !== undefined) {
+      handlers.onSnapshot(parsedEvent.data.snapshot, event.id ?? parsedEvent.data.eventId);
+    }
+  } catch (error) {
+    handlers.onError(normalizeError(error, "transient_error", "浏览器事件流解析失败。", "刷新工作台后重试。"));
+  }
+}
+
+function delay(milliseconds: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, milliseconds);
+    signal.addEventListener("abort", () => {
+      clearTimeout(timer);
+      resolve();
+    }, { once: true });
+  });
 }
 
 function readSessionIdFromUrl(): string | undefined {

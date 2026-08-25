@@ -3,11 +3,11 @@ import { useState } from "react";
 export interface AdoDecisionProps {
   readonly visible: boolean;
   readonly disabled?: boolean;
-  readonly onSubmit: (decision: string, rationale: string) => Promise<void>;
+  readonly onSubmit: (decision: "create_new" | "use_existing" | "local_only", rationale: string) => Promise<void>;
 }
 
 export function AdoDecision({ visible, disabled = false, onSubmit }: AdoDecisionProps) {
-  const [decision, setDecision] = useState("preview_only");
+  const [decision, setDecision] = useState<"create_new" | "use_existing" | "local_only">("local_only");
   const [rationale, setRationale] = useState("");
 
   if (!visible) {
@@ -32,12 +32,16 @@ export function AdoDecision({ visible, disabled = false, onSubmit }: AdoDecision
         <fieldset className="choice-group" disabled={disabled}>
           <legend>仅在 `governance_required` 时出现</legend>
           <label>
-            <input type="radio" name="ado-decision" checked={decision === "preview_only"} onChange={() => setDecision("preview_only")} />
-            仅保留预览，不执行写入
+            <input type="radio" name="ado-decision" checked={decision === "create_new"} onChange={() => setDecision("create_new")} />
+            创建新的 ADO work item
           </label>
           <label>
-            <input type="radio" name="ado-decision" checked={decision === "confirm_write"} onChange={() => setDecision("confirm_write")} />
-            进入受控写入流程
+            <input type="radio" name="ado-decision" checked={decision === "use_existing"} onChange={() => setDecision("use_existing")} />
+            使用现有 ADO work item
+          </label>
+          <label>
+            <input type="radio" name="ado-decision" checked={decision === "local_only"} onChange={() => setDecision("local_only")} />
+            不发布到 ADO
           </label>
         </fieldset>
         <label className="field">

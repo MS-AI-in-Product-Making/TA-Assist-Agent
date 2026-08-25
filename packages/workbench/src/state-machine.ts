@@ -3,7 +3,6 @@ import { createTypedError, f8SessionSnapshotSchema } from "@ai-assist/contracts"
 import {
   annotateSnapshot,
   attemptMatchesActiveAttempt,
-  canRetryAttempt,
   createRunningAttempt,
   deriveRetryable,
   resolveRetryStage,
@@ -56,7 +55,7 @@ export function reduceSessionCommand(snapshotInput: F8SessionSnapshot, commandIn
     case "confirm_downstream_scope":
       return reduceConfirmDownstreamScope(snapshot, command);
     case "confirm_ado_decision":
-      return transitionWithAttempt(snapshot, command, "ado_action_pending");
+      return reduceConfirmAdoDecision(snapshot, command);
     case "confirm_image_decision":
       return transitionWithAttempt(snapshot, command, "f5_running");
     case "confirm_analysis_context":
@@ -292,4 +291,23 @@ function withF7PlaceholderOutcome(snapshot: F8SessionSnapshot): F8SessionSnapsho
       runReference: placeholderRunReference,
     },
   ];
+}
+
+function reduceConfirmAdoDecision(snapshot: F8SessionSnapshot, command: F8SessionCommand): F8SessionSnapshot {
+  const payload = command.payload as { readonly decision: "create_new" | "use_existing" | "local_only" };
+  if (payload.decision !== "local_only") {
+    return transitionWithAttempt(snapshot, command, "ado_action_pending");
+  }
+
+  return transitionWithAttempt(snapshot, command, "f4_running", {
+    priorRunReferences: [
+      ...snapshot.priorRunReferences,
+      {
+        featureId: "F3",
+        referenceId: "ado-not-requested",
+        contractVersion: "f3-ado-reminder-v1",
+        runReference: `f3-ado:not-requested:${snapshot.sessionId}:${snapshot.inputRevision}`,
+      },
+    ],
+  });
 }

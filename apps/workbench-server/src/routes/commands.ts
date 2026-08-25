@@ -16,7 +16,7 @@ export const commandsRoutes: FastifyPluginAsync<{ readonly context: WorkbenchSer
       return reply.code(403).send({ error: "session_scope_rejected" });
     }
 
-    const parsed = f8SessionCommandSchema.safeParse(normalizeCommandBody(request.body));
+    const parsed = f8SessionCommandSchema.safeParse(await normalizeCommandBody(request.body, context));
     if (!parsed.success || parsed.data.sessionId !== sessionId) {
       return reply.code(400).send({ error: "command_schema_rejected" });
     }
@@ -31,12 +31,18 @@ export const commandsRoutes: FastifyPluginAsync<{ readonly context: WorkbenchSer
   });
 };
 
-function normalizeCommandBody(body: unknown): unknown {
+async function normalizeCommandBody(body: unknown, context: WorkbenchServerContext): Promise<unknown> {
   if (typeof body !== "object" || body === null || !("payload" in body)) {
     return body;
   }
 
-  const command = body as { readonly payload?: unknown };
+  const command = body as { readonly sessionId?: unknown; readonly command?: unknown; readonly payload?: unknown };
+  if (command.command === "upload_workbook" && typeof command.sessionId === "string" && typeof command.payload === "object" && command.payload !== null && "artifactId" in command.payload) {
+    const artifactId = (command.payload as { readonly artifactId?: unknown }).artifactId;
+    if (typeof artifactId !== "string") return body;
+    const managedWorkbook = await context.resolveManagedWorkbook(command.sessionId, artifactId);
+    return { ...command, payload: { fileName: managedWorkbook.fileName, workbookBytes: managedWorkbook.workbookBytes, inputClassification: "confidential" } };
+  }
   if (typeof command.payload !== "object" || command.payload === null || !("workbookBytes" in command.payload)) {
     return body;
   }

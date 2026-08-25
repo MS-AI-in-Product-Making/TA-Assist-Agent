@@ -90,6 +90,7 @@ textarea {
 
 .hero__metrics strong {
   font-size: 0.98rem;
+  overflow-wrap: anywhere;
 }
 
 .layout-grid {
@@ -223,6 +224,7 @@ textarea {
 
 .data-table {
   width: 100%;
+  min-width: 600px;
   border-collapse: collapse;
   font-size: 0.92rem;
 }
@@ -233,6 +235,16 @@ textarea {
   padding: 8px 10px;
   border-bottom: 1px solid rgba(201, 184, 160, 0.5);
   vertical-align: top;
+}
+
+.table-scroll {
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+
+:focus-visible {
+  outline: 3px solid #9b5442;
+  outline-offset: 3px;
 }
 
 .conversation-item {
@@ -288,6 +300,20 @@ textarea {
 
   .hero__metrics {
     min-width: 0;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: 1fr;
+  }
+
+  .app-shell {
+    padding: 14px;
+  }
+
+  .hero {
+    gap: 14px;
+    padding: 14px;
+  }
+
+  .ledger-item,
+  .queue-item {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

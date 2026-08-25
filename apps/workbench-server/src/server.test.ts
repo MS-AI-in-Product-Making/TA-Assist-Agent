@@ -1,12 +1,58 @@
 import { createHash } from "node:crypto";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
-import { rm } from "node:fs/promises";
 import { get } from "node:http";
 
 import { buildWorkbenchServer } from "./server.js";
 
 describe("workbench server routes", () => {
+  it("exchanges a one-time bootstrap nonce for a browser cookie and CSRF-protected session", async () => {
+    const server = await buildWorkbenchServer({ rootDir: ".tmp/workbench-server-bootstrap-session" });
+    try {
+      const nonce = await server.bootstrap.issueBrowserBootstrap();
+      const bootstrap = await server.inject({ method: "POST", url: "/api/bootstrap", payload: { nonce } });
+      const cookie = bootstrap.headers["set-cookie"];
+
+      expect(bootstrap.statusCode).toBe(204);
+      expect(cookie).toContain("HttpOnly");
+      expect((await server.inject({ method: "POST", url: "/api/bootstrap", payload: { nonce } })).statusCode).toBe(401);
+      const csrf = await server.inject({ method: "GET", url: "/api/csrf", headers: { host: "127.0.0.1:0", cookie } });
+      expect(csrf.statusCode).toBe(200);
+      const created = await server.inject({
+        method: "POST",
+        url: "/api/sessions",
+        headers: { host: "127.0.0.1:0", cookie, "x-csrf-token": csrf.json<{ csrfToken: string }>().csrfToken },
+      });
+      expect(created.statusCode).toBe(201);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("serves only the configured built workbench assets after bootstrap", async () => {
+    const rootDir = ".tmp/workbench-server-web-assets";
+    const webAssetsRoot = join(rootDir, "web-assets");
+    await rm(rootDir, { recursive: true, force: true });
+    await mkdir(webAssetsRoot, { recursive: true });
+    await Promise.all([
+      writeFile(join(webAssetsRoot, "workbench.js"), "export {}\n"),
+      writeFile(join(webAssetsRoot, "workbench.css"), "body {}\n"),
+    ]);
+    const server = await buildWorkbenchServer({ rootDir, webAssetsRoot });
+    try {
+      expect((await server.inject({ method: "GET", url: "/" })).body).toContain('id="app"');
+      expect((await server.inject({ method: "GET", url: "/" })).body).toContain('src="/bootstrap.js"');
+      expect((await server.inject({ method: "GET", url: "/workbench.js" })).body).toBe("export {}\n");
+      expect((await server.inject({ method: "GET", url: "/workbench.css" })).body).toBe("body {}\n");
+      expect((await server.inject({ method: "GET", url: "/assets/unknown.js" })).statusCode).toBe(404);
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
   it("returns CSRF only to the authenticated browser session", async () => {
     const server = await buildWorkbenchServer({ rootDir: ".tmp/workbench-server-csrf" });
     try {
