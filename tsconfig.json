@@ -2,6 +2,7 @@
   "files": [],
   "references": [
     { "path": "./apps/cli" },
+    { "path": "./apps/workbench-server" },
     { "path": "./packages/contracts" },
     { "path": "./packages/conversation" },
     { "path": "./packages/agent-runtime" },
