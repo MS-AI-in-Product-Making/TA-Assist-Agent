@@ -1,5 +1,4 @@
-import { createReadStream } from "node:fs";
-import { lstat, realpath } from "node:fs/promises";
+import { lstat, open, realpath, stat } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 
 import type { FastifyPluginAsync } from "fastify";
@@ -8,7 +7,7 @@ import type { WorkbenchServerContext } from "../server.js";
 
 export const artifactsRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServerContext }> = async (app, { context }) => {
   app.get("/api/sessions/:sessionId/artifacts/:artifactId", async (request, reply) => {
-    const auth = context.requireAuthenticated(request, reply);
+    const auth = context.requireBrowserSession(request, reply);
     if (auth === undefined) {
       return reply;
     }
@@ -32,13 +31,14 @@ export const artifactsRoutes: FastifyPluginAsync<{ readonly context: WorkbenchSe
     }
 
     const artifactPath = resolve(context.rootDir, artifact.relativePath);
-    if (!await isSafeManagedPath(context.rootDir, artifactPath)) {
+    const bytes = await readManagedArtifact(context.rootDir, artifactPath);
+    if (bytes === undefined) {
       return reply.code(403).send({ error: "artifact_path_rejected" });
     }
 
     reply.header("content-disposition", `attachment; filename="${artifact.fileName.replace(/"/g, "_")}"`);
     reply.type(artifact.mimeType);
-    return reply.send(createReadStream(artifactPath));
+    return reply.send(bytes);
   });
 };
 
@@ -62,5 +62,21 @@ async function isSafeManagedPath(rootDir: string, targetPath: string): Promise<b
     return realDelta.length > 0 && !realDelta.startsWith("..") && !realDelta.split(/[\\/]/).includes("..");
   } catch {
     return false;
+  }
+}
+
+async function readManagedArtifact(rootDir: string, targetPath: string): Promise<Buffer | undefined> {
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
+  try {
+    handle = await open(targetPath, "r");
+    const handleStat = await handle.stat();
+    if (!handleStat.isFile() || handleStat.isBlockDevice() || handleStat.isCharacterDevice() || !await isSafeManagedPath(rootDir, targetPath)) return undefined;
+    const pathStat = await stat(targetPath);
+    if (handleStat.dev !== pathStat.dev || handleStat.ino !== pathStat.ino) return undefined;
+    return await handle.readFile();
+  } catch {
+    return undefined;
+  } finally {
+    await handle?.close().catch(() => undefined);
   }
 }

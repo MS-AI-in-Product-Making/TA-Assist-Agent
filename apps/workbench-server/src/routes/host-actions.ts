@@ -40,7 +40,7 @@ export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: Workbench
       return reply.code(403).send({ error: "host_scope_rejected" });
     }
 
-    const claim = context.hostActions.claim(actionId, hostInstanceId);
+    const claim = context.hostActions.claim(sessionId, actionId, hostInstanceId);
     const parsed = hostActionClaimSchema.safeParse(claim);
     return parsed.success ? reply.send(parsed.data) : reply.code(409).send({ error: "host_action_not_claimable" });
   });
@@ -61,7 +61,7 @@ export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: Workbench
       return reply.code(400).send({ error: "host_action_result_rejected" });
     }
 
-    const completion = context.hostActions.complete(parsed.data);
+    const completion = context.hostActions.complete(sessionId, parsed.data);
     if (completion === "accepted") return reply.code(204).send();
     if (completion === "duplicate") return reply.code(409).send({ error: "host_action_result_replayed" });
     return reply.code(400).send({ error: "host_action_result_integrity_rejected" });

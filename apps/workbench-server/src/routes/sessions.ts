@@ -17,7 +17,7 @@ export const sessionsRoutes: FastifyPluginAsync<{ readonly context: WorkbenchSer
   });
 
   app.get("/api/sessions/:sessionId", async (request, reply) => {
-    const auth = context.requireAuthenticated(request, reply);
+    const auth = context.requireBrowserSession(request, reply);
     if (auth === undefined) {
       return reply;
     }

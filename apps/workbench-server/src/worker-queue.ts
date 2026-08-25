@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { createTypedError } from "@ai-assist/contracts";
 
@@ -21,8 +21,8 @@ export interface QueueReceipt {
 
 export interface QueueSessionStore {
   persistAttempt(attempt: { readonly attemptId: string; readonly status: "queued" | "running"; readonly jobId: string; readonly stage?: string }): Promise<void>;
-  markAttemptResult(attemptId: string, result: unknown, expectedStatus: "running"): Promise<boolean>;
-  markDependencyFailure(attemptId: string, reason: string): Promise<void>;
+  markAttemptResult(attemptId: string, result: unknown, expectedStatus: "running", job?: StageJob): Promise<boolean>;
+  markDependencyFailure(attemptId: string, reason: string, job?: StageJob): Promise<void>;
 }
 
 export interface PersistentWorkerQueueOptions {
@@ -69,6 +69,8 @@ class FileBackedWorkerQueue implements PersistentWorkerQueue {
 
   private sequence = 0;
 
+  private operations: Promise<void> = Promise.resolve();
+
   constructor(private readonly options: PersistentWorkerQueueOptions) {}
 
   async load(): Promise<void> {
@@ -76,70 +78,84 @@ class FileBackedWorkerQueue implements PersistentWorkerQueue {
       const raw = await readFile(this.queuePath, "utf8");
       const jobs = JSON.parse(raw) as PersistedJob[];
       for (const job of jobs) {
+        if (!job.jobId || this.jobs.has(job.jobId)) {
+          throw createTypedError({
+            code: "dependency_error",
+            summary: "Worker queue state is invalid.",
+            suggestedAction: "Preserve the queue file and repair it before restarting the workbench.",
+            affectedInputReferences: [this.queuePath],
+          });
+        }
         this.jobs.set(job.jobId, job);
         this.sequence = Math.max(this.sequence, job.sequence);
       }
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-        throw error;
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return;
       }
+
+      if ((error as { code?: unknown }).code === "dependency_error") throw error;
+      throw createTypedError({
+        code: "dependency_error",
+        summary: "Worker queue state could not be read.",
+        suggestedAction: "Preserve the queue file and repair it before restarting the workbench.",
+        affectedInputReferences: [this.queuePath],
+      });
     }
   }
 
   async enqueue(job: StageJob, options?: EnqueueOptions): Promise<QueueReceipt> {
-    if (job.jobId && this.jobs.has(job.jobId)) {
-      throw createTypedError({
-        code: "validation_error",
-        summary: "Duplicate worker job rejected.",
-        suggestedAction: "Submit each worker job with a unique jobId.",
-        affectedInputReferences: [job.jobId],
-      });
-    }
+    const persisted = await this.serialize(async () => {
+      if (job.jobId && this.jobs.has(job.jobId)) {
+        throw createTypedError({
+          code: "validation_error",
+          summary: "Duplicate worker job rejected.",
+          suggestedAction: "Submit each worker job with a unique jobId.",
+          affectedInputReferences: [job.jobId],
+        });
+      }
 
-    const persisted: PersistedJob = { ...job, jobId: job.jobId || randomUUID(), status: "queued", sequence: ++this.sequence };
-    this.jobs.set(persisted.jobId, persisted);
-    await this.options.sessionStore.persistAttempt({ attemptId: persisted.attemptId, status: "queued", jobId: persisted.jobId, stage: persisted.stage });
-    await this.persist();
+      const next: PersistedJob = { ...job, jobId: job.jobId || randomUUID(), status: "queued", sequence: ++this.sequence };
+      this.jobs.set(next.jobId, next);
+      await this.options.sessionStore.persistAttempt({ attemptId: next.attemptId, status: "queued", jobId: next.jobId, stage: next.stage });
+      if (options?.deferDrain === true) {
+        next.status = "running";
+        await this.options.sessionStore.persistAttempt({ attemptId: next.attemptId, status: "running", jobId: next.jobId, stage: next.stage });
+      }
+      await this.persist();
+      return next;
+    });
     let drain: Promise<void> | undefined;
     if (options?.deferDrain !== true) {
       drain = this.drain();
       await new Promise((resolve) => setImmediate(resolve));
-    } else {
-      persisted.status = "running";
-      await this.options.sessionStore.persistAttempt({ attemptId: persisted.attemptId, status: "running", jobId: persisted.jobId, stage: persisted.stage });
-      await this.persist();
     }
 
-    const terminal = this.terminalPromises.get(persisted.jobId);
-    if (terminal !== undefined && options?.deferDrain !== true) {
-      await terminal;
-    } else if (drain !== undefined) {
-      await drain;
-    }
+    if (options?.deferDrain !== true) await this.waitForTerminal(persisted.jobId, drain);
 
     return { jobId: persisted.jobId, attemptId: persisted.attemptId, status: this.jobs.get(persisted.jobId)?.status ?? "queued" };
   }
 
   async cancel(jobId: string): Promise<boolean> {
-    const job = this.jobs.get(jobId);
-    if (job === undefined || job.status === "completed" || job.status === "failed" || job.status === "cancelled") {
-      return false;
-    }
-
-    job.status = "cancelled";
-    await this.persist();
-    return true;
+    return this.serialize(async () => {
+      const job = this.jobs.get(jobId);
+      if (job === undefined || job.status === "completed" || job.status === "failed" || job.status === "cancelled") return false;
+      job.status = "cancelled";
+      await this.persist();
+      return true;
+    });
   }
 
   async reconcile(): Promise<void> {
-    for (const job of this.jobs.values()) {
-      if (job.status === "running") {
-        job.status = "failed";
-        await this.options.sessionStore.markDependencyFailure(job.attemptId, "Worker stopped before terminal callback; retry is required.");
+    await this.serialize(async () => {
+      for (const job of this.jobs.values()) {
+        if (job.status === "running") {
+          job.status = "failed";
+          await this.options.sessionStore.markDependencyFailure(job.attemptId, "Worker stopped before terminal callback; retry is required.", job);
+        }
       }
-    }
-
-    await this.persist();
+      await this.persist();
+    });
   }
 
   private async drain(): Promise<void> {
@@ -154,8 +170,10 @@ class FileBackedWorkerQueue implements PersistentWorkerQueue {
         scheduled = false;
         for (const job of [...this.jobs.values()].filter((candidate) => candidate.status === "queued").sort((left, right) => left.sequence - right.sequence)) {
           if (!this.canStart(job)) continue;
-          scheduled = true;
-          this.terminalPromises.set(job.jobId, this.runJob(job));
+          if (await this.startJob(job)) {
+            scheduled = true;
+            this.terminalPromises.set(job.jobId, this.runJob(job));
+          }
         }
       }
     } finally {
@@ -170,21 +188,51 @@ class FileBackedWorkerQueue implements PersistentWorkerQueue {
   }
 
   private async runJob(job: PersistedJob): Promise<void> {
-    this.incrementActive(job);
-    job.status = "running";
-    await this.options.sessionStore.persistAttempt({ attemptId: job.attemptId, status: "running", jobId: job.jobId, stage: job.stage });
-    await this.persist();
     try {
       const result = await this.options.worker(job);
-      const accepted = await this.options.sessionStore.markAttemptResult(job.attemptId, result, "running");
-      job.status = accepted ? "completed" : "failed";
+      await this.serialize(async () => {
+        const accepted = await this.options.sessionStore.markAttemptResult(job.attemptId, result, "running", job);
+        job.status = accepted ? "completed" : "failed";
+        await this.persist();
+      });
     } catch (error) {
-      job.status = "failed";
-      await this.options.sessionStore.markDependencyFailure(job.attemptId, "Worker failed.");
+      await this.serialize(async () => {
+        job.status = "failed";
+        await this.options.sessionStore.markDependencyFailure(job.attemptId, "Worker failed.", job);
+        await this.persist();
+      });
     } finally {
-      this.decrementActive(job);
-      await this.persist();
+      await this.serialize(async () => {
+        this.decrementActive(job);
+        await this.persist();
+      });
       void this.drain();
+    }
+  }
+
+  private async startJob(job: PersistedJob): Promise<boolean> {
+    return this.serialize(async () => {
+      if (job.status !== "queued") return false;
+      this.incrementActive(job);
+      job.status = "running";
+      await this.options.sessionStore.persistAttempt({ attemptId: job.attemptId, status: "running", jobId: job.jobId, stage: job.stage });
+      await this.persist();
+      return true;
+    });
+  }
+
+  private async waitForTerminal(jobId: string, drain: Promise<void> | undefined): Promise<void> {
+    while (true) {
+      const terminal = this.terminalPromises.get(jobId);
+      if (terminal !== undefined) {
+        await terminal;
+        return;
+      }
+
+      const status = this.jobs.get(jobId)?.status;
+      if (status === "completed" || status === "failed" || status === "cancelled") return;
+      if (drain !== undefined) await drain;
+      await new Promise<void>((resolve) => setImmediate(resolve));
     }
   }
 
@@ -199,7 +247,34 @@ class FileBackedWorkerQueue implements PersistentWorkerQueue {
   }
 
   private async persist(): Promise<void> {
-    await writeFile(this.queuePath, JSON.stringify([...this.jobs.values()], null, 2));
+    const temporaryPath = `${this.queuePath}.${randomUUID()}.tmp`;
+    const handle = await open(temporaryPath, "wx", 0o600);
+    try {
+      await handle.writeFile(JSON.stringify([...this.jobs.values()], null, 2));
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    try {
+      await rename(temporaryPath, this.queuePath);
+      const directory = await open(this.options.rootDir, "r");
+      try {
+        await directory.sync();
+      } catch {
+        // Windows does not support syncing a directory handle.
+      } finally {
+        await directory.close();
+      }
+    } catch (error) {
+      await rm(temporaryPath, { force: true }).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  private async serialize<T>(operation: () => Promise<T>): Promise<T> {
+    const next = this.operations.then(operation, operation);
+    this.operations = next.then(() => undefined, () => undefined);
+    return next;
   }
 
   private get queuePath(): string {

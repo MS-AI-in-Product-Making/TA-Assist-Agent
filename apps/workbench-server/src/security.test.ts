@@ -112,8 +112,8 @@ describe("workbench server security boundary", () => {
           sessionId: auth.sessionId,
           commandId: "command-stale",
           expectedRevision: 0,
-          command: "cancel",
-          payload: { reason: "stale" },
+          command: "retry",
+          payload: { stage: "f0_validating" },
         },
       });
       expect(stale.statusCode).toBe(409);
@@ -204,6 +204,43 @@ describe("workbench server security boundary", () => {
     }
   });
 
+  it("denies a claim-only host bearer every browser-only route", async () => {
+    const rootDir = ".tmp/workbench-server-host-route-matrix";
+    await rm(rootDir, { recursive: true, force: true });
+    const server = await buildWorkbenchServer({ rootDir });
+    try {
+      const browser = await server.testAuthenticate("abababab-abab-4bab-8bab-abababababab");
+      const token = server.issueHostBearer(browser.sessionId, ["host-actions:claim"], {
+        actionId: "action-matrix",
+        hostInstanceId: "host-a",
+      });
+      const headers = { host: "127.0.0.1:0", authorization: `Bearer ${token}` };
+
+      await mkdir(join(rootDir, "artifacts", browser.sessionId), { recursive: true });
+      await writeFile(join(rootDir, "artifacts", browser.sessionId, "safe.txt"), "safe");
+      server.registerArtifactForTest(browser.sessionId, "safe", `artifacts/${browser.sessionId}/safe.txt`, "safe.txt", "public", "text/plain");
+
+      const responses = await Promise.all([
+        server.inject({ method: "GET", url: "/api/csrf", headers }),
+        server.inject({ method: "POST", url: "/api/sessions", headers }),
+        server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}`, headers }),
+        server.inject({ method: "POST", url: `/api/sessions/${browser.sessionId}/commands`, headers, payload: {} }),
+        server.inject({ method: "POST", url: `/api/sessions/${browser.sessionId}/files`, headers: { ...headers, "content-type": "application/json" }, payload: {} }),
+        server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}/conversation`, headers }),
+        server.inject({ method: "POST", url: `/api/sessions/${browser.sessionId}/conversation`, headers, payload: {} }),
+        server.inject({ method: "POST", url: `/api/sessions/${browser.sessionId}/host-actions`, headers, payload: {} }),
+        server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}/artifacts/safe`, headers }),
+      ]);
+
+      for (const response of responses) {
+        expect(response.statusCode).toBe(403);
+      }
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
   it("rejects unknown multipart fields and malformed workbook content without leaking filesystem errors", async () => {
     const rootDir = ".tmp/workbench-server-upload-security";
     await rm(rootDir, { recursive: true, force: true });
@@ -291,6 +328,35 @@ describe("workbench server security boundary", () => {
     } finally {
       server.server.closeAllConnections();
       await server.close();
+    }
+  });
+
+  it("bounds cleanup when an SSE client disconnects before consuming the stream", async () => {
+    const rootDir = ".tmp/workbench-server-events-early-close";
+    await rm(rootDir, { recursive: true, force: true });
+    const started = await startWorkbenchServer({ rootDir });
+    const { server } = started;
+    try {
+      const auth = await server.testAuthenticate("89898989-8989-4989-8989-898989898989");
+      await new Promise<void>((resolve, reject) => {
+        const request = get(`${started.url.replace(/\/#.*$/, "")}/api/sessions/${auth.sessionId}/events`, {
+          headers: { cookie: auth.headers.cookie },
+        });
+        request.once("response", (response) => {
+          response.destroy();
+          resolve();
+        });
+        request.once("error", reject);
+      });
+
+      await expect(Promise.race([
+        server.close(),
+        new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error("SSE cleanup timed out")), 1_000)),
+      ])).resolves.toBeUndefined();
+    } finally {
+      server.server.closeAllConnections();
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
     }
   });
 });

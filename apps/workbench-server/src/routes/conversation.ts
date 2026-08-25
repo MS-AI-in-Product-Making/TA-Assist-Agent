@@ -1,13 +1,12 @@
 import { conversationTurnSchema } from "@ai-assist/contracts";
 import type { FastifyPluginAsync } from "fastify";
-import { once } from "node:events";
 
 import { formatSseEvent, sanitizeSsePayload } from "../sse.js";
 import type { WorkbenchServerContext } from "../server.js";
 
 export const conversationRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServerContext }> = async (app, { context }) => {
   app.get("/api/sessions/:sessionId/conversation", async (request, reply) => {
-    const auth = context.requireAuthenticated(request, reply);
+    const auth = context.requireBrowserSession(request, reply);
     if (auth === undefined) {
       return reply;
     }
@@ -36,7 +35,7 @@ export const conversationRoutes: FastifyPluginAsync<{ readonly context: Workbenc
   });
 
   app.get("/api/sessions/:sessionId/events", async (request, reply) => {
-    const auth = context.requireAuthenticated(request, reply);
+    const auth = context.requireBrowserSession(request, reply);
     if (auth === undefined) {
       return reply;
     }
@@ -54,14 +53,46 @@ export const conversationRoutes: FastifyPluginAsync<{ readonly context: Workbenc
     });
     reply.raw.flushHeaders();
     const lastEventId = typeof request.headers["last-event-id"] === "string" ? request.headers["last-event-id"] : undefined;
-    const events = context.events.replay(sessionId, lastEventId);
-    const write = async (message: string): Promise<void> => {
-      if (!reply.raw.write(message)) await once(reply.raw, "drain");
+    const events = context.events.replay(sessionId, lastEventId).slice(-256);
+    let heartbeat: NodeJS.Timeout | undefined;
+    let closed = false;
+    let unsubscribe = (): void => undefined;
+    const pendingWrites = new Set<() => void>();
+    const cleanup = (): void => {
+      if (closed) return;
+      closed = true;
+      if (heartbeat !== undefined) clearInterval(heartbeat);
+      unsubscribe();
+      for (const resolveWrite of pendingWrites) resolveWrite();
+      pendingWrites.clear();
+      request.raw.off("close", cleanup);
+      request.raw.off("aborted", cleanup);
+      reply.raw.off("close", cleanup);
     };
-    let cleanup: () => void;
-    const unsubscribe = context.events.subscribe(sessionId, (event) => {
+    request.raw.once("close", cleanup);
+    request.raw.once("aborted", cleanup);
+    reply.raw.once("close", cleanup);
+    const write = async (message: string): Promise<void> => {
+      if (closed || reply.raw.destroyed || reply.raw.writableEnded) return;
+      if (reply.raw.write(message)) return;
+      await new Promise<void>((resolve) => {
+        const finish = (): void => {
+          reply.raw.off("drain", finish);
+          pendingWrites.delete(finish);
+          resolve();
+        };
+        pendingWrites.add(finish);
+        reply.raw.once("drain", finish);
+        if (closed || reply.raw.destroyed || reply.raw.writableEnded) finish();
+      });
+    };
+    unsubscribe = context.events.subscribe(sessionId, (event) => {
       void write(formatSseEvent(event.eventName, sanitizeSsePayload(event.payload), event.id)).catch(() => cleanup());
     });
+    if (closed || request.raw.destroyed || reply.raw.destroyed) {
+      cleanup();
+      return reply;
+    }
     await write(": heartbeat\n\n");
     if (events.length === 0) {
       await write(formatSseEvent("snapshot", sanitizeSsePayload(await context.sessions.read(sessionId) ?? { sessionId }), "snapshot"));
@@ -70,19 +101,11 @@ export const conversationRoutes: FastifyPluginAsync<{ readonly context: Workbenc
         await write(formatSseEvent(event.eventName, sanitizeSsePayload(event.payload), event.id));
       }
     }
-    const heartbeat = setInterval(() => {
-      void write(": heartbeat\n\n").catch(() => cleanup());
-    }, 15_000);
-    cleanup = (): void => {
-      clearInterval(heartbeat);
-      unsubscribe();
-      request.raw.off("close", cleanup);
-      request.raw.off("aborted", cleanup);
-      reply.raw.off("close", cleanup);
-    };
-    request.raw.once("close", cleanup);
-    request.raw.once("aborted", cleanup);
-    reply.raw.once("close", cleanup);
+    if (!closed) {
+      heartbeat = setInterval(() => {
+        void write(": heartbeat\n\n").catch(() => cleanup());
+      }, 15_000);
+    }
     return reply;
   });
 };

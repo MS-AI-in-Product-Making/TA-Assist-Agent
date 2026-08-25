@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -114,5 +114,62 @@ describe("persistent workbench worker queue", () => {
     gates.get("calc-2")!.resolve({ ok: true });
     gates.get("excel-2")!.resolve({ ok: true });
     await Promise.all([excel1, excel2, calc1, calc2]);
+  });
+
+  it("preserves both concurrent calculation completions across restart", async () => {
+    const store = new MemoryQueueSessionStore();
+    const gates = new Map([["calc-a", deferred<unknown>()], ["calc-b", deferred<unknown>()]]);
+    const queue = await createPersistentWorkerQueue({
+      rootDir,
+      sessionStore: store,
+      calculationConcurrency: 2,
+      worker: async (job) => gates.get(job.jobId)!.promise,
+    });
+
+    const first = queue.enqueue({ jobId: "calc-a", attemptId: "attempt-a", kind: "calculation", stage: "f4_running", payload: {} });
+    const second = queue.enqueue({ jobId: "calc-b", attemptId: "attempt-b", kind: "calculation", stage: "f5_running", payload: {} });
+    await vi.waitFor(() => expect(store.attempts.get("attempt-b")?.status).toBe("running"));
+    gates.get("calc-a")!.resolve({ id: "a" });
+    gates.get("calc-b")!.resolve({ id: "b" });
+    await Promise.all([first, second]);
+
+    const persisted = JSON.parse(await readFile(join(rootDir, "worker-queue.json"), "utf8")) as Array<{ jobId: string; status: string }>;
+    expect(persisted).toEqual(expect.arrayContaining([
+      expect.objectContaining({ jobId: "calc-a", status: "completed" }),
+      expect.objectContaining({ jobId: "calc-b", status: "completed" }),
+    ]));
+  });
+
+  it("does not execute a queued job cancelled before capacity is available", async () => {
+    const store = new MemoryQueueSessionStore();
+    const firstGate = deferred<unknown>();
+    const starts: string[] = [];
+    const queue = await createPersistentWorkerQueue({
+      rootDir,
+      sessionStore: store,
+      worker: async (job) => {
+        starts.push(job.jobId);
+        return job.jobId === "excel-running" ? firstGate.promise : { ok: true };
+      },
+    });
+
+    const running = queue.enqueue({ jobId: "excel-running", attemptId: "attempt-running", kind: "excel", stage: "f1_f2_running", payload: {} });
+    await vi.waitFor(() => expect(starts).toEqual(["excel-running"]));
+    const cancelled = queue.enqueue({ jobId: "excel-cancelled", attemptId: "attempt-cancelled", kind: "excel", stage: "f1_f2_running", payload: {} });
+    await vi.waitFor(async () => expect(await queue.cancel("excel-cancelled")).toBe(true));
+    firstGate.resolve({ ok: true });
+
+    await Promise.all([running, cancelled]);
+    expect(starts).toEqual(["excel-running"]);
+  });
+
+  it("fails closed and preserves corrupt queue state", async () => {
+    const queuePath = join(rootDir, "worker-queue.json");
+    await writeFile(queuePath, "{not-json");
+    const store = new MemoryQueueSessionStore();
+
+    await expect(createPersistentWorkerQueue({ rootDir, sessionStore: store, worker: async () => ({}) }))
+      .rejects.toMatchObject({ code: "dependency_error" });
+    await expect(readFile(queuePath, "utf8")).resolves.toBe("{not-json");
   });
 });

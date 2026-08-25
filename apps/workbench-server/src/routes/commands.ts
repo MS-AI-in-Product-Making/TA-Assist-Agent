@@ -23,7 +23,8 @@ export const commandsRoutes: FastifyPluginAsync<{ readonly context: WorkbenchSer
 
     try {
       const snapshot = await context.sessions.applyCommand(parsed.data);
-      return reply.code(202).send(snapshot);
+      await context.enqueueActiveAttempt(snapshot);
+      return reply.code(202).send((await context.sessions.read(sessionId)) ?? snapshot);
     } catch (error) {
       return reply.code(errorStatusCode(error)).send(safeErrorResponse(error));
     }

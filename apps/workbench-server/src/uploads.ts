@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdir, realpath, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, open, realpath, rm, stat } from "node:fs/promises";
 import { basename, join, relative } from "node:path";
 
 import { createTypedError } from "@ai-assist/contracts";
@@ -72,13 +72,23 @@ export async function storeUpload(input: UploadValidationInput): Promise<StoredU
   const storageName = `${artifactId}-${fileName}`;
   const outputPath = join(sessionUploadRoot, storageName);
   await assertNoSymlinkAncestors(input.rootDir, sessionUploadRoot);
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
   try {
-    await writeFile(outputPath, bytes, { flag: "wx" });
+    handle = await open(outputPath, "wx", 0o600);
+    await handle.writeFile(bytes);
+    await handle.sync();
+    const handleStat = await handle.stat();
+    if (!handleStat.isFile() || handleStat.size !== bytes.length) throw safeUploadError("upload_handle_rejected", 400);
     await assertContainedPath(input.rootDir, outputPath);
+    await assertNoSymlinkAncestors(input.rootDir, sessionUploadRoot);
+    const pathStat = await stat(outputPath);
+    if (handleStat.dev !== pathStat.dev || handleStat.ino !== pathStat.ino) throw safeUploadError("upload_identity_rejected", 400);
   } catch (error) {
+    await handle?.close().catch(() => undefined);
     await rm(outputPath, { force: true }).catch(() => undefined);
     throw error;
   }
+  await handle.close();
 
   return {
     artifactId,

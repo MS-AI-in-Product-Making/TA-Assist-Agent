@@ -130,8 +130,8 @@ export function hasScope(authenticated: AuthenticatedRequest, scope: HostBearerS
 
 export function hostBearerMatches(authenticated: AuthenticatedRequest, actionId: string, hostInstanceId: string): boolean {
   return authenticated.kind === "host"
-    && (authenticated.actionId === undefined || authenticated.actionId === actionId)
-    && (authenticated.hostInstanceId === undefined || authenticated.hostInstanceId === hostInstanceId);
+    && authenticated.actionId === actionId
+    && authenticated.hostInstanceId === hostInstanceId;
 }
 
 function readBearerToken(authorization: string | undefined): string | undefined {
