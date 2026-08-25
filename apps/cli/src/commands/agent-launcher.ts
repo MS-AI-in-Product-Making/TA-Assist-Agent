@@ -1,6 +1,9 @@
 import { startWorkbenchServer } from "@ai-assist/workbench-server";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { runAgentCommand, type AgentCliRequest, type AgentLauncher } from "./agent.js";
 
@@ -45,13 +48,16 @@ function registerHostCredentialIpc(server: Awaited<ReturnType<typeof startWorkbe
 
 function openBrowser(url: string): void {
   const command = resolveBrowserCommand(process.platform, existsSync);
-  const args = resolveBrowserArgs(process.platform, command, url);
+  const profileRoot = process.platform === "win32" && command !== "explorer.exe" ? mkdtempSync(join(tmpdir(), "ta-assist-browser-")) : undefined;
+  const args = resolveBrowserArgs(process.platform, command, url, profileRoot);
   const child = spawn(command, args, { detached: true, stdio: "ignore", windowsHide: true });
   child.unref();
 }
 
-export function resolveBrowserArgs(platform: NodeJS.Platform, command: string, url: string): string[] {
-  return platform === "win32" && command !== "explorer.exe" ? ["--new-window", url] : [url];
+export function resolveBrowserArgs(platform: NodeJS.Platform, command: string, url: string, profileRoot?: string): string[] {
+  return platform === "win32" && command !== "explorer.exe"
+    ? ["--new-window", "--no-first-run", ...(profileRoot === undefined ? [] : [`--user-data-dir=${profileRoot}`]), url]
+    : [url];
 }
 
 export function resolveBrowserCommand(platform: NodeJS.Platform, exists: (path: string) => boolean): string {

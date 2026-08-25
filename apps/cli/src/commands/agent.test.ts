@@ -38,6 +38,6 @@ describe("runAgentCommand", () => {
     const edge = "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe";
     expect(resolveBrowserCommand("win32", (path) => path === edge)).toBe(edge);
     expect(resolveBrowserCommand("win32", () => false)).toBe("explorer.exe");
-    expect(resolveBrowserArgs("win32", edge, "http://127.0.0.1:4317/#bootstrap=nonce")).toEqual(["--new-window", "http://127.0.0.1:4317/#bootstrap=nonce"]);
+    expect(resolveBrowserArgs("win32", edge, "http://127.0.0.1:4317/#bootstrap=nonce", "C:\\Temp\\profile")).toEqual(["--new-window", "--no-first-run", "--user-data-dir=C:\\Temp\\profile", "http://127.0.0.1:4317/#bootstrap=nonce"]);
   });
 });
