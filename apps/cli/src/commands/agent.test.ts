@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { runAgentCommand } from "./agent.js";
-import { resolveBrowserCommand } from "./agent-launcher.js";
+import { resolveBrowserArgs, resolveBrowserCommand } from "./agent-launcher.js";
 
 const SESSION_ID = "30303030-3030-4303-8303-303030303030";
 
@@ -38,5 +38,6 @@ describe("runAgentCommand", () => {
     const edge = "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe";
     expect(resolveBrowserCommand("win32", (path) => path === edge)).toBe(edge);
     expect(resolveBrowserCommand("win32", () => false)).toBe("explorer.exe");
+    expect(resolveBrowserArgs("win32", edge, "http://127.0.0.1:4317/#bootstrap=nonce")).toEqual(["--new-window", "http://127.0.0.1:4317/#bootstrap=nonce"]);
   });
 });

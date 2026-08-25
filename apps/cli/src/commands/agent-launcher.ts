@@ -45,8 +45,13 @@ function registerHostCredentialIpc(server: Awaited<ReturnType<typeof startWorkbe
 
 function openBrowser(url: string): void {
   const command = resolveBrowserCommand(process.platform, existsSync);
-  const child = spawn(command, [url], { detached: true, stdio: "ignore", windowsHide: true });
+  const args = resolveBrowserArgs(process.platform, command, url);
+  const child = spawn(command, args, { detached: true, stdio: "ignore", windowsHide: true });
   child.unref();
+}
+
+export function resolveBrowserArgs(platform: NodeJS.Platform, command: string, url: string): string[] {
+  return platform === "win32" && command !== "explorer.exe" ? ["--new-window", url] : [url];
 }
 
 export function resolveBrowserCommand(platform: NodeJS.Platform, exists: (path: string) => boolean): string {
