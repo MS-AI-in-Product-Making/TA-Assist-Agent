@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 import { get } from "node:http";
@@ -53,6 +53,22 @@ describe("workbench server routes", () => {
     }
   });
 
+  it("resolves the production workbench bundle by default and fails safely when it is absent", async () => {
+    const rootDir = ".tmp/workbench-server-default-web-assets";
+    const server = await buildWorkbenchServer({ rootDir });
+    try {
+      const response = await server.inject({ method: "GET", url: "/workbench.js" });
+
+      expect([200, 503]).toContain(response.statusCode);
+      if (response.statusCode === 503) {
+        expect(response.json()).toEqual({ error: expect.objectContaining({ code: "dependency_error" }) });
+      }
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
   it("returns CSRF only to the authenticated browser session", async () => {
     const server = await buildWorkbenchServer({ rootDir: ".tmp/workbench-server-csrf" });
     try {
@@ -73,6 +89,11 @@ describe("workbench server routes", () => {
     const server = await buildWorkbenchServer({ rootDir });
     try {
       const auth = await server.testAuthenticate("12121212-1212-4212-8212-121212121212");
+      const artifactId = "managed-workbook";
+      server.registerArtifactForTest(auth.sessionId, artifactId, `uploads/${auth.sessionId}/workbook/${artifactId}-book.xlsx`, "book.xlsx", "confidential", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      const workbookPath = join(rootDir, `uploads/${auth.sessionId}/workbook/${artifactId}-book.xlsx`);
+      await mkdir(dirname(workbookPath), { recursive: true });
+      await writeFile(workbookPath, Buffer.from([80, 75, 3, 4]));
       const response = await server.inject({
         method: "POST",
         url: `/api/sessions/${auth.sessionId}/commands`,
@@ -83,13 +104,63 @@ describe("workbench server routes", () => {
           commandId: "missing-runner-upload",
           expectedRevision: 0,
           command: "upload_workbook",
-          payload: { fileName: "book.xlsx", workbookBytes: [1], inputClassification: "confidential" },
+          payload: { artifactId, inputClassification: "confidential" },
         },
       });
 
       expect(response.statusCode).toBe(202);
       expect(response.json()).toMatchObject({ state: "failed", activeAttempt: { status: "failed" } });
       expect(response.json()).not.toMatchObject({ state: "completed" });
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("projects ADO validation as a host action without enqueuing a generic worker", async () => {
+    const rootDir = ".tmp/workbench-server-ado-host-action";
+    await rm(rootDir, { recursive: true, force: true });
+    const server = await buildWorkbenchServer({ rootDir, runner: async () => ({ status: "worker-ran" }) });
+    try {
+      const browser = await server.testAuthenticate("28282828-2828-4282-8282-282828282828");
+      const session = await (await import("@ai-assist/workbench")).openSessionStore({ rootDir, sessionId: browser.sessionId });
+      try {
+        await session.applyCommand({
+          contractVersion: "f8-session-command-v1",
+          sessionId: browser.sessionId,
+          commandId: "seed-ado-decision",
+          expectedRevision: 0,
+          command: "upload_workbook",
+          payload: { fileName: "book.xlsx", workbookBytes: new Uint8Array([80, 75, 3, 4]), inputClassification: "confidential" },
+        }, async (snapshot) => ({ snapshot: { ...snapshot, state: "ado_decision_required", revision: snapshot.revision + 1, activeAttempt: null } }));
+      } finally {
+        await session.close();
+      }
+      const snapshot = (await server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}`, headers: browser.headers })).json<{ revision: number }>();
+      const response = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${browser.sessionId}/commands`,
+        headers: browser.headers,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId: browser.sessionId,
+          commandId: "request-ado-validation",
+          expectedRevision: snapshot.revision,
+          command: "confirm_ado_decision",
+          payload: { decision: "create_new" },
+        },
+      });
+
+      expect(response.statusCode).toBe(202);
+      expect(response.json()).toMatchObject({ state: "ado_action_pending", activeAttempt: null });
+      const actionId = `ado-validation:${browser.sessionId}:${response.json<{ revision: number }>().revision}`;
+      const token = server.issueHostBearer(browser.sessionId, ["host-actions:claim"], { actionId, hostInstanceId: "host-a" });
+      expect((await server.inject({
+        method: "POST",
+        url: `/api/sessions/${browser.sessionId}/host-actions/${actionId}/claim`,
+        headers: { host: "127.0.0.1:0", authorization: `Bearer ${token}` },
+        payload: { hostInstanceId: "host-a" },
+      })).statusCode).toBe(200);
     } finally {
       await server.close();
       await rm(rootDir, { recursive: true, force: true });

@@ -9,6 +9,26 @@ describe("SseEventParser", () => {
     expect(parser.push("id: 17\nevent: snapshot\ndata: {\"revision\":")).toEqual([]);
     expect(parser.push("2}\n\n")).toEqual([{ id: "17", event: "snapshot", data: '{"revision":2}' }]);
   });
+
+  it("preserves split CRLF delimiters and concatenates multiline data", () => {
+    const parser = new SseEventParser();
+
+    expect(parser.push("id: 18\r")).toEqual([]);
+    expect(parser.push("\nevent: snapshot\r\ndata: {\"revision\":\r\ndata: 3}\r\n\r")).toEqual([]);
+    expect(parser.push("\n")).toEqual([{ id: "18", event: "snapshot", data: '{"revision":\n3}' }]);
+  });
+
+  it("accepts fragmented UTF-8 decoded through TextDecoder streaming", () => {
+    const parser = new SseEventParser();
+    const decoder = new TextDecoder();
+    const bytes = new TextEncoder().encode("event: snapshot\ndata: {\"label\":\"\u4e2d\u6587\"}\n\n");
+    const splitAt = bytes.indexOf(0xe4) + 1;
+
+    expect(parser.push(decoder.decode(bytes.slice(0, splitAt), { stream: true }))).toEqual([]);
+    expect(parser.push(decoder.decode(bytes.slice(splitAt), { stream: true }) + decoder.decode())).toEqual([
+      { event: "snapshot", data: '{"label":"\u4e2d\u6587"}' },
+    ]);
+  });
 });
 
 describe("workbench browser API", () => {

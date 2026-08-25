@@ -93,6 +93,12 @@ describe("workbench server security boundary", () => {
       const mutationHeaders = { ...sessionHeaders, "x-csrf-token": sessionCsrf };
 
       expect((await started.server.inject({ method: "GET", url: `/api/sessions/${session.sessionId}`, headers: sessionHeaders })).statusCode).toBe(200);
+      const form = new FormData();
+      form.set("kind", "workbook");
+      form.set("file", new Blob([createAnonymousWorkbookZip()], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), "book.xlsx");
+      const uploaded = await started.server.inject({ method: "POST", url: `/api/sessions/${session.sessionId}/files`, headers: mutationHeaders, payload: form });
+      expect(uploaded.statusCode).toBe(201);
+      const artifactId = uploaded.json<{ artifactId: string }>().artifactId;
       expect((await started.server.inject({
         method: "POST",
         url: `/api/sessions/${session.sessionId}/commands`,
@@ -103,14 +109,9 @@ describe("workbench server security boundary", () => {
           commandId: "bootstrap-upload",
           expectedRevision: 0,
           command: "upload_workbook",
-          payload: { fileName: "book.xlsx", workbookBytes: [1], inputClassification: "confidential" },
+          payload: { artifactId, inputClassification: "confidential" },
         },
       })).statusCode).toBe(202);
-
-      const form = new FormData();
-      form.set("kind", "workbook");
-      form.set("file", new Blob([createAnonymousWorkbookZip()], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), "book.xlsx");
-      expect((await started.server.inject({ method: "POST", url: `/api/sessions/${session.sessionId}/files`, headers: mutationHeaders, payload: form })).statusCode).toBe(201);
 
       started.server.publishEventForTest(session.sessionId, "snapshot", { ready: true });
       const events = await new Promise<import("node:http").IncomingMessage>((resolve, reject) => {
@@ -154,6 +155,12 @@ describe("workbench server security boundary", () => {
       expect(disallowed.statusCode).toBe(409);
       expect(disallowed.json()).toMatchObject({ error: { code: "validation_error" } });
 
+      const form = new FormData();
+      form.set("kind", "workbook");
+      form.set("file", new Blob([createAnonymousWorkbookZip()], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), "book.xlsx");
+      const uploaded = await server.inject({ method: "POST", url: `/api/sessions/${auth.sessionId}/files`, headers: auth.headers, payload: form });
+      expect(uploaded.statusCode).toBe(201);
+
       const accepted = await server.inject({
         method: "POST",
         url: `/api/sessions/${auth.sessionId}/commands`,
@@ -164,7 +171,7 @@ describe("workbench server security boundary", () => {
           commandId: "command-upload",
           expectedRevision: 0,
           command: "upload_workbook",
-          payload: { fileName: "book.xlsx", workbookBytes: new Uint8Array([1]), inputClassification: "confidential" },
+          payload: { artifactId: uploaded.json<{ artifactId: string }>().artifactId, inputClassification: "confidential" },
         },
       });
       expect(accepted.statusCode).toBe(202);

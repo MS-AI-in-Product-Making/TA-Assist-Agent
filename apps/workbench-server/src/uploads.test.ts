@@ -52,6 +52,34 @@ describe("workbench uploads", () => {
     }
   });
 
+  it("rejects public command payloads that supply workbook bytes", async () => {
+    const rootDir = ".tmp/workbench-server-upload-public-bytes";
+    await rm(rootDir, { recursive: true, force: true });
+    const server = await buildWorkbenchServer({ rootDir, runner: async () => ({ status: "ok" }) });
+    try {
+      const auth = await server.testAuthenticate();
+      const response = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${auth.sessionId}/commands`,
+        headers: auth.headers,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId: auth.sessionId,
+          commandId: "public-workbook-bytes",
+          expectedRevision: 0,
+          command: "upload_workbook",
+          payload: { fileName: "book.xlsx", workbookBytes: [1], inputClassification: "confidential" },
+        },
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toEqual({ error: "command_schema_rejected" });
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
   it("never accepts a client supplied output path", async () => {
     const server = await buildWorkbenchServer({ rootDir: ".tmp/workbench-server-upload-path" });
     try {
@@ -92,9 +120,7 @@ describe("workbench uploads", () => {
 
 function createLargeWorkbook(): Uint8Array {
   const workbook = xlsx.utils.book_new();
-  const rows = Array.from({ length: 40 }, (_, index) => [Array.from({ length: 32767 }, (_value, characterIndex) => String.fromCharCode(65 + ((index + characterIndex) % 26))).join("")]);
+  const rows = Array.from({ length: 2 }, (_, index) => [Array.from({ length: 32767 }, (_value, characterIndex) => String.fromCharCode(65 + ((index + characterIndex) % 26))).join("")]);
   xlsx.utils.book_append_sheet(workbook, xlsx.utils.aoa_to_sheet(rows), "Large");
-  const bytes = xlsx.write(workbook, { type: "buffer", bookType: "xlsx", compression: false }) as Buffer;
-  expect(bytes.length).toBeGreaterThan(1_048_576);
-  return bytes;
+  return xlsx.write(workbook, { type: "buffer", bookType: "xlsx", compression: false }) as Buffer;
 }

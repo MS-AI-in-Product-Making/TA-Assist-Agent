@@ -1,7 +1,8 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, open, realpath } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, open, realpath, stat } from "node:fs/promises";
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { basename, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import cookie from "@fastify/cookie";
 import multipart from "@fastify/multipart";
@@ -15,7 +16,7 @@ import { createHostActionStore } from "@ai-assist/workbench";
 
 import { WorkbenchAuth, SESSION_COOKIE_NAME, type HostBearerOptions, type AuthenticatedRequest, type TestAuthentication } from "./auth.js";
 import { createBrowserBootstrapRendezvous, renderBootstrapPage, renderBootstrapScript, type BrowserBootstrapRendezvous } from "./bootstrap.js";
-import { applySecurityHeaders, isMutation, LOOPBACK_HOST, rejectIfUnsafeBrowserBoundary } from "./security.js";
+import { applySecurityHeaders, isMutation, LOOPBACK_HOST, rejectIfUnsafeBrowserBoundary, safeErrorResponse } from "./security.js";
 import { artifactsRoutes } from "./routes/artifacts.js";
 import { commandsRoutes } from "./routes/commands.js";
 import { conversationRoutes } from "./routes/conversation.js";
@@ -92,6 +93,7 @@ export interface WorkbenchServerContext {
   readonly events: EventSource;
   readonly queue: PersistentWorkerQueue;
   resolveManagedWorkbook(sessionId: string, artifactId: string): Promise<{ readonly fileName: string; readonly workbookBytes: Uint8Array }>;
+  createPendingHostAction(snapshot: F8SessionSnapshot, command: F8SessionCommand): Promise<void>;
   enqueueActiveAttempt(snapshot: F8SessionSnapshot): Promise<void>;
   requireAuthenticated(request: FastifyRequest, reply: FastifyReply): AuthenticatedRequest | undefined;
   requireBrowserSession(request: FastifyRequest, reply: FastifyReply): AuthenticatedRequest | undefined;
@@ -131,11 +133,9 @@ export async function buildWorkbenchServer(options: StartWorkbenchServerOptions)
 
   app.get("/", async (_request, reply) => reply.type("text/html; charset=utf-8").send(renderBootstrapPage()));
   app.get("/bootstrap.js", async (_request, reply) => reply.type("application/javascript; charset=utf-8").send(renderBootstrapScript()));
-  const webAssets = options.webAssetsRoot === undefined ? undefined : await openWebAssets(options.webAssetsRoot);
-  if (webAssets !== undefined) {
-    app.get("/workbench.js", async (_request, reply) => reply.type("application/javascript; charset=utf-8").send(await webAssets.read("workbench.js")));
-    app.get("/workbench.css", async (_request, reply) => reply.type("text/css; charset=utf-8").send(await webAssets.read("workbench.css")));
-  }
+  const webAssets = await openWebAssets(options.webAssetsRoot ?? defaultWebAssetsRoot());
+  app.get("/workbench.js", async (_request, reply) => sendWebAsset(reply, webAssets, "workbench.js", "application/javascript; charset=utf-8"));
+  app.get("/workbench.css", async (_request, reply) => sendWebAsset(reply, webAssets, "workbench.css", "text/css; charset=utf-8"));
   app.post("/api/bootstrap", async (request, reply) => {
     const nonce = (request.body as { readonly nonce?: unknown } | undefined)?.nonce;
     if (typeof nonce !== "string" || !(await bootstrap.consumeBrowserBootstrap(nonce))) {
@@ -204,13 +204,33 @@ async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth
     artifacts,
     events: await createSqliteEventSource({ rootDir }),
     queue,
+    async createPendingHostAction(snapshot, command) {
+      if (snapshot.state !== "ado_action_pending" || command.command !== "confirm_ado_decision") return;
+      const decision = (command.payload as { readonly decision: "create_new" | "use_existing" | "local_only" }).decision;
+      if (decision === "local_only") return;
+      const actionId = `ado-validation:${snapshot.sessionId}:${snapshot.revision}`;
+      const confirmationHash = createHash("sha256").update(JSON.stringify({ decision, inputRevision: snapshot.inputRevision })).digest("hex");
+      const created = await (new SqliteHostActionRegistry(rootDir)).create({
+        contractVersion: "f8-host-action-request-v1",
+        actionId,
+        sessionId: snapshot.sessionId,
+        expectedRevision: snapshot.revision,
+        kind: "surface_validate",
+        confirmationHash,
+        expectedTargetVersion: "ado-decision-v1",
+        expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+      });
+      if (created === undefined) {
+        throw createTypedError({ code: "dependency_error", summary: "Unable to create the required ADO validation action.", suggestedAction: "Retry the ADO decision before continuing.", affectedInputReferences: [actionId] });
+      }
+    },
     async enqueueActiveAttempt(snapshot) {
       const attempt = snapshot.activeAttempt;
       if (attempt === null) return;
       await queue.enqueue({
         jobId: attempt.attemptId,
         attemptId: attempt.attemptId,
-        kind: attempt.stage === "f1_f2_running" || attempt.stage === "f3_running" ? "excel" : attempt.stage === "ado_action_pending" ? "host" : "calculation",
+        kind: attempt.stage === "f1_f2_running" || attempt.stage === "f3_running" ? "excel" : "calculation",
         stage: attempt.stage,
         payload: { sessionId: snapshot.sessionId },
       });
@@ -225,16 +245,9 @@ async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth
           affectedInputReferences: [artifactId],
         });
       }
-      const rootRealPath = await realpath(rootDir);
-      const targetPath = resolve(rootDir, artifact.relativePath);
-      const targetRealPath = await realpath(targetPath);
-      if (relative(rootRealPath, targetRealPath).startsWith("..") || basename(targetRealPath) !== `${artifactId}-${artifact.fileName}`) {
-        throw createTypedError({ code: "policy_denied", summary: "Managed workbook reference was rejected.", suggestedAction: "Upload the workbook again.", affectedInputReferences: [artifactId] });
-      }
-      const handle = await open(targetRealPath, "r");
+      const handle = await open(resolve(rootDir, artifact.relativePath), "r");
       try {
-        const stats = await handle.stat();
-        if (!stats.isFile()) throw new Error("managed workbook is not a file");
+        await assertOpenedFileContained(handle, rootDir, artifact.relativePath, `${artifactId}-${artifact.fileName}`);
         return { fileName: artifact.fileName, workbookBytes: new Uint8Array(await handle.readFile()) };
       } finally {
         await handle.close();
@@ -453,22 +466,58 @@ interface OpenWebAssets {
 }
 
 async function openWebAssets(webAssetsRoot: string): Promise<OpenWebAssets> {
-  const rootRealPath = await realpath(webAssetsRoot);
+  let rootRealPath: string | undefined;
+  try {
+    rootRealPath = await realpath(webAssetsRoot);
+  } catch {
+    return { read: async () => { throw createTypedError({ code: "dependency_error", summary: "Workbench web assets are unavailable.", suggestedAction: "Build apps/workbench-web before starting the workbench server.", affectedInputReferences: [webAssetsRoot] }); } };
+  }
   return {
     async read(name) {
-      const targetPath = join(rootRealPath, name);
-      const targetRealPath = await realpath(targetPath);
-      if (relative(rootRealPath, targetRealPath).startsWith("..") || basename(targetRealPath) !== name) {
-        throw new Error("web asset containment rejected");
-      }
-      const handle = await open(targetRealPath, "r");
+      const relativePath = name;
+      const handle = await open(join(rootRealPath, relativePath), "r");
       try {
-        const stats = await handle.stat();
-        if (!stats.isFile()) throw new Error("web asset is not a file");
+        await assertOpenedFileContained(handle, rootRealPath, relativePath, name);
         return await handle.readFile({ encoding: "utf8" });
       } finally {
         await handle.close();
       }
     },
   };
+}
+
+function defaultWebAssetsRoot(): string {
+  return resolve(dirname(fileURLToPath(import.meta.url)), "../../workbench-web/dist");
+}
+
+async function sendWebAsset(reply: FastifyReply, webAssets: OpenWebAssets, name: "workbench.js" | "workbench.css", contentType: string): Promise<FastifyReply> {
+  try {
+    return reply.type(contentType).send(await webAssets.read(name));
+  } catch (error) {
+    return reply.code(503).send(safeErrorResponse(error));
+  }
+}
+
+async function assertOpenedFileContained(
+  handle: Awaited<ReturnType<typeof open>>,
+  rootDir: string,
+  relativePath: string,
+  expectedName: string,
+): Promise<void> {
+  const rootRealPath = await realpath(rootDir);
+  const targetPath = resolve(rootDir, relativePath);
+  const targetRealPath = await realpath(targetPath);
+  const [handleStats, targetStats] = await Promise.all([handle.stat(), stat(targetRealPath)]);
+  if (!handleStats.isFile()
+    || relative(rootRealPath, targetRealPath).startsWith("..")
+    || basename(targetRealPath) !== expectedName
+    || handleStats.dev !== targetStats.dev
+    || handleStats.ino !== targetStats.ino) {
+    throw createTypedError({
+      code: "policy_denied",
+      summary: "Managed file reference was rejected.",
+      suggestedAction: "Retry using a newly uploaded managed file.",
+      affectedInputReferences: [expectedName],
+    });
+  }
 }

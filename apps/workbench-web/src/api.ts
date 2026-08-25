@@ -34,8 +34,11 @@ export interface ParsedSseEvent {
 export class SseEventParser {
   private buffer = "";
 
+  private pendingCarriageReturn = false;
+
   push(chunk: string): readonly ParsedSseEvent[] {
-    this.buffer += chunk.replace(/\r\n/g, "\n");
+    const normalized = this.normalizeLineEndings(chunk);
+    this.buffer += normalized;
     const events: ParsedSseEvent[] = [];
     let boundary = this.buffer.indexOf("\n\n");
     while (boundary >= 0) {
@@ -46,6 +49,19 @@ export class SseEventParser {
       boundary = this.buffer.indexOf("\n\n");
     }
     return events;
+  }
+
+  private normalizeLineEndings(chunk: string): string {
+    let input = chunk;
+    if (this.pendingCarriageReturn) {
+      input = `\r${input}`;
+      this.pendingCarriageReturn = false;
+    }
+    if (input.endsWith("\r")) {
+      input = input.slice(0, -1);
+      this.pendingCarriageReturn = true;
+    }
+    return input.replace(/\r\n|\r/g, "\n");
   }
 }
 

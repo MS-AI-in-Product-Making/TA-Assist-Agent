@@ -115,6 +115,25 @@ describe("workbench state machine", () => {
     ]);
   });
 
+  it("keeps ADO host validation pending until an independent confirmed write", () => {
+    const api = requireApi();
+    const pending = api.reduceSessionCommand(
+      baseSnapshot({ state: "ado_decision_required", revision: 4 }),
+      {
+        contractVersion: "f8-session-command-v1",
+        sessionId: SESSION_ID,
+        commandId: "ado-create-new",
+        expectedRevision: 4,
+        command: "confirm_ado_decision",
+        payload: { decision: "create_new" },
+      },
+    );
+
+    expect(pending.state).toBe("ado_action_pending");
+    expect(pending.activeAttempt).toBeNull();
+    expect(api.acceptAttemptResult(pending, completedAttemptResult()).state).toBe("ado_action_pending");
+  });
+
   it("invalidates only the active input revision on replace_workbook while preserving immutable history", () => {
     const api = requireApi();
 

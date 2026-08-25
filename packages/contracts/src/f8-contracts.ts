@@ -223,6 +223,20 @@ export const f8SessionCommandSchema = z.discriminatedUnion("command", [
   commandEnvelopeSchema("complete_review", completeReviewPayloadSchema),
 ]);
 
+export const f8PublicSessionCommandSchema = z.discriminatedUnion("command", [
+  commandEnvelopeSchema("upload_workbook", managedWorkbookUploadPayloadSchema),
+  commandEnvelopeSchema("replace_workbook", workbookReplacePayloadSchema),
+  commandEnvelopeSchema("confirm_initial_scope", worksheetScopePayloadSchema),
+  commandEnvelopeSchema("confirm_downstream_scope", worksheetScopePayloadSchema),
+  commandEnvelopeSchema("confirm_ado_decision", adoDecisionPayloadSchema),
+  commandEnvelopeSchema("confirm_image_decision", confirmationDecisionPayloadSchema),
+  commandEnvelopeSchema("confirm_analysis_context", confirmationDecisionPayloadSchema),
+  commandEnvelopeSchema("confirm_optimization_targets", confirmationDecisionPayloadSchema),
+  commandEnvelopeSchema("retry", retryPayloadSchema),
+  commandEnvelopeSchema("cancel", cancelPayloadSchema),
+  commandEnvelopeSchema("complete_review", completeReviewPayloadSchema),
+]);
+
 const conversationTextPartSchema = z
   .object({
     kind: z.literal("text"),

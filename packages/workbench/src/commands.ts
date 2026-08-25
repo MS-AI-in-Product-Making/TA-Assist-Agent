@@ -17,7 +17,6 @@ export const RUNNING_STATES = new Set<F8SessionState>([
   "f0_validating",
   "f1_f2_running",
   "f3_running",
-  "ado_action_pending",
   "f4_running",
   "f5_running",
   "f6_running",

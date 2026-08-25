@@ -196,7 +196,7 @@ function resolveCompletionState(stage: F8SessionState, result: unknown): F8Sessi
     case "f3_running":
       return governanceRequired(result) ? "ado_decision_required" : "f4_running";
     case "ado_action_pending":
-      return "f4_running";
+      return "ado_action_pending";
     case "f4_running":
       return "image_decision_required";
     case "f5_running":
@@ -296,7 +296,10 @@ function withF7PlaceholderOutcome(snapshot: F8SessionSnapshot): F8SessionSnapsho
 function reduceConfirmAdoDecision(snapshot: F8SessionSnapshot, command: F8SessionCommand): F8SessionSnapshot {
   const payload = command.payload as { readonly decision: "create_new" | "use_existing" | "local_only" };
   if (payload.decision !== "local_only") {
-    return transitionWithAttempt(snapshot, command, "ado_action_pending");
+    return nextSnapshot(snapshot, {
+      state: "ado_action_pending",
+      activeAttempt: null,
+    });
   }
 
   return transitionWithAttempt(snapshot, command, "f4_running", {
