@@ -25,4 +25,11 @@ describe("runAgentCommand", () => {
     expect(analyze).toHaveBeenCalledWith("repo");
     expect(workbench).toHaveBeenCalledWith("repo");
   });
+
+  it("does not print the browser-created pending marker as a session query", async () => {
+    const result = await runAgentCommand({ action: "workbench", rootDir: "repo" }, { workbench: async () => ({ sessionId: "pending", url: "http://127.0.0.1:4317/" }) });
+    expect(result).toContain("session: created-in-browser");
+    expect(result).toContain("url: http://127.0.0.1:4317/");
+    expect(result).not.toContain("session=pending");
+  });
 });

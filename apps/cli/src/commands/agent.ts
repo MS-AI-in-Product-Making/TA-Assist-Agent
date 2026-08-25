@@ -36,11 +36,12 @@ export async function runAgentCommand(request: AgentCliRequest, launcher: Partia
       result = await launcher.status(request.rootDir, request.sessionId);
       break;
   }
-  const url = sanitizeWorkbenchUrl(result.url, result.sessionId);
-  return `session: ${result.sessionId}\nurl: ${url}\n`;
+  const browserCreatesSession = result.sessionId === "pending";
+  const url = sanitizeWorkbenchUrl(result.url, browserCreatesSession ? undefined : result.sessionId);
+  return `session: ${browserCreatesSession ? "created-in-browser" : result.sessionId}\nurl: ${url}\n`;
 }
 
-function sanitizeWorkbenchUrl(value: string, sessionId: string): string {
+function sanitizeWorkbenchUrl(value: string, sessionId: string | undefined): string {
   const parsed = new URL(value);
   if (parsed.hostname !== "127.0.0.1" && parsed.hostname !== "localhost") {
     throw new Error("policy_denied: Workbench URL must be loopback");
@@ -49,6 +50,6 @@ function sanitizeWorkbenchUrl(value: string, sessionId: string): string {
   for (const key of [...parsed.searchParams.keys()]) {
     if (key !== "session") parsed.searchParams.delete(key);
   }
-  parsed.searchParams.set("session", sessionId);
+  if (sessionId !== undefined) parsed.searchParams.set("session", sessionId);
   return parsed.toString();
 }
