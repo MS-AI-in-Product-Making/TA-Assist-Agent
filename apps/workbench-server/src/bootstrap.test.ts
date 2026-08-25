@@ -26,6 +26,8 @@ describe("browser bootstrap rendezvous", () => {
     expect(script).toContain("location.hash");
     expect(script).toContain("history.replaceState");
     expect(script.indexOf("history.replaceState")).toBeLessThan(script.indexOf("fetch('/api/bootstrap'"));
+    expect(script).toContain("location.replace('/')");
+    expect(script).not.toContain("document.createElement('script')");
     expect(page).not.toContain("localStorage");
     expect(script).not.toContain("localStorage");
   });

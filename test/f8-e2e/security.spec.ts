@@ -15,3 +15,15 @@ test("enforces Host, one-time bootstrap, CSRF, and artifact traversal boundaries
   const traversal = await request.get(`${workbench.origin}/api/sessions/${workbench.sessionId}/artifacts/..%2F..%2Fsecret`);
   expect([400, 403, 404]).toContain(traversal.status());
 });
+
+test("renders the Workbench after a one-time browser bootstrap", async ({ browser, workbench }) => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const nonce = await workbench.issueBootstrap();
+  await page.goto(`${workbench.origin}/#bootstrap=${nonce}`);
+  await expect(page.getByRole("heading", { name: "F0 - F3 Guided Workbench" })).toBeVisible();
+  expect(errors).toEqual([]);
+  await context.close();
+});

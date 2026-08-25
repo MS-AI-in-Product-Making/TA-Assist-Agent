@@ -60,15 +60,10 @@ export function renderBootstrapScript(): string {
     credentials: 'same-origin',
     body: JSON.stringify({ nonce })
   }).then((response) => {
-    if (!response.ok) return;
-    const stylesheet = document.createElement('link');
-    stylesheet.rel = 'stylesheet';
-    stylesheet.href = '/workbench.css';
-    document.head.append(stylesheet);
-    const bundle = document.createElement('script');
-    bundle.type = 'module';
-    bundle.src = '/workbench.js';
-    document.body.append(bundle);
+    if (!response.ok) throw new Error('bootstrap rejected');
+    location.replace('/');
+  }).catch(() => {
+    document.getElementById('app').textContent = 'Workbench authentication failed. Relaunch TA Assist.';
   }).finally(() => params.delete('bootstrap'));
 })();`;
 }
