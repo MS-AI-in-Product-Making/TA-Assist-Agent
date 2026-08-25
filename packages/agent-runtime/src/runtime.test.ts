@@ -116,6 +116,105 @@ describe("handleAgentTurn", () => {
     }
   });
 
+  it("single-flights concurrent duplicate handleAgentTurn calls to one model completion and one stored result", async () => {
+    const rootDir = await createTempRoot();
+    const conversationStore = await createConversationStore({ rootDir });
+    let releaseModel: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      releaseModel = resolve;
+    });
+    const model = {
+      complete: vi.fn(async () => {
+        await gate;
+        return {
+          responseText: "已生成报告导航。",
+          actions: [{ type: "open_report", target: "/report/current", label: "伪造标签" }],
+        };
+      }),
+    };
+    const deps = {
+      snapshotStore: {
+        readSnapshot: async () => baseSnapshot({
+          state: "review_required",
+          artifactRefs: [{ artifactId: "artifact-report-1", kind: "f6_report", revision: 3, validated: true }],
+        }),
+      },
+      conversationStore,
+      model,
+      now: () => "2026-08-25T00:00:00.000Z",
+    };
+
+    try {
+      const first = handleAgentTurn({
+        text: "打开报告",
+        sessionId: SESSION_ID,
+        commandId: "concurrent-command-001",
+        source: "web",
+      }, deps);
+      const second = handleAgentTurn({
+        text: "打开报告",
+        sessionId: SESSION_ID,
+        commandId: "concurrent-command-001",
+        source: "web",
+      }, deps);
+
+      releaseModel?.();
+      const [left, right] = await Promise.all([first, second]);
+
+      expect(left).toEqual(right);
+      expect(model.complete).toHaveBeenCalledTimes(1);
+      expect((await conversationStore.readTurns(SESSION_ID, { afterSequence: 0 })).map((turn) => turn.turnId)).toEqual([
+        "concurrent-command-001:user",
+        "concurrent-command-001:assistant",
+      ]);
+    } finally {
+      await conversationStore.close();
+    }
+  });
+
+  it("shares the first failure across concurrent duplicates and allows a later retry without duplicating the user turn", async () => {
+    const conversationStore = new FailingAssistantConversationStore(1);
+    stores.push(conversationStore);
+    const deps = {
+      snapshotStore: {
+        readSnapshot: async () => baseSnapshot({ state: "review_required" }),
+      },
+      conversationStore,
+      model: undefined,
+      now: () => "2026-08-25T00:00:00.000Z",
+    };
+
+    const first = handleAgentTurn({
+      text: "状态",
+      sessionId: SESSION_ID,
+      commandId: "retry-after-failure-1",
+      source: "web",
+    }, deps);
+    const second = handleAgentTurn({
+      text: "状态",
+      sessionId: SESSION_ID,
+      commandId: "retry-after-failure-1",
+      source: "web",
+    }, deps);
+
+    await expect(Promise.all([first, second])).rejects.toMatchObject({
+      summary: expect.stringContaining("assistant turn persistence failed"),
+    });
+
+    const retry = await handleAgentTurn({
+      text: "状态",
+      sessionId: SESSION_ID,
+      commandId: "retry-after-failure-1",
+      source: "web",
+    }, deps);
+
+    expect(retry.responseText).toContain("当前阶段为 review_required");
+    expect((await conversationStore.readTurns(SESSION_ID)).map((turn) => turn.turnId)).toEqual([
+      "retry-after-failure-1:user",
+      "retry-after-failure-1:assistant",
+    ]);
+  });
+
   it("drops misleading model actions and strips command metadata from model context", async () => {
     const model = {
       complete: vi.fn(async (input: { context: { turns: Array<{ text: string }> } }) => {
@@ -134,16 +233,18 @@ describe("handleAgentTurn", () => {
     };
     const deps = await createDeps(baseSnapshot({
       state: "review_required",
-      downstreamScopeSelection: {
-        workbookHash: "a".repeat(64),
-        worksheetNames: ["Sheet-1"],
-      },
-      priorRunReferences: [
+      artifactRefs: [
         {
-          featureId: "F6",
-          referenceId: "f6-report-1",
-          contractVersion: "f6-report-v1",
           artifactId: "artifact-report-1",
+          kind: "f6_report",
+          revision: 3,
+          validated: true,
+        },
+      ],
+      worksheetCapabilities: [
+        {
+          worksheetName: "Sheet-1",
+          whatIfAvailable: true,
         },
       ],
     }), {
@@ -169,6 +270,53 @@ describe("handleAgentTurn", () => {
       { type: "open_report", target: "/report/current", label: "打开当前报告" },
       { type: "open_what_if", target: "/what-if", label: "打开 What-if Draft" },
     ]);
+  });
+
+  it("does not authorize report or what-if actions from unrelated artifacts or unavailable worksheet capabilities", async () => {
+    const deps = await createDeps(baseSnapshot({
+      state: "review_required",
+      priorRunReferences: [
+        {
+          featureId: "F6",
+          referenceId: "f6-unrelated",
+          contractVersion: "f6-report-v1",
+          artifactId: "artifact-anything",
+        },
+      ],
+      artifactRefs: [
+        {
+          artifactId: "artifact-unrelated",
+          kind: "f5_report",
+          revision: 2,
+          validated: true,
+        },
+      ],
+      worksheetCapabilities: [
+        {
+          worksheetName: "Sheet-1",
+          whatIfAvailable: false,
+        },
+      ],
+    }), {
+      model: {
+        complete: async () => ({
+          responseText: "模型建议打开全部。",
+          actions: [
+            { type: "open_report", target: "/report/current", label: "伪造报告" },
+            { type: "open_what_if", target: "/what-if", label: "伪造试算" },
+          ],
+        }),
+      },
+    });
+
+    const result = await handleAgentTurn({
+      text: "打开报告并看看试算",
+      sessionId: SESSION_ID,
+      commandId: "strict-actions-1",
+      source: "web",
+    }, deps);
+
+    expect(result.actions).toEqual([{ type: "navigate", target: "/review", label: "完成评审" }]);
   });
 
   it("falls back safely when the model response shape is invalid or the model throws", async () => {
@@ -254,6 +402,8 @@ function baseSnapshot(overrides = {}) {
     state: "created",
     activeAttempt: null,
     priorRunReferences: [],
+    artifactRefs: [],
+    worksheetCapabilities: [],
     ...overrides,
   };
 }
@@ -329,4 +479,25 @@ async function createTempRoot(): Promise<string> {
   const rootDir = await mkdtemp(join(tmpdir(), "agent-runtime-task-8-"));
   tempRoots.push(rootDir);
   return rootDir;
+}
+
+class FailingAssistantConversationStore extends InMemoryConversationStore {
+  private remainingAssistantFailures: number;
+
+  constructor(failures: number) {
+    super();
+    this.remainingAssistantFailures = failures;
+  }
+
+  override async appendTurn(turn: ReturnType<typeof createTurnRecord>, commandId: string) {
+    if (turn.turnId.endsWith(":assistant") && this.remainingAssistantFailures > 0) {
+      this.remainingAssistantFailures -= 1;
+      throw {
+        code: "internal_error",
+        summary: "assistant turn persistence failed",
+      };
+    }
+
+    return super.appendTurn(turn, commandId);
+  }
 }

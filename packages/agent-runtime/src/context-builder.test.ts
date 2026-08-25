@@ -27,6 +27,29 @@ describe("buildAgentContext", () => {
     expect(context.session.f7.status).toBe("feature_not_available");
     expect(context.session.f7.actions).toEqual([]);
   });
+
+  it("omits internal command, tool, and receipt metadata from multi-turn model context", () => {
+    const context = buildAgentContext({
+      snapshot: baseSnapshot({ state: "review_required" }),
+      turns: [
+        turn(1, "tool", [{ kind: "command", commandId: "cmd-secret-token-123", command: "confirm_ado_decision" }]),
+        turn(2, "assistant", [
+          { kind: "text", text: "已准备报告。" },
+          {
+            kind: "tool_result",
+            actions: [{ type: "open_report", target: "/report/current", label: "打开当前报告" }],
+            commands: [{ id: "cmd-internal-1", kind: "confirm_ado_decision" }],
+          },
+        ]),
+      ],
+    });
+
+    expect(context.turns).toHaveLength(2);
+    expect(context.turns[0]?.text).not.toContain("cmd-secret-token-123");
+    expect(context.turns[0]?.text).not.toContain("confirm_ado_decision");
+    expect(context.turns[1]?.text).not.toContain("cmd-internal-1");
+    expect(context.turns[1]?.text).not.toContain("/report/current");
+  });
 });
 
 function baseSnapshot(overrides = {}) {
@@ -38,6 +61,8 @@ function baseSnapshot(overrides = {}) {
     state: "created",
     activeAttempt: null,
     priorRunReferences: [],
+    artifactRefs: [],
+    worksheetCapabilities: [],
     ...overrides,
   };
 }

@@ -142,7 +142,9 @@ function sanitizeTurn(turn: RuntimeTurn): SanitizedTurn {
 				case "decision_reference":
 					return part.decisionReference;
 				case "command":
-					return "governed command receipt";
+					return "";
+				case "tool_result":
+					return "";
 				case "error":
 					return part.error.summary;
 				default:

@@ -38,6 +38,20 @@ describe("F8 session and host contracts", () => {
       state: "review_required",
       activeAttempt: null,
       priorRunReferences: [],
+      artifactRefs: [
+        {
+          artifactId: "artifact-report-1",
+          kind: "f6_report",
+          revision: 4,
+          validated: true,
+        },
+      ],
+      worksheetCapabilities: [
+        {
+          worksheetName: "AJ_GAP",
+          whatIfAvailable: true,
+        },
+      ],
       scenarioDrafts: [],
     };
 
@@ -55,6 +69,70 @@ describe("F8 session and host contracts", () => {
     expect(f8SessionEventSchema.parse(event)).toEqual(event);
     expect(() => f8SessionSnapshotSchema.parse({ ...snapshot, outputRoot: "C:/arbitrary" })).toThrow();
     expect(() => f8SessionEventSchema.parse({ ...event, outputRoot: "C:/arbitrary" })).toThrow();
+  });
+
+  it("accepts typed artifact refs, worksheet capabilities, and strict tool receipts", () => {
+    const snapshot = {
+      contractVersion: "f8-session-snapshot-v1",
+      sessionId: SESSION_ID,
+      revision: 6,
+      inputRevision: 2,
+      state: "review_required",
+      activeAttempt: null,
+      priorRunReferences: [],
+      artifactRefs: [
+        {
+          artifactId: "artifact-report-2",
+          kind: "f6_report",
+          revision: 6,
+          validated: true,
+          sourceReferenceId: "f6-current",
+        },
+      ],
+      worksheetCapabilities: [
+        {
+          worksheetName: "AJ_GAP",
+          whatIfAvailable: false,
+        },
+      ],
+    };
+
+    const toolTurn = {
+      contractVersion: "ta-conversation-turn-v1",
+      turnId: "turn-tool-1",
+      sessionId: SESSION_ID,
+      sequence: 8,
+      source: "system",
+      role: "assistant",
+      content: [
+        { kind: "text", text: "已准备好报告。" },
+        {
+          kind: "tool_result",
+          actions: [{ type: "open_report", target: "/report/current", label: "打开当前报告" }],
+          commands: [],
+        },
+      ],
+      createdAt: "2026-08-24T00:00:00.000Z",
+      relatedArtifactIds: [],
+    };
+
+    expect(f8SessionSnapshotSchema.parse(snapshot)).toEqual(snapshot);
+    expect(conversationTurnSchema.parse(toolTurn)).toEqual(toolTurn);
+    expect(() => f8SessionSnapshotSchema.parse({
+      ...snapshot,
+      artifactRefs: [{ artifactId: "artifact-report-2", revision: 6, validated: true }],
+    })).toThrow();
+    expect(() => conversationTurnSchema.parse({
+      ...toolTurn,
+      content: [
+        toolTurn.content[0],
+        {
+          kind: "tool_result",
+          actions: [{ type: "open_report", target: "/report/current", label: "打开当前报告", extra: true }],
+          commands: [],
+        },
+      ],
+    })).toThrow();
   });
 
   it("keeps conversation turns, host actions, and drafts strict", () => {

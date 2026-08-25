@@ -101,6 +101,23 @@ const f8PriorRunReferenceSchema = z
   })
   .strict();
 
+const f8ArtifactRefSchema = z
+  .object({
+    artifactId: nonEmptyStringSchema,
+    kind: z.enum(["f1_image", "f2_report", "f3_report", "f4_report", "f5_report", "f6_report", "what_if_draft"]),
+    revision: z.number().int().nonnegative(),
+    validated: z.boolean(),
+    sourceReferenceId: nonEmptyStringSchema.optional(),
+  })
+  .strict();
+
+const f8WorksheetCapabilitySchema = z
+  .object({
+    worksheetName: nonEmptyStringSchema,
+    whatIfAvailable: z.boolean(),
+  })
+  .strict();
+
 const f8StageAttemptSchema = z
   .object({
     attemptId: nonEmptyStringSchema,
@@ -230,6 +247,29 @@ const conversationCommandPartSchema = z
   })
   .strict();
 
+const conversationToolActionSchema = z
+  .object({
+     type: z.enum(["navigate", "open_report", "open_what_if"]),
+    target: nonEmptyStringSchema,
+    label: nonEmptyStringSchema,
+  })
+  .strict();
+
+const conversationToolCommandSchema = z
+  .object({
+    id: nonEmptyStringSchema,
+    kind: nonEmptyStringSchema,
+  })
+  .strict();
+
+const conversationToolResultPartSchema = z
+  .object({
+    kind: z.literal("tool_result"),
+    actions: z.array(conversationToolActionSchema),
+    commands: z.array(conversationToolCommandSchema),
+  })
+  .strict();
+
 const conversationErrorPartSchema = z
   .object({
     kind: z.literal("error"),
@@ -243,6 +283,7 @@ export const conversationContentPartSchema = z.union([
   conversationArtifactPartSchema,
   conversationDecisionPartSchema,
   conversationCommandPartSchema,
+  conversationToolResultPartSchema,
   conversationErrorPartSchema,
 ]);
 
@@ -467,6 +508,8 @@ export const f8SessionSnapshotSchema = z
     state: f8SessionStateSchema,
     activeAttempt: f8StageAttemptSchema.nullable(),
     priorRunReferences: z.array(f8PriorRunReferenceSchema),
+    artifactRefs: z.array(f8ArtifactRefSchema).optional(),
+    worksheetCapabilities: z.array(f8WorksheetCapabilitySchema).optional(),
     initialScopeSelection: worksheetSelectionConfirmationSchema.optional(),
     downstreamScopeSelection: worksheetSelectionConfirmationSchema.optional(),
     scenarioDrafts: z.array(z.lazy(() => f8ScenarioDraftSchema)).optional(),

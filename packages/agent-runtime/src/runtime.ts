@@ -17,8 +17,7 @@ type StoredResultReceipt = {
 	readonly commands: readonly AgentCommand[];
 };
 
-const RECEIPT_PREFIX = "<!--ta-assist-receipt:";
-const RECEIPT_SUFFIX = "-->";
+const inFlightTurnResults = new Map<string, Promise<AgentTurnResult>>();
 
 export interface AgentTurnRequest {
 	readonly text: string;
@@ -81,6 +80,31 @@ export async function handleAgentTurn(
 	if (storedResult !== undefined) {
 		return storedResult;
 	}
+
+	const singleFlightKey = `${request.sessionId}:${request.commandId}`;
+	const inFlight = inFlightTurnResults.get(singleFlightKey);
+	if (inFlight !== undefined) {
+		return await inFlight;
+	}
+
+	const turnPromise = handleAgentTurnOnce(request, dependencies, snapshot, existingTurns);
+	inFlightTurnResults.set(singleFlightKey, turnPromise);
+
+	try {
+		return await turnPromise;
+	} finally {
+		if (inFlightTurnResults.get(singleFlightKey) === turnPromise) {
+			inFlightTurnResults.delete(singleFlightKey);
+		}
+	}
+}
+
+async function handleAgentTurnOnce(
+	request: AgentTurnRequest,
+	dependencies: AgentRuntimeDependencies,
+	snapshot: RuntimeSnapshot,
+	existingTurns: readonly RuntimeTurn[],
+): Promise<AgentTurnResult> {
 
 	const now = dependencies.now ?? (() => new Date().toISOString());
 	const intent = detectAgentIntent(request.text);
@@ -173,7 +197,7 @@ function buildDeterministicResponse(
 	wantsWrite: boolean,
 ): AgentTurnResult {
 	const pendingActions = projectPendingActions(snapshot.state);
-	const primaryAction = selectPrimaryAction(snapshot.state, intent, pendingActions);
+	const primaryAction = selectPrimaryAction(snapshot, snapshot.state, intent, pendingActions);
 
 	if (snapshot.state === "ado_decision_required" && wantsWrite) {
 		return {
@@ -211,15 +235,16 @@ function buildDeterministicResponse(
 }
 
 function selectPrimaryAction(
+	snapshot: RuntimeSnapshot,
 	state: RuntimeSnapshot["state"],
 	intent: string,
 	pendingActions: readonly { action: string }[],
 ): AgentAction | undefined {
-	if (state === "review_required" && intent === "open_report") {
+	if (state === "review_required" && intent === "open_report" && hasValidatedReport(snapshot)) {
 		return { type: "open_report", target: "/report/current", label: "打开当前报告" };
 	}
 
-	if (state === "review_required" && intent === "what_if_help") {
+	if (state === "review_required" && intent === "what_if_help" && hasWhatIfWorksheet(snapshot)) {
 		return { type: "open_what_if", target: "/what-if", label: "打开 What-if Draft" };
 	}
 
@@ -289,7 +314,7 @@ function createAssistantTurn(input: {
 		role: input.role,
 		content: [
 			{ kind: "text", text: sanitizeResponseText(input.text) },
-			{ kind: "markdown", markdown: serializeReceipt(input.receipt) },
+			{ kind: "tool_result", actions: input.receipt.actions, commands: input.receipt.commands },
 		],
 		createdAt: input.createdAt,
 		relatedArtifactIds: [],
@@ -329,7 +354,7 @@ function sanitizeActions(
 function allowedActionsFor(snapshot: RuntimeSnapshot, intent: string): readonly AgentAction[] {
 	const pendingActions = projectPendingActions(snapshot.state);
 	const allowed: AgentAction[] = [];
-	const primary = selectPrimaryAction(snapshot.state, intent, pendingActions);
+	const primary = selectPrimaryAction(snapshot, snapshot.state, intent, pendingActions);
 	if (primary !== undefined) {
 		allowed.push(primary);
 	}
@@ -350,12 +375,13 @@ function allowedActionsFor(snapshot: RuntimeSnapshot, intent: string): readonly 
 }
 
 function hasValidatedReport(snapshot: RuntimeSnapshot): boolean {
-	return snapshot.priorRunReferences.some((reference) => reference.artifactId !== undefined);
+	return (snapshot.artifactRefs ?? []).some((reference) => reference.kind === "f6_report"
+		&& reference.validated
+		&& reference.revision === snapshot.revision);
 }
 
 function hasWhatIfWorksheet(snapshot: RuntimeSnapshot): boolean {
-	return snapshot.downstreamScopeSelection?.selectedWorksheetNames.length !== undefined
-		&& snapshot.downstreamScopeSelection.selectedWorksheetNames.length > 0;
+	return (snapshot.worksheetCapabilities ?? []).some((capability) => capability.whatIfAvailable);
 }
 
 function dedupeActions(actions: readonly AgentAction[]): readonly AgentAction[] {
@@ -400,25 +426,15 @@ function readAssistantResponseText(turn: RuntimeTurn): string {
 }
 
 function readAssistantReceipt(turn: RuntimeTurn): StoredResultReceipt | undefined {
-	const receiptPart = turn.content.find((part) => part.kind === "markdown" && part.markdown.startsWith(RECEIPT_PREFIX));
-	if (receiptPart === undefined || receiptPart.kind !== "markdown") {
+	const receiptPart = turn.content.find((part) => part.kind === "tool_result");
+	if (receiptPart === undefined || receiptPart.kind !== "tool_result") {
 		return undefined;
 	}
 
-	const payload = receiptPart.markdown.slice(RECEIPT_PREFIX.length, receiptPart.markdown.length - RECEIPT_SUFFIX.length);
-	try {
-		const parsed = JSON.parse(payload) as StoredResultReceipt;
-		return {
-			actions: parsed.actions ?? [],
-			commands: parsed.commands ?? [],
-		};
-	} catch {
-		return undefined;
-	}
-	}
-
-function serializeReceipt(receipt: StoredResultReceipt): string {
-	return `${RECEIPT_PREFIX}${JSON.stringify(receipt)}${RECEIPT_SUFFIX}`;
+	return {
+		actions: receiptPart.actions,
+		commands: receiptPart.commands,
+	};
 }
 
 function isSafeResponseText(text: string): boolean {
