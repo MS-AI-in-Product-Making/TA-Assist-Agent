@@ -67,6 +67,8 @@ export interface F6ReportProjection {
     readonly mean: ProjectionConsistencyCheck;
     readonly rss: ProjectionConsistencyCheck;
     readonly worstCase: ProjectionConsistencyCheck;
+    readonly worstCaseUpper: ProjectionConsistencyCheck;
+    readonly worstCaseLower: ProjectionConsistencyCheck;
     readonly ranges: readonly ProjectionConsistencyCheck[];
   };
 }
@@ -222,13 +224,14 @@ export function createF6ReportProjection(input: {
 
   const mean = finite(calculation.system.mean, "system.mean");
   const rssSigma = finite(calculation.system.rssSigma, "system.rssSigma");
-  const statisticalRanges = [1, 3, 4, 6].map((sigmaLevel) => ({
+  const sigmaLevels = [...new Set([1, 3, 4, 6, calculation.capability.targetSigmaLevel])]
+    .sort((left, right) => left - right);
+  const statisticalRanges = sigmaLevels.map((sigmaLevel) => ({
     sigmaLevel,
     range: { lower: mean - sigmaLevel * rssSigma, upper: mean + sigmaLevel * rssSigma, unit },
     formulaCheckId: "statistical-bound-v1",
   }));
-  const selectedRange = statisticalRanges.find(({ sigmaLevel }) => sigmaLevel === calculation.capability.targetSigmaLevel)
-    ?? { sigmaLevel: calculation.capability.targetSigmaLevel, range: { lower: mean - calculation.capability.targetSigmaLevel * rssSigma, upper: mean + calculation.capability.targetSigmaLevel * rssSigma, unit }, formulaCheckId: "statistical-bound-v1" };
+  const selectedRange = statisticalRanges.find(({ sigmaLevel }) => sigmaLevel === calculation.capability.targetSigmaLevel)!;
   const statisticalLowerMargin = selectedRange.range.lower - calculation.capability.lowerSpecLimit;
   const statisticalUpperMargin = calculation.capability.upperSpecLimit - selectedRange.range.upper;
   const worstCaseLowerBound = mean + calculation.system.worstCaseLower;
@@ -271,6 +274,22 @@ export function createF6ReportProjection(input: {
       mean: comparison("mean", calculatedMean, calculation.system.mean, inputResolution, unit, ["system.mean"]),
       rss: comparison("rss", calculatedRss, calculation.system.rssSigma, inputResolution, unit, ["system.rssSigma"]),
       worstCase: comparison("worst-case", worstCaseDifference, 0, inputResolution, unit, ["system.worstCaseUpper", "system.worstCaseLower"]),
+      worstCaseUpper: comparison(
+        "worst-case-upper",
+        calculatedWorstCaseUpper,
+        calculation.system.worstCaseUpper,
+        inputResolution,
+        unit,
+        ["system.worstCaseUpper"],
+      ),
+      worstCaseLower: comparison(
+        "worst-case-lower",
+        calculatedWorstCaseLower,
+        calculation.system.worstCaseLower,
+        inputResolution,
+        unit,
+        ["system.worstCaseLower"],
+      ),
       ranges: statisticalRanges.map(({ sigmaLevel }) => comparison(`range-${sigmaLevel}`, mean + sigmaLevel * rssSigma, mean + sigmaLevel * calculation.system.rssSigma, inputResolution, unit, ["system.mean", "system.rssSigma"])),
     },
   });

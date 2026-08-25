@@ -84,13 +84,36 @@ function requestedActions(governanceRequiredCount) {
   ];
 }
 
+function partSubsystemLabel(value) {
+  if (value === null || value === undefined) return "(missing Part / Subsystem)";
+  const text = String(value).trim();
+  if (text.length === 0 || text === "(missing)") return "(missing Part / Subsystem)";
+  return text;
+}
+
+function groupedPartSubsystemRows(worksheets) {
+  const groups = [];
+  const bySubsystem = new Map();
+  for (const worksheet of worksheets) {
+    for (const row of worksheet.rows) {
+      const subsystem = partSubsystemLabel(row.partSubsystem);
+      if (!bySubsystem.has(subsystem)) {
+        bySubsystem.set(subsystem, []);
+        groups.push({ subsystem, rows: bySubsystem.get(subsystem) });
+      }
+      bySubsystem.get(subsystem).push(row);
+    }
+  }
+  return groups;
+}
+
 export function renderF3AdoReminder(report) {
   const parsed = drawingGovernanceResultV2Schema.parse(report);
   if (parsed.status === "input_rejected") {
     throw new Error("Cannot render ADO reminder for input_rejected report.");
   }
 
-  const rows = parsed.worksheets.flatMap((worksheet) => worksheet.rows);
+  const groups = groupedPartSubsystemRows(parsed.worksheets);
   const lines = [
     "## F3 DIM ID / Drawing Governance Reminder",
     "",
@@ -102,12 +125,16 @@ export function renderF3AdoReminder(report) {
     "Requested actions:",
     ...requestedActions(parsed.summary.governanceRequiredCount).map((action) => `- ${action}`),
     "",
-    ADO_TABLE_HEADER,
-    ADO_TABLE_SEPARATOR,
   ];
 
-  for (const row of rows) {
-    lines.push(`| ${cell(row.deviceLevelDim)} | ${cell(row.dimensionDescription)} | ${cell(row.partSubsystem)} | ${cell(row.drawingNumber)} | ${cell(row.dimId)} | ${cell(row.factorDescription)} | ${cell(row.nominal)} | ${cell(row.upperTolerance)} | ${cell(row.lowerTolerance)} | ${cell(row.sigmaLevel)} | ${cell(governanceIssue(row))} |`);
+  for (const group of groups) {
+    lines.push(`### Part / Subsystem: ${cell(group.subsystem)} (${group.rows.length} factors)`);
+    lines.push(ADO_TABLE_HEADER);
+    lines.push(ADO_TABLE_SEPARATOR);
+    for (const row of group.rows) {
+      lines.push(`| ${cell(row.deviceLevelDim)} | ${cell(row.dimensionDescription)} | ${cell(partSubsystemLabel(row.partSubsystem))} | ${cell(row.drawingNumber)} | ${cell(row.dimId)} | ${cell(row.factorDescription)} | ${cell(row.nominal)} | ${cell(row.upperTolerance)} | ${cell(row.lowerTolerance)} | ${cell(row.sigmaLevel)} | ${cell(governanceIssue(row))} |`);
+    }
+    lines.push("");
   }
 
   return `${lines.join("\n")}\n`;
@@ -119,21 +146,28 @@ export function renderF3AdoHistoryHtml(report) {
     throw new Error("Cannot render ADO history HTML for input_rejected report.");
   }
 
-  const rows = parsed.worksheets.flatMap((worksheet) => worksheet.rows);
+  const groups = groupedPartSubsystemRows(parsed.worksheets);
   const header = `<thead><tr>${ADO_HTML_TABLE_HEADERS.map((name) => `<th>${htmlCell(name)}</th>`).join("")}</tr></thead>`;
-  const body = `<tbody>${rows.map((row) => `<tr>${[
-    row.deviceLevelDim,
-    row.dimensionDescription,
-    row.partSubsystem,
-    row.drawingNumber,
-    row.dimId,
-    row.factorDescription,
-    row.nominal,
-    row.upperTolerance,
-    row.lowerTolerance,
-    row.sigmaLevel,
-    governanceIssue(row),
-  ].map((value) => `<td>${htmlCell(value)}</td>`).join("")}</tr>`).join("")}</tbody>`;
+  const bodyRows = [];
+  for (const group of groups) {
+    bodyRows.push(`<tr data-f3-group-row="true"><td colspan="11">${htmlCell(`Part / Subsystem: ${group.subsystem} (${group.rows.length} factors)`)}</td></tr>`);
+    for (const row of group.rows) {
+      bodyRows.push(`<tr data-f3-factor-row="true">${[
+        row.deviceLevelDim,
+        row.dimensionDescription,
+        partSubsystemLabel(row.partSubsystem),
+        row.drawingNumber,
+        row.dimId,
+        row.factorDescription,
+        row.nominal,
+        row.upperTolerance,
+        row.lowerTolerance,
+        row.sigmaLevel,
+        governanceIssue(row),
+      ].map((value) => `<td>${htmlCell(value)}</td>`).join("")}</tr>`);
+    }
+  }
+  const body = `<tbody>${bodyRows.join("")}</tbody>`;
   const actions = requestedActions(parsed.summary.governanceRequiredCount)
     .map((action) => `<li>${htmlCell(action)}</li>`)
     .join("");

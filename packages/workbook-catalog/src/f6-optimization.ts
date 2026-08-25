@@ -673,6 +673,7 @@ export function createLegacyF6Optimization(input: unknown, dependencies: Optimiz
       f3Reference: request.f3Reference,
       f4Reference: request.f4Reference,
       f5Reference: request.f5Reference,
+      reportScope: request.reportScope,
       f0Versions: request.f0Versions,
       scenarioPolicyVersion: request.scenarioPolicyVersion,
       ...(request.imageObservationReference === undefined ? {} : { imageObservationReference: request.imageObservationReference }),
@@ -704,10 +705,20 @@ function metricsV2(calculation: Pick<CalculationCompletedResult, "system" | "cap
     worstCaseUpper: calculation.system.worstCaseUpper,
     cp: calculation.capability.cp,
     cpk: calculation.capability.cpk,
+    lowerCpk: calculation.capability.lowerCpk,
+    upperCpk: calculation.capability.upperCpk,
+    capabilityStatus: calculation.capability.status,
     yield: calculation.capability.yield,
     dpm: calculation.capability.totalDpm,
   };
 }
+
+const BUILT_IN_TOP3_POLICY_ID = "f6-top3-tolerance-policy-v1" as const;
+const BUILT_IN_TOP3_OPTIONS = [
+  { optionCode: "OP1" as const, ratios: [0.25, 0.1, 0.1] as const },
+  { optionCode: "OP2" as const, ratios: [0.2, 0.15, 0.15] as const },
+  { optionCode: "OP3" as const, ratios: [0.4, 0.05, 0.05] as const },
+] as const;
 
 function inputBaselineIdentity(calculation: CalculationCompletedResult) {
   return {
@@ -782,7 +793,7 @@ function scaledOverride(factor: CalculationFactorResult, scale: number) {
 function scenarioForTarget(
   worksheet: F6OptimizationRequest["worksheets"][number],
   target: F6OptimizationTargets["worksheets"][number]["targets"][number],
-): { readonly scenario?: F6ControlledScenario; readonly v2Overrides?: F6OptionV2 extends infer _Option ? Array<{ factor: F6FactorIdentity; lowerTolerance?: number; upperTolerance?: number; sigma?: number }> : never; readonly insufficientInputs?: readonly string[] } {
+): { readonly scenario?: F6ControlledScenario; readonly v2Overrides?: Array<{ factor: F6FactorIdentity; lowerTolerance?: number; upperTolerance?: number; sigma?: number }>; readonly insufficientInputs?: readonly string[] } {
   const calculation = worksheet.baselineCalculation;
   let overrides: ReturnType<typeof overrideForTolerance>[];
   if (target.targetType === "factor_tolerance") {
@@ -837,6 +848,87 @@ function scenarioForTarget(
       };
     }),
   };
+}
+
+function builtInTop3Options(
+  request: F6OptimizationRequest,
+  worksheet: F6OptimizationRequest["worksheets"][number],
+  baselineRequest: CalculationRequest,
+  calculateScenario: typeof calculateF6Scenario,
+): F6OptionV2[] {
+  const baseline = worksheet.baselineCalculation;
+  const failedSides = [
+    ...(baseline.capability.lowerCpk < baseline.capability.targetCpk ? ["lowerCpk" as const] : []),
+    ...(baseline.capability.upperCpk < baseline.capability.targetCpk ? ["upperCpk" as const] : []),
+  ];
+  if (failedSides.length === 0 || baseline.factors.length === 0) return [];
+  const selectedFactors = selectTopContributors(baseline.factors, Math.min(3, baseline.factors.length));
+  const baselineMetrics = metricsV2(baseline);
+  const evidenceReferences = [artifactReference(request.f4Reference)];
+  return BUILT_IN_TOP3_OPTIONS.map(({ optionCode, ratios }) => {
+    const targetId = `${BUILT_IN_TOP3_POLICY_ID}:${optionCode}`;
+    const optionId = `${worksheet.worksheetName}:builtin-top3:${optionCode}`;
+    const reductions = selectedFactors.map((factor, index) => ({
+      factor: factorIdentity(factor),
+      rank: index + 1,
+      reductionRatio: ratios[index]!,
+      scale: 1 - ratios[index]!,
+    }));
+    const policyContext = {
+      policyId: BUILT_IN_TOP3_POLICY_ID,
+      optionCode,
+      trigger: {
+        lowerCpk: baseline.capability.lowerCpk,
+        upperCpk: baseline.capability.upperCpk,
+        targetCpk: baseline.capability.targetCpk,
+        failedSides,
+      },
+      selectedFactorCount: selectedFactors.length,
+      reductions,
+    };
+    try {
+      const overrides = selectedFactors.map((factor, index) => scaledOverride(factor, 1 - ratios[index]!));
+      const scenario: F6ControlledScenario = { scenarioId: optionId, optionKind: "requirement_change", factorOverrides: overrides };
+      const calculation = calculateScenario({ baselineRequest, scenario });
+      const scenarioResult = calculation.scenarios.find(({ scenarioId }) => scenarioId === optionId);
+      if (scenarioResult === undefined) throw new Error("built_in_scenario_unavailable");
+      return {
+        optionId,
+        status: "completed" as const,
+        optionSource: "BUILT_IN_POLICY" as const,
+        targetId,
+        policyContext,
+        baselineMetrics,
+        resultMetrics: metricsV2(scenarioResult.calculation),
+        scenarioEvidence: {
+          targetId,
+          baselineIdentity: inputBaselineIdentity(baseline),
+          factorOverrides: overrides.map((override, index) => ({
+            factor: factorIdentity(selectedFactors[index]!),
+            lowerTolerance: override.lowerTolerance,
+            upperTolerance: override.upperTolerance,
+          })),
+          calculationReference: artifactReference(request.f4Reference),
+          formulaReferences: scenarioResult.calculation.traceRecords.map(({ outputField, formulaId, formulaVersion }) => ({ outputField, formulaId, formulaVersion })),
+        },
+        feasibility: { status: "supported" as const, reasonCodes: ["built_in_policy"], evidenceReferences: [request.f4Reference.artifact] },
+        evidenceReferences,
+        impactRank: null,
+      };
+    } catch {
+      return {
+        optionId,
+        status: "calculation_failed" as const,
+        optionSource: "BUILT_IN_POLICY" as const,
+        targetId,
+        policyContext,
+        reasonCode: "built_in_calculation_failed",
+        baselineMetrics,
+        evidenceReferences,
+        impactRank: null,
+      };
+    }
+  });
 }
 
 function targetOption(
@@ -934,8 +1026,18 @@ export function createF6Optimization(
     const baseline = worksheet.baselineCalculation;
     const targetWorksheet = optimizationTargets?.worksheets.find((candidate) => candidate.worksheetName === worksheet.worksheetName
       && candidate.tableId === baseline.worksheetSelection.tableId);
-    let options: F6OptionV2[];
-    if (targetWorksheet === undefined) {
+    const builtInOptions = builtInTop3Options(request, worksheet, baselineRequests[index]!, calculateScenario);
+    let callerOptions: F6OptionV2[] = [];
+    if (targetWorksheet !== undefined) {
+      if (!equivalent(targetWorksheet.baselineIdentity, inputBaselineIdentity(baseline))) {
+        throw new Error("Optimization Targets baseline identity does not match the governed F4 baseline.");
+      }
+      callerOptions = targetWorksheet.targets.map((target) => targetOption(
+        request, worksheet, baselineRequests[index]!, target, inputs.inputDecisions.optimizationTargets, calculateScenario,
+      ));
+    }
+    let options: F6OptionV2[] = [...builtInOptions, ...callerOptions];
+    if (options.length === 0) {
       options = [{
         optionId: `${worksheet.worksheetName}:candidate`,
         status: "candidate",
@@ -946,13 +1048,6 @@ export function createF6Optimization(
         baselineMetrics: metricsV2(baseline),
         impactRank: null,
       }];
-    } else {
-      if (!equivalent(targetWorksheet.baselineIdentity, inputBaselineIdentity(baseline))) {
-        throw new Error("Optimization Targets baseline identity does not match the governed F4 baseline.");
-      }
-      options = targetWorksheet.targets.map((target) => targetOption(
-        request, worksheet, baselineRequests[index]!, target, inputs.inputDecisions.optimizationTargets, calculateScenario,
-      ));
     }
     const ranked = rankV2Options(options);
     const highest = ranked.find((option) => option.status === "completed" && option.impactRank === 1);
@@ -1001,7 +1096,11 @@ export function createF6Optimization(
       f3Reference: artifactReference(request.f3Reference),
       f4Reference: artifactReference(request.f4Reference),
       f5Reference: artifactReference(request.f5Reference),
+      reportScope: structuredClone(request.reportScope),
       ...(request.imageObservationReference === undefined ? {} : { imageObservationReference: artifactReference(request.imageObservationReference) }),
+      ...(request.supplierCapabilityReference === undefined ? {} : { supplierCapabilityReference: artifactReference(request.supplierCapabilityReference) }),
+      ...(request.datumStrategyReference === undefined ? {} : { datumStrategyReference: artifactReference(request.datumStrategyReference) }),
+      ...(request.costReference === undefined ? {} : { costReference: artifactReference(request.costReference) }),
       supplierCapabilityDecision: requestEvidenceDecision(request.supplierCapabilityEvidence?.[0]),
       datumStrategyDecision: requestEvidenceDecision(request.datumEvidence?.[0]),
       costDecision: requestEvidenceDecision(request.costEvidence),

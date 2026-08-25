@@ -15,4 +15,19 @@ describe("workbook workflow documentation", () => {
       expect(markdown).not.toMatch(/npm run workflow:f1 -- [^\r\n]+[\s\S]{0,160}npm run workflow:f2 --/);
     });
   }
+
+  it("documents the approved F3 factor-row counting protocol", () => {
+    for (const relativePath of ["docs/02-end-to-end-flow.md", "docs/governance/feature-register.md"]) {
+      const markdown = readFileSync(path.join(root, relativePath), "utf8");
+      expect(markdown).toContain("one 11-header payload");
+      expect(markdown).toContain("data-f3-factor-row=true");
+      expect(markdown).toContain("data-f3-group-row=true");
+      expect(markdown).toContain("canonical HTML");
+      expect(markdown).toMatch(/SHA-256|body\/hash/);
+      expect(markdown).toContain("top: 200");
+      expect(markdown).toContain("one write");
+      expect(markdown).toContain("readback");
+      expect(markdown).not.toContain("expected factor row count");
+    }
+  });
 });

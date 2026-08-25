@@ -107,7 +107,7 @@ Surface MCP entity calls may start only after Question call 1 returns
 	- inspect real Surface tool schema.
 	- Prefer a comment create/update tool only when it has a string field that carries the full Markdown body.
 	- Otherwise allow the `System.History` channel only when `mcp_surface_mcp_p_update_work_item` exposes `requestBody[]` items with `op`, `path`, and string `value`, and `op` accepts `add`.
-	- Before preview, call `mcp_surface_mcp_p_list_work_item_comments` once and snapshot existing comment IDs.
+	- Before preview, call `mcp_surface_mcp_p_list_work_item_comments` once with `top: 200` and snapshot existing comment IDs from the returned page. Never pass a `top` value greater than `200`.
 	- If neither channel qualifies, do not write and fail closed to local fallback reason `surface_mcp_comment_body_unsupported`.
 
 ## Phase 5 - Preview and final write confirmation
@@ -115,6 +115,8 @@ Surface MCP entity calls may start only after Question call 1 returns
 1. Preview contract:
 	- deterministic English preview.
 	- exact 11 columns.
+	- group all rows globally by `Part / Subsystem` across worksheets; do not create worksheet-level groups.
+	- preserve worksheet identity in `Device Level Dim`, `Dimension Description`, and validated row provenance.
 	- no model rewriting records.
 	- Use the fixed F3 reminder title and payload contract from the protocol reference.
 	- direct comment channel uses `confirmedMarkdownBody` from `Feature3-ADO-Reminder.md`.
@@ -137,8 +139,8 @@ Surface MCP entity calls may start only after Question call 1 returns
 2. Define `confirmedMarkdownBody` as the complete direct-comment body from `Feature3-ADO-Reminder.md` and `confirmedHistoryHtml` as the complete System.History body from `Feature3-ADO-History.html`.
 3. For the `System.History` channel, after final confirmation, call `mcp_surface_mcp_p_update_work_item` exactly once with one `requestBody` item: `op=add`, `path=/fields/System.History`, and `value` equal to `confirmedHistoryHtml`.
 4. Do not add any other JSON Patch operation and never derive `path` from user input.
-5. After the write returns, read back comments exactly once with `mcp_surface_mcp_p_list_work_item_comments`.
-6. Require exactly one new comment whose work item ID matches and whose comment format `html` is reported. Require 11 headers and the expected factor row count, then compare ADO-safe canonical HTML using `normalizeAdoHistoryHtmlForVerification` on both bodies; canonical HTML text and SHA-256 must match `confirmedHistoryHtml`. This is the required readback full body/hash check.
+5. After the write returns, read back comments exactly once with `mcp_surface_mcp_p_list_work_item_comments` and `top: 200`. Never pass a `top` value greater than `200`.
+6. Require exactly one new comment whose work item ID matches and whose comment format `html` is reported. Require 11 headers and the expected marked factor row count (`data-f3-factor-row="true"`), excluding group rows (`data-f3-group-row="true"`), then compare ADO-safe canonical HTML using `normalizeAdoHistoryHtmlForVerification` on both bodies; canonical HTML text and SHA-256 must match `confirmedHistoryHtml`. This is the required readback full body/hash check.
 7. ADO-safe canonical HTML may remove only trailing line endings and ADO-injected whitespace immediately before `h2`, `p`, `li`, `ul`, `th`, or `td` closing tags. It must not normalize any other text or structure.
 8. A write error, verification mismatch, or post-write check failure uses the local failed fallback with `write_verification_failed`; no retry.
 9. Success: use the supported `updated` persistence command with the validated work item reference and no reason code.

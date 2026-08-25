@@ -6,6 +6,9 @@ import {
   createWorkbookCatalog,
 } from "../packages/workbook-catalog/dist/workbook-catalog.js";
 import {
+  createWorkbookSheetAssets,
+} from "../packages/workbook-catalog/dist/workbook-sheet-assets.js";
+import {
   createWorksheetSelectionPrompt,
   createWorksheetSelectionView,
   validateWorksheetSelectionConfirmation,
@@ -537,6 +540,13 @@ for (const job of jobs) {
   }
   const selectedWorksheetNames = filterFeature1WorksheetNames(confirmationResult.selectedWorksheetNames);
 
+  const allSheetAssets = createWorkbookSheetAssets({
+    contractVersion: "v1",
+    inputClassification: "confidential",
+    workbookBytes,
+    workbookCatalog,
+  });
+
   const parallelAssets = await createWorksheetAnalysisAssetsParallel({
     contractVersion: "v1",
     inputClassification: "confidential",
@@ -704,12 +714,83 @@ for (const job of jobs) {
     });
   }
 
+  const selectedOutputByName = new Map(worksheetOutputs.map((item) => [item.worksheetName, item]));
+  const allWorksheetOutputs = [];
+  for (const sheet of allSheetAssets.worksheets) {
+    const selectedOutput = selectedOutputByName.get(sheet.worksheetName);
+    if (selectedOutput) {
+      allWorksheetOutputs.push({
+        ...selectedOutput,
+        worksheetIndex: sheet.worksheetIndex,
+        visibility: sheet.visibility,
+        worksheetKind: sheet.worksheetKind,
+        isTaAnalysis: sheet.isTaAnalysis,
+        extractionMode: "ta_analysis",
+      });
+      continue;
+    }
+
+    const worksheetSafe = safeName(sheet.worksheetName);
+    const imageRecords = sheet.images.map((image) => {
+      const ext = extensionFromMediaType(image.mediaType);
+      const fileName = `${worksheetSafe}__${image.contentHash.slice(0, 16)}${ext}`;
+      const outputPath = path.join(workbookImageDir, fileName);
+      writeFileSync(outputPath, image.bytes);
+      return {
+        contentHash: image.contentHash,
+        mediaType: image.mediaType,
+        byteLength: image.byteLength,
+        sourcePart: image.sourcePart,
+        drawingSourcePart: image.drawingSourcePart,
+        anchor: image.anchor,
+        outputFile: toPosix(path.relative(outRoot, outputPath)),
+      };
+    });
+    const worksheetRecord = {
+      taskId: "1.5-1.6-workbook-sheet",
+      generatedAt,
+      workbook: {
+        fileName: workbookCatalog.workbook.fileName,
+        contentHash: workbookCatalog.workbook.contentHash,
+        documentNo: workbookCatalog.workbook.metadata.documentNo,
+        revision: workbookCatalog.workbook.metadata.revision,
+        date: workbookCatalog.workbook.metadata.date.value,
+      },
+      worksheetName: sheet.worksheetName,
+      worksheetIndex: sheet.worksheetIndex,
+      visibility: sheet.visibility,
+      worksheetKind: sheet.worksheetKind,
+      isTaAnalysis: sheet.isTaAnalysis,
+      sourcePart: sheet.sourcePart,
+      cells: sheet.cells,
+      imageAssets: imageRecords,
+      imageExtractionStatus: sheet.imageExtractionStatus,
+    };
+    const worksheetJsonPath = path.join(workbookJsonDir, `${workbookSafe}__${worksheetSafe}.task1.5.sheet.full.json`);
+    const worksheetMdPath = path.join(workbookMdDir, `${workbookSafe}__${worksheetSafe}.task1.5.sheet.md`);
+    writeFileSync(worksheetJsonPath, JSON.stringify(worksheetRecord, null, 2));
+    writeFileSync(worksheetMdPath, sheet.markdown);
+    allWorksheetOutputs.push({
+      worksheetName: sheet.worksheetName,
+      worksheetIndex: sheet.worksheetIndex,
+      visibility: sheet.visibility,
+      worksheetKind: sheet.worksheetKind,
+      isTaAnalysis: sheet.isTaAnalysis,
+      extractionMode: "workbook_sheet",
+      jsonPath: toPosix(path.relative(outRoot, worksheetJsonPath)),
+      mdPath: toPosix(path.relative(outRoot, worksheetMdPath)),
+      imageAssetCount: imageRecords.length,
+      imageExtractionStatus: sheet.imageExtractionStatus,
+      composedStatus: "not_applicable",
+    });
+  }
+
   const workbookSheetReadme = [];
   workbookSheetReadme.push(`# Feature 1 Sheet Outputs - ${workbookCatalog.workbook.fileName}`);
   workbookSheetReadme.push("");
   workbookSheetReadme.push("| worksheet | sheetJson | sheetMd | images | composed |");
   workbookSheetReadme.push("|---|---|---|---:|---|");
-  for (const item of worksheetOutputs) {
+  for (const item of allWorksheetOutputs) {
     const composedText = item.composedSnapshot ? item.composedSnapshot : item.composedStatus;
     workbookSheetReadme.push(`| ${mdEscape(item.worksheetName)} | ${mdEscape(item.jsonPath)} | ${mdEscape(item.mdPath)} | ${item.imageAssetCount} | ${mdEscape(composedText ?? "") } |`);
   }
@@ -760,6 +841,7 @@ for (const job of jobs) {
       })),
       hyperlinkMode: "Factor Description and Part Name link to sheet-level composed/base image.",
     },
+    allWorksheetOutputs,
     sheetReadmePath: toPosix(path.relative(outRoot, workbookSheetReadmePath)),
   });
 }

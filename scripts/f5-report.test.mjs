@@ -256,15 +256,24 @@ function withRejectedWorksheet(report, onlyRejected = false) {
 }
 
 function chapter(markdown, heading, nextHeading) {
-  const start = markdown.indexOf(heading);
-  const end = nextHeading === undefined ? markdown.length : markdown.indexOf(nextHeading, start);
-  return markdown.slice(start, end);
+  const appendixText = auditAppendix(markdown);
+  const start = appendixText.indexOf(heading);
+  const end = nextHeading === undefined ? appendixText.length : appendixText.indexOf(nextHeading, start);
+  return appendixText.slice(start, end);
 }
 
 function section(markdown, heading, nextHeading) {
   const start = markdown.indexOf(heading);
   const end = nextHeading === undefined ? markdown.length : markdown.indexOf(nextHeading, start + heading.length);
   return markdown.slice(start, end < 0 ? markdown.length : end);
+}
+
+function engineeringSummary(markdown) {
+  return section(markdown, "## 工程审查摘要", "## 审计附录");
+}
+
+function auditAppendix(markdown) {
+  return section(markdown, "## 审计附录");
 }
 
 function toleranceStatusReport(status) {
@@ -301,6 +310,44 @@ function toleranceStatusReport(status) {
 }
 
 describe("renderF5Report", () => {
+  it("renders engineering summary before audit appendix with the required worksheet table columns", () => {
+    const markdown = renderF5Report(completedReport({ observations: [observation({ confidence: "high" })] }));
+
+    expect(markdown.indexOf("## 工程审查摘要")).toBeGreaterThanOrEqual(0);
+    expect(markdown.indexOf("## 审计附录")).toBeGreaterThanOrEqual(0);
+    expect(markdown.indexOf("## 工程审查摘要")).toBeLessThan(markdown.indexOf("## 审计附录"));
+
+    const summary = engineeringSummary(markdown);
+    expect(summary).toContain("| Worksheet | Status | Cpk | Target Cpk | Top Contributor | Image Evidence | Governance | Next Step |");
+    expect(summary).toContain("| Analysis-A |");
+  });
+
+  it("keeps verbose provenance in audit appendix while summary remains concise and ownership-scoped", () => {
+    const markdown = renderF5Report(completedReport({ observations: [observation({ confidence: "high" })] }));
+    const summary = engineeringSummary(markdown);
+    const appendix = auditAppendix(markdown);
+
+    for (const label of [
+      "image evidence",
+      "capability/spec",
+      "top contributors",
+      "high-confidence visual FACT",
+      "ME-review SIGNAL",
+      "governance missing",
+      "clarification",
+      "next step",
+      "F5 owned: image evidence, capability/spec interpretation, contributors",
+      "Delegated to F6: quantified tolerance range, optimization scenarios, ROI, final engineering decision",
+    ]) {
+      expect(summary).toContain(label);
+    }
+
+    expect(summary).not.toContain("sourceFileHash=");
+    expect(summary).not.toContain("sourceCells=");
+    expect(appendix).toContain("sourceFileHash=");
+    expect(appendix).toContain("sourceCells=");
+  });
+
   it("declares the governed bilingual evidence taxonomy without changing F5 ownership", () => {
     const markdown = renderF5Report(completedReport());
 
@@ -593,6 +640,37 @@ describe("renderF5Report", () => {
     expect(markdown).toContain("[F1 图片](../f1/artifacts/analysis-a.png)");
     expect(markdown).not.toContain("F1 图片证据链接不可用");
     expect(markdown).not.toContain(temporaryRoot);
+  });
+
+  it("renders clickable summary image links only for contained roots and keeps safe fallback otherwise", () => {
+    const temporaryRoot = mkdtempSync(path.join(tmpdir(), "f5-report-summary-"));
+    const f1ArtifactRoot = path.join(temporaryRoot, "f1");
+    const outputRoot = path.join(temporaryRoot, "f5");
+    const imagePath = path.join(f1ArtifactRoot, "artifacts", "analysis-a.png");
+    mkdirSync(path.dirname(imagePath), { recursive: true });
+    mkdirSync(outputRoot, { recursive: true });
+    writeFileSync(imagePath, "controlled-image", "utf8");
+
+    const report = completedReport({ observations: [observation({ confidence: "high" })] });
+    const withContainedRoots = renderF5Report(report, { outputRoot, f1ArtifactRoot, publishRoot: temporaryRoot });
+    const summaryWithContainedRoots = engineeringSummary(withContainedRoots);
+
+    expect(summaryWithContainedRoots).toContain("[F1 图片](../f1/artifacts/analysis-a.png)");
+    expect(summaryWithContainedRoots).toContain("- image evidence: [F1 图片](../f1/artifacts/analysis-a.png)");
+    expect(summaryWithContainedRoots).not.toContain("\\[F1 图片\\]\\(");
+    expect(summaryWithContainedRoots).not.toContain(temporaryRoot);
+
+    const withoutPublishRoot = renderF5Report(report, { outputRoot, f1ArtifactRoot });
+    const summaryWithoutPublishRoot = engineeringSummary(withoutPublishRoot);
+    expect(summaryWithoutPublishRoot).toContain("F1 图片证据链接不可用");
+    expect(summaryWithoutPublishRoot).not.toContain("[F1 图片](");
+    expect(summaryWithoutPublishRoot).not.toContain(temporaryRoot);
+
+    const escapingRoots = renderF5Report(report, { outputRoot, f1ArtifactRoot, publishRoot: outputRoot });
+    const summaryEscapingRoots = engineeringSummary(escapingRoots);
+    expect(summaryEscapingRoots).toContain("F1 图片证据链接不可用");
+    expect(summaryEscapingRoots).not.toContain("[F1 图片](");
+    expect(summaryEscapingRoots).not.toContain(temporaryRoot);
   });
 
   it("does not publish relative image links without a common controlled publish root", () => {

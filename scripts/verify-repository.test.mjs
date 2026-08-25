@@ -5,6 +5,41 @@ import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { isForbiddenRepositoryPath } from "./verify-repository.mjs";
 
+const COMPOSED_REPORT_ARTIFACT_TOKEN = ["Feature6", "Composed", "Report"].join("-");
+
+function normalizeRepositoryPath(repositoryPath) {
+  return repositoryPath.replaceAll("\\", "/");
+}
+
+function isActiveRuntimeOrCurrentDocumentationPath(repositoryPath) {
+  const normalizedPath = normalizeRepositoryPath(repositoryPath);
+  if (normalizedPath.endsWith(".test.mjs") || normalizedPath.endsWith(".test.ts")) return false;
+  if (normalizedPath.startsWith("docs/superpowers/specs/") || normalizedPath.startsWith("docs/superpowers/plans/")) return false;
+  return normalizedPath === "README.md"
+    || normalizedPath.startsWith(".github/skills/")
+    || normalizedPath.startsWith("apps/")
+    || normalizedPath.startsWith("docs/")
+    || normalizedPath.startsWith("packages/")
+    || normalizedPath.startsWith("scripts/");
+}
+
+function activeComposedReportArtifactReferences(repositoryPath) {
+  const trackedAndUntracked = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], {
+    cwd: repositoryPath,
+    encoding: "utf8",
+  })
+    .split("\n")
+    .filter(Boolean)
+    .filter(isActiveRuntimeOrCurrentDocumentationPath);
+
+  return trackedAndUntracked.flatMap((relativePath) => {
+    const filePath = resolve(repositoryPath, relativePath);
+    if (!existsSync(filePath)) return [];
+    const content = readFileSync(filePath, "utf8");
+    return content.includes(COMPOSED_REPORT_ARTIFACT_TOKEN) ? [normalizeRepositoryPath(relativePath)] : [];
+  });
+}
+
 function writeRepositoryFixture(repositoryPath, fixturePath, content) {
   const filePath = resolve(repositoryPath, fixturePath);
   const relativePath = relative(repositoryPath, filePath);
@@ -19,6 +54,10 @@ function writeRepositoryFixture(repositoryPath, fixturePath, content) {
 }
 
 describe("isForbiddenRepositoryPath", () => {
+  it("rejects active Feature 6 legacy report artifact references outside historical plans and specs", () => {
+    expect(activeComposedReportArtifactReferences(process.cwd())).toEqual([]);
+  });
+
   it.each([
     ".github/ISSUE_TEMPLATE/feature.yml",
     ".github/ISSUE_TEMPLATE/bug.yml",

@@ -398,6 +398,12 @@ export function loadF6ArtifactBundle({
   }
 
   const readyWorksheets = f2.worksheets.filter(({ status }) => status === "ready");
+  const reportScope = {
+    worksheetNames: f2.worksheets.map(({ worksheetName }) => worksheetName),
+    blockedWorksheetNames: f2.worksheets
+      .filter(({ status }) => status === "blocked")
+      .map(({ worksheetName }) => worksheetName),
+  };
   const selection = exactUniqueSelection(selectedWorksheetNames, readyWorksheets.map(({ worksheetName }) => worksheetName));
   if (!selection) return inputRejected("worksheet_selection_invalid", "selectedWorksheetNames");
   const f2ByName = indexExactlyOnce(readyWorksheets, selection);
@@ -541,6 +547,7 @@ export function loadF6ArtifactBundle({
       return inputRejected("artifact_identity_mismatch", loaded.reference.artifact);
     }
     optionalRequestFields.supplierCapabilityEvidence = [loaded.value];
+    optionalRequestFields.supplierCapabilityReference = loaded.reference;
     sourceReferences.supplierCapability = loaded.reference;
   }
 
@@ -557,6 +564,7 @@ export function loadF6ArtifactBundle({
       return inputRejected("artifact_identity_mismatch", loaded.reference.artifact);
     }
     optionalRequestFields.datumEvidence = [loaded.value];
+    optionalRequestFields.datumStrategyReference = loaded.reference;
     sourceReferences.datumStrategy = loaded.reference;
   }
 
@@ -568,6 +576,7 @@ export function loadF6ArtifactBundle({
       return inputRejected("artifact_identity_mismatch", loaded.reference.artifact);
     }
     optionalRequestFields.costEvidence = loaded.value;
+    optionalRequestFields.costReference = loaded.reference;
     sourceReferences.cost = loaded.reference;
   }
 
@@ -641,6 +650,7 @@ export function loadF6ArtifactBundle({
     inputClassification: "confidential",
     workbook: { fileName: workbook.fileName, contentHash: workbook.contentHash },
     selectedWorksheetNames: selection,
+    reportScope,
     f2Reference: sourceReferences.f2,
     f3Reference: sourceReferences.f3,
     f4Reference: sourceReferences.f4,
@@ -659,6 +669,8 @@ export function loadF6ArtifactBundle({
     status: "accepted",
     request: request.data,
     f2Report: f2,
+    f3Report: f3,
+    f4Report: f4,
     f5Report: f5,
     blockedWorksheets: f2.worksheets
       .filter(({ status }) => status === "blocked")

@@ -23,7 +23,7 @@ F0 is controlled capability and rule consumption, not a standalone artifact runn
 Choose exactly one mode from the supplied path:
 
 - **Entry mode 1 - TA workbook**: the input is one `.xlsx` TA workbook. Follow W0-W10 in order.
-- **Entry mode 2 - Existing F6 artifact**: the input is an F6 output directory or `Feature6-Composed-Report.json`. Follow the existing-artifact protocol only.
+- **Entry mode 2 - Existing F6 artifact**: the input is an F6 output directory or `Feature6-Optimization.json`. Follow the existing-artifact protocol only.
 
 If the trigger phrase contains no path, ask for one workbook or one existing F6 artifact path. Do not infer a workbook from editor state, previous runs, similarly named files, or historical artifacts. Resolve canonical paths and reject ambiguous, missing, out-of-root, linked-out, or identity-mismatched inputs.
 
@@ -107,17 +107,21 @@ For a valid supplied artifact, show a complete sanitized preview and make a dedi
 
 Collect at most one optional `f6-optimization-targets-v1` artifact after W8A is terminal. Require an existing, contained, non-linked JSON file accepted by the current schema and bound to the same baseline workbook, worksheet, factor, unit, and calculation identities. Invalid input is `REJECTED`; absent input is `NOT_PROVIDED`.
 
-For a valid supplied artifact, show every target, policy, selected factor, value, ratio, and unit in a complete sanitized preview. Make a second dedicated `vscode_askQuestions` call with the exact affirmative choice `Confirm optimization targets`. Record confirmation as `CALLER_AUTHORIZED`; record a declined confirmation as `DECLINED`. Declined optimization targets omit `--optimization-targets` and continue in candidate-only mode.
+For a valid supplied artifact, show every target, policy, selected factor, value, ratio, and unit in a complete sanitized preview. Make a second dedicated `vscode_askQuestions` call with the exact affirmative choice `Confirm optimization targets`. Record confirmation as `CALLER_AUTHORIZED`; record a declined confirmation as `DECLINED`. Declined optimization targets omit `--optimization-targets`; caller-target options remain unavailable.
 
-W8A and W8B use two separate `vscode_askQuestions` calls. Neither call may be merged with the other, and each must not be combined with the F3 ADO confirmation. No optimization scenario may be generated before target confirmation. Only caller-authorized targets may create a quantified scenario; without them, emit candidate-only options. Do not invent default percentage scenarios. Preserve each decision as `CALLER_AUTHORIZED`, `DECLINED`, `REJECTED`, or `NOT_PROVIDED` in Optimization, run summary, manifest, and the final ledger.
+W8A and W8B use two separate `vscode_askQuestions` calls. Neither call may be merged with the other, and each must not be combined with the F3 ADO confirmation. Caller-target optimization scenarios may not be generated before target confirmation. Only caller-authorized targets may create caller-target quantified scenarios.
+
+The sole no-target exception is the versioned built-in policy `f6-top3-tolerance-policy-v1`. For a worksheet where `CpkL` or `CpkU` is below that worksheet's recorded Target Cpk, F6 automatically freezes the baseline Top 3 variance contributors and runs exactly these F4-backed options: `OP1` = Top 1 tolerance band reduced 25% and Top 2/3 reduced 10%; `OP2` = Top 1 reduced 20% and Top 2/3 reduced 15%; `OP3` = Top 1 reduced 40% and Top 2/3 reduced 5%. The policy preserves each tolerance-band center, does not change specifications, and records policy, factor, ratio, baseline, and scenario calculation provenance. A worksheet whose `CpkL` and `CpkU` both meet Target Cpk receives no built-in option. No other automatic percentage scenario is permitted.
+
+Preserve each optional input decision as `CALLER_AUTHORIZED`, `DECLINED`, `REJECTED`, or `NOT_PROVIDED` in Optimization, run summary, manifest, and the final ledger. Built-in policy execution does not change the Optimization Targets input decision.
 
 ### Phase W9 - Run and validate F6
 
 Run F6 with the current F2, F3, F4, and F5 roots and one repeated `--worksheet` per downstream worksheet. Append `--analysis-context <artifact-path>` only after W8A caller authorization and `--optimization-targets <artifact-path>` only after W8B caller authorization. The loader may also consume the current F5 immutable image observation copy and governed supplier, datum, or cost evidence when already supplied by the controlled workflow.
 
-Validate `Feature6-Optimization.json` as `f6-optimization-v2` with `f6OptimizationResultSchema` and `Feature6-Composed-Report.json` as `f6-composed-report-v2` with `f6ComposedEngineeringReportSchema`. Validate the run summary, manifest, six-file output set, exact downstream worksheet set, F2 blocked worksheet placement, input decisions, input provenance hashes, output hashes, option counts, evidence gates, and ROI gates. Reject current-entry v1 artifacts as unsupported rather than converting or presenting them.
+Validate `Feature6-Optimization.json` as `f6-optimization-v2` with `f6OptimizationResultSchema` and validate the hash-bound `Feature6-Report.md` only through the recorded SHA-256 before presentation. Validate the run summary, manifest, five-file output set, exact downstream worksheet set, F2 blocked worksheet placement, input decisions, input provenance hashes, output hashes, option counts, evidence gates, ROI gates, built-in policy IDs/ratios/side-Cpk trigger/F4 scenario references, and `reportSummary`. Require Optimization worksheet names to be a unique subset of `reportSummary` worksheet names. Any `reportSummary` worksheet not present in Optimization is blocked `FAIL`; reportSummary extras with any other disposition are blocked FAIL. The exact full report scope comes from the validated run summary and manifest, not from Optimization alone. Reject current-entry v1 artifacts as unsupported rather than converting or presenting them. Never parse Markdown to derive disposition.
 
-The `F6` output is the validated F6 root, optimization JSON/Markdown, composed-report JSON/Markdown, run summary, and manifest.
+The `F6` output is the validated F6 root, optimization JSON/Markdown, final report Markdown, run summary, and manifest.
 
 ### Phase W10 - Present every Feature output
 
@@ -129,13 +133,15 @@ Present one concise run ledger containing:
 - `F3` output: status, root, report, governance-complete and governance-required counts, plus the optional ADO publishing outcome and sanitized work item reference when one was validated.
 - `F4` output: status, root, calculation/report paths, and accepted downstream calculation count.
 - `F5` output: status, root, report paths, image mode (`v2` or `not_evaluated`), and clarification count.
-- `F6` output: status, root, six artifact paths, Context/Targets decision outcomes and controlled hashes, candidate/completed/failed option counts, four-state report status (`PASS`, `CONDITIONAL_PASS`, `FAIL`, or `INCOMPLETE`), and blocked worksheet section.
+- `F6` output: status, root, five artifact paths, Context/Targets decision outcomes and controlled hashes, candidate/completed/failed option counts, four-state report status (`PASS`, `CONDITIONAL_PASS`, `FAIL`, or `INCOMPLETE`), and blocked worksheet section.
 
 Do not report a phase as completed until its contract, containment, identity, manifest, and recorded hashes have passed. Keep FACT, RULE, SIGNAL, OPTION, assumptions, clarifications, risks, and evidence-gated options distinct.
 
 ## Entry mode 2 - Existing F6 artifact
 
-Resolve the supplied F6 directory or `Feature6-Composed-Report.json` beneath the controlled publish root. Validate the composed report against `f6ComposedEngineeringReportSchema`, the optimization result against `f6OptimizationResultSchema`, and verify the run summary, manifest, six expected files, workbook/worksheet identities, source provenance hashes, output hashes, classifications, blocked worksheet placement, and evidence/ROI gates.
+Resolve the supplied F6 directory or `Feature6-Optimization.json` beneath the controlled publish root. Validate exactly the five-file artifact set: `Feature6-Report.md`, `Feature6-Optimization.json`, `Feature6-Optimization.md`, `Feature6-Run-Summary.json`, and `manifest.json`. Validate `Feature6-Optimization.json` against `f6OptimizationResultSchema`, then verify the manifest artifact map, the required run-summary and manifest input decision ledgers, the three recorded content hashes, workbook/worksheet identities, exact source provenance basename/hash bindings, classifications, blocked worksheet placement, evidence/ROI gates, and `reportSummary` consistency.
+
+The `reportSummary.worksheetDispositions` entries must use unique worksheet names and use only `PASS`, `CONDITIONAL_PASS`, `INCOMPLETE`, or `FAIL`. Optimization worksheet names must be a unique subset of reportSummary worksheet names. Any reportSummary worksheet not present in Optimization is blocked FAIL; reportSummary extras with any other disposition are blocked FAIL. The exact full report scope comes from the validated run summary and manifest, not from Optimization alone. Compute the expected workbook disposition by calling the exported Task 3 `worstDisposition` policy on those worksheet dispositions; do not duplicate the ranking table in the existing-artifact validator. If `reportSummary.workbookDisposition` differs, reject with `report_summary_invalid`. If any of the three recorded content hashes differs from the actual artifact bytes, reject with `artifact_hash_mismatch`. Never parse `Feature6-Report.md` to derive disposition; present it only after its SHA-256 has been verified.
 
 If validation succeeds, present the validated F6 report without rerunning F0, F1, F2, F3, F4, F5, or F6. Do not recreate observations or evidence. If any check fails, stop without presenting untrusted content.
 

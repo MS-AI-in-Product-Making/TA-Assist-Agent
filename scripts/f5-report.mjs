@@ -458,6 +458,141 @@ function renderCompletedWorksheet(lines, worksheet, chapterKey, options) {
   if (chapterKey === "designOptimizationAndParallelOptions") renderOptions(lines, worksheet);
 }
 
+function capabilityMetricValue(worksheet, metric) {
+  const statement = worksheet.statements.find((candidate) => (
+    candidate.type === "FACT"
+    && candidate.section === "capability-vs-specification"
+    && candidate.content.metric === metric
+  ));
+  if (statement === undefined) return undefined;
+  if ("value" in statement.content) return statement.content.value;
+  return statement.content.method;
+}
+
+function topContributorName(worksheet) {
+  if (worksheet.sections.majorContributors.items.length === 0) return undefined;
+  const [top] = [...worksheet.sections.majorContributors.items]
+    .sort((left, right) => right.contributionPercent - left.contributionPercent);
+  return `${top.factorName} (${top.contributionPercent}%)`;
+}
+
+function governanceMissingCount(worksheet) {
+  return worksheet.sections.majorContributors.items
+    .filter((item) => item.governanceStatus !== "complete")
+    .length;
+}
+
+function highConfidenceVisualFactCount(worksheet) {
+  return worksheet.statements
+    .filter((statement) => (
+      statement.type === "FACT"
+      && statement.section === "tolerance-chain-validity"
+      && statement.content.provenanceKind === "image_observation"
+      && statement.content.confidence === "high"
+    ))
+    .length;
+}
+
+function meReviewSignals(worksheet) {
+  return worksheet.statements
+    .filter((statement) => statement.type === "SIGNAL")
+    .filter((statement) => {
+      if ("requiresEngineeringReview" in statement.content) {
+        return statement.content.requiresEngineeringReview === true;
+      }
+      if (statement.content.observationEvidence !== undefined) {
+        return statement.content.observationEvidence.some((item) => item.reviewStatus === "unreviewed");
+      }
+      return false;
+    });
+}
+
+function signalKeyText(signal) {
+  if ("signalValue" in signal.content) return signal.content.signalValue;
+  if ("signalKind" in signal.content) return signal.content.signalKind;
+  return signal.statementId;
+}
+
+function worksheetNextStep(worksheet) {
+  if (worksheet.status === "input_rejected") return "Repair upstream artifact identity and rerun F5.";
+  const governanceMissing = governanceMissingCount(worksheet);
+  const clarifications = worksheet.clarifications.length;
+  if (governanceMissing > 0 || clarifications > 0) {
+    return "ME review governance gaps and open clarifications before F6.";
+  }
+  return "Pass worksheet package to F6 quantitative decision flow.";
+}
+
+function renderWorksheetSummaryRow(lines, worksheet, options) {
+  if (worksheet.status === "input_rejected") {
+    lines.push(`| ${cell(worksheet.worksheetName)} | ${cell(worksheet.status)} | （缺失） | （缺失） | （缺失） | （缺失） | （缺失） | ${cell(worksheetNextStep(worksheet))} |`);
+    return;
+  }
+  const cpk = capabilityMetricValue(worksheet, "cpk");
+  const targetCpk = capabilityMetricValue(worksheet, "target_cpk");
+  lines.push(`| ${cell(worksheet.worksheetName)} | ${cell(worksheet.status)} | ${cell(cpk)} | ${cell(targetCpk)} | ${cell(topContributorName(worksheet))} | ${imageLink(worksheet.imageReference, options)} | ${cell(`missing=${governanceMissingCount(worksheet)}`)} | ${cell(worksheetNextStep(worksheet))} |`);
+}
+
+function renderWorksheetCompactCard(lines, worksheet, options) {
+  lines.push("", `### Worksheet: ${cell(worksheet.worksheetName)}`);
+  if (worksheet.status === "input_rejected") {
+    lines.push(
+      "",
+      `- status: ${code(worksheet.status)}`,
+      `- image evidence: （缺失）`,
+      `- capability/spec: （缺失）`,
+      `- top contributors: （缺失）`,
+      `- high-confidence visual FACT: 0`,
+      `- ME-review SIGNAL count/key text: 0 / （无）`,
+      `- governance missing count: （缺失）`,
+      `- clarification count: 0`,
+      `- next step: ${inline(worksheetNextStep(worksheet))}`,
+    );
+    return;
+  }
+
+  const cpk = capabilityMetricValue(worksheet, "cpk");
+  const targetCpk = capabilityMetricValue(worksheet, "target_cpk");
+  const topContributor = topContributorName(worksheet);
+  const highConfidenceFacts = highConfidenceVisualFactCount(worksheet);
+  const signals = meReviewSignals(worksheet);
+  const signalText = signals.length > 0
+    ? signals.slice(0, 2).map(signalKeyText).map(inline).join("; ")
+    : "（无）";
+
+  lines.push(
+    "",
+    `- status: ${code(worksheet.status)}`,
+    `- image evidence: ${imageLink(worksheet.imageReference, options)}`,
+    `- capability/spec: cpk=${inline(cpk)}; target_cpk=${inline(targetCpk)}`,
+    `- top contributors: ${inline(topContributor)}`,
+    `- high-confidence visual FACT: ${highConfidenceFacts}`,
+    `- ME-review SIGNAL count/key text: ${signals.length} / ${signalText}`,
+    `- governance missing count: ${governanceMissingCount(worksheet)}`,
+    `- clarification count: ${worksheet.clarifications.length}`,
+    `- next step: ${inline(worksheetNextStep(worksheet))}`,
+  );
+}
+
+function renderEngineeringSummary(lines, parsed, options) {
+  lines.push(
+    "",
+    "## 工程审查摘要",
+    "",
+    "- F5 owned: image evidence, capability/spec interpretation, contributors",
+    "- Delegated to F6: quantified tolerance range, optimization scenarios, ROI, final engineering decision",
+    "",
+    "| Worksheet | Status | Cpk | Target Cpk | Top Contributor | Image Evidence | Governance | Next Step |",
+    "| --- | --- | ---: | ---: | --- | --- | --- | --- |",
+  );
+  for (const worksheet of parsed.worksheets) {
+    renderWorksheetSummaryRow(lines, worksheet, options);
+  }
+  for (const worksheet of parsed.worksheets) {
+    renderWorksheetCompactCard(lines, worksheet, options);
+  }
+}
+
 export function renderF5Report(report, { outputRoot, f1ArtifactRoot, publishRoot } = {}) {
   let parsed;
   try {
@@ -477,6 +612,10 @@ export function renderF5Report(report, { outputRoot, f1ArtifactRoot, publishRoot
     ...["INPUT_FACT", "CALCULATED", "DERIVED", "ASSUMPTION", "INFERENCE", "MISSING"]
       .map((type) => `- ${evidenceLabel(type)}`),
   ];
+
+  renderEngineeringSummary(lines, parsed, options);
+  lines.push("", "## 审计附录");
+
   for (const chapter of CHAPTERS) {
     lines.push("", chapter.title, "");
     for (const worksheet of parsed.worksheets) {

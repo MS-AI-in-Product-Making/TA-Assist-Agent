@@ -150,6 +150,9 @@ export function loadF1ArtifactBundle(artifactRoot) {
       fileName: workbookIdentity.fileName,
       contentHash: workbookIdentity.contentHash,
       f1GeneratedAt: rootReport.generatedAt,
+      revision: typeof workbookIdentity.metadata?.revision === "string" && workbookIdentity.metadata.revision.trim().length > 0
+        ? workbookIdentity.metadata.revision.trim()
+        : null,
     },
     worksheets,
   });

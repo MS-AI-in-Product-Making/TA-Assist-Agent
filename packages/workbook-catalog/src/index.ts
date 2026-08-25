@@ -7,6 +7,8 @@ export { extractResponseSummarySystemSpecification } from "./response-summary.js
 export type { WorksheetSystemSpecification } from "./response-summary.js";
 export { createWorksheetSelectionPrompt, createWorksheetSelectionView, validateWorksheetSelectionConfirmation } from "./worksheet-selection.js";
 export { createWorksheetAnalysisAssets, createWorksheetAnalysisAssetsParallel, readWorksheetImageAsset } from "./worksheet-analysis-assets.js";
+export { createWorkbookSheetAssets } from "./workbook-sheet-assets.js";
+export type { WorkbookSheetAsset, WorkbookSheetAssetsRequest, WorkbookSheetAssetsResult } from "./workbook-sheet-assets.js";
 export { createSemanticTableDetection } from "./semantic-table-detection.js";
 export { createRequiredFieldCheck } from "./required-field-check.js";
 export { createCapabilityValidation } from "./capability-validation.js";
@@ -21,7 +23,6 @@ export { createCalculation } from "./calculation.js";
 export { calculateF6Scenario } from "./f6-scenario-adapter.js";
 export { createF6Optimization } from "./f6-optimization.js";
 export { createF6ReportProjection } from "./f6-report-projection.js";
-export { createF6ComposedEngineeringReport } from "./f6-composed-report.js";
 export { createDrawingGovernancePlaceholder } from "./drawing-governance-placeholder.js";
 export { createInterpretation, createInterpretationPlaceholder } from "./interpretation-placeholder.js";
 export { createF5DataInterpretation } from "./f5-data-interpretation.js";

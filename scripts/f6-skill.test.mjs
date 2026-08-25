@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 const root = process.cwd();
 const skillPath = path.join(root, ".github", "skills", "f6-analysis", "SKILL.md");
+const deprecatedF6ReportArtifactJsonName = [["Feature6", "Composed", "Report"].join("-"), "json"].join(".");
 
 const allowedCommands = [
   "npm run workflow:f2:excel -- <ta-workbook-path>",
@@ -104,10 +105,10 @@ describe("F6 analysis skill contract", () => {
     expect(skill).toContain("two separate `vscode_askQuestions` calls");
     expect(skill).toContain("Declined analysis context omits `--analysis-context`");
     expect(skill).toContain("Declined optimization targets omit `--optimization-targets`");
-    expect(skill).toContain("No optimization scenario may be generated before target confirmation");
+    expect(skill).toContain("Caller-target optimization scenarios may not be generated before target confirmation");
     expect(skill).toContain("`CALLER_AUTHORIZED`, `DECLINED`, `REJECTED`, or `NOT_PROVIDED`");
     expect(skill).toContain("must not be combined with the F3 ADO confirmation");
-    expect(skill).toContain("f6-composed-report-v2");
+    expect(skill).toContain("f6-optimization-v2");
     expect(skill).not.toContain("reduce_top_contributor_20");
   });
 
@@ -158,20 +159,36 @@ describe("F6 analysis skill contract", () => {
     ]) expect(skill).toContain(`\`${scope}\``);
     expect(skill).toContain("f6-analysis-context-v1");
     expect(skill).toContain("f6-optimization-targets-v1");
-    expect(skill).toContain("candidate-only");
-    expect(skill).toContain("Do not invent default percentage scenarios");
+    expect(skill).toContain("f6-top3-tolerance-policy-v1");
+    expect(skill).toContain("CpkL");
+    expect(skill).toContain("CpkU");
+    expect(skill).toContain("OP1");
+    expect(skill).toContain("OP2");
+    expect(skill).toContain("OP3");
+    expect(skill).toContain("No other automatic percentage scenario is permitted");
   });
 
   it("validates every Feature output and supports an existing F6 artifact fast path", () => {
     const skill = readSkill();
     expect(skill).toContain("Entry mode 1 - TA workbook");
     expect(skill).toContain("Entry mode 2 - Existing F6 artifact");
-    expect(skill).toContain("Feature6-Composed-Report.json");
+    expect(skill).toContain("Feature6-Report.md");
+    expect(skill).toContain("five-file");
+    expect(skill).toContain("reportSummary");
+    expect(skill).not.toContain(deprecatedF6ReportArtifactJsonName);
     expect(skill).toContain("without rerunning F0, F1, F2, F3, F4, F5, or F6");
     for (const feature of ["F1", "F2", "F3", "F4", "F5", "F6"]) {
       expect(skill).toContain(`\`${feature}\` output`);
     }
     expect(skill).toContain("contract, containment, identity, manifest, and recorded hashes");
+  });
+
+  it("documents final report scope from validated summary and manifest instead of Optimization alone", () => {
+    const skill = readSkill();
+    expect(skill).toContain("Optimization worksheet names must be a unique subset of reportSummary worksheet names");
+    expect(skill).toContain("Any reportSummary worksheet not present in Optimization is blocked FAIL");
+    expect(skill).toContain("reportSummary extras with any other disposition are blocked FAIL");
+    expect(skill).toContain("The exact full report scope comes from the validated run summary and manifest, not from Optimization alone");
   });
 
   it("keeps deterministic runners local and the optional ADO adapter fail closed", () => {
@@ -211,7 +228,7 @@ describe("F6 analysis skill contract", () => {
     for (const check of [
       "f6-skill-contract-check",
       "f0-f6-real-workbook-flow",
-      "f6-composed-report-check",
+      "f6-final-report-check",
     ]) expect(documents.register).toContain(check);
   });
 });

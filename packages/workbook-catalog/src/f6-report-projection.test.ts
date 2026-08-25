@@ -86,6 +86,18 @@ describe("createF6ReportProjection", () => {
     expect(result.formulaChecks.map(({ formulaId }) => formulaId)).toContain("worst-case-v1");
   });
 
+  it("includes a nonstandard target sigma range required by the final report", () => {
+    const input = structuredClone(calculation());
+    input.capability.targetSigmaLevel = 4.5;
+
+    const result = createF6ReportProjection({ calculation: input, inputResolution: 0.01 });
+    const targetRange = result.statisticalRanges.find(({ sigmaLevel }) => sigmaLevel === 4.5);
+
+    expect(targetRange?.range.lower).toBeCloseTo(-0.2528122592448494);
+    expect(targetRange?.range.upper).toBeCloseTo(0.1528122592448494);
+    expect(result.margins.statistical.sigmaLevel).toBe(4.5);
+  });
+
   it("fails closed when a required F4 trace is missing", () => {
     const baseline = calculation();
     const input = {
@@ -103,6 +115,16 @@ describe("createF6ReportProjection", () => {
     expect(result.selfChecks.mean.result).toBe("PASS");
     expect(result.selfChecks.rss.result).toBe("PASS");
     expect(result.selfChecks.worstCase.result).toBe("PASS");
+    expect(result.selfChecks.worstCaseUpper).toMatchObject({ checkId: "worst-case-upper", result: "PASS" });
+    expect(result.selfChecks.worstCaseLower).toMatchObject({ checkId: "worst-case-lower", result: "PASS" });
+    expect(result.selfChecks.worstCaseUpper.calculated.value)
+      .toBeCloseTo(result.selfChecks.worstCaseUpper.reported.value);
+    expect(result.selfChecks.worstCaseLower.calculated.value)
+      .toBeCloseTo(result.selfChecks.worstCaseLower.reported.value);
+    expect(result.selfChecks.worstCaseUpper.tolerance.value).toBe(0.01);
+    expect(result.selfChecks.worstCaseLower.tolerance.value).toBe(0.01);
+    expect(result.selfChecks.worstCaseUpper.toleranceBasis).toBe("input resolution");
+    expect(result.selfChecks.worstCaseLower.toleranceBasis).toBe("input resolution");
     expect(Object.isFrozen(result)).toBe(true);
     expect(Object.isFrozen(result.formulaChecks)).toBe(true);
     expect(() => createF6ReportProjection({ calculation: calculation(), inputResolution: 0 }))

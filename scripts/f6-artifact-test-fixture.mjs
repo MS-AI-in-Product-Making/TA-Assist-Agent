@@ -31,7 +31,7 @@ function sourceCells(worksheetName, sourceRow) {
   };
 }
 
-function actualFields(worksheetName) {
+function actualFields(worksheetName, overrides = {}) {
   return {
     factorName: `Factor ${worksheetName}`,
     partName: `Part ${worksheetName}`,
@@ -49,10 +49,11 @@ function actualFields(worksheetName) {
     oneSigma: 0.05,
     percentContributionToSigma: 1,
     notes: null,
+    ...overrides,
   };
 }
 
-function systemSpecification(worksheetName) {
+function systemSpecification(worksheetName, overrides = {}) {
   return {
     status: "available",
     lowerSpecLimit: {
@@ -71,22 +72,23 @@ function systemSpecification(worksheetName) {
       status: "available", actualValue: 0, displayValue: "0",
       sourceLabel: "Additional Mean Shift", valueOrigin: "defaulted",
     },
+    ...overrides,
   };
 }
 
-function readyWorksheet(worksheetName, tableId, sourceRow) {
+function readyWorksheet(worksheetName, tableId, sourceRow, options = {}) {
   return {
     worksheetName,
     toleranceLoopDescription: `Loop ${worksheetName}`,
     status: "ready",
     tolerancePathImageStatus: "available",
-    systemSpecification: systemSpecification(worksheetName),
+    systemSpecification: systemSpecification(worksheetName, options.systemSpecificationOverrides),
     systemSpecificationIssues: [],
     rows: [{
       worksheetName,
       tableId,
       sourceRow,
-      actualFields: actualFields(worksheetName),
+      actualFields: actualFields(worksheetName, options.actualFieldOverrides),
       sourceCells: sourceCells(worksheetName, sourceRow),
       missingRequiredFields: [],
       missingIdentifiers: [],
@@ -145,7 +147,7 @@ export function fixtureFileSha256(filePath) {
   return createHash("sha256").update(readFileSync(filePath)).digest("hex");
 }
 
-export function createF6ArtifactBundleFixture({ worksheetNames = ["Analysis-A"], blockedWorksheetNames = [] } = {}) {
+export function createF6ArtifactBundleFixture({ worksheetNames = ["Analysis-A"], blockedWorksheetNames = [], actualFieldOverrides = {}, systemSpecificationOverrides = {} } = {}) {
   const root = mkdtempSync(path.join(tmpdir(), "f6-artifact-fixture-"));
   const publishRoot = path.join(root, "publish");
   const inputRoot = path.join(publishRoot, "inputs");
@@ -155,9 +157,9 @@ export function createF6ArtifactBundleFixture({ worksheetNames = ["Analysis-A"],
   const f5ArtifactRoot = path.join(inputRoot, "f5");
   mkdirSync(publishRoot, { recursive: true });
   const worksheets = worksheetNames.map((worksheetName, index) =>
-    readyWorksheet(worksheetName, `table-${index + 1}`, index + 2));
+    readyWorksheet(worksheetName, `table-${index + 1}`, index + 2, { actualFieldOverrides, systemSpecificationOverrides }));
   const blockedWorksheets = blockedWorksheetNames.map((worksheetName, index) => ({
-    ...readyWorksheet(worksheetName, `blocked-table-${index + 1}`, index + 20),
+    ...readyWorksheet(worksheetName, `blocked-table-${index + 1}`, index + 20, { actualFieldOverrides, systemSpecificationOverrides }),
     status: "blocked",
     tolerancePathImageStatus: "unavailable",
   }));

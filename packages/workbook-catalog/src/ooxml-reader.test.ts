@@ -118,6 +118,20 @@ describe("OOXML workbook reader", () => {
     expect(workbook.worksheets.get("Analysis-A")?.cells).toContainEqual({ reference: "C2", value: "3", formula: "=SUM(B2:B2)", cachedValue: "3" });
   });
 
+  it("exposes every worksheet in workbook order with visibility and source identity", () => {
+    const workbook = readOoxmlWorkbook(createAnonymousWorkbookZip({
+      xmlParts: {
+        "xl/workbook.xml": '<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Title Page" sheetId="1" r:id="rId1"/><sheet name="Auto Summary" sheetId="2" state="hidden" r:id="rId2"/><sheet name="Analysis-A" sheetId="3" state="veryHidden" r:id="rId3"/></sheets></workbook>',
+      },
+    }));
+
+    expect(workbook.worksheetInventory).toEqual([
+      { worksheetName: "Title Page", worksheetIndex: 0, visibility: "visible", relationshipId: "rId1", partName: "xl/worksheets/sheet1.xml" },
+      { worksheetName: "Auto Summary", worksheetIndex: 1, visibility: "hidden", relationshipId: "rId2", partName: "xl/worksheets/sheet2.xml" },
+      { worksheetName: "Analysis-A", worksheetIndex: 2, visibility: "veryHidden", relationshipId: "rId3", partName: "xl/worksheets/sheet3.xml" },
+    ]);
+  });
+
   it("reads internal worksheet drawing media with safe anchors", () => {
     const workbook = readOoxmlWorkbook(createAnonymousWorkbookZip({
       xmlParts: {
