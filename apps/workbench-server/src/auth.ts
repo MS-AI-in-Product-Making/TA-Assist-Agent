@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 
 import type { FastifyRequest } from "fastify";
 
@@ -11,6 +11,8 @@ export interface AuthenticatedRequest {
   readonly kind: "browser" | "host";
   readonly sessionId: string;
   readonly scopes: readonly HostBearerScope[];
+  readonly actionId?: string;
+  readonly hostInstanceId?: string;
 }
 
 export interface TestAuthentication {
@@ -27,7 +29,18 @@ interface BrowserSession {
 
 interface HostBearer {
   readonly sessionId: string;
+  readonly tokenHash: string;
   readonly scopes: readonly HostBearerScope[];
+  readonly expiresAtMs: number;
+  readonly actionId?: string;
+  readonly hostInstanceId?: string;
+}
+
+export interface HostBearerOptions {
+  readonly expiresAt?: string;
+  readonly ttlMs?: number;
+  readonly actionId?: string;
+  readonly hostInstanceId?: string;
 }
 
 export class WorkbenchAuth {
@@ -52,9 +65,18 @@ export class WorkbenchAuth {
     };
   }
 
-  issueHostBearer(sessionId: string, scopes: readonly HostBearerScope[]): string {
+  issueHostBearer(sessionId: string, scopes: readonly HostBearerScope[], options: HostBearerOptions = {}): string {
     const token = randomBytes(32).toString("base64url");
-    this.hostBearers.set(token, { sessionId, scopes });
+    const tokenHash = hashToken(token);
+    const credential: HostBearer = {
+      sessionId,
+      tokenHash,
+      scopes,
+      expiresAtMs: options.expiresAt === undefined ? Date.now() + (options.ttlMs ?? 60_000) : Date.parse(options.expiresAt),
+      ...(options.actionId === undefined ? {} : { actionId: options.actionId }),
+      ...(options.hostInstanceId === undefined ? {} : { hostInstanceId: options.hostInstanceId }),
+    };
+    this.hostBearers.set(tokenHash, credential);
     return token;
   }
 
@@ -65,9 +87,16 @@ export class WorkbenchAuth {
   authenticate(request: FastifyRequest): AuthenticatedRequest | undefined {
     const bearer = readBearerToken(request.headers.authorization);
     if (bearer !== undefined) {
-      const credential = this.hostBearers.get(bearer);
-      if (credential !== undefined) {
-        return { kind: "host", sessionId: credential.sessionId, scopes: credential.scopes };
+      const tokenHash = hashToken(bearer);
+      const credential = this.hostBearers.get(tokenHash);
+      if (credential !== undefined && credential.expiresAtMs > Date.now() && safeTokenHashEqual(credential.tokenHash, tokenHash)) {
+        return {
+          kind: "host",
+          sessionId: credential.sessionId,
+          scopes: credential.scopes,
+          ...(credential.actionId === undefined ? {} : { actionId: credential.actionId }),
+          ...(credential.hostInstanceId === undefined ? {} : { hostInstanceId: credential.hostInstanceId }),
+        };
       }
     }
 
@@ -99,6 +128,12 @@ export function hasScope(authenticated: AuthenticatedRequest, scope: HostBearerS
   return authenticated.kind === "host" && authenticated.scopes.includes(scope);
 }
 
+export function hostBearerMatches(authenticated: AuthenticatedRequest, actionId: string, hostInstanceId: string): boolean {
+  return authenticated.kind === "host"
+    && (authenticated.actionId === undefined || authenticated.actionId === actionId)
+    && (authenticated.hostInstanceId === undefined || authenticated.hostInstanceId === hostInstanceId);
+}
+
 function readBearerToken(authorization: string | undefined): string | undefined {
   if (authorization === undefined) {
     return undefined;
@@ -106,4 +141,14 @@ function readBearerToken(authorization: string | undefined): string | undefined 
 
   const match = /^Bearer\s+(.+)$/i.exec(authorization.trim());
   return match?.[1];
+}
+
+function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+function safeTokenHashEqual(left: string, right: string): boolean {
+  const leftBuffer = Buffer.from(left, "hex");
+  const rightBuffer = Buffer.from(right, "hex");
+  return leftBuffer.byteLength === rightBuffer.byteLength && timingSafeEqual(leftBuffer, rightBuffer);
 }

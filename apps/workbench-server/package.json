@@ -23,6 +23,7 @@
     "@ai-assist/agent-runtime": "0.1.0",
     "@ai-assist/contracts": "0.1.0",
     "@ai-assist/conversation": "0.1.0",
+    "@ai-assist/workbook-catalog": "0.1.0",
     "@ai-assist/workbench": "0.1.0",
     "@ai-assist/workflow-runners": "0.1.0",
     "@fastify/cookie": "^11.1.2",

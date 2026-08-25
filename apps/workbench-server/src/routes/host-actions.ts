@@ -1,7 +1,7 @@
 import { hostActionClaimSchema, hostActionRequestSchema, hostActionResultSchema } from "@ai-assist/contracts";
 import type { FastifyPluginAsync } from "fastify";
 
-import { hasScope } from "../auth.js";
+import { hasScope, hostBearerMatches } from "../auth.js";
 import type { WorkbenchServerContext } from "../server.js";
 
 export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServerContext }> = async (app, { context }) => {
@@ -22,6 +22,10 @@ export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: Workbench
 
   app.post("/api/sessions/:sessionId/host-actions/:actionId/claim", async (request, reply) => {
     const auth = context.requireAuthenticated(request, reply);
+    if (auth === undefined && request.headers.authorization !== undefined) {
+      return reply.code(403).send({ error: "host_scope_rejected" });
+    }
+
     if (auth === undefined || !hasScope(auth, "host-actions:claim")) {
       return reply.code(403).send({ error: "host_scope_rejected" });
     }
@@ -31,7 +35,12 @@ export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: Workbench
       return reply.code(403).send({ error: "session_scope_rejected" });
     }
 
-    const claim = context.hostActions.claim(actionId, readHostInstanceId(request.body));
+    const hostInstanceId = readHostInstanceId(request.body);
+    if (!hostBearerMatches(auth, actionId, hostInstanceId)) {
+      return reply.code(403).send({ error: "host_scope_rejected" });
+    }
+
+    const claim = context.hostActions.claim(actionId, hostInstanceId);
     const parsed = hostActionClaimSchema.safeParse(claim);
     return parsed.success ? reply.send(parsed.data) : reply.code(409).send({ error: "host_action_not_claimable" });
   });
@@ -48,7 +57,14 @@ export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: Workbench
       return reply.code(400).send({ error: "host_action_result_rejected" });
     }
 
-    return context.hostActions.complete(parsed.data) ? reply.code(204).send() : reply.code(400).send({ error: "host_action_result_integrity_rejected" });
+    if (!hostBearerMatches(auth, actionId, parsed.data.hostInstanceId)) {
+      return reply.code(400).send({ error: "host_action_result_rejected" });
+    }
+
+    const completion = context.hostActions.complete(parsed.data);
+    if (completion === "accepted") return reply.code(204).send();
+    if (completion === "duplicate") return reply.code(409).send({ error: "host_action_result_replayed" });
+    return reply.code(400).send({ error: "host_action_result_integrity_rejected" });
   });
 };
 

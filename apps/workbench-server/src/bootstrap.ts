@@ -44,8 +44,12 @@ export function renderBootstrapPage(): string {
   return `<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><title>TA Assist Workbench</title></head>
-<body><main id="app"></main><script>
-(() => {
+<body><main id="app"></main><script src="/bootstrap.js"></script></body>
+</html>`;
+}
+
+export function renderBootstrapScript(): string {
+  return `(() => {
   const params = new URLSearchParams(location.hash.startsWith('#') ? location.hash.slice(1) : '');
   const nonce = params.get('bootstrap');
   if (!nonce) return;
@@ -56,7 +60,5 @@ export function renderBootstrapPage(): string {
     credentials: 'same-origin',
     body: JSON.stringify({ nonce })
   }).finally(() => params.delete('bootstrap'));
-})();
-</script></body>
-</html>`;
+})();`;
 }

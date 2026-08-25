@@ -12,7 +12,7 @@ export const sessionsRoutes: FastifyPluginAsync<{ readonly context: WorkbenchSer
     }
 
     const sessionId = randomUUID();
-    const snapshot = context.sessions.create(sessionId);
+    const snapshot = await context.sessions.create(sessionId);
     return reply.code(201).send(snapshot);
   });
 
@@ -27,6 +27,6 @@ export const sessionsRoutes: FastifyPluginAsync<{ readonly context: WorkbenchSer
       return reply.code(403).send({ error: "session_scope_rejected" });
     }
 
-    return context.sessions.read(sessionId) ?? reply.code(404).send({ error: "session_not_found" });
+    return (await context.sessions.read(sessionId)) ?? reply.code(404).send({ error: "session_not_found" });
   });
 };

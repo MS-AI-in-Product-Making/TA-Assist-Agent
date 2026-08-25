@@ -8,10 +8,10 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 
 import type { ConversationTurn } from "@ai-assist/conversation";
 import type { hostActionClaimSchema, hostActionRequestSchema, hostActionResultSchema } from "@ai-assist/contracts";
-import type { F8SessionCommand, F8SessionSnapshot } from "@ai-assist/workbench";
+import { createSessionStore, openSessionStore, reduceSessionCommand, type F8SessionCommand, type F8SessionSnapshot } from "@ai-assist/workbench";
 
-import { WorkbenchAuth, SESSION_COOKIE_NAME, type AuthenticatedRequest, type TestAuthentication } from "./auth.js";
-import { createBrowserBootstrapRendezvous, renderBootstrapPage, type BrowserBootstrapRendezvous } from "./bootstrap.js";
+import { WorkbenchAuth, SESSION_COOKIE_NAME, type HostBearerOptions, type AuthenticatedRequest, type TestAuthentication } from "./auth.js";
+import { createBrowserBootstrapRendezvous, renderBootstrapPage, renderBootstrapScript, type BrowserBootstrapRendezvous } from "./bootstrap.js";
 import { applySecurityHeaders, isMutation, LOOPBACK_HOST, rejectIfUnsafeBrowserBoundary } from "./security.js";
 import { artifactsRoutes } from "./routes/artifacts.js";
 import { commandsRoutes } from "./routes/commands.js";
@@ -34,18 +34,22 @@ export interface WorkbenchServer extends FastifyInstance {
   readonly listenOptions: { readonly host: string; readonly port: number };
   readonly bootstrap: BrowserBootstrapRendezvous;
   testAuthenticate(sessionId?: string): Promise<TestAuthentication>;
-  issueHostBearer(sessionId: string, scopes: readonly string[]): string;
+  issueHostBearer(sessionId: string, scopes: readonly string[], options?: HostBearerOptions): string;
+  registerArtifactForTest(sessionId: string, artifactId: string, relativePath: string, fileName: string, classification: ArtifactClassification, mimeType: string): void;
+  publishEventForTest(sessionId: string, eventName: string, payload: unknown): void;
 }
 
+export type ArtifactClassification = "public" | "confidential";
+
 export interface ArtifactRegistry {
-  authorize(sessionId: string, artifactId: string, relativePath: string, fileName: string): void;
-  read(sessionId: string, artifactId: string): { readonly relativePath: string; readonly fileName: string } | undefined;
+  authorize(sessionId: string, artifactId: string, relativePath: string, fileName: string, classification: ArtifactClassification, mimeType: string): void;
+  read(sessionId: string, artifactId: string): { readonly relativePath: string; readonly fileName: string; readonly classification: ArtifactClassification; readonly mimeType: string } | undefined;
 }
 
 export interface SessionRegistry {
-  create(sessionId: string): F8SessionSnapshot;
-  read(sessionId: string): F8SessionSnapshot | undefined;
-  applyCommand(command: F8SessionCommand): F8SessionSnapshot;
+  create(sessionId: string): Promise<F8SessionSnapshot>;
+  read(sessionId: string): Promise<F8SessionSnapshot | undefined>;
+  applyCommand(command: F8SessionCommand): Promise<F8SessionSnapshot>;
 }
 
 export interface ConversationRegistry {
@@ -56,7 +60,19 @@ export interface ConversationRegistry {
 export interface HostActionRegistry {
   create(request: HostActionRequest): HostActionRequest;
   claim(actionId: string, hostInstanceId: string): HostActionClaim | undefined;
-  complete(result: HostActionResult): boolean;
+  complete(result: HostActionResult): "accepted" | "rejected" | "duplicate";
+}
+
+export interface EventSource {
+  publish(sessionId: string, eventName: string, payload: unknown): void;
+  replay(sessionId: string, afterEventId: string | undefined): readonly StoredEvent[];
+  subscribe(sessionId: string, listener: (event: StoredEvent) => void): () => void;
+}
+
+export interface StoredEvent {
+  readonly id: string;
+  readonly eventName: string;
+  readonly payload: unknown;
 }
 
 export interface WorkbenchServerContext {
@@ -66,6 +82,7 @@ export interface WorkbenchServerContext {
   readonly conversation: ConversationRegistry;
   readonly hostActions: HostActionRegistry;
   readonly artifacts: ArtifactRegistry;
+  readonly events: EventSource;
   requireAuthenticated(request: FastifyRequest, reply: FastifyReply): AuthenticatedRequest | undefined;
   requireBrowserMutation(request: FastifyRequest, reply: FastifyReply): AuthenticatedRequest | undefined;
 }
@@ -81,8 +98,16 @@ export async function buildWorkbenchServer(options: StartWorkbenchServerOptions)
   Object.defineProperties(app, {
     listenOptions: { value: { host: LOOPBACK_HOST, port: options.port ?? 0 }, enumerable: true },
     bootstrap: { value: bootstrap, enumerable: true },
-    testAuthenticate: { value: async (sessionId?: string) => auth.issueBrowserSession(sessionId as `${string}-${string}-${string}-${string}-${string}` | undefined), enumerable: true },
-    issueHostBearer: { value: (sessionId: string, scopes: readonly string[]) => auth.issueHostBearer(sessionId, scopes as never), enumerable: true },
+    testAuthenticate: { value: async (sessionId?: string) => {
+      const authentication = auth.issueBrowserSession(sessionId as `${string}-${string}-${string}-${string}-${string}` | undefined);
+      if (await context.sessions.read(authentication.sessionId) === undefined) {
+        await context.sessions.create(authentication.sessionId);
+      }
+      return authentication;
+    }, enumerable: true },
+    issueHostBearer: { value: (sessionId: string, scopes: readonly string[], bearerOptions?: HostBearerOptions) => auth.issueHostBearer(sessionId, scopes as never, bearerOptions), enumerable: true },
+    registerArtifactForTest: { value: (sessionId: string, artifactId: string, relativePath: string, fileName: string, classification: ArtifactClassification, mimeType: string) => context.artifacts.authorize(sessionId, artifactId, relativePath, fileName, classification, mimeType), enumerable: true },
+    publishEventForTest: { value: (sessionId: string, eventName: string, payload: unknown) => context.events.publish(sessionId, eventName, payload), enumerable: true },
   });
 
   app.addHook("onRequest", async (request, reply) => {
@@ -94,6 +119,7 @@ export async function buildWorkbenchServer(options: StartWorkbenchServerOptions)
   await app.register(multipart, { limits: { fileSize: 50 * 1024 * 1024, files: 1, fields: 8 } });
 
   app.get("/", async (_request, reply) => reply.type("text/html; charset=utf-8").send(renderBootstrapPage()));
+  app.get("/bootstrap.js", async (_request, reply) => reply.type("application/javascript; charset=utf-8").send(renderBootstrapScript()));
   app.post("/api/bootstrap", async (request, reply) => {
     const nonce = (request.body as { readonly nonce?: unknown } | undefined)?.nonce;
     if (typeof nonce !== "string" || !(await bootstrap.consumeBrowserBootstrap(nonce))) {
@@ -142,7 +168,7 @@ export async function startWorkbenchServer(options: StartWorkbenchServerOptions)
 }
 
 function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth): WorkbenchServerContext {
-  const sessions = new MemorySessionRegistry();
+  const sessions = new StoreBackedSessionRegistry(rootDir);
   return {
     rootDir,
     auth,
@@ -150,10 +176,11 @@ function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth): Wor
     conversation: new MemoryConversationRegistry(),
     hostActions: new MemoryHostActionRegistry(),
     artifacts: new MemoryArtifactRegistry(),
+    events: new MemoryEventSource(),
     requireAuthenticated(request, reply) {
       const authenticated = auth.authenticate(request);
       if (authenticated === undefined) {
-        reply.code(401).send({ error: "authentication_required" });
+        reply.code(request.headers.authorization === undefined ? 401 : 403).send({ error: "authentication_required" });
       }
 
       return authenticated;
@@ -175,24 +202,38 @@ function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth): Wor
   };
 }
 
-class MemorySessionRegistry implements SessionRegistry {
-  private readonly snapshots = new Map<string, F8SessionSnapshot>();
+class StoreBackedSessionRegistry implements SessionRegistry {
+  constructor(private readonly rootDir: string) {}
 
-  create(sessionId: string): F8SessionSnapshot {
-    const snapshot = createSnapshot(sessionId, 0, "workbook_required");
-    this.snapshots.set(sessionId, snapshot);
-    return snapshot;
+  async create(sessionId: string): Promise<F8SessionSnapshot> {
+    const store = await createSessionStore({ rootDir: this.rootDir, sessionId });
+    try {
+      return await store.readSnapshot();
+    } finally {
+      await store.close();
+    }
   }
 
-  read(sessionId: string): F8SessionSnapshot | undefined {
-    return this.snapshots.get(sessionId);
+  async read(sessionId: string): Promise<F8SessionSnapshot | undefined> {
+    try {
+      const store = await openSessionStore({ rootDir: this.rootDir, sessionId });
+      try {
+        return await store.readSnapshot();
+      } finally {
+        await store.close();
+      }
+    } catch {
+      return undefined;
+    }
   }
 
-  applyCommand(command: F8SessionCommand): F8SessionSnapshot {
-    const current = this.snapshots.get(command.sessionId) ?? createSnapshot(command.sessionId, 0, "workbook_required");
-    const next = createSnapshot(command.sessionId, current.revision + 1, current.state);
-    this.snapshots.set(command.sessionId, next);
-    return next;
+  async applyCommand(command: F8SessionCommand): Promise<F8SessionSnapshot> {
+    const store = await openSessionStore({ rootDir: this.rootDir, sessionId: command.sessionId });
+    try {
+      return await store.applyCommand(command, async (snapshot, nextCommand) => ({ snapshot: reduceSessionCommand(snapshot, nextCommand) }));
+    } finally {
+      await store.close();
+    }
   }
 }
 
@@ -236,42 +277,65 @@ class MemoryHostActionRegistry implements HostActionRegistry {
     return claim;
   }
 
-  complete(result: HostActionResult): boolean {
+  complete(result: HostActionResult): "accepted" | "rejected" | "duplicate" {
     const action = this.actions.get(result.actionId);
-    if (action?.claim?.leaseId !== result.leaseId) {
-      return false;
+    if (action?.result !== undefined) {
+      return "duplicate";
+    }
+
+    if (action?.claim?.leaseId !== result.leaseId || action.claim.hostInstanceId !== result.hostInstanceId || Date.parse(action.claim.leaseExpiresAt) <= Date.now()) {
+      return "rejected";
     }
 
     if (result.resultHash !== createHash("sha256").update(JSON.stringify(result.payload)).digest("hex")) {
-      return false;
+      return "rejected";
     }
 
     this.actions.set(result.actionId, { request: action.request, claim: action.claim, result });
-    return true;
+    return "accepted";
   }
 }
 
 class MemoryArtifactRegistry implements ArtifactRegistry {
-  private readonly artifacts = new Map<string, { readonly sessionId: string; readonly relativePath: string; readonly fileName: string }>();
+  private readonly artifacts = new Map<string, { readonly sessionId: string; readonly relativePath: string; readonly fileName: string; readonly classification: ArtifactClassification; readonly mimeType: string }>();
 
-  authorize(sessionId: string, artifactId: string, relativePath: string, fileName: string): void {
-    this.artifacts.set(artifactId, { sessionId, relativePath, fileName });
+  authorize(sessionId: string, artifactId: string, relativePath: string, fileName: string, classification: ArtifactClassification, mimeType: string): void {
+    this.artifacts.set(artifactId, { sessionId, relativePath, fileName, classification, mimeType });
   }
 
-  read(sessionId: string, artifactId: string): { readonly relativePath: string; readonly fileName: string } | undefined {
+  read(sessionId: string, artifactId: string): { readonly relativePath: string; readonly fileName: string; readonly classification: ArtifactClassification; readonly mimeType: string } | undefined {
     const artifact = this.artifacts.get(artifactId);
     return artifact?.sessionId === sessionId ? artifact : undefined;
   }
 }
 
-function createSnapshot(sessionId: string, revision: number, state: F8SessionSnapshot["state"]): F8SessionSnapshot {
-  return {
-    contractVersion: "f8-session-snapshot-v1",
-    sessionId,
-    revision,
-    inputRevision: 0,
-    state,
-    activeAttempt: null,
-    priorRunReferences: [],
-  };
+class MemoryEventSource implements EventSource {
+  private readonly events = new Map<string, StoredEvent[]>();
+
+  private readonly subscribers = new Map<string, Set<(event: StoredEvent) => void>>();
+
+  publish(sessionId: string, eventName: string, payload: unknown): void {
+    const events = this.events.get(sessionId) ?? [];
+    const event = { id: String(events.length + 1), eventName, payload };
+    events.push(event);
+    this.events.set(sessionId, events);
+    for (const listener of this.subscribers.get(sessionId) ?? []) {
+      listener(event);
+    }
+  }
+
+  replay(sessionId: string, afterEventId: string | undefined): readonly StoredEvent[] {
+    const afterId = Number(afterEventId ?? 0);
+    return (this.events.get(sessionId) ?? []).filter((event) => Number(event.id) > afterId);
+  }
+
+  subscribe(sessionId: string, listener: (event: StoredEvent) => void): () => void {
+    const listeners = this.subscribers.get(sessionId) ?? new Set<(event: StoredEvent) => void>();
+    listeners.add(listener);
+    this.subscribers.set(sessionId, listeners);
+    return () => {
+      listeners.delete(listener);
+      if (listeners.size === 0) this.subscribers.delete(sessionId);
+    };
+  }
 }

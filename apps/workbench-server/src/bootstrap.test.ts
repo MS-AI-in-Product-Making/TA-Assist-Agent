@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createBrowserBootstrapRendezvous, renderBootstrapPage } from "./bootstrap.js";
+import { createBrowserBootstrapRendezvous, renderBootstrapPage, renderBootstrapScript } from "./bootstrap.js";
 
 describe("browser bootstrap rendezvous", () => {
   it("issues 128-bit one-time nonces with expiry", async () => {
@@ -17,11 +17,16 @@ describe("browser bootstrap rendezvous", () => {
     expect(await rendezvous.consumeBrowserBootstrap(expired)).toBe(false);
   });
 
-  it("bootstrap page removes the fragment before posting", () => {
+  it("bootstrap script removes the fragment before posting without inline CSP exceptions", () => {
     const page = renderBootstrapPage();
+    const script = renderBootstrapScript();
 
-    expect(page).toContain("location.hash");
-    expect(page).toContain("history.replaceState");
+    expect(page).toContain('<script src="/bootstrap.js"></script>');
+    expect(page).not.toContain("<script>");
+    expect(script).toContain("location.hash");
+    expect(script).toContain("history.replaceState");
+    expect(script.indexOf("history.replaceState")).toBeLessThan(script.indexOf("fetch('/api/bootstrap'"));
     expect(page).not.toContain("localStorage");
+    expect(script).not.toContain("localStorage");
   });
 });

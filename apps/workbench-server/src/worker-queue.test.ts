@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createPersistentWorkerQueue, type QueueSessionStore } from "./worker-queue.js";
 
@@ -26,6 +26,14 @@ class MemoryQueueSessionStore implements QueueSessionStore {
   async markDependencyFailure(attemptId: string, reason: string): Promise<void> {
     this.attempts.set(attemptId, { status: "failed", result: reason });
   }
+}
+
+function deferred<T>(): { readonly promise: Promise<T>; resolve(value: T): void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((innerResolve) => {
+    resolve = innerResolve;
+  });
+  return { promise, resolve };
 }
 
 describe("persistent workbench worker queue", () => {
@@ -58,5 +66,53 @@ describe("persistent workbench worker queue", () => {
     await second.reconcile();
 
     expect(store.attempts.get("attempt-2")).toMatchObject({ status: "failed" });
+  });
+
+  it("rejects duplicate job IDs before persisting a second attempt", async () => {
+    const store = new MemoryQueueSessionStore();
+    const queue = await createPersistentWorkerQueue({ rootDir, sessionStore: store, worker: async () => ({ ok: true }) });
+
+    await queue.enqueue({ jobId: "job-duplicate", attemptId: "attempt-1", kind: "calculation", stage: "f4_running", payload: {} });
+    await expect(queue.enqueue({ jobId: "job-duplicate", attemptId: "attempt-2", kind: "calculation", stage: "f4_running", payload: {} }))
+      .rejects.toMatchObject({ code: "validation_error" });
+    expect(store.attempts.has("attempt-2")).toBe(false);
+  });
+
+  it("runs Excel jobs one at a time and calculation jobs at configured concurrency", async () => {
+    const store = new MemoryQueueSessionStore();
+    const gates = new Map([
+      ["excel-1", deferred<unknown>()],
+      ["excel-2", deferred<unknown>()],
+      ["calc-1", deferred<unknown>()],
+      ["calc-2", deferred<unknown>()],
+    ]);
+    const starts: string[] = [];
+    const queue = await createPersistentWorkerQueue({
+      rootDir,
+      sessionStore: store,
+      calculationConcurrency: 2,
+      worker: async (job) => {
+        starts.push(job.jobId);
+        return gates.get(job.jobId)!.promise;
+      },
+    });
+
+    const excel1 = queue.enqueue({ jobId: "excel-1", attemptId: "excel-attempt-1", kind: "excel", stage: "f1_f2_running", payload: {} });
+    const excel2 = queue.enqueue({ jobId: "excel-2", attemptId: "excel-attempt-2", kind: "excel", stage: "f1_f2_running", payload: {} });
+    const calc1 = queue.enqueue({ jobId: "calc-1", attemptId: "calc-attempt-1", kind: "calculation", stage: "f4_running", payload: {} });
+    const calc2 = queue.enqueue({ jobId: "calc-2", attemptId: "calc-attempt-2", kind: "calculation", stage: "f5_running", payload: {} });
+
+    await vi.waitFor(() => {
+      expect(starts).toContain("excel-1");
+      expect(starts).not.toContain("excel-2");
+      expect(starts).toEqual(expect.arrayContaining(["calc-1", "calc-2"]));
+      expect(starts).toHaveLength(3);
+    });
+    gates.get("excel-1")!.resolve({ ok: true });
+    await vi.waitFor(() => expect(starts).toContain("excel-2"));
+    gates.get("calc-1")!.resolve({ ok: true });
+    gates.get("calc-2")!.resolve({ ok: true });
+    gates.get("excel-2")!.resolve({ ok: true });
+    await Promise.all([excel1, excel2, calc1, calc2]);
   });
 });

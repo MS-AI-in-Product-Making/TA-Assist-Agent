@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { createTypedError } from "@ai-assist/contracts";
 
 export type StageJobKind = "excel" | "calculation" | "host";
 
@@ -58,7 +59,13 @@ export async function createPersistentWorkerQueue(options: PersistentWorkerQueue
 class FileBackedWorkerQueue implements PersistentWorkerQueue {
   private readonly jobs = new Map<string, PersistedJob>();
 
+  private readonly terminalPromises = new Map<string, Promise<void>>();
+
   private draining = false;
+
+  private activeExcelJobs = 0;
+
+  private activeCalculationJobs = 0;
 
   private sequence = 0;
 
@@ -80,16 +87,34 @@ class FileBackedWorkerQueue implements PersistentWorkerQueue {
   }
 
   async enqueue(job: StageJob, options?: EnqueueOptions): Promise<QueueReceipt> {
+    if (job.jobId && this.jobs.has(job.jobId)) {
+      throw createTypedError({
+        code: "validation_error",
+        summary: "Duplicate worker job rejected.",
+        suggestedAction: "Submit each worker job with a unique jobId.",
+        affectedInputReferences: [job.jobId],
+      });
+    }
+
     const persisted: PersistedJob = { ...job, jobId: job.jobId || randomUUID(), status: "queued", sequence: ++this.sequence };
     this.jobs.set(persisted.jobId, persisted);
     await this.options.sessionStore.persistAttempt({ attemptId: persisted.attemptId, status: "queued", jobId: persisted.jobId, stage: persisted.stage });
     await this.persist();
+    let drain: Promise<void> | undefined;
     if (options?.deferDrain !== true) {
-      await this.drain();
+      drain = this.drain();
+      await new Promise((resolve) => setImmediate(resolve));
     } else {
       persisted.status = "running";
       await this.options.sessionStore.persistAttempt({ attemptId: persisted.attemptId, status: "running", jobId: persisted.jobId, stage: persisted.stage });
       await this.persist();
+    }
+
+    const terminal = this.terminalPromises.get(persisted.jobId);
+    if (terminal !== undefined && options?.deferDrain !== true) {
+      await terminal;
+    } else if (drain !== undefined) {
+      await drain;
     }
 
     return { jobId: persisted.jobId, attemptId: persisted.attemptId, status: this.jobs.get(persisted.jobId)?.status ?? "queued" };
@@ -124,26 +149,53 @@ class FileBackedWorkerQueue implements PersistentWorkerQueue {
 
     this.draining = true;
     try {
-      const queuedJobs = [...this.jobs.values()]
-        .filter((job) => job.status === "queued")
-        .sort((left, right) => left.sequence - right.sequence);
-      for (const job of queuedJobs) {
-        job.status = "running";
-        await this.options.sessionStore.persistAttempt({ attemptId: job.attemptId, status: "running", jobId: job.jobId, stage: job.stage });
-        await this.persist();
-        try {
-          const result = await this.options.worker(job);
-          const accepted = await this.options.sessionStore.markAttemptResult(job.attemptId, result, "running");
-          job.status = accepted ? "completed" : "failed";
-        } catch (error) {
-          job.status = "failed";
-          await this.options.sessionStore.markDependencyFailure(job.attemptId, error instanceof Error ? error.message : "worker_failed");
+      let scheduled = true;
+      while (scheduled) {
+        scheduled = false;
+        for (const job of [...this.jobs.values()].filter((candidate) => candidate.status === "queued").sort((left, right) => left.sequence - right.sequence)) {
+          if (!this.canStart(job)) continue;
+          scheduled = true;
+          this.terminalPromises.set(job.jobId, this.runJob(job));
         }
-        await this.persist();
       }
     } finally {
       this.draining = false;
     }
+  }
+
+  private canStart(job: PersistedJob): boolean {
+    if (job.kind === "excel") return this.activeExcelJobs < 1;
+    if (job.kind === "calculation") return this.activeCalculationJobs < (this.options.calculationConcurrency ?? 2);
+    return true;
+  }
+
+  private async runJob(job: PersistedJob): Promise<void> {
+    this.incrementActive(job);
+    job.status = "running";
+    await this.options.sessionStore.persistAttempt({ attemptId: job.attemptId, status: "running", jobId: job.jobId, stage: job.stage });
+    await this.persist();
+    try {
+      const result = await this.options.worker(job);
+      const accepted = await this.options.sessionStore.markAttemptResult(job.attemptId, result, "running");
+      job.status = accepted ? "completed" : "failed";
+    } catch (error) {
+      job.status = "failed";
+      await this.options.sessionStore.markDependencyFailure(job.attemptId, "Worker failed.");
+    } finally {
+      this.decrementActive(job);
+      await this.persist();
+      void this.drain();
+    }
+  }
+
+  private incrementActive(job: PersistedJob): void {
+    if (job.kind === "excel") this.activeExcelJobs += 1;
+    if (job.kind === "calculation") this.activeCalculationJobs += 1;
+  }
+
+  private decrementActive(job: PersistedJob): void {
+    if (job.kind === "excel") this.activeExcelJobs -= 1;
+    if (job.kind === "calculation") this.activeCalculationJobs -= 1;
   }
 
   private async persist(): Promise<void> {

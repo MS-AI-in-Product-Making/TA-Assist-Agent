@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from "fastify";
 
 import { rejectClientOutputPath, storeUpload } from "../uploads.js";
 import type { WorkbenchServerContext } from "../server.js";
+import { errorStatusCode, safeErrorResponse } from "../security.js";
 
 export const filesRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServerContext }> = async (app, { context }) => {
   app.post("/api/sessions/:sessionId/files", async (request, reply) => {
@@ -35,13 +36,17 @@ export const filesRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServer
     for await (const part of request.parts()) {
       if (part.type === "field" && part.fieldname === "kind") {
         kind = String(part.value);
+        continue;
       }
 
       if (part.type === "file" && part.fieldname === "file") {
         fileName = part.filename;
         mimeType = part.mimetype;
         bytes = await part.toBuffer();
+        continue;
       }
+
+      return reply.code(400).send(safeErrorResponse(Object.assign(new Error("Unexpected upload field."), { code: "validation_error" })));
     }
 
     if (kind === undefined || fileName === undefined || mimeType === undefined || bytes === undefined) {
@@ -50,15 +55,10 @@ export const filesRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServer
 
     try {
       const artifact = await storeUpload({ rootDir: context.rootDir, sessionId, kind, fileName, mimeType, bytes });
-      context.artifacts.authorize(sessionId, artifact.artifactId, artifact.relativePath, artifact.fileName);
+      context.artifacts.authorize(sessionId, artifact.artifactId, artifact.relativePath, artifact.fileName, artifact.classification, artifact.mimeType);
       return reply.code(201).send(artifact);
     } catch (error) {
-      return reply.code(readStatusCode(error)).send({ error: error instanceof Error ? error.message : "upload_rejected" });
+      return reply.code(errorStatusCode(error)).send(safeErrorResponse(error));
     }
   });
 };
-
-function readStatusCode(error: unknown): number {
-  const statusCode = (error as { readonly statusCode?: unknown }).statusCode;
-  return typeof statusCode === "number" ? statusCode : 400;
-}

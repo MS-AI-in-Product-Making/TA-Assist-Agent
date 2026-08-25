@@ -1,12 +1,17 @@
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdir, realpath, writeFile } from "node:fs/promises";
+import { lstat, mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { basename, join, relative } from "node:path";
+
+import { createTypedError } from "@ai-assist/contracts";
+import { readOoxmlWorkbook } from "@ai-assist/workbook-catalog";
 
 export type UploadKind = "workbook" | "f7_feedback" | "image_evidence";
 
 export interface StoredUpload {
   readonly artifactId: string;
   readonly kind: UploadKind;
+  readonly classification: "confidential";
+  readonly mimeType: string;
   readonly fileName: string;
   readonly relativePath: string;
   readonly contentHash: string;
@@ -40,15 +45,23 @@ export async function storeUpload(input: UploadValidationInput): Promise<StoredU
   const bytes = Buffer.from(input.bytes);
 
   if (bytes.length === 0 || bytes.length > MAX_UPLOAD_BYTES_BY_KIND[kind]) {
-    throw Object.assign(new Error("upload_size_rejected"), { statusCode: 413 });
+    throw safeUploadError("upload_size_rejected", 413);
   }
 
   if (!MIME_BY_KIND[kind].includes(input.mimeType)) {
-    throw Object.assign(new Error("upload_mime_rejected"), { statusCode: 415 });
+    throw safeUploadError("upload_mime_rejected", 415);
   }
 
   if ((kind === "workbook" || kind === "f7_feedback") && !isOoxmlZip(bytes)) {
-    throw Object.assign(new Error("upload_ooxml_rejected"), { statusCode: 415 });
+    throw safeUploadError("upload_ooxml_rejected", 415);
+  }
+
+  if (kind === "workbook" || kind === "f7_feedback") {
+    try {
+      readOoxmlWorkbook(bytes, undefined, false);
+    } catch {
+      throw safeUploadError("upload_ooxml_rejected", 415);
+    }
   }
 
   const sessionUploadRoot = join(input.rootDir, "uploads", input.sessionId, kind);
@@ -59,12 +72,19 @@ export async function storeUpload(input: UploadValidationInput): Promise<StoredU
   const storageName = `${artifactId}-${fileName}`;
   const outputPath = join(sessionUploadRoot, storageName);
   await assertNoSymlinkAncestors(input.rootDir, sessionUploadRoot);
-  await writeFile(outputPath, bytes, { flag: "wx" });
-  await assertContainedPath(input.rootDir, outputPath);
+  try {
+    await writeFile(outputPath, bytes, { flag: "wx" });
+    await assertContainedPath(input.rootDir, outputPath);
+  } catch (error) {
+    await rm(outputPath, { force: true }).catch(() => undefined);
+    throw error;
+  }
 
   return {
     artifactId,
     kind,
+    classification: "confidential",
+    mimeType: input.mimeType,
     fileName,
     relativePath: relative(input.rootDir, outputPath).replace(/\\/g, "/"),
     contentHash: createHash("sha256").update(bytes).digest("hex"),
@@ -81,13 +101,13 @@ function parseUploadKind(kind: string): UploadKind {
     return kind;
   }
 
-  throw Object.assign(new Error("upload_kind_rejected"), { statusCode: 400 });
+  throw safeUploadError("upload_kind_rejected", 400);
 }
 
 function sanitizeFileName(fileName: string): string {
   const clean = basename(fileName).replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 160);
   if (clean.length === 0 || clean === "." || clean === "..") {
-    throw Object.assign(new Error("upload_name_rejected"), { statusCode: 400 });
+    throw safeUploadError("upload_name_rejected", 400);
   }
 
   return clean;
@@ -102,7 +122,7 @@ async function assertContainedPath(rootDir: string, targetPath: string): Promise
   const pathDelta = relative(rootRealPath, targetRealPath);
   if (pathDelta.startsWith("..") || pathDelta === "") {
     if (pathDelta !== "") {
-      throw Object.assign(new Error("path_escape_rejected"), { statusCode: 400 });
+      throw safeUploadError("path_escape_rejected", 400);
     }
   }
 }
@@ -115,7 +135,17 @@ async function assertNoSymlinkAncestors(rootDir: string, targetDir: string): Pro
   for (const segment of segments) {
     current = join(current, segment);
     if ((await lstat(current)).isSymbolicLink()) {
-      throw Object.assign(new Error("symlink_ancestor_rejected"), { statusCode: 400 });
+      throw safeUploadError("symlink_ancestor_rejected", 400);
     }
   }
+}
+
+function safeUploadError(reference: string, statusCode: number): Error {
+  const typedError = createTypedError({
+    code: statusCode === 413 ? "policy_denied" : "validation_error",
+    summary: "Upload rejected.",
+    suggestedAction: "Provide a supported workbook or evidence file.",
+    affectedInputReferences: [reference],
+  });
+  return Object.assign(new Error(typedError.summary), typedError, { statusCode });
 }
