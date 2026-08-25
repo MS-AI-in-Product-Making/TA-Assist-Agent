@@ -32,6 +32,20 @@ describe("SseEventParser", () => {
 });
 
 describe("workbench browser API", () => {
+  it("creates a session with a valid empty JSON request body", async () => {
+    vi.stubGlobal("location", { href: "http://127.0.0.1/" });
+    vi.stubGlobal("history", { replaceState: vi.fn() });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ csrfToken: "csrf" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(snapshot()), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ turns: [] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createWorkbenchApi().bootstrap();
+
+    expect(fetchMock.mock.calls[1]).toEqual(["/api/sessions", expect.objectContaining({ method: "POST", body: "{}" })]);
+  });
+
   it("validates F4 calculation artifacts instead of silently discarding them", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 200 })));
 

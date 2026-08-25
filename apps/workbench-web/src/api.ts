@@ -224,6 +224,7 @@ export function createWorkbenchApi(): WorkbenchApi {
       method: "POST",
       credentials: "same-origin",
       headers: await mutationHeaders(),
+      body: "{}",
     });
     return f8SessionSnapshotSchema.parse(await parseJsonResponse(response));
   }
@@ -370,7 +371,7 @@ function delay(milliseconds: number, signal: AbortSignal): Promise<void> {
 function readSessionIdFromUrl(): string | undefined {
   const url = new URL(globalThis.location.href);
   const sessionId = url.searchParams.get(SESSION_QUERY_KEY);
-  return sessionId === null || sessionId.length === 0 ? undefined : sessionId;
+  return sessionId === null || sessionId.length === 0 || sessionId === "pending" || sessionId === "created-in-browser" ? undefined : sessionId;
 }
 
 function persistSessionId(sessionId: string): void {
