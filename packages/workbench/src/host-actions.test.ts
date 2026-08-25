@@ -46,6 +46,32 @@ describe("host action lease lifecycle", () => {
     await hostActions.close();
   });
 
+  it("serializes claims across store instances and recreates only after terminal tombstone retention expires", async () => {
+    const rootDir = await createTempRoot();
+    const sessionStore = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+    await sessionStore.close();
+    let now = new Date("2026-08-24T00:00:00.000Z");
+    const first = await createHostActionStore({ rootDir, sessionId: SESSION_ID, terminalRetentionMs: 60_000, now: () => now });
+    const second = await createHostActionStore({ rootDir, sessionId: SESSION_ID, terminalRetentionMs: 60_000, now: () => now });
+    const action = await first.createHostAction(surfaceValidateRequest("action-cross-instance"));
+
+    const claims = await Promise.allSettled([
+      first.claimHostAction(action.actionId, "vscode-1"),
+      second.claimHostAction(action.actionId, "vscode-2"),
+    ]);
+    expect(claims.filter((claim) => claim.status === "fulfilled")).toHaveLength(1);
+    const claim = claims.find((candidate): candidate is PromiseFulfilledResult<{ leaseId: string; hostInstanceId: string }> => candidate.status === "fulfilled")!.value;
+    await first.completeHostAction(completedResult(claim, action.actionId));
+
+    await expect(second.createHostAction(surfaceValidateRequest(action.actionId))).resolves.toEqual(action);
+    now = new Date("2026-08-24T00:01:01.000Z");
+    const replacement = surfaceValidateRequest(action.actionId, { expiresAt: "2026-08-24T00:10:00.000Z" });
+    await expect(second.createHostAction(replacement)).resolves.toEqual(replacement);
+
+    await first.close();
+    await second.close();
+  });
+
   it("rejects duplicate terminal completion mutations after the session revision advances", async () => {
     const rootDir = await createTempRoot();
     const sessionStore = await createSessionStore({ rootDir, sessionId: SESSION_ID });
@@ -379,6 +405,7 @@ function surfaceValidateRequest(
   overrides: Partial<{
     sessionId: string;
     expectedRevision: number;
+    expiresAt: string;
     confirmationHash: string;
     expectedTargetVersion: string;
   }> = {},
@@ -389,7 +416,7 @@ function surfaceValidateRequest(
     sessionId: overrides.sessionId ?? SESSION_ID,
     expectedRevision: overrides.expectedRevision ?? 0,
     kind: "surface_validate" as const,
-    expiresAt: "2026-08-24T00:05:00.000Z",
+    expiresAt: overrides.expiresAt ?? "2026-08-24T00:05:00.000Z",
     confirmationHash: overrides.confirmationHash ?? WORKBOOK_HASH,
     expectedTargetVersion: overrides.expectedTargetVersion ?? "comment-v1",
   };

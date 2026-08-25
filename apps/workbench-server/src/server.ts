@@ -1,5 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
-import { createHash } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -12,6 +11,7 @@ import type { ConversationTurn } from "@ai-assist/conversation";
 import type { hostActionClaimSchema, hostActionRequestSchema, hostActionResultSchema } from "@ai-assist/contracts";
 import { acceptAttemptResult, createSessionStore, openSessionStore, reduceSessionCommand, type F8SessionCommand, type F8SessionSnapshot } from "@ai-assist/workbench";
 import { createTypedError } from "@ai-assist/contracts";
+import { createHostActionStore } from "@ai-assist/workbench";
 
 import { WorkbenchAuth, SESSION_COOKIE_NAME, type HostBearerOptions, type AuthenticatedRequest, type TestAuthentication } from "./auth.js";
 import { createBrowserBootstrapRendezvous, renderBootstrapPage, renderBootstrapScript, type BrowserBootstrapRendezvous } from "./bootstrap.js";
@@ -23,6 +23,7 @@ import { filesRoutes } from "./routes/files.js";
 import { hostActionsRoutes } from "./routes/host-actions.js";
 import { sessionsRoutes } from "./routes/sessions.js";
 import { createPersistentWorkerQueue, type PersistentWorkerQueue, type QueueSessionStore, type StageJob } from "./worker-queue.js";
+import { createSqliteEventSource, type SqliteEventSource } from "./sse.js";
 
 type HostActionClaim = ReturnType<typeof hostActionClaimSchema.parse>;
 type HostActionRequest = ReturnType<typeof hostActionRequestSchema.parse>;
@@ -63,9 +64,9 @@ export interface ConversationRegistry {
 }
 
 export interface HostActionRegistry {
-  create(request: HostActionRequest): HostActionRequest | undefined;
-  claim(sessionId: string, actionId: string, hostInstanceId: string): HostActionClaim | undefined;
-  complete(sessionId: string, result: HostActionResult): "accepted" | "rejected" | "duplicate";
+  create(request: HostActionRequest): Promise<HostActionRequest | undefined>;
+  claim(sessionId: string, actionId: string, hostInstanceId: string): Promise<HostActionClaim | undefined>;
+  complete(sessionId: string, result: HostActionResult): Promise<"accepted" | "rejected" | "duplicate">;
 }
 
 export interface EventSource {
@@ -162,6 +163,9 @@ export async function buildWorkbenchServer(options: StartWorkbenchServerOptions)
   await app.register(conversationRoutes, { context });
   await app.register(hostActionsRoutes, { context });
   await app.register(artifactsRoutes, { context });
+  app.addHook("onClose", async () => {
+    (context.events as SqliteEventSource).close();
+  });
 
   return app;
 }
@@ -188,9 +192,9 @@ async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth
     auth,
     sessions,
     conversation: new FileBackedConversationRegistry(rootDir),
-    hostActions: new FileBackedHostActionRegistry(rootDir),
+    hostActions: new SqliteHostActionRegistry(rootDir),
     artifacts: new FileBackedArtifactRegistry(rootDir),
-    events: new MemoryEventSource(),
+    events: await createSqliteEventSource({ rootDir }),
     queue,
     async enqueueActiveAttempt(snapshot) {
       const attempt = snapshot.activeAttempt;
@@ -287,70 +291,48 @@ class FileBackedConversationRegistry implements ConversationRegistry {
   }
 }
 
-type StoredHostAction = { request: HostActionRequest; claim?: HostActionClaim; result?: HostActionResult };
-
-class FileBackedHostActionRegistry implements HostActionRegistry {
+class SqliteHostActionRegistry implements HostActionRegistry {
   constructor(private readonly rootDir: string) {}
 
-  create(request: HostActionRequest): HostActionRequest | undefined {
-    const claimsDirectory = join(this.rootDir, "runtime", "workbench", "registries", "host-action-claims");
-    mkdirSync(claimsDirectory, { recursive: true, mode: 0o700 });
-    const claimPath = join(claimsDirectory, `${createHash("sha256").update(request.actionId).digest("hex")}.json`);
+  async create(request: HostActionRequest): Promise<HostActionRequest | undefined> {
     try {
-      writeFileSync(claimPath, JSON.stringify({ actionId: request.actionId, sessionId: request.sessionId }), { encoding: "utf8", mode: 0o600, flag: "wx" });
+      const store = await createHostActionStore({ rootDir: this.rootDir, sessionId: request.sessionId });
+      try {
+        return await store.createHostAction(request);
+      } finally {
+        await store.close();
+      }
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "EEXIST") return undefined;
+      if ((error as { code?: unknown }).code === "validation_error") return undefined;
       throw error;
     }
-    const actions = this.readActions(request.sessionId);
-    try {
-      writeRegistry(this.rootDir, "host-actions", request.sessionId, { ...actions, [request.actionId]: { request } });
-    } catch (error) {
-      rmSync(claimPath, { force: true });
-      throw error;
-    }
-    return request;
   }
 
-  claim(sessionId: string, actionId: string, hostInstanceId: string): HostActionClaim | undefined {
-    const actions = this.readActions(sessionId);
-    const action = actions[actionId];
-    if (action === undefined || action.claim !== undefined || Date.parse(action.request.expiresAt) <= Date.now()) {
+  async claim(sessionId: string, actionId: string, hostInstanceId: string): Promise<HostActionClaim | undefined> {
+    try {
+      const store = await createHostActionStore({ rootDir: this.rootDir, sessionId });
+      try {
+        return await store.claimHostAction(actionId, hostInstanceId);
+      } finally {
+        await store.close();
+      }
+    } catch {
       return undefined;
     }
-
-    const claim: HostActionClaim = {
-      contractVersion: "f8-host-action-claim-v1",
-      actionId,
-      hostInstanceId,
-      leaseId: randomUUID(),
-      leaseExpiresAt: new Date(Date.now() + 60_000).toISOString(),
-    };
-    writeRegistry(this.rootDir, "host-actions", sessionId, { ...actions, [actionId]: { ...action, claim } });
-    return claim;
   }
 
-  complete(sessionId: string, result: HostActionResult): "accepted" | "rejected" | "duplicate" {
-    const actions = this.readActions(sessionId);
-    const action = actions[result.actionId];
-    if (action?.result !== undefined) {
-      return "duplicate";
+  async complete(sessionId: string, result: HostActionResult): Promise<"accepted" | "rejected" | "duplicate"> {
+    try {
+      const store = await createHostActionStore({ rootDir: this.rootDir, sessionId });
+      try {
+        await store.completeHostAction(result);
+        return "accepted";
+      } finally {
+        await store.close();
+      }
+    } catch (error) {
+      return (error as { code?: unknown }).code === "policy_denied" ? "duplicate" : "rejected";
     }
-
-    if (action?.claim?.leaseId !== result.leaseId || action.claim.hostInstanceId !== result.hostInstanceId || Date.parse(action.claim.leaseExpiresAt) <= Date.now()) {
-      return "rejected";
-    }
-
-    if (result.resultHash !== createHash("sha256").update(JSON.stringify(result.payload)).digest("hex")) {
-      return "rejected";
-    }
-
-    writeRegistry(this.rootDir, "host-actions", sessionId, { ...actions, [result.actionId]: { request: action.request, claim: action.claim, result } });
-    return "accepted";
-  }
-
-  private readActions(sessionId: string): Record<string, StoredHostAction> {
-    return readRegistry<Record<string, StoredHostAction>>(this.rootDir, "host-actions", sessionId) ?? {};
   }
 }
 
@@ -386,57 +368,6 @@ function writeRegistry(rootDir: string, registry: string, sessionId: string, val
     renameSync(temporary, target);
   } finally {
     rmSync(temporary, { force: true });
-  }
-}
-
-class MemoryEventSource implements EventSource {
-  private static readonly MAX_EVENTS_PER_SESSION = 256;
-
-  private readonly events = new Map<string, StoredEvent[]>();
-
-  private readonly nextSequences = new Map<string, number>();
-
-  private readonly subscribers = new Map<string, Set<(event: StoredEvent) => void>>();
-
-  publish(sessionId: string, eventName: string, payload: unknown): void {
-    const events = this.events.get(sessionId) ?? [];
-    const sequence = this.nextSequences.get(sessionId) ?? 1;
-    const event = { id: String(sequence), eventName, payload };
-    this.nextSequences.set(sessionId, sequence + 1);
-    events.push(event);
-    if (events.length > MemoryEventSource.MAX_EVENTS_PER_SESSION) events.splice(0, events.length - MemoryEventSource.MAX_EVENTS_PER_SESSION);
-    this.events.set(sessionId, events);
-    for (const listener of this.subscribers.get(sessionId) ?? []) {
-      listener(event);
-    }
-  }
-
-  replay(sessionId: string, afterEventId: string | undefined): readonly StoredEvent[] {
-    const events = this.events.get(sessionId) ?? [];
-    const afterId = Number(afterEventId ?? 0);
-    if (afterEventId !== undefined && (!Number.isSafeInteger(afterId) || afterId < 0)) {
-      return [{ id: "0", eventName: "replay_truncated", payload: { reason: "invalid_last_event_id" } }, ...events];
-    }
-    const firstRetainedId = Number(events[0]?.id ?? 0);
-    const replay = events.filter((event) => Number(event.id) > afterId);
-    if (afterEventId !== undefined && firstRetainedId > 0 && afterId < firstRetainedId - 1) {
-      return [{
-        id: String(firstRetainedId - 1),
-        eventName: "replay_truncated",
-        payload: { requestedAfter: afterId, retainedFrom: firstRetainedId },
-      }, ...replay];
-    }
-    return replay;
-  }
-
-  subscribe(sessionId: string, listener: (event: StoredEvent) => void): () => void {
-    const listeners = this.subscribers.get(sessionId) ?? new Set<(event: StoredEvent) => void>();
-    listeners.add(listener);
-    this.subscribers.set(sessionId, listeners);
-    return () => {
-      listeners.delete(listener);
-      if (listeners.size === 0) this.subscribers.delete(sessionId);
-    };
   }
 }
 

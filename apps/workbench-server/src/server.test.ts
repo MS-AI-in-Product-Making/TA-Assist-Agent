@@ -267,4 +267,40 @@ describe("workbench server routes", () => {
       await rm(rootDir, { recursive: true, force: true });
     }
   });
+
+  it("replays persisted session events after a new server instance starts", async () => {
+    const rootDir = ".tmp/workbench-server-event-restart";
+    const sessionId = "26262626-2626-4262-8262-262626262626";
+    await rm(rootDir, { recursive: true, force: true });
+    const first = await (await import("./server.js")).startWorkbenchServer({ rootDir });
+    try {
+      const auth = await first.server.testAuthenticate(sessionId);
+      first.server.publishEventForTest(auth.sessionId, "progress", { sequence: 1 });
+      first.server.publishEventForTest(auth.sessionId, "progress", { sequence: 2 });
+    } finally {
+      first.server.server.closeAllConnections();
+      await first.server.close();
+    }
+
+    const second = await (await import("./server.js")).startWorkbenchServer({ rootDir });
+    try {
+      const auth = await second.server.testAuthenticate(sessionId);
+      const response = await new Promise<import("node:http").IncomingMessage>((resolve, reject) => {
+        const request = get(`${second.url.replace(/\/#.*$/, "")}/api/sessions/${sessionId}/events`, {
+          headers: { cookie: auth.headers.cookie, "last-event-id": "1" },
+        }, resolve);
+        request.once("error", reject);
+      });
+      let stream = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk: string) => { stream += chunk; });
+      await vi.waitFor(() => expect(stream).toContain("id: 2"));
+      expect(stream).toContain('data: {"sequence":2}');
+      response.destroy();
+    } finally {
+      second.server.server.closeAllConnections();
+      await second.server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
 });

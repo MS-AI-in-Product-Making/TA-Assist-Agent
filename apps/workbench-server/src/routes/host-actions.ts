@@ -1,4 +1,5 @@
 import { hostActionClaimSchema, hostActionRequestSchema, hostActionResultSchema } from "@ai-assist/contracts";
+import { createHash } from "node:crypto";
 import type { FastifyPluginAsync } from "fastify";
 
 import { hasScope, hostBearerMatches } from "../auth.js";
@@ -17,7 +18,7 @@ export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: Workbench
       return reply.code(400).send({ error: "host_action_schema_rejected" });
     }
 
-    const created = context.hostActions.create(parsed.data);
+    const created = await context.hostActions.create(parsed.data);
     return created === undefined
       ? reply.code(409).send({ error: "host_action_id_conflict" })
       : reply.code(201).send(created);
@@ -43,7 +44,7 @@ export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: Workbench
       return reply.code(403).send({ error: "host_scope_rejected" });
     }
 
-    const claim = context.hostActions.claim(sessionId, actionId, hostInstanceId);
+    const claim = await context.hostActions.claim(sessionId, actionId, hostInstanceId);
     const parsed = hostActionClaimSchema.safeParse(claim);
     return parsed.success ? reply.send(parsed.data) : reply.code(409).send({ error: "host_action_not_claimable" });
   });
@@ -64,7 +65,11 @@ export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: Workbench
       return reply.code(400).send({ error: "host_action_result_rejected" });
     }
 
-    const completion = context.hostActions.complete(sessionId, parsed.data);
+    if (parsed.data.resultHash !== createHash("sha256").update(JSON.stringify(parsed.data.payload)).digest("hex")) {
+      return reply.code(400).send({ error: "host_action_result_integrity_rejected" });
+    }
+
+    const completion = await context.hostActions.complete(sessionId, parsed.data);
     if (completion === "accepted") return reply.code(204).send();
     if (completion === "duplicate") return reply.code(409).send({ error: "host_action_result_replayed" });
     return reply.code(400).send({ error: "host_action_result_integrity_rejected" });

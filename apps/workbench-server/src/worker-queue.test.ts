@@ -118,6 +118,18 @@ describe("persistent workbench worker queue", () => {
     expect(store.attempts.has("attempt-2")).toBe(false);
   });
 
+  it("rejects malformed jobs and converts an undefined worker result into a failed attempt", async () => {
+    const store = new MemoryQueueSessionStore();
+    const queue = await createPersistentWorkerQueue({ rootDir, sessionStore: store, worker: async () => undefined });
+
+    await expect(queue.enqueue({ jobId: "", attemptId: "attempt-invalid", kind: "calculation", stage: "f4_running", payload: {} }))
+      .rejects.toMatchObject({ code: "validation_error" });
+    const receipt = await queue.enqueue({ jobId: "job-invalid-result", attemptId: "attempt-invalid-result", kind: "calculation", stage: "f4_running", payload: {} });
+
+    expect(receipt.status).toBe("failed");
+    expect(store.attempts.get("attempt-invalid-result")?.status).toBe("failed");
+  });
+
   it("runs Excel jobs one at a time and calculation jobs at configured concurrency", async () => {
     const store = new MemoryQueueSessionStore();
     const gates = new Map([

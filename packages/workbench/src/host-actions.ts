@@ -43,6 +43,7 @@ export interface HostActionStoreOptions {
   readonly rootDir: string;
   readonly sessionId: string;
   readonly leaseDurationMs?: number;
+  readonly terminalRetentionMs?: number;
   readonly now?: () => Date;
 }
 
@@ -102,9 +103,13 @@ class SqliteHostActionStore implements HostActionStore {
 
   private readonly selectSessionHostActionStatement;
 
+  private readonly deleteExpiredTerminalHostActionStatement;
+
   private readonly now;
 
   private readonly leaseDurationMs;
+
+  private readonly terminalRetentionMs;
 
   constructor(
     private readonly database: DatabaseSync,
@@ -181,8 +186,15 @@ class SqliteHostActionStore implements HostActionStore {
       WHERE action_id = ?
         AND session_id = ?
     `);
+    this.deleteExpiredTerminalHostActionStatement = this.database.prepare(`
+      DELETE FROM host_actions
+      WHERE action_id = ? AND session_id = ?
+        AND status IN ('completed', 'failed', 'blocked', 'cancelled')
+        AND updated_at <= ?
+    `);
     this.now = options.now ?? (() => new Date());
     this.leaseDurationMs = options.leaseDurationMs ?? 60_000;
+    this.terminalRetentionMs = options.terminalRetentionMs ?? 24 * 60 * 60 * 1_000;
     this.assertSessionExists();
   }
 
@@ -197,6 +209,11 @@ class SqliteHostActionStore implements HostActionStore {
       const sessionRow = this.requireSessionRow();
       ensureExpectedRevisionCurrent(request.expectedRevision, sessionRow.revision, request.actionId);
 
+      this.deleteExpiredTerminalHostActionStatement.run(
+        request.actionId,
+        this.options.sessionId,
+        toIso(new Date(this.now().getTime() - this.terminalRetentionMs)),
+      );
       const existingRow = this.readHostActionRow(request.actionId);
       const requestJson = stableStringify(request);
       if (existingRow !== undefined) {
