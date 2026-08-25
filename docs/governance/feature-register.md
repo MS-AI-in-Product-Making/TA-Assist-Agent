@@ -12,8 +12,7 @@ Feature Register 是 Phase 0 对 F0-F8 的唯一可查询能力清单。它提�
 `available`；F4 为受 F1/F2 证据门禁的 `excel-ta-v1` 计算服务而标记为 `available`；根 F5 为
 直接消费 F0/F1/F3/F4 受控工件的能力、规格与贡献解读而标记为 `available`，F5.1 保留为其
 历史 internal compatible core；F6 为消费 F2/F3/F4/F5 受控工件的本地优化 workflow 而标记为
-`available`，其历史 comparison placeholder API 仍返回 `feature_not_available`；F7 仍为 `unavailable`。F8 仅为 Phase 0 的匿名、`public`、受治理 Skill 验收 fixture 而标记为
-`available`。这些状态不表示已交付 TA 产品工作流、生产编排器、真实工程知识或任何外部写入
+`available`，其历史 comparison placeholder API 仍返回 `feature_not_available`；F7 仍为 `unavailable`。产品 F8 已作为本地 `confidential` TA Assist Workbench 标记为 `available`；历史匿名 `public` Skill fixture 保留为 `F8.public-smoke`。这些状态不表示已启用 F7、真实工程知识或未经确认的外部写入
 能力；调用方和后续编排器仍必须在执行前查询该清单。
 
 ## 当前条目
@@ -34,7 +33,8 @@ Feature Register 是 Phase 0 对 F0-F8 的唯一可查询能力清单。它提�
 | F5.1 | 客观结果解读 | `available` | `calculation-service-v1`, `knowledge-base-v1`, `interpretation-rules-v1`, `objective-interpretation-v1`; `approved-knowledge-base` | `interpretation-request-v1` / `interpretation-result-v1` | `confidential` | `anonymous-interpretation-fixture`, `interpretation-rule-traceability-check`, `interpretation-privacy-check` | `return feature_not_available` |
 | F6 | 可比较的方案选项 | `available` | `f2-user-report-v1`, `drawing-governance-v2`, `calculation-service-v1`, `f5-data-interpretation-v1`, `f6-analysis-context-v1`, `f6-optimization-targets-v1`, `f6-optimization-v2`; `approved-knowledge-base` | `f6-analysis-context-v1` / `f6-optimization-v2` | `confidential` | `anonymous-f6-optimization-fixture`, `f6-artifact-association-check`, `f6-optimization-contract-check`, `f6-privacy-check`, `f6-no-write-network-check`, `f6-supplier-datum-evidence-gate-check`, `f6-roi-gate-check`, `f6-skill-contract-check`, `f0-f6-real-workbook-flow`, `f6-final-report-check` | `return feature_not_available` |
 | F7 | 实测 Cpk 闭环 | `unavailable` | `measurement-store-v1`, `dim-id-service-v1`; `approved-measurement-store`, `canonical-dim-id-policy` | `cpk-request-v1` / `cpk-result-v1` | `confidential` | `anonymous-cpk-fixture` | `return feature_not_available` |
-| F8 | TA 工作流编排 | `available` | `orchestrator-v1`, `skill-runtime-v1`; `approved-skill-manifests` | `workflow-request-v1` / `workflow-result-v1` | `public` | `anonymous-workflow-fixture`, `anonymous-governed-skill` | `return feature_not_available` |
+| F8 | TA Assist Workbench | `available` | F8 session/snapshot/conversation/Surface contracts; approved OOXML and Surface MCP access | `f8-session-command-v1` / `f8-session-snapshot-v1` | `confidential` | `f8-browser-integration`, `f8-security-e2e`, `f8-f7-placeholder-e2e`, `f8-what-if-no-writeback` | `return feature_not_available` |
+| F8.public-smoke | TA Public Workflow Smoke Fixture | `available` | `orchestrator-v1`, `skill-runtime-v1`; `approved-skill-manifests` | `workflow-request-v1` / `workflow-result-v1` | `public` | `anonymous-workflow-fixture`, `anonymous-governed-skill` | `return feature_not_available` |
 
 F5 的 `approved-knowledge-base` 与 `approved-me-review` 是 Feature 发布/启用治理批准，不是每次运行要求用户提供的交互输入。F5 当前 `status: available` 表示这些部署批准已满足。每次运行中的 ME review 由 `requiresEngineeringReview` SIGNAL、clarification/assumption，以及禁止生成缺少受控证据支持的最终 RULE 共同门禁；physical image、artifact identity/hash 或 schema evidence 校验失败仍在运行时 fail closed。
 
@@ -166,7 +166,8 @@ F0 解读规则范围与维护边界见 [F0 TA 结果解读规则库设计](../s
   orchestrator。Skill 必须执行并验证 current-run F3；只有 `governance_required` 可进入复用 F3 完整双确认协议的
   optional ADO publishing gate，发布 never automatic or implicit。Skill 展示 F1-F6 output ledger，并在缺少 evidence 时保留
   `insufficient_evidence` / `not_computed`。F6 原子发布 `Feature6-Report.md`、`Feature6-Optimization.json/.md`、`Feature6-Run-Summary.json` 和 `manifest.json`；Run Summary 保存结构化 Workbook/Worksheet dispositions，最终报告使用 `PASS`、`CONDITIONAL_PASS`、`FAIL`、`INCOMPLETE` 四态。ADO gate 的终态只记录发布结果，不改变已验证的 F3 分析结果或 worksheet scope。当前入口对历史 V1 F6 artifact 返回受控 unsupported-version，不自动转换或展示。
-- F8 的 `available` 仅允许匿名 `public` Skill fixture 在 runner 中通过输入分类、
+- F8 的 `available` 表示本地 `confidential` TA Assist Workbench 已登记：CLI、VS Code 与 Web 共享受治理 session 和 TA Assist 自有 history；不导入其他 Copilot history。浏览器只通过 structured API 推进独立确认，源 workbook 与 F0-F6 工件只读，What-if 不写回，ADO 仅允许 Surface MCP 两阶段确认，F7 保持 unavailable placeholder。
+- `F8.public-smoke` 仅允许匿名 `public` Skill fixture 在 runner 中通过输入分类、
   Feature 状态和策略门检查后执行纯函数或显式注入的 mock adapter。`workflow-request-v1`
   入口只接受 `workflowId: "public-smoke"`，并固定执行 `public-echo` 与
   `classification-check`；`workflow-result-v1` 不包含 `runDirectory` 或 Skill 输出。

@@ -145,7 +145,8 @@ export function useWorkbenchSession(apiOverride?: WorkbenchApi, options: UseWork
       const f2Artifact = [...refs].reverse().find((artifact) => artifact.kind === "f2_report" && artifact.validated);
       const reviewContext = selectCompleteReviewContext(snapshot);
       const f3Artifact = reviewContext?.artifacts.get("f3_report");
-      const f4Artifact = reviewContext?.artifacts.get("f4_calculation");
+      const f4Artifact = reviewContext?.artifacts.get("f4_calculation")
+        ?? [...refs].reverse().find((artifact) => artifact.kind === "f4_calculation" && artifact.validated && artifact.revision === snapshot.inputRevision);
       const f5Artifact = reviewContext?.artifacts.get("f5_report");
       const f6Artifact = reviewContext?.artifacts.get("f6_report");
 

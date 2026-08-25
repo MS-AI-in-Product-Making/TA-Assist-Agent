@@ -10,6 +10,7 @@
     "build": "tsc -b",
     "lint": "eslint .",
     "test": "npm run build -- --force && vitest run --workspace vitest.workspace.ts",
+    "test:e2e": "playwright test",
     "check:repository": "node scripts/verify-repository.mjs",
     "verify:f4-excel-regression": "pwsh -NoProfile -File scripts/verify-f4-excel-regression.ps1",
     "export:dual-md": "pwsh -NoProfile -File scripts/export-excel-dual-grid.ps1",
@@ -28,6 +29,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
+    "@playwright/test": "^1.62.1",
     "@types/node": "^24.0.0",
     "eslint": "^9.0.0",
     "typescript": "^5.7.0",

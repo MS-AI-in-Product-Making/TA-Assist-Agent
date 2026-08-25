@@ -13,7 +13,7 @@ import { handleParticipant } from "./participant.js";
 import { launchNewWorkbench, resumeWorkbench, type WorkbenchProcessLauncher } from "./workbench-launcher.js";
 import { createSurfaceHostClient } from "./surface-host-client.js";
 import { inspectSurfaceMcpCapabilities } from "@ai-assist/adapters";
-import { pumpOneHostAction } from "./host-action-pump.js";
+import { pumpOneHostAction, type ClaimedHostAction } from "./host-action-pump.js";
 
 let activeSessionId: string | undefined;
 let activeWorkbenchUrl: string | undefined;
@@ -75,7 +75,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const resultBearer = await processLauncher.issueHostBearer!({ sessionId: activeSessionId, actionId: actionId.trim(), hostInstanceId, scopes: ["host-actions:result"] });
         await pumpOneHostAction({ sessionId: activeSessionId, actionId: actionId.trim() }, {
         hostInstanceId,
-        claim: async (sessionId, targetActionId, hostId) => hostRequest(activeWorkbenchUrl!, sessionId, targetActionId, "claim", claimBearer, { hostInstanceId: hostId }),
+        claim: async (sessionId, targetActionId, hostId) => hostRequest<ClaimedHostAction>(activeWorkbenchUrl!, sessionId, targetActionId, "claim", claimBearer, { hostInstanceId: hostId }),
         async execute(claim) {
           if (claim.request.kind === "surface_validate") {
             const capabilities = await inspectSurfaceMcpCapabilities(surface);
@@ -91,7 +91,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           }
           return { status: "blocked", reason: "Unsupported HostAction kind." };
         },
-        submit: async (result) => { await hostRequest(activeWorkbenchUrl!, activeSessionId!, actionId.trim(), "result", resultBearer, { contractVersion: "f8-host-action-result-v1", ...result }); },
+        submit: async (result) => { await hostRequest<void>(activeWorkbenchUrl!, activeSessionId!, actionId.trim(), "result", resultBearer, { contractVersion: "f8-host-action-result-v1", ...result }); },
         });
       await vscode.window.showInformationMessage("Surface HostAction 已提交。Validation 后请再次执行生成的 ado-write action 完成独立确认。", { modal: false });
     }),
@@ -194,13 +194,13 @@ function startCliHost(command: string, args: readonly string[], cwd: string): Pr
   });
 }
 
-async function hostRequest(originValue: string, sessionId: string, actionId: string, operation: "claim" | "result", bearer: string, body: unknown): Promise<any> {
+async function hostRequest<Result>(originValue: string, sessionId: string, actionId: string, operation: "claim" | "result", bearer: string, body: unknown): Promise<Result> {
   const origin = new URL(originValue).origin;
   const response = await fetch(`${origin}/api/sessions/${encodeURIComponent(sessionId)}/host-actions/${encodeURIComponent(actionId)}/${operation}`, {
     method: "POST", headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json" }, body: JSON.stringify(body),
   });
   if (!response.ok) throw new Error(`HostAction ${operation} was rejected (${response.status}).`);
-  return response.status === 204 ? undefined : response.json();
+  return (response.status === 204 ? undefined : await response.json()) as Result;
 }
 
 function outputUrl(stdout: string): string {

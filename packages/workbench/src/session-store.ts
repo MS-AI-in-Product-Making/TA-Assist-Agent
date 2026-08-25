@@ -722,7 +722,8 @@ function withScenarioDrafts(
   snapshot: F8SessionSnapshot,
   scenarioDrafts: readonly F8ScenarioDraft[],
 ): F8SessionSnapshot {
-  const { scenarioDrafts: _ignored, ...baseSnapshot } = snapshot;
+  const baseSnapshot = { ...snapshot };
+  delete baseSnapshot.scenarioDrafts;
   return f8SessionSnapshotSchema.parse(
     scenarioDrafts.length === 0
       ? baseSnapshot

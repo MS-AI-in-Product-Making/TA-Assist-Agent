@@ -344,7 +344,7 @@ function rollbackQuietly(database: DatabaseSync): void {
 function safeJsonParse(value: string): unknown {
   try {
     return JSON.parse(value) as unknown;
-  } catch (error) {
+  } catch {
     throw createTypedError({
       code: "internal_error",
       summary: "Persisted conversation payload is not valid JSON.",

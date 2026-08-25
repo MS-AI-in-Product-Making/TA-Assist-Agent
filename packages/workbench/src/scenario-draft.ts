@@ -40,7 +40,8 @@ function sameDraftIdentity(left: F8ScenarioDraft, right: F8ScenarioDraft): boole
 
 export function applyScenarioPatch(draft: F8ScenarioDraft, patch: ScenarioPatch): F8ScenarioDraft {
   const current = f8ScenarioDraftSchema.parse(draft);
-  const { calculationReference: _ignored, ...base } = current;
+  const base = { ...current };
+  delete base.calculationReference;
   return immutableDraft({
     ...base,
     status: "draft",
@@ -64,7 +65,8 @@ export function resetDraft(draft: F8ScenarioDraft, baseline: ScenarioBaseline): 
     || current.baselineRunReference !== baseline.baselineRunReference) {
     throw new Error("Scenario draft baseline identity does not match.");
   }
-  const { calculationReference: _ignored, ...base } = current;
+  const base = { ...current };
+  delete base.calculationReference;
   return immutableDraft({
     ...base,
     status: "draft",

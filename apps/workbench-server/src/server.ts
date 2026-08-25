@@ -158,7 +158,10 @@ export async function buildWorkbenchServer(options: StartWorkbenchServerOptions)
   await app.register(cookie, { hook: "onRequest" });
   await app.register(multipart, { limits: { fileSize: 50 * 1024 * 1024, files: 1, fields: 8 } });
 
-  app.get("/", async (_request, reply) => reply.type("text/html; charset=utf-8").send(renderBootstrapPage()));
+  app.get("/", async (request, reply) => {
+    const authenticated = auth.authenticate(request);
+    return reply.type("text/html; charset=utf-8").send(authenticated?.kind === "browser" ? renderWorkbenchPage() : renderBootstrapPage());
+  });
   app.get("/bootstrap.js", async (_request, reply) => reply.type("application/javascript; charset=utf-8").send(renderBootstrapScript()));
   const webAssets = options.skipWebAssets === true
     ? missingWebAssets(options.webAssetsRoot ?? defaultWebAssetsRoot())
@@ -882,4 +885,8 @@ function parseReviewContext(snapshot: F8SessionSnapshot, value: unknown): Review
     throw reviewContextMismatch(snapshot, "The persisted F4 review baseline is invalid.");
   }
   return candidate as ReviewContextIdentity;
+}
+
+function renderWorkbenchPage(): string {
+  return "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>TA Assist Workbench</title><link rel=\"stylesheet\" href=\"/workbench.css\"></head><body><main id=\"app\"></main><script type=\"module\" src=\"/workbench.js\"></script></body></html>";
 }

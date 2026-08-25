@@ -27,10 +27,6 @@ type LoadF2ArtifactBundleResult =
   | { readonly status: "accepted"; readonly request: DrawingGovernanceRequestV2 }
   | { readonly status: "inputRejected"; readonly report: DrawingGovernanceResultV2 };
 
-function safeName(value: string): string {
-  return value.replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, "-");
-}
-
 function atomicWrite(filePath: string, content: string): void {
   const temporaryPath = `${filePath}.${process.pid}.tmp`;
   writeFileSync(temporaryPath, content, "utf8");
@@ -154,7 +150,8 @@ function renderAccepted(report: Exclude<DrawingGovernanceResultV2, { status: "in
   return `${lines.join("\n")}\n`;
 }
 
-export function renderF3Report(report: DrawingGovernanceResultV2, _options: { outputRoot: string }): string {
+export function renderF3Report(report: DrawingGovernanceResultV2, options: { outputRoot: string }): string {
+  void options;
   return report.status === "input_rejected" ? renderRejected(report) : renderAccepted(report);
 }
 

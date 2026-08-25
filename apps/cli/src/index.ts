@@ -7,7 +7,7 @@ import { runFeature6WorkflowCommand, type Feature6CommandOptions } from "./comma
 import { runInspectCommand } from "./commands/inspect.js";
 import { runPurgeCommand, runPurgePlanCommand } from "./commands/purge.js";
 import { runSmokeCommand } from "./commands/smoke.js";
-import { runAgentCommand, type AgentCliRequest } from "./commands/agent.js";
+import type { AgentCliRequest } from "./commands/agent.js";
 import { runDefaultAgentCommand } from "./commands/agent-launcher.js";
 
 export interface CliResult {
