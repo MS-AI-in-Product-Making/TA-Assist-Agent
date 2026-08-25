@@ -204,6 +204,10 @@ Deferred until there is a proven need; each can be merged into the product later
 
 ## Repository Notes
 
+## Workbench Server Release Build
+
+- 根 `npm run build` 按设计只执行 TypeScript project build。发布或打包 `@ai-assist/workbench-server` 时使用 server package build；`apps/workbench-server` 的 `build` 会先构建 `@ai-assist/workbench-web`，再复制确定性的 `workbench.js` / `workbench.css` 到 package-local `assets/workbench`。`prepack` 会在 `npm pack` / publish 前自动运行同一 server package build，避免发布 stale committed assets。
+
 ## Dual Markdown Export (A=Actual, D=Display)
 
 For worksheet evidence review, use the reusable dual-track exporter:
