@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { get } from "node:http";
 import { dirname, join } from "node:path";
@@ -9,9 +9,14 @@ import { createAnonymousWorkbookZip } from "../../../packages/workbook-catalog/s
 import { buildWorkbenchServer, startWorkbenchServer } from "./server.js";
 import { createBrowserBootstrapRendezvous } from "./bootstrap.js";
 
+function testRoot(name: string): string {
+  return join(".tmp", `${name}-${randomUUID()}`);
+}
+
 describe("workbench server security boundary", () => {
   it("binds loopback and rejects hostile Host or missing CSRF", async () => {
-    const server = await buildWorkbenchServer({ rootDir: ".tmp/workbench-server-security" });
+    const rootDir = testRoot("workbench-server-security");
+    const server = await buildWorkbenchServer({ rootDir });
     try {
       expect(server.listenOptions.host).toBe("127.0.0.1");
 
@@ -22,11 +27,13 @@ describe("workbench server security boundary", () => {
         .resolves.toMatchObject({ statusCode: 403 });
     } finally {
       await server.close();
+      await rm(rootDir, { recursive: true, force: true });
     }
   });
 
   it("does not emit CORS and applies browser containment headers", async () => {
-    const server = await buildWorkbenchServer({ rootDir: ".tmp/workbench-server-headers" });
+    const rootDir = testRoot("workbench-server-headers");
+    const server = await buildWorkbenchServer({ rootDir });
     try {
       const response = await server.inject({ method: "GET", url: "/", headers: { host: "127.0.0.1:0" } });
 
@@ -37,12 +44,14 @@ describe("workbench server security boundary", () => {
       expect(response.headers["x-frame-options"]).toBe("DENY");
     } finally {
       await server.close();
+      await rm(rootDir, { recursive: true, force: true });
     }
   });
 
   it("consumes a fragment bootstrap nonce once and never returns it", async () => {
     const rendezvous = createBrowserBootstrapRendezvous({ now: () => new Date("2026-08-25T00:00:00.000Z") });
-    const server = await buildWorkbenchServer({ rootDir: ".tmp/workbench-server-bootstrap", bootstrap: rendezvous });
+    const rootDir = testRoot("workbench-server-bootstrap");
+    const server = await buildWorkbenchServer({ rootDir, bootstrap: rendezvous });
     try {
       const nonce = await rendezvous.issueBrowserBootstrap();
       const page = await server.inject({ method: "GET", url: "/", headers: { host: "127.0.0.1:0" } });
@@ -62,11 +71,12 @@ describe("workbench server security boundary", () => {
         .resolves.toMatchObject({ statusCode: 401 });
     } finally {
       await server.close();
+      await rm(rootDir, { recursive: true, force: true });
     }
   });
 
   it("binds bootstrap, CSRF, session creation, commands, uploads, and SSE to one rotated browser session", async () => {
-    const rootDir = ".tmp/workbench-server-bootstrap-flow";
+    const rootDir = testRoot("workbench-server-bootstrap-flow");
     await rm(rootDir, { recursive: true, force: true });
     const rendezvous = createBrowserBootstrapRendezvous();
     const started = await startWorkbenchServer({ rootDir, bootstrap: rendezvous, runner: async () => ({ ok: true }) });
@@ -133,7 +143,7 @@ describe("workbench server security boundary", () => {
   });
 
   it("rejects stale and disallowed session commands through the public route", async () => {
-    const rootDir = ".tmp/workbench-server-session-cas";
+    const rootDir = testRoot("workbench-server-session-cas");
     await rm(rootDir, { recursive: true, force: true });
     const server = await buildWorkbenchServer({ rootDir });
     try {
@@ -198,7 +208,7 @@ describe("workbench server security boundary", () => {
   });
 
   it("binds host bearer leases to session, action, host instance, expiry, and one terminal result", async () => {
-    const rootDir = ".tmp/workbench-server-host-action-binding";
+    const rootDir = testRoot("workbench-server-host-action-binding");
     await rm(rootDir, { recursive: true, force: true });
     const server = await buildWorkbenchServer({ rootDir });
     try {
@@ -263,7 +273,8 @@ describe("workbench server security boundary", () => {
   });
 
   it("rejects expired host bearer credentials", async () => {
-    const server = await buildWorkbenchServer({ rootDir: ".tmp/workbench-server-host-bearer-expired" });
+    const rootDir = testRoot("workbench-server-host-bearer-expired");
+    const server = await buildWorkbenchServer({ rootDir });
     try {
       const auth = await server.testAuthenticate("55555555-5555-4555-8555-555555555555");
       const token = server.issueHostBearer(auth.sessionId, ["host-actions:claim"], { expiresAt: new Date(Date.now() - 1).toISOString() });
@@ -277,11 +288,12 @@ describe("workbench server security boundary", () => {
       expect(response.statusCode).toBe(403);
     } finally {
       await server.close();
+      await rm(rootDir, { recursive: true, force: true });
     }
   });
 
   it("denies a claim-only host bearer every browser-only route", async () => {
-    const rootDir = ".tmp/workbench-server-host-route-matrix";
+    const rootDir = testRoot("workbench-server-host-route-matrix");
     await rm(rootDir, { recursive: true, force: true });
     const server = await buildWorkbenchServer({ rootDir });
     try {
@@ -318,7 +330,7 @@ describe("workbench server security boundary", () => {
   });
 
   it("rejects unknown multipart fields and malformed workbook content without leaking filesystem errors", async () => {
-    const rootDir = ".tmp/workbench-server-upload-security";
+    const rootDir = testRoot("workbench-server-upload-security");
     await rm(rootDir, { recursive: true, force: true });
     const server = await buildWorkbenchServer({ rootDir });
     try {
@@ -345,7 +357,7 @@ describe("workbench server security boundary", () => {
   });
 
   it("revalidates artifact registry paths and rejects range reads, symlinks, and cross-session access", async () => {
-    const rootDir = ".tmp/workbench-server-artifact-security";
+    const rootDir = testRoot("workbench-server-artifact-security");
     await rm(rootDir, { recursive: true, force: true });
     const server = await buildWorkbenchServer({ rootDir });
     try {
@@ -374,7 +386,8 @@ describe("workbench server security boundary", () => {
   });
 
   it("keeps authenticated session event streams open with ids, heartbeat, Last-Event-ID replay, and live delivery", async () => {
-    const started = await startWorkbenchServer({ rootDir: ".tmp/workbench-server-events" });
+    const rootDir = testRoot("workbench-server-events");
+    const started = await startWorkbenchServer({ rootDir });
     const { server } = started;
     try {
       const auth = await server.testAuthenticate("88888888-8888-4888-8888-888888888888");
@@ -404,11 +417,12 @@ describe("workbench server security boundary", () => {
     } finally {
       server.server.closeAllConnections();
       await server.close();
+      await rm(rootDir, { recursive: true, force: true });
     }
   });
 
   it("bounds cleanup when an SSE client disconnects before consuming the stream", async () => {
-    const rootDir = ".tmp/workbench-server-events-early-close";
+    const rootDir = testRoot("workbench-server-events-early-close");
     await rm(rootDir, { recursive: true, force: true });
     const started = await startWorkbenchServer({ rootDir });
     const { server } = started;

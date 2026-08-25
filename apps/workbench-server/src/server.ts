@@ -475,26 +475,30 @@ async function openWebAssets(webAssetsRoot: string): Promise<OpenWebAssets> {
   return {
     async read(name) {
       const relativePath = name;
-      const handle = await open(join(rootRealPath, relativePath), "r");
       try {
-        await assertOpenedFileContained(handle, rootRealPath, relativePath, name);
-        return await handle.readFile({ encoding: "utf8" });
-      } finally {
-        await handle.close();
+        const handle = await open(join(rootRealPath, relativePath), "r");
+        try {
+          await assertOpenedFileContained(handle, rootRealPath, relativePath, name);
+          return await handle.readFile({ encoding: "utf8" });
+        } finally {
+          await handle.close();
+        }
+      } catch {
+        throw createTypedError({ code: "dependency_error", summary: "Workbench web assets are unavailable.", suggestedAction: "Build apps/workbench-web before starting the workbench server.", affectedInputReferences: [join(rootRealPath, relativePath)] });
       }
     },
   };
 }
 
 function defaultWebAssetsRoot(): string {
-  return resolve(dirname(fileURLToPath(import.meta.url)), "../../workbench-web/dist");
+  return resolve(dirname(fileURLToPath(import.meta.url)), "../assets/workbench");
 }
 
 async function sendWebAsset(reply: FastifyReply, webAssets: OpenWebAssets, name: "workbench.js" | "workbench.css", contentType: string): Promise<FastifyReply> {
   try {
     return reply.type(contentType).send(await webAssets.read(name));
   } catch (error) {
-    return reply.code(503).send(safeErrorResponse(error));
+    return reply.code(503).type("application/json; charset=utf-8").send(safeErrorResponse(error));
   }
 }
 

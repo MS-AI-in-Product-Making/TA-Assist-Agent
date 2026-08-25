@@ -1,15 +1,21 @@
-import { createHash } from "node:crypto";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { describe, expect, it, vi } from "vitest";
 import { get } from "node:http";
 
 import { buildWorkbenchServer } from "./server.js";
 
+function testRoot(name: string): string {
+  return join(".tmp", `${name}-${randomUUID()}`);
+}
+
 describe("workbench server routes", () => {
   it("exchanges a one-time bootstrap nonce for a browser cookie and CSRF-protected session", async () => {
-    const server = await buildWorkbenchServer({ rootDir: ".tmp/workbench-server-bootstrap-session" });
+    const rootDir = testRoot("workbench-server-bootstrap-session");
+    const server = await buildWorkbenchServer({ rootDir });
     try {
       const nonce = await server.bootstrap.issueBrowserBootstrap();
       const bootstrap = await server.inject({ method: "POST", url: "/api/bootstrap", payload: { nonce } });
@@ -28,11 +34,12 @@ describe("workbench server routes", () => {
       expect(created.statusCode).toBe(201);
     } finally {
       await server.close();
+      await rm(rootDir, { recursive: true, force: true });
     }
   });
 
   it("serves only the configured built workbench assets after bootstrap", async () => {
-    const rootDir = ".tmp/workbench-server-web-assets";
+    const rootDir = testRoot("workbench-server-web-assets");
     const webAssetsRoot = join(rootDir, "web-assets");
     await rm(rootDir, { recursive: true, force: true });
     await mkdir(webAssetsRoot, { recursive: true });
@@ -46,6 +53,9 @@ describe("workbench server routes", () => {
       expect((await server.inject({ method: "GET", url: "/" })).body).toContain('src="/bootstrap.js"');
       expect((await server.inject({ method: "GET", url: "/workbench.js" })).body).toBe("export {}\n");
       expect((await server.inject({ method: "GET", url: "/workbench.css" })).body).toBe("body {}\n");
+      await rm(join(webAssetsRoot, "workbench.css"));
+      const missingAsset = await server.inject({ method: "GET", url: "/workbench.css" });
+      expect(missingAsset.statusCode, missingAsset.body).toBe(503);
       expect((await server.inject({ method: "GET", url: "/assets/unknown.js" })).statusCode).toBe(404);
     } finally {
       await server.close();
@@ -53,16 +63,33 @@ describe("workbench server routes", () => {
     }
   });
 
-  it("resolves the production workbench bundle by default and fails safely when it is absent", async () => {
-    const rootDir = ".tmp/workbench-server-default-web-assets";
-    const server = await buildWorkbenchServer({ rootDir });
+  it("serves the package-local bundle from a built server fixture with stable content types and hashes", async () => {
+    const rootDir = testRoot("workbench-server-package-assets");
+    const fixturePackageRoot = join(rootDir, "package");
+    const fixtureDistRoot = join(fixturePackageRoot, "dist");
+    const fixtureAssetsRoot = join(fixturePackageRoot, "assets", "workbench");
+    const sourcePackageRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+    await mkdir(fixtureDistRoot, { recursive: true });
+    await Promise.all([
+      cp(join(sourcePackageRoot, "dist"), fixtureDistRoot, { recursive: true }),
+      cp(join(sourcePackageRoot, "src"), join(fixturePackageRoot, "src"), { recursive: true }),
+    ]);
+    await Promise.all([
+      cp(join(sourcePackageRoot, "..", "workbench-web", "dist", "workbench.js"), join(fixtureAssetsRoot, "workbench.js")),
+      cp(join(sourcePackageRoot, "..", "workbench-web", "dist", "workbench.css"), join(fixtureAssetsRoot, "workbench.css")),
+    ]);
+    const { buildWorkbenchServer: buildFixtureServer } = await import(`${pathToFileURL(join(fixtureDistRoot, "server.js")).href}?fixture=${randomUUID()}`);
+    const server = await buildFixtureServer({ rootDir });
     try {
-      const response = await server.inject({ method: "GET", url: "/workbench.js" });
+      const script = await server.inject({ method: "GET", url: "/workbench.js" });
+      const stylesheet = await server.inject({ method: "GET", url: "/workbench.css" });
 
-      expect([200, 503]).toContain(response.statusCode);
-      if (response.statusCode === 503) {
-        expect(response.json()).toEqual({ error: expect.objectContaining({ code: "dependency_error" }) });
-      }
+      expect(script.statusCode).toBe(200);
+      expect(script.headers["content-type"]).toContain("application/javascript");
+      expect(createHash("sha256").update(script.body).digest("hex")).toBe(createHash("sha256").update(await readFile(join(fixtureAssetsRoot, "workbench.js"))).digest("hex"));
+      expect(stylesheet.statusCode).toBe(200);
+      expect(stylesheet.headers["content-type"]).toContain("text/css");
+      expect(createHash("sha256").update(stylesheet.body).digest("hex")).toBe(createHash("sha256").update(await readFile(join(fixtureAssetsRoot, "workbench.css"))).digest("hex"));
     } finally {
       await server.close();
       await rm(rootDir, { recursive: true, force: true });
@@ -70,7 +97,8 @@ describe("workbench server routes", () => {
   });
 
   it("returns CSRF only to the authenticated browser session", async () => {
-    const server = await buildWorkbenchServer({ rootDir: ".tmp/workbench-server-csrf" });
+    const rootDir = testRoot("workbench-server-csrf");
+    const server = await buildWorkbenchServer({ rootDir });
     try {
       const auth = await server.testAuthenticate();
 
@@ -80,11 +108,12 @@ describe("workbench server routes", () => {
       expect(response.json()).toEqual({ csrfToken: auth.csrfToken });
     } finally {
       await server.close();
+      await rm(rootDir, { recursive: true, force: true });
     }
   });
 
   it("reconciles a default runner dependency failure after committing the active attempt", async () => {
-    const rootDir = ".tmp/workbench-server-default-queue";
+    const rootDir = testRoot("workbench-server-default-queue");
     await rm(rootDir, { recursive: true, force: true });
     const server = await buildWorkbenchServer({ rootDir });
     try {
@@ -117,8 +146,8 @@ describe("workbench server routes", () => {
     }
   });
 
-  it("projects ADO validation as a host action without enqueuing a generic worker", async () => {
-    const rootDir = ".tmp/workbench-server-ado-host-action";
+  it("keeps create/use ADO decisions pending for Task 13 Surface validation and independent Confirm write", async () => {
+    const rootDir = testRoot("workbench-server-ado-host-action");
     await rm(rootDir, { recursive: true, force: true });
     const server = await buildWorkbenchServer({ rootDir, runner: async () => ({ status: "worker-ran" }) });
     try {
@@ -153,6 +182,8 @@ describe("workbench server routes", () => {
 
       expect(response.statusCode).toBe(202);
       expect(response.json()).toMatchObject({ state: "ado_action_pending", activeAttempt: null });
+      // Task 10 only projects the action; Task 13 owns Surface validation and the separate Confirm write.
+      expect(response.json()).not.toMatchObject({ state: "f4_running" });
       const actionId = `ado-validation:${browser.sessionId}:${response.json<{ revision: number }>().revision}`;
       const token = server.issueHostBearer(browser.sessionId, ["host-actions:claim"], { actionId, hostInstanceId: "host-a" });
       expect((await server.inject({
@@ -168,7 +199,7 @@ describe("workbench server routes", () => {
   });
 
   it("requires scoped host bearer credentials for host action claim and result", async () => {
-    const rootDir = ".tmp/workbench-server-host-actions";
+    const rootDir = testRoot("workbench-server-host-actions");
     await rm(rootDir, { recursive: true, force: true });
     const server = await buildWorkbenchServer({ rootDir });
     try {
@@ -226,7 +257,8 @@ describe("workbench server routes", () => {
   });
 
   it("rejects host action results whose hash does not match the result payload", async () => {
-    const server = await buildWorkbenchServer({ rootDir: ".tmp/workbench-server-host-action-hash" });
+    const rootDir = testRoot("workbench-server-host-action-hash");
+    const server = await buildWorkbenchServer({ rootDir });
     try {
       const browser = await server.testAuthenticate("22222222-2222-4222-8222-222222222222");
       await server.inject({
@@ -269,11 +301,12 @@ describe("workbench server routes", () => {
       expect(response.statusCode).toBe(400);
     } finally {
       await server.close();
+      await rm(rootDir, { recursive: true, force: true });
     }
   });
 
   it("rejects duplicate host action IDs in the same or another session without replacing terminal state", async () => {
-    const rootDir = ".tmp/workbench-server-durable-host-actions";
+    const rootDir = testRoot("workbench-server-durable-host-actions");
     await rm(rootDir, { recursive: true, force: true });
     const first = await buildWorkbenchServer({ rootDir });
     const firstSessionId = "23232323-2323-4232-8232-232323232323";
@@ -352,7 +385,7 @@ describe("workbench server routes", () => {
   });
 
   it("keeps event IDs monotonic after retention rollover and marks an expired replay cursor", async () => {
-    const rootDir = ".tmp/workbench-server-event-rollover";
+    const rootDir = testRoot("workbench-server-event-rollover");
     await rm(rootDir, { recursive: true, force: true });
     const started = await (await import("./server.js")).startWorkbenchServer({ rootDir });
     try {
@@ -386,7 +419,7 @@ describe("workbench server routes", () => {
   });
 
   it("replays persisted session events after a new server instance starts", async () => {
-    const rootDir = ".tmp/workbench-server-event-restart";
+    const rootDir = testRoot("workbench-server-event-restart");
     const sessionId = "26262626-2626-4262-8262-262626262626";
     await rm(rootDir, { recursive: true, force: true });
     const first = await (await import("./server.js")).startWorkbenchServer({ rootDir });
