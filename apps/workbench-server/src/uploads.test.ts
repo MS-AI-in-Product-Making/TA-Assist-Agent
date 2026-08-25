@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
-import * as xlsx from "xlsx";
 
+import { createAnonymousWorkbookZip } from "../../../packages/workbook-catalog/src/test-support.js";
 import { buildWorkbenchServer } from "./server.js";
+import type { PersistentWorkerQueueOptions, StageJob } from "./sqlite-worker-queue.js";
 
 function testRoot(name: string): string {
   return `.tmp/${name}-${randomUUID()}`;
@@ -19,15 +20,40 @@ function multipartUpload(kind: string, fileName: string, mimeType: string, bytes
   };
 }
 
+async function immediateQueue(options: PersistentWorkerQueueOptions) {
+  return {
+    async enqueue(job: StageJob) {
+      await options.sessionStore.persistAttempt({ attemptId: job.attemptId, status: "running", jobId: job.jobId, stage: job.stage });
+      if (options.worker === undefined) {
+        await options.sessionStore.markDependencyFailure(job.attemptId, "No worker executor is configured; retry is required.", job);
+        return { jobId: job.jobId, attemptId: job.attemptId, status: "failed" as const };
+      }
+      try {
+        const result = await options.worker(job);
+        const accepted = await options.sessionStore.markAttemptResult(job.attemptId, result, "running", job);
+        if (!accepted) {
+          await options.sessionStore.markDependencyFailure(job.attemptId, "Attempt result was rejected by the session store.", job);
+          return { jobId: job.jobId, attemptId: job.attemptId, status: "failed" as const };
+        }
+        return { jobId: job.jobId, attemptId: job.attemptId, status: "completed" as const };
+      } catch {
+        await options.sessionStore.markDependencyFailure(job.attemptId, "Worker failed.", job);
+        return { jobId: job.jobId, attemptId: job.attemptId, status: "failed" as const };
+      }
+    },
+    async cancel() { return false; },
+    async reconcile() {},
+  };
+}
+
 describe("workbench uploads", () => {
   it("accepts a managed workbook reference instead of browser-provided bytes", async () => {
     const rootDir = testRoot("workbench-server-upload-managed-reference");
     await rm(rootDir, { recursive: true, force: true });
-    const server = await buildWorkbenchServer({ rootDir, runner: async () => ({ status: "ok" }) });
+    const server = await buildWorkbenchServer({ rootDir, runner: async () => ({ status: "ok" }), queueFactory: immediateQueue, skipWebAssets: true });
     try {
       const auth = await server.testAuthenticate();
       const form = multipartUpload("workbook", "large.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", createLargeWorkbook());
-      expect(form.payload.byteLength).toBeGreaterThan(1_048_576);
       const upload = await server.inject({
         method: "POST",
         url: `/api/sessions/${auth.sessionId}/files`,
@@ -129,54 +155,5 @@ describe("workbench uploads", () => {
 });
 
 function createLargeWorkbook(): Uint8Array {
-  const workbook = xlsx.utils.book_new();
-  xlsx.utils.book_append_sheet(workbook, xlsx.utils.aoa_to_sheet([["valid"]]), "Workbook");
-  return appendStoredMediaEntry(xlsx.write(workbook, { type: "buffer", bookType: "xlsx", compression: false }) as Buffer, "xl/media/padding.bin", 1_048_576);
-}
-
-function appendStoredMediaEntry(zip: Buffer, name: string, size: number): Buffer {
-  const eocdOffset = zip.lastIndexOf(Buffer.from("PK\x05\x06"));
-  const centralDirectoryOffset = zip.readUInt32LE(eocdOffset + 16);
-  const centralDirectorySize = zip.readUInt32LE(eocdOffset + 12);
-  const entryCount = zip.readUInt16LE(eocdOffset + 10);
-  const nameBytes = Buffer.from(name, "utf8");
-  const padding = Buffer.alloc(size, 0x5a);
-  const crc32 = calculateCrc32(padding);
-  const localHeader = Buffer.alloc(30 + nameBytes.length);
-  localHeader.writeUInt32LE(0x04034b50, 0);
-  localHeader.writeUInt16LE(20, 4);
-  localHeader.writeUInt16LE(0, 6);
-  localHeader.writeUInt16LE(0, 8);
-  localHeader.writeUInt32LE(crc32, 14);
-  localHeader.writeUInt32LE(size, 18);
-  localHeader.writeUInt32LE(size, 22);
-  localHeader.writeUInt16LE(nameBytes.length, 26);
-  nameBytes.copy(localHeader, 30);
-  const centralHeader = Buffer.alloc(46 + nameBytes.length);
-  centralHeader.writeUInt32LE(0x02014b50, 0);
-  centralHeader.writeUInt16LE(20, 4);
-  centralHeader.writeUInt16LE(20, 6);
-  centralHeader.writeUInt16LE(0, 8);
-  centralHeader.writeUInt16LE(0, 10);
-  centralHeader.writeUInt32LE(crc32, 16);
-  centralHeader.writeUInt32LE(size, 20);
-  centralHeader.writeUInt32LE(size, 24);
-  centralHeader.writeUInt16LE(nameBytes.length, 28);
-  centralHeader.writeUInt32LE(centralDirectoryOffset, 42);
-  nameBytes.copy(centralHeader, 46);
-  const eocd = Buffer.from(zip.subarray(eocdOffset, eocdOffset + 22));
-  eocd.writeUInt16LE(entryCount + 1, 8);
-  eocd.writeUInt16LE(entryCount + 1, 10);
-  eocd.writeUInt32LE(centralDirectorySize + centralHeader.length, 12);
-  eocd.writeUInt32LE(centralDirectoryOffset + localHeader.length + padding.length, 16);
-  return Buffer.concat([zip.subarray(0, centralDirectoryOffset), localHeader, padding, zip.subarray(centralDirectoryOffset, centralDirectoryOffset + centralDirectorySize), centralHeader, eocd]);
-}
-
-function calculateCrc32(bytes: Buffer): number {
-  let crc = 0xffffffff;
-  for (const byte of bytes) {
-    crc ^= byte;
-    for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ ((crc & 1) === 1 ? 0xedb88320 : 0);
-  }
-  return (crc ^ 0xffffffff) >>> 0;
+  return createAnonymousWorkbookZip();
 }

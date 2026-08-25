@@ -85,7 +85,7 @@ export interface WorkbenchApi {
   loadArtifactJson(
     sessionId: string,
     artifactId: string,
-    kind: "f2_report" | "f3_report" | "f4_report" | "f5_report" | "f6_report",
+    kind: "f2_report" | "f3_report" | "f4_calculation" | "f4_report" | "f5_report" | "f6_report",
   ): Promise<F2UserReport | DrawingGovernanceResultV2 | F4WorkflowCalculationResult | F5DataInterpretationResult | F6OptimizationResultV2 | undefined>;
 }
 
@@ -194,6 +194,7 @@ export function createWorkbenchApi(): WorkbenchApi {
           return f2UserReportSchema.parse(data);
         case "f3_report":
           return drawingGovernanceResultV2Schema.parse(data);
+        case "f4_calculation":
         case "f4_report":
           return f4WorkflowCalculationResultSchema.parse(data);
         case "f5_report":

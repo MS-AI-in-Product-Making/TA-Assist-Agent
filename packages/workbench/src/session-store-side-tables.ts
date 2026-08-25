@@ -91,7 +91,7 @@ export function normalizeArtifactReferenceOps(
       const reviewContextId = createReviewContextId(reference.reviewContext);
       return {
         ...reference,
-        metadata: { ...reference.metadata, reviewContextId },
+        metadata: { ...reference.metadata, reviewContextId, reviewContext: reference.reviewContext },
       };
     },
     (reference) => reference.artifactId,

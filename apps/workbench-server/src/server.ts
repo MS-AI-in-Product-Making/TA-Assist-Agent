@@ -10,9 +10,16 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 
 import type { ConversationTurn } from "@ai-assist/conversation";
 import type { hostActionClaimSchema, hostActionRequestSchema, hostActionResultSchema } from "@ai-assist/contracts";
-import { acceptAttemptResult, createSessionStore, openSessionStore, reduceSessionCommand, type F8SessionCommand, type F8SessionSnapshot } from "@ai-assist/workbench";
+import { acceptAttemptResult, canonicalSelectedWorksheetSetHash, createSessionStore, openSessionStore, reduceSessionCommand, type F8SessionCommand, type F8SessionSnapshot, type ReviewContextIdentity, type SessionArtifactReference, type SessionDeltaOperations } from "@ai-assist/workbench";
 import { createTypedError } from "@ai-assist/contracts";
 import { createHostActionStore } from "@ai-assist/workbench";
+
+interface RunnerArtifactReference {
+  readonly artifactId: string;
+  readonly kind: "f1_image" | "f3_report" | "f4_calculation" | "f5_report" | "f6_optimization" | "f6_report";
+  readonly relativePath: string;
+  readonly contentHash: string;
+}
 
 import { WorkbenchAuth, SESSION_COOKIE_NAME, type HostBearerOptions, type AuthenticatedRequest, type TestAuthentication } from "./auth.js";
 import { createBrowserBootstrapRendezvous, renderBootstrapPage, renderBootstrapScript, type BrowserBootstrapRendezvous } from "./bootstrap.js";
@@ -23,7 +30,7 @@ import { conversationRoutes } from "./routes/conversation.js";
 import { filesRoutes } from "./routes/files.js";
 import { hostActionsRoutes } from "./routes/host-actions.js";
 import { sessionsRoutes } from "./routes/sessions.js";
-import { createPersistentWorkerQueue, type PersistentWorkerQueue, type QueueSessionStore, type StageJob } from "./sqlite-worker-queue.js";
+import { createPersistentWorkerQueue, type PersistentWorkerQueue, type PersistentWorkerQueueOptions, type QueueSessionStore, type StageJob } from "./sqlite-worker-queue.js";
 import { createSqliteEventSource, type SqliteEventSource } from "./sse.js";
 
 type HostActionClaim = ReturnType<typeof hostActionClaimSchema.parse>;
@@ -34,8 +41,10 @@ export interface StartWorkbenchServerOptions {
   readonly rootDir: string;
   readonly port?: number;
   readonly webAssetsRoot?: string;
+  readonly skipWebAssets?: boolean;
   readonly bootstrap?: BrowserBootstrapRendezvous;
   readonly runner?: (job: StageJob) => Promise<unknown>;
+  readonly queueFactory?: (options: PersistentWorkerQueueOptions) => Promise<PersistentWorkerQueue>;
 }
 
 export interface WorkbenchServer extends FastifyInstance {
@@ -104,7 +113,7 @@ export async function buildWorkbenchServer(options: StartWorkbenchServerOptions)
   await mkdir(options.rootDir, { recursive: true });
 
   const auth = new WorkbenchAuth();
-  const context = await createWorkbenchServerContext(options.rootDir, auth, options.runner);
+  const context = await createWorkbenchServerContext(options.rootDir, auth, options.runner, options.queueFactory);
   const app = Fastify({ logger: false, bodyLimit: 1024 * 1024 }) as unknown as WorkbenchServer;
   const bootstrap = options.bootstrap ?? createBrowserBootstrapRendezvous();
 
@@ -133,7 +142,9 @@ export async function buildWorkbenchServer(options: StartWorkbenchServerOptions)
 
   app.get("/", async (_request, reply) => reply.type("text/html; charset=utf-8").send(renderBootstrapPage()));
   app.get("/bootstrap.js", async (_request, reply) => reply.type("application/javascript; charset=utf-8").send(renderBootstrapScript()));
-  const webAssets = await openWebAssets(options.webAssetsRoot ?? defaultWebAssetsRoot());
+  const webAssets = options.skipWebAssets === true
+    ? missingWebAssets(options.webAssetsRoot ?? defaultWebAssetsRoot())
+    : await openWebAssets(options.webAssetsRoot ?? defaultWebAssetsRoot());
   app.get("/workbench.js", async (_request, reply) => sendWebAsset(reply, webAssets, "workbench.js", "application/javascript; charset=utf-8"));
   app.get("/workbench.css", async (_request, reply) => sendWebAsset(reply, webAssets, "workbench.css", "text/css; charset=utf-8"));
   app.post("/api/bootstrap", async (request, reply) => {
@@ -186,14 +197,15 @@ export async function startWorkbenchServer(options: StartWorkbenchServerOptions)
   return { server, url: `http://${LOOPBACK_HOST}:${port}/#bootstrap=${bootstrapNonce}`, bootstrapNonce };
 }
 
-async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth, runner: StartWorkbenchServerOptions["runner"]): Promise<WorkbenchServerContext> {
+async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth, runner: StartWorkbenchServerOptions["runner"], queueFactory: StartWorkbenchServerOptions["queueFactory"]): Promise<WorkbenchServerContext> {
   const sessions = new StoreBackedSessionRegistry(rootDir);
   const artifacts = new FileBackedArtifactRegistry(rootDir);
-  const queue = await createPersistentWorkerQueue({
+  const queueOptions = {
     rootDir: join(rootDir, "runtime", "workbench"),
     sessionStore: new StoreBackedQueueSessionStore(rootDir, sessions),
     ...(runner === undefined ? {} : { worker: runner }),
-  });
+  } satisfies PersistentWorkerQueueOptions;
+  const queue = await (queueFactory ?? createPersistentWorkerQueue)(queueOptions);
   await queue.reconcile();
   return {
     rootDir,
@@ -227,12 +239,22 @@ async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth
     async enqueueActiveAttempt(snapshot) {
       const attempt = snapshot.activeAttempt;
       if (attempt === null) return;
+      const reviewContext = ["f5_running", "f6_running"].includes(attempt.stage)
+        ? await persistedReviewContext(rootDir, snapshot)
+        : undefined;
+      const baselineRunReference = attempt.stage === "f4_running"
+        ? validatedF2BaselineReference(snapshot)
+        : undefined;
       await queue.enqueue({
         jobId: attempt.attemptId,
         attemptId: attempt.attemptId,
         kind: attempt.stage === "f1_f2_running" || attempt.stage === "f3_running" ? "excel" : "calculation",
         stage: attempt.stage,
-        payload: { sessionId: snapshot.sessionId },
+        payload: {
+          sessionId: snapshot.sessionId,
+          ...(baselineRunReference === undefined ? {} : { baselineRunReference }),
+          ...(reviewContext === undefined ? {} : { reviewContext }),
+        },
       });
     },
     async resolveManagedWorkbook(sessionId, artifactId) {
@@ -427,7 +449,12 @@ class StoreBackedQueueSessionStore implements QueueSessionStore {
     if (sessionId === undefined) return false;
     const current = await this.sessions.read(sessionId);
     if (current?.activeAttempt?.attemptId !== attemptId) return false;
-    return this.record(current, { result, status: "completed" });
+    try {
+      return await this.record(current, { result, status: "completed" });
+    } catch (error) {
+      if ((error as { readonly code?: unknown }).code !== "evidence_mismatch") throw error;
+      return this.record(current, { status: "failed", result: { error } });
+    }
   }
 
   async markDependencyFailure(attemptId: string, reason: string, job?: StageJob): Promise<void> {
@@ -444,11 +471,15 @@ class StoreBackedQueueSessionStore implements QueueSessionStore {
   private async record(snapshot: F8SessionSnapshot, result: { readonly status: "completed" | "failed"; readonly result: unknown }): Promise<boolean> {
     const store = await openSessionStore({ rootDir: this.rootDir, sessionId: snapshot.sessionId });
     try {
+      const artifactReferenceOps = result.status === "completed"
+        ? await artifactReferenceOpsFromRunnerResult(this.rootDir, snapshot, result.result)
+        : undefined;
       const receipt = await store.recordAttemptResult({
         attemptId: snapshot.activeAttempt!.attemptId,
         status: result.status,
         result: result.result,
         snapshot: acceptAttemptResult(snapshot, { attemptId: snapshot.activeAttempt!.attemptId, status: result.status, result: result.result }),
+        ...(artifactReferenceOps === undefined ? {} : { artifactReferenceOps }),
       });
       return receipt.accepted;
     } finally {
@@ -463,6 +494,10 @@ function readSessionId(value: unknown): string | undefined {
 
 interface OpenWebAssets {
   read(name: "workbench.js" | "workbench.css"): Promise<string>;
+}
+
+function missingWebAssets(webAssetsRoot: string): OpenWebAssets {
+  return { read: async () => { throw createTypedError({ code: "dependency_error", summary: "Workbench web assets are unavailable.", suggestedAction: "Build apps/workbench-web before starting the workbench server.", affectedInputReferences: [webAssetsRoot] }); } };
 }
 
 async function openWebAssets(webAssetsRoot: string): Promise<OpenWebAssets> {
@@ -524,4 +559,132 @@ async function assertOpenedFileContained(
       affectedInputReferences: [expectedName],
     });
   }
+}
+
+async function artifactReferenceOpsFromRunnerResult(
+  rootDir: string,
+  snapshot: F8SessionSnapshot,
+  result: unknown,
+): Promise<SessionDeltaOperations<SessionArtifactReference> | undefined> {
+  const candidate = result as { readonly reviewContext?: ReviewContextIdentity; readonly artifactReferences?: readonly RunnerArtifactReference[] };
+  if (candidate.reviewContext === undefined && candidate.artifactReferences === undefined) return undefined;
+  if (candidate.artifactReferences === undefined) {
+    throw createTypedError({
+      code: "evidence_mismatch",
+      summary: "Runner result must provide validated artifact references.",
+      suggestedAction: "Return validated structured artifact references from the runner.",
+      affectedInputReferences: [snapshot.activeAttempt?.attemptId ?? snapshot.sessionId],
+    });
+  }
+  const artifactReferences = candidate.artifactReferences;
+  const scope = snapshot.downstreamScopeSelection;
+  if (scope?.confirmed !== true) {
+    throw reviewContextMismatch(snapshot, "Runner review context does not match the current session lineage.");
+  }
+  const expectedFromSession: ReviewContextIdentity = {
+    workbookHash: scope.workbookContentHash,
+    downstreamSelectionHash: canonicalSelectedWorksheetSetHash(scope.selectedWorksheetNames),
+    baselineRunReference: validatedF2BaselineReference(snapshot),
+  };
+  let reviewContext: ReviewContextIdentity;
+  if (snapshot.activeAttempt?.stage === "f4_running") {
+    reviewContext = candidate.reviewContext ?? expectedFromSession;
+    if (reviewContext.workbookHash !== expectedFromSession.workbookHash
+      || reviewContext.downstreamSelectionHash !== expectedFromSession.downstreamSelectionHash
+      || reviewContext.baselineRunReference !== expectedFromSession.baselineRunReference) {
+      throw reviewContextMismatch(snapshot, "Runner review context does not match the validated F2 baseline lineage.");
+    }
+  } else {
+    if (candidate.reviewContext === undefined) {
+      throw reviewContextMismatch(snapshot, "Downstream runner result is missing the F4 review baseline.");
+    }
+    reviewContext = candidate.reviewContext;
+  }
+  if (["f5_running", "f6_running"].includes(snapshot.activeAttempt?.stage ?? "")) {
+    const expectedReviewContext = await persistedReviewContext(rootDir, snapshot);
+    if (reviewContext.workbookHash !== expectedReviewContext.workbookHash
+      || reviewContext.downstreamSelectionHash !== expectedReviewContext.downstreamSelectionHash
+      || reviewContext.baselineRunReference !== expectedReviewContext.baselineRunReference) {
+      throw reviewContextMismatch(snapshot, "Runner review context does not match the F4 baseline lineage.");
+    }
+  }
+  return {
+    upsert: artifactReferences.map((artifact) => ({
+      artifactId: artifact.artifactId,
+      sessionId: snapshot.sessionId,
+      inputRevision: snapshot.inputRevision,
+      kind: artifact.kind,
+      relativePath: artifact.relativePath,
+      contentHash: artifact.contentHash,
+      reviewContext,
+    })),
+  };
+}
+
+function reviewContextMismatch(snapshot: F8SessionSnapshot, summary: string): Error {
+  return createTypedError({
+    code: "evidence_mismatch",
+    summary,
+    suggestedAction: "Rerun the stage using the current workbook, worksheet selection, and F2 baseline.",
+    affectedInputReferences: [snapshot.activeAttempt?.attemptId ?? snapshot.sessionId],
+  });
+}
+
+function validatedF2BaselineReference(snapshot: F8SessionSnapshot): string {
+  const runReferences = new Set(snapshot.priorRunReferences.filter((candidate) =>
+    candidate.featureId === "F2"
+      && candidate.workbookHash === snapshot.downstreamScopeSelection?.workbookContentHash
+      && typeof candidate.runReference === "string"
+      && candidate.runReference.length > 0,
+  ).map((candidate) => candidate.runReference as string));
+  if (runReferences.size !== 1) {
+    throw reviewContextMismatch(snapshot, "The current session does not have one unambiguous validated F2 baseline lineage.");
+  }
+  return [...runReferences][0]!;
+}
+
+async function persistedReviewContext(rootDir: string, snapshot: F8SessionSnapshot): Promise<ReviewContextIdentity> {
+  const f4References = snapshot.artifactRefs?.filter((reference) =>
+    reference.kind === "f4_calculation" && reference.revision === snapshot.inputRevision && reference.validated,
+  ) ?? [];
+  if (f4References.length === 0) throw reviewContextMismatch(snapshot, "The current session has no F4 review baseline.");
+  const store = await openSessionStore({ rootDir, sessionId: snapshot.sessionId });
+  try {
+    const contexts = await Promise.all(f4References.map(async (reference) => {
+      const persisted = await store.readArtifactReference(reference.artifactId);
+      return parseReviewContext(snapshot, persisted?.metadata?.reviewContext);
+    }));
+    const uniqueContexts = new Map(contexts.map((context) => [JSON.stringify(context), context]));
+    if (uniqueContexts.size !== 1) {
+      throw reviewContextMismatch(snapshot, "The current session has ambiguous F4 review baselines.");
+    }
+    const reviewContext = [...uniqueContexts.values()][0]!;
+    const scope = snapshot.downstreamScopeSelection;
+    if (scope?.confirmed !== true) {
+      throw reviewContextMismatch(snapshot, "The persisted F4 review baseline has no confirmed downstream scope.");
+    }
+    const expected: ReviewContextIdentity = {
+      workbookHash: scope.workbookContentHash,
+      downstreamSelectionHash: canonicalSelectedWorksheetSetHash(scope.selectedWorksheetNames),
+      baselineRunReference: validatedF2BaselineReference(snapshot),
+    };
+    if (reviewContext.workbookHash !== expected.workbookHash
+      || reviewContext.downstreamSelectionHash !== expected.downstreamSelectionHash
+      || reviewContext.baselineRunReference !== expected.baselineRunReference) {
+      throw reviewContextMismatch(snapshot, "The persisted F4 review baseline does not match the current session lineage.");
+    }
+    return reviewContext;
+  } finally {
+    await store.close();
+  }
+}
+
+function parseReviewContext(snapshot: F8SessionSnapshot, value: unknown): ReviewContextIdentity {
+  const candidate = value as Partial<ReviewContextIdentity> | undefined;
+  if (typeof candidate?.workbookHash !== "string"
+    || typeof candidate.downstreamSelectionHash !== "string"
+    || typeof candidate.baselineRunReference !== "string") {
+    throw reviewContextMismatch(snapshot, "The persisted F4 review baseline is invalid.");
+  }
+  return candidate as ReviewContextIdentity;
 }

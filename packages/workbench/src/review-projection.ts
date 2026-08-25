@@ -289,7 +289,7 @@ function collectWorksheetNames(input: ReviewProjectionInput): string[] {
 }
 
 export function selectCompleteReviewContext(snapshot: F8SessionSnapshot): CompleteReviewContext | undefined {
-  const currentRevision = snapshot.revision;
+  const currentRevision = snapshot.inputRevision;
   const contexts = new Map<ReviewContextId, Map<ReviewArtifactKind, ReviewContextArtifact>>();
   for (const artifact of snapshot.artifactRefs ?? []) {
     if (!isReviewArtifact(artifact) || !artifact.validated || artifact.revision !== currentRevision || artifact.reviewContextId === undefined) {
@@ -301,7 +301,7 @@ export function selectCompleteReviewContext(snapshot: F8SessionSnapshot): Comple
   }
 
   const complete = [...contexts.entries()]
-    .filter(([, artifacts]) => ["f4_report", "f5_report", "f6_report"].every((kind) => artifacts.has(kind as ReviewArtifactKind)))
+    .filter(([, artifacts]) => ["f4_calculation", "f5_report", "f6_report"].every((kind) => artifacts.has(kind as ReviewArtifactKind)))
     .sort(([left], [right]) => left.localeCompare(right));
   if (complete.length !== 1) {
     return undefined;

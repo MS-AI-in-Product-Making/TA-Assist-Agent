@@ -2,6 +2,7 @@ import { lstat, open, realpath, stat } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 
 import type { FastifyPluginAsync } from "fastify";
+import { openSessionStore } from "@ai-assist/workbench";
 
 import type { WorkbenchServerContext } from "../server.js";
 
@@ -21,7 +22,7 @@ export const artifactsRoutes: FastifyPluginAsync<{ readonly context: WorkbenchSe
       return reply.code(403).send({ error: "session_scope_rejected" });
     }
 
-    const artifact = context.artifacts.read(sessionId, artifactId);
+    const artifact = context.artifacts.read(sessionId, artifactId) ?? await readPersistedArtifact(context.rootDir, sessionId, artifactId);
     if (artifact === undefined) {
       return reply.code(404).send({ error: "artifact_not_found" });
     }
@@ -43,6 +44,25 @@ export const artifactsRoutes: FastifyPluginAsync<{ readonly context: WorkbenchSe
 };
 
 const ALLOWED_MIME_TYPES = new Set(["text/plain", "application/json", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "image/png", "image/jpeg"]);
+const JSON_ARTIFACT_KINDS = new Set(["f1_image", "f3_report", "f4_calculation", "f5_report", "f6_optimization"]);
+
+async function readPersistedArtifact(rootDir: string, sessionId: string, artifactId: string) {
+  const store = await openSessionStore({ rootDir, sessionId });
+  try {
+    const reference = await store.readArtifactReference(artifactId);
+    if (reference === undefined || (!JSON_ARTIFACT_KINDS.has(reference.kind) && reference.kind !== "f6_report")) return undefined;
+    const fileName = reference.relativePath.split(/[\\/]/).at(-1);
+    if (fileName === undefined) return undefined;
+    return {
+      relativePath: reference.relativePath,
+      fileName,
+      classification: "confidential" as const,
+      mimeType: JSON_ARTIFACT_KINDS.has(reference.kind) ? "application/json" : "text/plain",
+    };
+  } finally {
+    await store.close();
+  }
+}
 
 async function isSafeManagedPath(rootDir: string, targetPath: string): Promise<boolean> {
   try {

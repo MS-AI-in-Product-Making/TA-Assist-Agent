@@ -32,6 +32,12 @@ describe("SseEventParser", () => {
 });
 
 describe("workbench browser API", () => {
+  it("validates F4 calculation artifacts instead of silently discarding them", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 200 })));
+
+    await expect(createWorkbenchApi().loadArtifactJson("session-1", "f4-current", "f4_calculation")).rejects.toThrow();
+  });
+
   it("uploads a multipart workbook then submits only its managed artifact reference", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ csrfToken: "csrf" }), { status: 200 }))

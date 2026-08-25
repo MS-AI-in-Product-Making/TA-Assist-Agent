@@ -15,10 +15,10 @@ describe("projectWorksheetReview", () => {
         activeAttempt: null,
         priorRunReferences: [],
         artifactRefs: [
-          { artifactId: "img-aj-gap", kind: "f1_image", revision: 8, validated: true, reviewContextId: "context-review-1" },
-          { artifactId: "f4-report-aj-gap", kind: "f4_report", revision: 8, validated: true, reviewContextId: "context-review-1" },
-          { artifactId: "f5-report-aj-gap", kind: "f5_report", revision: 8, validated: true, reviewContextId: "context-review-1" },
-          { artifactId: "f6-report-aj-gap", kind: "f6_report", revision: 8, validated: true, reviewContextId: "context-review-1" },
+          { artifactId: "img-aj-gap", kind: "f1_image", revision: 4, validated: true, reviewContextId: "context-review-1" },
+          { artifactId: "f4-report-aj-gap", kind: "f4_calculation", revision: 4, validated: true, reviewContextId: "context-review-1" },
+          { artifactId: "f5-report-aj-gap", kind: "f5_report", revision: 4, validated: true, reviewContextId: "context-review-1" },
+          { artifactId: "f6-report-aj-gap", kind: "f6_report", revision: 4, validated: true, reviewContextId: "context-review-1" },
         ],
       },
       f4Report: {
@@ -295,13 +295,13 @@ describe("projectWorksheetReview", () => {
           ...input.snapshot.artifactRefs!.map((artifact) => ({
             ...artifact,
             reviewContextId: "context-rerun-stale",
-            revision: 7,
+            revision: 3,
           })),
           ...input.snapshot.artifactRefs!.map((artifact) => ({
             ...artifact,
             artifactId: `${artifact.artifactId}-current`,
             reviewContextId: currentContext,
-            revision: 8,
+            revision: 4,
           })),
         ],
       },
@@ -341,10 +341,10 @@ function createReviewInput() {
       activeAttempt: null,
       priorRunReferences: [],
       artifactRefs: [
-        { artifactId: "img-aj-gap", kind: "f1_image", revision: 8, validated: true, reviewContextId: "context-review-1" },
-        { artifactId: "f4-report-aj-gap", kind: "f4_report", revision: 8, validated: true, reviewContextId: "context-review-1" },
-        { artifactId: "f5-report-aj-gap", kind: "f5_report", revision: 8, validated: true, reviewContextId: "context-review-1" },
-        { artifactId: "f6-report-aj-gap", kind: "f6_report", revision: 8, validated: true, reviewContextId: "context-review-1" },
+        { artifactId: "img-aj-gap", kind: "f1_image", revision: 4, validated: true, reviewContextId: "context-review-1" },
+        { artifactId: "f4-report-aj-gap", kind: "f4_calculation", revision: 4, validated: true, reviewContextId: "context-review-1" },
+        { artifactId: "f5-report-aj-gap", kind: "f5_report", revision: 4, validated: true, reviewContextId: "context-review-1" },
+        { artifactId: "f6-report-aj-gap", kind: "f6_report", revision: 4, validated: true, reviewContextId: "context-review-1" },
       ],
     },
     f4Report: {

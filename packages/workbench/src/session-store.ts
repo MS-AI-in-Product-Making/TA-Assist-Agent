@@ -85,6 +85,7 @@ export interface SessionAttemptResultReceipt {
 
 export interface SessionStore {
   readSnapshot(): Promise<F8SessionSnapshot>;
+  readArtifactReference(artifactId: string): Promise<SessionArtifactReference | undefined>;
   readCommandReceipt(commandId: string): Promise<F8SessionSnapshot | null>;
   applyCommand(command: F8SessionCommand, reducer: SessionCommandReducer): Promise<F8SessionSnapshot>;
   recordAttemptResult(result: SessionAttemptResultRecord): Promise<SessionAttemptResultReceipt>;
@@ -153,6 +154,8 @@ async function initializeStore(options: SessionStoreOptions): Promise<SqliteSess
 class SqliteSessionStore implements SessionStore {
   private readonly selectSessionStatement;
 
+  private readonly selectArtifactReferenceStatement;
+
   private readonly insertSessionStatement;
 
   private readonly selectCommandStatement;
@@ -190,6 +193,11 @@ class SqliteSessionStore implements SessionStore {
       SELECT revision, snapshot_json
       FROM sessions
       WHERE session_id = ?
+    `);
+    this.selectArtifactReferenceStatement = this.database.prepare(`
+      SELECT artifact_id, session_id, input_revision, kind, relative_path, content_hash, manifest_hash, metadata_json
+      FROM artifact_refs
+      WHERE artifact_id = ? AND session_id = ?
     `);
     this.insertSessionStatement = this.database.prepare(`
       INSERT INTO sessions(session_id, revision, snapshot_json, created_at, updated_at)
@@ -336,6 +344,30 @@ class SqliteSessionStore implements SessionStore {
     return this.readCommittedSnapshot();
   }
 
+  async readArtifactReference(artifactId: string): Promise<SessionArtifactReference | undefined> {
+    const row = this.selectArtifactReferenceStatement.get(artifactId, this.sessionId) as {
+      artifact_id: string;
+      session_id: string;
+      input_revision: number;
+      kind: string;
+      relative_path: string;
+      content_hash: string | null;
+      manifest_hash: string | null;
+      metadata_json: string | null;
+    } | undefined;
+    if (row === undefined) return undefined;
+    return {
+      artifactId: row.artifact_id,
+      sessionId: row.session_id,
+      inputRevision: row.input_revision,
+      kind: row.kind,
+      relativePath: row.relative_path,
+      ...(row.content_hash === null ? {} : { contentHash: row.content_hash }),
+      ...(row.manifest_hash === null ? {} : { manifestHash: row.manifest_hash }),
+      ...(row.metadata_json === null ? {} : { metadata: JSON.parse(row.metadata_json) as Record<string, unknown> }),
+    };
+  }
+
   async readCommandReceipt(commandId: string): Promise<F8SessionSnapshot | null> {
     const row = this.readCommandRow(commandId);
     if (row?.result_json === null || row === undefined) {
@@ -480,12 +512,13 @@ class SqliteSessionStore implements SessionStore {
       result.artifactReferences,
       result.artifactReferenceOps,
     );
+    const snapshotWithArtifactReferences = withArtifactReferences(nextSnapshot, artifactReferenceOps);
     const hostActionOps = normalizeHostActionOps(
       this.sessionId,
       result.hostActions,
       result.hostActionOps,
     );
-    const events = normalizeEvents(this.sessionId, nextSnapshot.revision, result.events ?? []);
+    const events = normalizeEvents(this.sessionId, snapshotWithArtifactReferences.revision, result.events ?? []);
 
     this.database.exec("BEGIN IMMEDIATE");
 
@@ -519,8 +552,8 @@ class SqliteSessionStore implements SessionStore {
 
       if (result.snapshot !== undefined) {
         const updateResult = this.updateSessionStatement.run(
-          nextSnapshot.revision,
-          stringifyJson(nextSnapshot),
+          snapshotWithArtifactReferences.revision,
+          stringifyJson(snapshotWithArtifactReferences),
           timestamp,
           this.sessionId,
           sessionRow.revision,
@@ -549,7 +582,7 @@ class SqliteSessionStore implements SessionStore {
       });
 
       this.database.exec("COMMIT");
-      return { accepted: true, snapshot: nextSnapshot };
+      return { accepted: true, snapshot: snapshotWithArtifactReferences };
     } catch (error) {
       rollbackQuietly(this.database);
       throw error;
@@ -689,7 +722,7 @@ function withScenarioDrafts(
   snapshot: F8SessionSnapshot,
   scenarioDrafts: readonly F8ScenarioDraft[],
 ): F8SessionSnapshot {
-  const { scenarioDrafts: _scenarioDrafts, ...baseSnapshot } = snapshot;
+  const { scenarioDrafts: _ignored, ...baseSnapshot } = snapshot;
   return f8SessionSnapshotSchema.parse(
     scenarioDrafts.length === 0
       ? baseSnapshot
@@ -914,4 +947,42 @@ function stableStringify(value: unknown): string {
 
 function toNumber(value: number | bigint): number {
   return typeof value === "bigint" ? Number(value) : value;
+}
+
+function withArtifactReferences(
+  snapshot: F8SessionSnapshot,
+  operations: SessionDeltaOperations<SessionArtifactReference> | undefined,
+): F8SessionSnapshot {
+  if (operations === undefined) return snapshot;
+  const references = new Map((snapshot.artifactRefs ?? []).map((reference) => [reference.artifactId, reference]));
+  operations.delete?.forEach((artifactId) => references.delete(artifactId));
+  operations.upsert?.forEach((reference) => {
+    if (!isReviewArtifactKind(reference.kind)) {
+      return;
+    }
+    const reviewContextId = reference.metadata?.reviewContextId;
+    if (typeof reviewContextId !== "string" || !/^[a-f0-9]{64}$/.test(reviewContextId)) {
+      throw createTypedError({
+        code: "evidence_mismatch",
+        summary: `Review artifact ${reference.artifactId} has no valid review context ID.`,
+        suggestedAction: "Register review artifacts with a validated review context identity.",
+        affectedInputReferences: [reference.artifactId],
+      });
+    }
+    references.set(reference.artifactId, {
+      artifactId: reference.artifactId,
+      kind: reference.kind,
+      revision: snapshot.inputRevision,
+      validated: true,
+      reviewContextId,
+    });
+  });
+  return f8SessionSnapshotSchema.parse({
+    ...snapshot,
+    ...(references.size === 0 ? {} : { artifactRefs: [...references.values()] }),
+  });
+}
+
+function isReviewArtifactKind(kind: string): kind is "f1_image" | "f3_report" | "f4_calculation" | "f4_report" | "f5_report" | "f6_optimization" | "f6_report" {
+  return ["f1_image", "f3_report", "f4_calculation", "f4_report", "f5_report", "f6_optimization", "f6_report"].includes(kind);
 }

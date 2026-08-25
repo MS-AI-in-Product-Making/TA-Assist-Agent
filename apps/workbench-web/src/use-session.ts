@@ -145,7 +145,7 @@ export function useWorkbenchSession(apiOverride?: WorkbenchApi, options: UseWork
       const f2Artifact = [...refs].reverse().find((artifact) => artifact.kind === "f2_report" && artifact.validated);
       const reviewContext = selectCompleteReviewContext(snapshot);
       const f3Artifact = reviewContext?.artifacts.get("f3_report");
-      const f4Artifact = reviewContext?.artifacts.get("f4_report");
+      const f4Artifact = reviewContext?.artifacts.get("f4_calculation");
       const f5Artifact = reviewContext?.artifacts.get("f5_report");
       const f6Artifact = reviewContext?.artifacts.get("f6_report");
 
@@ -153,7 +153,7 @@ export function useWorkbenchSession(apiOverride?: WorkbenchApi, options: UseWork
         const [nextF2, nextF3, nextF4, nextF5, nextF6] = await Promise.all([
           f2Artifact === undefined ? Promise.resolve(undefined) : api.loadArtifactJson(snapshot.sessionId, f2Artifact.artifactId, "f2_report"),
           f3Artifact === undefined ? Promise.resolve(undefined) : api.loadArtifactJson(snapshot.sessionId, f3Artifact.artifactId, "f3_report"),
-          f4Artifact === undefined ? Promise.resolve(undefined) : api.loadArtifactJson(snapshot.sessionId, f4Artifact.artifactId, "f4_report"),
+          f4Artifact === undefined ? Promise.resolve(undefined) : api.loadArtifactJson(snapshot.sessionId, f4Artifact.artifactId, "f4_calculation"),
           f5Artifact === undefined ? Promise.resolve(undefined) : api.loadArtifactJson(snapshot.sessionId, f5Artifact.artifactId, "f5_report"),
           f6Artifact === undefined ? Promise.resolve(undefined) : api.loadArtifactJson(snapshot.sessionId, f6Artifact.artifactId, "f6_report"),
         ]);
