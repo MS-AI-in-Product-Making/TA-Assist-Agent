@@ -152,8 +152,46 @@ describe("workbench uploads", () => {
       await rm(rootDir, { recursive: true, force: true });
     }
   });
+
+  it("accepts a valid formatted workbook larger than the full worksheet cell budget", async () => {
+    const rootDir = testRoot("workbench-server-upload-formatted-ta");
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const auth = await server.testAuthenticate();
+      const form = multipartUpload("workbook", "formatted-ta.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", createFormattedWorkbook());
+      const response = await server.inject({ method: "POST", url: `/api/sessions/${auth.sessionId}/files`, headers: { ...auth.headers, ...form.headers }, payload: form.payload });
+      expect(response.statusCode).toBe(201);
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
 });
 
 function createLargeWorkbook(): Uint8Array {
   return createAnonymousWorkbookZip();
+}
+
+function createFormattedWorkbook(): Uint8Array {
+  const rows = Array.from({ length: 102 }, (_, rowIndex) => {
+    const row = rowIndex + 1;
+    const cells = Array.from({ length: 100 }, (_, columnIndex) => `<c r="${columnName(columnIndex + 1)}${row}" s="1"><v>1</v></c>`).join("");
+    return `<row r="${row}">${cells}</row>`;
+  }).join("");
+  return createAnonymousWorkbookZip({
+    xmlParts: {
+      "xl/worksheets/sheet3.xml": `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${rows}</sheetData></worksheet>`,
+    },
+  });
+}
+
+function columnName(index: number): string {
+  let value = index;
+  let result = "";
+  while (value > 0) {
+    value -= 1;
+    result = String.fromCharCode(65 + (value % 26)) + result;
+    value = Math.floor(value / 26);
+  }
+  return result;
 }

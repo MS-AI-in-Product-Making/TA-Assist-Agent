@@ -58,7 +58,9 @@ export async function storeUpload(input: UploadValidationInput): Promise<StoredU
 
   if (kind === "workbook" || kind === "f7_feedback") {
     try {
-      readOoxmlWorkbook(bytes, undefined, false);
+      // Upload preflight validates package relationships and a bounded structural window;
+      // governed F1/F7 runners perform their own stage-specific reads afterward.
+      readOoxmlWorkbook(bytes, undefined, false, { maxRow: 100, maxColumn: "AZ" });
     } catch {
       throw safeUploadError("upload_ooxml_rejected", 415);
     }
