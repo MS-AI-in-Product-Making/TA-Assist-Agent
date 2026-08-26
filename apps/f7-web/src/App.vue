@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { createF7Client, type F7Client, type F7MeasurementStructure, type F7MsaStatus, type F7SourceMode } from "./api/f7-client";
+import { createF7Client, type F7Client, type F7MeasurementStructure, type F7MsaStatus, type F7SetupDistribution, type F7SourceMode } from "./api/f7-client";
 import WorksheetConfirmation from "./components/WorksheetConfirmation.vue";
 import FactorInputTable from "./components/FactorInputTable.vue";
 import MeasurementPastePanel from "./components/MeasurementPastePanel.vue";
@@ -109,6 +109,11 @@ async function onConfirmFactors(confirmations: ReadonlyArray<{
   readonly designNominal: number;
   readonly upperTolerance: number;
   readonly lowerTolerance: number;
+  readonly longTermSafetyFactor: number;
+  readonly sigmaLevel: number;
+  readonly distribution: F7SetupDistribution;
+  readonly factorName?: string;
+  readonly userAdded?: true;
 }>): Promise<void> {
   await swallowHandledError(async () => {
     await store.confirmFactors(confirmations);
@@ -239,9 +244,18 @@ async function openReport(): Promise<void> {
             <span class="step-status">{{ workflowStepStatusText(step.id, workflowStepState(step.id)) }}</span>
           </li>
         </ol>
-        <p><strong>Session</strong> {{ store.session.value.sessionId }}</p>
-        <p><strong>Classification</strong> {{ store.session.value.outputClassification }}</p>
-        <p><strong>Workbook</strong> {{ store.session.value.workbook.fileName }}</p>
+        <div class="workflow-metadata">
+          <p><strong>Classification</strong> {{ store.session.value.outputClassification }}</p>
+          <p><strong>Workbook</strong> <span data-workbook-name>{{ store.session.value.workbook.fileName }}</span></p>
+          <p>
+            <strong>Worksheet Selection</strong>
+            <span data-worksheet-selection>
+              {{ store.session.value.selectedWorksheetNames.length > 0
+                ? store.session.value.selectedWorksheetNames.join(", ")
+                : "Not selected" }}
+            </span>
+          </p>
+        </div>
       </aside>
       <section class="workflow-content">
         <WorksheetConfirmation

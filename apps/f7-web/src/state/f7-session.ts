@@ -6,6 +6,7 @@ import type {
   F7MsaStatus,
   F7ReportProjection,
   F7SessionSnapshot,
+  F7SetupDistribution,
   F7SourceMode,
   F7UiError,
 } from "../api/f7-client";
@@ -133,6 +134,11 @@ export function createF7SessionStore(client: F7Client) {
       readonly designNominal: number;
       readonly upperTolerance: number;
       readonly lowerTolerance: number;
+      readonly longTermSafetyFactor: number;
+      readonly sigmaLevel: number;
+      readonly distribution: F7SetupDistribution;
+      readonly factorName?: string;
+      readonly userAdded?: true;
     }>): Promise<void> {
       await runAction("confirmFactors", async () => {
         const current = session.value;

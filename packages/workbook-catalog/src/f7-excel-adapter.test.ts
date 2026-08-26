@@ -121,7 +121,7 @@ function confirmCandidates(extracted: ReturnType<typeof extractF7FactorCandidate
 
 describe("F7 interim excel adapter", () => {
   it("imports workbook and prompts for Anonymous_TA without exposing bytes", () => {
-    const workbookBytes = buildWorkbook();
+    const workbookBytes = buildWorkbook({ factorSpecifications: true });
     const imported = importWorkbook(workbookBytes);
 
     expect(imported.workbook.contentHash).toBe(createHash("sha256").update(workbookBytes).digest("hex"));
@@ -161,6 +161,11 @@ describe("F7 interim excel adapter", () => {
       distribution: "Anonymous_TA!Q14",
       lowerSpecLimit: "Anonymous_TA!P54",
       upperSpecLimit: "Anonymous_TA!P55",
+    });
+    expect(extracted.candidates[0]).toMatchObject({
+      longTermSafetyFactor: 1,
+      sigmaLevel: 4,
+      distribution: "Normal",
     });
     expect(Object.isFrozen(extracted)).toBe(true);
     expect(Object.isFrozen(extracted.candidates)).toBe(true);
@@ -230,7 +235,7 @@ describe("F7 interim excel adapter", () => {
       confirmations: confirmCandidates(extracted),
     });
 
-    expect(result.factors.reduce((sum, factor) => sum + factor.signedContributionMean, 0)).toBeCloseTo(-0.05, 12);
+    expect(result.factors.reduce((sum, factor) => sum + factor.signedContributionMean, 0)).toBeCloseTo(-0.2, 12);
     expect(result.factors[0]?.lowerSpecLimit).toBeCloseTo(0.52, 12);
     expect(result.factors[0]?.upperSpecLimit).toBeCloseTo(0.72, 12);
     expect(result.factors[5]?.lowerSpecLimit).toBe(0);
@@ -254,6 +259,54 @@ describe("F7 interim excel adapter", () => {
     expect(Object.isFrozen(result.factors[0])).toBe(true);
     expect(Object.isFrozen(result.factors[0]?.sourceCells)).toBe(true);
     expect(Object.isFrozen(result.factors[0]?.baselineSampler)).toBe(true);
+  });
+
+  it("persists F4 controls and recalculates factor outputs with the F4 formulas", () => {
+    const workbookBytes = buildWorkbook({ factorSpecifications: true });
+    const imported = importWorkbook(workbookBytes);
+    const extracted = extractF7FactorCandidates({
+      workbookBytes,
+      importResult: imported,
+      confirmation: { workbookContentHash: imported.workbook.contentHash, selectedWorksheetNames: ["Anonymous_TA"], confirmed: true },
+    });
+    const confirmations = confirmCandidates(extracted).map((confirmation, index) => ({
+      ...confirmation,
+      longTermSafetyFactor: index === 0 ? 2 : 1,
+      sigmaLevel: 4,
+      distribution: "Normal" as const,
+    }));
+
+    const result = confirmF7FactorSetup({ extractionResult: extracted, confirmations });
+    const first = result.factors[0]!;
+
+    expect(first).toMatchObject({
+      longTermSafetyFactor: 2,
+      sigmaLevel: 4,
+      distribution: "Normal",
+      calculatedMean: -0.57,
+      tolerance: 0.05,
+      oneSigma: 0.025,
+    });
+    expect(first.baselineSampler.standardDeviation).toBe(0.025);
+    expect(result.factors.reduce((total, factor) => total + factor.percentContributionToSigma, 0)).toBeCloseTo(1, 12);
+  });
+
+  it("applies the selected F4 distribution multiplier", () => {
+    const workbookBytes = buildWorkbook({ factorSpecifications: true });
+    const imported = importWorkbook(workbookBytes);
+    const extracted = extractF7FactorCandidates({
+      workbookBytes,
+      importResult: imported,
+      confirmation: { workbookContentHash: imported.workbook.contentHash, selectedWorksheetNames: ["Anonymous_TA"], confirmed: true },
+    });
+    const confirmations = confirmCandidates(extracted).map((confirmation, index) => ({
+      ...confirmation,
+      distribution: index === 0 ? "Uniform" as const : "Normal" as const,
+    }));
+
+    const first = confirmF7FactorSetup({ extractionResult: extracted, confirmations }).factors[0]!;
+    expect(first.distribution).toBe("Uniform");
+    expect(first.oneSigma).toBeCloseTo(0.0125 * 1.732, 12);
   });
 
   it("derives each factor's capability limits from absolute nominal value and tolerances", () => {
@@ -341,7 +394,7 @@ describe("F7 interim excel adapter", () => {
     })).toThrow("F7 factor extraction request is invalid.");
   });
 
-  it("rejects missing, duplicate, and unknown factor confirmations", () => {
+  it("supports removing workbook factors and adding governed user factors", () => {
     const workbookBytes = buildWorkbook();
     const imported = importWorkbook(workbookBytes);
     const extracted = extractF7FactorCandidates({
@@ -351,10 +404,44 @@ describe("F7 interim excel adapter", () => {
     });
     const full = confirmCandidates(extracted);
 
-    expect(() => confirmF7FactorSetup({
+    const userFactorId = "b".repeat(64);
+    const result = confirmF7FactorSetup({
       extractionResult: extracted,
-      confirmations: full.slice(1),
-    })).toThrow("F7 factor setup confirmation is invalid.");
+      confirmations: [full[0]!, {
+        factorCandidateId: userFactorId,
+        factorName: "User stack gap",
+        userAdded: true,
+        designNominal: 0.4,
+        upperTolerance: 0.08,
+        lowerTolerance: -0.04,
+        longTermSafetyFactor: 1,
+        sigmaLevel: 4,
+        distribution: "Normal",
+        confirmed: true,
+      }],
+    });
+
+    expect(result.factors).toHaveLength(2);
+    expect(result.factors[0]?.factorCandidateId).toBe(full[0]?.factorCandidateId);
+    expect(result.factors[1]).toMatchObject({
+      factorCandidateId: userFactorId,
+      factorName: "User stack gap",
+      sourceCells: {},
+      designNominal: 0.4,
+      oneSigma: 0.015,
+    });
+    expect(result.factors[1]?.calculatedMean).toBeCloseTo(0.42, 12);
+  });
+
+  it("rejects duplicate and ungoverned unknown factor confirmations", () => {
+    const workbookBytes = buildWorkbook();
+    const imported = importWorkbook(workbookBytes);
+    const extracted = extractF7FactorCandidates({
+      workbookBytes,
+      importResult: imported,
+      confirmation: { workbookContentHash: imported.workbook.contentHash, selectedWorksheetNames: ["Anonymous_TA"], confirmed: true },
+    });
+    const full = confirmCandidates(extracted);
 
     expect(() => confirmF7FactorSetup({
       extractionResult: extracted,
@@ -389,7 +476,9 @@ describe("F7 interim excel adapter", () => {
     });
 
     expect(result.factors.every((factor) => factor.loopCoefficient === 1)).toBe(true);
-    expect(result.factors.every((factor) => factor.signedContributionMean === factor.designNominal)).toBe(true);
+    expect(result.factors.every((factor) => factor.signedContributionMean === (
+      factor.designNominal + (factor.upperTolerance + factor.lowerTolerance) / 2
+    ))).toBe(true);
   });
 
   it("rejects missing specs, ambiguous headers, non-Normal baseline, and multiple factor-header tables", () => {

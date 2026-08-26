@@ -13,6 +13,7 @@ describe("extractResponseSummarySystemSpecification", () => {
       cell("N54", "*Lower Spec Limit ►"), cell("P54", "-0.15"),
       cell("N55", "*Upper Spec Limit ►"), cell("P55", "0.05"),
       cell("N56", "*Target σ Level ►"), cell("P56", "3", "3"),
+      cell("W56", "Volume ►"), cell("X56", "1000000"),
       cell("N60", "Suggested Spec"),
       cell("N61", "Lower Spec Limit"), cell("P61", "-0.25"),
       cell("N62", "Upper Spec Limit"), cell("P62", "0.15"),
@@ -23,6 +24,7 @@ describe("extractResponseSummarySystemSpecification", () => {
       lowerSpecLimit: { status: "available", actualValue: -0.15, sourceLabel: "*Lower Spec Limit ►", sourceCell: "TP_C_Step_TA!P54" },
       upperSpecLimit: { status: "available", actualValue: 0.05, sourceLabel: "*Upper Spec Limit ►", sourceCell: "TP_C_Step_TA!P55" },
       targetSigmaLevel: { status: "available", actualValue: 3, sourceLabel: "*Target σ Level ►", sourceCell: "TP_C_Step_TA!P56", valueOrigin: "formula_cached" },
+      volume: { status: "available", actualValue: 1_000_000, sourceLabel: "Volume ►", sourceCell: "TP_C_Step_TA!X56" },
       additionalMeanShift: { status: "available", actualValue: 0, sourceLabel: "Additional Mean Shift", valueOrigin: "defaulted" },
     });
   });

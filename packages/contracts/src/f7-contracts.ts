@@ -33,11 +33,20 @@ export const F7_SELECTION_NORMAL_QQ_CURVATURE_MAX = 0.10;
 
 const controlledCellReferenceSchema = z.string().regex(/^[^!]+![A-Z]+[1-9]\d*$/);
 const sourceCellsSchema = z
-  .record(z.string().min(1), controlledCellReferenceSchema)
-  .refine((sourceCells) => Object.keys(sourceCells).length > 0, {
-    message: "sourceCells must contain at least one controlled cell reference",
-    path: [],
-  });
+  .record(z.string().min(1), controlledCellReferenceSchema);
+
+function requireGovernedFactorSource(
+  value: { readonly sourceCells: Readonly<Record<string, string>>; readonly userAdded?: true | undefined },
+  context: z.RefinementCtx,
+): void {
+  if (value.userAdded !== true && Object.keys(value.sourceCells).length === 0) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "sourceCells must contain at least one controlled cell reference",
+      path: ["sourceCells"],
+    });
+  }
+}
 
 const uniquePositiveRowsSchema = z
   .array(z.number().int().positive())
@@ -97,6 +106,28 @@ const editableFactorSpecificationFields = {
   lowerTolerance: z.number().finite().nonpositive(),
 } as const;
 
+export const f7ToleranceDistributionSchema = z.enum([
+  "Normal",
+  "Uniform",
+  "Triangular",
+  "Trapezoidal",
+  "Elliptical",
+  "Beta",
+]);
+
+const f7FactorCalculationControlFields = {
+  longTermSafetyFactor: finitePositiveNumberSchema,
+  sigmaLevel: finitePositiveNumberSchema,
+  distribution: f7ToleranceDistributionSchema,
+} as const;
+
+const f7FactorCalculatedFields = {
+  calculatedMean: finiteNumberSchema,
+  tolerance: finitePositiveNumberSchema,
+  oneSigma: finitePositiveNumberSchema,
+  percentContributionToSigma: z.number().finite().min(0).max(1),
+} as const;
+
 function requireValidEditableFactorSpecification(
   value: { designNominal: number; upperTolerance: number; lowerTolerance: number },
   context: z.RefinementCtx,
@@ -143,16 +174,20 @@ export const f7FactorCandidateSchema = z
     sourceCells: sourceCellsSchema,
     factorCandidateId: sha256LowerSchema,
     factorName: z.string().min(1),
+    userAdded: z.literal(true).optional(),
     workbookUnitEvidence: z.string().min(1).optional(),
     excelSignedMean: finiteNumberSchema,
     ...editableFactorSpecificationFields,
+    longTermSafetyFactor: f7FactorCalculationControlFields.longTermSafetyFactor.optional(),
+    sigmaLevel: f7FactorCalculationControlFields.sigmaLevel.optional(),
     standardDeviation: finitePositiveNumberSchema,
-    distribution: z.literal("Normal"),
+    distribution: f7ToleranceDistributionSchema,
     lowerSpecLimit: finiteNumberSchema,
     upperSpecLimit: finiteNumberSchema,
   })
   .strict()
   .superRefine((candidate, context) => {
+    requireGovernedFactorSource(candidate, context);
     requireLowerSpecLessThanUpperSpec(candidate, context);
     requireValidEditableFactorSpecification(candidate, context);
   });
@@ -160,11 +195,25 @@ export const f7FactorCandidateSchema = z
 export const f7FactorSetupConfirmationSchema = z
   .object({
     factorCandidateId: sha256LowerSchema,
+    factorName: z.string().trim().min(1).optional(),
+    userAdded: z.literal(true).optional(),
     ...editableFactorSpecificationFields,
+    longTermSafetyFactor: f7FactorCalculationControlFields.longTermSafetyFactor.optional(),
+    sigmaLevel: f7FactorCalculationControlFields.sigmaLevel.optional(),
+    distribution: f7FactorCalculationControlFields.distribution.optional(),
     confirmed: z.literal(true),
   })
   .strict()
-  .superRefine(requireValidEditableFactorSpecification);
+  .superRefine((confirmation, context) => {
+    requireValidEditableFactorSpecification(confirmation, context);
+    if ((confirmation.userAdded === true) !== (confirmation.factorName !== undefined)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "user-added factors require factorName and userAdded together",
+        path: ["factorName"],
+      });
+    }
+  });
 
 export const f7UnitSourceSchema = z.enum(["workbook", "user_confirmed", "unspecified"]);
 
@@ -178,9 +227,12 @@ export const f7FactorEvidenceSchema = z
     factorCandidateId: sha256LowerSchema,
     factorId: sha256LowerSchema,
     factorName: z.string().min(1),
+    userAdded: z.literal(true).optional(),
     unit: z.string().trim().min(1),
     unitSource: f7UnitSourceSchema,
     ...editableFactorSpecificationFields,
+    ...f7FactorCalculationControlFields,
+    ...f7FactorCalculatedFields,
     loopCoefficient: f7LoopCoefficientSchema,
     physicalMean: z.number().finite().min(0),
     signedContributionMean: finiteNumberSchema,
@@ -190,6 +242,7 @@ export const f7FactorEvidenceSchema = z
   })
   .strict()
   .superRefine((evidence, context) => {
+    requireGovernedFactorSource(evidence, context);
     requireLowerSpecLessThanUpperSpec(evidence, context);
     requireValidEditableFactorSpecification(evidence, context);
 
@@ -201,7 +254,17 @@ export const f7FactorEvidenceSchema = z
         path: ["loopCoefficient"],
       });
     }
-    const expectedPhysicalMean = Math.abs(evidence.designNominal);
+    const expectedCalculatedMean = evidence.designNominal < 0
+      ? evidence.designNominal - (evidence.upperTolerance + evidence.lowerTolerance) / 2
+      : evidence.designNominal + (evidence.upperTolerance + evidence.lowerTolerance) / 2;
+    if (!nearlyEqual(evidence.calculatedMean, expectedCalculatedMean)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "calculatedMean must follow the governed F4 formula",
+        path: ["calculatedMean"],
+      });
+    }
+    const expectedPhysicalMean = Math.abs(expectedCalculatedMean);
     if (Math.abs(evidence.physicalMean - expectedPhysicalMean) > 1e-12) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -209,7 +272,7 @@ export const f7FactorEvidenceSchema = z
         path: ["physicalMean"],
       });
     }
-    const expectedSignedContributionMean = evidence.designNominal;
+    const expectedSignedContributionMean = expectedCalculatedMean;
     if (Math.abs(evidence.signedContributionMean - expectedSignedContributionMean) > 1e-12) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -1879,6 +1942,7 @@ export const f7SessionRouteParamsSchema = z
 
 export type F7FactorCandidate = z.infer<typeof f7FactorCandidateSchema>;
 export type F7FactorSetupConfirmation = z.infer<typeof f7FactorSetupConfirmationSchema>;
+export type F7ToleranceDistribution = z.infer<typeof f7ToleranceDistributionSchema>;
 export type F7LoopCoefficient = z.infer<typeof f7LoopCoefficientSchema>;
 export type F7FactorSourceMode = z.infer<typeof f7FactorSourceModeSchema>;
 export type F7MeasurementStructure = z.infer<typeof f7MeasurementStructureSchema>;

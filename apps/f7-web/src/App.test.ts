@@ -137,6 +137,8 @@ function fullFactorCandidate(sourceCells: Readonly<Record<string, string>>): F7F
     designNominal: -0.57,
     upperTolerance: 0.05,
     lowerTolerance: -0.05,
+    longTermSafetyFactor: 1,
+    sigmaLevel: 4,
     standardDeviation: 0.025,
     distribution: "Normal",
     lowerSpecLimit: 0.52,
@@ -163,6 +165,13 @@ function fullFactorEvidence(
     designNominal: -0.57,
     upperTolerance: 0.05,
     lowerTolerance: -0.05,
+    longTermSafetyFactor: 1,
+    sigmaLevel: 4,
+    distribution: "Normal",
+    calculatedMean: -0.57,
+    tolerance: 0.05,
+    oneSigma: 0.0125,
+    percentContributionToSigma: 1,
     loopCoefficient: -1,
     physicalMean: 0.57,
     signedContributionMean: -0.57,
@@ -197,10 +206,20 @@ function measurementDataset(): F7MeasurementDataset {
   };
 }
 
-function factorSetupSnapshot() {
+function factorSetupSnapshot(options?: { includeVolume?: boolean }) {
   return createSnapshot({
     status: "factor_setup",
     selectedWorksheetNames: ["Anonymous_TA"],
+    systemSpecification: {
+      status: "available",
+      lowerSpecLimit: { status: "available", actualValue: -0.62, displayValue: "-0.62", sourceLabel: "*Lower Spec Limit ►", sourceCell: "Anonymous_TA!P54", valueOrigin: "numeric_literal" },
+      upperSpecLimit: { status: "available", actualValue: -0.52, displayValue: "-0.52", sourceLabel: "*Upper Spec Limit ►", sourceCell: "Anonymous_TA!P55", valueOrigin: "numeric_literal" },
+      targetSigmaLevel: { status: "available", actualValue: 3, displayValue: "3", sourceLabel: "*Target σ Level ►", sourceCell: "Anonymous_TA!P56", valueOrigin: "numeric_literal" },
+      additionalMeanShift: { status: "available", actualValue: 0, displayValue: "0", sourceLabel: "Additional Mean Shift", valueOrigin: "defaulted" },
+      ...(options?.includeVolume === false ? {} : {
+        volume: { status: "available" as const, actualValue: 1_000_000, displayValue: "1,000,000", sourceLabel: "Volume ►", sourceCell: "Anonymous_TA!X56", valueOrigin: "numeric_literal" as const },
+      }),
+    },
     factors: [
       {
         factorCandidate: fullFactorCandidate({
@@ -696,6 +715,11 @@ describe("F7 workbench shell", () => {
     const wrapper = mount(App, { props: { client } });
     await uploadWorkbook(wrapper);
     expect(client.importWorkbook).toHaveBeenCalledTimes(1);
+    const workflowRail = wrapper.get(".workflow-rail");
+    expect(workflowRail.text()).not.toContain("Session");
+    expect(workflowRail.get("[data-workbook-name]").text()).toBe("demo.xlsx");
+    expect(workflowRail.get("[data-worksheet-selection]").text()).toBe("Not selected");
+    expect(wrapper.get("[aria-label='Worksheet confirmation']").text()).not.toContain("Workbook hash");
 
     await wrapper.get("input[type='radio'][name='worksheet-option'][value='Loop_B']").setValue(true);
     await wrapper.get("button").trigger("click");
@@ -705,6 +729,7 @@ describe("F7 workbench shell", () => {
       selectedWorksheetName: "Loop_B",
       confirmed: true,
     });
+    expect(wrapper.get("[data-worksheet-selection]").text()).toBe("Anonymous_TA");
   });
 
   it("2b) worksheet confirmation disables and does not call client when worksheet options are empty", async () => {
@@ -728,23 +753,121 @@ describe("F7 workbench shell", () => {
     await uploadWorkbook(wrapper);
 
     const headers = wrapper.findAll("th").map((header) => header.text());
-    expect(headers).toContain("Design Nominal");
-    expect(headers).toContain("+Tolerance");
-    expect(headers).toContain("-Tolerance");
+    expect(headers[0]).toBe("Item");
+    expect(headers).toContain("Distribution");
+    expect(headers).toContain("Mean");
+    expect(headers).toContain("Tolerance");
+    expect(headers).toContain("1σ");
+    expect(headers).toContain("% Cont. to σ");
+    const expectHeaderLines = (key: string, lines: readonly string[]) => {
+      const header = wrapper.get(`th[data-column-key='${key}']`);
+      expect(header.findAll(".factor-header-line").map((line) => line.text())).toEqual(lines);
+      expect(header.classes()).toContain("factor-header-multiline");
+    };
+    expectHeaderLines("designNominal", ["Design", "Norminal"]);
+    expectHeaderLines("upperTolerance", ["+", "Tol"]);
+    expectHeaderLines("lowerTolerance", ["-", "Tol"]);
+    expectHeaderLines("longTermSafetyFactor", ["Long Term/", "Safety Factor"]);
+    expectHeaderLines("sigmaLevel", ["σ", "Level"]);
     expect(headers).not.toContain("Source Cells");
     expect(headers).not.toContain("Signed Mean");
     expect(headers).not.toContain("Coefficient");
     expect(headers).not.toContain("Physical Mean");
     expect(wrapper.text()).not.toContain("Anonymous_TA!R15");
+    expect(wrapper.text()).not.toContain(HASH_B.slice(0, 12));
+    expect(wrapper.get("tbody tr > td .factor-item-controls > span").text()).toBe("1");
     expect(wrapper.find("input[id^='unit-']").exists()).toBe(false);
 
     const specificationInputs = wrapper.findAll("input.factor-spec-input");
-    expect(specificationInputs).toHaveLength(3);
+    expect(specificationInputs).toHaveLength(5);
+    const numericInputs = wrapper.findAll(".factor-table input[type='number']");
+    expect(numericInputs).toHaveLength(6);
+    expect(numericInputs.every((input) => input.classes().includes("factor-number-input"))).toBe(true);
     await specificationInputs[0]!.setValue("-2.05");
     await specificationInputs[1]!.setValue("0.1");
     await specificationInputs[2]!.setValue("-0.08");
+    await specificationInputs[3]!.setValue("2");
+    await specificationInputs[4]!.setValue("4");
+    const distribution = wrapper.get("select[aria-label='C-cover height Distribution']");
+    expect(distribution.findAll("option").map((option) => option.text())).toEqual([
+      "Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta",
+    ]);
+    expect((distribution.element as HTMLSelectElement).value).toBe("Normal");
+    expect(wrapper.get("output[aria-label='C-cover height Mean']").text()).toBe("-2.06");
+    expect(wrapper.get("output[aria-label='C-cover height Tolerance']").text()).toBe("0.09");
+    expect(wrapper.get("output[aria-label='C-cover height 1 Sigma']").text()).toBe("0.045");
+    expect(wrapper.get("output[aria-label='C-cover height Percent Contribution']").text()).toBe("100%");
+    await distribution.setValue("Uniform");
+    expect(wrapper.get("output[aria-label='C-cover height 1 Sigma']").text()).toBe("0.0779");
+    await distribution.setValue("Normal");
 
-    await wrapper.get("button.action-button").trigger("click");
+    const outputLayout = wrapper.get("[data-factor-output-layout]");
+    expect(outputLayout.element.firstElementChild?.hasAttribute("data-dimension-chain-panel")).toBe(true);
+    expect(outputLayout.element.lastElementChild?.hasAttribute("data-f4-response-summary")).toBe(true);
+    expect(wrapper.find("[data-dimension-chain-svg]").exists()).toBe(false);
+    await wrapper.get("[data-generate-dimension-chain]").trigger("click");
+    expect(wrapper.findAll("[data-dimension-segment]")).toHaveLength(1);
+    expect(wrapper.get("[data-dimension-segment='1']").attributes("data-direction")).toBe("subtractive");
+    expect(wrapper.get("[data-dimension-segment='1']").attributes("data-value")).toBe("-2.05");
+
+    await distribution.setValue("Uniform");
+    expect(wrapper.get("[data-dimension-chain-stale]").text()).toContain("Update");
+    expect(wrapper.get("[data-dimension-segment='1']").attributes("data-value")).toBe("-2.05");
+    await wrapper.get("[data-generate-dimension-chain]").trigger("click");
+    expect(wrapper.find("[data-dimension-chain-stale]").exists()).toBe(false);
+    await distribution.setValue("Normal");
+    await wrapper.get("[data-generate-dimension-chain]").trigger("click");
+
+    const responseSummary = wrapper.get("[data-factor-response-summary]");
+    expect(responseSummary.get("[data-summary-design-nominal]").text()).toBe("-2.05");
+    expect(responseSummary.get("[data-summary-upper-tolerance]").text()).toBe("+0.08");
+    expect(responseSummary.get("[data-summary-lower-tolerance]").text()).toBe("-0.1");
+    expect(responseSummary.get("[data-summary-mean-response]").text()).toBe("-2.06");
+    expect(responseSummary.get("[data-summary-tolerance]").text()).toBe("± 0.09");
+    expect(responseSummary.get("[data-summary-rss-sigma]").text()).toBe("0.045");
+    expect(responseSummary.get("[data-summary-contribution]").text()).toBe("100%");
+
+    const capabilitySummary = wrapper.get("[data-f4-response-summary]");
+    expect(capabilitySummary.text()).toContain("Response Summary Table");
+    expect(capabilitySummary.text()).toContain("Calculated RSS and Worst Case");
+    expect(capabilitySummary.text()).toContain("Calculated Sigma Level");
+    expect(capabilitySummary.text()).toContain("Calculated Cpk");
+    expect(capabilitySummary.text()).toContain("Defects Per Million");
+    expect(capabilitySummary.get("[data-f4-lsl]").text()).toBe("-0.62");
+    expect(capabilitySummary.get("[data-f4-usl]").text()).toBe("-0.52");
+    expect(capabilitySummary.get("[data-f4-target-sigma]").text()).toBe("3σ");
+    expect(capabilitySummary.get("[data-f4-volume]").text()).toBe("1,000,000");
+    for (const selector of ["[data-f4-lsl]", "[data-f4-usl]", "[data-f4-target-sigma]", "[data-f4-volume]"]) {
+      expect(capabilitySummary.get(selector).get("output").classes()).toContain("f4-readonly-field");
+    }
+    expect(capabilitySummary.get("[data-f4-rss-sigma]").text()).toBe("0.0450");
+    expect(capabilitySummary.get("[data-f4-worst-case-tolerance]").text()).toBe("± 0.0900");
+    expect(capabilitySummary.get("[data-f4-worst-case-upper]").text()).toBe("-1.9700");
+    expect(capabilitySummary.get("[data-f4-worst-case-lower]").text()).toBe("-2.1500");
+    expect(capabilitySummary.get("[data-f4-cpk]").text()).toBe("-10.67");
+    expect(capabilitySummary.get("[data-f4-total-dpm]").text()).toBe("1,000,000");
+    expect(capabilitySummary.get("[data-f4-yield]").text()).toBe("0.00%");
+
+    const meanShift = responseSummary.get("input[aria-label='Additional Mean Shift']");
+    expect((meanShift.element as HTMLInputElement).value).toBe("0");
+    await meanShift.setValue("0.25");
+    expect(responseSummary.get("[data-summary-adjusted-mean]").text()).toBe("-1.81");
+    expect(capabilitySummary.get("[data-f4-cpk]").text()).toBe("-8.81");
+    expect(responseSummary.findAll("input")).toHaveLength(1);
+
+    expect(wrapper.find("[data-factor-arithmetic-total]").exists()).toBe(false);
+    expect(wrapper.find("[data-factor-rss-total]").exists()).toBe(false);
+
+    expect(responseSummary.get("[data-summary-design-nominal]").element.parentElement?.dataset.factorColumn).toBe("design-nominal");
+    expect(responseSummary.get("[data-summary-upper-tolerance]").element.parentElement?.dataset.factorColumn).toBe("upper-tolerance");
+    expect(responseSummary.get("[data-summary-lower-tolerance]").element.parentElement?.dataset.factorColumn).toBe("lower-tolerance");
+    expect(responseSummary.get("[data-summary-mean-response]").element.parentElement?.dataset.factorColumn).toBe("mean");
+    expect(responseSummary.get("[data-summary-tolerance]").element.parentElement?.dataset.factorColumn).toBe("tolerance");
+    expect(responseSummary.get("[data-summary-rss-sigma]").element.parentElement?.dataset.factorColumn).toBe("one-sigma");
+    expect(responseSummary.get("[data-summary-contribution]").element.parentElement?.dataset.factorColumn).toBe("contribution");
+
+    await distribution.setValue("Uniform");
+    await wrapper.get("#confirm-factor-setup").trigger("click");
     expect(client.confirmFactors).toHaveBeenCalledWith({
       sessionId: "session-01",
       confirmations: [{
@@ -752,9 +875,209 @@ describe("F7 workbench shell", () => {
         designNominal: -2.05,
         upperTolerance: 0.1,
         lowerTolerance: -0.08,
+        longTermSafetyFactor: 2,
+        sigmaLevel: 4,
+        distribution: "Uniform",
         confirmed: true,
       }],
     });
+  });
+
+  it("3b) factor setup supports row insertion, deletion, and reordering", async () => {
+    const client = createMockClient(factorSetupSnapshot(), {
+      importWorkbook: factorSetupSnapshot(),
+      confirmFactors: measurementEntrySnapshot(),
+    });
+    const wrapper = mount(App, { props: { client } });
+    await uploadWorkbook(wrapper);
+
+    expect(wrapper.get("th[data-column-key='index']").text()).toBe("Item");
+    expect(wrapper.get("button[aria-label='Move C-cover height up']").attributes("disabled")).toBeDefined();
+    expect(wrapper.get("button[aria-label='Move C-cover height down']").attributes("disabled")).toBeDefined();
+
+    await wrapper.get("[data-generate-dimension-chain]").trigger("click");
+    await wrapper.get("button[aria-label='Add factor after C-cover height']").trigger("click");
+    expect(wrapper.get("[data-dimension-chain-stale]").text()).toContain("Update");
+    let rows = wrapper.findAll(".factor-table tbody tr");
+    await rows[1]!.get("button[aria-label='Delete new factor']").trigger("click");
+    expect(wrapper.findAll(".factor-table tbody tr")).toHaveLength(1);
+    expect(wrapper.find("[data-dimension-chain-stale]").exists()).toBe(false);
+
+    await wrapper.get("button[aria-label='Add factor after C-cover height']").trigger("click");
+    expect(wrapper.findAll(".factor-table tbody tr")).toHaveLength(2);
+    rows = wrapper.findAll(".factor-table tbody tr");
+    const addedRow = rows[1]!;
+    expect(addedRow.get(".factor-item-number").text()).toBe("2");
+    expect(addedRow.findAll(".factor-item-actions .factor-row-control").map((button) => button.text())).toEqual(["−", "+"]);
+    expect((addedRow.get("input[aria-label='New factor name']").element as HTMLInputElement).value).toBe("");
+    const initialSpecifications = addedRow.findAll("input.factor-spec-input");
+    expect(initialSpecifications.map((input) => (input.element as HTMLInputElement).value)).toEqual(["", "", "", "1", "4"]);
+    expect((addedRow.get("select.factor-distribution-select").element as HTMLSelectElement).value).toBe("Normal");
+    expect(addedRow.findAll("output").map((output) => output.text())).toEqual(["", "", "", ""]);
+    expect(addedRow.find("[role='alert']").exists()).toBe(false);
+
+    expect(initialSpecifications[1]!.attributes("min")).toBeUndefined();
+    expect(initialSpecifications[2]!.attributes("max")).toBeUndefined();
+    await initialSpecifications[0]!.setValue("0");
+    await initialSpecifications[1]!.setValue("-0.1");
+    await initialSpecifications[2]!.setValue("-0.3");
+    expect(addedRow.get("[data-factor-field='upperTolerance']").text()).toContain("+Tolerance must be non-negative.");
+    expect(addedRow.get("[data-factor-field='lowerTolerance']").find("[role='alert']").exists()).toBe(false);
+    await initialSpecifications[1]!.setValue("0.3");
+    await initialSpecifications[2]!.setValue("0.1");
+    expect(addedRow.get("[data-factor-field='upperTolerance']").find("[role='alert']").exists()).toBe(false);
+    expect(addedRow.get("[data-factor-field='lowerTolerance']").text()).toContain("-Tolerance must be non-positive.");
+    await initialSpecifications[1]!.setValue("0.1");
+    expect(addedRow.get("[data-factor-field='lowerTolerance']").text()).toContain("-Tolerance must be less than +Tolerance.");
+    await initialSpecifications[0]!.setValue("");
+    await initialSpecifications[1]!.setValue("");
+    await initialSpecifications[2]!.setValue("");
+    expect(addedRow.find("[role='alert']").exists()).toBe(false);
+
+    expect(wrapper.get("[data-summary-design-nominal]").text()).toBe("-0.57");
+    expect(wrapper.get("[data-summary-mean-response]").text()).toBe("-0.57");
+    expect(wrapper.get("[data-summary-tolerance]").text()).toBe("± 0.05");
+    expect(wrapper.get("[data-summary-rss-sigma]").text()).toBe("0.0125");
+    expect(wrapper.get("[data-f4-rss-sigma]").text()).toBe("0.0125");
+    expect(wrapper.get("[data-f4-cpk]").text()).toBe("1.33");
+    expect(wrapper.get("#confirm-factor-setup").attributes("disabled")).toBeDefined();
+
+    await addedRow.get("button[aria-label='Move new factor up']").trigger("click");
+    rows = wrapper.findAll(".factor-table tbody tr");
+    expect(rows[0]!.find("input[aria-label='New factor name']").exists()).toBe(true);
+    expect(rows[0]!.get("button[aria-label='Move new factor up']").attributes("disabled")).toBeDefined();
+    expect(rows[1]!.get("button[aria-label='Move C-cover height down']").attributes("disabled")).toBeDefined();
+
+    await addedRow.get("input[aria-label='New factor name']").setValue("User stack gap");
+    const addedSpecifications = addedRow.findAll("input.factor-spec-input");
+    await addedSpecifications[0]!.setValue("0.4");
+    await addedSpecifications[1]!.setValue("0.08");
+    await addedSpecifications[2]!.setValue("-0.04");
+    await addedSpecifications[3]!.setValue("1");
+    await addedSpecifications[4]!.setValue("4");
+    await addedRow.get("select.factor-distribution-select").setValue("Normal");
+
+    await wrapper.get("[data-generate-dimension-chain]").trigger("click");
+    expect(wrapper.find("[data-dimension-chain-stale]").exists()).toBe(false);
+    await addedRow.get("button[aria-label='Move User stack gap down']").trigger("click");
+    expect(wrapper.get("[data-dimension-chain-stale]").text()).toContain("Update");
+    await addedRow.get("button[aria-label='Move User stack gap up']").trigger("click");
+    await wrapper.get("[data-generate-dimension-chain]").trigger("click");
+
+    expect(wrapper.get("[data-summary-design-nominal]").text()).toBe("-0.17");
+    expect(wrapper.get("[data-summary-mean-response]").text()).toBe("-0.15");
+    await wrapper.get("#confirm-factor-setup").trigger("click");
+
+    expect(client.confirmFactors).toHaveBeenCalledWith({
+      sessionId: "session-01",
+      confirmations: [
+        expect.objectContaining({
+          factorCandidateId: expect.stringMatching(/^[a-f0-9]{64}$/),
+          factorName: "User stack gap",
+          userAdded: true,
+          designNominal: 0.4,
+          upperTolerance: 0.08,
+          lowerTolerance: -0.04,
+          longTermSafetyFactor: 1,
+          sigmaLevel: 4,
+          distribution: "Normal",
+          confirmed: true,
+        }),
+        expect.objectContaining({ factorCandidateId: HASH_B }),
+      ],
+    });
+    expect(wrapper.findAll(".factor-table tbody tr")).toHaveLength(1);
+    expect(wrapper.find("button[data-add-factor]").exists()).toBe(false);
+    expect(wrapper.find(".factor-row-control").exists()).toBe(false);
+  });
+
+  it("3b.1) deleting an existing factor marks a generated dimension chain stale", async () => {
+    const base = factorSetupSnapshot();
+    const first = base.factors[0]!;
+    const snapshot = createSnapshot({
+      ...base,
+      factors: [
+        first,
+        {
+          factorCandidate: {
+            ...first.factorCandidate,
+            factorCandidateId: HASH_C,
+            factorName: "Second factor",
+            sourceRow: first.factorCandidate.sourceRow + 1,
+          },
+        },
+      ],
+    });
+    const client = createMockClient(snapshot, { importWorkbook: snapshot });
+    const wrapper = mount(App, { props: { client } });
+    await uploadWorkbook(wrapper);
+    await wrapper.get("[data-generate-dimension-chain]").trigger("click");
+
+    await wrapper.get("button[aria-label='Delete Second factor']").trigger("click");
+
+    expect(wrapper.get("[data-dimension-chain-stale]").text()).toContain("Update");
+    expect(wrapper.findAll("[data-dimension-segment]")).toHaveLength(2);
+  });
+
+  it("3c) factor capability remains available when Excel volume is missing", async () => {
+    const snapshot = factorSetupSnapshot({ includeVolume: false });
+    const client = createMockClient(snapshot, { importWorkbook: snapshot });
+    const wrapper = mount(App, { props: { client } });
+    await uploadWorkbook(wrapper);
+
+    const capabilitySummary = wrapper.get("[data-f4-response-summary]");
+    expect(capabilitySummary.get("[data-f4-volume]").text()).toBe("—");
+    expect(capabilitySummary.get("[data-f4-cpk]").text()).toBe("1.33");
+    expect(capabilitySummary.get("[data-f4-total-dpm]").text()).toBe("63");
+  });
+
+  it("3d) factor table limits displayed decimals to four places and resizes columns by dragging", async () => {
+    const client = createMockClient(factorSetupSnapshot(), { importWorkbook: factorSetupSnapshot() });
+    const wrapper = mount(App, { props: { client }, attachTo: document.body });
+    await uploadWorkbook(wrapper);
+
+    expect(wrapper.get(".factor-table").classes()).toContain("factor-table-centered");
+    expect(wrapper.findAll("col[data-factor-column-index]").map((column) => column.attributes("style"))).toEqual([
+      "width: 96px;",
+      "width: 168px;",
+      "width: 104px;",
+      "width: 92px;",
+      "width: 92px;",
+      "width: 126px;",
+      "width: 76px;",
+      "width: 102px;",
+      "width: 76px;",
+      "width: 80px;",
+      "width: 72px;",
+      "width: 96px;",
+      "width: 184px;",
+      "width: 88px;",
+      "width: 96px;",
+    ]);
+
+    const specificationInputs = wrapper.findAll("input.factor-spec-input");
+    await specificationInputs[1]!.setValue("0.123456");
+    await specificationInputs[2]!.setValue("-0.1");
+    await specificationInputs[3]!.setValue("1");
+    await specificationInputs[4]!.setValue("3");
+
+    expect(wrapper.get("output[aria-label='C-cover height Mean']").text()).toBe("-0.5817");
+    expect(wrapper.get("output[aria-label='C-cover height Tolerance']").text()).toBe("0.1117");
+    expect(wrapper.get("output[aria-label='C-cover height 1 Sigma']").text()).toBe("0.0372");
+    expect(wrapper.get("output[aria-label='C-cover height Percent Contribution']").text()).toBe("100%");
+
+    const designColumn = wrapper.get("col[data-factor-column-index='2']");
+    expect(designColumn.attributes("style")).toContain("width: 104px");
+    const resizeHandle = wrapper.get("[aria-label='Resize Design Nominal column']");
+    await resizeHandle.trigger("pointerdown", { clientX: 200, pointerId: 1 });
+    window.dispatchEvent(new MouseEvent("pointermove", { clientX: 248 }));
+    window.dispatchEvent(new MouseEvent("pointerup", { clientX: 248 }));
+    await wrapper.vm.$nextTick();
+    expect(designColumn.attributes("style")).toContain("width: 152px");
+
+    await resizeHandle.trigger("dblclick");
+    expect(designColumn.attributes("style")).toContain("width: 104px");
+    wrapper.unmount();
   });
 
   it("4) confirmed factor row shows specifications/source mode/sample/readiness", async () => {
@@ -767,6 +1090,28 @@ describe("F7 workbench shell", () => {
     expect(wrapper.text()).toContain("MEASURED");
     expect(wrapper.text()).toContain("2");
     expect(wrapper.text().toLowerCase()).toContain("ready");
+  });
+
+  it("4a) baseline-assumption factors are ready without measurement data", async () => {
+    const measured = measurementEntrySnapshot();
+    const baselineReady = createSnapshot({
+      ...measured,
+      status: "phase_1_ready",
+      factors: measured.factors.map((factor) => ({
+        ...factor,
+        sourceMode: "BASELINE_ASSUMPTION" as const,
+        input: {
+          mode: "BASELINE_ASSUMPTION" as const,
+          baselineSampler: factor.evidence!.baselineSampler,
+        },
+      })),
+    });
+    const client = createMockClient(baselineReady, { importWorkbook: baselineReady });
+    const wrapper = mount(App, { props: { client } });
+    await uploadWorkbook(wrapper);
+
+    expect(wrapper.get("tbody .status-chip").text()).toBe("ready");
+    expect(wrapper.get("tbody .status-chip").classes()).toContain("chip-ready");
   });
 
   it("5) only a measured factor can open its dedicated measurement workspace", async () => {
@@ -809,7 +1154,7 @@ describe("F7 workbench shell", () => {
     expect(wrapper.find(`[data-open-measurement='${HASH_C}']`).exists()).toBe(false);
   });
 
-  it("5b) nominal sign controls its subtractive/additive color and invalid values block confirmation", async () => {
+  it("5b) nominal sign controls its subtractive/additive color and zero is rejected", async () => {
     const client = createMockClient(factorSetupSnapshot(), {
       importWorkbook: factorSetupSnapshot(),
     });
@@ -822,7 +1167,28 @@ describe("F7 workbench shell", () => {
     expect(nominal.classes()).toContain("nominal-positive");
     await nominal.setValue("0");
     expect(wrapper.get("button#confirm-factor-setup").attributes("disabled")).toBeDefined();
-    expect(wrapper.text()).toContain("Design Nominal must be non-zero");
+    expect(wrapper.text()).toContain("Design Nominal must be non-zero.");
+    await wrapper.get("button#confirm-factor-setup").trigger("click");
+    expect(client.confirmFactors).not.toHaveBeenCalled();
+  });
+
+  it("5bb) rejects tolerance signs that the factor contract cannot accept", async () => {
+    const client = createMockClient(factorSetupSnapshot(), { importWorkbook: factorSetupSnapshot() });
+    const wrapper = mount(App, { props: { client } });
+    await uploadWorkbook(wrapper);
+
+    const factorInputs = wrapper.get(".factor-table tbody tr").findAll("input.factor-spec-input");
+    const upperTolerance = factorInputs[1]!;
+    const lowerTolerance = factorInputs[2]!;
+    await upperTolerance.setValue("-0.1");
+    expect(wrapper.get("button#confirm-factor-setup").attributes("disabled")).toBeDefined();
+    expect(wrapper.text()).toContain("+Tolerance must be non-negative.");
+
+    await upperTolerance.setValue("0.2");
+    await lowerTolerance.setValue("0.1");
+    expect(wrapper.get("button#confirm-factor-setup").attributes("disabled")).toBeDefined();
+    expect(wrapper.text()).toContain("-Tolerance must be non-positive.");
+    expect(client.confirmFactors).not.toHaveBeenCalled();
   });
 
   it("5c) factor setup does not expose a measurement workspace before confirmation", async () => {
@@ -1151,8 +1517,11 @@ describe("F7 workbench shell", () => {
     });
     await vi.waitFor(() => expect(wrapper.find("[data-monte-carlo-results]").exists()).toBe(true));
     expect(wrapper.findAll("[data-monte-carlo-bin]")).toHaveLength(20);
+    expect(wrapper.findAll("[data-monte-carlo-bin][data-specification-status='in-spec']").length).toBeGreaterThan(0);
+    expect(wrapper.findAll("[data-monte-carlo-bin][data-specification-status='out-of-spec']").length).toBeGreaterThan(0);
     expect(wrapper.find("[data-monte-carlo-fit]").exists()).toBe(true);
-    expect(wrapper.findAll("[data-monte-carlo-reference]")).toHaveLength(5);
+    expect(wrapper.findAll("[data-monte-carlo-reference]")).toHaveLength(6);
+    expect(wrapper.get("[data-reference-id='target']").text()).toContain("Target");
     expect(wrapper.get("[data-normal-model-statistics]").text()).toContain("Expected DPM");
     expect(wrapper.get("[data-observed-defect-statistics]").text()).toContain("Observed PPM");
   });

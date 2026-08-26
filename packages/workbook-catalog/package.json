@@ -10,6 +10,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./calculation-kernel": {
+      "types": "./dist/calculation-kernel.d.ts",
+      "import": "./dist/calculation-kernel.js"
     }
   },
   "dependencies": {

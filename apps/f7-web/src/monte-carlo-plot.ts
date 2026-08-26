@@ -1,6 +1,7 @@
 export type MonteCarloReferenceId =
   | "lower-spec-limit"
   | "upper-spec-limit"
+  | "target"
   | "mean"
   | "minus-target-sigma"
   | "plus-target-sigma";
@@ -25,7 +26,13 @@ export interface MonteCarloPlotModel {
   readonly maximumCount: number;
   readonly xTicks: readonly number[];
   readonly yTicks: readonly number[];
-  readonly bars: readonly { x: number; y: number; width: number; height: number }[];
+  readonly bars: readonly {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    specificationStatus: "in-spec" | "out-of-spec" | "mixed";
+  }[];
   readonly curvePath: string;
   readonly references: readonly { id: MonteCarloReferenceId; value: number; x: number; labelRow: number }[];
 }
@@ -48,9 +55,11 @@ function finiteSum(left: number, right: number): number {
 
 export function buildMonteCarloPlot(input: MonteCarloPlotInput): MonteCarloPlotModel {
   const targetDistance = finiteProduct(input.targetSigmaLevel, input.standardDeviation);
+  const target = input.lowerSpecLimit / 2 + input.upperSpecLimit / 2;
   const references = [
     { id: "lower-spec-limit" as const, value: input.lowerSpecLimit },
     { id: "upper-spec-limit" as const, value: input.upperSpecLimit },
+    { id: "target" as const, value: target },
     { id: "mean" as const, value: input.mean },
     { id: "minus-target-sigma" as const, value: finiteSum(input.mean, -targetDistance) },
     { id: "plus-target-sigma" as const, value: finiteSum(input.mean, targetDistance) },
@@ -74,12 +83,20 @@ export function buildMonteCarloPlot(input: MonteCarloPlotInput): MonteCarloPlotM
     : margin.left + plotWidth / 2;
   const y = (count: number): number => margin.top + (1 - count / maximumCount) * plotHeight;
 
-  const bars = input.bins.map((bin) => ({
-    x: x(bin.minimum),
-    y: y(bin.observedCount),
-    width: Math.max(1, x(bin.maximum) - x(bin.minimum) - 1),
-    height: height - margin.bottom - y(bin.observedCount),
-  }));
+  const bars = input.bins.map((bin) => {
+    const specificationStatus = bin.maximum < input.lowerSpecLimit || bin.minimum > input.upperSpecLimit
+      ? "out-of-spec" as const
+      : bin.minimum >= input.lowerSpecLimit && bin.maximum <= input.upperSpecLimit
+        ? "in-spec" as const
+        : "mixed" as const;
+    return {
+      x: x(bin.minimum),
+      y: y(bin.observedCount),
+      width: Math.max(1, x(bin.maximum) - x(bin.minimum) - 1),
+      height: height - margin.bottom - y(bin.observedCount),
+      specificationStatus,
+    };
+  });
   const curvePath = input.bins.map((bin, index) => {
     const midpoint = bin.minimum / 2 + bin.maximum / 2;
     return `${index === 0 ? "M" : "L"}${x(midpoint).toFixed(2)},${y(input.expectedBinCounts[index] ?? 0).toFixed(2)}`;

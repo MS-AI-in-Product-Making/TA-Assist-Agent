@@ -8,6 +8,7 @@ export declare const f7LoopCoefficientSchema: z.ZodUnion<[z.ZodLiteral<-1>, z.Zo
 export declare const f7FactorSourceModeSchema: z.ZodEnum<["MEASURED", "BASELINE_ASSUMPTION"]>;
 export declare const f7MeasurementStructureSchema: z.ZodEnum<["RATIONAL_SUBGROUP", "ORDERED_INDIVIDUALS", "UNORDERED_SAMPLE"]>;
 export declare const f7MsaStatusSchema: z.ZodEnum<["available", "not_available", "unknown"]>;
+export declare const f7ToleranceDistributionSchema: z.ZodEnum<["Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta"]>;
 export declare const f7BaselineSamplerSchema: z.ZodObject<{
     samplerId: z.ZodLiteral<"NORMAL_LOCATION_SCALE_V1">;
     physicalMean: z.ZodNumber;
@@ -25,8 +26,10 @@ export declare const f7BaselineSamplerSchema: z.ZodObject<{
     support: "REAL";
 }>;
 export declare const f7FactorCandidateSchema: z.ZodEffects<z.ZodObject<{
+    longTermSafetyFactor: z.ZodOptional<z.ZodNumber>;
+    sigmaLevel: z.ZodOptional<z.ZodNumber>;
     standardDeviation: z.ZodNumber;
-    distribution: z.ZodLiteral<"Normal">;
+    distribution: z.ZodEnum<["Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta"]>;
     lowerSpecLimit: z.ZodNumber;
     upperSpecLimit: z.ZodNumber;
     designNominal: z.ZodEffects<z.ZodNumber, number, number>;
@@ -36,9 +39,10 @@ export declare const f7FactorCandidateSchema: z.ZodEffects<z.ZodObject<{
     worksheetName: z.ZodString;
     tableId: z.ZodString;
     sourceRow: z.ZodNumber;
-    sourceCells: z.ZodEffects<z.ZodRecord<z.ZodString, z.ZodString>, Record<string, string>, Record<string, string>>;
+    sourceCells: z.ZodRecord<z.ZodString, z.ZodString>;
     factorCandidateId: z.ZodString;
     factorName: z.ZodString;
+    userAdded: z.ZodOptional<z.ZodLiteral<true>>;
     workbookUnitEvidence: z.ZodOptional<z.ZodString>;
     excelSignedMean: z.ZodNumber;
 }, "strict", z.ZodTypeAny, {
@@ -47,7 +51,7 @@ export declare const f7FactorCandidateSchema: z.ZodEffects<z.ZodObject<{
     workbookContentHash: string;
     upperTolerance: number;
     lowerTolerance: number;
-    distribution: "Normal";
+    distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
     standardDeviation: number;
     lowerSpecLimit: number;
     upperSpecLimit: number;
@@ -57,6 +61,9 @@ export declare const f7FactorCandidateSchema: z.ZodEffects<z.ZodObject<{
     sourceCells: Record<string, string>;
     factorCandidateId: string;
     excelSignedMean: number;
+    longTermSafetyFactor?: number | undefined;
+    sigmaLevel?: number | undefined;
+    userAdded?: true | undefined;
     workbookUnitEvidence?: string | undefined;
 }, {
     factorName: string;
@@ -64,7 +71,7 @@ export declare const f7FactorCandidateSchema: z.ZodEffects<z.ZodObject<{
     workbookContentHash: string;
     upperTolerance: number;
     lowerTolerance: number;
-    distribution: "Normal";
+    distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
     standardDeviation: number;
     lowerSpecLimit: number;
     upperSpecLimit: number;
@@ -74,6 +81,9 @@ export declare const f7FactorCandidateSchema: z.ZodEffects<z.ZodObject<{
     sourceCells: Record<string, string>;
     factorCandidateId: string;
     excelSignedMean: number;
+    longTermSafetyFactor?: number | undefined;
+    sigmaLevel?: number | undefined;
+    userAdded?: true | undefined;
     workbookUnitEvidence?: string | undefined;
 }>, {
     factorName: string;
@@ -81,7 +91,7 @@ export declare const f7FactorCandidateSchema: z.ZodEffects<z.ZodObject<{
     workbookContentHash: string;
     upperTolerance: number;
     lowerTolerance: number;
-    distribution: "Normal";
+    distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
     standardDeviation: number;
     lowerSpecLimit: number;
     upperSpecLimit: number;
@@ -91,6 +101,9 @@ export declare const f7FactorCandidateSchema: z.ZodEffects<z.ZodObject<{
     sourceCells: Record<string, string>;
     factorCandidateId: string;
     excelSignedMean: number;
+    longTermSafetyFactor?: number | undefined;
+    sigmaLevel?: number | undefined;
+    userAdded?: true | undefined;
     workbookUnitEvidence?: string | undefined;
 }, {
     factorName: string;
@@ -98,7 +111,7 @@ export declare const f7FactorCandidateSchema: z.ZodEffects<z.ZodObject<{
     workbookContentHash: string;
     upperTolerance: number;
     lowerTolerance: number;
-    distribution: "Normal";
+    distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
     standardDeviation: number;
     lowerSpecLimit: number;
     upperSpecLimit: number;
@@ -108,38 +121,66 @@ export declare const f7FactorCandidateSchema: z.ZodEffects<z.ZodObject<{
     sourceCells: Record<string, string>;
     factorCandidateId: string;
     excelSignedMean: number;
+    longTermSafetyFactor?: number | undefined;
+    sigmaLevel?: number | undefined;
+    userAdded?: true | undefined;
     workbookUnitEvidence?: string | undefined;
 }>;
 export declare const f7FactorSetupConfirmationSchema: z.ZodEffects<z.ZodObject<{
+    longTermSafetyFactor: z.ZodOptional<z.ZodNumber>;
+    sigmaLevel: z.ZodOptional<z.ZodNumber>;
+    distribution: z.ZodOptional<z.ZodEnum<["Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta"]>>;
     confirmed: z.ZodLiteral<true>;
     designNominal: z.ZodEffects<z.ZodNumber, number, number>;
     upperTolerance: z.ZodNumber;
     lowerTolerance: z.ZodNumber;
     factorCandidateId: z.ZodString;
+    factorName: z.ZodOptional<z.ZodString>;
+    userAdded: z.ZodOptional<z.ZodLiteral<true>>;
 }, "strict", z.ZodTypeAny, {
     confirmed: true;
     upperTolerance: number;
     lowerTolerance: number;
     designNominal: number;
     factorCandidateId: string;
+    factorName?: string | undefined;
+    distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+    longTermSafetyFactor?: number | undefined;
+    sigmaLevel?: number | undefined;
+    userAdded?: true | undefined;
 }, {
     confirmed: true;
     upperTolerance: number;
     lowerTolerance: number;
     designNominal: number;
     factorCandidateId: string;
+    factorName?: string | undefined;
+    distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+    longTermSafetyFactor?: number | undefined;
+    sigmaLevel?: number | undefined;
+    userAdded?: true | undefined;
 }>, {
     confirmed: true;
     upperTolerance: number;
     lowerTolerance: number;
     designNominal: number;
     factorCandidateId: string;
+    factorName?: string | undefined;
+    distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+    longTermSafetyFactor?: number | undefined;
+    sigmaLevel?: number | undefined;
+    userAdded?: true | undefined;
 }, {
     confirmed: true;
     upperTolerance: number;
     lowerTolerance: number;
     designNominal: number;
     factorCandidateId: string;
+    factorName?: string | undefined;
+    distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+    longTermSafetyFactor?: number | undefined;
+    sigmaLevel?: number | undefined;
+    userAdded?: true | undefined;
 }>;
 export declare const f7UnitSourceSchema: z.ZodEnum<["workbook", "user_confirmed", "unspecified"]>;
 export declare const f7FactorEvidenceSchema: z.ZodEffects<z.ZodObject<{
@@ -164,6 +205,13 @@ export declare const f7FactorEvidenceSchema: z.ZodEffects<z.ZodObject<{
     }>;
     lowerSpecLimit: z.ZodNumber;
     upperSpecLimit: z.ZodNumber;
+    calculatedMean: z.ZodNumber;
+    tolerance: z.ZodNumber;
+    oneSigma: z.ZodNumber;
+    percentContributionToSigma: z.ZodNumber;
+    longTermSafetyFactor: z.ZodNumber;
+    sigmaLevel: z.ZodNumber;
+    distribution: z.ZodEnum<["Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta"]>;
     designNominal: z.ZodEffects<z.ZodNumber, number, number>;
     upperTolerance: z.ZodNumber;
     lowerTolerance: z.ZodNumber;
@@ -171,24 +219,31 @@ export declare const f7FactorEvidenceSchema: z.ZodEffects<z.ZodObject<{
     worksheetName: z.ZodString;
     tableId: z.ZodString;
     sourceRow: z.ZodNumber;
-    sourceCells: z.ZodEffects<z.ZodRecord<z.ZodString, z.ZodString>, Record<string, string>, Record<string, string>>;
+    sourceCells: z.ZodRecord<z.ZodString, z.ZodString>;
     factorCandidateId: z.ZodString;
     factorId: z.ZodString;
     factorName: z.ZodString;
+    userAdded: z.ZodOptional<z.ZodLiteral<true>>;
     unit: z.ZodString;
     unitSource: z.ZodEnum<["workbook", "user_confirmed", "unspecified"]>;
 }, "strict", z.ZodTypeAny, {
     unit: string;
+    tolerance: number;
     factorName: string;
     worksheetName: string;
     workbookContentHash: string;
     upperTolerance: number;
     lowerTolerance: number;
+    distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+    oneSigma: number;
+    percentContributionToSigma: number;
+    longTermSafetyFactor: number;
     lowerSpecLimit: number;
     upperSpecLimit: number;
     tableId: string;
     sourceRow: number;
     designNominal: number;
+    sigmaLevel: number;
     sourceCells: Record<string, string>;
     physicalMean: number;
     factorCandidateId: string;
@@ -202,18 +257,26 @@ export declare const f7FactorEvidenceSchema: z.ZodEffects<z.ZodObject<{
         physicalMean: number;
         support: "REAL";
     };
+    calculatedMean: number;
+    userAdded?: true | undefined;
 }, {
     unit: string;
+    tolerance: number;
     factorName: string;
     worksheetName: string;
     workbookContentHash: string;
     upperTolerance: number;
     lowerTolerance: number;
+    distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+    oneSigma: number;
+    percentContributionToSigma: number;
+    longTermSafetyFactor: number;
     lowerSpecLimit: number;
     upperSpecLimit: number;
     tableId: string;
     sourceRow: number;
     designNominal: number;
+    sigmaLevel: number;
     sourceCells: Record<string, string>;
     physicalMean: number;
     factorCandidateId: string;
@@ -227,18 +290,26 @@ export declare const f7FactorEvidenceSchema: z.ZodEffects<z.ZodObject<{
         physicalMean: number;
         support: "REAL";
     };
+    calculatedMean: number;
+    userAdded?: true | undefined;
 }>, {
     unit: string;
+    tolerance: number;
     factorName: string;
     worksheetName: string;
     workbookContentHash: string;
     upperTolerance: number;
     lowerTolerance: number;
+    distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+    oneSigma: number;
+    percentContributionToSigma: number;
+    longTermSafetyFactor: number;
     lowerSpecLimit: number;
     upperSpecLimit: number;
     tableId: string;
     sourceRow: number;
     designNominal: number;
+    sigmaLevel: number;
     sourceCells: Record<string, string>;
     physicalMean: number;
     factorCandidateId: string;
@@ -252,18 +323,26 @@ export declare const f7FactorEvidenceSchema: z.ZodEffects<z.ZodObject<{
         physicalMean: number;
         support: "REAL";
     };
+    calculatedMean: number;
+    userAdded?: true | undefined;
 }, {
     unit: string;
+    tolerance: number;
     factorName: string;
     worksheetName: string;
     workbookContentHash: string;
     upperTolerance: number;
     lowerTolerance: number;
+    distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+    oneSigma: number;
+    percentContributionToSigma: number;
+    longTermSafetyFactor: number;
     lowerSpecLimit: number;
     upperSpecLimit: number;
     tableId: string;
     sourceRow: number;
     designNominal: number;
+    sigmaLevel: number;
     sourceCells: Record<string, string>;
     physicalMean: number;
     factorCandidateId: string;
@@ -277,6 +356,8 @@ export declare const f7FactorEvidenceSchema: z.ZodEffects<z.ZodObject<{
         physicalMean: number;
         support: "REAL";
     };
+    calculatedMean: number;
+    userAdded?: true | undefined;
 }>;
 export declare const f7ObservationDispositionSchema: z.ZodEnum<["included", "excluded"]>;
 export declare const f7ExclusionReasonSchema: z.ZodEnum<["OUTLIER", "MEASUREMENT_SYSTEM_ERROR", "TRANSCRIPTION_ERROR", "PROCESS_INTERRUPTION", "OTHER"]>;
@@ -4881,6 +4962,40 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
             sourceCell?: string | undefined;
         }>]>;
+        volume: z.ZodOptional<z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
+            status: z.ZodLiteral<"available">;
+            actualValue: z.ZodNumber;
+            displayValue: z.ZodString;
+            sourceLabel: z.ZodString;
+            sourceCell: z.ZodOptional<z.ZodString>;
+            valueOrigin: z.ZodEnum<["numeric_literal", "formula_cached", "defaulted"]>;
+        }, "strict", z.ZodTypeAny, {
+            status: "available";
+            actualValue: number;
+            displayValue: string;
+            sourceLabel: string;
+            valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+            sourceCell?: string | undefined;
+        }, {
+            status: "available";
+            actualValue: number;
+            displayValue: string;
+            sourceLabel: string;
+            valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+            sourceCell?: string | undefined;
+        }>, z.ZodObject<{
+            status: z.ZodLiteral<"unavailable">;
+            reasonCode: z.ZodEnum<["response_summary_label_missing", "response_summary_label_ambiguous", "response_summary_value_missing", "response_summary_value_invalid"]>;
+            sourceCell: z.ZodOptional<z.ZodString>;
+        }, "strict", z.ZodTypeAny, {
+            status: "unavailable";
+            reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+            sourceCell?: string | undefined;
+        }, {
+            status: "unavailable";
+            reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+            sourceCell?: string | undefined;
+        }>]>>;
         status: z.ZodLiteral<"available">;
     }, "strict", z.ZodTypeAny, {
         status: "available";
@@ -4932,6 +5047,18 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
             sourceCell?: string | undefined;
         };
+        volume?: {
+            status: "available";
+            actualValue: number;
+            displayValue: string;
+            sourceLabel: string;
+            valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+            sourceCell?: string | undefined;
+        } | {
+            status: "unavailable";
+            reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+            sourceCell?: string | undefined;
+        } | undefined;
     }, {
         status: "available";
         lowerSpecLimit: {
@@ -4982,6 +5109,18 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
             sourceCell?: string | undefined;
         };
+        volume?: {
+            status: "available";
+            actualValue: number;
+            displayValue: string;
+            sourceLabel: string;
+            valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+            sourceCell?: string | undefined;
+        } | {
+            status: "unavailable";
+            reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+            sourceCell?: string | undefined;
+        } | undefined;
     }>, z.ZodObject<{
         status: z.ZodLiteral<"unavailable">;
         reasonCode: z.ZodEnum<["response_summary_label_missing", "response_summary_label_ambiguous", "system_specification_range_invalid", "legacy_artifact_missing_system_specification"]>;
@@ -5121,6 +5260,40 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
             sourceCell?: string | undefined;
         }>]>>;
+        volume: z.ZodOptional<z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
+            status: z.ZodLiteral<"available">;
+            actualValue: z.ZodNumber;
+            displayValue: z.ZodString;
+            sourceLabel: z.ZodString;
+            sourceCell: z.ZodOptional<z.ZodString>;
+            valueOrigin: z.ZodEnum<["numeric_literal", "formula_cached", "defaulted"]>;
+        }, "strict", z.ZodTypeAny, {
+            status: "available";
+            actualValue: number;
+            displayValue: string;
+            sourceLabel: string;
+            valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+            sourceCell?: string | undefined;
+        }, {
+            status: "available";
+            actualValue: number;
+            displayValue: string;
+            sourceLabel: string;
+            valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+            sourceCell?: string | undefined;
+        }>, z.ZodObject<{
+            status: z.ZodLiteral<"unavailable">;
+            reasonCode: z.ZodEnum<["response_summary_label_missing", "response_summary_label_ambiguous", "response_summary_value_missing", "response_summary_value_invalid"]>;
+            sourceCell: z.ZodOptional<z.ZodString>;
+        }, "strict", z.ZodTypeAny, {
+            status: "unavailable";
+            reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+            sourceCell?: string | undefined;
+        }, {
+            status: "unavailable";
+            reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+            sourceCell?: string | undefined;
+        }>]>>;
     }, "strict", z.ZodTypeAny, {
         status: "unavailable";
         reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "system_specification_range_invalid" | "legacy_artifact_missing_system_specification";
@@ -5161,6 +5334,18 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             sourceCell?: string | undefined;
         } | undefined;
         additionalMeanShift?: {
+            status: "available";
+            actualValue: number;
+            displayValue: string;
+            sourceLabel: string;
+            valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+            sourceCell?: string | undefined;
+        } | {
+            status: "unavailable";
+            reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+            sourceCell?: string | undefined;
+        } | undefined;
+        volume?: {
             status: "available";
             actualValue: number;
             displayValue: string;
@@ -5223,11 +5408,25 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
             sourceCell?: string | undefined;
         } | undefined;
+        volume?: {
+            status: "available";
+            actualValue: number;
+            displayValue: string;
+            sourceLabel: string;
+            valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+            sourceCell?: string | undefined;
+        } | {
+            status: "unavailable";
+            reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+            sourceCell?: string | undefined;
+        } | undefined;
     }>]>>;
     factors: z.ZodArray<z.ZodEffects<z.ZodObject<{
         factorCandidate: z.ZodEffects<z.ZodObject<{
+            longTermSafetyFactor: z.ZodOptional<z.ZodNumber>;
+            sigmaLevel: z.ZodOptional<z.ZodNumber>;
             standardDeviation: z.ZodNumber;
-            distribution: z.ZodLiteral<"Normal">;
+            distribution: z.ZodEnum<["Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta"]>;
             lowerSpecLimit: z.ZodNumber;
             upperSpecLimit: z.ZodNumber;
             designNominal: z.ZodEffects<z.ZodNumber, number, number>;
@@ -5237,9 +5436,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             worksheetName: z.ZodString;
             tableId: z.ZodString;
             sourceRow: z.ZodNumber;
-            sourceCells: z.ZodEffects<z.ZodRecord<z.ZodString, z.ZodString>, Record<string, string>, Record<string, string>>;
+            sourceCells: z.ZodRecord<z.ZodString, z.ZodString>;
             factorCandidateId: z.ZodString;
             factorName: z.ZodString;
+            userAdded: z.ZodOptional<z.ZodLiteral<true>>;
             workbookUnitEvidence: z.ZodOptional<z.ZodString>;
             excelSignedMean: z.ZodNumber;
         }, "strict", z.ZodTypeAny, {
@@ -5248,7 +5448,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
-            distribution: "Normal";
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
             standardDeviation: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
@@ -5258,6 +5458,9 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             sourceCells: Record<string, string>;
             factorCandidateId: string;
             excelSignedMean: number;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
+            userAdded?: true | undefined;
             workbookUnitEvidence?: string | undefined;
         }, {
             factorName: string;
@@ -5265,7 +5468,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
-            distribution: "Normal";
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
             standardDeviation: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
@@ -5275,6 +5478,9 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             sourceCells: Record<string, string>;
             factorCandidateId: string;
             excelSignedMean: number;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
+            userAdded?: true | undefined;
             workbookUnitEvidence?: string | undefined;
         }>, {
             factorName: string;
@@ -5282,7 +5488,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
-            distribution: "Normal";
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
             standardDeviation: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
@@ -5292,6 +5498,9 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             sourceCells: Record<string, string>;
             factorCandidateId: string;
             excelSignedMean: number;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
+            userAdded?: true | undefined;
             workbookUnitEvidence?: string | undefined;
         }, {
             factorName: string;
@@ -5299,7 +5508,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
-            distribution: "Normal";
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
             standardDeviation: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
@@ -5309,38 +5518,66 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             sourceCells: Record<string, string>;
             factorCandidateId: string;
             excelSignedMean: number;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
+            userAdded?: true | undefined;
             workbookUnitEvidence?: string | undefined;
         }>;
         setup: z.ZodOptional<z.ZodEffects<z.ZodObject<{
+            longTermSafetyFactor: z.ZodOptional<z.ZodNumber>;
+            sigmaLevel: z.ZodOptional<z.ZodNumber>;
+            distribution: z.ZodOptional<z.ZodEnum<["Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta"]>>;
             confirmed: z.ZodLiteral<true>;
             designNominal: z.ZodEffects<z.ZodNumber, number, number>;
             upperTolerance: z.ZodNumber;
             lowerTolerance: z.ZodNumber;
             factorCandidateId: z.ZodString;
+            factorName: z.ZodOptional<z.ZodString>;
+            userAdded: z.ZodOptional<z.ZodLiteral<true>>;
         }, "strict", z.ZodTypeAny, {
             confirmed: true;
             upperTolerance: number;
             lowerTolerance: number;
             designNominal: number;
             factorCandidateId: string;
+            factorName?: string | undefined;
+            distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
+            userAdded?: true | undefined;
         }, {
             confirmed: true;
             upperTolerance: number;
             lowerTolerance: number;
             designNominal: number;
             factorCandidateId: string;
+            factorName?: string | undefined;
+            distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
+            userAdded?: true | undefined;
         }>, {
             confirmed: true;
             upperTolerance: number;
             lowerTolerance: number;
             designNominal: number;
             factorCandidateId: string;
+            factorName?: string | undefined;
+            distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
+            userAdded?: true | undefined;
         }, {
             confirmed: true;
             upperTolerance: number;
             lowerTolerance: number;
             designNominal: number;
             factorCandidateId: string;
+            factorName?: string | undefined;
+            distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
+            userAdded?: true | undefined;
         }>>;
         sourceMode: z.ZodOptional<z.ZodEnum<["MEASURED", "BASELINE_ASSUMPTION"]>>;
         input: z.ZodOptional<z.ZodDiscriminatedUnion<"mode", [z.ZodObject<{
@@ -5698,6 +5935,13 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             }>;
             lowerSpecLimit: z.ZodNumber;
             upperSpecLimit: z.ZodNumber;
+            calculatedMean: z.ZodNumber;
+            tolerance: z.ZodNumber;
+            oneSigma: z.ZodNumber;
+            percentContributionToSigma: z.ZodNumber;
+            longTermSafetyFactor: z.ZodNumber;
+            sigmaLevel: z.ZodNumber;
+            distribution: z.ZodEnum<["Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta"]>;
             designNominal: z.ZodEffects<z.ZodNumber, number, number>;
             upperTolerance: z.ZodNumber;
             lowerTolerance: z.ZodNumber;
@@ -5705,24 +5949,31 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             worksheetName: z.ZodString;
             tableId: z.ZodString;
             sourceRow: z.ZodNumber;
-            sourceCells: z.ZodEffects<z.ZodRecord<z.ZodString, z.ZodString>, Record<string, string>, Record<string, string>>;
+            sourceCells: z.ZodRecord<z.ZodString, z.ZodString>;
             factorCandidateId: z.ZodString;
             factorId: z.ZodString;
             factorName: z.ZodString;
+            userAdded: z.ZodOptional<z.ZodLiteral<true>>;
             unit: z.ZodString;
             unitSource: z.ZodEnum<["workbook", "user_confirmed", "unspecified"]>;
         }, "strict", z.ZodTypeAny, {
             unit: string;
+            tolerance: number;
             factorName: string;
             worksheetName: string;
             workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+            oneSigma: number;
+            percentContributionToSigma: number;
+            longTermSafetyFactor: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
             tableId: string;
             sourceRow: number;
             designNominal: number;
+            sigmaLevel: number;
             sourceCells: Record<string, string>;
             physicalMean: number;
             factorCandidateId: string;
@@ -5736,18 +5987,26 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 physicalMean: number;
                 support: "REAL";
             };
+            calculatedMean: number;
+            userAdded?: true | undefined;
         }, {
             unit: string;
+            tolerance: number;
             factorName: string;
             worksheetName: string;
             workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+            oneSigma: number;
+            percentContributionToSigma: number;
+            longTermSafetyFactor: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
             tableId: string;
             sourceRow: number;
             designNominal: number;
+            sigmaLevel: number;
             sourceCells: Record<string, string>;
             physicalMean: number;
             factorCandidateId: string;
@@ -5761,18 +6020,26 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 physicalMean: number;
                 support: "REAL";
             };
+            calculatedMean: number;
+            userAdded?: true | undefined;
         }>, {
             unit: string;
+            tolerance: number;
             factorName: string;
             worksheetName: string;
             workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+            oneSigma: number;
+            percentContributionToSigma: number;
+            longTermSafetyFactor: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
             tableId: string;
             sourceRow: number;
             designNominal: number;
+            sigmaLevel: number;
             sourceCells: Record<string, string>;
             physicalMean: number;
             factorCandidateId: string;
@@ -5786,18 +6053,26 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 physicalMean: number;
                 support: "REAL";
             };
+            calculatedMean: number;
+            userAdded?: true | undefined;
         }, {
             unit: string;
+            tolerance: number;
             factorName: string;
             worksheetName: string;
             workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+            oneSigma: number;
+            percentContributionToSigma: number;
+            longTermSafetyFactor: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
             tableId: string;
             sourceRow: number;
             designNominal: number;
+            sigmaLevel: number;
             sourceCells: Record<string, string>;
             physicalMean: number;
             factorCandidateId: string;
@@ -5811,6 +6086,8 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 physicalMean: number;
                 support: "REAL";
             };
+            calculatedMean: number;
+            userAdded?: true | undefined;
         }>>;
         datasetValidation: z.ZodOptional<z.ZodObject<{
             status: z.ZodEnum<["ready", "blocked"]>;
@@ -6991,7 +7268,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
-            distribution: "Normal";
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
             standardDeviation: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
@@ -7001,6 +7278,9 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             sourceCells: Record<string, string>;
             factorCandidateId: string;
             excelSignedMean: number;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
+            userAdded?: true | undefined;
             workbookUnitEvidence?: string | undefined;
         };
         input?: {
@@ -7052,16 +7332,22 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         } | undefined;
         evidence?: {
             unit: string;
+            tolerance: number;
             factorName: string;
             worksheetName: string;
             workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+            oneSigma: number;
+            percentContributionToSigma: number;
+            longTermSafetyFactor: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
             tableId: string;
             sourceRow: number;
             designNominal: number;
+            sigmaLevel: number;
             sourceCells: Record<string, string>;
             physicalMean: number;
             factorCandidateId: string;
@@ -7075,6 +7361,8 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 physicalMean: number;
                 support: "REAL";
             };
+            calculatedMean: number;
+            userAdded?: true | undefined;
         } | undefined;
         sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
         setup?: {
@@ -7083,6 +7371,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             lowerTolerance: number;
             designNominal: number;
             factorCandidateId: string;
+            factorName?: string | undefined;
+            distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
+            userAdded?: true | undefined;
         } | undefined;
         datasetValidation?: {
             status: "blocked" | "ready";
@@ -7243,7 +7536,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
-            distribution: "Normal";
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
             standardDeviation: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
@@ -7253,6 +7546,9 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             sourceCells: Record<string, string>;
             factorCandidateId: string;
             excelSignedMean: number;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
+            userAdded?: true | undefined;
             workbookUnitEvidence?: string | undefined;
         };
         input?: {
@@ -7304,16 +7600,22 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         } | undefined;
         evidence?: {
             unit: string;
+            tolerance: number;
             factorName: string;
             worksheetName: string;
             workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+            oneSigma: number;
+            percentContributionToSigma: number;
+            longTermSafetyFactor: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
             tableId: string;
             sourceRow: number;
             designNominal: number;
+            sigmaLevel: number;
             sourceCells: Record<string, string>;
             physicalMean: number;
             factorCandidateId: string;
@@ -7327,6 +7629,8 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 physicalMean: number;
                 support: "REAL";
             };
+            calculatedMean: number;
+            userAdded?: true | undefined;
         } | undefined;
         sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
         setup?: {
@@ -7335,6 +7639,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             lowerTolerance: number;
             designNominal: number;
             factorCandidateId: string;
+            factorName?: string | undefined;
+            distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
+            userAdded?: true | undefined;
         } | undefined;
         datasetValidation?: {
             status: "blocked" | "ready";
@@ -7495,7 +7804,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
-            distribution: "Normal";
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
             standardDeviation: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
@@ -7505,6 +7814,9 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             sourceCells: Record<string, string>;
             factorCandidateId: string;
             excelSignedMean: number;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
+            userAdded?: true | undefined;
             workbookUnitEvidence?: string | undefined;
         };
         input?: {
@@ -7556,16 +7868,22 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         } | undefined;
         evidence?: {
             unit: string;
+            tolerance: number;
             factorName: string;
             worksheetName: string;
             workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+            oneSigma: number;
+            percentContributionToSigma: number;
+            longTermSafetyFactor: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
             tableId: string;
             sourceRow: number;
             designNominal: number;
+            sigmaLevel: number;
             sourceCells: Record<string, string>;
             physicalMean: number;
             factorCandidateId: string;
@@ -7579,6 +7897,8 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 physicalMean: number;
                 support: "REAL";
             };
+            calculatedMean: number;
+            userAdded?: true | undefined;
         } | undefined;
         sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
         setup?: {
@@ -7587,6 +7907,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             lowerTolerance: number;
             designNominal: number;
             factorCandidateId: string;
+            factorName?: string | undefined;
+            distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
+            userAdded?: true | undefined;
         } | undefined;
         datasetValidation?: {
             status: "blocked" | "ready";
@@ -7747,7 +8072,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
-            distribution: "Normal";
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
             standardDeviation: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
@@ -7757,6 +8082,9 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             sourceCells: Record<string, string>;
             factorCandidateId: string;
             excelSignedMean: number;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
+            userAdded?: true | undefined;
             workbookUnitEvidence?: string | undefined;
         };
         input?: {
@@ -7808,16 +8136,22 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         } | undefined;
         evidence?: {
             unit: string;
+            tolerance: number;
             factorName: string;
             worksheetName: string;
             workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+            oneSigma: number;
+            percentContributionToSigma: number;
+            longTermSafetyFactor: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
             tableId: string;
             sourceRow: number;
             designNominal: number;
+            sigmaLevel: number;
             sourceCells: Record<string, string>;
             physicalMean: number;
             factorCandidateId: string;
@@ -7831,6 +8165,8 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 physicalMean: number;
                 support: "REAL";
             };
+            calculatedMean: number;
+            userAdded?: true | undefined;
         } | undefined;
         sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
         setup?: {
@@ -7839,6 +8175,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             lowerTolerance: number;
             designNominal: number;
             factorCandidateId: string;
+            factorName?: string | undefined;
+            distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
+            userAdded?: true | undefined;
         } | undefined;
         datasetValidation?: {
             status: "blocked" | "ready";
@@ -8460,7 +8801,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
-            distribution: "Normal";
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
             standardDeviation: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
@@ -8470,6 +8811,9 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             sourceCells: Record<string, string>;
             factorCandidateId: string;
             excelSignedMean: number;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
+            userAdded?: true | undefined;
             workbookUnitEvidence?: string | undefined;
         };
         input?: {
@@ -8521,16 +8865,22 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         } | undefined;
         evidence?: {
             unit: string;
+            tolerance: number;
             factorName: string;
             worksheetName: string;
             workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+            oneSigma: number;
+            percentContributionToSigma: number;
+            longTermSafetyFactor: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
             tableId: string;
             sourceRow: number;
             designNominal: number;
+            sigmaLevel: number;
             sourceCells: Record<string, string>;
             physicalMean: number;
             factorCandidateId: string;
@@ -8544,6 +8894,8 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 physicalMean: number;
                 support: "REAL";
             };
+            calculatedMean: number;
+            userAdded?: true | undefined;
         } | undefined;
         sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
         setup?: {
@@ -8552,6 +8904,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             lowerTolerance: number;
             designNominal: number;
             factorCandidateId: string;
+            factorName?: string | undefined;
+            distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
+            userAdded?: true | undefined;
         } | undefined;
         datasetValidation?: {
             status: "blocked" | "ready";
@@ -8771,6 +9128,18 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
             sourceCell?: string | undefined;
         };
+        volume?: {
+            status: "available";
+            actualValue: number;
+            displayValue: string;
+            sourceLabel: string;
+            valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+            sourceCell?: string | undefined;
+        } | {
+            status: "unavailable";
+            reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+            sourceCell?: string | undefined;
+        } | undefined;
     } | {
         status: "unavailable";
         reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "system_specification_range_invalid" | "legacy_artifact_missing_system_specification";
@@ -8811,6 +9180,18 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             sourceCell?: string | undefined;
         } | undefined;
         additionalMeanShift?: {
+            status: "available";
+            actualValue: number;
+            displayValue: string;
+            sourceLabel: string;
+            valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+            sourceCell?: string | undefined;
+        } | {
+            status: "unavailable";
+            reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+            sourceCell?: string | undefined;
+        } | undefined;
+        volume?: {
             status: "available";
             actualValue: number;
             displayValue: string;
@@ -8908,7 +9289,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
-            distribution: "Normal";
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
             standardDeviation: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
@@ -8918,6 +9299,9 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             sourceCells: Record<string, string>;
             factorCandidateId: string;
             excelSignedMean: number;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
+            userAdded?: true | undefined;
             workbookUnitEvidence?: string | undefined;
         };
         input?: {
@@ -8969,16 +9353,22 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         } | undefined;
         evidence?: {
             unit: string;
+            tolerance: number;
             factorName: string;
             worksheetName: string;
             workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+            oneSigma: number;
+            percentContributionToSigma: number;
+            longTermSafetyFactor: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
             tableId: string;
             sourceRow: number;
             designNominal: number;
+            sigmaLevel: number;
             sourceCells: Record<string, string>;
             physicalMean: number;
             factorCandidateId: string;
@@ -8992,6 +9382,8 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 physicalMean: number;
                 support: "REAL";
             };
+            calculatedMean: number;
+            userAdded?: true | undefined;
         } | undefined;
         sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
         setup?: {
@@ -9000,6 +9392,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             lowerTolerance: number;
             designNominal: number;
             factorCandidateId: string;
+            factorName?: string | undefined;
+            distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
+            userAdded?: true | undefined;
         } | undefined;
         datasetValidation?: {
             status: "blocked" | "ready";
@@ -9219,6 +9616,18 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
             sourceCell?: string | undefined;
         };
+        volume?: {
+            status: "available";
+            actualValue: number;
+            displayValue: string;
+            sourceLabel: string;
+            valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+            sourceCell?: string | undefined;
+        } | {
+            status: "unavailable";
+            reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+            sourceCell?: string | undefined;
+        } | undefined;
     } | {
         status: "unavailable";
         reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "system_specification_range_invalid" | "legacy_artifact_missing_system_specification";
@@ -9259,6 +9668,18 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             sourceCell?: string | undefined;
         } | undefined;
         additionalMeanShift?: {
+            status: "available";
+            actualValue: number;
+            displayValue: string;
+            sourceLabel: string;
+            valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+            sourceCell?: string | undefined;
+        } | {
+            status: "unavailable";
+            reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+            sourceCell?: string | undefined;
+        } | undefined;
+        volume?: {
             status: "available";
             actualValue: number;
             displayValue: string;
@@ -9356,7 +9777,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
-            distribution: "Normal";
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
             standardDeviation: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
@@ -9366,6 +9787,9 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             sourceCells: Record<string, string>;
             factorCandidateId: string;
             excelSignedMean: number;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
+            userAdded?: true | undefined;
             workbookUnitEvidence?: string | undefined;
         };
         input?: {
@@ -9417,16 +9841,22 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         } | undefined;
         evidence?: {
             unit: string;
+            tolerance: number;
             factorName: string;
             worksheetName: string;
             workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+            oneSigma: number;
+            percentContributionToSigma: number;
+            longTermSafetyFactor: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
             tableId: string;
             sourceRow: number;
             designNominal: number;
+            sigmaLevel: number;
             sourceCells: Record<string, string>;
             physicalMean: number;
             factorCandidateId: string;
@@ -9440,6 +9870,8 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 physicalMean: number;
                 support: "REAL";
             };
+            calculatedMean: number;
+            userAdded?: true | undefined;
         } | undefined;
         sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
         setup?: {
@@ -9448,6 +9880,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             lowerTolerance: number;
             designNominal: number;
             factorCandidateId: string;
+            factorName?: string | undefined;
+            distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
+            userAdded?: true | undefined;
         } | undefined;
         datasetValidation?: {
             status: "blocked" | "ready";
@@ -9667,6 +10104,18 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
             sourceCell?: string | undefined;
         };
+        volume?: {
+            status: "available";
+            actualValue: number;
+            displayValue: string;
+            sourceLabel: string;
+            valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+            sourceCell?: string | undefined;
+        } | {
+            status: "unavailable";
+            reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+            sourceCell?: string | undefined;
+        } | undefined;
     } | {
         status: "unavailable";
         reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "system_specification_range_invalid" | "legacy_artifact_missing_system_specification";
@@ -9707,6 +10156,18 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             sourceCell?: string | undefined;
         } | undefined;
         additionalMeanShift?: {
+            status: "available";
+            actualValue: number;
+            displayValue: string;
+            sourceLabel: string;
+            valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+            sourceCell?: string | undefined;
+        } | {
+            status: "unavailable";
+            reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+            sourceCell?: string | undefined;
+        } | undefined;
+        volume?: {
             status: "available";
             actualValue: number;
             displayValue: string;
@@ -9804,7 +10265,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
-            distribution: "Normal";
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
             standardDeviation: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
@@ -9814,6 +10275,9 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             sourceCells: Record<string, string>;
             factorCandidateId: string;
             excelSignedMean: number;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
+            userAdded?: true | undefined;
             workbookUnitEvidence?: string | undefined;
         };
         input?: {
@@ -9865,16 +10329,22 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         } | undefined;
         evidence?: {
             unit: string;
+            tolerance: number;
             factorName: string;
             worksheetName: string;
             workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+            oneSigma: number;
+            percentContributionToSigma: number;
+            longTermSafetyFactor: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
             tableId: string;
             sourceRow: number;
             designNominal: number;
+            sigmaLevel: number;
             sourceCells: Record<string, string>;
             physicalMean: number;
             factorCandidateId: string;
@@ -9888,6 +10358,8 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 physicalMean: number;
                 support: "REAL";
             };
+            calculatedMean: number;
+            userAdded?: true | undefined;
         } | undefined;
         sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
         setup?: {
@@ -9896,6 +10368,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             lowerTolerance: number;
             designNominal: number;
             factorCandidateId: string;
+            factorName?: string | undefined;
+            distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
+            userAdded?: true | undefined;
         } | undefined;
         datasetValidation?: {
             status: "blocked" | "ready";
@@ -10115,6 +10592,18 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
             sourceCell?: string | undefined;
         };
+        volume?: {
+            status: "available";
+            actualValue: number;
+            displayValue: string;
+            sourceLabel: string;
+            valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+            sourceCell?: string | undefined;
+        } | {
+            status: "unavailable";
+            reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+            sourceCell?: string | undefined;
+        } | undefined;
     } | {
         status: "unavailable";
         reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "system_specification_range_invalid" | "legacy_artifact_missing_system_specification";
@@ -10155,6 +10644,18 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             sourceCell?: string | undefined;
         } | undefined;
         additionalMeanShift?: {
+            status: "available";
+            actualValue: number;
+            displayValue: string;
+            sourceLabel: string;
+            valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+            sourceCell?: string | undefined;
+        } | {
+            status: "unavailable";
+            reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+            sourceCell?: string | undefined;
+        } | undefined;
+        volume?: {
             status: "available";
             actualValue: number;
             displayValue: string;
@@ -10525,6 +11026,40 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
                 sourceCell?: string | undefined;
             }>]>;
+            volume: z.ZodOptional<z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
+                status: z.ZodLiteral<"available">;
+                actualValue: z.ZodNumber;
+                displayValue: z.ZodString;
+                sourceLabel: z.ZodString;
+                sourceCell: z.ZodOptional<z.ZodString>;
+                valueOrigin: z.ZodEnum<["numeric_literal", "formula_cached", "defaulted"]>;
+            }, "strict", z.ZodTypeAny, {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            }, {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            }>, z.ZodObject<{
+                status: z.ZodLiteral<"unavailable">;
+                reasonCode: z.ZodEnum<["response_summary_label_missing", "response_summary_label_ambiguous", "response_summary_value_missing", "response_summary_value_invalid"]>;
+                sourceCell: z.ZodOptional<z.ZodString>;
+            }, "strict", z.ZodTypeAny, {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            }, {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            }>]>>;
             status: z.ZodLiteral<"available">;
         }, "strict", z.ZodTypeAny, {
             status: "available";
@@ -10576,6 +11111,18 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
                 sourceCell?: string | undefined;
             };
+            volume?: {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            } | {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            } | undefined;
         }, {
             status: "available";
             lowerSpecLimit: {
@@ -10626,6 +11173,18 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
                 sourceCell?: string | undefined;
             };
+            volume?: {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            } | {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            } | undefined;
         }>, z.ZodObject<{
             status: z.ZodLiteral<"unavailable">;
             reasonCode: z.ZodEnum<["response_summary_label_missing", "response_summary_label_ambiguous", "system_specification_range_invalid", "legacy_artifact_missing_system_specification"]>;
@@ -10765,6 +11324,40 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
                 sourceCell?: string | undefined;
             }>]>>;
+            volume: z.ZodOptional<z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
+                status: z.ZodLiteral<"available">;
+                actualValue: z.ZodNumber;
+                displayValue: z.ZodString;
+                sourceLabel: z.ZodString;
+                sourceCell: z.ZodOptional<z.ZodString>;
+                valueOrigin: z.ZodEnum<["numeric_literal", "formula_cached", "defaulted"]>;
+            }, "strict", z.ZodTypeAny, {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            }, {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            }>, z.ZodObject<{
+                status: z.ZodLiteral<"unavailable">;
+                reasonCode: z.ZodEnum<["response_summary_label_missing", "response_summary_label_ambiguous", "response_summary_value_missing", "response_summary_value_invalid"]>;
+                sourceCell: z.ZodOptional<z.ZodString>;
+            }, "strict", z.ZodTypeAny, {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            }, {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            }>]>>;
         }, "strict", z.ZodTypeAny, {
             status: "unavailable";
             reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "system_specification_range_invalid" | "legacy_artifact_missing_system_specification";
@@ -10805,6 +11398,18 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 sourceCell?: string | undefined;
             } | undefined;
             additionalMeanShift?: {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            } | {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            } | undefined;
+            volume?: {
                 status: "available";
                 actualValue: number;
                 displayValue: string;
@@ -10867,11 +11472,25 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
                 sourceCell?: string | undefined;
             } | undefined;
+            volume?: {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            } | {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            } | undefined;
         }>]>>;
         factors: z.ZodArray<z.ZodEffects<z.ZodObject<{
             factorCandidate: z.ZodEffects<z.ZodObject<{
+                longTermSafetyFactor: z.ZodOptional<z.ZodNumber>;
+                sigmaLevel: z.ZodOptional<z.ZodNumber>;
                 standardDeviation: z.ZodNumber;
-                distribution: z.ZodLiteral<"Normal">;
+                distribution: z.ZodEnum<["Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta"]>;
                 lowerSpecLimit: z.ZodNumber;
                 upperSpecLimit: z.ZodNumber;
                 designNominal: z.ZodEffects<z.ZodNumber, number, number>;
@@ -10881,9 +11500,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 worksheetName: z.ZodString;
                 tableId: z.ZodString;
                 sourceRow: z.ZodNumber;
-                sourceCells: z.ZodEffects<z.ZodRecord<z.ZodString, z.ZodString>, Record<string, string>, Record<string, string>>;
+                sourceCells: z.ZodRecord<z.ZodString, z.ZodString>;
                 factorCandidateId: z.ZodString;
                 factorName: z.ZodString;
+                userAdded: z.ZodOptional<z.ZodLiteral<true>>;
                 workbookUnitEvidence: z.ZodOptional<z.ZodString>;
                 excelSignedMean: z.ZodNumber;
             }, "strict", z.ZodTypeAny, {
@@ -10892,7 +11512,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
-                distribution: "Normal";
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
                 standardDeviation: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
@@ -10902,6 +11522,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 sourceCells: Record<string, string>;
                 factorCandidateId: string;
                 excelSignedMean: number;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
             }, {
                 factorName: string;
@@ -10909,7 +11532,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
-                distribution: "Normal";
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
                 standardDeviation: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
@@ -10919,6 +11542,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 sourceCells: Record<string, string>;
                 factorCandidateId: string;
                 excelSignedMean: number;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
             }>, {
                 factorName: string;
@@ -10926,7 +11552,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
-                distribution: "Normal";
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
                 standardDeviation: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
@@ -10936,6 +11562,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 sourceCells: Record<string, string>;
                 factorCandidateId: string;
                 excelSignedMean: number;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
             }, {
                 factorName: string;
@@ -10943,7 +11572,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
-                distribution: "Normal";
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
                 standardDeviation: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
@@ -10953,38 +11582,66 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 sourceCells: Record<string, string>;
                 factorCandidateId: string;
                 excelSignedMean: number;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
             }>;
             setup: z.ZodOptional<z.ZodEffects<z.ZodObject<{
+                longTermSafetyFactor: z.ZodOptional<z.ZodNumber>;
+                sigmaLevel: z.ZodOptional<z.ZodNumber>;
+                distribution: z.ZodOptional<z.ZodEnum<["Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta"]>>;
                 confirmed: z.ZodLiteral<true>;
                 designNominal: z.ZodEffects<z.ZodNumber, number, number>;
                 upperTolerance: z.ZodNumber;
                 lowerTolerance: z.ZodNumber;
                 factorCandidateId: z.ZodString;
+                factorName: z.ZodOptional<z.ZodString>;
+                userAdded: z.ZodOptional<z.ZodLiteral<true>>;
             }, "strict", z.ZodTypeAny, {
                 confirmed: true;
                 upperTolerance: number;
                 lowerTolerance: number;
                 designNominal: number;
                 factorCandidateId: string;
+                factorName?: string | undefined;
+                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
             }, {
                 confirmed: true;
                 upperTolerance: number;
                 lowerTolerance: number;
                 designNominal: number;
                 factorCandidateId: string;
+                factorName?: string | undefined;
+                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
             }>, {
                 confirmed: true;
                 upperTolerance: number;
                 lowerTolerance: number;
                 designNominal: number;
                 factorCandidateId: string;
+                factorName?: string | undefined;
+                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
             }, {
                 confirmed: true;
                 upperTolerance: number;
                 lowerTolerance: number;
                 designNominal: number;
                 factorCandidateId: string;
+                factorName?: string | undefined;
+                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
             }>>;
             sourceMode: z.ZodOptional<z.ZodEnum<["MEASURED", "BASELINE_ASSUMPTION"]>>;
             input: z.ZodOptional<z.ZodDiscriminatedUnion<"mode", [z.ZodObject<{
@@ -11342,6 +11999,13 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 }>;
                 lowerSpecLimit: z.ZodNumber;
                 upperSpecLimit: z.ZodNumber;
+                calculatedMean: z.ZodNumber;
+                tolerance: z.ZodNumber;
+                oneSigma: z.ZodNumber;
+                percentContributionToSigma: z.ZodNumber;
+                longTermSafetyFactor: z.ZodNumber;
+                sigmaLevel: z.ZodNumber;
+                distribution: z.ZodEnum<["Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta"]>;
                 designNominal: z.ZodEffects<z.ZodNumber, number, number>;
                 upperTolerance: z.ZodNumber;
                 lowerTolerance: z.ZodNumber;
@@ -11349,24 +12013,31 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 worksheetName: z.ZodString;
                 tableId: z.ZodString;
                 sourceRow: z.ZodNumber;
-                sourceCells: z.ZodEffects<z.ZodRecord<z.ZodString, z.ZodString>, Record<string, string>, Record<string, string>>;
+                sourceCells: z.ZodRecord<z.ZodString, z.ZodString>;
                 factorCandidateId: z.ZodString;
                 factorId: z.ZodString;
                 factorName: z.ZodString;
+                userAdded: z.ZodOptional<z.ZodLiteral<true>>;
                 unit: z.ZodString;
                 unitSource: z.ZodEnum<["workbook", "user_confirmed", "unspecified"]>;
             }, "strict", z.ZodTypeAny, {
                 unit: string;
+                tolerance: number;
                 factorName: string;
                 worksheetName: string;
                 workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                oneSigma: number;
+                percentContributionToSigma: number;
+                longTermSafetyFactor: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
                 designNominal: number;
+                sigmaLevel: number;
                 sourceCells: Record<string, string>;
                 physicalMean: number;
                 factorCandidateId: string;
@@ -11380,18 +12051,26 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     physicalMean: number;
                     support: "REAL";
                 };
+                calculatedMean: number;
+                userAdded?: true | undefined;
             }, {
                 unit: string;
+                tolerance: number;
                 factorName: string;
                 worksheetName: string;
                 workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                oneSigma: number;
+                percentContributionToSigma: number;
+                longTermSafetyFactor: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
                 designNominal: number;
+                sigmaLevel: number;
                 sourceCells: Record<string, string>;
                 physicalMean: number;
                 factorCandidateId: string;
@@ -11405,18 +12084,26 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     physicalMean: number;
                     support: "REAL";
                 };
+                calculatedMean: number;
+                userAdded?: true | undefined;
             }>, {
                 unit: string;
+                tolerance: number;
                 factorName: string;
                 worksheetName: string;
                 workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                oneSigma: number;
+                percentContributionToSigma: number;
+                longTermSafetyFactor: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
                 designNominal: number;
+                sigmaLevel: number;
                 sourceCells: Record<string, string>;
                 physicalMean: number;
                 factorCandidateId: string;
@@ -11430,18 +12117,26 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     physicalMean: number;
                     support: "REAL";
                 };
+                calculatedMean: number;
+                userAdded?: true | undefined;
             }, {
                 unit: string;
+                tolerance: number;
                 factorName: string;
                 worksheetName: string;
                 workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                oneSigma: number;
+                percentContributionToSigma: number;
+                longTermSafetyFactor: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
                 designNominal: number;
+                sigmaLevel: number;
                 sourceCells: Record<string, string>;
                 physicalMean: number;
                 factorCandidateId: string;
@@ -11455,6 +12150,8 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     physicalMean: number;
                     support: "REAL";
                 };
+                calculatedMean: number;
+                userAdded?: true | undefined;
             }>>;
             datasetValidation: z.ZodOptional<z.ZodObject<{
                 status: z.ZodEnum<["ready", "blocked"]>;
@@ -12635,7 +13332,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
-                distribution: "Normal";
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
                 standardDeviation: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
@@ -12645,6 +13342,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 sourceCells: Record<string, string>;
                 factorCandidateId: string;
                 excelSignedMean: number;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
             };
             input?: {
@@ -12696,16 +13396,22 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             } | undefined;
             evidence?: {
                 unit: string;
+                tolerance: number;
                 factorName: string;
                 worksheetName: string;
                 workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                oneSigma: number;
+                percentContributionToSigma: number;
+                longTermSafetyFactor: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
                 designNominal: number;
+                sigmaLevel: number;
                 sourceCells: Record<string, string>;
                 physicalMean: number;
                 factorCandidateId: string;
@@ -12719,6 +13425,8 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     physicalMean: number;
                     support: "REAL";
                 };
+                calculatedMean: number;
+                userAdded?: true | undefined;
             } | undefined;
             sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
             setup?: {
@@ -12727,6 +13435,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 lowerTolerance: number;
                 designNominal: number;
                 factorCandidateId: string;
+                factorName?: string | undefined;
+                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
             } | undefined;
             datasetValidation?: {
                 status: "blocked" | "ready";
@@ -12887,7 +13600,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
-                distribution: "Normal";
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
                 standardDeviation: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
@@ -12897,6 +13610,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 sourceCells: Record<string, string>;
                 factorCandidateId: string;
                 excelSignedMean: number;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
             };
             input?: {
@@ -12948,16 +13664,22 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             } | undefined;
             evidence?: {
                 unit: string;
+                tolerance: number;
                 factorName: string;
                 worksheetName: string;
                 workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                oneSigma: number;
+                percentContributionToSigma: number;
+                longTermSafetyFactor: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
                 designNominal: number;
+                sigmaLevel: number;
                 sourceCells: Record<string, string>;
                 physicalMean: number;
                 factorCandidateId: string;
@@ -12971,6 +13693,8 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     physicalMean: number;
                     support: "REAL";
                 };
+                calculatedMean: number;
+                userAdded?: true | undefined;
             } | undefined;
             sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
             setup?: {
@@ -12979,6 +13703,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 lowerTolerance: number;
                 designNominal: number;
                 factorCandidateId: string;
+                factorName?: string | undefined;
+                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
             } | undefined;
             datasetValidation?: {
                 status: "blocked" | "ready";
@@ -13139,7 +13868,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
-                distribution: "Normal";
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
                 standardDeviation: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
@@ -13149,6 +13878,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 sourceCells: Record<string, string>;
                 factorCandidateId: string;
                 excelSignedMean: number;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
             };
             input?: {
@@ -13200,16 +13932,22 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             } | undefined;
             evidence?: {
                 unit: string;
+                tolerance: number;
                 factorName: string;
                 worksheetName: string;
                 workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                oneSigma: number;
+                percentContributionToSigma: number;
+                longTermSafetyFactor: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
                 designNominal: number;
+                sigmaLevel: number;
                 sourceCells: Record<string, string>;
                 physicalMean: number;
                 factorCandidateId: string;
@@ -13223,6 +13961,8 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     physicalMean: number;
                     support: "REAL";
                 };
+                calculatedMean: number;
+                userAdded?: true | undefined;
             } | undefined;
             sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
             setup?: {
@@ -13231,6 +13971,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 lowerTolerance: number;
                 designNominal: number;
                 factorCandidateId: string;
+                factorName?: string | undefined;
+                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
             } | undefined;
             datasetValidation?: {
                 status: "blocked" | "ready";
@@ -13391,7 +14136,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
-                distribution: "Normal";
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
                 standardDeviation: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
@@ -13401,6 +14146,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 sourceCells: Record<string, string>;
                 factorCandidateId: string;
                 excelSignedMean: number;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
             };
             input?: {
@@ -13452,16 +14200,22 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             } | undefined;
             evidence?: {
                 unit: string;
+                tolerance: number;
                 factorName: string;
                 worksheetName: string;
                 workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                oneSigma: number;
+                percentContributionToSigma: number;
+                longTermSafetyFactor: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
                 designNominal: number;
+                sigmaLevel: number;
                 sourceCells: Record<string, string>;
                 physicalMean: number;
                 factorCandidateId: string;
@@ -13475,6 +14229,8 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     physicalMean: number;
                     support: "REAL";
                 };
+                calculatedMean: number;
+                userAdded?: true | undefined;
             } | undefined;
             sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
             setup?: {
@@ -13483,6 +14239,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 lowerTolerance: number;
                 designNominal: number;
                 factorCandidateId: string;
+                factorName?: string | undefined;
+                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
             } | undefined;
             datasetValidation?: {
                 status: "blocked" | "ready";
@@ -14104,7 +14865,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
-                distribution: "Normal";
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
                 standardDeviation: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
@@ -14114,6 +14875,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 sourceCells: Record<string, string>;
                 factorCandidateId: string;
                 excelSignedMean: number;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
             };
             input?: {
@@ -14165,16 +14929,22 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             } | undefined;
             evidence?: {
                 unit: string;
+                tolerance: number;
                 factorName: string;
                 worksheetName: string;
                 workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                oneSigma: number;
+                percentContributionToSigma: number;
+                longTermSafetyFactor: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
                 designNominal: number;
+                sigmaLevel: number;
                 sourceCells: Record<string, string>;
                 physicalMean: number;
                 factorCandidateId: string;
@@ -14188,6 +14958,8 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     physicalMean: number;
                     support: "REAL";
                 };
+                calculatedMean: number;
+                userAdded?: true | undefined;
             } | undefined;
             sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
             setup?: {
@@ -14196,6 +14968,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 lowerTolerance: number;
                 designNominal: number;
                 factorCandidateId: string;
+                factorName?: string | undefined;
+                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
             } | undefined;
             datasetValidation?: {
                 status: "blocked" | "ready";
@@ -14415,6 +15192,18 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
                 sourceCell?: string | undefined;
             };
+            volume?: {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            } | {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            } | undefined;
         } | {
             status: "unavailable";
             reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "system_specification_range_invalid" | "legacy_artifact_missing_system_specification";
@@ -14455,6 +15244,18 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 sourceCell?: string | undefined;
             } | undefined;
             additionalMeanShift?: {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            } | {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            } | undefined;
+            volume?: {
                 status: "available";
                 actualValue: number;
                 displayValue: string;
@@ -14552,7 +15353,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
-                distribution: "Normal";
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
                 standardDeviation: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
@@ -14562,6 +15363,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 sourceCells: Record<string, string>;
                 factorCandidateId: string;
                 excelSignedMean: number;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
             };
             input?: {
@@ -14613,16 +15417,22 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             } | undefined;
             evidence?: {
                 unit: string;
+                tolerance: number;
                 factorName: string;
                 worksheetName: string;
                 workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                oneSigma: number;
+                percentContributionToSigma: number;
+                longTermSafetyFactor: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
                 designNominal: number;
+                sigmaLevel: number;
                 sourceCells: Record<string, string>;
                 physicalMean: number;
                 factorCandidateId: string;
@@ -14636,6 +15446,8 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     physicalMean: number;
                     support: "REAL";
                 };
+                calculatedMean: number;
+                userAdded?: true | undefined;
             } | undefined;
             sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
             setup?: {
@@ -14644,6 +15456,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 lowerTolerance: number;
                 designNominal: number;
                 factorCandidateId: string;
+                factorName?: string | undefined;
+                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
             } | undefined;
             datasetValidation?: {
                 status: "blocked" | "ready";
@@ -14863,6 +15680,18 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
                 sourceCell?: string | undefined;
             };
+            volume?: {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            } | {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            } | undefined;
         } | {
             status: "unavailable";
             reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "system_specification_range_invalid" | "legacy_artifact_missing_system_specification";
@@ -14903,6 +15732,18 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 sourceCell?: string | undefined;
             } | undefined;
             additionalMeanShift?: {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            } | {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            } | undefined;
+            volume?: {
                 status: "available";
                 actualValue: number;
                 displayValue: string;
@@ -15000,7 +15841,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
-                distribution: "Normal";
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
                 standardDeviation: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
@@ -15010,6 +15851,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 sourceCells: Record<string, string>;
                 factorCandidateId: string;
                 excelSignedMean: number;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
             };
             input?: {
@@ -15061,16 +15905,22 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             } | undefined;
             evidence?: {
                 unit: string;
+                tolerance: number;
                 factorName: string;
                 worksheetName: string;
                 workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                oneSigma: number;
+                percentContributionToSigma: number;
+                longTermSafetyFactor: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
                 designNominal: number;
+                sigmaLevel: number;
                 sourceCells: Record<string, string>;
                 physicalMean: number;
                 factorCandidateId: string;
@@ -15084,6 +15934,8 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     physicalMean: number;
                     support: "REAL";
                 };
+                calculatedMean: number;
+                userAdded?: true | undefined;
             } | undefined;
             sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
             setup?: {
@@ -15092,6 +15944,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 lowerTolerance: number;
                 designNominal: number;
                 factorCandidateId: string;
+                factorName?: string | undefined;
+                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
             } | undefined;
             datasetValidation?: {
                 status: "blocked" | "ready";
@@ -15311,6 +16168,18 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
                 sourceCell?: string | undefined;
             };
+            volume?: {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            } | {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            } | undefined;
         } | {
             status: "unavailable";
             reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "system_specification_range_invalid" | "legacy_artifact_missing_system_specification";
@@ -15351,6 +16220,18 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 sourceCell?: string | undefined;
             } | undefined;
             additionalMeanShift?: {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            } | {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            } | undefined;
+            volume?: {
                 status: "available";
                 actualValue: number;
                 displayValue: string;
@@ -15448,7 +16329,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
-                distribution: "Normal";
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
                 standardDeviation: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
@@ -15458,6 +16339,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 sourceCells: Record<string, string>;
                 factorCandidateId: string;
                 excelSignedMean: number;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
             };
             input?: {
@@ -15509,16 +16393,22 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             } | undefined;
             evidence?: {
                 unit: string;
+                tolerance: number;
                 factorName: string;
                 worksheetName: string;
                 workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                oneSigma: number;
+                percentContributionToSigma: number;
+                longTermSafetyFactor: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
                 designNominal: number;
+                sigmaLevel: number;
                 sourceCells: Record<string, string>;
                 physicalMean: number;
                 factorCandidateId: string;
@@ -15532,6 +16422,8 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     physicalMean: number;
                     support: "REAL";
                 };
+                calculatedMean: number;
+                userAdded?: true | undefined;
             } | undefined;
             sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
             setup?: {
@@ -15540,6 +16432,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 lowerTolerance: number;
                 designNominal: number;
                 factorCandidateId: string;
+                factorName?: string | undefined;
+                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
             } | undefined;
             datasetValidation?: {
                 status: "blocked" | "ready";
@@ -15759,6 +16656,18 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
                 sourceCell?: string | undefined;
             };
+            volume?: {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            } | {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            } | undefined;
         } | {
             status: "unavailable";
             reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "system_specification_range_invalid" | "legacy_artifact_missing_system_specification";
@@ -15799,6 +16708,18 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 sourceCell?: string | undefined;
             } | undefined;
             additionalMeanShift?: {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            } | {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            } | undefined;
+            volume?: {
                 status: "available";
                 actualValue: number;
                 displayValue: string;
@@ -15900,7 +16821,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
-                distribution: "Normal";
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
                 standardDeviation: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
@@ -15910,6 +16831,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 sourceCells: Record<string, string>;
                 factorCandidateId: string;
                 excelSignedMean: number;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
             };
             input?: {
@@ -15961,16 +16885,22 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             } | undefined;
             evidence?: {
                 unit: string;
+                tolerance: number;
                 factorName: string;
                 worksheetName: string;
                 workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                oneSigma: number;
+                percentContributionToSigma: number;
+                longTermSafetyFactor: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
                 designNominal: number;
+                sigmaLevel: number;
                 sourceCells: Record<string, string>;
                 physicalMean: number;
                 factorCandidateId: string;
@@ -15984,6 +16914,8 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     physicalMean: number;
                     support: "REAL";
                 };
+                calculatedMean: number;
+                userAdded?: true | undefined;
             } | undefined;
             sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
             setup?: {
@@ -15992,6 +16924,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 lowerTolerance: number;
                 designNominal: number;
                 factorCandidateId: string;
+                factorName?: string | undefined;
+                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
             } | undefined;
             datasetValidation?: {
                 status: "blocked" | "ready";
@@ -16211,6 +17148,18 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
                 sourceCell?: string | undefined;
             };
+            volume?: {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            } | {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            } | undefined;
         } | {
             status: "unavailable";
             reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "system_specification_range_invalid" | "legacy_artifact_missing_system_specification";
@@ -16251,6 +17200,18 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 sourceCell?: string | undefined;
             } | undefined;
             additionalMeanShift?: {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            } | {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            } | undefined;
+            volume?: {
                 status: "available";
                 actualValue: number;
                 displayValue: string;
@@ -16352,7 +17313,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
-                distribution: "Normal";
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
                 standardDeviation: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
@@ -16362,6 +17323,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 sourceCells: Record<string, string>;
                 factorCandidateId: string;
                 excelSignedMean: number;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
             };
             input?: {
@@ -16413,16 +17377,22 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             } | undefined;
             evidence?: {
                 unit: string;
+                tolerance: number;
                 factorName: string;
                 worksheetName: string;
                 workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                oneSigma: number;
+                percentContributionToSigma: number;
+                longTermSafetyFactor: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
                 designNominal: number;
+                sigmaLevel: number;
                 sourceCells: Record<string, string>;
                 physicalMean: number;
                 factorCandidateId: string;
@@ -16436,6 +17406,8 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     physicalMean: number;
                     support: "REAL";
                 };
+                calculatedMean: number;
+                userAdded?: true | undefined;
             } | undefined;
             sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
             setup?: {
@@ -16444,6 +17416,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 lowerTolerance: number;
                 designNominal: number;
                 factorCandidateId: string;
+                factorName?: string | undefined;
+                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
             } | undefined;
             datasetValidation?: {
                 status: "blocked" | "ready";
@@ -16663,6 +17640,18 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
                 sourceCell?: string | undefined;
             };
+            volume?: {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            } | {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            } | undefined;
         } | {
             status: "unavailable";
             reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "system_specification_range_invalid" | "legacy_artifact_missing_system_specification";
@@ -16703,6 +17692,18 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 sourceCell?: string | undefined;
             } | undefined;
             additionalMeanShift?: {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            } | {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            } | undefined;
+            volume?: {
                 status: "available";
                 actualValue: number;
                 displayValue: string;
@@ -16836,35 +17837,60 @@ export declare const f7WorksheetConfirmRouteRequestSchema: z.ZodObject<{
 export declare const f7FactorConfirmRouteRequestSchema: z.ZodObject<{
     sessionId: z.ZodString;
     confirmations: z.ZodArray<z.ZodEffects<z.ZodObject<{
+        longTermSafetyFactor: z.ZodOptional<z.ZodNumber>;
+        sigmaLevel: z.ZodOptional<z.ZodNumber>;
+        distribution: z.ZodOptional<z.ZodEnum<["Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta"]>>;
         confirmed: z.ZodLiteral<true>;
         designNominal: z.ZodEffects<z.ZodNumber, number, number>;
         upperTolerance: z.ZodNumber;
         lowerTolerance: z.ZodNumber;
         factorCandidateId: z.ZodString;
+        factorName: z.ZodOptional<z.ZodString>;
+        userAdded: z.ZodOptional<z.ZodLiteral<true>>;
     }, "strict", z.ZodTypeAny, {
         confirmed: true;
         upperTolerance: number;
         lowerTolerance: number;
         designNominal: number;
         factorCandidateId: string;
+        factorName?: string | undefined;
+        distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+        longTermSafetyFactor?: number | undefined;
+        sigmaLevel?: number | undefined;
+        userAdded?: true | undefined;
     }, {
         confirmed: true;
         upperTolerance: number;
         lowerTolerance: number;
         designNominal: number;
         factorCandidateId: string;
+        factorName?: string | undefined;
+        distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+        longTermSafetyFactor?: number | undefined;
+        sigmaLevel?: number | undefined;
+        userAdded?: true | undefined;
     }>, {
         confirmed: true;
         upperTolerance: number;
         lowerTolerance: number;
         designNominal: number;
         factorCandidateId: string;
+        factorName?: string | undefined;
+        distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+        longTermSafetyFactor?: number | undefined;
+        sigmaLevel?: number | undefined;
+        userAdded?: true | undefined;
     }, {
         confirmed: true;
         upperTolerance: number;
         lowerTolerance: number;
         designNominal: number;
         factorCandidateId: string;
+        factorName?: string | undefined;
+        distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+        longTermSafetyFactor?: number | undefined;
+        sigmaLevel?: number | undefined;
+        userAdded?: true | undefined;
     }>, "many">;
 }, "strict", z.ZodTypeAny, {
     sessionId: string;
@@ -16874,6 +17900,11 @@ export declare const f7FactorConfirmRouteRequestSchema: z.ZodObject<{
         lowerTolerance: number;
         designNominal: number;
         factorCandidateId: string;
+        factorName?: string | undefined;
+        distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+        longTermSafetyFactor?: number | undefined;
+        sigmaLevel?: number | undefined;
+        userAdded?: true | undefined;
     }[];
 }, {
     sessionId: string;
@@ -16883,6 +17914,11 @@ export declare const f7FactorConfirmRouteRequestSchema: z.ZodObject<{
         lowerTolerance: number;
         designNominal: number;
         factorCandidateId: string;
+        factorName?: string | undefined;
+        distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+        longTermSafetyFactor?: number | undefined;
+        sigmaLevel?: number | undefined;
+        userAdded?: true | undefined;
     }[];
 }>;
 export declare const f7FactorModeRouteRequestSchema: z.ZodObject<{
@@ -17188,6 +18224,7 @@ export declare const f7SessionRouteParamsSchema: z.ZodObject<{
 }>;
 export type F7FactorCandidate = z.infer<typeof f7FactorCandidateSchema>;
 export type F7FactorSetupConfirmation = z.infer<typeof f7FactorSetupConfirmationSchema>;
+export type F7ToleranceDistribution = z.infer<typeof f7ToleranceDistributionSchema>;
 export type F7LoopCoefficient = z.infer<typeof f7LoopCoefficientSchema>;
 export type F7FactorSourceMode = z.infer<typeof f7FactorSourceModeSchema>;
 export type F7MeasurementStructure = z.infer<typeof f7MeasurementStructureSchema>;

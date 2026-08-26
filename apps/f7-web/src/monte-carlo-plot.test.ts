@@ -8,8 +8,9 @@ describe("Monte Carlo plot", () => {
         { minimum: -0.2, maximum: -0.1, observedCount: 10 },
         { minimum: -0.1, maximum: 0, observedCount: 25 },
         { minimum: 0, maximum: 0.1, observedCount: 15 },
+        { minimum: 0.1, maximum: 0.2, observedCount: 5 },
       ],
-      expectedBinCounts: [8, 27, 15],
+      expectedBinCounts: [8, 27, 15, 4],
       lowerSpecLimit: -0.15,
       upperSpecLimit: 0.05,
       mean: -0.02,
@@ -18,8 +19,8 @@ describe("Monte Carlo plot", () => {
     });
 
     expect(model.domainMinimum).toBeLessThanOrEqual(-0.2);
-    expect(model.domainMaximum).toBeGreaterThanOrEqual(0.1);
-    expect(model.bars).toHaveLength(3);
+    expect(model.domainMaximum).toBeGreaterThanOrEqual(0.2);
+    expect(model.bars).toHaveLength(4);
     expect(model.bars.flatMap((bar) => [bar.x, bar.y, bar.width, bar.height]).every(Number.isFinite)).toBe(true);
     expect(model.xTicks).toHaveLength(5);
     expect(model.yTicks).toHaveLength(5);
@@ -27,12 +28,20 @@ describe("Monte Carlo plot", () => {
     expect(model.references.map(({ id }) => id)).toEqual([
       "lower-spec-limit",
       "upper-spec-limit",
+      "target",
       "mean",
       "minus-target-sigma",
       "plus-target-sigma",
     ]);
+    expect(model.references.find(({ id }) => id === "target")?.value).toBeCloseTo(-0.05, 12);
+    expect(model.bars.map(({ specificationStatus }) => specificationStatus)).toEqual([
+      "mixed",
+      "in-spec",
+      "mixed",
+      "out-of-spec",
+    ]);
     const nearbyRows = model.references
-      .filter((reference) => Math.abs(reference.x - model.references[2]!.x) < 52)
+      .filter((reference) => Math.abs(reference.x - model.references[3]!.x) < 52)
       .map((reference) => reference.labelRow);
     expect(new Set(nearbyRows).size).toBe(nearbyRows.length);
   });

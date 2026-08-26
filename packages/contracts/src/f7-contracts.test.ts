@@ -422,6 +422,30 @@ describe("F7 phase 1 factor contracts", () => {
       upperTolerance: 0.03,
     }).success).toBe(true);
     expect(f7FactorSetupConfirmationSchema.safeParse({ ...subtractive, loopCoefficient: -1 }).success).toBe(false);
+
+    const userAdded = {
+      ...subtractive,
+      factorCandidateId: SHA256_2,
+      factorName: "User stack gap",
+      userAdded: true,
+    } as const;
+    expect(f7FactorSetupConfirmationSchema.parse(userAdded)).toEqual(userAdded);
+    expect(f7FactorSetupConfirmationSchema.safeParse({ ...userAdded, factorName: "" }).success).toBe(false);
+    expect(f7FactorSetupConfirmationSchema.safeParse({ ...subtractive, factorName: "Unexpected" }).success).toBe(false);
+  });
+
+  it("accepts all F4 tolerance distribution choices", () => {
+    const base = {
+      factorCandidateId: SHA256,
+      designNominal: 1,
+      upperTolerance: 0.1,
+      lowerTolerance: -0.1,
+      confirmed: true,
+    } as const;
+
+    for (const distribution of ["Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta"] as const) {
+      expect(f7FactorSetupConfirmationSchema.parse({ ...base, distribution }).distribution).toBe(distribution);
+    }
   });
 
   it("requires confidential snapshot classification and rejects public", () => {
@@ -520,6 +544,13 @@ describe("F7 phase 1 factor contracts", () => {
       designNominal: -0.123456,
       upperTolerance: 0.05,
       lowerTolerance: -0.05,
+      longTermSafetyFactor: 1,
+      sigmaLevel: 2.5,
+      distribution: "Normal",
+      calculatedMean: -0.123456,
+      tolerance: 0.05,
+      oneSigma: 0.02,
+      percentContributionToSigma: 1,
       loopCoefficient: -1,
       physicalMean: 0.123456,
       signedContributionMean: -0.123456,
@@ -2074,6 +2105,13 @@ describe("F7 request/result strict wrappers", () => {
             designNominal: 0.2,
             upperTolerance: 0.1,
             lowerTolerance: -0.1,
+            longTermSafetyFactor: 1,
+            sigmaLevel: 1,
+            distribution: "Normal",
+            calculatedMean: 0.2,
+            tolerance: 0.1,
+            oneSigma: 0.1,
+            percentContributionToSigma: 1,
             loopCoefficient: 1,
             physicalMean: 0.2,
             signedContributionMean: 0.2,
@@ -2178,6 +2216,13 @@ describe("F7 request/result strict wrappers", () => {
         designNominal: 0.2,
         upperTolerance: 0.1,
         lowerTolerance: -0.1,
+        longTermSafetyFactor: 1,
+        sigmaLevel: 1,
+        distribution: "Normal",
+        calculatedMean: 0.2,
+        tolerance: 0.1,
+        oneSigma: 0.1,
+        percentContributionToSigma: 1,
         loopCoefficient: 1,
         physicalMean: 0.2,
         signedContributionMean: 0.2,

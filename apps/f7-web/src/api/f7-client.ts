@@ -22,6 +22,7 @@ import type {
   F7ReportProjection as ContractF7ReportProjection,
   F7SessionRouteParams,
   F7SessionSnapshot as ContractF7SessionSnapshot,
+  F7ToleranceDistribution,
   F7WorksheetConfirmRouteRequest,
   F7WorkbookImportRouteRequest,
 } from "@ai-assist/contracts";
@@ -29,6 +30,7 @@ import { f7ReportProjectionSchema, f7SessionSnapshotSchema } from "@ai-assist/co
 
 export type F7SessionStatus = ContractF7SessionSnapshot["status"];
 export type F7SourceMode = F7FactorSourceMode;
+export type F7SetupDistribution = F7ToleranceDistribution;
 export type F7LoopCoefficient = ContractF7LoopCoefficient;
 export type F7MeasurementStructure = ContractF7MeasurementStructure;
 export type F7MsaStatus = ContractF7MsaStatus;

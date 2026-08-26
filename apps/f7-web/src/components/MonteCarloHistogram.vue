@@ -19,6 +19,7 @@ const model = computed(() => buildMonteCarloPlot({
 const labels: Record<MonteCarloReferenceId, string> = {
   "lower-spec-limit": "LSL",
   "upper-spec-limit": "USL",
+  target: "Target",
   mean: "Mean",
   "minus-target-sigma": "−Target σ",
   "plus-target-sigma": "+Target σ",
@@ -45,7 +46,7 @@ function formatTick(value: number): string {
     <div class="monte-carlo-chart-viewport">
       <svg viewBox="0 0 800 320" role="img" aria-labelledby="monte-carlo-chart-title monte-carlo-chart-description">
         <title id="monte-carlo-chart-title">Monte Carlo output distribution</title>
-        <desc id="monte-carlo-chart-description">Observed simulation counts, fitted Normal expected counts, specification limits, mean, and target sigma references.</desc>
+        <desc id="monte-carlo-chart-description">In-spec bins are blue, out-of-spec bins are red, and bins crossing a specification limit are gray, with a fitted Normal curve and specification, Target, mean, and target sigma references.</desc>
         <g v-for="(tick, index) in model.yTicks" :key="`y-${index}`">
           <line class="plot-grid" x1="56" x2="780" :y1="yPosition(tick)" :y2="yPosition(tick)" />
           <text class="plot-tick-label" x="50" :y="yPosition(tick) + 4" text-anchor="end">{{ formatTick(tick) }}</text>
@@ -56,7 +57,8 @@ function formatTick(value: number): string {
         v-for="(bar, index) in model.bars"
         :key="index"
         data-monte-carlo-bin
-        class="monte-carlo-bin"
+        :data-specification-status="bar.specificationStatus"
+        :class="['monte-carlo-bin', `monte-carlo-bin-${bar.specificationStatus}`]"
         :x="bar.x"
         :y="bar.y"
         :width="bar.width"
@@ -89,9 +91,12 @@ function formatTick(value: number): string {
       </svg>
     </div>
     <figcaption class="monte-carlo-legend">
-      <span><i class="monte-carlo-bin-legend" />Observed count</span>
+      <span><i class="monte-carlo-in-spec-legend" />In specification</span>
+      <span><i class="monte-carlo-out-of-spec-legend" />Out of specification</span>
+      <span><i class="monte-carlo-mixed-legend" />Crosses specification limit</span>
       <span><i class="monte-carlo-fit-legend" />Moment-fitted Normal expected count</span>
       <span><i class="monte-carlo-spec-legend" />Specification limits</span>
+      <span><i class="monte-carlo-center-target-legend" />Target (specification midpoint)</span>
       <span><i class="monte-carlo-target-legend" />Target sigma range</span>
     </figcaption>
   </figure>

@@ -9,6 +9,8 @@ import {
   type F7FactorCandidate,
   type F7FactorEvidence,
   type F7FactorSetupConfirmation,
+  type F7ToleranceDistribution,
+  type Distribution,
   type WorksheetSelectionPrompt,
 } from "@ai-assist/contracts";
 import { z } from "zod";
@@ -17,6 +19,7 @@ import { readOoxmlWorkbook, type OoxmlCell, type OoxmlWorksheet } from "./ooxml-
 import { readSafeZip } from "./zip-security.js";
 import { createWorkbookCatalog } from "./workbook-catalog.js";
 import { createWorksheetSelectionPrompt, validateWorksheetSelectionConfirmation } from "./worksheet-selection.js";
+import { getDistributionMultiplier } from "./f6-numerics.js";
 
 const IMPORT_SUMMARY = "F7 workbook import request is invalid.";
 const EXTRACTION_SUMMARY = "F7 factor extraction request is invalid.";
@@ -25,6 +28,15 @@ const POLICY_SUMMARY = "F7 workbook import input is not permitted.";
 const RECOMMENDED_ACTION = "Provide a supported confidential F7 workbook request and explicit confirmations.";
 const CONTROLLED_HASH = /^[a-f0-9]{64}$/;
 const CELL_REFERENCE = /^([A-Z]+)([1-9]\d*)$/;
+
+const F4_DISTRIBUTION_BY_LABEL: Readonly<Record<F7ToleranceDistribution, Distribution>> = {
+  Normal: "normal",
+  Uniform: "uniform",
+  Triangular: "triangular",
+  Trapezoidal: "trapezoidal",
+  Elliptical: "elliptical",
+  Beta: "beta",
+};
 
 const importResultSchema = z.object({
   contractVersion: z.literal("v1"),
@@ -411,6 +423,8 @@ export function extractF7FactorCandidates(request: {
   const nominalValueColumn = resolution.columns.nominalValue?.sourceColumn;
   const upperToleranceColumn = resolution.columns.upperTolerance?.sourceColumn;
   const lowerToleranceColumn = resolution.columns.lowerTolerance?.sourceColumn;
+  const longTermSafetyFactorColumn = resolution.columns.longTermSafetyFactor?.sourceColumn;
+  const sigmaLevelColumn = resolution.columns.sigmaLevel?.sourceColumn;
   const meanColumn = resolution.columns.mean?.sourceColumn;
   const sigmaColumn = resolution.columns.oneSigma?.sourceColumn ?? resolution.columns.standardDeviation?.sourceColumn;
   const distributionColumn = resolution.columns.distribution?.sourceColumn;
@@ -444,11 +458,15 @@ export function extractF7FactorCandidates(request: {
     const nominalValueCell = nominalValueColumn ? cellAt(cellsByCoordinate, row, nominalValueColumn) : undefined;
     const upperToleranceCell = upperToleranceColumn ? cellAt(cellsByCoordinate, row, upperToleranceColumn) : undefined;
     const lowerToleranceCell = lowerToleranceColumn ? cellAt(cellsByCoordinate, row, lowerToleranceColumn) : undefined;
+    const longTermSafetyFactorCell = longTermSafetyFactorColumn ? cellAt(cellsByCoordinate, row, longTermSafetyFactorColumn) : undefined;
+    const sigmaLevelCell = sigmaLevelColumn ? cellAt(cellsByCoordinate, row, sigmaLevelColumn) : undefined;
     const excelSignedMean = finiteNumberFromCell(meanCell);
     const standardDeviation = finiteNumberFromCell(sigmaCell);
     const nominalValue = finiteNumberFromCell(nominalValueCell);
     const upperTolerance = finiteNumberFromCell(upperToleranceCell);
     const lowerTolerance = finiteNumberFromCell(lowerToleranceCell);
+    const workbookLongTermSafetyFactor = finiteNumberFromCell(longTermSafetyFactorCell);
+    const workbookSigmaLevel = finiteNumberFromCell(sigmaLevelCell);
     const distribution = distributionCell ? normalizeLabel(cellText(distributionCell)) : "";
     if (excelSignedMean === undefined || standardDeviation === undefined || standardDeviation <= 0 || !distributionCell) {
       throw adapterError(EXTRACTION_SUMMARY);
@@ -504,6 +522,10 @@ export function extractF7FactorCandidates(request: {
       upperTolerance: normalizedUpperTolerance,
       lowerTolerance: normalizedLowerTolerance,
       standardDeviation,
+      longTermSafetyFactor: workbookLongTermSafetyFactor && workbookLongTermSafetyFactor > 0
+        ? workbookLongTermSafetyFactor
+        : 1,
+      sigmaLevel: workbookSigmaLevel && workbookSigmaLevel > 0 ? workbookSigmaLevel : 4,
       distribution: "Normal" as const,
       lowerSpecLimit,
       upperSpecLimit,
@@ -548,25 +570,75 @@ export function confirmF7FactorSetup(request: {
   const seen = new Set<string>();
   const confirmationById = new Map<string, F7FactorSetupConfirmation>();
   for (const confirmation of confirmations) {
-    if (!candidateById.has(confirmation.factorCandidateId) || seen.has(confirmation.factorCandidateId)) {
+    const knownCandidate = candidateById.has(confirmation.factorCandidateId);
+    if (seen.has(confirmation.factorCandidateId)
+      || (knownCandidate && confirmation.userAdded === true)
+      || (!knownCandidate && confirmation.userAdded !== true)) {
       throw adapterError(SETUP_SUMMARY);
     }
     seen.add(confirmation.factorCandidateId);
     confirmationById.set(confirmation.factorCandidateId, confirmation);
   }
-  if (seen.size !== candidates.length) throw adapterError(SETUP_SUMMARY);
+  const maxSourceRow = Math.max(...candidates.map((candidate) => candidate.sourceRow));
+  let userFactorIndex = 0;
+  const selectedCandidates = confirmations.map((confirmation): F7FactorCandidate => {
+    const existing = candidateById.get(confirmation.factorCandidateId);
+    if (existing) return existing;
+    userFactorIndex += 1;
+    const lowerEndpoint = confirmation.designNominal + confirmation.lowerTolerance;
+    const upperEndpoint = confirmation.designNominal + confirmation.upperTolerance;
+    const tolerance = (confirmation.upperTolerance - confirmation.lowerTolerance) / 2;
+    const longTermSafetyFactor = confirmation.longTermSafetyFactor ?? 1;
+    const sigmaLevel = confirmation.sigmaLevel ?? 4;
+    return f7FactorCandidateSchema.parse({
+      workbookContentHash: extraction.data.workbookContentHash,
+      worksheetName: extraction.data.worksheetName,
+      tableId: `${extraction.data.tableId}-user`,
+      sourceRow: maxSourceRow + userFactorIndex,
+      sourceCells: {},
+      factorCandidateId: confirmation.factorCandidateId,
+      factorName: confirmation.factorName,
+      userAdded: true,
+      excelSignedMean: confirmation.designNominal,
+      designNominal: confirmation.designNominal,
+      upperTolerance: confirmation.upperTolerance,
+      lowerTolerance: confirmation.lowerTolerance,
+      longTermSafetyFactor,
+      sigmaLevel,
+      standardDeviation: tolerance * (longTermSafetyFactor / sigmaLevel),
+      distribution: confirmation.distribution ?? "Normal",
+      lowerSpecLimit: lowerEndpoint <= 0 && upperEndpoint >= 0
+        ? 0
+        : Math.min(Math.abs(lowerEndpoint), Math.abs(upperEndpoint)),
+      upperSpecLimit: Math.max(Math.abs(lowerEndpoint), Math.abs(upperEndpoint)),
+    });
+  });
+
+  const calculatedFactors = selectedCandidates.map((candidate) => {
+    const confirmation = confirmationById.get(candidate.factorCandidateId)!;
+    const tolerance = (confirmation.upperTolerance - confirmation.lowerTolerance) / 2;
+    const calculatedMean = confirmation.designNominal < 0
+      ? confirmation.designNominal - (confirmation.upperTolerance + confirmation.lowerTolerance) / 2
+      : confirmation.designNominal + (confirmation.upperTolerance + confirmation.lowerTolerance) / 2;
+    const longTermSafetyFactor = confirmation.longTermSafetyFactor ?? candidate.longTermSafetyFactor ?? 1;
+    const sigmaLevel = confirmation.sigmaLevel ?? candidate.sigmaLevel ?? 4;
+    const distribution = confirmation.distribution ?? candidate.distribution;
+    const oneSigma = tolerance * (longTermSafetyFactor / sigmaLevel)
+      * getDistributionMultiplier(F4_DISTRIBUTION_BY_LABEL[distribution]);
+    return { candidate, confirmation, tolerance, calculatedMean, longTermSafetyFactor, sigmaLevel, distribution, oneSigma };
+  });
+  const sumOfSigmaSquares = calculatedFactors.reduce((total, factor) => total + factor.oneSigma ** 2, 0);
 
   const factors: F7FactorEvidence[] = [];
-  for (const candidate of candidates) {
-    const confirmation = confirmationById.get(candidate.factorCandidateId);
-    if (!confirmation) throw adapterError(SETUP_SUMMARY);
+  for (const calculatedFactor of calculatedFactors) {
+    const { candidate, confirmation } = calculatedFactor;
 
     const workbookUnitEvidence = candidate.workbookUnitEvidence ? normalizeUnit(candidate.workbookUnitEvidence) : undefined;
     const unit = workbookUnitEvidence ?? "unspecified";
     const unitSource = workbookUnitEvidence ? "workbook" : "unspecified";
 
     const loopCoefficient = Math.sign(confirmation.designNominal) as -1 | 1;
-    const physicalMean = Math.abs(confirmation.designNominal);
+    const physicalMean = Math.abs(calculatedFactor.calculatedMean);
     const lowerEndpoint = confirmation.designNominal + confirmation.lowerTolerance;
     const upperEndpoint = confirmation.designNominal + confirmation.upperTolerance;
     const lowerSpecLimit = lowerEndpoint <= 0 && upperEndpoint >= 0
@@ -583,18 +655,26 @@ export function confirmF7FactorSetup(request: {
       factorCandidateId: candidate.factorCandidateId,
       factorId: buildFactorId(candidate.factorCandidateId, loopCoefficient),
       factorName: candidate.factorName,
+      ...(candidate.userAdded === true ? { userAdded: true as const } : {}),
       unit,
       unitSource,
       designNominal: confirmation.designNominal,
       upperTolerance: confirmation.upperTolerance,
       lowerTolerance: confirmation.lowerTolerance,
+      longTermSafetyFactor: calculatedFactor.longTermSafetyFactor,
+      sigmaLevel: calculatedFactor.sigmaLevel,
+      distribution: calculatedFactor.distribution,
+      calculatedMean: calculatedFactor.calculatedMean,
+      tolerance: calculatedFactor.tolerance,
+      oneSigma: calculatedFactor.oneSigma,
+      percentContributionToSigma: calculatedFactor.oneSigma ** 2 / sumOfSigmaSquares,
       loopCoefficient,
       physicalMean,
-      signedContributionMean: confirmation.designNominal,
+      signedContributionMean: calculatedFactor.calculatedMean,
       baselineSampler: {
         samplerId: "NORMAL_LOCATION_SCALE_V1" as const,
         physicalMean,
-        standardDeviation: candidate.standardDeviation,
+        standardDeviation: calculatedFactor.oneSigma,
         support: "REAL" as const,
       },
       lowerSpecLimit,

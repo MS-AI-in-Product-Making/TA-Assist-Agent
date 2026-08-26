@@ -262,7 +262,7 @@ describe("createF7SessionService", () => {
     expect(() => service.importWorkbook(importRequest(workbookBytes))).toThrow();
   });
 
-  it("enforces a fixed local session budget before ID allocation", () => {
+  it("evicts the oldest session when the fixed local session budget is reached", () => {
     const workbookBytes = buildWorkbook();
     const ids = Array.from({ length: 10 }, (_, index) => `s-${index + 1}`);
     let createIdCalls = 0;
@@ -279,18 +279,21 @@ describe("createF7SessionService", () => {
     }
     expect(createIdCalls).toBe(MAX_F7_LOCAL_SESSIONS);
 
-    let capacityError: unknown;
-    try {
-      service.importWorkbook(importRequest(workbookBytes));
-    } catch (error) {
-      capacityError = error;
-    }
+    const replacement = service.importWorkbook(importRequest(workbookBytes));
 
-    expectValidationErrorWithSummary(capacityError, "F7 local session capacity is reached.", "Restart");
-    expect(createIdCalls).toBe(MAX_F7_LOCAL_SESSIONS);
-    for (const snapshot of snapshots) {
+    expect(replacement.sessionId).toBe("s-9");
+    expect(createIdCalls).toBe(MAX_F7_LOCAL_SESSIONS + 1);
+    let oldestSessionError: unknown;
+    try {
+      service.getSession(snapshots[0]!.sessionId);
+    } catch (error) {
+      oldestSessionError = error;
+    }
+    expectValidationErrorWithSummary(oldestSessionError, "F7 session state was not found.", "Confirm session identity");
+    for (const snapshot of snapshots.slice(1)) {
       expect(service.getSession(snapshot.sessionId).sessionId).toBe(snapshot.sessionId);
     }
+    expect(service.getSession(replacement.sessionId).sessionId).toBe(replacement.sessionId);
   });
 
   it("confirmWorksheet transitions to factor_setup and blocks stale hash without mutation", () => {
@@ -426,7 +429,7 @@ describe("createF7SessionService", () => {
     expect(service.getSession(imported.sessionId)).toEqual(before);
   });
 
-  it("confirmFactorSetup requires complete unique confirmations and has atomic failures", () => {
+  it("confirmFactorSetup accepts the selected factor set and rejects duplicates atomically", () => {
     const workbookBytes = buildWorkbook();
     const service = createService();
     const imported = service.importWorkbook(importRequest(workbookBytes));
@@ -452,14 +455,46 @@ describe("createF7SessionService", () => {
       sessionId: imported2.sessionId,
       confirmation: worksheetConfirmation(imported2.workbook.workbookContentHash),
     });
-    const before = another.getSession(imported2.sessionId);
-    const oneMissing = confirmAll(setup2).slice(0, -1);
-    expect(() => another.confirmFactorSetup({ sessionId: imported2.sessionId, confirmations: oneMissing })).toThrow();
-    expect(() => another.confirmFactorSetup({
+    const selected = another.confirmFactorSetup({
       sessionId: imported2.sessionId,
-      confirmations: [confirmAll(setup2)[0]!, confirmAll(setup2)[0]!, ...confirmAll(setup2).slice(1)],
+      confirmations: [confirmAll(setup2)[0]!, {
+        factorCandidateId: "b".repeat(64),
+        factorName: "User stack gap",
+        userAdded: true,
+        designNominal: 0.4,
+        upperTolerance: 0.08,
+        lowerTolerance: -0.04,
+        longTermSafetyFactor: 1,
+        sigmaLevel: 4,
+        distribution: "Normal",
+        confirmed: true,
+      }],
+    });
+    expect(selected.factors).toHaveLength(2);
+    expect(selected.factors[1]?.factorCandidate).toMatchObject({
+      factorCandidateId: "b".repeat(64),
+      factorName: "User stack gap",
+      userAdded: true,
+      sourceCells: {},
+    });
+    expect(selected.factors[1]?.evidence).toMatchObject({
+      userAdded: true,
+      calculatedMean: 0.42000000000000004,
+      oneSigma: 0.015,
+    });
+
+    const duplicateService = createService();
+    const duplicateImport = duplicateService.importWorkbook(importRequest(workbookBytes));
+    const duplicateSetup = duplicateService.confirmWorksheet({
+      sessionId: duplicateImport.sessionId,
+      confirmation: worksheetConfirmation(duplicateImport.workbook.workbookContentHash),
+    });
+    const before = duplicateService.getSession(duplicateImport.sessionId);
+    expect(() => duplicateService.confirmFactorSetup({
+      sessionId: duplicateImport.sessionId,
+      confirmations: [confirmAll(duplicateSetup)[0]!, confirmAll(duplicateSetup)[0]!],
     })).toThrow();
-    expect(another.getSession(imported2.sessionId)).toEqual(before);
+    expect(duplicateService.getSession(duplicateImport.sessionId)).toEqual(before);
   });
 
   it("setFactorMode handles baseline and measured transitions and clears obsolete state", () => {

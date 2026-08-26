@@ -19,12 +19,6 @@ const options = computed(() => {
 
 const hasOptions = computed(() => options.value.length > 0);
 
-const shortHash = computed(() => {
-  const full = props.session.workbook.workbookContentHash;
-  if (full.length < 16) return full;
-  return `${full.slice(0, 8)}...${full.slice(-8)}`;
-});
-
 function submit(): void {
   if (!hasOptions.value || !selected.value || props.busy) return;
   emit("confirm", selected.value);
@@ -35,10 +29,6 @@ function submit(): void {
   <section class="workbench-panel" aria-label="Worksheet confirmation">
     <h2>Worksheet Selection</h2>
     <p class="subtle">Select exactly one worksheet before factor setup.</p>
-    <p>
-      <span class="label-inline">Workbook hash</span>
-      <span class="hash" :title="session.workbook.workbookContentHash">{{ shortHash }}</span>
-    </p>
     <fieldset>
       <legend>Worksheet options</legend>
       <label v-for="option in options" :key="option" class="row-line">

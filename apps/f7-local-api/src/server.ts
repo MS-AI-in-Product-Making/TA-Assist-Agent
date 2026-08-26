@@ -20,7 +20,6 @@ import {
 const REQUEST_SUMMARY = "F7 request is invalid.";
 const INTERNAL_SUMMARY = "F7 local API request failed.";
 const INTERNAL_REFERENCE = "f7-local-api";
-const CAPACITY_SUMMARY = "F7 local session capacity is reached.";
 
 const IMPORT_RAW_LIMIT_BYTES = 22_370_000;
 const JSON_ROUTE_LIMIT_BYTES = 1_100_000;
@@ -153,7 +152,6 @@ function writeClientErrorResponse(socket: NodeJS.WritableStream & { destroyed?: 
 function mapTypedErrorStatus(error: TypedError): number {
   if (error.code === "policy_denied") return 403;
   if (error.code === "validation_error") {
-    if (error.summary === CAPACITY_SUMMARY) return 409;
     return 400;
   }
   if (error.code === "evidence_mismatch") return 400;

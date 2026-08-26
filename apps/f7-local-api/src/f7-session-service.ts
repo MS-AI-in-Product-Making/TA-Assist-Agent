@@ -59,7 +59,6 @@ const SESSION_SUMMARY = "F7 session request is invalid.";
 const PREREQUISITE_SUMMARY = "F7 session operation is not ready.";
 const NOT_FOUND_SUMMARY = "F7 session state was not found.";
 const INTERNAL_REFERENCE = "f7-session-service";
-const CAPACITY_SUMMARY = "F7 local session capacity is reached.";
 const DISTRIBUTION_FIT_SUMMARY = "F7 distribution fitting could not be calculated.";
 const SELECTED_WORKSHEET_SUMMARY = "F7 selected worksheet could not be read.";
 
@@ -77,15 +76,6 @@ function fixedError(summary: string, code: "validation_error" | "prerequisite_no
     code,
     summary,
     suggestedAction: "Confirm session identity and complete each phase in order.",
-    affectedInputReferences: [INTERNAL_REFERENCE],
-  });
-}
-
-function fixedCapacityError(): Error {
-  return createTypedError({
-    code: "validation_error",
-    summary: CAPACITY_SUMMARY,
-    suggestedAction: "Restart the local API process or complete the current session before importing another workbook.",
     affectedInputReferences: [INTERNAL_REFERENCE],
   });
 }
@@ -177,7 +167,6 @@ export function createF7SessionService(dependencies: {
   const importWorkbook = (request: F7WorkbookImportRequest): F7SessionSnapshot => {
     const parsedRequest = f7WorkbookImportRequestSchema.safeParse(request);
     if (!parsedRequest.success) throw fixedError(SESSION_SUMMARY, "validation_error");
-    if (sessions.size >= MAX_F7_LOCAL_SESSIONS) throw fixedCapacityError();
 
     const sessionId = dependencies.createId();
     if (typeof sessionId !== "string" || sessionId.trim().length === 0) {
@@ -200,6 +189,10 @@ export function createF7SessionService(dependencies: {
       factors: [],
     });
 
+    if (sessions.size >= MAX_F7_LOCAL_SESSIONS) {
+      const oldestSession = sessions.keys().next();
+      if (!oldestSession.done) sessions.delete(oldestSession.value);
+    }
     writeSession(sessionId, {
       workbookBytes: new Uint8Array(parsedRequest.data.workbookBytes),
       importResult,
@@ -276,12 +269,36 @@ export function createF7SessionService(dependencies: {
       confirmation,
     ]));
 
-    const factors = current.snapshot.factors.map((factorState) => {
-      const factorEvidence = factorByCandidateId.get(factorState.factorCandidate.factorCandidateId);
-      const setup = confirmationByCandidateId.get(factorState.factorCandidate.factorCandidateId);
-      if (!factorEvidence || !setup) throw fixedError(SESSION_SUMMARY, "validation_error");
+    const currentFactorByCandidateId = new Map(current.snapshot.factors.map((factorState) => [
+      factorState.factorCandidate.factorCandidateId,
+      factorState,
+    ]));
+    const factors = setupResult.factors.map((factorEvidence) => {
+      const currentFactor = currentFactorByCandidateId.get(factorEvidence.factorCandidateId);
+      const setup = confirmationByCandidateId.get(factorEvidence.factorCandidateId);
+      if (!setup) throw fixedError(SESSION_SUMMARY, "validation_error");
+      const factorCandidate = currentFactor?.factorCandidate ?? {
+        workbookContentHash: factorEvidence.workbookContentHash,
+        worksheetName: factorEvidence.worksheetName,
+        tableId: factorEvidence.tableId,
+        sourceRow: factorEvidence.sourceRow,
+        sourceCells: factorEvidence.sourceCells,
+        factorCandidateId: factorEvidence.factorCandidateId,
+        factorName: factorEvidence.factorName,
+        userAdded: true as const,
+        excelSignedMean: factorEvidence.calculatedMean,
+        designNominal: factorEvidence.designNominal,
+        upperTolerance: factorEvidence.upperTolerance,
+        lowerTolerance: factorEvidence.lowerTolerance,
+        longTermSafetyFactor: factorEvidence.longTermSafetyFactor,
+        sigmaLevel: factorEvidence.sigmaLevel,
+        standardDeviation: factorEvidence.oneSigma,
+        distribution: factorEvidence.distribution,
+        lowerSpecLimit: factorEvidence.lowerSpecLimit,
+        upperSpecLimit: factorEvidence.upperSpecLimit,
+      };
       return {
-        factorCandidate: factorState.factorCandidate,
+        factorCandidate,
         setup,
         evidence: factorEvidence,
       };
