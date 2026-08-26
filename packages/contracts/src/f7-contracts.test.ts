@@ -1,0 +1,2291 @@
+import { describe, expect, it } from "vitest";
+import {
+  cpkRequestSchema,
+  cpkResultSchema,
+  f7CandidateEligibilitySchema,
+  f7AnalysisRequestSchema,
+  f7AnalysisResultSchema,
+  f7FactorCandidateSchema,
+  f7FactorConfirmRouteRequestSchema,
+  f7FactorEvidenceSchema,
+  f7FactorInputSchema,
+  f7DatasetValidationIssueSchema,
+  f7DatasetValidationReasonSchema,
+  f7DatasetValidationResultSchema,
+  f7DistributionCandidateFamilySchema,
+  f7DistributionFitCandidateSchema,
+  f7DistributionFitResultSchema,
+  f7DistributionFitRouteRequestSchema,
+  f7FactorModeRouteRequestSchema,
+  f7FactorSetupConfirmationSchema,
+  f7LoopCoefficientSchema,
+  f7MeasurementDispositionRequestSchema,
+  f7MeasurementDispositionRouteRequestSchema,
+  f7MeasurementPasteRequestSchema,
+  f7MeasurementPasteRouteRequestSchema,
+  f7MeasurementStructureSchema,
+  f7ReportAssessmentSchema,
+  f7ReportGenerateRouteRequestSchema,
+  f7ReportProjectionSchema,
+  f7SessionRouteParamsSchema,
+  f7SessionSnapshotSchema,
+  f7WorkbookImportRequestSchema,
+  f7WorkbookImportRouteRequestSchema,
+  f7WorksheetConfirmRouteRequestSchema,
+} from "./index.js";
+
+const SHA256 = "a".repeat(64);
+const SHA256_2 = "b".repeat(64);
+const BOOTSTRAP_REPLICATES = 10_000;
+const BOOTSTRAP_EXTREME_COUNT = 4200;
+const BOOTSTRAP_GRID_P_VALUE = (BOOTSTRAP_EXTREME_COUNT + 1) / (BOOTSTRAP_REPLICATES + 1);
+const BOOTSTRAP_Z_95 = 1.959963984540054;
+const UNIFORM_BOUNDARY_WARNING = "Uniform MLE bounds equal the sample minimum and maximum; boundary estimates are sensitive to additional observations.";
+
+function wilsonScoreInterval(successes: number, trials: number): { lower: number; upper: number } {
+  const zSquared = BOOTSTRAP_Z_95 * BOOTSTRAP_Z_95;
+  const proportion = successes / trials;
+  const denominator = 1 + zSquared / trials;
+  const center = (proportion + zSquared / (2 * trials)) / denominator;
+  const margin = (BOOTSTRAP_Z_95 / denominator)
+    * Math.sqrt((proportion * (1 - proportion) + zSquared / (4 * trials)) / trials);
+  return {
+    lower: Math.max(0, center - margin),
+    upper: Math.min(1, center + margin),
+  };
+}
+
+const DISTRIBUTION_FIT_RESULT = {
+  factorId: SHA256,
+  sampleSize: 32,
+  characteristicKind: "other",
+  candidates: [
+    {
+      family: "normal",
+      modelSpecification: "normal_location_scale",
+      parameterCount: 2,
+      parameters: { mean: 1.25, standardDeviation: 0.08 },
+      logLikelihood: 35.2,
+      aic: -66.4,
+      aicc: -65.98620689655172,
+      bic: -63.46852819440055,
+      deltaAicc: 0,
+      deltaBic: 0,
+      ks: 0.08,
+      ad: 0.31,
+      qqPoints: [
+        { observed: 1.1, theoretical: 1.08 },
+        { observed: 1.4, theoretical: 1.42 },
+      ],
+      bootstrap: {
+        statisticId: "anderson_darling",
+        observedStatistic: 0.31,
+        comparisonDirection: "greater_than_or_equal",
+        refitEachReplicate: true,
+        extremeReplicateCount: BOOTSTRAP_EXTREME_COUNT,
+        confidenceInterval: {
+          level: 0.95,
+          method: "wilson_score",
+          ...wilsonScoreInterval(BOOTSTRAP_EXTREME_COUNT, BOOTSTRAP_REPLICATES),
+        },
+        pValue: BOOTSTRAP_GRID_P_VALUE,
+        replicates: 10000,
+        seed: SHA256_2,
+        methodId: "F7_BOOTSTRAP_V2",
+        candidateMethodId: "F7_DISTRIBUTION_FIT_V1",
+        streamDigest: SHA256,
+        status: "acceptable",
+      },
+      warnings: [],
+    },
+  ],
+  failedCandidates: [],
+  sampleDiagnostics: {
+    mean: 1.25,
+    median: 1.24,
+    skewness: 0.02,
+    coefficientOfVariation: 0.064,
+    meanMedianRelativeDifference: 0.008,
+    normalQqCurvature: 0.03,
+  },
+  selectionDecision: {
+    methodId: "F7_MODEL_SELECTION_V1",
+    status: "unique_preference",
+    numericBestFamily: "normal",
+    competitiveFamilies: ["normal"],
+    proposedFinalFamily: "normal",
+    confidence: "moderate",
+    reasonCodes: ["SINGLE_ACCEPTABLE_COMPETITOR", "SMALL_SAMPLE_UNCERTAINTY"],
+  },
+} as const;
+
+function withFitCriteria<TCandidate extends typeof DISTRIBUTION_FIT_RESULT.candidates[number]>(
+  candidate: TCandidate,
+  sampleSize: number,
+): TCandidate {
+  const aic = 2 * candidate.parameterCount - 2 * candidate.logLikelihood;
+  const aicc = aic + (2 * candidate.parameterCount * (candidate.parameterCount + 1))
+    / (sampleSize - candidate.parameterCount - 1);
+  const bic = candidate.parameterCount * Math.log(sampleSize) - 2 * candidate.logLikelihood;
+  return {
+    ...candidate,
+    aic,
+    aicc,
+    bic,
+  };
+}
+
+const WORKSHEET_OPTIONS = [
+  {
+    selectionIndex: 1,
+    worksheetName: "Analysis-A",
+    toleranceLoopDescription: "Loop A",
+    worksheetKind: "analysis" as const,
+    source: {
+      summarySheet: "Auto Summary" as const,
+      summaryRow: 10,
+      worksheetAnchor: "Analysis-A!A1",
+    },
+  },
+] as const;
+
+function createReportFixture(
+  assessment: "MEETS_TARGET" | "BELOW_TARGET" | "NOT_EVALUABLE" = "MEETS_TARGET",
+) {
+  const notEvaluable = assessment === "NOT_EVALUABLE";
+  const targetSigmaLevel = assessment === "MEETS_TARGET" ? 3 : 6;
+  const standardDeviation = notEvaluable ? 0 : 0.1;
+  const targetCpk = targetSigmaLevel / 3;
+  const cp = notEvaluable ? undefined : 5 / 3;
+  const cpk = notEvaluable ? undefined : 5 / 3;
+  const inSpecCount = notEvaluable ? 10_000 : 9_997;
+  const outOfSpecCount = 10_000 - inSpecCount;
+  const yieldValue = inSpecCount / 10_000;
+  const ppm = (outOfSpecCount / 10_000) * 1_000_000;
+  const histogramBins = Array.from({ length: 20 }, (_, index) => ({
+    minimum: index,
+    maximum: index + 1,
+    observedCount: index === 0 ? inSpecCount : index === 1 ? outOfSpecCount : 0,
+  }));
+  const factorManifest = [{
+    factorId: SHA256,
+    family: "normal" as const,
+    sourceMode: "MEASURED" as const,
+  }];
+
+  const simulation = {
+    methodId: "F7_MONTE_CARLO_V1" as const,
+    status: "complete" as const,
+    lowerSpecLimit: -0.5,
+    upperSpecLimit: 0.5,
+    targetSigmaLevel,
+    iterations: 10_000 as const,
+    runSeed: SHA256_2,
+    correlationMode: "INDEPENDENT" as const,
+    mean: 0,
+    standardDeviation,
+    quantiles: notEvaluable
+      ? { p00135: 0, p01: 0, p05: 0, p50: 0, p95: 0, p99: 0, p99865: 0 }
+      : { p00135: -0.3, p01: -0.23, p05: -0.16, p50: 0, p95: 0.16, p99: 0.23, p99865: 0.3 },
+    inSpecCount,
+    outOfSpecCount,
+    yield: yieldValue,
+    outOfSpecProbability: outOfSpecCount / 10_000,
+    ppm,
+    histogram: {
+      methodId: "F7_HISTOGRAM_FD_V1" as const,
+      bins: histogramBins,
+    },
+    normalFit: {
+      methodId: "F7_NORMAL_MOMENT_FIT_V1" as const,
+      mean: 0,
+      standardDeviation,
+      expectedBinCounts: histogramBins.map((bin) => bin.observedCount),
+    },
+    capability: notEvaluable
+      ? { status: "not_available" as const, reason: "zero_variance" as const, targetCpk }
+      : {
+          status: "available" as const,
+          cp: cp!,
+          lowerCpk: cpk!,
+          upperCpk: cpk!,
+          cpk: cpk!,
+          targetCpk,
+          targetStatus: assessment === "MEETS_TARGET" ? "meets_target" as const : "below_target" as const,
+        },
+    normalModel: notEvaluable
+      ? { status: "not_available" as const, reason: "zero_variance" as const }
+      : {
+          status: "available" as const,
+          lowerTailDpm: 100,
+          upperTailDpm: 200,
+          totalDpm: 300,
+          expectedYield: 0.9997,
+        },
+    factorManifest,
+  };
+
+  return {
+    contractId: "f7-report-v1" as const,
+    outputClassification: "confidential" as const,
+    sessionId: "session-1",
+    generatedAt: "2026-08-25T08:00:00.000Z",
+    assessment,
+    workbook: {
+      fileName: "Demo.xlsx",
+      workbookContentHash: SHA256,
+      worksheetName: "Analysis-A",
+    },
+    summary: {
+      mean: simulation.mean,
+      standardDeviation: simulation.standardDeviation,
+      yield: simulation.yield,
+      ppm: simulation.ppm,
+      lowerSpecLimit: simulation.lowerSpecLimit,
+      upperSpecLimit: simulation.upperSpecLimit,
+      targetSigmaLevel: simulation.targetSigmaLevel,
+      ...(cp === undefined ? {} : { cp }),
+      ...(cpk === undefined ? {} : { cpk }),
+      targetCpk,
+    },
+    simulation,
+    factors: [{
+      factorId: SHA256,
+      factorName: "Gap",
+      loopCoefficient: 1 as const,
+      sourceMode: "MEASURED" as const,
+      approvedDistribution: "normal" as const,
+      sourceReferences: ["Analysis-A!A2", "clipboard"],
+    }],
+    evidence: {
+      workbookContentHash: SHA256,
+      worksheetName: "Analysis-A",
+      specificationSourceCells: {
+        lowerSpecLimit: "Analysis-A!B2",
+        upperSpecLimit: "Analysis-A!B3",
+        targetSigmaLevel: "Analysis-A!B4",
+      },
+      specificationInputOrigins: {
+        lowerSpecLimit: "excel_source" as const,
+        upperSpecLimit: "excel_source" as const,
+        targetSigmaLevel: "excel_source" as const,
+      },
+      methodIds: {
+        simulation: "F7_MONTE_CARLO_V1" as const,
+        histogram: "F7_HISTOGRAM_FD_V1" as const,
+        normalFit: "F7_NORMAL_MOMENT_FIT_V1" as const,
+      },
+      seed: SHA256_2,
+      iterations: 10_000 as const,
+      factorManifest,
+    },
+    markdown: "# F7 Report\n",
+  };
+}
+
+describe("F7 report contracts", () => {
+  it("accepts all governed assessment outcomes when they match simulation capability", () => {
+    for (const assessment of ["MEETS_TARGET", "BELOW_TARGET", "NOT_EVALUABLE"] as const) {
+      expect(f7ReportAssessmentSchema.parse(assessment)).toBe(assessment);
+      expect(f7ReportProjectionSchema.parse(createReportFixture(assessment)).assessment).toBe(assessment);
+    }
+    expect(f7ReportAssessmentSchema.safeParse("RELEASE").success).toBe(false);
+  });
+
+  it("rejects unknown report fields and non-finite summary metrics", () => {
+    const report = createReportFixture();
+    expect(f7ReportProjectionSchema.safeParse({ ...report, extra: true }).success).toBe(false);
+    expect(f7ReportProjectionSchema.safeParse({
+      ...report,
+      factors: [{ ...report.factors[0], extra: true }],
+    }).success).toBe(false);
+    expect(f7ReportProjectionSchema.safeParse({
+      ...report,
+      summary: { ...report.summary, mean: Number.POSITIVE_INFINITY },
+    }).success).toBe(false);
+  });
+
+  it("requires strict specification input origins for every Monte Carlo specification field", () => {
+    const report = createReportFixture();
+    const { specificationInputOrigins: _missing, ...evidenceWithoutOrigins } = report.evidence;
+
+    expect(f7ReportProjectionSchema.safeParse({
+      ...report,
+      evidence: evidenceWithoutOrigins,
+    }).success).toBe(false);
+    expect(f7ReportProjectionSchema.safeParse({
+      ...report,
+      evidence: {
+        ...report.evidence,
+        specificationInputOrigins: {
+          ...report.evidence.specificationInputOrigins,
+          lowerSpecLimit: "unknown",
+        },
+      },
+    }).success).toBe(false);
+    expect(f7ReportProjectionSchema.safeParse({
+      ...report,
+      evidence: {
+        ...report.evidence,
+        specificationInputOrigins: {
+          ...report.evidence.specificationInputOrigins,
+          extra: "manual_entry",
+        },
+      },
+    }).success).toBe(false);
+  });
+
+  it.each([
+    ["excel_source without its source cell", "excel_source", false],
+    ["manual_override with a source cell", "manual_override", true],
+  ] as const)("rejects %s at the specific source-cell path", (_case, origin, includeSourceCell) => {
+    const report = createReportFixture();
+    const specificationSourceCells = { ...report.evidence.specificationSourceCells };
+    if (!includeSourceCell) delete specificationSourceCells.lowerSpecLimit;
+
+    const result = f7ReportProjectionSchema.safeParse({
+      ...report,
+      evidence: {
+        ...report.evidence,
+        specificationSourceCells,
+        specificationInputOrigins: {
+          ...report.evidence.specificationInputOrigins,
+          lowerSpecLimit: origin,
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.map(({ path }) => path)).toContainEqual([
+        "evidence",
+        "specificationSourceCells",
+        "lowerSpecLimit",
+      ]);
+    }
+  });
+
+  it("requires a strict report generation route body", () => {
+    const request = { body: { sessionId: "session-1" } };
+    expect(f7ReportGenerateRouteRequestSchema.parse(request)).toEqual(request);
+    expect(f7ReportGenerateRouteRequestSchema.safeParse({
+      body: { sessionId: "session-1", extra: true },
+    }).success).toBe(false);
+    expect(f7ReportGenerateRouteRequestSchema.safeParse({
+      body: { sessionId: "" },
+    }).success).toBe(false);
+    expect(f7ReportGenerateRouteRequestSchema.safeParse({ ...request, extra: true }).success).toBe(false);
+  });
+
+  it("rejects report projections that disagree with the simulation or evidence manifest", () => {
+    const report = createReportFixture("BELOW_TARGET");
+    expect(f7ReportProjectionSchema.safeParse({ ...report, assessment: "MEETS_TARGET" }).success).toBe(false);
+    expect(f7ReportProjectionSchema.safeParse({
+      ...report,
+      summary: { ...report.summary, mean: 0.01 },
+    }).success).toBe(false);
+    expect(f7ReportProjectionSchema.safeParse({
+      ...report,
+      factors: [{ ...report.factors[0], sourceMode: "BASELINE_ASSUMPTION" }],
+    }).success).toBe(false);
+    expect(f7ReportProjectionSchema.safeParse({
+      ...report,
+      evidence: {
+        ...report.evidence,
+        factorManifest: [{ ...report.evidence.factorManifest[0], family: "gamma" }],
+      },
+    }).success).toBe(false);
+    expect(f7ReportProjectionSchema.safeParse({
+      ...report,
+      evidence: { ...report.evidence, iterations: 100_000 },
+    }).success).toBe(false);
+  });
+});
+
+describe("F7 phase 1 factor contracts", () => {
+  it("governs editable signed nominal and bilateral tolerances", () => {
+    const subtractive = {
+      factorCandidateId: SHA256,
+      designNominal: -0.57,
+      upperTolerance: 0.05,
+      lowerTolerance: -0.05,
+      confirmed: true,
+    } as const;
+
+    expect(f7FactorSetupConfirmationSchema.parse(subtractive)).toEqual(subtractive);
+    expect(f7FactorSetupConfirmationSchema.safeParse({ ...subtractive, designNominal: 0 }).success).toBe(false);
+    expect(f7FactorSetupConfirmationSchema.safeParse({ ...subtractive, upperTolerance: -0.01 }).success).toBe(false);
+    expect(f7FactorSetupConfirmationSchema.safeParse({ ...subtractive, lowerTolerance: 0.01 }).success).toBe(false);
+    expect(f7FactorSetupConfirmationSchema.safeParse({
+      ...subtractive,
+      designNominal: -0.02,
+      upperTolerance: 0.03,
+    }).success).toBe(true);
+    expect(f7FactorSetupConfirmationSchema.safeParse({ ...subtractive, loopCoefficient: -1 }).success).toBe(false);
+
+    const userAdded = {
+      ...subtractive,
+      factorCandidateId: SHA256_2,
+      factorName: "User stack gap",
+      userAdded: true,
+    } as const;
+    expect(f7FactorSetupConfirmationSchema.parse(userAdded)).toEqual(userAdded);
+    expect(f7FactorSetupConfirmationSchema.safeParse({ ...userAdded, factorName: "" }).success).toBe(false);
+    expect(f7FactorSetupConfirmationSchema.safeParse({ ...subtractive, factorName: "Unexpected" }).success).toBe(false);
+  });
+
+  it("accepts all F4 tolerance distribution choices", () => {
+    const base = {
+      factorCandidateId: SHA256,
+      designNominal: 1,
+      upperTolerance: 0.1,
+      lowerTolerance: -0.1,
+      confirmed: true,
+    } as const;
+
+    for (const distribution of ["Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta"] as const) {
+      expect(f7FactorSetupConfirmationSchema.parse({ ...base, distribution }).distribution).toBe(distribution);
+    }
+  });
+
+  it("requires confidential snapshot classification and rejects public", () => {
+    const baseSnapshot = {
+      contractId: "f7-analysis-result-v1",
+      outputClassification: "confidential",
+      sessionId: "session-1",
+      status: "worksheet_selection",
+      workbook: {
+        fileName: "Demo.xlsx",
+        workbookContentHash: SHA256,
+      },
+      selectedWorksheetNames: ["Analysis-A"],
+      worksheetOptions: WORKSHEET_OPTIONS,
+      factors: [],
+    } as const;
+
+    expect(f7SessionSnapshotSchema.safeParse(baseSnapshot).success).toBe(true);
+    expect(
+      f7SessionSnapshotSchema.safeParse({
+        ...baseSnapshot,
+        outputClassification: "public",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("optionally preserves the governed worksheet system specification", () => {
+    const systemSpecification = {
+      status: "available",
+      lowerSpecLimit: {
+        status: "available",
+        actualValue: -0.5,
+        displayValue: "-0.5",
+        sourceLabel: "Lower specification limit",
+        valueOrigin: "numeric_literal",
+      },
+      upperSpecLimit: {
+        status: "available",
+        actualValue: 0.5,
+        displayValue: "0.5",
+        sourceLabel: "Upper specification limit",
+        valueOrigin: "numeric_literal",
+      },
+      targetSigmaLevel: {
+        status: "available",
+        actualValue: 6,
+        displayValue: "6",
+        sourceLabel: "Target sigma level",
+        valueOrigin: "numeric_literal",
+      },
+      additionalMeanShift: {
+        status: "available",
+        actualValue: 0,
+        displayValue: "0",
+        sourceLabel: "Additional mean shift",
+        valueOrigin: "numeric_literal",
+      },
+    } as const;
+    const snapshot = {
+      contractId: "f7-analysis-result-v1",
+      outputClassification: "confidential",
+      sessionId: "session-1",
+      status: "worksheet_selection",
+      workbook: {
+        fileName: "Demo.xlsx",
+        workbookContentHash: SHA256,
+      },
+      selectedWorksheetNames: ["Analysis-A"],
+      worksheetOptions: WORKSHEET_OPTIONS,
+      factors: [],
+    } as const;
+
+    expect(f7SessionSnapshotSchema.parse({ ...snapshot, systemSpecification })).toEqual({
+      ...snapshot,
+      systemSpecification,
+    });
+    expect(f7SessionSnapshotSchema.safeParse(snapshot).success).toBe(true);
+    expect(f7SessionSnapshotSchema.safeParse({
+      ...snapshot,
+      systemSpecification: { ...systemSpecification, extra: true },
+    }).success).toBe(false);
+  });
+
+  it("enforces signedContributionMean = loopCoefficient * physicalMean within tolerance", () => {
+    const valid = {
+      workbookContentHash: SHA256,
+      worksheetName: "Analysis-A",
+      tableId: "table-1",
+      sourceRow: 2,
+      sourceCells: { mean: "Analysis-A!D2" },
+      factorCandidateId: SHA256_2,
+      factorId: SHA256,
+      factorName: "Gap",
+      unit: "mm",
+      unitSource: "user_confirmed",
+      designNominal: -0.123456,
+      upperTolerance: 0.05,
+      lowerTolerance: -0.05,
+      longTermSafetyFactor: 1,
+      sigmaLevel: 2.5,
+      distribution: "Normal",
+      calculatedMean: -0.123456,
+      tolerance: 0.05,
+      oneSigma: 0.02,
+      percentContributionToSigma: 1,
+      loopCoefficient: -1,
+      physicalMean: 0.123456,
+      signedContributionMean: -0.123456,
+      baselineSampler: {
+        samplerId: "NORMAL_LOCATION_SCALE_V1",
+        physicalMean: 0.123456,
+        standardDeviation: 0.02,
+        support: "REAL",
+      },
+      lowerSpecLimit: 0.073456,
+      upperSpecLimit: 0.173456,
+    } as const;
+
+    expect(f7FactorEvidenceSchema.parse(valid)).toEqual(valid);
+    expect(
+      f7FactorEvidenceSchema.safeParse({
+        ...valid,
+        signedContributionMean: -0.123455999998,
+      }).success,
+    ).toBe(false);
+    expect(
+      f7FactorEvidenceSchema.safeParse({
+        ...valid,
+        baselineSampler: {
+          ...valid.baselineSampler,
+          physicalMean: 0.123,
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      f7FactorEvidenceSchema.safeParse({
+        ...valid,
+        factorId: SHA256.toUpperCase(),
+      }).success,
+    ).toBe(false);
+    const missingFactorId = { ...valid };
+    delete (missingFactorId as { factorId?: string }).factorId;
+    expect(f7FactorEvidenceSchema.safeParse(missingFactorId).success).toBe(false);
+  });
+
+  it("limits coefficient to -1|+1 and rejects unknown fields", () => {
+    expect(f7LoopCoefficientSchema.safeParse(-1).success).toBe(true);
+    expect(f7LoopCoefficientSchema.safeParse(1).success).toBe(true);
+    expect(f7LoopCoefficientSchema.safeParse(0).success).toBe(false);
+
+    const candidate = {
+      workbookContentHash: SHA256,
+      worksheetName: "Analysis-A",
+      tableId: "table-1",
+      sourceRow: 3,
+      sourceCells: {
+        factorName: "Analysis-A!A3",
+        mean: "Analysis-A!D3",
+      },
+      factorCandidateId: SHA256_2,
+      factorName: "Thickness",
+      excelSignedMean: -0.2,
+      designNominal: -0.2,
+      upperTolerance: 0.1,
+      lowerTolerance: -0.1,
+      standardDeviation: 0.1,
+      distribution: "Normal",
+      lowerSpecLimit: -1,
+      upperSpecLimit: 1,
+    };
+    expect(f7FactorCandidateSchema.parse(candidate)).toEqual(candidate);
+    expect(f7FactorCandidateSchema.safeParse({ ...candidate, extra: true }).success).toBe(false);
+  });
+
+  it("reports sourceCells non-empty issue at sourceCells path", () => {
+    const invalidCandidate = {
+      workbookContentHash: SHA256,
+      worksheetName: "Analysis-A",
+      tableId: "table-1",
+      sourceRow: 3,
+      sourceCells: {},
+      factorCandidateId: SHA256_2,
+      factorName: "Thickness",
+      excelSignedMean: -0.2,
+      designNominal: -0.2,
+      upperTolerance: 0.1,
+      lowerTolerance: -0.1,
+      standardDeviation: 0.1,
+      distribution: "Normal",
+      lowerSpecLimit: -1,
+      upperSpecLimit: 1,
+    };
+
+    const result = f7FactorCandidateSchema.safeParse(invalidCandidate);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((issue) => issue.path.join(".") === "sourceCells")).toBe(true);
+    }
+  });
+
+  it("accepts MEASURED mode without dataset and requires baseline sampler for BASELINE_ASSUMPTION", () => {
+    expect(f7FactorInputSchema.safeParse({ mode: "MEASURED" }).success).toBe(true);
+    expect(f7FactorInputSchema.safeParse({ mode: "BASELINE_ASSUMPTION" }).success).toBe(false);
+    expect(
+      f7FactorInputSchema.safeParse({
+        mode: "BASELINE_ASSUMPTION",
+        baselineSampler: {
+          samplerId: "NORMAL_LOCATION_SCALE_V1",
+          physicalMean: 0.2,
+          standardDeviation: 0.05,
+          support: "REAL",
+        },
+      }).success,
+    ).toBe(true);
+    expect(
+      f7FactorInputSchema.safeParse({
+        mode: "BASELINE_ASSUMPTION",
+        baselineSampler: {
+          samplerId: "UNKNOWN",
+          physicalMean: 0.2,
+          standardDeviation: 0.05,
+          support: "REAL",
+        },
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("F7 measurement dataset contracts", () => {
+  it("caps measurement observations at the governed distribution-fit resource bound", () => {
+    const observations = Array.from({ length: 501 }, (_, index) => ({
+      value: index,
+      originalRow: index + 1,
+      disposition: "included" as const,
+    }));
+    const dataset = {
+      factorId: SHA256,
+      unit: "mm",
+      structure: "ORDERED_INDIVIDUALS",
+      sourceReference: "Paste",
+      importedAt: "2026-08-19T08:00:00.000Z",
+      msaStatus: "available",
+      observations,
+      missingRowCount: 0,
+      rejectionSummaries: [],
+      originalRowCount: observations.length,
+      analyzedCount: observations.length,
+      contentHash: SHA256_2,
+    };
+
+    expect(f7FactorInputSchema.safeParse({
+      mode: "MEASURED",
+      dataset: { ...dataset, observations: observations.slice(0, 500), originalRowCount: 500, analyzedCount: 500 },
+    }).success).toBe(true);
+    expect(f7FactorInputSchema.safeParse({ mode: "MEASURED", dataset }).success).toBe(false);
+  });
+
+  it("enforces exact dataset validation reason enums, issue shape, and candidate eligibility statuses", () => {
+    const exactReasons = [
+      "subgroup_too_small",
+      "ordered_sequence_invalid",
+      "sample_count_below_minimum",
+      "exploratory_only",
+      "fit_uncertainty",
+      "unit_mismatch",
+      "specification_missing",
+      "non_finite_measurement",
+      "duplicate_measurement",
+      "msa_evidence_missing",
+      "mixed_batch_conditions",
+      "outlier_candidate",
+      "invalid_rows_rejected",
+    ] as const;
+
+    for (const reason of exactReasons) {
+      expect(f7DatasetValidationReasonSchema.safeParse(reason).success).toBe(true);
+    }
+
+    expect(f7DatasetValidationReasonSchema.safeParse("invalid_row").success).toBe(false);
+    expect(f7DatasetValidationReasonSchema.safeParse("distribution_unsupported").success).toBe(false);
+
+    expect(
+      f7DatasetValidationIssueSchema.safeParse({
+        reason: "invalid_rows_rejected",
+        factorId: SHA256,
+        rowNumbers: [3, 7, 9],
+      }).success,
+    ).toBe(true);
+    expect(
+      f7DatasetValidationIssueSchema.safeParse({
+        reason: "invalid_rows_rejected",
+        factorId: SHA256,
+        rowNumber: 3,
+      }).success,
+    ).toBe(false);
+    expect(
+      f7DatasetValidationIssueSchema.safeParse({
+        reason: "invalid_rows_rejected",
+        factorId: SHA256,
+        rowNumbers: [7, 3],
+      }).success,
+    ).toBe(false);
+
+    expect(
+      f7CandidateEligibilitySchema.safeParse({
+        normal: "eligible",
+        lognormal: "eligible",
+        weibull: "ineligible_nonpositive",
+        gamma: "eligible",
+        uniform: "eligible_with_boundary_warning",
+      }).success,
+    ).toBe(true);
+    expect(
+      f7CandidateEligibilitySchema.safeParse({
+        normal: "unknown",
+        lognormal: "eligible",
+        weibull: "eligible",
+        gamma: "eligible",
+        uniform: "eligible",
+      }).success,
+    ).toBe(false);
+
+    expect(
+      f7DatasetValidationResultSchema.safeParse({
+        status: "ready",
+        blockingIssues: [],
+        advisoryIssues: [
+          {
+            reason: "fit_uncertainty",
+            factorId: SHA256,
+          },
+        ],
+        candidateEligibility: {
+          normal: "eligible",
+          lognormal: "eligible",
+          weibull: "eligible",
+          gamma: "eligible",
+          uniform: "eligible_with_boundary_warning",
+        },
+      }).success,
+    ).toBe(true);
+  });
+
+  it("enforces ordered dataset structure, lowercase hash, count reconciliation and disposition rules", () => {
+    const dataset = {
+      factorId: SHA256,
+      unit: "mm",
+      structure: "ORDERED_INDIVIDUALS",
+      sourceReference: "Paste: 2026-08-19",
+      importedAt: "2026-08-19T08:00:00.000Z",
+      msaStatus: "available",
+      observations: [
+        {
+          value: 1.2,
+          originalRow: 1,
+          disposition: "included",
+          sequence: "S-1",
+        },
+        {
+          value: 1.25,
+          originalRow: 2,
+          disposition: "excluded",
+          reason: "OUTLIER",
+          operatorReference: "op-001",
+          confirmed: true,
+          subgroup: "A",
+        },
+      ],
+      missingRowCount: 1,
+      rejectionSummaries: [{ rowNumber: 4, reason: "missing_value" }],
+      originalRowCount: 4,
+      analyzedCount: 1,
+      contentHash: SHA256_2,
+    };
+
+    expect(f7FactorInputSchema.parse({ mode: "MEASURED", dataset }).mode).toBe("MEASURED");
+    expect(f7MeasurementStructureSchema.safeParse("ORDERED_INDIVIDUALS").success).toBe(true);
+
+    expect(
+      f7FactorInputSchema.safeParse({
+        mode: "MEASURED",
+        dataset: {
+          ...dataset,
+          contentHash: SHA256_2.toUpperCase(),
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      f7FactorInputSchema.safeParse({
+        mode: "MEASURED",
+        dataset: {
+          ...dataset,
+          originalRowCount: 3,
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      f7FactorInputSchema.safeParse({
+        mode: "MEASURED",
+        dataset: {
+          ...dataset,
+          analyzedCount: 2,
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      f7FactorInputSchema.safeParse({
+        mode: "MEASURED",
+        dataset: {
+          ...dataset,
+          observations: [{
+            value: 1.2,
+            originalRow: 1,
+            disposition: "included",
+            reason: "OUTLIER",
+          }],
+          missingRowCount: 0,
+          rejectionSummaries: [],
+          originalRowCount: 1,
+          analyzedCount: 1,
+        },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects duplicate observation original rows", () => {
+    const duplicateObservations = {
+      factorId: SHA256,
+      unit: "mm",
+      structure: "ORDERED_INDIVIDUALS",
+      sourceReference: "Paste",
+      importedAt: "2026-08-19T08:00:00.000Z",
+      msaStatus: "available",
+      observations: [
+        {
+          value: 1.2,
+          originalRow: 1,
+          disposition: "included",
+        },
+        {
+          value: 1.25,
+          originalRow: 1,
+          disposition: "included",
+        },
+      ],
+      missingRowCount: 0,
+      rejectionSummaries: [],
+      originalRowCount: 2,
+      analyzedCount: 2,
+      contentHash: SHA256_2,
+    };
+    expect(f7FactorInputSchema.safeParse({ mode: "MEASURED", dataset: duplicateObservations }).success).toBe(false);
+  });
+
+  it("rejects duplicate rejection row numbers", () => {
+    const duplicateRejections = {
+      factorId: SHA256,
+      unit: "mm",
+      structure: "ORDERED_INDIVIDUALS",
+      sourceReference: "Paste",
+      importedAt: "2026-08-19T08:00:00.000Z",
+      msaStatus: "available",
+      observations: [
+        {
+          value: 1.2,
+          originalRow: 1,
+          disposition: "included",
+        },
+      ],
+      missingRowCount: 0,
+      rejectionSummaries: [
+        { rowNumber: 3, reason: "missing_value" },
+        { rowNumber: 3, reason: "invalid_row" },
+      ],
+      originalRowCount: 3,
+      analyzedCount: 1,
+      contentHash: SHA256_2,
+    };
+    expect(f7FactorInputSchema.safeParse({ mode: "MEASURED", dataset: duplicateRejections }).success).toBe(false);
+  });
+
+  it("rejects overlap between observation rows and rejection rows", () => {
+    const overlapRows = {
+      factorId: SHA256,
+      unit: "mm",
+      structure: "ORDERED_INDIVIDUALS",
+      sourceReference: "Paste",
+      importedAt: "2026-08-19T08:00:00.000Z",
+      msaStatus: "available",
+      observations: [
+        {
+          value: 1.2,
+          originalRow: 2,
+          disposition: "included",
+        },
+      ],
+      missingRowCount: 0,
+      rejectionSummaries: [{ rowNumber: 2, reason: "missing_value" }],
+      originalRowCount: 2,
+      analyzedCount: 1,
+      contentHash: SHA256_2,
+    };
+    expect(f7FactorInputSchema.safeParse({ mode: "MEASURED", dataset: overlapRows }).success).toBe(false);
+  });
+});
+
+describe("F7 distribution fit contracts", () => {
+  it("accepts only governed candidate families and strict finite fit diagnostics", () => {
+    for (const family of ["normal", "lognormal", "weibull", "gamma", "uniform"] as const) {
+      expect(f7DistributionCandidateFamilySchema.safeParse(family).success).toBe(true);
+    }
+    expect(f7DistributionCandidateFamilySchema.safeParse("beta").success).toBe(false);
+
+    expect(f7DistributionFitCandidateSchema.parse(DISTRIBUTION_FIT_RESULT.candidates[0])).toEqual(
+      DISTRIBUTION_FIT_RESULT.candidates[0],
+    );
+    expect(f7DistributionFitCandidateSchema.safeParse({
+      ...DISTRIBUTION_FIT_RESULT.candidates[0],
+      bootstrap: { ...DISTRIBUTION_FIT_RESULT.candidates[0].bootstrap, pValue: 1.01 },
+    }).success).toBe(false);
+    expect(f7DistributionFitCandidateSchema.safeParse({
+      ...DISTRIBUTION_FIT_RESULT.candidates[0],
+      ks: Number.NaN,
+    }).success).toBe(false);
+    expect(f7DistributionFitCandidateSchema.safeParse({
+      ...DISTRIBUTION_FIT_RESULT.candidates[0],
+      parameters: {},
+    }).success).toBe(false);
+    expect(f7DistributionFitCandidateSchema.safeParse({
+      ...DISTRIBUTION_FIT_RESULT.candidates[0],
+      bootstrap: { ...DISTRIBUTION_FIT_RESULT.candidates[0].bootstrap, seed: 1729 },
+    }).success).toBe(false);
+    expect(f7DistributionFitCandidateSchema.safeParse({
+      ...DISTRIBUTION_FIT_RESULT.candidates[0],
+      extra: true,
+    }).success).toBe(false);
+  });
+
+  it("requires explicit model specification, parameter count, and delta diagnostics", () => {
+    const candidate = DISTRIBUTION_FIT_RESULT.candidates[0];
+    expect(f7DistributionFitCandidateSchema.parse(candidate)).toEqual(candidate);
+    expect(f7DistributionFitCandidateSchema.safeParse({
+      ...candidate,
+      parameterCount: 3,
+    }).success).toBe(false);
+    expect(f7DistributionFitCandidateSchema.safeParse({
+      ...candidate,
+      modelSpecification: "gamma_location_scale",
+    }).success).toBe(false);
+    expect(f7DistributionFitCandidateSchema.safeParse({
+      ...candidate,
+      deltaAicc: Number.POSITIVE_INFINITY,
+    }).success).toBe(false);
+    expect(f7DistributionFitCandidateSchema.safeParse({
+      ...candidate,
+      deltaBic: Number.NaN,
+    }).success).toBe(false);
+  });
+
+  it("rejects future free-location specifications in governed fit candidates", () => {
+    const candidate = DISTRIBUTION_FIT_RESULT.candidates[0];
+    const freeLocationCandidates = [
+      ["lognormal", "lognormal_location_free", { logMean: 0, logStandardDeviation: 1 }],
+      ["weibull", "weibull_location_free", { shape: 2, scale: 1 }],
+      ["gamma", "gamma_location_free", { shape: 2, scale: 1 }],
+    ] as const;
+    for (const [family, modelSpecification, parameters] of freeLocationCandidates) {
+      expect(f7DistributionFitCandidateSchema.safeParse({
+        ...candidate,
+        family,
+        modelSpecification,
+        parameterCount: 3,
+        parameters,
+      }).success).toBe(false);
+    }
+  });
+
+  it("requires governed bootstrap framing and threshold-consistent status", () => {
+    const bootstrap = DISTRIBUTION_FIT_RESULT.candidates[0].bootstrap;
+    expect(f7DistributionFitCandidateSchema.safeParse({
+      ...DISTRIBUTION_FIT_RESULT.candidates[0],
+      bootstrap: { ...bootstrap, replicates: 1999 },
+    }).success).toBe(false);
+    expect(f7DistributionFitCandidateSchema.safeParse({
+      ...DISTRIBUTION_FIT_RESULT.candidates[0],
+      bootstrap: { ...bootstrap, methodId: "F7_BOOTSTRAP_V1" },
+    }).success).toBe(false);
+    expect(f7DistributionFitCandidateSchema.safeParse({
+      ...DISTRIBUTION_FIT_RESULT.candidates[0],
+      bootstrap: { ...bootstrap, candidateMethodId: "F7_DISTRIBUTION_FIT_V2" },
+    }).success).toBe(false);
+    expect(f7DistributionFitCandidateSchema.safeParse({
+      ...DISTRIBUTION_FIT_RESULT.candidates[0],
+      bootstrap: { ...bootstrap, streamDigest: "A".repeat(64) },
+    }).success).toBe(false);
+
+    for (const [pValue, status] of [
+      [499 / 10001, "rejected"],
+      [501 / 10001, "weak"],
+      [999 / 10001, "weak"],
+      [1001 / 10001, "acceptable"],
+    ] as const) {
+      const extremeReplicateCount = Math.round(pValue * (BOOTSTRAP_REPLICATES + 1)) - 1;
+      expect(f7DistributionFitCandidateSchema.safeParse({
+        ...DISTRIBUTION_FIT_RESULT.candidates[0],
+        bootstrap: {
+          ...bootstrap,
+          pValue,
+          status,
+          extremeReplicateCount,
+          confidenceInterval: {
+            level: 0.95,
+            method: "wilson_score",
+            ...wilsonScoreInterval(extremeReplicateCount, BOOTSTRAP_REPLICATES),
+          },
+        },
+      }).success).toBe(true);
+    }
+    expect(f7DistributionFitCandidateSchema.safeParse({
+      ...DISTRIBUTION_FIT_RESULT.candidates[0],
+      bootstrap: {
+        ...bootstrap,
+        pValue: 501 / 10001,
+        status: "rejected",
+        extremeReplicateCount: 500,
+        confidenceInterval: {
+          level: 0.95,
+          method: "wilson_score",
+          ...wilsonScoreInterval(500, BOOTSTRAP_REPLICATES),
+        },
+      },
+    }).success).toBe(false);
+    expect(f7DistributionFitCandidateSchema.safeParse({
+      ...DISTRIBUTION_FIT_RESULT.candidates[0],
+      bootstrap: {
+        ...bootstrap,
+        pValue: 1001 / 10001,
+        status: "weak",
+        extremeReplicateCount: 1000,
+        confidenceInterval: {
+          level: 0.95,
+          method: "wilson_score",
+          ...wilsonScoreInterval(1000, BOOTSTRAP_REPLICATES),
+        },
+      },
+    }).success).toBe(false);
+    expect(f7DistributionFitCandidateSchema.safeParse({
+      ...DISTRIBUTION_FIT_RESULT.candidates[0],
+      bootstrap: { ...bootstrap, pValue: 0 },
+    }).success).toBe(false);
+    expect(f7DistributionFitCandidateSchema.safeParse({
+      ...DISTRIBUTION_FIT_RESULT.candidates[0],
+      bootstrap: { ...bootstrap, pValue: 0.42 },
+    }).success).toBe(false);
+  });
+
+  it("requires governed Anderson-Darling bootstrap metadata and Wilson interval consistency", () => {
+    const candidate = DISTRIBUTION_FIT_RESULT.candidates[0];
+    expect(f7DistributionFitCandidateSchema.safeParse(candidate).success).toBe(true);
+    expect(f7DistributionFitCandidateSchema.safeParse({
+      ...candidate,
+      bootstrap: { ...candidate.bootstrap, statisticId: "kolmogorov_smirnov" },
+    }).success).toBe(false);
+    expect(f7DistributionFitCandidateSchema.safeParse({
+      ...candidate,
+      bootstrap: { ...candidate.bootstrap, observedStatistic: candidate.ad + 0.01 },
+    }).success).toBe(false);
+    expect(f7DistributionFitCandidateSchema.safeParse({
+      ...candidate,
+      bootstrap: { ...candidate.bootstrap, comparisonDirection: "greater_than" },
+    }).success).toBe(false);
+    expect(f7DistributionFitCandidateSchema.safeParse({
+      ...candidate,
+      bootstrap: { ...candidate.bootstrap, refitEachReplicate: false },
+    }).success).toBe(false);
+    expect(f7DistributionFitCandidateSchema.safeParse({
+      ...candidate,
+      bootstrap: { ...candidate.bootstrap, extremeReplicateCount: 10000.5 },
+    }).success).toBe(false);
+    expect(f7DistributionFitCandidateSchema.safeParse({
+      ...candidate,
+      bootstrap: {
+        ...candidate.bootstrap,
+        confidenceInterval: {
+          ...candidate.bootstrap.confidenceInterval,
+          lower: candidate.bootstrap.confidenceInterval.lower + 0.01,
+        },
+      },
+    }).success).toBe(false);
+    expect(f7DistributionFitCandidateSchema.safeParse({
+      ...candidate,
+      bootstrap: {
+        ...candidate.bootstrap,
+        pValue: BOOTSTRAP_EXTREME_COUNT / BOOTSTRAP_REPLICATES,
+      },
+    }).success).toBe(false);
+  });
+
+  it("requires finite ordered Q-Q evidence with at least two points", () => {
+    const candidate = DISTRIBUTION_FIT_RESULT.candidates[0];
+    expect(f7DistributionFitCandidateSchema.safeParse({
+      ...candidate,
+      qqPoints: candidate.qqPoints.slice(0, 1),
+    }).success).toBe(false);
+    expect(f7DistributionFitCandidateSchema.safeParse({
+      ...candidate,
+      qqPoints: [candidate.qqPoints[1], candidate.qqPoints[0]],
+    }).success).toBe(false);
+    expect(f7DistributionFitCandidateSchema.safeParse({
+      ...candidate,
+      qqPoints: [candidate.qqPoints[0], { observed: Number.POSITIVE_INFINITY, theoretical: 2 }],
+    }).success).toBe(false);
+    expect(f7DistributionFitCandidateSchema.safeParse({
+      ...candidate,
+      qqPoints: [{ ...candidate.qqPoints[0], extra: true }, candidate.qqPoints[1]],
+    }).success).toBe(false);
+  });
+
+  it("requires exactly the governed parameter keys and valid parameter domains", () => {
+    const normal = DISTRIBUTION_FIT_RESULT.candidates[0];
+    expect(f7DistributionFitCandidateSchema.safeParse({
+      ...normal,
+      parameters: { mean: 1.25, standardDeviation: 0.08, scale: 1 },
+    }).success).toBe(false);
+    expect(f7DistributionFitCandidateSchema.safeParse({
+      ...normal,
+      parameters: { mean: 1.25, standardDeviation: 0 },
+    }).success).toBe(false);
+
+    for (const [family, parameters] of [
+      ["lognormal", { logMean: 0.1, logStandardDeviation: 0.2 }],
+      ["weibull", { shape: 1.5, scale: 2 }],
+      ["gamma", { shape: 2, scale: 0.5 }],
+      ["uniform", { minimum: 1, maximum: 2 }],
+    ] as const) {
+      const warnings = family === "uniform" ? [UNIFORM_BOUNDARY_WARNING] : [];
+      const modelSpecification = family === "lognormal"
+        ? "lognormal_location_zero"
+        : family === "weibull"
+          ? "weibull_location_zero"
+          : family === "gamma"
+            ? "gamma_location_zero"
+            : "uniform_boundary_mle";
+      expect(
+        f7DistributionFitCandidateSchema.safeParse({
+          ...normal,
+          family,
+          modelSpecification,
+          parameterCount: 2,
+          parameters,
+          warnings,
+        }).success,
+      ).toBe(true);
+    }
+    expect(f7DistributionFitCandidateSchema.safeParse({
+      ...normal,
+      family: "gamma",
+      parameters: { shape: -1, scale: 0.5 },
+    }).success).toBe(false);
+    expect(f7DistributionFitCandidateSchema.safeParse({
+      ...normal,
+      family: "uniform",
+      parameters: { minimum: 2, maximum: 2 },
+      warnings: [UNIFORM_BOUNDARY_WARNING],
+    }).success).toBe(false);
+    expect(f7DistributionFitCandidateSchema.safeParse({
+      ...normal,
+      family: "uniform",
+      parameters: { minimum: 1, maximum: 2 },
+      warnings: ["Boundary warning"],
+    }).success).toBe(false);
+  });
+
+  it("validates failed candidates and withholds selection after any numerical failure", () => {
+    const failedGamma = { family: "gamma", reasonCode: "numerical_fit_failed" } as const;
+    expect(f7DistributionFitResultSchema.safeParse({
+      ...DISTRIBUTION_FIT_RESULT,
+      failedCandidates: [failedGamma],
+      selectionDecision: {
+        ...DISTRIBUTION_FIT_RESULT.selectionDecision,
+        status: "withheld_candidate_failures",
+        proposedFinalFamily: undefined,
+        confidence: "low",
+        reasonCodes: [
+          "SINGLE_ACCEPTABLE_COMPETITOR",
+          "SMALL_SAMPLE_UNCERTAINTY",
+          "CANDIDATE_FIT_FAILURES",
+        ],
+      },
+    }).success).toBe(true);
+    expect(f7DistributionFitResultSchema.safeParse({
+      ...DISTRIBUTION_FIT_RESULT,
+      failedCandidates: [failedGamma, failedGamma],
+    }).success).toBe(false);
+    expect(f7DistributionFitResultSchema.safeParse({
+      ...DISTRIBUTION_FIT_RESULT,
+      failedCandidates: [{ family: "normal", reasonCode: "numerical_fit_failed" }],
+    }).success).toBe(false);
+    expect(f7DistributionFitResultSchema.safeParse({
+      ...DISTRIBUTION_FIT_RESULT,
+      failedCandidates: [failedGamma],
+      selectionDecision: {
+        ...DISTRIBUTION_FIT_RESULT.selectionDecision,
+        status: "unique_preference",
+      },
+    }).success).toBe(false);
+    expect(f7DistributionFitResultSchema.safeParse({
+      ...DISTRIBUTION_FIT_RESULT,
+      failedCandidates: [{ family: "gamma", reasonCode: "unknown" }],
+    }).success).toBe(false);
+  });
+
+  it("requires the governed numeric best, competitive set, and no-acceptable logic", () => {
+    expect(f7DistributionFitResultSchema.parse(DISTRIBUTION_FIT_RESULT)).toEqual(DISTRIBUTION_FIT_RESULT);
+    expect(f7DistributionFitResultSchema.safeParse({
+      ...DISTRIBUTION_FIT_RESULT,
+      selectionDecision: {
+        ...DISTRIBUTION_FIT_RESULT.selectionDecision,
+        numericBestFamily: "gamma",
+      },
+    }).success).toBe(false);
+    expect(f7DistributionFitResultSchema.safeParse({
+      ...DISTRIBUTION_FIT_RESULT,
+      selectionDecision: {
+        ...DISTRIBUTION_FIT_RESULT.selectionDecision,
+        numericBestFamily: undefined,
+      },
+    }).success).toBe(false);
+    expect(f7DistributionFitResultSchema.safeParse({
+      ...DISTRIBUTION_FIT_RESULT,
+      candidates: [
+        DISTRIBUTION_FIT_RESULT.candidates[0],
+        {
+          ...DISTRIBUTION_FIT_RESULT.candidates[0],
+          family: "gamma",
+          modelSpecification: "gamma_location_zero",
+          parameters: { shape: 2, scale: 0.5 },
+          aicc: DISTRIBUTION_FIT_RESULT.candidates[0].aicc - 1,
+        },
+      ],
+      selectionDecision: {
+        ...DISTRIBUTION_FIT_RESULT.selectionDecision,
+        numericBestFamily: "normal",
+      },
+    }).success).toBe(false);
+    const tiedGamma = {
+      ...DISTRIBUTION_FIT_RESULT.candidates[0],
+      family: "gamma" as const,
+      modelSpecification: "gamma_location_zero" as const,
+      parameters: { shape: 2, scale: 0.5 },
+    };
+    expect(f7DistributionFitResultSchema.safeParse({
+      ...DISTRIBUTION_FIT_RESULT,
+      candidates: [DISTRIBUTION_FIT_RESULT.candidates[0], tiedGamma],
+      selectionDecision: {
+        ...DISTRIBUTION_FIT_RESULT.selectionDecision,
+        status: "no_unique_preference",
+        competitiveFamilies: ["normal", "gamma"],
+        confidence: "low",
+        reasonCodes: ["MULTIPLE_COMPETITIVE_MODELS", "SMALL_SAMPLE_UNCERTAINTY"],
+      },
+    }).success).toBe(true);
+    expect(f7DistributionFitResultSchema.safeParse({
+      ...DISTRIBUTION_FIT_RESULT,
+      candidates: [DISTRIBUTION_FIT_RESULT.candidates[0], tiedGamma],
+      selectionDecision: {
+        ...DISTRIBUTION_FIT_RESULT.selectionDecision,
+        status: "no_unique_preference",
+        competitiveFamilies: ["gamma"],
+        confidence: "low",
+        reasonCodes: ["MULTIPLE_COMPETITIVE_MODELS", "SMALL_SAMPLE_UNCERTAINTY"],
+      },
+    }).success).toBe(false);
+    expect(f7DistributionFitResultSchema.safeParse({
+      ...DISTRIBUTION_FIT_RESULT,
+      candidates: [{
+        ...DISTRIBUTION_FIT_RESULT.candidates[0],
+        bootstrap: {
+          ...DISTRIBUTION_FIT_RESULT.candidates[0].bootstrap,
+          pValue: 801 / 10001,
+          extremeReplicateCount: 800,
+          confidenceInterval: {
+            level: 0.95,
+            method: "wilson_score",
+            ...wilsonScoreInterval(800, BOOTSTRAP_REPLICATES),
+          },
+          status: "weak",
+        },
+      }],
+      selectionDecision: {
+        ...DISTRIBUTION_FIT_RESULT.selectionDecision,
+        status: "no_acceptable_model",
+        numericBestFamily: undefined,
+        competitiveFamilies: [],
+        proposedFinalFamily: undefined,
+        confidence: "low",
+        reasonCodes: ["SMALL_SAMPLE_UNCERTAINTY", "NO_ACCEPTABLE_MODEL"],
+      },
+    }).success).toBe(true);
+    expect(f7DistributionFitResultSchema.safeParse({
+      ...DISTRIBUTION_FIT_RESULT,
+      candidates: [{
+        ...DISTRIBUTION_FIT_RESULT.candidates[0],
+        bootstrap: {
+          ...DISTRIBUTION_FIT_RESULT.candidates[0].bootstrap,
+          pValue: 801 / 10001,
+          extremeReplicateCount: 800,
+          confidenceInterval: {
+            level: 0.95,
+            method: "wilson_score",
+            ...wilsonScoreInterval(800, BOOTSTRAP_REPLICATES),
+          },
+          status: "weak",
+        },
+      }],
+      selectionDecision: {
+        ...DISTRIBUTION_FIT_RESULT.selectionDecision,
+        status: "no_acceptable_model",
+        numericBestFamily: undefined,
+        competitiveFamilies: [],
+        proposedFinalFamily: undefined,
+        confidence: "moderate",
+        reasonCodes: ["SMALL_SAMPLE_UNCERTAINTY", "NO_ACCEPTABLE_MODEL"],
+      },
+    }).success).toBe(false);
+  });
+
+  it("requires structured diagnostics and selection decision while rejecting legacy recommendedFamily", () => {
+    const nextShape = {
+      ...DISTRIBUTION_FIT_RESULT,
+      sampleDiagnostics: {
+        mean: 1.25,
+        median: 1.24,
+        skewness: 0.02,
+        coefficientOfVariation: 0.064,
+        meanMedianRelativeDifference: 0.008,
+        normalQqCurvature: 0.03,
+      },
+      selectionDecision: {
+        methodId: "F7_MODEL_SELECTION_V1",
+        status: "unique_preference",
+        numericBestFamily: "normal",
+        competitiveFamilies: ["normal"],
+        proposedFinalFamily: "normal",
+        confidence: "moderate",
+        reasonCodes: ["SINGLE_ACCEPTABLE_COMPETITOR", "SMALL_SAMPLE_UNCERTAINTY"],
+      },
+    };
+    delete (nextShape as { recommendedFamily?: string }).recommendedFamily;
+
+    expect(f7DistributionFitResultSchema.safeParse(nextShape).success).toBe(true);
+    expect(f7DistributionFitResultSchema.safeParse({
+      ...nextShape,
+      recommendedFamily: "normal",
+    }).success).toBe(false);
+  });
+
+  it("validates competitive-set, small-sample, and engineering-default invariants in selectionDecision", () => {
+    const base = {
+      ...DISTRIBUTION_FIT_RESULT,
+      characteristicKind: "dimensional" as const,
+      candidates: [
+        DISTRIBUTION_FIT_RESULT.candidates[0],
+        {
+          ...DISTRIBUTION_FIT_RESULT.candidates[0],
+          family: "gamma" as const,
+          modelSpecification: "gamma_location_zero" as const,
+          parameters: { shape: 2, scale: 0.5 },
+        },
+      ],
+      sampleDiagnostics: {
+        mean: 1.25,
+        median: 1.24,
+        skewness: 0.1,
+        coefficientOfVariation: 0.064,
+        meanMedianRelativeDifference: 0.008,
+        normalQqCurvature: 0.03,
+      },
+      selectionDecision: {
+        methodId: "F7_MODEL_SELECTION_V1",
+        status: "no_unique_preference",
+        numericBestFamily: "normal",
+        competitiveFamilies: ["normal", "gamma"],
+        engineeringDefaultFamily: "normal",
+        proposedFinalFamily: "normal",
+        confidence: "low",
+        reasonCodes: [
+          "MULTIPLE_COMPETITIVE_MODELS",
+          "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT",
+          "SMALL_SAMPLE_UNCERTAINTY",
+        ],
+      },
+    };
+    delete (base as { recommendedFamily?: string }).recommendedFamily;
+
+    expect(f7DistributionFitResultSchema.safeParse(base).success).toBe(true);
+    expect(f7DistributionFitResultSchema.safeParse({
+      ...base,
+      selectionDecision: {
+        ...base.selectionDecision,
+        competitiveFamilies: ["normal"],
+      },
+    }).success).toBe(false);
+    expect(f7DistributionFitResultSchema.safeParse({
+      ...base,
+      selectionDecision: {
+        ...base.selectionDecision,
+        confidence: "moderate",
+      },
+    }).success).toBe(false);
+    expect(f7DistributionFitResultSchema.safeParse({
+      ...base,
+      selectionDecision: {
+        ...base.selectionDecision,
+        engineeringDefaultFamily: "gamma",
+      },
+    }).success).toBe(false);
+  });
+
+  it("requires characteristicKind and rejects engineering defaults unless the exact dimensional algorithm conditions hold", () => {
+    const normal64 = withFitCriteria(DISTRIBUTION_FIT_RESULT.candidates[0], 64);
+    const gamma64 = withFitCriteria({
+      ...normal64,
+      family: "gamma" as const,
+      modelSpecification: "gamma_location_zero" as const,
+      parameters: { shape: 2, scale: 0.5 },
+      logLikelihood: normal64.logLikelihood - 0.75,
+      deltaAicc: 1.5,
+      deltaBic: 1.5,
+    }, 64);
+    const base = {
+      ...DISTRIBUTION_FIT_RESULT,
+      sampleSize: 64,
+      characteristicKind: "dimensional" as const,
+      candidates: [normal64, gamma64],
+      selectionDecision: {
+        methodId: "F7_MODEL_SELECTION_V1",
+        status: "no_unique_preference" as const,
+        numericBestFamily: "normal" as const,
+        competitiveFamilies: ["normal", "gamma"] as const,
+        engineeringDefaultFamily: "normal" as const,
+        proposedFinalFamily: "normal" as const,
+        confidence: "moderate" as const,
+        reasonCodes: [
+          "MULTIPLE_COMPETITIVE_MODELS",
+          "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT",
+        ] as const,
+      },
+    };
+
+    const missingCharacteristicKind = { ...base } as { characteristicKind?: "dimensional" | "other" };
+    delete missingCharacteristicKind.characteristicKind;
+    expect(f7DistributionFitResultSchema.safeParse(missingCharacteristicKind).success).toBe(false);
+    expect(f7DistributionFitResultSchema.safeParse(base).success).toBe(true);
+    expect(f7DistributionFitResultSchema.safeParse({
+      ...base,
+      characteristicKind: "other",
+    }).success).toBe(false);
+    expect(f7DistributionFitResultSchema.safeParse({
+      ...base,
+      sampleDiagnostics: {
+        ...base.sampleDiagnostics,
+        skewness: 0.51,
+      },
+    }).success).toBe(false);
+    expect(f7DistributionFitResultSchema.safeParse({
+      ...base,
+      selectionDecision: {
+        ...base.selectionDecision,
+        engineeringDefaultFamily: undefined,
+        reasonCodes: ["MULTIPLE_COMPETITIVE_MODELS"],
+      },
+    }).success).toBe(false);
+  });
+
+  it("rejects reason codes that are extra, missing, or incompatible with the derived outcome", () => {
+    const normal64 = withFitCriteria(DISTRIBUTION_FIT_RESULT.candidates[0], 64);
+    const gamma64 = withFitCriteria({
+      ...normal64,
+      family: "gamma" as const,
+      modelSpecification: "gamma_location_zero" as const,
+      parameters: { shape: 2, scale: 0.5 },
+      logLikelihood: normal64.logLikelihood - 0.75,
+      deltaAicc: 1.5,
+      deltaBic: 1.5,
+    }, 64);
+    const competitiveBase = {
+      ...DISTRIBUTION_FIT_RESULT,
+      sampleSize: 64,
+      characteristicKind: "dimensional" as const,
+      candidates: [normal64, gamma64],
+      selectionDecision: {
+        methodId: "F7_MODEL_SELECTION_V1",
+        status: "no_unique_preference" as const,
+        numericBestFamily: "normal" as const,
+        competitiveFamilies: ["normal", "gamma"] as const,
+        engineeringDefaultFamily: "normal" as const,
+        proposedFinalFamily: "normal" as const,
+        confidence: "moderate" as const,
+        reasonCodes: [
+          "MULTIPLE_COMPETITIVE_MODELS",
+          "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT",
+        ] as const,
+      },
+    };
+
+    expect(f7DistributionFitResultSchema.safeParse({
+      ...competitiveBase,
+      selectionDecision: {
+        ...competitiveBase.selectionDecision,
+        status: "unique_preference",
+        reasonCodes: [
+          "SINGLE_ACCEPTABLE_COMPETITOR",
+          "NO_ACCEPTABLE_MODEL",
+          "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT",
+        ],
+      },
+    }).success).toBe(false);
+    expect(f7DistributionFitResultSchema.safeParse({
+      ...competitiveBase,
+      failedCandidates: [{ family: "weibull", reasonCode: "numerical_fit_failed" }],
+      selectionDecision: {
+        ...competitiveBase.selectionDecision,
+        status: "withheld_candidate_failures",
+        confidence: "low",
+        engineeringDefaultFamily: undefined,
+        reasonCodes: ["MULTIPLE_COMPETITIVE_MODELS"],
+      },
+    }).success).toBe(false);
+    expect(f7DistributionFitResultSchema.safeParse({
+      ...competitiveBase,
+      selectionDecision: {
+        ...competitiveBase.selectionDecision,
+        reasonCodes: [
+          "MULTIPLE_COMPETITIVE_MODELS",
+          "SMALL_SAMPLE_UNCERTAINTY",
+          "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT",
+        ],
+      },
+    }).success).toBe(false);
+    expect(f7DistributionFitResultSchema.safeParse({
+      ...DISTRIBUTION_FIT_RESULT,
+      selectionDecision: {
+        ...DISTRIBUTION_FIT_RESULT.selectionDecision,
+        reasonCodes: [
+          "SINGLE_ACCEPTABLE_COMPETITOR",
+          "SMALL_SAMPLE_UNCERTAINTY",
+          "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT",
+        ],
+      },
+    }).success).toBe(false);
+  });
+
+  it("accepts candidates at delta AICc 2 and rejects every positive exceedance", () => {
+    const normal64 = withFitCriteria(DISTRIBUTION_FIT_RESULT.candidates[0], 64);
+    const withinTolerance = {
+      ...DISTRIBUTION_FIT_RESULT,
+      sampleSize: 64,
+      candidates: [
+        normal64,
+        withFitCriteria({
+          ...normal64,
+          family: "gamma" as const,
+          modelSpecification: "gamma_location_zero" as const,
+          parameters: { shape: 2, scale: 0.5 },
+          logLikelihood: normal64.logLikelihood - 1,
+          deltaAicc: 2,
+          deltaBic: 2,
+        }, 64),
+      ],
+      selectionDecision: {
+        methodId: "F7_MODEL_SELECTION_V1",
+        status: "no_unique_preference" as const,
+        numericBestFamily: "normal" as const,
+        competitiveFamilies: ["normal", "gamma"] as const,
+        proposedFinalFamily: "normal" as const,
+        confidence: "moderate" as const,
+        reasonCodes: ["MULTIPLE_COMPETITIVE_MODELS"] as const,
+      },
+    };
+
+    expect(f7DistributionFitResultSchema.safeParse(withinTolerance).success).toBe(true);
+    expect(f7DistributionFitResultSchema.safeParse({
+      ...withinTolerance,
+      selectionDecision: {
+        ...withinTolerance.selectionDecision,
+        proposedFinalFamily: "gamma",
+      },
+    }).success).toBe(false);
+    expect(f7DistributionFitResultSchema.safeParse({
+      ...withinTolerance,
+      candidates: [
+        withinTolerance.candidates[0],
+        withFitCriteria({
+          ...withinTolerance.candidates[1],
+          logLikelihood: normal64.logLikelihood - 1.00000000025,
+          deltaAicc: 2.0000000005,
+          deltaBic: 2.0000000005,
+        }, 64),
+      ],
+      selectionDecision: {
+        ...withinTolerance.selectionDecision,
+        status: "unique_preference",
+        competitiveFamilies: ["normal"],
+        reasonCodes: ["SINGLE_ACCEPTABLE_COMPETITOR"],
+      },
+    }).success).toBe(true);
+    expect(f7DistributionFitResultSchema.safeParse({
+      ...withinTolerance,
+      candidates: [
+        withinTolerance.candidates[0],
+        withFitCriteria({
+          ...withinTolerance.candidates[1],
+          logLikelihood: normal64.logLikelihood - 1.00000000025,
+          deltaAicc: 2.0000000005,
+          deltaBic: 2.0000000005,
+        }, 64),
+      ],
+      selectionDecision: withinTolerance.selectionDecision,
+    }).success).toBe(false);
+  });
+
+  it("enforces governed family precedence for exact AICc ties independent of candidate order", () => {
+    const gamma = withFitCriteria({
+      ...DISTRIBUTION_FIT_RESULT.candidates[0],
+      family: "gamma" as const,
+      modelSpecification: "gamma_location_zero" as const,
+      parameters: { shape: 2, scale: 0.5 },
+    }, 64);
+    const lognormal = withFitCriteria({
+      ...DISTRIBUTION_FIT_RESULT.candidates[0],
+      family: "lognormal" as const,
+      modelSpecification: "lognormal_location_zero" as const,
+      parameters: { logMean: 0, logStandardDeviation: 0.2 },
+    }, 64);
+    const tiedResult = {
+      ...DISTRIBUTION_FIT_RESULT,
+      sampleSize: 64,
+      candidates: [gamma, lognormal],
+      selectionDecision: {
+        methodId: "F7_MODEL_SELECTION_V1" as const,
+        status: "no_unique_preference" as const,
+        numericBestFamily: "lognormal" as const,
+        competitiveFamilies: ["gamma", "lognormal"] as const,
+        proposedFinalFamily: "lognormal" as const,
+        confidence: "moderate" as const,
+        reasonCodes: ["MULTIPLE_COMPETITIVE_MODELS"] as const,
+      },
+    };
+
+    expect(f7DistributionFitResultSchema.safeParse(tiedResult).success).toBe(true);
+    expect(f7DistributionFitResultSchema.safeParse({
+      ...tiedResult,
+      candidates: [lognormal, gamma],
+      selectionDecision: {
+        ...tiedResult.selectionDecision,
+        competitiveFamilies: ["lognormal", "gamma"],
+      },
+    }).success).toBe(true);
+    expect(f7DistributionFitResultSchema.safeParse({
+      ...tiedResult,
+      selectionDecision: {
+        ...tiedResult.selectionDecision,
+        numericBestFamily: "gamma",
+        proposedFinalFamily: "gamma",
+      },
+    }).success).toBe(false);
+  });
+
+  it("requires factor-scoped route params and strict session body", () => {
+    const request = { params: { factorId: SHA256 }, body: { sessionId: "session-1" } };
+    expect(f7DistributionFitRouteRequestSchema.parse(request)).toEqual(request);
+    expect(f7DistributionFitRouteRequestSchema.safeParse({
+      ...request,
+      body: { ...request.body, factorId: SHA256 },
+    }).success).toBe(false);
+    expect(f7DistributionFitRouteRequestSchema.safeParse({
+      ...request,
+      params: { factorId: SHA256, extra: true },
+    }).success).toBe(false);
+  });
+});
+
+describe("F7 request/result strict wrappers", () => {
+  const factorConfirmation = {
+    factorCandidateId: SHA256,
+    designNominal: 0.2,
+    upperTolerance: 0.1,
+    lowerTolerance: -0.1,
+    confirmed: true,
+  } as const;
+
+  const sessionSnapshot = {
+    contractId: "f7-analysis-result-v1",
+    outputClassification: "confidential",
+    sessionId: "session-1",
+    status: "worksheet_selection",
+    workbook: {
+      fileName: "Demo.xlsx",
+      workbookContentHash: SHA256,
+    },
+    selectedWorksheetNames: ["Analysis-A"],
+    worksheetOptions: WORKSHEET_OPTIONS,
+    factors: [],
+  } as const;
+
+  it("requires strict worksheetOptions with controlled fields and unique names/indexes", () => {
+    const withWorksheetOptions = {
+      ...sessionSnapshot,
+      worksheetOptions: [
+        {
+          selectionIndex: 1,
+          worksheetName: "Analysis-A",
+          toleranceLoopDescription: "Loop A",
+          worksheetKind: "analysis",
+          source: {
+            summarySheet: "Auto Summary",
+            summaryRow: 10,
+            worksheetAnchor: "Analysis-A!A1",
+          },
+        },
+      ],
+    };
+
+    expect(f7SessionSnapshotSchema.safeParse(withWorksheetOptions).success).toBe(true);
+    expect(
+      f7SessionSnapshotSchema.safeParse({
+        ...sessionSnapshot,
+        worksheetOptions: undefined,
+      }).success,
+    ).toBe(false);
+    expect(
+      f7SessionSnapshotSchema.safeParse({
+        ...withWorksheetOptions,
+        worksheetOptions: [],
+      }).success,
+    ).toBe(false);
+    expect(
+      f7SessionSnapshotSchema.safeParse({
+        ...withWorksheetOptions,
+        worksheetOptions: [
+          withWorksheetOptions.worksheetOptions[0],
+          {
+            ...withWorksheetOptions.worksheetOptions[0],
+            selectionIndex: 2,
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      f7SessionSnapshotSchema.safeParse({
+        ...withWorksheetOptions,
+        worksheetOptions: [
+          withWorksheetOptions.worksheetOptions[0],
+          {
+            ...withWorksheetOptions.worksheetOptions[0],
+            worksheetName: "Analysis-B",
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("keeps all new input/output schemas strict", () => {
+    expect(
+      f7WorkbookImportRequestSchema.safeParse({
+        contractId: "f7-analysis-request-v1",
+        inputClassification: "confidential",
+        fileName: "Demo.xlsx",
+        workbookBytes: new Uint8Array([1]),
+      }).success,
+    ).toBe(true);
+    expect(
+      f7WorkbookImportRequestSchema.safeParse({
+        contractId: "f7-analysis-request-v1",
+        inputClassification: "confidential",
+        fileName: "Demo.xlsx",
+        workbookBytes: new Uint8Array([1]),
+        extra: 1,
+      }).success,
+    ).toBe(false);
+
+    expect(f7FactorSetupConfirmationSchema.parse(factorConfirmation)).toEqual(factorConfirmation);
+    expect(f7FactorSetupConfirmationSchema.safeParse({ ...factorConfirmation, extra: true }).success).toBe(false);
+    expect(f7FactorSetupConfirmationSchema.safeParse({ ...factorConfirmation, unit: "mm" }).success).toBe(false);
+
+    expect(
+      f7MeasurementPasteRequestSchema.safeParse({
+        factorId: SHA256,
+        unit: "mm",
+        structure: "ORDERED_INDIVIDUALS",
+        sourceReference: "paste",
+        msaStatus: "unknown",
+        text: "1.1\n1.2",
+      }).success,
+    ).toBe(true);
+    expect(
+      f7MeasurementPasteRequestSchema.safeParse({
+        factorId: SHA256,
+        unit: "mm",
+        structure: "ORDERED_INDIVIDUALS",
+        sourceReference: "paste",
+        msaStatus: "unknown",
+        text: "1.1\n1.2",
+        extra: "x",
+      }).success,
+    ).toBe(false);
+
+    expect(
+      f7MeasurementDispositionRequestSchema.safeParse({
+        factorId: SHA256,
+        rowNumbers: [1, 2],
+        action: "EXCLUDE",
+        reason: "OUTLIER",
+        operatorReference: "op-1",
+        confirmed: true,
+      }).success,
+    ).toBe(true);
+    expect(
+      f7MeasurementDispositionRequestSchema.safeParse({
+        factorId: SHA256,
+        rowNumbers: [1, 2],
+        action: "EXCLUDE",
+        reason: "OUTLIER",
+        operatorReference: "op-1",
+        confirmed: true,
+        extra: "x",
+      }).success,
+    ).toBe(false);
+
+    expect(f7SessionSnapshotSchema.parse(sessionSnapshot)).toEqual(sessionSnapshot);
+    expect(f7SessionSnapshotSchema.safeParse({ ...sessionSnapshot, workbookBytes: new Uint8Array([1]) }).success).toBe(false);
+
+    expect(
+      f7AnalysisRequestSchema.safeParse({
+        contractId: "f7-analysis-request-v1",
+        inputClassification: "confidential",
+        sessionId: "session-1",
+      }).success,
+    ).toBe(true);
+    expect(
+      f7AnalysisRequestSchema.safeParse({
+        contractId: "f7-analysis-request-v1",
+        inputClassification: "confidential",
+        sessionId: "session-1",
+        extra: "x",
+      }).success,
+    ).toBe(false);
+
+    expect(
+      f7AnalysisResultSchema.safeParse({
+        contractId: "f7-analysis-result-v1",
+        outputClassification: "confidential",
+        snapshot: sessionSnapshot,
+      }).success,
+    ).toBe(true);
+    expect(
+      f7AnalysisResultSchema.safeParse({
+        contractId: "f7-analysis-result-v1",
+        outputClassification: "confidential",
+        snapshot: sessionSnapshot,
+        extra: "x",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("keeps existing CPK placeholder schemas unchanged", () => {
+    expect(
+      cpkRequestSchema.safeParse({
+        contractVersion: "v1",
+        inputClassification: "confidential",
+        projectReference: "p1",
+        runReference: "r1",
+        worksheetReferences: ["w1"],
+      }).success,
+    ).toBe(true);
+    expect(
+      cpkRequestSchema.safeParse({
+        contractVersion: "v1",
+        inputClassification: "confidential",
+        projectReference: "p1",
+        runReference: "r1",
+        worksheetReferences: ["w1"],
+        featureId: "F7",
+      }).success,
+    ).toBe(false);
+
+    expect(
+      cpkResultSchema.safeParse({
+        contractVersion: "v1",
+        outputClassification: "confidential",
+        featureId: "F7",
+        status: "feature_not_available",
+        projectReference: "p1",
+        runReference: "r1",
+        worksheetReferences: ["w1"],
+        requiredPrerequisites: ["approved-measurement-store"],
+      }).success,
+    ).toBe(true);
+    expect(
+      cpkResultSchema.safeParse({
+        contractVersion: "v1",
+        outputClassification: "confidential",
+        featureId: "F7",
+        status: "feature_not_available",
+        projectReference: "p1",
+        runReference: "r1",
+        worksheetReferences: ["w1"],
+        requiredPrerequisites: ["approved-measurement-store"],
+        snapshot: {},
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects unknown fields for all HTTP wrappers and nested worksheet confirmation fields", () => {
+    const worksheetConfirm = {
+      sessionId: "session-1",
+      confirmation: {
+        workbookContentHash: SHA256,
+        selectedWorksheetNames: ["Analysis-A"],
+        confirmed: true,
+      },
+    };
+    expect(f7WorksheetConfirmRouteRequestSchema.safeParse(worksheetConfirm).success).toBe(true);
+    expect(f7WorksheetConfirmRouteRequestSchema.safeParse({ ...worksheetConfirm, extra: true }).success).toBe(false);
+    expect(
+      f7WorksheetConfirmRouteRequestSchema.safeParse({
+        ...worksheetConfirm,
+        confirmation: {
+          ...worksheetConfirm.confirmation,
+          notAllowed: true,
+        },
+      }).success,
+    ).toBe(false);
+
+    const workbookImport = {
+      fileName: "Demo.xlsx",
+      workbookBase64: "ZGVtby1kYXRh",
+    };
+    expect(f7WorkbookImportRouteRequestSchema.safeParse(workbookImport).success).toBe(true);
+    expect(f7WorkbookImportRouteRequestSchema.safeParse({ ...workbookImport, extra: true }).success).toBe(false);
+
+    const factorConfirm = {
+      sessionId: "session-1",
+      confirmations: [factorConfirmation],
+    };
+    expect(f7FactorConfirmRouteRequestSchema.safeParse(factorConfirm).success).toBe(true);
+    expect(f7FactorConfirmRouteRequestSchema.safeParse({ ...factorConfirm, extra: true }).success).toBe(false);
+
+    const factorMode = {
+      params: { factorId: SHA256 },
+      body: { sessionId: "session-1", mode: "MEASURED" },
+    };
+    expect(f7FactorModeRouteRequestSchema.safeParse(factorMode).success).toBe(true);
+    expect(f7FactorModeRouteRequestSchema.safeParse({ ...factorMode, extra: true }).success).toBe(false);
+    expect(
+      f7FactorModeRouteRequestSchema.safeParse({
+        ...factorMode,
+        body: { ...factorMode.body, factorId: SHA256 },
+      }).success,
+    ).toBe(false);
+
+    const paste = {
+      params: { factorId: SHA256 },
+      body: {
+        sessionId: "session-1",
+        structure: "ORDERED_INDIVIDUALS",
+        sourceReference: "clipboard",
+        msaStatus: "available",
+        text: "1.1\n1.2",
+      },
+    };
+    expect(f7MeasurementPasteRouteRequestSchema.safeParse(paste).success).toBe(true);
+    expect(f7MeasurementPasteRouteRequestSchema.safeParse({ ...paste, extra: true }).success).toBe(false);
+    expect(
+      f7MeasurementPasteRouteRequestSchema.safeParse({
+        ...paste,
+        body: { ...paste.body, factorId: SHA256 },
+      }).success,
+    ).toBe(false);
+
+    const disposition = {
+      params: { factorId: SHA256 },
+      body: {
+        sessionId: "session-1",
+        rowNumbers: [1],
+        action: "EXCLUDE",
+        reason: "OUTLIER",
+        operatorReference: "op-1",
+        confirmed: true,
+      },
+    };
+    expect(f7MeasurementDispositionRouteRequestSchema.safeParse(disposition).success).toBe(true);
+    expect(f7MeasurementDispositionRouteRequestSchema.safeParse({ ...disposition, extra: true }).success).toBe(false);
+    expect(
+      f7MeasurementDispositionRouteRequestSchema.safeParse({
+        ...disposition,
+        body: {
+          ...disposition.body,
+          rowNumbers: [1, 1],
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      f7MeasurementDispositionRouteRequestSchema.safeParse({
+        ...disposition,
+        body: { ...disposition.body, factorId: SHA256 },
+      }).success,
+    ).toBe(false);
+
+    expect(f7SessionRouteParamsSchema.safeParse({ sessionId: "session-1" }).success).toBe(true);
+    expect(f7SessionRouteParamsSchema.safeParse({ sessionId: "session-1", extra: true }).success).toBe(false);
+  });
+
+  it("requires measured dataset factorId to match known final evidence factorId when both exist", () => {
+    const consistentSnapshot = {
+      contractId: "f7-analysis-result-v1",
+      outputClassification: "confidential",
+      sessionId: "session-1",
+      status: "measurement_entry",
+      workbook: {
+        fileName: "Demo.xlsx",
+        workbookContentHash: SHA256,
+      },
+      selectedWorksheetNames: ["Analysis-A"],
+      worksheetOptions: WORKSHEET_OPTIONS,
+      factors: [
+        {
+          factorCandidate: {
+            workbookContentHash: SHA256,
+            worksheetName: "Analysis-A",
+            tableId: "table-1",
+            sourceRow: 2,
+            sourceCells: { factorName: "Analysis-A!A2" },
+            factorCandidateId: SHA256_2,
+            factorName: "Gap",
+            excelSignedMean: -0.2,
+            designNominal: 0.2,
+            upperTolerance: 0.1,
+            lowerTolerance: -0.1,
+            standardDeviation: 0.1,
+            distribution: "Normal",
+            lowerSpecLimit: -1,
+            upperSpecLimit: 1,
+          },
+          evidence: {
+            workbookContentHash: SHA256,
+            worksheetName: "Analysis-A",
+            tableId: "table-1",
+            sourceRow: 2,
+            sourceCells: { mean: "Analysis-A!D2" },
+            factorCandidateId: SHA256_2,
+            factorId: SHA256,
+            factorName: "Gap",
+            unit: "mm",
+            unitSource: "user_confirmed",
+            designNominal: 0.2,
+            upperTolerance: 0.1,
+            lowerTolerance: -0.1,
+            longTermSafetyFactor: 1,
+            sigmaLevel: 1,
+            distribution: "Normal",
+            calculatedMean: 0.2,
+            tolerance: 0.1,
+            oneSigma: 0.1,
+            percentContributionToSigma: 1,
+            loopCoefficient: 1,
+            physicalMean: 0.2,
+            signedContributionMean: 0.2,
+            baselineSampler: {
+              samplerId: "NORMAL_LOCATION_SCALE_V1",
+              physicalMean: 0.2,
+              standardDeviation: 0.1,
+              support: "REAL",
+            },
+            lowerSpecLimit: 0.1,
+            upperSpecLimit: 0.3,
+          },
+          input: {
+            mode: "MEASURED",
+            dataset: {
+              factorId: SHA256,
+              unit: "mm",
+              structure: "ORDERED_INDIVIDUALS",
+              sourceReference: "Paste",
+              importedAt: "2026-08-19T08:00:00.000Z",
+              msaStatus: "available",
+              observations: [{ value: 1.1, originalRow: 1, disposition: "included" }],
+              missingRowCount: 0,
+              rejectionSummaries: [],
+              originalRowCount: 1,
+              analyzedCount: 1,
+              contentHash: SHA256_2,
+            },
+          },
+        },
+      ],
+    };
+
+    const withDistributionFit = {
+      ...consistentSnapshot,
+      factors: [{
+        ...consistentSnapshot.factors[0],
+        distributionFitResult: DISTRIBUTION_FIT_RESULT,
+      }],
+    };
+
+    expect(f7SessionSnapshotSchema.safeParse(withDistributionFit).success).toBe(true);
+    expect(f7SessionSnapshotSchema.safeParse({
+      ...withDistributionFit,
+      factors: [{
+        ...withDistributionFit.factors[0],
+        distributionFitResult: {
+          ...DISTRIBUTION_FIT_RESULT,
+          factorId: SHA256_2,
+        },
+      }],
+    }).success).toBe(false);
+    expect(
+      f7SessionSnapshotSchema.safeParse({
+        ...consistentSnapshot,
+        factors: [
+          {
+            ...consistentSnapshot.factors[0],
+            input: {
+              mode: "MEASURED",
+              dataset: {
+                ...consistentSnapshot.factors[0].input.dataset,
+                factorId: SHA256_2,
+              },
+            },
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("requires evidence.factorCandidateId to match factorCandidate.factorCandidateId", () => {
+    const baseState = {
+      factorCandidate: {
+        workbookContentHash: SHA256,
+        worksheetName: "Analysis-A",
+        tableId: "table-1",
+        sourceRow: 2,
+        sourceCells: { factorName: "Analysis-A!A2" },
+        factorCandidateId: SHA256_2,
+        factorName: "Gap",
+        excelSignedMean: -0.2,
+        designNominal: 0.2,
+        upperTolerance: 0.1,
+        lowerTolerance: -0.1,
+        standardDeviation: 0.1,
+        distribution: "Normal",
+        lowerSpecLimit: -1,
+        upperSpecLimit: 1,
+      },
+      evidence: {
+        workbookContentHash: SHA256,
+        worksheetName: "Analysis-A",
+        tableId: "table-1",
+        sourceRow: 2,
+        sourceCells: { mean: "Analysis-A!D2" },
+        factorCandidateId: SHA256_2,
+        factorId: SHA256,
+        factorName: "Gap",
+        unit: "mm",
+        unitSource: "user_confirmed",
+        designNominal: 0.2,
+        upperTolerance: 0.1,
+        lowerTolerance: -0.1,
+        longTermSafetyFactor: 1,
+        sigmaLevel: 1,
+        distribution: "Normal",
+        calculatedMean: 0.2,
+        tolerance: 0.1,
+        oneSigma: 0.1,
+        percentContributionToSigma: 1,
+        loopCoefficient: 1,
+        physicalMean: 0.2,
+        signedContributionMean: 0.2,
+        baselineSampler: {
+          samplerId: "NORMAL_LOCATION_SCALE_V1",
+          physicalMean: 0.2,
+          standardDeviation: 0.1,
+          support: "REAL",
+        },
+        lowerSpecLimit: 0.1,
+        upperSpecLimit: 0.3,
+      },
+      input: {
+        mode: "MEASURED",
+        dataset: {
+          factorId: SHA256,
+          unit: "mm",
+          structure: "ORDERED_INDIVIDUALS",
+          sourceReference: "Paste",
+          importedAt: "2026-08-19T08:00:00.000Z",
+          msaStatus: "available",
+          observations: [{ value: 1.1, originalRow: 1, disposition: "included" }],
+          missingRowCount: 0,
+          rejectionSummaries: [],
+          originalRowCount: 1,
+          analyzedCount: 1,
+          contentHash: SHA256_2,
+        },
+      },
+    };
+
+    const snapshot = {
+      contractId: "f7-analysis-result-v1",
+      outputClassification: "confidential",
+      sessionId: "session-1",
+      status: "measurement_entry",
+      workbook: {
+        fileName: "Demo.xlsx",
+        workbookContentHash: SHA256,
+      },
+      selectedWorksheetNames: ["Analysis-A"],
+      worksheetOptions: WORKSHEET_OPTIONS,
+      factors: [baseState],
+    };
+
+    expect(f7SessionSnapshotSchema.safeParse(snapshot).success).toBe(true);
+    const mismatchResult = f7SessionSnapshotSchema.safeParse({
+      ...snapshot,
+      factors: [
+        {
+          ...baseState,
+          evidence: {
+            ...baseState.evidence,
+            factorCandidateId: SHA256,
+          },
+        },
+      ],
+    });
+    expect(mismatchResult.success).toBe(false);
+    if (!mismatchResult.success) {
+      expect(
+        mismatchResult.error.issues.some((issue) => issue.path.join(".") === "factors.0.evidence.factorCandidateId"),
+      ).toBe(true);
+    }
+  });
+});

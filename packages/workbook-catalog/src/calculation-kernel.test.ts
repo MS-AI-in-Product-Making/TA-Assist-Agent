@@ -170,6 +170,39 @@ describe("calculation kernel", () => {
     expect(result.capability.status).toBe("FAIL");
   });
 
+  it("projects asymmetric negative-nominal tolerances into the Excel response summary", () => {
+    const result = calculateToleranceAnalysis({
+      factors: [{
+        name: "assembly response",
+        unit: "mm",
+        source: { worksheetName: "Example_TA", tableId: "dm-table", sourceRow: 1 },
+        input: {
+          nominalValue: -10.05,
+          upperTolerance: 3.45,
+          lowerTolerance: 0.55,
+          longTermSafetyFactor: 1,
+          sigmaLevel: 4,
+          distribution: "normal",
+        },
+      }],
+      system: {
+        designNominal: -10.05,
+        lowerSpecLimit: -20,
+        upperSpecLimit: 0,
+        targetSigmaLevel: 3,
+        targetCpk: 1,
+        shift: 0,
+      },
+    });
+
+    expectClose(result.system.mean, -12.05);
+    expectClose(result.system.responseUpperTolerance, -0.55);
+    expectClose(result.system.responseLowerTolerance, -3.45);
+    expectClose(result.system.worstCaseTolerance, 1.45);
+    expectClose(result.system.worstCaseUpperBound, -10.6);
+    expectClose(result.system.worstCaseLowerBound, -13.5);
+  });
+
   it("matches Excel cached one-sided DPM constant at Z=1", () => {
     const result = calculateToleranceAnalysis({
       factors: [

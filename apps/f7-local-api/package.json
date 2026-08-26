@@ -1,0 +1,17 @@
+{
+  "name": "@ai-assist/f7-local-api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "dev": "tsx watch src/main.ts"
+  },
+  "dependencies": {
+    "@ai-assist/contracts": "0.1.0",
+    "@ai-assist/f7-statistics": "0.1.0",
+    "@ai-assist/f7-simulation": "0.1.0",
+    "@ai-assist/workbook-catalog": "0.1.0"
+  }
+}

@@ -731,6 +731,7 @@ const tolerancePathImageSchema = z.discriminatedUnion("status", [
     upperSpecLimit: worksheetEvidenceNumberSchema,
     targetSigmaLevel: worksheetEvidenceNumberSchema,
     additionalMeanShift: worksheetEvidenceNumberSchema,
+    volume: worksheetEvidenceNumberSchema.optional(),
   };
 
   export const worksheetSystemSpecificationSchema = z.discriminatedUnion("status", [
@@ -742,6 +743,7 @@ const tolerancePathImageSchema = z.discriminatedUnion("status", [
       upperSpecLimit: worksheetEvidenceNumberSchema.optional(),
       targetSigmaLevel: worksheetEvidenceNumberSchema.optional(),
       additionalMeanShift: worksheetEvidenceNumberSchema.optional(),
+      volume: worksheetEvidenceNumberSchema.optional(),
     }).strict(),
   ]);
 

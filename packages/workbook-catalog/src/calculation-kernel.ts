@@ -90,6 +90,11 @@ export interface KernelCalculationResult {
     readonly shift: number;
     readonly worstCaseUpper: number;
     readonly worstCaseLower: number;
+    readonly responseUpperTolerance: number;
+    readonly responseLowerTolerance: number;
+    readonly worstCaseTolerance: number;
+    readonly worstCaseUpperBound: number;
+    readonly worstCaseLowerBound: number;
     readonly rssSigma: number;
   };
   readonly capability: {
@@ -259,11 +264,22 @@ export function calculateToleranceAnalysis(input: NormalizedCalculationInput): K
 
   const worstCaseUpper = computedFactors.reduce((sum, factor) => sum + factor.input.upperTolerance, 0);
   const worstCaseLower = computedFactors.reduce((sum, factor) => sum + factor.input.lowerTolerance, 0);
-  const mean = computedFactors.reduce((sum, factor) => sum + factor.mean, 0) + input.system.shift;
+  const unshiftedMean = computedFactors.reduce((sum, factor) => sum + factor.mean, 0);
+  const mean = unshiftedMean + input.system.shift;
+  const worstCaseTolerance = computedFactors.reduce((sum, factor) => sum + factor.halfTolerance, 0);
+  const responseUpperTolerance = unshiftedMean + worstCaseTolerance - input.system.designNominal;
+  const responseLowerTolerance = unshiftedMean - worstCaseTolerance - input.system.designNominal;
+  const worstCaseUpperBound = mean + worstCaseTolerance;
+  const worstCaseLowerBound = mean - worstCaseTolerance;
   const rssSigma = stableL2Norm(computedFactors.map((factor) => factor.sigma));
 
   assertFinite(worstCaseUpper, "system.worstCaseUpper");
   assertFinite(worstCaseLower, "system.worstCaseLower");
+  assertFinite(responseUpperTolerance, "system.responseUpperTolerance");
+  assertFinite(responseLowerTolerance, "system.responseLowerTolerance");
+  assertFinite(worstCaseTolerance, "system.worstCaseTolerance");
+  assertFinite(worstCaseUpperBound, "system.worstCaseUpperBound");
+  assertFinite(worstCaseLowerBound, "system.worstCaseLowerBound");
   assertFinite(mean, "system.mean");
   assertFinite(rssSigma, "system.rssSigma");
 
@@ -343,6 +359,11 @@ export function calculateToleranceAnalysis(input: NormalizedCalculationInput): K
       shift: input.system.shift,
       worstCaseUpper,
       worstCaseLower,
+      responseUpperTolerance,
+      responseLowerTolerance,
+      worstCaseTolerance,
+      worstCaseUpperBound,
+      worstCaseLowerBound,
       rssSigma,
     },
     capability: {

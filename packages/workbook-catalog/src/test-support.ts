@@ -26,6 +26,7 @@ const NAMESPACE_FAMILIES = {
 } as const;
 
 const PACKAGE_RELATIONSHIPS_NAMESPACE = "http://schemas.openxmlformats.org/package/2006/relationships";
+const FIXED_ZIP_MTIME = new Date("2026-01-01T00:00:00.000Z");
 
 const workbookXml = (duplicateSheet: boolean, namespaceFamily: (typeof NAMESPACE_FAMILIES)[keyof typeof NAMESPACE_FAMILIES]) => `<?xml version="1.0" encoding="UTF-8"?>
 <workbook xmlns="${namespaceFamily.spreadsheetml}" xmlns:r="${namespaceFamily.officeRelationships}"><sheets>
@@ -87,7 +88,7 @@ export function createAnonymousWorkbookZip(options: AnonymousWorkbookOptions = {
   if (options.unsafeEntryName) parts[options.unsafeEntryName] = strToU8("anonymous-private-marker");
   if (options.highlyCompressibleEntry) parts["xl/repeated.xml"] = strToU8("0".repeat(200_000));
 
-  let archive: Uint8Array<ArrayBufferLike> = zipSync(parts, { level: 9 });
+  let archive: Uint8Array<ArrayBufferLike> = zipSync(parts, { level: 9, mtime: FIXED_ZIP_MTIME });
   if (options.duplicateEntryName) archive = addDuplicateCentralEntry(archive);
   if (options.zip64) archive = markZip64(archive);
   return archive;

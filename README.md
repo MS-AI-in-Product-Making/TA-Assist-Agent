@@ -204,6 +204,38 @@ Deferred until there is a proven need; each can be merged into the product later
 
 ## Repository Notes
 
+## F7 Phase 1 (Experimental Local Workflow)
+
+- F7 Phase 1 is experimental, local-only, single-user, confidential, and ephemeral.
+- API loopback endpoint: `127.0.0.1:4317`
+- Web loopback endpoint: `127.0.0.1:5177`
+- Local session budget is max 8 sessions; restart to clear all in-memory state.
+
+Local commands:
+
+- `npm run build -- --force`
+- `npm run dev:f7`
+
+Current Phase 1 capability boundary:
+
+- Uses direct Excel interim adapter for worksheet import and factor evidence extraction.
+- Only Normal baseline supported.
+- Requires explicit worksheet/factor specification/unit confirmations.
+- Supports measured/baseline mix by factor.
+- Provides capability analysis for ready measured factors.
+- Provides governed distribution fit with explicit engineer approval of the proposed family.
+- Provides deterministic Monte Carlo simulation with engineer-entered system limits and independent factors.
+- Data not uploaded; no remote persistence.
+- `phase_1_ready` means factor input evidence is ready; Monte Carlo additionally requires approved measured-factor distributions.
+
+Explicit exclusions in Phase 1:
+
+- no recommendation
+- no write-back and no workbook writeback
+- no upload and no remote persistence
+- no ADO publishing
+- no F0 writes
+
 ## Dual Markdown Export (A=Actual, D=Display)
 
 For worksheet evidence review, use the reusable dual-track exporter:

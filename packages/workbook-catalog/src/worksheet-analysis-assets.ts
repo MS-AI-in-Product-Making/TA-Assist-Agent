@@ -176,7 +176,10 @@ function sheetAssets(worksheet: OoxmlWorksheet, worksheetName: string, tolerance
     const factorResolution = resolveFactorHeaderCluster(rowCells.map((cell) => ({ reference: cell.reference, value: cell.value })));
     if (factorResolution.status !== "resolved") continue;
     for (const column of Object.values(factorResolution.columns)) {
-      if (column) mapped.set(column.semanticField, [column]);
+      if (column) {
+        const semanticField = column.semanticField === "sigmaLevel" ? "standardDeviation" : column.semanticField;
+        mapped.set(semanticField, [{ ...column, semanticField }]);
+      }
     }
     for (const cell of rowCells) {
       const location = address(cell.reference)!;
