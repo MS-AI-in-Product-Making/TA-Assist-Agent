@@ -16,6 +16,7 @@ const props = defineProps<{
 const store = createF7SessionStore(props.client ?? createF7Client());
 const activeMeasurementFactorId = ref("");
 const activeMeasurementStage = ref<"measurement" | "capability" | "distribution" | "monteCarlo" | "report">("measurement");
+const editingFactorSetup = ref(false);
 let reportRequestToken = 0;
 
 const simulationReady = computed(() => {
@@ -91,6 +92,7 @@ async function onImportFile(event: Event): Promise<void> {
     reportRequestToken += 1;
     activeMeasurementFactorId.value = "";
     activeMeasurementStage.value = "measurement";
+    editingFactorSetup.value = false;
   } catch {
     // Store already captures and exposes a controlled UI error.
   } finally {
@@ -117,7 +119,15 @@ async function onConfirmFactors(confirmations: ReadonlyArray<{
 }>): Promise<void> {
   await swallowHandledError(async () => {
     await store.confirmFactors(confirmations);
+    editingFactorSetup.value = false;
   });
+}
+
+function onEditFactorSetup(): void {
+  reportRequestToken += 1;
+  activeMeasurementFactorId.value = "";
+  activeMeasurementStage.value = "measurement";
+  editingFactorSetup.value = true;
 }
 
 async function onSetMode(factorId: string, mode: F7SourceMode): Promise<void> {
@@ -266,16 +276,18 @@ async function openReport(): Promise<void> {
         />
 
         <FactorInputTable
-          v-if="(activeMeasurementStage === 'measurement' || activeMeasurementStage === 'capability' || activeMeasurementStage === 'distribution') && (store.session.value.status === 'factor_setup' || store.session.value.status === 'measurement_entry' || store.session.value.status === 'phase_1_ready')"
+          v-if="!activeMeasurementFactorId && (activeMeasurementStage === 'measurement' || activeMeasurementStage === 'capability' || activeMeasurementStage === 'distribution') && (store.session.value.status === 'factor_setup' || store.session.value.status === 'measurement_entry' || store.session.value.status === 'phase_1_ready')"
           :session="store.session.value"
           :busy="store.isBusy.value"
+          :editing-setup="editingFactorSetup"
           @confirm-factors="onConfirmFactors"
+          @edit-setup="onEditFactorSetup"
           @set-mode="onSetMode"
           @open-measurement="onOpenMeasurement"
         />
 
         <MeasurementPastePanel
-          v-if="(activeMeasurementStage === 'measurement' || activeMeasurementStage === 'capability' || activeMeasurementStage === 'distribution') && activeMeasurementFactorId && (store.session.value.status === 'measurement_entry' || store.session.value.status === 'phase_1_ready')"
+          v-if="!editingFactorSetup && (activeMeasurementStage === 'measurement' || activeMeasurementStage === 'capability' || activeMeasurementStage === 'distribution') && activeMeasurementFactorId && (store.session.value.status === 'measurement_entry' || store.session.value.status === 'phase_1_ready')"
           :session="store.session.value"
           :busy="store.isBusy.value"
           :fit-loading="store.busyAction.value === 'fitDistribution'"
@@ -304,12 +316,12 @@ async function openReport(): Promise<void> {
         />
 
         <ValidationSummary
-          v-if="activeMeasurementStage !== 'monteCarlo' && activeMeasurementStage !== 'report' && (store.session.value.status === 'measurement_entry' || store.session.value.status === 'phase_1_ready')"
+          v-if="!editingFactorSetup && !activeMeasurementFactorId && activeMeasurementStage !== 'monteCarlo' && activeMeasurementStage !== 'report' && (store.session.value.status === 'measurement_entry' || store.session.value.status === 'phase_1_ready')"
           :session="store.session.value"
         />
 
         <section
-          v-if="activeMeasurementStage !== 'monteCarlo' && activeMeasurementStage !== 'report' && store.session.value.status === 'phase_1_ready'"
+          v-if="!editingFactorSetup && !activeMeasurementFactorId && activeMeasurementStage !== 'monteCarlo' && activeMeasurementStage !== 'report' && store.session.value.status === 'phase_1_ready'"
           class="workbench-panel ready-panel"
         >
           <h2>Phase 1 setup ready</h2>

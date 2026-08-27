@@ -254,7 +254,10 @@ export function createF7SessionService(dependencies: {
     if (!parsedRequest.success) throw fixedError(SESSION_SUMMARY, "validation_error");
 
     const current = readSession(parsedRequest.data.sessionId);
-    if (current.snapshot.status !== "factor_setup" || current.extractionResult === undefined) {
+    if (
+      !["factor_setup", "measurement_entry", "phase_1_ready"].includes(current.snapshot.status)
+      || current.extractionResult === undefined
+    ) {
       throw fixedError(PREREQUISITE_SUMMARY, "prerequisite_not_ready");
     }
 
@@ -308,6 +311,7 @@ export function createF7SessionService(dependencies: {
       ...current.snapshot,
       status: "measurement_entry",
       factors,
+      monteCarloResult: undefined,
     });
 
     writeSession(parsedRequest.data.sessionId, {

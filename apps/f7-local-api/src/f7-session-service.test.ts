@@ -497,6 +497,34 @@ describe("createF7SessionService", () => {
     expect(duplicateService.getSession(duplicateImport.sessionId)).toEqual(before);
   });
 
+  it("reconfirms factor setup after analysis and clears all downstream results", () => {
+    const service = createService();
+    const completed = prepareBaselineSimulation(service);
+    expect(completed.status).toBe("phase_1_ready");
+    expect(completed.monteCarloResult).toBeDefined();
+
+    const confirmations = completed.factors.map((factor, index) => ({
+      ...factor.setup!,
+      designNominal: index === 0 ? factor.setup!.designNominal - 0.1 : factor.setup!.designNominal,
+      confirmed: true as const,
+    }));
+    const reconfirmed = service.confirmFactorSetup({
+      sessionId: completed.sessionId,
+      confirmations,
+    });
+
+    expect(reconfirmed.status).toBe("measurement_entry");
+    expect(reconfirmed.monteCarloResult).toBeUndefined();
+    expect(reconfirmed.factors[0]?.setup?.designNominal).toBe(confirmations[0]?.designNominal);
+    for (const factor of reconfirmed.factors) {
+      expect(factor.sourceMode).toBeUndefined();
+      expect(factor.input).toBeUndefined();
+      expect(factor.measurementPasteResult).toBeUndefined();
+      expect(factor.distributionFitResult).toBeUndefined();
+      expect(factor.distributionApproval).toBeUndefined();
+    }
+  });
+
   it("setFactorMode handles baseline and measured transitions and clears obsolete state", () => {
     const workbookBytes = buildWorkbook();
     const service = createService();

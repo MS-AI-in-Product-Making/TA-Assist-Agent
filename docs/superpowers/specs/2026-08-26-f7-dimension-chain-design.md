@@ -11,7 +11,7 @@ Add a manually generated dimension-chain visualization to Factor Setup. The char
 - After any Factor Setup field changes, the existing chart remains visible and a warning says that an update is required. The primary action becomes `Update`.
 - Clicking `Update` replaces the saved snapshot and redraws the chart.
 - A segmented `Horizontal / Vertical` control changes chart orientation immediately. Orientation is presentation state and does not require regeneration.
-- On wide screens, Dimension Chain is on the left and Response Summary Table is on the right. On narrow screens, they stack vertically with Dimension Chain first.
+- On wide screens, Dimension Chain and Response Summary Table share the output row at an equal 50/50 width. On narrow screens, they stack vertically with Dimension Chain first.
 
 ## Factor Semantics
 
@@ -73,8 +73,9 @@ No chart-specific API, persistence, or workbook changes are required. The genera
 
 ## Responsive Layout
 
-- Desktop output grid: `minmax(420px, 0.8fr) minmax(0, 2fr)`. This width keeps a typical two-to-four-item chain readable without default horizontal scrolling.
-- The right Response Summary area retains its existing internal horizontal scrolling when space is constrained.
+- Desktop output grid uses `repeat(2, minmax(0, 1fr))`, giving Dimension Chain and Response Summary equal width.
+- Response Summary becomes denser within the half-width panel: reduce heading and cell padding, use a smaller but readable table font, tighten row height, and reduce each summary section's minimum track width. Numeric values remain right aligned and labels do not overlap or truncate silently.
+- Response Summary retains internal horizontal scrolling only when its content cannot fit after compacting; the page itself must not gain horizontal overflow.
 - Below the existing application breakpoint, switch to one column with Dimension Chain above Response Summary.
 - SVG uses a stable view box and does not allow labels or arrowheads to resize the surrounding layout.
 
@@ -91,4 +92,6 @@ Add focused tests for:
 - Dirty warning and Update action after every Factor Setup field category, reorder, add, and remove.
 - Horizontal and vertical controls without regeneration.
 - Dimension Chain appearing before Response Summary in the shared output layout.
+- Default output layout exposing two equal columns.
+- Compact Response Summary styles retaining readable labels, numeric alignment, and contained horizontal overflow.
 - Existing Factor Setup calculations and confirmation payloads remaining unchanged.

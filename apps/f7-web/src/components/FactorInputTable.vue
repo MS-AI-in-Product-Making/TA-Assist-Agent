@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, reactive, ref, type DeepReadonly } from "vue";
+/* global PointerEvent, window */
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch, type DeepReadonly } from "vue";
+import { ArrowLeftRight } from "lucide-vue-next";
 import { calculateToleranceAnalysis, type KernelCalculationResult } from "@ai-assist/workbook-catalog/calculation-kernel";
 import type { Distribution } from "@ai-assist/contracts";
 import type { F7FactorState, F7SessionSnapshot, F7SetupDistribution, F7SourceMode } from "../api/f7-client";
@@ -27,6 +29,7 @@ const F4_DISTRIBUTION_BY_LABEL: Readonly<Record<F7SetupDistribution, Distributio
 const props = defineProps<{
   readonly session: DeepReadonly<F7SessionSnapshot>;
   readonly busy: boolean;
+  readonly editingSetup: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -43,6 +46,7 @@ const emit = defineEmits<{
       readonly userAdded?: true;
     }>,
   ];
+  editSetup: [];
   setMode: [factorId: string, mode: F7SourceMode];
   openMeasurement: [factorId: string];
 }>();
@@ -73,9 +77,10 @@ const removedFactorIds = reactive(new Set<string>());
 const addedFactors = reactive<F7FactorState[]>([]);
 const factorOrder = reactive(props.session.factors.map((factor) => factor.factorCandidate.factorCandidateId));
 let addedFactorSequence = 0;
+const setupEditable = computed(() => props.session.status === "factor_setup" || props.editingSetup);
 
 const activeFactors = computed(() => {
-  if (props.session.status !== "factor_setup") return props.session.factors;
+  if (!setupEditable.value) return props.session.factors;
   const factorsById = new Map(
     [...props.session.factors, ...addedFactors].map((factor) => [factor.factorCandidate.factorCandidateId, factor]),
   );
@@ -98,7 +103,7 @@ const baseColumns = [
   { key: "tolerance", label: "Tolerance", lines: ["Tolerance"], defaultWidth: 80, minWidth: 80 },
   { key: "oneSigma", label: "1σ", lines: ["1σ"], defaultWidth: 72, minWidth: 72 },
   { key: "contribution", label: "% Cont. to σ", lines: ["% Cont. to σ"], defaultWidth: 96, minWidth: 96 },
-  { key: "sourceMode", label: "Source Mode", lines: ["Source Mode"], defaultWidth: 184, minWidth: 132 },
+  { key: "sourceMode", label: "Source Mode", lines: ["Source Mode"], defaultWidth: 376, minWidth: 300 },
   { key: "sampleCount", label: "Sample Count", lines: ["Sample Count"], defaultWidth: 88, minWidth: 88 },
   { key: "readiness", label: "Readiness", lines: ["Readiness"], defaultWidth: 96, minWidth: 82 },
 ] as const;
@@ -239,6 +244,143 @@ function candidateDraft(factor: DeepReadonly<F7SessionSnapshot["factors"][number
   });
 }
 
+interface FactorEditSnapshot {
+  readonly order: readonly string[];
+  readonly removedFactorIds: readonly string[];
+  readonly addedFactors: readonly F7FactorState[];
+  readonly drafts: Readonly<Record<string, FactorSpecificationDraft>>;
+  readonly names: Readonly<Record<string, string>>;
+}
+
+function cloneValue<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+for (const factor of props.session.factors) candidateDraft(factor);
+
+function captureEditSnapshot(): FactorEditSnapshot {
+  return cloneValue({
+    order: [...factorOrder],
+    removedFactorIds: [...removedFactorIds],
+    addedFactors: [...addedFactors],
+    drafts: { ...setupDraft },
+    names: { ...factorNames },
+  });
+}
+
+function importedSnapshot(): FactorEditSnapshot {
+  const importedFactors = props.session.factors.filter((factor) => !isUserAdded(factor));
+  return {
+    order: importedFactors.map((factor) => factor.factorCandidate.factorCandidateId),
+    removedFactorIds: [],
+    addedFactors: [],
+    drafts: Object.fromEntries(importedFactors.map((factor) => [
+      factor.factorCandidate.factorCandidateId,
+      {
+        designNominal: factor.factorCandidate.designNominal,
+        upperTolerance: factor.factorCandidate.upperTolerance,
+        lowerTolerance: factor.factorCandidate.lowerTolerance,
+        longTermSafetyFactor: factor.factorCandidate.longTermSafetyFactor ?? 1,
+        sigmaLevel: factor.factorCandidate.sigmaLevel ?? 4,
+        distribution: factor.factorCandidate.distribution,
+      } satisfies FactorSpecificationDraft,
+    ])),
+    names: {},
+  };
+}
+
+function replaceRecord<T>(target: Record<string, T>, source: Readonly<Record<string, T>>): void {
+  for (const key of Object.keys(target)) delete target[key];
+  Object.assign(target, cloneValue(source));
+}
+
+function restoreEditSnapshot(snapshot: FactorEditSnapshot): void {
+  factorOrder.splice(0, factorOrder.length, ...snapshot.order);
+  removedFactorIds.clear();
+  for (const factorId of snapshot.removedFactorIds) removedFactorIds.add(factorId);
+  addedFactors.splice(0, addedFactors.length, ...cloneValue(snapshot.addedFactors));
+  replaceRecord(setupDraft, snapshot.drafts);
+  replaceRecord(factorNames, snapshot.names);
+}
+
+const undoStack = ref<FactorEditSnapshot[]>([]);
+const redoStack = ref<FactorEditSnapshot[]>([]);
+let applyingHistory = false;
+const editSnapshotKey = computed(() => JSON.stringify(captureEditSnapshot()));
+
+watch(editSnapshotKey, (_current, previous) => {
+  if (applyingHistory || previous === undefined) return;
+  undoStack.value.push(JSON.parse(previous) as FactorEditSnapshot);
+  redoStack.value = [];
+}, { flush: "post" });
+
+const canUndo = computed(() => undoStack.value.length > 0);
+const canRedo = computed(() => redoStack.value.length > 0);
+const canReverseFactors = computed(() => activeFactors.value.some((factor) => {
+  const value = candidateDraft(factor).designNominal;
+  return typeof value === "number" && Number.isFinite(value) && value !== 0;
+}));
+
+function applyFactorSigns(changes: readonly { factorId: string; sign: 1 | -1 }[]): void {
+  if (!setupEditable.value || props.busy) return;
+  const signs = new Map(changes.map((change) => [change.factorId, change.sign]));
+  for (const factor of activeFactors.value) {
+    const sign = signs.get(factor.factorCandidate.factorCandidateId);
+    const draft = candidateDraft(factor);
+    if (sign && typeof draft.designNominal === "number" && Number.isFinite(draft.designNominal) && draft.designNominal !== 0) {
+      draft.designNominal = Math.abs(draft.designNominal) * sign;
+    }
+  }
+}
+
+function reverseAllFactors(): void {
+  applyFactorSigns(activeFactors.value.flatMap((factor) => {
+    const value = candidateDraft(factor).designNominal;
+    return typeof value === "number" && Number.isFinite(value) && value !== 0
+      ? [{ factorId: factor.factorCandidate.factorCandidateId, sign: (value > 0 ? -1 : 1) as 1 | -1 }]
+      : [];
+  }));
+}
+
+function applyHistorySnapshot(snapshot: FactorEditSnapshot): void {
+  applyingHistory = true;
+  restoreEditSnapshot(snapshot);
+  void nextTick(() => {
+    applyingHistory = false;
+  });
+}
+
+function undoEdit(): void {
+  const snapshot = undoStack.value.pop();
+  if (!snapshot) return;
+  redoStack.value.push(captureEditSnapshot());
+  applyHistorySnapshot(snapshot);
+}
+
+function redoEdit(): void {
+  const snapshot = redoStack.value.pop();
+  if (!snapshot) return;
+  undoStack.value.push(captureEditSnapshot());
+  applyHistorySnapshot(snapshot);
+}
+
+function resetImportedFactors(): void {
+  restoreEditSnapshot(importedSnapshot());
+}
+
+function clearAllFactors(): void {
+  if (!window.confirm("Clear all Factor rows and start with a blank row? You can undo this action.")) return;
+  factorOrder.splice(0, factorOrder.length);
+  removedFactorIds.clear();
+  for (const factor of props.session.factors) {
+    removedFactorIds.add(factor.factorCandidate.factorCandidateId);
+  }
+  addedFactors.splice(0, addedFactors.length);
+  replaceRecord(setupDraft, {});
+  replaceRecord(factorNames, {});
+  addFactor();
+}
+
 function specificationErrors(draft: FactorSpecificationDraft): Partial<Record<FactorSpecificationField, string>> {
   const errors: Partial<Record<FactorSpecificationField, string>> = {};
   if (typeof draft.designNominal !== "number" || !Number.isFinite(draft.designNominal)) {
@@ -322,7 +464,7 @@ const dimensionChainSourceSignature = computed(() => JSON.stringify(activeFactor
 function specificationFor(
   factor: DeepReadonly<F7SessionSnapshot["factors"][number]>,
 ): Pick<FactorSpecificationDraft, "designNominal" | "upperTolerance" | "lowerTolerance"> {
-  return factor.setup ?? candidateDraft(factor);
+  return setupEditable.value ? candidateDraft(factor) : factor.setup ?? candidateDraft(factor);
 }
 
 const specificationTotals = computed(() => {
@@ -353,7 +495,7 @@ function numericDraftValue(value: number | ""): number {
 }
 
 function calculatedValues(factor: DeepReadonly<F7SessionSnapshot["factors"][number]>) {
-  if (factor.evidence) {
+  if (!setupEditable.value && factor.evidence) {
     return {
       mean: factor.evidence.calculatedMean,
       tolerance: factor.evidence.tolerance,
@@ -369,6 +511,13 @@ function calculatedValues(factor: DeepReadonly<F7SessionSnapshot["factors"][numb
       mean: kernelFactor.mean,
       tolerance: kernelFactor.halfTolerance,
       oneSigma: kernelFactor.sigma,
+    };
+  }
+  if (factor.evidence) {
+    return {
+      mean: factor.evidence.calculatedMean,
+      tolerance: factor.evidence.tolerance,
+      oneSigma: factor.evidence.oneSigma,
     };
   }
   const draft = candidateDraft(factor);
@@ -591,17 +740,59 @@ function onModeChange(factorId: string, event: Event): void {
   <section class="workbench-panel" aria-label="Factor setup and source mode">
     <div class="factor-setup-heading">
       <h2>Factor Setup</h2>
-      <button
-        v-if="session.status === 'factor_setup' && activeFactors.length === 0"
-        type="button"
-        class="factor-add-button"
-        data-add-factor
-        :disabled="busy"
-        @click="addFactor()"
-      >
-        + Add Factor
-      </button>
+      <div class="factor-setup-actions">
+        <div v-if="setupEditable" class="factor-edit-toolbar" role="toolbar" aria-label="Factor table editing tools">
+          <button type="button" data-factor-undo title="Undo" aria-label="Undo" :disabled="busy || !canUndo" @click="undoEdit">↶</button>
+          <button type="button" data-factor-redo title="Redo" aria-label="Redo" :disabled="busy || !canRedo" @click="redoEdit">↷</button>
+          <button
+            type="button"
+            data-factor-reverse-all
+            title="Reverse all factors"
+            aria-label="Reverse all factors"
+            :disabled="busy || !canReverseFactors"
+            @click="reverseAllFactors"
+          >
+            <ArrowLeftRight :size="15" aria-hidden="true" />
+            <span>Reverse signs</span>
+          </button>
+          <button type="button" data-factor-reset title="Restore imported factors" :disabled="busy" @click="resetImportedFactors">Reset</button>
+          <button type="button" data-factor-clear-all title="Delete all Factor rows" :disabled="busy || activeFactors.length === 0" @click="clearAllFactors">Clear all</button>
+        </div>
+        <button
+          v-if="setupEditable && activeFactors.length === 0"
+          type="button"
+          class="factor-add-button"
+          data-add-factor
+          :disabled="busy"
+          @click="addFactor()"
+        >
+          + Add Factor
+        </button>
+        <button
+          v-if="!setupEditable"
+          type="button"
+          class="secondary-button"
+          data-edit-factor-setup
+          :disabled="busy"
+          @click="emit('editSetup')"
+        >
+          Edit setup
+        </button>
+        <button
+          v-else
+          id="confirm-factor-setup"
+          type="button"
+          class="action-button"
+          :disabled="busy || !setupIsValid"
+          @click="submitSetup"
+        >
+          Save setup
+        </button>
+      </div>
     </div>
+    <p v-if="setupEditable && activeFactors.length === 0" class="subtle" data-empty-factor-setup>
+      No factors. Add a Factor, restore imported factors, or undo the last action.
+    </p>
     <div class="table-scroll">
       <table
         class="data-table factor-table factor-table-centered"
@@ -612,6 +803,7 @@ function onModeChange(factorId: string, event: Event): void {
             v-for="(column, columnIndex) in visibleColumns"
             :key="column.key"
             :data-factor-column-index="columnIndex"
+            :data-column-key="column.key"
             :style="{ width: `${columnWidths[column.key]}px` }"
           >
         </colgroup>
@@ -645,7 +837,7 @@ function onModeChange(factorId: string, event: Event): void {
         <tbody>
           <tr v-for="(factor, index) in activeFactors" :key="factor.factorCandidate.factorCandidateId">
             <td class="factor-index-cell">
-              <div v-if="session.status === 'factor_setup'" class="factor-item-controls">
+              <div v-if="setupEditable" class="factor-item-controls">
                 <span class="factor-item-number">{{ index + 1 }}</span>
                 <div class="factor-item-actions">
                   <button
@@ -670,7 +862,7 @@ function onModeChange(factorId: string, event: Event): void {
             </td>
             <td>
               <div class="factor-name-cell">
-                <div v-if="session.status === 'factor_setup'" class="factor-move-controls">
+                <div v-if="setupEditable" class="factor-move-controls">
                   <button
                     type="button"
                     class="factor-row-control"
@@ -689,7 +881,7 @@ function onModeChange(factorId: string, event: Event): void {
                   >↓</button>
                 </div>
                 <input
-                  v-if="session.status === 'factor_setup' && isUserAdded(factor)"
+                  v-if="setupEditable && isUserAdded(factor)"
                   v-model.trim="factorNames[factor.factorCandidate.factorCandidateId]"
                   type="text"
                   class="factor-name-input"
@@ -702,18 +894,19 @@ function onModeChange(factorId: string, event: Event): void {
             <td>
               <div class="factor-field" data-factor-field="designNominal">
                 <input
-                  v-if="!factor.setup"
+                  v-if="setupEditable"
                   v-model.number="candidateDraft(factor).designNominal"
                   type="number"
                   step="any"
+                  data-factor-design-nominal
                   class="factor-spec-input factor-number-input"
                   :class="nominalClass(candidateDraft(factor).designNominal)"
                   :aria-label="`${factorNameFor(factor)} Design Nominal`"
                   :disabled="busy"
                 >
-                <span v-else :class="nominalClass(factor.setup.designNominal)">{{ formatSummary(factor.setup.designNominal) }}</span>
+                <span v-else :class="nominalClass(numericDraftValue(factor.setup?.designNominal ?? candidateDraft(factor).designNominal))">{{ formatSummary(numericDraftValue(factor.setup?.designNominal ?? candidateDraft(factor).designNominal)) }}</span>
                 <small
-                  v-if="!factor.setup && !isBlankSpecification(candidateDraft(factor)) && specificationFieldError(candidateDraft(factor), 'designNominal')"
+                  v-if="setupEditable && !isBlankSpecification(candidateDraft(factor)) && specificationFieldError(candidateDraft(factor), 'designNominal')"
                   class="factor-spec-error"
                   role="alert"
                 >{{ specificationFieldError(candidateDraft(factor), "designNominal") }}</small>
@@ -722,7 +915,7 @@ function onModeChange(factorId: string, event: Event): void {
             <td>
               <div class="factor-field" data-factor-field="upperTolerance">
                 <input
-                  v-if="!factor.setup"
+                  v-if="setupEditable"
                   v-model.number="candidateDraft(factor).upperTolerance"
                   type="number"
                   step="any"
@@ -730,9 +923,9 @@ function onModeChange(factorId: string, event: Event): void {
                   :aria-label="`${factorNameFor(factor)} +Tolerance`"
                   :disabled="busy"
                 >
-                <span v-else>{{ formatSummary(factor.setup.upperTolerance) }}</span>
+                <span v-else>{{ formatSummary(numericDraftValue(factor.setup?.upperTolerance ?? candidateDraft(factor).upperTolerance)) }}</span>
                 <small
-                  v-if="!factor.setup && !isBlankSpecification(candidateDraft(factor)) && specificationFieldError(candidateDraft(factor), 'upperTolerance')"
+                  v-if="setupEditable && !isBlankSpecification(candidateDraft(factor)) && specificationFieldError(candidateDraft(factor), 'upperTolerance')"
                   class="factor-spec-error"
                   role="alert"
                 >{{ specificationFieldError(candidateDraft(factor), "upperTolerance") }}</small>
@@ -741,7 +934,7 @@ function onModeChange(factorId: string, event: Event): void {
             <td>
               <div class="factor-field" data-factor-field="lowerTolerance">
                 <input
-                  v-if="!factor.setup"
+                  v-if="setupEditable"
                   v-model.number="candidateDraft(factor).lowerTolerance"
                   type="number"
                   step="any"
@@ -749,9 +942,9 @@ function onModeChange(factorId: string, event: Event): void {
                   :aria-label="`${factorNameFor(factor)} -Tolerance`"
                   :disabled="busy"
                 >
-                <span v-else>{{ formatSummary(factor.setup.lowerTolerance) }}</span>
+                <span v-else>{{ formatSummary(numericDraftValue(factor.setup?.lowerTolerance ?? candidateDraft(factor).lowerTolerance)) }}</span>
                 <small
-                  v-if="!factor.setup && !isBlankSpecification(candidateDraft(factor)) && specificationFieldError(candidateDraft(factor), 'lowerTolerance')"
+                  v-if="setupEditable && !isBlankSpecification(candidateDraft(factor)) && specificationFieldError(candidateDraft(factor), 'lowerTolerance')"
                   class="factor-spec-error"
                   role="alert"
                 >{{ specificationFieldError(candidateDraft(factor), "lowerTolerance") }}</small>
@@ -760,7 +953,7 @@ function onModeChange(factorId: string, event: Event): void {
             <td>
               <div class="factor-field" data-factor-field="longTermSafetyFactor">
                 <input
-                  v-if="!factor.setup"
+                  v-if="setupEditable"
                   v-model.number="candidateDraft(factor).longTermSafetyFactor"
                   type="number"
                   min="0"
@@ -769,9 +962,9 @@ function onModeChange(factorId: string, event: Event): void {
                   :aria-label="`${factorNameFor(factor)} Long Term/Safety Factor`"
                   :disabled="busy"
                 >
-                <span v-else>{{ formatSummary(factor.setup.longTermSafetyFactor ?? factor.evidence?.longTermSafetyFactor ?? 0) }}</span>
+                <span v-else>{{ formatSummary(factor.setup?.longTermSafetyFactor ?? factor.evidence?.longTermSafetyFactor ?? 0) }}</span>
                 <small
-                  v-if="!factor.setup && !isBlankSpecification(candidateDraft(factor)) && specificationFieldError(candidateDraft(factor), 'longTermSafetyFactor')"
+                  v-if="setupEditable && !isBlankSpecification(candidateDraft(factor)) && specificationFieldError(candidateDraft(factor), 'longTermSafetyFactor')"
                   class="factor-spec-error"
                   role="alert"
                 >{{ specificationFieldError(candidateDraft(factor), "longTermSafetyFactor") }}</small>
@@ -780,7 +973,7 @@ function onModeChange(factorId: string, event: Event): void {
             <td>
               <div class="factor-field" data-factor-field="sigmaLevel">
                 <input
-                  v-if="!factor.setup"
+                  v-if="setupEditable"
                   v-model.number="candidateDraft(factor).sigmaLevel"
                   type="number"
                   min="0"
@@ -789,9 +982,9 @@ function onModeChange(factorId: string, event: Event): void {
                   :aria-label="`${factorNameFor(factor)} Sigma Level`"
                   :disabled="busy"
                 >
-                <span v-else>{{ formatSummary(factor.setup.sigmaLevel ?? factor.evidence?.sigmaLevel ?? 0) }}</span>
+                <span v-else>{{ formatSummary(factor.setup?.sigmaLevel ?? factor.evidence?.sigmaLevel ?? 0) }}</span>
                 <small
-                  v-if="!factor.setup && !isBlankSpecification(candidateDraft(factor)) && specificationFieldError(candidateDraft(factor), 'sigmaLevel')"
+                  v-if="setupEditable && !isBlankSpecification(candidateDraft(factor)) && specificationFieldError(candidateDraft(factor), 'sigmaLevel')"
                   class="factor-spec-error"
                   role="alert"
                 >{{ specificationFieldError(candidateDraft(factor), "sigmaLevel") }}</small>
@@ -800,7 +993,7 @@ function onModeChange(factorId: string, event: Event): void {
             <td>
               <div class="factor-field" data-factor-field="distribution">
                 <select
-                  v-if="!factor.setup"
+                  v-if="setupEditable"
                   v-model="candidateDraft(factor).distribution"
                   class="factor-distribution-select"
                   :aria-label="`${factorNameFor(factor)} Distribution`"
@@ -810,9 +1003,9 @@ function onModeChange(factorId: string, event: Event): void {
                     {{ distribution }}
                   </option>
                 </select>
-                <span v-else>{{ factor.setup.distribution ?? factor.evidence?.distribution }}</span>
+                <span v-else>{{ factor.setup?.distribution ?? factor.evidence?.distribution }}</span>
                 <small
-                  v-if="!factor.setup && !isBlankSpecification(candidateDraft(factor)) && specificationFieldError(candidateDraft(factor), 'distribution')"
+                  v-if="setupEditable && !isBlankSpecification(candidateDraft(factor)) && specificationFieldError(candidateDraft(factor), 'distribution')"
                   class="factor-spec-error"
                   role="alert"
                 >{{ specificationFieldError(candidateDraft(factor), "distribution") }}</small>
@@ -823,41 +1016,44 @@ function onModeChange(factorId: string, event: Event): void {
             <td><output :aria-label="`${factorNameFor(factor)} 1 Sigma`">{{ formatFactorCalculation(factor, calculatedValues(factor).oneSigma) }}</output></td>
             <td><output :aria-label="`${factorNameFor(factor)} Percent Contribution`">{{ formatFactorContribution(factor, percentContribution(factor)) }}</output></td>
             <td>
-              <fieldset v-if="factor.evidence" class="source-mode-options">
-                <legend>Source mode</legend>
-                <label class="source-mode-option">
-                  <input
-                    :name="`mode-${factor.evidence.factorId}`"
-                    type="radio"
-                    value="BASELINE_ASSUMPTION"
-                    :checked="factor.sourceMode === 'BASELINE_ASSUMPTION'"
-                    :disabled="busy"
-                    @change="onModeChange(factor.evidence.factorId, $event)"
-                  >
-                  BASELINE_ASSUMPTION
-                </label>
-                <label class="source-mode-option">
-                  <input
-                    :name="`mode-${factor.evidence.factorId}`"
-                    type="radio"
-                    value="MEASURED"
-                    :checked="factor.sourceMode === 'MEASURED'"
-                    :disabled="busy"
-                    @change="onModeChange(factor.evidence.factorId, $event)"
-                  >
-                  MEASURED
-                </label>
-              </fieldset>
-              <button
-                v-if="factor.sourceMode === 'MEASURED'"
-                type="button"
-                class="factor-workspace-button"
-                :data-open-measurement="factor.evidence?.factorId"
-                :disabled="busy"
-                @click="factor.evidence && emit('openMeasurement', factor.evidence.factorId)"
-              >
-                Open workspace
-              </button>
+              <div v-if="factor.evidence && !setupEditable" class="source-mode-control">
+                <fieldset class="source-mode-options">
+                  <legend>Source mode</legend>
+                  <label class="source-mode-option">
+                    <input
+                      :name="`mode-${factor.evidence.factorId}`"
+                      type="radio"
+                      value="BASELINE_ASSUMPTION"
+                      :checked="factor.sourceMode === 'BASELINE_ASSUMPTION'"
+                      :disabled="busy"
+                      @change="onModeChange(factor.evidence.factorId, $event)"
+                    >
+                    BASELINE_ASSUMPTION
+                  </label>
+                  <div class="measured-workspace-row">
+                    <label class="source-mode-option">
+                      <input
+                        :name="`mode-${factor.evidence.factorId}`"
+                        type="radio"
+                        value="MEASURED"
+                        :checked="factor.sourceMode === 'MEASURED'"
+                        :disabled="busy"
+                        @change="onModeChange(factor.evidence.factorId, $event)"
+                      >
+                      MEASURED
+                    </label>
+                    <button
+                      type="button"
+                      class="factor-workspace-button"
+                      :data-open-measurement="factor.evidence.factorId"
+                      :disabled="busy || factor.sourceMode !== 'MEASURED'"
+                      @click="emit('openMeasurement', factor.evidence.factorId)"
+                    >
+                      Open workspace
+                    </button>
+                  </div>
+                </fieldset>
+              </div>
             </td>
             <td>{{ factor.measurementPasteResult?.dataset?.analyzedCount ?? "-" }}</td>
             <td>
@@ -908,6 +1104,9 @@ function onModeChange(factorId: string, event: Event): void {
         :factors="dimensionChainFactors"
         :valid="setupIsValid"
         :source-signature="dimensionChainSourceSignature"
+        :editable="setupEditable && !busy"
+        @reverse-all="reverseAllFactors"
+        @factor-sign-change="applyFactorSigns"
       />
       <section class="f4-response-summary" data-f4-response-summary aria-labelledby="f4-response-summary-title">
       <h3 id="f4-response-summary-title">Response Summary Table</h3>
@@ -947,9 +1146,9 @@ function onModeChange(factorId: string, event: Event): void {
             <div><dt>Design Nominal</dt><dd>{{ formatFixed(f4Calculation?.system.designNominal, 4) }}</dd></div>
             <div><dt>Adjusted Mean</dt><dd>{{ formatFixed(f4Calculation?.system.mean, 4) }}</dd></div>
             <div><dt>Additional Mean Shift</dt><dd>{{ formatFixed(f4Calculation?.system.shift, 4) }}</dd></div>
-            <div><dt>LSL</dt><dd class="f4-excel-evidence" data-f4-lsl><output class="f4-readonly-field">{{ formatFixed(f4Calculation?.capability.lowerSpecLimit, 2) }}</output></dd></div>
-            <div><dt>USL</dt><dd class="f4-excel-evidence" data-f4-usl><output class="f4-readonly-field">{{ formatFixed(f4Calculation?.capability.upperSpecLimit, 2) }}</output></dd></div>
-            <div><dt>Target Sigma Level</dt><dd class="f4-excel-evidence" data-f4-target-sigma><output class="f4-readonly-field">{{ f4Calculation ? `${formatFixed(f4Calculation.capability.targetSigmaLevel, 0)}σ` : "—" }}</output></dd></div>
+            <div><dt>LSL</dt><dd class="f4-excel-evidence" data-f4-lsl><output class="f4-readonly-field f4-compact-value">{{ formatFixed(f4Calculation?.capability.lowerSpecLimit, 2) }}</output></dd></div>
+            <div><dt>USL</dt><dd class="f4-excel-evidence" data-f4-usl><output class="f4-readonly-field f4-compact-value">{{ formatFixed(f4Calculation?.capability.upperSpecLimit, 2) }}</output></dd></div>
+            <div><dt>Target Sigma Level</dt><dd class="f4-excel-evidence" data-f4-target-sigma><output class="f4-readonly-field f4-compact-value">{{ f4Calculation ? `${formatFixed(f4Calculation.capability.targetSigmaLevel, 0)}σ` : "—" }}</output></dd></div>
             <div><dt>Target Cpk</dt><dd>{{ formatFixed(f4Calculation?.capability.targetCpk, 2) }}</dd></div>
           </dl>
         </section>
@@ -975,22 +1174,15 @@ function onModeChange(factorId: string, event: Event): void {
             <div><dt>Total DPM</dt><dd data-f4-total-dpm>{{ formatInteger(f4Calculation?.capability.totalDpm) }}</dd></div>
             <div><dt>% Out of Spec</dt><dd>{{ formatF4Percent(f4Calculation?.capability.outOfSpecRatio) }}</dd></div>
             <div><dt>Yield</dt><dd data-f4-yield>{{ formatF4Percent(f4Calculation?.capability.yield) }}</dd></div>
-            <div><dt>Volume</dt><dd class="f4-excel-evidence" data-f4-volume><output class="f4-readonly-field">{{ formatInteger(f4Volume) }}</output></dd></div>
+            <div><dt>Volume</dt><dd class="f4-excel-evidence" data-f4-volume><output class="f4-readonly-field f4-compact-value">{{ formatInteger(f4Volume) }}</output></dd></div>
             <div><dt>Failures Over Vol.</dt><dd>{{ formatInteger(failuresOverVolume()) }}</dd></div>
           </dl>
         </section>
         </div>
       </section>
     </div>
-    <button
-      v-if="session.status === 'factor_setup'"
-      id="confirm-factor-setup"
-      type="button"
-      class="action-button"
-      :disabled="busy || !setupIsValid"
-      @click="submitSetup"
-    >
-      Confirm factor setup
-    </button>
+    <p v-if="editingSetup" class="subtle" data-factor-setup-reset-notice>
+      Confirming changes resets source modes, measurement data, distribution fits, and simulation results.
+    </p>
   </section>
 </template>

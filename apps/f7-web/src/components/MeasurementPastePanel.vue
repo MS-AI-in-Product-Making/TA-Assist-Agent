@@ -4,6 +4,7 @@ import type { F7MeasurementStructure, F7SessionSnapshot, F7UiError } from "../ap
 import { calculateF7Capability } from "../f7-capability";
 import { buildDistributionFitReferences, distributionFitObservedDomain } from "../distribution-fit-plot";
 import DistributionFitPlot from "./DistributionFitPlot.vue";
+import SelectedFactorSetup from "./SelectedFactorSetup.vue";
 
 const props = defineProps<{
   readonly session: DeepReadonly<F7SessionSnapshot>;
@@ -315,9 +316,10 @@ watch(activeStage, (stage) => emit("stageChange", stage));
         data-close-measurement
         @click="closeMeasurementWorkspace"
       >
-        Back to factors
+        Back to factor setup
       </button>
     </header>
+    <SelectedFactorSetup :session="session" :factor-id="factorId" />
     <ol class="analysis-stage-list" aria-label="Factor analysis stages">
       <li :class="activeStage === 'measurement' ? 'stage-current' : 'stage-complete'">
         <span>1</span>

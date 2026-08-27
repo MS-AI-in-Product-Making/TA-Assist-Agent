@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { mount } from "@vue/test-utils";
 import App from "./App.vue";
+import DimensionChainPanel from "./components/DimensionChainPanel.vue";
 import type {
   F7Client,
   F7DistributionFitCandidate,
@@ -752,6 +753,10 @@ describe("F7 workbench shell", () => {
     const wrapper = mount(App, { props: { client } });
     await uploadWorkbook(wrapper);
 
+    const saveSetupButton = wrapper.get("#confirm-factor-setup");
+    expect(saveSetupButton.text()).toBe("Save setup");
+    expect(saveSetupButton.element.parentElement?.classList).toContain("factor-setup-actions");
+
     const headers = wrapper.findAll("th").map((header) => header.text());
     expect(headers[0]).toBe("Item");
     expect(headers).toContain("Distribution");
@@ -804,6 +809,8 @@ describe("F7 workbench shell", () => {
     const outputLayout = wrapper.get("[data-factor-output-layout]");
     expect(outputLayout.element.firstElementChild?.hasAttribute("data-dimension-chain-panel")).toBe(true);
     expect(outputLayout.element.lastElementChild?.hasAttribute("data-f4-response-summary")).toBe(true);
+    expect(outputLayout.classes()).not.toContain("is-dimension-chain-expanded");
+    expect(wrapper.find("[aria-label='Expand Dimension Chain']").exists()).toBe(false);
     expect(wrapper.find("[data-dimension-chain-svg]").exists()).toBe(false);
     await wrapper.get("[data-generate-dimension-chain]").trigger("click");
     expect(wrapper.findAll("[data-dimension-segment]")).toHaveLength(1);
@@ -838,7 +845,9 @@ describe("F7 workbench shell", () => {
     expect(capabilitySummary.get("[data-f4-target-sigma]").text()).toBe("3σ");
     expect(capabilitySummary.get("[data-f4-volume]").text()).toBe("1,000,000");
     for (const selector of ["[data-f4-lsl]", "[data-f4-usl]", "[data-f4-target-sigma]", "[data-f4-volume]"]) {
-      expect(capabilitySummary.get(selector).get("output").classes()).toContain("f4-readonly-field");
+      const outputClasses = capabilitySummary.get(selector).get("output").classes();
+      expect(outputClasses).toContain("f4-readonly-field");
+      expect(outputClasses).toContain("f4-compact-value");
     }
     expect(capabilitySummary.get("[data-f4-rss-sigma]").text()).toBe("0.0450");
     expect(capabilitySummary.get("[data-f4-worst-case-tolerance]").text()).toBe("± 0.0900");
@@ -881,6 +890,132 @@ describe("F7 workbench shell", () => {
         confirmed: true,
       }],
     });
+  });
+
+  it("3) factor_setup reverses all factor signs as one undoable edit and accepts partial chain sign changes", async () => {
+    const base = factorSetupSnapshot();
+    const first = base.factors[0]!;
+    const snapshot = createSnapshot({
+      ...base,
+      factors: [
+        first,
+        {
+          factorCandidate: {
+            ...first.factorCandidate,
+            factorCandidateId: HASH_C,
+            factorName: "Second factor",
+            sourceRow: first.factorCandidate.sourceRow + 1,
+            excelSignedMean: 0.4,
+            designNominal: 0.4,
+          },
+        },
+      ],
+    });
+    const client = createMockClient(snapshot, { importWorkbook: snapshot });
+    const wrapper = mount(App, { props: { client } });
+    await uploadWorkbook(wrapper);
+
+    const reverse = wrapper.get("button[aria-label='Reverse all factors']");
+    expect(reverse.attributes("title")).toBe("Reverse all factors");
+    expect(reverse.text()).toContain("Reverse signs");
+    expect(reverse.find("svg").exists()).toBe(true);
+    expect(reverse.attributes("disabled")).toBeUndefined();
+    expect(wrapper.getComponent(DimensionChainPanel).props("editable")).toBe(true);
+
+    const nominalValues = () => wrapper.findAll("input[data-factor-design-nominal]")
+      .map((input) => (input.element as HTMLInputElement).value);
+    expect(nominalValues()).toEqual(["-0.57", "0.4"]);
+    expect(wrapper.get("[data-summary-design-nominal]").text()).toBe("-0.17");
+
+    await reverse.trigger("click");
+    expect(nominalValues()).toEqual(["0.57", "-0.4"]);
+    expect(wrapper.get("[data-summary-design-nominal]").text()).toBe("0.17");
+
+    await wrapper.get("[data-factor-undo]").trigger("click");
+    expect(nominalValues()).toEqual(["-0.57", "0.4"]);
+    expect(wrapper.get("[data-summary-design-nominal]").text()).toBe("-0.17");
+
+    await wrapper.get("[data-factor-redo]").trigger("click");
+    expect(nominalValues()).toEqual(["0.57", "-0.4"]);
+    expect(wrapper.get("[data-summary-design-nominal]").text()).toBe("0.17");
+
+    wrapper.getComponent(DimensionChainPanel).vm.$emit("factor-sign-change", [
+      { factorId: HASH_C, sign: 1 },
+    ]);
+    await wrapper.vm.$nextTick();
+    expect(nominalValues()).toEqual(["0.57", "0.4"]);
+    await wrapper.get("[data-factor-undo]").trigger("click");
+    expect(nominalValues()).toEqual(["0.57", "-0.4"]);
+
+    wrapper.getComponent(DimensionChainPanel).vm.$emit("reverse-all");
+    await wrapper.vm.$nextTick();
+    expect(nominalValues()).toEqual(["-0.57", "0.4"]);
+
+    const nominalInputs = wrapper.findAll("input[data-factor-design-nominal]");
+    await nominalInputs[0]!.setValue("");
+    await nominalInputs[1]!.setValue("0");
+    expect(reverse.attributes("disabled")).toBeDefined();
+  });
+
+  it("3) factor_setup hides reverse signs when read-only and disables it while busy", async () => {
+    const readOnlySnapshot = measurementEntrySnapshot();
+    const readOnlyClient = createMockClient(readOnlySnapshot, { importWorkbook: readOnlySnapshot });
+    const readOnlyWrapper = mount(App, { props: { client: readOnlyClient } });
+    await uploadWorkbook(readOnlyWrapper);
+
+    expect(readOnlyWrapper.find("[data-factor-reverse-all]").exists()).toBe(false);
+    const readOnlyChain = readOnlyWrapper.getComponent(DimensionChainPanel);
+    expect(readOnlyChain.props("editable")).toBe(false);
+    expect(readOnlyChain.get("button[aria-label='Reverse all factors']").attributes("disabled")).toBeDefined();
+
+    const setupSnapshot = factorSetupSnapshot();
+    const busyClient = createMockClient(setupSnapshot, { importWorkbook: setupSnapshot });
+    let resolveConfirmation!: (snapshot: F7SessionSnapshot) => void;
+    vi.mocked(busyClient.confirmFactors).mockImplementation(() => new Promise((resolve) => {
+      resolveConfirmation = resolve;
+    }));
+    const busyWrapper = mount(App, { props: { client: busyClient } });
+    await uploadWorkbook(busyWrapper);
+
+    const submission = busyWrapper.get("#confirm-factor-setup").trigger("click");
+    await busyWrapper.vm.$nextTick();
+    expect(busyWrapper.attributes("aria-busy")).toBe("true");
+    expect(busyWrapper.get("button[aria-label='Reverse all factors']").attributes("disabled")).toBeDefined();
+    expect(busyWrapper.getComponent(DimensionChainPanel).props("editable")).toBe(false);
+
+    resolveConfirmation(measurementEntrySnapshot());
+    await submission;
+    await vi.waitFor(() => expect(busyWrapper.attributes("aria-busy")).toBe("false"));
+  });
+
+  it("3a) returns from measurement entry to editable factor setup and reconfirms updated values", async () => {
+    const measurementEntry = measurementEntrySnapshot();
+    const client = createMockClient(measurementEntry, {
+      importWorkbook: measurementEntry,
+      confirmFactors: measurementEntry,
+    });
+    const wrapper = mount(App, { props: { client } });
+    await uploadWorkbook(wrapper);
+
+    expect(wrapper.find("input.factor-spec-input").exists()).toBe(false);
+    const editSetupButton = wrapper.get("[data-edit-factor-setup]");
+    expect(editSetupButton.text()).toBe("Edit setup");
+    expect(editSetupButton.element.parentElement?.classList).toContain("factor-setup-actions");
+    await editSetupButton.trigger("click");
+
+    const designNominal = wrapper.get("input[aria-label='C-cover height Design Nominal']");
+    expect((designNominal.element as HTMLInputElement).value).toBe("-0.57");
+    expect(wrapper.get("#confirm-factor-setup").text()).toBe("Save setup");
+    expect(wrapper.get("#confirm-factor-setup").element.parentElement?.classList).toContain("factor-setup-actions");
+    expect(wrapper.find("fieldset.source-mode-options").exists()).toBe(false);
+    expect(wrapper.find("[aria-label='Validation summary']").exists()).toBe(false);
+
+    await designNominal.setValue("-0.6");
+    await wrapper.get("#confirm-factor-setup").trigger("click");
+    expect(client.confirmFactors).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: "session-01",
+      confirmations: [expect.objectContaining({ designNominal: -0.6, confirmed: true })],
+    }));
   });
 
   it("3b) factor setup supports row insertion, deletion, and reordering", async () => {
@@ -991,6 +1126,53 @@ describe("F7 workbench shell", () => {
     expect(wrapper.find(".factor-row-control").exists()).toBe(false);
   });
 
+  it("3b.0) supports undo, redo, reset to imported factors, and confirmed clear all", async () => {
+    const client = createMockClient(factorSetupSnapshot(), { importWorkbook: factorSetupSnapshot() });
+    const wrapper = mount(App, { props: { client } });
+    await uploadWorkbook(wrapper);
+
+    const undo = wrapper.get("[data-factor-undo]");
+    const redo = wrapper.get("[data-factor-redo]");
+    const reset = wrapper.get("[data-factor-reset]");
+    const clearAll = wrapper.get("[data-factor-clear-all]");
+    expect(undo.attributes("disabled")).toBeDefined();
+    expect(redo.attributes("disabled")).toBeDefined();
+
+    const nominal = wrapper.get("input[aria-label='C-cover height Design Nominal']");
+    await nominal.setValue("-0.8");
+    expect(undo.attributes("disabled")).toBeUndefined();
+    await undo.trigger("click");
+    expect((nominal.element as HTMLInputElement).value).toBe("-0.57");
+    expect(redo.attributes("disabled")).toBeUndefined();
+    await redo.trigger("click");
+    expect((nominal.element as HTMLInputElement).value).toBe("-0.8");
+
+    await reset.trigger("click");
+    expect((nominal.element as HTMLInputElement).value).toBe("-0.57");
+    await undo.trigger("click");
+    expect((nominal.element as HTMLInputElement).value).toBe("-0.8");
+
+    const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
+    await clearAll.trigger("click");
+    expect(wrapper.findAll(".factor-table tbody tr")).toHaveLength(1);
+    await clearAll.trigger("click");
+    expect(confirm).toHaveBeenCalledWith("Clear all Factor rows and start with a blank row? You can undo this action.");
+    expect(wrapper.findAll(".factor-table tbody tr")).toHaveLength(1);
+    const blankRow = wrapper.get(".factor-table tbody tr");
+    expect(blankRow.get(".factor-item-number").text()).toBe("1");
+    expect((blankRow.get("input[aria-label='New factor name']").element as HTMLInputElement).value).toBe("");
+    expect(blankRow.findAll("input.factor-spec-input").map((input) => (input.element as HTMLInputElement).value)).toEqual([
+      "", "", "", "1", "4",
+    ]);
+    expect(wrapper.find("[data-empty-factor-setup]").exists()).toBe(false);
+    expect(wrapper.get("#confirm-factor-setup").attributes("disabled")).toBeDefined();
+
+    await undo.trigger("click");
+    expect(wrapper.findAll(".factor-table tbody tr")).toHaveLength(1);
+    expect((wrapper.get("input[aria-label='C-cover height Design Nominal']").element as HTMLInputElement).value).toBe("-0.8");
+    confirm.mockRestore();
+  });
+
   it("3b.1) deleting an existing factor marks a generated dimension chain stale", async () => {
     const base = factorSetupSnapshot();
     const first = base.factors[0]!;
@@ -1050,7 +1232,7 @@ describe("F7 workbench shell", () => {
       "width: 80px;",
       "width: 72px;",
       "width: 96px;",
-      "width: 184px;",
+      "width: 376px;",
       "width: 88px;",
       "width: 96px;",
     ]);
@@ -1137,10 +1319,16 @@ describe("F7 workbench shell", () => {
     await uploadWorkbook(wrapper);
     expect(wrapper.find("fieldset legend").text()).toContain("Source mode");
     const sourceModeOptions = wrapper.get("fieldset.source-mode-options");
+    const sourceModeColumn = wrapper.get("col[data-column-key='sourceMode']");
+    const workspaceButton = wrapper.get(`[data-open-measurement='${HASH_C}']`);
+    expect(sourceModeColumn.attributes("style")).toContain("width: 376px");
+    expect(sourceModeOptions.element.parentElement?.classList).toContain("source-mode-control");
+    expect(workspaceButton.element.parentElement?.classList).toContain("measured-workspace-row");
+    expect(workspaceButton.element.previousElementSibling?.classList).toContain("source-mode-option");
     expect(sourceModeOptions.findAll("label.source-mode-option")).toHaveLength(2);
     expect(sourceModeOptions.findAll<HTMLInputElement>("label.source-mode-option > input[type='radio']")
       .map((input) => input.element.value)).toEqual(["BASELINE_ASSUMPTION", "MEASURED"]);
-    expect(wrapper.find(`[data-open-measurement='${HASH_C}']`).exists()).toBe(true);
+    expect(workspaceButton.attributes("disabled")).toBeUndefined();
     await openMeasurementWorkspace(wrapper);
     const workspace = wrapper.get("[aria-label='Factor measurement workspace']");
     expect(workspace.text()).toContain("C-cover height");
@@ -1148,10 +1336,36 @@ describe("F7 workbench shell", () => {
     expect(workspace.text()).toContain("Capability Analysis");
     expect(workspace.text()).toContain("Distribution Fit");
     expect(workspace.text()).toContain("Locked");
-    await workspace.get("button[data-close-measurement]").trigger("click");
+    const selectedFactorSetup = workspace.get("table[aria-label='Selected factor setup']");
+    expect(selectedFactorSetup.findAll("thead th").map((header) => header.text())).toEqual([
+      "Item",
+      "Factor",
+      "Design Nominal",
+      "+ Tol",
+      "- Tol",
+      "Long Term/Safety Factor",
+      "σ Level",
+      "Distribution",
+      "Mean",
+      "Tolerance",
+      "1σ",
+      "% Cont. to σ",
+      "Source Mode",
+    ]);
+    expect(selectedFactorSetup.text()).toContain("C-cover height");
+    expect(selectedFactorSetup.text()).toContain("-0.57");
+    expect(selectedFactorSetup.text()).toContain("MEASURED");
+    expect(selectedFactorSetup.find("[data-open-measurement]").exists()).toBe(false);
+    expect(wrapper.find("[aria-label='Factor setup and source mode']").exists()).toBe(false);
+    expect(wrapper.find("[aria-label='Validation summary']").exists()).toBe(false);
+    const backButton = workspace.get("button[data-close-measurement]");
+    expect(backButton.text()).toBe("Back to factor setup");
+    await backButton.trigger("click");
+    expect(wrapper.find("[aria-label='Factor setup and source mode']").exists()).toBe(true);
+    expect(wrapper.find("[aria-label='Factor measurement workspace']").exists()).toBe(false);
     await wrapper.get("input[value='BASELINE_ASSUMPTION']").trigger("change");
     expect(client.setFactorMode).toHaveBeenCalledWith({ sessionId: "session-01", factorId: HASH_C, mode: "BASELINE_ASSUMPTION" });
-    expect(wrapper.find(`[data-open-measurement='${HASH_C}']`).exists()).toBe(false);
+    expect(wrapper.get(`[data-open-measurement='${HASH_C}']`).attributes("disabled")).toBeDefined();
   });
 
   it("5b) nominal sign controls its subtractive/additive color and zero is rejected", async () => {
@@ -1214,7 +1428,7 @@ describe("F7 workbench shell", () => {
     const wrapper = mount(App, { props: { client } });
     await uploadWorkbook(wrapper);
 
-    expect(wrapper.find(`[data-open-measurement='${HASH_C}']`).exists()).toBe(false);
+    expect(wrapper.get(`[data-open-measurement='${HASH_C}']`).attributes("disabled")).toBeDefined();
     await wrapper.get("input[value='MEASURED']").trigger("change");
     expect(client.setFactorMode).toHaveBeenCalledWith({ sessionId: "session-01", factorId: HASH_C, mode: "MEASURED" });
     expect(wrapper.find(`[data-open-measurement='${HASH_C}']`).exists()).toBe(true);
@@ -1237,7 +1451,7 @@ describe("F7 workbench shell", () => {
     expect(workspace.text()).not.toContain("Source reference");
     expect(workspace.text()).not.toContain("MSA status");
     expect(workspace.text()).not.toContain("Outlier disposition");
-    expect(workspace.findAll("th").map((header) => header.text())).toEqual(["No.", "Measured Value", "Row actions"]);
+    expect(workspace.findAll(".measurement-grid th").map((header) => header.text())).toEqual(["No.", "Measured Value", "Row actions"]);
 
     const firstRow = workspace.get("input[data-measurement-row='1']");
     await firstRow.setValue("0.494");
@@ -1485,6 +1699,7 @@ describe("F7 workbench shell", () => {
       family: "normal",
       confirmed: true,
     });
+    await wrapper.get("button[data-close-measurement]").trigger("click");
     await vi.waitFor(() => expect(wrapper.find("[data-open-monte-carlo]").exists()).toBe(true));
     expect(wrapper.find("[data-distribution-plot]").exists()).toBe(false);
     expect(wrapper.findAll(".workflow-steps li")[4]?.text()).toContain("Available");
@@ -1713,6 +1928,7 @@ describe("F7 workbench shell", () => {
     await openMeasurementWorkspace(wrapper);
     await wrapper.get("button[data-stage='distribution']").trigger("click");
     await wrapper.get("[data-approve-distribution]").trigger("click");
+    await wrapper.get("button[data-close-measurement]").trigger("click");
     await vi.waitFor(() => expect(wrapper.find("[data-open-monte-carlo]").exists()).toBe(true));
     await wrapper.get("[data-open-monte-carlo]").trigger("click");
 
@@ -1874,11 +2090,13 @@ describe("F7 workbench shell", () => {
     await uploadWorkbook(wrapper);
     await openMeasurementWorkspace(wrapper);
 
-    const workspace = wrapper.get("[aria-label='Factor measurement workspace']");
+    let workspace = wrapper.get("[aria-label='Factor measurement workspace']");
     await workspace.get("button[data-stage='distribution']").trigger("click");
     expect(workspace.find("table.distribution-fit-table").exists()).toBe(true);
 
+    await workspace.get("button[data-close-measurement]").trigger("click");
     await wrapper.get(`[data-open-measurement='${HASH_A}']`).trigger("click");
+    workspace = wrapper.get("[aria-label='Factor measurement workspace']");
     expect(workspace.text()).toContain("Second factor");
     expect(workspace.find("table.distribution-fit-table").exists()).toBe(false);
     expect(workspace.find(".measurement-grid").exists()).toBe(true);

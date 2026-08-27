@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  boundaryKey,
+  buildDisplaySegments,
   buildDimensionChainGeometry,
   dimensionChainSignature,
+  pruneManualLayout,
+  signChangesForDisplay,
   type DimensionChainFactor,
+  type DimensionChainOrientation,
 } from "./dimension-chain";
 
 function factor(itemNumber: number, designNominal: number): DimensionChainFactor {
@@ -70,5 +75,85 @@ describe("dimension chain geometry", () => {
     for (const changed of changes) {
       expect(dimensionChainSignature([original])).not.toBe(dimensionChainSignature([changed]));
     }
+  });
+});
+
+describe("dimension chain display layout", () => {
+  it("defines horizontal and vertical orientations and stable boundary keys", () => {
+    const orientations: readonly DimensionChainOrientation[] = ["horizontal", "vertical"];
+
+    expect(orientations).toEqual(["horizontal", "vertical"]);
+    expect(boundaryKey("factor-1", "factor-2")).toBe("factor-1::factor-2");
+  });
+
+  it("applies offsets only to shared boundaries and lanes independently", () => {
+    const geometry = buildDimensionChainGeometry([factor(1, 2), factor(2, 2), factor(3, 2)]);
+    const segments = buildDisplaySegments(geometry, {
+      boundaryOffsets: {
+        [boundaryKey("factor-1", "factor-2")]: 20,
+        [boundaryKey("factor-2", "factor-3")]: -30,
+      },
+      laneOffsets: { "factor-2": 14 },
+    });
+
+    expect(segments.map(({ displayStart, displayEnd, laneOffset }) => ({
+      displayStart,
+      displayEnd,
+      laneOffset,
+    }))).toEqual([
+      { displayStart: 0, displayEnd: 200, laneOffset: 0 },
+      { displayStart: 200, displayEnd: 330, laneOffset: 14 },
+      { displayStart: 330, displayEnd: 540, laneOffset: 0 },
+    ]);
+    expect(geometry.segments.map(({ start, end }) => ({ start, end }))).toEqual([
+      { start: 0, end: 180 },
+      { start: 180, end: 360 },
+      { start: 360, end: 540 },
+    ]);
+  });
+
+  it("reports only reversed nonzero factors using the displayed sign", () => {
+    const geometry = buildDimensionChainGeometry([factor(1, 2), factor(2, -1), factor(3, 0)]);
+    const segments = buildDisplaySegments(geometry, {
+      boundaryOffsets: {
+        [boundaryKey("factor-1", "factor-2")]: -200,
+        [boundaryKey("factor-2", "factor-3")]: -200,
+      },
+      laneOffsets: {},
+    });
+
+    expect(segments.map(({ displayDirection }) => displayDirection)).toEqual([
+      "subtractive",
+      "subtractive",
+      "additive",
+    ]);
+    expect(signChangesForDisplay(segments)).toEqual([{ factorId: "factor-1", sign: -1 }]);
+  });
+
+  it("prunes stale lanes and boundaries that are no longer adjacent", () => {
+    const layout = {
+      boundaryOffsets: {
+        [boundaryKey("factor-1", "factor-2")]: 10,
+        [boundaryKey("factor-2", "factor-3")]: 20,
+        [boundaryKey("factor-1", "factor-3")]: 30,
+        [boundaryKey("stale", "factor-1")]: 40,
+      },
+      laneOffsets: {
+        "factor-1": 5,
+        "factor-3": 15,
+        stale: 25,
+      },
+    };
+
+    expect(pruneManualLayout(layout, [factor(1, 2), factor(2, 2), factor(3, 2)])).toEqual({
+      boundaryOffsets: {
+        [boundaryKey("factor-1", "factor-2")]: 10,
+        [boundaryKey("factor-2", "factor-3")]: 20,
+      },
+      laneOffsets: {
+        "factor-1": 5,
+        "factor-3": 15,
+      },
+    });
   });
 });
