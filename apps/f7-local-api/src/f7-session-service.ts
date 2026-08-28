@@ -3,7 +3,7 @@ import {
   createTypedError,
   f7DistributionCharacteristicKindSchema,
   f7DistributionApprovalRouteRequestSchema,
-  f7FactorSetupConfirmationSchema,
+  f7FactorConfirmRouteRequestSchema,
   f7MeasurementDispositionRequestSchema,
   f7MeasurementPasteRequestSchema,
   f7MonteCarloRunRouteRequestSchema,
@@ -15,7 +15,7 @@ import {
   type F7DistributionCharacteristicKind,
   type F7DistributionCandidateFamily,
   type F7FactorInput,
-  type F7FactorSetupConfirmation,
+  type F7FactorConfirmRouteRequest,
   type F7FactorSourceMode,
   type F7MeasurementDispositionRequest,
   type F7MeasurementPasteRequest,
@@ -246,11 +246,8 @@ export function createF7SessionService(dependencies: {
     return cloneFrozenSnapshot(snapshot);
   };
 
-  const confirmFactorSetup = (request: { sessionId: string; confirmations: readonly F7FactorSetupConfirmation[] }): F7SessionSnapshot => {
-    const parsedRequest = z.object({
-      sessionId: z.string().min(1),
-      confirmations: z.array(f7FactorSetupConfirmationSchema).min(1),
-    }).strict().safeParse(request);
+  const confirmFactorSetup = (request: F7FactorConfirmRouteRequest): F7SessionSnapshot => {
+    const parsedRequest = f7FactorConfirmRouteRequestSchema.safeParse(request);
     if (!parsedRequest.success) throw fixedError(SESSION_SUMMARY, "validation_error");
 
     const current = readSession(parsedRequest.data.sessionId);
@@ -307,10 +304,29 @@ export function createF7SessionService(dependencies: {
       };
     });
 
+    const specificationOverride = parsedRequest.data.systemSpecification;
+    const availableLiteral = (actualValue: number, sourceLabel: string) => ({
+      status: "available" as const,
+      actualValue,
+      displayValue: String(actualValue),
+      sourceLabel,
+      valueOrigin: "numeric_literal" as const,
+    });
+    const systemSpecification = specificationOverride && current.snapshot.systemSpecification
+      ? {
+          ...current.snapshot.systemSpecification,
+          status: "available" as const,
+          lowerSpecLimit: availableLiteral(specificationOverride.lowerSpecLimit, "Lower Specification Limit"),
+          upperSpecLimit: availableLiteral(specificationOverride.upperSpecLimit, "Upper Specification Limit"),
+          targetSigmaLevel: availableLiteral(specificationOverride.targetSigmaLevel, "Target Sigma Level"),
+          additionalMeanShift: current.snapshot.systemSpecification.additionalMeanShift ?? availableLiteral(0, "Additional Mean Shift"),
+        }
+      : current.snapshot.systemSpecification;
     const snapshot = normalizeSnapshot({
       ...current.snapshot,
       status: "measurement_entry",
       factors,
+      systemSpecification,
       monteCarloResult: undefined,
     });
 

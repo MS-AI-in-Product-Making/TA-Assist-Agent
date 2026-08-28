@@ -442,8 +442,19 @@ describe("createF7SessionService", () => {
     const good = service.confirmFactorSetup({
       sessionId: imported.sessionId,
       confirmations,
+      systemSpecification: {
+        lowerSpecLimit: -0.2,
+        upperSpecLimit: 0.1,
+        targetSigmaLevel: 4,
+      },
     });
     expect(good.status).toBe("measurement_entry");
+    expect(good.systemSpecification).toMatchObject({
+      status: "available",
+      lowerSpecLimit: { status: "available", actualValue: -0.2 },
+      upperSpecLimit: { status: "available", actualValue: 0.1 },
+      targetSigmaLevel: { status: "available", actualValue: 4 },
+    });
     for (const factor of good.factors) {
       expect(factor.setup?.confirmed).toBe(true);
       expect(factor.evidence).toBeDefined();

@@ -1849,8 +1849,23 @@ export const f7FactorConfirmRouteRequestSchema = z
   .object({
     sessionId: z.string().min(1),
     confirmations: z.array(f7FactorSetupConfirmationSchema).min(1),
+    systemSpecification: z.object({
+      lowerSpecLimit: finiteNumberSchema,
+      upperSpecLimit: finiteNumberSchema,
+      targetSigmaLevel: finitePositiveNumberSchema,
+    }).strict().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((request, context) => {
+    const specification = request.systemSpecification;
+    if (specification && specification.lowerSpecLimit >= specification.upperSpecLimit) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "lowerSpecLimit must be less than upperSpecLimit",
+        path: ["systemSpecification", "lowerSpecLimit"],
+      });
+    }
+  });
 
 export const f7FactorModeRouteRequestSchema = z
   .object({
@@ -1997,7 +2012,7 @@ export type F7SessionRouteParams = z.infer<typeof f7SessionRouteParamsSchema>;
 export interface F7SessionService {
   importWorkbook(request: F7WorkbookImportRequest): F7SessionSnapshot;
   confirmWorksheet(request: { sessionId: string; confirmation: WorksheetSelectionConfirmation }): F7SessionSnapshot;
-  confirmFactorSetup(request: { sessionId: string; confirmations: readonly F7FactorSetupConfirmation[] }): F7SessionSnapshot;
+  confirmFactorSetup(request: F7FactorConfirmRouteRequest): F7SessionSnapshot;
   setFactorMode(request: { sessionId: string; factorId: string; mode: F7FactorSourceMode }): F7SessionSnapshot;
   pasteMeasurements(request: F7MeasurementPasteRequest & { sessionId: string }): F7SessionSnapshot;
   applyMeasurementDisposition(request: F7MeasurementDispositionRequest & { sessionId: string }): F7SessionSnapshot;

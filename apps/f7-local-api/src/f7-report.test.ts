@@ -521,6 +521,19 @@ describe("createF7ReportProjection", () => {
     ]);
   });
 
+  it("deduplicates repeated factor source references while preserving source order", () => {
+    const snapshot = createSnapshot();
+    const sourceCells = snapshot.factors[0]?.evidence?.sourceCells as Record<string, string>;
+    sourceCells.designNominal = sourceCells.mean!;
+
+    const report = createF7ReportProjection(snapshot, GENERATED_AT);
+
+    expect(report.factors[0]?.sourceReferences).toEqual([
+      "Analysis-A!G14",
+      "Analysis-A!R14",
+    ]);
+  });
+
   it.each([
     ["lowerSpecLimit", -0.6],
     ["upperSpecLimit", 0.6],

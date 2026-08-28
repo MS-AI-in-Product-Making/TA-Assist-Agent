@@ -49,7 +49,11 @@ describe("createF7SessionStore report state", () => {
     const mutations = [
       () => store.importWorkbook(new File([], "replacement.xlsx")),
       () => store.confirmWorksheet("Anonymous_TA"),
-      () => store.confirmFactors([]),
+      () => store.confirmFactors([], {
+        lowerSpecLimit: -0.62,
+        upperSpecLimit: -0.52,
+        targetSigmaLevel: 3,
+      }),
       () => store.setFactorMode("factor-01", "MEASURED"),
       () => store.pasteMeasurements({
         factorId: "factor-01",

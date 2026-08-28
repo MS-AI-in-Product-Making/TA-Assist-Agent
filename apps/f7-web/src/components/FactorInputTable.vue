@@ -4,8 +4,9 @@ import { computed, nextTick, onBeforeUnmount, reactive, ref, watch, type DeepRea
 import { ArrowLeftRight } from "lucide-vue-next";
 import { calculateToleranceAnalysis, type KernelCalculationResult } from "@ai-assist/workbook-catalog/calculation-kernel";
 import type { Distribution } from "@ai-assist/contracts";
-import type { F7FactorState, F7SessionSnapshot, F7SetupDistribution, F7SourceMode } from "../api/f7-client";
+import type { F7FactorState, F7SessionSnapshot, F7SetupDistribution, F7SourceMode, F7SystemSpecificationInput } from "../api/f7-client";
 import DimensionChainPanel from "./DimensionChainPanel.vue";
+import ResponseDistributionCurve from "./ResponseDistributionCurve.vue";
 import type { DimensionChainFactor } from "./dimension-chain";
 
 const DISTRIBUTION_OPTIONS: readonly F7SetupDistribution[] = [
@@ -45,6 +46,7 @@ const emit = defineEmits<{
       readonly factorName?: string;
       readonly userAdded?: true;
     }>,
+    systemSpecification: F7SystemSpecificationInput,
   ];
   editSetup: [];
   setMode: [factorId: string, mode: F7SourceMode];
@@ -71,7 +73,37 @@ interface CompleteFactorSpecificationDraft {
 
 type FactorSpecificationField = keyof FactorSpecificationDraft;
 
+interface SystemSpecificationDraft {
+  lowerSpecLimit: number | "";
+  upperSpecLimit: number | "";
+  targetSigmaLevel: number | "";
+}
+
+const DEFAULT_TARGET_SIGMA_LEVEL = 3;
+
+function importedSystemSpecificationDraft(): SystemSpecificationDraft {
+  const specification = props.session.systemSpecification;
+  return specification?.status === "available"
+    ? {
+        lowerSpecLimit: specification.lowerSpecLimit.status === "available"
+          ? specification.lowerSpecLimit.actualValue
+          : "",
+        upperSpecLimit: specification.upperSpecLimit.status === "available"
+          ? specification.upperSpecLimit.actualValue
+          : "",
+        targetSigmaLevel: specification.targetSigmaLevel.status === "available"
+          ? specification.targetSigmaLevel.actualValue
+          : DEFAULT_TARGET_SIGMA_LEVEL,
+      }
+    : {
+        lowerSpecLimit: "",
+        upperSpecLimit: "",
+        targetSigmaLevel: DEFAULT_TARGET_SIGMA_LEVEL,
+      };
+}
+
 const setupDraft = reactive<Record<string, FactorSpecificationDraft>>({});
+const systemSpecificationDraft = reactive<SystemSpecificationDraft>(importedSystemSpecificationDraft());
 const factorNames = reactive<Record<string, string>>({});
 const removedFactorIds = reactive(new Set<string>());
 const addedFactors = reactive<F7FactorState[]>([]);
@@ -250,6 +282,7 @@ interface FactorEditSnapshot {
   readonly addedFactors: readonly F7FactorState[];
   readonly drafts: Readonly<Record<string, FactorSpecificationDraft>>;
   readonly names: Readonly<Record<string, string>>;
+  readonly systemSpecification: SystemSpecificationDraft;
 }
 
 function cloneValue<T>(value: T): T {
@@ -265,6 +298,7 @@ function captureEditSnapshot(): FactorEditSnapshot {
     addedFactors: [...addedFactors],
     drafts: { ...setupDraft },
     names: { ...factorNames },
+    systemSpecification: { ...systemSpecificationDraft },
   });
 }
 
@@ -286,6 +320,7 @@ function importedSnapshot(): FactorEditSnapshot {
       } satisfies FactorSpecificationDraft,
     ])),
     names: {},
+    systemSpecification: importedSystemSpecificationDraft(),
   };
 }
 
@@ -301,6 +336,7 @@ function restoreEditSnapshot(snapshot: FactorEditSnapshot): void {
   addedFactors.splice(0, addedFactors.length, ...cloneValue(snapshot.addedFactors));
   replaceRecord(setupDraft, snapshot.drafts);
   replaceRecord(factorNames, snapshot.names);
+  Object.assign(systemSpecificationDraft, cloneValue(snapshot.systemSpecification));
 }
 
 const undoStack = ref<FactorEditSnapshot[]>([]);
@@ -369,7 +405,7 @@ function resetImportedFactors(): void {
 }
 
 function clearAllFactors(): void {
-  if (!window.confirm("Clear all Factor rows and start with a blank row? You can undo this action.")) return;
+  if (!window.confirm("Clear all Factor rows and reset the System Specification? You can undo this action.")) return;
   factorOrder.splice(0, factorOrder.length);
   removedFactorIds.clear();
   for (const factor of props.session.factors) {
@@ -378,6 +414,11 @@ function clearAllFactors(): void {
   addedFactors.splice(0, addedFactors.length);
   replaceRecord(setupDraft, {});
   replaceRecord(factorNames, {});
+  Object.assign(systemSpecificationDraft, {
+    lowerSpecLimit: "",
+    upperSpecLimit: "",
+    targetSigmaLevel: DEFAULT_TARGET_SIGMA_LEVEL,
+  });
   addFactor();
 }
 
@@ -435,9 +476,21 @@ function isBlankSpecification(draft: FactorSpecificationDraft): boolean {
     && draft.lowerTolerance === "";
 }
 
-const setupIsValid = computed(() => activeFactors.value.length > 0 && activeFactors.value.every((factor) => (
-  factorNameFor(factor).trim().length > 0 && specificationError(candidateDraft(factor)) === ""
-)));
+function completeSystemSpecification(): F7SystemSpecificationInput | undefined {
+  const { lowerSpecLimit, upperSpecLimit, targetSigmaLevel } = systemSpecificationDraft;
+  if (typeof lowerSpecLimit !== "number" || !Number.isFinite(lowerSpecLimit)
+    || typeof upperSpecLimit !== "number" || !Number.isFinite(upperSpecLimit)
+    || lowerSpecLimit >= upperSpecLimit
+    || typeof targetSigmaLevel !== "number" || !Number.isFinite(targetSigmaLevel)
+    || targetSigmaLevel <= 0) return undefined;
+  return { lowerSpecLimit, upperSpecLimit, targetSigmaLevel };
+}
+
+const setupIsValid = computed(() => completeSystemSpecification() !== undefined
+  && activeFactors.value.length > 0
+  && activeFactors.value.every((factor) => (
+    factorNameFor(factor).trim().length > 0 && specificationError(candidateDraft(factor)) === ""
+  )));
 
 const dimensionChainFactors = computed<DimensionChainFactor[]>(() => activeFactors.value.map((factor, index) => {
   const draft = candidateDraft(factor);
@@ -561,11 +614,13 @@ const responseSummary = computed(() => {
 });
 
 const f4Calculation = computed<KernelCalculationResult | undefined>(() => {
-  const specification = props.session.systemSpecification;
-  if (specification?.status !== "available"
-    || specification.lowerSpecLimit.status !== "available"
-    || specification.upperSpecLimit.status !== "available"
-    || specification.targetSigmaLevel.status !== "available") return undefined;
+  const lowerSpecLimit = systemSpecificationDraft.lowerSpecLimit;
+  const upperSpecLimit = systemSpecificationDraft.upperSpecLimit;
+  const targetSigmaLevel = systemSpecificationDraft.targetSigmaLevel;
+  if (typeof lowerSpecLimit !== "number" || !Number.isFinite(lowerSpecLimit)
+    || typeof upperSpecLimit !== "number" || !Number.isFinite(upperSpecLimit)
+    || typeof targetSigmaLevel !== "number" || !Number.isFinite(targetSigmaLevel)
+    || targetSigmaLevel <= 0) return undefined;
   const factors = activeFactors.value.flatMap((factor) => {
     const draft = candidateDraft(factor);
     if (!isCompleteSpecification(draft)) return [];
@@ -593,10 +648,10 @@ const f4Calculation = computed<KernelCalculationResult | undefined>(() => {
       factors,
       system: {
         designNominal: specificationTotals.value.arithmetic.designNominal,
-        lowerSpecLimit: specification.lowerSpecLimit.actualValue,
-        upperSpecLimit: specification.upperSpecLimit.actualValue,
-        targetSigmaLevel: specification.targetSigmaLevel.actualValue,
-        targetCpk: specification.targetSigmaLevel.actualValue / 3,
+        lowerSpecLimit,
+        upperSpecLimit,
+        targetSigmaLevel,
+        targetCpk: targetSigmaLevel / 3,
         shift: additionalMeanShift.value,
       },
     });
@@ -686,6 +741,14 @@ function formatFactorCalculation(
   return hideDraftCalculation(factor) ? "" : formatSummary(value);
 }
 
+function formatFactorTolerance(
+  factor: DeepReadonly<F7SessionSnapshot["factors"][number]>,
+  value: number,
+): string {
+  const formattedValue = formatFactorCalculation(factor, value);
+  return formattedValue ? `± ${formattedValue}` : "";
+}
+
 function formatFactorContribution(
   factor: DeepReadonly<F7SessionSnapshot["factors"][number]>,
   value: number,
@@ -709,6 +772,8 @@ function factorReadiness(factor: DeepReadonly<F7SessionSnapshot["factors"][numbe
 
 function submitSetup(): void {
   if (props.busy) return;
+  const systemSpecification = completeSystemSpecification();
+  if (!systemSpecification) throw new Error("System specification is incomplete or invalid.");
   const payload = activeFactors.value.map((factor) => {
     const draft = candidateDraft(factor);
     if (!isCompleteSpecification(draft)) throw new Error("Factor specification is incomplete.");
@@ -726,7 +791,7 @@ function submitSetup(): void {
       } : {}),
     };
   });
-  emit("confirmFactors", payload);
+  emit("confirmFactors", payload, systemSpecification);
 }
 
 function onModeChange(factorId: string, event: Event): void {
@@ -1012,7 +1077,7 @@ function onModeChange(factorId: string, event: Event): void {
               </div>
             </td>
             <td><output :aria-label="`${factorNameFor(factor)} Mean`">{{ formatFactorCalculation(factor, calculatedValues(factor).mean) }}</output></td>
-            <td><output :aria-label="`${factorNameFor(factor)} Tolerance`">{{ formatFactorCalculation(factor, calculatedValues(factor).tolerance) }}</output></td>
+            <td><output :aria-label="`${factorNameFor(factor)} Tolerance`">{{ formatFactorTolerance(factor, calculatedValues(factor).tolerance) }}</output></td>
             <td><output :aria-label="`${factorNameFor(factor)} 1 Sigma`">{{ formatFactorCalculation(factor, calculatedValues(factor).oneSigma) }}</output></td>
             <td><output :aria-label="`${factorNameFor(factor)} Percent Contribution`">{{ formatFactorContribution(factor, percentContribution(factor)) }}</output></td>
             <td>
@@ -1146,9 +1211,18 @@ function onModeChange(factorId: string, event: Event): void {
             <div><dt>Design Nominal</dt><dd>{{ formatFixed(f4Calculation?.system.designNominal, 4) }}</dd></div>
             <div><dt>Adjusted Mean</dt><dd>{{ formatFixed(f4Calculation?.system.mean, 4) }}</dd></div>
             <div><dt>Additional Mean Shift</dt><dd>{{ formatFixed(f4Calculation?.system.shift, 4) }}</dd></div>
-            <div><dt>LSL</dt><dd class="f4-excel-evidence" data-f4-lsl><output class="f4-readonly-field f4-compact-value">{{ formatFixed(f4Calculation?.capability.lowerSpecLimit, 2) }}</output></dd></div>
-            <div><dt>USL</dt><dd class="f4-excel-evidence" data-f4-usl><output class="f4-readonly-field f4-compact-value">{{ formatFixed(f4Calculation?.capability.upperSpecLimit, 2) }}</output></dd></div>
-            <div><dt>Target Sigma Level</dt><dd class="f4-excel-evidence" data-f4-target-sigma><output class="f4-readonly-field f4-compact-value">{{ f4Calculation ? `${formatFixed(f4Calculation.capability.targetSigmaLevel, 0)}σ` : "—" }}</output></dd></div>
+            <div><dt>LSL</dt><dd class="f4-excel-evidence" data-f4-lsl>
+              <input v-if="setupEditable" v-model.number="systemSpecificationDraft.lowerSpecLimit" data-f4-lsl-input class="f4-readonly-field f4-compact-value" type="number" step="any" aria-label="Lower Specification Limit" :disabled="busy">
+              <output v-else class="f4-readonly-field f4-compact-value">{{ formatFixed(f4Calculation?.capability.lowerSpecLimit, 2) }}</output>
+            </dd></div>
+            <div><dt>USL</dt><dd class="f4-excel-evidence" data-f4-usl>
+              <input v-if="setupEditable" v-model.number="systemSpecificationDraft.upperSpecLimit" data-f4-usl-input class="f4-readonly-field f4-compact-value" type="number" step="any" aria-label="Upper Specification Limit" :disabled="busy">
+              <output v-else class="f4-readonly-field f4-compact-value">{{ formatFixed(f4Calculation?.capability.upperSpecLimit, 2) }}</output>
+            </dd></div>
+            <div><dt>Target Sigma Level</dt><dd class="f4-excel-evidence" data-f4-target-sigma>
+              <input v-if="setupEditable" v-model.number="systemSpecificationDraft.targetSigmaLevel" data-f4-target-sigma-input class="f4-readonly-field f4-compact-value" type="number" min="0.000001" step="any" aria-label="Target Sigma Level" :disabled="busy">
+              <output v-else class="f4-readonly-field f4-compact-value">{{ typeof systemSpecificationDraft.targetSigmaLevel === "number" ? `${formatFixed(systemSpecificationDraft.targetSigmaLevel, 0)}σ` : "—" }}</output>
+            </dd></div>
             <div><dt>Target Cpk</dt><dd>{{ formatFixed(f4Calculation?.capability.targetCpk, 2) }}</dd></div>
           </dl>
         </section>
@@ -1180,6 +1254,9 @@ function onModeChange(factorId: string, event: Event): void {
         </section>
         </div>
       </section>
+      <ResponseDistributionCurve
+        :calculation="f4Calculation"
+      />
     </div>
     <p v-if="editingSetup" class="subtle" data-factor-setup-reset-notice>
       Confirming changes resets source modes, measurement data, distribution fits, and simulation results.

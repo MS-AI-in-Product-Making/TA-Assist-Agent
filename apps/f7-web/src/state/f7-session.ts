@@ -8,6 +8,7 @@ import type {
   F7SessionSnapshot,
   F7SetupDistribution,
   F7SourceMode,
+  F7SystemSpecificationInput,
   F7UiError,
 } from "../api/f7-client";
 
@@ -139,13 +140,14 @@ export function createF7SessionStore(client: F7Client) {
       readonly distribution: F7SetupDistribution;
       readonly factorName?: string;
       readonly userAdded?: true;
-    }>): Promise<void> {
+    }>, systemSpecification: F7SystemSpecificationInput): Promise<void> {
       await runAction("confirmFactors", async () => {
         const current = session.value;
         if (!current) throw prerequisiteNotReadyError();
         commitMutationSnapshot(await client.confirmFactors({
           sessionId: current.sessionId,
           confirmations: confirmations.map((confirmation) => ({ ...confirmation, confirmed: true as const })),
+          systemSpecification,
         }));
       });
     },

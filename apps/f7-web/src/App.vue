@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { createF7Client, type F7Client, type F7MeasurementStructure, type F7MsaStatus, type F7SetupDistribution, type F7SourceMode } from "./api/f7-client";
+import { createF7Client, type F7Client, type F7MeasurementStructure, type F7MsaStatus, type F7SetupDistribution, type F7SourceMode, type F7SystemSpecificationInput } from "./api/f7-client";
 import WorksheetConfirmation from "./components/WorksheetConfirmation.vue";
 import FactorInputTable from "./components/FactorInputTable.vue";
 import MeasurementPastePanel from "./components/MeasurementPastePanel.vue";
@@ -116,9 +116,9 @@ async function onConfirmFactors(confirmations: ReadonlyArray<{
   readonly distribution: F7SetupDistribution;
   readonly factorName?: string;
   readonly userAdded?: true;
-}>): Promise<void> {
+}>, systemSpecification: F7SystemSpecificationInput): Promise<void> {
   await swallowHandledError(async () => {
-    await store.confirmFactors(confirmations);
+    await store.confirmFactors(confirmations, systemSpecification);
     editingFactorSetup.value = false;
   });
 }

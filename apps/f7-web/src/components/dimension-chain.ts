@@ -22,6 +22,9 @@ export type DimensionChainOrientation = "horizontal" | "vertical";
 export interface DimensionChainManualLayout {
   readonly boundaryOffsets: Readonly<Record<string, number>>;
   readonly laneOffsets: Readonly<Record<string, number>>;
+  readonly closureStartOffset?: number;
+  readonly closureEndOffset?: number;
+  readonly closureLaneOffset?: number;
 }
 
 export interface DimensionChainDisplaySegment extends DimensionChainSegment {
@@ -112,6 +115,9 @@ export function pruneManualLayout(
     laneOffsets: Object.fromEntries(
       Object.entries(layout.laneOffsets).filter(([id]) => factorIds.has(id)),
     ),
+    ...(layout.closureStartOffset !== undefined ? { closureStartOffset: layout.closureStartOffset } : {}),
+    ...(layout.closureEndOffset !== undefined ? { closureEndOffset: layout.closureEndOffset } : {}),
+    ...(layout.closureLaneOffset !== undefined ? { closureLaneOffset: layout.closureLaneOffset } : {}),
   };
 }
 

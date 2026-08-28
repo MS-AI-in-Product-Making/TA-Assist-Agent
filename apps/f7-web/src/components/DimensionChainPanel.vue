@@ -49,6 +49,7 @@ const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 2.5;
 const ZOOM_STEP = 1.2;
 const PAN_STEP = 24;
+const CLOSURE_GUIDE_MIN_GAP = 1;
 const BACKGROUND_PADDING = 16;
 const SUPPORTED_BACKGROUND_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const orientation = ref<DimensionChainOrientation>("horizontal");
@@ -73,6 +74,7 @@ let pendingSignSync: {
   readonly expectedSigns: ReadonlyMap<string, 1 | -1>;
   readonly sourceSignature: string;
   readonly canAcknowledgeSource: boolean;
+  readonly preserveClosurePositions: boolean;
 } | undefined;
 const markerSuffix = useId().replace(/[^a-zA-Z0-9_-]/g, "");
 const additiveMarkerId = `dimension-chain-additive-arrow-${markerSuffix}`;
@@ -86,9 +88,32 @@ const stale = computed(() => (
 const geometry = computed(() => (
   generatedFactors.value ? buildDimensionChainGeometry(generatedFactors.value) : undefined
 ));
-const displaySegments = computed(() => {
+const logicalDisplaySegments = computed(() => {
   const value = geometry.value;
   return value ? buildDisplaySegments(value, manualLayouts[orientation.value]) : [];
+});
+const displaySegments = computed<readonly DimensionChainDisplaySegment[]>(() => {
+  const segments = logicalDisplaySegments.value;
+  const lastIndex = segments.length - 1;
+  return segments.map((segment, index) => {
+    const displayStart = index === 0
+      ? segment.displayStart + closureEndOffset()
+      : segment.displayStart;
+    const displayEnd = index === lastIndex
+      ? segment.displayEnd + closureStartOffset()
+      : segment.displayEnd;
+    const displaySign = Math.sign(displayEnd - displayStart);
+    return {
+      ...segment,
+      displayStart,
+      displayEnd,
+      displayDirection: displaySign > 0
+        ? "additive"
+        : displaySign < 0
+          ? "subtractive"
+          : "zero",
+    };
+  });
 });
 const positionSpan = computed(() => {
   const value = geometry.value;
@@ -141,6 +166,23 @@ type DimensionChainInteraction =
     readonly pointerId: number;
     readonly orientation: DimensionChainOrientation;
     readonly key: string;
+    readonly initialLayout: DimensionChainManualLayout;
+    readonly clientX: number;
+    readonly clientY: number;
+  }
+  | {
+    readonly kind: "closure-guide";
+    readonly pointerId: number;
+    readonly orientation: DimensionChainOrientation;
+    readonly endpoint: "start" | "end";
+    readonly initialLayout: DimensionChainManualLayout;
+    readonly clientX: number;
+    readonly clientY: number;
+  }
+  | {
+    readonly kind: "closure-arrow";
+    readonly pointerId: number;
+    readonly orientation: DimensionChainOrientation;
     readonly initialLayout: DimensionChainManualLayout;
     readonly clientX: number;
     readonly clientY: number;
@@ -268,6 +310,7 @@ function reverseAllFactors(): void {
         expectedSigns,
         sourceSignature: currentSignature.value,
         canAcknowledgeSource: !stale.value,
+        preserveClosurePositions: false,
       };
     }
   }
@@ -283,6 +326,7 @@ function setPendingSignTransaction(
     expectedSigns: new Map(changes.map(({ factorId, sign }) => [factorId, sign])),
     sourceSignature: currentSignature.value,
     canAcknowledgeSource: !stale.value,
+    preserveClosurePositions: true,
   };
 }
 
@@ -417,6 +461,17 @@ watch(() => props.factors, (nextFactors) => {
   });
   if (!allSignsMatch) return;
 
+  const previousGeometry = geometry.value;
+  const closurePositions = pending.preserveClosurePositions && previousGeometry
+    ? Object.fromEntries((["horizontal", "vertical"] as const).map((key) => {
+        const layout = manualLayouts[key];
+        return [key, {
+          start: previousGeometry.closure.start + (layout.closureStartOffset ?? 0),
+          end: previousGeometry.closure.end + (layout.closureEndOffset ?? 0),
+        }];
+      })) as Record<DimensionChainOrientation, { readonly start: number; readonly end: number }>
+    : undefined;
+
   generatedFactors.value = snapshot.map((factor) => {
     const expectedSign = pending.expectedSigns.get(factor.id);
     if (expectedSign === undefined) return factor;
@@ -425,6 +480,18 @@ watch(() => props.factors, (nextFactors) => {
       designNominal: Math.abs(factor.designNominal) * expectedSign,
     };
   });
+
+  const nextGeometry = geometry.value;
+  if (closurePositions && nextGeometry) {
+    for (const key of ["horizontal", "vertical"] as const) {
+      const layout = manualLayouts[key];
+      manualLayouts[key] = {
+        ...layout,
+        closureStartOffset: closurePositions[key].start - nextGeometry.closure.start,
+        closureEndOffset: closurePositions[key].end - nextGeometry.closure.end,
+      };
+    }
+  }
 
   if (
     pending.canAcknowledgeSource
@@ -482,7 +549,11 @@ function onPointerDown(event: PointerEvent): void {
 
 function startHandleInteraction(
   event: PointerEvent,
-  handle: { readonly kind: "guide"; readonly key: string } | { readonly kind: "arrow"; readonly factorId: string },
+  handle:
+    | { readonly kind: "guide"; readonly key: string }
+    | { readonly kind: "arrow"; readonly factorId: string }
+    | { readonly kind: "closure-guide"; readonly endpoint: "start" | "end" }
+    | { readonly kind: "closure-arrow" },
 ): void {
   if (event.button !== 0) return;
   if (selectionMode.value) return;
@@ -492,8 +563,8 @@ function startHandleInteraction(
   const activeOrientation = orientation.value;
   const layout = manualLayouts[activeOrientation];
   canvasElement.value?.setPointerCapture?.(event.pointerId);
-  interaction.value = handle.kind === "guide"
-    ? {
+  if (handle.kind === "guide") {
+    interaction.value = {
       kind: "guide",
       pointerId: event.pointerId,
       orientation: activeOrientation,
@@ -501,8 +572,9 @@ function startHandleInteraction(
       initialLayout: layout,
       clientX: event.clientX,
       clientY: event.clientY,
-    }
-    : {
+    };
+  } else if (handle.kind === "arrow") {
+    interaction.value = {
       kind: "arrow",
       pointerId: event.pointerId,
       orientation: activeOrientation,
@@ -511,6 +583,26 @@ function startHandleInteraction(
       clientX: event.clientX,
       clientY: event.clientY,
     };
+  } else if (handle.kind === "closure-guide") {
+    interaction.value = {
+      kind: "closure-guide",
+      pointerId: event.pointerId,
+      orientation: activeOrientation,
+      endpoint: handle.endpoint,
+      initialLayout: layout,
+      clientX: event.clientX,
+      clientY: event.clientY,
+    };
+  } else {
+    interaction.value = {
+      kind: "closure-arrow",
+      pointerId: event.pointerId,
+      orientation: activeOrientation,
+      initialLayout: layout,
+      clientX: event.clientX,
+      clientY: event.clientY,
+    };
+  }
 }
 
 function onGuidePointerDown(event: PointerEvent, key: string): void {
@@ -521,9 +613,17 @@ function onArrowPointerDown(event: PointerEvent, factorId: string): void {
   startHandleInteraction(event, { kind: "arrow", factorId });
 }
 
+function onClosureGuidePointerDown(event: PointerEvent, endpoint: "start" | "end"): void {
+  startHandleInteraction(event, { kind: "closure-guide", endpoint });
+}
+
+function onClosureArrowPointerDown(event: PointerEvent): void {
+  startHandleInteraction(event, { kind: "closure-arrow" });
+}
+
 function updateHandleInteraction(
   event: PointerEvent,
-  activeInteraction: Extract<DimensionChainInteraction, { kind: "guide" | "arrow" }>,
+  activeInteraction: Extract<DimensionChainInteraction, { kind: "guide" | "arrow" | "closure-guide" | "closure-arrow" }>,
 ): void {
   const bounds = canvasElement.value?.getBoundingClientRect();
   if (!bounds) return;
@@ -531,21 +631,49 @@ function updateHandleInteraction(
   const deltaY = (event.clientY - activeInteraction.clientY) * (viewHeight.value / (bounds.height || 1));
   const layout = activeInteraction.initialLayout;
 
+  if (activeInteraction.kind === "closure-guide") {
+    const delta = activeInteraction.orientation === "horizontal" ? deltaX : deltaY;
+    const basePosition = activeInteraction.endpoint === "start"
+      ? (geometry.value?.closure.start ?? 0)
+      : (geometry.value?.closure.end ?? 0);
+    const initialOffset = activeInteraction.endpoint === "start"
+      ? (layout.closureStartOffset ?? 0)
+      : (layout.closureEndOffset ?? 0);
+    const position = clampClosureGuidePosition(
+      activeInteraction.endpoint,
+      basePosition + initialOffset + delta,
+      layout,
+    );
+    manualLayouts[activeInteraction.orientation] = activeInteraction.endpoint === "start"
+      ? { ...layout, closureStartOffset: position - basePosition }
+      : { ...layout, closureEndOffset: position - basePosition };
+    return;
+  }
+
+  if (activeInteraction.kind === "closure-arrow") {
+    const delta = activeInteraction.orientation === "horizontal" ? deltaY : deltaX;
+    manualLayouts[activeInteraction.orientation] = {
+      ...layout,
+      closureLaneOffset: (layout.closureLaneOffset ?? 0) + delta,
+    };
+    return;
+  }
+
   if (activeInteraction.kind === "guide") {
     const delta = activeInteraction.orientation === "horizontal" ? deltaX : deltaY;
     manualLayouts[activeInteraction.orientation] = {
+      ...layout,
       boundaryOffsets: {
         ...layout.boundaryOffsets,
         [activeInteraction.key]: (layout.boundaryOffsets[activeInteraction.key] ?? 0) + delta,
       },
-      laneOffsets: layout.laneOffsets,
     };
     return;
   }
 
   const delta = activeInteraction.orientation === "horizontal" ? deltaY : deltaX;
   manualLayouts[activeInteraction.orientation] = {
-    boundaryOffsets: layout.boundaryOffsets,
+    ...layout,
     laneOffsets: {
       ...layout.laneOffsets,
       [activeInteraction.factorId]: (layout.laneOffsets[activeInteraction.factorId] ?? 0) + delta,
@@ -560,7 +688,12 @@ function onPointerMove(event: PointerEvent): void {
     finishInteraction(true);
     return;
   }
-  if (activeInteraction.kind === "guide" || activeInteraction.kind === "arrow") {
+  if (
+    activeInteraction.kind === "guide"
+    || activeInteraction.kind === "arrow"
+    || activeInteraction.kind === "closure-guide"
+    || activeInteraction.kind === "closure-arrow"
+  ) {
     updateHandleInteraction(event, activeInteraction);
     return;
   }
@@ -578,11 +711,26 @@ function onPointerMove(event: PointerEvent): void {
 function finishInteraction(cancel = false, release = true): void {
   const activeInteraction = interaction.value;
   if (!activeInteraction) return;
-  if (cancel && (activeInteraction.kind === "guide" || activeInteraction.kind === "arrow")) {
+  if (
+    cancel
+    && (
+      activeInteraction.kind === "guide"
+      || activeInteraction.kind === "arrow"
+      || activeInteraction.kind === "closure-guide"
+      || activeInteraction.kind === "closure-arrow"
+    )
+  ) {
     manualLayouts[activeInteraction.orientation] = activeInteraction.initialLayout;
   }
-  if (!cancel && activeInteraction.kind === "guide") {
-    const changes = signChangesForDisplay(displaySegments.value);
+  if (
+    !cancel
+    && (activeInteraction.kind === "guide" || activeInteraction.kind === "closure-guide")
+  ) {
+    const changes = signChangesForDisplay(
+      activeInteraction.kind === "closure-guide"
+        ? displaySegments.value
+        : logicalDisplaySegments.value,
+    );
     if (changes.length > 0) {
       setPendingSignTransaction(changes);
       emit("factor-sign-change", changes);
@@ -623,7 +771,12 @@ function onLostPointerCapture(event: PointerEvent): void {
 function onWindowKeyDown(event: KeyboardEvent): void {
   if (event.key !== "Escape") return;
   const activeInteraction = interaction.value;
-  if (activeInteraction?.kind !== "guide" && activeInteraction?.kind !== "arrow") return;
+  if (
+    activeInteraction?.kind !== "guide"
+    && activeInteraction?.kind !== "arrow"
+    && activeInteraction?.kind !== "closure-guide"
+    && activeInteraction?.kind !== "closure-arrow"
+  ) return;
   event.preventDefault();
   finishInteraction(true);
 }
@@ -655,6 +808,59 @@ function axisPosition(position: number): number {
 
 function lanePosition(index: number, offset = 0): number {
   return 48 + index * LANE_SIZE + offset;
+}
+
+function closureStartOffset(): number {
+  return manualLayouts[orientation.value].closureStartOffset ?? 0;
+}
+
+function closureEndOffset(): number {
+  return manualLayouts[orientation.value].closureEndOffset ?? 0;
+}
+
+function closureLaneOffset(): number {
+  return manualLayouts[orientation.value].closureLaneOffset ?? 0;
+}
+
+function closureStartPosition(): number {
+  return (geometry.value?.closure.start ?? 0) + closureStartOffset();
+}
+
+function closureEndPosition(): number {
+  return (geometry.value?.closure.end ?? 0) + closureEndOffset();
+}
+
+function closureLanePosition(): number {
+  return lanePosition(geometry.value?.segments.length ?? 0, closureLaneOffset());
+}
+
+function closurePositionForLayout(
+  endpoint: "start" | "end",
+  layout: DimensionChainManualLayout,
+): number {
+  return endpoint === "start"
+    ? (geometry.value?.closure.start ?? 0) + (layout.closureStartOffset ?? 0)
+    : (geometry.value?.closure.end ?? 0) + (layout.closureEndOffset ?? 0);
+}
+
+function clampClosureGuidePosition(
+  endpoint: "start" | "end",
+  candidate: number,
+  layout: DimensionChainManualLayout,
+): number {
+  const start = closurePositionForLayout("start", layout);
+  const end = closurePositionForLayout("end", layout);
+  const moving = endpoint === "start" ? start : end;
+  const stationary = endpoint === "start" ? end : start;
+  const generatedStart = geometry.value?.closure.start ?? 0;
+  const generatedEnd = geometry.value?.closure.end ?? 0;
+  const generatedSide = endpoint === "start"
+    ? Math.sign(generatedStart - generatedEnd)
+    : Math.sign(generatedEnd - generatedStart);
+  const side = Math.sign(moving - stationary) || generatedSide || (endpoint === "start" ? 1 : -1);
+  return side > 0
+    ? Math.max(candidate, stationary + CLOSURE_GUIDE_MIN_GAP)
+    : Math.min(candidate, stationary - CLOSURE_GUIDE_MIN_GAP);
 }
 
 function signedValue(value: number): string {
@@ -874,25 +1080,6 @@ function componentMarkerId(segment: DimensionChainDisplaySegment): string {
         />
 
         <template v-if="geometry">
-        <line
-          v-if="orientation === 'horizontal'"
-          data-dimension-origin-guide
-          class="dimension-chain-origin-guide"
-          :x1="axisPosition(0)"
-          :x2="axisPosition(0)"
-          :y1="lanePosition(0)"
-          :y2="lanePosition(geometry.segments.length)"
-        />
-        <line
-          v-else
-          data-dimension-origin-guide
-          class="dimension-chain-origin-guide"
-          :x1="lanePosition(0)"
-          :x2="lanePosition(geometry.segments.length)"
-          :y1="axisPosition(0)"
-          :y2="axisPosition(0)"
-        />
-
         <g v-for="(segment, index) in displaySegments" :key="segment.id">
           <line
             v-if="index > 0 && orientation === 'horizontal'"
@@ -1060,27 +1247,96 @@ function componentMarkerId(segment: DimensionChainDisplaySegment): string {
           </g>
         </g>
 
-        <g aria-label="Closure loop">
+        <g
+          aria-label="Closure loop"
+          data-dimension-closure-loop
+          :data-start-offset="closureStartOffset()"
+          :data-end-offset="closureEndOffset()"
+          :data-lane-offset="closureLaneOffset()"
+        >
           <template v-if="orientation === 'horizontal'">
             <line
-              class="dimension-chain-guide"
-              :x1="axisPosition(geometry.closure.start)"
-              :x2="axisPosition(geometry.closure.start)"
+              data-dimension-closure-guide-handle="start"
+              class="dimension-chain-guide-handle"
+              :class="{ 'is-selected': interaction?.kind === 'closure-guide' && interaction.endpoint === 'start' }"
+              :x1="axisPosition(displaySegments[displaySegments.length - 1]!.displayEnd)"
+              :x2="axisPosition(closureStartPosition())"
               :y1="lanePosition(geometry.segments.length - 1, displaySegments[displaySegments.length - 1]?.laneOffset)"
-              :y2="lanePosition(geometry.segments.length)"
+              :y2="closureLanePosition()"
+              role="button"
+              tabindex="0"
+              :aria-disabled="!editable"
+              aria-label="Move Closure start guide"
+              @pointerdown="onClosureGuidePointerDown($event, 'start')"
+            />
+            <line
+              class="dimension-chain-closure-guide"
+              :x1="axisPosition(displaySegments[displaySegments.length - 1]!.displayEnd)"
+              :x2="axisPosition(closureStartPosition())"
+              :y1="lanePosition(geometry.segments.length - 1, displaySegments[displaySegments.length - 1]?.laneOffset)"
+              :y2="closureLanePosition()"
+            />
+            <line
+              data-dimension-closure-guide-handle="end"
+              class="dimension-chain-guide-handle"
+              :class="{ 'is-selected': interaction?.kind === 'closure-guide' && interaction.endpoint === 'end' }"
+              :x1="axisPosition(displaySegments[0]!.displayStart)"
+              :x2="axisPosition(closureEndPosition())"
+              :y1="lanePosition(0, displaySegments[0]?.laneOffset)"
+              :y2="closureLanePosition()"
+              role="button"
+              tabindex="0"
+              :aria-disabled="!editable"
+              aria-label="Move Closure end guide"
+              @pointerdown="onClosureGuidePointerDown($event, 'end')"
+            />
+            <line
+              class="dimension-chain-closure-guide"
+              :x1="axisPosition(displaySegments[0]!.displayStart)"
+              :x2="axisPosition(closureEndPosition())"
+              :y1="lanePosition(0, displaySegments[0]?.laneOffset)"
+              :y2="closureLanePosition()"
             />
             <circle
               data-dimension-closure-start
               class="dimension-chain-closure-start"
-              :cx="axisPosition(geometry.closure.start)"
-              :cy="lanePosition(geometry.segments.length)"
+              :cx="axisPosition(closureStartPosition())"
+              :cy="closureLanePosition()"
               r="4.5"
             />
             <path
-              v-if="geometry.closure.start === geometry.closure.end"
+              v-if="closureStartPosition() === closureEndPosition()"
+              data-dimension-closure-arrow-handle
+              class="dimension-chain-arrow-handle"
+              :class="{ 'is-selected': interaction?.kind === 'closure-arrow' }"
+              :d="`M ${axisPosition(closureEndPosition())} ${closureLanePosition()} c 28 -24 28 24 0 0`"
+              role="button"
+              tabindex="0"
+              :aria-disabled="!editable"
+              aria-label="Move Closure arrow lane"
+              fill="none"
+              @pointerdown="onClosureArrowPointerDown"
+            />
+            <line
+              v-else
+              data-dimension-closure-arrow-handle
+              class="dimension-chain-arrow-handle"
+              :class="{ 'is-selected': interaction?.kind === 'closure-arrow' }"
+              :x1="axisPosition(closureStartPosition())"
+              :x2="axisPosition(closureEndPosition())"
+              :y1="closureLanePosition()"
+              :y2="closureLanePosition()"
+              role="button"
+              tabindex="0"
+              :aria-disabled="!editable"
+              aria-label="Move Closure arrow lane"
+              @pointerdown="onClosureArrowPointerDown"
+            />
+            <path
+              v-if="closureStartPosition() === closureEndPosition()"
               data-dimension-closure
               class="dimension-chain-closure"
-              :d="`M ${axisPosition(0)} ${lanePosition(geometry.segments.length)} c 28 -24 28 24 0 0`"
+              :d="`M ${axisPosition(closureEndPosition())} ${closureLanePosition()} c 28 -24 28 24 0 0`"
               :marker-end="`url(#${closureMarkerId})`"
               fill="none"
             />
@@ -1088,39 +1344,102 @@ function componentMarkerId(segment: DimensionChainDisplaySegment): string {
               v-else
               data-dimension-closure
               class="dimension-chain-closure"
-              :x1="axisPosition(geometry.closure.start)"
-              :x2="axisPosition(geometry.closure.end)"
-              :y1="lanePosition(geometry.segments.length)"
-              :y2="lanePosition(geometry.segments.length)"
+              :x1="axisPosition(closureStartPosition())"
+              :x2="axisPosition(closureEndPosition())"
+              :y1="closureLanePosition()"
+              :y2="closureLanePosition()"
               :marker-end="`url(#${closureMarkerId})`"
             />
             <text
               class="dimension-chain-closure-label"
-              :x="(axisPosition(geometry.closure.start) + axisPosition(geometry.closure.end)) / 2"
-              :y="lanePosition(geometry.segments.length) - 13"
+              :x="(axisPosition(closureStartPosition()) + axisPosition(closureEndPosition())) / 2"
+              :y="closureLanePosition() - 13"
               text-anchor="middle"
             >Closure</text>
           </template>
           <template v-else>
             <line
-              class="dimension-chain-guide"
+              data-dimension-closure-guide-handle="start"
+              class="dimension-chain-guide-handle"
+              :class="{ 'is-selected': interaction?.kind === 'closure-guide' && interaction.endpoint === 'start' }"
               :x1="lanePosition(geometry.segments.length - 1, displaySegments[displaySegments.length - 1]?.laneOffset)"
-              :x2="lanePosition(geometry.segments.length)"
-              :y1="axisPosition(geometry.closure.start)"
-              :y2="axisPosition(geometry.closure.start)"
+              :x2="closureLanePosition()"
+              :y1="axisPosition(displaySegments[displaySegments.length - 1]!.displayEnd)"
+              :y2="axisPosition(closureStartPosition())"
+              role="button"
+              tabindex="0"
+              :aria-disabled="!editable"
+              aria-label="Move Closure start guide"
+              @pointerdown="onClosureGuidePointerDown($event, 'start')"
+            />
+            <line
+              class="dimension-chain-closure-guide"
+              :x1="lanePosition(geometry.segments.length - 1, displaySegments[displaySegments.length - 1]?.laneOffset)"
+              :x2="closureLanePosition()"
+              :y1="axisPosition(displaySegments[displaySegments.length - 1]!.displayEnd)"
+              :y2="axisPosition(closureStartPosition())"
+            />
+            <line
+              data-dimension-closure-guide-handle="end"
+              class="dimension-chain-guide-handle"
+              :class="{ 'is-selected': interaction?.kind === 'closure-guide' && interaction.endpoint === 'end' }"
+              :x1="lanePosition(0, displaySegments[0]?.laneOffset)"
+              :x2="closureLanePosition()"
+              :y1="axisPosition(displaySegments[0]!.displayStart)"
+              :y2="axisPosition(closureEndPosition())"
+              role="button"
+              tabindex="0"
+              :aria-disabled="!editable"
+              aria-label="Move Closure end guide"
+              @pointerdown="onClosureGuidePointerDown($event, 'end')"
+            />
+            <line
+              class="dimension-chain-closure-guide"
+              :x1="lanePosition(0, displaySegments[0]?.laneOffset)"
+              :x2="closureLanePosition()"
+              :y1="axisPosition(displaySegments[0]!.displayStart)"
+              :y2="axisPosition(closureEndPosition())"
             />
             <circle
               data-dimension-closure-start
               class="dimension-chain-closure-start"
-              :cx="lanePosition(geometry.segments.length)"
-              :cy="axisPosition(geometry.closure.start)"
+              :cx="closureLanePosition()"
+              :cy="axisPosition(closureStartPosition())"
               r="4.5"
             />
             <path
-              v-if="geometry.closure.start === geometry.closure.end"
+              v-if="closureStartPosition() === closureEndPosition()"
+              data-dimension-closure-arrow-handle
+              class="dimension-chain-arrow-handle"
+              :class="{ 'is-selected': interaction?.kind === 'closure-arrow' }"
+              :d="`M ${closureLanePosition()} ${axisPosition(closureEndPosition())} c -24 28 24 28 0 0`"
+              role="button"
+              tabindex="0"
+              :aria-disabled="!editable"
+              aria-label="Move Closure arrow lane"
+              fill="none"
+              @pointerdown="onClosureArrowPointerDown"
+            />
+            <line
+              v-else
+              data-dimension-closure-arrow-handle
+              class="dimension-chain-arrow-handle"
+              :class="{ 'is-selected': interaction?.kind === 'closure-arrow' }"
+              :x1="closureLanePosition()"
+              :x2="closureLanePosition()"
+              :y1="axisPosition(closureStartPosition())"
+              :y2="axisPosition(closureEndPosition())"
+              role="button"
+              tabindex="0"
+              :aria-disabled="!editable"
+              aria-label="Move Closure arrow lane"
+              @pointerdown="onClosureArrowPointerDown"
+            />
+            <path
+              v-if="closureStartPosition() === closureEndPosition()"
               data-dimension-closure
               class="dimension-chain-closure"
-              :d="`M ${lanePosition(geometry.segments.length)} ${axisPosition(0)} c -24 28 24 28 0 0`"
+              :d="`M ${closureLanePosition()} ${axisPosition(closureEndPosition())} c -24 28 24 28 0 0`"
               :marker-end="`url(#${closureMarkerId})`"
               fill="none"
             />
@@ -1128,16 +1447,16 @@ function componentMarkerId(segment: DimensionChainDisplaySegment): string {
               v-else
               data-dimension-closure
               class="dimension-chain-closure"
-              :x1="lanePosition(geometry.segments.length)"
-              :x2="lanePosition(geometry.segments.length)"
-              :y1="axisPosition(geometry.closure.start)"
-              :y2="axisPosition(geometry.closure.end)"
+              :x1="closureLanePosition()"
+              :x2="closureLanePosition()"
+              :y1="axisPosition(closureStartPosition())"
+              :y2="axisPosition(closureEndPosition())"
               :marker-end="`url(#${closureMarkerId})`"
             />
             <text
               class="dimension-chain-closure-label"
-              :x="lanePosition(geometry.segments.length) + 13"
-              :y="(axisPosition(geometry.closure.start) + axisPosition(geometry.closure.end)) / 2"
+              :x="closureLanePosition() + 13"
+              :y="(axisPosition(closureStartPosition()) + axisPosition(closureEndPosition())) / 2"
             >Closure</text>
           </template>
         </g>

@@ -1991,8 +1991,17 @@ describe("F7 request/result strict wrappers", () => {
     const factorConfirm = {
       sessionId: "session-1",
       confirmations: [factorConfirmation],
+      systemSpecification: {
+        lowerSpecLimit: -0.15,
+        upperSpecLimit: 0.05,
+        targetSigmaLevel: 3,
+      },
     };
     expect(f7FactorConfirmRouteRequestSchema.safeParse(factorConfirm).success).toBe(true);
+    expect(f7FactorConfirmRouteRequestSchema.safeParse({
+      ...factorConfirm,
+      systemSpecification: { ...factorConfirm.systemSpecification, upperSpecLimit: -0.2 },
+    }).success).toBe(false);
     expect(f7FactorConfirmRouteRequestSchema.safeParse({ ...factorConfirm, extra: true }).success).toBe(false);
 
     const factorMode = {

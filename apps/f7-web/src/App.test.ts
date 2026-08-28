@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { mount } from "@vue/test-utils";
 import App from "./App.vue";
@@ -14,6 +16,7 @@ import type {
 const HASH_A = "a".repeat(64);
 const HASH_B = "b".repeat(64);
 const HASH_C = "c".repeat(64);
+const STYLE_SOURCE = readFileSync(join(process.cwd(), "apps/f7-web/src/style.css"), "utf8");
 
 function wilsonScoreInterval(successes: number): { lower: number; upper: number } {
   const trials = 10000;
@@ -238,6 +241,7 @@ function measurementEntrySnapshot() {
   return createSnapshot({
     status: "measurement_entry",
     selectedWorksheetNames: ["Anonymous_TA"],
+    systemSpecification: factorSetupSnapshot().systemSpecification,
     factors: [
       {
         factorCandidate: fullFactorCandidate({
@@ -799,7 +803,7 @@ describe("F7 workbench shell", () => {
     ]);
     expect((distribution.element as HTMLSelectElement).value).toBe("Normal");
     expect(wrapper.get("output[aria-label='C-cover height Mean']").text()).toBe("-2.06");
-    expect(wrapper.get("output[aria-label='C-cover height Tolerance']").text()).toBe("0.09");
+    expect(wrapper.get("output[aria-label='C-cover height Tolerance']").text()).toBe("± 0.09");
     expect(wrapper.get("output[aria-label='C-cover height 1 Sigma']").text()).toBe("0.045");
     expect(wrapper.get("output[aria-label='C-cover height Percent Contribution']").text()).toBe("100%");
     await distribution.setValue("Uniform");
@@ -808,7 +812,6 @@ describe("F7 workbench shell", () => {
 
     const outputLayout = wrapper.get("[data-factor-output-layout]");
     expect(outputLayout.element.firstElementChild?.hasAttribute("data-dimension-chain-panel")).toBe(true);
-    expect(outputLayout.element.lastElementChild?.hasAttribute("data-f4-response-summary")).toBe(true);
     expect(outputLayout.classes()).not.toContain("is-dimension-chain-expanded");
     expect(wrapper.find("[aria-label='Expand Dimension Chain']").exists()).toBe(false);
     expect(wrapper.find("[data-dimension-chain-svg]").exists()).toBe(false);
@@ -840,15 +843,17 @@ describe("F7 workbench shell", () => {
     expect(capabilitySummary.text()).toContain("Calculated Sigma Level");
     expect(capabilitySummary.text()).toContain("Calculated Cpk");
     expect(capabilitySummary.text()).toContain("Defects Per Million");
-    expect(capabilitySummary.get("[data-f4-lsl]").text()).toBe("-0.62");
-    expect(capabilitySummary.get("[data-f4-usl]").text()).toBe("-0.52");
-    expect(capabilitySummary.get("[data-f4-target-sigma]").text()).toBe("3σ");
+    expect(capabilitySummary.get<HTMLInputElement>("[data-f4-lsl-input]").element.value).toBe("-0.62");
+    expect(capabilitySummary.get<HTMLInputElement>("[data-f4-usl-input]").element.value).toBe("-0.52");
+    expect(capabilitySummary.get<HTMLInputElement>("[data-f4-target-sigma-input]").element.value).toBe("3");
     expect(capabilitySummary.get("[data-f4-volume]").text()).toBe("1,000,000");
-    for (const selector of ["[data-f4-lsl]", "[data-f4-usl]", "[data-f4-target-sigma]", "[data-f4-volume]"]) {
-      const outputClasses = capabilitySummary.get(selector).get("output").classes();
-      expect(outputClasses).toContain("f4-readonly-field");
-      expect(outputClasses).toContain("f4-compact-value");
+    for (const selector of ["[data-f4-lsl-input]", "[data-f4-usl-input]", "[data-f4-target-sigma-input]"]) {
+      const input = capabilitySummary.get(selector);
+      expect(input.classes()).toContain("f4-readonly-field");
+      expect(input.classes()).toContain("f4-compact-value");
+      expect(input.attributes("disabled")).toBeUndefined();
     }
+    expect(capabilitySummary.get("[data-f4-volume]").get("output").classes()).toContain("f4-readonly-field");
     expect(capabilitySummary.get("[data-f4-rss-sigma]").text()).toBe("0.0450");
     expect(capabilitySummary.get("[data-f4-worst-case-tolerance]").text()).toBe("± 0.0900");
     expect(capabilitySummary.get("[data-f4-worst-case-upper]").text()).toBe("-1.9700");
@@ -879,6 +884,11 @@ describe("F7 workbench shell", () => {
     await wrapper.get("#confirm-factor-setup").trigger("click");
     expect(client.confirmFactors).toHaveBeenCalledWith({
       sessionId: "session-01",
+      systemSpecification: {
+        lowerSpecLimit: -0.62,
+        upperSpecLimit: -0.52,
+        targetSigmaLevel: 3,
+      },
       confirmations: [{
         factorCandidateId: HASH_B,
         designNominal: -2.05,
@@ -890,6 +900,37 @@ describe("F7 workbench shell", () => {
         confirmed: true,
       }],
     });
+  });
+
+  it("3) factor_setup keeps the response distribution curve synchronized with summary edits", async () => {
+    const snapshot = factorSetupSnapshot();
+    const client = createMockClient(snapshot, { importWorkbook: snapshot });
+    const wrapper = mount(App, { props: { client } });
+    await uploadWorkbook(wrapper);
+
+    const outputLayout = wrapper.get("[data-factor-output-layout]");
+    const responseSummary = wrapper.get("[data-factor-response-summary]");
+    const capabilitySummary = outputLayout.get("[data-f4-response-summary]");
+    const distributionCurve = outputLayout.get("[data-response-distribution-curve]");
+    const curveMeanReference = () => distributionCurve.get("[data-response-reference='mean']");
+    const adjustedMeanValue = () => Number(responseSummary.get("[data-summary-adjusted-mean]").text()).toFixed(4);
+
+    expect(capabilitySummary.element.nextElementSibling).toBe(distributionCurve.element);
+    expect(STYLE_SOURCE).toMatch(/\.factor-output-layout > \.response-distribution-curve\s*\{[^}]*grid-column:\s*1\s*\/\s*-1/s);
+    expect(curveMeanReference().attributes("data-value")).toBe(adjustedMeanValue());
+
+    await responseSummary.get("input[aria-label='Additional Mean Shift']").setValue("0.25");
+    expect(responseSummary.get("[data-summary-adjusted-mean]").text()).toBe("-0.32");
+    expect(curveMeanReference().attributes("data-value")).toBe("-0.3200");
+
+    const meanBeforeNominalChange = curveMeanReference().attributes("data-value");
+    const curvePathBeforeNominalChange = distributionCurve.get("[data-response-normal-curve]").attributes("d");
+    await wrapper.get("input[aria-label='C-cover height Design Nominal']").setValue("-0.67");
+
+    expect(curveMeanReference().attributes("data-value")).toBe(adjustedMeanValue());
+    expect(curveMeanReference().attributes("data-value")).not.toBe(meanBeforeNominalChange);
+    expect(distributionCurve.get("[data-response-normal-curve]").attributes("d")).not.toBe(curvePathBeforeNominalChange);
+    expect(client.confirmFactors).not.toHaveBeenCalled();
   });
 
   it("3) factor_setup reverses all factor signs as one undoable edit and accepts partial chain sign changes", async () => {
@@ -944,6 +985,7 @@ describe("F7 workbench shell", () => {
     ]);
     await wrapper.vm.$nextTick();
     expect(nominalValues()).toEqual(["0.57", "0.4"]);
+    expect(wrapper.get("[data-summary-design-nominal]").text()).toBe("0.97");
     await wrapper.get("[data-factor-undo]").trigger("click");
     expect(nominalValues()).toEqual(["0.57", "-0.4"]);
 
@@ -1105,6 +1147,11 @@ describe("F7 workbench shell", () => {
 
     expect(client.confirmFactors).toHaveBeenCalledWith({
       sessionId: "session-01",
+      systemSpecification: {
+        lowerSpecLimit: -0.62,
+        upperSpecLimit: -0.52,
+        targetSigmaLevel: 3,
+      },
       confirmations: [
         expect.objectContaining({
           factorCandidateId: expect.stringMatching(/^[a-f0-9]{64}$/),
@@ -1156,7 +1203,7 @@ describe("F7 workbench shell", () => {
     await clearAll.trigger("click");
     expect(wrapper.findAll(".factor-table tbody tr")).toHaveLength(1);
     await clearAll.trigger("click");
-    expect(confirm).toHaveBeenCalledWith("Clear all Factor rows and start with a blank row? You can undo this action.");
+    expect(confirm).toHaveBeenCalledWith("Clear all Factor rows and reset the System Specification? You can undo this action.");
     expect(wrapper.findAll(".factor-table tbody tr")).toHaveLength(1);
     const blankRow = wrapper.get(".factor-table tbody tr");
     expect(blankRow.get(".factor-item-number").text()).toBe("1");
@@ -1166,10 +1213,37 @@ describe("F7 workbench shell", () => {
     ]);
     expect(wrapper.find("[data-empty-factor-setup]").exists()).toBe(false);
     expect(wrapper.get("#confirm-factor-setup").attributes("disabled")).toBeDefined();
+    const lsl = wrapper.get<HTMLInputElement>("[data-f4-lsl-input]");
+    const usl = wrapper.get<HTMLInputElement>("[data-f4-usl-input]");
+    const targetSigma = wrapper.get<HTMLInputElement>("[data-f4-target-sigma-input]");
+    expect(lsl.element.value).toBe("");
+    expect(usl.element.value).toBe("");
+    expect(targetSigma.element.value).toBe("3");
+    expect(lsl.attributes("disabled")).toBeUndefined();
+    expect(usl.attributes("disabled")).toBeUndefined();
+    expect(targetSigma.attributes("disabled")).toBeUndefined();
 
     await undo.trigger("click");
-    expect(wrapper.findAll(".factor-table tbody tr")).toHaveLength(1);
     expect((wrapper.get("input[aria-label='C-cover height Design Nominal']").element as HTMLInputElement).value).toBe("-0.8");
+    expect(wrapper.get<HTMLInputElement>("[data-f4-lsl-input]").element.value).toBe("-0.62");
+    expect(wrapper.get<HTMLInputElement>("[data-f4-usl-input]").element.value).toBe("-0.52");
+    expect(wrapper.get<HTMLInputElement>("[data-f4-target-sigma-input]").element.value).toBe("3");
+    await redo.trigger("click");
+
+    const restoredBlankRow = wrapper.get(".factor-table tbody tr");
+    await restoredBlankRow.get("input[aria-label='New factor name']").setValue("Replacement factor");
+    const blankSpecifications = restoredBlankRow.findAll("input.factor-spec-input");
+    await blankSpecifications[0]!.setValue("1");
+    await blankSpecifications[1]!.setValue("0.1");
+    await blankSpecifications[2]!.setValue("-0.1");
+    const clearedLsl = wrapper.get<HTMLInputElement>("[data-f4-lsl-input]");
+    const clearedUsl = wrapper.get<HTMLInputElement>("[data-f4-usl-input]");
+    await clearedLsl.setValue("0.8");
+    await clearedUsl.setValue("1.2");
+    expect(clearedLsl.element.value).toBe("0.8");
+    expect(clearedUsl.element.value).toBe("1.2");
+    expect(wrapper.get<HTMLInputElement>("[data-f4-target-sigma-input]").element.value).toBe("3");
+    expect(wrapper.get("[data-f4-cpk]").text()).not.toBe("—");
     confirm.mockRestore();
   });
 
@@ -1213,6 +1287,23 @@ describe("F7 workbench shell", () => {
     expect(capabilitySummary.get("[data-f4-total-dpm]").text()).toBe("63");
   });
 
+  it("3c) factor_setup shows an unavailable distribution curve when F4 calculation is unavailable", async () => {
+    const available = factorSetupSnapshot();
+    const snapshot = createSnapshot({
+      ...available,
+      systemSpecification: {
+        status: "unavailable",
+        reasonCode: "legacy_artifact_missing_system_specification",
+      },
+    });
+    const client = createMockClient(snapshot, { importWorkbook: snapshot });
+    const wrapper = mount(App, { props: { client } });
+    await uploadWorkbook(wrapper);
+
+    expect(wrapper.find("[data-response-distribution-curve]").exists()).toBe(true);
+    expect(wrapper.get("[data-response-distribution-unavailable]").text()).toContain("unavailable");
+  });
+
   it("3d) factor table limits displayed decimals to four places and resizes columns by dragging", async () => {
     const client = createMockClient(factorSetupSnapshot(), { importWorkbook: factorSetupSnapshot() });
     const wrapper = mount(App, { props: { client }, attachTo: document.body });
@@ -1244,7 +1335,7 @@ describe("F7 workbench shell", () => {
     await specificationInputs[4]!.setValue("3");
 
     expect(wrapper.get("output[aria-label='C-cover height Mean']").text()).toBe("-0.5817");
-    expect(wrapper.get("output[aria-label='C-cover height Tolerance']").text()).toBe("0.1117");
+    expect(wrapper.get("output[aria-label='C-cover height Tolerance']").text()).toBe("± 0.1117");
     expect(wrapper.get("output[aria-label='C-cover height 1 Sigma']").text()).toBe("0.0372");
     expect(wrapper.get("output[aria-label='C-cover height Percent Contribution']").text()).toBe("100%");
 
@@ -1384,6 +1475,25 @@ describe("F7 workbench shell", () => {
     expect(wrapper.text()).toContain("Design Nominal must be non-zero.");
     await wrapper.get("button#confirm-factor-setup").trigger("click");
     expect(client.confirmFactors).not.toHaveBeenCalled();
+  });
+
+  it("5ba) uses green for additive dimensions and blue for subtractive dimensions and arrows", () => {
+    expect(STYLE_SOURCE).toMatch(/--additive:\s*#168447/);
+    expect(STYLE_SOURCE).toMatch(/--subtractive:\s*#1f62a6/);
+    expect(STYLE_SOURCE).toMatch(/\.nominal-positive\s*\{[^}]*color:\s*var\(--additive\)/s);
+    expect(STYLE_SOURCE).toMatch(/\.dimension-chain-additive \.dimension-chain-component[^}]*stroke:\s*var\(--additive\)/s);
+    expect(STYLE_SOURCE).toMatch(/\.dimension-chain-additive \.dimension-chain-start,[^}]*fill:\s*var\(--additive\)/s);
+    expect(STYLE_SOURCE).toMatch(/\.nominal-negative\s*\{[^}]*color:\s*var\(--subtractive\)/s);
+    expect(STYLE_SOURCE).toMatch(/\.dimension-chain-subtractive \.dimension-chain-component[^}]*stroke:\s*var\(--subtractive\)/s);
+    expect(STYLE_SOURCE).toMatch(/\.dimension-chain-subtractive \.dimension-chain-start,[^}]*fill:\s*var\(--subtractive\)/s);
+  });
+
+  it("5bab) uses red for the closure loop, arrow, endpoints, guides, and label", () => {
+    expect(STYLE_SOURCE).toMatch(/\.dimension-chain-closure-guide\s*\{[^}]*stroke:\s*var\(--danger\)/s);
+    expect(STYLE_SOURCE).toMatch(/\.dimension-chain-closure,[^}]*pointer-events:\s*none/s);
+    expect(STYLE_SOURCE).toMatch(/\.dimension-chain-closure\s*\{[^}]*stroke:\s*var\(--danger\)/s);
+    expect(STYLE_SOURCE).toMatch(/\.dimension-chain-closure-head,[^}]*fill:\s*var\(--danger\)/s);
+    expect(STYLE_SOURCE).toMatch(/\.dimension-chain-closure-label\s*\{[^}]*fill:\s*var\(--danger\)/s);
   });
 
   it("5bb) rejects tolerance signs that the factor contract cannot accept", async () => {

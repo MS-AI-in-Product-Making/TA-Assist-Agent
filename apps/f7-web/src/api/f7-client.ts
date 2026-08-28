@@ -79,6 +79,7 @@ export type F7MeasurementPasteResult = ContractF7MeasurementPasteResult;
 export type F7ReportProjection = ContractF7ReportProjection;
 
 export type F7FactorState = ContractF7SessionSnapshot["factors"][number];
+export type F7SystemSpecificationInput = NonNullable<F7FactorConfirmRouteRequest["systemSpecification"]>;
 
 type WorksheetConfirmRequest = {
   readonly sessionId: string;
@@ -90,6 +91,7 @@ type WorksheetConfirmRequest = {
 type ConfirmFactorsRequest = {
   readonly sessionId: string;
   readonly confirmations: F7FactorConfirmRouteRequest["confirmations"];
+  readonly systemSpecification: F7SystemSpecificationInput;
 };
 
 type SetFactorModeRequest = {
@@ -287,6 +289,7 @@ export function createF7Client(baseUrl = ""): F7Client {
       const payload = {
         sessionId: request.sessionId,
         confirmations: request.confirmations,
+        systemSpecification: request.systemSpecification,
       } satisfies F7FactorConfirmRouteRequest;
 
       return await requestJson("/f7/factors/confirm", {

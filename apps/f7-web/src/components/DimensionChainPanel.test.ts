@@ -152,7 +152,7 @@ describe("DimensionChainPanel", () => {
     expect(wrapper.get("[data-dimension-segment='2']").attributes("data-direction")).toBe("subtractive");
     expect(wrapper.get("[data-dimension-segment='1']").classes()).toContain("dimension-chain-additive");
     expect(wrapper.get("[data-dimension-segment='2']").classes()).toContain("dimension-chain-subtractive");
-    expect(wrapper.get("[data-dimension-origin-guide]").classes()).toContain("dimension-chain-origin-guide");
+    expect(wrapper.find("[data-dimension-origin-guide]").exists()).toBe(false);
     expect(wrapper.get("[data-dimension-closure]").classes()).toContain("dimension-chain-closure");
     expect(wrapper.get("[data-dimension-closure-start]").classes()).toContain("dimension-chain-closure-start");
     expect(wrapper.get("[data-dimension-closure-marker]").attributes("markerWidth")).toBe("4");
@@ -584,12 +584,16 @@ describe("DimensionChainPanel", () => {
 
     const first = wrapper.get("[data-dimension-segment='1']");
     const second = wrapper.get("[data-dimension-segment='2']");
+    const last = wrapper.get("[data-dimension-segment='3']");
     expect(first.attributes("data-value")).toBe("-2");
     expect(first.attributes("data-direction")).toBe("subtractive");
     expect(first.classes()).toContain("dimension-chain-subtractive");
     expect(second.attributes("data-value")).toBe("1");
     expect(second.attributes("data-direction")).toBe("additive");
     expect(second.classes()).toContain("dimension-chain-additive");
+    expect(last.attributes("data-value")).toBe("-0.5");
+    expect(last.attributes("data-direction")).toBe("subtractive");
+    expect(last.classes()).toContain("dimension-chain-subtractive");
     expect(wrapper.get("[data-dimension-chain-svg]").attributes("data-view-zoom")).toBe(zoomBefore);
     expect(wrapper.find("[data-dimension-chain-stale]").exists()).toBe(false);
   });
@@ -985,6 +989,308 @@ describe("DimensionChainPanel", () => {
 
     await wrapper.get("button[aria-label='Horizontal dimension chain']").trigger("click");
     expect(wrapper.get("[data-dimension-segment='2']").attributes("data-lane-offset")).toBe("35");
+  });
+
+  it("moves both closure guides and the closure arrow independently without changing factor data", async () => {
+    const wrapper = mount(DimensionChainPanel, {
+      props: { factors, valid: true, editable: true },
+    });
+    await wrapper.get("[data-generate-dimension-chain]").trigger("click");
+    const canvas = wrapper.get("[data-dimension-chain-canvas]");
+    setCanvasBounds(canvas.element);
+    Object.defineProperties(canvas.element, {
+      setPointerCapture: { configurable: true, value: vi.fn() },
+      releasePointerCapture: { configurable: true, value: vi.fn() },
+    });
+    const closure = wrapper.get("[data-dimension-closure-loop]");
+    const startGuide = wrapper.get("[data-dimension-closure-guide-handle='start']");
+    const endGuide = wrapper.get("[data-dimension-closure-guide-handle='end']");
+    const arrow = wrapper.get("[data-dimension-closure-arrow-handle]");
+
+    expect(startGuide.attributes("tabindex")).toBe("0");
+    expect(endGuide.attributes("tabindex")).toBe("0");
+    expect(arrow.attributes("tabindex")).toBe("0");
+    expect(startGuide.attributes("aria-label")).toBe("Move Closure start guide");
+    expect(endGuide.attributes("aria-label")).toBe("Move Closure end guide");
+    expect(arrow.attributes("aria-label")).toBe("Move Closure arrow lane");
+
+    dispatchPointer(startGuide.element, "pointerdown", {
+      button: 0, buttons: 1, clientX: 199, clientY: 222, pointerId: 30,
+    });
+    dispatchPointer(canvas.element, "pointermove", {
+      button: 0, buttons: 1, clientX: 219, clientY: 222, pointerId: 30,
+    });
+    dispatchPointer(canvas.element, "pointerup", {
+      button: 0, buttons: 0, clientX: 219, clientY: 222, pointerId: 30,
+    });
+    await wrapper.vm.$nextTick();
+    expect(closure.attributes("data-start-offset")).toBe("20");
+    expect(closure.attributes("data-end-offset")).toBe("0");
+    expect(closure.attributes("data-lane-offset")).toBe("0");
+    expect(startGuide.attributes("x1")).toBe(startGuide.attributes("x2"));
+    expect(
+      wrapper.get("[data-dimension-segment='3'] .dimension-chain-component").attributes("x2"),
+    ).toBe(startGuide.attributes("x2"));
+
+    dispatchPointer(endGuide.element, "pointerdown", {
+      button: 0, buttons: 1, clientX: 64, clientY: 222, pointerId: 31,
+    });
+    dispatchPointer(canvas.element, "pointermove", {
+      button: 0, buttons: 1, clientX: 49, clientY: 222, pointerId: 31,
+    });
+    dispatchPointer(canvas.element, "pointerup", {
+      button: 0, buttons: 0, clientX: 49, clientY: 222, pointerId: 31,
+    });
+    await wrapper.vm.$nextTick();
+    expect(closure.attributes("data-start-offset")).toBe("20");
+    expect(closure.attributes("data-end-offset")).toBe("-15");
+    expect(closure.attributes("data-lane-offset")).toBe("0");
+    expect(endGuide.attributes("x1")).toBe(endGuide.attributes("x2"));
+    expect(
+      wrapper.get("[data-dimension-segment='1'] .dimension-chain-component").attributes("x1"),
+    ).toBe(endGuide.attributes("x2"));
+
+    dispatchPointer(arrow.element, "pointerdown", {
+      button: 0, buttons: 1, clientX: 130, clientY: 222, pointerId: 32,
+    });
+    dispatchPointer(canvas.element, "pointermove", {
+      button: 0, buttons: 1, clientX: 130, clientY: 252, pointerId: 32,
+    });
+    dispatchPointer(canvas.element, "pointerup", {
+      button: 0, buttons: 0, clientX: 130, clientY: 252, pointerId: 32,
+    });
+    await wrapper.vm.$nextTick();
+    expect(closure.attributes("data-start-offset")).toBe("20");
+    expect(closure.attributes("data-end-offset")).toBe("-15");
+    expect(closure.attributes("data-lane-offset")).toBe("30");
+    expect(wrapper.emitted("factor-sign-change")).toBeUndefined();
+
+    dispatchPointer(wrapper.get("[data-dimension-arrow-handle='factor-2']").element, "pointerdown", {
+      button: 0, buttons: 1, clientX: 100, clientY: 100, pointerId: 35,
+    });
+    dispatchPointer(canvas.element, "pointermove", {
+      button: 0, buttons: 1, clientX: 100, clientY: 110, pointerId: 35,
+    });
+    dispatchPointer(canvas.element, "pointerup", {
+      button: 0, buttons: 0, clientX: 100, clientY: 110, pointerId: 35,
+    });
+    await wrapper.vm.$nextTick();
+    expect(closure.attributes("data-start-offset")).toBe("20");
+    expect(closure.attributes("data-end-offset")).toBe("-15");
+    expect(closure.attributes("data-lane-offset")).toBe("30");
+
+    await wrapper.get("button[aria-label='Reset layout']").trigger("click");
+    expect(closure.attributes("data-start-offset")).toBe("0");
+    expect(closure.attributes("data-end-offset")).toBe("0");
+    expect(closure.attributes("data-lane-offset")).toBe("0");
+
+    await wrapper.get("button[aria-label='Vertical dimension chain']").trigger("click");
+    dispatchPointer(wrapper.get("[data-dimension-closure-guide-handle='start']").element, "pointerdown", {
+      button: 0, buttons: 1, clientX: 222, clientY: 199, pointerId: 33,
+    });
+    dispatchPointer(canvas.element, "pointermove", {
+      button: 0, buttons: 1, clientX: 222, clientY: 211, pointerId: 33,
+    });
+    dispatchPointer(canvas.element, "pointerup", {
+      button: 0, buttons: 0, clientX: 222, clientY: 211, pointerId: 33,
+    });
+    dispatchPointer(wrapper.get("[data-dimension-closure-arrow-handle]").element, "pointerdown", {
+      button: 0, buttons: 1, clientX: 222, clientY: 130, pointerId: 34,
+    });
+    dispatchPointer(canvas.element, "pointermove", {
+      button: 0, buttons: 1, clientX: 238, clientY: 130, pointerId: 34,
+    });
+    dispatchPointer(canvas.element, "pointerup", {
+      button: 0, buttons: 0, clientX: 238, clientY: 130, pointerId: 34,
+    });
+    await wrapper.vm.$nextTick();
+    expect(Number(closure.attributes("data-start-offset"))).toBeCloseTo(14.4, 10);
+    expect(closure.attributes("data-end-offset")).toBe("0");
+    expect(closure.attributes("data-lane-offset")).toBe("16");
+    const verticalStartGuide = wrapper.get("[data-dimension-closure-guide-handle='start']");
+    expect(verticalStartGuide.attributes("y1")).toBe(verticalStartGuide.attributes("y2"));
+    expect(
+      wrapper.get("[data-dimension-segment='3'] .dimension-chain-component").attributes("y2"),
+    ).toBe(verticalStartGuide.attributes("y2"));
+    expect(wrapper.emitted("factor-sign-change")).toBeUndefined();
+  });
+
+  it("closes the chain from the last dimension endpoint to the first dimension start", async () => {
+    const wrapper = mount(DimensionChainPanel, {
+      props: { factors, valid: true },
+    });
+    await wrapper.get("[data-generate-dimension-chain]").trigger("click");
+
+    const horizontalClosure = wrapper.get("[data-dimension-closure]");
+    const horizontalStartGuide = wrapper.get("[data-dimension-closure-guide-handle='start']");
+    const horizontalEndGuide = wrapper.get("[data-dimension-closure-guide-handle='end']");
+    const horizontalFirst = wrapper.get("[data-dimension-segment='1'] .dimension-chain-component");
+    const horizontalLast = wrapper.get("[data-dimension-segment='3'] .dimension-chain-component");
+    expect(horizontalClosure.attributes("x1")).toBe(horizontalStartGuide.attributes("x2"));
+    expect(horizontalClosure.attributes("x2")).toBe(horizontalEndGuide.attributes("x2"));
+    expect(horizontalStartGuide.attributes("x1")).toBe(horizontalLast.attributes("x2"));
+    expect(horizontalEndGuide.attributes("x1")).toBe(horizontalFirst.attributes("x1"));
+    expect(wrapper.get("[data-dimension-closure-start]").attributes("cx"))
+      .toBe(horizontalStartGuide.attributes("x2"));
+
+    await wrapper.get("button[aria-label='Vertical dimension chain']").trigger("click");
+    const verticalClosure = wrapper.get("[data-dimension-closure]");
+    const verticalStartGuide = wrapper.get("[data-dimension-closure-guide-handle='start']");
+    const verticalEndGuide = wrapper.get("[data-dimension-closure-guide-handle='end']");
+    const verticalFirst = wrapper.get("[data-dimension-segment='1'] .dimension-chain-component");
+    const verticalLast = wrapper.get("[data-dimension-segment='3'] .dimension-chain-component");
+    expect(verticalClosure.attributes("y1")).toBe(verticalStartGuide.attributes("y2"));
+    expect(verticalClosure.attributes("y2")).toBe(verticalEndGuide.attributes("y2"));
+    expect(verticalStartGuide.attributes("y1")).toBe(verticalLast.attributes("y2"));
+    expect(verticalEndGuide.attributes("y1")).toBe(verticalFirst.attributes("y1"));
+    expect(wrapper.get("[data-dimension-closure-start]").attributes("cy"))
+      .toBe(verticalStartGuide.attributes("y2"));
+
+    const coincident = mount(DimensionChainPanel, {
+      props: { factors: [factor(1, 1), factor(2, -1)], valid: true },
+    });
+    await coincident.get("[data-generate-dimension-chain]").trigger("click");
+    const coincidentClosure = coincident.get("[data-dimension-closure]");
+    const coincidentHandle = coincident.get("[data-dimension-closure-arrow-handle]");
+    const coincidentStartGuide = coincident.get("[data-dimension-closure-guide-handle='start']");
+    const coincidentEndGuide = coincident.get("[data-dimension-closure-guide-handle='end']");
+    const coincidentAxisPosition = coincidentStartGuide.attributes("x2");
+    expect(coincidentClosure.element.tagName.toLowerCase()).toBe("path");
+    expect(coincidentEndGuide.attributes("x2")).toBe(coincidentAxisPosition);
+    expect(coincidentClosure.attributes("d")).toMatch(new RegExp(`^M ${coincidentAxisPosition} `));
+    expect(coincidentHandle.attributes("d")).toBe(coincidentClosure.attributes("d"));
+    expect(coincident.get("[data-dimension-closure-start]").attributes("cx"))
+      .toBe(coincidentAxisPosition);
+  });
+
+  it("prevents Closure guides from crossing in horizontal and vertical orientations", async () => {
+    const wrapper = mount(DimensionChainPanel, {
+      props: { factors, valid: true, editable: true },
+    });
+    await wrapper.get("[data-generate-dimension-chain]").trigger("click");
+    const canvas = wrapper.get("[data-dimension-chain-canvas]");
+    setCanvasBounds(canvas.element);
+    Object.defineProperties(canvas.element, {
+      setPointerCapture: { configurable: true, value: vi.fn() },
+      releasePointerCapture: { configurable: true, value: vi.fn() },
+    });
+
+    const startGuide = wrapper.get("[data-dimension-closure-guide-handle='start']");
+    const endGuide = wrapper.get("[data-dimension-closure-guide-handle='end']");
+    dispatchPointer(startGuide.element, "pointerdown", {
+      button: 0, buttons: 1, clientX: 220, clientY: 220, pointerId: 38,
+    });
+    dispatchPointer(canvas.element, "pointermove", {
+      button: 0, buttons: 1, clientX: 0, clientY: 220, pointerId: 38,
+    });
+    dispatchPointer(canvas.element, "pointerup", {
+      button: 0, buttons: 0, clientX: 0, clientY: 220, pointerId: 38,
+    });
+    await wrapper.vm.$nextTick();
+    expect(Number(startGuide.attributes("x2")) - Number(endGuide.attributes("x2"))).toBeCloseTo(1, 10);
+
+    dispatchPointer(endGuide.element, "pointerdown", {
+      button: 0, buttons: 1, clientX: 0, clientY: 220, pointerId: 39,
+    });
+    dispatchPointer(canvas.element, "pointermove", {
+      button: 0, buttons: 1, clientX: 300, clientY: 220, pointerId: 39,
+    });
+    dispatchPointer(canvas.element, "pointerup", {
+      button: 0, buttons: 0, clientX: 300, clientY: 220, pointerId: 39,
+    });
+    await wrapper.vm.$nextTick();
+    expect(Number(startGuide.attributes("x2")) - Number(endGuide.attributes("x2"))).toBeCloseTo(1, 10);
+
+    await wrapper.get("button[aria-label='Reset layout']").trigger("click");
+    await wrapper.get("button[aria-label='Vertical dimension chain']").trigger("click");
+    const verticalStartGuide = wrapper.get("[data-dimension-closure-guide-handle='start']");
+    const verticalEndGuide = wrapper.get("[data-dimension-closure-guide-handle='end']");
+    dispatchPointer(verticalStartGuide.element, "pointerdown", {
+      button: 0, buttons: 1, clientX: 220, clientY: 220, pointerId: 40,
+    });
+    dispatchPointer(canvas.element, "pointermove", {
+      button: 0, buttons: 1, clientX: 220, clientY: 0, pointerId: 40,
+    });
+    dispatchPointer(canvas.element, "pointerup", {
+      button: 0, buttons: 0, clientX: 220, clientY: 0, pointerId: 40,
+    });
+    await wrapper.vm.$nextTick();
+    expect(Number(verticalStartGuide.attributes("y2")) - Number(verticalEndGuide.attributes("y2")))
+      .toBeCloseTo(1, 10);
+
+    dispatchPointer(verticalEndGuide.element, "pointerdown", {
+      button: 0, buttons: 1, clientX: 220, clientY: 0, pointerId: 41,
+    });
+    dispatchPointer(canvas.element, "pointermove", {
+      button: 0, buttons: 1, clientX: 220, clientY: 300, pointerId: 41,
+    });
+    dispatchPointer(canvas.element, "pointerup", {
+      button: 0, buttons: 0, clientX: 220, clientY: 300, pointerId: 41,
+    });
+    await wrapper.vm.$nextTick();
+    expect(Number(verticalStartGuide.attributes("y2")) - Number(verticalEndGuide.attributes("y2")))
+      .toBeCloseTo(1, 10);
+  });
+
+  it("updates connected arrow colors when closure guide movement reverses their visual direction", async () => {
+    const wrapper = mount(DimensionChainPanel, {
+      props: { factors, valid: true, editable: true },
+    });
+    await wrapper.get("[data-generate-dimension-chain]").trigger("click");
+    const canvas = wrapper.get("[data-dimension-chain-canvas]");
+    setCanvasBounds(canvas.element);
+    Object.defineProperties(canvas.element, {
+      setPointerCapture: { configurable: true, value: vi.fn() },
+      releasePointerCapture: { configurable: true, value: vi.fn() },
+    });
+
+    dispatchPointer(wrapper.get("[data-dimension-closure-guide-handle='start']").element, "pointerdown", {
+      button: 0, buttons: 1, clientX: 220, clientY: 220, pointerId: 36,
+    });
+    dispatchPointer(canvas.element, "pointermove", {
+      button: 0, buttons: 1, clientX: 120, clientY: 220, pointerId: 36,
+    });
+    dispatchPointer(canvas.element, "pointerup", {
+      button: 0, buttons: 0, clientX: 120, clientY: 220, pointerId: 36,
+    });
+    await wrapper.vm.$nextTick();
+
+    const lastSegment = wrapper.get("[data-dimension-segment='3']");
+    expect(lastSegment.attributes("data-direction")).toBe("subtractive");
+    expect(lastSegment.classes()).toContain("dimension-chain-subtractive");
+    expect(lastSegment.get(".dimension-chain-component").attributes("marker-end"))
+      .toContain("dimension-chain-subtractive-arrow");
+    expect(wrapper.emitted("factor-sign-change")).toEqual([[
+      [{ factorId: "factor-3", sign: -1 }],
+    ]]);
+
+    await wrapper.setProps({
+      factors: [factors[0]!, factors[1]!, factor(3, -0.5)],
+    });
+    expect(lastSegment.attributes("data-value")).toBe("-0.5");
+    expect(lastSegment.attributes("data-direction")).toBe("subtractive");
+    const closureStartGuide = wrapper.get("[data-dimension-closure-guide-handle='start']");
+    const closureEndGuide = wrapper.get("[data-dimension-closure-guide-handle='end']");
+    expect(Number(closureStartGuide.attributes("x2")))
+      .toBeGreaterThan(Number(closureEndGuide.attributes("x2")));
+
+    dispatchPointer(wrapper.get("[data-dimension-closure-guide-handle='end']").element, "pointerdown", {
+      button: 0, buttons: 1, clientX: 80, clientY: 220, pointerId: 37,
+    });
+    dispatchPointer(canvas.element, "pointermove", {
+      button: 0, buttons: 1, clientX: 280, clientY: 220, pointerId: 37,
+    });
+    dispatchPointer(canvas.element, "pointerup", {
+      button: 0, buttons: 0, clientX: 280, clientY: 220, pointerId: 37,
+    });
+    await wrapper.vm.$nextTick();
+
+    const firstSegment = wrapper.get("[data-dimension-segment='1']");
+    expect(firstSegment.attributes("data-direction")).toBe("additive");
+    expect(firstSegment.classes()).toContain("dimension-chain-additive");
+    expect(Number(closureStartGuide.attributes("x2")) - Number(closureEndGuide.attributes("x2")))
+      .toBeCloseTo(1, 10);
+    expect(wrapper.emitted("factor-sign-change")).toEqual([[[{ factorId: "factor-3", sign: -1 }]]]);
   });
 
   it("exposes disabled edit handles without allowing non-editable pointer changes", async () => {
@@ -1387,9 +1693,9 @@ describe("DimensionChainPanel", () => {
     expectPersistentImage();
     const svg = wrapper.get("[data-dimension-chain-svg]");
     const image = wrapper.get("[data-dimension-chain-background]");
-    const originGuide = wrapper.get("[data-dimension-origin-guide]");
+    const closureLoop = wrapper.get("[data-dimension-closure-loop]");
     expect(Array.from(svg.element.children).indexOf(image.element)).toBeLessThan(
-      Array.from(svg.element.children).indexOf(originGuide.element),
+      Array.from(svg.element.children).indexOf(closureLoop.element),
     );
   });
 

@@ -189,13 +189,13 @@ export function createF7ReportProjection(
       throw new F7ReportPrerequisiteError("Simulation factor manifest does not match the current factor model");
     }
 
-    const sourceReferences = [
+    const sourceReferences = [...new Set([
       ...Object.values(evidence.sourceCells),
       ...(sourceMode === "MEASURED" && factorState.input?.mode === "MEASURED"
         && factorState.input.dataset !== undefined
         ? [factorState.input.dataset.sourceReference]
         : []),
-    ];
+    ])];
     return {
       factorId: evidence.factorId,
       factorName: evidence.factorName,
