@@ -31,16 +31,12 @@ const simulationReady = computed(() => {
 
 const workflowSteps = [
   { id: 1, label: "Select worksheet" },
-  { id: 2, label: "Measurement data" },
-  { id: 3, label: "Capability analysis" },
-  { id: 4, label: "Distribution fit" },
-  { id: 5, label: "Monte Carlo" },
+  { id: 2, label: "Measurement analysis" },
+  { id: 3, label: "Monte Carlo & Report" },
 ] as const;
 
 const currentPhaseStep = computed(() => {
-  if (activeMeasurementStage.value === "monteCarlo") return 5;
-  if (activeMeasurementStage.value === "distribution") return 4;
-  if (activeMeasurementStage.value === "capability") return 3;
+  if (activeMeasurementStage.value === "monteCarlo") return 3;
   const status = store.session.value?.status;
   if (!status || status === "worksheet_selection") return 1;
   if (status === "factor_setup" || status === "measurement_entry" || status === "phase_1_ready") return 2;
@@ -48,13 +44,8 @@ const currentPhaseStep = computed(() => {
 });
 
 function workflowStepState(stepId: number): "current" | "complete" | "pending" | "locked" {
-  if (stepId === 5 && !simulationReady.value) return "locked";
-  if (
-    stepId === 4
-    && activeMeasurementStage.value !== "distribution"
-    && activeMeasurementStage.value !== "monteCarlo"
-  ) return "locked";
-  if (stepId === 3 && activeMeasurementStage.value === "measurement") return "locked";
+  if (stepId === 3 && !simulationReady.value) return "locked";
+  if (stepId === 2 && store.session.value?.status === "worksheet_selection") return "locked";
   if (stepId < currentPhaseStep.value) return "complete";
   if (stepId === currentPhaseStep.value) return "current";
   return "pending";
@@ -63,8 +54,9 @@ function workflowStepState(stepId: number): "current" | "complete" | "pending" |
 function workflowStepStatusText(stepId: number, state: "current" | "complete" | "pending" | "locked"): string {
   if (state === "locked") return "Locked";
   if (state === "complete") return "Complete";
-  if (state === "pending") return "Available in Phase 1";
-  if (stepId === 2 && store.session.value?.status === "phase_1_ready") return "Current (ready summary)";
+  if (state === "pending") return stepId === 3 ? "Available when analysis is ready" : "Available";
+  if (stepId === 2) return "Measure · Capability · Fit";
+  if (stepId === 3) return "Simulation · Automatic report";
   return "Current";
 }
 
@@ -275,7 +267,7 @@ async function openReport(): Promise<void> {
               aria-hidden="true"
             >{{ step.id }}</span>
             <button
-              v-if="step.id === 5 && simulationReady"
+              v-if="step.id === 3 && simulationReady"
               type="button"
               class="step-label step-link"
               data-workflow-open-monte-carlo

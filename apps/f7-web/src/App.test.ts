@@ -2076,9 +2076,10 @@ describe("F7 workbench shell", () => {
     expect(workspace.get("[aria-label='Excel specification limits']").text()).toContain("0.52 mm");
 
     const workflow = wrapper.findAll("ol.workflow-steps > li");
-    expect(workflow[3]?.attributes("aria-current")).toBe("step");
-    expect(workflow[4]?.attributes("aria-disabled")).toBeUndefined();
-    expect(workflow[4]?.text()).toContain("Available");
+    expect(workflow[1]?.attributes("aria-current")).toBe("step");
+    expect(workflow[1]?.text()).toContain("Measure · Capability · Fit");
+    expect(workflow[2]?.attributes("aria-disabled")).toBeUndefined();
+    expect(workflow[2]?.text()).toContain("Available");
   });
 
   describe("Capability entry distribution fit", () => {
@@ -2326,7 +2327,7 @@ describe("F7 workbench shell", () => {
     });
   });
 
-  it("8e) uses the automatically selected model, unlocks Step 5, and submits governed run settings", async () => {
+  it("8e) uses the automatically selected model, unlocks Step 3, and submits governed run settings", async () => {
     const approved = approvedDistributionSnapshot();
     const completed = completedMonteCarloSnapshot();
     const report = reportProjection(completed);
@@ -2339,7 +2340,7 @@ describe("F7 workbench shell", () => {
     await uploadWorkbook(wrapper);
     await openMeasurementWorkspace(wrapper);
     expect(client.approveDistribution).not.toHaveBeenCalled();
-    const monteCarloStep = wrapper.findAll(".workflow-steps li")[4]!;
+    const monteCarloStep = wrapper.findAll(".workflow-steps li")[2]!;
     expect(monteCarloStep.text()).toContain("Available");
     expect(monteCarloStep.get("[data-workflow-open-monte-carlo]").attributes("disabled")).toBeUndefined();
 
@@ -2421,14 +2422,14 @@ describe("F7 workbench shell", () => {
     expect(wrapper.get("[data-setup-comparison-unavailable]").text()).toContain("unavailable");
   });
 
-  it("8f) keeps a five-step workflow and unlocks Step 5 only when simulation is ready", async () => {
+  it("8f) keeps a three-step workflow and unlocks Step 3 only when simulation is ready", async () => {
     const approved = approvedDistributionSnapshot();
     const withoutResult = mount(App, {
       props: { client: createMockClient(approved, { importWorkbook: approved }) },
     });
     await uploadWorkbook(withoutResult);
-    expect(withoutResult.findAll(".workflow-steps li")).toHaveLength(5);
-    expect(withoutResult.findAll(".workflow-steps li")[4]?.attributes("aria-disabled")).toBeUndefined();
+    expect(withoutResult.findAll(".workflow-steps li")).toHaveLength(3);
+    expect(withoutResult.findAll(".workflow-steps li")[2]?.attributes("aria-disabled")).toBeUndefined();
 
     const completed = completedMonteCarloSnapshot();
     const withResult = mount(App, {
@@ -2436,12 +2437,12 @@ describe("F7 workbench shell", () => {
     });
     await uploadWorkbook(withResult);
     await withResult.get("[data-open-monte-carlo]").trigger("click");
-    expect(withResult.findAll(".workflow-steps li")).toHaveLength(5);
-    expect(withResult.findAll(".workflow-steps li")[4]?.attributes("aria-current")).toBe("step");
-    expect(withResult.findAll(".workflow-steps li")[4]?.text()).toContain("Current");
+    expect(withResult.findAll(".workflow-steps li")).toHaveLength(3);
+    expect(withResult.findAll(".workflow-steps li")[2]?.attributes("aria-current")).toBe("step");
+    expect(withResult.findAll(".workflow-steps li")[2]?.text()).toContain("Simulation · Automatic report");
   });
 
-  it("8g) embeds the automatically generated F0 report below the Step 5 Monte Carlo result", async () => {
+  it("8g) embeds the automatically generated F0 report below the Step 3 Monte Carlo result", async () => {
     const completed = completedMonteCarloSnapshot();
     const report = reportProjection(completed);
     const generateReport = vi.fn(async ({ sessionId }: { readonly sessionId: string }) => {
@@ -2455,7 +2456,7 @@ describe("F7 workbench shell", () => {
 
     await vi.waitFor(() => expect(wrapper.find("#report-title").exists()).toBe(true));
     expect(wrapper.find("#monte-carlo-title").exists()).toBe(true);
-    expect(wrapper.findAll(".workflow-steps li")).toHaveLength(5);
+    expect(wrapper.findAll(".workflow-steps li")).toHaveLength(3);
     expect(wrapper.find("[data-report-back]").exists()).toBe(false);
     expect(wrapper.get("[data-report-f0-guidance]").text()).toContain("F0 v1 / default-cpk-target");
     expect(wrapper.get("[data-report-f0-guidance]").text()).toContain("Prioritize reducing and stabilizing");
@@ -2469,9 +2470,9 @@ describe("F7 workbench shell", () => {
     expect(wrapper.find("[aria-label='Factor measurement workspace']").exists()).toBe(false);
     expect(generateReport).toHaveBeenCalledTimes(1);
     expect(generateReport).toHaveBeenCalledWith({ sessionId: "session-01" });
-    expect(wrapper.findAll(".workflow-steps li")[3]?.text()).toContain("Complete");
-    expect(wrapper.findAll(".workflow-steps li")[4]?.text()).toContain("Current");
-    expect(wrapper.findAll(".workflow-steps li")[4]?.attributes("aria-current")).toBe("step");
+    expect(wrapper.findAll(".workflow-steps li")[1]?.text()).toContain("Complete");
+    expect(wrapper.findAll(".workflow-steps li")[2]?.text()).toContain("Simulation · Automatic report");
+    expect(wrapper.findAll(".workflow-steps li")[2]?.attributes("aria-current")).toBe("step");
     expect(wrapper.find("[aria-label='Validation summary']").exists()).toBe(false);
     expect(wrapper.find(".ready-panel").exists()).toBe(false);
 
@@ -2582,7 +2583,6 @@ describe("F7 workbench shell", () => {
   });
 
   it("8ea) keeps Monte Carlo specifications empty when Excel evidence is unavailable", async () => {
-    const fitted = distributionFitSnapshot();
     const approved = approvedDistributionSnapshot();
     const unavailable = createSnapshot({
       ...approved,
@@ -2844,7 +2844,7 @@ describe("F7 workbench shell", () => {
     expect(workspace.find("table.distribution-fit-table").exists()).toBe(false);
   });
 
-  it("9) workflow rail renders five exact steps, locks 3-5 as non-interactive, and marks step1 current initially", async () => {
+  it("9) workflow rail renders three grouped steps and marks step1 current initially", async () => {
     const client = createMockClient(createSnapshot({ status: "worksheet_selection" }), { importWorkbook: createSnapshot({ status: "worksheet_selection" }) });
     const wrapper = mount(App, { props: { client } });
     await uploadWorkbook(wrapper);
@@ -2852,17 +2852,15 @@ describe("F7 workbench shell", () => {
     const stepLabels = wrapper.findAll("ol.workflow-steps > li .step-label").map((node) => node.text().trim());
     expect(stepLabels).toEqual([
       "Select worksheet",
-      "Measurement data",
-      "Capability analysis",
-      "Distribution fit",
-      "Monte Carlo",
+      "Measurement analysis",
+      "Monte Carlo & Report",
     ]);
 
     const listItems = wrapper.findAll("ol.workflow-steps > li");
-    expect(listItems).toHaveLength(5);
+    expect(listItems).toHaveLength(3);
     expect(listItems[0]?.attributes("aria-current")).toBe("step");
 
-    for (const index of [2, 3, 4]) {
+    for (const index of [1, 2]) {
       const item = listItems[index];
       expect(item?.attributes("aria-disabled")).toBe("true");
       expect(item?.findAll("button, a, input, select, textarea")).toHaveLength(0);
@@ -2879,7 +2877,7 @@ describe("F7 workbench shell", () => {
     await uploadWorkbook(wrapper);
 
     const listItems = wrapper.findAll("ol.workflow-steps > li");
-    expect(listItems).toHaveLength(5);
+    expect(listItems).toHaveLength(3);
     expect(listItems[0]?.attributes("aria-current")).toBeUndefined();
     expect(listItems[1]?.attributes("aria-current")).toBe("step");
   });
