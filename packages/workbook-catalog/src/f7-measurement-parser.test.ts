@@ -12,6 +12,10 @@ interface ParserRequest {
   readonly factorId: string;
   readonly unit: string;
   readonly structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+  readonly rationalSubgroupConfig?: {
+    readonly subgroupSize: number;
+    readonly estimator: "RANGE_D2" | "S_C4";
+  };
   readonly sourceReference: string;
   readonly importedAt: string;
   readonly msaStatus: "available" | "not_available" | "unknown";
@@ -36,6 +40,23 @@ function collectRejectedRows(result: ReturnType<typeof parseF7MeasurementPaste>)
 }
 
 describe("parseF7MeasurementPaste", () => {
+  it("persists rational subgroup configuration and includes it in the dataset hash", () => {
+    const text = "value\tsubgroup\n10\t1\n12\t1\n20\t2\n24\t2";
+    const rangeResult = parseF7MeasurementPaste(makeRequest({
+      structure: "RATIONAL_SUBGROUP",
+      rationalSubgroupConfig: { subgroupSize: 2, estimator: "RANGE_D2" },
+      text,
+    }));
+    const standardDeviationResult = parseF7MeasurementPaste(makeRequest({
+      structure: "RATIONAL_SUBGROUP",
+      rationalSubgroupConfig: { subgroupSize: 2, estimator: "S_C4" },
+      text,
+    }));
+
+    expect(rangeResult.dataset?.rationalSubgroupConfig).toEqual({ subgroupSize: 2, estimator: "RANGE_D2" });
+    expect(rangeResult.dataset?.contentHash).not.toBe(standardDeviationResult.dataset?.contentHash);
+  });
+
   it("parses header plus one value per line deterministically", () => {
     const request = makeRequest({ text: "value\n0.571\n0.569", msaStatus: "available" });
     const first = parseF7MeasurementPaste(request);

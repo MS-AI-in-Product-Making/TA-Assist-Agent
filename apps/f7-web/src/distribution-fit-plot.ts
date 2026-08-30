@@ -1,4 +1,30 @@
-import type { F7DistributionFitCandidate } from "./api/f7-client";
+import type { F7DistributionFitCandidate, F7SetupDistribution } from "./api/f7-client";
+
+export interface FactorSetupAssumption {
+  readonly mean: number;
+  readonly standardDeviation: number;
+  readonly distribution: F7SetupDistribution;
+  readonly longTermSafetyFactor: number;
+  readonly sigmaLevel: number;
+}
+
+export interface FactorSetupAssumptionInput {
+  readonly signedMean: number;
+  readonly oneSigma: number;
+  readonly distribution: F7SetupDistribution;
+  readonly longTermSafetyFactor: number;
+  readonly sigmaLevel: number;
+}
+
+export function buildFactorSetupAssumption(input: FactorSetupAssumptionInput): FactorSetupAssumption {
+  return {
+    mean: Math.abs(input.signedMean),
+    standardDeviation: input.oneSigma,
+    distribution: input.distribution,
+    longTermSafetyFactor: input.longTermSafetyFactor,
+    sigmaLevel: input.sigmaLevel,
+  };
+}
 
 export interface DistributionFitPlotCandidate {
   readonly family: F7DistributionFitCandidate["family"];
@@ -26,6 +52,7 @@ export interface DistributionFitPlotModel {
   readonly maximumFrequency: number;
   readonly bins: readonly DistributionFitHistogramBin[];
   readonly curve: readonly DistributionFitCurvePoint[];
+  readonly assumptionCurve: readonly DistributionFitCurvePoint[];
   readonly ticks: readonly number[];
   readonly frequencyTicks: readonly number[];
 }
@@ -88,6 +115,57 @@ function logGamma(value: number): number {
 
 function finiteDensity(value: number): number {
   return Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+function factorSetupDensity(assumption: FactorSetupAssumption, value: number): number {
+  const sigma = assumption.standardDeviation;
+  if (!(sigma > 0) || !Number.isFinite(sigma)) return 0;
+  const distance = Math.abs(value - assumption.mean);
+  let radius: number;
+  switch (assumption.distribution) {
+    case "Normal": {
+      const z = distance / sigma;
+      return finiteDensity(Math.exp(-(z ** 2) / 2) / (sigma * SQRT_TWO_PI));
+    }
+    case "Uniform":
+      radius = sigma * Math.sqrt(3);
+      return distance <= radius ? 1 / (2 * radius) : 0;
+    case "Triangular":
+      radius = sigma * Math.sqrt(6);
+      return distance <= radius ? (radius - distance) / radius ** 2 : 0;
+    case "Trapezoidal": {
+      const plateauRatio = 0.5;
+      radius = sigma * Math.sqrt(6 / (1 + plateauRatio ** 2));
+      const plateauRadius = radius * plateauRatio;
+      const height = 1 / (radius + plateauRadius);
+      if (distance <= plateauRadius) return height;
+      return distance <= radius ? height * (radius - distance) / (radius - plateauRadius) : 0;
+    }
+    case "Elliptical":
+      radius = 2 * sigma;
+      return distance <= radius
+        ? 2 * Math.sqrt(Math.max(0, 1 - (distance / radius) ** 2)) / (Math.PI * radius)
+        : 0;
+    case "Beta":
+      radius = sigma * Math.sqrt(5);
+      return distance <= radius ? 3 * (1 - (distance / radius) ** 2) / (4 * radius) : 0;
+  }
+}
+
+function factorSetupSupport(assumption: FactorSetupAssumption): readonly [number, number] {
+  const sigma = assumption.standardDeviation;
+  const radius = assumption.distribution === "Normal"
+    ? 4 * sigma
+    : assumption.distribution === "Uniform"
+      ? Math.sqrt(3) * sigma
+      : assumption.distribution === "Triangular"
+        ? Math.sqrt(6) * sigma
+        : assumption.distribution === "Trapezoidal"
+          ? Math.sqrt(6 / 1.25) * sigma
+          : assumption.distribution === "Elliptical"
+            ? 2 * sigma
+            : Math.sqrt(5) * sigma;
+  return [assumption.mean - radius, assumption.mean + radius];
 }
 
 export function probabilityDensity(
@@ -239,6 +317,7 @@ export function buildDistributionFitReferences(
 export function distributionFitObservedDomain(
   candidates: readonly DistributionFitPlotCandidate[],
   references?: DistributionFitReferences,
+  assumption?: FactorSetupAssumption,
 ): DistributionFitObservedDomain {
   const canonicalObserved = candidates[0]!.qqPoints
     .map((point) => point.observed)
@@ -247,6 +326,7 @@ export function distributionFitObservedDomain(
   const domainValues = references
     ? [...allObserved, ...references.lines.map((line) => line.value).filter(Number.isFinite)]
     : allObserved;
+  if (assumption) domainValues.push(...factorSetupSupport(assumption));
   return {
     minimum: Math.min(...domainValues),
     maximum: Math.max(...domainValues),
@@ -257,6 +337,7 @@ export function distributionFitObservedDomain(
 export function buildDistributionFitPlot(
   candidate: DistributionFitPlotCandidate,
   observedDomain: DistributionFitObservedDomain = distributionFitObservedDomain([candidate]),
+  assumption?: FactorSetupAssumption,
 ): DistributionFitPlotModel {
   const observed = candidate.qqPoints.map((point) => point.observed);
   const observedRange = observedDomain.maximum - observedDomain.minimum;
@@ -299,14 +380,22 @@ export function buildDistributionFitPlot(
     const expectedFrequency = probabilityDensity(candidate.family, candidate.parameters, x) * observed.length * binWidth;
     return { x, expectedFrequency: Number.isFinite(expectedFrequency) && expectedFrequency >= 0 ? expectedFrequency : 0 };
   });
+  const assumptionCurve = assumption
+    ? Array.from({ length: 96 }, (_, index) => {
+        const x = interpolate(domainMinimum, domainMaximum, index / 95);
+        const expectedFrequency = factorSetupDensity(assumption, x) * observed.length * binWidth;
+        return { x, expectedFrequency: finiteDensity(expectedFrequency) };
+      })
+    : [];
   const rawMaximumFrequency = Math.max(
     ...bins.map((bin) => bin.frequency),
     ...curve.map((point) => point.expectedFrequency),
+    ...assumptionCurve.map((point) => point.expectedFrequency),
     1,
   );
   const frequencyStep = Math.max(1, Math.ceil(rawMaximumFrequency / 4));
   const maximumFrequency = frequencyStep * 4;
   const ticks = Array.from({ length: 5 }, (_, index) => interpolate(domainMinimum, domainMaximum, index / 4));
   const frequencyTicks = Array.from({ length: 5 }, (_, index) => frequencyStep * index);
-  return { domainMinimum, domainMaximum, maximumFrequency, bins, curve, ticks, frequencyTicks };
+  return { domainMinimum, domainMaximum, maximumFrequency, bins, curve, assumptionCurve, ticks, frequencyTicks };
 }

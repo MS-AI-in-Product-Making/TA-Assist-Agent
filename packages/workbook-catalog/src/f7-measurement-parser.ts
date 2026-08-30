@@ -21,11 +21,23 @@ const requestSchema = z.object({
   factorId: z.string().regex(/^[a-f0-9]{64}$/),
   unit: z.string().trim().min(1),
   structure: z.enum(["RATIONAL_SUBGROUP", "ORDERED_INDIVIDUALS", "UNORDERED_SAMPLE"]),
+  rationalSubgroupConfig: z.object({
+    subgroupSize: z.number().int().min(2).max(25),
+    estimator: z.enum(["RANGE_D2", "S_C4"]),
+  }).strict().optional(),
   sourceReference: z.string().min(1),
   importedAt: z.string().datetime({ offset: true }),
   msaStatus: z.enum(["available", "not_available", "unknown"]),
   text: z.string().min(1),
-}).strict();
+}).strict().superRefine((request, context) => {
+  if ((request.structure === "RATIONAL_SUBGROUP") === (request.rationalSubgroupConfig === undefined)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "rationalSubgroupConfig must be provided only for RATIONAL_SUBGROUP",
+      path: ["rationalSubgroupConfig"],
+    });
+  }
+});
 
 type ParserRequest = z.infer<typeof requestSchema>;
 type Delimiter = "\t" | "," | ";";
@@ -191,6 +203,10 @@ export function hashF7MeasurementDatasetContent(dataset: {
   readonly factorId: string;
   readonly unit: string;
   readonly structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+  readonly rationalSubgroupConfig?: {
+    readonly subgroupSize: number;
+    readonly estimator: "RANGE_D2" | "S_C4";
+  } | undefined;
   readonly sourceReference: string;
   readonly importedAt: string;
   readonly msaStatus: "available" | "not_available" | "unknown";
@@ -207,6 +223,11 @@ export function hashF7MeasurementDatasetContent(dataset: {
   pushString(chunks, dataset.unit);
   pushString(chunks, "structure");
   pushString(chunks, dataset.structure);
+  if (dataset.rationalSubgroupConfig) {
+    pushString(chunks, "rationalSubgroupConfig");
+    pushString(chunks, String(dataset.rationalSubgroupConfig.subgroupSize));
+    pushString(chunks, dataset.rationalSubgroupConfig.estimator);
+  }
   pushString(chunks, "sourceReference");
   pushString(chunks, dataset.sourceReference);
   pushString(chunks, "importedAt");
@@ -287,6 +308,10 @@ export function parseF7MeasurementPaste(request: {
   readonly factorId: string;
   readonly unit: string;
   readonly structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+  readonly rationalSubgroupConfig?: {
+    readonly subgroupSize: number;
+    readonly estimator: "RANGE_D2" | "S_C4";
+  };
   readonly sourceReference: string;
   readonly importedAt: string;
   readonly msaStatus: "available" | "not_available" | "unknown";
@@ -405,6 +430,9 @@ export function parseF7MeasurementPaste(request: {
     factorId: safeRequest.factorId,
     unit: safeRequest.unit,
     structure: safeRequest.structure,
+    ...(safeRequest.rationalSubgroupConfig
+      ? { rationalSubgroupConfig: safeRequest.rationalSubgroupConfig }
+      : {}),
     sourceReference: safeRequest.sourceReference,
     importedAt: safeRequest.importedAt,
     msaStatus: safeRequest.msaStatus,

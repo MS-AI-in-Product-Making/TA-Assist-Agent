@@ -16,6 +16,7 @@ export function calculateF7Capability(
   values: readonly number[],
   lowerSpecLimit: number,
   upperSpecLimit: number,
+  governedStandardDeviation?: number,
 ): F7CapabilityResult {
   const finiteValues = values.filter(Number.isFinite);
   if (finiteValues.length < 2) {
@@ -24,7 +25,8 @@ export function calculateF7Capability(
 
   const mean = finiteValues.reduce((sum, value) => sum + value, 0) / finiteValues.length;
   const squaredDeviationSum = finiteValues.reduce((sum, value) => sum + (value - mean) ** 2, 0);
-  const sampleStandardDeviation = Math.sqrt(squaredDeviationSum / (finiteValues.length - 1));
+  const sampleStandardDeviation = governedStandardDeviation
+    ?? Math.sqrt(squaredDeviationSum / (finiteValues.length - 1));
   if (sampleStandardDeviation === 0) {
     return { status: "zero_variation", sampleSize: finiteValues.length };
   }

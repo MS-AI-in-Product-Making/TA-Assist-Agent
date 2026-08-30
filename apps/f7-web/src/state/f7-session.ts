@@ -3,6 +3,7 @@ import type {
   F7Client,
   F7ExclusionReason,
   F7MeasurementStructure,
+  F7RationalSubgroupConfig,
   F7MsaStatus,
   F7ReportProjection,
   F7SessionSnapshot,
@@ -165,6 +166,7 @@ export function createF7SessionStore(client: F7Client) {
     async pasteMeasurements(request: {
       readonly factorId: string;
       readonly structure: F7MeasurementStructure;
+      readonly rationalSubgroupConfig?: F7RationalSubgroupConfig;
       readonly sourceReference: string;
       readonly msaStatus: F7MsaStatus;
       readonly text: string;
@@ -176,6 +178,9 @@ export function createF7SessionStore(client: F7Client) {
           sessionId: current.sessionId,
           factorId: request.factorId,
           structure: request.structure,
+          ...(request.rationalSubgroupConfig
+            ? { rationalSubgroupConfig: request.rationalSubgroupConfig }
+            : {}),
           sourceReference: request.sourceReference,
           msaStatus: request.msaStatus,
           text: request.text,

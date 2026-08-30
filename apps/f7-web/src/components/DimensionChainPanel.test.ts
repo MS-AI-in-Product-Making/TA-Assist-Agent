@@ -205,6 +205,20 @@ describe("DimensionChainPanel", () => {
     expect(wrapper.find("[data-dimension-chain-stale]").exists()).toBe(false);
   });
 
+  it("keeps the two arrow label lines at normal line spacing in both orientations", async () => {
+    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true } });
+    await wrapper.get("[data-generate-dimension-chain]").trigger("click");
+    const lineGap = () => {
+      const segment = wrapper.get("[data-dimension-segment='1']");
+      return Number(segment.get(".dimension-chain-factor-name").attributes("y"))
+        - Number(segment.get(".dimension-chain-label").attributes("y"));
+    };
+
+    expect(lineGap()).toBe(8);
+    await wrapper.get("button[aria-label='Vertical dimension chain']").trigger("click");
+    expect(lineGap()).toBe(8);
+  });
+
   it("keeps viewport controls without exposing a page-layout expansion action", async () => {
     const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true } });
     await wrapper.get("[data-generate-dimension-chain]").trigger("click");
@@ -569,13 +583,19 @@ describe("DimensionChainPanel", () => {
     expect(wrapper.get("[data-dimension-segment='2']").attributes("data-direction")).toBe("subtractive");
   });
 
-  it("synchronizes only pending snapshot signs while preserving magnitudes and zoom", async () => {
+  it("reverses arrows without moving their lines or guides", async () => {
     const wrapper = mount(DimensionChainPanel, {
       props: { factors, valid: true, editable: true },
     });
     await wrapper.get("[data-generate-dimension-chain]").trigger("click");
     await wrapper.get("button[aria-label='Zoom in']").trigger("click");
     const zoomBefore = wrapper.get("[data-dimension-chain-svg]").attributes("data-view-zoom");
+    const firstLine = wrapper.get("[data-dimension-segment='1'] .dimension-chain-component");
+    const guide = wrapper.get("[data-dimension-guide-handle='factor-1::factor-2']");
+    const closure = wrapper.get("[data-dimension-closure]");
+    const firstLineBefore = { x1: firstLine.attributes("x1"), x2: firstLine.attributes("x2"), y1: firstLine.attributes("y1") };
+    const guideBefore = { x1: guide.attributes("x1"), x2: guide.attributes("x2"), y1: guide.attributes("y1"), y2: guide.attributes("y2") };
+    const closureBefore = { x1: closure.attributes("x1"), x2: closure.attributes("x2"), y1: closure.attributes("y1"), y2: closure.attributes("y2") };
 
     await wrapper.get("button[aria-label='Reverse all factors']").trigger("click");
     await wrapper.setProps({
@@ -594,6 +614,13 @@ describe("DimensionChainPanel", () => {
     expect(last.attributes("data-value")).toBe("-0.5");
     expect(last.attributes("data-direction")).toBe("subtractive");
     expect(last.classes()).toContain("dimension-chain-subtractive");
+    expect(firstLine.attributes("x1")).toBe(firstLineBefore.x2);
+    expect(firstLine.attributes("x2")).toBe(firstLineBefore.x1);
+    expect(firstLine.attributes("y1")).toBe(firstLineBefore.y1);
+    expect({ x1: guide.attributes("x1"), x2: guide.attributes("x2"), y1: guide.attributes("y1"), y2: guide.attributes("y2") })
+      .toEqual(guideBefore);
+    expect({ x1: closure.attributes("x1"), x2: closure.attributes("x2"), y1: closure.attributes("y1"), y2: closure.attributes("y2") })
+      .toEqual(closureBefore);
     expect(wrapper.get("[data-dimension-chain-svg]").attributes("data-view-zoom")).toBe(zoomBefore);
     expect(wrapper.find("[data-dimension-chain-stale]").exists()).toBe(false);
   });
@@ -717,7 +744,7 @@ describe("DimensionChainPanel", () => {
     expect(wrapper.findAll("[data-dimension-segment]")).toHaveLength(3);
   });
 
-  it("drags a shared guide along the axis and emits crossed factor signs only on pointerup", async () => {
+  it("keeps a shared guide at its dragged position without changing factor signs", async () => {
     const wrapper = mount(DimensionChainPanel, {
       props: { factors, valid: true, editable: true },
     });
@@ -794,23 +821,11 @@ describe("DimensionChainPanel", () => {
     await wrapper.vm.$nextTick();
     expect(releasePointerCapture).toHaveBeenCalledWith(21);
     expect(guide.classes()).not.toContain("is-selected");
-
-    expect(wrapper.emitted("factor-sign-change")).toEqual([[
-      [
-        { factorId: "factor-1", sign: -1 },
-        { factorId: "factor-2", sign: 1 },
-      ],
-    ]]);
+    expect(first.attributes("data-display-end")).toBe("-20");
+    expect(second.attributes("data-display-start")).toBe("-20");
+    expect(wrapper.emitted("factor-sign-change")).toBeUndefined();
     const setupState = (wrapper.vm.$ as unknown as { setupState: Record<string, unknown> }).setupState;
-    expect(setupState.pendingSignSync).toBeDefined();
-
-    await wrapper.setProps({ factors: [factor(1, -2), factor(2, 1), factor(3, 0.5)] });
-    expect(first.attributes("data-value")).toBe("-2");
-    expect(second.attributes("data-value")).toBe("1");
-    expect(Math.abs(Number(first.attributes("data-value")))).toBe(2);
-    expect(Math.abs(Number(second.attributes("data-value")))).toBe(1);
     expect(setupState.pendingSignSync).toBeUndefined();
-    expect(wrapper.find("[data-dimension-chain-stale]").exists()).toBe(false);
   });
 
   it("rolls a guide preview back on pointercancel and Escape without emitting", async () => {
@@ -1542,6 +1557,89 @@ describe("DimensionChainPanel", () => {
     expect((createObjectURL.mock.calls[0]![0] as File).name).toBe("first-supported.jpg");
   });
 
+  it("loads a governed default background URL without taking ownership of it", async () => {
+    const { revokeObjectURL } = installImageEnvironment(
+      [],
+      { "/f7/session/session-fixed/dimension-chain-image": { width: 960, height: 540 } },
+    );
+    const wrapper = mount(DimensionChainPanel, {
+      props: {
+        factors,
+        valid: true,
+        defaultBackgroundImageUrl: "/f7/session/session-fixed/dimension-chain-image",
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(wrapper.get("[data-dimension-chain-background]").attributes("href")).toBe(
+        "/f7/session/session-fixed/dimension-chain-image",
+      );
+    });
+    expect(wrapper.get("[data-dimension-chain-background]").attributes("data-natural-width")).toBe("960");
+
+    await wrapper.setProps({ defaultBackgroundImageUrl: undefined });
+    await vi.waitFor(() => {
+      expect(wrapper.find("[data-dimension-chain-background]").exists()).toBe(false);
+    });
+    expect(wrapper.find(".dimension-chain-empty").exists()).toBe(true);
+
+    wrapper.unmount();
+    expect(revokeObjectURL).not.toHaveBeenCalled();
+  });
+
+  it("centers the generated chain over the background image", async () => {
+    installImageEnvironment(
+      ["blob:centered"],
+      { "blob:centered": { width: 640, height: 360 } },
+    );
+    const wrapper = mount(DimensionChainPanel, {
+      props: { factors, valid: true },
+    });
+    await chooseBackgroundFile(wrapper, new File(["png"], "section.png", { type: "image/png" }));
+    await vi.waitFor(() => expect(wrapper.find("[data-dimension-chain-background]").exists()).toBe(true));
+    await wrapper.get("[data-generate-dimension-chain]").trigger("click");
+
+    const background = wrapper.get("[data-dimension-chain-background]");
+    const backgroundCenterX = Number(background.attributes("x")) + Number(background.attributes("width")) / 2;
+    const backgroundCenterY = Number(background.attributes("y")) + Number(background.attributes("height")) / 2;
+    const components = wrapper.findAll("[data-dimension-segment] .dimension-chain-component");
+    const closure = wrapper.get("[data-dimension-closure]");
+    const axisCoordinates = components.flatMap((component) => [
+      Number(component.attributes("x1")),
+      Number(component.attributes("x2")),
+    ]);
+    const laneCoordinates = [
+      ...components.map((component) => Number(component.attributes("y1"))),
+      Number(closure.attributes("y1")),
+    ];
+
+    expect((Math.min(...axisCoordinates) + Math.max(...axisCoordinates)) / 2)
+      .toBeCloseTo(backgroundCenterX, 10);
+    expect((Math.min(...laneCoordinates) + Math.max(...laneCoordinates)) / 2)
+      .toBeCloseTo(backgroundCenterY, 10);
+
+    await wrapper.get("button[aria-label='Vertical dimension chain']").trigger("click");
+    const verticalBackground = wrapper.get("[data-dimension-chain-background]");
+    const verticalBackgroundCenterX = Number(verticalBackground.attributes("x"))
+      + Number(verticalBackground.attributes("width")) / 2;
+    const verticalBackgroundCenterY = Number(verticalBackground.attributes("y"))
+      + Number(verticalBackground.attributes("height")) / 2;
+    const verticalComponents = wrapper.findAll("[data-dimension-segment] .dimension-chain-component");
+    const verticalClosure = wrapper.get("[data-dimension-closure]");
+    const verticalAxisCoordinates = verticalComponents.flatMap((component) => [
+      Number(component.attributes("y1")),
+      Number(component.attributes("y2")),
+    ]);
+    const verticalLaneCoordinates = [
+      ...verticalComponents.map((component) => Number(component.attributes("x1"))),
+      Number(verticalClosure.attributes("x1")),
+    ];
+    expect((Math.min(...verticalAxisCoordinates) + Math.max(...verticalAxisCoordinates)) / 2)
+      .toBeCloseTo(verticalBackgroundCenterY, 10);
+    expect((Math.min(...verticalLaneCoordinates) + Math.max(...verticalLaneCoordinates)) / 2)
+      .toBeCloseTo(verticalBackgroundCenterX, 10);
+  });
+
   it("retains the current image for unsupported content and decode errors while revoking only failed candidates", async () => {
     const { createObjectURL, revokeObjectURL } = installImageEnvironment(
       ["blob:current", "blob:broken"],
@@ -1697,6 +1795,50 @@ describe("DimensionChainPanel", () => {
     expect(Array.from(svg.element.children).indexOf(image.element)).toBeLessThan(
       Array.from(svg.element.children).indexOf(closureLoop.element),
     );
+  });
+
+  it("scales the background image around its center and resets scale for a new image", async () => {
+    installImageEnvironment(
+      ["blob:first-scale", "blob:second-scale"],
+      {
+        "blob:first-scale": { width: 640, height: 360 },
+        "blob:second-scale": { width: 400, height: 300 },
+      },
+    );
+    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true } });
+    await chooseBackgroundFile(wrapper, new File(["png"], "first.png", { type: "image/png" }));
+    await vi.waitFor(() => expect(wrapper.find("[data-dimension-chain-background]").exists()).toBe(true));
+
+    const scale = wrapper.get("input[aria-label='Background image scale']");
+    expect(scale.attributes("type")).toBe("range");
+    expect(scale.attributes("min")).toBe("25");
+    expect(scale.attributes("max")).toBe("300");
+    expect(scale.element).toHaveProperty("value", "100");
+    const image = wrapper.get("[data-dimension-chain-background]");
+    const initial = {
+      x: Number(image.attributes("x")),
+      y: Number(image.attributes("y")),
+      width: Number(image.attributes("width")),
+      height: Number(image.attributes("height")),
+    };
+
+    await scale.setValue("200");
+    const scaled = {
+      x: Number(image.attributes("x")),
+      y: Number(image.attributes("y")),
+      width: Number(image.attributes("width")),
+      height: Number(image.attributes("height")),
+    };
+    expect(scaled.width).toBeCloseTo(initial.width * 2, 10);
+    expect(scaled.height).toBeCloseTo(initial.height * 2, 10);
+    expect(scaled.x + scaled.width / 2).toBeCloseTo(initial.x + initial.width / 2, 10);
+    expect(scaled.y + scaled.height / 2).toBeCloseTo(initial.y + initial.height / 2, 10);
+
+    await chooseBackgroundFile(wrapper, new File(["jpeg"], "second.jpg", { type: "image/jpeg" }));
+    await vi.waitFor(() => {
+      expect(wrapper.get("[data-dimension-chain-background]").attributes("href")).toBe("blob:second-scale");
+    });
+    expect(scale.element).toHaveProperty("value", "100");
   });
 
   it("disables generation for invalid factors and renders zero items once valid", async () => {

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /* global PointerEvent, window */
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch, type DeepReadonly } from "vue";
-import { ArrowLeftRight } from "lucide-vue-next";
+import { ArrowLeftRight, ArrowRightLeft } from "lucide-vue-next";
 import { calculateToleranceAnalysis, type KernelCalculationResult } from "@ai-assist/workbook-catalog/calculation-kernel";
 import type { Distribution } from "@ai-assist/contracts";
 import type { F7FactorState, F7SessionSnapshot, F7SetupDistribution, F7SourceMode, F7SystemSpecificationInput } from "../api/f7-client";
@@ -108,6 +108,7 @@ const factorNames = reactive<Record<string, string>>({});
 const removedFactorIds = reactive(new Set<string>());
 const addedFactors = reactive<F7FactorState[]>([]);
 const factorOrder = reactive(props.session.factors.map((factor) => factor.factorCandidate.factorCandidateId));
+const dimensionChainResetRevision = ref(0);
 let addedFactorSequence = 0;
 const setupEditable = computed(() => props.session.status === "factor_setup" || props.editingSetup);
 
@@ -123,21 +124,21 @@ const activeFactors = computed(() => {
 });
 
 const baseColumns = [
-  { key: "index", label: "Item", lines: ["Item"], defaultWidth: 96, minWidth: 88 },
-  { key: "factor", label: "Factor", lines: ["Factor"], defaultWidth: 168, minWidth: 110 },
-  { key: "designNominal", label: "Design Nominal", lines: ["Design", "Norminal"], defaultWidth: 104, minWidth: 104 },
-  { key: "upperTolerance", label: "+ Tolerance", lines: ["+", "Tol"], defaultWidth: 92, minWidth: 92 },
-  { key: "lowerTolerance", label: "- Tolerance", lines: ["-", "Tol"], defaultWidth: 92, minWidth: 92 },
-  { key: "longTermSafetyFactor", label: "Long Term/Safety Factor", lines: ["Long Term/", "Safety Factor"], defaultWidth: 126, minWidth: 126 },
-  { key: "sigmaLevel", label: "σ Level", lines: ["σ", "Level"], defaultWidth: 76, minWidth: 76 },
-  { key: "distribution", label: "Distribution", lines: ["Distribution"], defaultWidth: 102, minWidth: 102 },
-  { key: "mean", label: "Mean", lines: ["Mean"], defaultWidth: 76, minWidth: 76 },
-  { key: "tolerance", label: "Tolerance", lines: ["Tolerance"], defaultWidth: 80, minWidth: 80 },
-  { key: "oneSigma", label: "1σ", lines: ["1σ"], defaultWidth: 72, minWidth: 72 },
-  { key: "contribution", label: "% Cont. to σ", lines: ["% Cont. to σ"], defaultWidth: 96, minWidth: 96 },
-  { key: "sourceMode", label: "Source Mode", lines: ["Source Mode"], defaultWidth: 376, minWidth: 300 },
-  { key: "sampleCount", label: "Sample Count", lines: ["Sample Count"], defaultWidth: 88, minWidth: 88 },
-  { key: "readiness", label: "Readiness", lines: ["Readiness"], defaultWidth: 96, minWidth: 82 },
+  { key: "index", label: "Item", lines: ["Item"], defaultWidth: 64, minWidth: 58 },
+  { key: "factor", label: "Factor", lines: ["Factor"], defaultWidth: 150, minWidth: 105 },
+  { key: "designNominal", label: "Design Nominal", lines: ["Design", "Nominal"], defaultWidth: 88, minWidth: 78 },
+  { key: "upperTolerance", label: "+ Tolerance", lines: ["+", "Tol"], defaultWidth: 72, minWidth: 66 },
+  { key: "lowerTolerance", label: "- Tolerance", lines: ["-", "Tol"], defaultWidth: 72, minWidth: 66 },
+  { key: "longTermSafetyFactor", label: "Long Term/Safety Factor", lines: ["Long Term/", "Safety Factor"], defaultWidth: 96, minWidth: 88 },
+  { key: "sigmaLevel", label: "σ Level", lines: ["σ", "Level"], defaultWidth: 58, minWidth: 54 },
+  { key: "distribution", label: "Distribution", lines: ["Distribution"], defaultWidth: 88, minWidth: 80 },
+  { key: "mean", label: "Mean", lines: ["Mean"], defaultWidth: 68, minWidth: 62 },
+  { key: "tolerance", label: "Tolerance", lines: ["Tolerance"], defaultWidth: 72, minWidth: 66 },
+  { key: "oneSigma", label: "1σ", lines: ["1σ"], defaultWidth: 60, minWidth: 56 },
+  { key: "contribution", label: "% Cont. to σ", lines: ["% Cont. to σ"], defaultWidth: 80, minWidth: 72 },
+  { key: "sourceMode", label: "Source Mode", lines: ["Source Mode"], defaultWidth: 250, minWidth: 220 },
+  { key: "sampleCount", label: "Sample Count", lines: ["Sample Count"], defaultWidth: 70, minWidth: 64 },
+  { key: "readiness", label: "Readiness", lines: ["Readiness"], defaultWidth: 72, minWidth: 68 },
 ] as const;
 
 const visibleColumns = computed(() => [...baseColumns]);
@@ -378,6 +379,13 @@ function reverseAllFactors(): void {
   }));
 }
 
+function toggleFactorSign(factor: DeepReadonly<F7FactorState>): void {
+  const draft = candidateDraft(factor);
+  if (typeof draft.designNominal === "number" && Number.isFinite(draft.designNominal) && draft.designNominal !== 0) {
+    draft.designNominal = -draft.designNominal;
+  }
+}
+
 function applyHistorySnapshot(snapshot: FactorEditSnapshot): void {
   applyingHistory = true;
   restoreEditSnapshot(snapshot);
@@ -419,6 +427,7 @@ function clearAllFactors(): void {
     upperSpecLimit: "",
     targetSigmaLevel: DEFAULT_TARGET_SIGMA_LEVEL,
   });
+  dimensionChainResetRevision.value += 1;
   addFactor();
 }
 
@@ -860,8 +869,9 @@ function onModeChange(factorId: string, event: Event): void {
     </p>
     <div class="table-scroll">
       <table
+        id="factor-setup-table"
         class="data-table factor-table factor-table-centered"
-        :style="{ width: `${tableWidth}px`, minWidth: `${tableWidth}px` }"
+        :style="{ width: '100%', minWidth: `${tableWidth}px` }"
       >
         <colgroup>
           <col
@@ -958,17 +968,26 @@ function onModeChange(factorId: string, event: Event): void {
             </td>
             <td>
               <div class="factor-field" data-factor-field="designNominal">
-                <input
-                  v-if="setupEditable"
-                  v-model.number="candidateDraft(factor).designNominal"
-                  type="number"
-                  step="any"
-                  data-factor-design-nominal
-                  class="factor-spec-input factor-number-input"
-                  :class="nominalClass(candidateDraft(factor).designNominal)"
-                  :aria-label="`${factorNameFor(factor)} Design Nominal`"
-                  :disabled="busy"
-                >
+                <div v-if="setupEditable" class="factor-nominal-input">
+                  <input
+                    v-model.number="candidateDraft(factor).designNominal"
+                    type="number"
+                    step="any"
+                    data-factor-design-nominal
+                    class="factor-spec-input factor-number-input"
+                    :class="nominalClass(candidateDraft(factor).designNominal)"
+                    :aria-label="`${factorNameFor(factor)} Design Nominal`"
+                    :disabled="busy"
+                  >
+                  <button
+                    type="button"
+                    class="factor-sign-toggle"
+                    :aria-label="`Toggle ${factorNameFor(factor)} Design Nominal sign`"
+                    title="Toggle positive/negative"
+                    :disabled="busy || !candidateDraft(factor).designNominal"
+                    @click="toggleFactorSign(factor)"
+                  ><ArrowRightLeft :size="13" aria-hidden="true" /></button>
+                </div>
                 <span v-else :class="nominalClass(numericDraftValue(factor.setup?.designNominal ?? candidateDraft(factor).designNominal))">{{ formatSummary(numericDraftValue(factor.setup?.designNominal ?? candidateDraft(factor).designNominal)) }}</span>
                 <small
                   v-if="setupEditable && !isBlankSpecification(candidateDraft(factor)) && specificationFieldError(candidateDraft(factor), 'designNominal')"
@@ -1015,7 +1034,7 @@ function onModeChange(factorId: string, event: Event): void {
                 >{{ specificationFieldError(candidateDraft(factor), "lowerTolerance") }}</small>
               </div>
             </td>
-            <td>
+            <td data-column-key="longTermSafetyFactor">
               <div class="factor-field" data-factor-field="longTermSafetyFactor">
                 <input
                   v-if="setupEditable"
@@ -1035,7 +1054,7 @@ function onModeChange(factorId: string, event: Event): void {
                 >{{ specificationFieldError(candidateDraft(factor), "longTermSafetyFactor") }}</small>
               </div>
             </td>
-            <td>
+            <td data-column-key="sigmaLevel">
               <div class="factor-field" data-factor-field="sigmaLevel">
                 <input
                   v-if="setupEditable"
@@ -1080,7 +1099,7 @@ function onModeChange(factorId: string, event: Event): void {
             <td><output :aria-label="`${factorNameFor(factor)} Tolerance`">{{ formatFactorTolerance(factor, calculatedValues(factor).tolerance) }}</output></td>
             <td><output :aria-label="`${factorNameFor(factor)} 1 Sigma`">{{ formatFactorCalculation(factor, calculatedValues(factor).oneSigma) }}</output></td>
             <td><output :aria-label="`${factorNameFor(factor)} Percent Contribution`">{{ formatFactorContribution(factor, percentContribution(factor)) }}</output></td>
-            <td>
+            <td data-column-key="sourceMode">
               <div v-if="factor.evidence && !setupEditable" class="source-mode-control">
                 <fieldset class="source-mode-options">
                   <legend>Source mode</legend>
@@ -1120,8 +1139,8 @@ function onModeChange(factorId: string, event: Event): void {
                 </fieldset>
               </div>
             </td>
-            <td>{{ factor.measurementPasteResult?.dataset?.analyzedCount ?? "-" }}</td>
-            <td>
+            <td data-column-key="sampleCount">{{ factor.measurementPasteResult?.dataset?.analyzedCount ?? "-" }}</td>
+            <td data-column-key="readiness">
               <span class="status-chip" :class="factorReadiness(factor) === 'ready' ? 'chip-ready' : 'chip-pending'">
                 {{ factorReadiness(factor) }}
               </span>
@@ -1165,14 +1184,6 @@ function onModeChange(factorId: string, event: Event): void {
       </table>
     </div>
     <div class="factor-output-layout" data-factor-output-layout>
-      <DimensionChainPanel
-        :factors="dimensionChainFactors"
-        :valid="setupIsValid"
-        :source-signature="dimensionChainSourceSignature"
-        :editable="setupEditable && !busy"
-        @reverse-all="reverseAllFactors"
-        @factor-sign-change="applyFactorSigns"
-      />
       <section class="f4-response-summary" data-f4-response-summary aria-labelledby="f4-response-summary-title">
       <h3 id="f4-response-summary-title">Response Summary Table</h3>
       <div class="f4-summary-grid">
@@ -1254,6 +1265,17 @@ function onModeChange(factorId: string, event: Event): void {
         </section>
         </div>
       </section>
+      <DimensionChainPanel
+        :key="dimensionChainResetRevision"
+        :factors="dimensionChainFactors"
+        :valid="setupIsValid"
+        :empty-state-action-enabled="dimensionChainResetRevision > 0"
+        :source-signature="dimensionChainSourceSignature"
+        :default-background-image-url="session.dimensionChainImage?.url"
+        :editable="setupEditable && !busy"
+        @reverse-all="reverseAllFactors"
+        @factor-sign-change="applyFactorSigns"
+      />
       <ResponseDistributionCurve
         :calculation="f4Calculation"
       />

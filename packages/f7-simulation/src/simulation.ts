@@ -22,6 +22,7 @@ export interface F7MonteCarloRequest {
   readonly iterations: F7MonteCarloIterations;
   readonly runSeed: string;
   readonly correlationMode: "INDEPENDENT";
+  readonly additionalMeanShift?: number;
   readonly factors: readonly SimulationFactor[];
 }
 
@@ -286,6 +287,7 @@ export function runF7MonteCarlo(request: F7MonteCarloRequest): F7MonteCarloResul
     || !Number.isFinite(specificationWidth)
     || !(request.targetSigmaLevel > 0)
     || !Number.isFinite(request.targetSigmaLevel)
+    || (request.additionalMeanShift !== undefined && !Number.isFinite(request.additionalMeanShift))
     || request.factors.length === 0) {
     throw new Error("Monte Carlo request is invalid.");
   }
@@ -296,7 +298,7 @@ export function runF7MonteCarlo(request: F7MonteCarloRequest): F7MonteCarloResul
   let inSpecCount = 0;
 
   for (let iteration = 0; iteration < request.iterations; iteration += 1) {
-    let response = 0;
+    let response = request.additionalMeanShift ?? 0;
     for (const factor of request.factors) response += factor.coefficient * sampleFactor(factor, random);
     assertFiniteDerived(response);
     values[iteration] = response;
@@ -311,6 +313,7 @@ export function runF7MonteCarlo(request: F7MonteCarloRequest): F7MonteCarloResul
   values.sort((left, right) => left - right);
   const outOfSpecCount = request.iterations - inSpecCount;
   const yieldRate = inSpecCount / request.iterations;
+  const outOfSpecProbability = outOfSpecCount / request.iterations;
   const standardDeviation = Math.sqrt(sumSquaredDifference / (request.iterations - 1));
   assertFiniteDerived(mean, standardDeviation, yieldRate);
   const histogramBins = createHistogramBins(values);
@@ -351,8 +354,8 @@ export function runF7MonteCarlo(request: F7MonteCarloRequest): F7MonteCarloResul
     inSpecCount,
     outOfSpecCount,
     yield: yieldRate,
-    outOfSpecProbability: 1 - yieldRate,
-    ppm: (1 - yieldRate) * 1_000_000,
+    outOfSpecProbability,
+    ppm: outOfSpecProbability * 1_000_000,
     histogram: {
       methodId: "F7_HISTOGRAM_FD_V1",
       bins: histogramBins,

@@ -3,6 +3,7 @@ import { computed } from "vue";
 import {
   buildDistributionFitPlot,
   buildReferenceLabelRows,
+  type FactorSetupAssumption,
   type DistributionFitObservedDomain,
   type DistributionFitPlotCandidate,
   type DistributionFitReferenceLine,
@@ -13,6 +14,7 @@ const props = defineProps<{
   readonly candidate: DistributionFitPlotCandidate;
   readonly observedDomain: DistributionFitObservedDomain;
   readonly references: DistributionFitReferences;
+  readonly assumption: FactorSetupAssumption | undefined;
 }>();
 
 const width = 800;
@@ -20,7 +22,7 @@ const height = 332;
 const margin = { top: 88, right: 18, bottom: 42, left: 62 } as const;
 const plotWidth = width - margin.left - margin.right;
 const plotHeight = height - margin.top - margin.bottom;
-const model = computed(() => buildDistributionFitPlot(props.candidate, props.observedDomain));
+const model = computed(() => buildDistributionFitPlot(props.candidate, props.observedDomain, props.assumption));
 const referenceLabelRows = computed(() => buildReferenceLabelRows(
   props.references.lines,
   model.value.domainMinimum,
@@ -47,6 +49,9 @@ function yPosition(frequency: number): number {
 }
 
 const curvePath = computed(() => model.value.curve
+  .map((point, index) => `${index === 0 ? "M" : "L"}${xPosition(point.x).toFixed(2)},${yPosition(point.expectedFrequency).toFixed(2)}`)
+  .join(" "));
+const assumptionCurvePath = computed(() => model.value.assumptionCurve
   .map((point, index) => `${index === 0 ? "M" : "L"}${xPosition(point.x).toFixed(2)},${yPosition(point.expectedFrequency).toFixed(2)}`)
   .join(" "));
 
@@ -146,6 +151,12 @@ function referenceLabelY(line: DistributionFitReferenceLine): number {
           text-anchor="middle"
         >{{ referenceLabel(line) }}</text>
       </g>
+      <path
+        v-if="assumption"
+        data-factor-setup-assumption-curve
+        class="factor-setup-assumption-curve"
+        :d="assumptionCurvePath"
+      />
       <path data-fitted-density-curve class="fitted-density-curve" :d="curvePath" />
       <g v-for="(tick, index) in model.ticks" :key="index" data-axis-tick>
         <line class="plot-tick" :x1="xPosition(tick)" :x2="xPosition(tick)" :y1="height - margin.bottom" :y2="height - margin.bottom + 5" />
@@ -160,7 +171,21 @@ function referenceLabelY(line: DistributionFitReferenceLine): number {
         <h4>Legend</h4>
         <span><i class="histogram-legend" /> Observed frequency</span>
         <span><i class="curve-legend" /> Fitted {{ candidate.family }} expected frequency</span>
+        <span v-if="assumption"><i class="assumption-curve-legend" /> Factor Setup assumption</span>
         <span>n = {{ candidate.qqPoints.length }}</span>
+      </section>
+      <section
+        v-if="assumption"
+        class="plot-explanation-group"
+        data-factor-setup-assumption-details
+        aria-label="Factor Setup assumption parameters"
+      >
+        <h4>Factor Setup</h4>
+        <p>
+          {{ assumption.distribution }} · |Mean| {{ formatAxis(assumption.mean) }} ·
+          1σ {{ formatAxis(assumption.standardDeviation) }} · LTSF {{ formatAxis(assumption.longTermSafetyFactor) }} ·
+          σ Level {{ formatAxis(assumption.sigmaLevel) }}
+        </p>
       </section>
       <section class="plot-explanation-group" aria-label="Plot references">
         <h4>References</h4>

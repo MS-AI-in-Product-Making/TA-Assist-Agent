@@ -17,6 +17,7 @@ import type {
   F7MeasurementPasteResult as ContractF7MeasurementPasteResult,
   F7MeasurementPasteRouteRequest,
   F7MeasurementStructure as ContractF7MeasurementStructure,
+  F7RationalSubgroupConfig as ContractF7RationalSubgroupConfig,
   F7MonteCarloRunRouteRequest,
   F7MsaStatus as ContractF7MsaStatus,
   F7ReportProjection as ContractF7ReportProjection,
@@ -33,6 +34,7 @@ export type F7SourceMode = F7FactorSourceMode;
 export type F7SetupDistribution = F7ToleranceDistribution;
 export type F7LoopCoefficient = ContractF7LoopCoefficient;
 export type F7MeasurementStructure = ContractF7MeasurementStructure;
+export type F7RationalSubgroupConfig = ContractF7RationalSubgroupConfig;
 export type F7MsaStatus = ContractF7MsaStatus;
 export type F7ExclusionReason = ContractF7ExclusionReason;
 
@@ -314,6 +316,9 @@ export function createF7Client(baseUrl = ""): F7Client {
       const payload = {
         sessionId: request.sessionId,
         structure: request.structure,
+        ...(request.rationalSubgroupConfig
+          ? { rationalSubgroupConfig: request.rationalSubgroupConfig }
+          : {}),
         sourceReference: request.sourceReference,
         msaStatus: request.msaStatus,
         text: request.text,

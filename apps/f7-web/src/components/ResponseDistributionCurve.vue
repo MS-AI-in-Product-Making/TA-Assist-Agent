@@ -14,10 +14,10 @@ const props = defineProps<{
 
 const accessibleId = useId();
 const sigmaVisibility = reactive<Record<SigmaLevel, boolean>>({
-  "3": false,
-  "4": true,
+  "3": true,
+  "4": false,
   "4.5": false,
-  "6": true,
+  "6": false,
 });
 
 const model = computed(() => {

@@ -7,6 +7,17 @@ export declare const F7_SELECTION_NORMAL_QQ_CURVATURE_MAX = 0.1;
 export declare const f7LoopCoefficientSchema: z.ZodUnion<[z.ZodLiteral<-1>, z.ZodLiteral<1>]>;
 export declare const f7FactorSourceModeSchema: z.ZodEnum<["MEASURED", "BASELINE_ASSUMPTION"]>;
 export declare const f7MeasurementStructureSchema: z.ZodEnum<["RATIONAL_SUBGROUP", "ORDERED_INDIVIDUALS", "UNORDERED_SAMPLE"]>;
+export declare const f7RationalSubgroupEstimatorSchema: z.ZodEnum<["RANGE_D2", "S_C4"]>;
+export declare const f7RationalSubgroupConfigSchema: z.ZodObject<{
+    subgroupSize: z.ZodNumber;
+    estimator: z.ZodEnum<["RANGE_D2", "S_C4"]>;
+}, "strict", z.ZodTypeAny, {
+    subgroupSize: number;
+    estimator: "RANGE_D2" | "S_C4";
+}, {
+    subgroupSize: number;
+    estimator: "RANGE_D2" | "S_C4";
+}>;
 export declare const f7MsaStatusSchema: z.ZodEnum<["available", "not_available", "unknown"]>;
 export declare const f7ToleranceDistributionSchema: z.ZodEnum<["Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta"]>;
 export declare const f7BaselineSamplerSchema: z.ZodObject<{
@@ -15,14 +26,14 @@ export declare const f7BaselineSamplerSchema: z.ZodObject<{
     standardDeviation: z.ZodNumber;
     support: z.ZodLiteral<"REAL">;
 }, "strict", z.ZodTypeAny, {
+    standardDeviation: number;
     samplerId: "NORMAL_LOCATION_SCALE_V1";
     physicalMean: number;
-    standardDeviation: number;
     support: "REAL";
 }, {
+    standardDeviation: number;
     samplerId: "NORMAL_LOCATION_SCALE_V1";
     physicalMean: number;
-    standardDeviation: number;
     support: "REAL";
 }>;
 export declare const f7FactorCandidateSchema: z.ZodEffects<z.ZodObject<{
@@ -46,85 +57,85 @@ export declare const f7FactorCandidateSchema: z.ZodEffects<z.ZodObject<{
     workbookUnitEvidence: z.ZodOptional<z.ZodString>;
     excelSignedMean: z.ZodNumber;
 }, "strict", z.ZodTypeAny, {
-    standardDeviation: number;
-    workbookContentHash: string;
-    worksheetName: string;
-    tableId: string;
-    sourceRow: number;
-    sourceCells: Record<string, string>;
-    factorCandidateId: string;
     factorName: string;
-    excelSignedMean: number;
-    distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-    lowerSpecLimit: number;
-    upperSpecLimit: number;
-    designNominal: number;
+    worksheetName: string;
+    workbookContentHash: string;
     upperTolerance: number;
     lowerTolerance: number;
-    userAdded?: true | undefined;
-    workbookUnitEvidence?: string | undefined;
+    distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+    standardDeviation: number;
+    lowerSpecLimit: number;
+    upperSpecLimit: number;
+    tableId: string;
+    sourceRow: number;
+    designNominal: number;
+    sourceCells: Record<string, string>;
+    factorCandidateId: string;
+    excelSignedMean: number;
     longTermSafetyFactor?: number | undefined;
     sigmaLevel?: number | undefined;
+    userAdded?: true | undefined;
+    workbookUnitEvidence?: string | undefined;
 }, {
-    standardDeviation: number;
-    workbookContentHash: string;
-    worksheetName: string;
-    tableId: string;
-    sourceRow: number;
-    sourceCells: Record<string, string>;
-    factorCandidateId: string;
     factorName: string;
-    excelSignedMean: number;
-    distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-    lowerSpecLimit: number;
-    upperSpecLimit: number;
-    designNominal: number;
+    worksheetName: string;
+    workbookContentHash: string;
     upperTolerance: number;
     lowerTolerance: number;
-    userAdded?: true | undefined;
-    workbookUnitEvidence?: string | undefined;
+    distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+    standardDeviation: number;
+    lowerSpecLimit: number;
+    upperSpecLimit: number;
+    tableId: string;
+    sourceRow: number;
+    designNominal: number;
+    sourceCells: Record<string, string>;
+    factorCandidateId: string;
+    excelSignedMean: number;
     longTermSafetyFactor?: number | undefined;
     sigmaLevel?: number | undefined;
+    userAdded?: true | undefined;
+    workbookUnitEvidence?: string | undefined;
 }>, {
-    standardDeviation: number;
-    workbookContentHash: string;
-    worksheetName: string;
-    tableId: string;
-    sourceRow: number;
-    sourceCells: Record<string, string>;
-    factorCandidateId: string;
     factorName: string;
-    excelSignedMean: number;
-    distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-    lowerSpecLimit: number;
-    upperSpecLimit: number;
-    designNominal: number;
+    worksheetName: string;
+    workbookContentHash: string;
     upperTolerance: number;
     lowerTolerance: number;
-    userAdded?: true | undefined;
-    workbookUnitEvidence?: string | undefined;
+    distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+    standardDeviation: number;
+    lowerSpecLimit: number;
+    upperSpecLimit: number;
+    tableId: string;
+    sourceRow: number;
+    designNominal: number;
+    sourceCells: Record<string, string>;
+    factorCandidateId: string;
+    excelSignedMean: number;
     longTermSafetyFactor?: number | undefined;
     sigmaLevel?: number | undefined;
+    userAdded?: true | undefined;
+    workbookUnitEvidence?: string | undefined;
 }, {
-    standardDeviation: number;
-    workbookContentHash: string;
-    worksheetName: string;
-    tableId: string;
-    sourceRow: number;
-    sourceCells: Record<string, string>;
-    factorCandidateId: string;
     factorName: string;
-    excelSignedMean: number;
-    distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-    lowerSpecLimit: number;
-    upperSpecLimit: number;
-    designNominal: number;
+    worksheetName: string;
+    workbookContentHash: string;
     upperTolerance: number;
     lowerTolerance: number;
-    userAdded?: true | undefined;
-    workbookUnitEvidence?: string | undefined;
+    distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+    standardDeviation: number;
+    lowerSpecLimit: number;
+    upperSpecLimit: number;
+    tableId: string;
+    sourceRow: number;
+    designNominal: number;
+    sourceCells: Record<string, string>;
+    factorCandidateId: string;
+    excelSignedMean: number;
     longTermSafetyFactor?: number | undefined;
     sigmaLevel?: number | undefined;
+    userAdded?: true | undefined;
+    workbookUnitEvidence?: string | undefined;
 }>;
 export declare const f7FactorSetupConfirmationSchema: z.ZodEffects<z.ZodObject<{
     longTermSafetyFactor: z.ZodOptional<z.ZodNumber>;
@@ -138,49 +149,49 @@ export declare const f7FactorSetupConfirmationSchema: z.ZodEffects<z.ZodObject<{
     factorName: z.ZodOptional<z.ZodString>;
     userAdded: z.ZodOptional<z.ZodLiteral<true>>;
 }, "strict", z.ZodTypeAny, {
-    factorCandidateId: string;
-    designNominal: number;
+    confirmed: true;
     upperTolerance: number;
     lowerTolerance: number;
-    confirmed: true;
+    designNominal: number;
+    factorCandidateId: string;
     factorName?: string | undefined;
-    userAdded?: true | undefined;
+    distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
     longTermSafetyFactor?: number | undefined;
     sigmaLevel?: number | undefined;
-    distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+    userAdded?: true | undefined;
 }, {
-    factorCandidateId: string;
-    designNominal: number;
+    confirmed: true;
     upperTolerance: number;
     lowerTolerance: number;
-    confirmed: true;
+    designNominal: number;
+    factorCandidateId: string;
     factorName?: string | undefined;
-    userAdded?: true | undefined;
+    distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
     longTermSafetyFactor?: number | undefined;
     sigmaLevel?: number | undefined;
-    distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+    userAdded?: true | undefined;
 }>, {
-    factorCandidateId: string;
-    designNominal: number;
+    confirmed: true;
     upperTolerance: number;
     lowerTolerance: number;
-    confirmed: true;
+    designNominal: number;
+    factorCandidateId: string;
     factorName?: string | undefined;
-    userAdded?: true | undefined;
+    distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
     longTermSafetyFactor?: number | undefined;
     sigmaLevel?: number | undefined;
-    distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+    userAdded?: true | undefined;
 }, {
-    factorCandidateId: string;
-    designNominal: number;
+    confirmed: true;
     upperTolerance: number;
     lowerTolerance: number;
-    confirmed: true;
+    designNominal: number;
+    factorCandidateId: string;
     factorName?: string | undefined;
-    userAdded?: true | undefined;
+    distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
     longTermSafetyFactor?: number | undefined;
     sigmaLevel?: number | undefined;
-    distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+    userAdded?: true | undefined;
 }>;
 export declare const f7UnitSourceSchema: z.ZodEnum<["workbook", "user_confirmed", "unspecified"]>;
 export declare const f7FactorEvidenceSchema: z.ZodEffects<z.ZodObject<{
@@ -193,14 +204,14 @@ export declare const f7FactorEvidenceSchema: z.ZodEffects<z.ZodObject<{
         standardDeviation: z.ZodNumber;
         support: z.ZodLiteral<"REAL">;
     }, "strict", z.ZodTypeAny, {
+        standardDeviation: number;
         samplerId: "NORMAL_LOCATION_SCALE_V1";
         physicalMean: number;
-        standardDeviation: number;
         support: "REAL";
     }, {
+        standardDeviation: number;
         samplerId: "NORMAL_LOCATION_SCALE_V1";
         physicalMean: number;
-        standardDeviation: number;
         support: "REAL";
     }>;
     lowerSpecLimit: z.ZodNumber;
@@ -227,136 +238,136 @@ export declare const f7FactorEvidenceSchema: z.ZodEffects<z.ZodObject<{
     unit: z.ZodString;
     unitSource: z.ZodEnum<["workbook", "user_confirmed", "unspecified"]>;
 }, "strict", z.ZodTypeAny, {
-    physicalMean: number;
-    workbookContentHash: string;
-    worksheetName: string;
-    tableId: string;
-    sourceRow: number;
-    sourceCells: Record<string, string>;
-    factorCandidateId: string;
+    unit: string;
+    tolerance: number;
     factorName: string;
-    longTermSafetyFactor: number;
-    sigmaLevel: number;
-    distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-    lowerSpecLimit: number;
-    upperSpecLimit: number;
-    designNominal: number;
+    worksheetName: string;
+    workbookContentHash: string;
     upperTolerance: number;
     lowerTolerance: number;
+    distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+    oneSigma: number;
+    percentContributionToSigma: number;
+    longTermSafetyFactor: number;
+    lowerSpecLimit: number;
+    upperSpecLimit: number;
+    tableId: string;
+    sourceRow: number;
+    designNominal: number;
+    sigmaLevel: number;
+    sourceCells: Record<string, string>;
+    physicalMean: number;
+    factorCandidateId: string;
     factorId: string;
-    unit: string;
     unitSource: "workbook" | "user_confirmed" | "unspecified";
     loopCoefficient: 1 | -1;
     signedContributionMean: number;
     baselineSampler: {
+        standardDeviation: number;
         samplerId: "NORMAL_LOCATION_SCALE_V1";
         physicalMean: number;
-        standardDeviation: number;
         support: "REAL";
     };
     calculatedMean: number;
-    tolerance: number;
-    oneSigma: number;
-    percentContributionToSigma: number;
     userAdded?: true | undefined;
 }, {
-    physicalMean: number;
-    workbookContentHash: string;
-    worksheetName: string;
-    tableId: string;
-    sourceRow: number;
-    sourceCells: Record<string, string>;
-    factorCandidateId: string;
+    unit: string;
+    tolerance: number;
     factorName: string;
-    longTermSafetyFactor: number;
-    sigmaLevel: number;
-    distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-    lowerSpecLimit: number;
-    upperSpecLimit: number;
-    designNominal: number;
+    worksheetName: string;
+    workbookContentHash: string;
     upperTolerance: number;
     lowerTolerance: number;
+    distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+    oneSigma: number;
+    percentContributionToSigma: number;
+    longTermSafetyFactor: number;
+    lowerSpecLimit: number;
+    upperSpecLimit: number;
+    tableId: string;
+    sourceRow: number;
+    designNominal: number;
+    sigmaLevel: number;
+    sourceCells: Record<string, string>;
+    physicalMean: number;
+    factorCandidateId: string;
     factorId: string;
-    unit: string;
     unitSource: "workbook" | "user_confirmed" | "unspecified";
     loopCoefficient: 1 | -1;
     signedContributionMean: number;
     baselineSampler: {
+        standardDeviation: number;
         samplerId: "NORMAL_LOCATION_SCALE_V1";
         physicalMean: number;
-        standardDeviation: number;
         support: "REAL";
     };
     calculatedMean: number;
-    tolerance: number;
-    oneSigma: number;
-    percentContributionToSigma: number;
     userAdded?: true | undefined;
 }>, {
-    physicalMean: number;
-    workbookContentHash: string;
-    worksheetName: string;
-    tableId: string;
-    sourceRow: number;
-    sourceCells: Record<string, string>;
-    factorCandidateId: string;
+    unit: string;
+    tolerance: number;
     factorName: string;
-    longTermSafetyFactor: number;
-    sigmaLevel: number;
-    distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-    lowerSpecLimit: number;
-    upperSpecLimit: number;
-    designNominal: number;
+    worksheetName: string;
+    workbookContentHash: string;
     upperTolerance: number;
     lowerTolerance: number;
+    distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+    oneSigma: number;
+    percentContributionToSigma: number;
+    longTermSafetyFactor: number;
+    lowerSpecLimit: number;
+    upperSpecLimit: number;
+    tableId: string;
+    sourceRow: number;
+    designNominal: number;
+    sigmaLevel: number;
+    sourceCells: Record<string, string>;
+    physicalMean: number;
+    factorCandidateId: string;
     factorId: string;
-    unit: string;
     unitSource: "workbook" | "user_confirmed" | "unspecified";
     loopCoefficient: 1 | -1;
     signedContributionMean: number;
     baselineSampler: {
+        standardDeviation: number;
         samplerId: "NORMAL_LOCATION_SCALE_V1";
         physicalMean: number;
-        standardDeviation: number;
         support: "REAL";
     };
     calculatedMean: number;
-    tolerance: number;
-    oneSigma: number;
-    percentContributionToSigma: number;
     userAdded?: true | undefined;
 }, {
-    physicalMean: number;
-    workbookContentHash: string;
-    worksheetName: string;
-    tableId: string;
-    sourceRow: number;
-    sourceCells: Record<string, string>;
-    factorCandidateId: string;
+    unit: string;
+    tolerance: number;
     factorName: string;
-    longTermSafetyFactor: number;
-    sigmaLevel: number;
-    distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-    lowerSpecLimit: number;
-    upperSpecLimit: number;
-    designNominal: number;
+    worksheetName: string;
+    workbookContentHash: string;
     upperTolerance: number;
     lowerTolerance: number;
+    distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+    oneSigma: number;
+    percentContributionToSigma: number;
+    longTermSafetyFactor: number;
+    lowerSpecLimit: number;
+    upperSpecLimit: number;
+    tableId: string;
+    sourceRow: number;
+    designNominal: number;
+    sigmaLevel: number;
+    sourceCells: Record<string, string>;
+    physicalMean: number;
+    factorCandidateId: string;
     factorId: string;
-    unit: string;
     unitSource: "workbook" | "user_confirmed" | "unspecified";
     loopCoefficient: 1 | -1;
     signedContributionMean: number;
     baselineSampler: {
+        standardDeviation: number;
         samplerId: "NORMAL_LOCATION_SCALE_V1";
         physicalMean: number;
-        standardDeviation: number;
         support: "REAL";
     };
     calculatedMean: number;
-    tolerance: number;
-    oneSigma: number;
-    percentContributionToSigma: number;
     userAdded?: true | undefined;
 }>;
 export declare const f7ObservationDispositionSchema: z.ZodEnum<["included", "excluded"]>;
@@ -399,9 +410,9 @@ export declare const f7ObservationSchema: z.ZodDiscriminatedUnion<"disposition",
 }, "strict", z.ZodTypeAny, {
     value: number;
     confirmed: true;
+    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
     disposition: "excluded";
     originalRow: number;
-    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
     operatorReference: string;
     sequence?: string | undefined;
     timestamp?: string | undefined;
@@ -410,9 +421,9 @@ export declare const f7ObservationSchema: z.ZodDiscriminatedUnion<"disposition",
 }, {
     value: number;
     confirmed: true;
+    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
     disposition: "excluded";
     originalRow: number;
-    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
     operatorReference: string;
     sequence?: string | undefined;
     timestamp?: string | undefined;
@@ -435,6 +446,16 @@ export declare const f7MeasurementDatasetSchema: z.ZodEffects<z.ZodObject<{
     factorId: z.ZodString;
     unit: z.ZodString;
     structure: z.ZodEnum<["RATIONAL_SUBGROUP", "ORDERED_INDIVIDUALS", "UNORDERED_SAMPLE"]>;
+    rationalSubgroupConfig: z.ZodOptional<z.ZodObject<{
+        subgroupSize: z.ZodNumber;
+        estimator: z.ZodEnum<["RANGE_D2", "S_C4"]>;
+    }, "strict", z.ZodTypeAny, {
+        subgroupSize: number;
+        estimator: "RANGE_D2" | "S_C4";
+    }, {
+        subgroupSize: number;
+        estimator: "RANGE_D2" | "S_C4";
+    }>>;
     sourceReference: z.ZodString;
     importedAt: z.ZodString;
     msaStatus: z.ZodEnum<["available", "not_available", "unknown"]>;
@@ -476,9 +497,9 @@ export declare const f7MeasurementDatasetSchema: z.ZodEffects<z.ZodObject<{
     }, "strict", z.ZodTypeAny, {
         value: number;
         confirmed: true;
+        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
         disposition: "excluded";
         originalRow: number;
-        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
         operatorReference: string;
         sequence?: string | undefined;
         timestamp?: string | undefined;
@@ -487,9 +508,9 @@ export declare const f7MeasurementDatasetSchema: z.ZodEffects<z.ZodObject<{
     }, {
         value: number;
         confirmed: true;
+        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
         disposition: "excluded";
         originalRow: number;
-        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
         operatorReference: string;
         sequence?: string | undefined;
         timestamp?: string | undefined;
@@ -511,12 +532,8 @@ export declare const f7MeasurementDatasetSchema: z.ZodEffects<z.ZodObject<{
     analyzedCount: z.ZodNumber;
     contentHash: z.ZodString;
 }, "strict", z.ZodTypeAny, {
-    factorId: string;
     unit: string;
-    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-    sourceReference: string;
-    importedAt: string;
-    msaStatus: "unknown" | "available" | "not_available";
+    contentHash: string;
     observations: ({
         value: number;
         disposition: "included";
@@ -528,15 +545,20 @@ export declare const f7MeasurementDatasetSchema: z.ZodEffects<z.ZodObject<{
     } | {
         value: number;
         confirmed: true;
+        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
         disposition: "excluded";
         originalRow: number;
-        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
         operatorReference: string;
         sequence?: string | undefined;
         timestamp?: string | undefined;
         subgroup?: string | undefined;
         batch?: string | undefined;
     })[];
+    factorId: string;
+    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+    sourceReference: string;
+    importedAt: string;
+    msaStatus: "unknown" | "available" | "not_available";
     missingRowCount: number;
     rejectionSummaries: {
         reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -544,14 +566,13 @@ export declare const f7MeasurementDatasetSchema: z.ZodEffects<z.ZodObject<{
     }[];
     originalRowCount: number;
     analyzedCount: number;
-    contentHash: string;
+    rationalSubgroupConfig?: {
+        subgroupSize: number;
+        estimator: "RANGE_D2" | "S_C4";
+    } | undefined;
 }, {
-    factorId: string;
     unit: string;
-    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-    sourceReference: string;
-    importedAt: string;
-    msaStatus: "unknown" | "available" | "not_available";
+    contentHash: string;
     observations: ({
         value: number;
         disposition: "included";
@@ -563,15 +584,20 @@ export declare const f7MeasurementDatasetSchema: z.ZodEffects<z.ZodObject<{
     } | {
         value: number;
         confirmed: true;
+        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
         disposition: "excluded";
         originalRow: number;
-        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
         operatorReference: string;
         sequence?: string | undefined;
         timestamp?: string | undefined;
         subgroup?: string | undefined;
         batch?: string | undefined;
     })[];
+    factorId: string;
+    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+    sourceReference: string;
+    importedAt: string;
+    msaStatus: "unknown" | "available" | "not_available";
     missingRowCount: number;
     rejectionSummaries: {
         reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -579,14 +605,13 @@ export declare const f7MeasurementDatasetSchema: z.ZodEffects<z.ZodObject<{
     }[];
     originalRowCount: number;
     analyzedCount: number;
-    contentHash: string;
+    rationalSubgroupConfig?: {
+        subgroupSize: number;
+        estimator: "RANGE_D2" | "S_C4";
+    } | undefined;
 }>, {
-    factorId: string;
     unit: string;
-    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-    sourceReference: string;
-    importedAt: string;
-    msaStatus: "unknown" | "available" | "not_available";
+    contentHash: string;
     observations: ({
         value: number;
         disposition: "included";
@@ -598,15 +623,20 @@ export declare const f7MeasurementDatasetSchema: z.ZodEffects<z.ZodObject<{
     } | {
         value: number;
         confirmed: true;
+        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
         disposition: "excluded";
         originalRow: number;
-        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
         operatorReference: string;
         sequence?: string | undefined;
         timestamp?: string | undefined;
         subgroup?: string | undefined;
         batch?: string | undefined;
     })[];
+    factorId: string;
+    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+    sourceReference: string;
+    importedAt: string;
+    msaStatus: "unknown" | "available" | "not_available";
     missingRowCount: number;
     rejectionSummaries: {
         reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -614,14 +644,13 @@ export declare const f7MeasurementDatasetSchema: z.ZodEffects<z.ZodObject<{
     }[];
     originalRowCount: number;
     analyzedCount: number;
-    contentHash: string;
+    rationalSubgroupConfig?: {
+        subgroupSize: number;
+        estimator: "RANGE_D2" | "S_C4";
+    } | undefined;
 }, {
-    factorId: string;
     unit: string;
-    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-    sourceReference: string;
-    importedAt: string;
-    msaStatus: "unknown" | "available" | "not_available";
+    contentHash: string;
     observations: ({
         value: number;
         disposition: "included";
@@ -633,15 +662,20 @@ export declare const f7MeasurementDatasetSchema: z.ZodEffects<z.ZodObject<{
     } | {
         value: number;
         confirmed: true;
+        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
         disposition: "excluded";
         originalRow: number;
-        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
         operatorReference: string;
         sequence?: string | undefined;
         timestamp?: string | undefined;
         subgroup?: string | undefined;
         batch?: string | undefined;
     })[];
+    factorId: string;
+    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+    sourceReference: string;
+    importedAt: string;
+    msaStatus: "unknown" | "available" | "not_available";
     missingRowCount: number;
     rejectionSummaries: {
         reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -649,7 +683,10 @@ export declare const f7MeasurementDatasetSchema: z.ZodEffects<z.ZodObject<{
     }[];
     originalRowCount: number;
     analyzedCount: number;
-    contentHash: string;
+    rationalSubgroupConfig?: {
+        subgroupSize: number;
+        estimator: "RANGE_D2" | "S_C4";
+    } | undefined;
 }>;
 export declare const f7FactorInputSchema: z.ZodDiscriminatedUnion<"mode", [z.ZodObject<{
     mode: z.ZodLiteral<"MEASURED">;
@@ -657,6 +694,16 @@ export declare const f7FactorInputSchema: z.ZodDiscriminatedUnion<"mode", [z.Zod
         factorId: z.ZodString;
         unit: z.ZodString;
         structure: z.ZodEnum<["RATIONAL_SUBGROUP", "ORDERED_INDIVIDUALS", "UNORDERED_SAMPLE"]>;
+        rationalSubgroupConfig: z.ZodOptional<z.ZodObject<{
+            subgroupSize: z.ZodNumber;
+            estimator: z.ZodEnum<["RANGE_D2", "S_C4"]>;
+        }, "strict", z.ZodTypeAny, {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        }, {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        }>>;
         sourceReference: z.ZodString;
         importedAt: z.ZodString;
         msaStatus: z.ZodEnum<["available", "not_available", "unknown"]>;
@@ -698,9 +745,9 @@ export declare const f7FactorInputSchema: z.ZodDiscriminatedUnion<"mode", [z.Zod
         }, "strict", z.ZodTypeAny, {
             value: number;
             confirmed: true;
+            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
             disposition: "excluded";
             originalRow: number;
-            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
             operatorReference: string;
             sequence?: string | undefined;
             timestamp?: string | undefined;
@@ -709,9 +756,9 @@ export declare const f7FactorInputSchema: z.ZodDiscriminatedUnion<"mode", [z.Zod
         }, {
             value: number;
             confirmed: true;
+            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
             disposition: "excluded";
             originalRow: number;
-            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
             operatorReference: string;
             sequence?: string | undefined;
             timestamp?: string | undefined;
@@ -733,12 +780,8 @@ export declare const f7FactorInputSchema: z.ZodDiscriminatedUnion<"mode", [z.Zod
         analyzedCount: z.ZodNumber;
         contentHash: z.ZodString;
     }, "strict", z.ZodTypeAny, {
-        factorId: string;
         unit: string;
-        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-        sourceReference: string;
-        importedAt: string;
-        msaStatus: "unknown" | "available" | "not_available";
+        contentHash: string;
         observations: ({
             value: number;
             disposition: "included";
@@ -750,15 +793,20 @@ export declare const f7FactorInputSchema: z.ZodDiscriminatedUnion<"mode", [z.Zod
         } | {
             value: number;
             confirmed: true;
+            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
             disposition: "excluded";
             originalRow: number;
-            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
             operatorReference: string;
             sequence?: string | undefined;
             timestamp?: string | undefined;
             subgroup?: string | undefined;
             batch?: string | undefined;
         })[];
+        factorId: string;
+        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+        sourceReference: string;
+        importedAt: string;
+        msaStatus: "unknown" | "available" | "not_available";
         missingRowCount: number;
         rejectionSummaries: {
             reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -766,14 +814,13 @@ export declare const f7FactorInputSchema: z.ZodDiscriminatedUnion<"mode", [z.Zod
         }[];
         originalRowCount: number;
         analyzedCount: number;
-        contentHash: string;
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
     }, {
-        factorId: string;
         unit: string;
-        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-        sourceReference: string;
-        importedAt: string;
-        msaStatus: "unknown" | "available" | "not_available";
+        contentHash: string;
         observations: ({
             value: number;
             disposition: "included";
@@ -785,15 +832,20 @@ export declare const f7FactorInputSchema: z.ZodDiscriminatedUnion<"mode", [z.Zod
         } | {
             value: number;
             confirmed: true;
+            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
             disposition: "excluded";
             originalRow: number;
-            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
             operatorReference: string;
             sequence?: string | undefined;
             timestamp?: string | undefined;
             subgroup?: string | undefined;
             batch?: string | undefined;
         })[];
+        factorId: string;
+        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+        sourceReference: string;
+        importedAt: string;
+        msaStatus: "unknown" | "available" | "not_available";
         missingRowCount: number;
         rejectionSummaries: {
             reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -801,14 +853,13 @@ export declare const f7FactorInputSchema: z.ZodDiscriminatedUnion<"mode", [z.Zod
         }[];
         originalRowCount: number;
         analyzedCount: number;
-        contentHash: string;
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
     }>, {
-        factorId: string;
         unit: string;
-        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-        sourceReference: string;
-        importedAt: string;
-        msaStatus: "unknown" | "available" | "not_available";
+        contentHash: string;
         observations: ({
             value: number;
             disposition: "included";
@@ -820,15 +871,20 @@ export declare const f7FactorInputSchema: z.ZodDiscriminatedUnion<"mode", [z.Zod
         } | {
             value: number;
             confirmed: true;
+            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
             disposition: "excluded";
             originalRow: number;
-            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
             operatorReference: string;
             sequence?: string | undefined;
             timestamp?: string | undefined;
             subgroup?: string | undefined;
             batch?: string | undefined;
         })[];
+        factorId: string;
+        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+        sourceReference: string;
+        importedAt: string;
+        msaStatus: "unknown" | "available" | "not_available";
         missingRowCount: number;
         rejectionSummaries: {
             reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -836,14 +892,13 @@ export declare const f7FactorInputSchema: z.ZodDiscriminatedUnion<"mode", [z.Zod
         }[];
         originalRowCount: number;
         analyzedCount: number;
-        contentHash: string;
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
     }, {
-        factorId: string;
         unit: string;
-        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-        sourceReference: string;
-        importedAt: string;
-        msaStatus: "unknown" | "available" | "not_available";
+        contentHash: string;
         observations: ({
             value: number;
             disposition: "included";
@@ -855,15 +910,20 @@ export declare const f7FactorInputSchema: z.ZodDiscriminatedUnion<"mode", [z.Zod
         } | {
             value: number;
             confirmed: true;
+            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
             disposition: "excluded";
             originalRow: number;
-            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
             operatorReference: string;
             sequence?: string | undefined;
             timestamp?: string | undefined;
             subgroup?: string | undefined;
             batch?: string | undefined;
         })[];
+        factorId: string;
+        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+        sourceReference: string;
+        importedAt: string;
+        msaStatus: "unknown" | "available" | "not_available";
         missingRowCount: number;
         rejectionSummaries: {
             reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -871,17 +931,16 @@ export declare const f7FactorInputSchema: z.ZodDiscriminatedUnion<"mode", [z.Zod
         }[];
         originalRowCount: number;
         analyzedCount: number;
-        contentHash: string;
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
     }>>;
 }, "strict", z.ZodTypeAny, {
     mode: "MEASURED";
     dataset?: {
-        factorId: string;
         unit: string;
-        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-        sourceReference: string;
-        importedAt: string;
-        msaStatus: "unknown" | "available" | "not_available";
+        contentHash: string;
         observations: ({
             value: number;
             disposition: "included";
@@ -893,15 +952,20 @@ export declare const f7FactorInputSchema: z.ZodDiscriminatedUnion<"mode", [z.Zod
         } | {
             value: number;
             confirmed: true;
+            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
             disposition: "excluded";
             originalRow: number;
-            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
             operatorReference: string;
             sequence?: string | undefined;
             timestamp?: string | undefined;
             subgroup?: string | undefined;
             batch?: string | undefined;
         })[];
+        factorId: string;
+        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+        sourceReference: string;
+        importedAt: string;
+        msaStatus: "unknown" | "available" | "not_available";
         missingRowCount: number;
         rejectionSummaries: {
             reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -909,17 +973,16 @@ export declare const f7FactorInputSchema: z.ZodDiscriminatedUnion<"mode", [z.Zod
         }[];
         originalRowCount: number;
         analyzedCount: number;
-        contentHash: string;
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
     } | undefined;
 }, {
     mode: "MEASURED";
     dataset?: {
-        factorId: string;
         unit: string;
-        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-        sourceReference: string;
-        importedAt: string;
-        msaStatus: "unknown" | "available" | "not_available";
+        contentHash: string;
         observations: ({
             value: number;
             disposition: "included";
@@ -931,15 +994,20 @@ export declare const f7FactorInputSchema: z.ZodDiscriminatedUnion<"mode", [z.Zod
         } | {
             value: number;
             confirmed: true;
+            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
             disposition: "excluded";
             originalRow: number;
-            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
             operatorReference: string;
             sequence?: string | undefined;
             timestamp?: string | undefined;
             subgroup?: string | undefined;
             batch?: string | undefined;
         })[];
+        factorId: string;
+        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+        sourceReference: string;
+        importedAt: string;
+        msaStatus: "unknown" | "available" | "not_available";
         missingRowCount: number;
         rejectionSummaries: {
             reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -947,7 +1015,10 @@ export declare const f7FactorInputSchema: z.ZodDiscriminatedUnion<"mode", [z.Zod
         }[];
         originalRowCount: number;
         analyzedCount: number;
-        contentHash: string;
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
     } | undefined;
 }>, z.ZodObject<{
     mode: z.ZodLiteral<"BASELINE_ASSUMPTION">;
@@ -957,32 +1028,32 @@ export declare const f7FactorInputSchema: z.ZodDiscriminatedUnion<"mode", [z.Zod
         standardDeviation: z.ZodNumber;
         support: z.ZodLiteral<"REAL">;
     }, "strict", z.ZodTypeAny, {
+        standardDeviation: number;
         samplerId: "NORMAL_LOCATION_SCALE_V1";
         physicalMean: number;
-        standardDeviation: number;
         support: "REAL";
     }, {
+        standardDeviation: number;
         samplerId: "NORMAL_LOCATION_SCALE_V1";
         physicalMean: number;
-        standardDeviation: number;
         support: "REAL";
     }>;
 }, "strict", z.ZodTypeAny, {
+    mode: "BASELINE_ASSUMPTION";
     baselineSampler: {
+        standardDeviation: number;
         samplerId: "NORMAL_LOCATION_SCALE_V1";
         physicalMean: number;
-        standardDeviation: number;
         support: "REAL";
     };
-    mode: "BASELINE_ASSUMPTION";
 }, {
+    mode: "BASELINE_ASSUMPTION";
     baselineSampler: {
+        standardDeviation: number;
         samplerId: "NORMAL_LOCATION_SCALE_V1";
         physicalMean: number;
-        standardDeviation: number;
         support: "REAL";
     };
-    mode: "BASELINE_ASSUMPTION";
 }>]>;
 export declare const f7DatasetValidationReasonSchema: z.ZodEnum<["subgroup_too_small", "ordered_sequence_invalid", "sample_count_below_minimum", "exploratory_only", "fit_uncertainty", "unit_mismatch", "specification_missing", "non_finite_measurement", "duplicate_measurement", "msa_evidence_missing", "mixed_batch_conditions", "outlier_candidate", "invalid_rows_rejected"]>;
 export declare const f7DatasetValidationIssueReasonSchema: z.ZodEnum<["subgroup_too_small", "ordered_sequence_invalid", "sample_count_below_minimum", "exploratory_only", "fit_uncertainty", "unit_mismatch", "specification_missing", "non_finite_measurement", "duplicate_measurement", "msa_evidence_missing", "mixed_batch_conditions", "outlier_candidate", "invalid_rows_rejected"]>;
@@ -991,11 +1062,11 @@ export declare const f7DatasetValidationIssueSchema: z.ZodObject<{
     factorId: z.ZodOptional<z.ZodString>;
     rowNumbers: z.ZodOptional<z.ZodEffects<z.ZodEffects<z.ZodArray<z.ZodNumber, "many">, number[], number[]>, number[], number[]>>;
 }, "strict", z.ZodTypeAny, {
-    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
     factorId?: string | undefined;
     rowNumbers?: number[] | undefined;
 }, {
-    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
     factorId?: string | undefined;
     rowNumbers?: number[] | undefined;
 }>;
@@ -1008,16 +1079,16 @@ export declare const f7CandidateEligibilitySchema: z.ZodObject<{
     uniform: z.ZodLiteral<"eligible_with_boundary_warning">;
 }, "strict", z.ZodTypeAny, {
     normal: "eligible";
+    uniform: "eligible_with_boundary_warning";
     lognormal: "eligible" | "ineligible_nonpositive";
     weibull: "eligible" | "ineligible_nonpositive";
     gamma: "eligible" | "ineligible_nonpositive";
-    uniform: "eligible_with_boundary_warning";
 }, {
     normal: "eligible";
+    uniform: "eligible_with_boundary_warning";
     lognormal: "eligible" | "ineligible_nonpositive";
     weibull: "eligible" | "ineligible_nonpositive";
     gamma: "eligible" | "ineligible_nonpositive";
-    uniform: "eligible_with_boundary_warning";
 }>;
 export declare const f7DatasetValidationResultSchema: z.ZodObject<{
     status: z.ZodEnum<["ready", "blocked"]>;
@@ -1026,11 +1097,11 @@ export declare const f7DatasetValidationResultSchema: z.ZodObject<{
         factorId: z.ZodOptional<z.ZodString>;
         rowNumbers: z.ZodOptional<z.ZodEffects<z.ZodEffects<z.ZodArray<z.ZodNumber, "many">, number[], number[]>, number[], number[]>>;
     }, "strict", z.ZodTypeAny, {
-        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
         factorId?: string | undefined;
         rowNumbers?: number[] | undefined;
     }, {
-        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
         factorId?: string | undefined;
         rowNumbers?: number[] | undefined;
     }>, "many">;
@@ -1039,11 +1110,11 @@ export declare const f7DatasetValidationResultSchema: z.ZodObject<{
         factorId: z.ZodOptional<z.ZodString>;
         rowNumbers: z.ZodOptional<z.ZodEffects<z.ZodEffects<z.ZodArray<z.ZodNumber, "many">, number[], number[]>, number[], number[]>>;
     }, "strict", z.ZodTypeAny, {
-        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
         factorId?: string | undefined;
         rowNumbers?: number[] | undefined;
     }, {
-        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
         factorId?: string | undefined;
         rowNumbers?: number[] | undefined;
     }>, "many">;
@@ -1055,54 +1126,54 @@ export declare const f7DatasetValidationResultSchema: z.ZodObject<{
         uniform: z.ZodLiteral<"eligible_with_boundary_warning">;
     }, "strict", z.ZodTypeAny, {
         normal: "eligible";
+        uniform: "eligible_with_boundary_warning";
         lognormal: "eligible" | "ineligible_nonpositive";
         weibull: "eligible" | "ineligible_nonpositive";
         gamma: "eligible" | "ineligible_nonpositive";
-        uniform: "eligible_with_boundary_warning";
     }, {
         normal: "eligible";
+        uniform: "eligible_with_boundary_warning";
         lognormal: "eligible" | "ineligible_nonpositive";
         weibull: "eligible" | "ineligible_nonpositive";
         gamma: "eligible" | "ineligible_nonpositive";
-        uniform: "eligible_with_boundary_warning";
     }>;
 }, "strict", z.ZodTypeAny, {
-    status: "ready" | "blocked";
+    status: "blocked" | "ready";
     blockingIssues: {
-        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
         factorId?: string | undefined;
         rowNumbers?: number[] | undefined;
     }[];
     advisoryIssues: {
-        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
         factorId?: string | undefined;
         rowNumbers?: number[] | undefined;
     }[];
     candidateEligibility: {
         normal: "eligible";
+        uniform: "eligible_with_boundary_warning";
         lognormal: "eligible" | "ineligible_nonpositive";
         weibull: "eligible" | "ineligible_nonpositive";
         gamma: "eligible" | "ineligible_nonpositive";
-        uniform: "eligible_with_boundary_warning";
     };
 }, {
-    status: "ready" | "blocked";
+    status: "blocked" | "ready";
     blockingIssues: {
-        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
         factorId?: string | undefined;
         rowNumbers?: number[] | undefined;
     }[];
     advisoryIssues: {
-        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
         factorId?: string | undefined;
         rowNumbers?: number[] | undefined;
     }[];
     candidateEligibility: {
         normal: "eligible";
+        uniform: "eligible_with_boundary_warning";
         lognormal: "eligible" | "ineligible_nonpositive";
         weibull: "eligible" | "ineligible_nonpositive";
         gamma: "eligible" | "ineligible_nonpositive";
-        uniform: "eligible_with_boundary_warning";
     };
 }>;
 export declare const F7_DISTRIBUTION_CANDIDATE_ORDER: readonly ["normal", "lognormal", "weibull", "gamma", "uniform"];
@@ -1151,23 +1222,23 @@ export declare const f7DistributionFitBootstrapSchema: z.ZodEffects<z.ZodObject<
         lower: z.ZodNumber;
         upper: z.ZodNumber;
     }, "strict", z.ZodTypeAny, {
-        level: 0.95;
         method: "wilson_score";
+        level: 0.95;
         lower: number;
         upper: number;
     }, {
-        level: 0.95;
         method: "wilson_score";
+        level: 0.95;
         lower: number;
         upper: number;
     }>, {
-        level: 0.95;
         method: "wilson_score";
+        level: 0.95;
         lower: number;
         upper: number;
     }, {
-        level: 0.95;
         method: "wilson_score";
+        level: 0.95;
         lower: number;
         upper: number;
     }>;
@@ -1179,15 +1250,15 @@ export declare const f7DistributionFitBootstrapSchema: z.ZodEffects<z.ZodObject<
     streamDigest: z.ZodString;
     status: z.ZodEnum<["acceptable", "weak", "rejected"]>;
 }, "strict", z.ZodTypeAny, {
-    status: "acceptable" | "weak" | "rejected";
+    status: "rejected" | "acceptable" | "weak";
     statisticId: "anderson_darling";
     observedStatistic: number;
     comparisonDirection: "greater_than_or_equal";
     refitEachReplicate: true;
     extremeReplicateCount: number;
     confidenceInterval: {
-        level: 0.95;
         method: "wilson_score";
+        level: 0.95;
         lower: number;
         upper: number;
     };
@@ -1198,15 +1269,15 @@ export declare const f7DistributionFitBootstrapSchema: z.ZodEffects<z.ZodObject<
     candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
     streamDigest: string;
 }, {
-    status: "acceptable" | "weak" | "rejected";
+    status: "rejected" | "acceptable" | "weak";
     statisticId: "anderson_darling";
     observedStatistic: number;
     comparisonDirection: "greater_than_or_equal";
     refitEachReplicate: true;
     extremeReplicateCount: number;
     confidenceInterval: {
-        level: 0.95;
         method: "wilson_score";
+        level: 0.95;
         lower: number;
         upper: number;
     };
@@ -1217,15 +1288,15 @@ export declare const f7DistributionFitBootstrapSchema: z.ZodEffects<z.ZodObject<
     candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
     streamDigest: string;
 }>, {
-    status: "acceptable" | "weak" | "rejected";
+    status: "rejected" | "acceptable" | "weak";
     statisticId: "anderson_darling";
     observedStatistic: number;
     comparisonDirection: "greater_than_or_equal";
     refitEachReplicate: true;
     extremeReplicateCount: number;
     confidenceInterval: {
-        level: 0.95;
         method: "wilson_score";
+        level: 0.95;
         lower: number;
         upper: number;
     };
@@ -1236,15 +1307,15 @@ export declare const f7DistributionFitBootstrapSchema: z.ZodEffects<z.ZodObject<
     candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
     streamDigest: string;
 }, {
-    status: "acceptable" | "weak" | "rejected";
+    status: "rejected" | "acceptable" | "weak";
     statisticId: "anderson_darling";
     observedStatistic: number;
     comparisonDirection: "greater_than_or_equal";
     refitEachReplicate: true;
     extremeReplicateCount: number;
     confidenceInterval: {
-        level: 0.95;
         method: "wilson_score";
+        level: 0.95;
         lower: number;
         upper: number;
     };
@@ -1296,23 +1367,23 @@ export declare const f7DistributionFitCandidateSchema: z.ZodEffects<z.ZodObject<
             lower: z.ZodNumber;
             upper: z.ZodNumber;
         }, "strict", z.ZodTypeAny, {
-            level: 0.95;
             method: "wilson_score";
+            level: 0.95;
             lower: number;
             upper: number;
         }, {
-            level: 0.95;
             method: "wilson_score";
+            level: 0.95;
             lower: number;
             upper: number;
         }>, {
-            level: 0.95;
             method: "wilson_score";
+            level: 0.95;
             lower: number;
             upper: number;
         }, {
-            level: 0.95;
             method: "wilson_score";
+            level: 0.95;
             lower: number;
             upper: number;
         }>;
@@ -1324,15 +1395,15 @@ export declare const f7DistributionFitCandidateSchema: z.ZodEffects<z.ZodObject<
         streamDigest: z.ZodString;
         status: z.ZodEnum<["acceptable", "weak", "rejected"]>;
     }, "strict", z.ZodTypeAny, {
-        status: "acceptable" | "weak" | "rejected";
+        status: "rejected" | "acceptable" | "weak";
         statisticId: "anderson_darling";
         observedStatistic: number;
         comparisonDirection: "greater_than_or_equal";
         refitEachReplicate: true;
         extremeReplicateCount: number;
         confidenceInterval: {
-            level: 0.95;
             method: "wilson_score";
+            level: 0.95;
             lower: number;
             upper: number;
         };
@@ -1343,15 +1414,15 @@ export declare const f7DistributionFitCandidateSchema: z.ZodEffects<z.ZodObject<
         candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
         streamDigest: string;
     }, {
-        status: "acceptable" | "weak" | "rejected";
+        status: "rejected" | "acceptable" | "weak";
         statisticId: "anderson_darling";
         observedStatistic: number;
         comparisonDirection: "greater_than_or_equal";
         refitEachReplicate: true;
         extremeReplicateCount: number;
         confidenceInterval: {
-            level: 0.95;
             method: "wilson_score";
+            level: 0.95;
             lower: number;
             upper: number;
         };
@@ -1362,15 +1433,15 @@ export declare const f7DistributionFitCandidateSchema: z.ZodEffects<z.ZodObject<
         candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
         streamDigest: string;
     }>, {
-        status: "acceptable" | "weak" | "rejected";
+        status: "rejected" | "acceptable" | "weak";
         statisticId: "anderson_darling";
         observedStatistic: number;
         comparisonDirection: "greater_than_or_equal";
         refitEachReplicate: true;
         extremeReplicateCount: number;
         confidenceInterval: {
-            level: 0.95;
             method: "wilson_score";
+            level: 0.95;
             lower: number;
             upper: number;
         };
@@ -1381,15 +1452,15 @@ export declare const f7DistributionFitCandidateSchema: z.ZodEffects<z.ZodObject<
         candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
         streamDigest: string;
     }, {
-        status: "acceptable" | "weak" | "rejected";
+        status: "rejected" | "acceptable" | "weak";
         statisticId: "anderson_darling";
         observedStatistic: number;
         comparisonDirection: "greater_than_or_equal";
         refitEachReplicate: true;
         extremeReplicateCount: number;
         confidenceInterval: {
-            level: 0.95;
             method: "wilson_score";
+            level: 0.95;
             lower: number;
             upper: number;
         };
@@ -1402,7 +1473,7 @@ export declare const f7DistributionFitCandidateSchema: z.ZodEffects<z.ZodObject<
     }>;
     warnings: z.ZodArray<z.ZodString, "many">;
 }, "strict", z.ZodTypeAny, {
-    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
     parameterCount: number;
     parameters: Record<string, number>;
@@ -1419,15 +1490,15 @@ export declare const f7DistributionFitCandidateSchema: z.ZodEffects<z.ZodObject<
         theoretical: number;
     }[];
     bootstrap: {
-        status: "acceptable" | "weak" | "rejected";
+        status: "rejected" | "acceptable" | "weak";
         statisticId: "anderson_darling";
         observedStatistic: number;
         comparisonDirection: "greater_than_or_equal";
         refitEachReplicate: true;
         extremeReplicateCount: number;
         confidenceInterval: {
-            level: 0.95;
             method: "wilson_score";
+            level: 0.95;
             lower: number;
             upper: number;
         };
@@ -1440,7 +1511,7 @@ export declare const f7DistributionFitCandidateSchema: z.ZodEffects<z.ZodObject<
     };
     warnings: string[];
 }, {
-    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
     parameterCount: number;
     parameters: Record<string, number>;
@@ -1457,15 +1528,15 @@ export declare const f7DistributionFitCandidateSchema: z.ZodEffects<z.ZodObject<
         theoretical: number;
     }[];
     bootstrap: {
-        status: "acceptable" | "weak" | "rejected";
+        status: "rejected" | "acceptable" | "weak";
         statisticId: "anderson_darling";
         observedStatistic: number;
         comparisonDirection: "greater_than_or_equal";
         refitEachReplicate: true;
         extremeReplicateCount: number;
         confidenceInterval: {
-            level: 0.95;
             method: "wilson_score";
+            level: 0.95;
             lower: number;
             upper: number;
         };
@@ -1478,7 +1549,7 @@ export declare const f7DistributionFitCandidateSchema: z.ZodEffects<z.ZodObject<
     };
     warnings: string[];
 }>, {
-    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
     parameterCount: number;
     parameters: Record<string, number>;
@@ -1495,15 +1566,15 @@ export declare const f7DistributionFitCandidateSchema: z.ZodEffects<z.ZodObject<
         theoretical: number;
     }[];
     bootstrap: {
-        status: "acceptable" | "weak" | "rejected";
+        status: "rejected" | "acceptable" | "weak";
         statisticId: "anderson_darling";
         observedStatistic: number;
         comparisonDirection: "greater_than_or_equal";
         refitEachReplicate: true;
         extremeReplicateCount: number;
         confidenceInterval: {
-            level: 0.95;
             method: "wilson_score";
+            level: 0.95;
             lower: number;
             upper: number;
         };
@@ -1516,7 +1587,7 @@ export declare const f7DistributionFitCandidateSchema: z.ZodEffects<z.ZodObject<
     };
     warnings: string[];
 }, {
-    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
     parameterCount: number;
     parameters: Record<string, number>;
@@ -1533,15 +1604,15 @@ export declare const f7DistributionFitCandidateSchema: z.ZodEffects<z.ZodObject<
         theoretical: number;
     }[];
     bootstrap: {
-        status: "acceptable" | "weak" | "rejected";
+        status: "rejected" | "acceptable" | "weak";
         statisticId: "anderson_darling";
         observedStatistic: number;
         comparisonDirection: "greater_than_or_equal";
         refitEachReplicate: true;
         extremeReplicateCount: number;
         confidenceInterval: {
-            level: 0.95;
             method: "wilson_score";
+            level: 0.95;
             lower: number;
             upper: number;
         };
@@ -1558,11 +1629,11 @@ export declare const f7DistributionFitFailedCandidateSchema: z.ZodObject<{
     family: z.ZodEnum<["normal", "lognormal", "weibull", "gamma", "uniform"]>;
     reasonCode: z.ZodLiteral<"numerical_fit_failed">;
 }, "strict", z.ZodTypeAny, {
-    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
     reasonCode: "numerical_fit_failed";
+    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
 }, {
-    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
     reasonCode: "numerical_fit_failed";
+    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
 }>;
 export declare const f7SampleDiagnosticsSchema: z.ZodObject<{
     mean: z.ZodNumber;
@@ -1601,40 +1672,40 @@ export declare const f7SelectionDecisionSchema: z.ZodEffects<z.ZodObject<{
     reasonCodes: z.ZodArray<z.ZodEnum<["SINGLE_ACCEPTABLE_COMPETITOR", "MULTIPLE_COMPETITIVE_MODELS", "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT", "SMALL_SAMPLE_UNCERTAINTY", "NO_ACCEPTABLE_MODEL", "CANDIDATE_FIT_FAILURES"]>, "many">;
 }, "strict", z.ZodTypeAny, {
     status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-    methodId: "F7_MODEL_SELECTION_V1";
-    competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
     confidence: "low" | "moderate";
     reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-    numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-    engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-    proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+    methodId: "F7_MODEL_SELECTION_V1";
+    competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+    numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+    engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+    proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
 }, {
     status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-    methodId: "F7_MODEL_SELECTION_V1";
-    competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
     confidence: "low" | "moderate";
     reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-    numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-    engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-    proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+    methodId: "F7_MODEL_SELECTION_V1";
+    competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+    numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+    engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+    proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
 }>, {
     status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-    methodId: "F7_MODEL_SELECTION_V1";
-    competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
     confidence: "low" | "moderate";
     reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-    numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-    engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-    proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+    methodId: "F7_MODEL_SELECTION_V1";
+    competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+    numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+    engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+    proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
 }, {
     status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-    methodId: "F7_MODEL_SELECTION_V1";
-    competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
     confidence: "low" | "moderate";
     reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-    numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-    engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-    proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+    methodId: "F7_MODEL_SELECTION_V1";
+    competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+    numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+    engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+    proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
 }>;
 export declare const f7DistributionCharacteristicKindSchema: z.ZodEnum<["dimensional", "other"]>;
 export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
@@ -1682,23 +1753,23 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
                 lower: z.ZodNumber;
                 upper: z.ZodNumber;
             }, "strict", z.ZodTypeAny, {
-                level: 0.95;
                 method: "wilson_score";
+                level: 0.95;
                 lower: number;
                 upper: number;
             }, {
-                level: 0.95;
                 method: "wilson_score";
+                level: 0.95;
                 lower: number;
                 upper: number;
             }>, {
-                level: 0.95;
                 method: "wilson_score";
+                level: 0.95;
                 lower: number;
                 upper: number;
             }, {
-                level: 0.95;
                 method: "wilson_score";
+                level: 0.95;
                 lower: number;
                 upper: number;
             }>;
@@ -1710,15 +1781,15 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
             streamDigest: z.ZodString;
             status: z.ZodEnum<["acceptable", "weak", "rejected"]>;
         }, "strict", z.ZodTypeAny, {
-            status: "acceptable" | "weak" | "rejected";
+            status: "rejected" | "acceptable" | "weak";
             statisticId: "anderson_darling";
             observedStatistic: number;
             comparisonDirection: "greater_than_or_equal";
             refitEachReplicate: true;
             extremeReplicateCount: number;
             confidenceInterval: {
-                level: 0.95;
                 method: "wilson_score";
+                level: 0.95;
                 lower: number;
                 upper: number;
             };
@@ -1729,15 +1800,15 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
             candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
             streamDigest: string;
         }, {
-            status: "acceptable" | "weak" | "rejected";
+            status: "rejected" | "acceptable" | "weak";
             statisticId: "anderson_darling";
             observedStatistic: number;
             comparisonDirection: "greater_than_or_equal";
             refitEachReplicate: true;
             extremeReplicateCount: number;
             confidenceInterval: {
-                level: 0.95;
                 method: "wilson_score";
+                level: 0.95;
                 lower: number;
                 upper: number;
             };
@@ -1748,15 +1819,15 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
             candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
             streamDigest: string;
         }>, {
-            status: "acceptable" | "weak" | "rejected";
+            status: "rejected" | "acceptable" | "weak";
             statisticId: "anderson_darling";
             observedStatistic: number;
             comparisonDirection: "greater_than_or_equal";
             refitEachReplicate: true;
             extremeReplicateCount: number;
             confidenceInterval: {
-                level: 0.95;
                 method: "wilson_score";
+                level: 0.95;
                 lower: number;
                 upper: number;
             };
@@ -1767,15 +1838,15 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
             candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
             streamDigest: string;
         }, {
-            status: "acceptable" | "weak" | "rejected";
+            status: "rejected" | "acceptable" | "weak";
             statisticId: "anderson_darling";
             observedStatistic: number;
             comparisonDirection: "greater_than_or_equal";
             refitEachReplicate: true;
             extremeReplicateCount: number;
             confidenceInterval: {
-                level: 0.95;
                 method: "wilson_score";
+                level: 0.95;
                 lower: number;
                 upper: number;
             };
@@ -1788,7 +1859,7 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
         }>;
         warnings: z.ZodArray<z.ZodString, "many">;
     }, "strict", z.ZodTypeAny, {
-        family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+        family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
         parameterCount: number;
         parameters: Record<string, number>;
@@ -1805,15 +1876,15 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
             theoretical: number;
         }[];
         bootstrap: {
-            status: "acceptable" | "weak" | "rejected";
+            status: "rejected" | "acceptable" | "weak";
             statisticId: "anderson_darling";
             observedStatistic: number;
             comparisonDirection: "greater_than_or_equal";
             refitEachReplicate: true;
             extremeReplicateCount: number;
             confidenceInterval: {
-                level: 0.95;
                 method: "wilson_score";
+                level: 0.95;
                 lower: number;
                 upper: number;
             };
@@ -1826,7 +1897,7 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
         };
         warnings: string[];
     }, {
-        family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+        family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
         parameterCount: number;
         parameters: Record<string, number>;
@@ -1843,15 +1914,15 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
             theoretical: number;
         }[];
         bootstrap: {
-            status: "acceptable" | "weak" | "rejected";
+            status: "rejected" | "acceptable" | "weak";
             statisticId: "anderson_darling";
             observedStatistic: number;
             comparisonDirection: "greater_than_or_equal";
             refitEachReplicate: true;
             extremeReplicateCount: number;
             confidenceInterval: {
-                level: 0.95;
                 method: "wilson_score";
+                level: 0.95;
                 lower: number;
                 upper: number;
             };
@@ -1864,7 +1935,7 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
         };
         warnings: string[];
     }>, {
-        family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+        family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
         parameterCount: number;
         parameters: Record<string, number>;
@@ -1881,15 +1952,15 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
             theoretical: number;
         }[];
         bootstrap: {
-            status: "acceptable" | "weak" | "rejected";
+            status: "rejected" | "acceptable" | "weak";
             statisticId: "anderson_darling";
             observedStatistic: number;
             comparisonDirection: "greater_than_or_equal";
             refitEachReplicate: true;
             extremeReplicateCount: number;
             confidenceInterval: {
-                level: 0.95;
                 method: "wilson_score";
+                level: 0.95;
                 lower: number;
                 upper: number;
             };
@@ -1902,7 +1973,7 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
         };
         warnings: string[];
     }, {
-        family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+        family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
         parameterCount: number;
         parameters: Record<string, number>;
@@ -1919,15 +1990,15 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
             theoretical: number;
         }[];
         bootstrap: {
-            status: "acceptable" | "weak" | "rejected";
+            status: "rejected" | "acceptable" | "weak";
             statisticId: "anderson_darling";
             observedStatistic: number;
             comparisonDirection: "greater_than_or_equal";
             refitEachReplicate: true;
             extremeReplicateCount: number;
             confidenceInterval: {
-                level: 0.95;
                 method: "wilson_score";
+                level: 0.95;
                 lower: number;
                 upper: number;
             };
@@ -1944,11 +2015,11 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
         family: z.ZodEnum<["normal", "lognormal", "weibull", "gamma", "uniform"]>;
         reasonCode: z.ZodLiteral<"numerical_fit_failed">;
     }, "strict", z.ZodTypeAny, {
-        family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
         reasonCode: "numerical_fit_failed";
+        family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
     }, {
-        family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
         reasonCode: "numerical_fit_failed";
+        family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
     }>, "many">;
     sampleDiagnostics: z.ZodObject<{
         mean: z.ZodNumber;
@@ -1983,47 +2054,44 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
         reasonCodes: z.ZodArray<z.ZodEnum<["SINGLE_ACCEPTABLE_COMPETITOR", "MULTIPLE_COMPETITIVE_MODELS", "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT", "SMALL_SAMPLE_UNCERTAINTY", "NO_ACCEPTABLE_MODEL", "CANDIDATE_FIT_FAILURES"]>, "many">;
     }, "strict", z.ZodTypeAny, {
         status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-        methodId: "F7_MODEL_SELECTION_V1";
-        competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
         confidence: "low" | "moderate";
         reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-        numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-        engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-        proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+        methodId: "F7_MODEL_SELECTION_V1";
+        competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+        numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+        engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+        proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
     }, {
         status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-        methodId: "F7_MODEL_SELECTION_V1";
-        competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
         confidence: "low" | "moderate";
         reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-        numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-        engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-        proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+        methodId: "F7_MODEL_SELECTION_V1";
+        competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+        numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+        engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+        proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
     }>, {
         status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-        methodId: "F7_MODEL_SELECTION_V1";
-        competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
         confidence: "low" | "moderate";
         reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-        numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-        engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-        proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+        methodId: "F7_MODEL_SELECTION_V1";
+        competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+        numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+        engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+        proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
     }, {
         status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-        methodId: "F7_MODEL_SELECTION_V1";
-        competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
         confidence: "low" | "moderate";
         reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-        numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-        engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-        proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+        methodId: "F7_MODEL_SELECTION_V1";
+        competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+        numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+        engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+        proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
     }>;
 }, "strict", z.ZodTypeAny, {
-    factorId: string;
-    sampleSize: number;
-    characteristicKind: "dimensional" | "other";
     candidates: {
-        family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+        family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
         parameterCount: number;
         parameters: Record<string, number>;
@@ -2040,15 +2108,15 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
             theoretical: number;
         }[];
         bootstrap: {
-            status: "acceptable" | "weak" | "rejected";
+            status: "rejected" | "acceptable" | "weak";
             statisticId: "anderson_darling";
             observedStatistic: number;
             comparisonDirection: "greater_than_or_equal";
             refitEachReplicate: true;
             extremeReplicateCount: number;
             confidenceInterval: {
-                level: 0.95;
                 method: "wilson_score";
+                level: 0.95;
                 lower: number;
                 upper: number;
             };
@@ -2061,9 +2129,12 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
         };
         warnings: string[];
     }[];
+    factorId: string;
+    sampleSize: number;
+    characteristicKind: "other" | "dimensional";
     failedCandidates: {
-        family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
         reasonCode: "numerical_fit_failed";
+        family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
     }[];
     sampleDiagnostics: {
         mean: number;
@@ -2075,20 +2146,17 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
     };
     selectionDecision: {
         status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-        methodId: "F7_MODEL_SELECTION_V1";
-        competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
         confidence: "low" | "moderate";
         reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-        numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-        engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-        proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+        methodId: "F7_MODEL_SELECTION_V1";
+        competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+        numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+        engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+        proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
     };
 }, {
-    factorId: string;
-    sampleSize: number;
-    characteristicKind: "dimensional" | "other";
     candidates: {
-        family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+        family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
         parameterCount: number;
         parameters: Record<string, number>;
@@ -2105,15 +2173,15 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
             theoretical: number;
         }[];
         bootstrap: {
-            status: "acceptable" | "weak" | "rejected";
+            status: "rejected" | "acceptable" | "weak";
             statisticId: "anderson_darling";
             observedStatistic: number;
             comparisonDirection: "greater_than_or_equal";
             refitEachReplicate: true;
             extremeReplicateCount: number;
             confidenceInterval: {
-                level: 0.95;
                 method: "wilson_score";
+                level: 0.95;
                 lower: number;
                 upper: number;
             };
@@ -2126,9 +2194,12 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
         };
         warnings: string[];
     }[];
+    factorId: string;
+    sampleSize: number;
+    characteristicKind: "other" | "dimensional";
     failedCandidates: {
-        family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
         reasonCode: "numerical_fit_failed";
+        family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
     }[];
     sampleDiagnostics: {
         mean: number;
@@ -2140,20 +2211,17 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
     };
     selectionDecision: {
         status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-        methodId: "F7_MODEL_SELECTION_V1";
-        competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
         confidence: "low" | "moderate";
         reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-        numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-        engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-        proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+        methodId: "F7_MODEL_SELECTION_V1";
+        competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+        numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+        engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+        proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
     };
 }>, {
-    factorId: string;
-    sampleSize: number;
-    characteristicKind: "dimensional" | "other";
     candidates: {
-        family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+        family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
         parameterCount: number;
         parameters: Record<string, number>;
@@ -2170,15 +2238,15 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
             theoretical: number;
         }[];
         bootstrap: {
-            status: "acceptable" | "weak" | "rejected";
+            status: "rejected" | "acceptable" | "weak";
             statisticId: "anderson_darling";
             observedStatistic: number;
             comparisonDirection: "greater_than_or_equal";
             refitEachReplicate: true;
             extremeReplicateCount: number;
             confidenceInterval: {
-                level: 0.95;
                 method: "wilson_score";
+                level: 0.95;
                 lower: number;
                 upper: number;
             };
@@ -2191,9 +2259,12 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
         };
         warnings: string[];
     }[];
+    factorId: string;
+    sampleSize: number;
+    characteristicKind: "other" | "dimensional";
     failedCandidates: {
-        family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
         reasonCode: "numerical_fit_failed";
+        family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
     }[];
     sampleDiagnostics: {
         mean: number;
@@ -2205,20 +2276,17 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
     };
     selectionDecision: {
         status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-        methodId: "F7_MODEL_SELECTION_V1";
-        competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
         confidence: "low" | "moderate";
         reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-        numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-        engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-        proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+        methodId: "F7_MODEL_SELECTION_V1";
+        competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+        numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+        engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+        proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
     };
 }, {
-    factorId: string;
-    sampleSize: number;
-    characteristicKind: "dimensional" | "other";
     candidates: {
-        family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+        family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
         parameterCount: number;
         parameters: Record<string, number>;
@@ -2235,15 +2303,15 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
             theoretical: number;
         }[];
         bootstrap: {
-            status: "acceptable" | "weak" | "rejected";
+            status: "rejected" | "acceptable" | "weak";
             statisticId: "anderson_darling";
             observedStatistic: number;
             comparisonDirection: "greater_than_or_equal";
             refitEachReplicate: true;
             extremeReplicateCount: number;
             confidenceInterval: {
-                level: 0.95;
                 method: "wilson_score";
+                level: 0.95;
                 lower: number;
                 upper: number;
             };
@@ -2256,9 +2324,12 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
         };
         warnings: string[];
     }[];
+    factorId: string;
+    sampleSize: number;
+    characteristicKind: "other" | "dimensional";
     failedCandidates: {
-        family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
         reasonCode: "numerical_fit_failed";
+        family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
     }[];
     sampleDiagnostics: {
         mean: number;
@@ -2270,13 +2341,13 @@ export declare const f7DistributionFitResultSchema: z.ZodEffects<z.ZodObject<{
     };
     selectionDecision: {
         status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-        methodId: "F7_MODEL_SELECTION_V1";
-        competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
         confidence: "low" | "moderate";
         reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-        numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-        engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-        proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+        methodId: "F7_MODEL_SELECTION_V1";
+        competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+        numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+        engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+        proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
     };
 }>;
 export declare const f7MeasurementPasteResultSchema: z.ZodObject<{
@@ -2286,6 +2357,16 @@ export declare const f7MeasurementPasteResultSchema: z.ZodObject<{
         factorId: z.ZodString;
         unit: z.ZodString;
         structure: z.ZodEnum<["RATIONAL_SUBGROUP", "ORDERED_INDIVIDUALS", "UNORDERED_SAMPLE"]>;
+        rationalSubgroupConfig: z.ZodOptional<z.ZodObject<{
+            subgroupSize: z.ZodNumber;
+            estimator: z.ZodEnum<["RANGE_D2", "S_C4"]>;
+        }, "strict", z.ZodTypeAny, {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        }, {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        }>>;
         sourceReference: z.ZodString;
         importedAt: z.ZodString;
         msaStatus: z.ZodEnum<["available", "not_available", "unknown"]>;
@@ -2327,9 +2408,9 @@ export declare const f7MeasurementPasteResultSchema: z.ZodObject<{
         }, "strict", z.ZodTypeAny, {
             value: number;
             confirmed: true;
+            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
             disposition: "excluded";
             originalRow: number;
-            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
             operatorReference: string;
             sequence?: string | undefined;
             timestamp?: string | undefined;
@@ -2338,9 +2419,9 @@ export declare const f7MeasurementPasteResultSchema: z.ZodObject<{
         }, {
             value: number;
             confirmed: true;
+            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
             disposition: "excluded";
             originalRow: number;
-            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
             operatorReference: string;
             sequence?: string | undefined;
             timestamp?: string | undefined;
@@ -2362,12 +2443,8 @@ export declare const f7MeasurementPasteResultSchema: z.ZodObject<{
         analyzedCount: z.ZodNumber;
         contentHash: z.ZodString;
     }, "strict", z.ZodTypeAny, {
-        factorId: string;
         unit: string;
-        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-        sourceReference: string;
-        importedAt: string;
-        msaStatus: "unknown" | "available" | "not_available";
+        contentHash: string;
         observations: ({
             value: number;
             disposition: "included";
@@ -2379,15 +2456,20 @@ export declare const f7MeasurementPasteResultSchema: z.ZodObject<{
         } | {
             value: number;
             confirmed: true;
+            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
             disposition: "excluded";
             originalRow: number;
-            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
             operatorReference: string;
             sequence?: string | undefined;
             timestamp?: string | undefined;
             subgroup?: string | undefined;
             batch?: string | undefined;
         })[];
+        factorId: string;
+        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+        sourceReference: string;
+        importedAt: string;
+        msaStatus: "unknown" | "available" | "not_available";
         missingRowCount: number;
         rejectionSummaries: {
             reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -2395,14 +2477,13 @@ export declare const f7MeasurementPasteResultSchema: z.ZodObject<{
         }[];
         originalRowCount: number;
         analyzedCount: number;
-        contentHash: string;
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
     }, {
-        factorId: string;
         unit: string;
-        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-        sourceReference: string;
-        importedAt: string;
-        msaStatus: "unknown" | "available" | "not_available";
+        contentHash: string;
         observations: ({
             value: number;
             disposition: "included";
@@ -2414,15 +2495,20 @@ export declare const f7MeasurementPasteResultSchema: z.ZodObject<{
         } | {
             value: number;
             confirmed: true;
+            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
             disposition: "excluded";
             originalRow: number;
-            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
             operatorReference: string;
             sequence?: string | undefined;
             timestamp?: string | undefined;
             subgroup?: string | undefined;
             batch?: string | undefined;
         })[];
+        factorId: string;
+        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+        sourceReference: string;
+        importedAt: string;
+        msaStatus: "unknown" | "available" | "not_available";
         missingRowCount: number;
         rejectionSummaries: {
             reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -2430,14 +2516,13 @@ export declare const f7MeasurementPasteResultSchema: z.ZodObject<{
         }[];
         originalRowCount: number;
         analyzedCount: number;
-        contentHash: string;
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
     }>, {
-        factorId: string;
         unit: string;
-        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-        sourceReference: string;
-        importedAt: string;
-        msaStatus: "unknown" | "available" | "not_available";
+        contentHash: string;
         observations: ({
             value: number;
             disposition: "included";
@@ -2449,15 +2534,20 @@ export declare const f7MeasurementPasteResultSchema: z.ZodObject<{
         } | {
             value: number;
             confirmed: true;
+            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
             disposition: "excluded";
             originalRow: number;
-            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
             operatorReference: string;
             sequence?: string | undefined;
             timestamp?: string | undefined;
             subgroup?: string | undefined;
             batch?: string | undefined;
         })[];
+        factorId: string;
+        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+        sourceReference: string;
+        importedAt: string;
+        msaStatus: "unknown" | "available" | "not_available";
         missingRowCount: number;
         rejectionSummaries: {
             reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -2465,14 +2555,13 @@ export declare const f7MeasurementPasteResultSchema: z.ZodObject<{
         }[];
         originalRowCount: number;
         analyzedCount: number;
-        contentHash: string;
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
     }, {
-        factorId: string;
         unit: string;
-        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-        sourceReference: string;
-        importedAt: string;
-        msaStatus: "unknown" | "available" | "not_available";
+        contentHash: string;
         observations: ({
             value: number;
             disposition: "included";
@@ -2484,15 +2573,20 @@ export declare const f7MeasurementPasteResultSchema: z.ZodObject<{
         } | {
             value: number;
             confirmed: true;
+            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
             disposition: "excluded";
             originalRow: number;
-            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
             operatorReference: string;
             sequence?: string | undefined;
             timestamp?: string | undefined;
             subgroup?: string | undefined;
             batch?: string | undefined;
         })[];
+        factorId: string;
+        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+        sourceReference: string;
+        importedAt: string;
+        msaStatus: "unknown" | "available" | "not_available";
         missingRowCount: number;
         rejectionSummaries: {
             reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -2500,7 +2594,10 @@ export declare const f7MeasurementPasteResultSchema: z.ZodObject<{
         }[];
         originalRowCount: number;
         analyzedCount: number;
-        contentHash: string;
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
     }>>;
     validation: z.ZodObject<{
         status: z.ZodEnum<["ready", "blocked"]>;
@@ -2509,11 +2606,11 @@ export declare const f7MeasurementPasteResultSchema: z.ZodObject<{
             factorId: z.ZodOptional<z.ZodString>;
             rowNumbers: z.ZodOptional<z.ZodEffects<z.ZodEffects<z.ZodArray<z.ZodNumber, "many">, number[], number[]>, number[], number[]>>;
         }, "strict", z.ZodTypeAny, {
-            reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
             factorId?: string | undefined;
             rowNumbers?: number[] | undefined;
         }, {
-            reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
             factorId?: string | undefined;
             rowNumbers?: number[] | undefined;
         }>, "many">;
@@ -2522,11 +2619,11 @@ export declare const f7MeasurementPasteResultSchema: z.ZodObject<{
             factorId: z.ZodOptional<z.ZodString>;
             rowNumbers: z.ZodOptional<z.ZodEffects<z.ZodEffects<z.ZodArray<z.ZodNumber, "many">, number[], number[]>, number[], number[]>>;
         }, "strict", z.ZodTypeAny, {
-            reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
             factorId?: string | undefined;
             rowNumbers?: number[] | undefined;
         }, {
-            reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
             factorId?: string | undefined;
             rowNumbers?: number[] | undefined;
         }>, "many">;
@@ -2538,86 +2635,82 @@ export declare const f7MeasurementPasteResultSchema: z.ZodObject<{
             uniform: z.ZodLiteral<"eligible_with_boundary_warning">;
         }, "strict", z.ZodTypeAny, {
             normal: "eligible";
+            uniform: "eligible_with_boundary_warning";
             lognormal: "eligible" | "ineligible_nonpositive";
             weibull: "eligible" | "ineligible_nonpositive";
             gamma: "eligible" | "ineligible_nonpositive";
-            uniform: "eligible_with_boundary_warning";
         }, {
             normal: "eligible";
+            uniform: "eligible_with_boundary_warning";
             lognormal: "eligible" | "ineligible_nonpositive";
             weibull: "eligible" | "ineligible_nonpositive";
             gamma: "eligible" | "ineligible_nonpositive";
-            uniform: "eligible_with_boundary_warning";
         }>;
     }, "strict", z.ZodTypeAny, {
-        status: "ready" | "blocked";
+        status: "blocked" | "ready";
         blockingIssues: {
-            reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
             factorId?: string | undefined;
             rowNumbers?: number[] | undefined;
         }[];
         advisoryIssues: {
-            reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
             factorId?: string | undefined;
             rowNumbers?: number[] | undefined;
         }[];
         candidateEligibility: {
             normal: "eligible";
+            uniform: "eligible_with_boundary_warning";
             lognormal: "eligible" | "ineligible_nonpositive";
             weibull: "eligible" | "ineligible_nonpositive";
             gamma: "eligible" | "ineligible_nonpositive";
-            uniform: "eligible_with_boundary_warning";
         };
     }, {
-        status: "ready" | "blocked";
+        status: "blocked" | "ready";
         blockingIssues: {
-            reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
             factorId?: string | undefined;
             rowNumbers?: number[] | undefined;
         }[];
         advisoryIssues: {
-            reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
             factorId?: string | undefined;
             rowNumbers?: number[] | undefined;
         }[];
         candidateEligibility: {
             normal: "eligible";
+            uniform: "eligible_with_boundary_warning";
             lognormal: "eligible" | "ineligible_nonpositive";
             weibull: "eligible" | "ineligible_nonpositive";
             gamma: "eligible" | "ineligible_nonpositive";
-            uniform: "eligible_with_boundary_warning";
         };
     }>;
 }, "strict", z.ZodTypeAny, {
-    status: "ready" | "blocked";
     validation: {
-        status: "ready" | "blocked";
+        status: "blocked" | "ready";
         blockingIssues: {
-            reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
             factorId?: string | undefined;
             rowNumbers?: number[] | undefined;
         }[];
         advisoryIssues: {
-            reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
             factorId?: string | undefined;
             rowNumbers?: number[] | undefined;
         }[];
         candidateEligibility: {
             normal: "eligible";
+            uniform: "eligible_with_boundary_warning";
             lognormal: "eligible" | "ineligible_nonpositive";
             weibull: "eligible" | "ineligible_nonpositive";
             gamma: "eligible" | "ineligible_nonpositive";
-            uniform: "eligible_with_boundary_warning";
         };
     };
+    status: "blocked" | "ready";
     factorId: string;
     dataset?: {
-        factorId: string;
         unit: string;
-        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-        sourceReference: string;
-        importedAt: string;
-        msaStatus: "unknown" | "available" | "not_available";
+        contentHash: string;
         observations: ({
             value: number;
             disposition: "included";
@@ -2629,15 +2722,20 @@ export declare const f7MeasurementPasteResultSchema: z.ZodObject<{
         } | {
             value: number;
             confirmed: true;
+            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
             disposition: "excluded";
             originalRow: number;
-            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
             operatorReference: string;
             sequence?: string | undefined;
             timestamp?: string | undefined;
             subgroup?: string | undefined;
             batch?: string | undefined;
         })[];
+        factorId: string;
+        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+        sourceReference: string;
+        importedAt: string;
+        msaStatus: "unknown" | "available" | "not_available";
         missingRowCount: number;
         rejectionSummaries: {
             reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -2645,38 +2743,37 @@ export declare const f7MeasurementPasteResultSchema: z.ZodObject<{
         }[];
         originalRowCount: number;
         analyzedCount: number;
-        contentHash: string;
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
     } | undefined;
 }, {
-    status: "ready" | "blocked";
     validation: {
-        status: "ready" | "blocked";
+        status: "blocked" | "ready";
         blockingIssues: {
-            reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
             factorId?: string | undefined;
             rowNumbers?: number[] | undefined;
         }[];
         advisoryIssues: {
-            reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+            reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
             factorId?: string | undefined;
             rowNumbers?: number[] | undefined;
         }[];
         candidateEligibility: {
             normal: "eligible";
+            uniform: "eligible_with_boundary_warning";
             lognormal: "eligible" | "ineligible_nonpositive";
             weibull: "eligible" | "ineligible_nonpositive";
             gamma: "eligible" | "ineligible_nonpositive";
-            uniform: "eligible_with_boundary_warning";
         };
     };
+    status: "blocked" | "ready";
     factorId: string;
     dataset?: {
-        factorId: string;
         unit: string;
-        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-        sourceReference: string;
-        importedAt: string;
-        msaStatus: "unknown" | "available" | "not_available";
+        contentHash: string;
         observations: ({
             value: number;
             disposition: "included";
@@ -2688,15 +2785,20 @@ export declare const f7MeasurementPasteResultSchema: z.ZodObject<{
         } | {
             value: number;
             confirmed: true;
+            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
             disposition: "excluded";
             originalRow: number;
-            reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
             operatorReference: string;
             sequence?: string | undefined;
             timestamp?: string | undefined;
             subgroup?: string | undefined;
             batch?: string | undefined;
         })[];
+        factorId: string;
+        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+        sourceReference: string;
+        importedAt: string;
+        msaStatus: "unknown" | "available" | "not_available";
         missingRowCount: number;
         rejectionSummaries: {
             reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -2704,7 +2806,10 @@ export declare const f7MeasurementPasteResultSchema: z.ZodObject<{
         }[];
         originalRowCount: number;
         analyzedCount: number;
-        contentHash: string;
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
     } | undefined;
 }>;
 export declare const f7DistributionApprovalSchema: z.ZodObject<{
@@ -2715,12 +2820,12 @@ export declare const f7DistributionApprovalSchema: z.ZodObject<{
 }, "strict", z.ZodTypeAny, {
     confirmed: true;
     factorId: string;
-    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
     approvedAt: string;
 }, {
     confirmed: true;
     factorId: string;
-    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
     approvedAt: string;
 }>;
 export declare const f7MonteCarloIterationsSchema: z.ZodUnion<[z.ZodLiteral<10000>, z.ZodLiteral<100000>]>;
@@ -2731,11 +2836,11 @@ export declare const f7MonteCarloFactorManifestEntrySchema: z.ZodObject<{
     sourceMode: z.ZodEnum<["MEASURED", "BASELINE_ASSUMPTION"]>;
 }, "strict", z.ZodTypeAny, {
     factorId: string;
-    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
     sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
 }, {
     factorId: string;
-    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
     sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
 }>;
 export declare const f7MonteCarloResultSchema: z.ZodEffects<z.ZodObject<{
@@ -2831,14 +2936,14 @@ export declare const f7MonteCarloResultSchema: z.ZodEffects<z.ZodObject<{
         standardDeviation: z.ZodNumber;
         expectedBinCounts: z.ZodArray<z.ZodNumber, "many">;
     }, "strict", z.ZodTypeAny, {
+        mean: number;
         standardDeviation: number;
         methodId: "F7_NORMAL_MOMENT_FIT_V1";
-        mean: number;
         expectedBinCounts: number[];
     }, {
+        mean: number;
         standardDeviation: number;
         methodId: "F7_NORMAL_MOMENT_FIT_V1";
-        mean: number;
         expectedBinCounts: number[];
     }>;
     capability: z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
@@ -2851,19 +2956,19 @@ export declare const f7MonteCarloResultSchema: z.ZodEffects<z.ZodObject<{
         targetStatus: z.ZodEnum<["meets_target", "below_target"]>;
     }, "strict", z.ZodTypeAny, {
         status: "available";
+        cpk: number;
+        targetCpk: number;
         cp: number;
         lowerCpk: number;
         upperCpk: number;
-        cpk: number;
-        targetCpk: number;
         targetStatus: "meets_target" | "below_target";
     }, {
         status: "available";
+        cpk: number;
+        targetCpk: number;
         cp: number;
         lowerCpk: number;
         upperCpk: number;
-        cpk: number;
-        targetCpk: number;
         targetStatus: "meets_target" | "below_target";
     }>, z.ZodObject<{
         status: z.ZodLiteral<"not_available">;
@@ -2871,12 +2976,12 @@ export declare const f7MonteCarloResultSchema: z.ZodEffects<z.ZodObject<{
         targetCpk: z.ZodNumber;
     }, "strict", z.ZodTypeAny, {
         status: "not_available";
-        reason: "zero_variance";
         targetCpk: number;
+        reason: "zero_variance";
     }, {
         status: "not_available";
-        reason: "zero_variance";
         targetCpk: number;
+        reason: "zero_variance";
     }>]>;
     normalModel: z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
         status: z.ZodLiteral<"available">;
@@ -2886,15 +2991,15 @@ export declare const f7MonteCarloResultSchema: z.ZodEffects<z.ZodObject<{
         expectedYield: z.ZodNumber;
     }, "strict", z.ZodTypeAny, {
         status: "available";
+        totalDpm: number;
         lowerTailDpm: number;
         upperTailDpm: number;
-        totalDpm: number;
         expectedYield: number;
     }, {
         status: "available";
+        totalDpm: number;
         lowerTailDpm: number;
         upperTailDpm: number;
-        totalDpm: number;
         expectedYield: number;
     }>, z.ZodObject<{
         status: z.ZodLiteral<"not_available">;
@@ -2912,21 +3017,35 @@ export declare const f7MonteCarloResultSchema: z.ZodEffects<z.ZodObject<{
         sourceMode: z.ZodEnum<["MEASURED", "BASELINE_ASSUMPTION"]>;
     }, "strict", z.ZodTypeAny, {
         factorId: string;
-        family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+        family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
     }, {
         factorId: string;
-        family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+        family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
     }>, "many">;
 }, "strict", z.ZodTypeAny, {
     status: "complete";
+    capability: {
+        status: "available";
+        cpk: number;
+        targetCpk: number;
+        cp: number;
+        lowerCpk: number;
+        upperCpk: number;
+        targetStatus: "meets_target" | "below_target";
+    } | {
+        status: "not_available";
+        targetCpk: number;
+        reason: "zero_variance";
+    };
+    mean: number;
     standardDeviation: number;
     lowerSpecLimit: number;
     upperSpecLimit: number;
-    methodId: "F7_MONTE_CARLO_V1";
-    mean: number;
     targetSigmaLevel: number;
+    yield: number;
+    methodId: "F7_MONTE_CARLO_V1";
     iterations: 10000 | 100000;
     runSeed: string;
     correlationMode: "INDEPENDENT";
@@ -2941,7 +3060,6 @@ export declare const f7MonteCarloResultSchema: z.ZodEffects<z.ZodObject<{
     };
     inSpecCount: number;
     outOfSpecCount: number;
-    yield: number;
     outOfSpecProbability: number;
     ppm: number;
     histogram: {
@@ -2953,29 +3071,16 @@ export declare const f7MonteCarloResultSchema: z.ZodEffects<z.ZodObject<{
         }[];
     };
     normalFit: {
+        mean: number;
         standardDeviation: number;
         methodId: "F7_NORMAL_MOMENT_FIT_V1";
-        mean: number;
         expectedBinCounts: number[];
-    };
-    capability: {
-        status: "available";
-        cp: number;
-        lowerCpk: number;
-        upperCpk: number;
-        cpk: number;
-        targetCpk: number;
-        targetStatus: "meets_target" | "below_target";
-    } | {
-        status: "not_available";
-        reason: "zero_variance";
-        targetCpk: number;
     };
     normalModel: {
         status: "available";
+        totalDpm: number;
         lowerTailDpm: number;
         upperTailDpm: number;
-        totalDpm: number;
         expectedYield: number;
     } | {
         status: "not_available";
@@ -2983,17 +3088,31 @@ export declare const f7MonteCarloResultSchema: z.ZodEffects<z.ZodObject<{
     };
     factorManifest: {
         factorId: string;
-        family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+        family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
     }[];
 }, {
     status: "complete";
+    capability: {
+        status: "available";
+        cpk: number;
+        targetCpk: number;
+        cp: number;
+        lowerCpk: number;
+        upperCpk: number;
+        targetStatus: "meets_target" | "below_target";
+    } | {
+        status: "not_available";
+        targetCpk: number;
+        reason: "zero_variance";
+    };
+    mean: number;
     standardDeviation: number;
     lowerSpecLimit: number;
     upperSpecLimit: number;
-    methodId: "F7_MONTE_CARLO_V1";
-    mean: number;
     targetSigmaLevel: number;
+    yield: number;
+    methodId: "F7_MONTE_CARLO_V1";
     iterations: 10000 | 100000;
     runSeed: string;
     correlationMode: "INDEPENDENT";
@@ -3008,7 +3127,6 @@ export declare const f7MonteCarloResultSchema: z.ZodEffects<z.ZodObject<{
     };
     inSpecCount: number;
     outOfSpecCount: number;
-    yield: number;
     outOfSpecProbability: number;
     ppm: number;
     histogram: {
@@ -3020,29 +3138,16 @@ export declare const f7MonteCarloResultSchema: z.ZodEffects<z.ZodObject<{
         }[];
     };
     normalFit: {
+        mean: number;
         standardDeviation: number;
         methodId: "F7_NORMAL_MOMENT_FIT_V1";
-        mean: number;
         expectedBinCounts: number[];
-    };
-    capability: {
-        status: "available";
-        cp: number;
-        lowerCpk: number;
-        upperCpk: number;
-        cpk: number;
-        targetCpk: number;
-        targetStatus: "meets_target" | "below_target";
-    } | {
-        status: "not_available";
-        reason: "zero_variance";
-        targetCpk: number;
     };
     normalModel: {
         status: "available";
+        totalDpm: number;
         lowerTailDpm: number;
         upperTailDpm: number;
-        totalDpm: number;
         expectedYield: number;
     } | {
         status: "not_available";
@@ -3050,17 +3155,31 @@ export declare const f7MonteCarloResultSchema: z.ZodEffects<z.ZodObject<{
     };
     factorManifest: {
         factorId: string;
-        family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+        family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
     }[];
 }>, {
     status: "complete";
+    capability: {
+        status: "available";
+        cpk: number;
+        targetCpk: number;
+        cp: number;
+        lowerCpk: number;
+        upperCpk: number;
+        targetStatus: "meets_target" | "below_target";
+    } | {
+        status: "not_available";
+        targetCpk: number;
+        reason: "zero_variance";
+    };
+    mean: number;
     standardDeviation: number;
     lowerSpecLimit: number;
     upperSpecLimit: number;
-    methodId: "F7_MONTE_CARLO_V1";
-    mean: number;
     targetSigmaLevel: number;
+    yield: number;
+    methodId: "F7_MONTE_CARLO_V1";
     iterations: 10000 | 100000;
     runSeed: string;
     correlationMode: "INDEPENDENT";
@@ -3075,7 +3194,6 @@ export declare const f7MonteCarloResultSchema: z.ZodEffects<z.ZodObject<{
     };
     inSpecCount: number;
     outOfSpecCount: number;
-    yield: number;
     outOfSpecProbability: number;
     ppm: number;
     histogram: {
@@ -3087,29 +3205,16 @@ export declare const f7MonteCarloResultSchema: z.ZodEffects<z.ZodObject<{
         }[];
     };
     normalFit: {
+        mean: number;
         standardDeviation: number;
         methodId: "F7_NORMAL_MOMENT_FIT_V1";
-        mean: number;
         expectedBinCounts: number[];
-    };
-    capability: {
-        status: "available";
-        cp: number;
-        lowerCpk: number;
-        upperCpk: number;
-        cpk: number;
-        targetCpk: number;
-        targetStatus: "meets_target" | "below_target";
-    } | {
-        status: "not_available";
-        reason: "zero_variance";
-        targetCpk: number;
     };
     normalModel: {
         status: "available";
+        totalDpm: number;
         lowerTailDpm: number;
         upperTailDpm: number;
-        totalDpm: number;
         expectedYield: number;
     } | {
         status: "not_available";
@@ -3117,17 +3222,31 @@ export declare const f7MonteCarloResultSchema: z.ZodEffects<z.ZodObject<{
     };
     factorManifest: {
         factorId: string;
-        family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+        family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
     }[];
 }, {
     status: "complete";
+    capability: {
+        status: "available";
+        cpk: number;
+        targetCpk: number;
+        cp: number;
+        lowerCpk: number;
+        upperCpk: number;
+        targetStatus: "meets_target" | "below_target";
+    } | {
+        status: "not_available";
+        targetCpk: number;
+        reason: "zero_variance";
+    };
+    mean: number;
     standardDeviation: number;
     lowerSpecLimit: number;
     upperSpecLimit: number;
-    methodId: "F7_MONTE_CARLO_V1";
-    mean: number;
     targetSigmaLevel: number;
+    yield: number;
+    methodId: "F7_MONTE_CARLO_V1";
     iterations: 10000 | 100000;
     runSeed: string;
     correlationMode: "INDEPENDENT";
@@ -3142,7 +3261,6 @@ export declare const f7MonteCarloResultSchema: z.ZodEffects<z.ZodObject<{
     };
     inSpecCount: number;
     outOfSpecCount: number;
-    yield: number;
     outOfSpecProbability: number;
     ppm: number;
     histogram: {
@@ -3154,29 +3272,16 @@ export declare const f7MonteCarloResultSchema: z.ZodEffects<z.ZodObject<{
         }[];
     };
     normalFit: {
+        mean: number;
         standardDeviation: number;
         methodId: "F7_NORMAL_MOMENT_FIT_V1";
-        mean: number;
         expectedBinCounts: number[];
-    };
-    capability: {
-        status: "available";
-        cp: number;
-        lowerCpk: number;
-        upperCpk: number;
-        cpk: number;
-        targetCpk: number;
-        targetStatus: "meets_target" | "below_target";
-    } | {
-        status: "not_available";
-        reason: "zero_variance";
-        targetCpk: number;
     };
     normalModel: {
         status: "available";
+        totalDpm: number;
         lowerTailDpm: number;
         upperTailDpm: number;
-        totalDpm: number;
         expectedYield: number;
     } | {
         status: "not_available";
@@ -3184,7 +3289,7 @@ export declare const f7MonteCarloResultSchema: z.ZodEffects<z.ZodObject<{
     };
     factorManifest: {
         factorId: string;
-        family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+        family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
     }[];
 }>;
@@ -3194,13 +3299,13 @@ export declare const f7ReportWorkbookSchema: z.ZodObject<{
     workbookContentHash: z.ZodString;
     worksheetName: z.ZodString;
 }, "strict", z.ZodTypeAny, {
-    workbookContentHash: string;
-    worksheetName: string;
     fileName: string;
+    worksheetName: string;
+    workbookContentHash: string;
 }, {
-    workbookContentHash: string;
-    worksheetName: string;
     fileName: string;
+    worksheetName: string;
+    workbookContentHash: string;
 }>;
 export declare const f7ReportSummarySchema: z.ZodEffects<z.ZodObject<{
     mean: z.ZodNumber;
@@ -3214,49 +3319,49 @@ export declare const f7ReportSummarySchema: z.ZodEffects<z.ZodObject<{
     cpk: z.ZodOptional<z.ZodNumber>;
     targetCpk: z.ZodNumber;
 }, "strict", z.ZodTypeAny, {
+    mean: number;
     standardDeviation: number;
     lowerSpecLimit: number;
     upperSpecLimit: number;
-    mean: number;
     targetSigmaLevel: number;
+    targetCpk: number;
     yield: number;
     ppm: number;
-    targetCpk: number;
-    cp?: number | undefined;
     cpk?: number | undefined;
+    cp?: number | undefined;
 }, {
+    mean: number;
     standardDeviation: number;
     lowerSpecLimit: number;
     upperSpecLimit: number;
-    mean: number;
     targetSigmaLevel: number;
+    targetCpk: number;
     yield: number;
     ppm: number;
-    targetCpk: number;
-    cp?: number | undefined;
     cpk?: number | undefined;
+    cp?: number | undefined;
 }>, {
+    mean: number;
     standardDeviation: number;
     lowerSpecLimit: number;
     upperSpecLimit: number;
-    mean: number;
     targetSigmaLevel: number;
+    targetCpk: number;
     yield: number;
     ppm: number;
-    targetCpk: number;
-    cp?: number | undefined;
     cpk?: number | undefined;
+    cp?: number | undefined;
 }, {
+    mean: number;
     standardDeviation: number;
     lowerSpecLimit: number;
     upperSpecLimit: number;
-    mean: number;
     targetSigmaLevel: number;
+    targetCpk: number;
     yield: number;
     ppm: number;
-    targetCpk: number;
-    cp?: number | undefined;
     cpk?: number | undefined;
+    cp?: number | undefined;
 }>;
 export declare const f7ReportFactorSchema: z.ZodObject<{
     factorId: z.ZodString;
@@ -3270,14 +3375,14 @@ export declare const f7ReportFactorSchema: z.ZodObject<{
     factorId: string;
     loopCoefficient: 1 | -1;
     sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
-    approvedDistribution: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+    approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
     sourceReferences: string[];
 }, {
     factorName: string;
     factorId: string;
     loopCoefficient: 1 | -1;
     sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
-    approvedDistribution: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+    approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
     sourceReferences: string[];
 }>;
 export declare const f7ReportSpecificationSourceCellsSchema: z.ZodObject<{
@@ -3369,21 +3474,21 @@ export declare const f7ReportEvidenceSchema: z.ZodEffects<z.ZodObject<{
         sourceMode: z.ZodEnum<["MEASURED", "BASELINE_ASSUMPTION"]>;
     }, "strict", z.ZodTypeAny, {
         factorId: string;
-        family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+        family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
     }, {
         factorId: string;
-        family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+        family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
     }>, "many">;
 }, "strict", z.ZodTypeAny, {
-    workbookContentHash: string;
     worksheetName: string;
+    workbookContentHash: string;
     seed: string;
     iterations: 10000 | 100000;
     factorManifest: {
         factorId: string;
-        family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+        family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
     }[];
     specificationSourceCells: {
@@ -3402,13 +3507,13 @@ export declare const f7ReportEvidenceSchema: z.ZodEffects<z.ZodObject<{
         simulation: "F7_MONTE_CARLO_V1";
     };
 }, {
-    workbookContentHash: string;
     worksheetName: string;
+    workbookContentHash: string;
     seed: string;
     iterations: 10000 | 100000;
     factorManifest: {
         factorId: string;
-        family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+        family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
     }[];
     specificationSourceCells: {
@@ -3427,13 +3532,13 @@ export declare const f7ReportEvidenceSchema: z.ZodEffects<z.ZodObject<{
         simulation: "F7_MONTE_CARLO_V1";
     };
 }>, {
-    workbookContentHash: string;
     worksheetName: string;
+    workbookContentHash: string;
     seed: string;
     iterations: 10000 | 100000;
     factorManifest: {
         factorId: string;
-        family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+        family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
     }[];
     specificationSourceCells: {
@@ -3452,13 +3557,13 @@ export declare const f7ReportEvidenceSchema: z.ZodEffects<z.ZodObject<{
         simulation: "F7_MONTE_CARLO_V1";
     };
 }, {
-    workbookContentHash: string;
     worksheetName: string;
+    workbookContentHash: string;
     seed: string;
     iterations: 10000 | 100000;
     factorManifest: {
         factorId: string;
-        family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+        family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
     }[];
     specificationSourceCells: {
@@ -3477,6 +3582,150 @@ export declare const f7ReportEvidenceSchema: z.ZodEffects<z.ZodObject<{
         simulation: "F7_MONTE_CARLO_V1";
     };
 }>;
+export declare const f7ReportAnalysisSchema: z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
+    status: z.ZodLiteral<"available">;
+    provenance: z.ZodObject<{
+        knowledgeBaseVersion: z.ZodLiteral<"v1">;
+        ruleId: z.ZodLiteral<"default-cpk-target">;
+        threshold: z.ZodNumber;
+        applicability: z.ZodString;
+    }, "strict", z.ZodTypeAny, {
+        ruleId: "default-cpk-target";
+        threshold: number;
+        applicability: string;
+        knowledgeBaseVersion: "v1";
+    }, {
+        ruleId: "default-cpk-target";
+        threshold: number;
+        applicability: string;
+        knowledgeBaseVersion: "v1";
+    }>;
+    comparison: z.ZodObject<{
+        setup: z.ZodObject<{
+            mean: z.ZodNumber;
+            standardDeviation: z.ZodNumber;
+            cp: z.ZodNumber;
+            cpk: z.ZodNumber;
+        }, "strict", z.ZodTypeAny, {
+            cpk: number;
+            mean: number;
+            standardDeviation: number;
+            cp: number;
+        }, {
+            cpk: number;
+            mean: number;
+            standardDeviation: number;
+            cp: number;
+        }>;
+        monteCarlo: z.ZodObject<{
+            mean: z.ZodNumber;
+            standardDeviation: z.ZodNumber;
+            cp: z.ZodNumber;
+            cpk: z.ZodNumber;
+        }, "strict", z.ZodTypeAny, {
+            cpk: number;
+            mean: number;
+            standardDeviation: number;
+            cp: number;
+        }, {
+            cpk: number;
+            mean: number;
+            standardDeviation: number;
+            cp: number;
+        }>;
+    }, "strict", z.ZodTypeAny, {
+        setup: {
+            cpk: number;
+            mean: number;
+            standardDeviation: number;
+            cp: number;
+        };
+        monteCarlo: {
+            cpk: number;
+            mean: number;
+            standardDeviation: number;
+            cp: number;
+        };
+    }, {
+        setup: {
+            cpk: number;
+            mean: number;
+            standardDeviation: number;
+            cp: number;
+        };
+        monteCarlo: {
+            cpk: number;
+            mean: number;
+            standardDeviation: number;
+            cp: number;
+        };
+    }>;
+    targetAssessment: z.ZodString;
+    interpretations: z.ZodArray<z.ZodString, "many">;
+    optimizationDirections: z.ZodArray<z.ZodString, "many">;
+}, "strict", z.ZodTypeAny, {
+    status: "available";
+    provenance: {
+        ruleId: "default-cpk-target";
+        threshold: number;
+        applicability: string;
+        knowledgeBaseVersion: "v1";
+    };
+    comparison: {
+        setup: {
+            cpk: number;
+            mean: number;
+            standardDeviation: number;
+            cp: number;
+        };
+        monteCarlo: {
+            cpk: number;
+            mean: number;
+            standardDeviation: number;
+            cp: number;
+        };
+    };
+    targetAssessment: string;
+    interpretations: string[];
+    optimizationDirections: string[];
+}, {
+    status: "available";
+    provenance: {
+        ruleId: "default-cpk-target";
+        threshold: number;
+        applicability: string;
+        knowledgeBaseVersion: "v1";
+    };
+    comparison: {
+        setup: {
+            cpk: number;
+            mean: number;
+            standardDeviation: number;
+            cp: number;
+        };
+        monteCarlo: {
+            cpk: number;
+            mean: number;
+            standardDeviation: number;
+            cp: number;
+        };
+    };
+    targetAssessment: string;
+    interpretations: string[];
+    optimizationDirections: string[];
+}>, z.ZodObject<{
+    status: z.ZodLiteral<"unavailable">;
+    reason: z.ZodString;
+    optimizationDirections: z.ZodArray<z.ZodString, "many">;
+}, "strict", z.ZodTypeAny, {
+    status: "unavailable";
+    reason: string;
+    optimizationDirections: string[];
+}, {
+    status: "unavailable";
+    reason: string;
+    optimizationDirections: string[];
+}>]>;
 export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
     contractId: z.ZodLiteral<"f7-report-v1">;
     outputClassification: z.ZodLiteral<"confidential">;
@@ -3488,13 +3737,13 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         workbookContentHash: z.ZodString;
         worksheetName: z.ZodString;
     }, "strict", z.ZodTypeAny, {
-        workbookContentHash: string;
-        worksheetName: string;
         fileName: string;
+        worksheetName: string;
+        workbookContentHash: string;
     }, {
-        workbookContentHash: string;
-        worksheetName: string;
         fileName: string;
+        worksheetName: string;
+        workbookContentHash: string;
     }>;
     summary: z.ZodEffects<z.ZodObject<{
         mean: z.ZodNumber;
@@ -3508,49 +3757,49 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         cpk: z.ZodOptional<z.ZodNumber>;
         targetCpk: z.ZodNumber;
     }, "strict", z.ZodTypeAny, {
+        mean: number;
         standardDeviation: number;
         lowerSpecLimit: number;
         upperSpecLimit: number;
-        mean: number;
         targetSigmaLevel: number;
+        targetCpk: number;
         yield: number;
         ppm: number;
-        targetCpk: number;
-        cp?: number | undefined;
         cpk?: number | undefined;
+        cp?: number | undefined;
     }, {
+        mean: number;
         standardDeviation: number;
         lowerSpecLimit: number;
         upperSpecLimit: number;
-        mean: number;
         targetSigmaLevel: number;
+        targetCpk: number;
         yield: number;
         ppm: number;
-        targetCpk: number;
-        cp?: number | undefined;
         cpk?: number | undefined;
+        cp?: number | undefined;
     }>, {
+        mean: number;
         standardDeviation: number;
         lowerSpecLimit: number;
         upperSpecLimit: number;
-        mean: number;
         targetSigmaLevel: number;
+        targetCpk: number;
         yield: number;
         ppm: number;
-        targetCpk: number;
-        cp?: number | undefined;
         cpk?: number | undefined;
+        cp?: number | undefined;
     }, {
+        mean: number;
         standardDeviation: number;
         lowerSpecLimit: number;
         upperSpecLimit: number;
-        mean: number;
         targetSigmaLevel: number;
+        targetCpk: number;
         yield: number;
         ppm: number;
-        targetCpk: number;
-        cp?: number | undefined;
         cpk?: number | undefined;
+        cp?: number | undefined;
     }>;
     simulation: z.ZodEffects<z.ZodObject<{
         methodId: z.ZodLiteral<"F7_MONTE_CARLO_V1">;
@@ -3645,14 +3894,14 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             standardDeviation: z.ZodNumber;
             expectedBinCounts: z.ZodArray<z.ZodNumber, "many">;
         }, "strict", z.ZodTypeAny, {
+            mean: number;
             standardDeviation: number;
             methodId: "F7_NORMAL_MOMENT_FIT_V1";
-            mean: number;
             expectedBinCounts: number[];
         }, {
+            mean: number;
             standardDeviation: number;
             methodId: "F7_NORMAL_MOMENT_FIT_V1";
-            mean: number;
             expectedBinCounts: number[];
         }>;
         capability: z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
@@ -3665,19 +3914,19 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             targetStatus: z.ZodEnum<["meets_target", "below_target"]>;
         }, "strict", z.ZodTypeAny, {
             status: "available";
+            cpk: number;
+            targetCpk: number;
             cp: number;
             lowerCpk: number;
             upperCpk: number;
-            cpk: number;
-            targetCpk: number;
             targetStatus: "meets_target" | "below_target";
         }, {
             status: "available";
+            cpk: number;
+            targetCpk: number;
             cp: number;
             lowerCpk: number;
             upperCpk: number;
-            cpk: number;
-            targetCpk: number;
             targetStatus: "meets_target" | "below_target";
         }>, z.ZodObject<{
             status: z.ZodLiteral<"not_available">;
@@ -3685,12 +3934,12 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             targetCpk: z.ZodNumber;
         }, "strict", z.ZodTypeAny, {
             status: "not_available";
-            reason: "zero_variance";
             targetCpk: number;
+            reason: "zero_variance";
         }, {
             status: "not_available";
-            reason: "zero_variance";
             targetCpk: number;
+            reason: "zero_variance";
         }>]>;
         normalModel: z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
             status: z.ZodLiteral<"available">;
@@ -3700,15 +3949,15 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             expectedYield: z.ZodNumber;
         }, "strict", z.ZodTypeAny, {
             status: "available";
+            totalDpm: number;
             lowerTailDpm: number;
             upperTailDpm: number;
-            totalDpm: number;
             expectedYield: number;
         }, {
             status: "available";
+            totalDpm: number;
             lowerTailDpm: number;
             upperTailDpm: number;
-            totalDpm: number;
             expectedYield: number;
         }>, z.ZodObject<{
             status: z.ZodLiteral<"not_available">;
@@ -3726,21 +3975,35 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             sourceMode: z.ZodEnum<["MEASURED", "BASELINE_ASSUMPTION"]>;
         }, "strict", z.ZodTypeAny, {
             factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }, {
             factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }>, "many">;
     }, "strict", z.ZodTypeAny, {
         status: "complete";
+        capability: {
+            status: "available";
+            cpk: number;
+            targetCpk: number;
+            cp: number;
+            lowerCpk: number;
+            upperCpk: number;
+            targetStatus: "meets_target" | "below_target";
+        } | {
+            status: "not_available";
+            targetCpk: number;
+            reason: "zero_variance";
+        };
+        mean: number;
         standardDeviation: number;
         lowerSpecLimit: number;
         upperSpecLimit: number;
-        methodId: "F7_MONTE_CARLO_V1";
-        mean: number;
         targetSigmaLevel: number;
+        yield: number;
+        methodId: "F7_MONTE_CARLO_V1";
         iterations: 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
@@ -3755,7 +4018,6 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         };
         inSpecCount: number;
         outOfSpecCount: number;
-        yield: number;
         outOfSpecProbability: number;
         ppm: number;
         histogram: {
@@ -3767,29 +4029,16 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             }[];
         };
         normalFit: {
+            mean: number;
             standardDeviation: number;
             methodId: "F7_NORMAL_MOMENT_FIT_V1";
-            mean: number;
             expectedBinCounts: number[];
-        };
-        capability: {
-            status: "available";
-            cp: number;
-            lowerCpk: number;
-            upperCpk: number;
-            cpk: number;
-            targetCpk: number;
-            targetStatus: "meets_target" | "below_target";
-        } | {
-            status: "not_available";
-            reason: "zero_variance";
-            targetCpk: number;
         };
         normalModel: {
             status: "available";
+            totalDpm: number;
             lowerTailDpm: number;
             upperTailDpm: number;
-            totalDpm: number;
             expectedYield: number;
         } | {
             status: "not_available";
@@ -3797,17 +4046,31 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         };
         factorManifest: {
             factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
     }, {
         status: "complete";
+        capability: {
+            status: "available";
+            cpk: number;
+            targetCpk: number;
+            cp: number;
+            lowerCpk: number;
+            upperCpk: number;
+            targetStatus: "meets_target" | "below_target";
+        } | {
+            status: "not_available";
+            targetCpk: number;
+            reason: "zero_variance";
+        };
+        mean: number;
         standardDeviation: number;
         lowerSpecLimit: number;
         upperSpecLimit: number;
-        methodId: "F7_MONTE_CARLO_V1";
-        mean: number;
         targetSigmaLevel: number;
+        yield: number;
+        methodId: "F7_MONTE_CARLO_V1";
         iterations: 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
@@ -3822,7 +4085,6 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         };
         inSpecCount: number;
         outOfSpecCount: number;
-        yield: number;
         outOfSpecProbability: number;
         ppm: number;
         histogram: {
@@ -3834,29 +4096,16 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             }[];
         };
         normalFit: {
+            mean: number;
             standardDeviation: number;
             methodId: "F7_NORMAL_MOMENT_FIT_V1";
-            mean: number;
             expectedBinCounts: number[];
-        };
-        capability: {
-            status: "available";
-            cp: number;
-            lowerCpk: number;
-            upperCpk: number;
-            cpk: number;
-            targetCpk: number;
-            targetStatus: "meets_target" | "below_target";
-        } | {
-            status: "not_available";
-            reason: "zero_variance";
-            targetCpk: number;
         };
         normalModel: {
             status: "available";
+            totalDpm: number;
             lowerTailDpm: number;
             upperTailDpm: number;
-            totalDpm: number;
             expectedYield: number;
         } | {
             status: "not_available";
@@ -3864,17 +4113,31 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         };
         factorManifest: {
             factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
     }>, {
         status: "complete";
+        capability: {
+            status: "available";
+            cpk: number;
+            targetCpk: number;
+            cp: number;
+            lowerCpk: number;
+            upperCpk: number;
+            targetStatus: "meets_target" | "below_target";
+        } | {
+            status: "not_available";
+            targetCpk: number;
+            reason: "zero_variance";
+        };
+        mean: number;
         standardDeviation: number;
         lowerSpecLimit: number;
         upperSpecLimit: number;
-        methodId: "F7_MONTE_CARLO_V1";
-        mean: number;
         targetSigmaLevel: number;
+        yield: number;
+        methodId: "F7_MONTE_CARLO_V1";
         iterations: 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
@@ -3889,7 +4152,6 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         };
         inSpecCount: number;
         outOfSpecCount: number;
-        yield: number;
         outOfSpecProbability: number;
         ppm: number;
         histogram: {
@@ -3901,29 +4163,16 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             }[];
         };
         normalFit: {
+            mean: number;
             standardDeviation: number;
             methodId: "F7_NORMAL_MOMENT_FIT_V1";
-            mean: number;
             expectedBinCounts: number[];
-        };
-        capability: {
-            status: "available";
-            cp: number;
-            lowerCpk: number;
-            upperCpk: number;
-            cpk: number;
-            targetCpk: number;
-            targetStatus: "meets_target" | "below_target";
-        } | {
-            status: "not_available";
-            reason: "zero_variance";
-            targetCpk: number;
         };
         normalModel: {
             status: "available";
+            totalDpm: number;
             lowerTailDpm: number;
             upperTailDpm: number;
-            totalDpm: number;
             expectedYield: number;
         } | {
             status: "not_available";
@@ -3931,17 +4180,31 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         };
         factorManifest: {
             factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
     }, {
         status: "complete";
+        capability: {
+            status: "available";
+            cpk: number;
+            targetCpk: number;
+            cp: number;
+            lowerCpk: number;
+            upperCpk: number;
+            targetStatus: "meets_target" | "below_target";
+        } | {
+            status: "not_available";
+            targetCpk: number;
+            reason: "zero_variance";
+        };
+        mean: number;
         standardDeviation: number;
         lowerSpecLimit: number;
         upperSpecLimit: number;
-        methodId: "F7_MONTE_CARLO_V1";
-        mean: number;
         targetSigmaLevel: number;
+        yield: number;
+        methodId: "F7_MONTE_CARLO_V1";
         iterations: 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
@@ -3956,7 +4219,6 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         };
         inSpecCount: number;
         outOfSpecCount: number;
-        yield: number;
         outOfSpecProbability: number;
         ppm: number;
         histogram: {
@@ -3968,29 +4230,16 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             }[];
         };
         normalFit: {
+            mean: number;
             standardDeviation: number;
             methodId: "F7_NORMAL_MOMENT_FIT_V1";
-            mean: number;
             expectedBinCounts: number[];
-        };
-        capability: {
-            status: "available";
-            cp: number;
-            lowerCpk: number;
-            upperCpk: number;
-            cpk: number;
-            targetCpk: number;
-            targetStatus: "meets_target" | "below_target";
-        } | {
-            status: "not_available";
-            reason: "zero_variance";
-            targetCpk: number;
         };
         normalModel: {
             status: "available";
+            totalDpm: number;
             lowerTailDpm: number;
             upperTailDpm: number;
-            totalDpm: number;
             expectedYield: number;
         } | {
             status: "not_available";
@@ -3998,7 +4247,7 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         };
         factorManifest: {
             factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
     }>;
@@ -4014,16 +4263,160 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         factorId: string;
         loopCoefficient: 1 | -1;
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
-        approvedDistribution: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+        approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         sourceReferences: string[];
     }, {
         factorName: string;
         factorId: string;
         loopCoefficient: 1 | -1;
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
-        approvedDistribution: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+        approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         sourceReferences: string[];
     }>, "many">;
+    analysis: z.ZodOptional<z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
+        status: z.ZodLiteral<"available">;
+        provenance: z.ZodObject<{
+            knowledgeBaseVersion: z.ZodLiteral<"v1">;
+            ruleId: z.ZodLiteral<"default-cpk-target">;
+            threshold: z.ZodNumber;
+            applicability: z.ZodString;
+        }, "strict", z.ZodTypeAny, {
+            ruleId: "default-cpk-target";
+            threshold: number;
+            applicability: string;
+            knowledgeBaseVersion: "v1";
+        }, {
+            ruleId: "default-cpk-target";
+            threshold: number;
+            applicability: string;
+            knowledgeBaseVersion: "v1";
+        }>;
+        comparison: z.ZodObject<{
+            setup: z.ZodObject<{
+                mean: z.ZodNumber;
+                standardDeviation: z.ZodNumber;
+                cp: z.ZodNumber;
+                cpk: z.ZodNumber;
+            }, "strict", z.ZodTypeAny, {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            }, {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            }>;
+            monteCarlo: z.ZodObject<{
+                mean: z.ZodNumber;
+                standardDeviation: z.ZodNumber;
+                cp: z.ZodNumber;
+                cpk: z.ZodNumber;
+            }, "strict", z.ZodTypeAny, {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            }, {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            }>;
+        }, "strict", z.ZodTypeAny, {
+            setup: {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            };
+            monteCarlo: {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            };
+        }, {
+            setup: {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            };
+            monteCarlo: {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            };
+        }>;
+        targetAssessment: z.ZodString;
+        interpretations: z.ZodArray<z.ZodString, "many">;
+        optimizationDirections: z.ZodArray<z.ZodString, "many">;
+    }, "strict", z.ZodTypeAny, {
+        status: "available";
+        provenance: {
+            ruleId: "default-cpk-target";
+            threshold: number;
+            applicability: string;
+            knowledgeBaseVersion: "v1";
+        };
+        comparison: {
+            setup: {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            };
+            monteCarlo: {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            };
+        };
+        targetAssessment: string;
+        interpretations: string[];
+        optimizationDirections: string[];
+    }, {
+        status: "available";
+        provenance: {
+            ruleId: "default-cpk-target";
+            threshold: number;
+            applicability: string;
+            knowledgeBaseVersion: "v1";
+        };
+        comparison: {
+            setup: {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            };
+            monteCarlo: {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            };
+        };
+        targetAssessment: string;
+        interpretations: string[];
+        optimizationDirections: string[];
+    }>, z.ZodObject<{
+        status: z.ZodLiteral<"unavailable">;
+        reason: z.ZodString;
+        optimizationDirections: z.ZodArray<z.ZodString, "many">;
+    }, "strict", z.ZodTypeAny, {
+        status: "unavailable";
+        reason: string;
+        optimizationDirections: string[];
+    }, {
+        status: "unavailable";
+        reason: string;
+        optimizationDirections: string[];
+    }>]>>;
     evidence: z.ZodEffects<z.ZodObject<{
         workbookContentHash: z.ZodString;
         worksheetName: z.ZodString;
@@ -4074,21 +4467,21 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             sourceMode: z.ZodEnum<["MEASURED", "BASELINE_ASSUMPTION"]>;
         }, "strict", z.ZodTypeAny, {
             factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }, {
             factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }>, "many">;
     }, "strict", z.ZodTypeAny, {
-        workbookContentHash: string;
         worksheetName: string;
+        workbookContentHash: string;
         seed: string;
         iterations: 10000 | 100000;
         factorManifest: {
             factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
         specificationSourceCells: {
@@ -4107,13 +4500,13 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             simulation: "F7_MONTE_CARLO_V1";
         };
     }, {
-        workbookContentHash: string;
         worksheetName: string;
+        workbookContentHash: string;
         seed: string;
         iterations: 10000 | 100000;
         factorManifest: {
             factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
         specificationSourceCells: {
@@ -4132,13 +4525,13 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             simulation: "F7_MONTE_CARLO_V1";
         };
     }>, {
-        workbookContentHash: string;
         worksheetName: string;
+        workbookContentHash: string;
         seed: string;
         iterations: 10000 | 100000;
         factorManifest: {
             factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
         specificationSourceCells: {
@@ -4157,13 +4550,13 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             simulation: "F7_MONTE_CARLO_V1";
         };
     }, {
-        workbookContentHash: string;
         worksheetName: string;
+        workbookContentHash: string;
         seed: string;
         iterations: 10000 | 100000;
         factorManifest: {
             factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
         specificationSourceCells: {
@@ -4184,112 +4577,42 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
     }>;
     markdown: z.ZodString;
 }, "strict", z.ZodTypeAny, {
-    workbook: {
-        workbookContentHash: string;
-        worksheetName: string;
-        fileName: string;
-    };
-    simulation: {
-        status: "complete";
-        standardDeviation: number;
-        lowerSpecLimit: number;
-        upperSpecLimit: number;
-        methodId: "F7_MONTE_CARLO_V1";
-        mean: number;
-        targetSigmaLevel: number;
-        iterations: 10000 | 100000;
-        runSeed: string;
-        correlationMode: "INDEPENDENT";
-        quantiles: {
-            p00135: number;
-            p01: number;
-            p05: number;
-            p50: number;
-            p95: number;
-            p99: number;
-            p99865: number;
-        };
-        inSpecCount: number;
-        outOfSpecCount: number;
-        yield: number;
-        outOfSpecProbability: number;
-        ppm: number;
-        histogram: {
-            methodId: "F7_HISTOGRAM_FD_V1";
-            bins: {
-                minimum: number;
-                maximum: number;
-                observedCount: number;
-            }[];
-        };
-        normalFit: {
-            standardDeviation: number;
-            methodId: "F7_NORMAL_MOMENT_FIT_V1";
-            mean: number;
-            expectedBinCounts: number[];
-        };
-        capability: {
-            status: "available";
-            cp: number;
-            lowerCpk: number;
-            upperCpk: number;
-            cpk: number;
-            targetCpk: number;
-            targetStatus: "meets_target" | "below_target";
-        } | {
-            status: "not_available";
-            reason: "zero_variance";
-            targetCpk: number;
-        };
-        normalModel: {
-            status: "available";
-            lowerTailDpm: number;
-            upperTailDpm: number;
-            totalDpm: number;
-            expectedYield: number;
-        } | {
-            status: "not_available";
-            reason: "zero_variance";
-        };
-        factorManifest: {
-            factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
-            sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
-        }[];
-    };
-    contractId: "f7-report-v1";
-    outputClassification: "confidential";
     sessionId: string;
-    generatedAt: string;
-    assessment: "MEETS_TARGET" | "BELOW_TARGET" | "NOT_EVALUABLE";
+    outputClassification: "confidential";
+    contractId: "f7-report-v1";
     summary: {
+        mean: number;
         standardDeviation: number;
         lowerSpecLimit: number;
         upperSpecLimit: number;
-        mean: number;
         targetSigmaLevel: number;
+        targetCpk: number;
         yield: number;
         ppm: number;
-        targetCpk: number;
-        cp?: number | undefined;
         cpk?: number | undefined;
+        cp?: number | undefined;
+    };
+    workbook: {
+        fileName: string;
+        worksheetName: string;
+        workbookContentHash: string;
     };
     factors: {
         factorName: string;
         factorId: string;
         loopCoefficient: 1 | -1;
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
-        approvedDistribution: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+        approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         sourceReferences: string[];
     }[];
     evidence: {
-        workbookContentHash: string;
         worksheetName: string;
+        workbookContentHash: string;
         seed: string;
         iterations: 10000 | 100000;
         factorManifest: {
             factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
         specificationSourceCells: {
@@ -4308,114 +4631,144 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             simulation: "F7_MONTE_CARLO_V1";
         };
     };
+    generatedAt: string;
+    simulation: {
+        status: "complete";
+        capability: {
+            status: "available";
+            cpk: number;
+            targetCpk: number;
+            cp: number;
+            lowerCpk: number;
+            upperCpk: number;
+            targetStatus: "meets_target" | "below_target";
+        } | {
+            status: "not_available";
+            targetCpk: number;
+            reason: "zero_variance";
+        };
+        mean: number;
+        standardDeviation: number;
+        lowerSpecLimit: number;
+        upperSpecLimit: number;
+        targetSigmaLevel: number;
+        yield: number;
+        methodId: "F7_MONTE_CARLO_V1";
+        iterations: 10000 | 100000;
+        runSeed: string;
+        correlationMode: "INDEPENDENT";
+        quantiles: {
+            p00135: number;
+            p01: number;
+            p05: number;
+            p50: number;
+            p95: number;
+            p99: number;
+            p99865: number;
+        };
+        inSpecCount: number;
+        outOfSpecCount: number;
+        outOfSpecProbability: number;
+        ppm: number;
+        histogram: {
+            methodId: "F7_HISTOGRAM_FD_V1";
+            bins: {
+                minimum: number;
+                maximum: number;
+                observedCount: number;
+            }[];
+        };
+        normalFit: {
+            mean: number;
+            standardDeviation: number;
+            methodId: "F7_NORMAL_MOMENT_FIT_V1";
+            expectedBinCounts: number[];
+        };
+        normalModel: {
+            status: "available";
+            totalDpm: number;
+            lowerTailDpm: number;
+            upperTailDpm: number;
+            expectedYield: number;
+        } | {
+            status: "not_available";
+            reason: "zero_variance";
+        };
+        factorManifest: {
+            factorId: string;
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+            sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+        }[];
+    };
+    assessment: "MEETS_TARGET" | "BELOW_TARGET" | "NOT_EVALUABLE";
     markdown: string;
+    analysis?: {
+        status: "available";
+        provenance: {
+            ruleId: "default-cpk-target";
+            threshold: number;
+            applicability: string;
+            knowledgeBaseVersion: "v1";
+        };
+        comparison: {
+            setup: {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            };
+            monteCarlo: {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            };
+        };
+        targetAssessment: string;
+        interpretations: string[];
+        optimizationDirections: string[];
+    } | {
+        status: "unavailable";
+        reason: string;
+        optimizationDirections: string[];
+    } | undefined;
 }, {
-    workbook: {
-        workbookContentHash: string;
-        worksheetName: string;
-        fileName: string;
-    };
-    simulation: {
-        status: "complete";
-        standardDeviation: number;
-        lowerSpecLimit: number;
-        upperSpecLimit: number;
-        methodId: "F7_MONTE_CARLO_V1";
-        mean: number;
-        targetSigmaLevel: number;
-        iterations: 10000 | 100000;
-        runSeed: string;
-        correlationMode: "INDEPENDENT";
-        quantiles: {
-            p00135: number;
-            p01: number;
-            p05: number;
-            p50: number;
-            p95: number;
-            p99: number;
-            p99865: number;
-        };
-        inSpecCount: number;
-        outOfSpecCount: number;
-        yield: number;
-        outOfSpecProbability: number;
-        ppm: number;
-        histogram: {
-            methodId: "F7_HISTOGRAM_FD_V1";
-            bins: {
-                minimum: number;
-                maximum: number;
-                observedCount: number;
-            }[];
-        };
-        normalFit: {
-            standardDeviation: number;
-            methodId: "F7_NORMAL_MOMENT_FIT_V1";
-            mean: number;
-            expectedBinCounts: number[];
-        };
-        capability: {
-            status: "available";
-            cp: number;
-            lowerCpk: number;
-            upperCpk: number;
-            cpk: number;
-            targetCpk: number;
-            targetStatus: "meets_target" | "below_target";
-        } | {
-            status: "not_available";
-            reason: "zero_variance";
-            targetCpk: number;
-        };
-        normalModel: {
-            status: "available";
-            lowerTailDpm: number;
-            upperTailDpm: number;
-            totalDpm: number;
-            expectedYield: number;
-        } | {
-            status: "not_available";
-            reason: "zero_variance";
-        };
-        factorManifest: {
-            factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
-            sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
-        }[];
-    };
-    contractId: "f7-report-v1";
-    outputClassification: "confidential";
     sessionId: string;
-    generatedAt: string;
-    assessment: "MEETS_TARGET" | "BELOW_TARGET" | "NOT_EVALUABLE";
+    outputClassification: "confidential";
+    contractId: "f7-report-v1";
     summary: {
+        mean: number;
         standardDeviation: number;
         lowerSpecLimit: number;
         upperSpecLimit: number;
-        mean: number;
         targetSigmaLevel: number;
+        targetCpk: number;
         yield: number;
         ppm: number;
-        targetCpk: number;
-        cp?: number | undefined;
         cpk?: number | undefined;
+        cp?: number | undefined;
+    };
+    workbook: {
+        fileName: string;
+        worksheetName: string;
+        workbookContentHash: string;
     };
     factors: {
         factorName: string;
         factorId: string;
         loopCoefficient: 1 | -1;
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
-        approvedDistribution: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+        approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         sourceReferences: string[];
     }[];
     evidence: {
-        workbookContentHash: string;
         worksheetName: string;
+        workbookContentHash: string;
         seed: string;
         iterations: 10000 | 100000;
         factorManifest: {
             factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
         specificationSourceCells: {
@@ -4434,114 +4787,144 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             simulation: "F7_MONTE_CARLO_V1";
         };
     };
+    generatedAt: string;
+    simulation: {
+        status: "complete";
+        capability: {
+            status: "available";
+            cpk: number;
+            targetCpk: number;
+            cp: number;
+            lowerCpk: number;
+            upperCpk: number;
+            targetStatus: "meets_target" | "below_target";
+        } | {
+            status: "not_available";
+            targetCpk: number;
+            reason: "zero_variance";
+        };
+        mean: number;
+        standardDeviation: number;
+        lowerSpecLimit: number;
+        upperSpecLimit: number;
+        targetSigmaLevel: number;
+        yield: number;
+        methodId: "F7_MONTE_CARLO_V1";
+        iterations: 10000 | 100000;
+        runSeed: string;
+        correlationMode: "INDEPENDENT";
+        quantiles: {
+            p00135: number;
+            p01: number;
+            p05: number;
+            p50: number;
+            p95: number;
+            p99: number;
+            p99865: number;
+        };
+        inSpecCount: number;
+        outOfSpecCount: number;
+        outOfSpecProbability: number;
+        ppm: number;
+        histogram: {
+            methodId: "F7_HISTOGRAM_FD_V1";
+            bins: {
+                minimum: number;
+                maximum: number;
+                observedCount: number;
+            }[];
+        };
+        normalFit: {
+            mean: number;
+            standardDeviation: number;
+            methodId: "F7_NORMAL_MOMENT_FIT_V1";
+            expectedBinCounts: number[];
+        };
+        normalModel: {
+            status: "available";
+            totalDpm: number;
+            lowerTailDpm: number;
+            upperTailDpm: number;
+            expectedYield: number;
+        } | {
+            status: "not_available";
+            reason: "zero_variance";
+        };
+        factorManifest: {
+            factorId: string;
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+            sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+        }[];
+    };
+    assessment: "MEETS_TARGET" | "BELOW_TARGET" | "NOT_EVALUABLE";
     markdown: string;
+    analysis?: {
+        status: "available";
+        provenance: {
+            ruleId: "default-cpk-target";
+            threshold: number;
+            applicability: string;
+            knowledgeBaseVersion: "v1";
+        };
+        comparison: {
+            setup: {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            };
+            monteCarlo: {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            };
+        };
+        targetAssessment: string;
+        interpretations: string[];
+        optimizationDirections: string[];
+    } | {
+        status: "unavailable";
+        reason: string;
+        optimizationDirections: string[];
+    } | undefined;
 }>, {
-    workbook: {
-        workbookContentHash: string;
-        worksheetName: string;
-        fileName: string;
-    };
-    simulation: {
-        status: "complete";
-        standardDeviation: number;
-        lowerSpecLimit: number;
-        upperSpecLimit: number;
-        methodId: "F7_MONTE_CARLO_V1";
-        mean: number;
-        targetSigmaLevel: number;
-        iterations: 10000 | 100000;
-        runSeed: string;
-        correlationMode: "INDEPENDENT";
-        quantiles: {
-            p00135: number;
-            p01: number;
-            p05: number;
-            p50: number;
-            p95: number;
-            p99: number;
-            p99865: number;
-        };
-        inSpecCount: number;
-        outOfSpecCount: number;
-        yield: number;
-        outOfSpecProbability: number;
-        ppm: number;
-        histogram: {
-            methodId: "F7_HISTOGRAM_FD_V1";
-            bins: {
-                minimum: number;
-                maximum: number;
-                observedCount: number;
-            }[];
-        };
-        normalFit: {
-            standardDeviation: number;
-            methodId: "F7_NORMAL_MOMENT_FIT_V1";
-            mean: number;
-            expectedBinCounts: number[];
-        };
-        capability: {
-            status: "available";
-            cp: number;
-            lowerCpk: number;
-            upperCpk: number;
-            cpk: number;
-            targetCpk: number;
-            targetStatus: "meets_target" | "below_target";
-        } | {
-            status: "not_available";
-            reason: "zero_variance";
-            targetCpk: number;
-        };
-        normalModel: {
-            status: "available";
-            lowerTailDpm: number;
-            upperTailDpm: number;
-            totalDpm: number;
-            expectedYield: number;
-        } | {
-            status: "not_available";
-            reason: "zero_variance";
-        };
-        factorManifest: {
-            factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
-            sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
-        }[];
-    };
-    contractId: "f7-report-v1";
-    outputClassification: "confidential";
     sessionId: string;
-    generatedAt: string;
-    assessment: "MEETS_TARGET" | "BELOW_TARGET" | "NOT_EVALUABLE";
+    outputClassification: "confidential";
+    contractId: "f7-report-v1";
     summary: {
+        mean: number;
         standardDeviation: number;
         lowerSpecLimit: number;
         upperSpecLimit: number;
-        mean: number;
         targetSigmaLevel: number;
+        targetCpk: number;
         yield: number;
         ppm: number;
-        targetCpk: number;
-        cp?: number | undefined;
         cpk?: number | undefined;
+        cp?: number | undefined;
+    };
+    workbook: {
+        fileName: string;
+        worksheetName: string;
+        workbookContentHash: string;
     };
     factors: {
         factorName: string;
         factorId: string;
         loopCoefficient: 1 | -1;
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
-        approvedDistribution: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+        approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         sourceReferences: string[];
     }[];
     evidence: {
-        workbookContentHash: string;
         worksheetName: string;
+        workbookContentHash: string;
         seed: string;
         iterations: 10000 | 100000;
         factorManifest: {
             factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
         specificationSourceCells: {
@@ -4560,114 +4943,144 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             simulation: "F7_MONTE_CARLO_V1";
         };
     };
+    generatedAt: string;
+    simulation: {
+        status: "complete";
+        capability: {
+            status: "available";
+            cpk: number;
+            targetCpk: number;
+            cp: number;
+            lowerCpk: number;
+            upperCpk: number;
+            targetStatus: "meets_target" | "below_target";
+        } | {
+            status: "not_available";
+            targetCpk: number;
+            reason: "zero_variance";
+        };
+        mean: number;
+        standardDeviation: number;
+        lowerSpecLimit: number;
+        upperSpecLimit: number;
+        targetSigmaLevel: number;
+        yield: number;
+        methodId: "F7_MONTE_CARLO_V1";
+        iterations: 10000 | 100000;
+        runSeed: string;
+        correlationMode: "INDEPENDENT";
+        quantiles: {
+            p00135: number;
+            p01: number;
+            p05: number;
+            p50: number;
+            p95: number;
+            p99: number;
+            p99865: number;
+        };
+        inSpecCount: number;
+        outOfSpecCount: number;
+        outOfSpecProbability: number;
+        ppm: number;
+        histogram: {
+            methodId: "F7_HISTOGRAM_FD_V1";
+            bins: {
+                minimum: number;
+                maximum: number;
+                observedCount: number;
+            }[];
+        };
+        normalFit: {
+            mean: number;
+            standardDeviation: number;
+            methodId: "F7_NORMAL_MOMENT_FIT_V1";
+            expectedBinCounts: number[];
+        };
+        normalModel: {
+            status: "available";
+            totalDpm: number;
+            lowerTailDpm: number;
+            upperTailDpm: number;
+            expectedYield: number;
+        } | {
+            status: "not_available";
+            reason: "zero_variance";
+        };
+        factorManifest: {
+            factorId: string;
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+            sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+        }[];
+    };
+    assessment: "MEETS_TARGET" | "BELOW_TARGET" | "NOT_EVALUABLE";
     markdown: string;
+    analysis?: {
+        status: "available";
+        provenance: {
+            ruleId: "default-cpk-target";
+            threshold: number;
+            applicability: string;
+            knowledgeBaseVersion: "v1";
+        };
+        comparison: {
+            setup: {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            };
+            monteCarlo: {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            };
+        };
+        targetAssessment: string;
+        interpretations: string[];
+        optimizationDirections: string[];
+    } | {
+        status: "unavailable";
+        reason: string;
+        optimizationDirections: string[];
+    } | undefined;
 }, {
-    workbook: {
-        workbookContentHash: string;
-        worksheetName: string;
-        fileName: string;
-    };
-    simulation: {
-        status: "complete";
-        standardDeviation: number;
-        lowerSpecLimit: number;
-        upperSpecLimit: number;
-        methodId: "F7_MONTE_CARLO_V1";
-        mean: number;
-        targetSigmaLevel: number;
-        iterations: 10000 | 100000;
-        runSeed: string;
-        correlationMode: "INDEPENDENT";
-        quantiles: {
-            p00135: number;
-            p01: number;
-            p05: number;
-            p50: number;
-            p95: number;
-            p99: number;
-            p99865: number;
-        };
-        inSpecCount: number;
-        outOfSpecCount: number;
-        yield: number;
-        outOfSpecProbability: number;
-        ppm: number;
-        histogram: {
-            methodId: "F7_HISTOGRAM_FD_V1";
-            bins: {
-                minimum: number;
-                maximum: number;
-                observedCount: number;
-            }[];
-        };
-        normalFit: {
-            standardDeviation: number;
-            methodId: "F7_NORMAL_MOMENT_FIT_V1";
-            mean: number;
-            expectedBinCounts: number[];
-        };
-        capability: {
-            status: "available";
-            cp: number;
-            lowerCpk: number;
-            upperCpk: number;
-            cpk: number;
-            targetCpk: number;
-            targetStatus: "meets_target" | "below_target";
-        } | {
-            status: "not_available";
-            reason: "zero_variance";
-            targetCpk: number;
-        };
-        normalModel: {
-            status: "available";
-            lowerTailDpm: number;
-            upperTailDpm: number;
-            totalDpm: number;
-            expectedYield: number;
-        } | {
-            status: "not_available";
-            reason: "zero_variance";
-        };
-        factorManifest: {
-            factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
-            sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
-        }[];
-    };
-    contractId: "f7-report-v1";
-    outputClassification: "confidential";
     sessionId: string;
-    generatedAt: string;
-    assessment: "MEETS_TARGET" | "BELOW_TARGET" | "NOT_EVALUABLE";
+    outputClassification: "confidential";
+    contractId: "f7-report-v1";
     summary: {
+        mean: number;
         standardDeviation: number;
         lowerSpecLimit: number;
         upperSpecLimit: number;
-        mean: number;
         targetSigmaLevel: number;
+        targetCpk: number;
         yield: number;
         ppm: number;
-        targetCpk: number;
-        cp?: number | undefined;
         cpk?: number | undefined;
+        cp?: number | undefined;
+    };
+    workbook: {
+        fileName: string;
+        worksheetName: string;
+        workbookContentHash: string;
     };
     factors: {
         factorName: string;
         factorId: string;
         loopCoefficient: 1 | -1;
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
-        approvedDistribution: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+        approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         sourceReferences: string[];
     }[];
     evidence: {
-        workbookContentHash: string;
         worksheetName: string;
+        workbookContentHash: string;
         seed: string;
         iterations: 10000 | 100000;
         factorManifest: {
             factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
         specificationSourceCells: {
@@ -4686,7 +5099,107 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
             simulation: "F7_MONTE_CARLO_V1";
         };
     };
+    generatedAt: string;
+    simulation: {
+        status: "complete";
+        capability: {
+            status: "available";
+            cpk: number;
+            targetCpk: number;
+            cp: number;
+            lowerCpk: number;
+            upperCpk: number;
+            targetStatus: "meets_target" | "below_target";
+        } | {
+            status: "not_available";
+            targetCpk: number;
+            reason: "zero_variance";
+        };
+        mean: number;
+        standardDeviation: number;
+        lowerSpecLimit: number;
+        upperSpecLimit: number;
+        targetSigmaLevel: number;
+        yield: number;
+        methodId: "F7_MONTE_CARLO_V1";
+        iterations: 10000 | 100000;
+        runSeed: string;
+        correlationMode: "INDEPENDENT";
+        quantiles: {
+            p00135: number;
+            p01: number;
+            p05: number;
+            p50: number;
+            p95: number;
+            p99: number;
+            p99865: number;
+        };
+        inSpecCount: number;
+        outOfSpecCount: number;
+        outOfSpecProbability: number;
+        ppm: number;
+        histogram: {
+            methodId: "F7_HISTOGRAM_FD_V1";
+            bins: {
+                minimum: number;
+                maximum: number;
+                observedCount: number;
+            }[];
+        };
+        normalFit: {
+            mean: number;
+            standardDeviation: number;
+            methodId: "F7_NORMAL_MOMENT_FIT_V1";
+            expectedBinCounts: number[];
+        };
+        normalModel: {
+            status: "available";
+            totalDpm: number;
+            lowerTailDpm: number;
+            upperTailDpm: number;
+            expectedYield: number;
+        } | {
+            status: "not_available";
+            reason: "zero_variance";
+        };
+        factorManifest: {
+            factorId: string;
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
+            sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
+        }[];
+    };
+    assessment: "MEETS_TARGET" | "BELOW_TARGET" | "NOT_EVALUABLE";
     markdown: string;
+    analysis?: {
+        status: "available";
+        provenance: {
+            ruleId: "default-cpk-target";
+            threshold: number;
+            applicability: string;
+            knowledgeBaseVersion: "v1";
+        };
+        comparison: {
+            setup: {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            };
+            monteCarlo: {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            };
+        };
+        targetAssessment: string;
+        interpretations: string[];
+        optimizationDirections: string[];
+    } | {
+        status: "unavailable";
+        reason: string;
+        optimizationDirections: string[];
+    } | undefined;
 }>;
 export declare const f7AnalysisRequestContractIdSchema: z.ZodLiteral<"f7-analysis-request-v1">;
 export declare const f7AnalysisResultContractIdSchema: z.ZodLiteral<"f7-analysis-result-v1">;
@@ -4722,10 +5235,6 @@ export declare const f7WorksheetOptionSchema: z.ZodObject<{
         descriptionCell: string;
     }>]>;
 }, "strict", z.ZodTypeAny, {
-    worksheetName: string;
-    selectionIndex: number;
-    toleranceLoopDescription: string;
-    worksheetKind: "analysis" | "example_or_template";
     source: {
         summarySheet: "Auto Summary";
         summaryRow: number;
@@ -4735,11 +5244,11 @@ export declare const f7WorksheetOptionSchema: z.ZodObject<{
         discoveryMethod: "worksheet_scan";
         descriptionCell: string;
     };
+    worksheetName: string;
+    toleranceLoopDescription: string;
+    worksheetKind: "analysis" | "example_or_template";
+    selectionIndex: number;
 }, {
-    worksheetName: string;
-    selectionIndex: number;
-    toleranceLoopDescription: string;
-    worksheetKind: "analysis" | "example_or_template";
     source: {
         summarySheet: "Auto Summary";
         summaryRow: number;
@@ -4749,6 +5258,10 @@ export declare const f7WorksheetOptionSchema: z.ZodObject<{
         discoveryMethod: "worksheet_scan";
         descriptionCell: string;
     };
+    worksheetName: string;
+    toleranceLoopDescription: string;
+    worksheetKind: "analysis" | "example_or_template";
+    selectionIndex: number;
 }>;
 export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
     contractId: z.ZodLiteral<"f7-analysis-result-v1">;
@@ -4759,11 +5272,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         fileName: z.ZodString;
         workbookContentHash: z.ZodString;
     }, "strict", z.ZodTypeAny, {
-        workbookContentHash: string;
         fileName: string;
+        workbookContentHash: string;
     }, {
-        workbookContentHash: string;
         fileName: string;
+        workbookContentHash: string;
     }>;
     selectedWorksheetNames: z.ZodArray<z.ZodString, "many">;
     worksheetOptions: z.ZodArray<z.ZodObject<{
@@ -4797,10 +5310,6 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             descriptionCell: string;
         }>]>;
     }, "strict", z.ZodTypeAny, {
-        worksheetName: string;
-        selectionIndex: number;
-        toleranceLoopDescription: string;
-        worksheetKind: "analysis" | "example_or_template";
         source: {
             summarySheet: "Auto Summary";
             summaryRow: number;
@@ -4810,11 +5319,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             discoveryMethod: "worksheet_scan";
             descriptionCell: string;
         };
+        worksheetName: string;
+        toleranceLoopDescription: string;
+        worksheetKind: "analysis" | "example_or_template";
+        selectionIndex: number;
     }, {
-        worksheetName: string;
-        selectionIndex: number;
-        toleranceLoopDescription: string;
-        worksheetKind: "analysis" | "example_or_template";
         source: {
             summarySheet: "Auto Summary";
             summaryRow: number;
@@ -4824,7 +5333,27 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             discoveryMethod: "worksheet_scan";
             descriptionCell: string;
         };
+        worksheetName: string;
+        toleranceLoopDescription: string;
+        worksheetKind: "analysis" | "example_or_template";
+        selectionIndex: number;
     }>, "many">;
+    dimensionChainImage: z.ZodOptional<z.ZodObject<{
+        status: z.ZodLiteral<"available">;
+        worksheetName: z.ZodString;
+        contentHash: z.ZodString;
+        url: z.ZodString;
+    }, "strict", z.ZodTypeAny, {
+        status: "available";
+        contentHash: string;
+        worksheetName: string;
+        url: string;
+    }, {
+        status: "available";
+        contentHash: string;
+        worksheetName: string;
+        url: string;
+    }>>;
     systemSpecification: z.ZodOptional<z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
         lowerSpecLimit: z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
             status: z.ZodLiteral<"available">;
@@ -5443,85 +5972,85 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             workbookUnitEvidence: z.ZodOptional<z.ZodString>;
             excelSignedMean: z.ZodNumber;
         }, "strict", z.ZodTypeAny, {
-            standardDeviation: number;
-            workbookContentHash: string;
-            worksheetName: string;
-            tableId: string;
-            sourceRow: number;
-            sourceCells: Record<string, string>;
-            factorCandidateId: string;
             factorName: string;
-            excelSignedMean: number;
-            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-            lowerSpecLimit: number;
-            upperSpecLimit: number;
-            designNominal: number;
+            worksheetName: string;
+            workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
-            userAdded?: true | undefined;
-            workbookUnitEvidence?: string | undefined;
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+            standardDeviation: number;
+            lowerSpecLimit: number;
+            upperSpecLimit: number;
+            tableId: string;
+            sourceRow: number;
+            designNominal: number;
+            sourceCells: Record<string, string>;
+            factorCandidateId: string;
+            excelSignedMean: number;
             longTermSafetyFactor?: number | undefined;
             sigmaLevel?: number | undefined;
+            userAdded?: true | undefined;
+            workbookUnitEvidence?: string | undefined;
         }, {
-            standardDeviation: number;
-            workbookContentHash: string;
-            worksheetName: string;
-            tableId: string;
-            sourceRow: number;
-            sourceCells: Record<string, string>;
-            factorCandidateId: string;
             factorName: string;
-            excelSignedMean: number;
-            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-            lowerSpecLimit: number;
-            upperSpecLimit: number;
-            designNominal: number;
+            worksheetName: string;
+            workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
-            userAdded?: true | undefined;
-            workbookUnitEvidence?: string | undefined;
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+            standardDeviation: number;
+            lowerSpecLimit: number;
+            upperSpecLimit: number;
+            tableId: string;
+            sourceRow: number;
+            designNominal: number;
+            sourceCells: Record<string, string>;
+            factorCandidateId: string;
+            excelSignedMean: number;
             longTermSafetyFactor?: number | undefined;
             sigmaLevel?: number | undefined;
+            userAdded?: true | undefined;
+            workbookUnitEvidence?: string | undefined;
         }>, {
-            standardDeviation: number;
-            workbookContentHash: string;
-            worksheetName: string;
-            tableId: string;
-            sourceRow: number;
-            sourceCells: Record<string, string>;
-            factorCandidateId: string;
             factorName: string;
-            excelSignedMean: number;
-            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-            lowerSpecLimit: number;
-            upperSpecLimit: number;
-            designNominal: number;
+            worksheetName: string;
+            workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
-            userAdded?: true | undefined;
-            workbookUnitEvidence?: string | undefined;
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+            standardDeviation: number;
+            lowerSpecLimit: number;
+            upperSpecLimit: number;
+            tableId: string;
+            sourceRow: number;
+            designNominal: number;
+            sourceCells: Record<string, string>;
+            factorCandidateId: string;
+            excelSignedMean: number;
             longTermSafetyFactor?: number | undefined;
             sigmaLevel?: number | undefined;
+            userAdded?: true | undefined;
+            workbookUnitEvidence?: string | undefined;
         }, {
-            standardDeviation: number;
-            workbookContentHash: string;
-            worksheetName: string;
-            tableId: string;
-            sourceRow: number;
-            sourceCells: Record<string, string>;
-            factorCandidateId: string;
             factorName: string;
-            excelSignedMean: number;
-            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-            lowerSpecLimit: number;
-            upperSpecLimit: number;
-            designNominal: number;
+            worksheetName: string;
+            workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
-            userAdded?: true | undefined;
-            workbookUnitEvidence?: string | undefined;
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+            standardDeviation: number;
+            lowerSpecLimit: number;
+            upperSpecLimit: number;
+            tableId: string;
+            sourceRow: number;
+            designNominal: number;
+            sourceCells: Record<string, string>;
+            factorCandidateId: string;
+            excelSignedMean: number;
             longTermSafetyFactor?: number | undefined;
             sigmaLevel?: number | undefined;
+            userAdded?: true | undefined;
+            workbookUnitEvidence?: string | undefined;
         }>;
         setup: z.ZodOptional<z.ZodEffects<z.ZodObject<{
             longTermSafetyFactor: z.ZodOptional<z.ZodNumber>;
@@ -5535,49 +6064,49 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorName: z.ZodOptional<z.ZodString>;
             userAdded: z.ZodOptional<z.ZodLiteral<true>>;
         }, "strict", z.ZodTypeAny, {
-            factorCandidateId: string;
-            designNominal: number;
+            confirmed: true;
             upperTolerance: number;
             lowerTolerance: number;
-            confirmed: true;
+            designNominal: number;
+            factorCandidateId: string;
             factorName?: string | undefined;
-            userAdded?: true | undefined;
+            distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
             longTermSafetyFactor?: number | undefined;
             sigmaLevel?: number | undefined;
-            distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+            userAdded?: true | undefined;
         }, {
-            factorCandidateId: string;
-            designNominal: number;
+            confirmed: true;
             upperTolerance: number;
             lowerTolerance: number;
-            confirmed: true;
+            designNominal: number;
+            factorCandidateId: string;
             factorName?: string | undefined;
-            userAdded?: true | undefined;
+            distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
             longTermSafetyFactor?: number | undefined;
             sigmaLevel?: number | undefined;
-            distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+            userAdded?: true | undefined;
         }>, {
-            factorCandidateId: string;
-            designNominal: number;
+            confirmed: true;
             upperTolerance: number;
             lowerTolerance: number;
-            confirmed: true;
+            designNominal: number;
+            factorCandidateId: string;
             factorName?: string | undefined;
-            userAdded?: true | undefined;
+            distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
             longTermSafetyFactor?: number | undefined;
             sigmaLevel?: number | undefined;
-            distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+            userAdded?: true | undefined;
         }, {
-            factorCandidateId: string;
-            designNominal: number;
+            confirmed: true;
             upperTolerance: number;
             lowerTolerance: number;
-            confirmed: true;
+            designNominal: number;
+            factorCandidateId: string;
             factorName?: string | undefined;
-            userAdded?: true | undefined;
+            distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
             longTermSafetyFactor?: number | undefined;
             sigmaLevel?: number | undefined;
-            distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+            userAdded?: true | undefined;
         }>>;
         sourceMode: z.ZodOptional<z.ZodEnum<["MEASURED", "BASELINE_ASSUMPTION"]>>;
         input: z.ZodOptional<z.ZodDiscriminatedUnion<"mode", [z.ZodObject<{
@@ -5586,6 +6115,16 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 factorId: z.ZodString;
                 unit: z.ZodString;
                 structure: z.ZodEnum<["RATIONAL_SUBGROUP", "ORDERED_INDIVIDUALS", "UNORDERED_SAMPLE"]>;
+                rationalSubgroupConfig: z.ZodOptional<z.ZodObject<{
+                    subgroupSize: z.ZodNumber;
+                    estimator: z.ZodEnum<["RANGE_D2", "S_C4"]>;
+                }, "strict", z.ZodTypeAny, {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                }, {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                }>>;
                 sourceReference: z.ZodString;
                 importedAt: z.ZodString;
                 msaStatus: z.ZodEnum<["available", "not_available", "unknown"]>;
@@ -5627,9 +6166,9 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }, "strict", z.ZodTypeAny, {
                     value: number;
                     confirmed: true;
+                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     disposition: "excluded";
                     originalRow: number;
-                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     operatorReference: string;
                     sequence?: string | undefined;
                     timestamp?: string | undefined;
@@ -5638,9 +6177,9 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }, {
                     value: number;
                     confirmed: true;
+                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     disposition: "excluded";
                     originalRow: number;
-                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     operatorReference: string;
                     sequence?: string | undefined;
                     timestamp?: string | undefined;
@@ -5662,12 +6201,8 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 analyzedCount: z.ZodNumber;
                 contentHash: z.ZodString;
             }, "strict", z.ZodTypeAny, {
-                factorId: string;
                 unit: string;
-                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                sourceReference: string;
-                importedAt: string;
-                msaStatus: "unknown" | "available" | "not_available";
+                contentHash: string;
                 observations: ({
                     value: number;
                     disposition: "included";
@@ -5679,15 +6214,20 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 } | {
                     value: number;
                     confirmed: true;
+                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     disposition: "excluded";
                     originalRow: number;
-                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     operatorReference: string;
                     sequence?: string | undefined;
                     timestamp?: string | undefined;
                     subgroup?: string | undefined;
                     batch?: string | undefined;
                 })[];
+                factorId: string;
+                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                sourceReference: string;
+                importedAt: string;
+                msaStatus: "unknown" | "available" | "not_available";
                 missingRowCount: number;
                 rejectionSummaries: {
                     reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -5695,14 +6235,13 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
-                contentHash: string;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             }, {
-                factorId: string;
                 unit: string;
-                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                sourceReference: string;
-                importedAt: string;
-                msaStatus: "unknown" | "available" | "not_available";
+                contentHash: string;
                 observations: ({
                     value: number;
                     disposition: "included";
@@ -5714,15 +6253,20 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 } | {
                     value: number;
                     confirmed: true;
+                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     disposition: "excluded";
                     originalRow: number;
-                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     operatorReference: string;
                     sequence?: string | undefined;
                     timestamp?: string | undefined;
                     subgroup?: string | undefined;
                     batch?: string | undefined;
                 })[];
+                factorId: string;
+                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                sourceReference: string;
+                importedAt: string;
+                msaStatus: "unknown" | "available" | "not_available";
                 missingRowCount: number;
                 rejectionSummaries: {
                     reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -5730,14 +6274,13 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
-                contentHash: string;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             }>, {
-                factorId: string;
                 unit: string;
-                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                sourceReference: string;
-                importedAt: string;
-                msaStatus: "unknown" | "available" | "not_available";
+                contentHash: string;
                 observations: ({
                     value: number;
                     disposition: "included";
@@ -5749,15 +6292,20 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 } | {
                     value: number;
                     confirmed: true;
+                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     disposition: "excluded";
                     originalRow: number;
-                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     operatorReference: string;
                     sequence?: string | undefined;
                     timestamp?: string | undefined;
                     subgroup?: string | undefined;
                     batch?: string | undefined;
                 })[];
+                factorId: string;
+                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                sourceReference: string;
+                importedAt: string;
+                msaStatus: "unknown" | "available" | "not_available";
                 missingRowCount: number;
                 rejectionSummaries: {
                     reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -5765,14 +6313,13 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
-                contentHash: string;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             }, {
-                factorId: string;
                 unit: string;
-                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                sourceReference: string;
-                importedAt: string;
-                msaStatus: "unknown" | "available" | "not_available";
+                contentHash: string;
                 observations: ({
                     value: number;
                     disposition: "included";
@@ -5784,15 +6331,20 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 } | {
                     value: number;
                     confirmed: true;
+                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     disposition: "excluded";
                     originalRow: number;
-                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     operatorReference: string;
                     sequence?: string | undefined;
                     timestamp?: string | undefined;
                     subgroup?: string | undefined;
                     batch?: string | undefined;
                 })[];
+                factorId: string;
+                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                sourceReference: string;
+                importedAt: string;
+                msaStatus: "unknown" | "available" | "not_available";
                 missingRowCount: number;
                 rejectionSummaries: {
                     reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -5800,17 +6352,16 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
-                contentHash: string;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             }>>;
         }, "strict", z.ZodTypeAny, {
             mode: "MEASURED";
             dataset?: {
-                factorId: string;
                 unit: string;
-                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                sourceReference: string;
-                importedAt: string;
-                msaStatus: "unknown" | "available" | "not_available";
+                contentHash: string;
                 observations: ({
                     value: number;
                     disposition: "included";
@@ -5822,15 +6373,20 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 } | {
                     value: number;
                     confirmed: true;
+                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     disposition: "excluded";
                     originalRow: number;
-                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     operatorReference: string;
                     sequence?: string | undefined;
                     timestamp?: string | undefined;
                     subgroup?: string | undefined;
                     batch?: string | undefined;
                 })[];
+                factorId: string;
+                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                sourceReference: string;
+                importedAt: string;
+                msaStatus: "unknown" | "available" | "not_available";
                 missingRowCount: number;
                 rejectionSummaries: {
                     reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -5838,17 +6394,16 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
-                contentHash: string;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         }, {
             mode: "MEASURED";
             dataset?: {
-                factorId: string;
                 unit: string;
-                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                sourceReference: string;
-                importedAt: string;
-                msaStatus: "unknown" | "available" | "not_available";
+                contentHash: string;
                 observations: ({
                     value: number;
                     disposition: "included";
@@ -5860,15 +6415,20 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 } | {
                     value: number;
                     confirmed: true;
+                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     disposition: "excluded";
                     originalRow: number;
-                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     operatorReference: string;
                     sequence?: string | undefined;
                     timestamp?: string | undefined;
                     subgroup?: string | undefined;
                     batch?: string | undefined;
                 })[];
+                factorId: string;
+                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                sourceReference: string;
+                importedAt: string;
+                msaStatus: "unknown" | "available" | "not_available";
                 missingRowCount: number;
                 rejectionSummaries: {
                     reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -5876,7 +6436,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
-                contentHash: string;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         }>, z.ZodObject<{
             mode: z.ZodLiteral<"BASELINE_ASSUMPTION">;
@@ -5886,32 +6449,32 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 standardDeviation: z.ZodNumber;
                 support: z.ZodLiteral<"REAL">;
             }, "strict", z.ZodTypeAny, {
+                standardDeviation: number;
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
-                standardDeviation: number;
                 support: "REAL";
             }, {
+                standardDeviation: number;
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
-                standardDeviation: number;
                 support: "REAL";
             }>;
         }, "strict", z.ZodTypeAny, {
+            mode: "BASELINE_ASSUMPTION";
             baselineSampler: {
+                standardDeviation: number;
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
-                standardDeviation: number;
                 support: "REAL";
             };
-            mode: "BASELINE_ASSUMPTION";
         }, {
+            mode: "BASELINE_ASSUMPTION";
             baselineSampler: {
+                standardDeviation: number;
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
-                standardDeviation: number;
                 support: "REAL";
             };
-            mode: "BASELINE_ASSUMPTION";
         }>]>>;
         evidence: z.ZodOptional<z.ZodEffects<z.ZodObject<{
             loopCoefficient: z.ZodUnion<[z.ZodLiteral<-1>, z.ZodLiteral<1>]>;
@@ -5923,14 +6486,14 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 standardDeviation: z.ZodNumber;
                 support: z.ZodLiteral<"REAL">;
             }, "strict", z.ZodTypeAny, {
+                standardDeviation: number;
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
-                standardDeviation: number;
                 support: "REAL";
             }, {
+                standardDeviation: number;
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
-                standardDeviation: number;
                 support: "REAL";
             }>;
             lowerSpecLimit: z.ZodNumber;
@@ -5957,136 +6520,136 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             unit: z.ZodString;
             unitSource: z.ZodEnum<["workbook", "user_confirmed", "unspecified"]>;
         }, "strict", z.ZodTypeAny, {
-            physicalMean: number;
-            workbookContentHash: string;
-            worksheetName: string;
-            tableId: string;
-            sourceRow: number;
-            sourceCells: Record<string, string>;
-            factorCandidateId: string;
+            unit: string;
+            tolerance: number;
             factorName: string;
-            longTermSafetyFactor: number;
-            sigmaLevel: number;
-            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-            lowerSpecLimit: number;
-            upperSpecLimit: number;
-            designNominal: number;
+            worksheetName: string;
+            workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+            oneSigma: number;
+            percentContributionToSigma: number;
+            longTermSafetyFactor: number;
+            lowerSpecLimit: number;
+            upperSpecLimit: number;
+            tableId: string;
+            sourceRow: number;
+            designNominal: number;
+            sigmaLevel: number;
+            sourceCells: Record<string, string>;
+            physicalMean: number;
+            factorCandidateId: string;
             factorId: string;
-            unit: string;
             unitSource: "workbook" | "user_confirmed" | "unspecified";
             loopCoefficient: 1 | -1;
             signedContributionMean: number;
             baselineSampler: {
+                standardDeviation: number;
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
-                standardDeviation: number;
                 support: "REAL";
             };
             calculatedMean: number;
-            tolerance: number;
-            oneSigma: number;
-            percentContributionToSigma: number;
             userAdded?: true | undefined;
         }, {
-            physicalMean: number;
-            workbookContentHash: string;
-            worksheetName: string;
-            tableId: string;
-            sourceRow: number;
-            sourceCells: Record<string, string>;
-            factorCandidateId: string;
+            unit: string;
+            tolerance: number;
             factorName: string;
-            longTermSafetyFactor: number;
-            sigmaLevel: number;
-            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-            lowerSpecLimit: number;
-            upperSpecLimit: number;
-            designNominal: number;
+            worksheetName: string;
+            workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+            oneSigma: number;
+            percentContributionToSigma: number;
+            longTermSafetyFactor: number;
+            lowerSpecLimit: number;
+            upperSpecLimit: number;
+            tableId: string;
+            sourceRow: number;
+            designNominal: number;
+            sigmaLevel: number;
+            sourceCells: Record<string, string>;
+            physicalMean: number;
+            factorCandidateId: string;
             factorId: string;
-            unit: string;
             unitSource: "workbook" | "user_confirmed" | "unspecified";
             loopCoefficient: 1 | -1;
             signedContributionMean: number;
             baselineSampler: {
+                standardDeviation: number;
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
-                standardDeviation: number;
                 support: "REAL";
             };
             calculatedMean: number;
-            tolerance: number;
-            oneSigma: number;
-            percentContributionToSigma: number;
             userAdded?: true | undefined;
         }>, {
-            physicalMean: number;
-            workbookContentHash: string;
-            worksheetName: string;
-            tableId: string;
-            sourceRow: number;
-            sourceCells: Record<string, string>;
-            factorCandidateId: string;
+            unit: string;
+            tolerance: number;
             factorName: string;
-            longTermSafetyFactor: number;
-            sigmaLevel: number;
-            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-            lowerSpecLimit: number;
-            upperSpecLimit: number;
-            designNominal: number;
+            worksheetName: string;
+            workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+            oneSigma: number;
+            percentContributionToSigma: number;
+            longTermSafetyFactor: number;
+            lowerSpecLimit: number;
+            upperSpecLimit: number;
+            tableId: string;
+            sourceRow: number;
+            designNominal: number;
+            sigmaLevel: number;
+            sourceCells: Record<string, string>;
+            physicalMean: number;
+            factorCandidateId: string;
             factorId: string;
-            unit: string;
             unitSource: "workbook" | "user_confirmed" | "unspecified";
             loopCoefficient: 1 | -1;
             signedContributionMean: number;
             baselineSampler: {
+                standardDeviation: number;
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
-                standardDeviation: number;
                 support: "REAL";
             };
             calculatedMean: number;
-            tolerance: number;
-            oneSigma: number;
-            percentContributionToSigma: number;
             userAdded?: true | undefined;
         }, {
-            physicalMean: number;
-            workbookContentHash: string;
-            worksheetName: string;
-            tableId: string;
-            sourceRow: number;
-            sourceCells: Record<string, string>;
-            factorCandidateId: string;
+            unit: string;
+            tolerance: number;
             factorName: string;
-            longTermSafetyFactor: number;
-            sigmaLevel: number;
-            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-            lowerSpecLimit: number;
-            upperSpecLimit: number;
-            designNominal: number;
+            worksheetName: string;
+            workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+            oneSigma: number;
+            percentContributionToSigma: number;
+            longTermSafetyFactor: number;
+            lowerSpecLimit: number;
+            upperSpecLimit: number;
+            tableId: string;
+            sourceRow: number;
+            designNominal: number;
+            sigmaLevel: number;
+            sourceCells: Record<string, string>;
+            physicalMean: number;
+            factorCandidateId: string;
             factorId: string;
-            unit: string;
             unitSource: "workbook" | "user_confirmed" | "unspecified";
             loopCoefficient: 1 | -1;
             signedContributionMean: number;
             baselineSampler: {
+                standardDeviation: number;
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
-                standardDeviation: number;
                 support: "REAL";
             };
             calculatedMean: number;
-            tolerance: number;
-            oneSigma: number;
-            percentContributionToSigma: number;
             userAdded?: true | undefined;
         }>>;
         datasetValidation: z.ZodOptional<z.ZodObject<{
@@ -6096,11 +6659,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 factorId: z.ZodOptional<z.ZodString>;
                 rowNumbers: z.ZodOptional<z.ZodEffects<z.ZodEffects<z.ZodArray<z.ZodNumber, "many">, number[], number[]>, number[], number[]>>;
             }, "strict", z.ZodTypeAny, {
-                reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                 factorId?: string | undefined;
                 rowNumbers?: number[] | undefined;
             }, {
-                reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                 factorId?: string | undefined;
                 rowNumbers?: number[] | undefined;
             }>, "many">;
@@ -6109,11 +6672,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 factorId: z.ZodOptional<z.ZodString>;
                 rowNumbers: z.ZodOptional<z.ZodEffects<z.ZodEffects<z.ZodArray<z.ZodNumber, "many">, number[], number[]>, number[], number[]>>;
             }, "strict", z.ZodTypeAny, {
-                reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                 factorId?: string | undefined;
                 rowNumbers?: number[] | undefined;
             }, {
-                reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                 factorId?: string | undefined;
                 rowNumbers?: number[] | undefined;
             }>, "many">;
@@ -6125,54 +6688,54 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 uniform: z.ZodLiteral<"eligible_with_boundary_warning">;
             }, "strict", z.ZodTypeAny, {
                 normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
                 lognormal: "eligible" | "ineligible_nonpositive";
                 weibull: "eligible" | "ineligible_nonpositive";
                 gamma: "eligible" | "ineligible_nonpositive";
-                uniform: "eligible_with_boundary_warning";
             }, {
                 normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
                 lognormal: "eligible" | "ineligible_nonpositive";
                 weibull: "eligible" | "ineligible_nonpositive";
                 gamma: "eligible" | "ineligible_nonpositive";
-                uniform: "eligible_with_boundary_warning";
             }>;
         }, "strict", z.ZodTypeAny, {
-            status: "ready" | "blocked";
+            status: "blocked" | "ready";
             blockingIssues: {
-                reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                 factorId?: string | undefined;
                 rowNumbers?: number[] | undefined;
             }[];
             advisoryIssues: {
-                reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                 factorId?: string | undefined;
                 rowNumbers?: number[] | undefined;
             }[];
             candidateEligibility: {
                 normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
                 lognormal: "eligible" | "ineligible_nonpositive";
                 weibull: "eligible" | "ineligible_nonpositive";
                 gamma: "eligible" | "ineligible_nonpositive";
-                uniform: "eligible_with_boundary_warning";
             };
         }, {
-            status: "ready" | "blocked";
+            status: "blocked" | "ready";
             blockingIssues: {
-                reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                 factorId?: string | undefined;
                 rowNumbers?: number[] | undefined;
             }[];
             advisoryIssues: {
-                reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                 factorId?: string | undefined;
                 rowNumbers?: number[] | undefined;
             }[];
             candidateEligibility: {
                 normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
                 lognormal: "eligible" | "ineligible_nonpositive";
                 weibull: "eligible" | "ineligible_nonpositive";
                 gamma: "eligible" | "ineligible_nonpositive";
-                uniform: "eligible_with_boundary_warning";
             };
         }>>;
         measurementPasteResult: z.ZodOptional<z.ZodObject<{
@@ -6182,6 +6745,16 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 factorId: z.ZodString;
                 unit: z.ZodString;
                 structure: z.ZodEnum<["RATIONAL_SUBGROUP", "ORDERED_INDIVIDUALS", "UNORDERED_SAMPLE"]>;
+                rationalSubgroupConfig: z.ZodOptional<z.ZodObject<{
+                    subgroupSize: z.ZodNumber;
+                    estimator: z.ZodEnum<["RANGE_D2", "S_C4"]>;
+                }, "strict", z.ZodTypeAny, {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                }, {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                }>>;
                 sourceReference: z.ZodString;
                 importedAt: z.ZodString;
                 msaStatus: z.ZodEnum<["available", "not_available", "unknown"]>;
@@ -6223,9 +6796,9 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }, "strict", z.ZodTypeAny, {
                     value: number;
                     confirmed: true;
+                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     disposition: "excluded";
                     originalRow: number;
-                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     operatorReference: string;
                     sequence?: string | undefined;
                     timestamp?: string | undefined;
@@ -6234,9 +6807,9 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }, {
                     value: number;
                     confirmed: true;
+                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     disposition: "excluded";
                     originalRow: number;
-                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     operatorReference: string;
                     sequence?: string | undefined;
                     timestamp?: string | undefined;
@@ -6258,12 +6831,8 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 analyzedCount: z.ZodNumber;
                 contentHash: z.ZodString;
             }, "strict", z.ZodTypeAny, {
-                factorId: string;
                 unit: string;
-                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                sourceReference: string;
-                importedAt: string;
-                msaStatus: "unknown" | "available" | "not_available";
+                contentHash: string;
                 observations: ({
                     value: number;
                     disposition: "included";
@@ -6275,15 +6844,20 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 } | {
                     value: number;
                     confirmed: true;
+                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     disposition: "excluded";
                     originalRow: number;
-                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     operatorReference: string;
                     sequence?: string | undefined;
                     timestamp?: string | undefined;
                     subgroup?: string | undefined;
                     batch?: string | undefined;
                 })[];
+                factorId: string;
+                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                sourceReference: string;
+                importedAt: string;
+                msaStatus: "unknown" | "available" | "not_available";
                 missingRowCount: number;
                 rejectionSummaries: {
                     reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -6291,14 +6865,13 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
-                contentHash: string;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             }, {
-                factorId: string;
                 unit: string;
-                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                sourceReference: string;
-                importedAt: string;
-                msaStatus: "unknown" | "available" | "not_available";
+                contentHash: string;
                 observations: ({
                     value: number;
                     disposition: "included";
@@ -6310,15 +6883,20 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 } | {
                     value: number;
                     confirmed: true;
+                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     disposition: "excluded";
                     originalRow: number;
-                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     operatorReference: string;
                     sequence?: string | undefined;
                     timestamp?: string | undefined;
                     subgroup?: string | undefined;
                     batch?: string | undefined;
                 })[];
+                factorId: string;
+                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                sourceReference: string;
+                importedAt: string;
+                msaStatus: "unknown" | "available" | "not_available";
                 missingRowCount: number;
                 rejectionSummaries: {
                     reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -6326,14 +6904,13 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
-                contentHash: string;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             }>, {
-                factorId: string;
                 unit: string;
-                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                sourceReference: string;
-                importedAt: string;
-                msaStatus: "unknown" | "available" | "not_available";
+                contentHash: string;
                 observations: ({
                     value: number;
                     disposition: "included";
@@ -6345,15 +6922,20 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 } | {
                     value: number;
                     confirmed: true;
+                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     disposition: "excluded";
                     originalRow: number;
-                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     operatorReference: string;
                     sequence?: string | undefined;
                     timestamp?: string | undefined;
                     subgroup?: string | undefined;
                     batch?: string | undefined;
                 })[];
+                factorId: string;
+                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                sourceReference: string;
+                importedAt: string;
+                msaStatus: "unknown" | "available" | "not_available";
                 missingRowCount: number;
                 rejectionSummaries: {
                     reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -6361,14 +6943,13 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
-                contentHash: string;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             }, {
-                factorId: string;
                 unit: string;
-                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                sourceReference: string;
-                importedAt: string;
-                msaStatus: "unknown" | "available" | "not_available";
+                contentHash: string;
                 observations: ({
                     value: number;
                     disposition: "included";
@@ -6380,15 +6961,20 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 } | {
                     value: number;
                     confirmed: true;
+                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     disposition: "excluded";
                     originalRow: number;
-                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     operatorReference: string;
                     sequence?: string | undefined;
                     timestamp?: string | undefined;
                     subgroup?: string | undefined;
                     batch?: string | undefined;
                 })[];
+                factorId: string;
+                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                sourceReference: string;
+                importedAt: string;
+                msaStatus: "unknown" | "available" | "not_available";
                 missingRowCount: number;
                 rejectionSummaries: {
                     reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -6396,7 +6982,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
-                contentHash: string;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             }>>;
             validation: z.ZodObject<{
                 status: z.ZodEnum<["ready", "blocked"]>;
@@ -6405,11 +6994,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     factorId: z.ZodOptional<z.ZodString>;
                     rowNumbers: z.ZodOptional<z.ZodEffects<z.ZodEffects<z.ZodArray<z.ZodNumber, "many">, number[], number[]>, number[], number[]>>;
                 }, "strict", z.ZodTypeAny, {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }, {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }>, "many">;
@@ -6418,11 +7007,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     factorId: z.ZodOptional<z.ZodString>;
                     rowNumbers: z.ZodOptional<z.ZodEffects<z.ZodEffects<z.ZodArray<z.ZodNumber, "many">, number[], number[]>, number[], number[]>>;
                 }, "strict", z.ZodTypeAny, {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }, {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }>, "many">;
@@ -6434,86 +7023,82 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     uniform: z.ZodLiteral<"eligible_with_boundary_warning">;
                 }, "strict", z.ZodTypeAny, {
                     normal: "eligible";
+                    uniform: "eligible_with_boundary_warning";
                     lognormal: "eligible" | "ineligible_nonpositive";
                     weibull: "eligible" | "ineligible_nonpositive";
                     gamma: "eligible" | "ineligible_nonpositive";
-                    uniform: "eligible_with_boundary_warning";
                 }, {
                     normal: "eligible";
+                    uniform: "eligible_with_boundary_warning";
                     lognormal: "eligible" | "ineligible_nonpositive";
                     weibull: "eligible" | "ineligible_nonpositive";
                     gamma: "eligible" | "ineligible_nonpositive";
-                    uniform: "eligible_with_boundary_warning";
                 }>;
             }, "strict", z.ZodTypeAny, {
-                status: "ready" | "blocked";
+                status: "blocked" | "ready";
                 blockingIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 advisoryIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 candidateEligibility: {
                     normal: "eligible";
+                    uniform: "eligible_with_boundary_warning";
                     lognormal: "eligible" | "ineligible_nonpositive";
                     weibull: "eligible" | "ineligible_nonpositive";
                     gamma: "eligible" | "ineligible_nonpositive";
-                    uniform: "eligible_with_boundary_warning";
                 };
             }, {
-                status: "ready" | "blocked";
+                status: "blocked" | "ready";
                 blockingIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 advisoryIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 candidateEligibility: {
                     normal: "eligible";
+                    uniform: "eligible_with_boundary_warning";
                     lognormal: "eligible" | "ineligible_nonpositive";
                     weibull: "eligible" | "ineligible_nonpositive";
                     gamma: "eligible" | "ineligible_nonpositive";
-                    uniform: "eligible_with_boundary_warning";
                 };
             }>;
         }, "strict", z.ZodTypeAny, {
-            status: "ready" | "blocked";
             validation: {
-                status: "ready" | "blocked";
+                status: "blocked" | "ready";
                 blockingIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 advisoryIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 candidateEligibility: {
                     normal: "eligible";
+                    uniform: "eligible_with_boundary_warning";
                     lognormal: "eligible" | "ineligible_nonpositive";
                     weibull: "eligible" | "ineligible_nonpositive";
                     gamma: "eligible" | "ineligible_nonpositive";
-                    uniform: "eligible_with_boundary_warning";
                 };
             };
+            status: "blocked" | "ready";
             factorId: string;
             dataset?: {
-                factorId: string;
                 unit: string;
-                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                sourceReference: string;
-                importedAt: string;
-                msaStatus: "unknown" | "available" | "not_available";
+                contentHash: string;
                 observations: ({
                     value: number;
                     disposition: "included";
@@ -6525,15 +7110,20 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 } | {
                     value: number;
                     confirmed: true;
+                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     disposition: "excluded";
                     originalRow: number;
-                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     operatorReference: string;
                     sequence?: string | undefined;
                     timestamp?: string | undefined;
                     subgroup?: string | undefined;
                     batch?: string | undefined;
                 })[];
+                factorId: string;
+                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                sourceReference: string;
+                importedAt: string;
+                msaStatus: "unknown" | "available" | "not_available";
                 missingRowCount: number;
                 rejectionSummaries: {
                     reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -6541,38 +7131,37 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
-                contentHash: string;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         }, {
-            status: "ready" | "blocked";
             validation: {
-                status: "ready" | "blocked";
+                status: "blocked" | "ready";
                 blockingIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 advisoryIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 candidateEligibility: {
                     normal: "eligible";
+                    uniform: "eligible_with_boundary_warning";
                     lognormal: "eligible" | "ineligible_nonpositive";
                     weibull: "eligible" | "ineligible_nonpositive";
                     gamma: "eligible" | "ineligible_nonpositive";
-                    uniform: "eligible_with_boundary_warning";
                 };
             };
+            status: "blocked" | "ready";
             factorId: string;
             dataset?: {
-                factorId: string;
                 unit: string;
-                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                sourceReference: string;
-                importedAt: string;
-                msaStatus: "unknown" | "available" | "not_available";
+                contentHash: string;
                 observations: ({
                     value: number;
                     disposition: "included";
@@ -6584,15 +7173,20 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 } | {
                     value: number;
                     confirmed: true;
+                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     disposition: "excluded";
                     originalRow: number;
-                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     operatorReference: string;
                     sequence?: string | undefined;
                     timestamp?: string | undefined;
                     subgroup?: string | undefined;
                     batch?: string | undefined;
                 })[];
+                factorId: string;
+                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                sourceReference: string;
+                importedAt: string;
+                msaStatus: "unknown" | "available" | "not_available";
                 missingRowCount: number;
                 rejectionSummaries: {
                     reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -6600,7 +7194,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
-                contentHash: string;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         }>>;
         distributionFitResult: z.ZodOptional<z.ZodEffects<z.ZodObject<{
@@ -6648,23 +7245,23 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                         lower: z.ZodNumber;
                         upper: z.ZodNumber;
                     }, "strict", z.ZodTypeAny, {
-                        level: 0.95;
                         method: "wilson_score";
+                        level: 0.95;
                         lower: number;
                         upper: number;
                     }, {
-                        level: 0.95;
                         method: "wilson_score";
+                        level: 0.95;
                         lower: number;
                         upper: number;
                     }>, {
-                        level: 0.95;
                         method: "wilson_score";
+                        level: 0.95;
                         lower: number;
                         upper: number;
                     }, {
-                        level: 0.95;
                         method: "wilson_score";
+                        level: 0.95;
                         lower: number;
                         upper: number;
                     }>;
@@ -6676,15 +7273,15 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     streamDigest: z.ZodString;
                     status: z.ZodEnum<["acceptable", "weak", "rejected"]>;
                 }, "strict", z.ZodTypeAny, {
-                    status: "acceptable" | "weak" | "rejected";
+                    status: "rejected" | "acceptable" | "weak";
                     statisticId: "anderson_darling";
                     observedStatistic: number;
                     comparisonDirection: "greater_than_or_equal";
                     refitEachReplicate: true;
                     extremeReplicateCount: number;
                     confidenceInterval: {
-                        level: 0.95;
                         method: "wilson_score";
+                        level: 0.95;
                         lower: number;
                         upper: number;
                     };
@@ -6695,15 +7292,15 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                     streamDigest: string;
                 }, {
-                    status: "acceptable" | "weak" | "rejected";
+                    status: "rejected" | "acceptable" | "weak";
                     statisticId: "anderson_darling";
                     observedStatistic: number;
                     comparisonDirection: "greater_than_or_equal";
                     refitEachReplicate: true;
                     extremeReplicateCount: number;
                     confidenceInterval: {
-                        level: 0.95;
                         method: "wilson_score";
+                        level: 0.95;
                         lower: number;
                         upper: number;
                     };
@@ -6714,15 +7311,15 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                     streamDigest: string;
                 }>, {
-                    status: "acceptable" | "weak" | "rejected";
+                    status: "rejected" | "acceptable" | "weak";
                     statisticId: "anderson_darling";
                     observedStatistic: number;
                     comparisonDirection: "greater_than_or_equal";
                     refitEachReplicate: true;
                     extremeReplicateCount: number;
                     confidenceInterval: {
-                        level: 0.95;
                         method: "wilson_score";
+                        level: 0.95;
                         lower: number;
                         upper: number;
                     };
@@ -6733,15 +7330,15 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                     streamDigest: string;
                 }, {
-                    status: "acceptable" | "weak" | "rejected";
+                    status: "rejected" | "acceptable" | "weak";
                     statisticId: "anderson_darling";
                     observedStatistic: number;
                     comparisonDirection: "greater_than_or_equal";
                     refitEachReplicate: true;
                     extremeReplicateCount: number;
                     confidenceInterval: {
-                        level: 0.95;
                         method: "wilson_score";
+                        level: 0.95;
                         lower: number;
                         upper: number;
                     };
@@ -6754,7 +7351,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }>;
                 warnings: z.ZodArray<z.ZodString, "many">;
             }, "strict", z.ZodTypeAny, {
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                 parameterCount: number;
                 parameters: Record<string, number>;
@@ -6771,15 +7368,15 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     theoretical: number;
                 }[];
                 bootstrap: {
-                    status: "acceptable" | "weak" | "rejected";
+                    status: "rejected" | "acceptable" | "weak";
                     statisticId: "anderson_darling";
                     observedStatistic: number;
                     comparisonDirection: "greater_than_or_equal";
                     refitEachReplicate: true;
                     extremeReplicateCount: number;
                     confidenceInterval: {
-                        level: 0.95;
                         method: "wilson_score";
+                        level: 0.95;
                         lower: number;
                         upper: number;
                     };
@@ -6792,7 +7389,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 };
                 warnings: string[];
             }, {
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                 parameterCount: number;
                 parameters: Record<string, number>;
@@ -6809,15 +7406,15 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     theoretical: number;
                 }[];
                 bootstrap: {
-                    status: "acceptable" | "weak" | "rejected";
+                    status: "rejected" | "acceptable" | "weak";
                     statisticId: "anderson_darling";
                     observedStatistic: number;
                     comparisonDirection: "greater_than_or_equal";
                     refitEachReplicate: true;
                     extremeReplicateCount: number;
                     confidenceInterval: {
-                        level: 0.95;
                         method: "wilson_score";
+                        level: 0.95;
                         lower: number;
                         upper: number;
                     };
@@ -6830,7 +7427,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 };
                 warnings: string[];
             }>, {
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                 parameterCount: number;
                 parameters: Record<string, number>;
@@ -6847,15 +7444,15 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     theoretical: number;
                 }[];
                 bootstrap: {
-                    status: "acceptable" | "weak" | "rejected";
+                    status: "rejected" | "acceptable" | "weak";
                     statisticId: "anderson_darling";
                     observedStatistic: number;
                     comparisonDirection: "greater_than_or_equal";
                     refitEachReplicate: true;
                     extremeReplicateCount: number;
                     confidenceInterval: {
-                        level: 0.95;
                         method: "wilson_score";
+                        level: 0.95;
                         lower: number;
                         upper: number;
                     };
@@ -6868,7 +7465,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 };
                 warnings: string[];
             }, {
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                 parameterCount: number;
                 parameters: Record<string, number>;
@@ -6885,15 +7482,15 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     theoretical: number;
                 }[];
                 bootstrap: {
-                    status: "acceptable" | "weak" | "rejected";
+                    status: "rejected" | "acceptable" | "weak";
                     statisticId: "anderson_darling";
                     observedStatistic: number;
                     comparisonDirection: "greater_than_or_equal";
                     refitEachReplicate: true;
                     extremeReplicateCount: number;
                     confidenceInterval: {
-                        level: 0.95;
                         method: "wilson_score";
+                        level: 0.95;
                         lower: number;
                         upper: number;
                     };
@@ -6910,11 +7507,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 family: z.ZodEnum<["normal", "lognormal", "weibull", "gamma", "uniform"]>;
                 reasonCode: z.ZodLiteral<"numerical_fit_failed">;
             }, "strict", z.ZodTypeAny, {
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
                 reasonCode: "numerical_fit_failed";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             }, {
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
                 reasonCode: "numerical_fit_failed";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             }>, "many">;
             sampleDiagnostics: z.ZodObject<{
                 mean: z.ZodNumber;
@@ -6949,47 +7546,44 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 reasonCodes: z.ZodArray<z.ZodEnum<["SINGLE_ACCEPTABLE_COMPETITOR", "MULTIPLE_COMPETITIVE_MODELS", "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT", "SMALL_SAMPLE_UNCERTAINTY", "NO_ACCEPTABLE_MODEL", "CANDIDATE_FIT_FAILURES"]>, "many">;
             }, "strict", z.ZodTypeAny, {
                 status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-                methodId: "F7_MODEL_SELECTION_V1";
-                competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
                 confidence: "low" | "moderate";
                 reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-                numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+                methodId: "F7_MODEL_SELECTION_V1";
+                competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+                numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
             }, {
                 status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-                methodId: "F7_MODEL_SELECTION_V1";
-                competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
                 confidence: "low" | "moderate";
                 reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-                numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+                methodId: "F7_MODEL_SELECTION_V1";
+                competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+                numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
             }>, {
                 status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-                methodId: "F7_MODEL_SELECTION_V1";
-                competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
                 confidence: "low" | "moderate";
                 reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-                numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+                methodId: "F7_MODEL_SELECTION_V1";
+                competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+                numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
             }, {
                 status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-                methodId: "F7_MODEL_SELECTION_V1";
-                competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
                 confidence: "low" | "moderate";
                 reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-                numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+                methodId: "F7_MODEL_SELECTION_V1";
+                competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+                numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
             }>;
         }, "strict", z.ZodTypeAny, {
-            factorId: string;
-            sampleSize: number;
-            characteristicKind: "dimensional" | "other";
             candidates: {
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                 parameterCount: number;
                 parameters: Record<string, number>;
@@ -7006,15 +7600,15 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     theoretical: number;
                 }[];
                 bootstrap: {
-                    status: "acceptable" | "weak" | "rejected";
+                    status: "rejected" | "acceptable" | "weak";
                     statisticId: "anderson_darling";
                     observedStatistic: number;
                     comparisonDirection: "greater_than_or_equal";
                     refitEachReplicate: true;
                     extremeReplicateCount: number;
                     confidenceInterval: {
-                        level: 0.95;
                         method: "wilson_score";
+                        level: 0.95;
                         lower: number;
                         upper: number;
                     };
@@ -7027,9 +7621,12 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 };
                 warnings: string[];
             }[];
+            factorId: string;
+            sampleSize: number;
+            characteristicKind: "other" | "dimensional";
             failedCandidates: {
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
                 reasonCode: "numerical_fit_failed";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             }[];
             sampleDiagnostics: {
                 mean: number;
@@ -7041,20 +7638,17 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             };
             selectionDecision: {
                 status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-                methodId: "F7_MODEL_SELECTION_V1";
-                competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
                 confidence: "low" | "moderate";
                 reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-                numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+                methodId: "F7_MODEL_SELECTION_V1";
+                competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+                numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
             };
         }, {
-            factorId: string;
-            sampleSize: number;
-            characteristicKind: "dimensional" | "other";
             candidates: {
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                 parameterCount: number;
                 parameters: Record<string, number>;
@@ -7071,15 +7665,15 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     theoretical: number;
                 }[];
                 bootstrap: {
-                    status: "acceptable" | "weak" | "rejected";
+                    status: "rejected" | "acceptable" | "weak";
                     statisticId: "anderson_darling";
                     observedStatistic: number;
                     comparisonDirection: "greater_than_or_equal";
                     refitEachReplicate: true;
                     extremeReplicateCount: number;
                     confidenceInterval: {
-                        level: 0.95;
                         method: "wilson_score";
+                        level: 0.95;
                         lower: number;
                         upper: number;
                     };
@@ -7092,9 +7686,12 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 };
                 warnings: string[];
             }[];
+            factorId: string;
+            sampleSize: number;
+            characteristicKind: "other" | "dimensional";
             failedCandidates: {
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
                 reasonCode: "numerical_fit_failed";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             }[];
             sampleDiagnostics: {
                 mean: number;
@@ -7106,20 +7703,17 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             };
             selectionDecision: {
                 status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-                methodId: "F7_MODEL_SELECTION_V1";
-                competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
                 confidence: "low" | "moderate";
                 reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-                numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+                methodId: "F7_MODEL_SELECTION_V1";
+                competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+                numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
             };
         }>, {
-            factorId: string;
-            sampleSize: number;
-            characteristicKind: "dimensional" | "other";
             candidates: {
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                 parameterCount: number;
                 parameters: Record<string, number>;
@@ -7136,15 +7730,15 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     theoretical: number;
                 }[];
                 bootstrap: {
-                    status: "acceptable" | "weak" | "rejected";
+                    status: "rejected" | "acceptable" | "weak";
                     statisticId: "anderson_darling";
                     observedStatistic: number;
                     comparisonDirection: "greater_than_or_equal";
                     refitEachReplicate: true;
                     extremeReplicateCount: number;
                     confidenceInterval: {
-                        level: 0.95;
                         method: "wilson_score";
+                        level: 0.95;
                         lower: number;
                         upper: number;
                     };
@@ -7157,9 +7751,12 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 };
                 warnings: string[];
             }[];
+            factorId: string;
+            sampleSize: number;
+            characteristicKind: "other" | "dimensional";
             failedCandidates: {
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
                 reasonCode: "numerical_fit_failed";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             }[];
             sampleDiagnostics: {
                 mean: number;
@@ -7171,20 +7768,17 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             };
             selectionDecision: {
                 status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-                methodId: "F7_MODEL_SELECTION_V1";
-                competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
                 confidence: "low" | "moderate";
                 reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-                numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+                methodId: "F7_MODEL_SELECTION_V1";
+                competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+                numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
             };
         }, {
-            factorId: string;
-            sampleSize: number;
-            characteristicKind: "dimensional" | "other";
             candidates: {
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                 parameterCount: number;
                 parameters: Record<string, number>;
@@ -7201,15 +7795,15 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     theoretical: number;
                 }[];
                 bootstrap: {
-                    status: "acceptable" | "weak" | "rejected";
+                    status: "rejected" | "acceptable" | "weak";
                     statisticId: "anderson_darling";
                     observedStatistic: number;
                     comparisonDirection: "greater_than_or_equal";
                     refitEachReplicate: true;
                     extremeReplicateCount: number;
                     confidenceInterval: {
-                        level: 0.95;
                         method: "wilson_score";
+                        level: 0.95;
                         lower: number;
                         upper: number;
                     };
@@ -7222,9 +7816,12 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 };
                 warnings: string[];
             }[];
+            factorId: string;
+            sampleSize: number;
+            characteristicKind: "other" | "dimensional";
             failedCandidates: {
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
                 reasonCode: "numerical_fit_failed";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             }[];
             sampleDiagnostics: {
                 mean: number;
@@ -7236,13 +7833,13 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             };
             selectionDecision: {
                 status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-                methodId: "F7_MODEL_SELECTION_V1";
-                competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
                 confidence: "low" | "moderate";
                 reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-                numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+                methodId: "F7_MODEL_SELECTION_V1";
+                competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+                numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
             };
         }>>;
         distributionApproval: z.ZodOptional<z.ZodObject<{
@@ -7253,92 +7850,41 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         }, "strict", z.ZodTypeAny, {
             confirmed: true;
             factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             approvedAt: string;
         }, {
             confirmed: true;
             factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             approvedAt: string;
         }>>;
     }, "strict", z.ZodTypeAny, {
         factorCandidate: {
-            standardDeviation: number;
-            workbookContentHash: string;
-            worksheetName: string;
-            tableId: string;
-            sourceRow: number;
-            sourceCells: Record<string, string>;
-            factorCandidateId: string;
             factorName: string;
-            excelSignedMean: number;
-            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-            lowerSpecLimit: number;
-            upperSpecLimit: number;
-            designNominal: number;
+            worksheetName: string;
+            workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+            standardDeviation: number;
+            lowerSpecLimit: number;
+            upperSpecLimit: number;
+            tableId: string;
+            sourceRow: number;
+            designNominal: number;
+            sourceCells: Record<string, string>;
+            factorCandidateId: string;
+            excelSignedMean: number;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
             userAdded?: true | undefined;
             workbookUnitEvidence?: string | undefined;
-            longTermSafetyFactor?: number | undefined;
-            sigmaLevel?: number | undefined;
         };
-        sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
-        evidence?: {
-            physicalMean: number;
-            workbookContentHash: string;
-            worksheetName: string;
-            tableId: string;
-            sourceRow: number;
-            sourceCells: Record<string, string>;
-            factorCandidateId: string;
-            factorName: string;
-            longTermSafetyFactor: number;
-            sigmaLevel: number;
-            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-            lowerSpecLimit: number;
-            upperSpecLimit: number;
-            designNominal: number;
-            upperTolerance: number;
-            lowerTolerance: number;
-            factorId: string;
-            unit: string;
-            unitSource: "workbook" | "user_confirmed" | "unspecified";
-            loopCoefficient: 1 | -1;
-            signedContributionMean: number;
-            baselineSampler: {
-                samplerId: "NORMAL_LOCATION_SCALE_V1";
-                physicalMean: number;
-                standardDeviation: number;
-                support: "REAL";
-            };
-            calculatedMean: number;
-            tolerance: number;
-            oneSigma: number;
-            percentContributionToSigma: number;
-            userAdded?: true | undefined;
-        } | undefined;
-        setup?: {
-            factorCandidateId: string;
-            designNominal: number;
-            upperTolerance: number;
-            lowerTolerance: number;
-            confirmed: true;
-            factorName?: string | undefined;
-            userAdded?: true | undefined;
-            longTermSafetyFactor?: number | undefined;
-            sigmaLevel?: number | undefined;
-            distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
-        } | undefined;
         input?: {
             mode: "MEASURED";
             dataset?: {
-                factorId: string;
                 unit: string;
-                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                sourceReference: string;
-                importedAt: string;
-                msaStatus: "unknown" | "available" | "not_available";
+                contentHash: string;
                 observations: ({
                     value: number;
                     disposition: "included";
@@ -7350,15 +7896,20 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 } | {
                     value: number;
                     confirmed: true;
+                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     disposition: "excluded";
                     originalRow: number;
-                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     operatorReference: string;
                     sequence?: string | undefined;
                     timestamp?: string | undefined;
                     subgroup?: string | undefined;
                     batch?: string | undefined;
                 })[];
+                factorId: string;
+                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                sourceReference: string;
+                importedAt: string;
+                msaStatus: "unknown" | "available" | "not_available";
                 missingRowCount: number;
                 rejectionSummaries: {
                     reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -7366,67 +7917,113 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
-                contentHash: string;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         } | {
+            mode: "BASELINE_ASSUMPTION";
             baselineSampler: {
+                standardDeviation: number;
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
-                standardDeviation: number;
                 support: "REAL";
             };
-            mode: "BASELINE_ASSUMPTION";
+        } | undefined;
+        evidence?: {
+            unit: string;
+            tolerance: number;
+            factorName: string;
+            worksheetName: string;
+            workbookContentHash: string;
+            upperTolerance: number;
+            lowerTolerance: number;
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+            oneSigma: number;
+            percentContributionToSigma: number;
+            longTermSafetyFactor: number;
+            lowerSpecLimit: number;
+            upperSpecLimit: number;
+            tableId: string;
+            sourceRow: number;
+            designNominal: number;
+            sigmaLevel: number;
+            sourceCells: Record<string, string>;
+            physicalMean: number;
+            factorCandidateId: string;
+            factorId: string;
+            unitSource: "workbook" | "user_confirmed" | "unspecified";
+            loopCoefficient: 1 | -1;
+            signedContributionMean: number;
+            baselineSampler: {
+                standardDeviation: number;
+                samplerId: "NORMAL_LOCATION_SCALE_V1";
+                physicalMean: number;
+                support: "REAL";
+            };
+            calculatedMean: number;
+            userAdded?: true | undefined;
+        } | undefined;
+        sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
+        setup?: {
+            confirmed: true;
+            upperTolerance: number;
+            lowerTolerance: number;
+            designNominal: number;
+            factorCandidateId: string;
+            factorName?: string | undefined;
+            distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
+            userAdded?: true | undefined;
         } | undefined;
         datasetValidation?: {
-            status: "ready" | "blocked";
+            status: "blocked" | "ready";
             blockingIssues: {
-                reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                 factorId?: string | undefined;
                 rowNumbers?: number[] | undefined;
             }[];
             advisoryIssues: {
-                reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                 factorId?: string | undefined;
                 rowNumbers?: number[] | undefined;
             }[];
             candidateEligibility: {
                 normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
                 lognormal: "eligible" | "ineligible_nonpositive";
                 weibull: "eligible" | "ineligible_nonpositive";
                 gamma: "eligible" | "ineligible_nonpositive";
-                uniform: "eligible_with_boundary_warning";
             };
         } | undefined;
         measurementPasteResult?: {
-            status: "ready" | "blocked";
             validation: {
-                status: "ready" | "blocked";
+                status: "blocked" | "ready";
                 blockingIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 advisoryIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 candidateEligibility: {
                     normal: "eligible";
+                    uniform: "eligible_with_boundary_warning";
                     lognormal: "eligible" | "ineligible_nonpositive";
                     weibull: "eligible" | "ineligible_nonpositive";
                     gamma: "eligible" | "ineligible_nonpositive";
-                    uniform: "eligible_with_boundary_warning";
                 };
             };
+            status: "blocked" | "ready";
             factorId: string;
             dataset?: {
-                factorId: string;
                 unit: string;
-                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                sourceReference: string;
-                importedAt: string;
-                msaStatus: "unknown" | "available" | "not_available";
+                contentHash: string;
                 observations: ({
                     value: number;
                     disposition: "included";
@@ -7438,15 +8035,20 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 } | {
                     value: number;
                     confirmed: true;
+                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     disposition: "excluded";
                     originalRow: number;
-                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     operatorReference: string;
                     sequence?: string | undefined;
                     timestamp?: string | undefined;
                     subgroup?: string | undefined;
                     batch?: string | undefined;
                 })[];
+                factorId: string;
+                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                sourceReference: string;
+                importedAt: string;
+                msaStatus: "unknown" | "available" | "not_available";
                 missingRowCount: number;
                 rejectionSummaries: {
                     reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -7454,15 +8056,15 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
-                contentHash: string;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         } | undefined;
         distributionFitResult?: {
-            factorId: string;
-            sampleSize: number;
-            characteristicKind: "dimensional" | "other";
             candidates: {
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                 parameterCount: number;
                 parameters: Record<string, number>;
@@ -7479,15 +8081,15 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     theoretical: number;
                 }[];
                 bootstrap: {
-                    status: "acceptable" | "weak" | "rejected";
+                    status: "rejected" | "acceptable" | "weak";
                     statisticId: "anderson_darling";
                     observedStatistic: number;
                     comparisonDirection: "greater_than_or_equal";
                     refitEachReplicate: true;
                     extremeReplicateCount: number;
                     confidenceInterval: {
-                        level: 0.95;
                         method: "wilson_score";
+                        level: 0.95;
                         lower: number;
                         upper: number;
                     };
@@ -7500,9 +8102,12 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 };
                 warnings: string[];
             }[];
+            factorId: string;
+            sampleSize: number;
+            characteristicKind: "other" | "dimensional";
             failedCandidates: {
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
                 reasonCode: "numerical_fit_failed";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             }[];
             sampleDiagnostics: {
                 mean: number;
@@ -7514,99 +8119,48 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             };
             selectionDecision: {
                 status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-                methodId: "F7_MODEL_SELECTION_V1";
-                competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
                 confidence: "low" | "moderate";
                 reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-                numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+                methodId: "F7_MODEL_SELECTION_V1";
+                competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+                numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
             };
         } | undefined;
         distributionApproval?: {
             confirmed: true;
             factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             approvedAt: string;
         } | undefined;
     }, {
         factorCandidate: {
-            standardDeviation: number;
-            workbookContentHash: string;
-            worksheetName: string;
-            tableId: string;
-            sourceRow: number;
-            sourceCells: Record<string, string>;
-            factorCandidateId: string;
             factorName: string;
-            excelSignedMean: number;
-            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-            lowerSpecLimit: number;
-            upperSpecLimit: number;
-            designNominal: number;
+            worksheetName: string;
+            workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+            standardDeviation: number;
+            lowerSpecLimit: number;
+            upperSpecLimit: number;
+            tableId: string;
+            sourceRow: number;
+            designNominal: number;
+            sourceCells: Record<string, string>;
+            factorCandidateId: string;
+            excelSignedMean: number;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
             userAdded?: true | undefined;
             workbookUnitEvidence?: string | undefined;
-            longTermSafetyFactor?: number | undefined;
-            sigmaLevel?: number | undefined;
         };
-        sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
-        evidence?: {
-            physicalMean: number;
-            workbookContentHash: string;
-            worksheetName: string;
-            tableId: string;
-            sourceRow: number;
-            sourceCells: Record<string, string>;
-            factorCandidateId: string;
-            factorName: string;
-            longTermSafetyFactor: number;
-            sigmaLevel: number;
-            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-            lowerSpecLimit: number;
-            upperSpecLimit: number;
-            designNominal: number;
-            upperTolerance: number;
-            lowerTolerance: number;
-            factorId: string;
-            unit: string;
-            unitSource: "workbook" | "user_confirmed" | "unspecified";
-            loopCoefficient: 1 | -1;
-            signedContributionMean: number;
-            baselineSampler: {
-                samplerId: "NORMAL_LOCATION_SCALE_V1";
-                physicalMean: number;
-                standardDeviation: number;
-                support: "REAL";
-            };
-            calculatedMean: number;
-            tolerance: number;
-            oneSigma: number;
-            percentContributionToSigma: number;
-            userAdded?: true | undefined;
-        } | undefined;
-        setup?: {
-            factorCandidateId: string;
-            designNominal: number;
-            upperTolerance: number;
-            lowerTolerance: number;
-            confirmed: true;
-            factorName?: string | undefined;
-            userAdded?: true | undefined;
-            longTermSafetyFactor?: number | undefined;
-            sigmaLevel?: number | undefined;
-            distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
-        } | undefined;
         input?: {
             mode: "MEASURED";
             dataset?: {
-                factorId: string;
                 unit: string;
-                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                sourceReference: string;
-                importedAt: string;
-                msaStatus: "unknown" | "available" | "not_available";
+                contentHash: string;
                 observations: ({
                     value: number;
                     disposition: "included";
@@ -7618,15 +8172,20 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 } | {
                     value: number;
                     confirmed: true;
+                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     disposition: "excluded";
                     originalRow: number;
-                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     operatorReference: string;
                     sequence?: string | undefined;
                     timestamp?: string | undefined;
                     subgroup?: string | undefined;
                     batch?: string | undefined;
                 })[];
+                factorId: string;
+                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                sourceReference: string;
+                importedAt: string;
+                msaStatus: "unknown" | "available" | "not_available";
                 missingRowCount: number;
                 rejectionSummaries: {
                     reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -7634,67 +8193,113 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
-                contentHash: string;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         } | {
+            mode: "BASELINE_ASSUMPTION";
             baselineSampler: {
+                standardDeviation: number;
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
-                standardDeviation: number;
                 support: "REAL";
             };
-            mode: "BASELINE_ASSUMPTION";
+        } | undefined;
+        evidence?: {
+            unit: string;
+            tolerance: number;
+            factorName: string;
+            worksheetName: string;
+            workbookContentHash: string;
+            upperTolerance: number;
+            lowerTolerance: number;
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+            oneSigma: number;
+            percentContributionToSigma: number;
+            longTermSafetyFactor: number;
+            lowerSpecLimit: number;
+            upperSpecLimit: number;
+            tableId: string;
+            sourceRow: number;
+            designNominal: number;
+            sigmaLevel: number;
+            sourceCells: Record<string, string>;
+            physicalMean: number;
+            factorCandidateId: string;
+            factorId: string;
+            unitSource: "workbook" | "user_confirmed" | "unspecified";
+            loopCoefficient: 1 | -1;
+            signedContributionMean: number;
+            baselineSampler: {
+                standardDeviation: number;
+                samplerId: "NORMAL_LOCATION_SCALE_V1";
+                physicalMean: number;
+                support: "REAL";
+            };
+            calculatedMean: number;
+            userAdded?: true | undefined;
+        } | undefined;
+        sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
+        setup?: {
+            confirmed: true;
+            upperTolerance: number;
+            lowerTolerance: number;
+            designNominal: number;
+            factorCandidateId: string;
+            factorName?: string | undefined;
+            distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
+            userAdded?: true | undefined;
         } | undefined;
         datasetValidation?: {
-            status: "ready" | "blocked";
+            status: "blocked" | "ready";
             blockingIssues: {
-                reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                 factorId?: string | undefined;
                 rowNumbers?: number[] | undefined;
             }[];
             advisoryIssues: {
-                reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                 factorId?: string | undefined;
                 rowNumbers?: number[] | undefined;
             }[];
             candidateEligibility: {
                 normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
                 lognormal: "eligible" | "ineligible_nonpositive";
                 weibull: "eligible" | "ineligible_nonpositive";
                 gamma: "eligible" | "ineligible_nonpositive";
-                uniform: "eligible_with_boundary_warning";
             };
         } | undefined;
         measurementPasteResult?: {
-            status: "ready" | "blocked";
             validation: {
-                status: "ready" | "blocked";
+                status: "blocked" | "ready";
                 blockingIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 advisoryIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 candidateEligibility: {
                     normal: "eligible";
+                    uniform: "eligible_with_boundary_warning";
                     lognormal: "eligible" | "ineligible_nonpositive";
                     weibull: "eligible" | "ineligible_nonpositive";
                     gamma: "eligible" | "ineligible_nonpositive";
-                    uniform: "eligible_with_boundary_warning";
                 };
             };
+            status: "blocked" | "ready";
             factorId: string;
             dataset?: {
-                factorId: string;
                 unit: string;
-                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                sourceReference: string;
-                importedAt: string;
-                msaStatus: "unknown" | "available" | "not_available";
+                contentHash: string;
                 observations: ({
                     value: number;
                     disposition: "included";
@@ -7706,15 +8311,20 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 } | {
                     value: number;
                     confirmed: true;
+                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     disposition: "excluded";
                     originalRow: number;
-                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     operatorReference: string;
                     sequence?: string | undefined;
                     timestamp?: string | undefined;
                     subgroup?: string | undefined;
                     batch?: string | undefined;
                 })[];
+                factorId: string;
+                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                sourceReference: string;
+                importedAt: string;
+                msaStatus: "unknown" | "available" | "not_available";
                 missingRowCount: number;
                 rejectionSummaries: {
                     reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -7722,15 +8332,15 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
-                contentHash: string;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         } | undefined;
         distributionFitResult?: {
-            factorId: string;
-            sampleSize: number;
-            characteristicKind: "dimensional" | "other";
             candidates: {
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                 parameterCount: number;
                 parameters: Record<string, number>;
@@ -7747,15 +8357,15 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     theoretical: number;
                 }[];
                 bootstrap: {
-                    status: "acceptable" | "weak" | "rejected";
+                    status: "rejected" | "acceptable" | "weak";
                     statisticId: "anderson_darling";
                     observedStatistic: number;
                     comparisonDirection: "greater_than_or_equal";
                     refitEachReplicate: true;
                     extremeReplicateCount: number;
                     confidenceInterval: {
-                        level: 0.95;
                         method: "wilson_score";
+                        level: 0.95;
                         lower: number;
                         upper: number;
                     };
@@ -7768,9 +8378,12 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 };
                 warnings: string[];
             }[];
+            factorId: string;
+            sampleSize: number;
+            characteristicKind: "other" | "dimensional";
             failedCandidates: {
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
                 reasonCode: "numerical_fit_failed";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             }[];
             sampleDiagnostics: {
                 mean: number;
@@ -7782,99 +8395,48 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             };
             selectionDecision: {
                 status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-                methodId: "F7_MODEL_SELECTION_V1";
-                competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
                 confidence: "low" | "moderate";
                 reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-                numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+                methodId: "F7_MODEL_SELECTION_V1";
+                competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+                numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
             };
         } | undefined;
         distributionApproval?: {
             confirmed: true;
             factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             approvedAt: string;
         } | undefined;
     }>, {
         factorCandidate: {
-            standardDeviation: number;
-            workbookContentHash: string;
-            worksheetName: string;
-            tableId: string;
-            sourceRow: number;
-            sourceCells: Record<string, string>;
-            factorCandidateId: string;
             factorName: string;
-            excelSignedMean: number;
-            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-            lowerSpecLimit: number;
-            upperSpecLimit: number;
-            designNominal: number;
+            worksheetName: string;
+            workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+            standardDeviation: number;
+            lowerSpecLimit: number;
+            upperSpecLimit: number;
+            tableId: string;
+            sourceRow: number;
+            designNominal: number;
+            sourceCells: Record<string, string>;
+            factorCandidateId: string;
+            excelSignedMean: number;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
             userAdded?: true | undefined;
             workbookUnitEvidence?: string | undefined;
-            longTermSafetyFactor?: number | undefined;
-            sigmaLevel?: number | undefined;
         };
-        sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
-        evidence?: {
-            physicalMean: number;
-            workbookContentHash: string;
-            worksheetName: string;
-            tableId: string;
-            sourceRow: number;
-            sourceCells: Record<string, string>;
-            factorCandidateId: string;
-            factorName: string;
-            longTermSafetyFactor: number;
-            sigmaLevel: number;
-            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-            lowerSpecLimit: number;
-            upperSpecLimit: number;
-            designNominal: number;
-            upperTolerance: number;
-            lowerTolerance: number;
-            factorId: string;
-            unit: string;
-            unitSource: "workbook" | "user_confirmed" | "unspecified";
-            loopCoefficient: 1 | -1;
-            signedContributionMean: number;
-            baselineSampler: {
-                samplerId: "NORMAL_LOCATION_SCALE_V1";
-                physicalMean: number;
-                standardDeviation: number;
-                support: "REAL";
-            };
-            calculatedMean: number;
-            tolerance: number;
-            oneSigma: number;
-            percentContributionToSigma: number;
-            userAdded?: true | undefined;
-        } | undefined;
-        setup?: {
-            factorCandidateId: string;
-            designNominal: number;
-            upperTolerance: number;
-            lowerTolerance: number;
-            confirmed: true;
-            factorName?: string | undefined;
-            userAdded?: true | undefined;
-            longTermSafetyFactor?: number | undefined;
-            sigmaLevel?: number | undefined;
-            distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
-        } | undefined;
         input?: {
             mode: "MEASURED";
             dataset?: {
-                factorId: string;
                 unit: string;
-                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                sourceReference: string;
-                importedAt: string;
-                msaStatus: "unknown" | "available" | "not_available";
+                contentHash: string;
                 observations: ({
                     value: number;
                     disposition: "included";
@@ -7886,15 +8448,20 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 } | {
                     value: number;
                     confirmed: true;
+                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     disposition: "excluded";
                     originalRow: number;
-                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     operatorReference: string;
                     sequence?: string | undefined;
                     timestamp?: string | undefined;
                     subgroup?: string | undefined;
                     batch?: string | undefined;
                 })[];
+                factorId: string;
+                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                sourceReference: string;
+                importedAt: string;
+                msaStatus: "unknown" | "available" | "not_available";
                 missingRowCount: number;
                 rejectionSummaries: {
                     reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -7902,67 +8469,113 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
-                contentHash: string;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         } | {
+            mode: "BASELINE_ASSUMPTION";
             baselineSampler: {
+                standardDeviation: number;
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
-                standardDeviation: number;
                 support: "REAL";
             };
-            mode: "BASELINE_ASSUMPTION";
+        } | undefined;
+        evidence?: {
+            unit: string;
+            tolerance: number;
+            factorName: string;
+            worksheetName: string;
+            workbookContentHash: string;
+            upperTolerance: number;
+            lowerTolerance: number;
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+            oneSigma: number;
+            percentContributionToSigma: number;
+            longTermSafetyFactor: number;
+            lowerSpecLimit: number;
+            upperSpecLimit: number;
+            tableId: string;
+            sourceRow: number;
+            designNominal: number;
+            sigmaLevel: number;
+            sourceCells: Record<string, string>;
+            physicalMean: number;
+            factorCandidateId: string;
+            factorId: string;
+            unitSource: "workbook" | "user_confirmed" | "unspecified";
+            loopCoefficient: 1 | -1;
+            signedContributionMean: number;
+            baselineSampler: {
+                standardDeviation: number;
+                samplerId: "NORMAL_LOCATION_SCALE_V1";
+                physicalMean: number;
+                support: "REAL";
+            };
+            calculatedMean: number;
+            userAdded?: true | undefined;
+        } | undefined;
+        sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
+        setup?: {
+            confirmed: true;
+            upperTolerance: number;
+            lowerTolerance: number;
+            designNominal: number;
+            factorCandidateId: string;
+            factorName?: string | undefined;
+            distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
+            userAdded?: true | undefined;
         } | undefined;
         datasetValidation?: {
-            status: "ready" | "blocked";
+            status: "blocked" | "ready";
             blockingIssues: {
-                reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                 factorId?: string | undefined;
                 rowNumbers?: number[] | undefined;
             }[];
             advisoryIssues: {
-                reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                 factorId?: string | undefined;
                 rowNumbers?: number[] | undefined;
             }[];
             candidateEligibility: {
                 normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
                 lognormal: "eligible" | "ineligible_nonpositive";
                 weibull: "eligible" | "ineligible_nonpositive";
                 gamma: "eligible" | "ineligible_nonpositive";
-                uniform: "eligible_with_boundary_warning";
             };
         } | undefined;
         measurementPasteResult?: {
-            status: "ready" | "blocked";
             validation: {
-                status: "ready" | "blocked";
+                status: "blocked" | "ready";
                 blockingIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 advisoryIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 candidateEligibility: {
                     normal: "eligible";
+                    uniform: "eligible_with_boundary_warning";
                     lognormal: "eligible" | "ineligible_nonpositive";
                     weibull: "eligible" | "ineligible_nonpositive";
                     gamma: "eligible" | "ineligible_nonpositive";
-                    uniform: "eligible_with_boundary_warning";
                 };
             };
+            status: "blocked" | "ready";
             factorId: string;
             dataset?: {
-                factorId: string;
                 unit: string;
-                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                sourceReference: string;
-                importedAt: string;
-                msaStatus: "unknown" | "available" | "not_available";
+                contentHash: string;
                 observations: ({
                     value: number;
                     disposition: "included";
@@ -7974,15 +8587,20 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 } | {
                     value: number;
                     confirmed: true;
+                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     disposition: "excluded";
                     originalRow: number;
-                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     operatorReference: string;
                     sequence?: string | undefined;
                     timestamp?: string | undefined;
                     subgroup?: string | undefined;
                     batch?: string | undefined;
                 })[];
+                factorId: string;
+                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                sourceReference: string;
+                importedAt: string;
+                msaStatus: "unknown" | "available" | "not_available";
                 missingRowCount: number;
                 rejectionSummaries: {
                     reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -7990,15 +8608,15 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
-                contentHash: string;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         } | undefined;
         distributionFitResult?: {
-            factorId: string;
-            sampleSize: number;
-            characteristicKind: "dimensional" | "other";
             candidates: {
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                 parameterCount: number;
                 parameters: Record<string, number>;
@@ -8015,15 +8633,15 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     theoretical: number;
                 }[];
                 bootstrap: {
-                    status: "acceptable" | "weak" | "rejected";
+                    status: "rejected" | "acceptable" | "weak";
                     statisticId: "anderson_darling";
                     observedStatistic: number;
                     comparisonDirection: "greater_than_or_equal";
                     refitEachReplicate: true;
                     extremeReplicateCount: number;
                     confidenceInterval: {
-                        level: 0.95;
                         method: "wilson_score";
+                        level: 0.95;
                         lower: number;
                         upper: number;
                     };
@@ -8036,9 +8654,12 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 };
                 warnings: string[];
             }[];
+            factorId: string;
+            sampleSize: number;
+            characteristicKind: "other" | "dimensional";
             failedCandidates: {
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
                 reasonCode: "numerical_fit_failed";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             }[];
             sampleDiagnostics: {
                 mean: number;
@@ -8050,99 +8671,48 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             };
             selectionDecision: {
                 status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-                methodId: "F7_MODEL_SELECTION_V1";
-                competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
                 confidence: "low" | "moderate";
                 reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-                numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+                methodId: "F7_MODEL_SELECTION_V1";
+                competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+                numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
             };
         } | undefined;
         distributionApproval?: {
             confirmed: true;
             factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             approvedAt: string;
         } | undefined;
     }, {
         factorCandidate: {
-            standardDeviation: number;
-            workbookContentHash: string;
-            worksheetName: string;
-            tableId: string;
-            sourceRow: number;
-            sourceCells: Record<string, string>;
-            factorCandidateId: string;
             factorName: string;
-            excelSignedMean: number;
-            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-            lowerSpecLimit: number;
-            upperSpecLimit: number;
-            designNominal: number;
+            worksheetName: string;
+            workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+            standardDeviation: number;
+            lowerSpecLimit: number;
+            upperSpecLimit: number;
+            tableId: string;
+            sourceRow: number;
+            designNominal: number;
+            sourceCells: Record<string, string>;
+            factorCandidateId: string;
+            excelSignedMean: number;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
             userAdded?: true | undefined;
             workbookUnitEvidence?: string | undefined;
-            longTermSafetyFactor?: number | undefined;
-            sigmaLevel?: number | undefined;
         };
-        sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
-        evidence?: {
-            physicalMean: number;
-            workbookContentHash: string;
-            worksheetName: string;
-            tableId: string;
-            sourceRow: number;
-            sourceCells: Record<string, string>;
-            factorCandidateId: string;
-            factorName: string;
-            longTermSafetyFactor: number;
-            sigmaLevel: number;
-            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-            lowerSpecLimit: number;
-            upperSpecLimit: number;
-            designNominal: number;
-            upperTolerance: number;
-            lowerTolerance: number;
-            factorId: string;
-            unit: string;
-            unitSource: "workbook" | "user_confirmed" | "unspecified";
-            loopCoefficient: 1 | -1;
-            signedContributionMean: number;
-            baselineSampler: {
-                samplerId: "NORMAL_LOCATION_SCALE_V1";
-                physicalMean: number;
-                standardDeviation: number;
-                support: "REAL";
-            };
-            calculatedMean: number;
-            tolerance: number;
-            oneSigma: number;
-            percentContributionToSigma: number;
-            userAdded?: true | undefined;
-        } | undefined;
-        setup?: {
-            factorCandidateId: string;
-            designNominal: number;
-            upperTolerance: number;
-            lowerTolerance: number;
-            confirmed: true;
-            factorName?: string | undefined;
-            userAdded?: true | undefined;
-            longTermSafetyFactor?: number | undefined;
-            sigmaLevel?: number | undefined;
-            distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
-        } | undefined;
         input?: {
             mode: "MEASURED";
             dataset?: {
-                factorId: string;
                 unit: string;
-                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                sourceReference: string;
-                importedAt: string;
-                msaStatus: "unknown" | "available" | "not_available";
+                contentHash: string;
                 observations: ({
                     value: number;
                     disposition: "included";
@@ -8154,15 +8724,20 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 } | {
                     value: number;
                     confirmed: true;
+                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     disposition: "excluded";
                     originalRow: number;
-                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     operatorReference: string;
                     sequence?: string | undefined;
                     timestamp?: string | undefined;
                     subgroup?: string | undefined;
                     batch?: string | undefined;
                 })[];
+                factorId: string;
+                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                sourceReference: string;
+                importedAt: string;
+                msaStatus: "unknown" | "available" | "not_available";
                 missingRowCount: number;
                 rejectionSummaries: {
                     reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -8170,67 +8745,113 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
-                contentHash: string;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         } | {
+            mode: "BASELINE_ASSUMPTION";
             baselineSampler: {
+                standardDeviation: number;
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
-                standardDeviation: number;
                 support: "REAL";
             };
-            mode: "BASELINE_ASSUMPTION";
+        } | undefined;
+        evidence?: {
+            unit: string;
+            tolerance: number;
+            factorName: string;
+            worksheetName: string;
+            workbookContentHash: string;
+            upperTolerance: number;
+            lowerTolerance: number;
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+            oneSigma: number;
+            percentContributionToSigma: number;
+            longTermSafetyFactor: number;
+            lowerSpecLimit: number;
+            upperSpecLimit: number;
+            tableId: string;
+            sourceRow: number;
+            designNominal: number;
+            sigmaLevel: number;
+            sourceCells: Record<string, string>;
+            physicalMean: number;
+            factorCandidateId: string;
+            factorId: string;
+            unitSource: "workbook" | "user_confirmed" | "unspecified";
+            loopCoefficient: 1 | -1;
+            signedContributionMean: number;
+            baselineSampler: {
+                standardDeviation: number;
+                samplerId: "NORMAL_LOCATION_SCALE_V1";
+                physicalMean: number;
+                support: "REAL";
+            };
+            calculatedMean: number;
+            userAdded?: true | undefined;
+        } | undefined;
+        sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
+        setup?: {
+            confirmed: true;
+            upperTolerance: number;
+            lowerTolerance: number;
+            designNominal: number;
+            factorCandidateId: string;
+            factorName?: string | undefined;
+            distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
+            userAdded?: true | undefined;
         } | undefined;
         datasetValidation?: {
-            status: "ready" | "blocked";
+            status: "blocked" | "ready";
             blockingIssues: {
-                reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                 factorId?: string | undefined;
                 rowNumbers?: number[] | undefined;
             }[];
             advisoryIssues: {
-                reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                 factorId?: string | undefined;
                 rowNumbers?: number[] | undefined;
             }[];
             candidateEligibility: {
                 normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
                 lognormal: "eligible" | "ineligible_nonpositive";
                 weibull: "eligible" | "ineligible_nonpositive";
                 gamma: "eligible" | "ineligible_nonpositive";
-                uniform: "eligible_with_boundary_warning";
             };
         } | undefined;
         measurementPasteResult?: {
-            status: "ready" | "blocked";
             validation: {
-                status: "ready" | "blocked";
+                status: "blocked" | "ready";
                 blockingIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 advisoryIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 candidateEligibility: {
                     normal: "eligible";
+                    uniform: "eligible_with_boundary_warning";
                     lognormal: "eligible" | "ineligible_nonpositive";
                     weibull: "eligible" | "ineligible_nonpositive";
                     gamma: "eligible" | "ineligible_nonpositive";
-                    uniform: "eligible_with_boundary_warning";
                 };
             };
+            status: "blocked" | "ready";
             factorId: string;
             dataset?: {
-                factorId: string;
                 unit: string;
-                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                sourceReference: string;
-                importedAt: string;
-                msaStatus: "unknown" | "available" | "not_available";
+                contentHash: string;
                 observations: ({
                     value: number;
                     disposition: "included";
@@ -8242,15 +8863,20 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 } | {
                     value: number;
                     confirmed: true;
+                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     disposition: "excluded";
                     originalRow: number;
-                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     operatorReference: string;
                     sequence?: string | undefined;
                     timestamp?: string | undefined;
                     subgroup?: string | undefined;
                     batch?: string | undefined;
                 })[];
+                factorId: string;
+                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                sourceReference: string;
+                importedAt: string;
+                msaStatus: "unknown" | "available" | "not_available";
                 missingRowCount: number;
                 rejectionSummaries: {
                     reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -8258,15 +8884,15 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
-                contentHash: string;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         } | undefined;
         distributionFitResult?: {
-            factorId: string;
-            sampleSize: number;
-            characteristicKind: "dimensional" | "other";
             candidates: {
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                 parameterCount: number;
                 parameters: Record<string, number>;
@@ -8283,15 +8909,15 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     theoretical: number;
                 }[];
                 bootstrap: {
-                    status: "acceptable" | "weak" | "rejected";
+                    status: "rejected" | "acceptable" | "weak";
                     statisticId: "anderson_darling";
                     observedStatistic: number;
                     comparisonDirection: "greater_than_or_equal";
                     refitEachReplicate: true;
                     extremeReplicateCount: number;
                     confidenceInterval: {
-                        level: 0.95;
                         method: "wilson_score";
+                        level: 0.95;
                         lower: number;
                         upper: number;
                     };
@@ -8304,9 +8930,12 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 };
                 warnings: string[];
             }[];
+            factorId: string;
+            sampleSize: number;
+            characteristicKind: "other" | "dimensional";
             failedCandidates: {
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
                 reasonCode: "numerical_fit_failed";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             }[];
             sampleDiagnostics: {
                 mean: number;
@@ -8318,19 +8947,19 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             };
             selectionDecision: {
                 status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-                methodId: "F7_MODEL_SELECTION_V1";
-                competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
                 confidence: "low" | "moderate";
                 reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-                numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+                methodId: "F7_MODEL_SELECTION_V1";
+                competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+                numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
             };
         } | undefined;
         distributionApproval?: {
             confirmed: true;
             factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             approvedAt: string;
         } | undefined;
     }>, "many">;
@@ -8427,14 +9056,14 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             standardDeviation: z.ZodNumber;
             expectedBinCounts: z.ZodArray<z.ZodNumber, "many">;
         }, "strict", z.ZodTypeAny, {
+            mean: number;
             standardDeviation: number;
             methodId: "F7_NORMAL_MOMENT_FIT_V1";
-            mean: number;
             expectedBinCounts: number[];
         }, {
+            mean: number;
             standardDeviation: number;
             methodId: "F7_NORMAL_MOMENT_FIT_V1";
-            mean: number;
             expectedBinCounts: number[];
         }>;
         capability: z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
@@ -8447,19 +9076,19 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             targetStatus: z.ZodEnum<["meets_target", "below_target"]>;
         }, "strict", z.ZodTypeAny, {
             status: "available";
+            cpk: number;
+            targetCpk: number;
             cp: number;
             lowerCpk: number;
             upperCpk: number;
-            cpk: number;
-            targetCpk: number;
             targetStatus: "meets_target" | "below_target";
         }, {
             status: "available";
+            cpk: number;
+            targetCpk: number;
             cp: number;
             lowerCpk: number;
             upperCpk: number;
-            cpk: number;
-            targetCpk: number;
             targetStatus: "meets_target" | "below_target";
         }>, z.ZodObject<{
             status: z.ZodLiteral<"not_available">;
@@ -8467,12 +9096,12 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             targetCpk: z.ZodNumber;
         }, "strict", z.ZodTypeAny, {
             status: "not_available";
-            reason: "zero_variance";
             targetCpk: number;
+            reason: "zero_variance";
         }, {
             status: "not_available";
-            reason: "zero_variance";
             targetCpk: number;
+            reason: "zero_variance";
         }>]>;
         normalModel: z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
             status: z.ZodLiteral<"available">;
@@ -8482,15 +9111,15 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             expectedYield: z.ZodNumber;
         }, "strict", z.ZodTypeAny, {
             status: "available";
+            totalDpm: number;
             lowerTailDpm: number;
             upperTailDpm: number;
-            totalDpm: number;
             expectedYield: number;
         }, {
             status: "available";
+            totalDpm: number;
             lowerTailDpm: number;
             upperTailDpm: number;
-            totalDpm: number;
             expectedYield: number;
         }>, z.ZodObject<{
             status: z.ZodLiteral<"not_available">;
@@ -8508,21 +9137,35 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             sourceMode: z.ZodEnum<["MEASURED", "BASELINE_ASSUMPTION"]>;
         }, "strict", z.ZodTypeAny, {
             factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }, {
             factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }>, "many">;
     }, "strict", z.ZodTypeAny, {
         status: "complete";
+        capability: {
+            status: "available";
+            cpk: number;
+            targetCpk: number;
+            cp: number;
+            lowerCpk: number;
+            upperCpk: number;
+            targetStatus: "meets_target" | "below_target";
+        } | {
+            status: "not_available";
+            targetCpk: number;
+            reason: "zero_variance";
+        };
+        mean: number;
         standardDeviation: number;
         lowerSpecLimit: number;
         upperSpecLimit: number;
-        methodId: "F7_MONTE_CARLO_V1";
-        mean: number;
         targetSigmaLevel: number;
+        yield: number;
+        methodId: "F7_MONTE_CARLO_V1";
         iterations: 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
@@ -8537,7 +9180,6 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         };
         inSpecCount: number;
         outOfSpecCount: number;
-        yield: number;
         outOfSpecProbability: number;
         ppm: number;
         histogram: {
@@ -8549,29 +9191,16 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             }[];
         };
         normalFit: {
+            mean: number;
             standardDeviation: number;
             methodId: "F7_NORMAL_MOMENT_FIT_V1";
-            mean: number;
             expectedBinCounts: number[];
-        };
-        capability: {
-            status: "available";
-            cp: number;
-            lowerCpk: number;
-            upperCpk: number;
-            cpk: number;
-            targetCpk: number;
-            targetStatus: "meets_target" | "below_target";
-        } | {
-            status: "not_available";
-            reason: "zero_variance";
-            targetCpk: number;
         };
         normalModel: {
             status: "available";
+            totalDpm: number;
             lowerTailDpm: number;
             upperTailDpm: number;
-            totalDpm: number;
             expectedYield: number;
         } | {
             status: "not_available";
@@ -8579,17 +9208,31 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         };
         factorManifest: {
             factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
     }, {
         status: "complete";
+        capability: {
+            status: "available";
+            cpk: number;
+            targetCpk: number;
+            cp: number;
+            lowerCpk: number;
+            upperCpk: number;
+            targetStatus: "meets_target" | "below_target";
+        } | {
+            status: "not_available";
+            targetCpk: number;
+            reason: "zero_variance";
+        };
+        mean: number;
         standardDeviation: number;
         lowerSpecLimit: number;
         upperSpecLimit: number;
-        methodId: "F7_MONTE_CARLO_V1";
-        mean: number;
         targetSigmaLevel: number;
+        yield: number;
+        methodId: "F7_MONTE_CARLO_V1";
         iterations: 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
@@ -8604,7 +9247,6 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         };
         inSpecCount: number;
         outOfSpecCount: number;
-        yield: number;
         outOfSpecProbability: number;
         ppm: number;
         histogram: {
@@ -8616,29 +9258,16 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             }[];
         };
         normalFit: {
+            mean: number;
             standardDeviation: number;
             methodId: "F7_NORMAL_MOMENT_FIT_V1";
-            mean: number;
             expectedBinCounts: number[];
-        };
-        capability: {
-            status: "available";
-            cp: number;
-            lowerCpk: number;
-            upperCpk: number;
-            cpk: number;
-            targetCpk: number;
-            targetStatus: "meets_target" | "below_target";
-        } | {
-            status: "not_available";
-            reason: "zero_variance";
-            targetCpk: number;
         };
         normalModel: {
             status: "available";
+            totalDpm: number;
             lowerTailDpm: number;
             upperTailDpm: number;
-            totalDpm: number;
             expectedYield: number;
         } | {
             status: "not_available";
@@ -8646,17 +9275,31 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         };
         factorManifest: {
             factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
     }>, {
         status: "complete";
+        capability: {
+            status: "available";
+            cpk: number;
+            targetCpk: number;
+            cp: number;
+            lowerCpk: number;
+            upperCpk: number;
+            targetStatus: "meets_target" | "below_target";
+        } | {
+            status: "not_available";
+            targetCpk: number;
+            reason: "zero_variance";
+        };
+        mean: number;
         standardDeviation: number;
         lowerSpecLimit: number;
         upperSpecLimit: number;
-        methodId: "F7_MONTE_CARLO_V1";
-        mean: number;
         targetSigmaLevel: number;
+        yield: number;
+        methodId: "F7_MONTE_CARLO_V1";
         iterations: 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
@@ -8671,7 +9314,6 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         };
         inSpecCount: number;
         outOfSpecCount: number;
-        yield: number;
         outOfSpecProbability: number;
         ppm: number;
         histogram: {
@@ -8683,29 +9325,16 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             }[];
         };
         normalFit: {
+            mean: number;
             standardDeviation: number;
             methodId: "F7_NORMAL_MOMENT_FIT_V1";
-            mean: number;
             expectedBinCounts: number[];
-        };
-        capability: {
-            status: "available";
-            cp: number;
-            lowerCpk: number;
-            upperCpk: number;
-            cpk: number;
-            targetCpk: number;
-            targetStatus: "meets_target" | "below_target";
-        } | {
-            status: "not_available";
-            reason: "zero_variance";
-            targetCpk: number;
         };
         normalModel: {
             status: "available";
+            totalDpm: number;
             lowerTailDpm: number;
             upperTailDpm: number;
-            totalDpm: number;
             expectedYield: number;
         } | {
             status: "not_available";
@@ -8713,17 +9342,31 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         };
         factorManifest: {
             factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
     }, {
         status: "complete";
+        capability: {
+            status: "available";
+            cpk: number;
+            targetCpk: number;
+            cp: number;
+            lowerCpk: number;
+            upperCpk: number;
+            targetStatus: "meets_target" | "below_target";
+        } | {
+            status: "not_available";
+            targetCpk: number;
+            reason: "zero_variance";
+        };
+        mean: number;
         standardDeviation: number;
         lowerSpecLimit: number;
         upperSpecLimit: number;
-        methodId: "F7_MONTE_CARLO_V1";
-        mean: number;
         targetSigmaLevel: number;
+        yield: number;
+        methodId: "F7_MONTE_CARLO_V1";
         iterations: 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
@@ -8738,7 +9381,6 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         };
         inSpecCount: number;
         outOfSpecCount: number;
-        yield: number;
         outOfSpecProbability: number;
         ppm: number;
         histogram: {
@@ -8750,29 +9392,16 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             }[];
         };
         normalFit: {
+            mean: number;
             standardDeviation: number;
             methodId: "F7_NORMAL_MOMENT_FIT_V1";
-            mean: number;
             expectedBinCounts: number[];
-        };
-        capability: {
-            status: "available";
-            cp: number;
-            lowerCpk: number;
-            upperCpk: number;
-            cpk: number;
-            targetCpk: number;
-            targetStatus: "meets_target" | "below_target";
-        } | {
-            status: "not_available";
-            reason: "zero_variance";
-            targetCpk: number;
         };
         normalModel: {
             status: "available";
+            totalDpm: number;
             lowerTailDpm: number;
             upperTailDpm: number;
-            totalDpm: number;
             expectedYield: number;
         } | {
             status: "not_available";
@@ -8780,97 +9409,47 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         };
         factorManifest: {
             factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
     }>>;
 }, "strict", z.ZodTypeAny, {
-    status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
-    workbook: {
-        workbookContentHash: string;
-        fileName: string;
-    };
-    contractId: "f7-analysis-result-v1";
-    outputClassification: "confidential";
     sessionId: string;
+    status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
+    outputClassification: "confidential";
+    contractId: "f7-analysis-result-v1";
+    workbook: {
+        fileName: string;
+        workbookContentHash: string;
+    };
+    selectedWorksheetNames: string[];
     factors: {
         factorCandidate: {
-            standardDeviation: number;
-            workbookContentHash: string;
-            worksheetName: string;
-            tableId: string;
-            sourceRow: number;
-            sourceCells: Record<string, string>;
-            factorCandidateId: string;
             factorName: string;
-            excelSignedMean: number;
-            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-            lowerSpecLimit: number;
-            upperSpecLimit: number;
-            designNominal: number;
+            worksheetName: string;
+            workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+            standardDeviation: number;
+            lowerSpecLimit: number;
+            upperSpecLimit: number;
+            tableId: string;
+            sourceRow: number;
+            designNominal: number;
+            sourceCells: Record<string, string>;
+            factorCandidateId: string;
+            excelSignedMean: number;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
             userAdded?: true | undefined;
             workbookUnitEvidence?: string | undefined;
-            longTermSafetyFactor?: number | undefined;
-            sigmaLevel?: number | undefined;
         };
-        sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
-        evidence?: {
-            physicalMean: number;
-            workbookContentHash: string;
-            worksheetName: string;
-            tableId: string;
-            sourceRow: number;
-            sourceCells: Record<string, string>;
-            factorCandidateId: string;
-            factorName: string;
-            longTermSafetyFactor: number;
-            sigmaLevel: number;
-            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-            lowerSpecLimit: number;
-            upperSpecLimit: number;
-            designNominal: number;
-            upperTolerance: number;
-            lowerTolerance: number;
-            factorId: string;
-            unit: string;
-            unitSource: "workbook" | "user_confirmed" | "unspecified";
-            loopCoefficient: 1 | -1;
-            signedContributionMean: number;
-            baselineSampler: {
-                samplerId: "NORMAL_LOCATION_SCALE_V1";
-                physicalMean: number;
-                standardDeviation: number;
-                support: "REAL";
-            };
-            calculatedMean: number;
-            tolerance: number;
-            oneSigma: number;
-            percentContributionToSigma: number;
-            userAdded?: true | undefined;
-        } | undefined;
-        setup?: {
-            factorCandidateId: string;
-            designNominal: number;
-            upperTolerance: number;
-            lowerTolerance: number;
-            confirmed: true;
-            factorName?: string | undefined;
-            userAdded?: true | undefined;
-            longTermSafetyFactor?: number | undefined;
-            sigmaLevel?: number | undefined;
-            distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
-        } | undefined;
         input?: {
             mode: "MEASURED";
             dataset?: {
-                factorId: string;
                 unit: string;
-                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                sourceReference: string;
-                importedAt: string;
-                msaStatus: "unknown" | "available" | "not_available";
+                contentHash: string;
                 observations: ({
                     value: number;
                     disposition: "included";
@@ -8882,15 +9461,20 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 } | {
                     value: number;
                     confirmed: true;
+                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     disposition: "excluded";
                     originalRow: number;
-                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     operatorReference: string;
                     sequence?: string | undefined;
                     timestamp?: string | undefined;
                     subgroup?: string | undefined;
                     batch?: string | undefined;
                 })[];
+                factorId: string;
+                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                sourceReference: string;
+                importedAt: string;
+                msaStatus: "unknown" | "available" | "not_available";
                 missingRowCount: number;
                 rejectionSummaries: {
                     reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -8898,67 +9482,113 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
-                contentHash: string;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         } | {
+            mode: "BASELINE_ASSUMPTION";
             baselineSampler: {
+                standardDeviation: number;
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
-                standardDeviation: number;
                 support: "REAL";
             };
-            mode: "BASELINE_ASSUMPTION";
+        } | undefined;
+        evidence?: {
+            unit: string;
+            tolerance: number;
+            factorName: string;
+            worksheetName: string;
+            workbookContentHash: string;
+            upperTolerance: number;
+            lowerTolerance: number;
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+            oneSigma: number;
+            percentContributionToSigma: number;
+            longTermSafetyFactor: number;
+            lowerSpecLimit: number;
+            upperSpecLimit: number;
+            tableId: string;
+            sourceRow: number;
+            designNominal: number;
+            sigmaLevel: number;
+            sourceCells: Record<string, string>;
+            physicalMean: number;
+            factorCandidateId: string;
+            factorId: string;
+            unitSource: "workbook" | "user_confirmed" | "unspecified";
+            loopCoefficient: 1 | -1;
+            signedContributionMean: number;
+            baselineSampler: {
+                standardDeviation: number;
+                samplerId: "NORMAL_LOCATION_SCALE_V1";
+                physicalMean: number;
+                support: "REAL";
+            };
+            calculatedMean: number;
+            userAdded?: true | undefined;
+        } | undefined;
+        sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
+        setup?: {
+            confirmed: true;
+            upperTolerance: number;
+            lowerTolerance: number;
+            designNominal: number;
+            factorCandidateId: string;
+            factorName?: string | undefined;
+            distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
+            userAdded?: true | undefined;
         } | undefined;
         datasetValidation?: {
-            status: "ready" | "blocked";
+            status: "blocked" | "ready";
             blockingIssues: {
-                reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                 factorId?: string | undefined;
                 rowNumbers?: number[] | undefined;
             }[];
             advisoryIssues: {
-                reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                 factorId?: string | undefined;
                 rowNumbers?: number[] | undefined;
             }[];
             candidateEligibility: {
                 normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
                 lognormal: "eligible" | "ineligible_nonpositive";
                 weibull: "eligible" | "ineligible_nonpositive";
                 gamma: "eligible" | "ineligible_nonpositive";
-                uniform: "eligible_with_boundary_warning";
             };
         } | undefined;
         measurementPasteResult?: {
-            status: "ready" | "blocked";
             validation: {
-                status: "ready" | "blocked";
+                status: "blocked" | "ready";
                 blockingIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 advisoryIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 candidateEligibility: {
                     normal: "eligible";
+                    uniform: "eligible_with_boundary_warning";
                     lognormal: "eligible" | "ineligible_nonpositive";
                     weibull: "eligible" | "ineligible_nonpositive";
                     gamma: "eligible" | "ineligible_nonpositive";
-                    uniform: "eligible_with_boundary_warning";
                 };
             };
+            status: "blocked" | "ready";
             factorId: string;
             dataset?: {
-                factorId: string;
                 unit: string;
-                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                sourceReference: string;
-                importedAt: string;
-                msaStatus: "unknown" | "available" | "not_available";
+                contentHash: string;
                 observations: ({
                     value: number;
                     disposition: "included";
@@ -8970,15 +9600,20 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 } | {
                     value: number;
                     confirmed: true;
+                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     disposition: "excluded";
                     originalRow: number;
-                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     operatorReference: string;
                     sequence?: string | undefined;
                     timestamp?: string | undefined;
                     subgroup?: string | undefined;
                     batch?: string | undefined;
                 })[];
+                factorId: string;
+                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                sourceReference: string;
+                importedAt: string;
+                msaStatus: "unknown" | "available" | "not_available";
                 missingRowCount: number;
                 rejectionSummaries: {
                     reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -8986,15 +9621,15 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
-                contentHash: string;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         } | undefined;
         distributionFitResult?: {
-            factorId: string;
-            sampleSize: number;
-            characteristicKind: "dimensional" | "other";
             candidates: {
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                 parameterCount: number;
                 parameters: Record<string, number>;
@@ -9011,15 +9646,15 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     theoretical: number;
                 }[];
                 bootstrap: {
-                    status: "acceptable" | "weak" | "rejected";
+                    status: "rejected" | "acceptable" | "weak";
                     statisticId: "anderson_darling";
                     observedStatistic: number;
                     comparisonDirection: "greater_than_or_equal";
                     refitEachReplicate: true;
                     extremeReplicateCount: number;
                     confidenceInterval: {
-                        level: 0.95;
                         method: "wilson_score";
+                        level: 0.95;
                         lower: number;
                         upper: number;
                     };
@@ -9032,9 +9667,12 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 };
                 warnings: string[];
             }[];
+            factorId: string;
+            sampleSize: number;
+            characteristicKind: "other" | "dimensional";
             failedCandidates: {
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
                 reasonCode: "numerical_fit_failed";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             }[];
             sampleDiagnostics: {
                 mean: number;
@@ -9046,28 +9684,23 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             };
             selectionDecision: {
                 status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-                methodId: "F7_MODEL_SELECTION_V1";
-                competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
                 confidence: "low" | "moderate";
                 reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-                numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+                methodId: "F7_MODEL_SELECTION_V1";
+                competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+                numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
             };
         } | undefined;
         distributionApproval?: {
             confirmed: true;
             factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             approvedAt: string;
         } | undefined;
     }[];
-    selectedWorksheetNames: string[];
     worksheetOptions: {
-        worksheetName: string;
-        selectionIndex: number;
-        toleranceLoopDescription: string;
-        worksheetKind: "analysis" | "example_or_template";
         source: {
             summarySheet: "Auto Summary";
             summaryRow: number;
@@ -9077,6 +9710,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             discoveryMethod: "worksheet_scan";
             descriptionCell: string;
         };
+        worksheetName: string;
+        toleranceLoopDescription: string;
+        worksheetKind: "analysis" | "example_or_template";
+        selectionIndex: number;
     }[];
     systemSpecification?: {
         status: "available";
@@ -9204,14 +9841,34 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             sourceCell?: string | undefined;
         } | undefined;
     } | undefined;
+    dimensionChainImage?: {
+        status: "available";
+        contentHash: string;
+        worksheetName: string;
+        url: string;
+    } | undefined;
     monteCarloResult?: {
         status: "complete";
+        capability: {
+            status: "available";
+            cpk: number;
+            targetCpk: number;
+            cp: number;
+            lowerCpk: number;
+            upperCpk: number;
+            targetStatus: "meets_target" | "below_target";
+        } | {
+            status: "not_available";
+            targetCpk: number;
+            reason: "zero_variance";
+        };
+        mean: number;
         standardDeviation: number;
         lowerSpecLimit: number;
         upperSpecLimit: number;
-        methodId: "F7_MONTE_CARLO_V1";
-        mean: number;
         targetSigmaLevel: number;
+        yield: number;
+        methodId: "F7_MONTE_CARLO_V1";
         iterations: 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
@@ -9226,7 +9883,6 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         };
         inSpecCount: number;
         outOfSpecCount: number;
-        yield: number;
         outOfSpecProbability: number;
         ppm: number;
         histogram: {
@@ -9238,29 +9894,16 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             }[];
         };
         normalFit: {
+            mean: number;
             standardDeviation: number;
             methodId: "F7_NORMAL_MOMENT_FIT_V1";
-            mean: number;
             expectedBinCounts: number[];
-        };
-        capability: {
-            status: "available";
-            cp: number;
-            lowerCpk: number;
-            upperCpk: number;
-            cpk: number;
-            targetCpk: number;
-            targetStatus: "meets_target" | "below_target";
-        } | {
-            status: "not_available";
-            reason: "zero_variance";
-            targetCpk: number;
         };
         normalModel: {
             status: "available";
+            totalDpm: number;
             lowerTailDpm: number;
             upperTailDpm: number;
-            totalDpm: number;
             expectedYield: number;
         } | {
             status: "not_available";
@@ -9268,97 +9911,47 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         };
         factorManifest: {
             factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
     } | undefined;
 }, {
-    status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
-    workbook: {
-        workbookContentHash: string;
-        fileName: string;
-    };
-    contractId: "f7-analysis-result-v1";
-    outputClassification: "confidential";
     sessionId: string;
+    status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
+    outputClassification: "confidential";
+    contractId: "f7-analysis-result-v1";
+    workbook: {
+        fileName: string;
+        workbookContentHash: string;
+    };
+    selectedWorksheetNames: string[];
     factors: {
         factorCandidate: {
-            standardDeviation: number;
-            workbookContentHash: string;
-            worksheetName: string;
-            tableId: string;
-            sourceRow: number;
-            sourceCells: Record<string, string>;
-            factorCandidateId: string;
             factorName: string;
-            excelSignedMean: number;
-            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-            lowerSpecLimit: number;
-            upperSpecLimit: number;
-            designNominal: number;
+            worksheetName: string;
+            workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+            standardDeviation: number;
+            lowerSpecLimit: number;
+            upperSpecLimit: number;
+            tableId: string;
+            sourceRow: number;
+            designNominal: number;
+            sourceCells: Record<string, string>;
+            factorCandidateId: string;
+            excelSignedMean: number;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
             userAdded?: true | undefined;
             workbookUnitEvidence?: string | undefined;
-            longTermSafetyFactor?: number | undefined;
-            sigmaLevel?: number | undefined;
         };
-        sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
-        evidence?: {
-            physicalMean: number;
-            workbookContentHash: string;
-            worksheetName: string;
-            tableId: string;
-            sourceRow: number;
-            sourceCells: Record<string, string>;
-            factorCandidateId: string;
-            factorName: string;
-            longTermSafetyFactor: number;
-            sigmaLevel: number;
-            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-            lowerSpecLimit: number;
-            upperSpecLimit: number;
-            designNominal: number;
-            upperTolerance: number;
-            lowerTolerance: number;
-            factorId: string;
-            unit: string;
-            unitSource: "workbook" | "user_confirmed" | "unspecified";
-            loopCoefficient: 1 | -1;
-            signedContributionMean: number;
-            baselineSampler: {
-                samplerId: "NORMAL_LOCATION_SCALE_V1";
-                physicalMean: number;
-                standardDeviation: number;
-                support: "REAL";
-            };
-            calculatedMean: number;
-            tolerance: number;
-            oneSigma: number;
-            percentContributionToSigma: number;
-            userAdded?: true | undefined;
-        } | undefined;
-        setup?: {
-            factorCandidateId: string;
-            designNominal: number;
-            upperTolerance: number;
-            lowerTolerance: number;
-            confirmed: true;
-            factorName?: string | undefined;
-            userAdded?: true | undefined;
-            longTermSafetyFactor?: number | undefined;
-            sigmaLevel?: number | undefined;
-            distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
-        } | undefined;
         input?: {
             mode: "MEASURED";
             dataset?: {
-                factorId: string;
                 unit: string;
-                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                sourceReference: string;
-                importedAt: string;
-                msaStatus: "unknown" | "available" | "not_available";
+                contentHash: string;
                 observations: ({
                     value: number;
                     disposition: "included";
@@ -9370,15 +9963,20 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 } | {
                     value: number;
                     confirmed: true;
+                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     disposition: "excluded";
                     originalRow: number;
-                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     operatorReference: string;
                     sequence?: string | undefined;
                     timestamp?: string | undefined;
                     subgroup?: string | undefined;
                     batch?: string | undefined;
                 })[];
+                factorId: string;
+                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                sourceReference: string;
+                importedAt: string;
+                msaStatus: "unknown" | "available" | "not_available";
                 missingRowCount: number;
                 rejectionSummaries: {
                     reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -9386,67 +9984,113 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
-                contentHash: string;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         } | {
+            mode: "BASELINE_ASSUMPTION";
             baselineSampler: {
+                standardDeviation: number;
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
-                standardDeviation: number;
                 support: "REAL";
             };
-            mode: "BASELINE_ASSUMPTION";
+        } | undefined;
+        evidence?: {
+            unit: string;
+            tolerance: number;
+            factorName: string;
+            worksheetName: string;
+            workbookContentHash: string;
+            upperTolerance: number;
+            lowerTolerance: number;
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+            oneSigma: number;
+            percentContributionToSigma: number;
+            longTermSafetyFactor: number;
+            lowerSpecLimit: number;
+            upperSpecLimit: number;
+            tableId: string;
+            sourceRow: number;
+            designNominal: number;
+            sigmaLevel: number;
+            sourceCells: Record<string, string>;
+            physicalMean: number;
+            factorCandidateId: string;
+            factorId: string;
+            unitSource: "workbook" | "user_confirmed" | "unspecified";
+            loopCoefficient: 1 | -1;
+            signedContributionMean: number;
+            baselineSampler: {
+                standardDeviation: number;
+                samplerId: "NORMAL_LOCATION_SCALE_V1";
+                physicalMean: number;
+                support: "REAL";
+            };
+            calculatedMean: number;
+            userAdded?: true | undefined;
+        } | undefined;
+        sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
+        setup?: {
+            confirmed: true;
+            upperTolerance: number;
+            lowerTolerance: number;
+            designNominal: number;
+            factorCandidateId: string;
+            factorName?: string | undefined;
+            distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
+            userAdded?: true | undefined;
         } | undefined;
         datasetValidation?: {
-            status: "ready" | "blocked";
+            status: "blocked" | "ready";
             blockingIssues: {
-                reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                 factorId?: string | undefined;
                 rowNumbers?: number[] | undefined;
             }[];
             advisoryIssues: {
-                reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                 factorId?: string | undefined;
                 rowNumbers?: number[] | undefined;
             }[];
             candidateEligibility: {
                 normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
                 lognormal: "eligible" | "ineligible_nonpositive";
                 weibull: "eligible" | "ineligible_nonpositive";
                 gamma: "eligible" | "ineligible_nonpositive";
-                uniform: "eligible_with_boundary_warning";
             };
         } | undefined;
         measurementPasteResult?: {
-            status: "ready" | "blocked";
             validation: {
-                status: "ready" | "blocked";
+                status: "blocked" | "ready";
                 blockingIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 advisoryIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 candidateEligibility: {
                     normal: "eligible";
+                    uniform: "eligible_with_boundary_warning";
                     lognormal: "eligible" | "ineligible_nonpositive";
                     weibull: "eligible" | "ineligible_nonpositive";
                     gamma: "eligible" | "ineligible_nonpositive";
-                    uniform: "eligible_with_boundary_warning";
                 };
             };
+            status: "blocked" | "ready";
             factorId: string;
             dataset?: {
-                factorId: string;
                 unit: string;
-                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                sourceReference: string;
-                importedAt: string;
-                msaStatus: "unknown" | "available" | "not_available";
+                contentHash: string;
                 observations: ({
                     value: number;
                     disposition: "included";
@@ -9458,15 +10102,20 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 } | {
                     value: number;
                     confirmed: true;
+                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     disposition: "excluded";
                     originalRow: number;
-                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     operatorReference: string;
                     sequence?: string | undefined;
                     timestamp?: string | undefined;
                     subgroup?: string | undefined;
                     batch?: string | undefined;
                 })[];
+                factorId: string;
+                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                sourceReference: string;
+                importedAt: string;
+                msaStatus: "unknown" | "available" | "not_available";
                 missingRowCount: number;
                 rejectionSummaries: {
                     reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -9474,15 +10123,15 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
-                contentHash: string;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         } | undefined;
         distributionFitResult?: {
-            factorId: string;
-            sampleSize: number;
-            characteristicKind: "dimensional" | "other";
             candidates: {
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                 parameterCount: number;
                 parameters: Record<string, number>;
@@ -9499,15 +10148,15 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     theoretical: number;
                 }[];
                 bootstrap: {
-                    status: "acceptable" | "weak" | "rejected";
+                    status: "rejected" | "acceptable" | "weak";
                     statisticId: "anderson_darling";
                     observedStatistic: number;
                     comparisonDirection: "greater_than_or_equal";
                     refitEachReplicate: true;
                     extremeReplicateCount: number;
                     confidenceInterval: {
-                        level: 0.95;
                         method: "wilson_score";
+                        level: 0.95;
                         lower: number;
                         upper: number;
                     };
@@ -9520,9 +10169,12 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 };
                 warnings: string[];
             }[];
+            factorId: string;
+            sampleSize: number;
+            characteristicKind: "other" | "dimensional";
             failedCandidates: {
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
                 reasonCode: "numerical_fit_failed";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             }[];
             sampleDiagnostics: {
                 mean: number;
@@ -9534,28 +10186,23 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             };
             selectionDecision: {
                 status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-                methodId: "F7_MODEL_SELECTION_V1";
-                competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
                 confidence: "low" | "moderate";
                 reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-                numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+                methodId: "F7_MODEL_SELECTION_V1";
+                competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+                numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
             };
         } | undefined;
         distributionApproval?: {
             confirmed: true;
             factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             approvedAt: string;
         } | undefined;
     }[];
-    selectedWorksheetNames: string[];
     worksheetOptions: {
-        worksheetName: string;
-        selectionIndex: number;
-        toleranceLoopDescription: string;
-        worksheetKind: "analysis" | "example_or_template";
         source: {
             summarySheet: "Auto Summary";
             summaryRow: number;
@@ -9565,6 +10212,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             discoveryMethod: "worksheet_scan";
             descriptionCell: string;
         };
+        worksheetName: string;
+        toleranceLoopDescription: string;
+        worksheetKind: "analysis" | "example_or_template";
+        selectionIndex: number;
     }[];
     systemSpecification?: {
         status: "available";
@@ -9692,14 +10343,34 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             sourceCell?: string | undefined;
         } | undefined;
     } | undefined;
+    dimensionChainImage?: {
+        status: "available";
+        contentHash: string;
+        worksheetName: string;
+        url: string;
+    } | undefined;
     monteCarloResult?: {
         status: "complete";
+        capability: {
+            status: "available";
+            cpk: number;
+            targetCpk: number;
+            cp: number;
+            lowerCpk: number;
+            upperCpk: number;
+            targetStatus: "meets_target" | "below_target";
+        } | {
+            status: "not_available";
+            targetCpk: number;
+            reason: "zero_variance";
+        };
+        mean: number;
         standardDeviation: number;
         lowerSpecLimit: number;
         upperSpecLimit: number;
-        methodId: "F7_MONTE_CARLO_V1";
-        mean: number;
         targetSigmaLevel: number;
+        yield: number;
+        methodId: "F7_MONTE_CARLO_V1";
         iterations: 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
@@ -9714,7 +10385,6 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         };
         inSpecCount: number;
         outOfSpecCount: number;
-        yield: number;
         outOfSpecProbability: number;
         ppm: number;
         histogram: {
@@ -9726,29 +10396,16 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             }[];
         };
         normalFit: {
+            mean: number;
             standardDeviation: number;
             methodId: "F7_NORMAL_MOMENT_FIT_V1";
-            mean: number;
             expectedBinCounts: number[];
-        };
-        capability: {
-            status: "available";
-            cp: number;
-            lowerCpk: number;
-            upperCpk: number;
-            cpk: number;
-            targetCpk: number;
-            targetStatus: "meets_target" | "below_target";
-        } | {
-            status: "not_available";
-            reason: "zero_variance";
-            targetCpk: number;
         };
         normalModel: {
             status: "available";
+            totalDpm: number;
             lowerTailDpm: number;
             upperTailDpm: number;
-            totalDpm: number;
             expectedYield: number;
         } | {
             status: "not_available";
@@ -9756,97 +10413,47 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         };
         factorManifest: {
             factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
     } | undefined;
 }>, {
-    status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
-    workbook: {
-        workbookContentHash: string;
-        fileName: string;
-    };
-    contractId: "f7-analysis-result-v1";
-    outputClassification: "confidential";
     sessionId: string;
+    status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
+    outputClassification: "confidential";
+    contractId: "f7-analysis-result-v1";
+    workbook: {
+        fileName: string;
+        workbookContentHash: string;
+    };
+    selectedWorksheetNames: string[];
     factors: {
         factorCandidate: {
-            standardDeviation: number;
-            workbookContentHash: string;
-            worksheetName: string;
-            tableId: string;
-            sourceRow: number;
-            sourceCells: Record<string, string>;
-            factorCandidateId: string;
             factorName: string;
-            excelSignedMean: number;
-            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-            lowerSpecLimit: number;
-            upperSpecLimit: number;
-            designNominal: number;
+            worksheetName: string;
+            workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+            standardDeviation: number;
+            lowerSpecLimit: number;
+            upperSpecLimit: number;
+            tableId: string;
+            sourceRow: number;
+            designNominal: number;
+            sourceCells: Record<string, string>;
+            factorCandidateId: string;
+            excelSignedMean: number;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
             userAdded?: true | undefined;
             workbookUnitEvidence?: string | undefined;
-            longTermSafetyFactor?: number | undefined;
-            sigmaLevel?: number | undefined;
         };
-        sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
-        evidence?: {
-            physicalMean: number;
-            workbookContentHash: string;
-            worksheetName: string;
-            tableId: string;
-            sourceRow: number;
-            sourceCells: Record<string, string>;
-            factorCandidateId: string;
-            factorName: string;
-            longTermSafetyFactor: number;
-            sigmaLevel: number;
-            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-            lowerSpecLimit: number;
-            upperSpecLimit: number;
-            designNominal: number;
-            upperTolerance: number;
-            lowerTolerance: number;
-            factorId: string;
-            unit: string;
-            unitSource: "workbook" | "user_confirmed" | "unspecified";
-            loopCoefficient: 1 | -1;
-            signedContributionMean: number;
-            baselineSampler: {
-                samplerId: "NORMAL_LOCATION_SCALE_V1";
-                physicalMean: number;
-                standardDeviation: number;
-                support: "REAL";
-            };
-            calculatedMean: number;
-            tolerance: number;
-            oneSigma: number;
-            percentContributionToSigma: number;
-            userAdded?: true | undefined;
-        } | undefined;
-        setup?: {
-            factorCandidateId: string;
-            designNominal: number;
-            upperTolerance: number;
-            lowerTolerance: number;
-            confirmed: true;
-            factorName?: string | undefined;
-            userAdded?: true | undefined;
-            longTermSafetyFactor?: number | undefined;
-            sigmaLevel?: number | undefined;
-            distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
-        } | undefined;
         input?: {
             mode: "MEASURED";
             dataset?: {
-                factorId: string;
                 unit: string;
-                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                sourceReference: string;
-                importedAt: string;
-                msaStatus: "unknown" | "available" | "not_available";
+                contentHash: string;
                 observations: ({
                     value: number;
                     disposition: "included";
@@ -9858,15 +10465,20 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 } | {
                     value: number;
                     confirmed: true;
+                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     disposition: "excluded";
                     originalRow: number;
-                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     operatorReference: string;
                     sequence?: string | undefined;
                     timestamp?: string | undefined;
                     subgroup?: string | undefined;
                     batch?: string | undefined;
                 })[];
+                factorId: string;
+                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                sourceReference: string;
+                importedAt: string;
+                msaStatus: "unknown" | "available" | "not_available";
                 missingRowCount: number;
                 rejectionSummaries: {
                     reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -9874,67 +10486,113 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
-                contentHash: string;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         } | {
+            mode: "BASELINE_ASSUMPTION";
             baselineSampler: {
+                standardDeviation: number;
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
-                standardDeviation: number;
                 support: "REAL";
             };
-            mode: "BASELINE_ASSUMPTION";
+        } | undefined;
+        evidence?: {
+            unit: string;
+            tolerance: number;
+            factorName: string;
+            worksheetName: string;
+            workbookContentHash: string;
+            upperTolerance: number;
+            lowerTolerance: number;
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+            oneSigma: number;
+            percentContributionToSigma: number;
+            longTermSafetyFactor: number;
+            lowerSpecLimit: number;
+            upperSpecLimit: number;
+            tableId: string;
+            sourceRow: number;
+            designNominal: number;
+            sigmaLevel: number;
+            sourceCells: Record<string, string>;
+            physicalMean: number;
+            factorCandidateId: string;
+            factorId: string;
+            unitSource: "workbook" | "user_confirmed" | "unspecified";
+            loopCoefficient: 1 | -1;
+            signedContributionMean: number;
+            baselineSampler: {
+                standardDeviation: number;
+                samplerId: "NORMAL_LOCATION_SCALE_V1";
+                physicalMean: number;
+                support: "REAL";
+            };
+            calculatedMean: number;
+            userAdded?: true | undefined;
+        } | undefined;
+        sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
+        setup?: {
+            confirmed: true;
+            upperTolerance: number;
+            lowerTolerance: number;
+            designNominal: number;
+            factorCandidateId: string;
+            factorName?: string | undefined;
+            distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
+            userAdded?: true | undefined;
         } | undefined;
         datasetValidation?: {
-            status: "ready" | "blocked";
+            status: "blocked" | "ready";
             blockingIssues: {
-                reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                 factorId?: string | undefined;
                 rowNumbers?: number[] | undefined;
             }[];
             advisoryIssues: {
-                reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                 factorId?: string | undefined;
                 rowNumbers?: number[] | undefined;
             }[];
             candidateEligibility: {
                 normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
                 lognormal: "eligible" | "ineligible_nonpositive";
                 weibull: "eligible" | "ineligible_nonpositive";
                 gamma: "eligible" | "ineligible_nonpositive";
-                uniform: "eligible_with_boundary_warning";
             };
         } | undefined;
         measurementPasteResult?: {
-            status: "ready" | "blocked";
             validation: {
-                status: "ready" | "blocked";
+                status: "blocked" | "ready";
                 blockingIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 advisoryIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 candidateEligibility: {
                     normal: "eligible";
+                    uniform: "eligible_with_boundary_warning";
                     lognormal: "eligible" | "ineligible_nonpositive";
                     weibull: "eligible" | "ineligible_nonpositive";
                     gamma: "eligible" | "ineligible_nonpositive";
-                    uniform: "eligible_with_boundary_warning";
                 };
             };
+            status: "blocked" | "ready";
             factorId: string;
             dataset?: {
-                factorId: string;
                 unit: string;
-                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                sourceReference: string;
-                importedAt: string;
-                msaStatus: "unknown" | "available" | "not_available";
+                contentHash: string;
                 observations: ({
                     value: number;
                     disposition: "included";
@@ -9946,15 +10604,20 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 } | {
                     value: number;
                     confirmed: true;
+                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     disposition: "excluded";
                     originalRow: number;
-                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     operatorReference: string;
                     sequence?: string | undefined;
                     timestamp?: string | undefined;
                     subgroup?: string | undefined;
                     batch?: string | undefined;
                 })[];
+                factorId: string;
+                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                sourceReference: string;
+                importedAt: string;
+                msaStatus: "unknown" | "available" | "not_available";
                 missingRowCount: number;
                 rejectionSummaries: {
                     reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -9962,15 +10625,15 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
-                contentHash: string;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         } | undefined;
         distributionFitResult?: {
-            factorId: string;
-            sampleSize: number;
-            characteristicKind: "dimensional" | "other";
             candidates: {
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                 parameterCount: number;
                 parameters: Record<string, number>;
@@ -9987,15 +10650,15 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     theoretical: number;
                 }[];
                 bootstrap: {
-                    status: "acceptable" | "weak" | "rejected";
+                    status: "rejected" | "acceptable" | "weak";
                     statisticId: "anderson_darling";
                     observedStatistic: number;
                     comparisonDirection: "greater_than_or_equal";
                     refitEachReplicate: true;
                     extremeReplicateCount: number;
                     confidenceInterval: {
-                        level: 0.95;
                         method: "wilson_score";
+                        level: 0.95;
                         lower: number;
                         upper: number;
                     };
@@ -10008,9 +10671,12 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 };
                 warnings: string[];
             }[];
+            factorId: string;
+            sampleSize: number;
+            characteristicKind: "other" | "dimensional";
             failedCandidates: {
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
                 reasonCode: "numerical_fit_failed";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             }[];
             sampleDiagnostics: {
                 mean: number;
@@ -10022,28 +10688,23 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             };
             selectionDecision: {
                 status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-                methodId: "F7_MODEL_SELECTION_V1";
-                competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
                 confidence: "low" | "moderate";
                 reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-                numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+                methodId: "F7_MODEL_SELECTION_V1";
+                competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+                numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
             };
         } | undefined;
         distributionApproval?: {
             confirmed: true;
             factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             approvedAt: string;
         } | undefined;
     }[];
-    selectedWorksheetNames: string[];
     worksheetOptions: {
-        worksheetName: string;
-        selectionIndex: number;
-        toleranceLoopDescription: string;
-        worksheetKind: "analysis" | "example_or_template";
         source: {
             summarySheet: "Auto Summary";
             summaryRow: number;
@@ -10053,6 +10714,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             discoveryMethod: "worksheet_scan";
             descriptionCell: string;
         };
+        worksheetName: string;
+        toleranceLoopDescription: string;
+        worksheetKind: "analysis" | "example_or_template";
+        selectionIndex: number;
     }[];
     systemSpecification?: {
         status: "available";
@@ -10180,14 +10845,34 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             sourceCell?: string | undefined;
         } | undefined;
     } | undefined;
+    dimensionChainImage?: {
+        status: "available";
+        contentHash: string;
+        worksheetName: string;
+        url: string;
+    } | undefined;
     monteCarloResult?: {
         status: "complete";
+        capability: {
+            status: "available";
+            cpk: number;
+            targetCpk: number;
+            cp: number;
+            lowerCpk: number;
+            upperCpk: number;
+            targetStatus: "meets_target" | "below_target";
+        } | {
+            status: "not_available";
+            targetCpk: number;
+            reason: "zero_variance";
+        };
+        mean: number;
         standardDeviation: number;
         lowerSpecLimit: number;
         upperSpecLimit: number;
-        methodId: "F7_MONTE_CARLO_V1";
-        mean: number;
         targetSigmaLevel: number;
+        yield: number;
+        methodId: "F7_MONTE_CARLO_V1";
         iterations: 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
@@ -10202,7 +10887,6 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         };
         inSpecCount: number;
         outOfSpecCount: number;
-        yield: number;
         outOfSpecProbability: number;
         ppm: number;
         histogram: {
@@ -10214,29 +10898,16 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             }[];
         };
         normalFit: {
+            mean: number;
             standardDeviation: number;
             methodId: "F7_NORMAL_MOMENT_FIT_V1";
-            mean: number;
             expectedBinCounts: number[];
-        };
-        capability: {
-            status: "available";
-            cp: number;
-            lowerCpk: number;
-            upperCpk: number;
-            cpk: number;
-            targetCpk: number;
-            targetStatus: "meets_target" | "below_target";
-        } | {
-            status: "not_available";
-            reason: "zero_variance";
-            targetCpk: number;
         };
         normalModel: {
             status: "available";
+            totalDpm: number;
             lowerTailDpm: number;
             upperTailDpm: number;
-            totalDpm: number;
             expectedYield: number;
         } | {
             status: "not_available";
@@ -10244,97 +10915,47 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         };
         factorManifest: {
             factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
     } | undefined;
 }, {
-    status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
-    workbook: {
-        workbookContentHash: string;
-        fileName: string;
-    };
-    contractId: "f7-analysis-result-v1";
-    outputClassification: "confidential";
     sessionId: string;
+    status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
+    outputClassification: "confidential";
+    contractId: "f7-analysis-result-v1";
+    workbook: {
+        fileName: string;
+        workbookContentHash: string;
+    };
+    selectedWorksheetNames: string[];
     factors: {
         factorCandidate: {
-            standardDeviation: number;
-            workbookContentHash: string;
-            worksheetName: string;
-            tableId: string;
-            sourceRow: number;
-            sourceCells: Record<string, string>;
-            factorCandidateId: string;
             factorName: string;
-            excelSignedMean: number;
-            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-            lowerSpecLimit: number;
-            upperSpecLimit: number;
-            designNominal: number;
+            worksheetName: string;
+            workbookContentHash: string;
             upperTolerance: number;
             lowerTolerance: number;
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+            standardDeviation: number;
+            lowerSpecLimit: number;
+            upperSpecLimit: number;
+            tableId: string;
+            sourceRow: number;
+            designNominal: number;
+            sourceCells: Record<string, string>;
+            factorCandidateId: string;
+            excelSignedMean: number;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
             userAdded?: true | undefined;
             workbookUnitEvidence?: string | undefined;
-            longTermSafetyFactor?: number | undefined;
-            sigmaLevel?: number | undefined;
         };
-        sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
-        evidence?: {
-            physicalMean: number;
-            workbookContentHash: string;
-            worksheetName: string;
-            tableId: string;
-            sourceRow: number;
-            sourceCells: Record<string, string>;
-            factorCandidateId: string;
-            factorName: string;
-            longTermSafetyFactor: number;
-            sigmaLevel: number;
-            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-            lowerSpecLimit: number;
-            upperSpecLimit: number;
-            designNominal: number;
-            upperTolerance: number;
-            lowerTolerance: number;
-            factorId: string;
-            unit: string;
-            unitSource: "workbook" | "user_confirmed" | "unspecified";
-            loopCoefficient: 1 | -1;
-            signedContributionMean: number;
-            baselineSampler: {
-                samplerId: "NORMAL_LOCATION_SCALE_V1";
-                physicalMean: number;
-                standardDeviation: number;
-                support: "REAL";
-            };
-            calculatedMean: number;
-            tolerance: number;
-            oneSigma: number;
-            percentContributionToSigma: number;
-            userAdded?: true | undefined;
-        } | undefined;
-        setup?: {
-            factorCandidateId: string;
-            designNominal: number;
-            upperTolerance: number;
-            lowerTolerance: number;
-            confirmed: true;
-            factorName?: string | undefined;
-            userAdded?: true | undefined;
-            longTermSafetyFactor?: number | undefined;
-            sigmaLevel?: number | undefined;
-            distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
-        } | undefined;
         input?: {
             mode: "MEASURED";
             dataset?: {
-                factorId: string;
                 unit: string;
-                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                sourceReference: string;
-                importedAt: string;
-                msaStatus: "unknown" | "available" | "not_available";
+                contentHash: string;
                 observations: ({
                     value: number;
                     disposition: "included";
@@ -10346,15 +10967,20 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 } | {
                     value: number;
                     confirmed: true;
+                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     disposition: "excluded";
                     originalRow: number;
-                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     operatorReference: string;
                     sequence?: string | undefined;
                     timestamp?: string | undefined;
                     subgroup?: string | undefined;
                     batch?: string | undefined;
                 })[];
+                factorId: string;
+                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                sourceReference: string;
+                importedAt: string;
+                msaStatus: "unknown" | "available" | "not_available";
                 missingRowCount: number;
                 rejectionSummaries: {
                     reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -10362,67 +10988,113 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
-                contentHash: string;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         } | {
+            mode: "BASELINE_ASSUMPTION";
             baselineSampler: {
+                standardDeviation: number;
                 samplerId: "NORMAL_LOCATION_SCALE_V1";
                 physicalMean: number;
-                standardDeviation: number;
                 support: "REAL";
             };
-            mode: "BASELINE_ASSUMPTION";
+        } | undefined;
+        evidence?: {
+            unit: string;
+            tolerance: number;
+            factorName: string;
+            worksheetName: string;
+            workbookContentHash: string;
+            upperTolerance: number;
+            lowerTolerance: number;
+            distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+            oneSigma: number;
+            percentContributionToSigma: number;
+            longTermSafetyFactor: number;
+            lowerSpecLimit: number;
+            upperSpecLimit: number;
+            tableId: string;
+            sourceRow: number;
+            designNominal: number;
+            sigmaLevel: number;
+            sourceCells: Record<string, string>;
+            physicalMean: number;
+            factorCandidateId: string;
+            factorId: string;
+            unitSource: "workbook" | "user_confirmed" | "unspecified";
+            loopCoefficient: 1 | -1;
+            signedContributionMean: number;
+            baselineSampler: {
+                standardDeviation: number;
+                samplerId: "NORMAL_LOCATION_SCALE_V1";
+                physicalMean: number;
+                support: "REAL";
+            };
+            calculatedMean: number;
+            userAdded?: true | undefined;
+        } | undefined;
+        sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
+        setup?: {
+            confirmed: true;
+            upperTolerance: number;
+            lowerTolerance: number;
+            designNominal: number;
+            factorCandidateId: string;
+            factorName?: string | undefined;
+            distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+            longTermSafetyFactor?: number | undefined;
+            sigmaLevel?: number | undefined;
+            userAdded?: true | undefined;
         } | undefined;
         datasetValidation?: {
-            status: "ready" | "blocked";
+            status: "blocked" | "ready";
             blockingIssues: {
-                reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                 factorId?: string | undefined;
                 rowNumbers?: number[] | undefined;
             }[];
             advisoryIssues: {
-                reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                 factorId?: string | undefined;
                 rowNumbers?: number[] | undefined;
             }[];
             candidateEligibility: {
                 normal: "eligible";
+                uniform: "eligible_with_boundary_warning";
                 lognormal: "eligible" | "ineligible_nonpositive";
                 weibull: "eligible" | "ineligible_nonpositive";
                 gamma: "eligible" | "ineligible_nonpositive";
-                uniform: "eligible_with_boundary_warning";
             };
         } | undefined;
         measurementPasteResult?: {
-            status: "ready" | "blocked";
             validation: {
-                status: "ready" | "blocked";
+                status: "blocked" | "ready";
                 blockingIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 advisoryIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 candidateEligibility: {
                     normal: "eligible";
+                    uniform: "eligible_with_boundary_warning";
                     lognormal: "eligible" | "ineligible_nonpositive";
                     weibull: "eligible" | "ineligible_nonpositive";
                     gamma: "eligible" | "ineligible_nonpositive";
-                    uniform: "eligible_with_boundary_warning";
                 };
             };
+            status: "blocked" | "ready";
             factorId: string;
             dataset?: {
-                factorId: string;
                 unit: string;
-                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                sourceReference: string;
-                importedAt: string;
-                msaStatus: "unknown" | "available" | "not_available";
+                contentHash: string;
                 observations: ({
                     value: number;
                     disposition: "included";
@@ -10434,15 +11106,20 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 } | {
                     value: number;
                     confirmed: true;
+                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     disposition: "excluded";
                     originalRow: number;
-                    reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                     operatorReference: string;
                     sequence?: string | undefined;
                     timestamp?: string | undefined;
                     subgroup?: string | undefined;
                     batch?: string | undefined;
                 })[];
+                factorId: string;
+                structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                sourceReference: string;
+                importedAt: string;
+                msaStatus: "unknown" | "available" | "not_available";
                 missingRowCount: number;
                 rejectionSummaries: {
                     reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -10450,15 +11127,15 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
-                contentHash: string;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         } | undefined;
         distributionFitResult?: {
-            factorId: string;
-            sampleSize: number;
-            characteristicKind: "dimensional" | "other";
             candidates: {
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                 parameterCount: number;
                 parameters: Record<string, number>;
@@ -10475,15 +11152,15 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                     theoretical: number;
                 }[];
                 bootstrap: {
-                    status: "acceptable" | "weak" | "rejected";
+                    status: "rejected" | "acceptable" | "weak";
                     statisticId: "anderson_darling";
                     observedStatistic: number;
                     comparisonDirection: "greater_than_or_equal";
                     refitEachReplicate: true;
                     extremeReplicateCount: number;
                     confidenceInterval: {
-                        level: 0.95;
                         method: "wilson_score";
+                        level: 0.95;
                         lower: number;
                         upper: number;
                     };
@@ -10496,9 +11173,12 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 };
                 warnings: string[];
             }[];
+            factorId: string;
+            sampleSize: number;
+            characteristicKind: "other" | "dimensional";
             failedCandidates: {
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
                 reasonCode: "numerical_fit_failed";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             }[];
             sampleDiagnostics: {
                 mean: number;
@@ -10510,28 +11190,23 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             };
             selectionDecision: {
                 status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-                methodId: "F7_MODEL_SELECTION_V1";
-                competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
                 confidence: "low" | "moderate";
                 reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-                numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+                methodId: "F7_MODEL_SELECTION_V1";
+                competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+                numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
             };
         } | undefined;
         distributionApproval?: {
             confirmed: true;
             factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             approvedAt: string;
         } | undefined;
     }[];
-    selectedWorksheetNames: string[];
     worksheetOptions: {
-        worksheetName: string;
-        selectionIndex: number;
-        toleranceLoopDescription: string;
-        worksheetKind: "analysis" | "example_or_template";
         source: {
             summarySheet: "Auto Summary";
             summaryRow: number;
@@ -10541,6 +11216,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             discoveryMethod: "worksheet_scan";
             descriptionCell: string;
         };
+        worksheetName: string;
+        toleranceLoopDescription: string;
+        worksheetKind: "analysis" | "example_or_template";
+        selectionIndex: number;
     }[];
     systemSpecification?: {
         status: "available";
@@ -10668,14 +11347,34 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             sourceCell?: string | undefined;
         } | undefined;
     } | undefined;
+    dimensionChainImage?: {
+        status: "available";
+        contentHash: string;
+        worksheetName: string;
+        url: string;
+    } | undefined;
     monteCarloResult?: {
         status: "complete";
+        capability: {
+            status: "available";
+            cpk: number;
+            targetCpk: number;
+            cp: number;
+            lowerCpk: number;
+            upperCpk: number;
+            targetStatus: "meets_target" | "below_target";
+        } | {
+            status: "not_available";
+            targetCpk: number;
+            reason: "zero_variance";
+        };
+        mean: number;
         standardDeviation: number;
         lowerSpecLimit: number;
         upperSpecLimit: number;
-        methodId: "F7_MONTE_CARLO_V1";
-        mean: number;
         targetSigmaLevel: number;
+        yield: number;
+        methodId: "F7_MONTE_CARLO_V1";
         iterations: 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
@@ -10690,7 +11389,6 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         };
         inSpecCount: number;
         outOfSpecCount: number;
-        yield: number;
         outOfSpecProbability: number;
         ppm: number;
         histogram: {
@@ -10702,29 +11400,16 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             }[];
         };
         normalFit: {
+            mean: number;
             standardDeviation: number;
             methodId: "F7_NORMAL_MOMENT_FIT_V1";
-            mean: number;
             expectedBinCounts: number[];
-        };
-        capability: {
-            status: "available";
-            cp: number;
-            lowerCpk: number;
-            upperCpk: number;
-            cpk: number;
-            targetCpk: number;
-            targetStatus: "meets_target" | "below_target";
-        } | {
-            status: "not_available";
-            reason: "zero_variance";
-            targetCpk: number;
         };
         normalModel: {
             status: "available";
+            totalDpm: number;
             lowerTailDpm: number;
             upperTailDpm: number;
-            totalDpm: number;
             expectedYield: number;
         } | {
             status: "not_available";
@@ -10732,7 +11417,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         };
         factorManifest: {
             factorId: string;
-            family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+            family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
             sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         }[];
     } | undefined;
@@ -10743,37 +11428,77 @@ export declare const f7WorkbookImportRequestSchema: z.ZodObject<{
     fileName: z.ZodString;
     workbookBytes: z.ZodEffects<z.ZodType<Uint8Array<ArrayBuffer>, z.ZodTypeDef, Uint8Array<ArrayBuffer>>, Uint8Array<ArrayBuffer>, Uint8Array<ArrayBuffer>>;
 }, "strict", z.ZodTypeAny, {
-    fileName: string;
-    contractId: "f7-analysis-request-v1";
     inputClassification: "confidential";
+    contractId: "f7-analysis-request-v1";
+    fileName: string;
     workbookBytes: Uint8Array<ArrayBuffer>;
 }, {
-    fileName: string;
-    contractId: "f7-analysis-request-v1";
     inputClassification: "confidential";
+    contractId: "f7-analysis-request-v1";
+    fileName: string;
     workbookBytes: Uint8Array<ArrayBuffer>;
 }>;
-export declare const f7MeasurementPasteRequestSchema: z.ZodObject<{
+export declare const f7MeasurementPasteRequestSchema: z.ZodEffects<z.ZodObject<{
     factorId: z.ZodString;
     unit: z.ZodString;
     structure: z.ZodEnum<["RATIONAL_SUBGROUP", "ORDERED_INDIVIDUALS", "UNORDERED_SAMPLE"]>;
+    rationalSubgroupConfig: z.ZodOptional<z.ZodObject<{
+        subgroupSize: z.ZodNumber;
+        estimator: z.ZodEnum<["RANGE_D2", "S_C4"]>;
+    }, "strict", z.ZodTypeAny, {
+        subgroupSize: number;
+        estimator: "RANGE_D2" | "S_C4";
+    }, {
+        subgroupSize: number;
+        estimator: "RANGE_D2" | "S_C4";
+    }>>;
     sourceReference: z.ZodString;
     msaStatus: z.ZodEnum<["available", "not_available", "unknown"]>;
     text: z.ZodString;
 }, "strict", z.ZodTypeAny, {
-    factorId: string;
     unit: string;
+    text: string;
+    factorId: string;
     structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
     sourceReference: string;
     msaStatus: "unknown" | "available" | "not_available";
-    text: string;
+    rationalSubgroupConfig?: {
+        subgroupSize: number;
+        estimator: "RANGE_D2" | "S_C4";
+    } | undefined;
 }, {
-    factorId: string;
     unit: string;
+    text: string;
+    factorId: string;
     structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
     sourceReference: string;
     msaStatus: "unknown" | "available" | "not_available";
+    rationalSubgroupConfig?: {
+        subgroupSize: number;
+        estimator: "RANGE_D2" | "S_C4";
+    } | undefined;
+}>, {
+    unit: string;
     text: string;
+    factorId: string;
+    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+    sourceReference: string;
+    msaStatus: "unknown" | "available" | "not_available";
+    rationalSubgroupConfig?: {
+        subgroupSize: number;
+        estimator: "RANGE_D2" | "S_C4";
+    } | undefined;
+}, {
+    unit: string;
+    text: string;
+    factorId: string;
+    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+    sourceReference: string;
+    msaStatus: "unknown" | "available" | "not_available";
+    rationalSubgroupConfig?: {
+        subgroupSize: number;
+        estimator: "RANGE_D2" | "S_C4";
+    } | undefined;
 }>;
 export declare const f7MeasurementDispositionActionSchema: z.ZodEnum<["EXCLUDE", "RESTORE"]>;
 export declare const f7MeasurementDispositionRequestSchema: z.ZodObject<{
@@ -10785,31 +11510,31 @@ export declare const f7MeasurementDispositionRequestSchema: z.ZodObject<{
     confirmed: z.ZodLiteral<true>;
 }, "strict", z.ZodTypeAny, {
     confirmed: true;
-    factorId: string;
+    action: "EXCLUDE" | "RESTORE";
     reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+    factorId: string;
     operatorReference: string;
     rowNumbers: number[];
-    action: "EXCLUDE" | "RESTORE";
 }, {
     confirmed: true;
-    factorId: string;
+    action: "EXCLUDE" | "RESTORE";
     reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
+    factorId: string;
     operatorReference: string;
     rowNumbers: number[];
-    action: "EXCLUDE" | "RESTORE";
 }>;
 export declare const f7AnalysisRequestSchema: z.ZodObject<{
     contractId: z.ZodLiteral<"f7-analysis-request-v1">;
     inputClassification: z.ZodLiteral<"confidential">;
     sessionId: z.ZodString;
 }, "strict", z.ZodTypeAny, {
-    contractId: "f7-analysis-request-v1";
     sessionId: string;
     inputClassification: "confidential";
+    contractId: "f7-analysis-request-v1";
 }, {
-    contractId: "f7-analysis-request-v1";
     sessionId: string;
     inputClassification: "confidential";
+    contractId: "f7-analysis-request-v1";
 }>;
 export declare const f7AnalysisResultSchema: z.ZodObject<{
     contractId: z.ZodLiteral<"f7-analysis-result-v1">;
@@ -10823,11 +11548,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             fileName: z.ZodString;
             workbookContentHash: z.ZodString;
         }, "strict", z.ZodTypeAny, {
-            workbookContentHash: string;
             fileName: string;
+            workbookContentHash: string;
         }, {
-            workbookContentHash: string;
             fileName: string;
+            workbookContentHash: string;
         }>;
         selectedWorksheetNames: z.ZodArray<z.ZodString, "many">;
         worksheetOptions: z.ZodArray<z.ZodObject<{
@@ -10861,10 +11586,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 descriptionCell: string;
             }>]>;
         }, "strict", z.ZodTypeAny, {
-            worksheetName: string;
-            selectionIndex: number;
-            toleranceLoopDescription: string;
-            worksheetKind: "analysis" | "example_or_template";
             source: {
                 summarySheet: "Auto Summary";
                 summaryRow: number;
@@ -10874,11 +11595,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 discoveryMethod: "worksheet_scan";
                 descriptionCell: string;
             };
+            worksheetName: string;
+            toleranceLoopDescription: string;
+            worksheetKind: "analysis" | "example_or_template";
+            selectionIndex: number;
         }, {
-            worksheetName: string;
-            selectionIndex: number;
-            toleranceLoopDescription: string;
-            worksheetKind: "analysis" | "example_or_template";
             source: {
                 summarySheet: "Auto Summary";
                 summaryRow: number;
@@ -10888,7 +11609,27 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 discoveryMethod: "worksheet_scan";
                 descriptionCell: string;
             };
+            worksheetName: string;
+            toleranceLoopDescription: string;
+            worksheetKind: "analysis" | "example_or_template";
+            selectionIndex: number;
         }>, "many">;
+        dimensionChainImage: z.ZodOptional<z.ZodObject<{
+            status: z.ZodLiteral<"available">;
+            worksheetName: z.ZodString;
+            contentHash: z.ZodString;
+            url: z.ZodString;
+        }, "strict", z.ZodTypeAny, {
+            status: "available";
+            contentHash: string;
+            worksheetName: string;
+            url: string;
+        }, {
+            status: "available";
+            contentHash: string;
+            worksheetName: string;
+            url: string;
+        }>>;
         systemSpecification: z.ZodOptional<z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
             lowerSpecLimit: z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
                 status: z.ZodLiteral<"available">;
@@ -11507,85 +12248,85 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 workbookUnitEvidence: z.ZodOptional<z.ZodString>;
                 excelSignedMean: z.ZodNumber;
             }, "strict", z.ZodTypeAny, {
-                standardDeviation: number;
-                workbookContentHash: string;
-                worksheetName: string;
-                tableId: string;
-                sourceRow: number;
-                sourceCells: Record<string, string>;
-                factorCandidateId: string;
                 factorName: string;
-                excelSignedMean: number;
-                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-                lowerSpecLimit: number;
-                upperSpecLimit: number;
-                designNominal: number;
+                worksheetName: string;
+                workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
-                userAdded?: true | undefined;
-                workbookUnitEvidence?: string | undefined;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                standardDeviation: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                tableId: string;
+                sourceRow: number;
+                designNominal: number;
+                sourceCells: Record<string, string>;
+                factorCandidateId: string;
+                excelSignedMean: number;
                 longTermSafetyFactor?: number | undefined;
                 sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
+                workbookUnitEvidence?: string | undefined;
             }, {
-                standardDeviation: number;
-                workbookContentHash: string;
-                worksheetName: string;
-                tableId: string;
-                sourceRow: number;
-                sourceCells: Record<string, string>;
-                factorCandidateId: string;
                 factorName: string;
-                excelSignedMean: number;
-                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-                lowerSpecLimit: number;
-                upperSpecLimit: number;
-                designNominal: number;
+                worksheetName: string;
+                workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
-                userAdded?: true | undefined;
-                workbookUnitEvidence?: string | undefined;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                standardDeviation: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                tableId: string;
+                sourceRow: number;
+                designNominal: number;
+                sourceCells: Record<string, string>;
+                factorCandidateId: string;
+                excelSignedMean: number;
                 longTermSafetyFactor?: number | undefined;
                 sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
+                workbookUnitEvidence?: string | undefined;
             }>, {
-                standardDeviation: number;
-                workbookContentHash: string;
-                worksheetName: string;
-                tableId: string;
-                sourceRow: number;
-                sourceCells: Record<string, string>;
-                factorCandidateId: string;
                 factorName: string;
-                excelSignedMean: number;
-                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-                lowerSpecLimit: number;
-                upperSpecLimit: number;
-                designNominal: number;
+                worksheetName: string;
+                workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
-                userAdded?: true | undefined;
-                workbookUnitEvidence?: string | undefined;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                standardDeviation: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                tableId: string;
+                sourceRow: number;
+                designNominal: number;
+                sourceCells: Record<string, string>;
+                factorCandidateId: string;
+                excelSignedMean: number;
                 longTermSafetyFactor?: number | undefined;
                 sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
+                workbookUnitEvidence?: string | undefined;
             }, {
-                standardDeviation: number;
-                workbookContentHash: string;
-                worksheetName: string;
-                tableId: string;
-                sourceRow: number;
-                sourceCells: Record<string, string>;
-                factorCandidateId: string;
                 factorName: string;
-                excelSignedMean: number;
-                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-                lowerSpecLimit: number;
-                upperSpecLimit: number;
-                designNominal: number;
+                worksheetName: string;
+                workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
-                userAdded?: true | undefined;
-                workbookUnitEvidence?: string | undefined;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                standardDeviation: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                tableId: string;
+                sourceRow: number;
+                designNominal: number;
+                sourceCells: Record<string, string>;
+                factorCandidateId: string;
+                excelSignedMean: number;
                 longTermSafetyFactor?: number | undefined;
                 sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
+                workbookUnitEvidence?: string | undefined;
             }>;
             setup: z.ZodOptional<z.ZodEffects<z.ZodObject<{
                 longTermSafetyFactor: z.ZodOptional<z.ZodNumber>;
@@ -11599,49 +12340,49 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorName: z.ZodOptional<z.ZodString>;
                 userAdded: z.ZodOptional<z.ZodLiteral<true>>;
             }, "strict", z.ZodTypeAny, {
-                factorCandidateId: string;
-                designNominal: number;
+                confirmed: true;
                 upperTolerance: number;
                 lowerTolerance: number;
-                confirmed: true;
+                designNominal: number;
+                factorCandidateId: string;
                 factorName?: string | undefined;
-                userAdded?: true | undefined;
+                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
                 longTermSafetyFactor?: number | undefined;
                 sigmaLevel?: number | undefined;
-                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+                userAdded?: true | undefined;
             }, {
-                factorCandidateId: string;
-                designNominal: number;
+                confirmed: true;
                 upperTolerance: number;
                 lowerTolerance: number;
-                confirmed: true;
+                designNominal: number;
+                factorCandidateId: string;
                 factorName?: string | undefined;
-                userAdded?: true | undefined;
+                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
                 longTermSafetyFactor?: number | undefined;
                 sigmaLevel?: number | undefined;
-                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+                userAdded?: true | undefined;
             }>, {
-                factorCandidateId: string;
-                designNominal: number;
+                confirmed: true;
                 upperTolerance: number;
                 lowerTolerance: number;
-                confirmed: true;
+                designNominal: number;
+                factorCandidateId: string;
                 factorName?: string | undefined;
-                userAdded?: true | undefined;
+                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
                 longTermSafetyFactor?: number | undefined;
                 sigmaLevel?: number | undefined;
-                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+                userAdded?: true | undefined;
             }, {
-                factorCandidateId: string;
-                designNominal: number;
+                confirmed: true;
                 upperTolerance: number;
                 lowerTolerance: number;
-                confirmed: true;
+                designNominal: number;
+                factorCandidateId: string;
                 factorName?: string | undefined;
-                userAdded?: true | undefined;
+                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
                 longTermSafetyFactor?: number | undefined;
                 sigmaLevel?: number | undefined;
-                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+                userAdded?: true | undefined;
             }>>;
             sourceMode: z.ZodOptional<z.ZodEnum<["MEASURED", "BASELINE_ASSUMPTION"]>>;
             input: z.ZodOptional<z.ZodDiscriminatedUnion<"mode", [z.ZodObject<{
@@ -11650,6 +12391,16 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     factorId: z.ZodString;
                     unit: z.ZodString;
                     structure: z.ZodEnum<["RATIONAL_SUBGROUP", "ORDERED_INDIVIDUALS", "UNORDERED_SAMPLE"]>;
+                    rationalSubgroupConfig: z.ZodOptional<z.ZodObject<{
+                        subgroupSize: z.ZodNumber;
+                        estimator: z.ZodEnum<["RANGE_D2", "S_C4"]>;
+                    }, "strict", z.ZodTypeAny, {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    }, {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    }>>;
                     sourceReference: z.ZodString;
                     importedAt: z.ZodString;
                     msaStatus: z.ZodEnum<["available", "not_available", "unknown"]>;
@@ -11691,9 +12442,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }, "strict", z.ZodTypeAny, {
                         value: number;
                         confirmed: true;
+                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         disposition: "excluded";
                         originalRow: number;
-                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         operatorReference: string;
                         sequence?: string | undefined;
                         timestamp?: string | undefined;
@@ -11702,9 +12453,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }, {
                         value: number;
                         confirmed: true;
+                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         disposition: "excluded";
                         originalRow: number;
-                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         operatorReference: string;
                         sequence?: string | undefined;
                         timestamp?: string | undefined;
@@ -11726,12 +12477,8 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     analyzedCount: z.ZodNumber;
                     contentHash: z.ZodString;
                 }, "strict", z.ZodTypeAny, {
-                    factorId: string;
                     unit: string;
-                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                    sourceReference: string;
-                    importedAt: string;
-                    msaStatus: "unknown" | "available" | "not_available";
+                    contentHash: string;
                     observations: ({
                         value: number;
                         disposition: "included";
@@ -11743,15 +12490,20 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     } | {
                         value: number;
                         confirmed: true;
+                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         disposition: "excluded";
                         originalRow: number;
-                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         operatorReference: string;
                         sequence?: string | undefined;
                         timestamp?: string | undefined;
                         subgroup?: string | undefined;
                         batch?: string | undefined;
                     })[];
+                    factorId: string;
+                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                    sourceReference: string;
+                    importedAt: string;
+                    msaStatus: "unknown" | "available" | "not_available";
                     missingRowCount: number;
                     rejectionSummaries: {
                         reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -11759,14 +12511,13 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
-                    contentHash: string;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 }, {
-                    factorId: string;
                     unit: string;
-                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                    sourceReference: string;
-                    importedAt: string;
-                    msaStatus: "unknown" | "available" | "not_available";
+                    contentHash: string;
                     observations: ({
                         value: number;
                         disposition: "included";
@@ -11778,15 +12529,20 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     } | {
                         value: number;
                         confirmed: true;
+                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         disposition: "excluded";
                         originalRow: number;
-                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         operatorReference: string;
                         sequence?: string | undefined;
                         timestamp?: string | undefined;
                         subgroup?: string | undefined;
                         batch?: string | undefined;
                     })[];
+                    factorId: string;
+                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                    sourceReference: string;
+                    importedAt: string;
+                    msaStatus: "unknown" | "available" | "not_available";
                     missingRowCount: number;
                     rejectionSummaries: {
                         reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -11794,14 +12550,13 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
-                    contentHash: string;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 }>, {
-                    factorId: string;
                     unit: string;
-                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                    sourceReference: string;
-                    importedAt: string;
-                    msaStatus: "unknown" | "available" | "not_available";
+                    contentHash: string;
                     observations: ({
                         value: number;
                         disposition: "included";
@@ -11813,15 +12568,20 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     } | {
                         value: number;
                         confirmed: true;
+                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         disposition: "excluded";
                         originalRow: number;
-                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         operatorReference: string;
                         sequence?: string | undefined;
                         timestamp?: string | undefined;
                         subgroup?: string | undefined;
                         batch?: string | undefined;
                     })[];
+                    factorId: string;
+                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                    sourceReference: string;
+                    importedAt: string;
+                    msaStatus: "unknown" | "available" | "not_available";
                     missingRowCount: number;
                     rejectionSummaries: {
                         reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -11829,14 +12589,13 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
-                    contentHash: string;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 }, {
-                    factorId: string;
                     unit: string;
-                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                    sourceReference: string;
-                    importedAt: string;
-                    msaStatus: "unknown" | "available" | "not_available";
+                    contentHash: string;
                     observations: ({
                         value: number;
                         disposition: "included";
@@ -11848,15 +12607,20 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     } | {
                         value: number;
                         confirmed: true;
+                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         disposition: "excluded";
                         originalRow: number;
-                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         operatorReference: string;
                         sequence?: string | undefined;
                         timestamp?: string | undefined;
                         subgroup?: string | undefined;
                         batch?: string | undefined;
                     })[];
+                    factorId: string;
+                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                    sourceReference: string;
+                    importedAt: string;
+                    msaStatus: "unknown" | "available" | "not_available";
                     missingRowCount: number;
                     rejectionSummaries: {
                         reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -11864,17 +12628,16 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
-                    contentHash: string;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 }>>;
             }, "strict", z.ZodTypeAny, {
                 mode: "MEASURED";
                 dataset?: {
-                    factorId: string;
                     unit: string;
-                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                    sourceReference: string;
-                    importedAt: string;
-                    msaStatus: "unknown" | "available" | "not_available";
+                    contentHash: string;
                     observations: ({
                         value: number;
                         disposition: "included";
@@ -11886,15 +12649,20 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     } | {
                         value: number;
                         confirmed: true;
+                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         disposition: "excluded";
                         originalRow: number;
-                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         operatorReference: string;
                         sequence?: string | undefined;
                         timestamp?: string | undefined;
                         subgroup?: string | undefined;
                         batch?: string | undefined;
                     })[];
+                    factorId: string;
+                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                    sourceReference: string;
+                    importedAt: string;
+                    msaStatus: "unknown" | "available" | "not_available";
                     missingRowCount: number;
                     rejectionSummaries: {
                         reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -11902,17 +12670,16 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
-                    contentHash: string;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             }, {
                 mode: "MEASURED";
                 dataset?: {
-                    factorId: string;
                     unit: string;
-                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                    sourceReference: string;
-                    importedAt: string;
-                    msaStatus: "unknown" | "available" | "not_available";
+                    contentHash: string;
                     observations: ({
                         value: number;
                         disposition: "included";
@@ -11924,15 +12691,20 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     } | {
                         value: number;
                         confirmed: true;
+                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         disposition: "excluded";
                         originalRow: number;
-                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         operatorReference: string;
                         sequence?: string | undefined;
                         timestamp?: string | undefined;
                         subgroup?: string | undefined;
                         batch?: string | undefined;
                     })[];
+                    factorId: string;
+                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                    sourceReference: string;
+                    importedAt: string;
+                    msaStatus: "unknown" | "available" | "not_available";
                     missingRowCount: number;
                     rejectionSummaries: {
                         reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -11940,7 +12712,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
-                    contentHash: string;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             }>, z.ZodObject<{
                 mode: z.ZodLiteral<"BASELINE_ASSUMPTION">;
@@ -11950,32 +12725,32 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     standardDeviation: z.ZodNumber;
                     support: z.ZodLiteral<"REAL">;
                 }, "strict", z.ZodTypeAny, {
+                    standardDeviation: number;
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
-                    standardDeviation: number;
                     support: "REAL";
                 }, {
+                    standardDeviation: number;
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
-                    standardDeviation: number;
                     support: "REAL";
                 }>;
             }, "strict", z.ZodTypeAny, {
+                mode: "BASELINE_ASSUMPTION";
                 baselineSampler: {
+                    standardDeviation: number;
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
-                    standardDeviation: number;
                     support: "REAL";
                 };
-                mode: "BASELINE_ASSUMPTION";
             }, {
+                mode: "BASELINE_ASSUMPTION";
                 baselineSampler: {
+                    standardDeviation: number;
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
-                    standardDeviation: number;
                     support: "REAL";
                 };
-                mode: "BASELINE_ASSUMPTION";
             }>]>>;
             evidence: z.ZodOptional<z.ZodEffects<z.ZodObject<{
                 loopCoefficient: z.ZodUnion<[z.ZodLiteral<-1>, z.ZodLiteral<1>]>;
@@ -11987,14 +12762,14 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     standardDeviation: z.ZodNumber;
                     support: z.ZodLiteral<"REAL">;
                 }, "strict", z.ZodTypeAny, {
+                    standardDeviation: number;
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
-                    standardDeviation: number;
                     support: "REAL";
                 }, {
+                    standardDeviation: number;
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
-                    standardDeviation: number;
                     support: "REAL";
                 }>;
                 lowerSpecLimit: z.ZodNumber;
@@ -12021,136 +12796,136 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 unit: z.ZodString;
                 unitSource: z.ZodEnum<["workbook", "user_confirmed", "unspecified"]>;
             }, "strict", z.ZodTypeAny, {
-                physicalMean: number;
-                workbookContentHash: string;
-                worksheetName: string;
-                tableId: string;
-                sourceRow: number;
-                sourceCells: Record<string, string>;
-                factorCandidateId: string;
+                unit: string;
+                tolerance: number;
                 factorName: string;
-                longTermSafetyFactor: number;
-                sigmaLevel: number;
-                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-                lowerSpecLimit: number;
-                upperSpecLimit: number;
-                designNominal: number;
+                worksheetName: string;
+                workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                oneSigma: number;
+                percentContributionToSigma: number;
+                longTermSafetyFactor: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                tableId: string;
+                sourceRow: number;
+                designNominal: number;
+                sigmaLevel: number;
+                sourceCells: Record<string, string>;
+                physicalMean: number;
+                factorCandidateId: string;
                 factorId: string;
-                unit: string;
                 unitSource: "workbook" | "user_confirmed" | "unspecified";
                 loopCoefficient: 1 | -1;
                 signedContributionMean: number;
                 baselineSampler: {
+                    standardDeviation: number;
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
-                    standardDeviation: number;
                     support: "REAL";
                 };
                 calculatedMean: number;
-                tolerance: number;
-                oneSigma: number;
-                percentContributionToSigma: number;
                 userAdded?: true | undefined;
             }, {
-                physicalMean: number;
-                workbookContentHash: string;
-                worksheetName: string;
-                tableId: string;
-                sourceRow: number;
-                sourceCells: Record<string, string>;
-                factorCandidateId: string;
+                unit: string;
+                tolerance: number;
                 factorName: string;
-                longTermSafetyFactor: number;
-                sigmaLevel: number;
-                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-                lowerSpecLimit: number;
-                upperSpecLimit: number;
-                designNominal: number;
+                worksheetName: string;
+                workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                oneSigma: number;
+                percentContributionToSigma: number;
+                longTermSafetyFactor: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                tableId: string;
+                sourceRow: number;
+                designNominal: number;
+                sigmaLevel: number;
+                sourceCells: Record<string, string>;
+                physicalMean: number;
+                factorCandidateId: string;
                 factorId: string;
-                unit: string;
                 unitSource: "workbook" | "user_confirmed" | "unspecified";
                 loopCoefficient: 1 | -1;
                 signedContributionMean: number;
                 baselineSampler: {
+                    standardDeviation: number;
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
-                    standardDeviation: number;
                     support: "REAL";
                 };
                 calculatedMean: number;
-                tolerance: number;
-                oneSigma: number;
-                percentContributionToSigma: number;
                 userAdded?: true | undefined;
             }>, {
-                physicalMean: number;
-                workbookContentHash: string;
-                worksheetName: string;
-                tableId: string;
-                sourceRow: number;
-                sourceCells: Record<string, string>;
-                factorCandidateId: string;
+                unit: string;
+                tolerance: number;
                 factorName: string;
-                longTermSafetyFactor: number;
-                sigmaLevel: number;
-                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-                lowerSpecLimit: number;
-                upperSpecLimit: number;
-                designNominal: number;
+                worksheetName: string;
+                workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                oneSigma: number;
+                percentContributionToSigma: number;
+                longTermSafetyFactor: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                tableId: string;
+                sourceRow: number;
+                designNominal: number;
+                sigmaLevel: number;
+                sourceCells: Record<string, string>;
+                physicalMean: number;
+                factorCandidateId: string;
                 factorId: string;
-                unit: string;
                 unitSource: "workbook" | "user_confirmed" | "unspecified";
                 loopCoefficient: 1 | -1;
                 signedContributionMean: number;
                 baselineSampler: {
+                    standardDeviation: number;
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
-                    standardDeviation: number;
                     support: "REAL";
                 };
                 calculatedMean: number;
-                tolerance: number;
-                oneSigma: number;
-                percentContributionToSigma: number;
                 userAdded?: true | undefined;
             }, {
-                physicalMean: number;
-                workbookContentHash: string;
-                worksheetName: string;
-                tableId: string;
-                sourceRow: number;
-                sourceCells: Record<string, string>;
-                factorCandidateId: string;
+                unit: string;
+                tolerance: number;
                 factorName: string;
-                longTermSafetyFactor: number;
-                sigmaLevel: number;
-                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-                lowerSpecLimit: number;
-                upperSpecLimit: number;
-                designNominal: number;
+                worksheetName: string;
+                workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                oneSigma: number;
+                percentContributionToSigma: number;
+                longTermSafetyFactor: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                tableId: string;
+                sourceRow: number;
+                designNominal: number;
+                sigmaLevel: number;
+                sourceCells: Record<string, string>;
+                physicalMean: number;
+                factorCandidateId: string;
                 factorId: string;
-                unit: string;
                 unitSource: "workbook" | "user_confirmed" | "unspecified";
                 loopCoefficient: 1 | -1;
                 signedContributionMean: number;
                 baselineSampler: {
+                    standardDeviation: number;
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
-                    standardDeviation: number;
                     support: "REAL";
                 };
                 calculatedMean: number;
-                tolerance: number;
-                oneSigma: number;
-                percentContributionToSigma: number;
                 userAdded?: true | undefined;
             }>>;
             datasetValidation: z.ZodOptional<z.ZodObject<{
@@ -12160,11 +12935,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     factorId: z.ZodOptional<z.ZodString>;
                     rowNumbers: z.ZodOptional<z.ZodEffects<z.ZodEffects<z.ZodArray<z.ZodNumber, "many">, number[], number[]>, number[], number[]>>;
                 }, "strict", z.ZodTypeAny, {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }, {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }>, "many">;
@@ -12173,11 +12948,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     factorId: z.ZodOptional<z.ZodString>;
                     rowNumbers: z.ZodOptional<z.ZodEffects<z.ZodEffects<z.ZodArray<z.ZodNumber, "many">, number[], number[]>, number[], number[]>>;
                 }, "strict", z.ZodTypeAny, {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }, {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }>, "many">;
@@ -12189,54 +12964,54 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     uniform: z.ZodLiteral<"eligible_with_boundary_warning">;
                 }, "strict", z.ZodTypeAny, {
                     normal: "eligible";
+                    uniform: "eligible_with_boundary_warning";
                     lognormal: "eligible" | "ineligible_nonpositive";
                     weibull: "eligible" | "ineligible_nonpositive";
                     gamma: "eligible" | "ineligible_nonpositive";
-                    uniform: "eligible_with_boundary_warning";
                 }, {
                     normal: "eligible";
+                    uniform: "eligible_with_boundary_warning";
                     lognormal: "eligible" | "ineligible_nonpositive";
                     weibull: "eligible" | "ineligible_nonpositive";
                     gamma: "eligible" | "ineligible_nonpositive";
-                    uniform: "eligible_with_boundary_warning";
                 }>;
             }, "strict", z.ZodTypeAny, {
-                status: "ready" | "blocked";
+                status: "blocked" | "ready";
                 blockingIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 advisoryIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 candidateEligibility: {
                     normal: "eligible";
+                    uniform: "eligible_with_boundary_warning";
                     lognormal: "eligible" | "ineligible_nonpositive";
                     weibull: "eligible" | "ineligible_nonpositive";
                     gamma: "eligible" | "ineligible_nonpositive";
-                    uniform: "eligible_with_boundary_warning";
                 };
             }, {
-                status: "ready" | "blocked";
+                status: "blocked" | "ready";
                 blockingIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 advisoryIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 candidateEligibility: {
                     normal: "eligible";
+                    uniform: "eligible_with_boundary_warning";
                     lognormal: "eligible" | "ineligible_nonpositive";
                     weibull: "eligible" | "ineligible_nonpositive";
                     gamma: "eligible" | "ineligible_nonpositive";
-                    uniform: "eligible_with_boundary_warning";
                 };
             }>>;
             measurementPasteResult: z.ZodOptional<z.ZodObject<{
@@ -12246,6 +13021,16 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     factorId: z.ZodString;
                     unit: z.ZodString;
                     structure: z.ZodEnum<["RATIONAL_SUBGROUP", "ORDERED_INDIVIDUALS", "UNORDERED_SAMPLE"]>;
+                    rationalSubgroupConfig: z.ZodOptional<z.ZodObject<{
+                        subgroupSize: z.ZodNumber;
+                        estimator: z.ZodEnum<["RANGE_D2", "S_C4"]>;
+                    }, "strict", z.ZodTypeAny, {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    }, {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    }>>;
                     sourceReference: z.ZodString;
                     importedAt: z.ZodString;
                     msaStatus: z.ZodEnum<["available", "not_available", "unknown"]>;
@@ -12287,9 +13072,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }, "strict", z.ZodTypeAny, {
                         value: number;
                         confirmed: true;
+                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         disposition: "excluded";
                         originalRow: number;
-                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         operatorReference: string;
                         sequence?: string | undefined;
                         timestamp?: string | undefined;
@@ -12298,9 +13083,9 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }, {
                         value: number;
                         confirmed: true;
+                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         disposition: "excluded";
                         originalRow: number;
-                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         operatorReference: string;
                         sequence?: string | undefined;
                         timestamp?: string | undefined;
@@ -12322,12 +13107,8 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     analyzedCount: z.ZodNumber;
                     contentHash: z.ZodString;
                 }, "strict", z.ZodTypeAny, {
-                    factorId: string;
                     unit: string;
-                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                    sourceReference: string;
-                    importedAt: string;
-                    msaStatus: "unknown" | "available" | "not_available";
+                    contentHash: string;
                     observations: ({
                         value: number;
                         disposition: "included";
@@ -12339,15 +13120,20 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     } | {
                         value: number;
                         confirmed: true;
+                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         disposition: "excluded";
                         originalRow: number;
-                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         operatorReference: string;
                         sequence?: string | undefined;
                         timestamp?: string | undefined;
                         subgroup?: string | undefined;
                         batch?: string | undefined;
                     })[];
+                    factorId: string;
+                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                    sourceReference: string;
+                    importedAt: string;
+                    msaStatus: "unknown" | "available" | "not_available";
                     missingRowCount: number;
                     rejectionSummaries: {
                         reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -12355,14 +13141,13 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
-                    contentHash: string;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 }, {
-                    factorId: string;
                     unit: string;
-                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                    sourceReference: string;
-                    importedAt: string;
-                    msaStatus: "unknown" | "available" | "not_available";
+                    contentHash: string;
                     observations: ({
                         value: number;
                         disposition: "included";
@@ -12374,15 +13159,20 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     } | {
                         value: number;
                         confirmed: true;
+                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         disposition: "excluded";
                         originalRow: number;
-                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         operatorReference: string;
                         sequence?: string | undefined;
                         timestamp?: string | undefined;
                         subgroup?: string | undefined;
                         batch?: string | undefined;
                     })[];
+                    factorId: string;
+                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                    sourceReference: string;
+                    importedAt: string;
+                    msaStatus: "unknown" | "available" | "not_available";
                     missingRowCount: number;
                     rejectionSummaries: {
                         reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -12390,14 +13180,13 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
-                    contentHash: string;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 }>, {
-                    factorId: string;
                     unit: string;
-                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                    sourceReference: string;
-                    importedAt: string;
-                    msaStatus: "unknown" | "available" | "not_available";
+                    contentHash: string;
                     observations: ({
                         value: number;
                         disposition: "included";
@@ -12409,15 +13198,20 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     } | {
                         value: number;
                         confirmed: true;
+                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         disposition: "excluded";
                         originalRow: number;
-                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         operatorReference: string;
                         sequence?: string | undefined;
                         timestamp?: string | undefined;
                         subgroup?: string | undefined;
                         batch?: string | undefined;
                     })[];
+                    factorId: string;
+                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                    sourceReference: string;
+                    importedAt: string;
+                    msaStatus: "unknown" | "available" | "not_available";
                     missingRowCount: number;
                     rejectionSummaries: {
                         reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -12425,14 +13219,13 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
-                    contentHash: string;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 }, {
-                    factorId: string;
                     unit: string;
-                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                    sourceReference: string;
-                    importedAt: string;
-                    msaStatus: "unknown" | "available" | "not_available";
+                    contentHash: string;
                     observations: ({
                         value: number;
                         disposition: "included";
@@ -12444,15 +13237,20 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     } | {
                         value: number;
                         confirmed: true;
+                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         disposition: "excluded";
                         originalRow: number;
-                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         operatorReference: string;
                         sequence?: string | undefined;
                         timestamp?: string | undefined;
                         subgroup?: string | undefined;
                         batch?: string | undefined;
                     })[];
+                    factorId: string;
+                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                    sourceReference: string;
+                    importedAt: string;
+                    msaStatus: "unknown" | "available" | "not_available";
                     missingRowCount: number;
                     rejectionSummaries: {
                         reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -12460,7 +13258,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
-                    contentHash: string;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 }>>;
                 validation: z.ZodObject<{
                     status: z.ZodEnum<["ready", "blocked"]>;
@@ -12469,11 +13270,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         factorId: z.ZodOptional<z.ZodString>;
                         rowNumbers: z.ZodOptional<z.ZodEffects<z.ZodEffects<z.ZodArray<z.ZodNumber, "many">, number[], number[]>, number[], number[]>>;
                     }, "strict", z.ZodTypeAny, {
-                        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                         factorId?: string | undefined;
                         rowNumbers?: number[] | undefined;
                     }, {
-                        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                         factorId?: string | undefined;
                         rowNumbers?: number[] | undefined;
                     }>, "many">;
@@ -12482,11 +13283,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         factorId: z.ZodOptional<z.ZodString>;
                         rowNumbers: z.ZodOptional<z.ZodEffects<z.ZodEffects<z.ZodArray<z.ZodNumber, "many">, number[], number[]>, number[], number[]>>;
                     }, "strict", z.ZodTypeAny, {
-                        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                         factorId?: string | undefined;
                         rowNumbers?: number[] | undefined;
                     }, {
-                        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                         factorId?: string | undefined;
                         rowNumbers?: number[] | undefined;
                     }>, "many">;
@@ -12498,86 +13299,82 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         uniform: z.ZodLiteral<"eligible_with_boundary_warning">;
                     }, "strict", z.ZodTypeAny, {
                         normal: "eligible";
+                        uniform: "eligible_with_boundary_warning";
                         lognormal: "eligible" | "ineligible_nonpositive";
                         weibull: "eligible" | "ineligible_nonpositive";
                         gamma: "eligible" | "ineligible_nonpositive";
-                        uniform: "eligible_with_boundary_warning";
                     }, {
                         normal: "eligible";
+                        uniform: "eligible_with_boundary_warning";
                         lognormal: "eligible" | "ineligible_nonpositive";
                         weibull: "eligible" | "ineligible_nonpositive";
                         gamma: "eligible" | "ineligible_nonpositive";
-                        uniform: "eligible_with_boundary_warning";
                     }>;
                 }, "strict", z.ZodTypeAny, {
-                    status: "ready" | "blocked";
+                    status: "blocked" | "ready";
                     blockingIssues: {
-                        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                         factorId?: string | undefined;
                         rowNumbers?: number[] | undefined;
                     }[];
                     advisoryIssues: {
-                        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                         factorId?: string | undefined;
                         rowNumbers?: number[] | undefined;
                     }[];
                     candidateEligibility: {
                         normal: "eligible";
+                        uniform: "eligible_with_boundary_warning";
                         lognormal: "eligible" | "ineligible_nonpositive";
                         weibull: "eligible" | "ineligible_nonpositive";
                         gamma: "eligible" | "ineligible_nonpositive";
-                        uniform: "eligible_with_boundary_warning";
                     };
                 }, {
-                    status: "ready" | "blocked";
+                    status: "blocked" | "ready";
                     blockingIssues: {
-                        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                         factorId?: string | undefined;
                         rowNumbers?: number[] | undefined;
                     }[];
                     advisoryIssues: {
-                        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                         factorId?: string | undefined;
                         rowNumbers?: number[] | undefined;
                     }[];
                     candidateEligibility: {
                         normal: "eligible";
+                        uniform: "eligible_with_boundary_warning";
                         lognormal: "eligible" | "ineligible_nonpositive";
                         weibull: "eligible" | "ineligible_nonpositive";
                         gamma: "eligible" | "ineligible_nonpositive";
-                        uniform: "eligible_with_boundary_warning";
                     };
                 }>;
             }, "strict", z.ZodTypeAny, {
-                status: "ready" | "blocked";
                 validation: {
-                    status: "ready" | "blocked";
+                    status: "blocked" | "ready";
                     blockingIssues: {
-                        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                         factorId?: string | undefined;
                         rowNumbers?: number[] | undefined;
                     }[];
                     advisoryIssues: {
-                        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                         factorId?: string | undefined;
                         rowNumbers?: number[] | undefined;
                     }[];
                     candidateEligibility: {
                         normal: "eligible";
+                        uniform: "eligible_with_boundary_warning";
                         lognormal: "eligible" | "ineligible_nonpositive";
                         weibull: "eligible" | "ineligible_nonpositive";
                         gamma: "eligible" | "ineligible_nonpositive";
-                        uniform: "eligible_with_boundary_warning";
                     };
                 };
+                status: "blocked" | "ready";
                 factorId: string;
                 dataset?: {
-                    factorId: string;
                     unit: string;
-                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                    sourceReference: string;
-                    importedAt: string;
-                    msaStatus: "unknown" | "available" | "not_available";
+                    contentHash: string;
                     observations: ({
                         value: number;
                         disposition: "included";
@@ -12589,15 +13386,20 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     } | {
                         value: number;
                         confirmed: true;
+                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         disposition: "excluded";
                         originalRow: number;
-                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         operatorReference: string;
                         sequence?: string | undefined;
                         timestamp?: string | undefined;
                         subgroup?: string | undefined;
                         batch?: string | undefined;
                     })[];
+                    factorId: string;
+                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                    sourceReference: string;
+                    importedAt: string;
+                    msaStatus: "unknown" | "available" | "not_available";
                     missingRowCount: number;
                     rejectionSummaries: {
                         reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -12605,38 +13407,37 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
-                    contentHash: string;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             }, {
-                status: "ready" | "blocked";
                 validation: {
-                    status: "ready" | "blocked";
+                    status: "blocked" | "ready";
                     blockingIssues: {
-                        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                         factorId?: string | undefined;
                         rowNumbers?: number[] | undefined;
                     }[];
                     advisoryIssues: {
-                        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                         factorId?: string | undefined;
                         rowNumbers?: number[] | undefined;
                     }[];
                     candidateEligibility: {
                         normal: "eligible";
+                        uniform: "eligible_with_boundary_warning";
                         lognormal: "eligible" | "ineligible_nonpositive";
                         weibull: "eligible" | "ineligible_nonpositive";
                         gamma: "eligible" | "ineligible_nonpositive";
-                        uniform: "eligible_with_boundary_warning";
                     };
                 };
+                status: "blocked" | "ready";
                 factorId: string;
                 dataset?: {
-                    factorId: string;
                     unit: string;
-                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                    sourceReference: string;
-                    importedAt: string;
-                    msaStatus: "unknown" | "available" | "not_available";
+                    contentHash: string;
                     observations: ({
                         value: number;
                         disposition: "included";
@@ -12648,15 +13449,20 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     } | {
                         value: number;
                         confirmed: true;
+                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         disposition: "excluded";
                         originalRow: number;
-                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         operatorReference: string;
                         sequence?: string | undefined;
                         timestamp?: string | undefined;
                         subgroup?: string | undefined;
                         batch?: string | undefined;
                     })[];
+                    factorId: string;
+                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                    sourceReference: string;
+                    importedAt: string;
+                    msaStatus: "unknown" | "available" | "not_available";
                     missingRowCount: number;
                     rejectionSummaries: {
                         reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -12664,7 +13470,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
-                    contentHash: string;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             }>>;
             distributionFitResult: z.ZodOptional<z.ZodEffects<z.ZodObject<{
@@ -12712,23 +13521,23 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                             lower: z.ZodNumber;
                             upper: z.ZodNumber;
                         }, "strict", z.ZodTypeAny, {
-                            level: 0.95;
                             method: "wilson_score";
+                            level: 0.95;
                             lower: number;
                             upper: number;
                         }, {
-                            level: 0.95;
                             method: "wilson_score";
+                            level: 0.95;
                             lower: number;
                             upper: number;
                         }>, {
-                            level: 0.95;
                             method: "wilson_score";
+                            level: 0.95;
                             lower: number;
                             upper: number;
                         }, {
-                            level: 0.95;
                             method: "wilson_score";
+                            level: 0.95;
                             lower: number;
                             upper: number;
                         }>;
@@ -12740,15 +13549,15 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         streamDigest: z.ZodString;
                         status: z.ZodEnum<["acceptable", "weak", "rejected"]>;
                     }, "strict", z.ZodTypeAny, {
-                        status: "acceptable" | "weak" | "rejected";
+                        status: "rejected" | "acceptable" | "weak";
                         statisticId: "anderson_darling";
                         observedStatistic: number;
                         comparisonDirection: "greater_than_or_equal";
                         refitEachReplicate: true;
                         extremeReplicateCount: number;
                         confidenceInterval: {
-                            level: 0.95;
                             method: "wilson_score";
+                            level: 0.95;
                             lower: number;
                             upper: number;
                         };
@@ -12759,15 +13568,15 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                         streamDigest: string;
                     }, {
-                        status: "acceptable" | "weak" | "rejected";
+                        status: "rejected" | "acceptable" | "weak";
                         statisticId: "anderson_darling";
                         observedStatistic: number;
                         comparisonDirection: "greater_than_or_equal";
                         refitEachReplicate: true;
                         extremeReplicateCount: number;
                         confidenceInterval: {
-                            level: 0.95;
                             method: "wilson_score";
+                            level: 0.95;
                             lower: number;
                             upper: number;
                         };
@@ -12778,15 +13587,15 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                         streamDigest: string;
                     }>, {
-                        status: "acceptable" | "weak" | "rejected";
+                        status: "rejected" | "acceptable" | "weak";
                         statisticId: "anderson_darling";
                         observedStatistic: number;
                         comparisonDirection: "greater_than_or_equal";
                         refitEachReplicate: true;
                         extremeReplicateCount: number;
                         confidenceInterval: {
-                            level: 0.95;
                             method: "wilson_score";
+                            level: 0.95;
                             lower: number;
                             upper: number;
                         };
@@ -12797,15 +13606,15 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         candidateMethodId: "F7_DISTRIBUTION_FIT_V1";
                         streamDigest: string;
                     }, {
-                        status: "acceptable" | "weak" | "rejected";
+                        status: "rejected" | "acceptable" | "weak";
                         statisticId: "anderson_darling";
                         observedStatistic: number;
                         comparisonDirection: "greater_than_or_equal";
                         refitEachReplicate: true;
                         extremeReplicateCount: number;
                         confidenceInterval: {
-                            level: 0.95;
                             method: "wilson_score";
+                            level: 0.95;
                             lower: number;
                             upper: number;
                         };
@@ -12818,7 +13627,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }>;
                     warnings: z.ZodArray<z.ZodString, "many">;
                 }, "strict", z.ZodTypeAny, {
-                    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                     parameterCount: number;
                     parameters: Record<string, number>;
@@ -12835,15 +13644,15 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         theoretical: number;
                     }[];
                     bootstrap: {
-                        status: "acceptable" | "weak" | "rejected";
+                        status: "rejected" | "acceptable" | "weak";
                         statisticId: "anderson_darling";
                         observedStatistic: number;
                         comparisonDirection: "greater_than_or_equal";
                         refitEachReplicate: true;
                         extremeReplicateCount: number;
                         confidenceInterval: {
-                            level: 0.95;
                             method: "wilson_score";
+                            level: 0.95;
                             lower: number;
                             upper: number;
                         };
@@ -12856,7 +13665,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     };
                     warnings: string[];
                 }, {
-                    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                     parameterCount: number;
                     parameters: Record<string, number>;
@@ -12873,15 +13682,15 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         theoretical: number;
                     }[];
                     bootstrap: {
-                        status: "acceptable" | "weak" | "rejected";
+                        status: "rejected" | "acceptable" | "weak";
                         statisticId: "anderson_darling";
                         observedStatistic: number;
                         comparisonDirection: "greater_than_or_equal";
                         refitEachReplicate: true;
                         extremeReplicateCount: number;
                         confidenceInterval: {
-                            level: 0.95;
                             method: "wilson_score";
+                            level: 0.95;
                             lower: number;
                             upper: number;
                         };
@@ -12894,7 +13703,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     };
                     warnings: string[];
                 }>, {
-                    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                     parameterCount: number;
                     parameters: Record<string, number>;
@@ -12911,15 +13720,15 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         theoretical: number;
                     }[];
                     bootstrap: {
-                        status: "acceptable" | "weak" | "rejected";
+                        status: "rejected" | "acceptable" | "weak";
                         statisticId: "anderson_darling";
                         observedStatistic: number;
                         comparisonDirection: "greater_than_or_equal";
                         refitEachReplicate: true;
                         extremeReplicateCount: number;
                         confidenceInterval: {
-                            level: 0.95;
                             method: "wilson_score";
+                            level: 0.95;
                             lower: number;
                             upper: number;
                         };
@@ -12932,7 +13741,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     };
                     warnings: string[];
                 }, {
-                    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                     parameterCount: number;
                     parameters: Record<string, number>;
@@ -12949,15 +13758,15 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         theoretical: number;
                     }[];
                     bootstrap: {
-                        status: "acceptable" | "weak" | "rejected";
+                        status: "rejected" | "acceptable" | "weak";
                         statisticId: "anderson_darling";
                         observedStatistic: number;
                         comparisonDirection: "greater_than_or_equal";
                         refitEachReplicate: true;
                         extremeReplicateCount: number;
                         confidenceInterval: {
-                            level: 0.95;
                             method: "wilson_score";
+                            level: 0.95;
                             lower: number;
                             upper: number;
                         };
@@ -12974,11 +13783,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     family: z.ZodEnum<["normal", "lognormal", "weibull", "gamma", "uniform"]>;
                     reasonCode: z.ZodLiteral<"numerical_fit_failed">;
                 }, "strict", z.ZodTypeAny, {
-                    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
                     reasonCode: "numerical_fit_failed";
+                    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 }, {
-                    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
                     reasonCode: "numerical_fit_failed";
+                    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 }>, "many">;
                 sampleDiagnostics: z.ZodObject<{
                     mean: z.ZodNumber;
@@ -13013,47 +13822,44 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     reasonCodes: z.ZodArray<z.ZodEnum<["SINGLE_ACCEPTABLE_COMPETITOR", "MULTIPLE_COMPETITIVE_MODELS", "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT", "SMALL_SAMPLE_UNCERTAINTY", "NO_ACCEPTABLE_MODEL", "CANDIDATE_FIT_FAILURES"]>, "many">;
                 }, "strict", z.ZodTypeAny, {
                     status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-                    methodId: "F7_MODEL_SELECTION_V1";
-                    competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
                     confidence: "low" | "moderate";
                     reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-                    numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                    engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                    proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+                    methodId: "F7_MODEL_SELECTION_V1";
+                    competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+                    numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                    engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                    proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
                 }, {
                     status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-                    methodId: "F7_MODEL_SELECTION_V1";
-                    competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
                     confidence: "low" | "moderate";
                     reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-                    numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                    engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                    proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+                    methodId: "F7_MODEL_SELECTION_V1";
+                    competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+                    numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                    engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                    proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
                 }>, {
                     status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-                    methodId: "F7_MODEL_SELECTION_V1";
-                    competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
                     confidence: "low" | "moderate";
                     reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-                    numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                    engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                    proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+                    methodId: "F7_MODEL_SELECTION_V1";
+                    competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+                    numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                    engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                    proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
                 }, {
                     status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-                    methodId: "F7_MODEL_SELECTION_V1";
-                    competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
                     confidence: "low" | "moderate";
                     reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-                    numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                    engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                    proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+                    methodId: "F7_MODEL_SELECTION_V1";
+                    competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+                    numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                    engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                    proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
                 }>;
             }, "strict", z.ZodTypeAny, {
-                factorId: string;
-                sampleSize: number;
-                characteristicKind: "dimensional" | "other";
                 candidates: {
-                    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                     parameterCount: number;
                     parameters: Record<string, number>;
@@ -13070,15 +13876,15 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         theoretical: number;
                     }[];
                     bootstrap: {
-                        status: "acceptable" | "weak" | "rejected";
+                        status: "rejected" | "acceptable" | "weak";
                         statisticId: "anderson_darling";
                         observedStatistic: number;
                         comparisonDirection: "greater_than_or_equal";
                         refitEachReplicate: true;
                         extremeReplicateCount: number;
                         confidenceInterval: {
-                            level: 0.95;
                             method: "wilson_score";
+                            level: 0.95;
                             lower: number;
                             upper: number;
                         };
@@ -13091,9 +13897,12 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     };
                     warnings: string[];
                 }[];
+                factorId: string;
+                sampleSize: number;
+                characteristicKind: "other" | "dimensional";
                 failedCandidates: {
-                    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
                     reasonCode: "numerical_fit_failed";
+                    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 }[];
                 sampleDiagnostics: {
                     mean: number;
@@ -13105,20 +13914,17 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 };
                 selectionDecision: {
                     status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-                    methodId: "F7_MODEL_SELECTION_V1";
-                    competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
                     confidence: "low" | "moderate";
                     reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-                    numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                    engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                    proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+                    methodId: "F7_MODEL_SELECTION_V1";
+                    competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+                    numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                    engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                    proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
                 };
             }, {
-                factorId: string;
-                sampleSize: number;
-                characteristicKind: "dimensional" | "other";
                 candidates: {
-                    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                     parameterCount: number;
                     parameters: Record<string, number>;
@@ -13135,15 +13941,15 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         theoretical: number;
                     }[];
                     bootstrap: {
-                        status: "acceptable" | "weak" | "rejected";
+                        status: "rejected" | "acceptable" | "weak";
                         statisticId: "anderson_darling";
                         observedStatistic: number;
                         comparisonDirection: "greater_than_or_equal";
                         refitEachReplicate: true;
                         extremeReplicateCount: number;
                         confidenceInterval: {
-                            level: 0.95;
                             method: "wilson_score";
+                            level: 0.95;
                             lower: number;
                             upper: number;
                         };
@@ -13156,9 +13962,12 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     };
                     warnings: string[];
                 }[];
+                factorId: string;
+                sampleSize: number;
+                characteristicKind: "other" | "dimensional";
                 failedCandidates: {
-                    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
                     reasonCode: "numerical_fit_failed";
+                    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 }[];
                 sampleDiagnostics: {
                     mean: number;
@@ -13170,20 +13979,17 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 };
                 selectionDecision: {
                     status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-                    methodId: "F7_MODEL_SELECTION_V1";
-                    competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
                     confidence: "low" | "moderate";
                     reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-                    numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                    engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                    proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+                    methodId: "F7_MODEL_SELECTION_V1";
+                    competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+                    numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                    engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                    proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
                 };
             }>, {
-                factorId: string;
-                sampleSize: number;
-                characteristicKind: "dimensional" | "other";
                 candidates: {
-                    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                     parameterCount: number;
                     parameters: Record<string, number>;
@@ -13200,15 +14006,15 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         theoretical: number;
                     }[];
                     bootstrap: {
-                        status: "acceptable" | "weak" | "rejected";
+                        status: "rejected" | "acceptable" | "weak";
                         statisticId: "anderson_darling";
                         observedStatistic: number;
                         comparisonDirection: "greater_than_or_equal";
                         refitEachReplicate: true;
                         extremeReplicateCount: number;
                         confidenceInterval: {
-                            level: 0.95;
                             method: "wilson_score";
+                            level: 0.95;
                             lower: number;
                             upper: number;
                         };
@@ -13221,9 +14027,12 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     };
                     warnings: string[];
                 }[];
+                factorId: string;
+                sampleSize: number;
+                characteristicKind: "other" | "dimensional";
                 failedCandidates: {
-                    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
                     reasonCode: "numerical_fit_failed";
+                    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 }[];
                 sampleDiagnostics: {
                     mean: number;
@@ -13235,20 +14044,17 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 };
                 selectionDecision: {
                     status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-                    methodId: "F7_MODEL_SELECTION_V1";
-                    competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
                     confidence: "low" | "moderate";
                     reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-                    numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                    engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                    proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+                    methodId: "F7_MODEL_SELECTION_V1";
+                    competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+                    numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                    engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                    proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
                 };
             }, {
-                factorId: string;
-                sampleSize: number;
-                characteristicKind: "dimensional" | "other";
                 candidates: {
-                    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                     parameterCount: number;
                     parameters: Record<string, number>;
@@ -13265,15 +14071,15 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         theoretical: number;
                     }[];
                     bootstrap: {
-                        status: "acceptable" | "weak" | "rejected";
+                        status: "rejected" | "acceptable" | "weak";
                         statisticId: "anderson_darling";
                         observedStatistic: number;
                         comparisonDirection: "greater_than_or_equal";
                         refitEachReplicate: true;
                         extremeReplicateCount: number;
                         confidenceInterval: {
-                            level: 0.95;
                             method: "wilson_score";
+                            level: 0.95;
                             lower: number;
                             upper: number;
                         };
@@ -13286,9 +14092,12 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     };
                     warnings: string[];
                 }[];
+                factorId: string;
+                sampleSize: number;
+                characteristicKind: "other" | "dimensional";
                 failedCandidates: {
-                    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
                     reasonCode: "numerical_fit_failed";
+                    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 }[];
                 sampleDiagnostics: {
                     mean: number;
@@ -13300,13 +14109,13 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 };
                 selectionDecision: {
                     status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-                    methodId: "F7_MODEL_SELECTION_V1";
-                    competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
                     confidence: "low" | "moderate";
                     reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-                    numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                    engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                    proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+                    methodId: "F7_MODEL_SELECTION_V1";
+                    competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+                    numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                    engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                    proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
                 };
             }>>;
             distributionApproval: z.ZodOptional<z.ZodObject<{
@@ -13317,92 +14126,41 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             }, "strict", z.ZodTypeAny, {
                 confirmed: true;
                 factorId: string;
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 approvedAt: string;
             }, {
                 confirmed: true;
                 factorId: string;
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 approvedAt: string;
             }>>;
         }, "strict", z.ZodTypeAny, {
             factorCandidate: {
-                standardDeviation: number;
-                workbookContentHash: string;
-                worksheetName: string;
-                tableId: string;
-                sourceRow: number;
-                sourceCells: Record<string, string>;
-                factorCandidateId: string;
                 factorName: string;
-                excelSignedMean: number;
-                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-                lowerSpecLimit: number;
-                upperSpecLimit: number;
-                designNominal: number;
+                worksheetName: string;
+                workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                standardDeviation: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                tableId: string;
+                sourceRow: number;
+                designNominal: number;
+                sourceCells: Record<string, string>;
+                factorCandidateId: string;
+                excelSignedMean: number;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
                 userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
-                longTermSafetyFactor?: number | undefined;
-                sigmaLevel?: number | undefined;
             };
-            sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
-            evidence?: {
-                physicalMean: number;
-                workbookContentHash: string;
-                worksheetName: string;
-                tableId: string;
-                sourceRow: number;
-                sourceCells: Record<string, string>;
-                factorCandidateId: string;
-                factorName: string;
-                longTermSafetyFactor: number;
-                sigmaLevel: number;
-                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-                lowerSpecLimit: number;
-                upperSpecLimit: number;
-                designNominal: number;
-                upperTolerance: number;
-                lowerTolerance: number;
-                factorId: string;
-                unit: string;
-                unitSource: "workbook" | "user_confirmed" | "unspecified";
-                loopCoefficient: 1 | -1;
-                signedContributionMean: number;
-                baselineSampler: {
-                    samplerId: "NORMAL_LOCATION_SCALE_V1";
-                    physicalMean: number;
-                    standardDeviation: number;
-                    support: "REAL";
-                };
-                calculatedMean: number;
-                tolerance: number;
-                oneSigma: number;
-                percentContributionToSigma: number;
-                userAdded?: true | undefined;
-            } | undefined;
-            setup?: {
-                factorCandidateId: string;
-                designNominal: number;
-                upperTolerance: number;
-                lowerTolerance: number;
-                confirmed: true;
-                factorName?: string | undefined;
-                userAdded?: true | undefined;
-                longTermSafetyFactor?: number | undefined;
-                sigmaLevel?: number | undefined;
-                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
-            } | undefined;
             input?: {
                 mode: "MEASURED";
                 dataset?: {
-                    factorId: string;
                     unit: string;
-                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                    sourceReference: string;
-                    importedAt: string;
-                    msaStatus: "unknown" | "available" | "not_available";
+                    contentHash: string;
                     observations: ({
                         value: number;
                         disposition: "included";
@@ -13414,15 +14172,20 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     } | {
                         value: number;
                         confirmed: true;
+                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         disposition: "excluded";
                         originalRow: number;
-                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         operatorReference: string;
                         sequence?: string | undefined;
                         timestamp?: string | undefined;
                         subgroup?: string | undefined;
                         batch?: string | undefined;
                     })[];
+                    factorId: string;
+                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                    sourceReference: string;
+                    importedAt: string;
+                    msaStatus: "unknown" | "available" | "not_available";
                     missingRowCount: number;
                     rejectionSummaries: {
                         reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -13430,67 +14193,113 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
-                    contentHash: string;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | {
+                mode: "BASELINE_ASSUMPTION";
                 baselineSampler: {
+                    standardDeviation: number;
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
-                    standardDeviation: number;
                     support: "REAL";
                 };
-                mode: "BASELINE_ASSUMPTION";
+            } | undefined;
+            evidence?: {
+                unit: string;
+                tolerance: number;
+                factorName: string;
+                worksheetName: string;
+                workbookContentHash: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                oneSigma: number;
+                percentContributionToSigma: number;
+                longTermSafetyFactor: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                tableId: string;
+                sourceRow: number;
+                designNominal: number;
+                sigmaLevel: number;
+                sourceCells: Record<string, string>;
+                physicalMean: number;
+                factorCandidateId: string;
+                factorId: string;
+                unitSource: "workbook" | "user_confirmed" | "unspecified";
+                loopCoefficient: 1 | -1;
+                signedContributionMean: number;
+                baselineSampler: {
+                    standardDeviation: number;
+                    samplerId: "NORMAL_LOCATION_SCALE_V1";
+                    physicalMean: number;
+                    support: "REAL";
+                };
+                calculatedMean: number;
+                userAdded?: true | undefined;
+            } | undefined;
+            sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
+            setup?: {
+                confirmed: true;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                factorCandidateId: string;
+                factorName?: string | undefined;
+                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
             } | undefined;
             datasetValidation?: {
-                status: "ready" | "blocked";
+                status: "blocked" | "ready";
                 blockingIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 advisoryIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 candidateEligibility: {
                     normal: "eligible";
+                    uniform: "eligible_with_boundary_warning";
                     lognormal: "eligible" | "ineligible_nonpositive";
                     weibull: "eligible" | "ineligible_nonpositive";
                     gamma: "eligible" | "ineligible_nonpositive";
-                    uniform: "eligible_with_boundary_warning";
                 };
             } | undefined;
             measurementPasteResult?: {
-                status: "ready" | "blocked";
                 validation: {
-                    status: "ready" | "blocked";
+                    status: "blocked" | "ready";
                     blockingIssues: {
-                        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                         factorId?: string | undefined;
                         rowNumbers?: number[] | undefined;
                     }[];
                     advisoryIssues: {
-                        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                         factorId?: string | undefined;
                         rowNumbers?: number[] | undefined;
                     }[];
                     candidateEligibility: {
                         normal: "eligible";
+                        uniform: "eligible_with_boundary_warning";
                         lognormal: "eligible" | "ineligible_nonpositive";
                         weibull: "eligible" | "ineligible_nonpositive";
                         gamma: "eligible" | "ineligible_nonpositive";
-                        uniform: "eligible_with_boundary_warning";
                     };
                 };
+                status: "blocked" | "ready";
                 factorId: string;
                 dataset?: {
-                    factorId: string;
                     unit: string;
-                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                    sourceReference: string;
-                    importedAt: string;
-                    msaStatus: "unknown" | "available" | "not_available";
+                    contentHash: string;
                     observations: ({
                         value: number;
                         disposition: "included";
@@ -13502,15 +14311,20 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     } | {
                         value: number;
                         confirmed: true;
+                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         disposition: "excluded";
                         originalRow: number;
-                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         operatorReference: string;
                         sequence?: string | undefined;
                         timestamp?: string | undefined;
                         subgroup?: string | undefined;
                         batch?: string | undefined;
                     })[];
+                    factorId: string;
+                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                    sourceReference: string;
+                    importedAt: string;
+                    msaStatus: "unknown" | "available" | "not_available";
                     missingRowCount: number;
                     rejectionSummaries: {
                         reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -13518,15 +14332,15 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
-                    contentHash: string;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | undefined;
             distributionFitResult?: {
-                factorId: string;
-                sampleSize: number;
-                characteristicKind: "dimensional" | "other";
                 candidates: {
-                    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                     parameterCount: number;
                     parameters: Record<string, number>;
@@ -13543,15 +14357,15 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         theoretical: number;
                     }[];
                     bootstrap: {
-                        status: "acceptable" | "weak" | "rejected";
+                        status: "rejected" | "acceptable" | "weak";
                         statisticId: "anderson_darling";
                         observedStatistic: number;
                         comparisonDirection: "greater_than_or_equal";
                         refitEachReplicate: true;
                         extremeReplicateCount: number;
                         confidenceInterval: {
-                            level: 0.95;
                             method: "wilson_score";
+                            level: 0.95;
                             lower: number;
                             upper: number;
                         };
@@ -13564,9 +14378,12 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     };
                     warnings: string[];
                 }[];
+                factorId: string;
+                sampleSize: number;
+                characteristicKind: "other" | "dimensional";
                 failedCandidates: {
-                    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
                     reasonCode: "numerical_fit_failed";
+                    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 }[];
                 sampleDiagnostics: {
                     mean: number;
@@ -13578,99 +14395,48 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 };
                 selectionDecision: {
                     status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-                    methodId: "F7_MODEL_SELECTION_V1";
-                    competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
                     confidence: "low" | "moderate";
                     reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-                    numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                    engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                    proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+                    methodId: "F7_MODEL_SELECTION_V1";
+                    competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+                    numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                    engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                    proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
                 };
             } | undefined;
             distributionApproval?: {
                 confirmed: true;
                 factorId: string;
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 approvedAt: string;
             } | undefined;
         }, {
             factorCandidate: {
-                standardDeviation: number;
-                workbookContentHash: string;
-                worksheetName: string;
-                tableId: string;
-                sourceRow: number;
-                sourceCells: Record<string, string>;
-                factorCandidateId: string;
                 factorName: string;
-                excelSignedMean: number;
-                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-                lowerSpecLimit: number;
-                upperSpecLimit: number;
-                designNominal: number;
+                worksheetName: string;
+                workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                standardDeviation: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                tableId: string;
+                sourceRow: number;
+                designNominal: number;
+                sourceCells: Record<string, string>;
+                factorCandidateId: string;
+                excelSignedMean: number;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
                 userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
-                longTermSafetyFactor?: number | undefined;
-                sigmaLevel?: number | undefined;
             };
-            sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
-            evidence?: {
-                physicalMean: number;
-                workbookContentHash: string;
-                worksheetName: string;
-                tableId: string;
-                sourceRow: number;
-                sourceCells: Record<string, string>;
-                factorCandidateId: string;
-                factorName: string;
-                longTermSafetyFactor: number;
-                sigmaLevel: number;
-                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-                lowerSpecLimit: number;
-                upperSpecLimit: number;
-                designNominal: number;
-                upperTolerance: number;
-                lowerTolerance: number;
-                factorId: string;
-                unit: string;
-                unitSource: "workbook" | "user_confirmed" | "unspecified";
-                loopCoefficient: 1 | -1;
-                signedContributionMean: number;
-                baselineSampler: {
-                    samplerId: "NORMAL_LOCATION_SCALE_V1";
-                    physicalMean: number;
-                    standardDeviation: number;
-                    support: "REAL";
-                };
-                calculatedMean: number;
-                tolerance: number;
-                oneSigma: number;
-                percentContributionToSigma: number;
-                userAdded?: true | undefined;
-            } | undefined;
-            setup?: {
-                factorCandidateId: string;
-                designNominal: number;
-                upperTolerance: number;
-                lowerTolerance: number;
-                confirmed: true;
-                factorName?: string | undefined;
-                userAdded?: true | undefined;
-                longTermSafetyFactor?: number | undefined;
-                sigmaLevel?: number | undefined;
-                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
-            } | undefined;
             input?: {
                 mode: "MEASURED";
                 dataset?: {
-                    factorId: string;
                     unit: string;
-                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                    sourceReference: string;
-                    importedAt: string;
-                    msaStatus: "unknown" | "available" | "not_available";
+                    contentHash: string;
                     observations: ({
                         value: number;
                         disposition: "included";
@@ -13682,15 +14448,20 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     } | {
                         value: number;
                         confirmed: true;
+                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         disposition: "excluded";
                         originalRow: number;
-                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         operatorReference: string;
                         sequence?: string | undefined;
                         timestamp?: string | undefined;
                         subgroup?: string | undefined;
                         batch?: string | undefined;
                     })[];
+                    factorId: string;
+                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                    sourceReference: string;
+                    importedAt: string;
+                    msaStatus: "unknown" | "available" | "not_available";
                     missingRowCount: number;
                     rejectionSummaries: {
                         reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -13698,67 +14469,113 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
-                    contentHash: string;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | {
+                mode: "BASELINE_ASSUMPTION";
                 baselineSampler: {
+                    standardDeviation: number;
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
-                    standardDeviation: number;
                     support: "REAL";
                 };
-                mode: "BASELINE_ASSUMPTION";
+            } | undefined;
+            evidence?: {
+                unit: string;
+                tolerance: number;
+                factorName: string;
+                worksheetName: string;
+                workbookContentHash: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                oneSigma: number;
+                percentContributionToSigma: number;
+                longTermSafetyFactor: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                tableId: string;
+                sourceRow: number;
+                designNominal: number;
+                sigmaLevel: number;
+                sourceCells: Record<string, string>;
+                physicalMean: number;
+                factorCandidateId: string;
+                factorId: string;
+                unitSource: "workbook" | "user_confirmed" | "unspecified";
+                loopCoefficient: 1 | -1;
+                signedContributionMean: number;
+                baselineSampler: {
+                    standardDeviation: number;
+                    samplerId: "NORMAL_LOCATION_SCALE_V1";
+                    physicalMean: number;
+                    support: "REAL";
+                };
+                calculatedMean: number;
+                userAdded?: true | undefined;
+            } | undefined;
+            sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
+            setup?: {
+                confirmed: true;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                factorCandidateId: string;
+                factorName?: string | undefined;
+                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
             } | undefined;
             datasetValidation?: {
-                status: "ready" | "blocked";
+                status: "blocked" | "ready";
                 blockingIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 advisoryIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 candidateEligibility: {
                     normal: "eligible";
+                    uniform: "eligible_with_boundary_warning";
                     lognormal: "eligible" | "ineligible_nonpositive";
                     weibull: "eligible" | "ineligible_nonpositive";
                     gamma: "eligible" | "ineligible_nonpositive";
-                    uniform: "eligible_with_boundary_warning";
                 };
             } | undefined;
             measurementPasteResult?: {
-                status: "ready" | "blocked";
                 validation: {
-                    status: "ready" | "blocked";
+                    status: "blocked" | "ready";
                     blockingIssues: {
-                        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                         factorId?: string | undefined;
                         rowNumbers?: number[] | undefined;
                     }[];
                     advisoryIssues: {
-                        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                         factorId?: string | undefined;
                         rowNumbers?: number[] | undefined;
                     }[];
                     candidateEligibility: {
                         normal: "eligible";
+                        uniform: "eligible_with_boundary_warning";
                         lognormal: "eligible" | "ineligible_nonpositive";
                         weibull: "eligible" | "ineligible_nonpositive";
                         gamma: "eligible" | "ineligible_nonpositive";
-                        uniform: "eligible_with_boundary_warning";
                     };
                 };
+                status: "blocked" | "ready";
                 factorId: string;
                 dataset?: {
-                    factorId: string;
                     unit: string;
-                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                    sourceReference: string;
-                    importedAt: string;
-                    msaStatus: "unknown" | "available" | "not_available";
+                    contentHash: string;
                     observations: ({
                         value: number;
                         disposition: "included";
@@ -13770,15 +14587,20 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     } | {
                         value: number;
                         confirmed: true;
+                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         disposition: "excluded";
                         originalRow: number;
-                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         operatorReference: string;
                         sequence?: string | undefined;
                         timestamp?: string | undefined;
                         subgroup?: string | undefined;
                         batch?: string | undefined;
                     })[];
+                    factorId: string;
+                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                    sourceReference: string;
+                    importedAt: string;
+                    msaStatus: "unknown" | "available" | "not_available";
                     missingRowCount: number;
                     rejectionSummaries: {
                         reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -13786,15 +14608,15 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
-                    contentHash: string;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | undefined;
             distributionFitResult?: {
-                factorId: string;
-                sampleSize: number;
-                characteristicKind: "dimensional" | "other";
                 candidates: {
-                    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                     parameterCount: number;
                     parameters: Record<string, number>;
@@ -13811,15 +14633,15 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         theoretical: number;
                     }[];
                     bootstrap: {
-                        status: "acceptable" | "weak" | "rejected";
+                        status: "rejected" | "acceptable" | "weak";
                         statisticId: "anderson_darling";
                         observedStatistic: number;
                         comparisonDirection: "greater_than_or_equal";
                         refitEachReplicate: true;
                         extremeReplicateCount: number;
                         confidenceInterval: {
-                            level: 0.95;
                             method: "wilson_score";
+                            level: 0.95;
                             lower: number;
                             upper: number;
                         };
@@ -13832,9 +14654,12 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     };
                     warnings: string[];
                 }[];
+                factorId: string;
+                sampleSize: number;
+                characteristicKind: "other" | "dimensional";
                 failedCandidates: {
-                    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
                     reasonCode: "numerical_fit_failed";
+                    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 }[];
                 sampleDiagnostics: {
                     mean: number;
@@ -13846,99 +14671,48 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 };
                 selectionDecision: {
                     status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-                    methodId: "F7_MODEL_SELECTION_V1";
-                    competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
                     confidence: "low" | "moderate";
                     reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-                    numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                    engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                    proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+                    methodId: "F7_MODEL_SELECTION_V1";
+                    competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+                    numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                    engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                    proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
                 };
             } | undefined;
             distributionApproval?: {
                 confirmed: true;
                 factorId: string;
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 approvedAt: string;
             } | undefined;
         }>, {
             factorCandidate: {
-                standardDeviation: number;
-                workbookContentHash: string;
-                worksheetName: string;
-                tableId: string;
-                sourceRow: number;
-                sourceCells: Record<string, string>;
-                factorCandidateId: string;
                 factorName: string;
-                excelSignedMean: number;
-                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-                lowerSpecLimit: number;
-                upperSpecLimit: number;
-                designNominal: number;
+                worksheetName: string;
+                workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                standardDeviation: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                tableId: string;
+                sourceRow: number;
+                designNominal: number;
+                sourceCells: Record<string, string>;
+                factorCandidateId: string;
+                excelSignedMean: number;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
                 userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
-                longTermSafetyFactor?: number | undefined;
-                sigmaLevel?: number | undefined;
             };
-            sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
-            evidence?: {
-                physicalMean: number;
-                workbookContentHash: string;
-                worksheetName: string;
-                tableId: string;
-                sourceRow: number;
-                sourceCells: Record<string, string>;
-                factorCandidateId: string;
-                factorName: string;
-                longTermSafetyFactor: number;
-                sigmaLevel: number;
-                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-                lowerSpecLimit: number;
-                upperSpecLimit: number;
-                designNominal: number;
-                upperTolerance: number;
-                lowerTolerance: number;
-                factorId: string;
-                unit: string;
-                unitSource: "workbook" | "user_confirmed" | "unspecified";
-                loopCoefficient: 1 | -1;
-                signedContributionMean: number;
-                baselineSampler: {
-                    samplerId: "NORMAL_LOCATION_SCALE_V1";
-                    physicalMean: number;
-                    standardDeviation: number;
-                    support: "REAL";
-                };
-                calculatedMean: number;
-                tolerance: number;
-                oneSigma: number;
-                percentContributionToSigma: number;
-                userAdded?: true | undefined;
-            } | undefined;
-            setup?: {
-                factorCandidateId: string;
-                designNominal: number;
-                upperTolerance: number;
-                lowerTolerance: number;
-                confirmed: true;
-                factorName?: string | undefined;
-                userAdded?: true | undefined;
-                longTermSafetyFactor?: number | undefined;
-                sigmaLevel?: number | undefined;
-                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
-            } | undefined;
             input?: {
                 mode: "MEASURED";
                 dataset?: {
-                    factorId: string;
                     unit: string;
-                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                    sourceReference: string;
-                    importedAt: string;
-                    msaStatus: "unknown" | "available" | "not_available";
+                    contentHash: string;
                     observations: ({
                         value: number;
                         disposition: "included";
@@ -13950,15 +14724,20 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     } | {
                         value: number;
                         confirmed: true;
+                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         disposition: "excluded";
                         originalRow: number;
-                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         operatorReference: string;
                         sequence?: string | undefined;
                         timestamp?: string | undefined;
                         subgroup?: string | undefined;
                         batch?: string | undefined;
                     })[];
+                    factorId: string;
+                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                    sourceReference: string;
+                    importedAt: string;
+                    msaStatus: "unknown" | "available" | "not_available";
                     missingRowCount: number;
                     rejectionSummaries: {
                         reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -13966,67 +14745,113 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
-                    contentHash: string;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | {
+                mode: "BASELINE_ASSUMPTION";
                 baselineSampler: {
+                    standardDeviation: number;
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
-                    standardDeviation: number;
                     support: "REAL";
                 };
-                mode: "BASELINE_ASSUMPTION";
+            } | undefined;
+            evidence?: {
+                unit: string;
+                tolerance: number;
+                factorName: string;
+                worksheetName: string;
+                workbookContentHash: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                oneSigma: number;
+                percentContributionToSigma: number;
+                longTermSafetyFactor: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                tableId: string;
+                sourceRow: number;
+                designNominal: number;
+                sigmaLevel: number;
+                sourceCells: Record<string, string>;
+                physicalMean: number;
+                factorCandidateId: string;
+                factorId: string;
+                unitSource: "workbook" | "user_confirmed" | "unspecified";
+                loopCoefficient: 1 | -1;
+                signedContributionMean: number;
+                baselineSampler: {
+                    standardDeviation: number;
+                    samplerId: "NORMAL_LOCATION_SCALE_V1";
+                    physicalMean: number;
+                    support: "REAL";
+                };
+                calculatedMean: number;
+                userAdded?: true | undefined;
+            } | undefined;
+            sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
+            setup?: {
+                confirmed: true;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                factorCandidateId: string;
+                factorName?: string | undefined;
+                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
             } | undefined;
             datasetValidation?: {
-                status: "ready" | "blocked";
+                status: "blocked" | "ready";
                 blockingIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 advisoryIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 candidateEligibility: {
                     normal: "eligible";
+                    uniform: "eligible_with_boundary_warning";
                     lognormal: "eligible" | "ineligible_nonpositive";
                     weibull: "eligible" | "ineligible_nonpositive";
                     gamma: "eligible" | "ineligible_nonpositive";
-                    uniform: "eligible_with_boundary_warning";
                 };
             } | undefined;
             measurementPasteResult?: {
-                status: "ready" | "blocked";
                 validation: {
-                    status: "ready" | "blocked";
+                    status: "blocked" | "ready";
                     blockingIssues: {
-                        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                         factorId?: string | undefined;
                         rowNumbers?: number[] | undefined;
                     }[];
                     advisoryIssues: {
-                        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                         factorId?: string | undefined;
                         rowNumbers?: number[] | undefined;
                     }[];
                     candidateEligibility: {
                         normal: "eligible";
+                        uniform: "eligible_with_boundary_warning";
                         lognormal: "eligible" | "ineligible_nonpositive";
                         weibull: "eligible" | "ineligible_nonpositive";
                         gamma: "eligible" | "ineligible_nonpositive";
-                        uniform: "eligible_with_boundary_warning";
                     };
                 };
+                status: "blocked" | "ready";
                 factorId: string;
                 dataset?: {
-                    factorId: string;
                     unit: string;
-                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                    sourceReference: string;
-                    importedAt: string;
-                    msaStatus: "unknown" | "available" | "not_available";
+                    contentHash: string;
                     observations: ({
                         value: number;
                         disposition: "included";
@@ -14038,15 +14863,20 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     } | {
                         value: number;
                         confirmed: true;
+                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         disposition: "excluded";
                         originalRow: number;
-                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         operatorReference: string;
                         sequence?: string | undefined;
                         timestamp?: string | undefined;
                         subgroup?: string | undefined;
                         batch?: string | undefined;
                     })[];
+                    factorId: string;
+                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                    sourceReference: string;
+                    importedAt: string;
+                    msaStatus: "unknown" | "available" | "not_available";
                     missingRowCount: number;
                     rejectionSummaries: {
                         reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -14054,15 +14884,15 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
-                    contentHash: string;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | undefined;
             distributionFitResult?: {
-                factorId: string;
-                sampleSize: number;
-                characteristicKind: "dimensional" | "other";
                 candidates: {
-                    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                     parameterCount: number;
                     parameters: Record<string, number>;
@@ -14079,15 +14909,15 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         theoretical: number;
                     }[];
                     bootstrap: {
-                        status: "acceptable" | "weak" | "rejected";
+                        status: "rejected" | "acceptable" | "weak";
                         statisticId: "anderson_darling";
                         observedStatistic: number;
                         comparisonDirection: "greater_than_or_equal";
                         refitEachReplicate: true;
                         extremeReplicateCount: number;
                         confidenceInterval: {
-                            level: 0.95;
                             method: "wilson_score";
+                            level: 0.95;
                             lower: number;
                             upper: number;
                         };
@@ -14100,9 +14930,12 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     };
                     warnings: string[];
                 }[];
+                factorId: string;
+                sampleSize: number;
+                characteristicKind: "other" | "dimensional";
                 failedCandidates: {
-                    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
                     reasonCode: "numerical_fit_failed";
+                    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 }[];
                 sampleDiagnostics: {
                     mean: number;
@@ -14114,99 +14947,48 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 };
                 selectionDecision: {
                     status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-                    methodId: "F7_MODEL_SELECTION_V1";
-                    competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
                     confidence: "low" | "moderate";
                     reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-                    numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                    engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                    proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+                    methodId: "F7_MODEL_SELECTION_V1";
+                    competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+                    numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                    engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                    proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
                 };
             } | undefined;
             distributionApproval?: {
                 confirmed: true;
                 factorId: string;
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 approvedAt: string;
             } | undefined;
         }, {
             factorCandidate: {
-                standardDeviation: number;
-                workbookContentHash: string;
-                worksheetName: string;
-                tableId: string;
-                sourceRow: number;
-                sourceCells: Record<string, string>;
-                factorCandidateId: string;
                 factorName: string;
-                excelSignedMean: number;
-                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-                lowerSpecLimit: number;
-                upperSpecLimit: number;
-                designNominal: number;
+                worksheetName: string;
+                workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                standardDeviation: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                tableId: string;
+                sourceRow: number;
+                designNominal: number;
+                sourceCells: Record<string, string>;
+                factorCandidateId: string;
+                excelSignedMean: number;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
                 userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
-                longTermSafetyFactor?: number | undefined;
-                sigmaLevel?: number | undefined;
             };
-            sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
-            evidence?: {
-                physicalMean: number;
-                workbookContentHash: string;
-                worksheetName: string;
-                tableId: string;
-                sourceRow: number;
-                sourceCells: Record<string, string>;
-                factorCandidateId: string;
-                factorName: string;
-                longTermSafetyFactor: number;
-                sigmaLevel: number;
-                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-                lowerSpecLimit: number;
-                upperSpecLimit: number;
-                designNominal: number;
-                upperTolerance: number;
-                lowerTolerance: number;
-                factorId: string;
-                unit: string;
-                unitSource: "workbook" | "user_confirmed" | "unspecified";
-                loopCoefficient: 1 | -1;
-                signedContributionMean: number;
-                baselineSampler: {
-                    samplerId: "NORMAL_LOCATION_SCALE_V1";
-                    physicalMean: number;
-                    standardDeviation: number;
-                    support: "REAL";
-                };
-                calculatedMean: number;
-                tolerance: number;
-                oneSigma: number;
-                percentContributionToSigma: number;
-                userAdded?: true | undefined;
-            } | undefined;
-            setup?: {
-                factorCandidateId: string;
-                designNominal: number;
-                upperTolerance: number;
-                lowerTolerance: number;
-                confirmed: true;
-                factorName?: string | undefined;
-                userAdded?: true | undefined;
-                longTermSafetyFactor?: number | undefined;
-                sigmaLevel?: number | undefined;
-                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
-            } | undefined;
             input?: {
                 mode: "MEASURED";
                 dataset?: {
-                    factorId: string;
                     unit: string;
-                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                    sourceReference: string;
-                    importedAt: string;
-                    msaStatus: "unknown" | "available" | "not_available";
+                    contentHash: string;
                     observations: ({
                         value: number;
                         disposition: "included";
@@ -14218,15 +15000,20 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     } | {
                         value: number;
                         confirmed: true;
+                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         disposition: "excluded";
                         originalRow: number;
-                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         operatorReference: string;
                         sequence?: string | undefined;
                         timestamp?: string | undefined;
                         subgroup?: string | undefined;
                         batch?: string | undefined;
                     })[];
+                    factorId: string;
+                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                    sourceReference: string;
+                    importedAt: string;
+                    msaStatus: "unknown" | "available" | "not_available";
                     missingRowCount: number;
                     rejectionSummaries: {
                         reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -14234,67 +15021,113 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
-                    contentHash: string;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | {
+                mode: "BASELINE_ASSUMPTION";
                 baselineSampler: {
+                    standardDeviation: number;
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
-                    standardDeviation: number;
                     support: "REAL";
                 };
-                mode: "BASELINE_ASSUMPTION";
+            } | undefined;
+            evidence?: {
+                unit: string;
+                tolerance: number;
+                factorName: string;
+                worksheetName: string;
+                workbookContentHash: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                oneSigma: number;
+                percentContributionToSigma: number;
+                longTermSafetyFactor: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                tableId: string;
+                sourceRow: number;
+                designNominal: number;
+                sigmaLevel: number;
+                sourceCells: Record<string, string>;
+                physicalMean: number;
+                factorCandidateId: string;
+                factorId: string;
+                unitSource: "workbook" | "user_confirmed" | "unspecified";
+                loopCoefficient: 1 | -1;
+                signedContributionMean: number;
+                baselineSampler: {
+                    standardDeviation: number;
+                    samplerId: "NORMAL_LOCATION_SCALE_V1";
+                    physicalMean: number;
+                    support: "REAL";
+                };
+                calculatedMean: number;
+                userAdded?: true | undefined;
+            } | undefined;
+            sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
+            setup?: {
+                confirmed: true;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                factorCandidateId: string;
+                factorName?: string | undefined;
+                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
             } | undefined;
             datasetValidation?: {
-                status: "ready" | "blocked";
+                status: "blocked" | "ready";
                 blockingIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 advisoryIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 candidateEligibility: {
                     normal: "eligible";
+                    uniform: "eligible_with_boundary_warning";
                     lognormal: "eligible" | "ineligible_nonpositive";
                     weibull: "eligible" | "ineligible_nonpositive";
                     gamma: "eligible" | "ineligible_nonpositive";
-                    uniform: "eligible_with_boundary_warning";
                 };
             } | undefined;
             measurementPasteResult?: {
-                status: "ready" | "blocked";
                 validation: {
-                    status: "ready" | "blocked";
+                    status: "blocked" | "ready";
                     blockingIssues: {
-                        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                         factorId?: string | undefined;
                         rowNumbers?: number[] | undefined;
                     }[];
                     advisoryIssues: {
-                        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                         factorId?: string | undefined;
                         rowNumbers?: number[] | undefined;
                     }[];
                     candidateEligibility: {
                         normal: "eligible";
+                        uniform: "eligible_with_boundary_warning";
                         lognormal: "eligible" | "ineligible_nonpositive";
                         weibull: "eligible" | "ineligible_nonpositive";
                         gamma: "eligible" | "ineligible_nonpositive";
-                        uniform: "eligible_with_boundary_warning";
                     };
                 };
+                status: "blocked" | "ready";
                 factorId: string;
                 dataset?: {
-                    factorId: string;
                     unit: string;
-                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                    sourceReference: string;
-                    importedAt: string;
-                    msaStatus: "unknown" | "available" | "not_available";
+                    contentHash: string;
                     observations: ({
                         value: number;
                         disposition: "included";
@@ -14306,15 +15139,20 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     } | {
                         value: number;
                         confirmed: true;
+                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         disposition: "excluded";
                         originalRow: number;
-                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         operatorReference: string;
                         sequence?: string | undefined;
                         timestamp?: string | undefined;
                         subgroup?: string | undefined;
                         batch?: string | undefined;
                     })[];
+                    factorId: string;
+                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                    sourceReference: string;
+                    importedAt: string;
+                    msaStatus: "unknown" | "available" | "not_available";
                     missingRowCount: number;
                     rejectionSummaries: {
                         reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -14322,15 +15160,15 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
-                    contentHash: string;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | undefined;
             distributionFitResult?: {
-                factorId: string;
-                sampleSize: number;
-                characteristicKind: "dimensional" | "other";
                 candidates: {
-                    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                     parameterCount: number;
                     parameters: Record<string, number>;
@@ -14347,15 +15185,15 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         theoretical: number;
                     }[];
                     bootstrap: {
-                        status: "acceptable" | "weak" | "rejected";
+                        status: "rejected" | "acceptable" | "weak";
                         statisticId: "anderson_darling";
                         observedStatistic: number;
                         comparisonDirection: "greater_than_or_equal";
                         refitEachReplicate: true;
                         extremeReplicateCount: number;
                         confidenceInterval: {
-                            level: 0.95;
                             method: "wilson_score";
+                            level: 0.95;
                             lower: number;
                             upper: number;
                         };
@@ -14368,9 +15206,12 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     };
                     warnings: string[];
                 }[];
+                factorId: string;
+                sampleSize: number;
+                characteristicKind: "other" | "dimensional";
                 failedCandidates: {
-                    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
                     reasonCode: "numerical_fit_failed";
+                    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 }[];
                 sampleDiagnostics: {
                     mean: number;
@@ -14382,19 +15223,19 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 };
                 selectionDecision: {
                     status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-                    methodId: "F7_MODEL_SELECTION_V1";
-                    competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
                     confidence: "low" | "moderate";
                     reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-                    numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                    engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                    proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+                    methodId: "F7_MODEL_SELECTION_V1";
+                    competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+                    numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                    engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                    proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
                 };
             } | undefined;
             distributionApproval?: {
                 confirmed: true;
                 factorId: string;
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 approvedAt: string;
             } | undefined;
         }>, "many">;
@@ -14491,14 +15332,14 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 standardDeviation: z.ZodNumber;
                 expectedBinCounts: z.ZodArray<z.ZodNumber, "many">;
             }, "strict", z.ZodTypeAny, {
+                mean: number;
                 standardDeviation: number;
                 methodId: "F7_NORMAL_MOMENT_FIT_V1";
-                mean: number;
                 expectedBinCounts: number[];
             }, {
+                mean: number;
                 standardDeviation: number;
                 methodId: "F7_NORMAL_MOMENT_FIT_V1";
-                mean: number;
                 expectedBinCounts: number[];
             }>;
             capability: z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
@@ -14511,19 +15352,19 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 targetStatus: z.ZodEnum<["meets_target", "below_target"]>;
             }, "strict", z.ZodTypeAny, {
                 status: "available";
+                cpk: number;
+                targetCpk: number;
                 cp: number;
                 lowerCpk: number;
                 upperCpk: number;
-                cpk: number;
-                targetCpk: number;
                 targetStatus: "meets_target" | "below_target";
             }, {
                 status: "available";
+                cpk: number;
+                targetCpk: number;
                 cp: number;
                 lowerCpk: number;
                 upperCpk: number;
-                cpk: number;
-                targetCpk: number;
                 targetStatus: "meets_target" | "below_target";
             }>, z.ZodObject<{
                 status: z.ZodLiteral<"not_available">;
@@ -14531,12 +15372,12 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 targetCpk: z.ZodNumber;
             }, "strict", z.ZodTypeAny, {
                 status: "not_available";
-                reason: "zero_variance";
                 targetCpk: number;
+                reason: "zero_variance";
             }, {
                 status: "not_available";
-                reason: "zero_variance";
                 targetCpk: number;
+                reason: "zero_variance";
             }>]>;
             normalModel: z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
                 status: z.ZodLiteral<"available">;
@@ -14546,15 +15387,15 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 expectedYield: z.ZodNumber;
             }, "strict", z.ZodTypeAny, {
                 status: "available";
+                totalDpm: number;
                 lowerTailDpm: number;
                 upperTailDpm: number;
-                totalDpm: number;
                 expectedYield: number;
             }, {
                 status: "available";
+                totalDpm: number;
                 lowerTailDpm: number;
                 upperTailDpm: number;
-                totalDpm: number;
                 expectedYield: number;
             }>, z.ZodObject<{
                 status: z.ZodLiteral<"not_available">;
@@ -14572,21 +15413,35 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 sourceMode: z.ZodEnum<["MEASURED", "BASELINE_ASSUMPTION"]>;
             }, "strict", z.ZodTypeAny, {
                 factorId: string;
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
             }, {
                 factorId: string;
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
             }>, "many">;
         }, "strict", z.ZodTypeAny, {
             status: "complete";
+            capability: {
+                status: "available";
+                cpk: number;
+                targetCpk: number;
+                cp: number;
+                lowerCpk: number;
+                upperCpk: number;
+                targetStatus: "meets_target" | "below_target";
+            } | {
+                status: "not_available";
+                targetCpk: number;
+                reason: "zero_variance";
+            };
+            mean: number;
             standardDeviation: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
-            methodId: "F7_MONTE_CARLO_V1";
-            mean: number;
             targetSigmaLevel: number;
+            yield: number;
+            methodId: "F7_MONTE_CARLO_V1";
             iterations: 10000 | 100000;
             runSeed: string;
             correlationMode: "INDEPENDENT";
@@ -14601,7 +15456,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             };
             inSpecCount: number;
             outOfSpecCount: number;
-            yield: number;
             outOfSpecProbability: number;
             ppm: number;
             histogram: {
@@ -14613,29 +15467,16 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 }[];
             };
             normalFit: {
+                mean: number;
                 standardDeviation: number;
                 methodId: "F7_NORMAL_MOMENT_FIT_V1";
-                mean: number;
                 expectedBinCounts: number[];
-            };
-            capability: {
-                status: "available";
-                cp: number;
-                lowerCpk: number;
-                upperCpk: number;
-                cpk: number;
-                targetCpk: number;
-                targetStatus: "meets_target" | "below_target";
-            } | {
-                status: "not_available";
-                reason: "zero_variance";
-                targetCpk: number;
             };
             normalModel: {
                 status: "available";
+                totalDpm: number;
                 lowerTailDpm: number;
                 upperTailDpm: number;
-                totalDpm: number;
                 expectedYield: number;
             } | {
                 status: "not_available";
@@ -14643,17 +15484,31 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             };
             factorManifest: {
                 factorId: string;
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
             }[];
         }, {
             status: "complete";
+            capability: {
+                status: "available";
+                cpk: number;
+                targetCpk: number;
+                cp: number;
+                lowerCpk: number;
+                upperCpk: number;
+                targetStatus: "meets_target" | "below_target";
+            } | {
+                status: "not_available";
+                targetCpk: number;
+                reason: "zero_variance";
+            };
+            mean: number;
             standardDeviation: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
-            methodId: "F7_MONTE_CARLO_V1";
-            mean: number;
             targetSigmaLevel: number;
+            yield: number;
+            methodId: "F7_MONTE_CARLO_V1";
             iterations: 10000 | 100000;
             runSeed: string;
             correlationMode: "INDEPENDENT";
@@ -14668,7 +15523,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             };
             inSpecCount: number;
             outOfSpecCount: number;
-            yield: number;
             outOfSpecProbability: number;
             ppm: number;
             histogram: {
@@ -14680,29 +15534,16 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 }[];
             };
             normalFit: {
+                mean: number;
                 standardDeviation: number;
                 methodId: "F7_NORMAL_MOMENT_FIT_V1";
-                mean: number;
                 expectedBinCounts: number[];
-            };
-            capability: {
-                status: "available";
-                cp: number;
-                lowerCpk: number;
-                upperCpk: number;
-                cpk: number;
-                targetCpk: number;
-                targetStatus: "meets_target" | "below_target";
-            } | {
-                status: "not_available";
-                reason: "zero_variance";
-                targetCpk: number;
             };
             normalModel: {
                 status: "available";
+                totalDpm: number;
                 lowerTailDpm: number;
                 upperTailDpm: number;
-                totalDpm: number;
                 expectedYield: number;
             } | {
                 status: "not_available";
@@ -14710,17 +15551,31 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             };
             factorManifest: {
                 factorId: string;
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
             }[];
         }>, {
             status: "complete";
+            capability: {
+                status: "available";
+                cpk: number;
+                targetCpk: number;
+                cp: number;
+                lowerCpk: number;
+                upperCpk: number;
+                targetStatus: "meets_target" | "below_target";
+            } | {
+                status: "not_available";
+                targetCpk: number;
+                reason: "zero_variance";
+            };
+            mean: number;
             standardDeviation: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
-            methodId: "F7_MONTE_CARLO_V1";
-            mean: number;
             targetSigmaLevel: number;
+            yield: number;
+            methodId: "F7_MONTE_CARLO_V1";
             iterations: 10000 | 100000;
             runSeed: string;
             correlationMode: "INDEPENDENT";
@@ -14735,7 +15590,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             };
             inSpecCount: number;
             outOfSpecCount: number;
-            yield: number;
             outOfSpecProbability: number;
             ppm: number;
             histogram: {
@@ -14747,29 +15601,16 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 }[];
             };
             normalFit: {
+                mean: number;
                 standardDeviation: number;
                 methodId: "F7_NORMAL_MOMENT_FIT_V1";
-                mean: number;
                 expectedBinCounts: number[];
-            };
-            capability: {
-                status: "available";
-                cp: number;
-                lowerCpk: number;
-                upperCpk: number;
-                cpk: number;
-                targetCpk: number;
-                targetStatus: "meets_target" | "below_target";
-            } | {
-                status: "not_available";
-                reason: "zero_variance";
-                targetCpk: number;
             };
             normalModel: {
                 status: "available";
+                totalDpm: number;
                 lowerTailDpm: number;
                 upperTailDpm: number;
-                totalDpm: number;
                 expectedYield: number;
             } | {
                 status: "not_available";
@@ -14777,17 +15618,31 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             };
             factorManifest: {
                 factorId: string;
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
             }[];
         }, {
             status: "complete";
+            capability: {
+                status: "available";
+                cpk: number;
+                targetCpk: number;
+                cp: number;
+                lowerCpk: number;
+                upperCpk: number;
+                targetStatus: "meets_target" | "below_target";
+            } | {
+                status: "not_available";
+                targetCpk: number;
+                reason: "zero_variance";
+            };
+            mean: number;
             standardDeviation: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
-            methodId: "F7_MONTE_CARLO_V1";
-            mean: number;
             targetSigmaLevel: number;
+            yield: number;
+            methodId: "F7_MONTE_CARLO_V1";
             iterations: 10000 | 100000;
             runSeed: string;
             correlationMode: "INDEPENDENT";
@@ -14802,7 +15657,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             };
             inSpecCount: number;
             outOfSpecCount: number;
-            yield: number;
             outOfSpecProbability: number;
             ppm: number;
             histogram: {
@@ -14814,29 +15668,16 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 }[];
             };
             normalFit: {
+                mean: number;
                 standardDeviation: number;
                 methodId: "F7_NORMAL_MOMENT_FIT_V1";
-                mean: number;
                 expectedBinCounts: number[];
-            };
-            capability: {
-                status: "available";
-                cp: number;
-                lowerCpk: number;
-                upperCpk: number;
-                cpk: number;
-                targetCpk: number;
-                targetStatus: "meets_target" | "below_target";
-            } | {
-                status: "not_available";
-                reason: "zero_variance";
-                targetCpk: number;
             };
             normalModel: {
                 status: "available";
+                totalDpm: number;
                 lowerTailDpm: number;
                 upperTailDpm: number;
-                totalDpm: number;
                 expectedYield: number;
             } | {
                 status: "not_available";
@@ -14844,97 +15685,47 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             };
             factorManifest: {
                 factorId: string;
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
             }[];
         }>>;
     }, "strict", z.ZodTypeAny, {
-        status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
-        workbook: {
-            workbookContentHash: string;
-            fileName: string;
-        };
-        contractId: "f7-analysis-result-v1";
-        outputClassification: "confidential";
         sessionId: string;
+        status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
+        outputClassification: "confidential";
+        contractId: "f7-analysis-result-v1";
+        workbook: {
+            fileName: string;
+            workbookContentHash: string;
+        };
+        selectedWorksheetNames: string[];
         factors: {
             factorCandidate: {
-                standardDeviation: number;
-                workbookContentHash: string;
-                worksheetName: string;
-                tableId: string;
-                sourceRow: number;
-                sourceCells: Record<string, string>;
-                factorCandidateId: string;
                 factorName: string;
-                excelSignedMean: number;
-                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-                lowerSpecLimit: number;
-                upperSpecLimit: number;
-                designNominal: number;
+                worksheetName: string;
+                workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                standardDeviation: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                tableId: string;
+                sourceRow: number;
+                designNominal: number;
+                sourceCells: Record<string, string>;
+                factorCandidateId: string;
+                excelSignedMean: number;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
                 userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
-                longTermSafetyFactor?: number | undefined;
-                sigmaLevel?: number | undefined;
             };
-            sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
-            evidence?: {
-                physicalMean: number;
-                workbookContentHash: string;
-                worksheetName: string;
-                tableId: string;
-                sourceRow: number;
-                sourceCells: Record<string, string>;
-                factorCandidateId: string;
-                factorName: string;
-                longTermSafetyFactor: number;
-                sigmaLevel: number;
-                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-                lowerSpecLimit: number;
-                upperSpecLimit: number;
-                designNominal: number;
-                upperTolerance: number;
-                lowerTolerance: number;
-                factorId: string;
-                unit: string;
-                unitSource: "workbook" | "user_confirmed" | "unspecified";
-                loopCoefficient: 1 | -1;
-                signedContributionMean: number;
-                baselineSampler: {
-                    samplerId: "NORMAL_LOCATION_SCALE_V1";
-                    physicalMean: number;
-                    standardDeviation: number;
-                    support: "REAL";
-                };
-                calculatedMean: number;
-                tolerance: number;
-                oneSigma: number;
-                percentContributionToSigma: number;
-                userAdded?: true | undefined;
-            } | undefined;
-            setup?: {
-                factorCandidateId: string;
-                designNominal: number;
-                upperTolerance: number;
-                lowerTolerance: number;
-                confirmed: true;
-                factorName?: string | undefined;
-                userAdded?: true | undefined;
-                longTermSafetyFactor?: number | undefined;
-                sigmaLevel?: number | undefined;
-                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
-            } | undefined;
             input?: {
                 mode: "MEASURED";
                 dataset?: {
-                    factorId: string;
                     unit: string;
-                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                    sourceReference: string;
-                    importedAt: string;
-                    msaStatus: "unknown" | "available" | "not_available";
+                    contentHash: string;
                     observations: ({
                         value: number;
                         disposition: "included";
@@ -14946,15 +15737,20 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     } | {
                         value: number;
                         confirmed: true;
+                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         disposition: "excluded";
                         originalRow: number;
-                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         operatorReference: string;
                         sequence?: string | undefined;
                         timestamp?: string | undefined;
                         subgroup?: string | undefined;
                         batch?: string | undefined;
                     })[];
+                    factorId: string;
+                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                    sourceReference: string;
+                    importedAt: string;
+                    msaStatus: "unknown" | "available" | "not_available";
                     missingRowCount: number;
                     rejectionSummaries: {
                         reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -14962,67 +15758,113 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
-                    contentHash: string;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | {
+                mode: "BASELINE_ASSUMPTION";
                 baselineSampler: {
+                    standardDeviation: number;
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
-                    standardDeviation: number;
                     support: "REAL";
                 };
-                mode: "BASELINE_ASSUMPTION";
+            } | undefined;
+            evidence?: {
+                unit: string;
+                tolerance: number;
+                factorName: string;
+                worksheetName: string;
+                workbookContentHash: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                oneSigma: number;
+                percentContributionToSigma: number;
+                longTermSafetyFactor: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                tableId: string;
+                sourceRow: number;
+                designNominal: number;
+                sigmaLevel: number;
+                sourceCells: Record<string, string>;
+                physicalMean: number;
+                factorCandidateId: string;
+                factorId: string;
+                unitSource: "workbook" | "user_confirmed" | "unspecified";
+                loopCoefficient: 1 | -1;
+                signedContributionMean: number;
+                baselineSampler: {
+                    standardDeviation: number;
+                    samplerId: "NORMAL_LOCATION_SCALE_V1";
+                    physicalMean: number;
+                    support: "REAL";
+                };
+                calculatedMean: number;
+                userAdded?: true | undefined;
+            } | undefined;
+            sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
+            setup?: {
+                confirmed: true;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                factorCandidateId: string;
+                factorName?: string | undefined;
+                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
             } | undefined;
             datasetValidation?: {
-                status: "ready" | "blocked";
+                status: "blocked" | "ready";
                 blockingIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 advisoryIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 candidateEligibility: {
                     normal: "eligible";
+                    uniform: "eligible_with_boundary_warning";
                     lognormal: "eligible" | "ineligible_nonpositive";
                     weibull: "eligible" | "ineligible_nonpositive";
                     gamma: "eligible" | "ineligible_nonpositive";
-                    uniform: "eligible_with_boundary_warning";
                 };
             } | undefined;
             measurementPasteResult?: {
-                status: "ready" | "blocked";
                 validation: {
-                    status: "ready" | "blocked";
+                    status: "blocked" | "ready";
                     blockingIssues: {
-                        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                         factorId?: string | undefined;
                         rowNumbers?: number[] | undefined;
                     }[];
                     advisoryIssues: {
-                        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                         factorId?: string | undefined;
                         rowNumbers?: number[] | undefined;
                     }[];
                     candidateEligibility: {
                         normal: "eligible";
+                        uniform: "eligible_with_boundary_warning";
                         lognormal: "eligible" | "ineligible_nonpositive";
                         weibull: "eligible" | "ineligible_nonpositive";
                         gamma: "eligible" | "ineligible_nonpositive";
-                        uniform: "eligible_with_boundary_warning";
                     };
                 };
+                status: "blocked" | "ready";
                 factorId: string;
                 dataset?: {
-                    factorId: string;
                     unit: string;
-                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                    sourceReference: string;
-                    importedAt: string;
-                    msaStatus: "unknown" | "available" | "not_available";
+                    contentHash: string;
                     observations: ({
                         value: number;
                         disposition: "included";
@@ -15034,15 +15876,20 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     } | {
                         value: number;
                         confirmed: true;
+                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         disposition: "excluded";
                         originalRow: number;
-                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         operatorReference: string;
                         sequence?: string | undefined;
                         timestamp?: string | undefined;
                         subgroup?: string | undefined;
                         batch?: string | undefined;
                     })[];
+                    factorId: string;
+                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                    sourceReference: string;
+                    importedAt: string;
+                    msaStatus: "unknown" | "available" | "not_available";
                     missingRowCount: number;
                     rejectionSummaries: {
                         reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -15050,15 +15897,15 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
-                    contentHash: string;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | undefined;
             distributionFitResult?: {
-                factorId: string;
-                sampleSize: number;
-                characteristicKind: "dimensional" | "other";
                 candidates: {
-                    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                     parameterCount: number;
                     parameters: Record<string, number>;
@@ -15075,15 +15922,15 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         theoretical: number;
                     }[];
                     bootstrap: {
-                        status: "acceptable" | "weak" | "rejected";
+                        status: "rejected" | "acceptable" | "weak";
                         statisticId: "anderson_darling";
                         observedStatistic: number;
                         comparisonDirection: "greater_than_or_equal";
                         refitEachReplicate: true;
                         extremeReplicateCount: number;
                         confidenceInterval: {
-                            level: 0.95;
                             method: "wilson_score";
+                            level: 0.95;
                             lower: number;
                             upper: number;
                         };
@@ -15096,9 +15943,12 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     };
                     warnings: string[];
                 }[];
+                factorId: string;
+                sampleSize: number;
+                characteristicKind: "other" | "dimensional";
                 failedCandidates: {
-                    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
                     reasonCode: "numerical_fit_failed";
+                    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 }[];
                 sampleDiagnostics: {
                     mean: number;
@@ -15110,28 +15960,23 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 };
                 selectionDecision: {
                     status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-                    methodId: "F7_MODEL_SELECTION_V1";
-                    competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
                     confidence: "low" | "moderate";
                     reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-                    numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                    engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                    proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+                    methodId: "F7_MODEL_SELECTION_V1";
+                    competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+                    numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                    engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                    proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
                 };
             } | undefined;
             distributionApproval?: {
                 confirmed: true;
                 factorId: string;
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 approvedAt: string;
             } | undefined;
         }[];
-        selectedWorksheetNames: string[];
         worksheetOptions: {
-            worksheetName: string;
-            selectionIndex: number;
-            toleranceLoopDescription: string;
-            worksheetKind: "analysis" | "example_or_template";
             source: {
                 summarySheet: "Auto Summary";
                 summaryRow: number;
@@ -15141,6 +15986,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 discoveryMethod: "worksheet_scan";
                 descriptionCell: string;
             };
+            worksheetName: string;
+            toleranceLoopDescription: string;
+            worksheetKind: "analysis" | "example_or_template";
+            selectionIndex: number;
         }[];
         systemSpecification?: {
             status: "available";
@@ -15268,14 +16117,34 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 sourceCell?: string | undefined;
             } | undefined;
         } | undefined;
+        dimensionChainImage?: {
+            status: "available";
+            contentHash: string;
+            worksheetName: string;
+            url: string;
+        } | undefined;
         monteCarloResult?: {
             status: "complete";
+            capability: {
+                status: "available";
+                cpk: number;
+                targetCpk: number;
+                cp: number;
+                lowerCpk: number;
+                upperCpk: number;
+                targetStatus: "meets_target" | "below_target";
+            } | {
+                status: "not_available";
+                targetCpk: number;
+                reason: "zero_variance";
+            };
+            mean: number;
             standardDeviation: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
-            methodId: "F7_MONTE_CARLO_V1";
-            mean: number;
             targetSigmaLevel: number;
+            yield: number;
+            methodId: "F7_MONTE_CARLO_V1";
             iterations: 10000 | 100000;
             runSeed: string;
             correlationMode: "INDEPENDENT";
@@ -15290,7 +16159,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             };
             inSpecCount: number;
             outOfSpecCount: number;
-            yield: number;
             outOfSpecProbability: number;
             ppm: number;
             histogram: {
@@ -15302,29 +16170,16 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 }[];
             };
             normalFit: {
+                mean: number;
                 standardDeviation: number;
                 methodId: "F7_NORMAL_MOMENT_FIT_V1";
-                mean: number;
                 expectedBinCounts: number[];
-            };
-            capability: {
-                status: "available";
-                cp: number;
-                lowerCpk: number;
-                upperCpk: number;
-                cpk: number;
-                targetCpk: number;
-                targetStatus: "meets_target" | "below_target";
-            } | {
-                status: "not_available";
-                reason: "zero_variance";
-                targetCpk: number;
             };
             normalModel: {
                 status: "available";
+                totalDpm: number;
                 lowerTailDpm: number;
                 upperTailDpm: number;
-                totalDpm: number;
                 expectedYield: number;
             } | {
                 status: "not_available";
@@ -15332,97 +16187,47 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             };
             factorManifest: {
                 factorId: string;
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
             }[];
         } | undefined;
     }, {
-        status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
-        workbook: {
-            workbookContentHash: string;
-            fileName: string;
-        };
-        contractId: "f7-analysis-result-v1";
-        outputClassification: "confidential";
         sessionId: string;
+        status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
+        outputClassification: "confidential";
+        contractId: "f7-analysis-result-v1";
+        workbook: {
+            fileName: string;
+            workbookContentHash: string;
+        };
+        selectedWorksheetNames: string[];
         factors: {
             factorCandidate: {
-                standardDeviation: number;
-                workbookContentHash: string;
-                worksheetName: string;
-                tableId: string;
-                sourceRow: number;
-                sourceCells: Record<string, string>;
-                factorCandidateId: string;
                 factorName: string;
-                excelSignedMean: number;
-                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-                lowerSpecLimit: number;
-                upperSpecLimit: number;
-                designNominal: number;
+                worksheetName: string;
+                workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                standardDeviation: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                tableId: string;
+                sourceRow: number;
+                designNominal: number;
+                sourceCells: Record<string, string>;
+                factorCandidateId: string;
+                excelSignedMean: number;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
                 userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
-                longTermSafetyFactor?: number | undefined;
-                sigmaLevel?: number | undefined;
             };
-            sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
-            evidence?: {
-                physicalMean: number;
-                workbookContentHash: string;
-                worksheetName: string;
-                tableId: string;
-                sourceRow: number;
-                sourceCells: Record<string, string>;
-                factorCandidateId: string;
-                factorName: string;
-                longTermSafetyFactor: number;
-                sigmaLevel: number;
-                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-                lowerSpecLimit: number;
-                upperSpecLimit: number;
-                designNominal: number;
-                upperTolerance: number;
-                lowerTolerance: number;
-                factorId: string;
-                unit: string;
-                unitSource: "workbook" | "user_confirmed" | "unspecified";
-                loopCoefficient: 1 | -1;
-                signedContributionMean: number;
-                baselineSampler: {
-                    samplerId: "NORMAL_LOCATION_SCALE_V1";
-                    physicalMean: number;
-                    standardDeviation: number;
-                    support: "REAL";
-                };
-                calculatedMean: number;
-                tolerance: number;
-                oneSigma: number;
-                percentContributionToSigma: number;
-                userAdded?: true | undefined;
-            } | undefined;
-            setup?: {
-                factorCandidateId: string;
-                designNominal: number;
-                upperTolerance: number;
-                lowerTolerance: number;
-                confirmed: true;
-                factorName?: string | undefined;
-                userAdded?: true | undefined;
-                longTermSafetyFactor?: number | undefined;
-                sigmaLevel?: number | undefined;
-                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
-            } | undefined;
             input?: {
                 mode: "MEASURED";
                 dataset?: {
-                    factorId: string;
                     unit: string;
-                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                    sourceReference: string;
-                    importedAt: string;
-                    msaStatus: "unknown" | "available" | "not_available";
+                    contentHash: string;
                     observations: ({
                         value: number;
                         disposition: "included";
@@ -15434,15 +16239,20 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     } | {
                         value: number;
                         confirmed: true;
+                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         disposition: "excluded";
                         originalRow: number;
-                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         operatorReference: string;
                         sequence?: string | undefined;
                         timestamp?: string | undefined;
                         subgroup?: string | undefined;
                         batch?: string | undefined;
                     })[];
+                    factorId: string;
+                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                    sourceReference: string;
+                    importedAt: string;
+                    msaStatus: "unknown" | "available" | "not_available";
                     missingRowCount: number;
                     rejectionSummaries: {
                         reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -15450,67 +16260,113 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
-                    contentHash: string;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | {
+                mode: "BASELINE_ASSUMPTION";
                 baselineSampler: {
+                    standardDeviation: number;
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
-                    standardDeviation: number;
                     support: "REAL";
                 };
-                mode: "BASELINE_ASSUMPTION";
+            } | undefined;
+            evidence?: {
+                unit: string;
+                tolerance: number;
+                factorName: string;
+                worksheetName: string;
+                workbookContentHash: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                oneSigma: number;
+                percentContributionToSigma: number;
+                longTermSafetyFactor: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                tableId: string;
+                sourceRow: number;
+                designNominal: number;
+                sigmaLevel: number;
+                sourceCells: Record<string, string>;
+                physicalMean: number;
+                factorCandidateId: string;
+                factorId: string;
+                unitSource: "workbook" | "user_confirmed" | "unspecified";
+                loopCoefficient: 1 | -1;
+                signedContributionMean: number;
+                baselineSampler: {
+                    standardDeviation: number;
+                    samplerId: "NORMAL_LOCATION_SCALE_V1";
+                    physicalMean: number;
+                    support: "REAL";
+                };
+                calculatedMean: number;
+                userAdded?: true | undefined;
+            } | undefined;
+            sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
+            setup?: {
+                confirmed: true;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                factorCandidateId: string;
+                factorName?: string | undefined;
+                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
             } | undefined;
             datasetValidation?: {
-                status: "ready" | "blocked";
+                status: "blocked" | "ready";
                 blockingIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 advisoryIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 candidateEligibility: {
                     normal: "eligible";
+                    uniform: "eligible_with_boundary_warning";
                     lognormal: "eligible" | "ineligible_nonpositive";
                     weibull: "eligible" | "ineligible_nonpositive";
                     gamma: "eligible" | "ineligible_nonpositive";
-                    uniform: "eligible_with_boundary_warning";
                 };
             } | undefined;
             measurementPasteResult?: {
-                status: "ready" | "blocked";
                 validation: {
-                    status: "ready" | "blocked";
+                    status: "blocked" | "ready";
                     blockingIssues: {
-                        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                         factorId?: string | undefined;
                         rowNumbers?: number[] | undefined;
                     }[];
                     advisoryIssues: {
-                        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                         factorId?: string | undefined;
                         rowNumbers?: number[] | undefined;
                     }[];
                     candidateEligibility: {
                         normal: "eligible";
+                        uniform: "eligible_with_boundary_warning";
                         lognormal: "eligible" | "ineligible_nonpositive";
                         weibull: "eligible" | "ineligible_nonpositive";
                         gamma: "eligible" | "ineligible_nonpositive";
-                        uniform: "eligible_with_boundary_warning";
                     };
                 };
+                status: "blocked" | "ready";
                 factorId: string;
                 dataset?: {
-                    factorId: string;
                     unit: string;
-                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                    sourceReference: string;
-                    importedAt: string;
-                    msaStatus: "unknown" | "available" | "not_available";
+                    contentHash: string;
                     observations: ({
                         value: number;
                         disposition: "included";
@@ -15522,15 +16378,20 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     } | {
                         value: number;
                         confirmed: true;
+                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         disposition: "excluded";
                         originalRow: number;
-                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         operatorReference: string;
                         sequence?: string | undefined;
                         timestamp?: string | undefined;
                         subgroup?: string | undefined;
                         batch?: string | undefined;
                     })[];
+                    factorId: string;
+                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                    sourceReference: string;
+                    importedAt: string;
+                    msaStatus: "unknown" | "available" | "not_available";
                     missingRowCount: number;
                     rejectionSummaries: {
                         reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -15538,15 +16399,15 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
-                    contentHash: string;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | undefined;
             distributionFitResult?: {
-                factorId: string;
-                sampleSize: number;
-                characteristicKind: "dimensional" | "other";
                 candidates: {
-                    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                     parameterCount: number;
                     parameters: Record<string, number>;
@@ -15563,15 +16424,15 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         theoretical: number;
                     }[];
                     bootstrap: {
-                        status: "acceptable" | "weak" | "rejected";
+                        status: "rejected" | "acceptable" | "weak";
                         statisticId: "anderson_darling";
                         observedStatistic: number;
                         comparisonDirection: "greater_than_or_equal";
                         refitEachReplicate: true;
                         extremeReplicateCount: number;
                         confidenceInterval: {
-                            level: 0.95;
                             method: "wilson_score";
+                            level: 0.95;
                             lower: number;
                             upper: number;
                         };
@@ -15584,9 +16445,12 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     };
                     warnings: string[];
                 }[];
+                factorId: string;
+                sampleSize: number;
+                characteristicKind: "other" | "dimensional";
                 failedCandidates: {
-                    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
                     reasonCode: "numerical_fit_failed";
+                    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 }[];
                 sampleDiagnostics: {
                     mean: number;
@@ -15598,28 +16462,23 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 };
                 selectionDecision: {
                     status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-                    methodId: "F7_MODEL_SELECTION_V1";
-                    competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
                     confidence: "low" | "moderate";
                     reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-                    numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                    engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                    proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+                    methodId: "F7_MODEL_SELECTION_V1";
+                    competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+                    numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                    engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                    proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
                 };
             } | undefined;
             distributionApproval?: {
                 confirmed: true;
                 factorId: string;
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 approvedAt: string;
             } | undefined;
         }[];
-        selectedWorksheetNames: string[];
         worksheetOptions: {
-            worksheetName: string;
-            selectionIndex: number;
-            toleranceLoopDescription: string;
-            worksheetKind: "analysis" | "example_or_template";
             source: {
                 summarySheet: "Auto Summary";
                 summaryRow: number;
@@ -15629,6 +16488,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 discoveryMethod: "worksheet_scan";
                 descriptionCell: string;
             };
+            worksheetName: string;
+            toleranceLoopDescription: string;
+            worksheetKind: "analysis" | "example_or_template";
+            selectionIndex: number;
         }[];
         systemSpecification?: {
             status: "available";
@@ -15756,14 +16619,34 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 sourceCell?: string | undefined;
             } | undefined;
         } | undefined;
+        dimensionChainImage?: {
+            status: "available";
+            contentHash: string;
+            worksheetName: string;
+            url: string;
+        } | undefined;
         monteCarloResult?: {
             status: "complete";
+            capability: {
+                status: "available";
+                cpk: number;
+                targetCpk: number;
+                cp: number;
+                lowerCpk: number;
+                upperCpk: number;
+                targetStatus: "meets_target" | "below_target";
+            } | {
+                status: "not_available";
+                targetCpk: number;
+                reason: "zero_variance";
+            };
+            mean: number;
             standardDeviation: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
-            methodId: "F7_MONTE_CARLO_V1";
-            mean: number;
             targetSigmaLevel: number;
+            yield: number;
+            methodId: "F7_MONTE_CARLO_V1";
             iterations: 10000 | 100000;
             runSeed: string;
             correlationMode: "INDEPENDENT";
@@ -15778,7 +16661,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             };
             inSpecCount: number;
             outOfSpecCount: number;
-            yield: number;
             outOfSpecProbability: number;
             ppm: number;
             histogram: {
@@ -15790,29 +16672,16 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 }[];
             };
             normalFit: {
+                mean: number;
                 standardDeviation: number;
                 methodId: "F7_NORMAL_MOMENT_FIT_V1";
-                mean: number;
                 expectedBinCounts: number[];
-            };
-            capability: {
-                status: "available";
-                cp: number;
-                lowerCpk: number;
-                upperCpk: number;
-                cpk: number;
-                targetCpk: number;
-                targetStatus: "meets_target" | "below_target";
-            } | {
-                status: "not_available";
-                reason: "zero_variance";
-                targetCpk: number;
             };
             normalModel: {
                 status: "available";
+                totalDpm: number;
                 lowerTailDpm: number;
                 upperTailDpm: number;
-                totalDpm: number;
                 expectedYield: number;
             } | {
                 status: "not_available";
@@ -15820,97 +16689,47 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             };
             factorManifest: {
                 factorId: string;
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
             }[];
         } | undefined;
     }>, {
-        status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
-        workbook: {
-            workbookContentHash: string;
-            fileName: string;
-        };
-        contractId: "f7-analysis-result-v1";
-        outputClassification: "confidential";
         sessionId: string;
+        status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
+        outputClassification: "confidential";
+        contractId: "f7-analysis-result-v1";
+        workbook: {
+            fileName: string;
+            workbookContentHash: string;
+        };
+        selectedWorksheetNames: string[];
         factors: {
             factorCandidate: {
-                standardDeviation: number;
-                workbookContentHash: string;
-                worksheetName: string;
-                tableId: string;
-                sourceRow: number;
-                sourceCells: Record<string, string>;
-                factorCandidateId: string;
                 factorName: string;
-                excelSignedMean: number;
-                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-                lowerSpecLimit: number;
-                upperSpecLimit: number;
-                designNominal: number;
+                worksheetName: string;
+                workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                standardDeviation: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                tableId: string;
+                sourceRow: number;
+                designNominal: number;
+                sourceCells: Record<string, string>;
+                factorCandidateId: string;
+                excelSignedMean: number;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
                 userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
-                longTermSafetyFactor?: number | undefined;
-                sigmaLevel?: number | undefined;
             };
-            sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
-            evidence?: {
-                physicalMean: number;
-                workbookContentHash: string;
-                worksheetName: string;
-                tableId: string;
-                sourceRow: number;
-                sourceCells: Record<string, string>;
-                factorCandidateId: string;
-                factorName: string;
-                longTermSafetyFactor: number;
-                sigmaLevel: number;
-                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-                lowerSpecLimit: number;
-                upperSpecLimit: number;
-                designNominal: number;
-                upperTolerance: number;
-                lowerTolerance: number;
-                factorId: string;
-                unit: string;
-                unitSource: "workbook" | "user_confirmed" | "unspecified";
-                loopCoefficient: 1 | -1;
-                signedContributionMean: number;
-                baselineSampler: {
-                    samplerId: "NORMAL_LOCATION_SCALE_V1";
-                    physicalMean: number;
-                    standardDeviation: number;
-                    support: "REAL";
-                };
-                calculatedMean: number;
-                tolerance: number;
-                oneSigma: number;
-                percentContributionToSigma: number;
-                userAdded?: true | undefined;
-            } | undefined;
-            setup?: {
-                factorCandidateId: string;
-                designNominal: number;
-                upperTolerance: number;
-                lowerTolerance: number;
-                confirmed: true;
-                factorName?: string | undefined;
-                userAdded?: true | undefined;
-                longTermSafetyFactor?: number | undefined;
-                sigmaLevel?: number | undefined;
-                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
-            } | undefined;
             input?: {
                 mode: "MEASURED";
                 dataset?: {
-                    factorId: string;
                     unit: string;
-                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                    sourceReference: string;
-                    importedAt: string;
-                    msaStatus: "unknown" | "available" | "not_available";
+                    contentHash: string;
                     observations: ({
                         value: number;
                         disposition: "included";
@@ -15922,15 +16741,20 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     } | {
                         value: number;
                         confirmed: true;
+                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         disposition: "excluded";
                         originalRow: number;
-                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         operatorReference: string;
                         sequence?: string | undefined;
                         timestamp?: string | undefined;
                         subgroup?: string | undefined;
                         batch?: string | undefined;
                     })[];
+                    factorId: string;
+                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                    sourceReference: string;
+                    importedAt: string;
+                    msaStatus: "unknown" | "available" | "not_available";
                     missingRowCount: number;
                     rejectionSummaries: {
                         reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -15938,67 +16762,113 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
-                    contentHash: string;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | {
+                mode: "BASELINE_ASSUMPTION";
                 baselineSampler: {
+                    standardDeviation: number;
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
-                    standardDeviation: number;
                     support: "REAL";
                 };
-                mode: "BASELINE_ASSUMPTION";
+            } | undefined;
+            evidence?: {
+                unit: string;
+                tolerance: number;
+                factorName: string;
+                worksheetName: string;
+                workbookContentHash: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                oneSigma: number;
+                percentContributionToSigma: number;
+                longTermSafetyFactor: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                tableId: string;
+                sourceRow: number;
+                designNominal: number;
+                sigmaLevel: number;
+                sourceCells: Record<string, string>;
+                physicalMean: number;
+                factorCandidateId: string;
+                factorId: string;
+                unitSource: "workbook" | "user_confirmed" | "unspecified";
+                loopCoefficient: 1 | -1;
+                signedContributionMean: number;
+                baselineSampler: {
+                    standardDeviation: number;
+                    samplerId: "NORMAL_LOCATION_SCALE_V1";
+                    physicalMean: number;
+                    support: "REAL";
+                };
+                calculatedMean: number;
+                userAdded?: true | undefined;
+            } | undefined;
+            sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
+            setup?: {
+                confirmed: true;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                factorCandidateId: string;
+                factorName?: string | undefined;
+                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
             } | undefined;
             datasetValidation?: {
-                status: "ready" | "blocked";
+                status: "blocked" | "ready";
                 blockingIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 advisoryIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 candidateEligibility: {
                     normal: "eligible";
+                    uniform: "eligible_with_boundary_warning";
                     lognormal: "eligible" | "ineligible_nonpositive";
                     weibull: "eligible" | "ineligible_nonpositive";
                     gamma: "eligible" | "ineligible_nonpositive";
-                    uniform: "eligible_with_boundary_warning";
                 };
             } | undefined;
             measurementPasteResult?: {
-                status: "ready" | "blocked";
                 validation: {
-                    status: "ready" | "blocked";
+                    status: "blocked" | "ready";
                     blockingIssues: {
-                        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                         factorId?: string | undefined;
                         rowNumbers?: number[] | undefined;
                     }[];
                     advisoryIssues: {
-                        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                         factorId?: string | undefined;
                         rowNumbers?: number[] | undefined;
                     }[];
                     candidateEligibility: {
                         normal: "eligible";
+                        uniform: "eligible_with_boundary_warning";
                         lognormal: "eligible" | "ineligible_nonpositive";
                         weibull: "eligible" | "ineligible_nonpositive";
                         gamma: "eligible" | "ineligible_nonpositive";
-                        uniform: "eligible_with_boundary_warning";
                     };
                 };
+                status: "blocked" | "ready";
                 factorId: string;
                 dataset?: {
-                    factorId: string;
                     unit: string;
-                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                    sourceReference: string;
-                    importedAt: string;
-                    msaStatus: "unknown" | "available" | "not_available";
+                    contentHash: string;
                     observations: ({
                         value: number;
                         disposition: "included";
@@ -16010,15 +16880,20 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     } | {
                         value: number;
                         confirmed: true;
+                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         disposition: "excluded";
                         originalRow: number;
-                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         operatorReference: string;
                         sequence?: string | undefined;
                         timestamp?: string | undefined;
                         subgroup?: string | undefined;
                         batch?: string | undefined;
                     })[];
+                    factorId: string;
+                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                    sourceReference: string;
+                    importedAt: string;
+                    msaStatus: "unknown" | "available" | "not_available";
                     missingRowCount: number;
                     rejectionSummaries: {
                         reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -16026,15 +16901,15 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
-                    contentHash: string;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | undefined;
             distributionFitResult?: {
-                factorId: string;
-                sampleSize: number;
-                characteristicKind: "dimensional" | "other";
                 candidates: {
-                    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                     parameterCount: number;
                     parameters: Record<string, number>;
@@ -16051,15 +16926,15 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         theoretical: number;
                     }[];
                     bootstrap: {
-                        status: "acceptable" | "weak" | "rejected";
+                        status: "rejected" | "acceptable" | "weak";
                         statisticId: "anderson_darling";
                         observedStatistic: number;
                         comparisonDirection: "greater_than_or_equal";
                         refitEachReplicate: true;
                         extremeReplicateCount: number;
                         confidenceInterval: {
-                            level: 0.95;
                             method: "wilson_score";
+                            level: 0.95;
                             lower: number;
                             upper: number;
                         };
@@ -16072,9 +16947,12 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     };
                     warnings: string[];
                 }[];
+                factorId: string;
+                sampleSize: number;
+                characteristicKind: "other" | "dimensional";
                 failedCandidates: {
-                    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
                     reasonCode: "numerical_fit_failed";
+                    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 }[];
                 sampleDiagnostics: {
                     mean: number;
@@ -16086,28 +16964,23 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 };
                 selectionDecision: {
                     status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-                    methodId: "F7_MODEL_SELECTION_V1";
-                    competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
                     confidence: "low" | "moderate";
                     reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-                    numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                    engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                    proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+                    methodId: "F7_MODEL_SELECTION_V1";
+                    competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+                    numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                    engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                    proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
                 };
             } | undefined;
             distributionApproval?: {
                 confirmed: true;
                 factorId: string;
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 approvedAt: string;
             } | undefined;
         }[];
-        selectedWorksheetNames: string[];
         worksheetOptions: {
-            worksheetName: string;
-            selectionIndex: number;
-            toleranceLoopDescription: string;
-            worksheetKind: "analysis" | "example_or_template";
             source: {
                 summarySheet: "Auto Summary";
                 summaryRow: number;
@@ -16117,6 +16990,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 discoveryMethod: "worksheet_scan";
                 descriptionCell: string;
             };
+            worksheetName: string;
+            toleranceLoopDescription: string;
+            worksheetKind: "analysis" | "example_or_template";
+            selectionIndex: number;
         }[];
         systemSpecification?: {
             status: "available";
@@ -16244,14 +17121,34 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 sourceCell?: string | undefined;
             } | undefined;
         } | undefined;
+        dimensionChainImage?: {
+            status: "available";
+            contentHash: string;
+            worksheetName: string;
+            url: string;
+        } | undefined;
         monteCarloResult?: {
             status: "complete";
+            capability: {
+                status: "available";
+                cpk: number;
+                targetCpk: number;
+                cp: number;
+                lowerCpk: number;
+                upperCpk: number;
+                targetStatus: "meets_target" | "below_target";
+            } | {
+                status: "not_available";
+                targetCpk: number;
+                reason: "zero_variance";
+            };
+            mean: number;
             standardDeviation: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
-            methodId: "F7_MONTE_CARLO_V1";
-            mean: number;
             targetSigmaLevel: number;
+            yield: number;
+            methodId: "F7_MONTE_CARLO_V1";
             iterations: 10000 | 100000;
             runSeed: string;
             correlationMode: "INDEPENDENT";
@@ -16266,7 +17163,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             };
             inSpecCount: number;
             outOfSpecCount: number;
-            yield: number;
             outOfSpecProbability: number;
             ppm: number;
             histogram: {
@@ -16278,29 +17174,16 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 }[];
             };
             normalFit: {
+                mean: number;
                 standardDeviation: number;
                 methodId: "F7_NORMAL_MOMENT_FIT_V1";
-                mean: number;
                 expectedBinCounts: number[];
-            };
-            capability: {
-                status: "available";
-                cp: number;
-                lowerCpk: number;
-                upperCpk: number;
-                cpk: number;
-                targetCpk: number;
-                targetStatus: "meets_target" | "below_target";
-            } | {
-                status: "not_available";
-                reason: "zero_variance";
-                targetCpk: number;
             };
             normalModel: {
                 status: "available";
+                totalDpm: number;
                 lowerTailDpm: number;
                 upperTailDpm: number;
-                totalDpm: number;
                 expectedYield: number;
             } | {
                 status: "not_available";
@@ -16308,97 +17191,47 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             };
             factorManifest: {
                 factorId: string;
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
             }[];
         } | undefined;
     }, {
-        status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
-        workbook: {
-            workbookContentHash: string;
-            fileName: string;
-        };
-        contractId: "f7-analysis-result-v1";
-        outputClassification: "confidential";
         sessionId: string;
+        status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
+        outputClassification: "confidential";
+        contractId: "f7-analysis-result-v1";
+        workbook: {
+            fileName: string;
+            workbookContentHash: string;
+        };
+        selectedWorksheetNames: string[];
         factors: {
             factorCandidate: {
-                standardDeviation: number;
-                workbookContentHash: string;
-                worksheetName: string;
-                tableId: string;
-                sourceRow: number;
-                sourceCells: Record<string, string>;
-                factorCandidateId: string;
                 factorName: string;
-                excelSignedMean: number;
-                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-                lowerSpecLimit: number;
-                upperSpecLimit: number;
-                designNominal: number;
+                worksheetName: string;
+                workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                standardDeviation: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                tableId: string;
+                sourceRow: number;
+                designNominal: number;
+                sourceCells: Record<string, string>;
+                factorCandidateId: string;
+                excelSignedMean: number;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
                 userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
-                longTermSafetyFactor?: number | undefined;
-                sigmaLevel?: number | undefined;
             };
-            sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
-            evidence?: {
-                physicalMean: number;
-                workbookContentHash: string;
-                worksheetName: string;
-                tableId: string;
-                sourceRow: number;
-                sourceCells: Record<string, string>;
-                factorCandidateId: string;
-                factorName: string;
-                longTermSafetyFactor: number;
-                sigmaLevel: number;
-                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-                lowerSpecLimit: number;
-                upperSpecLimit: number;
-                designNominal: number;
-                upperTolerance: number;
-                lowerTolerance: number;
-                factorId: string;
-                unit: string;
-                unitSource: "workbook" | "user_confirmed" | "unspecified";
-                loopCoefficient: 1 | -1;
-                signedContributionMean: number;
-                baselineSampler: {
-                    samplerId: "NORMAL_LOCATION_SCALE_V1";
-                    physicalMean: number;
-                    standardDeviation: number;
-                    support: "REAL";
-                };
-                calculatedMean: number;
-                tolerance: number;
-                oneSigma: number;
-                percentContributionToSigma: number;
-                userAdded?: true | undefined;
-            } | undefined;
-            setup?: {
-                factorCandidateId: string;
-                designNominal: number;
-                upperTolerance: number;
-                lowerTolerance: number;
-                confirmed: true;
-                factorName?: string | undefined;
-                userAdded?: true | undefined;
-                longTermSafetyFactor?: number | undefined;
-                sigmaLevel?: number | undefined;
-                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
-            } | undefined;
             input?: {
                 mode: "MEASURED";
                 dataset?: {
-                    factorId: string;
                     unit: string;
-                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                    sourceReference: string;
-                    importedAt: string;
-                    msaStatus: "unknown" | "available" | "not_available";
+                    contentHash: string;
                     observations: ({
                         value: number;
                         disposition: "included";
@@ -16410,15 +17243,20 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     } | {
                         value: number;
                         confirmed: true;
+                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         disposition: "excluded";
                         originalRow: number;
-                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         operatorReference: string;
                         sequence?: string | undefined;
                         timestamp?: string | undefined;
                         subgroup?: string | undefined;
                         batch?: string | undefined;
                     })[];
+                    factorId: string;
+                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                    sourceReference: string;
+                    importedAt: string;
+                    msaStatus: "unknown" | "available" | "not_available";
                     missingRowCount: number;
                     rejectionSummaries: {
                         reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -16426,67 +17264,113 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
-                    contentHash: string;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | {
+                mode: "BASELINE_ASSUMPTION";
                 baselineSampler: {
+                    standardDeviation: number;
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
-                    standardDeviation: number;
                     support: "REAL";
                 };
-                mode: "BASELINE_ASSUMPTION";
+            } | undefined;
+            evidence?: {
+                unit: string;
+                tolerance: number;
+                factorName: string;
+                worksheetName: string;
+                workbookContentHash: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                oneSigma: number;
+                percentContributionToSigma: number;
+                longTermSafetyFactor: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                tableId: string;
+                sourceRow: number;
+                designNominal: number;
+                sigmaLevel: number;
+                sourceCells: Record<string, string>;
+                physicalMean: number;
+                factorCandidateId: string;
+                factorId: string;
+                unitSource: "workbook" | "user_confirmed" | "unspecified";
+                loopCoefficient: 1 | -1;
+                signedContributionMean: number;
+                baselineSampler: {
+                    standardDeviation: number;
+                    samplerId: "NORMAL_LOCATION_SCALE_V1";
+                    physicalMean: number;
+                    support: "REAL";
+                };
+                calculatedMean: number;
+                userAdded?: true | undefined;
+            } | undefined;
+            sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
+            setup?: {
+                confirmed: true;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                factorCandidateId: string;
+                factorName?: string | undefined;
+                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
             } | undefined;
             datasetValidation?: {
-                status: "ready" | "blocked";
+                status: "blocked" | "ready";
                 blockingIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 advisoryIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 candidateEligibility: {
                     normal: "eligible";
+                    uniform: "eligible_with_boundary_warning";
                     lognormal: "eligible" | "ineligible_nonpositive";
                     weibull: "eligible" | "ineligible_nonpositive";
                     gamma: "eligible" | "ineligible_nonpositive";
-                    uniform: "eligible_with_boundary_warning";
                 };
             } | undefined;
             measurementPasteResult?: {
-                status: "ready" | "blocked";
                 validation: {
-                    status: "ready" | "blocked";
+                    status: "blocked" | "ready";
                     blockingIssues: {
-                        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                         factorId?: string | undefined;
                         rowNumbers?: number[] | undefined;
                     }[];
                     advisoryIssues: {
-                        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                         factorId?: string | undefined;
                         rowNumbers?: number[] | undefined;
                     }[];
                     candidateEligibility: {
                         normal: "eligible";
+                        uniform: "eligible_with_boundary_warning";
                         lognormal: "eligible" | "ineligible_nonpositive";
                         weibull: "eligible" | "ineligible_nonpositive";
                         gamma: "eligible" | "ineligible_nonpositive";
-                        uniform: "eligible_with_boundary_warning";
                     };
                 };
+                status: "blocked" | "ready";
                 factorId: string;
                 dataset?: {
-                    factorId: string;
                     unit: string;
-                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                    sourceReference: string;
-                    importedAt: string;
-                    msaStatus: "unknown" | "available" | "not_available";
+                    contentHash: string;
                     observations: ({
                         value: number;
                         disposition: "included";
@@ -16498,15 +17382,20 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     } | {
                         value: number;
                         confirmed: true;
+                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         disposition: "excluded";
                         originalRow: number;
-                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         operatorReference: string;
                         sequence?: string | undefined;
                         timestamp?: string | undefined;
                         subgroup?: string | undefined;
                         batch?: string | undefined;
                     })[];
+                    factorId: string;
+                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                    sourceReference: string;
+                    importedAt: string;
+                    msaStatus: "unknown" | "available" | "not_available";
                     missingRowCount: number;
                     rejectionSummaries: {
                         reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -16514,15 +17403,15 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
-                    contentHash: string;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | undefined;
             distributionFitResult?: {
-                factorId: string;
-                sampleSize: number;
-                characteristicKind: "dimensional" | "other";
                 candidates: {
-                    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                     parameterCount: number;
                     parameters: Record<string, number>;
@@ -16539,15 +17428,15 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         theoretical: number;
                     }[];
                     bootstrap: {
-                        status: "acceptable" | "weak" | "rejected";
+                        status: "rejected" | "acceptable" | "weak";
                         statisticId: "anderson_darling";
                         observedStatistic: number;
                         comparisonDirection: "greater_than_or_equal";
                         refitEachReplicate: true;
                         extremeReplicateCount: number;
                         confidenceInterval: {
-                            level: 0.95;
                             method: "wilson_score";
+                            level: 0.95;
                             lower: number;
                             upper: number;
                         };
@@ -16560,9 +17449,12 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     };
                     warnings: string[];
                 }[];
+                factorId: string;
+                sampleSize: number;
+                characteristicKind: "other" | "dimensional";
                 failedCandidates: {
-                    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
                     reasonCode: "numerical_fit_failed";
+                    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 }[];
                 sampleDiagnostics: {
                     mean: number;
@@ -16574,28 +17466,23 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 };
                 selectionDecision: {
                     status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-                    methodId: "F7_MODEL_SELECTION_V1";
-                    competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
                     confidence: "low" | "moderate";
                     reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-                    numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                    engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                    proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+                    methodId: "F7_MODEL_SELECTION_V1";
+                    competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+                    numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                    engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                    proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
                 };
             } | undefined;
             distributionApproval?: {
                 confirmed: true;
                 factorId: string;
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 approvedAt: string;
             } | undefined;
         }[];
-        selectedWorksheetNames: string[];
         worksheetOptions: {
-            worksheetName: string;
-            selectionIndex: number;
-            toleranceLoopDescription: string;
-            worksheetKind: "analysis" | "example_or_template";
             source: {
                 summarySheet: "Auto Summary";
                 summaryRow: number;
@@ -16605,6 +17492,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 discoveryMethod: "worksheet_scan";
                 descriptionCell: string;
             };
+            worksheetName: string;
+            toleranceLoopDescription: string;
+            worksheetKind: "analysis" | "example_or_template";
+            selectionIndex: number;
         }[];
         systemSpecification?: {
             status: "available";
@@ -16732,14 +17623,34 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 sourceCell?: string | undefined;
             } | undefined;
         } | undefined;
+        dimensionChainImage?: {
+            status: "available";
+            contentHash: string;
+            worksheetName: string;
+            url: string;
+        } | undefined;
         monteCarloResult?: {
             status: "complete";
+            capability: {
+                status: "available";
+                cpk: number;
+                targetCpk: number;
+                cp: number;
+                lowerCpk: number;
+                upperCpk: number;
+                targetStatus: "meets_target" | "below_target";
+            } | {
+                status: "not_available";
+                targetCpk: number;
+                reason: "zero_variance";
+            };
+            mean: number;
             standardDeviation: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
-            methodId: "F7_MONTE_CARLO_V1";
-            mean: number;
             targetSigmaLevel: number;
+            yield: number;
+            methodId: "F7_MONTE_CARLO_V1";
             iterations: 10000 | 100000;
             runSeed: string;
             correlationMode: "INDEPENDENT";
@@ -16754,7 +17665,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             };
             inSpecCount: number;
             outOfSpecCount: number;
-            yield: number;
             outOfSpecProbability: number;
             ppm: number;
             histogram: {
@@ -16766,29 +17676,16 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 }[];
             };
             normalFit: {
+                mean: number;
                 standardDeviation: number;
                 methodId: "F7_NORMAL_MOMENT_FIT_V1";
-                mean: number;
                 expectedBinCounts: number[];
-            };
-            capability: {
-                status: "available";
-                cp: number;
-                lowerCpk: number;
-                upperCpk: number;
-                cpk: number;
-                targetCpk: number;
-                targetStatus: "meets_target" | "below_target";
-            } | {
-                status: "not_available";
-                reason: "zero_variance";
-                targetCpk: number;
             };
             normalModel: {
                 status: "available";
+                totalDpm: number;
                 lowerTailDpm: number;
                 upperTailDpm: number;
-                totalDpm: number;
                 expectedYield: number;
             } | {
                 status: "not_available";
@@ -16796,101 +17693,51 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             };
             factorManifest: {
                 factorId: string;
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
             }[];
         } | undefined;
     }>;
 }, "strict", z.ZodTypeAny, {
-    contractId: "f7-analysis-result-v1";
     outputClassification: "confidential";
+    contractId: "f7-analysis-result-v1";
     snapshot: {
-        status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
-        workbook: {
-            workbookContentHash: string;
-            fileName: string;
-        };
-        contractId: "f7-analysis-result-v1";
-        outputClassification: "confidential";
         sessionId: string;
+        status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
+        outputClassification: "confidential";
+        contractId: "f7-analysis-result-v1";
+        workbook: {
+            fileName: string;
+            workbookContentHash: string;
+        };
+        selectedWorksheetNames: string[];
         factors: {
             factorCandidate: {
-                standardDeviation: number;
-                workbookContentHash: string;
-                worksheetName: string;
-                tableId: string;
-                sourceRow: number;
-                sourceCells: Record<string, string>;
-                factorCandidateId: string;
                 factorName: string;
-                excelSignedMean: number;
-                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-                lowerSpecLimit: number;
-                upperSpecLimit: number;
-                designNominal: number;
+                worksheetName: string;
+                workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                standardDeviation: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                tableId: string;
+                sourceRow: number;
+                designNominal: number;
+                sourceCells: Record<string, string>;
+                factorCandidateId: string;
+                excelSignedMean: number;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
                 userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
-                longTermSafetyFactor?: number | undefined;
-                sigmaLevel?: number | undefined;
             };
-            sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
-            evidence?: {
-                physicalMean: number;
-                workbookContentHash: string;
-                worksheetName: string;
-                tableId: string;
-                sourceRow: number;
-                sourceCells: Record<string, string>;
-                factorCandidateId: string;
-                factorName: string;
-                longTermSafetyFactor: number;
-                sigmaLevel: number;
-                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-                lowerSpecLimit: number;
-                upperSpecLimit: number;
-                designNominal: number;
-                upperTolerance: number;
-                lowerTolerance: number;
-                factorId: string;
-                unit: string;
-                unitSource: "workbook" | "user_confirmed" | "unspecified";
-                loopCoefficient: 1 | -1;
-                signedContributionMean: number;
-                baselineSampler: {
-                    samplerId: "NORMAL_LOCATION_SCALE_V1";
-                    physicalMean: number;
-                    standardDeviation: number;
-                    support: "REAL";
-                };
-                calculatedMean: number;
-                tolerance: number;
-                oneSigma: number;
-                percentContributionToSigma: number;
-                userAdded?: true | undefined;
-            } | undefined;
-            setup?: {
-                factorCandidateId: string;
-                designNominal: number;
-                upperTolerance: number;
-                lowerTolerance: number;
-                confirmed: true;
-                factorName?: string | undefined;
-                userAdded?: true | undefined;
-                longTermSafetyFactor?: number | undefined;
-                sigmaLevel?: number | undefined;
-                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
-            } | undefined;
             input?: {
                 mode: "MEASURED";
                 dataset?: {
-                    factorId: string;
                     unit: string;
-                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                    sourceReference: string;
-                    importedAt: string;
-                    msaStatus: "unknown" | "available" | "not_available";
+                    contentHash: string;
                     observations: ({
                         value: number;
                         disposition: "included";
@@ -16902,15 +17749,20 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     } | {
                         value: number;
                         confirmed: true;
+                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         disposition: "excluded";
                         originalRow: number;
-                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         operatorReference: string;
                         sequence?: string | undefined;
                         timestamp?: string | undefined;
                         subgroup?: string | undefined;
                         batch?: string | undefined;
                     })[];
+                    factorId: string;
+                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                    sourceReference: string;
+                    importedAt: string;
+                    msaStatus: "unknown" | "available" | "not_available";
                     missingRowCount: number;
                     rejectionSummaries: {
                         reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -16918,67 +17770,113 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
-                    contentHash: string;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | {
+                mode: "BASELINE_ASSUMPTION";
                 baselineSampler: {
+                    standardDeviation: number;
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
-                    standardDeviation: number;
                     support: "REAL";
                 };
-                mode: "BASELINE_ASSUMPTION";
+            } | undefined;
+            evidence?: {
+                unit: string;
+                tolerance: number;
+                factorName: string;
+                worksheetName: string;
+                workbookContentHash: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                oneSigma: number;
+                percentContributionToSigma: number;
+                longTermSafetyFactor: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                tableId: string;
+                sourceRow: number;
+                designNominal: number;
+                sigmaLevel: number;
+                sourceCells: Record<string, string>;
+                physicalMean: number;
+                factorCandidateId: string;
+                factorId: string;
+                unitSource: "workbook" | "user_confirmed" | "unspecified";
+                loopCoefficient: 1 | -1;
+                signedContributionMean: number;
+                baselineSampler: {
+                    standardDeviation: number;
+                    samplerId: "NORMAL_LOCATION_SCALE_V1";
+                    physicalMean: number;
+                    support: "REAL";
+                };
+                calculatedMean: number;
+                userAdded?: true | undefined;
+            } | undefined;
+            sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
+            setup?: {
+                confirmed: true;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                factorCandidateId: string;
+                factorName?: string | undefined;
+                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
             } | undefined;
             datasetValidation?: {
-                status: "ready" | "blocked";
+                status: "blocked" | "ready";
                 blockingIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 advisoryIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 candidateEligibility: {
                     normal: "eligible";
+                    uniform: "eligible_with_boundary_warning";
                     lognormal: "eligible" | "ineligible_nonpositive";
                     weibull: "eligible" | "ineligible_nonpositive";
                     gamma: "eligible" | "ineligible_nonpositive";
-                    uniform: "eligible_with_boundary_warning";
                 };
             } | undefined;
             measurementPasteResult?: {
-                status: "ready" | "blocked";
                 validation: {
-                    status: "ready" | "blocked";
+                    status: "blocked" | "ready";
                     blockingIssues: {
-                        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                         factorId?: string | undefined;
                         rowNumbers?: number[] | undefined;
                     }[];
                     advisoryIssues: {
-                        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                         factorId?: string | undefined;
                         rowNumbers?: number[] | undefined;
                     }[];
                     candidateEligibility: {
                         normal: "eligible";
+                        uniform: "eligible_with_boundary_warning";
                         lognormal: "eligible" | "ineligible_nonpositive";
                         weibull: "eligible" | "ineligible_nonpositive";
                         gamma: "eligible" | "ineligible_nonpositive";
-                        uniform: "eligible_with_boundary_warning";
                     };
                 };
+                status: "blocked" | "ready";
                 factorId: string;
                 dataset?: {
-                    factorId: string;
                     unit: string;
-                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                    sourceReference: string;
-                    importedAt: string;
-                    msaStatus: "unknown" | "available" | "not_available";
+                    contentHash: string;
                     observations: ({
                         value: number;
                         disposition: "included";
@@ -16990,15 +17888,20 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     } | {
                         value: number;
                         confirmed: true;
+                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         disposition: "excluded";
                         originalRow: number;
-                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         operatorReference: string;
                         sequence?: string | undefined;
                         timestamp?: string | undefined;
                         subgroup?: string | undefined;
                         batch?: string | undefined;
                     })[];
+                    factorId: string;
+                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                    sourceReference: string;
+                    importedAt: string;
+                    msaStatus: "unknown" | "available" | "not_available";
                     missingRowCount: number;
                     rejectionSummaries: {
                         reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -17006,15 +17909,15 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
-                    contentHash: string;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | undefined;
             distributionFitResult?: {
-                factorId: string;
-                sampleSize: number;
-                characteristicKind: "dimensional" | "other";
                 candidates: {
-                    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                     parameterCount: number;
                     parameters: Record<string, number>;
@@ -17031,15 +17934,15 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         theoretical: number;
                     }[];
                     bootstrap: {
-                        status: "acceptable" | "weak" | "rejected";
+                        status: "rejected" | "acceptable" | "weak";
                         statisticId: "anderson_darling";
                         observedStatistic: number;
                         comparisonDirection: "greater_than_or_equal";
                         refitEachReplicate: true;
                         extremeReplicateCount: number;
                         confidenceInterval: {
-                            level: 0.95;
                             method: "wilson_score";
+                            level: 0.95;
                             lower: number;
                             upper: number;
                         };
@@ -17052,9 +17955,12 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     };
                     warnings: string[];
                 }[];
+                factorId: string;
+                sampleSize: number;
+                characteristicKind: "other" | "dimensional";
                 failedCandidates: {
-                    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
                     reasonCode: "numerical_fit_failed";
+                    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 }[];
                 sampleDiagnostics: {
                     mean: number;
@@ -17066,28 +17972,23 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 };
                 selectionDecision: {
                     status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-                    methodId: "F7_MODEL_SELECTION_V1";
-                    competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
                     confidence: "low" | "moderate";
                     reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-                    numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                    engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                    proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+                    methodId: "F7_MODEL_SELECTION_V1";
+                    competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+                    numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                    engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                    proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
                 };
             } | undefined;
             distributionApproval?: {
                 confirmed: true;
                 factorId: string;
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 approvedAt: string;
             } | undefined;
         }[];
-        selectedWorksheetNames: string[];
         worksheetOptions: {
-            worksheetName: string;
-            selectionIndex: number;
-            toleranceLoopDescription: string;
-            worksheetKind: "analysis" | "example_or_template";
             source: {
                 summarySheet: "Auto Summary";
                 summaryRow: number;
@@ -17097,6 +17998,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 discoveryMethod: "worksheet_scan";
                 descriptionCell: string;
             };
+            worksheetName: string;
+            toleranceLoopDescription: string;
+            worksheetKind: "analysis" | "example_or_template";
+            selectionIndex: number;
         }[];
         systemSpecification?: {
             status: "available";
@@ -17224,14 +18129,34 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 sourceCell?: string | undefined;
             } | undefined;
         } | undefined;
+        dimensionChainImage?: {
+            status: "available";
+            contentHash: string;
+            worksheetName: string;
+            url: string;
+        } | undefined;
         monteCarloResult?: {
             status: "complete";
+            capability: {
+                status: "available";
+                cpk: number;
+                targetCpk: number;
+                cp: number;
+                lowerCpk: number;
+                upperCpk: number;
+                targetStatus: "meets_target" | "below_target";
+            } | {
+                status: "not_available";
+                targetCpk: number;
+                reason: "zero_variance";
+            };
+            mean: number;
             standardDeviation: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
-            methodId: "F7_MONTE_CARLO_V1";
-            mean: number;
             targetSigmaLevel: number;
+            yield: number;
+            methodId: "F7_MONTE_CARLO_V1";
             iterations: 10000 | 100000;
             runSeed: string;
             correlationMode: "INDEPENDENT";
@@ -17246,7 +18171,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             };
             inSpecCount: number;
             outOfSpecCount: number;
-            yield: number;
             outOfSpecProbability: number;
             ppm: number;
             histogram: {
@@ -17258,29 +18182,16 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 }[];
             };
             normalFit: {
+                mean: number;
                 standardDeviation: number;
                 methodId: "F7_NORMAL_MOMENT_FIT_V1";
-                mean: number;
                 expectedBinCounts: number[];
-            };
-            capability: {
-                status: "available";
-                cp: number;
-                lowerCpk: number;
-                upperCpk: number;
-                cpk: number;
-                targetCpk: number;
-                targetStatus: "meets_target" | "below_target";
-            } | {
-                status: "not_available";
-                reason: "zero_variance";
-                targetCpk: number;
             };
             normalModel: {
                 status: "available";
+                totalDpm: number;
                 lowerTailDpm: number;
                 upperTailDpm: number;
-                totalDpm: number;
                 expectedYield: number;
             } | {
                 status: "not_available";
@@ -17288,101 +18199,51 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             };
             factorManifest: {
                 factorId: string;
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
             }[];
         } | undefined;
     };
 }, {
-    contractId: "f7-analysis-result-v1";
     outputClassification: "confidential";
+    contractId: "f7-analysis-result-v1";
     snapshot: {
-        status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
-        workbook: {
-            workbookContentHash: string;
-            fileName: string;
-        };
-        contractId: "f7-analysis-result-v1";
-        outputClassification: "confidential";
         sessionId: string;
+        status: "worksheet_selection" | "factor_setup" | "measurement_entry" | "phase_1_ready";
+        outputClassification: "confidential";
+        contractId: "f7-analysis-result-v1";
+        workbook: {
+            fileName: string;
+            workbookContentHash: string;
+        };
+        selectedWorksheetNames: string[];
         factors: {
             factorCandidate: {
-                standardDeviation: number;
-                workbookContentHash: string;
-                worksheetName: string;
-                tableId: string;
-                sourceRow: number;
-                sourceCells: Record<string, string>;
-                factorCandidateId: string;
                 factorName: string;
-                excelSignedMean: number;
-                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-                lowerSpecLimit: number;
-                upperSpecLimit: number;
-                designNominal: number;
+                worksheetName: string;
+                workbookContentHash: string;
                 upperTolerance: number;
                 lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                standardDeviation: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                tableId: string;
+                sourceRow: number;
+                designNominal: number;
+                sourceCells: Record<string, string>;
+                factorCandidateId: string;
+                excelSignedMean: number;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
                 userAdded?: true | undefined;
                 workbookUnitEvidence?: string | undefined;
-                longTermSafetyFactor?: number | undefined;
-                sigmaLevel?: number | undefined;
             };
-            sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
-            evidence?: {
-                physicalMean: number;
-                workbookContentHash: string;
-                worksheetName: string;
-                tableId: string;
-                sourceRow: number;
-                sourceCells: Record<string, string>;
-                factorCandidateId: string;
-                factorName: string;
-                longTermSafetyFactor: number;
-                sigmaLevel: number;
-                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
-                lowerSpecLimit: number;
-                upperSpecLimit: number;
-                designNominal: number;
-                upperTolerance: number;
-                lowerTolerance: number;
-                factorId: string;
-                unit: string;
-                unitSource: "workbook" | "user_confirmed" | "unspecified";
-                loopCoefficient: 1 | -1;
-                signedContributionMean: number;
-                baselineSampler: {
-                    samplerId: "NORMAL_LOCATION_SCALE_V1";
-                    physicalMean: number;
-                    standardDeviation: number;
-                    support: "REAL";
-                };
-                calculatedMean: number;
-                tolerance: number;
-                oneSigma: number;
-                percentContributionToSigma: number;
-                userAdded?: true | undefined;
-            } | undefined;
-            setup?: {
-                factorCandidateId: string;
-                designNominal: number;
-                upperTolerance: number;
-                lowerTolerance: number;
-                confirmed: true;
-                factorName?: string | undefined;
-                userAdded?: true | undefined;
-                longTermSafetyFactor?: number | undefined;
-                sigmaLevel?: number | undefined;
-                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
-            } | undefined;
             input?: {
                 mode: "MEASURED";
                 dataset?: {
-                    factorId: string;
                     unit: string;
-                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                    sourceReference: string;
-                    importedAt: string;
-                    msaStatus: "unknown" | "available" | "not_available";
+                    contentHash: string;
                     observations: ({
                         value: number;
                         disposition: "included";
@@ -17394,15 +18255,20 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     } | {
                         value: number;
                         confirmed: true;
+                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         disposition: "excluded";
                         originalRow: number;
-                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         operatorReference: string;
                         sequence?: string | undefined;
                         timestamp?: string | undefined;
                         subgroup?: string | undefined;
                         batch?: string | undefined;
                     })[];
+                    factorId: string;
+                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                    sourceReference: string;
+                    importedAt: string;
+                    msaStatus: "unknown" | "available" | "not_available";
                     missingRowCount: number;
                     rejectionSummaries: {
                         reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -17410,67 +18276,113 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
-                    contentHash: string;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | {
+                mode: "BASELINE_ASSUMPTION";
                 baselineSampler: {
+                    standardDeviation: number;
                     samplerId: "NORMAL_LOCATION_SCALE_V1";
                     physicalMean: number;
-                    standardDeviation: number;
                     support: "REAL";
                 };
-                mode: "BASELINE_ASSUMPTION";
+            } | undefined;
+            evidence?: {
+                unit: string;
+                tolerance: number;
+                factorName: string;
+                worksheetName: string;
+                workbookContentHash: string;
+                upperTolerance: number;
+                lowerTolerance: number;
+                distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
+                oneSigma: number;
+                percentContributionToSigma: number;
+                longTermSafetyFactor: number;
+                lowerSpecLimit: number;
+                upperSpecLimit: number;
+                tableId: string;
+                sourceRow: number;
+                designNominal: number;
+                sigmaLevel: number;
+                sourceCells: Record<string, string>;
+                physicalMean: number;
+                factorCandidateId: string;
+                factorId: string;
+                unitSource: "workbook" | "user_confirmed" | "unspecified";
+                loopCoefficient: 1 | -1;
+                signedContributionMean: number;
+                baselineSampler: {
+                    standardDeviation: number;
+                    samplerId: "NORMAL_LOCATION_SCALE_V1";
+                    physicalMean: number;
+                    support: "REAL";
+                };
+                calculatedMean: number;
+                userAdded?: true | undefined;
+            } | undefined;
+            sourceMode?: "MEASURED" | "BASELINE_ASSUMPTION" | undefined;
+            setup?: {
+                confirmed: true;
+                upperTolerance: number;
+                lowerTolerance: number;
+                designNominal: number;
+                factorCandidateId: string;
+                factorName?: string | undefined;
+                distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+                longTermSafetyFactor?: number | undefined;
+                sigmaLevel?: number | undefined;
+                userAdded?: true | undefined;
             } | undefined;
             datasetValidation?: {
-                status: "ready" | "blocked";
+                status: "blocked" | "ready";
                 blockingIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 advisoryIssues: {
-                    reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                    reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                     factorId?: string | undefined;
                     rowNumbers?: number[] | undefined;
                 }[];
                 candidateEligibility: {
                     normal: "eligible";
+                    uniform: "eligible_with_boundary_warning";
                     lognormal: "eligible" | "ineligible_nonpositive";
                     weibull: "eligible" | "ineligible_nonpositive";
                     gamma: "eligible" | "ineligible_nonpositive";
-                    uniform: "eligible_with_boundary_warning";
                 };
             } | undefined;
             measurementPasteResult?: {
-                status: "ready" | "blocked";
                 validation: {
-                    status: "ready" | "blocked";
+                    status: "blocked" | "ready";
                     blockingIssues: {
-                        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                         factorId?: string | undefined;
                         rowNumbers?: number[] | undefined;
                     }[];
                     advisoryIssues: {
-                        reason: "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "unit_mismatch" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
+                        reason: "unit_mismatch" | "subgroup_too_small" | "ordered_sequence_invalid" | "sample_count_below_minimum" | "exploratory_only" | "fit_uncertainty" | "specification_missing" | "non_finite_measurement" | "duplicate_measurement" | "msa_evidence_missing" | "mixed_batch_conditions" | "outlier_candidate" | "invalid_rows_rejected";
                         factorId?: string | undefined;
                         rowNumbers?: number[] | undefined;
                     }[];
                     candidateEligibility: {
                         normal: "eligible";
+                        uniform: "eligible_with_boundary_warning";
                         lognormal: "eligible" | "ineligible_nonpositive";
                         weibull: "eligible" | "ineligible_nonpositive";
                         gamma: "eligible" | "ineligible_nonpositive";
-                        uniform: "eligible_with_boundary_warning";
                     };
                 };
+                status: "blocked" | "ready";
                 factorId: string;
                 dataset?: {
-                    factorId: string;
                     unit: string;
-                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
-                    sourceReference: string;
-                    importedAt: string;
-                    msaStatus: "unknown" | "available" | "not_available";
+                    contentHash: string;
                     observations: ({
                         value: number;
                         disposition: "included";
@@ -17482,15 +18394,20 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     } | {
                         value: number;
                         confirmed: true;
+                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         disposition: "excluded";
                         originalRow: number;
-                        reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
                         operatorReference: string;
                         sequence?: string | undefined;
                         timestamp?: string | undefined;
                         subgroup?: string | undefined;
                         batch?: string | undefined;
                     })[];
+                    factorId: string;
+                    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+                    sourceReference: string;
+                    importedAt: string;
+                    msaStatus: "unknown" | "available" | "not_available";
                     missingRowCount: number;
                     rejectionSummaries: {
                         reason: "non_finite_value" | "invalid_row" | "missing_value";
@@ -17498,15 +18415,15 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
-                    contentHash: string;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | undefined;
             distributionFitResult?: {
-                factorId: string;
-                sampleSize: number;
-                characteristicKind: "dimensional" | "other";
                 candidates: {
-                    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                     modelSpecification: "normal_location_scale" | "lognormal_location_zero" | "lognormal_location_free" | "weibull_location_zero" | "weibull_location_free" | "gamma_location_zero" | "gamma_location_free" | "uniform_boundary_mle";
                     parameterCount: number;
                     parameters: Record<string, number>;
@@ -17523,15 +18440,15 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                         theoretical: number;
                     }[];
                     bootstrap: {
-                        status: "acceptable" | "weak" | "rejected";
+                        status: "rejected" | "acceptable" | "weak";
                         statisticId: "anderson_darling";
                         observedStatistic: number;
                         comparisonDirection: "greater_than_or_equal";
                         refitEachReplicate: true;
                         extremeReplicateCount: number;
                         confidenceInterval: {
-                            level: 0.95;
                             method: "wilson_score";
+                            level: 0.95;
                             lower: number;
                             upper: number;
                         };
@@ -17544,9 +18461,12 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     };
                     warnings: string[];
                 }[];
+                factorId: string;
+                sampleSize: number;
+                characteristicKind: "other" | "dimensional";
                 failedCandidates: {
-                    family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
                     reasonCode: "numerical_fit_failed";
+                    family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 }[];
                 sampleDiagnostics: {
                     mean: number;
@@ -17558,28 +18478,23 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 };
                 selectionDecision: {
                     status: "unique_preference" | "no_unique_preference" | "no_acceptable_model" | "withheld_candidate_failures";
-                    methodId: "F7_MODEL_SELECTION_V1";
-                    competitiveFamilies: ("normal" | "lognormal" | "weibull" | "gamma" | "uniform")[];
                     confidence: "low" | "moderate";
                     reasonCodes: ("SINGLE_ACCEPTABLE_COMPETITOR" | "MULTIPLE_COMPETITIVE_MODELS" | "NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT" | "SMALL_SAMPLE_UNCERTAINTY" | "NO_ACCEPTABLE_MODEL" | "CANDIDATE_FIT_FAILURES")[];
-                    numericBestFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                    engineeringDefaultFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
-                    proposedFinalFamily?: "normal" | "lognormal" | "weibull" | "gamma" | "uniform" | undefined;
+                    methodId: "F7_MODEL_SELECTION_V1";
+                    competitiveFamilies: ("normal" | "uniform" | "lognormal" | "weibull" | "gamma")[];
+                    numericBestFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                    engineeringDefaultFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
+                    proposedFinalFamily?: "normal" | "uniform" | "lognormal" | "weibull" | "gamma" | undefined;
                 };
             } | undefined;
             distributionApproval?: {
                 confirmed: true;
                 factorId: string;
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 approvedAt: string;
             } | undefined;
         }[];
-        selectedWorksheetNames: string[];
         worksheetOptions: {
-            worksheetName: string;
-            selectionIndex: number;
-            toleranceLoopDescription: string;
-            worksheetKind: "analysis" | "example_or_template";
             source: {
                 summarySheet: "Auto Summary";
                 summaryRow: number;
@@ -17589,6 +18504,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 discoveryMethod: "worksheet_scan";
                 descriptionCell: string;
             };
+            worksheetName: string;
+            toleranceLoopDescription: string;
+            worksheetKind: "analysis" | "example_or_template";
+            selectionIndex: number;
         }[];
         systemSpecification?: {
             status: "available";
@@ -17716,14 +18635,34 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 sourceCell?: string | undefined;
             } | undefined;
         } | undefined;
+        dimensionChainImage?: {
+            status: "available";
+            contentHash: string;
+            worksheetName: string;
+            url: string;
+        } | undefined;
         monteCarloResult?: {
             status: "complete";
+            capability: {
+                status: "available";
+                cpk: number;
+                targetCpk: number;
+                cp: number;
+                lowerCpk: number;
+                upperCpk: number;
+                targetStatus: "meets_target" | "below_target";
+            } | {
+                status: "not_available";
+                targetCpk: number;
+                reason: "zero_variance";
+            };
+            mean: number;
             standardDeviation: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
-            methodId: "F7_MONTE_CARLO_V1";
-            mean: number;
             targetSigmaLevel: number;
+            yield: number;
+            methodId: "F7_MONTE_CARLO_V1";
             iterations: 10000 | 100000;
             runSeed: string;
             correlationMode: "INDEPENDENT";
@@ -17738,7 +18677,6 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             };
             inSpecCount: number;
             outOfSpecCount: number;
-            yield: number;
             outOfSpecProbability: number;
             ppm: number;
             histogram: {
@@ -17750,29 +18688,16 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 }[];
             };
             normalFit: {
+                mean: number;
                 standardDeviation: number;
                 methodId: "F7_NORMAL_MOMENT_FIT_V1";
-                mean: number;
                 expectedBinCounts: number[];
-            };
-            capability: {
-                status: "available";
-                cp: number;
-                lowerCpk: number;
-                upperCpk: number;
-                cpk: number;
-                targetCpk: number;
-                targetStatus: "meets_target" | "below_target";
-            } | {
-                status: "not_available";
-                reason: "zero_variance";
-                targetCpk: number;
             };
             normalModel: {
                 status: "available";
+                totalDpm: number;
                 lowerTailDpm: number;
                 upperTailDpm: number;
-                totalDpm: number;
                 expectedYield: number;
             } | {
                 status: "not_available";
@@ -17780,7 +18705,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             };
             factorManifest: {
                 factorId: string;
-                family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
+                family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
                 sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
             }[];
         } | undefined;
@@ -17804,34 +18729,34 @@ export declare const f7WorksheetConfirmRouteRequestSchema: z.ZodObject<{
         confirmed: z.ZodLiteral<true>;
     }, "strict", z.ZodTypeAny, {
         workbookContentHash: string;
-        confirmed: true;
         selectedWorksheetNames: string[];
+        confirmed: true;
     }, {
         workbookContentHash: string;
-        confirmed: true;
         selectedWorksheetNames: string[];
+        confirmed: true;
     }>, {
         workbookContentHash: string;
-        confirmed: true;
         selectedWorksheetNames: string[];
+        confirmed: true;
     }, {
         workbookContentHash: string;
-        confirmed: true;
         selectedWorksheetNames: string[];
+        confirmed: true;
     }>;
 }, "strict", z.ZodTypeAny, {
     sessionId: string;
     confirmation: {
         workbookContentHash: string;
-        confirmed: true;
         selectedWorksheetNames: string[];
+        confirmed: true;
     };
 }, {
     sessionId: string;
     confirmation: {
         workbookContentHash: string;
-        confirmed: true;
         selectedWorksheetNames: string[];
+        confirmed: true;
     };
 }>;
 export declare const f7FactorConfirmRouteRequestSchema: z.ZodEffects<z.ZodObject<{
@@ -17848,49 +18773,49 @@ export declare const f7FactorConfirmRouteRequestSchema: z.ZodEffects<z.ZodObject
         factorName: z.ZodOptional<z.ZodString>;
         userAdded: z.ZodOptional<z.ZodLiteral<true>>;
     }, "strict", z.ZodTypeAny, {
-        factorCandidateId: string;
-        designNominal: number;
+        confirmed: true;
         upperTolerance: number;
         lowerTolerance: number;
-        confirmed: true;
+        designNominal: number;
+        factorCandidateId: string;
         factorName?: string | undefined;
-        userAdded?: true | undefined;
+        distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
         longTermSafetyFactor?: number | undefined;
         sigmaLevel?: number | undefined;
-        distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+        userAdded?: true | undefined;
     }, {
-        factorCandidateId: string;
-        designNominal: number;
+        confirmed: true;
         upperTolerance: number;
         lowerTolerance: number;
-        confirmed: true;
+        designNominal: number;
+        factorCandidateId: string;
         factorName?: string | undefined;
-        userAdded?: true | undefined;
+        distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
         longTermSafetyFactor?: number | undefined;
         sigmaLevel?: number | undefined;
-        distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+        userAdded?: true | undefined;
     }>, {
-        factorCandidateId: string;
-        designNominal: number;
+        confirmed: true;
         upperTolerance: number;
         lowerTolerance: number;
-        confirmed: true;
+        designNominal: number;
+        factorCandidateId: string;
         factorName?: string | undefined;
-        userAdded?: true | undefined;
+        distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
         longTermSafetyFactor?: number | undefined;
         sigmaLevel?: number | undefined;
-        distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+        userAdded?: true | undefined;
     }, {
-        factorCandidateId: string;
-        designNominal: number;
+        confirmed: true;
         upperTolerance: number;
         lowerTolerance: number;
-        confirmed: true;
+        designNominal: number;
+        factorCandidateId: string;
         factorName?: string | undefined;
-        userAdded?: true | undefined;
+        distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
         longTermSafetyFactor?: number | undefined;
         sigmaLevel?: number | undefined;
-        distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+        userAdded?: true | undefined;
     }>, "many">;
     systemSpecification: z.ZodOptional<z.ZodObject<{
         lowerSpecLimit: z.ZodNumber;
@@ -17908,16 +18833,16 @@ export declare const f7FactorConfirmRouteRequestSchema: z.ZodEffects<z.ZodObject
 }, "strict", z.ZodTypeAny, {
     sessionId: string;
     confirmations: {
-        factorCandidateId: string;
-        designNominal: number;
+        confirmed: true;
         upperTolerance: number;
         lowerTolerance: number;
-        confirmed: true;
+        designNominal: number;
+        factorCandidateId: string;
         factorName?: string | undefined;
-        userAdded?: true | undefined;
+        distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
         longTermSafetyFactor?: number | undefined;
         sigmaLevel?: number | undefined;
-        distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+        userAdded?: true | undefined;
     }[];
     systemSpecification?: {
         lowerSpecLimit: number;
@@ -17927,16 +18852,16 @@ export declare const f7FactorConfirmRouteRequestSchema: z.ZodEffects<z.ZodObject
 }, {
     sessionId: string;
     confirmations: {
-        factorCandidateId: string;
-        designNominal: number;
+        confirmed: true;
         upperTolerance: number;
         lowerTolerance: number;
-        confirmed: true;
+        designNominal: number;
+        factorCandidateId: string;
         factorName?: string | undefined;
-        userAdded?: true | undefined;
+        distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
         longTermSafetyFactor?: number | undefined;
         sigmaLevel?: number | undefined;
-        distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+        userAdded?: true | undefined;
     }[];
     systemSpecification?: {
         lowerSpecLimit: number;
@@ -17946,16 +18871,16 @@ export declare const f7FactorConfirmRouteRequestSchema: z.ZodEffects<z.ZodObject
 }>, {
     sessionId: string;
     confirmations: {
-        factorCandidateId: string;
-        designNominal: number;
+        confirmed: true;
         upperTolerance: number;
         lowerTolerance: number;
-        confirmed: true;
+        designNominal: number;
+        factorCandidateId: string;
         factorName?: string | undefined;
-        userAdded?: true | undefined;
+        distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
         longTermSafetyFactor?: number | undefined;
         sigmaLevel?: number | undefined;
-        distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+        userAdded?: true | undefined;
     }[];
     systemSpecification?: {
         lowerSpecLimit: number;
@@ -17965,16 +18890,16 @@ export declare const f7FactorConfirmRouteRequestSchema: z.ZodEffects<z.ZodObject
 }, {
     sessionId: string;
     confirmations: {
-        factorCandidateId: string;
-        designNominal: number;
+        confirmed: true;
         upperTolerance: number;
         lowerTolerance: number;
-        confirmed: true;
+        designNominal: number;
+        factorCandidateId: string;
         factorName?: string | undefined;
-        userAdded?: true | undefined;
+        distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
         longTermSafetyFactor?: number | undefined;
         sigmaLevel?: number | undefined;
-        distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+        userAdded?: true | undefined;
     }[];
     systemSpecification?: {
         lowerSpecLimit: number;
@@ -17994,27 +18919,27 @@ export declare const f7FactorModeRouteRequestSchema: z.ZodObject<{
         sessionId: z.ZodString;
         mode: z.ZodEnum<["MEASURED", "BASELINE_ASSUMPTION"]>;
     }, "strict", z.ZodTypeAny, {
-        mode: "MEASURED" | "BASELINE_ASSUMPTION";
         sessionId: string;
+        mode: "MEASURED" | "BASELINE_ASSUMPTION";
     }, {
-        mode: "MEASURED" | "BASELINE_ASSUMPTION";
         sessionId: string;
+        mode: "MEASURED" | "BASELINE_ASSUMPTION";
     }>;
 }, "strict", z.ZodTypeAny, {
     params: {
         factorId: string;
     };
     body: {
-        mode: "MEASURED" | "BASELINE_ASSUMPTION";
         sessionId: string;
+        mode: "MEASURED" | "BASELINE_ASSUMPTION";
     };
 }, {
     params: {
         factorId: string;
     };
     body: {
-        mode: "MEASURED" | "BASELINE_ASSUMPTION";
         sessionId: string;
+        mode: "MEASURED" | "BASELINE_ASSUMPTION";
     };
 }>;
 export declare const f7MeasurementPasteRouteRequestSchema: z.ZodObject<{
@@ -18025,46 +18950,92 @@ export declare const f7MeasurementPasteRouteRequestSchema: z.ZodObject<{
     }, {
         factorId: string;
     }>;
-    body: z.ZodObject<{
+    body: z.ZodEffects<z.ZodObject<{
         sessionId: z.ZodString;
         structure: z.ZodEnum<["RATIONAL_SUBGROUP", "ORDERED_INDIVIDUALS", "UNORDERED_SAMPLE"]>;
+        rationalSubgroupConfig: z.ZodOptional<z.ZodObject<{
+            subgroupSize: z.ZodNumber;
+            estimator: z.ZodEnum<["RANGE_D2", "S_C4"]>;
+        }, "strict", z.ZodTypeAny, {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        }, {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        }>>;
         sourceReference: z.ZodString;
         msaStatus: z.ZodEnum<["available", "not_available", "unknown"]>;
         text: z.ZodString;
     }, "strict", z.ZodTypeAny, {
+        sessionId: string;
+        text: string;
         structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
         sourceReference: string;
         msaStatus: "unknown" | "available" | "not_available";
-        sessionId: string;
-        text: string;
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
     }, {
+        sessionId: string;
+        text: string;
         structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
         sourceReference: string;
         msaStatus: "unknown" | "available" | "not_available";
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
+    }>, {
         sessionId: string;
         text: string;
+        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+        sourceReference: string;
+        msaStatus: "unknown" | "available" | "not_available";
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
+    }, {
+        sessionId: string;
+        text: string;
+        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+        sourceReference: string;
+        msaStatus: "unknown" | "available" | "not_available";
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
     }>;
 }, "strict", z.ZodTypeAny, {
     params: {
         factorId: string;
     };
     body: {
+        sessionId: string;
+        text: string;
         structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
         sourceReference: string;
         msaStatus: "unknown" | "available" | "not_available";
-        sessionId: string;
-        text: string;
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
     };
 }, {
     params: {
         factorId: string;
     };
     body: {
+        sessionId: string;
+        text: string;
         structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
         sourceReference: string;
         msaStatus: "unknown" | "available" | "not_available";
-        sessionId: string;
-        text: string;
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
     };
 }>;
 export declare const f7MeasurementDispositionRouteRequestSchema: z.ZodObject<{
@@ -18083,43 +19054,43 @@ export declare const f7MeasurementDispositionRouteRequestSchema: z.ZodObject<{
         operatorReference: z.ZodString;
         confirmed: z.ZodLiteral<true>;
     }, "strict", z.ZodTypeAny, {
+        sessionId: string;
         confirmed: true;
+        action: "EXCLUDE" | "RESTORE";
         reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
         operatorReference: string;
         rowNumbers: number[];
-        sessionId: string;
-        action: "EXCLUDE" | "RESTORE";
     }, {
+        sessionId: string;
         confirmed: true;
+        action: "EXCLUDE" | "RESTORE";
         reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
         operatorReference: string;
         rowNumbers: number[];
-        sessionId: string;
-        action: "EXCLUDE" | "RESTORE";
     }>;
 }, "strict", z.ZodTypeAny, {
     params: {
         factorId: string;
     };
     body: {
+        sessionId: string;
         confirmed: true;
+        action: "EXCLUDE" | "RESTORE";
         reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
         operatorReference: string;
         rowNumbers: number[];
-        sessionId: string;
-        action: "EXCLUDE" | "RESTORE";
     };
 }, {
     params: {
         factorId: string;
     };
     body: {
+        sessionId: string;
         confirmed: true;
+        action: "EXCLUDE" | "RESTORE";
         reason: "OUTLIER" | "MEASUREMENT_SYSTEM_ERROR" | "TRANSCRIPTION_ERROR" | "PROCESS_INTERRUPTION" | "OTHER";
         operatorReference: string;
         rowNumbers: number[];
-        sessionId: string;
-        action: "EXCLUDE" | "RESTORE";
     };
 }>;
 export declare const f7DistributionFitRouteRequestSchema: z.ZodObject<{
@@ -18165,31 +19136,31 @@ export declare const f7DistributionApprovalRouteRequestSchema: z.ZodObject<{
         family: z.ZodEnum<["normal", "lognormal", "weibull", "gamma", "uniform"]>;
         confirmed: z.ZodLiteral<true>;
     }, "strict", z.ZodTypeAny, {
-        confirmed: true;
-        family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
         sessionId: string;
+        confirmed: true;
+        family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
     }, {
-        confirmed: true;
-        family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
         sessionId: string;
+        confirmed: true;
+        family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
     }>;
 }, "strict", z.ZodTypeAny, {
     params: {
         factorId: string;
     };
     body: {
-        confirmed: true;
-        family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
         sessionId: string;
+        confirmed: true;
+        family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
     };
 }, {
     params: {
         factorId: string;
     };
     body: {
-        confirmed: true;
-        family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform";
         sessionId: string;
+        confirmed: true;
+        family: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
     };
 }>;
 export declare const f7MonteCarloRunRouteRequestSchema: z.ZodEffects<z.ZodObject<{
@@ -18202,61 +19173,61 @@ export declare const f7MonteCarloRunRouteRequestSchema: z.ZodEffects<z.ZodObject
         runSeed: z.ZodString;
         correlationMode: z.ZodLiteral<"INDEPENDENT">;
     }, "strict", z.ZodTypeAny, {
+        sessionId: string;
         lowerSpecLimit: number;
         upperSpecLimit: number;
         targetSigmaLevel: number;
         iterations: 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
-        sessionId: string;
     }, {
+        sessionId: string;
         lowerSpecLimit: number;
         upperSpecLimit: number;
         targetSigmaLevel: number;
         iterations: 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
-        sessionId: string;
     }>;
 }, "strict", z.ZodTypeAny, {
     body: {
+        sessionId: string;
         lowerSpecLimit: number;
         upperSpecLimit: number;
         targetSigmaLevel: number;
         iterations: 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
-        sessionId: string;
     };
 }, {
     body: {
+        sessionId: string;
         lowerSpecLimit: number;
         upperSpecLimit: number;
         targetSigmaLevel: number;
         iterations: 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
-        sessionId: string;
     };
 }>, {
     body: {
+        sessionId: string;
         lowerSpecLimit: number;
         upperSpecLimit: number;
         targetSigmaLevel: number;
         iterations: 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
-        sessionId: string;
     };
 }, {
     body: {
+        sessionId: string;
         lowerSpecLimit: number;
         upperSpecLimit: number;
         targetSigmaLevel: number;
         iterations: 10000 | 100000;
         runSeed: string;
         correlationMode: "INDEPENDENT";
-        sessionId: string;
     };
 }>;
 export declare const f7ReportGenerateRouteRequestSchema: z.ZodObject<{
@@ -18289,6 +19260,8 @@ export type F7ToleranceDistribution = z.infer<typeof f7ToleranceDistributionSche
 export type F7LoopCoefficient = z.infer<typeof f7LoopCoefficientSchema>;
 export type F7FactorSourceMode = z.infer<typeof f7FactorSourceModeSchema>;
 export type F7MeasurementStructure = z.infer<typeof f7MeasurementStructureSchema>;
+export type F7RationalSubgroupEstimator = z.infer<typeof f7RationalSubgroupEstimatorSchema>;
+export type F7RationalSubgroupConfig = z.infer<typeof f7RationalSubgroupConfigSchema>;
 export type F7MsaStatus = z.infer<typeof f7MsaStatusSchema>;
 export type F7ExclusionReason = z.infer<typeof f7ExclusionReasonSchema>;
 export type F7FactorInput = z.infer<typeof f7FactorInputSchema>;
@@ -18319,6 +19292,7 @@ export type F7ReportSpecificationSourceCells = z.infer<typeof f7ReportSpecificat
 export type F7ReportSpecificationInputOrigins = z.infer<typeof f7ReportSpecificationInputOriginsSchema>;
 export type F7ReportMethodIds = z.infer<typeof f7ReportMethodIdsSchema>;
 export type F7ReportEvidence = z.infer<typeof f7ReportEvidenceSchema>;
+export type F7ReportAnalysis = z.infer<typeof f7ReportAnalysisSchema>;
 export type F7ReportProjection = z.infer<typeof f7ReportProjectionSchema>;
 export type F7WorkbookImportRequest = z.infer<typeof f7WorkbookImportRequestSchema>;
 export type F7MeasurementPasteRequest = z.infer<typeof f7MeasurementPasteRequestSchema>;
@@ -18369,5 +19343,9 @@ export interface F7SessionService {
         sessionId: string;
     }): F7ReportProjection;
     getSession(sessionId: string): F7SessionSnapshot;
+    readDimensionChainImage(sessionId: string): {
+        readonly mediaType: "image/png" | "image/jpeg";
+        readonly bytes: Uint8Array;
+    };
 }
 //# sourceMappingURL=f7-contracts.d.ts.map

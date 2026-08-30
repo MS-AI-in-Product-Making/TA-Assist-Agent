@@ -98,6 +98,15 @@ export const f7MeasurementStructureSchema = z.enum([
   "UNORDERED_SAMPLE",
 ]);
 
+export const f7RationalSubgroupEstimatorSchema = z.enum(["RANGE_D2", "S_C4"]);
+
+export const f7RationalSubgroupConfigSchema = z
+  .object({
+    subgroupSize: z.number().int().min(2).max(25),
+    estimator: f7RationalSubgroupEstimatorSchema,
+  })
+  .strict();
+
 export const f7MsaStatusSchema = z.enum(["available", "not_available", "unknown"]);
 
 const editableFactorSpecificationFields = {
@@ -361,6 +370,7 @@ export const f7MeasurementDatasetSchema = z
     factorId: sha256LowerSchema,
     unit: z.string().trim().min(1),
     structure: f7MeasurementStructureSchema,
+    rationalSubgroupConfig: f7RationalSubgroupConfigSchema.optional(),
     sourceReference: z.string().min(1),
     importedAt: isoDateTimeSchema,
     msaStatus: f7MsaStatusSchema,
@@ -1456,6 +1466,37 @@ export const f7ReportEvidenceSchema = z
     }
   });
 
+const f7ReportTaMetricsSchema = z.object({
+  mean: finiteNumberSchema,
+  standardDeviation: finitePositiveNumberSchema,
+  cp: finiteNumberSchema,
+  cpk: finiteNumberSchema,
+}).strict();
+
+export const f7ReportAnalysisSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("available"),
+    provenance: z.object({
+      knowledgeBaseVersion: z.literal("v1"),
+      ruleId: z.literal("default-cpk-target"),
+      threshold: finitePositiveNumberSchema,
+      applicability: z.string().min(1),
+    }).strict(),
+    comparison: z.object({
+      setup: f7ReportTaMetricsSchema,
+      monteCarlo: f7ReportTaMetricsSchema,
+    }).strict(),
+    targetAssessment: z.string().min(1),
+    interpretations: z.array(z.string().min(1)).min(1),
+    optimizationDirections: z.array(z.string().min(1)).min(1),
+  }).strict(),
+  z.object({
+    status: z.literal("unavailable"),
+    reason: z.string().min(1),
+    optimizationDirections: z.array(z.string().min(1)),
+  }).strict(),
+]);
+
 export const f7ReportProjectionSchema = z
   .object({
     contractId: z.literal("f7-report-v1"),
@@ -1467,6 +1508,7 @@ export const f7ReportProjectionSchema = z
     summary: f7ReportSummarySchema,
     simulation: f7MonteCarloResultSchema,
     factors: z.array(f7ReportFactorSchema).min(1),
+    analysis: f7ReportAnalysisSchema.optional(),
     evidence: f7ReportEvidenceSchema,
     markdown: z.string().min(1),
   })
@@ -1755,6 +1797,12 @@ export const f7SessionSnapshotSchema = z
       .strict(),
     selectedWorksheetNames: z.array(z.string().min(1)),
     worksheetOptions: z.array(f7WorksheetOptionSchema).min(1),
+    dimensionChainImage: z.object({
+      status: z.literal("available"),
+      worksheetName: z.string().min(1),
+      contentHash: sha256LowerSchema,
+      url: z.string().regex(/^\/f7\/session\/[^/]+\/dimension-chain-image$/),
+    }).strict().optional(),
     systemSpecification: worksheetSystemSpecificationSchema.optional(),
     factors: z.array(f7SessionFactorStateSchema),
     monteCarloResult: f7MonteCarloResultSchema.optional(),
@@ -1796,11 +1844,21 @@ export const f7MeasurementPasteRequestSchema = z
     factorId: sha256LowerSchema,
     unit: z.string().trim().min(1),
     structure: f7MeasurementStructureSchema,
+    rationalSubgroupConfig: f7RationalSubgroupConfigSchema.optional(),
     sourceReference: z.string().min(1),
     msaStatus: f7MsaStatusSchema,
     text: z.string().min(1).max(1024 * 1024),
   })
-  .strict();
+  .strict()
+  .superRefine((request, context) => {
+    if ((request.structure === "RATIONAL_SUBGROUP") === (request.rationalSubgroupConfig === undefined)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "rationalSubgroupConfig must be provided only for RATIONAL_SUBGROUP",
+        path: ["rationalSubgroupConfig"],
+      });
+    }
+  });
 
 export const f7MeasurementDispositionActionSchema = z.enum(["EXCLUDE", "RESTORE"]);
 
@@ -1886,11 +1944,21 @@ export const f7MeasurementPasteRouteRequestSchema = z
       .object({
         sessionId: z.string().min(1),
         structure: f7MeasurementStructureSchema,
+        rationalSubgroupConfig: f7RationalSubgroupConfigSchema.optional(),
         sourceReference: z.string().min(1),
         msaStatus: f7MsaStatusSchema,
         text: z.string().min(1).max(1024 * 1024),
       })
-      .strict(),
+      .strict()
+      .superRefine((body, context) => {
+        if ((body.structure === "RATIONAL_SUBGROUP") === (body.rationalSubgroupConfig === undefined)) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "rationalSubgroupConfig must be provided only for RATIONAL_SUBGROUP",
+            path: ["rationalSubgroupConfig"],
+          });
+        }
+      }),
   })
   .strict();
 
@@ -1961,6 +2029,8 @@ export type F7ToleranceDistribution = z.infer<typeof f7ToleranceDistributionSche
 export type F7LoopCoefficient = z.infer<typeof f7LoopCoefficientSchema>;
 export type F7FactorSourceMode = z.infer<typeof f7FactorSourceModeSchema>;
 export type F7MeasurementStructure = z.infer<typeof f7MeasurementStructureSchema>;
+export type F7RationalSubgroupEstimator = z.infer<typeof f7RationalSubgroupEstimatorSchema>;
+export type F7RationalSubgroupConfig = z.infer<typeof f7RationalSubgroupConfigSchema>;
 export type F7MsaStatus = z.infer<typeof f7MsaStatusSchema>;
 export type F7ExclusionReason = z.infer<typeof f7ExclusionReasonSchema>;
 export type F7FactorInput = z.infer<typeof f7FactorInputSchema>;
@@ -1991,6 +2061,7 @@ export type F7ReportSpecificationSourceCells = z.infer<typeof f7ReportSpecificat
 export type F7ReportSpecificationInputOrigins = z.infer<typeof f7ReportSpecificationInputOriginsSchema>;
 export type F7ReportMethodIds = z.infer<typeof f7ReportMethodIdsSchema>;
 export type F7ReportEvidence = z.infer<typeof f7ReportEvidenceSchema>;
+export type F7ReportAnalysis = z.infer<typeof f7ReportAnalysisSchema>;
 export type F7ReportProjection = z.infer<typeof f7ReportProjectionSchema>;
 export type F7WorkbookImportRequest = z.infer<typeof f7WorkbookImportRequestSchema>;
 export type F7MeasurementPasteRequest = z.infer<typeof f7MeasurementPasteRequestSchema>;
@@ -2021,4 +2092,8 @@ export interface F7SessionService {
   runMonteCarlo(request: F7MonteCarloRunRouteRequest["body"]): F7SessionSnapshot;
   generateReport(request: { sessionId: string }): F7ReportProjection;
   getSession(sessionId: string): F7SessionSnapshot;
+  readDimensionChainImage(sessionId: string): {
+    readonly mediaType: "image/png" | "image/jpeg";
+    readonly bytes: Uint8Array;
+  };
 }

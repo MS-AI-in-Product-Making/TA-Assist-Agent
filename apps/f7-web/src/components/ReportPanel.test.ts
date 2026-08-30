@@ -107,6 +107,33 @@ function createReport(
       approvedDistribution: "normal",
       sourceReferences: ["Analysis-A!A2", "clipboard-run-1"],
     }],
+    analysis: notEvaluable
+      ? {
+          status: "unavailable",
+          reason: "TA comparison is unavailable because Monte Carlo capability is not evaluable.",
+          optimizationDirections: ["Resolve variation evidence and rerun Monte Carlo."],
+        }
+      : {
+          status: "available",
+          provenance: {
+            knowledgeBaseVersion: "v1",
+            ruleId: "default-cpk-target",
+            threshold: 1.33,
+            applicability: "public demo process capability",
+          },
+          comparison: {
+            setup: { mean: 0, standardDeviation: 0.08, cp: 2.083333, cpk: 2.083333 },
+            monteCarlo: {
+              mean: simulation.mean,
+              standardDeviation,
+              cp: capability.status === "available" ? capability.cp : 0,
+              cpk: capability.status === "available" ? capability.cpk : 0,
+            },
+          },
+          targetAssessment: "Monte Carlo Cpk 1.667 meets the F0 default target of 1.33.",
+          interpretations: ["Measured variation is wider than the Factor Setup assumption."],
+          optimizationDirections: ["Prioritize reducing and stabilizing measured within-factor variation."],
+        },
     evidence: {
       workbookContentHash: WORKBOOK_HASH,
       worksheetName: "Analysis-A",
@@ -133,17 +160,8 @@ function createReport(
   };
 }
 
-const histogramStub = {
-  name: "MonteCarloHistogram",
-  props: ["result"],
-  template: "<div data-histogram-stub />",
-};
-
 function mountReport(report = createReport()) {
-  return mount(ReportPanel, {
-    props: { report },
-    global: { stubs: { MonteCarloHistogram: histogramStub } },
-  });
+  return mount(ReportPanel, { props: { report } });
 }
 
 function readBlob(blob: Blob): Promise<string> {
@@ -181,48 +199,51 @@ describe("ReportPanel", () => {
     expect(banner.attributes("role")).toBe("status");
   });
 
-  it("renders governed metrics and passes the report simulation to the histogram unchanged", () => {
-    const report = createReport();
-    const wrapper = mountReport(report);
-    const metrics = wrapper.get("[data-report-metrics]");
-
-    expect(metrics.text()).toContain("99.97%");
-    expect(metrics.text()).toContain("Std. deviation");
-    expect(metrics.text()).toContain("1.666667");
-    expect(metrics.text()).toContain("Target Cpk");
-    expect(metrics.text()).toContain("300");
-    expect(wrapper.getComponent(histogramStub).props("result")).toBe(report.simulation);
-  });
-
-  it("uses scientific notation instead of rounding tiny non-zero metrics or boundary percentages", () => {
-    const report = createReport();
-    report.summary.standardDeviation = 0.000000004321;
-    report.summary.ppm = 0.000000000987;
-    report.summary.yield = 0.999999999999;
-    const wrapper = mountReport(report);
-    const metrics = wrapper.get("[data-report-metrics]").text();
-
-    expect(metrics).toContain("4.32e-9");
-    expect(metrics).toContain("9.87e-10");
-    expect(metrics).toContain("100% - 1e-10%");
-    expect(metrics).not.toMatch(/Std\. deviation\s*0(?:\D|$)/);
-    expect(metrics).not.toMatch(/Observed PPM\s*0(?:\D|$)/);
-  });
-
-  it("omits Cp and Cpk values when capability is not evaluable but shows target and reason", () => {
-    const wrapper = mountReport(createReport("NOT_EVALUABLE"));
-    const metrics = wrapper.get("[data-report-metrics]");
-
-    expect(metrics.find("[data-metric-cp]").exists()).toBe(false);
-    expect(metrics.find("[data-metric-cpk]").exists()).toBe(false);
-    expect(metrics.text()).toContain("Target Cpk");
-    expect(metrics.text()).toContain("Not evaluable");
-    expect(metrics.text()).toContain("Zero variance");
-  });
-
-  it("renders simulation, factor, and closed evidence details", () => {
+  it("does not repeat the Monte Carlo histogram or percentile summary", () => {
     const wrapper = mountReport();
-    const text = wrapper.text();
+
+    expect(wrapper.find(".monte-carlo-histogram").exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("P0.135");
+    expect(wrapper.text()).not.toContain("P99.865");
+  });
+
+  it("leads with the Setup versus Monte Carlo comparison and F0 optimization guidance", () => {
+    const wrapper = mountReport();
+    const comparison = wrapper.get("[data-report-ta-comparison]");
+    const guidance = wrapper.get("[data-report-f0-guidance]");
+
+    expect(comparison.text()).toContain("Factor Setup assumption");
+    expect(comparison.text()).toContain("Measured-data Monte Carlo");
+    expect(comparison.text()).toContain("Mean");
+    expect(comparison.text()).toContain("Standard deviation");
+    expect(comparison.text()).toContain("Cp");
+    expect(comparison.text()).toContain("Cpk");
+    expect(guidance.text()).toContain("F0 v1 / default-cpk-target");
+    expect(guidance.text()).toContain("Measured variation is wider");
+    expect(guidance.text()).toContain("Prioritize reducing and stabilizing");
+  });
+
+  it("uses scientific notation instead of rounding a tiny non-zero comparison value", () => {
+    const report = createReport();
+    if (report.analysis?.status !== "available") throw new Error("expected available analysis");
+    report.analysis.comparison.setup.mean = 0.000000004321;
+    const wrapper = mountReport(report);
+    const comparison = wrapper.get("[data-report-ta-comparison]").text();
+
+    expect(comparison).toContain("4.32e-9");
+  });
+
+  it("shows the governed reason and recovery direction when analysis is not evaluable", () => {
+    const wrapper = mountReport(createReport("NOT_EVALUABLE"));
+    const unavailable = wrapper.get("[data-report-analysis-unavailable]");
+
+    expect(wrapper.find("[data-report-ta-comparison]").exists()).toBe(false);
+    expect(unavailable.text()).toContain("not evaluable");
+    expect(unavailable.text()).toContain("Resolve variation evidence");
+  });
+
+  it("renders the closed evidence details", () => {
+    const wrapper = mountReport();
     const details = wrapper.get("details[data-report-evidence]");
     const evidenceRows = details.findAll(".evidence-list > div");
     const worksheetValue = evidenceRows.find((row) => row.get("dt").text() === "Worksheet")?.get("dd");
@@ -230,16 +251,6 @@ describe("ReportPanel", () => {
       .find((row) => row.get("dt").text() === "Specification source cells")
       ?.get("dd");
 
-    expect(text).toContain("Monte Carlo summary");
-    expect(text).toContain("Mean");
-    expect(text).toContain("P0.135");
-    expect(text).toContain("P99.865");
-    expect(text).toContain("Independent");
-    expect(wrapper.get("table[aria-label='Factor models'] caption").text()).toContain("Factor models");
-    expect(text).toContain("Gap");
-    expect(text).toContain("MEASURED");
-    expect(text).toContain("normal");
-    expect(text).toContain("Analysis-A!A2");
     expect(details.attributes("open")).toBeUndefined();
     expect(details.text()).toContain(WORKBOOK_HASH);
     expect(details.text()).toContain("LSL: Excel source Analysis-A!B2");
@@ -271,16 +282,6 @@ describe("ReportPanel", () => {
     expect(details).toContain("Target sigma: Excel source Analysis-A!B4");
     expect(details).not.toContain("LSL: Not available");
     expect(details).not.toContain("USL: Not available");
-  });
-
-  it("emits close from the report back button", async () => {
-    const wrapper = mountReport();
-
-    expect(wrapper.get("[data-report-back]").text()).toBe("Back to Monte Carlo");
-
-    await wrapper.get("[data-report-back]").trigger("click");
-
-    expect(wrapper.emitted("close")).toEqual([[]]);
   });
 
   it("downloads exact Markdown bytes with a safe filename and revokes the object URL", async () => {
@@ -351,7 +352,6 @@ describe("ReportPanel", () => {
     const wrapper = mount(ReportPanel, {
       props: { report: createReport() },
       global: {
-        stubs: { MonteCarloHistogram: histogramStub },
         config: { errorHandler },
       },
     });

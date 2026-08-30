@@ -134,7 +134,7 @@ describe("ResponseDistributionCurve", () => {
     expect(wrapper.get("[data-response-legend]").text()).toContain("Mean");
   });
 
-  it("shows 4 sigma and 6 sigma by default with four explicitly labelled native checkboxes", () => {
+  it("selects only 3 sigma by default with four explicitly labelled native checkboxes", () => {
     const wrapper = mount(ResponseDistributionCurve, { props: { calculation: createCalculation() } });
 
     const checkboxes = wrapper.findAll("input[type='checkbox']");
@@ -149,10 +149,16 @@ describe("ResponseDistributionCurve", () => {
     expect(wrapper.get("[data-response-sigma-controls]").text()).toContain("±4σ");
     expect(wrapper.get("[data-response-sigma-controls]").text()).toContain("±4.5σ");
     expect(wrapper.get("[data-response-sigma-controls]").text()).toContain("±6σ");
-    expect(wrapper.findAll('[data-response-sigma="3"]')).toHaveLength(0);
-    expect(wrapper.findAll('[data-response-sigma="4"]')).toHaveLength(2);
+    expect(checkboxes.map((checkbox) => (checkbox.element as HTMLInputElement).checked)).toEqual([
+      true,
+      false,
+      false,
+      false,
+    ]);
+    expect(wrapper.findAll('[data-response-sigma="3"]')).toHaveLength(2);
+    expect(wrapper.findAll('[data-response-sigma="4"]')).toHaveLength(0);
     expect(wrapper.findAll('[data-response-sigma="4.5"]')).toHaveLength(0);
-    expect(wrapper.findAll('[data-response-sigma="6"]')).toHaveLength(2);
+    expect(wrapper.findAll('[data-response-sigma="6"]')).toHaveLength(0);
   });
 
   it("keeps every badge at its exact reference x in non-overlapping rows above the plot", async () => {
@@ -221,18 +227,18 @@ describe("ResponseDistributionCurve", () => {
     expect(wrapper.get("[data-response-legend]").text()).toContain("LSL / USL");
     expect(wrapper.get("[data-response-legend]").text()).toContain("Target");
     expect(wrapper.get("[data-response-legend]").text()).toContain("Mean");
-    expect(wrapper.get("[data-response-legend]").text()).not.toContain("±3σ");
-    expect(wrapper.get("[data-response-legend]").text()).toContain("±4σ");
-    expect(wrapper.get("[data-response-legend]").text()).not.toContain("±4.5σ");
-    expect(wrapper.get("[data-response-legend]").text()).toContain("±6σ");
-
-    await toggle.setValue(true);
     expect(wrapper.get("[data-response-legend]").text()).toContain("±3σ");
-    expect(wrapper.findAll('[data-response-sigma="3"]')).toHaveLength(2);
+    expect(wrapper.get("[data-response-legend]").text()).not.toContain("±4σ");
+    expect(wrapper.get("[data-response-legend]").text()).not.toContain("±4.5σ");
+    expect(wrapper.get("[data-response-legend]").text()).not.toContain("±6σ");
 
     await toggle.setValue(false);
     expect(wrapper.get("[data-response-legend]").text()).not.toContain("±3σ");
     expect(wrapper.findAll('[data-response-sigma="3"]')).toHaveLength(0);
+
+    await toggle.setValue(true);
+    expect(wrapper.get("[data-response-legend]").text()).toContain("±3σ");
+    expect(wrapper.findAll('[data-response-sigma="3"]')).toHaveLength(2);
   });
 
   it("makes the horizontal plot viewport keyboard focusable and labelled", () => {
@@ -248,6 +254,10 @@ describe("ResponseDistributionCurve", () => {
     const toggle = wrapper.get("input[value='3']");
 
     expect(toggle.attributes("type")).toBe("checkbox");
+    expect((toggle.element as HTMLInputElement).checked).toBe(true);
+    await toggle.setValue(false);
+
+    expect(wrapper.findAll('[data-response-sigma="3"]')).toHaveLength(0);
     expect((toggle.element as HTMLInputElement).checked).toBe(false);
     await toggle.setValue(true);
 

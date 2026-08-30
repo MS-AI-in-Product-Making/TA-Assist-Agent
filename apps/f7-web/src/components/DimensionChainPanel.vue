@@ -24,6 +24,7 @@ import {
   signChangesForDisplay,
   type DimensionChainDisplaySegment,
   type DimensionChainFactor,
+  type DimensionChainGeometry,
   type DimensionChainManualLayout,
   type DimensionChainOrientation,
 } from "./dimension-chain";
@@ -32,9 +33,12 @@ const props = withDefaults(defineProps<{
   readonly factors: readonly DimensionChainFactor[];
   readonly valid: boolean;
   readonly sourceSignature?: string;
+  readonly defaultBackgroundImageUrl?: string | undefined;
   readonly editable?: boolean;
+  readonly emptyStateActionEnabled?: boolean;
 }>(), {
   editable: false,
+  emptyStateActionEnabled: false,
 });
 
 const emit = defineEmits<{
@@ -54,19 +58,27 @@ const BACKGROUND_PADDING = 16;
 const SUPPORTED_BACKGROUND_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const orientation = ref<DimensionChainOrientation>("horizontal");
 const generatedFactors = ref<readonly DimensionChainFactor[]>();
+const generatedGeometry = ref<DimensionChainGeometry>();
+const reversedArrowFactorIds = new Set<string>();
 const generatedSourceSignature = ref("");
 const backgroundInput = ref<HTMLInputElement>();
 const backgroundUrl = ref("");
 const backgroundNaturalWidth = ref(0);
 const backgroundNaturalHeight = ref(0);
 const backgroundOpacity = ref(0.6);
+const backgroundScale = ref(1);
 const backgroundError = ref("");
+const backgroundUrlOwned = ref(false);
 const revokedBackgroundUrls = new Set<string>();
 let backgroundImportRevision = 0;
 let pendingBackgroundUrl = "";
 const manualLayouts = reactive<Record<DimensionChainOrientation, DimensionChainManualLayout>>({
   horizontal: { boundaryOffsets: {}, laneOffsets: {} },
   vertical: { boundaryOffsets: {}, laneOffsets: {} },
+});
+const generatedAlignment = reactive<Record<DimensionChainOrientation, { axis: number; lane: number }>>({
+  horizontal: { axis: 0, lane: 0 },
+  vertical: { axis: 0, lane: 0 },
 });
 const layoutRevision = ref(0);
 let pendingSignSync: {
@@ -85,26 +97,28 @@ const currentSignature = computed(() => props.sourceSignature ?? dimensionChainS
 const stale = computed(() => (
   generatedFactors.value !== undefined && currentSignature.value !== generatedSourceSignature.value
 ));
-const geometry = computed(() => (
-  generatedFactors.value ? buildDimensionChainGeometry(generatedFactors.value) : undefined
-));
+const geometry = computed(() => generatedGeometry.value);
 const logicalDisplaySegments = computed(() => {
   const value = geometry.value;
   return value ? buildDisplaySegments(value, manualLayouts[orientation.value]) : [];
 });
 const displaySegments = computed<readonly DimensionChainDisplaySegment[]>(() => {
   const segments = logicalDisplaySegments.value;
+  const generatedById = new Map(generatedFactors.value?.map((factor) => [factor.id, factor]) ?? []);
   const lastIndex = segments.length - 1;
   return segments.map((segment, index) => {
+    const generatedFactor = generatedById.get(segment.id);
     const displayStart = index === 0
       ? segment.displayStart + closureEndOffset()
       : segment.displayStart;
     const displayEnd = index === lastIndex
       ? segment.displayEnd + closureStartOffset()
       : segment.displayEnd;
-    const displaySign = Math.sign(displayEnd - displayStart);
+    const physicalSign = Math.sign(displayEnd - displayStart);
+    const displaySign = reversedArrowFactorIds.has(segment.id) ? -physicalSign : physicalSign;
     return {
       ...segment,
+      ...(generatedFactor ?? {}),
       displayStart,
       displayEnd,
       displayDirection: displaySign > 0
@@ -119,24 +133,39 @@ const positionSpan = computed(() => {
   const value = geometry.value;
   return value ? value.maxPosition - value.minPosition : 0;
 });
-const canvasWidth = computed(() => orientation.value === "horizontal"
-  ? Math.max(MIN_CANVAS_SIZE, positionSpan.value + AXIS_PADDING * 2)
-  : Math.max(MIN_CANVAS_SIZE, (geometry.value?.segments.length ?? 0) * LANE_SIZE + 150));
-const canvasHeight = computed(() => orientation.value === "horizontal"
-  ? Math.max(190, ((geometry.value?.segments.length ?? 0) + 1) * LANE_SIZE + 68)
-  : Math.max(MIN_CANVAS_SIZE, positionSpan.value + AXIS_PADDING * 2));
+function canvasSize(targetOrientation: DimensionChainOrientation): { width: number; height: number } {
+  return targetOrientation === "horizontal"
+    ? {
+        width: Math.max(MIN_CANVAS_SIZE, positionSpan.value + AXIS_PADDING * 2),
+        height: Math.max(190, ((geometry.value?.segments.length ?? 0) + 1) * LANE_SIZE + 68),
+      }
+    : {
+        width: Math.max(MIN_CANVAS_SIZE, (geometry.value?.segments.length ?? 0) * LANE_SIZE + 150),
+        height: Math.max(MIN_CANVAS_SIZE, positionSpan.value + AXIS_PADDING * 2),
+      };
+}
+
+const canvasWidth = computed(() => canvasSize(orientation.value).width);
+const canvasHeight = computed(() => canvasSize(orientation.value).height);
 const backgroundOpacityPercent = computed({
   get: () => Math.round(backgroundOpacity.value * 100),
   set: (value: number | string) => {
     backgroundOpacity.value = Number(value) / 100;
   },
 });
-const backgroundLayout = computed(() => {
+const backgroundScalePercent = computed({
+  get: () => Math.round(backgroundScale.value * 100),
+  set: (value: number | string) => {
+    backgroundScale.value = Number(value) / 100;
+  },
+});
+function fittedBackgroundLayout(targetOrientation: DimensionChainOrientation) {
   if (!backgroundUrl.value || backgroundNaturalWidth.value <= 0 || backgroundNaturalHeight.value <= 0) {
     return undefined;
   }
-  const availableWidth = Math.max(1, canvasWidth.value - BACKGROUND_PADDING * 2);
-  const availableHeight = Math.max(1, canvasHeight.value - BACKGROUND_PADDING * 2);
+  const { width: targetWidth, height: targetHeight } = canvasSize(targetOrientation);
+  const availableWidth = Math.max(1, targetWidth - BACKGROUND_PADDING * 2);
+  const availableHeight = Math.max(1, targetHeight - BACKGROUND_PADDING * 2);
   const scale = Math.min(
     availableWidth / backgroundNaturalWidth.value,
     availableHeight / backgroundNaturalHeight.value,
@@ -144,8 +173,21 @@ const backgroundLayout = computed(() => {
   const width = backgroundNaturalWidth.value * scale;
   const height = backgroundNaturalHeight.value * scale;
   return {
-    x: (canvasWidth.value - width) / 2,
-    y: canvasHeight.value - BACKGROUND_PADDING - height,
+    x: (targetWidth - width) / 2,
+    y: targetHeight - BACKGROUND_PADDING - height,
+    width,
+    height,
+  };
+}
+
+const backgroundLayout = computed(() => {
+  const fitted = fittedBackgroundLayout(orientation.value);
+  if (!fitted) return undefined;
+  const width = fitted.width * backgroundScale.value;
+  const height = fitted.height * backgroundScale.value;
+  return {
+    x: fitted.x + (fitted.width - width) / 2,
+    y: fitted.y + (fitted.height - height) / 2,
     width,
     height,
   };
@@ -384,10 +426,13 @@ async function importBackgroundFile(file: File): Promise<void> {
     }
     pendingBackgroundUrl = "";
     const previousUrl = backgroundUrl.value;
+    const previousUrlOwned = backgroundUrlOwned.value;
     backgroundUrl.value = candidateUrl;
+    backgroundUrlOwned.value = true;
     backgroundNaturalWidth.value = dimensions.width;
     backgroundNaturalHeight.value = dimensions.height;
-    if (previousUrl && previousUrl !== candidateUrl) revokeBackgroundUrl(previousUrl);
+    backgroundScale.value = 1;
+    if (previousUrlOwned && previousUrl && previousUrl !== candidateUrl) revokeBackgroundUrl(previousUrl);
   } catch {
     if (pendingBackgroundUrl === candidateUrl) pendingBackgroundUrl = "";
     revokeBackgroundUrl(candidateUrl);
@@ -410,12 +455,47 @@ function openBackgroundInput(): void {
 function removeBackground(): void {
   cancelPendingBackgroundImport();
   const currentUrl = backgroundUrl.value;
+  const currentUrlOwned = backgroundUrlOwned.value;
   backgroundUrl.value = "";
+  backgroundUrlOwned.value = false;
   backgroundNaturalWidth.value = 0;
   backgroundNaturalHeight.value = 0;
   backgroundError.value = "";
-  if (currentUrl) revokeBackgroundUrl(currentUrl);
+  if (currentUrlOwned && currentUrl) revokeBackgroundUrl(currentUrl);
 }
+
+watch(() => props.defaultBackgroundImageUrl, async (url) => {
+  const revision = cancelPendingBackgroundImport();
+  const previousUrl = backgroundUrl.value;
+  const previousUrlOwned = backgroundUrlOwned.value;
+  backgroundError.value = "";
+  if (!url) {
+    backgroundUrl.value = "";
+    backgroundUrlOwned.value = false;
+    backgroundNaturalWidth.value = 0;
+    backgroundNaturalHeight.value = 0;
+    if (previousUrlOwned && previousUrl) revokeBackgroundUrl(previousUrl);
+    return;
+  }
+  try {
+    const dimensions = await decodeBackgroundImage(url);
+    if (revision !== backgroundImportRevision) return;
+    backgroundUrl.value = url;
+    backgroundUrlOwned.value = false;
+    backgroundNaturalWidth.value = dimensions.width;
+    backgroundNaturalHeight.value = dimensions.height;
+    backgroundScale.value = 1;
+    if (previousUrlOwned && previousUrl && previousUrl !== url) revokeBackgroundUrl(previousUrl);
+  } catch {
+    if (revision !== backgroundImportRevision) return;
+    backgroundUrl.value = "";
+    backgroundUrlOwned.value = false;
+    backgroundNaturalWidth.value = 0;
+    backgroundNaturalHeight.value = 0;
+    if (previousUrlOwned && previousUrl) revokeBackgroundUrl(previousUrl);
+    backgroundError.value = "The worksheet image could not be decoded.";
+  }
+}, { immediate: true });
 
 function isTextEntryTarget(target: unknown): boolean {
   return target instanceof HTMLElement && (
@@ -480,6 +560,18 @@ watch(() => props.factors, (nextFactors) => {
       designNominal: Math.abs(factor.designNominal) * expectedSign,
     };
   });
+
+  if (!pending.preserveClosurePositions) {
+    const geometryById = new Map(previousGeometry?.segments.map((segment) => [segment.id, segment]) ?? []);
+    for (const factor of generatedFactors.value) {
+      const geometryFactor = geometryById.get(factor.id);
+      if (geometryFactor && Math.sign(factor.designNominal) !== Math.sign(geometryFactor.designNominal)) {
+        reversedArrowFactorIds.add(factor.id);
+      } else {
+        reversedArrowFactorIds.delete(factor.id);
+      }
+    }
+  }
 
   const nextGeometry = geometry.value;
   if (closurePositions && nextGeometry) {
@@ -724,12 +816,10 @@ function finishInteraction(cancel = false, release = true): void {
   }
   if (
     !cancel
-    && (activeInteraction.kind === "guide" || activeInteraction.kind === "closure-guide")
+    && activeInteraction.kind === "closure-guide"
   ) {
     const changes = signChangesForDisplay(
-      activeInteraction.kind === "closure-guide"
-        ? displaySegments.value
-        : logicalDisplaySegments.value,
+      displaySegments.value,
     );
     if (changes.length > 0) {
       setPendingSignTransaction(changes);
@@ -786,10 +876,11 @@ onBeforeUnmount(() => {
   window.removeEventListener("keydown", onWindowKeyDown);
   finishInteraction(true);
   cancelPendingBackgroundImport();
-  if (backgroundUrl.value) {
+  if (backgroundUrlOwned.value && backgroundUrl.value) {
     revokeBackgroundUrl(backgroundUrl.value);
-    backgroundUrl.value = "";
   }
+  backgroundUrl.value = "";
+  backgroundUrlOwned.value = false;
 });
 
 function generate(): void {
@@ -798,16 +889,67 @@ function generate(): void {
   manualLayouts.horizontal = pruneManualLayout(manualLayouts.horizontal, props.factors);
   manualLayouts.vertical = pruneManualLayout(manualLayouts.vertical, props.factors);
   generatedFactors.value = props.factors.map((factor) => ({ ...factor }));
+  generatedGeometry.value = buildDimensionChainGeometry(generatedFactors.value);
+  reversedArrowFactorIds.clear();
   generatedSourceSignature.value = currentSignature.value;
+  generatedAlignment.horizontal = centeredAlignment("horizontal");
+  generatedAlignment.vertical = centeredAlignment("vertical");
   resetView();
 }
 
 function axisPosition(position: number): number {
-  return AXIS_PADDING + position - (geometry.value?.minPosition ?? 0);
+  return AXIS_PADDING + position - (geometry.value?.minPosition ?? 0) + generatedAlignment[orientation.value].axis;
 }
 
 function lanePosition(index: number, offset = 0): number {
-  return 48 + index * LANE_SIZE + offset;
+  return 48 + index * LANE_SIZE + offset + generatedAlignment[orientation.value].lane;
+}
+
+function arrowStartPosition(segment: DimensionChainDisplaySegment): number {
+  const physicalSign = Math.sign(segment.displayEnd - segment.displayStart);
+  const visualSign = segment.displayDirection === "additive"
+    ? 1
+    : segment.displayDirection === "subtractive"
+      ? -1
+      : 0;
+  return physicalSign !== 0 && visualSign !== 0 && physicalSign !== visualSign
+    ? segment.displayEnd
+    : segment.displayStart;
+}
+
+function arrowEndPosition(segment: DimensionChainDisplaySegment): number {
+  return arrowStartPosition(segment) === segment.displayStart
+    ? segment.displayEnd
+    : segment.displayStart;
+}
+
+function centeredAlignment(targetOrientation: DimensionChainOrientation): { axis: number; lane: number } {
+  const value = geometry.value;
+  const image = fittedBackgroundLayout(targetOrientation);
+  if (!value || !image) return { axis: 0, lane: 0 };
+
+  const layout = manualLayouts[targetOrientation];
+  const segments = buildDisplaySegments(value, layout);
+  const axisValues = segments.flatMap((segment, index) => [
+    index === 0 ? segment.displayStart + (layout.closureEndOffset ?? 0) : segment.displayStart,
+    index === segments.length - 1
+      ? segment.displayEnd + (layout.closureStartOffset ?? 0)
+      : segment.displayEnd,
+  ]);
+  const axisCenter = AXIS_PADDING
+    + (Math.min(...axisValues) + Math.max(...axisValues)) / 2
+    - value.minPosition;
+  const laneValues = [
+    ...segments.map((segment, index) => 48 + index * LANE_SIZE + segment.laneOffset),
+    48 + segments.length * LANE_SIZE + (layout.closureLaneOffset ?? 0),
+  ];
+  const laneCenter = (Math.min(...laneValues) + Math.max(...laneValues)) / 2;
+  const imageCenterX = image.x + image.width / 2;
+  const imageCenterY = image.y + image.height / 2;
+
+  return targetOrientation === "horizontal"
+    ? { axis: imageCenterX - axisCenter, lane: imageCenterY - laneCenter }
+    : { axis: imageCenterY - axisCenter, lane: imageCenterX - laneCenter };
 }
 
 function closureStartOffset(): number {
@@ -912,7 +1054,7 @@ function componentMarkerId(segment: DimensionChainDisplaySegment): string {
         type="button"
         class="action-button dimension-chain-action"
         data-generate-dimension-chain
-        :disabled="!valid || (generatedFactors !== undefined && !stale)"
+        :disabled="(!valid && !emptyStateActionEnabled) || (generatedFactors !== undefined && !stale)"
         @click="generate"
       >{{ actionLabel }}</button>
       <div class="dimension-chain-orientation" aria-label="Dimension chain orientation">
@@ -970,6 +1112,17 @@ function componentMarkerId(segment: DimensionChainDisplaySegment): string {
             aria-label="Background image opacity"
           />
           <output>{{ backgroundOpacityPercent }}%</output>
+        </label>
+        <label v-if="backgroundUrl" class="dimension-chain-background-opacity">
+          <span>Scale</span>
+          <input
+            v-model="backgroundScalePercent"
+            type="range"
+            min="25"
+            max="300"
+            aria-label="Background image scale"
+          />
+          <output>{{ backgroundScalePercent }}%</output>
         </label>
         <button
           v-if="backgroundUrl"
@@ -1145,8 +1298,8 @@ function componentMarkerId(segment: DimensionChainDisplaySegment): string {
                 :data-dimension-arrow-handle="segment.id"
                 class="dimension-chain-arrow-handle"
                 :class="{ 'is-selected': interaction?.kind === 'arrow' && interaction.factorId === segment.id }"
-                :x1="axisPosition(segment.displayStart)"
-                :x2="axisPosition(segment.displayEnd)"
+                :x1="axisPosition(arrowStartPosition(segment))"
+                :x2="axisPosition(arrowEndPosition(segment))"
                 :y1="lanePosition(index, segment.laneOffset)"
                 :y2="lanePosition(index, segment.laneOffset)"
                 role="button"
@@ -1158,15 +1311,15 @@ function componentMarkerId(segment: DimensionChainDisplaySegment): string {
               <circle
                 data-dimension-start
                 class="dimension-chain-start"
-                :cx="axisPosition(segment.displayStart)"
+                :cx="axisPosition(arrowStartPosition(segment))"
                 :cy="lanePosition(index, segment.laneOffset)"
                 r="4.5"
               />
               <line
                 v-if="segment.displayDirection !== 'zero'"
                 class="dimension-chain-component"
-                :x1="axisPosition(segment.displayStart)"
-                :x2="axisPosition(segment.displayEnd)"
+                :x1="axisPosition(arrowStartPosition(segment))"
+                :x2="axisPosition(arrowEndPosition(segment))"
                 :y1="lanePosition(index, segment.laneOffset)"
                 :y2="lanePosition(index, segment.laneOffset)"
                 :marker-end="`url(#${componentMarkerId(segment)})`"
@@ -1183,13 +1336,13 @@ function componentMarkerId(segment: DimensionChainDisplaySegment): string {
               <text
                 class="dimension-chain-label"
                 :x="(axisPosition(segment.displayStart) + axisPosition(segment.displayEnd)) / 2"
-                :y="lanePosition(index, segment.laneOffset) - 13"
+                :y="lanePosition(index, segment.laneOffset) - 10"
                 text-anchor="middle"
               >Item {{ segment.itemNumber }} · {{ signedValue(segment.designNominal) }}</text>
               <text
                 class="dimension-chain-factor-name"
                 :x="(axisPosition(segment.displayStart) + axisPosition(segment.displayEnd)) / 2"
-                :y="lanePosition(index, segment.laneOffset) + 20"
+                :y="lanePosition(index, segment.laneOffset) - 2"
                 text-anchor="middle"
               >{{ displayName(segment.name) }}</text>
             </template>
@@ -1200,8 +1353,8 @@ function componentMarkerId(segment: DimensionChainDisplaySegment): string {
                 :class="{ 'is-selected': interaction?.kind === 'arrow' && interaction.factorId === segment.id }"
                 :x1="lanePosition(index, segment.laneOffset)"
                 :x2="lanePosition(index, segment.laneOffset)"
-                :y1="axisPosition(segment.displayStart)"
-                :y2="axisPosition(segment.displayEnd)"
+                :y1="axisPosition(arrowStartPosition(segment))"
+                :y2="axisPosition(arrowEndPosition(segment))"
                 role="button"
                 tabindex="0"
                 :aria-disabled="!editable"
@@ -1212,7 +1365,7 @@ function componentMarkerId(segment: DimensionChainDisplaySegment): string {
                 data-dimension-start
                 class="dimension-chain-start"
                 :cx="lanePosition(index, segment.laneOffset)"
-                :cy="axisPosition(segment.displayStart)"
+                :cy="axisPosition(arrowStartPosition(segment))"
                 r="4.5"
               />
               <line
@@ -1220,8 +1373,8 @@ function componentMarkerId(segment: DimensionChainDisplaySegment): string {
                 class="dimension-chain-component"
                 :x1="lanePosition(index, segment.laneOffset)"
                 :x2="lanePosition(index, segment.laneOffset)"
-                :y1="axisPosition(segment.displayStart)"
-                :y2="axisPosition(segment.displayEnd)"
+                :y1="axisPosition(arrowStartPosition(segment))"
+                :y2="axisPosition(arrowEndPosition(segment))"
                 :marker-end="`url(#${componentMarkerId(segment)})`"
               />
               <line
@@ -1241,7 +1394,7 @@ function componentMarkerId(segment: DimensionChainDisplaySegment): string {
               <text
                 class="dimension-chain-factor-name"
                 :x="lanePosition(index, segment.laneOffset) + 13"
-                :y="(axisPosition(segment.displayStart) + axisPosition(segment.displayEnd)) / 2 + 13"
+                :y="(axisPosition(segment.displayStart) + axisPosition(segment.displayEnd)) / 2 + 4"
               >{{ displayName(segment.name) }}</text>
             </template>
           </g>

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { F7DistributionFitCandidate } from "./api/f7-client";
 import {
+  buildFactorSetupAssumption,
   buildDistributionFitPlot,
   buildDistributionFitReferences,
   buildReferenceLabelRows,
@@ -101,6 +102,31 @@ describe("distribution fit plot", () => {
     expect(model.curve.every((point) => Number.isFinite(point.x) && Number.isFinite(point.expectedFrequency)
       && point.expectedFrequency >= 0)).toBe(true);
   });
+
+  it.each(["Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta"] as const)(
+    "builds a finite count-scaled %s Factor Setup assumption curve around the absolute mean",
+    (distribution) => {
+      const assumption = buildFactorSetupAssumption({
+        signedMean: -0.5224,
+        oneSigma: 0.0123,
+        distribution,
+        longTermSafetyFactor: 1.5,
+        sigmaLevel: 4,
+      });
+      const normal = candidate("normal", { mean: 0.5224, standardDeviation: 0.0123 });
+      const domain = distributionFitObservedDomain([normal], undefined, assumption);
+      const model = buildDistributionFitPlot(normal, domain, assumption);
+
+      expect(assumption.mean).toBe(0.5224);
+      expect(assumption.standardDeviation).toBe(0.0123);
+      expect(model.assumptionCurve).toHaveLength(96);
+      expect(model.assumptionCurve.every((point) => Number.isFinite(point.x)
+        && Number.isFinite(point.expectedFrequency) && point.expectedFrequency >= 0)).toBe(true);
+      expect(model.maximumFrequency).toBeGreaterThanOrEqual(
+        Math.max(...model.assumptionCurve.map((point) => point.expectedFrequency)),
+      );
+    },
+  );
 
   it("builds shared Target, specification, mean, and sample-sigma reference lines", () => {
     const normal = {
