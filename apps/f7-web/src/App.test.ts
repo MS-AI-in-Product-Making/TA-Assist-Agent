@@ -733,8 +733,16 @@ describe("F7 workbench shell", () => {
   it("1) initial import UI has file label and no marketing landing", () => {
     const client = createMockClient(createSnapshot({ status: "worksheet_selection" }));
     const wrapper = mount(App, { props: { client } });
-    expect(wrapper.text()).toContain("Import Workbook");
-    expect(wrapper.find("label[for='workbook-file']").text()).toContain("Workbook file");
+    const workflowRail = wrapper.get(".workflow-rail");
+    const workflowContent = wrapper.get(".workflow-content");
+    const workflowSteps = workflowRail.findAll("ol.workflow-steps > li");
+    expect(workflowSteps).toHaveLength(3);
+    expect(workflowSteps[0]?.attributes("aria-current")).toBe("step");
+    expect(workflowSteps[1]?.attributes("aria-disabled")).toBe("true");
+    expect(workflowSteps[2]?.attributes("aria-disabled")).toBe("true");
+    expect(workflowContent.text()).toContain("Import Workbook");
+    expect(workflowContent.find("label[for='workbook-file']").text()).toContain("Workbook file");
+    expect(wrapper.find(".workbench-root > .workbench-panel").exists()).toBe(false);
     expect(wrapper.text().toLowerCase()).not.toContain("hero");
     expect(wrapper.text().toLowerCase()).not.toContain("welcome");
   });
@@ -751,10 +759,15 @@ describe("F7 workbench shell", () => {
     expect(workflowRail.text()).not.toContain("Session");
     expect(workflowRail.get("[data-workbook-name]").text()).toBe("demo.xlsx");
     expect(workflowRail.get("[data-worksheet-selection]").text()).toBe("Not selected");
-    expect(wrapper.get("[aria-label='Worksheet confirmation']").text()).not.toContain("Workbook hash");
+    const worksheetConfirmation = wrapper.get("[aria-label='Worksheet confirmation']");
+    expect(worksheetConfirmation.text()).not.toContain("Workbook hash");
+    const worksheetHeader = worksheetConfirmation.get(".worksheet-selection-header");
+    const confirmSelectionButton = worksheetHeader.get("button.action-button");
+    expect(confirmSelectionButton.text()).toBe("Confirm selection");
+    expect(worksheetConfirmation.get(".worksheet-options-grid").findAll("label")).toHaveLength(2);
 
     await wrapper.get("input[type='radio'][name='worksheet-option'][value='Loop_B']").setValue(true);
-    await wrapper.get("button").trigger("click");
+    await confirmSelectionButton.trigger("click");
     expect(client.confirmWorksheet).toHaveBeenCalledWith({
       sessionId: "session-01",
       workbookContentHash: HASH_A,
@@ -774,6 +787,33 @@ describe("F7 workbench shell", () => {
     expect(confirmButton.attributes("disabled")).toBeDefined();
     await confirmButton.trigger("click");
     expect(client.confirmWorksheet).not.toHaveBeenCalled();
+  });
+
+  it("2c) shows a protected progress state while worksheet analysis is running", async () => {
+    const worksheetSelection = createSnapshot({ status: "worksheet_selection" });
+    const client = createMockClient(worksheetSelection, { importWorkbook: worksheetSelection });
+    let resolveConfirmation!: (snapshot: F7SessionSnapshot) => void;
+    vi.mocked(client.confirmWorksheet).mockImplementation(() => new Promise((resolve) => {
+      resolveConfirmation = resolve;
+    }));
+    const wrapper = mount(App, { props: { client } });
+    await uploadWorkbook(wrapper);
+    await wrapper.get("input[type='radio'][name='worksheet-option'][value='Loop_B']").setValue(true);
+
+    const submission = wrapper.get("[aria-label='Worksheet confirmation'] button.action-button").trigger("click");
+    await wrapper.vm.$nextTick();
+
+    const confirmation = wrapper.get("[aria-label='Worksheet confirmation']");
+    expect(confirmation.attributes("aria-busy")).toBe("true");
+    expect(confirmation.get("[data-worksheet-analysis-progress]").attributes("role")).toBe("progressbar");
+    expect(confirmation.get("[data-worksheet-analysis-status]").text()).toBe("Analyzing worksheet…");
+    expect(confirmation.get("button.action-button").text()).toContain("Analyzing worksheet…");
+    expect(confirmation.findAll("input[type='radio']").every((input) => input.attributes("disabled") !== undefined)).toBe(true);
+    expect(client.confirmWorksheet).toHaveBeenCalledTimes(1);
+
+    resolveConfirmation(factorSetupSnapshot());
+    await submission;
+    await vi.waitFor(() => expect(wrapper.find("[aria-label='Worksheet confirmation']").exists()).toBe(false));
   });
 
   it("3) factor_setup exposes editable specifications and confirms their values", async () => {
@@ -979,7 +1019,7 @@ describe("F7 workbench shell", () => {
     expect(client.confirmFactors).not.toHaveBeenCalled();
   });
 
-  it("3) factor_setup reverses all factor signs as one undoable edit and accepts partial chain sign changes", async () => {
+  it("3) factor_setup reverses factor signs and system limits as one undoable edit and accepts partial chain sign changes", async () => {
     const base = factorSetupSnapshot();
     const first = base.factors[0]!;
     const snapshot = createSnapshot({
@@ -1011,19 +1051,27 @@ describe("F7 workbench shell", () => {
 
     const nominalValues = () => wrapper.findAll("input[data-factor-design-nominal]")
       .map((input) => (input.element as HTMLInputElement).value);
+    const specificationLimits = () => [
+      wrapper.get<HTMLInputElement>("[data-f4-lsl-input]").element.value,
+      wrapper.get<HTMLInputElement>("[data-f4-usl-input]").element.value,
+    ];
     expect(nominalValues()).toEqual(["-0.57", "0.4"]);
+    expect(specificationLimits()).toEqual(["-0.62", "-0.52"]);
     expect(wrapper.get("[data-summary-design-nominal]").text()).toBe("-0.17");
 
     await reverse.trigger("click");
     expect(nominalValues()).toEqual(["0.57", "-0.4"]);
+    expect(specificationLimits()).toEqual(["0.52", "0.62"]);
     expect(wrapper.get("[data-summary-design-nominal]").text()).toBe("0.17");
 
     await wrapper.get("[data-factor-undo]").trigger("click");
     expect(nominalValues()).toEqual(["-0.57", "0.4"]);
+    expect(specificationLimits()).toEqual(["-0.62", "-0.52"]);
     expect(wrapper.get("[data-summary-design-nominal]").text()).toBe("-0.17");
 
     await wrapper.get("[data-factor-redo]").trigger("click");
     expect(nominalValues()).toEqual(["0.57", "-0.4"]);
+    expect(specificationLimits()).toEqual(["0.52", "0.62"]);
     expect(wrapper.get("[data-summary-design-nominal]").text()).toBe("0.17");
 
     wrapper.getComponent(DimensionChainPanel).vm.$emit("factor-sign-change", [
@@ -1031,13 +1079,16 @@ describe("F7 workbench shell", () => {
     ]);
     await wrapper.vm.$nextTick();
     expect(nominalValues()).toEqual(["0.57", "0.4"]);
+    expect(specificationLimits()).toEqual(["0.52", "0.62"]);
     expect(wrapper.get("[data-summary-design-nominal]").text()).toBe("0.97");
     await wrapper.get("[data-factor-undo]").trigger("click");
     expect(nominalValues()).toEqual(["0.57", "-0.4"]);
+    expect(specificationLimits()).toEqual(["0.52", "0.62"]);
 
     wrapper.getComponent(DimensionChainPanel).vm.$emit("reverse-all");
     await wrapper.vm.$nextTick();
     expect(nominalValues()).toEqual(["-0.57", "0.4"]);
+    expect(specificationLimits()).toEqual(["-0.62", "-0.52"]);
 
     const nominalInputs = wrapper.findAll("input[data-factor-design-nominal]");
     await nominalInputs[0]!.setValue("");
@@ -2077,7 +2128,7 @@ describe("F7 workbench shell", () => {
 
     const workflow = wrapper.findAll("ol.workflow-steps > li");
     expect(workflow[1]?.attributes("aria-current")).toBe("step");
-    expect(workflow[1]?.text()).toContain("Measure · Capability · Fit");
+    expect(workflow[1]?.text()).toContain("Import · Capability · Fit");
     expect(workflow[2]?.attributes("aria-disabled")).toBeUndefined();
     expect(workflow[2]?.text()).toContain("Available");
   });
@@ -2347,6 +2398,9 @@ describe("F7 workbench shell", () => {
     await monteCarloStep.get("[data-workflow-open-monte-carlo]").trigger("click");
     expect(wrapper.find("[aria-label='Factor measurement workspace']").exists()).toBe(false);
     expect(wrapper.get("#monte-carlo-title").text()).toBe("Monte Carlo simulation");
+    const restartFromStepOne = wrapper.findAll(".workflow-steps li")[0]!.get("[data-workflow-restart]");
+    expect(restartFromStepOne.attributes("disabled")).toBeUndefined();
+    expect(restartFromStepOne.text()).toBe("Select worksheet");
     expect(wrapper.get<HTMLInputElement>("[data-monte-carlo-lsl]").element.value).toBe("-0.15");
     expect(wrapper.get<HTMLInputElement>("[data-monte-carlo-usl]").element.value).toBe("0.05");
     expect(wrapper.get<HTMLInputElement>("[data-monte-carlo-target-sigma]").element.value).toBe("3");
@@ -2852,13 +2906,14 @@ describe("F7 workbench shell", () => {
     const stepLabels = wrapper.findAll("ol.workflow-steps > li .step-label").map((node) => node.text().trim());
     expect(stepLabels).toEqual([
       "Select worksheet",
-      "Measurement analysis",
-      "Monte Carlo & Report",
+      "Measurement Data Import & Analysis",
+      "Monte Carlo Calculation & Report",
     ]);
 
     const listItems = wrapper.findAll("ol.workflow-steps > li");
     expect(listItems).toHaveLength(3);
     expect(listItems[0]?.attributes("aria-current")).toBe("step");
+    expect(listItems[0]?.find("[data-workflow-restart]").exists()).toBe(false);
 
     for (const index of [1, 2]) {
       const item = listItems[index];
@@ -2880,6 +2935,39 @@ describe("F7 workbench shell", () => {
     expect(listItems).toHaveLength(3);
     expect(listItems[0]?.attributes("aria-current")).toBeUndefined();
     expect(listItems[1]?.attributes("aria-current")).toBe("step");
+
+    const workbookInput = wrapper.get<HTMLInputElement>("#workbook-file").element;
+    Object.defineProperty(workbookInput, "value", {
+      configurable: true,
+      writable: true,
+      value: "C:\\fakepath\\demo.xlsx",
+    });
+    const openPicker = vi.spyOn(workbookInput, "click").mockImplementation(() => undefined);
+    const restart = listItems[0]!.get("[data-workflow-restart]");
+    expect(restart.text()).toBe("Select worksheet");
+    expect(restart.attributes("disabled")).toBeUndefined();
+
+    await restart.trigger("click");
+
+    const confirmation = wrapper.get("[data-workflow-restart-confirmation]");
+    expect(confirmation.attributes("role")).toBe("alertdialog");
+    expect(confirmation.attributes("aria-modal")).toBe("true");
+    expect(confirmation.text()).toContain(
+      "Opening another workbook or worksheet will discard the current worksheet data and analysis results.",
+    );
+    expect(workbookInput.value).toBe("C:\\fakepath\\demo.xlsx");
+    expect(openPicker).not.toHaveBeenCalled();
+
+    await confirmation.get("[data-workflow-restart-cancel]").trigger("click");
+    expect(wrapper.find("[data-workflow-restart-confirmation]").exists()).toBe(false);
+
+    await restart.trigger("click");
+    await wrapper.get("[data-workflow-restart-continue]").trigger("click");
+
+    expect(wrapper.find("[data-workflow-restart-confirmation]").exists()).toBe(false);
+    expect(workbookInput.value).toBe("");
+    expect(openPicker).toHaveBeenCalledOnce();
+    expect(listItems[0]?.text()).toContain("Change workbook or worksheet");
   });
 
   it("10) aria-live polite validation region and aria-busy with duplicate submission disabled", async () => {

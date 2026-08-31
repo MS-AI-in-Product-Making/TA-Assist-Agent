@@ -7,9 +7,10 @@ import {
   ArrowLeftRight,
   ArrowRight,
   ArrowUp,
+  Eye,
+  EyeOff,
   ImagePlus,
   Maximize2,
-  RotateCcw,
   ScanSearch,
   Trash2,
   ZoomIn,
@@ -49,7 +50,7 @@ const emit = defineEmits<{
 const AXIS_PADDING = 64;
 const LANE_SIZE = 58;
 const MIN_CANVAS_SIZE = 360;
-const MIN_ZOOM = 0.5;
+const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 2.5;
 const ZOOM_STEP = 1.2;
 const PAN_STEP = 24;
@@ -60,6 +61,7 @@ const orientation = ref<DimensionChainOrientation>("horizontal");
 const generatedFactors = ref<readonly DimensionChainFactor[]>();
 const generatedGeometry = ref<DimensionChainGeometry>();
 const reversedArrowFactorIds = new Set<string>();
+const closureArrowReversed = ref(false);
 const generatedSourceSignature = ref("");
 const backgroundInput = ref<HTMLInputElement>();
 const backgroundUrl = ref("");
@@ -80,13 +82,14 @@ const generatedAlignment = reactive<Record<DimensionChainOrientation, { axis: nu
   horizontal: { axis: 0, lane: 0 },
   vertical: { axis: 0, lane: 0 },
 });
-const layoutRevision = ref(0);
 let pendingSignSync: {
   readonly factorIds: ReadonlySet<string>;
   readonly expectedSigns: ReadonlyMap<string, 1 | -1>;
   readonly sourceSignature: string;
   readonly canAcknowledgeSource: boolean;
   readonly preserveClosurePositions: boolean;
+  readonly reverseVisualFactorIds?: ReadonlySet<string>;
+  readonly reverseClosure?: boolean;
 } | undefined;
 const markerSuffix = useId().replace(/[^a-zA-Z0-9_-]/g, "");
 const additiveMarkerId = `dimension-chain-additive-arrow-${markerSuffix}`;
@@ -200,6 +203,7 @@ const viewX = ref(0);
 const viewY = ref(0);
 const viewZoom = ref(1);
 const selectionMode = ref(false);
+const dimensionChainVisible = ref(true);
 const canvasElement = ref<HTMLElement>();
 type DimensionChainInteraction =
   | { readonly kind: "pan" | "select"; readonly pointerId: number }
@@ -265,6 +269,12 @@ function resetView(): void {
   viewY.value = 0;
   viewZoom.value = 1;
   selectionMode.value = false;
+}
+
+function toggleDimensionChainVisibility(): void {
+  finishInteraction(true);
+  selectionMode.value = false;
+  dimensionChainVisible.value = !dimensionChainVisible.value;
 }
 
 function zoomTo(nextValue: number, anchorX = 0.5, anchorY = 0.5): void {
@@ -353,6 +363,8 @@ function reverseAllFactors(): void {
         sourceSignature: currentSignature.value,
         canAcknowledgeSource: !stale.value,
         preserveClosurePositions: false,
+        reverseVisualFactorIds: new Set(expectedSigns.keys()),
+        reverseClosure: true,
       };
     }
   }
@@ -370,12 +382,6 @@ function setPendingSignTransaction(
     canAcknowledgeSource: !stale.value,
     preserveClosurePositions: true,
   };
-}
-
-function resetLayout(): void {
-  manualLayouts.horizontal = { boundaryOffsets: {}, laneOffsets: {} };
-  manualLayouts.vertical = { boundaryOffsets: {}, laneOffsets: {} };
-  layoutRevision.value += 1;
 }
 
 function revokeBackgroundUrl(url: string): void {
@@ -560,18 +566,14 @@ watch(() => props.factors, (nextFactors) => {
       designNominal: Math.abs(factor.designNominal) * expectedSign,
     };
   });
-
-  if (!pending.preserveClosurePositions) {
-    const geometryById = new Map(previousGeometry?.segments.map((segment) => [segment.id, segment]) ?? []);
-    for (const factor of generatedFactors.value) {
-      const geometryFactor = geometryById.get(factor.id);
-      if (geometryFactor && Math.sign(factor.designNominal) !== Math.sign(geometryFactor.designNominal)) {
-        reversedArrowFactorIds.add(factor.id);
-      } else {
-        reversedArrowFactorIds.delete(factor.id);
-      }
+  for (const factorId of pending.reverseVisualFactorIds ?? []) {
+    if (reversedArrowFactorIds.has(factorId)) {
+      reversedArrowFactorIds.delete(factorId);
+    } else {
+      reversedArrowFactorIds.add(factorId);
     }
   }
+  if (pending.reverseClosure) closureArrowReversed.value = !closureArrowReversed.value;
 
   const nextGeometry = geometry.value;
   if (closurePositions && nextGeometry) {
@@ -891,6 +893,7 @@ function generate(): void {
   generatedFactors.value = props.factors.map((factor) => ({ ...factor }));
   generatedGeometry.value = buildDimensionChainGeometry(generatedFactors.value);
   reversedArrowFactorIds.clear();
+  closureArrowReversed.value = false;
   generatedSourceSignature.value = currentSignature.value;
   generatedAlignment.horizontal = centeredAlignment("horizontal");
   generatedAlignment.vertical = centeredAlignment("vertical");
@@ -972,6 +975,14 @@ function closureEndPosition(): number {
   return (geometry.value?.closure.end ?? 0) + closureEndOffset();
 }
 
+function closureArrowStartPosition(): number {
+  return closureArrowReversed.value ? closureEndPosition() : closureStartPosition();
+}
+
+function closureArrowEndPosition(): number {
+  return closureArrowReversed.value ? closureStartPosition() : closureEndPosition();
+}
+
 function closureLanePosition(): number {
   return lanePosition(geometry.value?.segments.length ?? 0, closureLaneOffset());
 }
@@ -1047,6 +1058,19 @@ function componentMarkerId(segment: DimensionChainDisplaySegment): string {
         <button type="button" aria-label="Zoom out" title="Zoom out" :disabled="viewZoom <= MIN_ZOOM" @click="zoomTo(viewZoom / ZOOM_STEP)"><ZoomOut :size="16" /></button>
         <button type="button" aria-label="Select area to zoom" title="Select area to zoom" :aria-pressed="selectionMode" :class="{ 'is-active': selectionMode }" @click="selectionMode = !selectionMode"><ScanSearch :size="16" /></button>
         <button type="button" aria-label="Fit full dimension chain" title="Fit full dimension chain" @click="resetView"><Maximize2 :size="16" /></button>
+        <span class="dimension-chain-tool-separator" aria-hidden="true"></span>
+        <button
+          type="button"
+          :aria-label="dimensionChainVisible ? 'Hide dimension chain' : 'Show dimension chain'"
+          :title="dimensionChainVisible ? 'Hide dimension chain' : 'Show dimension chain'"
+          :aria-pressed="dimensionChainVisible"
+          :class="{ 'is-active': dimensionChainVisible }"
+          :disabled="!geometry"
+          @click="toggleDimensionChainVisibility"
+        >
+          <Eye v-if="dimensionChainVisible" :size="16" />
+          <EyeOff v-else :size="16" />
+        </button>
       </div>
     </header>
     <div class="dimension-chain-toolbar">
@@ -1080,14 +1104,6 @@ function componentMarkerId(segment: DimensionChainDisplaySegment): string {
         :disabled="!editable || !valid"
         @click="reverseAllFactors"
       ><ArrowLeftRight :size="16" aria-hidden="true" /></button>
-      <button
-        type="button"
-        aria-label="Reset layout"
-        title="Reset layout"
-        :data-layout-revision="layoutRevision"
-        :disabled="!editable"
-        @click="resetLayout"
-      ><RotateCcw :size="16" aria-hidden="true" /></button>
       <div class="dimension-chain-background-controls">
         <input
           ref="backgroundInput"
@@ -1104,6 +1120,7 @@ function componentMarkerId(segment: DimensionChainDisplaySegment): string {
         ><ImagePlus :size="16" aria-hidden="true" /></button>
         <label v-if="backgroundUrl" class="dimension-chain-background-opacity">
           <span>Opacity</span>
+          <output>{{ backgroundOpacityPercent }}%</output>
           <input
             v-model="backgroundOpacityPercent"
             type="range"
@@ -1111,10 +1128,10 @@ function componentMarkerId(segment: DimensionChainDisplaySegment): string {
             max="100"
             aria-label="Background image opacity"
           />
-          <output>{{ backgroundOpacityPercent }}%</output>
         </label>
         <label v-if="backgroundUrl" class="dimension-chain-background-opacity">
           <span>Scale</span>
+          <output>{{ backgroundScalePercent }}%</output>
           <input
             v-model="backgroundScalePercent"
             type="range"
@@ -1122,7 +1139,6 @@ function componentMarkerId(segment: DimensionChainDisplaySegment): string {
             max="300"
             aria-label="Background image scale"
           />
-          <output>{{ backgroundScalePercent }}%</output>
         </label>
         <button
           v-if="backgroundUrl"
@@ -1232,7 +1248,7 @@ function componentMarkerId(segment: DimensionChainDisplaySegment): string {
           :data-image-height="backgroundLayout.height"
         />
 
-        <template v-if="geometry">
+        <g v-if="geometry && dimensionChainVisible" data-dimension-chain-overlay>
         <g v-for="(segment, index) in displaySegments" :key="segment.id">
           <line
             v-if="index > 0 && orientation === 'horizontal'"
@@ -1453,7 +1469,7 @@ function componentMarkerId(segment: DimensionChainDisplaySegment): string {
             <circle
               data-dimension-closure-start
               class="dimension-chain-closure-start"
-              :cx="axisPosition(closureStartPosition())"
+              :cx="axisPosition(closureArrowStartPosition())"
               :cy="closureLanePosition()"
               r="4.5"
             />
@@ -1475,8 +1491,8 @@ function componentMarkerId(segment: DimensionChainDisplaySegment): string {
               data-dimension-closure-arrow-handle
               class="dimension-chain-arrow-handle"
               :class="{ 'is-selected': interaction?.kind === 'closure-arrow' }"
-              :x1="axisPosition(closureStartPosition())"
-              :x2="axisPosition(closureEndPosition())"
+              :x1="axisPosition(closureArrowStartPosition())"
+              :x2="axisPosition(closureArrowEndPosition())"
               :y1="closureLanePosition()"
               :y2="closureLanePosition()"
               role="button"
@@ -1497,8 +1513,8 @@ function componentMarkerId(segment: DimensionChainDisplaySegment): string {
               v-else
               data-dimension-closure
               class="dimension-chain-closure"
-              :x1="axisPosition(closureStartPosition())"
-              :x2="axisPosition(closureEndPosition())"
+              :x1="axisPosition(closureArrowStartPosition())"
+              :x2="axisPosition(closureArrowEndPosition())"
               :y1="closureLanePosition()"
               :y2="closureLanePosition()"
               :marker-end="`url(#${closureMarkerId})`"
@@ -1557,7 +1573,7 @@ function componentMarkerId(segment: DimensionChainDisplaySegment): string {
               data-dimension-closure-start
               class="dimension-chain-closure-start"
               :cx="closureLanePosition()"
-              :cy="axisPosition(closureStartPosition())"
+              :cy="axisPosition(closureArrowStartPosition())"
               r="4.5"
             />
             <path
@@ -1580,8 +1596,8 @@ function componentMarkerId(segment: DimensionChainDisplaySegment): string {
               :class="{ 'is-selected': interaction?.kind === 'closure-arrow' }"
               :x1="closureLanePosition()"
               :x2="closureLanePosition()"
-              :y1="axisPosition(closureStartPosition())"
-              :y2="axisPosition(closureEndPosition())"
+              :y1="axisPosition(closureArrowStartPosition())"
+              :y2="axisPosition(closureArrowEndPosition())"
               role="button"
               tabindex="0"
               :aria-disabled="!editable"
@@ -1602,8 +1618,8 @@ function componentMarkerId(segment: DimensionChainDisplaySegment): string {
               class="dimension-chain-closure"
               :x1="closureLanePosition()"
               :x2="closureLanePosition()"
-              :y1="axisPosition(closureStartPosition())"
-              :y2="axisPosition(closureEndPosition())"
+              :y1="axisPosition(closureArrowStartPosition())"
+              :y2="axisPosition(closureArrowEndPosition())"
               :marker-end="`url(#${closureMarkerId})`"
             />
             <text
@@ -1613,7 +1629,7 @@ function componentMarkerId(segment: DimensionChainDisplaySegment): string {
             >Closure</text>
           </template>
         </g>
-        </template>
+        </g>
         <rect
           v-if="selectionBox"
           data-dimension-chain-selection
@@ -1629,7 +1645,7 @@ function componentMarkerId(segment: DimensionChainDisplaySegment): string {
         class="dimension-chain-image-only-hint"
         data-dimension-chain-image-only-hint
       >Generate to overlay the dimension chain.</p>
-      <ol v-if="geometry" class="sr-only" data-dimension-chain-accessible-list aria-label="Dimension chain components">
+      <ol v-if="geometry && dimensionChainVisible" class="sr-only" data-dimension-chain-accessible-list aria-label="Dimension chain components">
         <li v-for="segment in displaySegments" :key="segment.id">{{ segmentLabel(segment) }}</li>
         <li>Closure, final cumulative position to origin</li>
       </ol>
