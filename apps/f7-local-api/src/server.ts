@@ -37,6 +37,7 @@ const ROUTE_KIND_DISTRIBUTION_APPROVAL = "f7.factors.distribution-approval";
 const ROUTE_KIND_MONTE_CARLO = "f7.monte-carlo.run";
 const ROUTE_KIND_REPORT = "f7.report.generate";
 const ROUTE_KIND_SESSION_GET = "f7.session.get";
+const ROUTE_KIND_DIMENSION_CHAIN_IMAGE_GET = "f7.session.dimension-chain-image.get";
 
 const FACTOR_MODE_PATH = /^\/f7\/factors\/([^/]+)\/mode$/;
 const FACTOR_MEASUREMENT_PASTE_PATH = /^\/f7\/factors\/([^/]+)\/measurements\/paste$/;
@@ -44,6 +45,7 @@ const FACTOR_MEASUREMENT_DISPOSITION_PATH = /^\/f7\/factors\/([^/]+)\/measuremen
 const FACTOR_DISTRIBUTION_FIT_PATH = /^\/f7\/factors\/([^/]+)\/distribution-fit$/;
 const FACTOR_DISTRIBUTION_APPROVAL_PATH = /^\/f7\/factors\/([^/]+)\/distribution-approval$/;
 const SESSION_PATH = /^\/f7\/session\/([^/]+)$/;
+const DIMENSION_CHAIN_IMAGE_PATH = /^\/f7\/session\/([^/]+)\/dimension-chain-image$/;
 
 interface ErrorEnvelope {
   readonly code: string;
@@ -301,6 +303,16 @@ function writeJson(response: ServerResponse, status: number, payload: unknown): 
   response.end(serialized);
 }
 
+function writeImage(response: ServerResponse, mediaType: "image/png" | "image/jpeg", bytes: Uint8Array): void {
+  if (response.writableEnded || response.destroyed) return;
+  response.statusCode = 200;
+  response.setHeader("content-type", mediaType);
+  response.setHeader("cache-control", "no-store");
+  response.setHeader("x-content-type-options", "nosniff");
+  response.setHeader("content-length", bytes.byteLength);
+  response.end(bytes);
+}
+
 function writeFailure(response: ServerResponse, error: unknown): number {
   if (error instanceof HttpRouteError) {
     writeJson(response, error.status, error.envelope);
@@ -399,6 +411,9 @@ async function handleRequest(
       factorId: routeRequest.data.params.factorId,
       unit,
       structure: routeRequest.data.body.structure,
+      ...(routeRequest.data.body.rationalSubgroupConfig
+        ? { rationalSubgroupConfig: routeRequest.data.body.rationalSubgroupConfig }
+        : {}),
       sourceReference: routeRequest.data.body.sourceReference,
       msaStatus: routeRequest.data.body.msaStatus,
       text: routeRequest.data.body.text,
@@ -478,6 +493,18 @@ async function handleRequest(
     const report = service.generateReport(routeRequest.data.body);
     writeJson(response, 200, report);
     return { kind: ROUTE_KIND_REPORT, status: 200 };
+  }
+
+  const dimensionChainImagePathMatch = DIMENSION_CHAIN_IMAGE_PATH.exec(pathname);
+  if (method === "GET" && dimensionChainImagePathMatch) {
+    if (parsedUrl.search.length > 0) rejectBadRequest();
+    if (hasBodyIndication(request)) rejectBadRequest();
+    const sessionId = decodeURIComponentStrict(dimensionChainImagePathMatch[1]!);
+    const params = f7SessionRouteParamsSchema.safeParse({ sessionId });
+    if (!params.success) rejectBadRequest();
+    const image = service.readDimensionChainImage(params.data.sessionId);
+    writeImage(response, image.mediaType, image.bytes);
+    return { kind: ROUTE_KIND_DIMENSION_CHAIN_IMAGE_GET, status: 200 };
   }
 
   const sessionPathMatch = SESSION_PATH.exec(pathname);

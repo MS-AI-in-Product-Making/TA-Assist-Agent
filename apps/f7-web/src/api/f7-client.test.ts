@@ -314,6 +314,11 @@ describe("createF7Client", () => {
 
     await client.confirmFactors({
       sessionId: "s-1",
+      systemSpecification: {
+        lowerSpecLimit: -0.62,
+        upperSpecLimit: -0.52,
+        targetSigmaLevel: 3,
+      },
       confirmations: [{
         factorCandidateId: HASH_B,
         designNominal: -0.57,

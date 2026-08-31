@@ -115,6 +115,47 @@ describe("runF7MonteCarlo", () => {
     expect(second.quantiles).not.toEqual(first.quantiles);
   });
 
+  it("applies the system additional mean shift once to every simulated response", () => {
+    const baseline = runF7MonteCarlo(request);
+    const shifted = runF7MonteCarlo({ ...request, additionalMeanShift: 0.025 });
+
+    expect(shifted.mean - baseline.mean).toBeCloseTo(0.025, 12);
+    expect(shifted.standardDeviation).toBeCloseTo(baseline.standardDeviation, 12);
+    for (const quantileName of Object.keys(baseline.quantiles) as Array<keyof typeof baseline.quantiles>) {
+      expect(shifted.quantiles[quantileName] - baseline.quantiles[quantileName]).toBeCloseTo(0.025, 12);
+    }
+  });
+
+  it("derives complementary rates from their respective counts", () => {
+    const factorValues = [
+      [-1, 0.57, 0.0125],
+      [-1, 1.99, 0.0375],
+      [1, 0.22, 0.0125],
+      [1, 0.75, 0.025],
+      [1, 0.44, 0.0125],
+      [1, 0.075, 0.01875],
+      [1, 1, 0.0125],
+    ] as const;
+    const result = runF7MonteCarlo({
+      ...request,
+      lowerSpecLimit: -0.25,
+      upperSpecLimit: 0.2,
+      targetSigmaLevel: 3,
+      runSeed: "762a2ad1ee40357357d0929f9f88cc8b9e15104b888d142f32f1101d815b8297",
+      factors: factorValues.map(([coefficient, mean, standardDeviation], index) => ({
+        factorId: String(index).repeat(64),
+        coefficient,
+        sourceMode: "BASELINE_ASSUMPTION" as const,
+        family: "normal" as const,
+        parameters: { mean, standardDeviation },
+      })),
+    });
+
+    expect(result.yield).toBe(result.inSpecCount / result.iterations);
+    expect(result.outOfSpecProbability).toBe(result.outOfSpecCount / result.iterations);
+    expect(result.ppm).toBe(result.outOfSpecProbability * 1_000_000);
+  });
+
   it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
     "fails fast when target sigma level is not positive and finite: %s",
     (targetSigmaLevel) => {

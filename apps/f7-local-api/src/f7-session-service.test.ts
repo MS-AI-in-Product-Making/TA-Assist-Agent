@@ -262,6 +262,62 @@ describe("createF7SessionService", () => {
     expect(() => service.importWorkbook(importRequest(workbookBytes))).toThrow();
   });
 
+  it("exposes a selected worksheet tolerance-path image through the private session service", () => {
+    const imageContentHash = "a".repeat(64);
+    const imageBytes = new Uint8Array([137, 80, 78, 71]);
+    const service = createF7SessionService({
+      createId: () => "session-fixed",
+      now: () => "2026-08-19T08:00:00.000Z",
+      createWorksheetAnalysisAssets: () => ({
+        contractVersion: "v1",
+        workbook: {
+          classification: "confidential",
+          contentHash: createHash("sha256").update(buildWorkbook()).digest("hex"),
+          catalogContractVersion: "v1",
+        },
+        worksheets: [{
+          worksheetName: "Anonymous_TA",
+          toleranceLoopDescription: "First loop",
+          factorTables: [],
+          formulaCells: [],
+          imageAssets: [],
+          tolerancePathImage: {
+            status: "available",
+            labelSourceCell: "Anonymous_TA!A60",
+            imageContentHash,
+            imageAnchor: { from: "A61", to: "H80" },
+          },
+        }],
+      }),
+      readWorksheetImageAsset: () => ({
+        contractVersion: "v1",
+        classification: "confidential",
+        workbookContentHash: createHash("sha256").update(buildWorkbook()).digest("hex"),
+        imageContentHash,
+        mediaType: "image/png",
+        bytes: imageBytes,
+      }),
+    });
+    const workbookBytes = buildWorkbook();
+    const imported = service.importWorkbook(importRequest(workbookBytes));
+
+    const snapshot = service.confirmWorksheet({
+      sessionId: imported.sessionId,
+      confirmation: worksheetConfirmation(imported.workbook.workbookContentHash),
+    });
+
+    expect(snapshot.dimensionChainImage).toEqual({
+      status: "available",
+      worksheetName: "Anonymous_TA",
+      contentHash: imageContentHash,
+      url: "/f7/session/session-fixed/dimension-chain-image",
+    });
+    expect(service.readDimensionChainImage(imported.sessionId)).toEqual({
+      mediaType: "image/png",
+      bytes: imageBytes,
+    });
+  });
+
   it("evicts the oldest session when the fixed local session budget is reached", () => {
     const workbookBytes = buildWorkbook();
     const ids = Array.from({ length: 10 }, (_, index) => `s-${index + 1}`);
@@ -307,6 +363,7 @@ describe("createF7SessionService", () => {
     });
 
     expect(next.status).toBe("factor_setup");
+    expect(next.dimensionChainImage).toBeUndefined();
     expect(next.worksheetOptions.length).toBeGreaterThan(0);
     expect(next.worksheetOptions[0]?.worksheetName).toBe("Anonymous_TA");
     expect(next.systemSpecification).toEqual({
@@ -442,8 +499,19 @@ describe("createF7SessionService", () => {
     const good = service.confirmFactorSetup({
       sessionId: imported.sessionId,
       confirmations,
+      systemSpecification: {
+        lowerSpecLimit: -0.2,
+        upperSpecLimit: 0.1,
+        targetSigmaLevel: 4,
+      },
     });
     expect(good.status).toBe("measurement_entry");
+    expect(good.systemSpecification).toMatchObject({
+      status: "available",
+      lowerSpecLimit: { status: "available", actualValue: -0.2 },
+      upperSpecLimit: { status: "available", actualValue: 0.1 },
+      targetSigmaLevel: { status: "available", actualValue: 4 },
+    });
     for (const factor of good.factors) {
       expect(factor.setup?.confirmed).toBe(true);
       expect(factor.evidence).toBeDefined();
@@ -495,6 +563,34 @@ describe("createF7SessionService", () => {
       confirmations: [confirmAll(duplicateSetup)[0]!, confirmAll(duplicateSetup)[0]!],
     })).toThrow();
     expect(duplicateService.getSession(duplicateImport.sessionId)).toEqual(before);
+  });
+
+  it("reconfirms factor setup after analysis and clears all downstream results", () => {
+    const service = createService();
+    const completed = prepareBaselineSimulation(service);
+    expect(completed.status).toBe("phase_1_ready");
+    expect(completed.monteCarloResult).toBeDefined();
+
+    const confirmations = completed.factors.map((factor, index) => ({
+      ...factor.setup!,
+      designNominal: index === 0 ? factor.setup!.designNominal - 0.1 : factor.setup!.designNominal,
+      confirmed: true as const,
+    }));
+    const reconfirmed = service.confirmFactorSetup({
+      sessionId: completed.sessionId,
+      confirmations,
+    });
+
+    expect(reconfirmed.status).toBe("measurement_entry");
+    expect(reconfirmed.monteCarloResult).toBeUndefined();
+    expect(reconfirmed.factors[0]?.setup?.designNominal).toBe(confirmations[0]?.designNominal);
+    for (const factor of reconfirmed.factors) {
+      expect(factor.sourceMode).toBeUndefined();
+      expect(factor.input).toBeUndefined();
+      expect(factor.measurementPasteResult).toBeUndefined();
+      expect(factor.distributionFitResult).toBeUndefined();
+      expect(factor.distributionApproval).toBeUndefined();
+    }
   });
 
   it("setFactorMode handles baseline and measured transitions and clears obsolete state", () => {
@@ -668,7 +764,7 @@ describe("createF7SessionService", () => {
     expect(f7SessionSnapshotSchema.safeParse(fitted).success).toBe(true);
   });
 
-  it("requires explicit fit approval before running a reproducible Monte Carlo analysis", () => {
+  it("automatically approves the final fitted distribution before running Monte Carlo", () => {
     const service = createService();
     const imported = service.importWorkbook(importRequest(buildWorkbook()));
     const worksheetReady = service.confirmWorksheet({
@@ -698,6 +794,11 @@ describe("createF7SessionService", () => {
     snapshot = service.fitDistribution({ sessionId: imported.sessionId, factorId: factorIds[0]! });
     const proposedFamily = snapshot.factors[0]?.distributionFitResult?.selectionDecision.proposedFinalFamily;
     expect(proposedFamily).toBeDefined();
+    expect(snapshot.factors[0]?.distributionApproval).toEqual(expect.objectContaining({
+      factorId: factorIds[0],
+      family: proposedFamily,
+      confirmed: true,
+    }));
 
     const runRequest = {
       sessionId: imported.sessionId,
@@ -708,22 +809,15 @@ describe("createF7SessionService", () => {
       runSeed: "c".repeat(64),
       correlationMode: "INDEPENDENT" as const,
     };
-    expect(() => service.runMonteCarlo(runRequest)).toThrow();
-
-    snapshot = service.approveDistribution({
-      sessionId: imported.sessionId,
-      factorId: factorIds[0]!,
-      family: proposedFamily!,
-      confirmed: true,
-    });
-    expect(snapshot.factors[0]?.distributionApproval?.family).toBe(proposedFamily);
-
     vi.mocked(runF7MonteCarlo).mockImplementation((request) => createMonteCarloResult(
       request as Parameters<typeof runF7MonteCarlo>[0] & { readonly targetSigmaLevel: number },
     ));
     const first = service.runMonteCarlo(runRequest);
     const second = service.runMonteCarlo(runRequest);
-    expect(runF7MonteCarlo).toHaveBeenCalledWith(expect.objectContaining({ targetSigmaLevel: 4 }));
+    expect(runF7MonteCarlo).toHaveBeenCalledWith(expect.objectContaining({
+      targetSigmaLevel: 4,
+      additionalMeanShift: 0,
+    }));
     expect(first.monteCarloResult).toEqual(second.monteCarloResult);
     expect(first.monteCarloResult?.targetSigmaLevel).toBe(4);
     expect(first.monteCarloResult).toEqual(expect.objectContaining({
@@ -885,9 +979,15 @@ describe("createF7SessionService", () => {
     snapshot = service.setFactorMode({
       sessionId: imported.sessionId,
       factorId: factorIds[0]!,
-      mode: "BASELINE_ASSUMPTION",
+      mode: "MEASURED",
     });
+    expect(snapshot.status).toBe("measurement_entry");
+    expect(snapshot.factors[0]?.sourceMode).toBe("MEASURED");
+    expect(snapshot.factors[0]?.input).toEqual({ mode: "MEASURED" });
+    expect(snapshot.factors[0]?.measurementPasteResult).toBeUndefined();
+    expect(snapshot.factors[0]?.datasetValidation).toBeUndefined();
     expect(snapshot.factors[0]?.distributionFitResult).toBeUndefined();
+    expect(snapshot.factors[0]?.distributionApproval).toBeUndefined();
   });
 
   it("rejects ineligible distribution fit requests atomically", () => {

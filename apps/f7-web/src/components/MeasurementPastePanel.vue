@@ -1,9 +1,32 @@
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref, watch, type DeepReadonly } from "vue";
-import type { F7MeasurementStructure, F7SessionSnapshot, F7UiError } from "../api/f7-client";
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch, type DeepReadonly } from "vue";
+import type {
+  F7MeasurementStructure,
+  F7RationalSubgroupConfig,
+  F7SessionSnapshot,
+  F7UiError,
+} from "../api/f7-client";
 import { calculateF7Capability } from "../f7-capability";
-import { buildDistributionFitReferences, distributionFitObservedDomain } from "../distribution-fit-plot";
-import DistributionFitPlot from "./DistributionFitPlot.vue";
+import { buildMeasurementDiagnostics } from "../measurement-diagnostics";
+import { buildCapabilityComparison } from "../capability-comparison";
+import {
+  buildDistributionFitReferences,
+  buildFactorSetupAssumption,
+  distributionFitObservedDomain,
+} from "../distribution-fit-plot";
+import { buildMeasuredDistributionInterpretation } from "../distribution-guidance";
+import DistributionFitAnalysis from "./DistributionFitAnalysis.vue";
+import MeasurementHistogram from "./MeasurementHistogram.vue";
+import SelectedDistributionSummary from "./SelectedDistributionSummary.vue";
+import SelectedFactorSetup from "./SelectedFactorSetup.vue";
+import {
+  buildMeasurementRowMetadata,
+  calculateRationalSubgroupStandardDeviation,
+  rationalSubgroupConstant,
+  type RationalSubgroupEstimator,
+} from "../measurement-structure";
+import { defaultCpkRule } from '../capability-guidance';
+import { buildCapabilityGuidance as builder } from '../capability-guidance';
 
 const props = defineProps<{
   readonly session: DeepReadonly<F7SessionSnapshot>;
@@ -17,41 +40,103 @@ const emit = defineEmits<{
   paste: [payload: {
     factorId: string;
     structure: F7MeasurementStructure;
+    rationalSubgroupConfig?: F7RationalSubgroupConfig;
     sourceReference: string;
     msaStatus: "unknown";
     text: string;
-  }];
+  }, onSaved: (saved: boolean) => void];
   close: [];
+  clear: [factorId: string, onCleared: () => void];
   fit: [factorId: string];
-  approve: [factorId: string, family: "normal" | "lognormal" | "weibull" | "gamma" | "uniform"];
   stageChange: [stage: "measurement" | "capability" | "distribution"];
 }>();
 
 const form = reactive({
   structure: "UNORDERED_SAMPLE" as F7MeasurementStructure,
+  subgroupSize: 5,
+  subgroupEstimator: "RANGE_D2" as RationalSubgroupEstimator,
 });
 
 const selectedFactor = computed(() => props.session.factors.find((factor) => factor.evidence?.factorId === props.factorId));
 
 function measurementValues(factorId: string): string[] {
-  return props.session.factors
+  const dataset = props.session.factors
     .find((factor) => factor.evidence?.factorId === factorId)
-    ?.measurementPasteResult?.dataset?.observations
-    .filter((observation) => observation.disposition === "included")
-    .sort((left, right) => left.originalRow - right.originalRow)
-    .map((observation) => String(observation.value)) ?? [];
+    ?.measurementPasteResult?.dataset;
+  if (!dataset) return [];
+  const maximumSourceRow = Math.max(
+    0,
+    ...dataset.observations.map((observation) => observation.originalRow),
+    ...dataset.rejectionSummaries.map((summary) => summary.rowNumber),
+  );
+  const headerRows = maximumSourceRow > dataset.originalRowCount ? 1 : 0;
+  const values = Array<string>(dataset.originalRowCount).fill("");
+  for (const observation of dataset.observations) {
+    if (observation.disposition !== "included") continue;
+    const rowIndex = observation.originalRow - headerRows - 1;
+    if (rowIndex >= 0 && rowIndex < values.length) values[rowIndex] = String(observation.value);
+  }
+  while (values.at(-1) === "") values.pop();
+  return values;
 }
 
-const measurementRows = ref([...measurementValues(props.factorId), ""]);
-const measurementGrid = ref<HTMLElement | null>(null);
+const VISIBLE_EMPTY_MEASUREMENT_ROWS = 5;
+
+function rowsWithEmptyEntries(values: readonly string[]): string[] {
+  return [...values, ...Array<string>(VISIBLE_EMPTY_MEASUREMENT_ROWS).fill("")];
+}
+
+const measurementRows = ref(rowsWithEmptyEntries(measurementValues(props.factorId)));
+const measurementGrid = ref<globalThis.HTMLElement | null>(null);
 const measurementCount = computed(() => measurementRows.value.filter((value) => value.trim().length > 0).length);
+const populatedMeasurementRows = computed(() => {
+  const lastPopulatedIndex = measurementRows.value.findLastIndex((value) => value.trim().length > 0);
+  return measurementRows.value.slice(0, lastPopulatedIndex + 1);
+});
+const numericMeasurementRows = computed(() => populatedMeasurementRows.value
+  .map((value, rowIndex) => ({ value: Number(value.trim()), rowIndex }))
+  .filter((entry) => entry.value !== 0 || populatedMeasurementRows.value[entry.rowIndex]?.trim() !== "")
+  .filter((entry) => Number.isFinite(entry.value)));
+const measurementDiagnostics = computed(() => buildMeasurementDiagnostics(
+  numericMeasurementRows.value.map((entry) => entry.value),
+  populatedMeasurementRows.value.filter((value) => value.trim() === "").length,
+));
+const measurementMissingRows = computed(() => new Set(
+  populatedMeasurementRows.value
+    .map((value, rowIndex) => value.trim() === "" ? rowIndex : undefined)
+    .filter((rowIndex): rowIndex is number => rowIndex !== undefined),
+));
+const measurementOutlierRows = computed(() => new Set(
+  measurementDiagnostics.value.outlierIndexes
+    .map((index) => numericMeasurementRows.value[index]?.rowIndex)
+    .filter((index): index is number => index !== undefined),
+));
+const subgroupConstant = computed(() => rationalSubgroupConstant(form.subgroupSize, form.subgroupEstimator));
+const incompleteSubgroupCount = computed(() => form.structure === "RATIONAL_SUBGROUP"
+  ? measurementCount.value % form.subgroupSize
+  : 0);
+const measurementsNeededForCompleteSubgroup = computed(() => incompleteSubgroupCount.value === 0
+  ? 0
+  : form.subgroupSize - incompleteSubgroupCount.value);
+const automaticSaveEnabled = computed(() => (
+  !props.busy
+  && measurementCount.value > 0
+  && measurementsNeededForCompleteSubgroup.value === 0
+));
 const activeStage = ref<"measurement" | "capability" | "distribution">("measurement");
-const confirmationPending = ref(false);
+const automaticSavePending = ref(false);
+const automaticSaveTimer = ref<ReturnType<typeof globalThis.setTimeout>>();
+let measurementRevision = 0;
 const measurementReady = computed(() => selectedFactor.value?.measurementPasteResult?.status === "ready");
 const specificationUnit = computed(() => {
   const unit = selectedFactor.value?.evidence?.unit;
   return unit && unit !== "unspecified" ? unit : "";
 });
+
+function formatDiagnostic(value: number | undefined): string {
+  return value === undefined ? "-" : value.toLocaleString("en-US", { maximumSignificantDigits: 6, useGrouping: false });
+}
+
 const capabilityResult = computed(() => {
   const evidence = selectedFactor.value?.evidence;
   const dataset = selectedFactor.value?.measurementPasteResult?.dataset;
@@ -59,11 +144,66 @@ const capabilityResult = computed(() => {
 
   const values = dataset.observations
     .filter((observation) => observation.disposition === "included")
+    .sort((left, right) => left.originalRow - right.originalRow)
     .map((observation) => observation.value);
-  return calculateF7Capability(values, evidence.lowerSpecLimit, evidence.upperSpecLimit);
+  const withinSubgroupStandardDeviation = dataset.structure === "RATIONAL_SUBGROUP" && dataset.rationalSubgroupConfig
+    ? calculateRationalSubgroupStandardDeviation(
+        values,
+        dataset.rationalSubgroupConfig.subgroupSize,
+        dataset.rationalSubgroupConfig.estimator,
+      )
+    : undefined;
+  return calculateF7Capability(
+    values,
+    evidence.lowerSpecLimit,
+    evidence.upperSpecLimit,
+    withinSubgroupStandardDeviation,
+  );
+});
+const capabilityComparison = computed(() => {
+  const evidence = selectedFactor.value?.evidence;
+  const capability = capabilityResult.value;
+  if (!evidence || capability?.status !== "ready") return undefined;
+  return buildCapabilityComparison({
+    measured: {
+      mean: capability.mean,
+      standardDeviation: capability.sampleStandardDeviation,
+      cp: capability.cp,
+      cpk: capability.cpk,
+    },
+    setup: {
+      signedMean: evidence.calculatedMean,
+      standardDeviation: evidence.oneSigma,
+    },
+    lowerSpecLimit: evidence.lowerSpecLimit,
+    upperSpecLimit: evidence.upperSpecLimit,
+  });
+});
+const guidance = computed(() => {
+  const comp = capabilityComparison.value;
+  if (!comp || !defaultCpkRule) return undefined;
+  return builder({
+    mean: comp.mean,
+    standardDeviation: comp.standardDeviation,
+    cp: comp.cp,
+    cpk: comp.cpk,
+    ruleResult: defaultCpkRule,
+  });
 });
 const distributionFitResult = computed(() => selectedFactor.value?.distributionFitResult);
 const distributionFitResultKey = computed(() => JSON.stringify(distributionFitResult.value ?? null));
+const factorSetupAssumption = computed(() => {
+  const evidence = selectedFactor.value?.evidence;
+  return evidence
+    ? buildFactorSetupAssumption({
+        signedMean: evidence.calculatedMean,
+        oneSigma: evidence.oneSigma,
+        distribution: evidence.distribution,
+        longTermSafetyFactor: evidence.longTermSafetyFactor,
+        sigmaLevel: evidence.sigmaLevel,
+      })
+    : undefined;
+});
 const distributionPlotReferences = computed(() => {
   const result = distributionFitResult.value;
   const evidence = selectedFactor.value?.evidence;
@@ -72,107 +212,119 @@ const distributionPlotReferences = computed(() => {
     : undefined;
 });
 const distributionPlotDomain = computed(() => distributionFitResult.value
-  ? distributionFitObservedDomain(distributionFitResult.value.candidates, distributionPlotReferences.value)
+  ? distributionFitObservedDomain(
+      distributionFitResult.value.candidates,
+      distributionPlotReferences.value,
+      factorSetupAssumption.value,
+    )
   : undefined);
 const selectionDecision = computed(() => distributionFitResult.value?.selectionDecision);
 const distributionApproval = computed(() => selectedFactor.value?.distributionApproval);
-const proposedCandidateIsAcceptable = computed(() => {
-  const family = selectionDecision.value?.proposedFinalFamily;
-  return distributionFitResult.value?.candidates.some((candidate) => (
-    candidate.family === family && candidate.bootstrap.status === "acceptable"
-  )) ?? false;
-});
-const sortedCandidates = computed(() => {
-  const candidates = distributionFitResult.value?.candidates ?? [];
-  const proposedFamily = selectionDecision.value?.proposedFinalFamily;
-  if (!proposedFamily) return candidates;
-  return [...candidates].sort((left, right) => (
-    Number(right.family === proposedFamily) - Number(left.family === proposedFamily)
-  ));
-});
-const selectionConclusionStatements = computed(() => {
-  const decision = selectionDecision.value;
-  if (!decision) return [];
-  const statements: string[] = [];
-  if (decision.reasonCodes.includes("MULTIPLE_COMPETITIVE_MODELS")) {
-    statements.push(`${familyList(decision.competitiveFamilies)} are statistically competitive for this sample.`);
-  } else if (decision.reasonCodes.includes("SINGLE_ACCEPTABLE_COMPETITOR") && decision.numericBestFamily) {
-    statements.push(`${familyLabel(decision.numericBestFamily)} is the only acceptable model within ΔAICc ≤ 2.`);
-  }
-  if (decision.numericBestFamily) {
-    statements.push(`${familyLabel(decision.numericBestFamily)} has the numerically lowest AICc among acceptable candidates.`);
-  }
-  if (decision.reasonCodes.includes("NORMAL_DIMENSIONAL_ENGINEERING_DEFAULT") && decision.engineeringDefaultFamily) {
-    statements.push(`${familyLabel(decision.engineeringDefaultFamily)} is the engineering default.`);
-  }
-  const alternativeFamilies = decision.competitiveFamilies.filter((family) => (
-    family !== decision.engineeringDefaultFamily && family !== decision.numericBestFamily
-  ));
-  if (alternativeFamilies.length === 1) {
-    statements.push(`${familyList(alternativeFamilies)} is a plausible alternative.`);
-  } else if (alternativeFamilies.length > 1) {
-    statements.push(`${familyList(alternativeFamilies)} are plausible alternatives.`);
-  }
-  return statements;
+const measuredDistributionInterpretation = computed(() => {
+  const result = distributionFitResult.value;
+  const comparison = capabilityComparison.value;
+  if (!result || !comparison) return undefined;
+  const approval = distributionApproval.value;
+  return buildMeasuredDistributionInterpretation({
+    fitResult: result as F7SessionSnapshot["factors"][number]["distributionFitResult"] & {},
+    ...(approval ? { approval: approval as NonNullable<F7SessionSnapshot["factors"][number]["distributionApproval"]> } : {}),
+    setup: {
+      mean: comparison.mean.setup,
+      standardDeviation: comparison.standardDeviation.setup,
+    },
+    sample: {
+      mean: comparison.mean.measured,
+      standardDeviation: comparison.standardDeviation.measured,
+    },
+  });
 });
 const expandedPlotFamily = ref<string>();
-const fitWarnings = computed(() => distributionFitResult.value?.candidates.flatMap((candidate) =>
-  candidate.warnings.map((warning) => ({ family: candidate.family, warning }))) ?? []);
-const failedCandidates = computed(() => distributionFitResult.value?.failedCandidates ?? []);
 
 function showProposedDistributionPlot(): void {
   expandedPlotFamily.value = selectionDecision.value?.proposedFinalFamily;
 }
 
 function ensureTrailingEmptyRow(): void {
-  while (
-    measurementRows.value.length > 1
-    && measurementRows.value.at(-1)?.trim() === ""
-    && measurementRows.value.at(-2)?.trim() === ""
-  ) {
+  while (measurementRows.value.length > VISIBLE_EMPTY_MEASUREMENT_ROWS) {
+    const trailingRows = measurementRows.value.slice(-VISIBLE_EMPTY_MEASUREMENT_ROWS - 1);
+    if (trailingRows.some((value) => value.trim() !== "")) break;
     measurementRows.value.pop();
   }
-  if (measurementRows.value.at(-1)?.trim() !== "") measurementRows.value.push("");
+  while (
+    measurementRows.value.length < VISIBLE_EMPTY_MEASUREMENT_ROWS
+    || measurementRows.value.slice(-VISIBLE_EMPTY_MEASUREMENT_ROWS).some((value) => value.trim() !== "")
+  ) {
+    measurementRows.value.push("");
+  }
+}
+
+function scheduleAutomaticAnalysis(): void {
+  ensureTrailingEmptyRow();
+  measurementRevision += 1;
+  automaticSavePending.value = measurementCount.value > 0;
+  if (automaticSaveTimer.value) globalThis.clearTimeout(automaticSaveTimer.value);
+  if (!automaticSaveEnabled.value) return;
+  const scheduledRevision = measurementRevision;
+  automaticSaveTimer.value = globalThis.setTimeout(() => submitPaste(scheduledRevision), 500);
 }
 
 function removeRow(index: number): void {
   measurementRows.value.splice(index, 1);
-  if (measurementRows.value.length === 0) measurementRows.value.push("");
-  ensureTrailingEmptyRow();
+  scheduleAutomaticAnalysis();
 }
 
 async function clearMeasurements(): Promise<void> {
   if (measurementCount.value === 0) return;
-  measurementRows.value = [""];
-  confirmationPending.value = false;
-  await nextTick();
-  measurementGrid.value?.querySelector<HTMLInputElement>("input[data-measurement-row='1']")?.focus();
+  emit("clear", props.factorId, () => {
+    measurementRevision += 1;
+    if (automaticSaveTimer.value) globalThis.clearTimeout(automaticSaveTimer.value);
+    measurementRows.value = rowsWithEmptyEntries([]);
+    automaticSavePending.value = false;
+    void nextTick(() => {
+      measurementGrid.value?.querySelector<HTMLInputElement>("input[data-measurement-row='1']")?.focus();
+    });
+  });
 }
 
-function pasteRows(index: number, event: ClipboardEvent): void {
-  const pastedValues = event.clipboardData?.getData("text/plain")
-    .split(/\r?\n|\t/)
-    .map((value) => value.trim())
-    .filter((value) => value.length > 0) ?? [];
+type PasteLikeEvent = { clipboardData?: { getData?: (format: string) => string } | null; preventDefault: () => void };
+
+function pasteRows(index: number, event: PasteLikeEvent): void {
+  const rawText = event.clipboardData?.getData?.("text/plain") ?? "";
+  const pastedValues = rawText
+    ? rawText.split(/\r?\n|\t/).map((value) => value.trim())
+    : [];
+  while (pastedValues.at(-1) === "") pastedValues.pop();
   if (pastedValues.length === 0) return;
   event.preventDefault();
   measurementRows.value.splice(index, 1, ...pastedValues);
-  ensureTrailingEmptyRow();
+  scheduleAutomaticAnalysis();
 }
 
-function submitPaste(): void {
-  const values = measurementRows.value.map((value) => value.trim()).filter((value) => value.length > 0);
-  if (props.busy || !selectedFactor.value || values.length === 0) return;
-  confirmationPending.value = true;
+function submitPaste(scheduledRevision: number): void {
+  const values = populatedMeasurementRows.value.map((value) => value.trim());
+  if (scheduledRevision !== measurementRevision || !automaticSaveEnabled.value || !selectedFactor.value) return;
+  automaticSavePending.value = true;
   const text = form.structure === "ORDERED_INDIVIDUALS"
-    ? ["value\tsequence", ...values.map((value, index) => `${value}\t${index + 1}`)].join("\n")
-    : values.join("\n");
+    ? ["value\tsequence", ...values.map((value, index) => value === "" ? "" : `${value}\t${index + 1}`)].join("\n")
+    : form.structure === "RATIONAL_SUBGROUP"
+      ? [
+          "value\tsubgroup",
+          ...values.map((value, index) => value === "" ? "" : `${value}\t${buildMeasurementRowMetadata(index, form.structure, form.subgroupSize).subgroup}`),
+        ].join("\n")
+      : values.join("\n");
   emit("paste", {
     factorId: props.factorId,
     structure: form.structure,
+    ...(form.structure === "RATIONAL_SUBGROUP"
+      ? { rationalSubgroupConfig: { subgroupSize: form.subgroupSize, estimator: form.subgroupEstimator } }
+      : {}),
     sourceReference: "local-workbench-entry",
     msaStatus: "unknown",
     text,
+  }, (saved) => {
+    if (scheduledRevision !== measurementRevision) return;
+    automaticSavePending.value = false;
+    if (saved) emit("fit", props.factorId);
   });
 }
 
@@ -186,63 +338,21 @@ function openDistributionFit(): void {
   }
 }
 
-function approveProposedDistribution(): void {
-  const family = selectionDecision.value?.proposedFinalFamily;
-  if (!family || !proposedCandidateIsAcceptable.value || props.busy) return;
-  emit("approve", props.factorId, family);
+function formatSigned(value: number, fractionDigits: number): string {
+  const magnitude = Math.abs(value).toFixed(fractionDigits);
+  if (value > 0) return `+${magnitude}`;
+  if (value < 0) return `−${magnitude}`;
+  return magnitude;
 }
 
-function formatMetric(value: number): string {
-  return value.toLocaleString("en-US", { maximumFractionDigits: 6, useGrouping: false });
+function formatChangePercent(value: number): string {
+  return `${formatSigned(value * 100, 1)}%`;
 }
 
-function formatParameters(parameters: Readonly<Record<string, number>>): string {
-  return Object.entries(parameters)
-    .map(([name, value]) => `${name}=${formatMetric(value)}`)
-    .join(", ");
+function changeAssessmentClass(assessment: "better" | "worse" | "unchanged"): string {
+  return `capability-change-${assessment}`;
 }
 
-function familyLabel(family: string): string {
-  return `${family.charAt(0).toUpperCase()}${family.slice(1)}`;
-}
-
-function modelSpecificationLabel(specification: string): string {
-  if (specification === "normal_location_scale") return "Location fitted";
-  if (specification.endsWith("_location_zero")) return "Location fixed at 0";
-  if (specification === "uniform_boundary_mle") return "Boundary MLE";
-  return specification;
-}
-
-function candidateDecisionLabels(family: string): string[] {
-  const decision = selectionDecision.value;
-  if (!decision) return [];
-  const labels: string[] = [];
-  if (decision.proposedFinalFamily === family) labels.push("Proposed final selection");
-  if (decision.numericBestFamily === family) labels.push("Numerically lowest AICc");
-  if (decision.engineeringDefaultFamily === family) labels.push("Engineering default");
-  if (decision.competitiveFamilies.includes(family as typeof decision.competitiveFamilies[number])
-    && decision.engineeringDefaultFamily !== family) {
-    labels.push("Plausible alternative");
-  }
-  return labels;
-}
-
-function familyList(families: readonly string[]): string {
-  const labels = families.map(familyLabel);
-  if (labels.length <= 1) return labels[0] ?? "";
-  if (labels.length === 2) return `${labels[0]} and ${labels[1]}`;
-  return `${labels.slice(0, -1).join(", ")}, and ${labels.at(-1)}`;
-}
-
-function hasSelectionReason(reasonCode: string): boolean {
-  return selectionDecision.value?.reasonCodes.includes(
-    reasonCode as NonNullable<typeof selectionDecision.value>["reasonCodes"][number],
-  ) ?? false;
-}
-
-function failureReason(reasonCode: string): string {
-  return reasonCode === "numerical_fit_failed" ? "numerical fit failed" : reasonCode;
-}
 
 function toggleDistributionPlot(family: string): void {
   expandedPlotFamily.value = expandedPlotFamily.value === family ? undefined : family;
@@ -253,33 +363,18 @@ function closeMeasurementWorkspace(): void {
   emit("close");
 }
 
-function specificationSource(bound: "lowerSpecLimit" | "upperSpecLimit"): string {
-  const evidence = selectedFactor.value?.evidence;
-  if (!evidence) return "";
-  const nominalValueSource = evidence.sourceCells.nominalValue;
-  const toleranceSource = evidence.sourceCells[bound === "lowerSpecLimit" ? "lowerTolerance" : "upperTolerance"];
-  if (nominalValueSource && toleranceSource) return `ABS(${nominalValueSource}) + ${toleranceSource}`;
-  return evidence.sourceCells[bound] ?? "";
-}
-
 function formatSpecificationLimit(value: number | undefined): string {
   if (value === undefined) return "";
   return value.toLocaleString("en-US", { maximumFractionDigits: 12, useGrouping: false });
 }
 
 watch(
-  () => [props.busy, selectedFactor.value?.measurementPasteResult?.status] as const,
-  ([busy, status]) => {
-    if (busy || !confirmationPending.value) return;
-    confirmationPending.value = false;
-    if (status === "ready") activeStage.value = "capability";
-  },
-);
-
-watch(
   distributionFitResultKey,
   (resultKey, previousResultKey) => {
-    if (activeStage.value === "distribution" && resultKey !== previousResultKey) {
+    if (
+      (activeStage.value === "capability" || activeStage.value === "distribution")
+      && resultKey !== previousResultKey
+    ) {
       showProposedDistributionPlot();
     }
   },
@@ -288,15 +383,37 @@ watch(
 watch(
   () => props.factorId,
   (factorId) => {
-    measurementRows.value = [...measurementValues(factorId), ""];
-    form.structure = selectedFactor.value?.measurementPasteResult?.dataset?.structure ?? "UNORDERED_SAMPLE";
+    measurementRows.value = rowsWithEmptyEntries(measurementValues(factorId));
+    const dataset = selectedFactor.value?.measurementPasteResult?.dataset;
+    form.structure = dataset?.structure ?? "UNORDERED_SAMPLE";
+    form.subgroupSize = dataset?.rationalSubgroupConfig?.subgroupSize ?? 5;
+    form.subgroupEstimator = dataset?.rationalSubgroupConfig?.estimator ?? "RANGE_D2";
     activeStage.value = "measurement";
     expandedPlotFamily.value = undefined;
-    confirmationPending.value = false;
+    automaticSavePending.value = false;
+    measurementRevision += 1;
+    if (automaticSaveTimer.value) globalThis.clearTimeout(automaticSaveTimer.value);
   },
+  { immediate: true },
 );
 
-watch(activeStage, (stage) => emit("stageChange", stage));
+watch(activeStage, (stage) => {
+  emit("stageChange", stage);
+  if (
+    stage === "capability"
+    && measurementReady.value
+    && !props.busy
+    && !props.fitLoading
+    && !props.fitError
+    && !distributionFitResult.value
+  ) {
+    emit("fit", props.factorId);
+  }
+});
+
+onBeforeUnmount(() => {
+  if (automaticSaveTimer.value) globalThis.clearTimeout(automaticSaveTimer.value);
+});
 </script>
 
 <template>
@@ -315,9 +432,10 @@ watch(activeStage, (stage) => emit("stageChange", stage));
         data-close-measurement
         @click="closeMeasurementWorkspace"
       >
-        Back to factors
+        Back to factor setup
       </button>
     </header>
+    <SelectedFactorSetup :session="session" :factor-id="factorId" />
     <ol class="analysis-stage-list" aria-label="Factor analysis stages">
       <li :class="activeStage === 'measurement' ? 'stage-current' : 'stage-complete'">
         <span>1</span>
@@ -346,25 +464,44 @@ watch(activeStage, (stage) => emit("stageChange", stage));
       </li>
     </ol>
     <section class="specification-evidence" aria-label="Excel specification limits">
-      <h4>Factor Specification Limits (Excel)</h4>
-      <dl>
-        <div>
-          <dt>LSL</dt>
-          <dd>{{ formatSpecificationLimit(selectedFactor?.evidence?.lowerSpecLimit) }} {{ specificationUnit }}</dd>
-          <small>{{ specificationSource("lowerSpecLimit") }}</small>
+      <div class="specification-evidence-header">
+        <div class="specification-evidence-summary">
+          <h4>Factor Specification Limits</h4>
+          <dl class="specification-limit-values">
+            <div>
+              <dt>LSL</dt>
+              <dd>{{ formatSpecificationLimit(selectedFactor?.evidence?.lowerSpecLimit) }} {{ specificationUnit }}</dd>
+            </div>
+            <div>
+              <dt>USL</dt>
+              <dd>{{ formatSpecificationLimit(selectedFactor?.evidence?.upperSpecLimit) }} {{ specificationUnit }}</dd>
+            </div>
+          </dl>
         </div>
-        <div>
-          <dt>USL</dt>
-          <dd>{{ formatSpecificationLimit(selectedFactor?.evidence?.upperSpecLimit) }} {{ specificationUnit }}</dd>
-          <small>{{ specificationSource("upperSpecLimit") }}</small>
-        </div>
-      </dl>
+        <button
+          v-if="activeStage === 'capability'"
+          type="button"
+          class="workspace-close-button"
+          data-review-measurements
+          @click="activeStage = 'measurement'"
+        >
+          Review Measurement Data
+        </button>
+      </div>
     </section>
-    <div v-if="activeStage === 'measurement'" class="measurement-workspace-body">
+    <div
+      v-if="activeStage !== 'distribution'"
+      class="measurement-capability-layout"
+      data-measurement-capability-layout
+    >
+    <div class="measurement-workspace-body measurement-entry-column" data-measurement-entry-column>
       <div class="measurement-section-heading">
         <h3>Measurement Data</h3>
         <div class="measurement-heading-actions">
           <strong>{{ measurementCount }} values</strong>
+          <small class="measurement-auto-save-status" data-measurement-auto-save-status>
+            {{ automaticSavePending || busy ? "Saving and updating analysis..." : "Changes save automatically" }}
+          </small>
           <button
             type="button"
             class="clear-measurements-button"
@@ -379,32 +516,68 @@ watch(activeStage, (stage) => emit("stageChange", stage));
       <div class="measurement-structure-control">
         <label>
           Structure
-          <select v-model="form.structure">
-            <option value="RATIONAL_SUBGROUP">RATIONAL_SUBGROUP</option>
-            <option value="ORDERED_INDIVIDUALS">ORDERED_INDIVIDUALS</option>
+          <select v-model="form.structure" data-measurement-structure @change="scheduleAutomaticAnalysis">
             <option value="UNORDERED_SAMPLE">UNORDERED_SAMPLE</option>
+            <option value="ORDERED_INDIVIDUALS">ORDERED_INDIVIDUALS</option>
+            <option value="RATIONAL_SUBGROUP">RATIONAL_SUBGROUP</option>
           </select>
         </label>
+        <div v-if="form.structure === 'RATIONAL_SUBGROUP'" class="rational-subgroup-controls" data-rational-subgroup-controls>
+          <label>
+            Observations per subgroup
+            <select v-model.number="form.subgroupSize" aria-label="Observations per subgroup" @change="scheduleAutomaticAnalysis">
+              <option v-for="size in 24" :key="size + 1" :value="size + 1">{{ size + 1 }}</option>
+            </select>
+          </label>
+          <label>
+            Within-subgroup estimator
+            <select v-model="form.subgroupEstimator" aria-label="Within-subgroup estimator" @change="scheduleAutomaticAnalysis">
+              <option value="RANGE_D2">Average range / d2</option>
+              <option value="S_C4">Average standard deviation / c4</option>
+            </select>
+          </label>
+          <output data-subgroup-constant>
+            {{ form.subgroupEstimator === "RANGE_D2" ? "d2" : "c4" }} = {{ subgroupConstant }}
+          </output>
+        </div>
       </div>
       <div ref="measurementGrid" class="measurement-grid-scroll">
         <table class="measurement-grid">
           <thead>
             <tr>
-              <th>No.</th>
+              <th v-if="form.structure === 'RATIONAL_SUBGROUP'">Subgroup</th>
+              <th v-if="form.structure === 'RATIONAL_SUBGROUP'">Position</th>
+              <th v-else>{{ form.structure === "ORDERED_INDIVIDUALS" ? "Sequence" : "No." }}</th>
               <th>Measured Value</th>
               <th><span class="sr-only">Row actions</span></th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="(value, index) in measurementRows" :key="index">
-              <td>{{ index + 1 }}</td>
+            <tr
+              v-for="(value, index) in measurementRows"
+              :key="index"
+              :class="{
+                'subgroup-start-row': form.structure === 'RATIONAL_SUBGROUP' && index > 0 && index % form.subgroupSize === 0,
+                'measurement-missing-row': measurementMissingRows.has(index),
+                'measurement-outlier-row': measurementOutlierRows.has(index),
+              }"
+              :data-missing-value="measurementMissingRows.has(index) || undefined"
+              :data-outlier-candidate="measurementOutlierRows.has(index) || undefined"
+            >
+              <td v-if="form.structure === 'RATIONAL_SUBGROUP'" data-subgroup-id>
+                {{ buildMeasurementRowMetadata(index, form.structure, form.subgroupSize).subgroup }}
+              </td>
+              <td v-if="form.structure === 'RATIONAL_SUBGROUP'" data-subgroup-position>
+                {{ buildMeasurementRowMetadata(index, form.structure, form.subgroupSize).position }}
+              </td>
+              <td v-else>{{ index + 1 }}</td>
               <td>
                 <input
                   v-model="measurementRows[index]"
                   :data-measurement-row="index + 1"
                   inputmode="decimal"
-                  :aria-label="`Measurement value ${index + 1}`"
-                  @input="ensureTrailingEmptyRow"
+                  :aria-label="`Measurement value ${index + 1}${measurementMissingRows.has(index) ? ', missing value' : measurementOutlierRows.has(index) ? ', outlier candidate' : ''}`"
+                  @input="scheduleAutomaticAnalysis"
                   @paste="pasteRows(index, $event)"
                 >
               </td>
@@ -422,229 +595,239 @@ watch(activeStage, (stage) => emit("stageChange", stage));
           </tbody>
         </table>
       </div>
-      <button
-        type="button"
-        class="action-button"
-        data-confirm-measurements
-        :disabled="busy || measurementCount === 0"
-        @click="submitPaste"
-      >
-        Confirm Measurement Data
-      </button>
+      <p v-if="measurementsNeededForCompleteSubgroup > 0" class="measurement-structure-warning" data-incomplete-subgroup-warning>
+        Add {{ measurementsNeededForCompleteSubgroup }} more measurement{{ measurementsNeededForCompleteSubgroup === 1 ? "" : "s" }} to complete the final subgroup.
+      </p>
     </div>
-    <div v-else-if="activeStage === 'capability'" class="measurement-workspace-body capability-analysis">
+    <aside class="measurement-workspace-body capability-analysis" data-live-capability-column aria-live="polite">
       <p class="workspace-eyebrow">Measurement data confirmed</p>
       <h3>Capability Analysis</h3>
-      <dl v-if="capabilityResult?.status === 'ready'" class="capability-metrics">
+      <div class="measurement-metrics-board" data-measurement-metrics-board>
+        <section class="measurement-metric-group quality-metric-group" data-metric-group="quality">
+          <h4>Data Quality</h4>
+          <dl class="measurement-diagnostics" data-measurement-diagnostics>
         <div>
           <dt>Sample Size</dt>
-          <dd>{{ capabilityResult.sampleSize }}</dd>
+          <dd>{{ measurementDiagnostics.sampleSize }}</dd>
+          <span :class="['diagnostic-status', measurementDiagnostics.sampleSizeStatus]">
+            {{ measurementDiagnostics.sampleSizeStatus === "acceptable" ? "Acceptable (n ≥ 30)" : "Limited (n < 30)" }}
+          </span>
         </div>
+        <div><dt>Minimum</dt><dd>{{ formatDiagnostic(measurementDiagnostics.minimum) }}</dd></div>
+        <div><dt>Maximum</dt><dd>{{ formatDiagnostic(measurementDiagnostics.maximum) }}</dd></div>
+        <div><dt>Range</dt><dd>{{ formatDiagnostic(measurementDiagnostics.range) }}</dd></div>
+        <div>
+          <dt>Missing Values</dt>
+          <dd :class="{ 'diagnostic-alert': measurementDiagnostics.missingCount > 0 }">{{ measurementDiagnostics.missingCount }}</dd>
+        </div>
+        <div>
+          <dt>3σ Rule</dt>
+          <dd :class="{ 'diagnostic-alert': measurementDiagnostics.threeSigmaOutlierIndexes.length > 0 }">
+            {{ measurementDiagnostics.threeSigmaOutlierIndexes.length }} candidate{{ measurementDiagnostics.threeSigmaOutlierIndexes.length === 1 ? "" : "s" }}
+          </dd>
+          <span>|x − Mean| &gt; 3σ</span>
+        </div>
+        <div>
+          <dt>IQR Method</dt>
+          <dd :class="{ 'diagnostic-alert': measurementDiagnostics.iqrOutlierIndexes.length > 0 }">
+            {{ measurementDiagnostics.iqrOutlierIndexes.length }} candidate{{ measurementDiagnostics.iqrOutlierIndexes.length === 1 ? "" : "s" }}
+          </dd>
+          <span>Tukey 1.5 × IQR fences</span>
+        </div>
+          </dl>
+        </section>
+        <section class="measurement-metric-group capability-metric-group" data-metric-group="capability">
+          <h4>Capability Comparison</h4>
+          <dl v-if="capabilityResult?.status === 'ready'" class="capability-metrics">
         <div>
           <dt>Mean</dt>
-          <dd>{{ capabilityResult.mean.toFixed(4) }}</dd>
+          <dd v-if="capabilityComparison" class="capability-comparison" data-capability-comparison="mean">
+            <div class="capability-comparison-row setup-row" data-comparison-row>
+              <span data-comparison-source>Setup</span>
+              <strong>|Mean| {{ capabilityComparison.mean.setup.toFixed(4) }}</strong>
+            </div>
+            <div class="capability-comparison-row sample-row" data-comparison-row>
+              <span data-comparison-source>Sample</span>
+              <strong>{{ capabilityComparison.mean.measured.toFixed(4) }}</strong>
+              <span class="capability-change-badge" data-comparison-change>Change {{ formatSigned(capabilityComparison.mean.delta, 4) }} · {{ formatChangePercent(capabilityComparison.mean.relativeChange) }}</span>
+            </div>
+          </dd>
         </div>
         <div>
-          <dt>Sample Std Dev</dt>
-          <dd>{{ capabilityResult.sampleStandardDeviation.toFixed(4) }}</dd>
+          <dt>{{ selectedFactor?.measurementPasteResult?.dataset?.structure === "RATIONAL_SUBGROUP" ? "Within-subgroup Std Dev" : "Sample Std Dev" }}</dt>
+          <dd
+            v-if="capabilityComparison"
+            :class="['capability-comparison', changeAssessmentClass(capabilityComparison.standardDeviation.assessment)]"
+            data-capability-comparison="standard-deviation"
+          >
+            <div class="capability-comparison-row setup-row" data-comparison-row>
+              <span data-comparison-source>Setup</span>
+              <strong>1σ {{ capabilityComparison.standardDeviation.setup.toFixed(4) }}</strong>
+            </div>
+            <div class="capability-comparison-row sample-row" data-comparison-row>
+              <span data-comparison-source>Sample</span>
+              <strong>{{ capabilityComparison.standardDeviation.measured.toFixed(4) }}</strong>
+              <span class="capability-change-badge" data-comparison-change>Change {{ formatSigned(capabilityComparison.standardDeviation.delta, 4) }} · {{ formatChangePercent(capabilityComparison.standardDeviation.relativeChange) }} · {{ capabilityComparison.standardDeviation.ratio.toFixed(2) }}×</span>
+            </div>
+          </dd>
         </div>
         <div>
           <dt>Cp</dt>
-          <dd>{{ capabilityResult.cp.toFixed(3) }}</dd>
+          <dd
+            v-if="capabilityComparison"
+            :class="['capability-comparison', changeAssessmentClass(capabilityComparison.cp.assessment)]"
+            data-capability-comparison="cp"
+          >
+            <div class="capability-comparison-row setup-row" data-comparison-row>
+              <span data-comparison-source>Setup</span>
+              <strong>{{ capabilityComparison.cp.setup.toFixed(3) }}</strong>
+            </div>
+            <div class="capability-comparison-row sample-row" data-comparison-row>
+              <span data-comparison-source>Sample</span>
+              <strong>{{ capabilityComparison.cp.measured.toFixed(3) }}</strong>
+              <span class="capability-change-badge" data-comparison-change>Change {{ formatSigned(capabilityComparison.cp.delta, 3) }} · {{ formatChangePercent(capabilityComparison.cp.relativeChange) }}</span>
+            </div>
+          </dd>
         </div>
         <div>
           <dt>Cpk</dt>
-          <dd>{{ capabilityResult.cpk.toFixed(3) }}</dd>
+          <dd
+            v-if="capabilityComparison"
+            :class="['capability-comparison', changeAssessmentClass(capabilityComparison.cpk.assessment)]"
+            data-capability-comparison="cpk"
+          >
+            <div class="capability-comparison-row setup-row" data-comparison-row>
+              <span data-comparison-source>Setup</span>
+              <strong>{{ capabilityComparison.cpk.setup.toFixed(3) }}</strong>
+            </div>
+            <div class="capability-comparison-row sample-row" data-comparison-row>
+              <span data-comparison-source>Sample</span>
+              <strong>{{ capabilityComparison.cpk.measured.toFixed(3) }}</strong>
+              <span class="capability-change-badge" data-comparison-change>Change {{ formatSigned(capabilityComparison.cpk.delta, 3) }} · {{ formatChangePercent(capabilityComparison.cpk.relativeChange) }}</span>
+            </div>
+          </dd>
         </div>
-      </dl>
-      <p v-else-if="capabilityResult?.status === 'insufficient_data'" class="error-banner">
+          </dl>
+          <p v-else class="metric-group-empty">Capability requires at least two measurements with variation.</p>
+        </section>
+        <p v-if="capabilityComparison" class="capability-change-summary" data-capability-change-summary>
+          Mean shifted {{ capabilityComparison.mean.delta >= 0 ? "higher" : "lower" }} by {{ Math.abs(capabilityComparison.mean.delta).toFixed(4) }}.
+          Variation {{ capabilityComparison.standardDeviation.delta >= 0 ? "increased" : "decreased" }} by {{ Math.abs(capabilityComparison.standardDeviation.relativeChange * 100).toFixed(1) }}%.
+          Cp {{ capabilityComparison.cp.delta >= 0 ? "increased" : "decreased" }} by {{ Math.abs(capabilityComparison.cp.delta).toFixed(3) }};
+          Cpk {{ capabilityComparison.cpk.delta >= 0 ? "increased" : "decreased" }} by {{ Math.abs(capabilityComparison.cpk.delta).toFixed(3) }}.
+        </p>
+      </div>
+      <p v-if="measurementDiagnostics.outlierIndexes.length > 0" class="outlier-advisory" data-outlier-advisory>
+        Red rows are candidate outliers only. Values remain included in all calculations.
+      </p>
+      <MeasurementHistogram :diagnostics="measurementDiagnostics" />
+      <section class="capability-distribution-fit" data-capability-distribution-fit>
+        <SelectedDistributionSummary
+          :result="distributionFitResult"
+          :approval="distributionApproval"
+          :fit-loading="fitLoading"
+          :fit-error="fitError"
+          :plot-domain="distributionPlotDomain"
+          :plot-references="distributionPlotReferences"
+          :setup-assumption="factorSetupAssumption"
+        />
+      </section>
+      <section
+        v-if="guidance"
+        class="capability-guidance compact semantic"
+        data-capability-guidance
+      >
+        <template v-if="guidance.available">
+          <h4 data-capability-guidance-title>
+            Factor Capability Guidance
+          </h4>
+          <p data-capability-guidance-assessment>
+            {{ guidance.targetAssessment }}
+          </p>
+          <p data-capability-guidance-provenance>
+            F0 target rule: {{ guidance.provenanceLabel }}
+          </p>
+          <p
+            v-if="guidance.applicability"
+            data-capability-guidance-applicability
+          >
+            Applicability: {{ guidance.applicability }}
+          </p>
+          <h5>Interpretation</h5>
+          <ul data-capability-guidance-interpretations>
+            <li
+              v-for="interpretation in guidance.interpretations"
+              :key="interpretation"
+            >
+              {{ interpretation }}
+            </li>
+          </ul>
+          <h5>Recommended review</h5>
+          <ul data-capability-guidance-recommendations>
+            <li
+              v-for="recommendation in guidance.recommendations"
+              :key="recommendation"
+            >
+              {{ recommendation }}
+            </li>
+          </ul>
+        </template>
+        <template v-else>
+          <h4 data-capability-guidance-title>
+            Factor Capability Guidance unavailable
+          </h4>
+          <p data-capability-guidance-unavailable>
+            A controlled Cpk target could not be resolved. No target assessment is shown.
+          </p>
+        </template>
+      </section>
+      <section class="measured-distribution-interpretation" data-measured-distribution-interpretation>
+        <template v-if="measuredDistributionInterpretation?.available">
+          <h4>Measured Distribution Interpretation</h4>
+          <h5>Controlled statements</h5>
+          <ul data-distribution-controlled-statements>
+            <li v-for="statement in measuredDistributionInterpretation.controlledStatements" :key="statement">
+              {{ statement }}
+            </li>
+          </ul>
+          <h5>Setup / sample facts</h5>
+          <ul data-distribution-factual-comparisons>
+            <li v-for="comparison in measuredDistributionInterpretation.factualComparisons" :key="comparison">
+              {{ comparison }}
+            </li>
+          </ul>
+          <p data-distribution-provenance>F0 provenance: {{ measuredDistributionInterpretation.provenanceLabel }}</p>
+          <p data-distribution-rule-ids>Rule IDs: {{ measuredDistributionInterpretation.ruleIds.join(", ") }}</p>
+        </template>
+        <template v-else>
+          <h4>Measured Distribution Interpretation unavailable</h4>
+          <p data-measured-distribution-unavailable>
+            A governed selected distribution or the required Setup and Sample comparison is unavailable.
+          </p>
+        </template>
+      </section>
+      <p v-if="capabilityResult?.status === 'insufficient_data'" class="error-banner">
         At least two included measurements are required for capability analysis.
       </p>
       <p v-else-if="capabilityResult?.status === 'zero_variation'" class="error-banner">
         Capability cannot be calculated when all included measurements are identical.
       </p>
-      <button type="button" class="workspace-close-button" @click="activeStage = 'measurement'">
-        Review Measurement Data
-      </button>
+    </aside>
     </div>
     <div v-else class="measurement-workspace-body distribution-fit-analysis">
-      <p class="workspace-eyebrow">Candidate model comparison</p>
-      <h3>Distribution Fit</h3>
-      <p v-if="fitLoading" data-distribution-fit-loading role="status" aria-live="polite">
-        Fitting candidate distributions with 10,000 deterministic Bootstrap replicates...
-      </p>
-      <p v-else-if="fitError && !distributionFitResult" data-distribution-fit-error class="error-banner" role="alert">
-        {{ fitError.summary }}
-      </p>
-      <div v-else-if="distributionFitResult" class="distribution-fit-table-scroll">
-        <table class="distribution-fit-table">
-          <caption>
-            Candidate distributions for {{ selectedFactor?.factorCandidate.factorName }}; sample size {{ distributionFitResult.sampleSize }}
-          </caption>
-          <thead>
-            <tr>
-              <th scope="col">Distribution</th>
-              <th scope="col">Model / location</th>
-              <th scope="col">k</th>
-              <th scope="col">Parameters</th>
-              <th scope="col">AIC</th>
-              <th scope="col">AICc</th>
-              <th scope="col">ΔAICc</th>
-              <th scope="col">BIC</th>
-              <th scope="col">ΔBIC</th>
-              <th scope="col">AD Bootstrap GOF</th>
-              <th scope="col">Status</th>
-              <th scope="col">Plot</th>
-              <th scope="col">Q-Q evidence</th>
-            </tr>
-          </thead>
-          <tbody>
-            <template
-              v-for="candidate in sortedCandidates"
-              :key="candidate.family"
-            >
-              <tr :class="selectionDecision?.proposedFinalFamily === candidate.family
-                ? 'fit-proposed-final'
-                : candidateDecisionLabels(candidate.family).length > 0 ? 'fit-governed' : undefined">
-                <th scope="row">
-                  {{ familyLabel(candidate.family) }}
-                  <span
-                    v-for="label in candidateDecisionLabels(candidate.family)"
-                    :key="label"
-                    class="fit-decision-mark"
-                  >{{ label }}</span>
-                </th>
-                <td>{{ modelSpecificationLabel(candidate.modelSpecification) }}</td>
-                <td>{{ candidate.parameterCount }}</td>
-                <td class="fit-parameters">{{ formatParameters(candidate.parameters) }}</td>
-                <td>{{ formatMetric(candidate.aic) }}</td>
-                <td>{{ formatMetric(candidate.aicc) }}</td>
-                <td>{{ formatMetric(candidate.deltaAicc) }}</td>
-                <td>{{ formatMetric(candidate.bic) }}</td>
-                <td>{{ formatMetric(candidate.deltaBic) }}</td>
-                <td class="fit-gof-audit">
-                  <span>{{ candidate.bootstrap.methodId }}</span>
-                  <span>candidate={{ candidate.bootstrap.candidateMethodId }}</span>
-                  <span>{{ candidate.bootstrap.refitEachReplicate ? "Refit each replicate" : "No replicate refit" }}</span>
-                  <span>comparison={{ candidate.bootstrap.comparisonDirection }}</span>
-                  <span>AD={{ formatMetric(candidate.ad) }}</span>
-                  <span>p={{ formatMetric(candidate.bootstrap.pValue) }}</span>
-                  <span>B={{ candidate.bootstrap.replicates }}</span>
-                  <span>
-                    95% CI [{{ formatMetric(candidate.bootstrap.confidenceInterval.lower) }},
-                    {{ formatMetric(candidate.bootstrap.confidenceInterval.upper) }}]
-                  </span>
-                  <span>extreme={{ candidate.bootstrap.extremeReplicateCount }}</span>
-                </td>
-                <td><span :class="`fit-status fit-status-${candidate.bootstrap.status}`">{{ candidate.bootstrap.status }}</span></td>
-                <td>
-                  <button
-                    type="button"
-                    class="fit-plot-toggle"
-                    :data-fit-plot-family="candidate.family"
-                    :aria-expanded="expandedPlotFamily === candidate.family"
-                    @click="toggleDistributionPlot(candidate.family)"
-                  >{{ expandedPlotFamily === candidate.family ? "Hide plot" : "Show plot" }}</button>
-                </td>
-                <td>
-                  <details class="qq-evidence" :data-qq-family="candidate.family">
-                    <summary>{{ candidate.qqPoints.length }} points</summary>
-                    <div class="qq-point-table-scroll">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th scope="col">Point</th>
-                            <th scope="col">Observed</th>
-                            <th scope="col">Theoretical</th>
-                            <th scope="col">Difference</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr v-for="(point, index) in candidate.qqPoints" :key="index">
-                            <th scope="row">{{ index + 1 }}</th>
-                            <td>{{ formatMetric(point.observed) }}</td>
-                            <td>{{ formatMetric(point.theoretical) }}</td>
-                            <td>{{ formatMetric(point.observed - point.theoretical) }}</td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-                  </details>
-                </td>
-              </tr>
-              <tr v-if="expandedPlotFamily === candidate.family && distributionPlotDomain && distributionPlotReferences" class="distribution-plot-row">
-                <td colspan="13">
-                  <DistributionFitPlot
-                    :candidate="candidate"
-                    :observed-domain="distributionPlotDomain"
-                    :references="distributionPlotReferences"
-                  />
-                </td>
-              </tr>
-            </template>
-          </tbody>
-        </table>
-        <ul v-if="fitWarnings.length > 0" class="fit-warnings" aria-label="Distribution fit warnings">
-          <li v-for="entry in fitWarnings" :key="`${entry.family}-${entry.warning}`">
-            <strong>{{ familyLabel(entry.family) }}:</strong> {{ entry.warning }}
-          </li>
-        </ul>
-        <section
-          v-if="failedCandidates.length > 0"
-          class="fit-failures"
-          data-failed-candidates
-          role="status"
-          aria-label="Failed distribution candidates"
-        >
-          <h4>Failed candidates</h4>
-          <ul>
-            <li v-for="failure in failedCandidates" :key="failure.family">
-              <strong>{{ familyLabel(failure.family) }}:</strong> {{ failureReason(failure.reasonCode) }}
-            </li>
-          </ul>
-          <p data-recommendation-withheld>
-            Conclusion withheld because one or more eligible candidates could not be fitted numerically.
-          </p>
-        </section>
-        <p
-          v-else-if="selectionDecision?.status === 'no_acceptable_model'"
-          class="fit-no-recommendation"
-          data-no-fit-recommendation
-          role="status"
-        >
-          No candidate met the acceptable Bootstrap threshold; the data do not support a governed model preference.
-        </p>
-        <section v-else-if="selectionDecision" class="fit-conclusion" data-fit-conclusion aria-label="Distribution fit conclusion">
-          <p class="workspace-eyebrow">Governed conclusion</p>
-          <h4 v-if="selectionDecision.status === 'no_unique_preference'">No unique distribution preference</h4>
-          <h4 v-else>Unique statistical preference: {{ familyLabel(selectionDecision.numericBestFamily ?? "") }}</h4>
-          <p v-for="statement in selectionConclusionStatements" :key="statement">{{ statement }}</p>
-          <p v-if="selectionDecision.proposedFinalFamily" class="fit-proposed-summary">
-            <strong>Proposed final distribution: {{ familyLabel(selectionDecision.proposedFinalFamily) }}.</strong>
-            <span v-if="distributionApproval">
-              Approved for Monte Carlo at {{ distributionApproval.approvedAt }}.
-            </span>
-            <span v-else>Requires engineer confirmation before Monte Carlo.</span>
-          </p>
-          <button
-            v-if="selectionDecision.proposedFinalFamily && !distributionApproval"
-            type="button"
-            class="action-button"
-            data-approve-distribution
-            :disabled="busy || !proposedCandidateIsAcceptable"
-            @click="approveProposedDistribution"
-          >
-            Approve {{ familyLabel(selectionDecision.proposedFinalFamily) }} for Monte Carlo
-          </button>
-          <p class="fit-confidence"><strong>{{ selectionDecision.confidence.toUpperCase() }} confidence</strong></p>
-          <p v-if="hasSelectionReason('SMALL_SAMPLE_UNCERTAINTY')" class="fit-small-sample-warning">
-            Small sample (n={{ distributionFitResult.sampleSize }}): model-selection uncertainty remains material.
-          </p>
-          <p class="fit-conclusion-note">
-            Compatibility with the observed sample does not prove that the measurements follow any candidate distribution.
-          </p>
-        </section>
-      </div>
+      <DistributionFitAnalysis
+        heading-eyebrow="Candidate model comparison"
+        :result="distributionFitResult"
+        :approval="distributionApproval"
+        :fit-loading="fitLoading"
+        :fit-error="fitError"
+        :factor-name="selectedFactor?.factorCandidate.factorName"
+        :expanded-plot-family="expandedPlotFamily"
+        :plot-domain="distributionPlotDomain"
+        :plot-references="distributionPlotReferences"
+        :setup-assumption="factorSetupAssumption"
+        @toggle-plot="toggleDistributionPlot"
+      />
       <button type="button" class="workspace-close-button" @click="activeStage = 'capability'">
         Review Capability Analysis
       </button>

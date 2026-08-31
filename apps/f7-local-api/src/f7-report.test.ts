@@ -521,6 +521,53 @@ describe("createF7ReportProjection", () => {
     ]);
   });
 
+  it("adds an F0-grounded Setup versus Monte Carlo interpretation and optimization direction", () => {
+    const report = createF7ReportProjection(createSnapshot("BELOW_TARGET"), GENERATED_AT);
+
+    expect(report).toMatchObject({
+      analysis: {
+        status: "available",
+        provenance: {
+          knowledgeBaseVersion: "v1",
+          ruleId: "default-cpk-target",
+          threshold: 1.33,
+        },
+        comparison: {
+          setup: {
+            mean: expect.any(Number),
+            standardDeviation: expect.any(Number),
+            cp: expect.any(Number),
+            cpk: expect.any(Number),
+          },
+          monteCarlo: {
+            mean: expect.any(Number),
+            standardDeviation: expect.any(Number),
+            cp: expect.any(Number),
+            cpk: expect.any(Number),
+          },
+        },
+      },
+    });
+    expect(report.analysis.interpretations.length).toBeGreaterThan(0);
+    expect(report.analysis.optimizationDirections.length).toBeGreaterThan(0);
+    expect(report.markdown).toContain("## Factor Setup vs Monte Carlo TA");
+    expect(report.markdown).toContain("## F0 Interpretation and Optimization Direction");
+    expect(report.markdown).toContain("F0 v1 / default-cpk-target");
+  });
+
+  it("deduplicates repeated factor source references while preserving source order", () => {
+    const snapshot = createSnapshot();
+    const sourceCells = snapshot.factors[0]?.evidence?.sourceCells as Record<string, string>;
+    sourceCells.designNominal = sourceCells.mean!;
+
+    const report = createF7ReportProjection(snapshot, GENERATED_AT);
+
+    expect(report.factors[0]?.sourceReferences).toEqual([
+      "Analysis-A!G14",
+      "Analysis-A!R14",
+    ]);
+  });
+
   it.each([
     ["lowerSpecLimit", -0.6],
     ["upperSpecLimit", 0.6],

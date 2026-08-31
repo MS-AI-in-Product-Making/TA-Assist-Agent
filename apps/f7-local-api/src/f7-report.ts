@@ -6,8 +6,117 @@ import {
   type F7ReportSpecificationSourceCells,
   type F7SessionSnapshot,
 } from "@ai-assist/contracts";
+import { getPublicEngineeringRule } from "@ai-assist/knowledge-base/public-engineering-rules";
 
 type ReportWithoutMarkdown = Omit<F7ReportProjection, "markdown">;
+
+function formatSigned(value: number, digits: number): string {
+  return `${value >= 0 ? "+" : "-"}${Math.abs(value).toFixed(digits)}`;
+}
+
+function createF0Analysis(
+  snapshot: F7SessionSnapshot,
+  simulation: F7SessionSnapshot["monteCarloResult"] & {},
+): NonNullable<F7ReportProjection["analysis"]> {
+  const rule = getPublicEngineeringRule({ ruleId: "default-cpk-target" });
+  if (
+    rule.status !== "matched"
+    || rule.entry.ruleId !== "default-cpk-target"
+    || rule.entry.ruleType !== "cpk"
+  ) {
+    return { status: "unavailable", reason: "The governed F0 Cpk rule is unavailable.", optimizationDirections: [] };
+  }
+  if (simulation.capability.status !== "available") {
+    return {
+      status: "unavailable",
+      reason: "TA comparison is unavailable because Monte Carlo capability is not evaluable.",
+      optimizationDirections: ["Resolve zero or invalid variation evidence, then rerun Monte Carlo capability."],
+    };
+  }
+
+  let setupMean = 0;
+  let setupStandardDeviation = 0;
+  for (const factor of snapshot.factors) {
+    if (factor.setup?.confirmed !== true || factor.evidence === undefined
+      || !Number.isFinite(factor.evidence.calculatedMean)
+      || !Number.isFinite(factor.evidence.oneSigma)
+      || factor.evidence.oneSigma < 0) {
+      return {
+        status: "unavailable",
+        reason: "Factor Setup comparison is unavailable because confirmed setup evidence is incomplete.",
+        optimizationDirections: ["Complete and confirm Factor Setup evidence before comparing assumed and measured TA."],
+      };
+    }
+    setupMean += factor.evidence.calculatedMean;
+    setupStandardDeviation = Math.hypot(setupStandardDeviation, factor.evidence.oneSigma);
+  }
+  const shiftEvidence = snapshot.systemSpecification?.additionalMeanShift;
+  if (shiftEvidence?.status !== "available" || setupStandardDeviation <= 0) {
+    return {
+      status: "unavailable",
+      reason: "Factor Setup comparison is unavailable because mean-shift or variation evidence is incomplete.",
+      optimizationDirections: ["Complete the system mean-shift and factor variation assumptions, then regenerate the report."],
+    };
+  }
+  setupMean += shiftEvidence.valueOrigin === "defaulted" ? 0 : shiftEvidence.actualValue;
+  const setupCp = (simulation.upperSpecLimit - simulation.lowerSpecLimit) / (6 * setupStandardDeviation);
+  const setupCpk = Math.min(
+    (simulation.upperSpecLimit - setupMean) / (3 * setupStandardDeviation),
+    (setupMean - simulation.lowerSpecLimit) / (3 * setupStandardDeviation),
+  );
+  const monteCarlo = simulation.capability;
+  const meanDelta = simulation.mean - setupMean;
+  const sigmaRelativeChange = (simulation.standardDeviation - setupStandardDeviation) / setupStandardDeviation;
+  const cpDelta = monteCarlo.cp - setupCp;
+  const cpkDelta = monteCarlo.cpk - setupCpk;
+  const target = rule.entry.threshold;
+  const targetAssessment = monteCarlo.cpk >= target
+    ? `Monte Carlo Cpk ${monteCarlo.cpk.toFixed(3)} meets the F0 default target of ${target}.`
+    : `Monte Carlo Cpk ${monteCarlo.cpk.toFixed(3)} is below the F0 default target of ${target}.`;
+  const interpretations = [
+    `Mean changed from Setup ${setupMean.toFixed(4)} to Monte Carlo ${simulation.mean.toFixed(4)} (${formatSigned(meanDelta, 4)}).`,
+    `Standard deviation changed from Setup ${setupStandardDeviation.toFixed(4)} to Monte Carlo ${simulation.standardDeviation.toFixed(4)} (${formatSigned(sigmaRelativeChange * 100, 1)}%).`,
+    `Cp changed from Setup ${setupCp.toFixed(3)} to Monte Carlo ${monteCarlo.cp.toFixed(3)} (${formatSigned(cpDelta, 3)}).`,
+    `Cpk changed from Setup ${setupCpk.toFixed(3)} to Monte Carlo ${monteCarlo.cpk.toFixed(3)} (${formatSigned(cpkDelta, 3)}); ${targetAssessment}`,
+  ];
+  const optimizationDirections: string[] = [];
+  if (Math.abs(meanDelta) >= 0.00005 || monteCarlo.cp - monteCarlo.cpk >= 0.0005) {
+    optimizationDirections.push("Review process centering against the Factor Setup mean and specification midpoint before changing tolerances.");
+  }
+  if (sigmaRelativeChange > 0.0005) {
+    optimizationDirections.push("Prioritize reducing and stabilizing measured within-factor variation, then confirm with a new representative sample.");
+  } else if (sigmaRelativeChange < -0.0005) {
+    optimizationDirections.push("Confirm the lower measured variation is repeatable with a new representative sample.");
+  }
+  if (monteCarlo.cpk < target || cpDelta < -0.0005 || cpkDelta < -0.0005) {
+    optimizationDirections.push("After corrective action, rerun Monte Carlo and compare Cpk with the F0 target before any Release/Hold decision.");
+  }
+  if (optimizationDirections.length === 0) {
+    optimizationDirections.push("Maintain the current setup and verify capability remains stable with the next representative measurement sample.");
+  }
+
+  return {
+    status: "available",
+    provenance: {
+      knowledgeBaseVersion: rule.knowledgeBaseVersion,
+      ruleId: rule.entry.ruleId,
+      threshold: target,
+      applicability: rule.entry.applicability,
+    },
+    comparison: {
+      setup: { mean: setupMean, standardDeviation: setupStandardDeviation, cp: setupCp, cpk: setupCpk },
+      monteCarlo: {
+        mean: simulation.mean,
+        standardDeviation: simulation.standardDeviation,
+        cp: monteCarlo.cp,
+        cpk: monteCarlo.cpk,
+      },
+    },
+    targetAssessment,
+    interpretations,
+    optimizationDirections,
+  };
+}
 
 export class F7ReportPrerequisiteError extends Error {
   readonly code = "F7_REPORT_PREREQUISITE_MISMATCH" as const;
@@ -59,6 +168,38 @@ function renderMarkdown(report: ReportWithoutMarkdown): string {
   const manifestRows = report.evidence.factorManifest.map((entry) => (
     `| ${entry.factorId} | ${entry.sourceMode} | ${entry.family} |`
   ));
+  const analysisLines = report.analysis?.status === "available"
+    ? [
+        "## Factor Setup vs Monte Carlo TA",
+        "",
+        "| Metric | Factor Setup assumption | Measured-data Monte Carlo |",
+        "| --- | ---: | ---: |",
+        `| Mean | ${renderValue(report.analysis.comparison.setup.mean)} | ${renderValue(report.analysis.comparison.monteCarlo.mean)} |`,
+        `| Standard deviation | ${renderValue(report.analysis.comparison.setup.standardDeviation)} | ${renderValue(report.analysis.comparison.monteCarlo.standardDeviation)} |`,
+        `| Cp | ${renderValue(report.analysis.comparison.setup.cp)} | ${renderValue(report.analysis.comparison.monteCarlo.cp)} |`,
+        `| Cpk | ${renderValue(report.analysis.comparison.setup.cpk)} | ${renderValue(report.analysis.comparison.monteCarlo.cpk)} |`,
+        "",
+        "## F0 Interpretation and Optimization Direction",
+        "",
+        `F0 ${report.analysis.provenance.knowledgeBaseVersion} / ${report.analysis.provenance.ruleId}`,
+        "",
+        `**${report.analysis.targetAssessment}**`,
+        "",
+        ...report.analysis.interpretations.map((item) => `- ${escapeMarkdownTableText(item)}`),
+        "",
+        "### Optimization direction",
+        "",
+        ...report.analysis.optimizationDirections.map((item) => `- ${escapeMarkdownTableText(item)}`),
+        "",
+      ]
+    : [
+        "## F0 Interpretation and Optimization Direction",
+        "",
+        report.analysis?.reason ?? "F0 analysis is unavailable.",
+        "",
+        ...(report.analysis?.optimizationDirections ?? []).map((item) => `- ${escapeMarkdownTableText(item)}`),
+        "",
+      ];
 
   return [
     "# F7 Report",
@@ -69,6 +210,7 @@ function renderMarkdown(report: ReportWithoutMarkdown): string {
     "",
     "This statistical assessment is not a design or production release decision and does not confirm physical root cause.",
     "",
+    ...analysisLines,
     "## Key Metrics",
     "",
     "| Metric | Value |",
@@ -189,13 +331,13 @@ export function createF7ReportProjection(
       throw new F7ReportPrerequisiteError("Simulation factor manifest does not match the current factor model");
     }
 
-    const sourceReferences = [
+    const sourceReferences = [...new Set([
       ...Object.values(evidence.sourceCells),
       ...(sourceMode === "MEASURED" && factorState.input?.mode === "MEASURED"
         && factorState.input.dataset !== undefined
         ? [factorState.input.dataset.sourceReference]
         : []),
-    ];
+    ])];
     return {
       factorId: evidence.factorId,
       factorName: evidence.factorName,
@@ -253,6 +395,7 @@ export function createF7ReportProjection(
     },
     simulation,
     factors,
+    analysis: createF0Analysis(parsedSnapshot, simulation),
     evidence: {
       workbookContentHash: parsedSnapshot.workbook.workbookContentHash,
       worksheetName,

@@ -85,6 +85,7 @@ function createTypedErrorService(code: Parameters<typeof createTypedError>[0]["c
 type HttpResult = {
   readonly status: number;
   readonly headers: Record<string, string | string[] | undefined>;
+  readonly rawBytes: Buffer;
   readonly rawBody: string;
   readonly json: unknown;
 };
@@ -120,7 +121,8 @@ async function httpJson(options: {
       const chunks: Buffer[] = [];
       res.on("data", (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
       res.on("end", () => {
-        const rawBody = Buffer.concat(chunks).toString("utf8");
+        const rawBytes = Buffer.concat(chunks);
+        const rawBody = rawBytes.toString("utf8");
         let json: unknown = undefined;
         try {
           json = rawBody.length > 0 ? JSON.parse(rawBody) : undefined;
@@ -130,6 +132,7 @@ async function httpJson(options: {
         resolve({
           status: res.statusCode ?? 0,
           headers: res.headers,
+          rawBytes,
           rawBody,
           json,
         });
@@ -847,6 +850,29 @@ describe("f7 local server", () => {
       contentType: "application/json",
     });
     expectRequestEnvelope(withBody, 400);
+  });
+
+  it("serves the session-bound Dimension Chain image as private binary content", async () => {
+    const imageBytes = new Uint8Array([137, 80, 78, 71, 13, 10]);
+    const service: F7SessionService = {
+      ...createRealService(),
+      readDimensionChainImage: () => ({ mediaType: "image/png", bytes: imageBytes }),
+    };
+    const server = createF7LocalServer({ service });
+    openServers.push(server);
+    const address = await listenF7LocalServer(server, 0);
+
+    const response = await httpJson({
+      port: address.port,
+      method: "GET",
+      path: "/f7/session/session-fixed/dimension-chain-image",
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers["content-type"]).toBe("image/png");
+    expect(response.headers["cache-control"]).toBe("no-store");
+    expect(response.headers["x-content-type-options"]).toBe("nosniff");
+    expect(response.rawBytes).toEqual(Buffer.from(imageBytes));
   });
 
   it("rejects unsupported transfer-encoding and does not dispatch service", async () => {

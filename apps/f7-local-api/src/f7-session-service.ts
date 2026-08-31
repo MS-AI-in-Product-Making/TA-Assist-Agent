@@ -3,7 +3,7 @@ import {
   createTypedError,
   f7DistributionCharacteristicKindSchema,
   f7DistributionApprovalRouteRequestSchema,
-  f7FactorSetupConfirmationSchema,
+  f7FactorConfirmRouteRequestSchema,
   f7MeasurementDispositionRequestSchema,
   f7MeasurementPasteRequestSchema,
   f7MonteCarloRunRouteRequestSchema,
@@ -15,7 +15,7 @@ import {
   type F7DistributionCharacteristicKind,
   type F7DistributionCandidateFamily,
   type F7FactorInput,
-  type F7FactorSetupConfirmation,
+  type F7FactorConfirmRouteRequest,
   type F7FactorSourceMode,
   type F7MeasurementDispositionRequest,
   type F7MeasurementPasteRequest,
@@ -23,6 +23,8 @@ import {
   type F7SessionService,
   type F7SessionSnapshot,
   type F7WorkbookImportRequest,
+  type WorksheetAnalysisAssetsResult,
+  type WorksheetImageReadResult,
   type WorksheetSelectionConfirmation,
 } from "@ai-assist/contracts";
 import { runF7MonteCarlo as runF7MonteCarloSimulation } from "@ai-assist/f7-simulation";
@@ -33,10 +35,13 @@ import {
 import {
   applyF7MeasurementDisposition,
   confirmF7FactorSetup,
+  createWorkbookCatalog,
+  createWorksheetAnalysisAssets as createWorksheetAnalysisAssetsDefault,
   createF7WorkbookImport,
   extractResponseSummarySystemSpecification,
   extractF7FactorCandidates,
   parseF7MeasurementPaste,
+  readWorksheetImageAsset as readWorksheetImageAssetDefault,
   readOoxmlWorkbook,
   validateF7MeasurementDataset,
   type F7FactorCandidateExtractionResult,
@@ -52,6 +57,10 @@ interface InternalSession {
   readonly workbookBytes: Uint8Array;
   readonly importResult: F7WorkbookImportResult;
   readonly extractionResult?: F7FactorCandidateExtractionResult;
+  readonly dimensionChainImage?: {
+    readonly mediaType: "image/png" | "image/jpeg";
+    readonly bytes: Uint8Array;
+  };
   readonly snapshot: F7SessionSnapshot;
 }
 
@@ -146,6 +155,8 @@ export function createF7SessionService(dependencies: {
   readonly createId: () => string;
   readonly now: () => string;
   readonly createReportProjection?: typeof createF7ReportProjection;
+  readonly createWorksheetAnalysisAssets?: (request: unknown) => WorksheetAnalysisAssetsResult;
+  readonly readWorksheetImageAsset?: (request: unknown) => WorksheetImageReadResult;
 }): F7SessionService {
   if (typeof dependencies.createId !== "function" || typeof dependencies.now !== "function") {
     throw fixedError(SESSION_SUMMARY, "validation_error");
@@ -153,6 +164,8 @@ export function createF7SessionService(dependencies: {
 
   const sessions = new Map<string, InternalSession>();
   const projectReport = dependencies.createReportProjection ?? createF7ReportProjection;
+  const createAnalysisAssets = dependencies.createWorksheetAnalysisAssets ?? createWorksheetAnalysisAssetsDefault;
+  const readImageAsset = dependencies.readWorksheetImageAsset ?? readWorksheetImageAssetDefault;
 
   const readSession = (sessionId: string): InternalSession => {
     const session = sessions.get(sessionId);
@@ -228,33 +241,85 @@ export function createF7SessionService(dependencies: {
       extraction.worksheetName,
       selectedWorksheet.cells,
     );
+    const workbookCatalog = createWorkbookCatalog({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      fileName: current.snapshot.workbook.fileName,
+      workbookBytes: current.workbookBytes,
+    });
+    const analysisAssets = createAnalysisAssets({
+      contractVersion: "v1",
+      inputClassification: "confidential",
+      workbookBytes: current.workbookBytes,
+      workbookCatalog,
+      worksheetSelection: { mode: "selected", worksheetNames: [extraction.worksheetName] },
+    });
+    const tolerancePathImage = analysisAssets.worksheets[0]?.tolerancePathImage;
+    const imageAsset = tolerancePathImage?.status === "available"
+      ? readImageAsset({
+          contractVersion: "v1",
+          inputClassification: "confidential",
+          workbookBytes: current.workbookBytes,
+          workbookContentHash: current.snapshot.workbook.workbookContentHash,
+          imageContentHash: tolerancePathImage.imageContentHash,
+        })
+      : undefined;
+    const dimensionChainImage: InternalSession["dimensionChainImage"] = imageAsset
+      && (imageAsset.mediaType === "image/png" || imageAsset.mediaType === "image/jpeg")
+      ? {
+          mediaType: imageAsset.mediaType,
+          bytes: imageAsset.bytes.slice(),
+        }
+      : undefined;
 
     const snapshot = normalizeSnapshot({
       ...current.snapshot,
       status: "factor_setup",
       selectedWorksheetNames: [extraction.worksheetName],
       worksheetOptions: current.importResult.prompt.options,
+      ...(dimensionChainImage && tolerancePathImage?.status === "available"
+        ? {
+            dimensionChainImage: {
+              status: "available" as const,
+              worksheetName: extraction.worksheetName,
+              contentHash: tolerancePathImage.imageContentHash,
+              url: `/f7/session/${encodeURIComponent(parsedRequest.data.sessionId)}/dimension-chain-image`,
+            },
+          }
+        : {}),
       systemSpecification,
       factors: extraction.candidates.map((factorCandidate) => ({ factorCandidate })),
     });
 
-    writeSession(parsedRequest.data.sessionId, {
+    const nextSession: InternalSession = {
       ...current,
       extractionResult: extraction,
       snapshot,
-    });
+    };
+    writeSession(parsedRequest.data.sessionId, dimensionChainImage
+      ? { ...nextSession, dimensionChainImage }
+      : nextSession);
     return cloneFrozenSnapshot(snapshot);
   };
 
-  const confirmFactorSetup = (request: { sessionId: string; confirmations: readonly F7FactorSetupConfirmation[] }): F7SessionSnapshot => {
-    const parsedRequest = z.object({
-      sessionId: z.string().min(1),
-      confirmations: z.array(f7FactorSetupConfirmationSchema).min(1),
-    }).strict().safeParse(request);
+  const readDimensionChainImage = (sessionId: string) => {
+    const current = readSession(sessionId);
+    if (!current.dimensionChainImage) throw fixedError(NOT_FOUND_SUMMARY, "validation_error");
+    return Object.freeze({
+      mediaType: current.dimensionChainImage.mediaType,
+      bytes: current.dimensionChainImage.bytes.slice(),
+    });
+  };
+
+  const confirmFactorSetup = (request: F7FactorConfirmRouteRequest): F7SessionSnapshot => {
+    const parsedRequest = f7FactorConfirmRouteRequestSchema.safeParse(request);
     if (!parsedRequest.success) throw fixedError(SESSION_SUMMARY, "validation_error");
 
     const current = readSession(parsedRequest.data.sessionId);
-    if (current.snapshot.status !== "factor_setup" || current.extractionResult === undefined) {
+    if (
+      !["factor_setup", "measurement_entry", "phase_1_ready"].includes(current.snapshot.status)
+      || current.extractionResult === undefined
+    ) {
       throw fixedError(PREREQUISITE_SUMMARY, "prerequisite_not_ready");
     }
 
@@ -263,7 +328,6 @@ export function createF7SessionService(dependencies: {
       confirmations: parsedRequest.data.confirmations,
     });
 
-    const factorByCandidateId = new Map(setupResult.factors.map((factor) => [factor.factorCandidateId, factor]));
     const confirmationByCandidateId = new Map(parsedRequest.data.confirmations.map((confirmation) => [
       confirmation.factorCandidateId,
       confirmation,
@@ -304,10 +368,30 @@ export function createF7SessionService(dependencies: {
       };
     });
 
+    const specificationOverride = parsedRequest.data.systemSpecification;
+    const availableLiteral = (actualValue: number, sourceLabel: string) => ({
+      status: "available" as const,
+      actualValue,
+      displayValue: String(actualValue),
+      sourceLabel,
+      valueOrigin: "numeric_literal" as const,
+    });
+    const systemSpecification = specificationOverride && current.snapshot.systemSpecification
+      ? {
+          ...current.snapshot.systemSpecification,
+          status: "available" as const,
+          lowerSpecLimit: availableLiteral(specificationOverride.lowerSpecLimit, "Lower Specification Limit"),
+          upperSpecLimit: availableLiteral(specificationOverride.upperSpecLimit, "Upper Specification Limit"),
+          targetSigmaLevel: availableLiteral(specificationOverride.targetSigmaLevel, "Target Sigma Level"),
+          additionalMeanShift: current.snapshot.systemSpecification.additionalMeanShift ?? availableLiteral(0, "Additional Mean Shift"),
+        }
+      : current.snapshot.systemSpecification;
     const snapshot = normalizeSnapshot({
       ...current.snapshot,
       status: "measurement_entry",
       factors,
+      systemSpecification,
+      monteCarloResult: undefined,
     });
 
     writeSession(parsedRequest.data.sessionId, {
@@ -385,6 +469,9 @@ export function createF7SessionService(dependencies: {
         factorId: request.factorId,
         unit: request.unit,
         structure: request.structure,
+        ...(request.rationalSubgroupConfig
+          ? { rationalSubgroupConfig: request.rationalSubgroupConfig }
+          : {}),
         sourceReference: request.sourceReference,
         msaStatus: request.msaStatus,
         text: request.text,
@@ -414,6 +501,9 @@ export function createF7SessionService(dependencies: {
         factorId: factorState.evidence.factorId,
         unit: factorState.evidence.unit,
         structure: parsedRequest.data.payload.structure,
+        ...(parsedRequest.data.payload.rationalSubgroupConfig
+          ? { rationalSubgroupConfig: parsedRequest.data.payload.rationalSubgroupConfig }
+          : {}),
         sourceReference: parsedRequest.data.payload.sourceReference,
         importedAt: now,
         msaStatus: parsedRequest.data.payload.msaStatus,
@@ -582,7 +672,20 @@ export function createF7SessionService(dependencies: {
       } catch {
         throw fixedDistributionFitError();
       }
-      return { ...factorState, distributionFitResult, distributionApproval: undefined };
+      const proposedFamily = distributionFitResult.selectionDecision.proposedFinalFamily;
+      const proposedCandidate = distributionFitResult.candidates.find((candidate) => (
+        candidate.family === proposedFamily
+      ));
+      const distributionApproval = proposedFamily !== undefined
+        && proposedCandidate?.bootstrap.status === "acceptable"
+        ? {
+            factorId: parsedRequest.data.factorId,
+            family: proposedFamily,
+            confirmed: true as const,
+            approvedAt: normalizeNow(dependencies.now()),
+          }
+        : undefined;
+      return { ...factorState, distributionFitResult, distributionApproval };
     });
 
     if (!found) throw fixedError(NOT_FOUND_SUMMARY, "validation_error");
@@ -683,6 +786,10 @@ export function createF7SessionService(dependencies: {
       iterations: requestBody.iterations,
       runSeed: requestBody.runSeed,
       correlationMode: requestBody.correlationMode,
+      additionalMeanShift: current.snapshot.systemSpecification?.additionalMeanShift?.status === "available"
+        && current.snapshot.systemSpecification.additionalMeanShift.valueOrigin !== "defaulted"
+        ? current.snapshot.systemSpecification.additionalMeanShift.actualValue
+        : 0,
       factors,
     };
     const monteCarloResult = runF7MonteCarloSimulation(simulationRequest);
@@ -727,5 +834,6 @@ export function createF7SessionService(dependencies: {
     runMonteCarlo,
     generateReport,
     getSession,
+    readDimensionChainImage,
   });
 }

@@ -3,11 +3,13 @@ import type {
   F7Client,
   F7ExclusionReason,
   F7MeasurementStructure,
+  F7RationalSubgroupConfig,
   F7MsaStatus,
   F7ReportProjection,
   F7SessionSnapshot,
   F7SetupDistribution,
   F7SourceMode,
+  F7SystemSpecificationInput,
   F7UiError,
 } from "../api/f7-client";
 
@@ -139,13 +141,14 @@ export function createF7SessionStore(client: F7Client) {
       readonly distribution: F7SetupDistribution;
       readonly factorName?: string;
       readonly userAdded?: true;
-    }>): Promise<void> {
+    }>, systemSpecification: F7SystemSpecificationInput): Promise<void> {
       await runAction("confirmFactors", async () => {
         const current = session.value;
         if (!current) throw prerequisiteNotReadyError();
         commitMutationSnapshot(await client.confirmFactors({
           sessionId: current.sessionId,
           confirmations: confirmations.map((confirmation) => ({ ...confirmation, confirmed: true as const })),
+          systemSpecification,
         }));
       });
     },
@@ -163,6 +166,7 @@ export function createF7SessionStore(client: F7Client) {
     async pasteMeasurements(request: {
       readonly factorId: string;
       readonly structure: F7MeasurementStructure;
+      readonly rationalSubgroupConfig?: F7RationalSubgroupConfig;
       readonly sourceReference: string;
       readonly msaStatus: F7MsaStatus;
       readonly text: string;
@@ -174,6 +178,9 @@ export function createF7SessionStore(client: F7Client) {
           sessionId: current.sessionId,
           factorId: request.factorId,
           structure: request.structure,
+          ...(request.rationalSubgroupConfig
+            ? { rationalSubgroupConfig: request.rationalSubgroupConfig }
+            : {}),
           sourceReference: request.sourceReference,
           msaStatus: request.msaStatus,
           text: request.text,

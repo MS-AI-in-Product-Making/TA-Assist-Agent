@@ -675,6 +675,39 @@ describe("F7 phase 1 factor contracts", () => {
 });
 
 describe("F7 measurement dataset contracts", () => {
+  it("accepts governed rational subgroup configuration on paste requests", () => {
+    const request = {
+      factorId: SHA256,
+      unit: "mm",
+      structure: "RATIONAL_SUBGROUP",
+      rationalSubgroupConfig: { subgroupSize: 5, estimator: "RANGE_D2" },
+      sourceReference: "local-workbench-entry",
+      msaStatus: "unknown",
+      text: "value\tsubgroup\n1\t1\n2\t1",
+    };
+
+    expect(f7MeasurementPasteRequestSchema.safeParse(request).success).toBe(true);
+    expect(f7MeasurementPasteRequestSchema.safeParse({
+      ...request,
+      rationalSubgroupConfig: { subgroupSize: 1, estimator: "RANGE_D2" },
+    }).success).toBe(false);
+    expect(f7MeasurementPasteRouteRequestSchema.safeParse({
+      params: { factorId: SHA256 },
+      body: { sessionId: "session-01", ...request, factorId: undefined, unit: undefined },
+    }).success).toBe(false);
+    expect(f7MeasurementPasteRouteRequestSchema.safeParse({
+      params: { factorId: SHA256 },
+      body: {
+        sessionId: "session-01",
+        structure: request.structure,
+        rationalSubgroupConfig: request.rationalSubgroupConfig,
+        sourceReference: request.sourceReference,
+        msaStatus: request.msaStatus,
+        text: request.text,
+      },
+    }).success).toBe(true);
+  });
+
   it("caps measurement observations at the governed distribution-fit resource bound", () => {
     const observations = Array.from({ length: 501 }, (_, index) => ({
       value: index,
@@ -1991,8 +2024,17 @@ describe("F7 request/result strict wrappers", () => {
     const factorConfirm = {
       sessionId: "session-1",
       confirmations: [factorConfirmation],
+      systemSpecification: {
+        lowerSpecLimit: -0.15,
+        upperSpecLimit: 0.05,
+        targetSigmaLevel: 3,
+      },
     };
     expect(f7FactorConfirmRouteRequestSchema.safeParse(factorConfirm).success).toBe(true);
+    expect(f7FactorConfirmRouteRequestSchema.safeParse({
+      ...factorConfirm,
+      systemSpecification: { ...factorConfirm.systemSpecification, upperSpecLimit: -0.2 },
+    }).success).toBe(false);
     expect(f7FactorConfirmRouteRequestSchema.safeParse({ ...factorConfirm, extra: true }).success).toBe(false);
 
     const factorMode = {

@@ -1,6 +1,9 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { mount } from "@vue/test-utils";
 import App from "./App.vue";
+import DimensionChainPanel from "./components/DimensionChainPanel.vue";
 import type {
   F7Client,
   F7DistributionFitCandidate,
@@ -13,6 +16,7 @@ import type {
 const HASH_A = "a".repeat(64);
 const HASH_B = "b".repeat(64);
 const HASH_C = "c".repeat(64);
+const STYLE_SOURCE = readFileSync(join(process.cwd(), "apps/f7-web/src/style.css"), "utf8");
 
 function wilsonScoreInterval(successes: number): { lower: number; upper: number } {
   const trials = 10000;
@@ -237,6 +241,7 @@ function measurementEntrySnapshot() {
   return createSnapshot({
     status: "measurement_entry",
     selectedWorksheetNames: ["Anonymous_TA"],
+    systemSpecification: factorSetupSnapshot().systemSpecification,
     factors: [
       {
         factorCandidate: fullFactorCandidate({
@@ -561,6 +566,33 @@ function reportProjection(snapshot = completedMonteCarloSnapshot()): F7ReportPro
       approvedDistribution: factor.distributionApproval!.family,
       sourceReferences: Object.values(factor.evidence!.sourceCells),
     })),
+    analysis: capability.status === "available"
+      ? {
+          status: "available",
+          provenance: {
+            knowledgeBaseVersion: "v1",
+            ruleId: "default-cpk-target",
+            threshold: 1.33,
+            applicability: "public demo process capability",
+          },
+          comparison: {
+            setup: { mean: -0.57, standardDeviation: 0.0125, cp: 2.666667, cpk: -11.2 },
+            monteCarlo: {
+              mean: simulation.mean,
+              standardDeviation: simulation.standardDeviation,
+              cp: capability.cp,
+              cpk: capability.cpk,
+            },
+          },
+          targetAssessment: "Monte Carlo Cpk is below the F0 default target of 1.33.",
+          interpretations: ["Measured-data Monte Carlo variation is wider than the Factor Setup assumption."],
+          optimizationDirections: ["Prioritize reducing and stabilizing measured within-factor variation."],
+        }
+      : {
+          status: "unavailable",
+          reason: "Monte Carlo capability is not evaluable.",
+          optimizationDirections: [],
+        },
     evidence: {
       workbookContentHash: snapshot.workbook.workbookContentHash,
       worksheetName: snapshot.selectedWorksheetNames[0]!,
@@ -752,6 +784,10 @@ describe("F7 workbench shell", () => {
     const wrapper = mount(App, { props: { client } });
     await uploadWorkbook(wrapper);
 
+    const saveSetupButton = wrapper.get("#confirm-factor-setup");
+    expect(saveSetupButton.text()).toBe("Save setup");
+    expect(saveSetupButton.element.parentElement?.classList).toContain("factor-setup-actions");
+
     const headers = wrapper.findAll("th").map((header) => header.text());
     expect(headers[0]).toBe("Item");
     expect(headers).toContain("Distribution");
@@ -759,12 +795,15 @@ describe("F7 workbench shell", () => {
     expect(headers).toContain("Tolerance");
     expect(headers).toContain("1σ");
     expect(headers).toContain("% Cont. to σ");
+    expect(wrapper.find("[data-factor-advanced-toggle]").exists()).toBe(false);
+    expect(wrapper.get(".factor-table").classes()).not.toContain("show-advanced-columns");
+    expect(wrapper.get(".factor-table").attributes("style")).toContain("min-width: 1360px");
     const expectHeaderLines = (key: string, lines: readonly string[]) => {
       const header = wrapper.get(`th[data-column-key='${key}']`);
       expect(header.findAll(".factor-header-line").map((line) => line.text())).toEqual(lines);
       expect(header.classes()).toContain("factor-header-multiline");
     };
-    expectHeaderLines("designNominal", ["Design", "Norminal"]);
+    expectHeaderLines("designNominal", ["Design", "Nominal"]);
     expectHeaderLines("upperTolerance", ["+", "Tol"]);
     expectHeaderLines("lowerTolerance", ["-", "Tol"]);
     expectHeaderLines("longTermSafetyFactor", ["Long Term/", "Safety Factor"]);
@@ -794,7 +833,7 @@ describe("F7 workbench shell", () => {
     ]);
     expect((distribution.element as HTMLSelectElement).value).toBe("Normal");
     expect(wrapper.get("output[aria-label='C-cover height Mean']").text()).toBe("-2.06");
-    expect(wrapper.get("output[aria-label='C-cover height Tolerance']").text()).toBe("0.09");
+    expect(wrapper.get("output[aria-label='C-cover height Tolerance']").text()).toBe("± 0.09");
     expect(wrapper.get("output[aria-label='C-cover height 1 Sigma']").text()).toBe("0.045");
     expect(wrapper.get("output[aria-label='C-cover height Percent Contribution']").text()).toBe("100%");
     await distribution.setValue("Uniform");
@@ -802,8 +841,11 @@ describe("F7 workbench shell", () => {
     await distribution.setValue("Normal");
 
     const outputLayout = wrapper.get("[data-factor-output-layout]");
-    expect(outputLayout.element.firstElementChild?.hasAttribute("data-dimension-chain-panel")).toBe(true);
-    expect(outputLayout.element.lastElementChild?.hasAttribute("data-f4-response-summary")).toBe(true);
+    expect(outputLayout.find("[data-dimension-chain-panel]").exists()).toBe(true);
+    expect(outputLayout.find("[data-response-distribution-curve]").exists()).toBe(true);
+    expect(outputLayout.find("[data-f4-response-summary]").exists()).toBe(true);
+    expect(outputLayout.classes()).not.toContain("is-dimension-chain-expanded");
+    expect(wrapper.find("[aria-label='Expand Dimension Chain']").exists()).toBe(false);
     expect(wrapper.find("[data-dimension-chain-svg]").exists()).toBe(false);
     await wrapper.get("[data-generate-dimension-chain]").trigger("click");
     expect(wrapper.findAll("[data-dimension-segment]")).toHaveLength(1);
@@ -833,13 +875,30 @@ describe("F7 workbench shell", () => {
     expect(capabilitySummary.text()).toContain("Calculated Sigma Level");
     expect(capabilitySummary.text()).toContain("Calculated Cpk");
     expect(capabilitySummary.text()).toContain("Defects Per Million");
-    expect(capabilitySummary.get("[data-f4-lsl]").text()).toBe("-0.62");
-    expect(capabilitySummary.get("[data-f4-usl]").text()).toBe("-0.52");
-    expect(capabilitySummary.get("[data-f4-target-sigma]").text()).toBe("3σ");
+    expect(capabilitySummary.get<HTMLInputElement>("[data-f4-lsl-input]").element.value).toBe("-0.62");
+    expect(capabilitySummary.get<HTMLInputElement>("[data-f4-usl-input]").element.value).toBe("-0.52");
+    expect(capabilitySummary.get<HTMLInputElement>("[data-f4-target-sigma-input]").element.value).toBe("3");
     expect(capabilitySummary.get("[data-f4-volume]").text()).toBe("1,000,000");
-    for (const selector of ["[data-f4-lsl]", "[data-f4-usl]", "[data-f4-target-sigma]", "[data-f4-volume]"]) {
-      expect(capabilitySummary.get(selector).get("output").classes()).toContain("f4-readonly-field");
+    for (const selector of ["[data-f4-lsl-input]", "[data-f4-usl-input]", "[data-f4-target-sigma-input]"]) {
+      const input = capabilitySummary.get(selector);
+      expect(input.classes()).toContain("f4-readonly-field");
+      expect(input.classes()).toContain("f4-compact-value");
+      expect(input.attributes("disabled")).toBeUndefined();
     }
+    expect(STYLE_SOURCE).toMatch(/\.f4-readonly-field\.f4-compact-value\s*\{[^}]*width:\s*100%[^}]*min-width:\s*0/s);
+    expect(STYLE_SOURCE).toMatch(/\.f4-summary-grid\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1\.3fr\)\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)[^}]*min-width:\s*0/s);
+    expect(STYLE_SOURCE).toMatch(/\.f4-summary-table th,\s*\.f4-summary-table td\s*\{[^}]*text-align:\s*center/s);
+    expect(STYLE_SOURCE).toMatch(/\.f4-metric-list dt\s*\{[^}]*justify-content:\s*center[^}]*text-align:\s*center/s);
+    expect(STYLE_SOURCE).toMatch(/\.f4-metric-list dd\s*\{[^}]*justify-content:\s*center[^}]*text-align:\s*center/s);
+    expect(STYLE_SOURCE).toMatch(/\.f4-readonly-field\.f4-compact-value\s*\{[^}]*text-align:\s*center/s);
+    expect(STYLE_SOURCE).toMatch(/\.factor-name-cell > :last-child\s*\{[^}]*overflow-wrap:\s*anywhere[^}]*white-space:\s*normal/s);
+    expect(STYLE_SOURCE).toMatch(/\.factor-item-actions\s*\{[^}]*flex-direction:\s*column/s);
+    expect(STYLE_SOURCE).toMatch(/\.dimension-chain-label\s*\{[^}]*font-size:\s*0\.38rem/s);
+    expect(STYLE_SOURCE).toMatch(/\.dimension-chain-factor-name\s*\{[^}]*font-size:\s*0\.38rem/s);
+    expect(STYLE_SOURCE).toMatch(/\.dimension-chain-closure-label\s*\{[^}]*font-size:\s*0\.38rem/s);
+    expect(STYLE_SOURCE).not.toContain("show-advanced-columns");
+    expect(STYLE_SOURCE).not.toContain("factor-advanced-toggle");
+    expect(capabilitySummary.get("[data-f4-volume]").get("output").classes()).toContain("f4-readonly-field");
     expect(capabilitySummary.get("[data-f4-rss-sigma]").text()).toBe("0.0450");
     expect(capabilitySummary.get("[data-f4-worst-case-tolerance]").text()).toBe("± 0.0900");
     expect(capabilitySummary.get("[data-f4-worst-case-upper]").text()).toBe("-1.9700");
@@ -870,6 +929,11 @@ describe("F7 workbench shell", () => {
     await wrapper.get("#confirm-factor-setup").trigger("click");
     expect(client.confirmFactors).toHaveBeenCalledWith({
       sessionId: "session-01",
+      systemSpecification: {
+        lowerSpecLimit: -0.62,
+        upperSpecLimit: -0.52,
+        targetSigmaLevel: 3,
+      },
       confirmations: [{
         factorCandidateId: HASH_B,
         designNominal: -2.05,
@@ -881,6 +945,184 @@ describe("F7 workbench shell", () => {
         confirmed: true,
       }],
     });
+  });
+
+  it("3) factor_setup keeps the response distribution curve synchronized with summary edits", async () => {
+    const snapshot = factorSetupSnapshot();
+    const client = createMockClient(snapshot, { importWorkbook: snapshot });
+    const wrapper = mount(App, { props: { client } });
+    await uploadWorkbook(wrapper);
+
+    const outputLayout = wrapper.get("[data-factor-output-layout]");
+    const responseSummary = wrapper.get("[data-factor-response-summary]");
+    const distributionCurve = outputLayout.get("[data-response-distribution-curve]");
+    const curveMeanReference = () => distributionCurve.get("[data-response-reference='mean']");
+    const adjustedMeanValue = () => Number(responseSummary.get("[data-summary-adjusted-mean]").text()).toFixed(4);
+
+    expect(STYLE_SOURCE).toMatch(/\.factor-output-layout\s*\{[^}]*grid-template-areas:\s*"chain curve"\s*"chain summary"/s);
+    expect(STYLE_SOURCE).toMatch(/\.factor-output-layout > \.dimension-chain-panel\s*\{[^}]*grid-area:\s*chain/s);
+    expect(STYLE_SOURCE).toMatch(/\.factor-output-layout > \.response-distribution-curve\s*\{[^}]*grid-area:\s*curve/s);
+    expect(STYLE_SOURCE).toMatch(/\.factor-output-layout \.f4-response-summary\s*\{[^}]*grid-area:\s*summary/s);
+    expect(curveMeanReference().attributes("data-value")).toBe(adjustedMeanValue());
+
+    await responseSummary.get("input[aria-label='Additional Mean Shift']").setValue("0.25");
+    expect(responseSummary.get("[data-summary-adjusted-mean]").text()).toBe("-0.32");
+    expect(curveMeanReference().attributes("data-value")).toBe("-0.3200");
+
+    const meanBeforeNominalChange = curveMeanReference().attributes("data-value");
+    const curvePathBeforeNominalChange = distributionCurve.get("[data-response-normal-curve]").attributes("d");
+    await wrapper.get("input[aria-label='C-cover height Design Nominal']").setValue("-0.67");
+
+    expect(curveMeanReference().attributes("data-value")).toBe(adjustedMeanValue());
+    expect(curveMeanReference().attributes("data-value")).not.toBe(meanBeforeNominalChange);
+    expect(distributionCurve.get("[data-response-normal-curve]").attributes("d")).not.toBe(curvePathBeforeNominalChange);
+    expect(client.confirmFactors).not.toHaveBeenCalled();
+  });
+
+  it("3) factor_setup reverses all factor signs as one undoable edit and accepts partial chain sign changes", async () => {
+    const base = factorSetupSnapshot();
+    const first = base.factors[0]!;
+    const snapshot = createSnapshot({
+      ...base,
+      factors: [
+        first,
+        {
+          factorCandidate: {
+            ...first.factorCandidate,
+            factorCandidateId: HASH_C,
+            factorName: "Second factor",
+            sourceRow: first.factorCandidate.sourceRow + 1,
+            excelSignedMean: 0.4,
+            designNominal: 0.4,
+          },
+        },
+      ],
+    });
+    const client = createMockClient(snapshot, { importWorkbook: snapshot });
+    const wrapper = mount(App, { props: { client } });
+    await uploadWorkbook(wrapper);
+
+    const reverse = wrapper.get("button[aria-label='Reverse all factors']");
+    expect(reverse.attributes("title")).toBe("Reverse all factors");
+    expect(reverse.text()).toContain("Reverse signs");
+    expect(reverse.find("svg").exists()).toBe(true);
+    expect(reverse.attributes("disabled")).toBeUndefined();
+    expect(wrapper.getComponent(DimensionChainPanel).props("editable")).toBe(true);
+
+    const nominalValues = () => wrapper.findAll("input[data-factor-design-nominal]")
+      .map((input) => (input.element as HTMLInputElement).value);
+    expect(nominalValues()).toEqual(["-0.57", "0.4"]);
+    expect(wrapper.get("[data-summary-design-nominal]").text()).toBe("-0.17");
+
+    await reverse.trigger("click");
+    expect(nominalValues()).toEqual(["0.57", "-0.4"]);
+    expect(wrapper.get("[data-summary-design-nominal]").text()).toBe("0.17");
+
+    await wrapper.get("[data-factor-undo]").trigger("click");
+    expect(nominalValues()).toEqual(["-0.57", "0.4"]);
+    expect(wrapper.get("[data-summary-design-nominal]").text()).toBe("-0.17");
+
+    await wrapper.get("[data-factor-redo]").trigger("click");
+    expect(nominalValues()).toEqual(["0.57", "-0.4"]);
+    expect(wrapper.get("[data-summary-design-nominal]").text()).toBe("0.17");
+
+    wrapper.getComponent(DimensionChainPanel).vm.$emit("factor-sign-change", [
+      { factorId: HASH_C, sign: 1 },
+    ]);
+    await wrapper.vm.$nextTick();
+    expect(nominalValues()).toEqual(["0.57", "0.4"]);
+    expect(wrapper.get("[data-summary-design-nominal]").text()).toBe("0.97");
+    await wrapper.get("[data-factor-undo]").trigger("click");
+    expect(nominalValues()).toEqual(["0.57", "-0.4"]);
+
+    wrapper.getComponent(DimensionChainPanel).vm.$emit("reverse-all");
+    await wrapper.vm.$nextTick();
+    expect(nominalValues()).toEqual(["-0.57", "0.4"]);
+
+    const nominalInputs = wrapper.findAll("input[data-factor-design-nominal]");
+    await nominalInputs[0]!.setValue("");
+    await nominalInputs[1]!.setValue("0");
+    expect(reverse.attributes("disabled")).toBeDefined();
+  });
+
+  it("3) factor_setup hides reverse signs when read-only and disables it while busy", async () => {
+    const readOnlySnapshot = measurementEntrySnapshot();
+    const readOnlyClient = createMockClient(readOnlySnapshot, { importWorkbook: readOnlySnapshot });
+    const readOnlyWrapper = mount(App, { props: { client: readOnlyClient } });
+    await uploadWorkbook(readOnlyWrapper);
+
+    expect(readOnlyWrapper.find("[data-factor-reverse-all]").exists()).toBe(false);
+    const readOnlyChain = readOnlyWrapper.getComponent(DimensionChainPanel);
+    expect(readOnlyChain.props("editable")).toBe(false);
+    expect(readOnlyChain.get("button[aria-label='Reverse all factors']").attributes("disabled")).toBeDefined();
+
+    const setupSnapshot = factorSetupSnapshot();
+    const busyClient = createMockClient(setupSnapshot, { importWorkbook: setupSnapshot });
+    let resolveConfirmation!: (snapshot: F7SessionSnapshot) => void;
+    vi.mocked(busyClient.confirmFactors).mockImplementation(() => new Promise((resolve) => {
+      resolveConfirmation = resolve;
+    }));
+    const busyWrapper = mount(App, { props: { client: busyClient } });
+    await uploadWorkbook(busyWrapper);
+
+    const submission = busyWrapper.get("#confirm-factor-setup").trigger("click");
+    await busyWrapper.vm.$nextTick();
+    expect(busyWrapper.attributes("aria-busy")).toBe("true");
+    expect(busyWrapper.get("button[aria-label='Reverse all factors']").attributes("disabled")).toBeDefined();
+    expect(busyWrapper.getComponent(DimensionChainPanel).props("editable")).toBe(false);
+
+    resolveConfirmation(measurementEntrySnapshot());
+    await submission;
+    await vi.waitFor(() => expect(busyWrapper.attributes("aria-busy")).toBe("false"));
+  });
+
+  it("3a) returns from measurement entry to editable factor setup and reconfirms updated values", async () => {
+    const measurementEntry = measurementEntrySnapshot();
+    const client = createMockClient(measurementEntry, {
+      importWorkbook: measurementEntry,
+      confirmFactors: measurementEntry,
+    });
+    const wrapper = mount(App, { props: { client } });
+    await uploadWorkbook(wrapper);
+
+    expect(wrapper.find("input.factor-spec-input").exists()).toBe(false);
+    const editSetupButton = wrapper.get("[data-edit-factor-setup]");
+    expect(editSetupButton.text()).toBe("Edit setup");
+    expect(editSetupButton.element.parentElement?.classList).toContain("factor-setup-actions");
+    await editSetupButton.trigger("click");
+
+    const designNominal = wrapper.get("input[aria-label='C-cover height Design Nominal']");
+    expect((designNominal.element as HTMLInputElement).value).toBe("-0.57");
+    expect(wrapper.get("#confirm-factor-setup").text()).toBe("Save setup");
+    expect(wrapper.get("#confirm-factor-setup").element.parentElement?.classList).toContain("factor-setup-actions");
+    expect(wrapper.find("fieldset.source-mode-options").exists()).toBe(false);
+    expect(wrapper.find("[aria-label='Validation summary']").exists()).toBe(false);
+
+    await designNominal.setValue("-0.6");
+    await wrapper.get("#confirm-factor-setup").trigger("click");
+    expect(client.confirmFactors).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: "session-01",
+      confirmations: [expect.objectContaining({ designNominal: -0.6, confirmed: true })],
+    }));
+  });
+
+  it("3a.1) toggles each Design Nominal value between positive and negative", async () => {
+    const snapshot = factorSetupSnapshot();
+    const client = createMockClient(snapshot, { importWorkbook: snapshot });
+    const wrapper = mount(App, { props: { client } });
+    await uploadWorkbook(wrapper);
+
+    const input = wrapper.get<HTMLInputElement>("input[aria-label='C-cover height Design Nominal']");
+    const toggle = wrapper.get("button[aria-label='Toggle C-cover height Design Nominal sign']");
+    expect(toggle.element.parentElement?.classList).toContain("factor-nominal-input");
+    expect(toggle.find("svg.lucide-arrow-right-left").exists()).toBe(true);
+    expect(toggle.text()).toBe("");
+    expect(input.element.value).toBe("-0.57");
+
+    await toggle.trigger("click");
+    expect(input.element.value).toBe("0.57");
+    await toggle.trigger("click");
+    expect(input.element.value).toBe("-0.57");
   });
 
   it("3b) factor setup supports row insertion, deletion, and reordering", async () => {
@@ -970,6 +1212,11 @@ describe("F7 workbench shell", () => {
 
     expect(client.confirmFactors).toHaveBeenCalledWith({
       sessionId: "session-01",
+      systemSpecification: {
+        lowerSpecLimit: -0.62,
+        upperSpecLimit: -0.52,
+        targetSigmaLevel: 3,
+      },
       confirmations: [
         expect.objectContaining({
           factorCandidateId: expect.stringMatching(/^[a-f0-9]{64}$/),
@@ -989,6 +1236,89 @@ describe("F7 workbench shell", () => {
     expect(wrapper.findAll(".factor-table tbody tr")).toHaveLength(1);
     expect(wrapper.find("button[data-add-factor]").exists()).toBe(false);
     expect(wrapper.find(".factor-row-control").exists()).toBe(false);
+  });
+
+  it("3b.0) supports undo, redo, reset to imported factors, and confirmed clear all", async () => {
+    const client = createMockClient(factorSetupSnapshot(), { importWorkbook: factorSetupSnapshot() });
+    const wrapper = mount(App, { props: { client } });
+    await uploadWorkbook(wrapper);
+
+    const undo = wrapper.get("[data-factor-undo]");
+    const redo = wrapper.get("[data-factor-redo]");
+    const reset = wrapper.get("[data-factor-reset]");
+    const clearAll = wrapper.get("[data-factor-clear-all]");
+    expect(undo.attributes("disabled")).toBeDefined();
+    expect(redo.attributes("disabled")).toBeDefined();
+
+    const nominal = wrapper.get("input[aria-label='C-cover height Design Nominal']");
+    await nominal.setValue("-0.8");
+    expect(undo.attributes("disabled")).toBeUndefined();
+    await undo.trigger("click");
+    expect((nominal.element as HTMLInputElement).value).toBe("-0.57");
+    expect(redo.attributes("disabled")).toBeUndefined();
+    await redo.trigger("click");
+    expect((nominal.element as HTMLInputElement).value).toBe("-0.8");
+
+    await reset.trigger("click");
+    expect((nominal.element as HTMLInputElement).value).toBe("-0.57");
+    await undo.trigger("click");
+    expect((nominal.element as HTMLInputElement).value).toBe("-0.8");
+
+    const generateDimensionChain = wrapper.get("[data-generate-dimension-chain]");
+    await generateDimensionChain.trigger("click");
+    expect(wrapper.find("[data-dimension-chain-svg]").exists()).toBe(true);
+
+    const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
+    await clearAll.trigger("click");
+    expect(wrapper.findAll(".factor-table tbody tr")).toHaveLength(1);
+    await clearAll.trigger("click");
+    expect(confirm).toHaveBeenCalledWith("Clear all Factor rows and reset the System Specification? You can undo this action.");
+    expect(wrapper.findAll(".factor-table tbody tr")).toHaveLength(1);
+    const blankRow = wrapper.get(".factor-table tbody tr");
+    expect(blankRow.get(".factor-item-number").text()).toBe("1");
+    expect((blankRow.get("input[aria-label='New factor name']").element as HTMLInputElement).value).toBe("");
+    expect(blankRow.findAll("input.factor-spec-input").map((input) => (input.element as HTMLInputElement).value)).toEqual([
+      "", "", "", "1", "4",
+    ]);
+    expect(wrapper.find("[data-empty-factor-setup]").exists()).toBe(false);
+    expect(wrapper.get("#confirm-factor-setup").attributes("disabled")).toBeDefined();
+    expect(wrapper.find("[data-dimension-chain-svg]").exists()).toBe(false);
+    expect(wrapper.get(".dimension-chain-empty").text()).toContain("Generate a dimension chain");
+    const resetGenerateDimensionChain = wrapper.get("[data-generate-dimension-chain]");
+    expect(resetGenerateDimensionChain.text()).toBe("Generate");
+    expect(resetGenerateDimensionChain.attributes("disabled")).toBeUndefined();
+    const lsl = wrapper.get<HTMLInputElement>("[data-f4-lsl-input]");
+    const usl = wrapper.get<HTMLInputElement>("[data-f4-usl-input]");
+    const targetSigma = wrapper.get<HTMLInputElement>("[data-f4-target-sigma-input]");
+    expect(lsl.element.value).toBe("");
+    expect(usl.element.value).toBe("");
+    expect(targetSigma.element.value).toBe("3");
+    expect(lsl.attributes("disabled")).toBeUndefined();
+    expect(usl.attributes("disabled")).toBeUndefined();
+    expect(targetSigma.attributes("disabled")).toBeUndefined();
+
+    await undo.trigger("click");
+    expect((wrapper.get("input[aria-label='C-cover height Design Nominal']").element as HTMLInputElement).value).toBe("-0.8");
+    expect(wrapper.get<HTMLInputElement>("[data-f4-lsl-input]").element.value).toBe("-0.62");
+    expect(wrapper.get<HTMLInputElement>("[data-f4-usl-input]").element.value).toBe("-0.52");
+    expect(wrapper.get<HTMLInputElement>("[data-f4-target-sigma-input]").element.value).toBe("3");
+    await redo.trigger("click");
+
+    const restoredBlankRow = wrapper.get(".factor-table tbody tr");
+    await restoredBlankRow.get("input[aria-label='New factor name']").setValue("Replacement factor");
+    const blankSpecifications = restoredBlankRow.findAll("input.factor-spec-input");
+    await blankSpecifications[0]!.setValue("1");
+    await blankSpecifications[1]!.setValue("0.1");
+    await blankSpecifications[2]!.setValue("-0.1");
+    const clearedLsl = wrapper.get<HTMLInputElement>("[data-f4-lsl-input]");
+    const clearedUsl = wrapper.get<HTMLInputElement>("[data-f4-usl-input]");
+    await clearedLsl.setValue("0.8");
+    await clearedUsl.setValue("1.2");
+    expect(clearedLsl.element.value).toBe("0.8");
+    expect(clearedUsl.element.value).toBe("1.2");
+    expect(wrapper.get<HTMLInputElement>("[data-f4-target-sigma-input]").element.value).toBe("3");
+    expect(wrapper.get("[data-f4-cpk]").text()).not.toBe("—");
+    confirm.mockRestore();
   });
 
   it("3b.1) deleting an existing factor marks a generated dimension chain stale", async () => {
@@ -1031,6 +1361,23 @@ describe("F7 workbench shell", () => {
     expect(capabilitySummary.get("[data-f4-total-dpm]").text()).toBe("63");
   });
 
+  it("3c) factor_setup shows an unavailable distribution curve when F4 calculation is unavailable", async () => {
+    const available = factorSetupSnapshot();
+    const snapshot = createSnapshot({
+      ...available,
+      systemSpecification: {
+        status: "unavailable",
+        reasonCode: "legacy_artifact_missing_system_specification",
+      },
+    });
+    const client = createMockClient(snapshot, { importWorkbook: snapshot });
+    const wrapper = mount(App, { props: { client } });
+    await uploadWorkbook(wrapper);
+
+    expect(wrapper.find("[data-response-distribution-curve]").exists()).toBe(true);
+    expect(wrapper.get("[data-response-distribution-unavailable]").text()).toContain("unavailable");
+  });
+
   it("3d) factor table limits displayed decimals to four places and resizes columns by dragging", async () => {
     const client = createMockClient(factorSetupSnapshot(), { importWorkbook: factorSetupSnapshot() });
     const wrapper = mount(App, { props: { client }, attachTo: document.body });
@@ -1038,21 +1385,21 @@ describe("F7 workbench shell", () => {
 
     expect(wrapper.get(".factor-table").classes()).toContain("factor-table-centered");
     expect(wrapper.findAll("col[data-factor-column-index]").map((column) => column.attributes("style"))).toEqual([
-      "width: 96px;",
-      "width: 168px;",
-      "width: 104px;",
-      "width: 92px;",
-      "width: 92px;",
-      "width: 126px;",
-      "width: 76px;",
-      "width: 102px;",
-      "width: 76px;",
-      "width: 80px;",
+      "width: 64px;",
+      "width: 150px;",
+      "width: 88px;",
+      "width: 72px;",
       "width: 72px;",
       "width: 96px;",
-      "width: 184px;",
+      "width: 58px;",
       "width: 88px;",
-      "width: 96px;",
+      "width: 68px;",
+      "width: 72px;",
+      "width: 60px;",
+      "width: 80px;",
+      "width: 250px;",
+      "width: 70px;",
+      "width: 72px;",
     ]);
 
     const specificationInputs = wrapper.findAll("input.factor-spec-input");
@@ -1062,21 +1409,21 @@ describe("F7 workbench shell", () => {
     await specificationInputs[4]!.setValue("3");
 
     expect(wrapper.get("output[aria-label='C-cover height Mean']").text()).toBe("-0.5817");
-    expect(wrapper.get("output[aria-label='C-cover height Tolerance']").text()).toBe("0.1117");
+    expect(wrapper.get("output[aria-label='C-cover height Tolerance']").text()).toBe("± 0.1117");
     expect(wrapper.get("output[aria-label='C-cover height 1 Sigma']").text()).toBe("0.0372");
     expect(wrapper.get("output[aria-label='C-cover height Percent Contribution']").text()).toBe("100%");
 
     const designColumn = wrapper.get("col[data-factor-column-index='2']");
-    expect(designColumn.attributes("style")).toContain("width: 104px");
+    expect(designColumn.attributes("style")).toContain("width: 88px");
     const resizeHandle = wrapper.get("[aria-label='Resize Design Nominal column']");
     await resizeHandle.trigger("pointerdown", { clientX: 200, pointerId: 1 });
     window.dispatchEvent(new MouseEvent("pointermove", { clientX: 248 }));
     window.dispatchEvent(new MouseEvent("pointerup", { clientX: 248 }));
     await wrapper.vm.$nextTick();
-    expect(designColumn.attributes("style")).toContain("width: 152px");
+    expect(designColumn.attributes("style")).toContain("width: 136px");
 
     await resizeHandle.trigger("dblclick");
-    expect(designColumn.attributes("style")).toContain("width: 104px");
+    expect(designColumn.attributes("style")).toContain("width: 88px");
     wrapper.unmount();
   });
 
@@ -1137,10 +1484,16 @@ describe("F7 workbench shell", () => {
     await uploadWorkbook(wrapper);
     expect(wrapper.find("fieldset legend").text()).toContain("Source mode");
     const sourceModeOptions = wrapper.get("fieldset.source-mode-options");
+    const sourceModeColumn = wrapper.get("col[data-column-key='sourceMode']");
+    const workspaceButton = wrapper.get(`[data-open-measurement='${HASH_C}']`);
+    expect(sourceModeColumn.attributes("style")).toContain("width: 250px");
+    expect(sourceModeOptions.element.parentElement?.classList).toContain("source-mode-control");
+    expect(workspaceButton.element.parentElement?.classList).toContain("measured-workspace-row");
+    expect(workspaceButton.element.previousElementSibling?.classList).toContain("source-mode-option");
     expect(sourceModeOptions.findAll("label.source-mode-option")).toHaveLength(2);
     expect(sourceModeOptions.findAll<HTMLInputElement>("label.source-mode-option > input[type='radio']")
       .map((input) => input.element.value)).toEqual(["BASELINE_ASSUMPTION", "MEASURED"]);
-    expect(wrapper.find(`[data-open-measurement='${HASH_C}']`).exists()).toBe(true);
+    expect(workspaceButton.attributes("disabled")).toBeUndefined();
     await openMeasurementWorkspace(wrapper);
     const workspace = wrapper.get("[aria-label='Factor measurement workspace']");
     expect(workspace.text()).toContain("C-cover height");
@@ -1148,10 +1501,36 @@ describe("F7 workbench shell", () => {
     expect(workspace.text()).toContain("Capability Analysis");
     expect(workspace.text()).toContain("Distribution Fit");
     expect(workspace.text()).toContain("Locked");
-    await workspace.get("button[data-close-measurement]").trigger("click");
+    const selectedFactorSetup = workspace.get("table[aria-label='Selected factor setup']");
+    expect(selectedFactorSetup.findAll("thead th").map((header) => header.text())).toEqual([
+      "Item",
+      "Factor",
+      "Design Nominal",
+      "+ Tol",
+      "- Tol",
+      "Long Term/Safety Factor",
+      "σ Level",
+      "Distribution",
+      "Mean",
+      "Tolerance",
+      "1σ",
+      "% Cont. to σ",
+      "Source Mode",
+    ]);
+    expect(selectedFactorSetup.text()).toContain("C-cover height");
+    expect(selectedFactorSetup.text()).toContain("-0.57");
+    expect(selectedFactorSetup.text()).toContain("MEASURED");
+    expect(selectedFactorSetup.find("[data-open-measurement]").exists()).toBe(false);
+    expect(wrapper.find("[aria-label='Factor setup and source mode']").exists()).toBe(false);
+    expect(wrapper.find("[aria-label='Validation summary']").exists()).toBe(false);
+    const backButton = workspace.get("button[data-close-measurement]");
+    expect(backButton.text()).toBe("Back to factor setup");
+    await backButton.trigger("click");
+    expect(wrapper.find("[aria-label='Factor setup and source mode']").exists()).toBe(true);
+    expect(wrapper.find("[aria-label='Factor measurement workspace']").exists()).toBe(false);
     await wrapper.get("input[value='BASELINE_ASSUMPTION']").trigger("change");
     expect(client.setFactorMode).toHaveBeenCalledWith({ sessionId: "session-01", factorId: HASH_C, mode: "BASELINE_ASSUMPTION" });
-    expect(wrapper.find(`[data-open-measurement='${HASH_C}']`).exists()).toBe(false);
+    expect(wrapper.get(`[data-open-measurement='${HASH_C}']`).attributes("disabled")).toBeDefined();
   });
 
   it("5b) nominal sign controls its subtractive/additive color and zero is rejected", async () => {
@@ -1170,6 +1549,25 @@ describe("F7 workbench shell", () => {
     expect(wrapper.text()).toContain("Design Nominal must be non-zero.");
     await wrapper.get("button#confirm-factor-setup").trigger("click");
     expect(client.confirmFactors).not.toHaveBeenCalled();
+  });
+
+  it("5ba) uses green for additive dimensions and blue for subtractive dimensions and arrows", () => {
+    expect(STYLE_SOURCE).toMatch(/--additive:\s*#168447/);
+    expect(STYLE_SOURCE).toMatch(/--subtractive:\s*#1f62a6/);
+    expect(STYLE_SOURCE).toMatch(/\.nominal-positive\s*\{[^}]*color:\s*var\(--additive\)/s);
+    expect(STYLE_SOURCE).toMatch(/\.dimension-chain-additive \.dimension-chain-component[^}]*stroke:\s*var\(--additive\)/s);
+    expect(STYLE_SOURCE).toMatch(/\.dimension-chain-additive \.dimension-chain-start,[^}]*fill:\s*var\(--additive\)/s);
+    expect(STYLE_SOURCE).toMatch(/\.nominal-negative\s*\{[^}]*color:\s*var\(--subtractive\)/s);
+    expect(STYLE_SOURCE).toMatch(/\.dimension-chain-subtractive \.dimension-chain-component[^}]*stroke:\s*var\(--subtractive\)/s);
+    expect(STYLE_SOURCE).toMatch(/\.dimension-chain-subtractive \.dimension-chain-start,[^}]*fill:\s*var\(--subtractive\)/s);
+  });
+
+  it("5bab) uses red for the closure loop, arrow, endpoints, guides, and label", () => {
+    expect(STYLE_SOURCE).toMatch(/\.dimension-chain-closure-guide\s*\{[^}]*stroke:\s*var\(--danger\)/s);
+    expect(STYLE_SOURCE).toMatch(/\.dimension-chain-closure,[^}]*pointer-events:\s*none/s);
+    expect(STYLE_SOURCE).toMatch(/\.dimension-chain-closure\s*\{[^}]*stroke:\s*var\(--danger\)/s);
+    expect(STYLE_SOURCE).toMatch(/\.dimension-chain-closure-head,[^}]*fill:\s*var\(--danger\)/s);
+    expect(STYLE_SOURCE).toMatch(/\.dimension-chain-closure-label\s*\{[^}]*fill:\s*var\(--danger\)/s);
   });
 
   it("5bb) rejects tolerance signs that the factor contract cannot accept", async () => {
@@ -1214,7 +1612,7 @@ describe("F7 workbench shell", () => {
     const wrapper = mount(App, { props: { client } });
     await uploadWorkbook(wrapper);
 
-    expect(wrapper.find(`[data-open-measurement='${HASH_C}']`).exists()).toBe(false);
+    expect(wrapper.get(`[data-open-measurement='${HASH_C}']`).attributes("disabled")).toBeDefined();
     await wrapper.get("input[value='MEASURED']").trigger("change");
     expect(client.setFactorMode).toHaveBeenCalledWith({ sessionId: "session-01", factorId: HASH_C, mode: "MEASURED" });
     expect(wrapper.find(`[data-open-measurement='${HASH_C}']`).exists()).toBe(true);
@@ -1224,6 +1622,7 @@ describe("F7 workbench shell", () => {
     const client = createMockClient(measurementEntrySnapshot(), {
       importWorkbook: measurementEntrySnapshot(),
       pasteMeasurements: phaseReadySnapshot(),
+      fitDistribution: distributionFitSnapshot(),
     });
     const wrapper = mount(App, { props: { client } });
     await uploadWorkbook(wrapper);
@@ -1232,27 +1631,38 @@ describe("F7 workbench shell", () => {
     const workspace = wrapper.get("[aria-label='Factor measurement workspace']");
     const specification = workspace.get("[aria-label='Excel specification limits']");
     const measurementBody = workspace.get(".measurement-workspace-body");
-    expect(specification.text()).toContain("Factor Specification Limits (Excel)");
-    expect(specification.element.nextElementSibling).toBe(measurementBody.element);
+    expect(specification.text()).toContain("Factor Specification Limits");
+    expect(specification.text()).not.toContain("(Excel)");
+    expect(specification.element.nextElementSibling).toBe(workspace.get("[data-measurement-capability-layout]").element);
+    expect(workspace.get("[data-measurement-capability-layout]").element.contains(measurementBody.element)).toBe(true);
     expect(workspace.text()).not.toContain("Source reference");
     expect(workspace.text()).not.toContain("MSA status");
     expect(workspace.text()).not.toContain("Outlier disposition");
-    expect(workspace.findAll("th").map((header) => header.text())).toEqual(["No.", "Measured Value", "Row actions"]);
+    expect(workspace.findAll(".measurement-grid th").map((header) => header.text())).toEqual(["No.", "Measured Value", "Row actions"]);
+    expect(workspace.findAll("input[data-measurement-row]")).toHaveLength(5);
 
     const firstRow = workspace.get("input[data-measurement-row='1']");
     await firstRow.setValue("0.494");
     await workspace.get("input[data-measurement-row='2']").setValue("0.503");
     expect(workspace.text()).toContain("2 values");
+    expect(workspace.findAll("input[data-measurement-row]")).toHaveLength(7);
+    expect(workspace.find("button[data-confirm-measurements]").exists()).toBe(false);
 
-    await workspace.get("button[data-confirm-measurements]").trigger("click");
-    expect(client.pasteMeasurements).toHaveBeenCalledWith({
+    await vi.waitFor(() => {
+      expect(client.pasteMeasurements).toHaveBeenCalledWith({
+        sessionId: "session-01",
+        factorId: HASH_C,
+        structure: "UNORDERED_SAMPLE",
+        sourceReference: "local-workbench-entry",
+        msaStatus: "unknown",
+        text: "0.494\n0.503",
+      });
+    });
+    await vi.waitFor(() => expect(client.fitDistribution).toHaveBeenCalledWith({
       sessionId: "session-01",
       factorId: HASH_C,
-      structure: "UNORDERED_SAMPLE",
-      sourceReference: "local-workbench-entry",
-      msaStatus: "unknown",
-      text: "0.494\n0.503",
-    });
+    }));
+    expect(workspace.find(".measurement-grid").exists()).toBe(true);
   });
 
   it("serializes ordered measurements with generated sequence metadata", async () => {
@@ -1268,16 +1678,75 @@ describe("F7 workbench shell", () => {
     await workspace.get("select").setValue("ORDERED_INDIVIDUALS");
     await workspace.get("input[data-measurement-row='1']").setValue("0.494");
     await workspace.get("input[data-measurement-row='2']").setValue("0.503");
-    await workspace.get("button[data-confirm-measurements]").trigger("click");
-
-    expect(client.pasteMeasurements).toHaveBeenCalledWith({
-      sessionId: "session-01",
-      factorId: HASH_C,
-      structure: "ORDERED_INDIVIDUALS",
-      sourceReference: "local-workbench-entry",
-      msaStatus: "unknown",
-      text: "value\tsequence\n0.494\t1\n0.503\t2",
+    await vi.waitFor(() => {
+      expect(client.pasteMeasurements).toHaveBeenCalledWith({
+        sessionId: "session-01",
+        factorId: HASH_C,
+        structure: "ORDERED_INDIVIDUALS",
+        sourceReference: "local-workbench-entry",
+        msaStatus: "unknown",
+        text: "value\tsequence\n0.494\t1\n0.503\t2",
+      });
     });
+  });
+
+  it("configures rational subgroups and adapts rows and serialized metadata", async () => {
+    const client = createMockClient(measurementEntrySnapshot(), {
+      importWorkbook: measurementEntrySnapshot(),
+      pasteMeasurements: phaseReadySnapshot(),
+    });
+    const wrapper = mount(App, { props: { client } });
+    await uploadWorkbook(wrapper);
+    await openMeasurementWorkspace(wrapper);
+
+    const workspace = wrapper.get("[aria-label='Factor measurement workspace']");
+    await workspace.get("[data-measurement-structure]").setValue("RATIONAL_SUBGROUP");
+    expect(workspace.find("[data-rational-subgroup-controls]").exists()).toBe(true);
+    await workspace.get("[aria-label='Observations per subgroup']").setValue(3);
+    await workspace.get("[aria-label='Within-subgroup estimator']").setValue("S_C4");
+    expect(workspace.get("[data-subgroup-constant]").text()).toContain("c4 = 0.8862");
+    expect(workspace.findAll(".measurement-grid th").map((header) => header.text())).toEqual([
+      "Subgroup", "Position", "Measured Value", "Row actions",
+    ]);
+
+    for (const [index, value] of ["0.494", "0.503", "0.499", "0.501", "0.505", "0.497"].entries()) {
+      await workspace.get(`input[data-measurement-row='${index + 1}']`).setValue(value);
+    }
+    expect(workspace.findAll("[data-subgroup-id]").slice(0, 6).map((cell) => cell.text())).toEqual([
+      "1", "1", "1", "2", "2", "2",
+    ]);
+    expect(workspace.findAll("[data-subgroup-position]").slice(0, 6).map((cell) => cell.text())).toEqual([
+      "1", "2", "3", "1", "2", "3",
+    ]);
+
+    await vi.waitFor(() => {
+      expect(client.pasteMeasurements).toHaveBeenCalledWith({
+        sessionId: "session-01",
+        factorId: HASH_C,
+        structure: "RATIONAL_SUBGROUP",
+        rationalSubgroupConfig: { subgroupSize: 3, estimator: "S_C4" },
+        sourceReference: "local-workbench-entry",
+        msaStatus: "unknown",
+        text: "value\tsubgroup\n0.494\t1\n0.503\t1\n0.499\t1\n0.501\t2\n0.505\t2\n0.497\t2",
+      });
+    });
+  });
+
+  it("blocks confirmation for an incomplete rational subgroup", async () => {
+    const client = createMockClient(measurementEntrySnapshot(), { importWorkbook: measurementEntrySnapshot() });
+    const wrapper = mount(App, { props: { client } });
+    await uploadWorkbook(wrapper);
+    await openMeasurementWorkspace(wrapper);
+
+    const workspace = wrapper.get("[aria-label='Factor measurement workspace']");
+    await workspace.get("[data-measurement-structure]").setValue("RATIONAL_SUBGROUP");
+    await workspace.get("[aria-label='Observations per subgroup']").setValue(3);
+    await workspace.get("input[data-measurement-row='1']").setValue("0.494");
+    await workspace.get("input[data-measurement-row='2']").setValue("0.503");
+
+    expect(workspace.get("[data-incomplete-subgroup-warning]").text()).toContain("1 more measurement");
+    await new Promise((resolve) => setTimeout(resolve, 550));
+    expect(client.pasteMeasurements).not.toHaveBeenCalled();
   });
 
   it("clears all measurement rows for a fresh entry", async () => {
@@ -1289,6 +1758,7 @@ describe("F7 workbench shell", () => {
     await openMeasurementWorkspace(wrapper);
 
     const workspace = wrapper.get("[aria-label='Factor measurement workspace']");
+    expect(workspace.get("[data-measurement-auto-save-status]").text()).toBe("Changes save automatically");
     const clearButton = workspace.get("button[data-clear-measurements]");
     expect(clearButton.attributes("disabled")).toBeDefined();
 
@@ -1297,11 +1767,65 @@ describe("F7 workbench shell", () => {
     expect(clearButton.attributes("disabled")).toBeUndefined();
 
     await clearButton.trigger("click");
-    expect(workspace.text()).toContain("0 values");
-    expect(workspace.findAll("input[data-measurement-row]")).toHaveLength(1);
+    await vi.waitFor(() => expect(workspace.text()).toContain("0 values"));
+    expect(workspace.findAll("input[data-measurement-row]")).toHaveLength(5);
     expect((workspace.get("input[data-measurement-row='1']").element as HTMLInputElement).value).toBe("");
-    expect(workspace.get("button[data-confirm-measurements]").attributes("disabled")).toBeDefined();
+    expect(workspace.get("[data-measurement-auto-save-status]").text()).toBe("Changes save automatically");
     expect(clearButton.attributes("disabled")).toBeDefined();
+  });
+
+  it("clears confirmed measurements and locks capability and distribution fit", async () => {
+    const fitted = distributionFitSnapshot();
+    const cleared = measurementEntrySnapshot();
+    const client = createMockClient(fitted, {
+      importWorkbook: fitted,
+      setFactorMode: cleared,
+    });
+    const wrapper = mount(App, { props: { client } });
+    await uploadWorkbook(wrapper);
+    await openMeasurementWorkspace(wrapper);
+
+    const workspace = wrapper.get("[aria-label='Factor measurement workspace']");
+    await workspace.get("button[data-stage='distribution']").trigger("click");
+    expect(workspace.find("table.distribution-fit-table").exists()).toBe(true);
+    await workspace.get(".distribution-fit-analysis .workspace-close-button").trigger("click");
+    await workspace.get("[data-review-measurements]").trigger("click");
+    await workspace.get("[data-clear-measurements]").trigger("click");
+
+    await vi.waitFor(() => expect(client.setFactorMode).toHaveBeenCalledWith({
+      sessionId: "session-01",
+      factorId: HASH_C,
+      mode: "MEASURED",
+    }));
+    expect(workspace.get("button[data-stage='capability']").attributes("disabled")).toBeDefined();
+    expect(workspace.get("button[data-stage='distribution']").attributes("disabled")).toBeDefined();
+    expect(workspace.get("button[data-stage='distribution']").element.closest("li")?.textContent).toContain("Locked");
+    expect(workspace.find("table.distribution-fit-table").exists()).toBe(false);
+  });
+
+  it("keeps confirmed measurements when the persistent clear fails", async () => {
+    const fitted = distributionFitSnapshot();
+    const client = createMockClient(fitted, { importWorkbook: fitted });
+    client.setFactorMode = vi.fn(async () => {
+      throw {
+        code: "request_failed",
+        summary: "Measurement data could not be cleared.",
+        suggestedAction: "Retry clearing the measurements.",
+        affectedInputReferences: ["measurement-clear"],
+      };
+    });
+    const wrapper = mount(App, { props: { client } });
+    await uploadWorkbook(wrapper);
+    await openMeasurementWorkspace(wrapper);
+
+    const workspace = wrapper.get("[aria-label='Factor measurement workspace']");
+    expect(workspace.text()).toContain("2 values");
+    await workspace.get("[data-clear-measurements]").trigger("click");
+
+    await vi.waitFor(() => expect(client.setFactorMode).toHaveBeenCalledTimes(1));
+    expect(workspace.text()).toContain("2 values");
+    expect(workspace.get("button[data-stage='capability']").attributes("disabled")).toBeUndefined();
+    expect(workspace.get("button[data-stage='distribution']").attributes("disabled")).toBeUndefined();
   });
 
   it("7) calculates capability after confirmed data is ready without considering MSA", async () => {
@@ -1314,33 +1838,120 @@ describe("F7 workbench shell", () => {
     await openMeasurementWorkspace(wrapper);
 
     const workspace = wrapper.get("[aria-label='Factor measurement workspace']");
+    expect(workspace.find("[data-measurement-capability-layout]").exists()).toBe(true);
+    expect(workspace.find("[data-measurement-entry-column]").exists()).toBe(true);
+    expect(workspace.find("[data-live-capability-column]").exists()).toBe(true);
     await workspace.get("input[data-measurement-row='1']").setValue("0.494");
-    await workspace.get("button[data-confirm-measurements]").trigger("click");
-    await vi.waitFor(() => {
-      expect(workspace.text()).toContain("Measurement data confirmed");
-    });
+    await vi.waitFor(() => expect(workspace.get("button[data-stage='capability']").attributes("disabled")).toBeUndefined());
     expect(workspace.get("button[data-stage='capability']").attributes("disabled")).toBeUndefined();
+    expect(workspace.find(".measurement-grid").exists()).toBe(true);
+    expect(workspace.find(".capability-analysis").exists()).toBe(true);
     expect(workspace.text()).toContain("Sample Size");
     expect(workspace.text()).toContain("2");
+    const diagnostics = workspace.get("[data-measurement-diagnostics]");
+    const metricsBoard = workspace.get("[data-measurement-metrics-board]");
+    expect(metricsBoard.findAll("dt").filter((node) => node.text() === "Sample Size")).toHaveLength(1);
+    expect(metricsBoard.get("[data-metric-group='quality']").text()).toContain("Data Quality");
+    expect(metricsBoard.get("[data-metric-group='capability']").text()).toContain("Capability Comparison");
+    expect(metricsBoard.get("[data-capability-change-summary]").text()).toContain("Mean shifted");
+    expect(diagnostics.text()).toContain("Limited (n < 30)");
+    expect(diagnostics.text()).toContain("Minimum");
+    expect(diagnostics.text()).toContain("Maximum");
+    expect(diagnostics.text()).toContain("Range");
+    expect(diagnostics.text()).toContain("Missing Values");
+    expect(diagnostics.text()).toContain("3σ Rule");
+    expect(diagnostics.text()).toContain("IQR Method");
+    expect(workspace.find("[data-measurement-histogram]").exists()).toBe(true);
+    expect(workspace.get("[data-measurement-shape]").text()).toContain("Not enough data");
+    await workspace.get("input[data-measurement-row='3']").setValue("0.500");
+    await workspace.get("input[data-measurement-row='2']").setValue("");
+    expect(workspace.get("tr[data-missing-value='true'] input").attributes("aria-label")).toContain("missing value");
+    expect(workspace.find("input[data-measurement-row='4']").element.closest("tr")?.hasAttribute("data-missing-value")).toBe(false);
     expect(workspace.text()).toContain("Mean");
     expect(workspace.text()).toContain("0.0000");
     expect(workspace.text()).toContain("Sample Std Dev");
     expect(workspace.text()).toContain("0.0141");
     expect(workspace.text()).toContain("Cp");
     expect(workspace.text()).toContain("1.179");
+    const capabilityMetrics = workspace.findAll(".capability-metrics > div");
+    for (const metric of capabilityMetrics) {
+      expect(metric.findAll(":scope > dt")).toHaveLength(1);
+      expect(metric.findAll(":scope > dd")).toHaveLength(1);
+      expect(metric.findAll(":scope > div")).toHaveLength(0);
+    }
     const specification = workspace.get("[aria-label='Excel specification limits']");
-    expect(specification.text()).toContain("Factor Specification Limits (Excel)");
+    expect(specification.text()).toContain("Factor Specification Limits");
+    expect(specification.text()).not.toContain("(Excel)");
     expect(specification.findAll("dt").map((node) => node.text())).toEqual(["LSL", "USL"]);
     expect(specification.findAll("dd").map((node) => node.text())).toEqual(["0.52 mm", "0.62 mm"]);
-    expect(specification.findAll("small").map((node) => node.text())).toEqual([
-      "ABS(Anonymous_TA!L15) + Anonymous_TA!N15",
-      "ABS(Anonymous_TA!L15) + Anonymous_TA!M15",
-    ]);
+    expect(specification.findAll("small")).toHaveLength(0);
+    expect(specification.text()).not.toContain("ABS(");
+    expect(specification.text()).not.toContain("Anonymous_TA!");
     expect(workspace.text()).not.toContain("unspecified");
     expect(workspace.text()).toContain("Cpk");
+    const meanComparison = workspace.get("[data-capability-comparison='mean']");
+    const meanRows = meanComparison.findAll("[data-comparison-row]");
+    expect(meanRows[0]?.get("strong").text()).toBe("|Mean| 0.5700");
+    expect(meanRows[1]?.get("strong").text()).toBe("0.0000");
+    expect(meanRows[1]?.get("[data-comparison-change]").text()).toContain("Change −0.5700");
+    const variationComparison = workspace.get("[data-capability-comparison='standard-deviation']");
+    expect(variationComparison.findAll("[data-comparison-row]")[0]?.get("strong").text()).toBe("1σ 0.0125");
+    expect(variationComparison.get("[data-comparison-change]").text()).toContain("1.13×");
+    expect(workspace.get("[data-capability-comparison='cp'] [data-comparison-row] strong").text()).toBe("1.333");
+    expect(workspace.get("[data-capability-comparison='cpk'] [data-comparison-row] strong").text()).toBe("1.333");
+    for (const comparison of workspace.findAll("[data-capability-comparison]")) {
+      const rows = comparison.findAll("[data-comparison-row]");
+      expect(rows).toHaveLength(2);
+      expect(rows[0]?.get("[data-comparison-source]").text()).toBe("Setup");
+      expect(rows[0]?.find("[data-comparison-change]").exists()).toBe(false);
+      expect(rows[1]?.get("[data-comparison-source]").text()).toBe("Sample");
+      expect(rows[1]?.get("[data-comparison-change]").text()).toMatch(/^Change /);
+    }
+    const changeSummary = workspace.get("[data-capability-change-summary]").text();
+    expect(changeSummary).toContain("Mean shifted lower");
+    expect(changeSummary).toContain("Variation increased");
     expect(workspace.text()).not.toContain("MSA");
     expect(workspace.text()).not.toContain("not enabled in Phase 1");
-    expect(wrapper.findAll(".workflow-steps li")[2]?.text()).toContain("Current");
+    // Guidance UI should render after capability summary (F0 Guidance)
+    await vi.waitFor(() => expect(workspace.find("[data-capability-guidance]").exists()).toBeTruthy());
+    // Title and assessment (title exposed via data attribute)
+    expect(workspace.get("[data-capability-guidance] [data-capability-guidance-title]").text()).toBe("Factor Capability Guidance");
+    // measured Cpk value must appear in the assessment and match displayed Cpk
+    const cpkStrongs = workspace.findAll("[data-capability-comparison='cpk'] [data-comparison-row] strong");
+    const measuredCpkText = cpkStrongs[1]!.text();
+    const match = measuredCpkText.match(/[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?/);
+    const measuredCpkNum = match ? Number(match[0]) : NaN;
+    const measuredCpkRounded = Number.isFinite(measuredCpkNum) ? measuredCpkNum.toFixed(3) : measuredCpkText;
+    expect(workspace.get("[data-capability-guidance-assessment]").text()).toContain(measuredCpkRounded);
+    // assessment should indicate below/above explicitly; scenario expects below
+    expect(workspace.get("[data-capability-guidance-assessment]").text()).toContain('is below');
+    // default target must be present
+    expect(workspace.get("[data-capability-guidance-assessment]").text()).toContain("1.33");
+    const interpretations = workspace.findAll("[data-capability-guidance-interpretations] li").map((item) => item.text());
+    expect(interpretations).toHaveLength(4);
+    expect(interpretations[0]).toContain("Mean shifted lower");
+    expect(interpretations[1]).toContain("Standard deviation increased");
+    expect(interpretations[2]).toContain("Cp decreased");
+    expect(interpretations[3]).toContain("Cpk decreased");
+    const recommendations = workspace.findAll("[data-capability-guidance-recommendations] li").map((item) => item.text().toLowerCase());
+    expect(recommendations.some((recommendation) => recommendation.includes("process centering"))).toBe(true);
+    expect(recommendations.some((recommendation) => recommendation.includes("within-factor variation"))).toBe(true);
+    expect(workspace.get("[data-capability-guidance-provenance]").text()).toBe("F0 target rule: F0 v1 / default-cpk-target");
+    // applicability element exists with data attr and exact rule value
+    expect(workspace.find("[data-capability-guidance-applicability]").exists()).toBeTruthy();
+    expect(workspace.find("[data-capability-guidance-applicability]").text()).toBe("Applicability: public demo process capability");
+    // Selected distribution summary precedes guidance and measured interpretation.
+    const changeSummaryEl = workspace.get("[data-capability-change-summary]").element! as Element;
+    const selectedDistributionEl = workspace.get("[data-capability-distribution-fit]").element! as Element;
+    const guidanceEl = workspace.get("[data-capability-guidance]").element! as Element;
+    const measuredInterpretationEl = workspace.get("[data-measured-distribution-interpretation]").element! as Element;
+    const metricsBoardEl = workspace.get("[data-measurement-metrics-board]").element! as Element;
+    const histogramEl = workspace.get("[data-measurement-histogram]").element! as Element;
+    expect(changeSummaryEl.parentElement).toBe(metricsBoardEl);
+    expect(metricsBoardEl.nextElementSibling).toBe(histogramEl);
+    expect(histogramEl.nextElementSibling).toBe(selectedDistributionEl);
+    expect(selectedDistributionEl.nextElementSibling).toBe(guidanceEl);
+    expect(guidanceEl.nextElementSibling).toBe(measuredInterpretationEl);
   });
 
   it("8) phase_1_ready banner states readiness without contradicting the available factor capability analysis", async () => {
@@ -1350,7 +1961,7 @@ describe("F7 workbench shell", () => {
 
     expect(wrapper.text()).toContain("Phase 1 setup ready");
     expect(wrapper.text()).not.toContain("Capability analysis and Monte Carlo are not executed in this phase");
-    expect(wrapper.text()).toContain("Approve the proposed distribution for each measured factor to unlock Monte Carlo.");
+    expect(wrapper.text()).toContain("automatically select its final Monte Carlo distribution");
     const buttonLabels = wrapper.findAll("button").map((button) => button.text().toLowerCase());
     expect(buttonLabels.some((text) => text.includes("capability") || text.includes("fit") || text.includes("simulation") || text.includes("recommend"))).toBe(false);
   });
@@ -1358,7 +1969,7 @@ describe("F7 workbench shell", () => {
   it("8b) unlocks factor step 3, fits on entry, and renders governed comparison results", async () => {
     const client = createMockClient(phaseReadySnapshot(), {
       importWorkbook: phaseReadySnapshot(),
-      fitDistribution: distributionFitSnapshot(),
+      fitDistribution: approvedDistributionSnapshot(),
     });
     const wrapper = mount(App, { props: { client } });
     await uploadWorkbook(wrapper);
@@ -1406,6 +2017,7 @@ describe("F7 workbench shell", () => {
     expect(normalPlot.attributes("aria-label")).toContain("Normal frequency histogram and fitted expected frequency curve");
     expect(normalPlot.findAll("[data-histogram-bin]")).toHaveLength(6);
     expect(normalPlot.get("[data-fitted-density-curve]").attributes("d")).toContain("L");
+    expect(normalPlot.get("[data-factor-setup-assumption-curve]").attributes("d")).toContain("L");
     const xAxisTicks = normalPlot.findAll("[data-axis-tick]");
     expect(xAxisTicks).toHaveLength(5);
     expect(xAxisTicks.map((tick) => tick.text())).toEqual(["0.46", "0.51", "0.56", "0.60", "0.65"]);
@@ -1431,7 +2043,13 @@ describe("F7 workbench shell", () => {
     expect(explanation.element.tagName).toBe("FIGCAPTION");
     expect(explanation.get("[data-plot-legend]").text()).toContain("Observed frequency");
     expect(explanation.get("[data-plot-legend]").text()).toContain("Fitted normal expected frequency");
+    expect(explanation.get("[data-plot-legend]").text()).toContain("Factor Setup assumption");
     expect(explanation.get("[data-plot-legend]").text()).toContain("n = 32");
+    expect(explanation.get("[data-factor-setup-assumption-details]").text()).toContain("Normal");
+    expect(explanation.get("[data-factor-setup-assumption-details]").text()).toContain("|Mean| 0.57");
+    expect(explanation.get("[data-factor-setup-assumption-details]").text()).toContain("1σ 0.0125");
+    expect(explanation.get("[data-factor-setup-assumption-details]").text()).toContain("LTSF 1");
+    expect(explanation.get("[data-factor-setup-assumption-details]").text()).toContain("σ Level 4");
     expect(explanation.get("[data-plot-references]").findAll("dt").map((node) => node.text())).toEqual([
       "LSL", "USL", "Target", "Mean", "±3σ (sample)", "±4σ (sample)",
     ]);
@@ -1442,6 +2060,7 @@ describe("F7 workbench shell", () => {
     expect(workspace.find("[data-distribution-plot='normal']").exists()).toBe(false);
     expect(workspace.find("[data-distribution-plot='lognormal']").exists()).toBe(true);
     expect(workspace.findAll("[data-distribution-plot]")).toHaveLength(1);
+    expect(workspace.get("[data-distribution-plot='lognormal'] [data-factor-setup-assumption-curve]").attributes("d")).toContain("L");
     await workspace.get("button[data-fit-plot-family='lognormal']").trigger("click");
     expect(workspace.findAll("[data-distribution-plot]")).toHaveLength(0);
     const conclusion = workspace.get("[data-fit-conclusion]");
@@ -1451,59 +2070,296 @@ describe("F7 workbench shell", () => {
     expect(conclusion.text()).toContain("Normal is the engineering default");
     expect(conclusion.text()).toContain("Lognormal and Gamma are plausible alternatives");
     expect(conclusion.text()).toContain("Proposed final distribution: Normal");
-    expect(conclusion.text()).toContain("engineer confirmation before Monte Carlo");
+    expect(conclusion.text()).toContain("Automatically selected for Monte Carlo");
     expect(conclusion.text()).toContain("LOW confidence");
     expect(conclusion.text()).toContain("Small sample");
     expect(workspace.get("[aria-label='Excel specification limits']").text()).toContain("0.52 mm");
 
     const workflow = wrapper.findAll("ol.workflow-steps > li");
-    expect(workflow[3]?.attributes("aria-current")).toBe("step");
-    expect(workflow[4]?.attributes("aria-disabled")).toBe("true");
-    expect(workflow[5]?.attributes("aria-disabled")).toBe("true");
+    expect(workflow[1]?.attributes("aria-current")).toBe("step");
+    expect(workflow[1]?.text()).toContain("Measure · Capability · Fit");
+    expect(workflow[2]?.attributes("aria-disabled")).toBeUndefined();
+    expect(workflow[2]?.text()).toContain("Available");
   });
 
-  it("8e) approves the proposed model, unlocks Step 5, and submits governed run settings", async () => {
-    const fitted = distributionFitSnapshot();
+  describe("Capability entry distribution fit", () => {
+    it("auto-fits ready measurements and shows only the selected distribution summary", async () => {
+      const client = createMockClient(phaseReadySnapshot(), {
+        importWorkbook: phaseReadySnapshot(),
+        fitDistribution: approvedDistributionSnapshot(),
+      });
+      const wrapper = mount(App, { props: { client } });
+      await uploadWorkbook(wrapper);
+      await openMeasurementWorkspace(wrapper);
+
+      const workspace = wrapper.get("[aria-label='Factor measurement workspace']");
+      await workspace.get("button[data-stage='capability']").trigger("click");
+
+      await vi.waitFor(() => expect(client.fitDistribution).toHaveBeenCalledWith({
+        sessionId: "session-01",
+        factorId: HASH_C,
+      }));
+      await vi.waitFor(() => expect(workspace.find("[data-selected-distribution-summary]").exists()).toBe(true));
+      expect(client.fitDistribution).toHaveBeenCalledTimes(1);
+
+      const embeddedFit = workspace.get("[data-capability-distribution-fit]");
+      expect(embeddedFit.findAll("[data-selected-distribution-family]")).toHaveLength(1);
+      expect(embeddedFit.get("[data-selected-distribution-family]").text()).toBe("Normal");
+      expect(embeddedFit.get("[data-selected-model-specification]").text()).toContain("normal_location_scale");
+      expect(embeddedFit.get("[data-selected-distribution-parameters]").text()).toContain("mean=0.55");
+      expect(embeddedFit.get("[data-selected-distribution-parameters]").text()).toContain("standardDeviation=0.018");
+      expect(embeddedFit.get("[data-selected-bootstrap]").text()).toContain("acceptable");
+      expect(embeddedFit.get("[data-selected-bootstrap]").text()).toContain("p=0.50005");
+      expect(embeddedFit.get("[data-selected-aicc]").text()).toBe("-160.386207");
+      expect(embeddedFit.get("[data-selected-sample-size]").text()).toBe("32");
+      expect(embeddedFit.get("[data-selected-confidence]").text()).toBe("Low");
+      expect(embeddedFit.get("[data-selected-approval-state]").text()).toContain("Automatically selected for Monte Carlo");
+      expect(embeddedFit.find("[data-approve-distribution]").exists()).toBe(false);
+      expect(embeddedFit.findAll("[data-distribution-plot='normal']")).toHaveLength(1);
+      expect(embeddedFit.find("table.distribution-fit-table").exists()).toBe(false);
+      expect(embeddedFit.find("[data-qq-family]").exists()).toBe(false);
+      expect(embeddedFit.find("[data-fit-conclusion]").exists()).toBe(false);
+      expect(embeddedFit.text()).not.toContain("Lognormal");
+      expect(embeddedFit.text()).not.toContain("Gamma");
+      expect(embeddedFit.text()).not.toContain("Plausible alternative");
+      expect(embeddedFit.text()).not.toContain("No unique distribution preference");
+
+      const interpretation = workspace.get("[data-measured-distribution-interpretation]");
+      expect(interpretation.get("[data-distribution-controlled-statements]").findAll("li").length).toBeGreaterThan(0);
+      expect(interpretation.get("[data-distribution-factual-comparisons]").text()).toContain("Factor Setup value of 0.5700");
+      expect(interpretation.get("[data-distribution-provenance]").text()).toContain("F0 distribution-interpretation-v1");
+      expect(interpretation.get("[data-distribution-rule-ids]").text()).toContain("f0:distribution:bootstrap:acceptable");
+    });
+
+    it("does not automatically retry while a controlled fit error exists", async () => {
+      const client = createMockClient(phaseReadySnapshot(), { importWorkbook: phaseReadySnapshot() });
+      client.fitDistribution = vi.fn(async () => {
+        throw {
+          code: "calculation_not_possible",
+          summary: "F7 distribution fitting could not be calculated.",
+          suggestedAction: "Review measurements.",
+          affectedInputReferences: ["f7-session-service"],
+        };
+      });
+      const wrapper = mount(App, { props: { client } });
+      await uploadWorkbook(wrapper);
+      await openMeasurementWorkspace(wrapper);
+
+      const workspace = wrapper.get("[aria-label='Factor measurement workspace']");
+      await workspace.get("button[data-stage='capability']").trigger("click");
+
+      await vi.waitFor(() => {
+        expect(workspace.get("[data-capability-distribution-fit] [data-distribution-fit-error]").text())
+          .toContain("could not be calculated");
+      });
+      expect(client.fitDistribution).toHaveBeenCalledTimes(1);
+
+      await workspace.get("[data-review-measurements]").trigger("click");
+      await workspace.get("button[data-stage='capability']").trigger("click");
+      await wrapper.vm.$nextTick();
+
+      expect(client.fitDistribution).toHaveBeenCalledTimes(1);
+    });
+
+    it("isolates a fit error from another ready measured factor", async () => {
+      const twoFactors = twoFactorReadySnapshot();
+      const snapshot = createSnapshot({
+        ...twoFactors,
+        factors: twoFactors.factors.map((factor) => {
+          const { distributionFitResult: _distributionFitResult, ...unfittedFactor } = factor;
+          return unfittedFactor;
+        }),
+      });
+      const client = createMockClient(snapshot, { importWorkbook: snapshot });
+      client.fitDistribution = vi.fn(async (request: Parameters<F7Client["fitDistribution"]>[0]) => {
+        if (request.factorId === HASH_C) {
+          throw {
+            code: "calculation_not_possible",
+            summary: "Factor A distribution fitting could not be calculated.",
+            suggestedAction: "Review factor A measurements.",
+            affectedInputReferences: [HASH_C],
+          };
+        }
+        return snapshot;
+      });
+      const wrapper = mount(App, { props: { client } });
+      await uploadWorkbook(wrapper);
+      await openMeasurementWorkspace(wrapper);
+
+      let workspace = wrapper.get("[aria-label='Factor measurement workspace']");
+      await workspace.get("button[data-stage='capability']").trigger("click");
+      await vi.waitFor(() => {
+        expect(workspace.get("[data-capability-distribution-fit] [data-distribution-fit-error]").text())
+          .toContain("Factor A distribution fitting could not be calculated.");
+      });
+      expect(client.fitDistribution).toHaveBeenNthCalledWith(1, {
+        sessionId: "session-01",
+        factorId: HASH_C,
+      });
+
+      await workspace.get("button[data-close-measurement]").trigger("click");
+      await wrapper.get(`[data-open-measurement='${HASH_A}']`).trigger("click");
+      workspace = wrapper.get("[aria-label='Factor measurement workspace']");
+      expect(workspace.text()).toContain("Second factor");
+      await workspace.get("button[data-stage='capability']").trigger("click");
+
+      expect.soft(
+        workspace.find("[data-capability-distribution-fit] [data-distribution-fit-error]").exists(),
+        "factor B must not display factor A's fit error",
+      ).toBe(false);
+      await vi.waitFor(() => expect(client.fitDistribution).toHaveBeenCalledTimes(2));
+      expect(client.fitDistribution).toHaveBeenNthCalledWith(2, {
+        sessionId: "session-01",
+        factorId: HASH_A,
+      });
+    });
+
+    it("places Review Measurement Data at the right of the compact specification limits", async () => {
+      const client = createMockClient(phaseReadySnapshot(), {
+        importWorkbook: phaseReadySnapshot(),
+        fitDistribution: distributionFitSnapshot(),
+      });
+      const wrapper = mount(App, { props: { client } });
+      await uploadWorkbook(wrapper);
+      await openMeasurementWorkspace(wrapper);
+
+      const workspace = wrapper.get("[aria-label='Factor measurement workspace']");
+      await workspace.get("button[data-stage='capability']").trigger("click");
+
+      const specification = workspace.get("[aria-label='Excel specification limits']");
+      const specificationHeader = specification.get(".specification-evidence-header");
+      const reviewMeasurements = workspace.get("[data-review-measurements]");
+      expect(specificationHeader.get("h4").text()).toBe("Factor Specification Limits");
+      expect(specificationHeader.get(".specification-limit-values").text()).toContain("LSL");
+      expect(specificationHeader.get(".specification-limit-values").text()).toContain("USL");
+      expect(specificationHeader.element.contains(reviewMeasurements.element)).toBe(true);
+      expect(reviewMeasurements.text()).toBe("Review Measurement Data");
+    });
+
+    it("reuses an existing fit without requesting another fit", async () => {
+      const fitted = distributionFitSnapshot();
+      const client = createMockClient(fitted, { importWorkbook: fitted });
+      const wrapper = mount(App, { props: { client } });
+      await uploadWorkbook(wrapper);
+      await openMeasurementWorkspace(wrapper);
+
+      const workspace = wrapper.get("[aria-label='Factor measurement workspace']");
+      await workspace.get("button[data-stage='capability']").trigger("click");
+
+      await vi.waitFor(() => expect(workspace.find("[data-selected-distribution-summary]").exists()).toBe(true));
+      expect(workspace.findAll("[data-capability-distribution-fit]")).toHaveLength(1);
+      expect(client.fitDistribution).not.toHaveBeenCalled();
+      const embeddedFit = workspace.get("[data-capability-distribution-fit]");
+      expect(embeddedFit.get("[data-selected-distribution-family]").text()).toBe("Normal");
+      expect(embeddedFit.find("table.distribution-fit-table").exists()).toBe(false);
+    });
+
+    it("shows the unique Normal preference as the only selected family", async () => {
+      const fitted = distributionFitSnapshot();
+      const uniquePreference = createSnapshot({
+        ...fitted,
+        factors: fitted.factors.map((factor) => factor.distributionFitResult ? {
+          ...factor,
+          distributionFitResult: {
+            ...factor.distributionFitResult,
+            candidates: factor.distributionFitResult.candidates.map((candidate) => {
+              if (candidate.family === "normal") return candidate;
+              return {
+                ...candidate,
+                logLikelihood: candidate.logLikelihood - 2,
+                aic: candidate.aic + 4,
+                aicc: candidate.aicc + 4,
+                bic: candidate.bic + 4,
+                deltaAicc: candidate.deltaAicc + 4,
+                deltaBic: candidate.deltaBic + 4,
+              };
+            }),
+            selectionDecision: {
+              methodId: "F7_MODEL_SELECTION_V1" as const,
+              status: "unique_preference" as const,
+              numericBestFamily: "normal" as const,
+              competitiveFamilies: ["normal" as const],
+              engineeringDefaultFamily: undefined,
+              proposedFinalFamily: "normal" as const,
+              confidence: "moderate" as const,
+              reasonCodes: [
+                "SINGLE_ACCEPTABLE_COMPETITOR" as const,
+                "SMALL_SAMPLE_UNCERTAINTY" as const,
+              ],
+            },
+          },
+        } : factor),
+      });
+      const client = createMockClient(uniquePreference, { importWorkbook: uniquePreference });
+      const wrapper = mount(App, { props: { client } });
+      await uploadWorkbook(wrapper);
+      await openMeasurementWorkspace(wrapper);
+
+      const workspace = wrapper.get("[aria-label='Factor measurement workspace']");
+      await workspace.get("button[data-stage='capability']").trigger("click");
+
+      const embeddedFit = workspace.get("[data-capability-distribution-fit]");
+      expect(embeddedFit.findAll("[data-selected-distribution-family]")).toHaveLength(1);
+      expect(embeddedFit.get("[data-selected-distribution-family]").text()).toBe("Normal");
+      expect(embeddedFit.find("table.distribution-fit-table").exists()).toBe(false);
+      expect(embeddedFit.text()).not.toContain("Lognormal");
+      expect(embeddedFit.text()).not.toContain("Gamma");
+    });
+
+    it("keeps the Normal plot visible after automatic Monte Carlo selection", async () => {
+      const fitted = approvedDistributionSnapshot();
+      const client = createMockClient(fitted, { importWorkbook: fitted });
+      const wrapper = mount(App, { props: { client } });
+      await uploadWorkbook(wrapper);
+      await openMeasurementWorkspace(wrapper);
+
+      const workspace = wrapper.get("[aria-label='Factor measurement workspace']");
+      await workspace.get("button[data-stage='capability']").trigger("click");
+
+      const embeddedFit = workspace.get("[data-capability-distribution-fit]");
+  const fitHeading = embeddedFit.get("[data-selected-distribution-heading]");
+  expect(fitHeading.get("h4").text()).toBe("Selected Distribution Fit");
+      expect(fitHeading.find("[data-approve-distribution]").exists()).toBe(false);
+  expect(embeddedFit.find("button[data-fit-plot-family]").exists()).toBe(false);
+  expect(embeddedFit.findAll("[data-distribution-plot='normal']")).toHaveLength(1);
+      expect(embeddedFit.get("[data-selected-approval-state]").text()).toContain("Automatically selected for Monte Carlo");
+      expect(client.approveDistribution).not.toHaveBeenCalled();
+    });
+  });
+
+  it("8e) uses the automatically selected model, unlocks Step 3, and submits governed run settings", async () => {
     const approved = approvedDistributionSnapshot();
     const completed = completedMonteCarloSnapshot();
-    const client = createMockClient(fitted, {
-      importWorkbook: fitted,
-      approveDistribution: approved,
+    const report = reportProjection(completed);
+    const generateReport = vi.fn(async () => report);
+    const client = createMockClient(approved, {
+      importWorkbook: approved,
       runMonteCarlo: completed,
-    });
+    }, generateReport);
     const wrapper = mount(App, { props: { client } });
     await uploadWorkbook(wrapper);
     await openMeasurementWorkspace(wrapper);
-    await wrapper.get("button[data-stage='distribution']").trigger("click");
+    expect(client.approveDistribution).not.toHaveBeenCalled();
+    const monteCarloStep = wrapper.findAll(".workflow-steps li")[2]!;
+    expect(monteCarloStep.text()).toContain("Available");
+    expect(monteCarloStep.get("[data-workflow-open-monte-carlo]").attributes("disabled")).toBeUndefined();
 
-    await wrapper.get("button[data-fit-plot-family='normal']").trigger("click");
-    expect(wrapper.find("[data-distribution-plot]").exists()).toBe(false);
-    await wrapper.get("[data-approve-distribution]").trigger("click");
-    expect(client.approveDistribution).toHaveBeenCalledWith({
-      sessionId: "session-01",
-      factorId: HASH_C,
-      family: "normal",
-      confirmed: true,
-    });
-    await vi.waitFor(() => expect(wrapper.find("[data-open-monte-carlo]").exists()).toBe(true));
-    expect(wrapper.find("[data-distribution-plot]").exists()).toBe(false);
-    expect(wrapper.findAll(".workflow-steps li")[4]?.text()).toContain("Available");
-
-    await wrapper.get("[data-open-monte-carlo]").trigger("click");
+    await monteCarloStep.get("[data-workflow-open-monte-carlo]").trigger("click");
+    expect(wrapper.find("[aria-label='Factor measurement workspace']").exists()).toBe(false);
     expect(wrapper.get("#monte-carlo-title").text()).toBe("Monte Carlo simulation");
     expect(wrapper.get<HTMLInputElement>("[data-monte-carlo-lsl]").element.value).toBe("-0.15");
     expect(wrapper.get<HTMLInputElement>("[data-monte-carlo-usl]").element.value).toBe("0.05");
     expect(wrapper.get<HTMLInputElement>("[data-monte-carlo-target-sigma]").element.value).toBe("3");
-    expect(wrapper.get("[data-monte-carlo-lsl-source]").text()).toContain("P54");
-    expect(wrapper.get("[data-monte-carlo-usl-source]").text()).toContain("P55");
-    expect(wrapper.get("[data-monte-carlo-target-sigma-source]").text()).toContain("P56");
-    expect(wrapper.get("[data-monte-carlo-target-sigma-status]").text()).toBe("Excel default");
+    expect(wrapper.find("[data-monte-carlo-lsl-source]").exists()).toBe(false);
+    expect(wrapper.find("[data-monte-carlo-usl-source]").exists()).toBe(false);
+    expect(wrapper.find("[data-monte-carlo-target-sigma-source]").exists()).toBe(false);
+    expect(wrapper.find("[data-monte-carlo-target-sigma-status]").exists()).toBe(false);
+    expect(wrapper.get<HTMLInputElement>("[data-monte-carlo-seed]").element.value).toBe("12345");
     await wrapper.get("[data-monte-carlo-target-sigma]").setValue("0");
     expect(wrapper.get("[data-run-monte-carlo]").attributes("disabled")).toBeDefined();
     await wrapper.get("[data-monte-carlo-target-sigma]").setValue("4");
-    expect(wrapper.get("[data-monte-carlo-target-sigma-status]").text()).toBe("Override");
     await wrapper.get("[data-monte-carlo-iterations]").setValue("10000");
-    await wrapper.get("[data-monte-carlo-seed]").setValue(HASH_A);
+    await wrapper.get("[data-monte-carlo-seed]").setValue("42");
     await wrapper.get("[data-run-monte-carlo]").trigger("submit");
 
     expect(client.runMonteCarlo).toHaveBeenCalledWith({
@@ -1512,28 +2368,68 @@ describe("F7 workbench shell", () => {
       upperSpecLimit: 0.05,
       targetSigmaLevel: 4,
       iterations: 10_000,
-      runSeed: HASH_A,
+      runSeed: "2a".padStart(64, "0"),
       correlationMode: "INDEPENDENT",
     });
-    await vi.waitFor(() => expect(wrapper.find("[data-monte-carlo-results]").exists()).toBe(true));
+    await vi.waitFor(() => expect(wrapper.find("#report-title").exists()).toBe(true));
+    expect(generateReport).toHaveBeenCalledTimes(1);
+    expect(wrapper.find("[data-open-report]").exists()).toBe(false);
+    expect(wrapper.find("#monte-carlo-title").exists()).toBe(true);
+    expect(wrapper.find("[data-ta-comparison-matrix]").exists()).toBe(true);
+    expect(wrapper.find("[data-normal-model-statistics]").exists()).toBe(false);
+    expect(wrapper.find("[data-observed-defect-statistics]").exists()).toBe(false);
     expect(wrapper.findAll("[data-monte-carlo-bin]")).toHaveLength(20);
     expect(wrapper.findAll("[data-monte-carlo-bin][data-specification-status='in-spec']").length).toBeGreaterThan(0);
     expect(wrapper.findAll("[data-monte-carlo-bin][data-specification-status='out-of-spec']").length).toBeGreaterThan(0);
     expect(wrapper.find("[data-monte-carlo-fit]").exists()).toBe(true);
     expect(wrapper.findAll("[data-monte-carlo-reference]")).toHaveLength(6);
     expect(wrapper.get("[data-reference-id='target']").text()).toContain("Target");
-    expect(wrapper.get("[data-normal-model-statistics]").text()).toContain("Expected DPM");
-    expect(wrapper.get("[data-observed-defect-statistics]").text()).toContain("Observed PPM");
+    expect(wrapper.get("[data-factor-setup-fit]").attributes("d")).not.toBe("");
+    expect(wrapper.get(".monte-carlo-histogram").attributes("aria-label")).toContain("Factor Setup");
+    expect(wrapper.get("[data-factor-setup-mean]").text()).toContain("Setup Mean");
+    expect(wrapper.get("[data-monte-carlo-legend]").text()).toContain("Factor Setup TA Normal expected count");
+    expect(wrapper.get("[data-monte-carlo-legend]").text()).toContain("Setup Mean");
+    expect(wrapper.get("[data-setup-mean-comparison]").text()).toContain("-0.5700");
+    expect(wrapper.get("[data-setup-mean-comparison]").text()).toContain("-0.0200");
+    expect(wrapper.get("[data-setup-mean-comparison]").text()).toContain("+0.5500");
+    expect(wrapper.get("[data-setup-standard-deviation-comparison]").text()).toContain("+220.0%");
+    expect(wrapper.get("[data-setup-comparison-interpretation]").text()).toContain("shifted right");
+    expect(wrapper.get("[data-setup-comparison-interpretation]").text()).toContain("wider");
+    const matrix = wrapper.get("[data-ta-comparison-matrix]");
+    expect(matrix.text()).toContain("Fitted Normal 95.936382%");
+    expect(matrix.text()).toContain("Empirical 95%");
+    expect(matrix.text()).toContain("Fitted Normal 40,636.182 PPM");
+    expect(matrix.text()).toContain("Empirical 50,000 PPM");
   });
 
-  it("8f) locks Step 6 without a Monte Carlo result and marks it Available when a result exists", async () => {
+  it("8e.1) fails closed when Factor Setup evidence is unavailable", async () => {
+    const completed = completedMonteCarloSnapshot();
+    const unavailable = createSnapshot({
+      ...completed,
+      factors: completed.factors.map(({ evidence: _evidence, ...factor }) => factor),
+    });
+    const wrapper = mount(App, {
+      props: { client: createMockClient(unavailable, { importWorkbook: unavailable }) },
+    });
+
+    await uploadWorkbook(wrapper);
+    await wrapper.get("[data-open-monte-carlo]").trigger("click");
+
+    expect(wrapper.find("[data-factor-setup-fit]").exists()).toBe(false);
+    expect(wrapper.find("[data-factor-setup-mean]").exists()).toBe(false);
+    expect(wrapper.get(".monte-carlo-histogram").attributes("aria-label")).not.toContain("Factor Setup");
+    expect(wrapper.get("#monte-carlo-chart-description").text()).not.toContain("Factor Setup");
+    expect(wrapper.get("[data-setup-comparison-unavailable]").text()).toContain("unavailable");
+  });
+
+  it("8f) keeps a three-step workflow and unlocks Step 3 only when simulation is ready", async () => {
     const approved = approvedDistributionSnapshot();
     const withoutResult = mount(App, {
       props: { client: createMockClient(approved, { importWorkbook: approved }) },
     });
     await uploadWorkbook(withoutResult);
-    expect(withoutResult.findAll(".workflow-steps li")[5]?.attributes("aria-disabled")).toBe("true");
-    expect(withoutResult.findAll(".workflow-steps li")[5]?.text()).toContain("Locked");
+    expect(withoutResult.findAll(".workflow-steps li")).toHaveLength(3);
+    expect(withoutResult.findAll(".workflow-steps li")[2]?.attributes("aria-disabled")).toBeUndefined();
 
     const completed = completedMonteCarloSnapshot();
     const withResult = mount(App, {
@@ -1541,12 +2437,12 @@ describe("F7 workbench shell", () => {
     });
     await uploadWorkbook(withResult);
     await withResult.get("[data-open-monte-carlo]").trigger("click");
-    expect(withResult.findAll(".workflow-steps li")[5]?.attributes("aria-disabled")).toBeUndefined();
-    expect(withResult.findAll(".workflow-steps li")[5]?.text()).toContain("Available");
-    expect(withResult.findAll(".workflow-steps li")[5]?.text()).not.toContain("Phase 1");
+    expect(withResult.findAll(".workflow-steps li")).toHaveLength(3);
+    expect(withResult.findAll(".workflow-steps li")[2]?.attributes("aria-current")).toBe("step");
+    expect(withResult.findAll(".workflow-steps li")[2]?.text()).toContain("Simulation · Automatic report");
   });
 
-  it("8g) generates the report once on entry and returns to Step 5 without rerunning Monte Carlo", async () => {
+  it("8g) embeds the automatically generated F0 report below the Step 3 Monte Carlo result", async () => {
     const completed = completedMonteCarloSnapshot();
     const report = reportProjection(completed);
     const generateReport = vi.fn(async ({ sessionId }: { readonly sessionId: string }) => {
@@ -1558,35 +2454,31 @@ describe("F7 workbench shell", () => {
     await uploadWorkbook(wrapper);
     await wrapper.get("[data-open-monte-carlo]").trigger("click");
 
-    expect(wrapper.find("[data-open-report]").exists()).toBe(true);
-    expect(wrapper.find("[aria-label='Factor setup and source mode']").exists()).toBe(false);
-    (wrapper.vm as unknown as { activeMeasurementFactorId: string }).activeMeasurementFactorId = HASH_C;
-    await wrapper.vm.$nextTick();
-    expect(wrapper.find("[aria-label='Factor measurement workspace']").exists()).toBe(false);
-    expect(wrapper.find("[aria-label='Validation summary']").exists()).toBe(false);
-    expect(wrapper.find(".ready-panel").exists()).toBe(false);
-    await wrapper.get("[data-open-report]").trigger("click");
-
     await vi.waitFor(() => expect(wrapper.find("#report-title").exists()).toBe(true));
+    expect(wrapper.find("#monte-carlo-title").exists()).toBe(true);
+    expect(wrapper.findAll(".workflow-steps li")).toHaveLength(3);
+    expect(wrapper.find("[data-report-back]").exists()).toBe(false);
+    expect(wrapper.get("[data-report-f0-guidance]").text()).toContain("F0 v1 / default-cpk-target");
+    expect(wrapper.get("[data-report-f0-guidance]").text()).toContain("Prioritize reducing and stabilizing");
+    const monteCarloPanel = wrapper.get(".monte-carlo-panel").element;
+    const reportPanel = wrapper.get(".report-panel").element;
+    expect(monteCarloPanel.compareDocumentPosition(reportPanel) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(wrapper.find("[data-open-report]").exists()).toBe(false);
     expect(wrapper.find("[aria-label='Factor setup and source mode']").exists()).toBe(false);
     (wrapper.vm as unknown as { activeMeasurementFactorId: string }).activeMeasurementFactorId = HASH_C;
     await wrapper.vm.$nextTick();
     expect(wrapper.find("[aria-label='Factor measurement workspace']").exists()).toBe(false);
     expect(generateReport).toHaveBeenCalledTimes(1);
     expect(generateReport).toHaveBeenCalledWith({ sessionId: "session-01" });
-    expect(wrapper.findAll(".workflow-steps li")[3]?.text()).toContain("Complete");
-    expect(wrapper.findAll(".workflow-steps li")[4]?.text()).toContain("Complete");
-    expect(wrapper.findAll(".workflow-steps li")[5]?.attributes("aria-current")).toBe("step");
+    expect(wrapper.findAll(".workflow-steps li")[1]?.text()).toContain("Complete");
+    expect(wrapper.findAll(".workflow-steps li")[2]?.text()).toContain("Simulation · Automatic report");
+    expect(wrapper.findAll(".workflow-steps li")[2]?.attributes("aria-current")).toBe("step");
     expect(wrapper.find("[aria-label='Validation summary']").exists()).toBe(false);
     expect(wrapper.find(".ready-panel").exists()).toBe(false);
 
-    await wrapper.get("[data-report-back]").trigger("click");
-    expect(wrapper.find("#report-title").exists()).toBe(false);
-    expect(wrapper.find("#monte-carlo-title").exists()).toBe(true);
-    expect(client.runMonteCarlo).not.toHaveBeenCalled();
-
-    await wrapper.get("[data-open-report]").trigger("click");
-    await vi.waitFor(() => expect(generateReport).toHaveBeenCalledTimes(2));
+    await wrapper.get("[data-workflow-open-monte-carlo]").trigger("click");
+    await vi.waitFor(() => expect(wrapper.find("#report-title").exists()).toBe(true));
+    expect(generateReport).toHaveBeenCalledTimes(1);
   });
 
   it("8h) keeps Step 5 active after report failure and allows a controlled retry", async () => {
@@ -1605,12 +2497,12 @@ describe("F7 workbench shell", () => {
     await uploadWorkbook(wrapper);
     await wrapper.get("[data-open-monte-carlo]").trigger("click");
 
-    await wrapper.get("[data-open-report]").trigger("click");
     await vi.waitFor(() => expect(wrapper.text()).toContain("Unable to generate the F7 report."));
     expect(wrapper.find("#monte-carlo-title").exists()).toBe(true);
     expect(wrapper.find("#report-title").exists()).toBe(false);
 
-    await wrapper.get("[data-open-report]").trigger("click");
+    await vi.waitFor(() => expect(wrapper.find("[data-retry-report]").exists()).toBe(true));
+    await wrapper.get("[data-retry-report]").trigger("click");
     await vi.waitFor(() => expect(wrapper.find("#report-title").exists()).toBe(true));
     expect(generateReport).toHaveBeenCalledTimes(2);
   });
@@ -1627,16 +2519,15 @@ describe("F7 workbench shell", () => {
     await uploadWorkbook(wrapper);
     await wrapper.get("[data-open-monte-carlo]").trigger("click");
 
-    await wrapper.get("[data-open-report]").trigger("click");
-    expect(wrapper.get("[data-open-report]").attributes("disabled")).toBeDefined();
-    await wrapper.get("[data-open-report]").trigger("click");
+    expect(wrapper.get("[data-workflow-open-monte-carlo]").attributes("disabled")).toBeDefined();
+    await wrapper.get("[data-workflow-open-monte-carlo]").trigger("click");
     expect(generateReport).toHaveBeenCalledTimes(1);
 
     resolveReport(report);
     await vi.waitFor(() => expect(wrapper.find("#report-title").exists()).toBe(true));
   });
 
-  it("8j) does not reopen a deferred report after returning to factors and requests a fresh report next time", async () => {
+  it("8j) does not reopen a deferred report after returning to factors and reuses it next time", async () => {
     const completed = completedMonteCarloSnapshot();
     const report = reportProjection(completed);
     let resolveFirstReport!: (value: F7ReportProjection) => void;
@@ -1650,7 +2541,6 @@ describe("F7 workbench shell", () => {
     await uploadWorkbook(wrapper);
     await wrapper.get("[data-open-monte-carlo]").trigger("click");
 
-    await wrapper.get("[data-open-report]").trigger("click");
     await wrapper.get(".workspace-close-button").trigger("click");
     resolveFirstReport(report);
 
@@ -1659,9 +2549,8 @@ describe("F7 workbench shell", () => {
     expect(wrapper.findAll(".workflow-steps li")[1]?.attributes("aria-current")).toBe("step");
 
     await wrapper.get("[data-open-monte-carlo]").trigger("click");
-    await wrapper.get("[data-open-report]").trigger("click");
     await vi.waitFor(() => expect(wrapper.find("#report-title").exists()).toBe(true));
-    expect(generateReport).toHaveBeenCalledTimes(2);
+    expect(generateReport).toHaveBeenCalledTimes(1);
   });
 
   it("8k) resets report workflow state only after a new workbook imports successfully", async () => {
@@ -1682,7 +2571,6 @@ describe("F7 workbench shell", () => {
     const wrapper = mount(App, { props: { client } });
     await uploadWorkbook(wrapper);
     await wrapper.get("[data-open-monte-carlo]").trigger("click");
-    await wrapper.get("[data-open-report]").trigger("click");
     await vi.waitFor(() => expect(wrapper.find("#report-title").exists()).toBe(true));
     (wrapper.vm as unknown as { activeMeasurementFactorId: string }).activeMeasurementFactorId = HASH_C;
 
@@ -1695,7 +2583,6 @@ describe("F7 workbench shell", () => {
   });
 
   it("8ea) keeps Monte Carlo specifications empty when Excel evidence is unavailable", async () => {
-    const fitted = distributionFitSnapshot();
     const approved = approvedDistributionSnapshot();
     const unavailable = createSnapshot({
       ...approved,
@@ -1704,15 +2591,11 @@ describe("F7 workbench shell", () => {
         reasonCode: "legacy_artifact_missing_system_specification",
       },
     });
-    const client = createMockClient(fitted, {
-      importWorkbook: fitted,
-      approveDistribution: unavailable,
-    });
+    const client = createMockClient(unavailable, { importWorkbook: unavailable });
     const wrapper = mount(App, { props: { client } });
     await uploadWorkbook(wrapper);
     await openMeasurementWorkspace(wrapper);
-    await wrapper.get("button[data-stage='distribution']").trigger("click");
-    await wrapper.get("[data-approve-distribution]").trigger("click");
+    await wrapper.get("button[data-close-measurement]").trigger("click");
     await vi.waitFor(() => expect(wrapper.find("[data-open-monte-carlo]").exists()).toBe(true));
     await wrapper.get("[data-open-monte-carlo]").trigger("click");
 
@@ -1770,7 +2653,7 @@ describe("F7 workbench shell", () => {
     await workspace.get("button[data-close-measurement]").trigger("click");
     await openMeasurementWorkspace(wrapper);
     const reopenedWorkspace = wrapper.get("[aria-label='Factor measurement workspace']");
-    expect(reopenedWorkspace.find("[data-distribution-plot]").exists()).toBe(false);
+    expect(reopenedWorkspace.find(".distribution-fit-analysis [data-distribution-plot]").exists()).toBe(false);
     await reopenedWorkspace.get("button[data-stage='distribution']").trigger("click");
     expect(reopenedWorkspace.find("[data-distribution-plot='normal']").exists()).toBe(true);
   });
@@ -1783,12 +2666,43 @@ describe("F7 workbench shell", () => {
     await openMeasurementWorkspace(wrapper);
 
     const workspace = wrapper.get("[aria-label='Factor measurement workspace']");
+    await workspace.get("button[data-stage='capability']").trigger("click");
+    const embeddedFit = workspace.get("[data-capability-distribution-fit]");
+    expect(embeddedFit.get("[data-selected-distribution-unavailable]").text()).toContain("unavailable");
+    expect(embeddedFit.find("[data-selected-distribution-family]").exists()).toBe(false);
+    expect(embeddedFit.find("[data-failed-candidates]").exists()).toBe(false);
+    expect(embeddedFit.find("[data-fit-conclusion]").exists()).toBe(false);
+    expect(embeddedFit.find("[data-distribution-plot]").exists()).toBe(false);
+    expect(embeddedFit.text()).not.toContain("Weibull");
+    expect(workspace.get("[data-measured-distribution-unavailable]").text()).toContain("unavailable");
+
     await workspace.get("button[data-stage='distribution']").trigger("click");
-    expect(workspace.get("[data-failed-candidates]").text()).toContain("Weibull");
-    expect(workspace.get("[data-failed-candidates]").text()).toContain("numerical fit failed");
-    expect(workspace.get("[data-recommendation-withheld]").text()).toContain("Conclusion withheld");
-    expect(workspace.text()).not.toContain("Recommended");
-    expect(workspace.text()).not.toContain("Proposed final selection");
+    const dedicatedFit = workspace.get(".distribution-fit-analysis");
+    expect(dedicatedFit.get("[data-failed-candidates]").text()).toContain("Weibull");
+    expect(dedicatedFit.get("[data-failed-candidates]").text()).toContain("numerical fit failed");
+    expect(dedicatedFit.get("[data-recommendation-withheld]").text()).toContain("Conclusion withheld");
+    const confidence = dedicatedFit.find(".fit-confidence");
+    expect.soft(confidence.exists(), "embedded failed-candidate confidence is missing").toBe(true);
+    if (confidence.exists()) {
+      expect(confidence.isVisible()).toBe(true);
+      expect(confidence.text()).toContain("LOW confidence");
+    }
+    const smallSampleWarning = dedicatedFit.find(".fit-small-sample-warning");
+    expect.soft(smallSampleWarning.exists(), "embedded failed-candidate small-sample warning is missing").toBe(true);
+    if (smallSampleWarning.exists()) {
+      expect(smallSampleWarning.isVisible()).toBe(true);
+      expect(smallSampleWarning.text()).toContain("Small sample (n=32)");
+    }
+    const compatibilityNote = dedicatedFit.find(".fit-conclusion-note");
+    expect.soft(compatibilityNote.exists(), "embedded failed-candidate compatibility note is missing").toBe(true);
+    if (compatibilityNote.exists()) {
+      expect(compatibilityNote.isVisible()).toBe(true);
+      expect(compatibilityNote.text()).toContain(
+        "Compatibility with the observed sample does not prove that the measurements follow any candidate distribution.",
+      );
+    }
+    expect(dedicatedFit.text()).not.toContain("Recommended");
+    expect(dedicatedFit.text()).not.toContain("Proposed final selection");
   });
 
   it("8f) explains when no candidate meets the acceptable recommendation threshold", async () => {
@@ -1832,11 +2746,41 @@ describe("F7 workbench shell", () => {
     await openMeasurementWorkspace(wrapper);
 
     const workspace = wrapper.get("[aria-label='Factor measurement workspace']");
+    await workspace.get("button[data-stage='capability']").trigger("click");
+    const embeddedFit = workspace.get("[data-capability-distribution-fit]");
+    expect(embeddedFit.get("[data-selected-distribution-unavailable]").text()).toContain("unavailable");
+    expect(embeddedFit.find("[data-selected-distribution-family]").exists()).toBe(false);
+    expect(embeddedFit.find("[data-no-fit-recommendation]").exists()).toBe(false);
+    expect(embeddedFit.find("[data-fit-conclusion]").exists()).toBe(false);
+    expect(embeddedFit.findAll("[data-distribution-plot]")).toHaveLength(0);
+    expect(workspace.get("[data-measured-distribution-unavailable]").text()).toContain("unavailable");
+
     await workspace.get("button[data-stage='distribution']").trigger("click");
-    expect(workspace.get("[data-no-fit-recommendation]").text()).toContain(
+    const dedicatedFit = workspace.get(".distribution-fit-analysis");
+    expect(dedicatedFit.get("[data-no-fit-recommendation]").text()).toContain(
       "No candidate met the acceptable Bootstrap threshold",
     );
-    expect(workspace.findAll("[data-distribution-plot]")).toHaveLength(0);
+    const confidence = dedicatedFit.find(".fit-confidence");
+    expect.soft(confidence.exists(), "embedded no-acceptable-model confidence is missing").toBe(true);
+    if (confidence.exists()) {
+      expect(confidence.isVisible()).toBe(true);
+      expect(confidence.text()).toContain("LOW confidence");
+    }
+    const smallSampleWarning = dedicatedFit.find(".fit-small-sample-warning");
+    expect.soft(smallSampleWarning.exists(), "embedded no-acceptable-model small-sample warning is missing").toBe(true);
+    if (smallSampleWarning.exists()) {
+      expect(smallSampleWarning.isVisible()).toBe(true);
+      expect(smallSampleWarning.text()).toContain("Small sample (n=32)");
+    }
+    const compatibilityNote = dedicatedFit.find(".fit-conclusion-note");
+    expect.soft(compatibilityNote.exists(), "embedded no-acceptable-model compatibility note is missing").toBe(true);
+    if (compatibilityNote.exists()) {
+      expect(compatibilityNote.isVisible()).toBe(true);
+      expect(compatibilityNote.text()).toContain(
+        "Compatibility with the observed sample does not prove that the measurements follow any candidate distribution.",
+      );
+    }
+    expect(dedicatedFit.findAll("[data-distribution-plot]")).toHaveLength(0);
   });
 
   it("8c) shows factor-scoped distribution fit loading and controlled error states", async () => {
@@ -1874,17 +2818,20 @@ describe("F7 workbench shell", () => {
     await uploadWorkbook(wrapper);
     await openMeasurementWorkspace(wrapper);
 
-    const workspace = wrapper.get("[aria-label='Factor measurement workspace']");
+    let workspace = wrapper.get("[aria-label='Factor measurement workspace']");
     await workspace.get("button[data-stage='distribution']").trigger("click");
     expect(workspace.find("table.distribution-fit-table").exists()).toBe(true);
 
+    await workspace.get("button[data-close-measurement]").trigger("click");
     await wrapper.get(`[data-open-measurement='${HASH_A}']`).trigger("click");
+    workspace = wrapper.get("[aria-label='Factor measurement workspace']");
     expect(workspace.text()).toContain("Second factor");
     expect(workspace.find("table.distribution-fit-table").exists()).toBe(false);
     expect(workspace.find(".measurement-grid").exists()).toBe(true);
     expect((workspace.get("input[data-measurement-row='1']").element as HTMLInputElement).value).toBe("2.1");
 
-    await workspace.get("button[data-confirm-measurements]").trigger("click");
+    await workspace.get("input[data-measurement-row='1']").setValue("2.2");
+    await vi.waitFor(() => expect(client.pasteMeasurements).toHaveBeenCalled());
     (wrapper.vm as unknown as { onOpenMeasurement: (factorId: string) => void }).onOpenMeasurement(HASH_C);
     await wrapper.vm.$nextTick();
     expect(workspace.text()).toContain("C-cover height");
@@ -1893,11 +2840,11 @@ describe("F7 workbench shell", () => {
     resolvePaste?.(snapshot);
     await vi.waitFor(() => expect(wrapper.attributes("aria-busy")).toBe("false"));
     expect(workspace.find(".measurement-grid").exists()).toBe(true);
-    expect(workspace.find(".capability-analysis").exists()).toBe(false);
+    expect(workspace.find(".capability-analysis").exists()).toBe(true);
     expect(workspace.find("table.distribution-fit-table").exists()).toBe(false);
   });
 
-  it("9) workflow rail renders six exact steps, locks 3-6 as non-interactive, and marks step1 current initially", async () => {
+  it("9) workflow rail renders three grouped steps and marks step1 current initially", async () => {
     const client = createMockClient(createSnapshot({ status: "worksheet_selection" }), { importWorkbook: createSnapshot({ status: "worksheet_selection" }) });
     const wrapper = mount(App, { props: { client } });
     await uploadWorkbook(wrapper);
@@ -1905,18 +2852,15 @@ describe("F7 workbench shell", () => {
     const stepLabels = wrapper.findAll("ol.workflow-steps > li .step-label").map((node) => node.text().trim());
     expect(stepLabels).toEqual([
       "Select worksheet",
-      "Measurement data",
-      "Capability analysis",
-      "Distribution fit",
-      "Monte Carlo",
-      "Report",
+      "Measurement analysis",
+      "Monte Carlo & Report",
     ]);
 
     const listItems = wrapper.findAll("ol.workflow-steps > li");
-    expect(listItems).toHaveLength(6);
+    expect(listItems).toHaveLength(3);
     expect(listItems[0]?.attributes("aria-current")).toBe("step");
 
-    for (const index of [2, 3, 4, 5]) {
+    for (const index of [1, 2]) {
       const item = listItems[index];
       expect(item?.attributes("aria-disabled")).toBe("true");
       expect(item?.findAll("button, a, input, select, textarea")).toHaveLength(0);
@@ -1933,7 +2877,7 @@ describe("F7 workbench shell", () => {
     await uploadWorkbook(wrapper);
 
     const listItems = wrapper.findAll("ol.workflow-steps > li");
-    expect(listItems).toHaveLength(6);
+    expect(listItems).toHaveLength(3);
     expect(listItems[0]?.attributes("aria-current")).toBeUndefined();
     expect(listItems[1]?.attributes("aria-current")).toBe("step");
   });

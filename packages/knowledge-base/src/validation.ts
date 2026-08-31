@@ -59,10 +59,10 @@ export function contentHash(value: unknown): string {
 
 export function createSeedPackage(): KnowledgeBaseSeedPackage {
   const canonical = createCanonicalSeedData();
-  const capabilities = structuredClone(canonical.capabilities);
-  const itemMappings = structuredClone(canonical.itemMappings);
-  const rules = structuredClone(canonical.rules);
-  const terminology = structuredClone(canonical.terminology);
+  const capabilities = structuredClone(canonical.capabilities) as CapabilityEntry[];
+  const itemMappings = structuredClone(canonical.itemMappings) as CapabilityItemMapping[];
+  const rules = structuredClone(canonical.rules) as EngineeringRuleEntry[];
+  const terminology = structuredClone(canonical.terminology) as TerminologyEntry[];
 
   return {
     manifest: {
@@ -133,10 +133,10 @@ function validateSeedPackage(value: unknown): KnowledgeBaseSeedPackage {
 
   const parsed: KnowledgeBaseSeedPackage = {
     manifest: manifest.data,
-    capabilities: capabilities.map((entry) => (entry as { data: CapabilityEntry }).data),
-    itemMappings: itemMappings.map((entry) => (entry as { data: CapabilityItemMapping }).data),
-    rules: rules.map((entry) => (entry as { data: EngineeringRuleEntry }).data),
-    terminology: terminology.map((entry) => (entry as { data: TerminologyEntry }).data),
+    capabilities: capabilities.map((entry) => structuredClone((entry as { data: CapabilityEntry }).data)),
+    itemMappings: itemMappings.map((entry) => structuredClone((entry as { data: CapabilityItemMapping }).data)),
+    rules: rules.map((entry) => structuredClone((entry as { data: EngineeringRuleEntry }).data)),
+    terminology: terminology.map((entry) => structuredClone((entry as { data: TerminologyEntry }).data)),
   };
 
   validateUniqueIds(parsed.capabilities, (entry) => entry.entryId, "capability-library");
@@ -330,3 +330,4 @@ function validateItemMappings(seed: KnowledgeBaseSeedPackage): void {
 function normalizeKeyword(value: string): string {
   return value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim().replace(/\s+/g, " ");
 }
+

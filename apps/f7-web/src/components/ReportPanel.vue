@@ -2,14 +2,9 @@
 /* global Blob, document */
 import { computed, toRaw, type DeepReadonly } from "vue";
 import type { F7ReportProjection } from "../api/f7-client";
-import MonteCarloHistogram from "./MonteCarloHistogram.vue";
 
 const props = defineProps<{
   readonly report: DeepReadonly<F7ReportProjection>;
-}>();
-
-const emit = defineEmits<{
-  close: [];
 }>();
 
 const assessmentContent = computed(() => ({
@@ -27,7 +22,7 @@ const assessmentContent = computed(() => ({
   },
 }[props.report.assessment]));
 
-const simulation = computed(() => toRaw(props.report.simulation));
+const analysis = computed(() => toRaw(props.report.analysis));
 
 function formatScientific(value: number): string {
   return value.toExponential(2)
@@ -50,11 +45,6 @@ function formatPercent(value: number): string {
     return `100% - ${formatScientific(distanceFromHundred)}%`;
   }
   return `${formatNumber(percentage)}%`;
-}
-
-function formatReason(reason: string): string {
-  const readable = reason.toLowerCase().replaceAll("_", " ");
-  return `${readable[0]?.toUpperCase() ?? ""}${readable.slice(1)}`;
 }
 
 function specificationSource(
@@ -105,19 +95,103 @@ function downloadMarkdown(): void {
   <section class="workbench-panel report-panel" aria-labelledby="report-title">
     <header class="factor-workspace-header report-header">
       <div>
-        <p class="workspace-eyebrow">Step 6</p>
-        <h2 id="report-title">F7 analysis report</h2>
+        <p class="workspace-eyebrow">Step 5 · F0 interpretation</p>
+        <h2 id="report-title">TA interpretation and optimization report</h2>
         <p class="subtle">{{ report.workbook.fileName }} · {{ report.workbook.worksheetName }}</p>
       </div>
       <div class="report-actions">
         <button type="button" class="action-button" data-download-report @click="downloadMarkdown">
           Download Markdown
         </button>
-        <button type="button" class="workspace-close-button" data-report-back @click="emit('close')">
-          Back to Monte Carlo
-        </button>
       </div>
     </header>
+
+    <section v-if="analysis?.status === 'available'" data-report-ta-comparison aria-labelledby="report-comparison-title">
+      <div class="report-section-heading">
+        <div>
+          <p class="workspace-eyebrow">Assumption vs measured evidence</p>
+          <h3 id="report-comparison-title">Factor Setup vs Monte Carlo TA</h3>
+        </div>
+        <p>{{ analysis.targetAssessment }}</p>
+      </div>
+      <div class="report-table-scroll">
+        <table class="report-table">
+          <caption>Factor Setup assumption and measured-data Monte Carlo comparison</caption>
+          <thead>
+            <tr>
+              <th scope="col">TA parameter</th>
+              <th scope="col">Factor Setup assumption</th>
+              <th scope="col">Measured-data Monte Carlo</th>
+              <th scope="col">Difference</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">Mean</th>
+              <td>{{ formatNumber(analysis.comparison.setup.mean) }}</td>
+              <td>{{ formatNumber(analysis.comparison.monteCarlo.mean) }}</td>
+              <td>{{ formatNumber(analysis.comparison.monteCarlo.mean - analysis.comparison.setup.mean) }}</td>
+            </tr>
+            <tr>
+              <th scope="row">Standard deviation</th>
+              <td>{{ formatNumber(analysis.comparison.setup.standardDeviation) }}</td>
+              <td>{{ formatNumber(analysis.comparison.monteCarlo.standardDeviation) }}</td>
+              <td>{{ formatPercent(analysis.comparison.monteCarlo.standardDeviation / analysis.comparison.setup.standardDeviation - 1) }}</td>
+            </tr>
+            <tr>
+              <th scope="row">Cp</th>
+              <td>{{ formatNumber(analysis.comparison.setup.cp) }}</td>
+              <td>{{ formatNumber(analysis.comparison.monteCarlo.cp) }}</td>
+              <td>{{ formatNumber(analysis.comparison.monteCarlo.cp - analysis.comparison.setup.cp) }}</td>
+            </tr>
+            <tr>
+              <th scope="row">Cpk</th>
+              <td>{{ formatNumber(analysis.comparison.setup.cpk) }}</td>
+              <td>{{ formatNumber(analysis.comparison.monteCarlo.cpk) }}</td>
+              <td>{{ formatNumber(analysis.comparison.monteCarlo.cpk - analysis.comparison.setup.cpk) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section v-if="analysis?.status === 'available'" class="f0-guidance" data-report-f0-guidance aria-labelledby="report-guidance-title">
+      <div class="report-section-heading">
+        <div>
+          <p class="workspace-eyebrow">F0 {{ analysis.provenance.knowledgeBaseVersion }} / {{ analysis.provenance.ruleId }}</p>
+          <h3 id="report-guidance-title">Interpretation and optimization direction</h3>
+        </div>
+        <span class="status-chip" :class="report.assessment === 'MEETS_TARGET' ? 'chip-success' : 'chip-blocked'">
+          {{ assessmentContent.title }}
+        </span>
+      </div>
+      <div class="guidance-grid">
+        <article>
+          <h4>Interpretation</h4>
+          <ul>
+            <li v-for="item in analysis.interpretations" :key="item">{{ item }}</li>
+          </ul>
+        </article>
+        <article>
+          <h4>Optimization direction</h4>
+          <ol>
+            <li v-for="item in analysis.optimizationDirections" :key="item">{{ item }}</li>
+          </ol>
+        </article>
+      </div>
+      <p class="f0-applicability">Applicability: {{ analysis.provenance.applicability }}</p>
+    </section>
+
+    <section v-else class="assessment-banner assessment-not_evaluable" data-report-analysis-unavailable>
+      <div>
+        <p class="assessment-label">F0 analysis unavailable</p>
+        <h3>Complete governed evidence</h3>
+        <p>{{ analysis?.reason ?? "The generated report does not contain F0 analysis evidence." }}</p>
+        <ul v-if="analysis?.optimizationDirections.length">
+          <li v-for="item in analysis.optimizationDirections" :key="item">{{ item }}</li>
+        </ul>
+      </div>
+    </section>
 
     <section
       class="assessment-banner"
@@ -135,76 +209,6 @@ function downloadMarkdown(): void {
       <p class="assessment-disclaimer">
         This statistical assessment is not a design or production Release/Hold decision.
       </p>
-    </section>
-
-    <section aria-labelledby="report-metrics-title">
-      <h3 id="report-metrics-title">Review summary</h3>
-      <dl class="result-metrics report-metrics" data-report-metrics>
-        <div><dt>Predicted yield</dt><dd>{{ formatPercent(report.summary.yield) }}</dd></div>
-        <div><dt>Std. deviation</dt><dd>{{ formatNumber(report.summary.standardDeviation) }}</dd></div>
-        <div v-if="report.summary.cp !== undefined" data-metric-cp>
-          <dt>Cp</dt><dd>{{ formatNumber(report.summary.cp) }}</dd>
-        </div>
-        <div v-if="report.summary.cpk !== undefined" data-metric-cpk>
-          <dt>Cpk</dt><dd>{{ formatNumber(report.summary.cpk) }}</dd>
-        </div>
-        <div><dt>Target Cpk</dt><dd>{{ formatNumber(report.summary.targetCpk) }}</dd></div>
-        <div><dt>Observed PPM</dt><dd>{{ formatNumber(report.summary.ppm) }}</dd></div>
-        <div v-if="report.simulation.capability.status === 'not_available'" class="capability-status">
-          <dt>Capability status</dt>
-          <dd>Not evaluable · {{ formatReason(report.simulation.capability.reason) }}</dd>
-        </div>
-      </dl>
-    </section>
-
-    <section class="distribution-section" aria-labelledby="report-distribution-title">
-      <h3 id="report-distribution-title">Monte Carlo distribution</h3>
-      <MonteCarloHistogram :result="simulation" />
-    </section>
-
-    <section aria-labelledby="simulation-summary-title">
-      <h3 id="simulation-summary-title">Monte Carlo summary</h3>
-      <dl class="simulation-summary">
-        <div><dt>Mean</dt><dd>{{ formatNumber(report.simulation.mean) }}</dd></div>
-        <div><dt>P0.135</dt><dd>{{ formatNumber(report.simulation.quantiles.p00135) }}</dd></div>
-        <div><dt>P1</dt><dd>{{ formatNumber(report.simulation.quantiles.p01) }}</dd></div>
-        <div><dt>P5</dt><dd>{{ formatNumber(report.simulation.quantiles.p05) }}</dd></div>
-        <div><dt>Median (P50)</dt><dd>{{ formatNumber(report.simulation.quantiles.p50) }}</dd></div>
-        <div><dt>P95</dt><dd>{{ formatNumber(report.simulation.quantiles.p95) }}</dd></div>
-        <div><dt>P99</dt><dd>{{ formatNumber(report.simulation.quantiles.p99) }}</dd></div>
-        <div><dt>P99.865</dt><dd>{{ formatNumber(report.simulation.quantiles.p99865) }}</dd></div>
-        <div><dt>Lower limit</dt><dd>{{ formatNumber(report.simulation.lowerSpecLimit) }}</dd></div>
-        <div><dt>Upper limit</dt><dd>{{ formatNumber(report.simulation.upperSpecLimit) }}</dd></div>
-        <div><dt>Iterations</dt><dd>{{ report.simulation.iterations.toLocaleString("en-US") }}</dd></div>
-        <div><dt>Correlation</dt><dd>{{ formatReason(report.simulation.correlationMode) }}</dd></div>
-      </dl>
-    </section>
-
-    <section aria-labelledby="factor-models-title">
-      <h3 id="factor-models-title">Factor models</h3>
-      <div class="report-table-scroll">
-        <table class="report-table" aria-label="Factor models">
-          <caption>Factor models and governed source references</caption>
-          <thead>
-            <tr>
-              <th scope="col">Factor</th>
-              <th scope="col">Coefficient</th>
-              <th scope="col">Source mode</th>
-              <th scope="col">Distribution</th>
-              <th scope="col">Source references</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="factor in report.factors" :key="factor.factorId">
-              <th scope="row">{{ factor.factorName }}</th>
-              <td>{{ factor.loopCoefficient }}</td>
-              <td>{{ factor.sourceMode }}</td>
-              <td>{{ factor.approvedDistribution }}</td>
-              <td>{{ factor.sourceReferences.join(", ") }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
     </section>
 
     <details class="evidence-details" data-report-evidence>
@@ -252,6 +256,57 @@ function downloadMarkdown(): void {
   grid-template-columns: minmax(0, 1fr);
   gap: 18px;
   border-top: 4px solid var(--accent);
+}
+
+.report-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.report-section-heading p {
+  margin: 0;
+}
+
+.guidance-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.guidance-grid article {
+  border-left: 4px solid var(--line-strong);
+  padding: 12px 16px;
+  background: #f4f5f6;
+}
+
+.guidance-grid article:last-child {
+  border-left-color: var(--accent);
+  background: #eef5f7;
+}
+
+.guidance-grid h4,
+.guidance-grid ul,
+.guidance-grid ol {
+  margin: 0;
+}
+
+.guidance-grid ul,
+.guidance-grid ol {
+  margin-top: 8px;
+  padding-left: 20px;
+}
+
+.guidance-grid li + li {
+  margin-top: 8px;
+}
+
+.f0-applicability {
+  margin: 10px 0 0;
+  color: var(--ink-soft);
+  font-size: 0.82rem;
 }
 
 .report-header,
@@ -324,40 +379,11 @@ function downloadMarkdown(): void {
   font-weight: 700;
 }
 
-.report-metrics,
-.simulation-summary {
-  margin: 8px 0 0;
-}
-
-.capability-status {
-  grid-column: span 2;
-}
-
-.distribution-section {
-  min-width: 0;
-}
-
-.simulation-summary {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
-  border-top: 1px solid var(--line);
-  border-left: 1px solid var(--line);
-}
-
-.simulation-summary div {
-  min-width: 0;
-  border-right: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-  padding: 8px 10px;
-}
-
-.simulation-summary dt,
 .evidence-list dt {
   color: var(--ink-soft);
   font-size: 0.78rem;
 }
 
-.simulation-summary dd,
 .evidence-list dd {
   margin: 3px 0 0;
   font-weight: 700;
@@ -452,6 +478,14 @@ function downloadMarkdown(): void {
     grid-template-columns: 1fr;
   }
 
+  .report-section-heading {
+    flex-direction: column;
+  }
+
+  .guidance-grid {
+    grid-template-columns: 1fr;
+  }
+
   .report-actions {
     justify-content: flex-start;
   }
@@ -467,8 +501,5 @@ function downloadMarkdown(): void {
     grid-template-columns: 1fr;
   }
 
-  .capability-status {
-    grid-column: auto;
-  }
 }
 </style>

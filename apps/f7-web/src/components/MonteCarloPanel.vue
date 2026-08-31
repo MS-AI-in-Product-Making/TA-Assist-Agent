@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { computed, reactive, type DeepReadonly } from "vue";
 import type { F7SessionSnapshot } from "../api/f7-client";
+import {
+  buildMonteCarloSetupComparison,
+  deriveMonteCarloSetupSummary,
+} from "../monte-carlo-setup-comparison";
 import MonteCarloHistogram from "./MonteCarloHistogram.vue";
 
 const props = defineProps<{
@@ -17,15 +21,8 @@ const emit = defineEmits<{
     runSeed: string;
     correlationMode: "INDEPENDENT";
   }];
-  openReport: [];
   close: [];
 }>();
-
-function initialSeed(): string {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
-}
 
 function initialEvidenceValue(field: "lowerSpecLimit" | "upperSpecLimit" | "targetSigmaLevel"): string {
   const evidence = props.session.systemSpecification?.[field];
@@ -37,7 +34,7 @@ const form = reactive({
   upperSpecLimit: initialEvidenceValue("upperSpecLimit"),
   targetSigmaLevel: initialEvidenceValue("targetSigmaLevel"),
   iterations: 100_000 as 10_000 | 100_000,
-  runSeed: initialSeed(),
+  runSeed: "12345",
 });
 
 const limitsValid = computed(() => {
@@ -46,22 +43,43 @@ const limitsValid = computed(() => {
   const upper = Number(form.upperSpecLimit);
   return Number.isFinite(lower) && Number.isFinite(upper) && lower < upper;
 });
-const seedValid = computed(() => /^[a-f0-9]{64}$/.test(form.runSeed));
+const seedValid = computed(() => /^\d{1,15}$/.test(form.runSeed));
 const targetSigmaValid = computed(() => form.targetSigmaLevel.trim() !== ""
   && Number.isFinite(Number(form.targetSigmaLevel))
   && Number(form.targetSigmaLevel) > 0);
 const canRun = computed(() => limitsValid.value && targetSigmaValid.value && seedValid.value && !props.busy);
 const result = computed(() => props.session.monteCarloResult);
+const setupSummary = computed(() => {
+  const systemSpecification = props.session.systemSpecification;
+  return deriveMonteCarloSetupSummary({
+    factors: props.session.factors,
+    ...(systemSpecification?.status === "available" ? { systemSpecification } : {}),
+  });
+});
+const setupComparison = computed(() => buildMonteCarloSetupComparison({
+  setup: setupSummary.value,
+  monteCarlo: {
+    mean: result.value?.mean ?? Number.NaN,
+    standardDeviation: result.value?.standardDeviation ?? Number.NaN,
+  },
+}));
+const setupCapability = computed(() => {
+  if (!setupSummary.value.available || !result.value) return undefined;
+  const standardDeviation = setupSummary.value.standardDeviation;
+  const cp = (result.value.upperSpecLimit - result.value.lowerSpecLimit) / (6 * standardDeviation);
+  const cpk = Math.min(
+    (result.value.upperSpecLimit - setupSummary.value.mean) / (3 * standardDeviation),
+    (setupSummary.value.mean - result.value.lowerSpecLimit) / (3 * standardDeviation),
+  );
+  return { cp, cpk };
+});
 
-function sourceCell(field: "lowerSpecLimit" | "upperSpecLimit" | "targetSigmaLevel"): string | undefined {
-  const evidence = props.session.systemSpecification?.[field];
-  return evidence?.status === "available" ? evidence.sourceCell : undefined;
+function encodedSeed(seed: string): string {
+  return BigInt(seed).toString(16).padStart(64, "0");
 }
 
-function valueStatus(field: "lowerSpecLimit" | "upperSpecLimit" | "targetSigmaLevel", value: string): string {
-  const evidence = props.session.systemSpecification?.[field];
-  if (evidence?.status !== "available") return "Manual entry";
-  return Number(value) === evidence.actualValue ? "Excel default" : "Override";
+function displayedSeed(seed: string): string {
+  return /^0{49,63}[a-f0-9]{1,15}$/.test(seed) ? BigInt(`0x${seed}`).toString(10) : seed;
 }
 
 function submit(): void {
@@ -71,7 +89,7 @@ function submit(): void {
     upperSpecLimit: Number(form.upperSpecLimit),
     targetSigmaLevel: Number(form.targetSigmaLevel),
     iterations: form.iterations,
-    runSeed: form.runSeed,
+    runSeed: encodedSeed(form.runSeed),
     correlationMode: "INDEPENDENT",
   });
 }
@@ -79,6 +97,32 @@ function submit(): void {
 function format(value: number): string {
   return value.toLocaleString("en-US", { maximumFractionDigits: 6 });
 }
+
+function formatFixed(value: number, digits: number): string {
+  return value.toFixed(digits);
+}
+
+function formatSigned(value: number, digits: number): string {
+  return `${value >= 0 ? "+" : "-"}${Math.abs(value).toFixed(digits)}`;
+}
+
+function comparisonDirection(delta: number, improvementWhenHigher = false): string {
+  if (Math.abs(delta) < 0.5e-3) return "No material change";
+  if (improvementWhenHigher) return delta > 0 ? "Improved" : "Decreased";
+  return delta > 0 ? "Higher" : "Lower";
+}
+
+const comparisonInterpretation = computed(() => {
+  const comparison = setupComparison.value;
+  if (!comparison.available) return "";
+  const mean = comparison.mean.direction === "same"
+    ? "No displayed mean shift"
+    : `Monte Carlo mean shifted ${comparison.mean.direction}`;
+  const spread = comparison.standardDeviation.direction === "same"
+    ? "no displayed spread change"
+    : `Monte Carlo spread is ${comparison.standardDeviation.direction}`;
+  return `${mean}; ${spread}.`;
+});
 </script>
 
 <template>
@@ -95,20 +139,14 @@ function format(value: number): string {
       <label>
         System LSL
         <input v-model="form.lowerSpecLimit" data-monte-carlo-lsl inputmode="decimal" required>
-        <small data-monte-carlo-lsl-source>{{ sourceCell("lowerSpecLimit") ?? "No Excel source" }}</small>
-        <small>{{ valueStatus("lowerSpecLimit", form.lowerSpecLimit) }}</small>
       </label>
       <label>
         System USL
         <input v-model="form.upperSpecLimit" data-monte-carlo-usl inputmode="decimal" required>
-        <small data-monte-carlo-usl-source>{{ sourceCell("upperSpecLimit") ?? "No Excel source" }}</small>
-        <small>{{ valueStatus("upperSpecLimit", form.upperSpecLimit) }}</small>
       </label>
       <label>
         Target Sigma Level
         <input v-model="form.targetSigmaLevel" data-monte-carlo-target-sigma inputmode="decimal" required>
-        <small data-monte-carlo-target-sigma-source>{{ sourceCell("targetSigmaLevel") ?? "No Excel source" }}</small>
-        <small data-monte-carlo-target-sigma-status>{{ valueStatus("targetSigmaLevel", form.targetSigmaLevel) }}</small>
       </label>
       <label>
         Iterations
@@ -119,7 +157,7 @@ function format(value: number): string {
       </label>
       <label class="seed-field">
         Run seed
-        <input v-model.trim="form.runSeed" data-monte-carlo-seed pattern="[a-f0-9]{64}" required>
+        <input v-model.trim="form.runSeed" data-monte-carlo-seed inputmode="numeric" pattern="\d{1,15}" maxlength="15" required>
       </label>
       <p class="subtle correlation-note">Correlation mode: Independent factors</p>
       <button type="submit" class="action-button" data-run-monte-carlo :disabled="!canRun">
@@ -130,43 +168,85 @@ function format(value: number): string {
     <section v-if="result" class="monte-carlo-results" data-monte-carlo-results aria-live="polite">
       <p class="workspace-eyebrow">Governed result</p>
       <h3>{{ format(result.yield * 100) }}% predicted yield</h3>
-      <MonteCarloHistogram :result="result" />
-      <h4>Process Outputs</h4>
-      <dl class="result-metrics">
-        <div><dt>Iterations</dt><dd>{{ result.iterations.toLocaleString() }}</dd></div>
-        <div><dt>Mean</dt><dd>{{ format(result.mean) }}</dd></div>
-        <div><dt>Std. deviation</dt><dd>{{ format(result.standardDeviation) }}</dd></div>
-        <div><dt>Median</dt><dd>{{ format(result.quantiles.p50) }}</dd></div>
-        <div><dt>LSL</dt><dd>{{ format(result.lowerSpecLimit) }}</dd></div>
-        <div><dt>USL</dt><dd>{{ format(result.upperSpecLimit) }}</dd></div>
-        <div><dt>Target Sigma</dt><dd>{{ format(result.targetSigmaLevel) }}</dd></div>
-      </dl>
-      <h4>Normal Model Statistics</h4>
-      <dl class="result-metrics" data-normal-model-statistics>
-        <template v-if="result.normalModel.status === 'available'">
-          <div><dt>Expected DPM</dt><dd>{{ format(result.normalModel.totalDpm) }}</dd></div>
-          <div><dt>Expected yield</dt><dd>{{ format(result.normalModel.expectedYield * 100) }}%</dd></div>
-        </template>
-        <div v-if="result.capability.status === 'available'"><dt>Cp</dt><dd>{{ format(result.capability.cp) }}</dd></div>
-        <div v-if="result.capability.status === 'available'"><dt>Cpk</dt><dd>{{ format(result.capability.cpk) }}</dd></div>
-        <div><dt>Target Cpk</dt><dd>{{ format(result.capability.targetCpk) }}</dd></div>
-      </dl>
-      <h4>Observed Defect Statistics</h4>
-      <dl class="result-metrics" data-observed-defect-statistics>
-        <div><dt>Out-of-spec count</dt><dd>{{ result.outOfSpecCount.toLocaleString() }}</dd></div>
-        <div><dt>Observed PPM</dt><dd>{{ format(result.ppm) }}</dd></div>
-        <div><dt>Observed yield</dt><dd>{{ format(result.yield * 100) }}%</dd></div>
-      </dl>
-      <p class="subtle">{{ result.iterations.toLocaleString() }} iterations · seed {{ result.runSeed }}</p>
-      <button
-        type="button"
-        class="action-button"
-        data-open-report
-        :disabled="busy"
-        @click="emit('openReport')"
-      >
-        {{ busy ? "Generating report..." : "Open report" }}
-      </button>
+      <MonteCarloHistogram
+        :result="result"
+        v-bind="setupSummary.available ? { setup: setupSummary } : {}"
+      />
+      <section class="ta-comparison" data-setup-comparison>
+        <div class="ta-comparison-heading">
+          <div>
+            <p class="workspace-eyebrow">Factor Setup vs governed simulation</p>
+            <h4>TA Comparison Matrix</h4>
+          </div>
+          <p v-if="setupComparison.available" data-setup-comparison-interpretation>{{ comparisonInterpretation }}</p>
+          <p v-else data-setup-comparison-unavailable>Factor Setup comparison unavailable because evidence is incomplete; Monte Carlo outputs remain available.</p>
+        </div>
+        <div class="ta-comparison-scroll">
+          <table data-ta-comparison-matrix>
+            <caption>Factor Setup and Monte Carlo TA results</caption>
+            <thead>
+              <tr>
+                <th scope="col">TA metric</th>
+                <th scope="col">Factor Setup TA</th>
+                <th scope="col">Monte Carlo output</th>
+                <th scope="col">Difference</th>
+                <th scope="col">Reading</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr data-setup-mean-comparison>
+                <th scope="row">Mean</th>
+                <td>{{ setupSummary.available ? formatFixed(setupSummary.mean, 4) : "Unavailable" }}</td>
+                <td>{{ formatFixed(result.mean, 4) }}</td>
+                <td>{{ setupComparison.available ? formatSigned(setupComparison.mean.delta, 4) : "—" }}</td>
+                <td>{{ setupComparison.available ? `Shifted ${setupComparison.mean.direction}` : "Comparison unavailable" }}</td>
+              </tr>
+              <tr data-setup-standard-deviation-comparison>
+                <th scope="row">Standard deviation</th>
+                <td>{{ setupSummary.available ? formatFixed(setupSummary.standardDeviation, 4) : "Unavailable" }}</td>
+                <td>{{ formatFixed(result.standardDeviation, 4) }}</td>
+                <td>{{ setupComparison.available ? `${formatSigned(setupComparison.standardDeviation.relativeChange * 100, 1)}%` : "—" }}</td>
+                <td>{{ setupComparison.available ? `Spread is ${setupComparison.standardDeviation.direction}` : "Comparison unavailable" }}</td>
+              </tr>
+              <tr v-if="result.capability.status === 'available'">
+                <th scope="row">Cp</th>
+                <td>{{ setupCapability ? format(setupCapability.cp) : "Unavailable" }}</td>
+                <td>{{ format(result.capability.cp) }}</td>
+                <td>{{ setupCapability ? formatSigned(result.capability.cp - setupCapability.cp, 4) : "—" }}</td>
+                <td>{{ setupCapability ? comparisonDirection(result.capability.cp - setupCapability.cp, true) : "Comparison unavailable" }}</td>
+              </tr>
+              <tr v-if="result.capability.status === 'available'">
+                <th scope="row">Cpk</th>
+                <td>{{ setupCapability ? format(setupCapability.cpk) : "Unavailable" }}</td>
+                <td>{{ format(result.capability.cpk) }}</td>
+                <td>{{ setupCapability ? formatSigned(result.capability.cpk - setupCapability.cpk, 4) : "—" }}</td>
+                <td>{{ setupCapability ? (result.capability.targetStatus === "below_target" ? "Below target" : "Meets target") : "Comparison unavailable" }}</td>
+              </tr>
+              <tr v-if="result.normalModel.status === 'available'">
+                <th scope="row">Yield</th>
+                <td>Not independently estimated</td>
+                <td>Fitted Normal {{ format(result.normalModel.expectedYield * 100) }}% · Empirical {{ format(result.yield * 100) }}%</td>
+                <td>{{ formatSigned((result.yield - result.normalModel.expectedYield) * 100, 3) }} pp</td>
+                <td>Expected model vs observed simulation</td>
+              </tr>
+              <tr v-if="result.normalModel.status === 'available'">
+                <th scope="row">Defect rate</th>
+                <td>Not independently estimated</td>
+                <td>Fitted Normal {{ format(result.normalModel.totalDpm) }} PPM · Empirical {{ format(result.ppm) }} PPM</td>
+                <td>{{ formatSigned(result.ppm - result.normalModel.totalDpm, 0) }}</td>
+                <td>Lower is better</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <dl class="ta-run-metadata">
+          <div><dt>Iterations</dt><dd>{{ result.iterations.toLocaleString() }}</dd></div>
+          <div><dt>Median</dt><dd>{{ format(result.quantiles.p50) }}</dd></div>
+          <div><dt>LSL / USL</dt><dd>{{ format(result.lowerSpecLimit) }} / {{ format(result.upperSpecLimit) }}</dd></div>
+          <div><dt>Target σ / Cpk</dt><dd>{{ format(result.targetSigmaLevel) }} / {{ format(result.capability.targetCpk) }}</dd></div>
+          <div><dt>Run seed</dt><dd>{{ displayedSeed(result.runSeed) }}</dd></div>
+        </dl>
+      </section>
     </section>
   </section>
 </template>

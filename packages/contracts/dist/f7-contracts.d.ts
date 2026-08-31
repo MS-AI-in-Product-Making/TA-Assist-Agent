@@ -7,6 +7,17 @@ export declare const F7_SELECTION_NORMAL_QQ_CURVATURE_MAX = 0.1;
 export declare const f7LoopCoefficientSchema: z.ZodUnion<[z.ZodLiteral<-1>, z.ZodLiteral<1>]>;
 export declare const f7FactorSourceModeSchema: z.ZodEnum<["MEASURED", "BASELINE_ASSUMPTION"]>;
 export declare const f7MeasurementStructureSchema: z.ZodEnum<["RATIONAL_SUBGROUP", "ORDERED_INDIVIDUALS", "UNORDERED_SAMPLE"]>;
+export declare const f7RationalSubgroupEstimatorSchema: z.ZodEnum<["RANGE_D2", "S_C4"]>;
+export declare const f7RationalSubgroupConfigSchema: z.ZodObject<{
+    subgroupSize: z.ZodNumber;
+    estimator: z.ZodEnum<["RANGE_D2", "S_C4"]>;
+}, "strict", z.ZodTypeAny, {
+    subgroupSize: number;
+    estimator: "RANGE_D2" | "S_C4";
+}, {
+    subgroupSize: number;
+    estimator: "RANGE_D2" | "S_C4";
+}>;
 export declare const f7MsaStatusSchema: z.ZodEnum<["available", "not_available", "unknown"]>;
 export declare const f7ToleranceDistributionSchema: z.ZodEnum<["Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta"]>;
 export declare const f7BaselineSamplerSchema: z.ZodObject<{
@@ -435,6 +446,16 @@ export declare const f7MeasurementDatasetSchema: z.ZodEffects<z.ZodObject<{
     factorId: z.ZodString;
     unit: z.ZodString;
     structure: z.ZodEnum<["RATIONAL_SUBGROUP", "ORDERED_INDIVIDUALS", "UNORDERED_SAMPLE"]>;
+    rationalSubgroupConfig: z.ZodOptional<z.ZodObject<{
+        subgroupSize: z.ZodNumber;
+        estimator: z.ZodEnum<["RANGE_D2", "S_C4"]>;
+    }, "strict", z.ZodTypeAny, {
+        subgroupSize: number;
+        estimator: "RANGE_D2" | "S_C4";
+    }, {
+        subgroupSize: number;
+        estimator: "RANGE_D2" | "S_C4";
+    }>>;
     sourceReference: z.ZodString;
     importedAt: z.ZodString;
     msaStatus: z.ZodEnum<["available", "not_available", "unknown"]>;
@@ -545,6 +566,10 @@ export declare const f7MeasurementDatasetSchema: z.ZodEffects<z.ZodObject<{
     }[];
     originalRowCount: number;
     analyzedCount: number;
+    rationalSubgroupConfig?: {
+        subgroupSize: number;
+        estimator: "RANGE_D2" | "S_C4";
+    } | undefined;
 }, {
     unit: string;
     contentHash: string;
@@ -580,6 +605,10 @@ export declare const f7MeasurementDatasetSchema: z.ZodEffects<z.ZodObject<{
     }[];
     originalRowCount: number;
     analyzedCount: number;
+    rationalSubgroupConfig?: {
+        subgroupSize: number;
+        estimator: "RANGE_D2" | "S_C4";
+    } | undefined;
 }>, {
     unit: string;
     contentHash: string;
@@ -615,6 +644,10 @@ export declare const f7MeasurementDatasetSchema: z.ZodEffects<z.ZodObject<{
     }[];
     originalRowCount: number;
     analyzedCount: number;
+    rationalSubgroupConfig?: {
+        subgroupSize: number;
+        estimator: "RANGE_D2" | "S_C4";
+    } | undefined;
 }, {
     unit: string;
     contentHash: string;
@@ -650,6 +683,10 @@ export declare const f7MeasurementDatasetSchema: z.ZodEffects<z.ZodObject<{
     }[];
     originalRowCount: number;
     analyzedCount: number;
+    rationalSubgroupConfig?: {
+        subgroupSize: number;
+        estimator: "RANGE_D2" | "S_C4";
+    } | undefined;
 }>;
 export declare const f7FactorInputSchema: z.ZodDiscriminatedUnion<"mode", [z.ZodObject<{
     mode: z.ZodLiteral<"MEASURED">;
@@ -657,6 +694,16 @@ export declare const f7FactorInputSchema: z.ZodDiscriminatedUnion<"mode", [z.Zod
         factorId: z.ZodString;
         unit: z.ZodString;
         structure: z.ZodEnum<["RATIONAL_SUBGROUP", "ORDERED_INDIVIDUALS", "UNORDERED_SAMPLE"]>;
+        rationalSubgroupConfig: z.ZodOptional<z.ZodObject<{
+            subgroupSize: z.ZodNumber;
+            estimator: z.ZodEnum<["RANGE_D2", "S_C4"]>;
+        }, "strict", z.ZodTypeAny, {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        }, {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        }>>;
         sourceReference: z.ZodString;
         importedAt: z.ZodString;
         msaStatus: z.ZodEnum<["available", "not_available", "unknown"]>;
@@ -767,6 +814,10 @@ export declare const f7FactorInputSchema: z.ZodDiscriminatedUnion<"mode", [z.Zod
         }[];
         originalRowCount: number;
         analyzedCount: number;
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
     }, {
         unit: string;
         contentHash: string;
@@ -802,6 +853,10 @@ export declare const f7FactorInputSchema: z.ZodDiscriminatedUnion<"mode", [z.Zod
         }[];
         originalRowCount: number;
         analyzedCount: number;
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
     }>, {
         unit: string;
         contentHash: string;
@@ -837,6 +892,10 @@ export declare const f7FactorInputSchema: z.ZodDiscriminatedUnion<"mode", [z.Zod
         }[];
         originalRowCount: number;
         analyzedCount: number;
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
     }, {
         unit: string;
         contentHash: string;
@@ -872,6 +931,10 @@ export declare const f7FactorInputSchema: z.ZodDiscriminatedUnion<"mode", [z.Zod
         }[];
         originalRowCount: number;
         analyzedCount: number;
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
     }>>;
 }, "strict", z.ZodTypeAny, {
     mode: "MEASURED";
@@ -910,6 +973,10 @@ export declare const f7FactorInputSchema: z.ZodDiscriminatedUnion<"mode", [z.Zod
         }[];
         originalRowCount: number;
         analyzedCount: number;
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
     } | undefined;
 }, {
     mode: "MEASURED";
@@ -948,6 +1015,10 @@ export declare const f7FactorInputSchema: z.ZodDiscriminatedUnion<"mode", [z.Zod
         }[];
         originalRowCount: number;
         analyzedCount: number;
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
     } | undefined;
 }>, z.ZodObject<{
     mode: z.ZodLiteral<"BASELINE_ASSUMPTION">;
@@ -2286,6 +2357,16 @@ export declare const f7MeasurementPasteResultSchema: z.ZodObject<{
         factorId: z.ZodString;
         unit: z.ZodString;
         structure: z.ZodEnum<["RATIONAL_SUBGROUP", "ORDERED_INDIVIDUALS", "UNORDERED_SAMPLE"]>;
+        rationalSubgroupConfig: z.ZodOptional<z.ZodObject<{
+            subgroupSize: z.ZodNumber;
+            estimator: z.ZodEnum<["RANGE_D2", "S_C4"]>;
+        }, "strict", z.ZodTypeAny, {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        }, {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        }>>;
         sourceReference: z.ZodString;
         importedAt: z.ZodString;
         msaStatus: z.ZodEnum<["available", "not_available", "unknown"]>;
@@ -2396,6 +2477,10 @@ export declare const f7MeasurementPasteResultSchema: z.ZodObject<{
         }[];
         originalRowCount: number;
         analyzedCount: number;
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
     }, {
         unit: string;
         contentHash: string;
@@ -2431,6 +2516,10 @@ export declare const f7MeasurementPasteResultSchema: z.ZodObject<{
         }[];
         originalRowCount: number;
         analyzedCount: number;
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
     }>, {
         unit: string;
         contentHash: string;
@@ -2466,6 +2555,10 @@ export declare const f7MeasurementPasteResultSchema: z.ZodObject<{
         }[];
         originalRowCount: number;
         analyzedCount: number;
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
     }, {
         unit: string;
         contentHash: string;
@@ -2501,6 +2594,10 @@ export declare const f7MeasurementPasteResultSchema: z.ZodObject<{
         }[];
         originalRowCount: number;
         analyzedCount: number;
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
     }>>;
     validation: z.ZodObject<{
         status: z.ZodEnum<["ready", "blocked"]>;
@@ -2646,6 +2743,10 @@ export declare const f7MeasurementPasteResultSchema: z.ZodObject<{
         }[];
         originalRowCount: number;
         analyzedCount: number;
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
     } | undefined;
 }, {
     validation: {
@@ -2705,6 +2806,10 @@ export declare const f7MeasurementPasteResultSchema: z.ZodObject<{
         }[];
         originalRowCount: number;
         analyzedCount: number;
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
     } | undefined;
 }>;
 export declare const f7DistributionApprovalSchema: z.ZodObject<{
@@ -3477,6 +3582,150 @@ export declare const f7ReportEvidenceSchema: z.ZodEffects<z.ZodObject<{
         simulation: "F7_MONTE_CARLO_V1";
     };
 }>;
+export declare const f7ReportAnalysisSchema: z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
+    status: z.ZodLiteral<"available">;
+    provenance: z.ZodObject<{
+        knowledgeBaseVersion: z.ZodLiteral<"v1">;
+        ruleId: z.ZodLiteral<"default-cpk-target">;
+        threshold: z.ZodNumber;
+        applicability: z.ZodString;
+    }, "strict", z.ZodTypeAny, {
+        ruleId: "default-cpk-target";
+        threshold: number;
+        applicability: string;
+        knowledgeBaseVersion: "v1";
+    }, {
+        ruleId: "default-cpk-target";
+        threshold: number;
+        applicability: string;
+        knowledgeBaseVersion: "v1";
+    }>;
+    comparison: z.ZodObject<{
+        setup: z.ZodObject<{
+            mean: z.ZodNumber;
+            standardDeviation: z.ZodNumber;
+            cp: z.ZodNumber;
+            cpk: z.ZodNumber;
+        }, "strict", z.ZodTypeAny, {
+            cpk: number;
+            mean: number;
+            standardDeviation: number;
+            cp: number;
+        }, {
+            cpk: number;
+            mean: number;
+            standardDeviation: number;
+            cp: number;
+        }>;
+        monteCarlo: z.ZodObject<{
+            mean: z.ZodNumber;
+            standardDeviation: z.ZodNumber;
+            cp: z.ZodNumber;
+            cpk: z.ZodNumber;
+        }, "strict", z.ZodTypeAny, {
+            cpk: number;
+            mean: number;
+            standardDeviation: number;
+            cp: number;
+        }, {
+            cpk: number;
+            mean: number;
+            standardDeviation: number;
+            cp: number;
+        }>;
+    }, "strict", z.ZodTypeAny, {
+        setup: {
+            cpk: number;
+            mean: number;
+            standardDeviation: number;
+            cp: number;
+        };
+        monteCarlo: {
+            cpk: number;
+            mean: number;
+            standardDeviation: number;
+            cp: number;
+        };
+    }, {
+        setup: {
+            cpk: number;
+            mean: number;
+            standardDeviation: number;
+            cp: number;
+        };
+        monteCarlo: {
+            cpk: number;
+            mean: number;
+            standardDeviation: number;
+            cp: number;
+        };
+    }>;
+    targetAssessment: z.ZodString;
+    interpretations: z.ZodArray<z.ZodString, "many">;
+    optimizationDirections: z.ZodArray<z.ZodString, "many">;
+}, "strict", z.ZodTypeAny, {
+    status: "available";
+    provenance: {
+        ruleId: "default-cpk-target";
+        threshold: number;
+        applicability: string;
+        knowledgeBaseVersion: "v1";
+    };
+    comparison: {
+        setup: {
+            cpk: number;
+            mean: number;
+            standardDeviation: number;
+            cp: number;
+        };
+        monteCarlo: {
+            cpk: number;
+            mean: number;
+            standardDeviation: number;
+            cp: number;
+        };
+    };
+    targetAssessment: string;
+    interpretations: string[];
+    optimizationDirections: string[];
+}, {
+    status: "available";
+    provenance: {
+        ruleId: "default-cpk-target";
+        threshold: number;
+        applicability: string;
+        knowledgeBaseVersion: "v1";
+    };
+    comparison: {
+        setup: {
+            cpk: number;
+            mean: number;
+            standardDeviation: number;
+            cp: number;
+        };
+        monteCarlo: {
+            cpk: number;
+            mean: number;
+            standardDeviation: number;
+            cp: number;
+        };
+    };
+    targetAssessment: string;
+    interpretations: string[];
+    optimizationDirections: string[];
+}>, z.ZodObject<{
+    status: z.ZodLiteral<"unavailable">;
+    reason: z.ZodString;
+    optimizationDirections: z.ZodArray<z.ZodString, "many">;
+}, "strict", z.ZodTypeAny, {
+    status: "unavailable";
+    reason: string;
+    optimizationDirections: string[];
+}, {
+    status: "unavailable";
+    reason: string;
+    optimizationDirections: string[];
+}>]>;
 export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
     contractId: z.ZodLiteral<"f7-report-v1">;
     outputClassification: z.ZodLiteral<"confidential">;
@@ -4024,6 +4273,150 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         sourceReferences: string[];
     }>, "many">;
+    analysis: z.ZodOptional<z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
+        status: z.ZodLiteral<"available">;
+        provenance: z.ZodObject<{
+            knowledgeBaseVersion: z.ZodLiteral<"v1">;
+            ruleId: z.ZodLiteral<"default-cpk-target">;
+            threshold: z.ZodNumber;
+            applicability: z.ZodString;
+        }, "strict", z.ZodTypeAny, {
+            ruleId: "default-cpk-target";
+            threshold: number;
+            applicability: string;
+            knowledgeBaseVersion: "v1";
+        }, {
+            ruleId: "default-cpk-target";
+            threshold: number;
+            applicability: string;
+            knowledgeBaseVersion: "v1";
+        }>;
+        comparison: z.ZodObject<{
+            setup: z.ZodObject<{
+                mean: z.ZodNumber;
+                standardDeviation: z.ZodNumber;
+                cp: z.ZodNumber;
+                cpk: z.ZodNumber;
+            }, "strict", z.ZodTypeAny, {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            }, {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            }>;
+            monteCarlo: z.ZodObject<{
+                mean: z.ZodNumber;
+                standardDeviation: z.ZodNumber;
+                cp: z.ZodNumber;
+                cpk: z.ZodNumber;
+            }, "strict", z.ZodTypeAny, {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            }, {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            }>;
+        }, "strict", z.ZodTypeAny, {
+            setup: {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            };
+            monteCarlo: {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            };
+        }, {
+            setup: {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            };
+            monteCarlo: {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            };
+        }>;
+        targetAssessment: z.ZodString;
+        interpretations: z.ZodArray<z.ZodString, "many">;
+        optimizationDirections: z.ZodArray<z.ZodString, "many">;
+    }, "strict", z.ZodTypeAny, {
+        status: "available";
+        provenance: {
+            ruleId: "default-cpk-target";
+            threshold: number;
+            applicability: string;
+            knowledgeBaseVersion: "v1";
+        };
+        comparison: {
+            setup: {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            };
+            monteCarlo: {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            };
+        };
+        targetAssessment: string;
+        interpretations: string[];
+        optimizationDirections: string[];
+    }, {
+        status: "available";
+        provenance: {
+            ruleId: "default-cpk-target";
+            threshold: number;
+            applicability: string;
+            knowledgeBaseVersion: "v1";
+        };
+        comparison: {
+            setup: {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            };
+            monteCarlo: {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            };
+        };
+        targetAssessment: string;
+        interpretations: string[];
+        optimizationDirections: string[];
+    }>, z.ZodObject<{
+        status: z.ZodLiteral<"unavailable">;
+        reason: z.ZodString;
+        optimizationDirections: z.ZodArray<z.ZodString, "many">;
+    }, "strict", z.ZodTypeAny, {
+        status: "unavailable";
+        reason: string;
+        optimizationDirections: string[];
+    }, {
+        status: "unavailable";
+        reason: string;
+        optimizationDirections: string[];
+    }>]>>;
     evidence: z.ZodEffects<z.ZodObject<{
         workbookContentHash: z.ZodString;
         worksheetName: z.ZodString;
@@ -4309,6 +4702,36 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
     };
     assessment: "MEETS_TARGET" | "BELOW_TARGET" | "NOT_EVALUABLE";
     markdown: string;
+    analysis?: {
+        status: "available";
+        provenance: {
+            ruleId: "default-cpk-target";
+            threshold: number;
+            applicability: string;
+            knowledgeBaseVersion: "v1";
+        };
+        comparison: {
+            setup: {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            };
+            monteCarlo: {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            };
+        };
+        targetAssessment: string;
+        interpretations: string[];
+        optimizationDirections: string[];
+    } | {
+        status: "unavailable";
+        reason: string;
+        optimizationDirections: string[];
+    } | undefined;
 }, {
     sessionId: string;
     outputClassification: "confidential";
@@ -4435,6 +4858,36 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
     };
     assessment: "MEETS_TARGET" | "BELOW_TARGET" | "NOT_EVALUABLE";
     markdown: string;
+    analysis?: {
+        status: "available";
+        provenance: {
+            ruleId: "default-cpk-target";
+            threshold: number;
+            applicability: string;
+            knowledgeBaseVersion: "v1";
+        };
+        comparison: {
+            setup: {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            };
+            monteCarlo: {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            };
+        };
+        targetAssessment: string;
+        interpretations: string[];
+        optimizationDirections: string[];
+    } | {
+        status: "unavailable";
+        reason: string;
+        optimizationDirections: string[];
+    } | undefined;
 }>, {
     sessionId: string;
     outputClassification: "confidential";
@@ -4561,6 +5014,36 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
     };
     assessment: "MEETS_TARGET" | "BELOW_TARGET" | "NOT_EVALUABLE";
     markdown: string;
+    analysis?: {
+        status: "available";
+        provenance: {
+            ruleId: "default-cpk-target";
+            threshold: number;
+            applicability: string;
+            knowledgeBaseVersion: "v1";
+        };
+        comparison: {
+            setup: {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            };
+            monteCarlo: {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            };
+        };
+        targetAssessment: string;
+        interpretations: string[];
+        optimizationDirections: string[];
+    } | {
+        status: "unavailable";
+        reason: string;
+        optimizationDirections: string[];
+    } | undefined;
 }, {
     sessionId: string;
     outputClassification: "confidential";
@@ -4687,6 +5170,36 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
     };
     assessment: "MEETS_TARGET" | "BELOW_TARGET" | "NOT_EVALUABLE";
     markdown: string;
+    analysis?: {
+        status: "available";
+        provenance: {
+            ruleId: "default-cpk-target";
+            threshold: number;
+            applicability: string;
+            knowledgeBaseVersion: "v1";
+        };
+        comparison: {
+            setup: {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            };
+            monteCarlo: {
+                cpk: number;
+                mean: number;
+                standardDeviation: number;
+                cp: number;
+            };
+        };
+        targetAssessment: string;
+        interpretations: string[];
+        optimizationDirections: string[];
+    } | {
+        status: "unavailable";
+        reason: string;
+        optimizationDirections: string[];
+    } | undefined;
 }>;
 export declare const f7AnalysisRequestContractIdSchema: z.ZodLiteral<"f7-analysis-request-v1">;
 export declare const f7AnalysisResultContractIdSchema: z.ZodLiteral<"f7-analysis-result-v1">;
@@ -4825,6 +5338,22 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         worksheetKind: "analysis" | "example_or_template";
         selectionIndex: number;
     }>, "many">;
+    dimensionChainImage: z.ZodOptional<z.ZodObject<{
+        status: z.ZodLiteral<"available">;
+        worksheetName: z.ZodString;
+        contentHash: z.ZodString;
+        url: z.ZodString;
+    }, "strict", z.ZodTypeAny, {
+        status: "available";
+        contentHash: string;
+        worksheetName: string;
+        url: string;
+    }, {
+        status: "available";
+        contentHash: string;
+        worksheetName: string;
+        url: string;
+    }>>;
     systemSpecification: z.ZodOptional<z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
         lowerSpecLimit: z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
             status: z.ZodLiteral<"available">;
@@ -5586,6 +6115,16 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 factorId: z.ZodString;
                 unit: z.ZodString;
                 structure: z.ZodEnum<["RATIONAL_SUBGROUP", "ORDERED_INDIVIDUALS", "UNORDERED_SAMPLE"]>;
+                rationalSubgroupConfig: z.ZodOptional<z.ZodObject<{
+                    subgroupSize: z.ZodNumber;
+                    estimator: z.ZodEnum<["RANGE_D2", "S_C4"]>;
+                }, "strict", z.ZodTypeAny, {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                }, {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                }>>;
                 sourceReference: z.ZodString;
                 importedAt: z.ZodString;
                 msaStatus: z.ZodEnum<["available", "not_available", "unknown"]>;
@@ -5696,6 +6235,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             }, {
                 unit: string;
                 contentHash: string;
@@ -5731,6 +6274,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             }>, {
                 unit: string;
                 contentHash: string;
@@ -5766,6 +6313,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             }, {
                 unit: string;
                 contentHash: string;
@@ -5801,6 +6352,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             }>>;
         }, "strict", z.ZodTypeAny, {
             mode: "MEASURED";
@@ -5839,6 +6394,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         }, {
             mode: "MEASURED";
@@ -5877,6 +6436,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         }>, z.ZodObject<{
             mode: z.ZodLiteral<"BASELINE_ASSUMPTION">;
@@ -6182,6 +6745,16 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 factorId: z.ZodString;
                 unit: z.ZodString;
                 structure: z.ZodEnum<["RATIONAL_SUBGROUP", "ORDERED_INDIVIDUALS", "UNORDERED_SAMPLE"]>;
+                rationalSubgroupConfig: z.ZodOptional<z.ZodObject<{
+                    subgroupSize: z.ZodNumber;
+                    estimator: z.ZodEnum<["RANGE_D2", "S_C4"]>;
+                }, "strict", z.ZodTypeAny, {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                }, {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                }>>;
                 sourceReference: z.ZodString;
                 importedAt: z.ZodString;
                 msaStatus: z.ZodEnum<["available", "not_available", "unknown"]>;
@@ -6292,6 +6865,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             }, {
                 unit: string;
                 contentHash: string;
@@ -6327,6 +6904,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             }>, {
                 unit: string;
                 contentHash: string;
@@ -6362,6 +6943,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             }, {
                 unit: string;
                 contentHash: string;
@@ -6397,6 +6982,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             }>>;
             validation: z.ZodObject<{
                 status: z.ZodEnum<["ready", "blocked"]>;
@@ -6542,6 +7131,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         }, {
             validation: {
@@ -6601,6 +7194,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         }>>;
         distributionFitResult: z.ZodOptional<z.ZodEffects<z.ZodObject<{
@@ -7320,6 +7917,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         } | {
             mode: "BASELINE_ASSUMPTION";
@@ -7455,6 +8056,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         } | undefined;
         distributionFitResult?: {
@@ -7588,6 +8193,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         } | {
             mode: "BASELINE_ASSUMPTION";
@@ -7723,6 +8332,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         } | undefined;
         distributionFitResult?: {
@@ -7856,6 +8469,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         } | {
             mode: "BASELINE_ASSUMPTION";
@@ -7991,6 +8608,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         } | undefined;
         distributionFitResult?: {
@@ -8124,6 +8745,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         } | {
             mode: "BASELINE_ASSUMPTION";
@@ -8259,6 +8884,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         } | undefined;
         distributionFitResult?: {
@@ -8853,6 +9482,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         } | {
             mode: "BASELINE_ASSUMPTION";
@@ -8988,6 +9621,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         } | undefined;
         distributionFitResult?: {
@@ -9203,6 +9840,12 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
             sourceCell?: string | undefined;
         } | undefined;
+    } | undefined;
+    dimensionChainImage?: {
+        status: "available";
+        contentHash: string;
+        worksheetName: string;
+        url: string;
     } | undefined;
     monteCarloResult?: {
         status: "complete";
@@ -9341,6 +9984,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         } | {
             mode: "BASELINE_ASSUMPTION";
@@ -9476,6 +10123,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         } | undefined;
         distributionFitResult?: {
@@ -9691,6 +10342,12 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
             sourceCell?: string | undefined;
         } | undefined;
+    } | undefined;
+    dimensionChainImage?: {
+        status: "available";
+        contentHash: string;
+        worksheetName: string;
+        url: string;
     } | undefined;
     monteCarloResult?: {
         status: "complete";
@@ -9829,6 +10486,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         } | {
             mode: "BASELINE_ASSUMPTION";
@@ -9964,6 +10625,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         } | undefined;
         distributionFitResult?: {
@@ -10179,6 +10844,12 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
             sourceCell?: string | undefined;
         } | undefined;
+    } | undefined;
+    dimensionChainImage?: {
+        status: "available";
+        contentHash: string;
+        worksheetName: string;
+        url: string;
     } | undefined;
     monteCarloResult?: {
         status: "complete";
@@ -10317,6 +10988,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         } | {
             mode: "BASELINE_ASSUMPTION";
@@ -10452,6 +11127,10 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
                 }[];
                 originalRowCount: number;
                 analyzedCount: number;
+                rationalSubgroupConfig?: {
+                    subgroupSize: number;
+                    estimator: "RANGE_D2" | "S_C4";
+                } | undefined;
             } | undefined;
         } | undefined;
         distributionFitResult?: {
@@ -10668,6 +11347,12 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             sourceCell?: string | undefined;
         } | undefined;
     } | undefined;
+    dimensionChainImage?: {
+        status: "available";
+        contentHash: string;
+        worksheetName: string;
+        url: string;
+    } | undefined;
     monteCarloResult?: {
         status: "complete";
         capability: {
@@ -10753,10 +11438,20 @@ export declare const f7WorkbookImportRequestSchema: z.ZodObject<{
     fileName: string;
     workbookBytes: Uint8Array<ArrayBuffer>;
 }>;
-export declare const f7MeasurementPasteRequestSchema: z.ZodObject<{
+export declare const f7MeasurementPasteRequestSchema: z.ZodEffects<z.ZodObject<{
     factorId: z.ZodString;
     unit: z.ZodString;
     structure: z.ZodEnum<["RATIONAL_SUBGROUP", "ORDERED_INDIVIDUALS", "UNORDERED_SAMPLE"]>;
+    rationalSubgroupConfig: z.ZodOptional<z.ZodObject<{
+        subgroupSize: z.ZodNumber;
+        estimator: z.ZodEnum<["RANGE_D2", "S_C4"]>;
+    }, "strict", z.ZodTypeAny, {
+        subgroupSize: number;
+        estimator: "RANGE_D2" | "S_C4";
+    }, {
+        subgroupSize: number;
+        estimator: "RANGE_D2" | "S_C4";
+    }>>;
     sourceReference: z.ZodString;
     msaStatus: z.ZodEnum<["available", "not_available", "unknown"]>;
     text: z.ZodString;
@@ -10767,6 +11462,10 @@ export declare const f7MeasurementPasteRequestSchema: z.ZodObject<{
     structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
     sourceReference: string;
     msaStatus: "unknown" | "available" | "not_available";
+    rationalSubgroupConfig?: {
+        subgroupSize: number;
+        estimator: "RANGE_D2" | "S_C4";
+    } | undefined;
 }, {
     unit: string;
     text: string;
@@ -10774,6 +11473,32 @@ export declare const f7MeasurementPasteRequestSchema: z.ZodObject<{
     structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
     sourceReference: string;
     msaStatus: "unknown" | "available" | "not_available";
+    rationalSubgroupConfig?: {
+        subgroupSize: number;
+        estimator: "RANGE_D2" | "S_C4";
+    } | undefined;
+}>, {
+    unit: string;
+    text: string;
+    factorId: string;
+    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+    sourceReference: string;
+    msaStatus: "unknown" | "available" | "not_available";
+    rationalSubgroupConfig?: {
+        subgroupSize: number;
+        estimator: "RANGE_D2" | "S_C4";
+    } | undefined;
+}, {
+    unit: string;
+    text: string;
+    factorId: string;
+    structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+    sourceReference: string;
+    msaStatus: "unknown" | "available" | "not_available";
+    rationalSubgroupConfig?: {
+        subgroupSize: number;
+        estimator: "RANGE_D2" | "S_C4";
+    } | undefined;
 }>;
 export declare const f7MeasurementDispositionActionSchema: z.ZodEnum<["EXCLUDE", "RESTORE"]>;
 export declare const f7MeasurementDispositionRequestSchema: z.ZodObject<{
@@ -10889,6 +11614,22 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             worksheetKind: "analysis" | "example_or_template";
             selectionIndex: number;
         }>, "many">;
+        dimensionChainImage: z.ZodOptional<z.ZodObject<{
+            status: z.ZodLiteral<"available">;
+            worksheetName: z.ZodString;
+            contentHash: z.ZodString;
+            url: z.ZodString;
+        }, "strict", z.ZodTypeAny, {
+            status: "available";
+            contentHash: string;
+            worksheetName: string;
+            url: string;
+        }, {
+            status: "available";
+            contentHash: string;
+            worksheetName: string;
+            url: string;
+        }>>;
         systemSpecification: z.ZodOptional<z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
             lowerSpecLimit: z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
                 status: z.ZodLiteral<"available">;
@@ -11650,6 +12391,16 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     factorId: z.ZodString;
                     unit: z.ZodString;
                     structure: z.ZodEnum<["RATIONAL_SUBGROUP", "ORDERED_INDIVIDUALS", "UNORDERED_SAMPLE"]>;
+                    rationalSubgroupConfig: z.ZodOptional<z.ZodObject<{
+                        subgroupSize: z.ZodNumber;
+                        estimator: z.ZodEnum<["RANGE_D2", "S_C4"]>;
+                    }, "strict", z.ZodTypeAny, {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    }, {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    }>>;
                     sourceReference: z.ZodString;
                     importedAt: z.ZodString;
                     msaStatus: z.ZodEnum<["available", "not_available", "unknown"]>;
@@ -11760,6 +12511,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 }, {
                     unit: string;
                     contentHash: string;
@@ -11795,6 +12550,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 }>, {
                     unit: string;
                     contentHash: string;
@@ -11830,6 +12589,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 }, {
                     unit: string;
                     contentHash: string;
@@ -11865,6 +12628,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 }>>;
             }, "strict", z.ZodTypeAny, {
                 mode: "MEASURED";
@@ -11903,6 +12670,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             }, {
                 mode: "MEASURED";
@@ -11941,6 +12712,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             }>, z.ZodObject<{
                 mode: z.ZodLiteral<"BASELINE_ASSUMPTION">;
@@ -12246,6 +13021,16 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     factorId: z.ZodString;
                     unit: z.ZodString;
                     structure: z.ZodEnum<["RATIONAL_SUBGROUP", "ORDERED_INDIVIDUALS", "UNORDERED_SAMPLE"]>;
+                    rationalSubgroupConfig: z.ZodOptional<z.ZodObject<{
+                        subgroupSize: z.ZodNumber;
+                        estimator: z.ZodEnum<["RANGE_D2", "S_C4"]>;
+                    }, "strict", z.ZodTypeAny, {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    }, {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    }>>;
                     sourceReference: z.ZodString;
                     importedAt: z.ZodString;
                     msaStatus: z.ZodEnum<["available", "not_available", "unknown"]>;
@@ -12356,6 +13141,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 }, {
                     unit: string;
                     contentHash: string;
@@ -12391,6 +13180,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 }>, {
                     unit: string;
                     contentHash: string;
@@ -12426,6 +13219,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 }, {
                     unit: string;
                     contentHash: string;
@@ -12461,6 +13258,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 }>>;
                 validation: z.ZodObject<{
                     status: z.ZodEnum<["ready", "blocked"]>;
@@ -12606,6 +13407,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             }, {
                 validation: {
@@ -12665,6 +13470,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             }>>;
             distributionFitResult: z.ZodOptional<z.ZodEffects<z.ZodObject<{
@@ -13384,6 +14193,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | {
                 mode: "BASELINE_ASSUMPTION";
@@ -13519,6 +14332,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | undefined;
             distributionFitResult?: {
@@ -13652,6 +14469,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | {
                 mode: "BASELINE_ASSUMPTION";
@@ -13787,6 +14608,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | undefined;
             distributionFitResult?: {
@@ -13920,6 +14745,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | {
                 mode: "BASELINE_ASSUMPTION";
@@ -14055,6 +14884,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | undefined;
             distributionFitResult?: {
@@ -14188,6 +15021,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | {
                 mode: "BASELINE_ASSUMPTION";
@@ -14323,6 +15160,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | undefined;
             distributionFitResult?: {
@@ -14917,6 +15758,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | {
                 mode: "BASELINE_ASSUMPTION";
@@ -15052,6 +15897,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | undefined;
             distributionFitResult?: {
@@ -15267,6 +16116,12 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
                 sourceCell?: string | undefined;
             } | undefined;
+        } | undefined;
+        dimensionChainImage?: {
+            status: "available";
+            contentHash: string;
+            worksheetName: string;
+            url: string;
         } | undefined;
         monteCarloResult?: {
             status: "complete";
@@ -15405,6 +16260,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | {
                 mode: "BASELINE_ASSUMPTION";
@@ -15540,6 +16399,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | undefined;
             distributionFitResult?: {
@@ -15755,6 +16618,12 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
                 sourceCell?: string | undefined;
             } | undefined;
+        } | undefined;
+        dimensionChainImage?: {
+            status: "available";
+            contentHash: string;
+            worksheetName: string;
+            url: string;
         } | undefined;
         monteCarloResult?: {
             status: "complete";
@@ -15893,6 +16762,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | {
                 mode: "BASELINE_ASSUMPTION";
@@ -16028,6 +16901,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | undefined;
             distributionFitResult?: {
@@ -16243,6 +17120,12 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
                 sourceCell?: string | undefined;
             } | undefined;
+        } | undefined;
+        dimensionChainImage?: {
+            status: "available";
+            contentHash: string;
+            worksheetName: string;
+            url: string;
         } | undefined;
         monteCarloResult?: {
             status: "complete";
@@ -16381,6 +17264,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | {
                 mode: "BASELINE_ASSUMPTION";
@@ -16516,6 +17403,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | undefined;
             distributionFitResult?: {
@@ -16731,6 +17622,12 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
                 sourceCell?: string | undefined;
             } | undefined;
+        } | undefined;
+        dimensionChainImage?: {
+            status: "available";
+            contentHash: string;
+            worksheetName: string;
+            url: string;
         } | undefined;
         monteCarloResult?: {
             status: "complete";
@@ -16873,6 +17770,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | {
                 mode: "BASELINE_ASSUMPTION";
@@ -17008,6 +17909,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | undefined;
             distributionFitResult?: {
@@ -17223,6 +18128,12 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
                 sourceCell?: string | undefined;
             } | undefined;
+        } | undefined;
+        dimensionChainImage?: {
+            status: "available";
+            contentHash: string;
+            worksheetName: string;
+            url: string;
         } | undefined;
         monteCarloResult?: {
             status: "complete";
@@ -17365,6 +18276,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | {
                 mode: "BASELINE_ASSUMPTION";
@@ -17500,6 +18415,10 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                     }[];
                     originalRowCount: number;
                     analyzedCount: number;
+                    rationalSubgroupConfig?: {
+                        subgroupSize: number;
+                        estimator: "RANGE_D2" | "S_C4";
+                    } | undefined;
                 } | undefined;
             } | undefined;
             distributionFitResult?: {
@@ -17715,6 +18634,12 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
                 sourceCell?: string | undefined;
             } | undefined;
+        } | undefined;
+        dimensionChainImage?: {
+            status: "available";
+            contentHash: string;
+            worksheetName: string;
+            url: string;
         } | undefined;
         monteCarloResult?: {
             status: "complete";
@@ -17834,7 +18759,7 @@ export declare const f7WorksheetConfirmRouteRequestSchema: z.ZodObject<{
         confirmed: true;
     };
 }>;
-export declare const f7FactorConfirmRouteRequestSchema: z.ZodObject<{
+export declare const f7FactorConfirmRouteRequestSchema: z.ZodEffects<z.ZodObject<{
     sessionId: z.ZodString;
     confirmations: z.ZodArray<z.ZodEffects<z.ZodObject<{
         longTermSafetyFactor: z.ZodOptional<z.ZodNumber>;
@@ -17892,6 +18817,19 @@ export declare const f7FactorConfirmRouteRequestSchema: z.ZodObject<{
         sigmaLevel?: number | undefined;
         userAdded?: true | undefined;
     }>, "many">;
+    systemSpecification: z.ZodOptional<z.ZodObject<{
+        lowerSpecLimit: z.ZodNumber;
+        upperSpecLimit: z.ZodNumber;
+        targetSigmaLevel: z.ZodNumber;
+    }, "strict", z.ZodTypeAny, {
+        lowerSpecLimit: number;
+        upperSpecLimit: number;
+        targetSigmaLevel: number;
+    }, {
+        lowerSpecLimit: number;
+        upperSpecLimit: number;
+        targetSigmaLevel: number;
+    }>>;
 }, "strict", z.ZodTypeAny, {
     sessionId: string;
     confirmations: {
@@ -17906,6 +18844,11 @@ export declare const f7FactorConfirmRouteRequestSchema: z.ZodObject<{
         sigmaLevel?: number | undefined;
         userAdded?: true | undefined;
     }[];
+    systemSpecification?: {
+        lowerSpecLimit: number;
+        upperSpecLimit: number;
+        targetSigmaLevel: number;
+    } | undefined;
 }, {
     sessionId: string;
     confirmations: {
@@ -17920,6 +18863,49 @@ export declare const f7FactorConfirmRouteRequestSchema: z.ZodObject<{
         sigmaLevel?: number | undefined;
         userAdded?: true | undefined;
     }[];
+    systemSpecification?: {
+        lowerSpecLimit: number;
+        upperSpecLimit: number;
+        targetSigmaLevel: number;
+    } | undefined;
+}>, {
+    sessionId: string;
+    confirmations: {
+        confirmed: true;
+        upperTolerance: number;
+        lowerTolerance: number;
+        designNominal: number;
+        factorCandidateId: string;
+        factorName?: string | undefined;
+        distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+        longTermSafetyFactor?: number | undefined;
+        sigmaLevel?: number | undefined;
+        userAdded?: true | undefined;
+    }[];
+    systemSpecification?: {
+        lowerSpecLimit: number;
+        upperSpecLimit: number;
+        targetSigmaLevel: number;
+    } | undefined;
+}, {
+    sessionId: string;
+    confirmations: {
+        confirmed: true;
+        upperTolerance: number;
+        lowerTolerance: number;
+        designNominal: number;
+        factorCandidateId: string;
+        factorName?: string | undefined;
+        distribution?: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta" | undefined;
+        longTermSafetyFactor?: number | undefined;
+        sigmaLevel?: number | undefined;
+        userAdded?: true | undefined;
+    }[];
+    systemSpecification?: {
+        lowerSpecLimit: number;
+        upperSpecLimit: number;
+        targetSigmaLevel: number;
+    } | undefined;
 }>;
 export declare const f7FactorModeRouteRequestSchema: z.ZodObject<{
     params: z.ZodObject<{
@@ -17964,9 +18950,19 @@ export declare const f7MeasurementPasteRouteRequestSchema: z.ZodObject<{
     }, {
         factorId: string;
     }>;
-    body: z.ZodObject<{
+    body: z.ZodEffects<z.ZodObject<{
         sessionId: z.ZodString;
         structure: z.ZodEnum<["RATIONAL_SUBGROUP", "ORDERED_INDIVIDUALS", "UNORDERED_SAMPLE"]>;
+        rationalSubgroupConfig: z.ZodOptional<z.ZodObject<{
+            subgroupSize: z.ZodNumber;
+            estimator: z.ZodEnum<["RANGE_D2", "S_C4"]>;
+        }, "strict", z.ZodTypeAny, {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        }, {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        }>>;
         sourceReference: z.ZodString;
         msaStatus: z.ZodEnum<["available", "not_available", "unknown"]>;
         text: z.ZodString;
@@ -17976,12 +18972,40 @@ export declare const f7MeasurementPasteRouteRequestSchema: z.ZodObject<{
         structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
         sourceReference: string;
         msaStatus: "unknown" | "available" | "not_available";
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
     }, {
         sessionId: string;
         text: string;
         structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
         sourceReference: string;
         msaStatus: "unknown" | "available" | "not_available";
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
+    }>, {
+        sessionId: string;
+        text: string;
+        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+        sourceReference: string;
+        msaStatus: "unknown" | "available" | "not_available";
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
+    }, {
+        sessionId: string;
+        text: string;
+        structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
+        sourceReference: string;
+        msaStatus: "unknown" | "available" | "not_available";
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
     }>;
 }, "strict", z.ZodTypeAny, {
     params: {
@@ -17993,6 +19017,10 @@ export declare const f7MeasurementPasteRouteRequestSchema: z.ZodObject<{
         structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
         sourceReference: string;
         msaStatus: "unknown" | "available" | "not_available";
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
     };
 }, {
     params: {
@@ -18004,6 +19032,10 @@ export declare const f7MeasurementPasteRouteRequestSchema: z.ZodObject<{
         structure: "RATIONAL_SUBGROUP" | "ORDERED_INDIVIDUALS" | "UNORDERED_SAMPLE";
         sourceReference: string;
         msaStatus: "unknown" | "available" | "not_available";
+        rationalSubgroupConfig?: {
+            subgroupSize: number;
+            estimator: "RANGE_D2" | "S_C4";
+        } | undefined;
     };
 }>;
 export declare const f7MeasurementDispositionRouteRequestSchema: z.ZodObject<{
@@ -18228,6 +19260,8 @@ export type F7ToleranceDistribution = z.infer<typeof f7ToleranceDistributionSche
 export type F7LoopCoefficient = z.infer<typeof f7LoopCoefficientSchema>;
 export type F7FactorSourceMode = z.infer<typeof f7FactorSourceModeSchema>;
 export type F7MeasurementStructure = z.infer<typeof f7MeasurementStructureSchema>;
+export type F7RationalSubgroupEstimator = z.infer<typeof f7RationalSubgroupEstimatorSchema>;
+export type F7RationalSubgroupConfig = z.infer<typeof f7RationalSubgroupConfigSchema>;
 export type F7MsaStatus = z.infer<typeof f7MsaStatusSchema>;
 export type F7ExclusionReason = z.infer<typeof f7ExclusionReasonSchema>;
 export type F7FactorInput = z.infer<typeof f7FactorInputSchema>;
@@ -18258,6 +19292,7 @@ export type F7ReportSpecificationSourceCells = z.infer<typeof f7ReportSpecificat
 export type F7ReportSpecificationInputOrigins = z.infer<typeof f7ReportSpecificationInputOriginsSchema>;
 export type F7ReportMethodIds = z.infer<typeof f7ReportMethodIdsSchema>;
 export type F7ReportEvidence = z.infer<typeof f7ReportEvidenceSchema>;
+export type F7ReportAnalysis = z.infer<typeof f7ReportAnalysisSchema>;
 export type F7ReportProjection = z.infer<typeof f7ReportProjectionSchema>;
 export type F7WorkbookImportRequest = z.infer<typeof f7WorkbookImportRequestSchema>;
 export type F7MeasurementPasteRequest = z.infer<typeof f7MeasurementPasteRequestSchema>;
@@ -18281,10 +19316,7 @@ export interface F7SessionService {
         sessionId: string;
         confirmation: WorksheetSelectionConfirmation;
     }): F7SessionSnapshot;
-    confirmFactorSetup(request: {
-        sessionId: string;
-        confirmations: readonly F7FactorSetupConfirmation[];
-    }): F7SessionSnapshot;
+    confirmFactorSetup(request: F7FactorConfirmRouteRequest): F7SessionSnapshot;
     setFactorMode(request: {
         sessionId: string;
         factorId: string;
@@ -18311,5 +19343,9 @@ export interface F7SessionService {
         sessionId: string;
     }): F7ReportProjection;
     getSession(sessionId: string): F7SessionSnapshot;
+    readDimensionChainImage(sessionId: string): {
+        readonly mediaType: "image/png" | "image/jpeg";
+        readonly bytes: Uint8Array;
+    };
 }
 //# sourceMappingURL=f7-contracts.d.ts.map
