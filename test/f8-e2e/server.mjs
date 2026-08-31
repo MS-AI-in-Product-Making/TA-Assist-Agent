@@ -9,6 +9,7 @@ import { createHostActionStore, openSessionStore } from "@ai-assist/workbench";
 import { renderF3AdoMarkdown } from "@ai-assist/workflow-runners";
 import { startWorkbenchServer } from "@ai-assist/workbench-server";
 import { createSeededAdoValidationHostAction } from "./ado-fixture-contract.mjs";
+import { createF6ArtifactBundleFixture } from "../../scripts/f6-artifact-test-fixture.mjs";
 
 const SESSION_ID = "40404040-4040-4404-8404-404040404040";
 const ADO_SELECTION_SESSION_ID = "50505050-5050-4505-8505-505050505050";
@@ -24,9 +25,7 @@ const f3RelativePath = "e2e/f3.json";
 const f3AdoReminderRelativePath = "e2e/Feature3-ADO-Reminder.json";
 const f5RelativePath = "e2e/f5.json";
 const f6ReportRelativePath = "e2e/f6-report.json";
-const f6OptimizationRelativePath = "e2e/f6-optimization.json";
-const sourceF5Path = "runtime/workbench/runner-output/5c39c3ec-3794-4712-930f-3d4fea93cc5f/production/f5/2026-08-26T06-25-06-229Z/Feature5-Report.json";
-const sourceF6OptimizationPath = "runtime/workbench/runner-output/5c39c3ec-3794-4712-930f-3d4fea93cc5f/production/f6/2026-08-26T06-25-06-583Z/Feature6-Optimization.json";
+const downstreamFixture = createF6ArtifactBundleFixture({ worksheetNames: ["AJ_GAP"] });
 const calculatedDraft = {
   contractVersion: "f8-scenario-draft-v1", draftId: "e2e-draft", sessionId: SESSION_ID, worksheetName: "AJ_GAP", inputRevision: 1, status: "calculated", mode: "WHAT_IF",
   baselineWorkbookHash: HASH, baselineRunReference: "run-1", change: { upperTolerance: 0.04 }, calculationReference: "what-if:e2e-draft",
@@ -52,9 +51,8 @@ const f2Bytes = Buffer.from(JSON.stringify(f2Report));
 const f3Bytes = Buffer.from(JSON.stringify(f3Report));
 const f3AdoReminderBytes = Buffer.from(JSON.stringify(f3AdoReminder));
 const f4Bytes = Buffer.from(JSON.stringify(f4Report));
-const f5Bytes = await readFile(sourceF5Path);
-const f6OptimizationBytes = await readFile(sourceF6OptimizationPath);
-const f6ReportBytes = f6OptimizationBytes;
+const f5Bytes = await readFile(downstreamFixture.paths.f5);
+const f6ReportBytes = Buffer.from("# F6 E2E review complete\n", "utf8");
 const f1Bytes = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4////fwAJ+wP9KobjigAAAABJRU5ErkJggg==", "base64");
 await writeFile(join(rootDir, f2RelativePath), f2Bytes);
 await writeFile(join(rootDir, f3RelativePath), f3Bytes);
@@ -62,7 +60,6 @@ await writeFile(join(rootDir, f3AdoReminderRelativePath), f3AdoReminderBytes);
 await writeFile(join(rootDir, f4RelativePath), f4Bytes);
 await writeFile(join(rootDir, f5RelativePath), f5Bytes);
 await writeFile(join(rootDir, f6ReportRelativePath), f6ReportBytes);
-await writeFile(join(rootDir, f6OptimizationRelativePath), f6OptimizationBytes);
 await writeFile(join(rootDir, f1RelativePath), f1Bytes);
 await seedReviewSession(SESSION_ID, "review_required");
 await seedReviewSession(ADO_SELECTION_SESSION_ID, "ado_decision_required");
@@ -94,7 +91,7 @@ started.server.registerArtifactForTest(ADO_UPDATE_PREVIEW_SESSION_ID, reviewArti
 started.server.registerArtifactForTest(ADO_UPDATE_PREVIEW_SESSION_ID, reviewArtifactId("f6-report-e2e", ADO_UPDATE_PREVIEW_SESSION_ID), f6ReportRelativePath, "f6-report.json", "confidential", "application/json");
 started.server.registerArtifactForTest(ADO_UPDATE_PREVIEW_SESSION_ID, `f1-image:${f1ContentHash}`, f1RelativePath, "f1.png", "confidential", "image/png");
 process.stdout.write(`${JSON.stringify({ origin: new URL(started.url).origin, sessionId: SESSION_ID, rootDir })}\n`);
-const close = async () => { started.server.server.closeAllConnections(); await started.server.close(); await rm(rootDir, { recursive: true, force: true }); process.exit(0); };
+const close = async () => { started.server.server.closeAllConnections(); await started.server.close(); await rm(rootDir, { recursive: true, force: true }); await rm(downstreamFixture.root, { recursive: true, force: true }); process.exit(0); };
 process.on("SIGTERM", () => { void close(); });
 process.on("SIGINT", () => { void close(); });
 process.on("message", async (message) => {

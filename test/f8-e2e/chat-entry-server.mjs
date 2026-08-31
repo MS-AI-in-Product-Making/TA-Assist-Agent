@@ -11,12 +11,14 @@ import { createCalculation } from "@ai-assist/workbook-catalog";
 import { runAgentCommand } from "../../apps/cli/dist/commands/agent.js";
 import { classifyAnalyzeIntent } from "../../apps/vscode-extension/dist/analyze-intent.js";
 import { importWorkbook } from "../../apps/vscode-extension/dist/workbook-import.js";
+import { createF6ArtifactBundleFixture } from "../../scripts/f6-artifact-test-fixture.mjs";
 
 const fixtureWorkbookPath = "test/f8-e2e/fixtures/anonymous-ta-workbook.xlsx";
 const f1ContentHash = "f".repeat(64);
 const f1RelativePath = "synthetic/f1.png";
-const sourceF5Path = "runtime/workbench/runner-output/5c39c3ec-3794-4712-930f-3d4fea93cc5f/production/f5/2026-08-26T06-25-06-229Z/Feature5-Report.json";
-const sourceF6OptimizationPath = "runtime/workbench/runner-output/5c39c3ec-3794-4712-930f-3d4fea93cc5f/production/f6/2026-08-26T06-25-06-583Z/Feature6-Optimization.json";
+const downstreamFixture = createF6ArtifactBundleFixture({ worksheetNames: ["Synthetic_A"] });
+const f5Bytes = await readFile(downstreamFixture.paths.f5);
+const f6ReportBytes = Buffer.from("# F6 E2E review complete\n", "utf8");
 const rootDir = await mkdtemp(join(tmpdir(), "chat-entry-e2e-"));
 const stageLog = new Map();
 const runner = async (job) => {
@@ -245,7 +247,7 @@ async function writeStageArtifact(rootDir, sessionId, stage) {
   const artifact = artifactRef(sessionId, stage);
   if (stage === "f5_running" || stage === "f6_running") {
     await mkdir(dirname(join(rootDir, artifact.relativePath)), { recursive: true });
-    await writeFile(join(rootDir, artifact.relativePath), await readFile(stage === "f5_running" ? sourceF5Path : sourceF6OptimizationPath));
+    await writeFile(join(rootDir, artifact.relativePath), stage === "f5_running" ? f5Bytes : f6ReportBytes);
     return;
   }
   await writeJson(join(rootDir, artifact.relativePath), buildF3F4Artifact(readManagedWorkbookHash(rootDir, sessionId), stage));
@@ -373,8 +375,8 @@ function buildF3F4Artifact(workbookHash, stage) {
 }
 
 function artifactContentHash(workbookHash, stage) {
-  if (stage === "f5_running") return createHash("sha256").update(readFileSync(sourceF5Path)).digest("hex");
-  if (stage === "f6_running") return createHash("sha256").update(readFileSync(sourceF6OptimizationPath)).digest("hex");
+  if (stage === "f5_running") return createHash("sha256").update(f5Bytes).digest("hex");
+  if (stage === "f6_running") return createHash("sha256").update(f6ReportBytes).digest("hex");
   return createHash("sha256").update(`${JSON.stringify(buildF3F4Artifact(workbookHash, stage), null, 2)}\n`).digest("hex");
 }
 
@@ -531,5 +533,6 @@ async function close(code) {
   server.server.closeAllConnections();
   await server.close();
   await rm(rootDir, { recursive: true, force: true });
+  await rm(downstreamFixture.root, { recursive: true, force: true });
   process.exit(code);
 }

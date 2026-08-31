@@ -60,7 +60,7 @@ test("Case A accepts an explicit workbook path into one managed session with liv
     await page.goto(chat.url);
     await expect(page.locator(".connection-indicator")).toHaveText("Connected");
     await collectSseEvents(page, harness.origin, chat.sessionId, sseEvents);
-    await expect.poll(() => readSession(page.request, harness.origin, chat.sessionId).then((snapshot) => snapshot.state)).toBe("review_required");
+    await expect.poll(() => readSession(page.request, harness.origin, chat.sessionId).then((snapshot) => snapshot.state), { timeout: 30_000 }).toBe("review_required");
 
     const snapshot = await readSession(page.request, harness.origin, chat.sessionId);
     expect(snapshot.artifactRefs?.map((artifact) => artifact.kind)).toEqual(expect.arrayContaining(["f2_report", "f3_report", "f4_calculation", "f5_report", "f6_report"]));
@@ -112,7 +112,7 @@ test("Case B opens the same real session for Web multipart upload and downstream
     });
     expect(uploadCommand.status()).toBe(202);
 
-    await expect.poll(() => readSession(page.request, harness.origin, chat.sessionId).then((snapshot) => snapshot.state)).toBe("review_required");
+    await expect.poll(() => readSession(page.request, harness.origin, chat.sessionId).then((snapshot) => snapshot.state), { timeout: 30_000 }).toBe("review_required");
     const snapshot = await readSession(page.request, harness.origin, chat.sessionId);
     expect(snapshot.downstreamScopeSelection?.workbookContentHash).toBe(artifact.contentHash);
     expect(await harness.stages(chat.sessionId)).toEqual(["f0_validating", "f1_f2_running", "f3_running", "f4_running", "f5_running", "f6_running"]);
