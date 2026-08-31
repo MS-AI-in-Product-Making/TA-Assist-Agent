@@ -1,5 +1,14 @@
 # Sensitive data / confidential templates
 test/
+!test/
+test/*
+!test/f8-e2e/
+test/f8-e2e/*
+!test/f8-e2e/ado-fixture-contract.mjs
+!test/f8-e2e/ado-fixture-contract.test.mjs
+!test/f8-e2e/chat-entry-server.mjs
+!test/f8-e2e/chat-entry.spec.ts
+!test/f8-e2e/engineering-workspace.spec.ts
 # Only public fixtures are committable; the repository checker enforces this across path casing.
 fixtures/confidential/
 *.xlsx
