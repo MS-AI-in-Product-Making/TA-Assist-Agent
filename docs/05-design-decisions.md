@@ -201,6 +201,12 @@ Automatic capture of measured data (avoiding manual upload for multi-part assemb
 
 **Why read-in only:** it delivers the value of "see the real gap now, get more accurate over time" while deferring the riskier write-back and the cost questions of automatic capture. It also turns Lib 1's source-tier design (D1) from a documented concept into a path that is actually exercised.
 
+## D9 · F8 is a local confidential Workbench, not a chat transcript
+
+F8 uses one loopback server and a structured resumable state machine shared by Web, CLI, and VS Code. Synchronization covers TA Assist-owned turns, decisions, stages, and artifact references only; native Copilot history is neither treated as a global log nor persisted. Browser cookie/CSRF and Extension IPC credentials remain separate.
+
+The workbook and governed artifacts are read-only. What-if is one temporary Draft backed by F4, with tolerance-only promotion through the existing F6 targets contract. Surface ADO requires validation plus an independent write confirmation. F7 remains unavailable until its real owner publishes the governed runner.
+
 ---
 
 ## How the Decisions Shape the Feature Flow

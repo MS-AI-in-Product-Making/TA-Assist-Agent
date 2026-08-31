@@ -1,45 +1,40 @@
-import { mkdirSync, renameSync, writeFileSync } from "node:fs";
-import path from "node:path";
-import { createF3DrawingGovernance } from "../packages/workbook-catalog/dist/f3-drawing-governance.js";
-import { loadF2ArtifactBundle } from "./f3-artifact-loader.mjs";
 import { parseF3CliArgs } from "./f3-cli-args.mjs";
-import { resolveFeature3OutputLayout } from "./f3-output-layout.mjs";
-import { renderF3AdoHistoryHtml, renderF3AdoReminder } from "./f3-ado-reminder.mjs";
-import { renderF3Report } from "./f3-report.mjs";
+import { runF3Analysis, normalizeRunnerError } from "../packages/workflow-runners/dist/index.js";
+import { typedErrorSchema } from "../packages/contracts/dist/errors.js";
 
-function atomicWrite(filePath, content) {
-  const temporaryPath = `${filePath}.${process.pid}.tmp`;
-  writeFileSync(temporaryPath, content, "utf8");
-  renameSync(temporaryPath, filePath);
+function safeTypedError(error) {
+  const parsed = typedErrorSchema.safeParse(error);
+  const typed = parsed.success ? parsed.data : normalizeRunnerError(error);
+  return {
+    code: typed.code,
+    runId: typed.runId,
+    summary: typed.summary,
+    retryable: typed.retryable,
+    suggestedAction: typed.suggestedAction,
+    affectedInputReferences: [...typed.affectedInputReferences],
+  };
 }
 
-const cliArgs = process.argv.slice(2);
-const { artifactRoot, selectedWorksheetNames } = parseF3CliArgs(cliArgs);
-const outputLayout = resolveFeature3OutputLayout([artifactRoot], process.env.AI_TVA_F3_OUTPUT_ROOT);
-const loaded = loadF2ArtifactBundle(artifactRoot, { selectedWorksheetNames });
-const report = loaded.status === "accepted"
-  ? createF3DrawingGovernance(loaded.request)
-  : loaded.report;
+try {
+  const cliArgs = process.argv.slice(2);
+  const { artifactRoot, selectedWorksheetNames } = parseF3CliArgs(cliArgs);
+  const result = runF3Analysis({ artifactRoot, selectedWorksheetNames }, {
+    repositoryRoot: process.cwd(),
+    managedOutputRoot: process.env.AI_TVA_F3_OUTPUT_ROOT ?? "test/demo-output/feature3-output",
+    attemptId: crypto.randomUUID(),
+    signal: new AbortController().signal,
+    emit: () => {},
+  });
 
-mkdirSync(outputLayout.outRoot, { recursive: true });
-const reportJsonPath = path.join(outputLayout.outRoot, outputLayout.reportJsonName);
-const reportMdPath = path.join(outputLayout.outRoot, outputLayout.reportMdName);
-atomicWrite(reportJsonPath, `${JSON.stringify(report, null, 2)}\n`);
-atomicWrite(reportMdPath, renderF3Report(report, { outputRoot: outputLayout.outRoot }));
-let reminderMdPath;
-let historyHtmlPath;
-if (report.status !== "input_rejected") {
-  reminderMdPath = path.join(outputLayout.outRoot, "Feature3-ADO-Reminder.md");
-  historyHtmlPath = path.join(outputLayout.outRoot, "Feature3-ADO-History.html");
-  atomicWrite(reminderMdPath, renderF3AdoReminder(report));
-  atomicWrite(historyHtmlPath, renderF3AdoHistoryHtml(report));
+  console.log(JSON.stringify({
+    status: result.status,
+    outputDirectory: result.outputDirectory,
+    reportJsonPath: result.reportJsonPath,
+    reportMdPath: result.reportMdPath,
+    ...(result.reminderMdPath ? { reminderMdPath: result.reminderMdPath, historyHtmlPath: result.historyHtmlPath } : {}),
+    ...(result.report.status === "input_rejected" ? { artifactIssues: result.report.artifactIssues } : { summary: result.report.summary }),
+  }, null, 2));
+} catch (error) {
+  console.error(JSON.stringify({ status: "failed", error: safeTypedError(error) }, null, 2));
+  process.exitCode = 1;
 }
-
-console.log(JSON.stringify({
-  status: report.status,
-  outputDirectory: outputLayout.outRoot,
-  reportJsonPath,
-  reportMdPath,
-  ...(reminderMdPath ? { reminderMdPath, historyHtmlPath } : {}),
-  ...(report.status === "input_rejected" ? { artifactIssues: report.artifactIssues } : { summary: report.summary }),
-}, null, 2));

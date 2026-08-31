@@ -121,6 +121,12 @@ flowchart TB
 | 8 Closed loop | **F7** | Backfill measured Cpk by DIM ID, compare the real gap, and feed back into F0 | Manual import from a centralized store (SharePoint / platform) at first; auto-capture and write-back come later |
 | 9 Interaction & output | **F8** | Read-only evidence pane, citable dialogue, structured report | Includes the Loop image; traceable and reproducible item by item |
 
+### F8 Workbench Runtime
+
+F8 is a confidential local application composed of a loopback Fastify server, transactional SessionStore/ConversationStore, a React workbench, CLI Agent entry points, and the VS Code `@ta-assist` participant. Web, CLI, and VS Code share only TA Assist-owned turns and session state; native Copilot history is temporary request context and is never imported. Browser commands use cookie/CSRF, while the Extension Host uses action-scoped credentials issued over local Node IPC.
+
+The source workbook and governed F0-F6 artifacts remain immutable. One worksheet-scoped What-if Draft may call the F4 kernel; only tolerance changes can be promoted through `f6-optimization-targets-v1`. Surface ADO remains `validate -> independent write`, and only a verified final receipt can enqueue F4. F7 remains an unavailable placeholder with no measured result controls.
+
 ### F5 and F6 governance boundary
 
 F5 directly consumes controlled F0/F1/F3/F4 artifacts; a workbook-started run must first pass the F2 handoff gate. It owns baseline `FACT`/`RULE`/`SIGNAL`, clarifications, and optional v2 image evidence, while retaining v1 read-only compatibility. Sections 4 and 5 remain `delegated_to_f6` in the detailed F5 report.

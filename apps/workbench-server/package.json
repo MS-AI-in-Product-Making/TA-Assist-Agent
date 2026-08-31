@@ -1,0 +1,35 @@
+{
+  "name": "@ai-assist/workbench-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "assets/workbench"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "npm --workspace @ai-assist/workbench-web run build && tsc -b && node ./scripts/build.mjs",
+    "prepack": "npm run build",
+    "start": "node ./dist/index.js",
+    "test": "vitest run --workspace ../../vitest.workspace.ts apps/workbench-server/src"
+  },
+  "dependencies": {
+    "@ai-assist/agent-runtime": "0.1.0",
+    "@ai-assist/contracts": "0.1.0",
+    "@ai-assist/conversation": "0.1.0",
+    "@ai-assist/workbook-catalog": "0.1.0",
+    "@ai-assist/workbench": "0.1.0",
+    "@ai-assist/workflow-runners": "0.1.0",
+    "@fastify/cookie": "^11.1.2",
+    "@fastify/multipart": "^9.4.0",
+    "fastify": "^5.12.0"
+  }
+}

@@ -14,6 +14,7 @@
     "build:f7:web": "npm run build --workspace @ai-assist/f7-web",
     "lint": "eslint .",
     "test": "npm run build -- --force && vitest run",
+    "test:e2e": "playwright test",
     "check:repository": "node scripts/verify-repository.mjs",
     "verify:f4-excel-regression": "pwsh -NoProfile -File scripts/verify-f4-excel-regression.ps1",
     "export:dual-md": "pwsh -NoProfile -File scripts/export-excel-dual-grid.ps1",
@@ -32,6 +33,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
+    "@playwright/test": "^1.62.1",
     "@types/node": "^24.0.0",
     "concurrently": "^9.0.0",
     "eslint": "^9.0.0",

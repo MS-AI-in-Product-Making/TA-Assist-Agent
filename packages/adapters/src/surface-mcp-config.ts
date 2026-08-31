@@ -21,6 +21,12 @@ export const REQUIRED_F3_CAPABILITIES = [
   "workItems.comments.update",
 ] as const satisfies readonly SurfaceMcpCapability[];
 
+const REQUIRED_F3_UPDATE_CAPABILITIES = [
+  "workItems.read",
+  "workItems.comments.read",
+  "workItems.comments.update",
+] as const satisfies readonly SurfaceMcpCapability[];
+
 export type SurfaceMcpConfigInspection = {
   readonly configured: true;
   readonly serverName: "surface-mcp";
@@ -45,9 +51,11 @@ export function inspectSurfaceMcpConfig(config: unknown): SurfaceMcpConfigInspec
 
 export async function inspectSurfaceMcpCapabilities(
   client: Pick<SurfaceMcpDrawingGovernanceClient, "listCapabilities">,
+  target: { readonly mode: "create" | "existing" } = { mode: "create" },
 ): Promise<SurfaceMcpCapabilityReport> {
   const reported = new Set<string>(await client.listCapabilities());
-  const available = REQUIRED_F3_CAPABILITIES.filter((capability) => reported.has(capability));
-  const missing = REQUIRED_F3_CAPABILITIES.filter((capability) => !reported.has(capability));
+  const required = target.mode === "create" ? REQUIRED_F3_CAPABILITIES : REQUIRED_F3_UPDATE_CAPABILITIES;
+  const available = required.filter((capability) => reported.has(capability));
+  const missing = required.filter((capability) => !reported.has(capability));
   return { ready: missing.length === 0, available, missing };
 }

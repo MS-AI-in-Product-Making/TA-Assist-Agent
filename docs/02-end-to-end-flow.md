@@ -142,6 +142,12 @@ flowchart TB
     classDef orch fill:#fff8e1,stroke:#f9a825,color:#f57f17
 ```
 
+## F8 Workbench Confirmation Order
+
+The local Workbench preserves the governed order: upload/F0 validation -> initial worksheet confirmation -> F1/F2 -> downstream ready-worksheet confirmation -> F3 -> optional Surface MCP validation and independent final write -> F4 -> image decision -> F5 -> Analysis Context decision -> Optimization Targets decision -> F6 -> evidence review and one What-if Draft. No browser or chat message can merge or bypass these confirmations.
+
+What-if calculation replays the current validated F2/F4 lineage and calls the F4 kernel. It never writes to the source workbook. Tolerance-only changes may produce a separate F6 targets preview; nominal or mean-shift changes stay in `WHAT_IF`. F7 remains `feature_not_available / in_development`, so the first Workbench release shows no measured import or result controls.
+
 ## Key Decision Points
 
 | Node | Decision | Branch handling |

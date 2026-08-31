@@ -23,6 +23,7 @@ export { createCalculation } from "./calculation.js";
 export { calculateF6Scenario } from "./f6-scenario-adapter.js";
 export { createF6Optimization } from "./f6-optimization.js";
 export { createF6ReportProjection } from "./f6-report-projection.js";
+export { F6_DISPOSITION_RANK, worstDisposition } from "./f6-report-policy.js";
 export { createDrawingGovernancePlaceholder } from "./drawing-governance-placeholder.js";
 export { createInterpretation, createInterpretationPlaceholder } from "./interpretation-placeholder.js";
 export { createF5DataInterpretation } from "./f5-data-interpretation.js";

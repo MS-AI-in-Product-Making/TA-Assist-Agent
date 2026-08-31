@@ -98,6 +98,8 @@ The result must include a quick, easy-to-scan TA risk summary.
 
 ### F8 - User Interaction, Read-Only Pane & Output
 
+Delivered as a confidential local TA Assist Workbench. CLI `agent analyze|resume|status|workbench` and VS Code `@ta-assist` open or resume the same session. The browser provides upload, two worksheet confirmations, F3/ADO decisions, F4-F6 progress, three-pane evidence review, report links, conversation, and one F4-backed What-if Draft. Shared history is limited to TA Assist-owned turns; unrelated Copilot history is never synchronized. The source workbook is read-only, Surface MCP is the only ADO path, and F7 is an explicit unavailable placeholder.
+
 **Feature:** Give the engineer a complete, trustworthy TA result without silently changing the uploaded source data.
 
 **Tasks:**

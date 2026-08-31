@@ -5,7 +5,7 @@ import vueParser from "vue-eslint-parser";
 
 export default [
   {
-    ignores: ["**/node_modules/**", "**/dist/**", "**/coverage/**", "**/runtime/**", "**/exports/**", "**/.tmp/**", "**/.worktrees/**"],
+  ignores: ["**/node_modules/**", "**/dist/**", "**/coverage/**", "**/runtime/**", "**/exports/**", "**/.tmp/**", "**/.worktrees/**", "**/assets/workbench/**", "**/test-results/**"],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
@@ -71,5 +71,17 @@ export default [
     rules: {
       "no-useless-escape": "off",
     },
+  },
+  {
+    files: ["apps/workbench-server/src/sse.ts", "packages/agent-runtime/src/context-builder.ts", "packages/agent-runtime/src/runtime.ts"],
+    rules: { "no-control-regex": "off" },
+  },
+  {
+    files: ["scripts/f2-excel-runner.mjs", "scripts/run-f3-full-validation.mjs"],
+    languageOptions: { globals: { crypto: "readonly", AbortController: "readonly" } },
+  },
+  {
+    files: ["test/f8-e2e/server.mjs"],
+    languageOptions: { globals: { Buffer: "readonly" } },
   },
 ];

@@ -47,8 +47,9 @@ exact content against schema、workbook/worksheet identity 与 selected set、sn
 `imageReference` identity，并重新校验物理 F1 image SHA-256。Observation artifact 不存在可预先校验的自身
 digest；接受后由 workflow runner 计算其 SHA-256 并记录到 `Feature5-Run-Summary`。Observation-only 失败整件
 回退到 deterministic F5，baseline identity 错误 fail closed。
-F6 已作为 F5 后的本地 `f6-optimization-v2` workflow 启用，消费 F2/F3/F4/F5 受控工件并原子发布 `Feature6-Report.md`、`Feature6-Optimization.json/.md`、`Feature6-Run-Summary.json` 和 `manifest.json`；Run Summary 保存结构化 Workbook/Worksheet dispositions；F7 仍为 `unavailable`。历史 F6 comparison placeholder 继续单独返回 `feature_not_available`；F8 仅提供匿名
-`public` fixture 的受治理 Skill 运行时验收，不包含外部 Adapter、模型、ADO、SharePoint 或 UI 行为。
+F6 已作为 F5 后的本地 `f6-optimization-v2` workflow 启用，消费 F2/F3/F4/F5 受控工件并原子发布 `Feature6-Report.md`、`Feature6-Optimization.json/.md`、`Feature6-Run-Summary.json` 和 `manifest.json`；Run Summary 保存结构化 Workbook/Worksheet dispositions；F7 仍为 `unavailable`。历史 F6 comparison placeholder 继续单独返回 `feature_not_available`。F8 已注册为本地 `confidential` TA Assist Workbench；历史匿名 `public` fixture 迁移为 `F8.public-smoke`。
+
+F8 由 CLI Agent 或 VS Code `@ta-assist` 打开 loopback Web Workbench。三端只同步 TA Assist 自有 conversation/session，不导入其他 Copilot history。工作簿与 F0/F4/F6 基线保持只读；What-if 仅保存 Draft 和计算引用。ADO 只通过 Surface MCP 两阶段确认；F7 保持 `feature_not_available / in_development` 占位。
 
 | 文档 | 内容 |
 |---|---|

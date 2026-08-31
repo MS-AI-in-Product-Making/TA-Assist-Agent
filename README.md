@@ -56,7 +56,7 @@ JSON/Markdown workflow 和宿主注入的 Surface MCP adapter；真实 Comment 0
 策略审批及逐次用户确认。根 F5 直接消费 F0/F1/F3/F4 受控工件，提供能力、规格、贡献和证据受限的
 公差链解读；F5.1 作为历史 internal compatible core 保留。F6 在 F5 后消费 F2/F3/F4/F5 受控工件，负责
 options、reverse solve、RSS apportionment、feasibility、impact ranking 与最终 `Feature6-Report.md`；F7 仍不可用。F5/F6 不自动发布
-ADO、不回写 workbook；F8 仅限用于受治理 Skill 运行时验收的匿名 `public` fixture。
+ADO、不回写 workbook。产品 F8 现为本地 `confidential` TA Assist Workbench；历史匿名验收入口保留为 `F8.public-smoke`。
 
 - [Phase 0 设计](docs/superpowers/specs/2026-07-22-ai-assist-agent-foundation-design.md)
 - [Phase 0 实施计划](docs/superpowers/plans/2026-07-22-ai-assist-agent-foundation.md)
@@ -93,6 +93,12 @@ ADO、不回写 workbook；F8 仅限用于受治理 Skill 运行时验收的匿�
 ---
 
 ## Positioning
+
+## F8 TA Assist Workbench
+
+F8 通过 CLI `agent analyze|resume|status|workbench` 或 VS Code `@ta-assist` 打开同一个 loopback Workbench session。Web、CLI 与 VS Code 共享 TA Assist 自有的 session、conversation、decision 与 artifact reference；不会读取、导入或声称同步其他 GitHub Copilot 对话。工作簿始终只读，浏览器不解析 terminal/stdout 控制流程。
+
+运行顺序保持独立门禁：上传与 F0 validation -> 初次 worksheet 确认 -> F1/F2 -> 下游 worksheet 确认 -> F3 -> optional Surface MCP ADO `validate -> independent write` -> F4 -> image decision -> F5 -> Analysis Context -> Optimization Targets -> F6 -> evidence review/What-if。What-if 复用 F4 kernel；只有 tolerance diff 可生成现有 F6 targets preview，nominal/mean shift 不晋级且不写回 workbook。F7 显示 `feature_not_available / in_development`，不提供或伪造 measured result。
 
 **Objective evidence provider + verifiable decision support** — not a black-box adviser.
 Every statement is tagged **FACT** (computed) / **RULE** (threshold check) → asserted, or
@@ -235,6 +241,10 @@ Explicit exclusions in Phase 1:
 - no upload and no remote persistence
 - no ADO publishing
 - no F0 writes
+
+## Workbench Server Release Build
+
+- 根 `npm run build` 按设计只执行 TypeScript project build。发布或打包 `@ai-assist/workbench-server` 时使用 server package build；`apps/workbench-server` 的 `build` 会先构建 `@ai-assist/workbench-web`，再复制确定性的 `workbench.js` / `workbench.css` 到 package-local `assets/workbench`。`prepack` 会在 `npm pack` / publish 前自动运行同一 server package build，避免发布 stale committed assets。
 
 ## Dual Markdown Export (A=Actual, D=Display)
 

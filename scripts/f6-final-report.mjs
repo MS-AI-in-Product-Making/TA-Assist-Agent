@@ -1,12 +1,5 @@
 /* global structuredClone */
 
-export const F6_DISPOSITION_RANK = Object.freeze({
-  PASS: 0,
-  CONDITIONAL_PASS: 1,
-  INCOMPLETE: 2,
-  FAIL: 3,
-});
-
 import { isDeepStrictEqual } from "node:util";
 import {
   drawingGovernanceResultV2Schema,
@@ -21,24 +14,15 @@ import {
   createCalculationRequestFromF4Handoff,
   createF4Handoff,
 } from "../packages/workbook-catalog/dist/f4-handoff.js";
-import { createF6ReportProjection } from "../packages/workbook-catalog/dist/index.js";
+import { createF6ReportProjection, F6_DISPOSITION_RANK, worstDisposition } from "../packages/workbook-catalog/dist/index.js";
 import { formatEngineering, formatPercent } from "./engineering-format.mjs";
 import { safeText } from "./f6-markdown-sanitizer.mjs";
+
+export { F6_DISPOSITION_RANK, worstDisposition };
 
 const NOT_PROVIDED = "NOT_PROVIDED";
 const INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE";
 const NA = "N/A";
-
-function rankDisposition(disposition) {
-  return F6_DISPOSITION_RANK[disposition] ?? F6_DISPOSITION_RANK.FAIL;
-}
-
-export function worstDisposition(dispositions) {
-  if (!Array.isArray(dispositions) || dispositions.length === 0) return "PASS";
-  return dispositions.reduce((worst, value) => (
-    rankDisposition(value) > rankDisposition(worst) ? value : worst
-  ), "PASS");
-}
 
 function indexByWorksheetName(records) {
   return new Map(records.map((record) => [record.worksheetName, record]));

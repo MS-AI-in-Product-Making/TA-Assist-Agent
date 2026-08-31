@@ -214,19 +214,26 @@ describe("policy gate", () => {
     });
   });
 
-  it("reports F8 as the available anonymous public workflow fixture", () => {
+  it("registers confidential F8 Workbench while preserving the public smoke fixture", () => {
     expect(getFeatureStatus("F8")).toEqual({
       featureId: "F8",
-      title: "TA 工作流编排",
+      title: "TA Assist Workbench",
       status: "available",
-      dependsOn: ["orchestrator-v1", "skill-runtime-v1"],
+      dependsOn: ["f8-session-command-v1", "f8-session-snapshot-v1", "ta-conversation-turn-v1", "surface-mcp-adapter-v1"],
+      inputContractId: "f8-session-command-v1",
+      outputContractId: "f8-session-snapshot-v1",
+      maximumClassification: "confidential",
+      acceptanceChecks: ["f8-browser-integration", "f8-security-e2e", "f8-f7-placeholder-e2e", "f8-what-if-no-writeback"],
+      externalPrerequisites: ["approved-ooxml-parser", "approved-surface-mcp-access"],
+      disableBehavior: "return feature_not_available",
+    });
+    expect(getFeatureStatus("F8.public-smoke")).toMatchObject({
+      featureId: "F8.public-smoke",
       inputContractId: "workflow-request-v1",
       outputContractId: "workflow-result-v1",
       maximumClassification: "public",
-      acceptanceChecks: ["anonymous-workflow-fixture", "anonymous-governed-skill"],
-      externalPrerequisites: ["approved-skill-manifests"],
-      disableBehavior: "return feature_not_available",
     });
+    expect(getFeatureStatus("F7")).toMatchObject({ status: "unavailable" });
   });
 
   it("reports F4 as the available governed calculation engine", () => {

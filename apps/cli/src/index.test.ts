@@ -12,6 +12,18 @@ import { executeCli } from "./index.js";
 
 const execFileAsync = promisify(execFile);
 
+it("routes the CLI Agent to the same workbench session", async () => {
+  const resume = vi.fn(async () => "resumed");
+  const result = await executeCli(["agent", "resume", "--root", "repo", "--session", "session-a"], {
+    cwd: () => "ignored",
+    runFeature2: async () => "unused",
+    runAgent: async (request) => { await resume(request.sessionId); return "session: session-a\nurl: http://127.0.0.1:4317/?session=session-a\n"; },
+  });
+
+  expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+  expect(resume).toHaveBeenCalledWith("session-a");
+});
+
 async function createTemporaryRoot(): Promise<string> {
   return mkdtemp(join(tmpdir(), "ai-assist-cli-"));
 }

@@ -764,6 +764,7 @@ describe("f3-analysis skill contract", () => {
       "## F1 to F2 Evidence Contract",
       "## F5 Governed Interpretation Contract",
       "## Flow Diagram",
+      "## F8 Workbench Confirmation Order",
       "## Key Decision Points",
       "## F3 Governed ADO Publishing Contract",
     ]);
@@ -771,6 +772,7 @@ describe("f3-analysis skill contract", () => {
       "## F1 到 F2 证据契约",
       "## F5 受治理解读契约",
       "## 流程图",
+      "## F8 Workbench 独立确认顺序",
       "## 关键决策点",
       "## F3 受治理 ADO 发布契约",
     ]);

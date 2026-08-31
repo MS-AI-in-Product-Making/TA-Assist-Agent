@@ -4163,6 +4163,12 @@ export const f2SystemSpecificationIssueSchema = z.object({
   sourceCell: worksheetSourceCellSchema.optional(),
 }).strict();
 
+export const f2F4CalculabilityIssueSchema = z.object({
+  reasonCode: z.enum(["factor_tables_missing", "factor_table_has_no_rows", "factor_tolerance_range_invalid", "long_term_safety_factor_invalid", "sigma_level_invalid", "f4_calculation_not_possible"]),
+  tableId: z.string().min(1).optional(),
+  sourceRow: z.number().int().positive().optional(),
+}).strict();
+
 const f4HandoffFactorSchema = z.object({
   tableId: z.string().min(1),
   sourceRow: z.number().int().positive(),
@@ -4212,6 +4218,7 @@ const f2ReportWorksheetBaseSchema = z.object({
   tolerancePathImageStatus: z.enum(["available", "unavailable"]),
   systemSpecification: worksheetSystemSpecificationSchema,
   systemSpecificationIssues: z.array(f2SystemSpecificationIssueSchema),
+  f4CalculabilityIssues: z.array(f2F4CalculabilityIssueSchema).default([]),
   rows: z.array(f2EnhancedRowSchema),
   missingFieldSummary: z.array(f2MissingFieldSummarySchema),
 });
@@ -4220,6 +4227,7 @@ export const f2ReadyWorksheetSchema = f2ReportWorksheetBaseSchema.extend({
   status: z.literal("ready"),
   systemSpecification: z.object({ status: z.literal("available"), ...worksheetSystemSpecificationFields }).strict(),
   systemSpecificationIssues: z.array(f2SystemSpecificationIssueSchema).length(0),
+  f4CalculabilityIssues: z.array(f2F4CalculabilityIssueSchema).length(0).default([]),
 }).strict();
 
 const f2BlockedWorksheetSchema = f2ReportWorksheetBaseSchema.extend({
@@ -4280,7 +4288,8 @@ const f2AcceptedReportSchema = z.object({
   report.worksheets.forEach((worksheet, index) => {
     const shouldBlock = worksheet.tolerancePathImageStatus === "unavailable"
       || worksheet.rows.some((row) => row.missingRequiredFields.length > 0)
-      || worksheet.systemSpecificationIssues.length > 0;
+      || worksheet.systemSpecificationIssues.length > 0
+      || worksheet.f4CalculabilityIssues.length > 0;
     if ((worksheet.status === "blocked") !== shouldBlock) context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet status must match required input gaps", path: ["worksheets", index, "status"] });
     const matchingHandoffs = report.f4Handoffs.filter((handoff) => handoff.worksheetName === worksheet.worksheetName);
     if (worksheet.status === "ready" && matchingHandoffs.length !== 1) {
@@ -6142,6 +6151,7 @@ export type F2InitialWorkflowResult = z.infer<typeof f2InitialWorkflowResultSche
 export type F2ArtifactInput = z.infer<typeof f2ArtifactInputSchema>;
 export type F2UserReport = z.infer<typeof f2UserReportSchema>;
 export type F2SystemSpecificationIssue = z.infer<typeof f2SystemSpecificationIssueSchema>;
+export type F2F4CalculabilityIssue = z.infer<typeof f2F4CalculabilityIssueSchema>;
 export type F2ReadyWorksheet = z.infer<typeof f2ReadyWorksheetSchema>;
 export type F4HandoffReady = z.infer<typeof f4HandoffReadySchema>;
 export type DrawingGovernanceRequestV2 = z.infer<typeof drawingGovernanceRequestV2Schema>;

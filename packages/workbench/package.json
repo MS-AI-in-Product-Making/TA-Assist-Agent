@@ -1,0 +1,23 @@
+{
+  "name": "@ai-assist/workbench",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./review": {
+      "types": "./dist/review.d.ts",
+      "import": "./dist/review.js"
+    }
+  },
+  "dependencies": {
+    "@ai-assist/contracts": "0.1.0",
+    "@ai-assist/governance": "0.1.0"
+  }
+}
