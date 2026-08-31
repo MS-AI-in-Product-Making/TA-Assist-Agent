@@ -11,11 +11,11 @@ export function F7Placeholder({ status }: F7PlaceholderProps) {
       <div className="panel__header">
         <div>
           <p className="eyebrow">F7</p>
-          <h2 id="f7-placeholder-title">F7 正在开发</h2>
+          <h2 id="f7-placeholder-title">F7 in development</h2>
         </div>
       </div>
-      <p className="support-text">当前状态: {status.status}{status.lifecycle === undefined ? "" : ` / ${status.lifecycle}`}</p>
-      <p className="support-text">工作台保留 F7 位置和后续 handoff 边界，但当前版本不提供 measured import、preview 或结果录入控件。</p>
+      <p className="support-text">Current status: {status.status}{status.lifecycle === undefined ? "" : ` / ${status.lifecycle}`}</p>
+      <p className="support-text">The workspace keeps the F7 slot and downstream handoff boundary, but this version does not provide measured import, preview, or result entry controls.</p>
     </section>
   );
 }

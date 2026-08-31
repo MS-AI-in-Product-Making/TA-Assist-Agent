@@ -3,6 +3,7 @@ import {
   f2ReadyWorksheetSchema,
   f2UserReportSchema,
   type F2ArtifactInput,
+  type F2F4CalculabilityIssue,
   type F2SystemSpecificationIssue,
   type F2UserReport,
   type WorksheetSystemSpecification,
@@ -200,9 +201,25 @@ export function createF2UserReport(
     });
     if (worksheet.tolerancePathImage.status === "unavailable") missingFieldSummary.push({ field: "tolerancePathImage", factorCount: 0, sourceRows: [] });
     const systemSpecificationIssues = validateWorksheetSystemSpecification(worksheet.systemSpecification);
+    const f4CalculabilityIssues: F2F4CalculabilityIssue[] = [];
+    if (worksheet.factorTables.length === 0) {
+      f4CalculabilityIssues.push({ reasonCode: "factor_tables_missing" });
+    }
+    for (const table of worksheet.factorTables) {
+      if (table.rows.length === 0) {
+        f4CalculabilityIssues.push({ reasonCode: "factor_table_has_no_rows", tableId: table.tableId });
+      }
+      for (const row of table.rows) {
+        const fields = row.actualFields;
+        if (typeof fields.upperTolerance === "number" && typeof fields.lowerTolerance === "number" && !(fields.upperTolerance > fields.lowerTolerance)) f4CalculabilityIssues.push({ reasonCode: "factor_tolerance_range_invalid", tableId: table.tableId, sourceRow: row.sourceRow });
+        if (typeof fields.longTermSafetyFactor === "number" && !(fields.longTermSafetyFactor > 0)) f4CalculabilityIssues.push({ reasonCode: "long_term_safety_factor_invalid", tableId: table.tableId, sourceRow: row.sourceRow });
+        if (typeof fields.sigmaLevel === "number" && !(fields.sigmaLevel > 0)) f4CalculabilityIssues.push({ reasonCode: "sigma_level_invalid", tableId: table.tableId, sourceRow: row.sourceRow });
+      }
+    }
     const blocked = worksheet.tolerancePathImage.status === "unavailable"
       || rows.some((row) => row.missingRequiredFields.length > 0)
-      || systemSpecificationIssues.length > 0;
+      || systemSpecificationIssues.length > 0
+      || f4CalculabilityIssues.length > 0;
     return {
       worksheetName: worksheet.worksheetName,
       ...(worksheet.toleranceLoopDescription === undefined ? {} : { toleranceLoopDescription: worksheet.toleranceLoopDescription }),
@@ -210,6 +227,7 @@ export function createF2UserReport(
       tolerancePathImageStatus: worksheet.tolerancePathImage.status,
       systemSpecification: worksheet.systemSpecification,
       systemSpecificationIssues,
+      f4CalculabilityIssues,
       rows,
       missingFieldSummary,
     };

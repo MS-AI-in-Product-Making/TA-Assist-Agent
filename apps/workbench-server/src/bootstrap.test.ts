@@ -9,12 +9,18 @@ describe("browser bootstrap rendezvous", () => {
     const nonce = await rendezvous.issueBrowserBootstrap();
 
     expect(Buffer.from(nonce, "base64url")).toHaveLength(16);
-    expect(await rendezvous.consumeBrowserBootstrap(nonce)).toBe(true);
-    expect(await rendezvous.consumeBrowserBootstrap(nonce)).toBe(false);
+    expect(await rendezvous.consumeBrowserBootstrap(nonce)).toEqual({ accepted: true });
+    expect(await rendezvous.consumeBrowserBootstrap(nonce)).toEqual({ accepted: false });
 
     const expired = await rendezvous.issueBrowserBootstrap();
     now = new Date("2026-08-25T00:00:02.000Z");
-    expect(await rendezvous.consumeBrowserBootstrap(expired)).toBe(false);
+    expect(await rendezvous.consumeBrowserBootstrap(expired)).toEqual({ accepted: false });
+  });
+
+  it("binds a one-time bootstrap nonce to the requested resume session", async () => {
+    const rendezvous = createBrowserBootstrapRendezvous();
+    const nonce = await rendezvous.issueBrowserBootstrap("session-a");
+    expect(await rendezvous.consumeBrowserBootstrap(nonce)).toEqual({ accepted: true, sessionId: "session-a" });
   });
 
   it("bootstrap script removes the fragment before posting without inline CSP exceptions", () => {
@@ -26,7 +32,8 @@ describe("browser bootstrap rendezvous", () => {
     expect(script).toContain("location.hash");
     expect(script).toContain("history.replaceState");
     expect(script.indexOf("history.replaceState")).toBeLessThan(script.indexOf("fetch('/api/bootstrap'"));
-    expect(script).toContain("location.replace('/')");
+    expect(script).toContain("location.replace(location.pathname + location.search)");
+    expect(page).toContain("需要重新连接");
     expect(script).not.toContain("document.createElement('script')");
     expect(page).not.toContain("localStorage");
     expect(script).not.toContain("localStorage");

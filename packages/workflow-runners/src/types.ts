@@ -69,12 +69,13 @@ export interface F1F2ConfirmedRequest {
   readonly workbookContentHash: string;
   readonly selectedWorksheetNames: readonly string[];
   readonly selectionReference?: F1F2SelectionReference;
+  readonly refreshF2?: boolean;
   readonly now?: () => Date;
 }
 
 export interface F1F2ConfirmedResult {
   readonly featureId: "F2";
-  readonly status: "completed";
+  readonly status: "completed" | "partiallyBlocked";
   readonly workbookContentHash: string;
   readonly selectedWorksheetNames: readonly string[];
   readonly runId: string;

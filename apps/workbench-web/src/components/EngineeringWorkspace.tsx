@@ -1,0 +1,236 @@
+import type { ConversationTurn } from "@ai-assist/conversation";
+import { useState } from "react";
+
+import type { EngineeringWorkspaceModel } from "../workspace-model.js";
+import type { TaConversationSelection, WorkbenchApi } from "../api.js";
+import { useScenarioWorkspace } from "../hooks/use-scenario-workspace.js";
+import { FactorTable } from "./FactorTable.js";
+import { EngineeringCharts } from "./EngineeringCharts.js";
+import { TaAssistantPanel, type RequestContextChip } from "./TaAssistantPanel.js";
+import type { WorkspaceIssue } from "../business-status.js";
+import { WorkspaceIssuePanel } from "./WorkspaceIssuePanel.js";
+import { WorkspacePreparation } from "./WorkspacePreparation.js";
+import { WorkspaceToolbar } from "./WorkspaceToolbar.js";
+import type { DrawingGovernanceResultV2, F2UserReport, F4WorkflowCalculationResult, F6OptimizationResultV2, F8AdoProjection, F8AdoWriteConfirmation, F8ScenarioDraft } from "@ai-assist/contracts";
+import type { F8SessionSnapshot } from "@ai-assist/workbench";
+import { F6Summary } from "./F6Summary.js";
+import { EvidenceImagePane } from "./EvidenceImagePane.js";
+import { WorkbookHealth } from "./WorkbookHealth.js";
+import { projectWorkbookHealth } from "../workbook-health.js";
+import { F3Governance } from "./F3Governance.js";
+import { AnalysisProgress } from "./AnalysisProgress.js";
+import { SourceText } from "./SourceText.js";
+import type { FeatureLedgerEntry } from "../workbench-session.js";
+import type { RunnerProgressEvent } from "../api.js";
+
+export interface EngineeringWorkspaceProps {
+  readonly model: EngineeringWorkspaceModel;
+  readonly loading: boolean;
+  readonly connected: boolean;
+  readonly featureLedger: readonly FeatureLedgerEntry[];
+  readonly runnerProgress?: RunnerProgressEvent;
+  readonly activeAttemptStartedAt?: string;
+  readonly conversation: readonly ConversationTurn[];
+  readonly api?: WorkbenchApi;
+  readonly sessionId?: string;
+  readonly inputRevision?: number;
+  readonly onSaveScenario?: (payload: Record<string, unknown>) => Promise<void>;
+  readonly scenarioDrafts?: readonly F8ScenarioDraft[];
+  readonly snapshot?: F8SessionSnapshot;
+  readonly issue?: WorkspaceIssue;
+  readonly onUpload: (file: File) => Promise<void>;
+  readonly onSelectWorksheet: (worksheetName: string) => void;
+  readonly onSubmitConversation: (message: string, selection: TaConversationSelection) => Promise<void>;
+  readonly f6Report?: F6OptimizationResultV2;
+  readonly f2Report?: F2UserReport;
+  readonly f4Report?: F4WorkflowCalculationResult;
+  readonly f3Report?: DrawingGovernanceResultV2;
+  readonly adoDecisionRequired?: boolean;
+  readonly adoProjection?: F8AdoProjection;
+  readonly onAdoDecision?: (decision: "local_only" | "create_new" | "use_existing", workItemReference?: string) => Promise<void>;
+  readonly onAdoConfirm?: (confirmation: F8AdoWriteConfirmation) => Promise<void>;
+  readonly onAdoReset?: () => Promise<void>;
+}
+
+export function EngineeringWorkspace(props: EngineeringWorkspaceProps) {
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [selectedFactorKey, setSelectedFactorKey] = useState<string>();
+  const worksheet = props.model.worksheets.find(({ worksheetName }) => worksheetName === props.model.selectedWorksheetName);
+  const initialScenarioDraft = selectCurrentWorksheetScenarioDraft(props.scenarioDrafts, props.sessionId, props.inputRevision, worksheet?.worksheetName);
+  const scenario = useScenarioWorkspace({ api: props.api ?? unavailableApi(), sessionId: props.sessionId, inputRevision: props.inputRevision, factors: worksheet?.factors ?? [], baselineSystem: worksheet?.metrics, initialScenarioDraft, onSave: props.onSaveScenario ?? (async () => undefined) });
+  const selectedFactor = worksheet?.factors.find(({ key }) => key === selectedFactorKey);
+  const selectedCalculation = props.f4Report?.calculations.find((candidate) => candidate.worksheetSelection.worksheetName === worksheet?.worksheetName);
+  const savedScenario = resolveCurrentSavedScenario(props.snapshot, props.scenarioDrafts, worksheet?.worksheetName, selectedCalculation?.runReference);
+  const evidenceFactor = selectedFactor ?? worksheet?.factors.find(({ imageReference }) => imageReference !== undefined);
+  const evidenceUrl = props.api !== undefined && props.sessionId !== undefined && evidenceFactor?.imageReference !== undefined
+    ? props.api.artifactUrl(props.sessionId, `f1-image:${evidenceFactor.imageReference.contentHash}`, "inline")
+    : undefined;
+  const scenarioResult = scenario.scenarioResult ?? [...scenario.factorStates.values()].find(({ lastValidResult }) => lastValidResult !== undefined)?.lastValidResult;
+  const scenarioContributions = new Map([...scenario.factorStates].flatMap(([key, state]) => state.calculated === undefined ? [] : [[key, state.calculated.contribution] as const]));
+  const preparing = props.loading || props.model.preparationMessage !== undefined;
+  const requestContextChips = buildAssistantRequestContextChips({
+    snapshot: props.snapshot,
+    worksheetName: worksheet?.worksheetName,
+    selectedFactorSourceRow: selectedFactor?.sourceRow,
+    f2Report: props.f2Report,
+    f4Report: props.f4Report,
+    scenarioDrafts: props.scenarioDrafts,
+  });
+
+  return (
+    <main className="engineering-shell">
+      <WorkspaceToolbar model={props.model} loading={props.loading} onUpload={props.onUpload} onSelectWorksheet={props.onSelectWorksheet} onUndo={scenario.undo} onReset={() => scenario.reset()} onSave={() => { void scenario.save(selectedFactor?.key); }} canUndo={scenario.canUndo} canSave={scenario.dirty && scenarioResult !== undefined} />
+      <AnalysisProgress entries={props.featureLedger} connected={props.connected} {...(props.runnerProgress === undefined ? {} : { progress: props.runnerProgress })} {...(props.activeAttemptStartedAt === undefined ? {} : { activeAttemptStartedAt: props.activeAttemptStartedAt })} />
+      <WorkspaceIssuePanel issue={props.issue} />
+      <div className="engineering-layout">
+        <section className="engineering-layout__workbench">
+          {preparing ? <WorkspacePreparation message={props.model.preparationMessage} /> : worksheet === undefined ? (
+            <WorkspacePreparation message="Open a workbook to start analysis" />
+          ) : (
+            <>
+              <header className="worksheet-heading">
+                <div><span>Current worksheet</span><h1>{worksheet.worksheetName}</h1></div>
+                <span className={`worksheet-status worksheet-status--${worksheet.status}`}>{worksheet.status}</span>
+              </header>
+              {worksheet.status !== "blocked" || worksheet.issues.length === 0 ? null : (
+                <div className="worksheet-blocked-reasons" role="status" aria-label="Worksheet blocking reasons">
+                  <strong>This worksheet did not enter F4 calculation</strong>
+                  <span>{worksheet.issues.map(issueLabel).join("; ")}</span>
+                </div>
+              )}
+              <div className="factor-evidence-layout">
+                <EvidenceImagePane worksheetName={worksheet.worksheetName} imageUrl={evidenceUrl} focusedLabel={evidenceFactor === undefined ? undefined : `${evidenceFactor.factorName.displayText} · ${evidenceFactor.partName.displayText}`} analysisTarget={worksheet.analysisTarget} />
+                <FactorTable factors={worksheet.factors} states={scenario.factorStates} onEdit={scenario.edit} onCommit={scenario.commit} onSelect={setSelectedFactorKey} onEvidenceFocus={setSelectedFactorKey} />
+              </div>
+              {selectedFactor === undefined ? null : <section className="selected-factor-strip"><SourceText value={selectedFactor.factorName} />{worksheet.metrics?.meanOffset === undefined ? null : <div className="selected-factor-strip__metric"><span>Mean Offset</span><strong>{worksheet.metrics.meanOffset.toFixed(3)}</strong><span className="visually-hidden" aria-label="Mean Offset source values">{`Calculated Mean ${worksheet.metrics.mean.toFixed(3)} minus Target Nominal ${worksheet.analysisTarget.nominal?.toFixed(3) ?? "Not available"}`}</span></div>}<button type="button" className="button" onClick={() => scenario.reset(selectedFactor.key)}>Reset</button><button type="button" className="button button--primary" disabled={scenario.factorStates.get(selectedFactor.key)?.lastValidResult === undefined} onClick={() => { void scenario.save(selectedFactor.key); }}>Save scenario</button></section>}
+              <EngineeringCharts worksheet={worksheet} scenario={scenarioResult} scenarioContributions={scenarioContributions} systemValues={scenario.systemValues} systemSpecificationError={scenario.systemSpecificationError} onSystemEdit={scenario.editSystem} onSystemCommit={scenario.commitSystemSpecification} />
+              <F6Summary report={props.f6Report} selectedWorksheetName={worksheet.worksheetName} />
+              <WorkbookHealth model={projectWorkbookHealth(props.f2Report)} onNavigate={props.onSelectWorksheet} />
+              <F3Governance report={props.f3Report} adoDecisionRequired={props.adoDecisionRequired} adoProjection={props.adoProjection} onAdoDecision={props.onAdoDecision} onAdoConfirm={props.onAdoConfirm} onAdoReset={props.onAdoReset} />
+            </>
+          )}
+        </section>
+        <aside className={`engineering-layout__assistant ${assistantOpen ? "engineering-layout__assistant--open" : ""}`}>
+          <button type="button" className="assistant-drawer__close" aria-label="Close TA Assistant" onClick={() => setAssistantOpen(false)}>×</button>
+          <TaAssistantPanel worksheetName={worksheet?.worksheetName} factorName={selectedFactor?.factorName.displayText} turns={props.conversation} disabled={props.loading} onSubmit={(message) => props.onSubmitConversation(message, {
+            ...(worksheet === undefined ? {} : { worksheetName: worksheet.worksheetName }),
+            ...(selectedFactor === undefined ? {} : { tableId: selectedFactor.tableId, sourceRow: selectedFactor.sourceRow, factorName: selectedFactor.factorName.sourceText }),
+            ...(savedScenario?.calculationReference === undefined ? {} : { calculationReference: savedScenario.calculationReference }),
+          })} requestContextChips={requestContextChips} />
+        </aside>
+      </div>
+      <button type="button" className="assistant-drawer__open icon-button" aria-label="Open TA Assistant" aria-expanded={assistantOpen} onClick={() => setAssistantOpen(true)}>?</button>
+      <div className={`connection-indicator ${props.connected ? "connection-indicator--online" : ""}`}>{props.connected ? "Connected" : "Reconnecting"}</div>
+    </main>
+  );
+}
+
+function selectCurrentWorksheetScenarioDraft(drafts: readonly F8ScenarioDraft[] | undefined, sessionId: string | undefined, inputRevision: number | undefined, worksheetName: string | undefined): F8ScenarioDraft | undefined {
+  if (drafts === undefined || sessionId === undefined || inputRevision === undefined || worksheetName === undefined) return undefined;
+  return drafts.findLast((draft) => draft.status === "saved" && draft.sessionId === sessionId && draft.inputRevision === inputRevision && draft.worksheetName === worksheetName);
+}
+
+function unavailableApi(): WorkbenchApi {
+  return { calculateWhatIf: async () => { throw new Error("Scenario calculation is unavailable."); } } as WorkbenchApi;
+}
+
+function issueLabel(issue: string): string {
+  if (issue === "required_field_missing") return "Required field missing";
+  const issueLabels: Record<string, string> = { tolerance_path_image_unavailable: "Tolerance loop image missing", factor_tables_missing: "Factor table missing", factor_table_has_no_rows: "Factor table has no rows", factor_tolerance_range_invalid: "Factor tolerance range is invalid", long_term_safety_factor_invalid: "Long Term / Safety Factor is invalid", sigma_level_invalid: "Sigma Level is invalid", f4_calculation_not_possible: "The current input cannot run F4 calculation" };
+  if (issueLabels[issue] !== undefined) return issueLabels[issue];
+  const fieldLabels: Record<string, string> = { factorName: "Factor Description", partName: "Part Name", nominalValue: "Design Nominal", upperTolerance: "+ Tolerance", lowerTolerance: "- Tolerance" };
+  return fieldLabels[issue] === undefined ? issue : `Required field missing: ${fieldLabels[issue]}`;
+}
+
+function buildAssistantRequestContextChips(input: {
+  readonly snapshot?: F8SessionSnapshot;
+  readonly worksheetName?: string;
+  readonly selectedFactorSourceRow?: number;
+  readonly f2Report?: F2UserReport;
+  readonly f4Report?: F4WorkflowCalculationResult;
+  readonly scenarioDrafts?: readonly F8ScenarioDraft[];
+}): RequestContextChip[] {
+  const worksheet = input.f2Report !== undefined && input.f2Report.status !== "inputRejected"
+    ? input.f2Report.worksheets.find((candidate) => candidate.worksheetName === input.worksheetName)
+    : undefined;
+  const validFactorRows = worksheet?.rows.filter((row) => hasConversationFactorContext(row.actualFields.factorName, row.actualFields.nominalValue, row.actualFields.upperTolerance, row.actualFields.lowerTolerance)) ?? [];
+  const knowledgeCount = worksheet?.rows.filter((row) => typeof row.actualFields.factorName === "string" && row.actualFields.factorName.trim().length > 0).length ?? 0;
+  const calculation = input.f4Report?.calculations.find((candidate) => candidate.worksheetSelection.worksheetName === input.worksheetName);
+  const imageRow = input.selectedFactorSourceRow === undefined
+    ? worksheet?.rows.find((row) => row.imageReference !== undefined)
+    : worksheet?.rows.find((row) => row.sourceRow === input.selectedFactorSourceRow && row.imageReference !== undefined);
+  const savedScenario = resolveCurrentSavedScenario(input.snapshot, input.scenarioDrafts, input.worksheetName, calculation?.runReference);
+
+  return [
+    {
+      key: "knowledge",
+      label: "Knowledge",
+      value: countLabel(knowledgeCount, "item"),
+      included: knowledgeCount > 0,
+      detail: knowledgeCount > 0 ? `${countLabel(knowledgeCount, "governed F0 knowledge item")} are available for validation.` : "No governed F0 knowledge items are available for validation.",
+    },
+    {
+      key: "loop-image",
+      label: "Loop image",
+      value: imageRow !== undefined ? "Requested" : "Not requested",
+      included: imageRow !== undefined,
+      detail: imageRow !== undefined ? "The F1 loop image is requested for the next request." : "The F1 loop image is not requested for the next request.",
+    },
+    {
+      key: "factor-table",
+      label: "Factor table",
+      value: countLabel(validFactorRows.length, "row"),
+      included: validFactorRows.length > 0,
+      detail: validFactorRows.length > 0 ? `${countLabel(validFactorRows.length, "governed factor row")} are available for validation.` : "No governed factor rows are available for validation.",
+    },
+    {
+      key: "baseline",
+      label: "Baseline",
+      value: calculation === undefined ? "Not requested" : "Available for validation",
+      included: calculation !== undefined,
+      detail: calculation === undefined ? "No current F4 baseline metrics are requested for the next request." : `Current baseline run ${calculation.runReference} is available for validation.`,
+    },
+    {
+      key: "scenario",
+      label: "Scenario",
+      value: savedScenario === undefined ? "Not requested" : "Requested",
+      included: savedScenario !== undefined,
+      detail: savedScenario === undefined ? "No saved current-lineage Scenario is requested for the next request." : `Saved Scenario ${savedScenario.calculationReference} is requested for the next request.`,
+    },
+  ];
+}
+
+function hasConversationFactorContext(factorName: unknown, nominalValue: unknown, upperTolerance: unknown, lowerTolerance: unknown): boolean {
+  return typeof factorName === "string"
+    && factorName.trim().length > 0
+    && typeof nominalValue === "number"
+    && Number.isFinite(nominalValue)
+    && typeof upperTolerance === "number"
+    && Number.isFinite(upperTolerance)
+    && typeof lowerTolerance === "number"
+    && Number.isFinite(lowerTolerance);
+}
+
+function countLabel(count: number, unit: string): string {
+  return `${count} ${unit}${count === 1 ? "" : "s"}`;
+}
+
+function resolveCurrentSavedScenario(
+  snapshot: F8SessionSnapshot | undefined,
+  drafts: readonly F8ScenarioDraft[] | undefined,
+  worksheetName: string | undefined,
+  baselineRunReference: string | undefined,
+): F8ScenarioDraft | undefined {
+  if (snapshot === undefined || drafts === undefined || worksheetName === undefined || baselineRunReference === undefined) return undefined;
+  const workbookHash = snapshot.downstreamScopeSelection?.workbookContentHash ?? snapshot.initialScopeSelection?.workbookContentHash;
+  if (workbookHash === undefined) return undefined;
+
+  return drafts.findLast((draft) => (
+    draft.status === "saved"
+    && draft.sessionId === snapshot.sessionId
+    && draft.inputRevision === snapshot.inputRevision
+    && draft.worksheetName === worksheetName
+    && draft.baselineWorkbookHash === workbookHash
+    && draft.baselineRunReference === baselineRunReference
+  ));
+}

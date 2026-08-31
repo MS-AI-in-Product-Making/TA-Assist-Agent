@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { runF4Calculation } from "../packages/workflow-runners/dist/index.js";
 import {
   createTypedError,
-} from "../packages/contracts/dist/contracts.js";
+} from "../packages/contracts/dist/index.js";
 import { loadF4Handoffs } from "./f4-artifact-loader.mjs";
 import { calculateF4Workflow } from "./f4-calculation-workflow.mjs";
 import { compareF4WithExcel } from "./f4-excel-comparison.mjs";

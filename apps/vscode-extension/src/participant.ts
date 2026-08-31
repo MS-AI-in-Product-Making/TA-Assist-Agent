@@ -1,5 +1,7 @@
 import type { AgentTurnRequest, AgentTurnResult } from "@ai-assist/agent-runtime";
 
+import { classifyAnalyzeIntent, type TaAnalyzeIntent } from "./analyze-intent.js";
+
 export interface ParticipantRequest {
   readonly prompt: string;
   readonly command: string | undefined;
@@ -21,8 +23,9 @@ export interface ParticipantCancellation {
 }
 
 export interface ParticipantDependencies {
-  readonly sessionId: string;
+  readonly sessionId?: string;
   readonly commandId: () => string;
+  readonly handleAnalyzeIntent?: (intent: TaAnalyzeIntent) => Promise<string>;
   readonly handleTurn: (request: AgentTurnRequest, dependencies: { readonly model?: unknown }) => Promise<AgentTurnResult>;
 }
 
@@ -34,6 +37,12 @@ export async function handleParticipant(
   dependencies: ParticipantDependencies,
 ): Promise<void> {
   if (cancellation.isCancellationRequested) return;
+  const handledAnalyzeIntent = await handleAnalyzeIntent(request, stream, cancellation, dependencies);
+  if (handledAnalyzeIntent) return;
+  if (dependencies.sessionId === undefined) {
+    stream.markdown("请先使用 `/analyze` 或 `/resume <session-id>` 绑定 TA Assist session。");
+    return;
+  }
   stream.progress("正在读取 TA Assist session...");
   const result = await dependencies.handleTurn({
     text: request.prompt,
@@ -46,4 +55,34 @@ export async function handleParticipant(
   for (const action of result.actions) {
     stream.button({ command: "ta-assist.openAction", title: action.label, arguments: [action.target] });
   }
+}
+
+async function handleAnalyzeIntent(
+  request: ParticipantRequest,
+  stream: ParticipantStream,
+  cancellation: ParticipantCancellation,
+  dependencies: ParticipantDependencies,
+): Promise<boolean> {
+  const classification = classifyParticipantAnalyzeIntent(request);
+  if (classification === undefined) return false;
+  if (classification.kind === "invalid_analyze_ta") {
+    stream.markdown(classification.reason === "multiple_paths"
+      ? "Provide exactly one Windows absolute .xlsx workbook path, or omit the path and upload in TA Assist Workbench."
+      : "TA Assist analyze accepts one Windows absolute .xlsx workbook path, or no path.");
+    return true;
+  }
+  if (dependencies.handleAnalyzeIntent === undefined) return false;
+  stream.progress("正在准备 TA Assist Workbench...");
+  const response = await dependencies.handleAnalyzeIntent(classification);
+  if (cancellation.isCancellationRequested) return true;
+  stream.markdown(response);
+  return true;
+}
+
+function classifyParticipantAnalyzeIntent(request: ParticipantRequest): ReturnType<typeof classifyAnalyzeIntent> {
+  if (request.command === "analyze") {
+    const prompt = request.prompt.trim();
+    return classifyAnalyzeIntent(prompt.length === 0 ? "analyze TA workbook" : `analyze TA workbook ${prompt}`);
+  }
+  return request.command === undefined ? classifyAnalyzeIntent(request.prompt) : undefined;
 }

@@ -415,6 +415,31 @@ describe("runF1F2Confirmed", () => {
     expect(readFileSync(path.join(result.f1Root, "Feature1-Report.json"), "utf8")).toBe(f1Payload);
   });
 
+  it("identifies F1 and F2 stages precisely in progress events", () => {
+    const setup = setupRepo();
+    const emit = vi.fn();
+    const executeStage = vi.fn(({ stage, env, args }) => {
+      if (stage === "f1-selection") {
+        mkdirSync(env.AI_TVA_F1_OUTPUT_ROOT, { recursive: true });
+        writeFileSync(path.join(env.AI_TVA_F1_OUTPUT_ROOT, "Feature1-Selection.json"), JSON.stringify(selectionPrompt()));
+      } else if (stage === "f1") {
+        mkdirSync(env.AI_TVA_F1_OUTPUT_ROOT, { recursive: true });
+        writeFileSync(path.join(env.AI_TVA_F1_OUTPUT_ROOT, "Feature1-Report.json"), "{}");
+      } else {
+        mkdirSync(env.AI_TVA_F2_OUTPUT_ROOT, { recursive: true });
+        writeFileSync(path.join(env.AI_TVA_F2_OUTPUT_ROOT, "Feature2-Report.json"), JSON.stringify(validF2Report(args[1])));
+      }
+      return { stdout: "complete", stderr: "" };
+    });
+    const runContext = { ...context(setup.repositoryRoot), emit };
+    const selection = runF1F2Selection({ workbookPath: setup.workbookPath, now: fixedNow }, runContext, { executeStage });
+    runF1F2Confirmed({ workbookPath: setup.workbookPath, workbookContentHash: HASH, selectedWorksheetNames: ["Analysis-A"], selectionReference: selection.selectionReference, now: fixedNow }, runContext, { executeStage });
+
+    expect(emit).toHaveBeenCalledWith(expect.objectContaining({ kind: "stage_started", featureId: "F1", stage: "f1-selection" }));
+    expect(emit).toHaveBeenCalledWith(expect.objectContaining({ kind: "stage_started", featureId: "F1", stage: "f1" }));
+    expect(emit).toHaveBeenCalledWith(expect.objectContaining({ kind: "stage_started", featureId: "F2", stage: "f2" }));
+  });
+
   it("returns the same structured result when confirmation is repeated after completion", async () => {
     const setup = setupRepo();
     const executeStage = vi.fn(({ stage, env, args }) => {
@@ -456,6 +481,39 @@ describe("runF1F2Confirmed", () => {
 
     expect(duplicate).toEqual(completed);
     expect(duplicateExecuteStage).not.toHaveBeenCalled();
+  });
+
+  it("refreshes completed F2 into a new run without rerunning F1 or overwriting prior artifacts", () => {
+    const setup = setupRepo();
+    const executeStage = vi.fn(({ stage, env, args }) => {
+      if (stage === "f1-selection") {
+        mkdirSync(env.AI_TVA_F1_OUTPUT_ROOT, { recursive: true });
+        writeFileSync(path.join(env.AI_TVA_F1_OUTPUT_ROOT, "Feature1-Selection.json"), JSON.stringify(selectionPrompt()));
+      } else if (stage === "f1") {
+        mkdirSync(env.AI_TVA_F1_OUTPUT_ROOT, { recursive: true });
+        writeFileSync(path.join(env.AI_TVA_F1_OUTPUT_ROOT, "Feature1-Report.json"), '{"artifact":"f1"}');
+      } else {
+        mkdirSync(env.AI_TVA_F2_OUTPUT_ROOT, { recursive: true });
+        writeFileSync(path.join(env.AI_TVA_F2_OUTPUT_ROOT, "Feature2-Report.json"), JSON.stringify(validF2Report(args[1])));
+      }
+      return { stdout: `${stage} complete`, stderr: "" };
+    });
+    const selection = runF1F2Selection({ workbookPath: setup.workbookPath, now: fixedNow }, context(setup.repositoryRoot), { executeStage });
+    const completed = runF1F2Confirmed({ workbookPath: setup.workbookPath, workbookContentHash: HASH, selectedWorksheetNames: ["Analysis-A"], selectionReference: selection.selectionReference, now: fixedNow }, context(setup.repositoryRoot), { executeStage });
+    const priorReport = readFileSync(path.join(completed.f2Root, "Feature2-Report.json"), "utf8");
+    const refreshExecuteStage = vi.fn(({ stage, env, args }) => {
+      if (stage !== "f2") throw new Error("refresh should only execute F2");
+      mkdirSync(env.AI_TVA_F2_OUTPUT_ROOT, { recursive: true });
+      writeFileSync(path.join(env.AI_TVA_F2_OUTPUT_ROOT, "Feature2-Report.json"), JSON.stringify(validF2Report(args[1])));
+      return { stdout: "f2 refreshed", stderr: "" };
+    });
+
+    const refreshed = runF1F2Confirmed({ workbookPath: setup.workbookPath, workbookContentHash: HASH, selectedWorksheetNames: ["Analysis-A"], selectionReference: selection.selectionReference, refreshF2: true, now: () => new Date("2026-08-04T00:00:00.000Z") }, context(setup.repositoryRoot), { executeStage: refreshExecuteStage });
+
+    expect(refreshExecuteStage.mock.calls.map(([request]) => request.stage)).toEqual(["f2"]);
+    expect(refreshed.f1Root).toBe(completed.f1Root);
+    expect(refreshed.f2Root).not.toBe(completed.f2Root);
+    expect(readFileSync(path.join(completed.f2Root, "Feature2-Report.json"), "utf8")).toBe(priorReport);
   });
 
   it("prefers a fresh waiting selection over an older completed run for the same workbook hash", () => {

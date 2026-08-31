@@ -13,7 +13,7 @@ export function F2WorksheetStatus({ report }: F2WorksheetStatusProps) {
           <h2 id="f2-title">Ready / Blocked worksheets</h2>
         </div>
       </div>
-      {report === undefined ? <p className="support-text">F2 artifact 尚未可见。</p> : null}
+      {report === undefined ? <p className="support-text">The F2 artifact is not visible yet.</p> : null}
       {report !== undefined ? (
         <>
           <p className="support-text">Ready {report.summary.readyWorksheetCount} / Blocked {report.summary.blockedWorksheetCount}</p>

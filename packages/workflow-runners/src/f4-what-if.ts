@@ -11,12 +11,14 @@ export interface F4WhatIfPatch {
 export interface F4WhatIfRequest {
   readonly draftId: string;
   readonly baselineRequest: CalculationRequest;
-  readonly factor: {
+  readonly factor?: {
     readonly worksheetName: string;
     readonly tableId: string;
     readonly sourceRow: number;
   };
-  readonly patch: F4WhatIfPatch;
+  readonly patch?: F4WhatIfPatch;
+  readonly factorOverrides?: readonly ({ readonly worksheetName: string; readonly tableId: string; readonly sourceRow: number } & Omit<F4WhatIfPatch, "additionalMeanShift">)[];
+  readonly systemSpecification?: { readonly lowerSpecLimit?: number; readonly upperSpecLimit?: number; readonly additionalMeanShift?: number };
   readonly signedDirectionEvidence?: true;
 }
 
@@ -35,7 +37,17 @@ export type F4WhatIfResult = {
     readonly cpk: number;
     readonly statisticalMargin: number;
     readonly worstCaseMargin: number;
+    readonly lowerSpecLimit: number;
+    readonly upperSpecLimit: number;
+    readonly meanShift: number;
+    readonly yield: number;
+    readonly dpm: number;
+    readonly statisticalLower: number;
+    readonly statisticalUpper: number;
+    readonly worstCaseLower: number;
+    readonly worstCaseUpper: number;
   };
+  readonly factors: readonly { readonly worksheetName: string; readonly tableId: string; readonly sourceRow: number; readonly mean: number; readonly tolerance: number; readonly oneSigma: number; readonly contribution: number }[];
   readonly traceReferences: readonly {
     readonly outputField: string;
     readonly formulaId: string;
@@ -44,29 +56,27 @@ export type F4WhatIfResult = {
 };
 
 export function runF4WhatIfCalculation(request: F4WhatIfRequest): F4WhatIfResult {
-  if ((request.patch.nominalValue !== undefined || request.patch.additionalMeanShift !== undefined)
-    && request.signedDirectionEvidence !== true) {
-    return { status: "calculation_not_possible", reasonCode: "DIRECTION_EVIDENCE_REQUIRED" };
-  }
-
-  const factorOverride = {
+  const legacyOverride = request.factor === undefined || request.patch === undefined ? [] : [{
     ...request.factor,
     ...(request.patch.nominalValue === undefined ? {} : { nominalValue: request.patch.nominalValue }),
     ...(request.patch.upperTolerance === undefined ? {} : { upperTolerance: request.patch.upperTolerance }),
     ...(request.patch.lowerTolerance === undefined ? {} : { lowerTolerance: request.patch.lowerTolerance }),
-  };
-  const hasFactorOverride = request.patch.nominalValue !== undefined
-    || request.patch.upperTolerance !== undefined
-    || request.patch.lowerTolerance !== undefined;
+  }];
+  const factorOverrides = request.factorOverrides ?? legacyOverride;
+  if (factorOverrides.some((override) => override.nominalValue !== undefined)
+    && request.signedDirectionEvidence !== true) {
+    return { status: "calculation_not_possible", reasonCode: "DIRECTION_EVIDENCE_REQUIRED" };
+  }
+
+  const legacyMeanShift = request.patch?.additionalMeanShift;
+  const systemSpecification = { ...request.systemSpecification, ...(legacyMeanShift === undefined ? {} : { additionalMeanShift: legacyMeanShift }) };
   const calculation = calculateF6Scenario({
     baselineRequest: request.baselineRequest,
     scenario: {
       scenarioId: `what-if:${request.draftId}`,
       optionKind: "improve_supplier_capability",
-      factorOverrides: hasFactorOverride ? [factorOverride] : [],
-      ...(request.patch.additionalMeanShift === undefined
-        ? {}
-        : { systemSpecification: { additionalMeanShift: request.patch.additionalMeanShift } }),
+      factorOverrides: [...factorOverrides],
+      ...(Object.keys(systemSpecification).length === 0 ? {} : { systemSpecification }),
     },
   });
   const scenario = calculation.scenarios.at(-1)?.calculation;
@@ -89,7 +99,17 @@ export function runF4WhatIfCalculation(request: F4WhatIfRequest): F4WhatIfResult
       cpk: scenario.capability.cpk,
       statisticalMargin: Math.min(statisticalLowerMargin, statisticalUpperMargin),
       worstCaseMargin: Math.min(worstCaseLowerMargin, worstCaseUpperMargin),
+      lowerSpecLimit: scenario.capability.lowerSpecLimit,
+      upperSpecLimit: scenario.capability.upperSpecLimit,
+      meanShift: scenario.system.additionalMeanShift,
+      yield: scenario.capability.yield,
+      dpm: scenario.capability.totalDpm,
+      statisticalLower: scenario.system.mean - scenario.system.rssSigma * scenario.capability.targetSigmaLevel,
+      statisticalUpper: scenario.system.mean + scenario.system.rssSigma * scenario.capability.targetSigmaLevel,
+      worstCaseLower: scenario.system.worstCaseLower,
+      worstCaseUpper: scenario.system.worstCaseUpper,
     },
+    factors: scenario.factors.map((factor) => ({ worksheetName: factor.source.worksheetName, tableId: factor.source.tableId, sourceRow: factor.source.sourceRow, mean: factor.mean, tolerance: factor.halfTolerance, oneSigma: factor.sigma, contribution: factor.contribution })),
     traceReferences: scenario.traceRecords.map(({ outputField, formulaId, formulaVersion }) => ({ outputField, formulaId, formulaVersion })),
   };
 }

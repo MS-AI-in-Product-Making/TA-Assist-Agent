@@ -46,10 +46,43 @@ describe("workbench browser API", () => {
     expect(fetchMock.mock.calls[1]).toEqual(["/api/sessions", expect.objectContaining({ method: "POST", body: "{}" })]);
   });
 
+  it("never replaces a requested session with a random new session when authentication fails", async () => {
+    vi.stubGlobal("location", { href: "http://127.0.0.1/?session=expected-session" });
+    vi.stubGlobal("history", { replaceState: vi.fn() });
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: "session_scope_rejected" }), { status: 403 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(createWorkbenchApi().bootstrap()).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith("/api/sessions/expected-session", expect.anything());
+  });
+
   it("validates F4 calculation artifacts instead of silently discarding them", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 200 })));
 
     await expect(createWorkbenchApi().loadArtifactJson("session-1", "f4-current", "f4_calculation")).rejects.toThrow();
+  });
+
+  it("reads the sanitized ADO projection and confirms a preview with CSRF", async () => {
+    const projection = { contractVersion: "f8-ado-projection-v1", sessionId: "session-1", state: "validation_pending", actionId: "ado-validation:session-1:2", expectedRevision: 2 };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(projection), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ csrfToken: "csrf" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ actionId: "ado-write:session-1:2" }), { status: 201 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const api = createWorkbenchApi();
+
+    expect(await api.readAdoProjection("session-1")).toEqual(projection);
+    await api.confirmAdoWrite("session-1", {
+      contractVersion: "f8-ado-write-confirmation-v1",
+      validationActionId: "ado-validation:session-1:2",
+      expectedRevision: 2,
+      target: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx" },
+      contentHash: "c".repeat(64),
+      confirmationHash: "b".repeat(64),
+      confirmed: true,
+    });
+
+    expect(fetchMock.mock.calls[2]).toEqual(["/api/sessions/session-1/ado/confirm", expect.objectContaining({ method: "POST", headers: expect.objectContaining({ "x-csrf-token": "csrf" }) })]);
   });
 
   it("uploads a multipart workbook then submits only its managed artifact reference", async () => {
@@ -69,6 +102,24 @@ describe("workbench browser API", () => {
       command: "upload_workbook",
       payload: { artifactId: "managed-workbook", inputClassification: "confidential" },
     });
+  });
+
+  it("refreshes CSRF after browser session rotation before the first upload", async () => {
+    vi.stubGlobal("location", { href: "http://127.0.0.1/" });
+    vi.stubGlobal("history", { replaceState: vi.fn() });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ csrfToken: "bootstrap-csrf" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(snapshot()), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ turns: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ csrfToken: "session-csrf" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ artifactId: "managed-workbook", contentHash: "a".repeat(64) }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(snapshot()), { status: 202 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const api = createWorkbenchApi();
+    await api.bootstrap();
+    await api.uploadWorkbook("session-1", 1, new File(["workbook"], "book.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+    expect(fetchMock.mock.calls[3]?.[0]).toBe("/api/csrf");
+    expect((fetchMock.mock.calls[4]?.[1] as RequestInit).headers).toMatchObject({ "x-csrf-token": "session-csrf" });
   });
 
   it("reconnects fetch SSE with Last-Event-ID and refreshes after replay truncation", async () => {
@@ -92,6 +143,20 @@ describe("workbench browser API", () => {
     expect(fetchMock.mock.calls[2]![1]).toMatchObject({ headers: { "last-event-id": "8" }, credentials: "same-origin" });
     expect(snapshots).toEqual([8, 9]);
     vi.useRealTimers();
+  });
+
+  it("delivers governed runner progress from the session event stream", async () => {
+    const progress = { kind: "stage_started", featureId: "F2", stage: "report", timestamp: "2026-08-28T00:00:00.000Z" };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(streamResponse(`id: 3\nevent: runner_progress\ndata: ${JSON.stringify(progress)}\n\n`)));
+    const onProgress = vi.fn();
+    const api = createWorkbenchApi();
+    const dispose = api.subscribe("session-1", { onSnapshot: vi.fn(), onProgress, onError: vi.fn() });
+
+    await Promise.resolve();
+    await Promise.resolve();
+    dispose();
+
+    expect(onProgress).toHaveBeenCalledWith(progress, "3");
   });
 });
 

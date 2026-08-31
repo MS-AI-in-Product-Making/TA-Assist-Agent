@@ -17,7 +17,7 @@ export function ErrorPanel({ error, onDismiss }: ErrorPanelProps) {
           <p className="eyebrow">Safe error</p>
           <h2>{error.code}</h2>
         </div>
-        <button type="button" className="button button--ghost" onClick={onDismiss}>关闭</button>
+        <button type="button" className="button button--ghost" onClick={onDismiss}>Close</button>
       </div>
       <p>{error.summary}</p>
       <p className="support-text">{error.suggestedAction}</p>

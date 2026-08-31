@@ -1,5 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { WhatIfEditor } from "./WhatIfEditor.js";
@@ -27,17 +26,16 @@ afterEach(() => {
 
 describe("WhatIfEditor", () => {
   it("recalculates immediately on Enter and resets to baseline", async () => {
-    const user = userEvent.setup();
     const calculate = vi.fn(async () => calculated);
     render(<WhatIfEditor baseline={baseline} api={{ calculate, save: vi.fn() }} />);
 
     const upper = screen.getByLabelText("AJ center to C-bucket +Tol");
-    await user.clear(upper);
-    await user.type(upper, "0.040{Enter}");
+    fireEvent.change(upper, { target: { value: "0.040" } });
+    fireEvent.keyDown(upper, { key: "Enter" });
 
-    expect(calculate).toHaveBeenCalledWith(expect.objectContaining({ upperTolerance: 0.04 }));
-    expect(screen.getByTestId("draft-cpk")).toHaveTextContent("1.550");
-    await user.click(screen.getByRole("button", { name: "恢复 Baseline" }));
+    await waitFor(() => expect(calculate).toHaveBeenCalledWith(expect.objectContaining({ upperTolerance: 0.04 })));
+    await waitFor(() => expect(screen.getByTestId("draft-cpk")).toHaveTextContent("1.550"));
+    fireEvent.click(screen.getByRole("button", { name: "Restore baseline" }));
     expect(upper).toHaveValue(0.05);
   });
 
@@ -58,8 +56,8 @@ describe("WhatIfEditor", () => {
     await act(async () => vi.advanceTimersByTimeAsync(250));
     expect(calculate).toHaveBeenCalledOnce();
     expect(screen.getByTestId("draft-cpk")).toHaveTextContent("1.550");
-    expect(screen.getByRole("alert")).toHaveTextContent("请输入有效数值");
-    expect(screen.getByRole("button", { name: "保存 Draft" })).toBeDisabled();
+    expect(screen.getByRole("alert")).toHaveTextContent("Enter a valid numeric value");
+    expect(screen.getByRole("button", { name: "Save draft" })).toBeDisabled();
   });
 
   it("ignores a stale calculation that resolves after the newest edit", async () => {
@@ -76,7 +74,7 @@ describe("WhatIfEditor", () => {
     fireEvent.keyDown(upper, { key: "Enter" });
     fireEvent.change(upper, { target: { value: "0.03" } });
     fireEvent.keyDown(upper, { key: "Enter" });
-    expect(await screen.findByTestId("draft-cpk")).toHaveTextContent("1.800");
+    await waitFor(() => expect(screen.getByTestId("draft-cpk")).toHaveTextContent("1.800"));
 
     await act(async () => resolveFirst(calculated));
     expect(screen.getByTestId("draft-cpk")).toHaveTextContent("1.800");
@@ -91,7 +89,7 @@ describe("WhatIfEditor", () => {
     expect(await screen.findByTestId("draft-cpk")).toHaveTextContent("1.550");
     fireEvent.change(upper, { target: { value: "0.03" } });
     fireEvent.keyDown(upper, { key: "Enter" });
-    expect(await screen.findByRole("alert")).toHaveTextContent("试算失败");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Preview failed");
     expect(screen.getByTestId("draft-cpk")).toHaveTextContent("1.550");
   });
 });

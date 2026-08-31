@@ -9,6 +9,7 @@ import {
   f8SessionEventSchema,
   f8SessionSnapshotSchema,
   f8ScenarioDraftSchema,
+  f8AdoProjectionSchema,
   typedErrorSchema,
   type ConversationTurn,
   type DrawingGovernanceResultV2,
@@ -17,6 +18,9 @@ import {
   type F6OptimizationResultV2,
   type F2UserReport,
   type F8ScenarioDraft,
+  type F8AdoProjection,
+  type F8AdoWriteConfirmation,
+  type F8WorksheetWhatIfCalculationRequest,
   type TypedError,
 } from "@ai-assist/contracts";
 import type { F8CommandKind, F8PublicSessionCommand, F8SessionSnapshot } from "./workbench-session.js";
@@ -30,7 +34,15 @@ export interface BootstrapResult {
 
 export interface WorkbenchSubscriptionHandlers {
   readonly onSnapshot: (snapshot: F8SessionSnapshot, eventId?: string) => void;
+  readonly onProgress?: (progress: RunnerProgressEvent, eventId?: string) => void;
   readonly onError: (error: TypedError) => void;
+}
+
+export interface RunnerProgressEvent {
+  readonly kind: "stage_started" | "stage_completed" | "stage_failed" | "artifact_written";
+  readonly featureId: "F0" | "F1" | "F2" | "F3" | "F4" | "F5" | "F6" | "F7";
+  readonly stage: string;
+  readonly timestamp: string;
 }
 
 export interface ParsedSseEvent {
@@ -83,14 +95,21 @@ export interface WorkbenchApi {
     command: F8CommandKind,
     payload: TPayload,
   ): Promise<F8SessionSnapshot>;
-  calculateWhatIf(sessionId: string, input: { readonly draftId: string; readonly worksheetName: string; readonly tableId: string; readonly sourceRow: number; readonly inputRevision: number; readonly patch: NonNullable<F8ScenarioDraft["change"]> }): Promise<F8ScenarioDraft>;
-  appendConversationTurn(turn: ConversationTurn): Promise<ConversationTurn>;
+  calculateWhatIf(sessionId: string, input: { readonly draftId: string; readonly worksheetName: string; readonly tableId: string; readonly sourceRow: number; readonly inputRevision: number; readonly patch: NonNullable<F8ScenarioDraft["change"]>; readonly signedDirectionEvidence?: true }): Promise<F8ScenarioDraft>;
+  calculateWorksheetWhatIf(sessionId: string, input: F8WorksheetWhatIfCalculationRequest): Promise<F8ScenarioDraft>;
+  appendConversationTurn(turn: ConversationTurn, selection: TaConversationSelection): Promise<ConversationTurn>;
+  readConversation(sessionId: string): Promise<readonly ConversationTurn[]>;
+  readAdoProjection(sessionId: string): Promise<F8AdoProjection>;
+  confirmAdoWrite(sessionId: string, confirmation: F8AdoWriteConfirmation): Promise<void>;
+  artifactUrl(sessionId: string, artifactId: string, disposition?: "inline" | "attachment"): string;
   loadArtifactJson(
     sessionId: string,
     artifactId: string,
-    kind: "f2_report" | "f3_report" | "f4_calculation" | "f4_report" | "f5_report" | "f6_report",
+    kind: "f2_report" | "f3_report" | "f4_calculation" | "f4_report" | "f5_report" | "f6_optimization" | "f6_report",
   ): Promise<F2UserReport | DrawingGovernanceResultV2 | F4WorkflowCalculationResult | F5DataInterpretationResult | F6OptimizationResultV2 | undefined>;
 }
+
+export interface TaConversationSelection { readonly worksheetName: string; readonly tableId?: string; readonly sourceRow?: number; readonly factorName?: string; readonly calculationReference?: string }
 
 const SESSION_QUERY_KEY = "session";
 
@@ -102,7 +121,7 @@ export function createWorkbenchApi(): WorkbenchApi {
       const requestedSessionId = readSessionIdFromUrl();
       const snapshot = requestedSessionId === undefined
         ? await createSession()
-        : await readSession(requestedSessionId).catch(async () => createSession());
+        : await readSession(requestedSessionId);
       persistSessionId(snapshot.sessionId);
       const conversation = await readConversation(snapshot.sessionId);
       return { sessionId: snapshot.sessionId, snapshot, conversation };
@@ -136,7 +155,7 @@ export function createWorkbenchApi(): WorkbenchApi {
             }
           } catch (error) {
             if (controller.signal.aborted) return;
-            handlers.onError(normalizeError(error, "transient_error", "工作台事件流已中断。", "等待自动重连，或刷新工作台。"));
+            handlers.onError(normalizeError(error, "transient_error", "The workspace event stream was interrupted.", "Wait for automatic reconnection or refresh the workspace."));
           }
           if (!controller.signal.aborted) await delay(250, controller.signal);
         }
@@ -158,7 +177,7 @@ export function createWorkbenchApi(): WorkbenchApi {
       });
       const upload = await parseJsonResponse(uploadResponse) as { readonly artifactId?: unknown; readonly contentHash?: unknown };
       if (typeof upload.artifactId !== "string" || typeof upload.contentHash !== "string") {
-        throw createTypedError({ code: "validation_error", summary: "服务器未返回受管 workbook 引用。", suggestedAction: "重新上传 workbook。", affectedInputReferences: [sessionId] });
+        throw createTypedError({ code: "validation_error", summary: "The server did not return a governed workbook reference.", suggestedAction: "Upload the workbook again.", affectedInputReferences: [sessionId] });
       }
       const snapshot = await submitCommandInternal({
         sessionId,
@@ -183,14 +202,37 @@ export function createWorkbenchApi(): WorkbenchApi {
       });
       return f8ScenarioDraftSchema.parse(await parseJsonResponse(response));
     },
-    async appendConversationTurn(turn) {
+    async calculateWorksheetWhatIf(sessionId, input) {
+      const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/what-if/calculate-worksheet`, {
+        method: "POST", credentials: "same-origin", headers: await mutationHeaders(), body: JSON.stringify(input),
+      });
+      return f8ScenarioDraftSchema.parse(await parseJsonResponse(response));
+    },
+    async appendConversationTurn(turn, selection) {
       const response = await fetch(`/api/sessions/${encodeURIComponent(turn.sessionId)}/conversation`, {
         method: "POST",
         credentials: "same-origin",
         headers: await mutationHeaders(),
-        body: JSON.stringify(turn),
+        body: JSON.stringify({ turn, selection }),
       });
       return conversationTurnSchema.parse(await parseJsonResponse(response));
+    },
+    readConversation,
+    async readAdoProjection(sessionId) {
+      const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/ado`, { credentials: "same-origin" });
+      return f8AdoProjectionSchema.parse(await parseJsonResponse(response));
+    },
+    async confirmAdoWrite(sessionId, confirmation) {
+      const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/ado/confirm`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: await mutationHeaders(),
+        body: JSON.stringify(confirmation),
+      });
+      await parseJsonResponse(response);
+    },
+    artifactUrl(sessionId, artifactId, disposition = "attachment") {
+      return `/api/sessions/${encodeURIComponent(sessionId)}/artifacts/${encodeURIComponent(artifactId)}?disposition=${disposition}`;
     },
     async loadArtifactJson(sessionId, artifactId, kind) {
       const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/artifacts/${encodeURIComponent(artifactId)}`, {
@@ -211,6 +253,7 @@ export function createWorkbenchApi(): WorkbenchApi {
           return f4WorkflowCalculationResultSchema.parse(data);
         case "f5_report":
           return f5DataInterpretationResultSchema.parse(data);
+        case "f6_optimization":
         case "f6_report":
           return f6OptimizationResultSchema.parse(data);
         default:
@@ -226,7 +269,9 @@ export function createWorkbenchApi(): WorkbenchApi {
       headers: await mutationHeaders(),
       body: "{}",
     });
-    return f8SessionSnapshotSchema.parse(await parseJsonResponse(response));
+    const snapshot = f8SessionSnapshotSchema.parse(await parseJsonResponse(response));
+    csrfToken = undefined;
+    return snapshot;
   }
 
   async function readSession(sessionId: string): Promise<F8SessionSnapshot> {
@@ -280,8 +325,8 @@ export function createWorkbenchApi(): WorkbenchApi {
     if (typeof data.csrfToken !== "string" || data.csrfToken.length === 0) {
       throw createTypedError({
         code: "policy_denied",
-        summary: "工作台未获取到 CSRF token。",
-        suggestedAction: "刷新工作台以重新建立受控浏览器会话。",
+        summary: "The workspace did not receive a CSRF token.",
+        suggestedAction: "Refresh the workspace to re-establish the governed browser session.",
         affectedInputReferences: ["csrf"],
       });
     }
@@ -301,7 +346,7 @@ async function parseJsonResponse(response: Response): Promise<unknown> {
   const parsedError = typedErrorSchema.safeParse((data as { readonly error?: unknown } | undefined)?.error);
   throw parsedError.success
     ? createTypedError(parsedError.data)
-    : normalizeError(data, "validation_error", "工作台请求被拒绝。", "检查当前状态后重试。", response.status);
+    : normalizeError(data, "validation_error", "The workspace request was rejected.", "Review the current state and try again.", response.status);
 }
 
 function normalizeError(
@@ -344,6 +389,11 @@ function parseSseBlock(block: string): ParsedSseEvent | undefined {
 function deliverSsePayload(event: ParsedSseEvent, handlers: WorkbenchSubscriptionHandlers): void {
   try {
     const payload = JSON.parse(event.data) as unknown;
+    const progress = parseRunnerProgress(payload);
+    if (event.event === "runner_progress" && progress !== undefined) {
+      handlers.onProgress?.(progress, event.id);
+      return;
+    }
     const parsedSnapshot = f8SessionSnapshotSchema.safeParse(payload);
     if (parsedSnapshot.success) {
       handlers.onSnapshot(parsedSnapshot.data, event.id);
@@ -354,8 +404,17 @@ function deliverSsePayload(event: ParsedSseEvent, handlers: WorkbenchSubscriptio
       handlers.onSnapshot(parsedEvent.data.snapshot, event.id ?? parsedEvent.data.eventId);
     }
   } catch (error) {
-    handlers.onError(normalizeError(error, "transient_error", "浏览器事件流解析失败。", "刷新工作台后重试。"));
+    handlers.onError(normalizeError(error, "transient_error", "Browser event stream parsing failed.", "Refresh the workspace and try again."));
   }
+}
+
+function parseRunnerProgress(value: unknown): RunnerProgressEvent | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const candidate = value as Partial<RunnerProgressEvent>;
+  if (!["stage_started", "stage_completed", "stage_failed", "artifact_written"].includes(candidate.kind ?? "")) return undefined;
+  if (!["F0", "F1", "F2", "F3", "F4", "F5", "F6", "F7"].includes(candidate.featureId ?? "")) return undefined;
+  if (typeof candidate.stage !== "string" || candidate.stage.length === 0 || typeof candidate.timestamp !== "string" || Number.isNaN(Date.parse(candidate.timestamp))) return undefined;
+  return candidate as RunnerProgressEvent;
 }
 
 function delay(milliseconds: number, signal: AbortSignal): Promise<void> {

@@ -1,11 +1,261 @@
 import { z } from "zod";
-import { f6OptimizationTargetsSchema, worksheetSelectionConfirmationSchema, workbookCatalogFileNameSchema } from "./contracts.js";
+import { distributionSchema, f6OptimizationTargetsSchema, worksheetSelectionConfirmationSchema, workbookCatalogFileNameSchema } from "./contracts.js";
 import { typedErrorSchema } from "./errors.js";
 
 const nonEmptyStringSchema = z.string().min(1);
 const nonEmptyStringArraySchema = z.array(nonEmptyStringSchema);
 const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 const f8TypedErrorSchema = typedErrorSchema.strict();
+const SUPPORTED_GOVERNED_IMAGE_MEDIA_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+const CREDENTIAL_LIKE_PATTERN = /\b(?:Authorization\s*[:=]\s*(?:Bearer\s+)?[^\s;|<>{}"'`]+|Bearer\s+[A-Za-z0-9._~+/=-]{6,}|(?:password|token|access[ _-]?token|secret(?:s)?|api[ _-]?key)\s*[:=]\s*[^\s;|<>{}"'`]+)/iu;
+
+function containsLocalFilesystemPath(value: string): boolean {
+  const normalized = value.trim();
+  return /(?:^|[^A-Za-z0-9])(?:[A-Za-z]:[\\/](?![\\/])|\\\\[^\\/]+[\\/][^\\/]+|file:\/\/|\/(?:Users|home|var|tmp|private|opt|mnt)\/)/.test(normalized);
+}
+
+function containsCredentialLikePromptText(value: string): boolean {
+  return CREDENTIAL_LIKE_PATTERN.test(value.trim());
+}
+
+function rejectLocalFilesystemPath(value: string, context: z.RefinementCtx, message: string): void {
+  if (containsLocalFilesystemPath(value)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message });
+  }
+}
+
+const boundedContextIdSchema = z.string().trim().min(1).max(160).superRefine((value, context) => {
+  rejectLocalFilesystemPath(value, context, "local filesystem paths are not allowed in identity strings");
+});
+const boundedContextNameSchema = z.string().trim().min(1).max(160).superRefine((value, context) => {
+  rejectLocalFilesystemPath(value, context, "local filesystem paths are not allowed in identity strings");
+});
+const boundedContextUnitSchema = z.string().trim().min(1).max(32);
+
+const promptVisibleIdentitySchema = nonEmptyStringSchema.superRefine((value, context) => {
+  rejectLocalFilesystemPath(value, context, "local filesystem paths are not allowed in identity strings");
+});
+
+const boundedContextTextSchema = z.string().trim().min(1).max(280).superRefine((value, context) => {
+  if (containsLocalFilesystemPath(value)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "local filesystem paths are not allowed in model context text" });
+  }
+  if (containsCredentialLikePromptText(value)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "credential-like strings are not allowed in model context text" });
+  }
+});
+
+const taWorksheetContextSchema = z.object({
+  worksheetName: boundedContextNameSchema,
+  tableId: boundedContextIdSchema.optional(),
+  sourceRow: z.number().int().positive().optional(),
+  factorName: boundedContextNameSchema.optional(),
+  calculationReference: boundedContextIdSchema.optional(),
+}).strict().superRefine((worksheet, context) => {
+  const hasAnyFactorIdentity = worksheet.tableId !== undefined || worksheet.sourceRow !== undefined || worksheet.factorName !== undefined;
+  if (hasAnyFactorIdentity && (worksheet.tableId === undefined || worksheet.sourceRow === undefined || worksheet.factorName === undefined)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet factor identity must include tableId, sourceRow, and factorName together" });
+  }
+});
+
+const taF0CapabilityStatusSchema = z.enum([
+  "in_library_recommended",
+  "in_library_tolerance_outside",
+  "in_library_distribution_differs",
+  "in_library_tolerance_and_distribution_differ",
+  "outside_library",
+  "internal_within_guidance",
+  "internal_guidance_exceeded",
+  "f0_information_insufficient",
+  "non_f0_process_category",
+  "unable_to_check",
+]);
+
+const taF0InformationReasonSchema = z.enum(["missing_process_context", "invalid_total_band", "guidance_unknown"]);
+
+const taKnowledgeRecommendationSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("public"),
+    capabilityEntryId: boundedContextIdSchema,
+    toleranceMin: z.number().finite(),
+    toleranceMax: z.number().finite(),
+    unit: z.literal("mm"),
+    distribution: distributionSchema,
+  }).strict(),
+  z.object({
+    kind: z.literal("internal-guidance"),
+    assessedTotalBand: z.number().finite().positive(),
+    maximumRecommendedTotalBand: z.number().finite().positive(),
+    unit: z.literal("mm"),
+    matchedEntryId: boundedContextIdSchema,
+    sourceFileHash: sha256Schema,
+  }).strict(),
+]);
+
+const taKnowledgeContextItemSchema = z.object({
+  inputRevision: z.number().int().nonnegative(),
+  worksheetName: boundedContextNameSchema,
+  tableId: boundedContextIdSchema,
+  sourceRow: z.number().int().positive(),
+  factorName: boundedContextNameSchema,
+  capabilityStatus: taF0CapabilityStatusSchema,
+  f0KnowledgeBaseVersion: z.enum(["v1", "internal-v1"]).optional(),
+  summary: boundedContextTextSchema,
+  recommendation: taKnowledgeRecommendationSchema.optional(),
+  f0InformationReason: taF0InformationReasonSchema.optional(),
+}).strict().superRefine((item, context) => {
+  const publicMatch = item.capabilityStatus.startsWith("in_library_");
+  const internalMatch = item.capabilityStatus === "internal_within_guidance" || item.capabilityStatus === "internal_guidance_exceeded";
+  if (publicMatch && (item.f0KnowledgeBaseVersion !== "v1" || item.recommendation?.kind !== "public")) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "public F0 knowledge items require a v1 public recommendation", path: ["recommendation"] });
+  }
+  if (internalMatch && (item.f0KnowledgeBaseVersion !== "internal-v1" || item.recommendation?.kind !== "internal-guidance")) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "internal F0 knowledge items require an internal-v1 recommendation", path: ["recommendation"] });
+  }
+  if (!publicMatch && !internalMatch && item.recommendation !== undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "unmatched F0 knowledge items must not include a recommendation", path: ["recommendation"] });
+  }
+  if (item.capabilityStatus === "f0_information_insufficient") {
+    if (item.f0KnowledgeBaseVersion !== "internal-v1" || item.f0InformationReason === undefined) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "insufficient F0 knowledge items require an internal-v1 information reason", path: ["f0InformationReason"] });
+    }
+  } else if (item.f0InformationReason !== undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "only insufficient F0 knowledge items may include an information reason", path: ["f0InformationReason"] });
+  }
+  if ((item.capabilityStatus === "non_f0_process_category" || item.capabilityStatus === "unable_to_check") && item.f0KnowledgeBaseVersion !== undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "knowledge items without an F0 decision must not claim an F0 version", path: ["f0KnowledgeBaseVersion"] });
+  }
+});
+
+const taArtifactContextReferenceSchema = z.object({
+  artifactId: boundedContextIdSchema,
+  kind: z.literal("f1_image"),
+  inputRevision: z.number().int().nonnegative(),
+  worksheetName: boundedContextNameSchema,
+  contentHash: sha256Schema,
+  mediaType: z.string().superRefine((value, context) => {
+    if (!SUPPORTED_GOVERNED_IMAGE_MEDIA_TYPES.has(value)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "only supported F1 image media types are allowed in model context" });
+    }
+  }),
+  description: boundedContextTextSchema.optional(),
+}).strict();
+
+const taFactorContextRowSchema = z.object({
+  inputRevision: z.number().int().nonnegative(),
+  worksheetName: boundedContextNameSchema,
+  tableId: boundedContextIdSchema,
+  sourceRow: z.number().int().positive(),
+  factorName: boundedContextNameSchema,
+  partName: boundedContextNameSchema.optional(),
+  unit: boundedContextUnitSchema,
+  nominalValue: z.number().finite(),
+  upperTolerance: z.number().finite(),
+  lowerTolerance: z.number().finite(),
+  distribution: distributionSchema.optional(),
+  mean: z.number().finite().optional(),
+  tolerance: z.number().finite().nonnegative().optional(),
+  oneSigma: z.number().finite().nonnegative().optional(),
+  contribution: z.number().finite().nonnegative().optional(),
+  notes: boundedContextTextSchema.optional(),
+}).strict();
+
+const taMetricContextSchema = z.object({
+  inputRevision: z.number().int().nonnegative(),
+  calculationReference: boundedContextIdSchema,
+  mean: z.number().finite(),
+  rssSigma: z.number().finite().nonnegative(),
+  cp: z.number().finite(),
+  cpkL: z.number().finite(),
+  cpkU: z.number().finite(),
+  cpk: z.number().finite(),
+  statisticalMargin: z.number().finite(),
+  worstCaseMargin: z.number().finite(),
+  lowerSpecLimit: z.number().finite().optional(),
+  upperSpecLimit: z.number().finite().optional(),
+  meanShift: z.number().finite().optional(),
+  yield: z.number().finite().optional(),
+  dpm: z.number().finite().nonnegative().optional(),
+  statisticalLower: z.number().finite().optional(),
+  statisticalUpper: z.number().finite().optional(),
+  worstCaseLower: z.number().finite().optional(),
+  worstCaseUpper: z.number().finite().optional(),
+}).strict();
+
+export const taModelContextEnvelopeSchema = z.object({
+  contractVersion: z.literal("ta-model-context-envelope-v1"),
+  session: z.object({
+    sessionId: boundedContextIdSchema,
+    revision: z.number().int().nonnegative(),
+  }).strict(),
+  inputRevision: z.number().int().nonnegative(),
+  worksheet: taWorksheetContextSchema,
+  f0Knowledge: z.array(taKnowledgeContextItemSchema).max(128),
+  toleranceLoopImage: taArtifactContextReferenceSchema.optional(),
+  factorTable: z.array(taFactorContextRowSchema).max(256),
+  baselineMetrics: taMetricContextSchema.optional(),
+  scenarioMetrics: taMetricContextSchema.optional(),
+  relatedArtifactIds: z.array(boundedContextIdSchema).max(16),
+}).strict().superRefine((envelope, context) => {
+  if (new Set(envelope.relatedArtifactIds).size !== envelope.relatedArtifactIds.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "relatedArtifactIds must be unique", path: ["relatedArtifactIds"] });
+  }
+
+  const factorKeys = new Set<string>();
+  envelope.factorTable.forEach((row, index) => {
+    if (row.inputRevision !== envelope.inputRevision) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "factor rows must match the envelope inputRevision", path: ["factorTable", index, "inputRevision"] });
+    }
+    if (row.worksheetName !== envelope.worksheet.worksheetName) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "factor rows must belong to the envelope worksheet", path: ["factorTable", index, "worksheetName"] });
+    }
+    const key = `${row.worksheetName}::${row.tableId}::${row.sourceRow}`;
+    if (factorKeys.has(key)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "duplicate factor rows are not allowed in model context", path: ["factorTable", index] });
+    }
+    factorKeys.add(key);
+  });
+
+  envelope.f0Knowledge.forEach((item, index) => {
+    if (item.inputRevision !== envelope.inputRevision) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "F0 knowledge items must match the envelope inputRevision", path: ["f0Knowledge", index, "inputRevision"] });
+    }
+    if (item.worksheetName !== envelope.worksheet.worksheetName) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "F0 knowledge items must belong to the envelope worksheet", path: ["f0Knowledge", index, "worksheetName"] });
+    }
+  });
+
+  if (envelope.toleranceLoopImage !== undefined) {
+    if (envelope.toleranceLoopImage.inputRevision !== envelope.inputRevision) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "toleranceLoopImage must match the envelope inputRevision", path: ["toleranceLoopImage", "inputRevision"] });
+    }
+    if (envelope.toleranceLoopImage.worksheetName !== envelope.worksheet.worksheetName) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "toleranceLoopImage must belong to the envelope worksheet", path: ["toleranceLoopImage", "worksheetName"] });
+    }
+    if (!envelope.relatedArtifactIds.includes(envelope.toleranceLoopImage.artifactId)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "toleranceLoopImage artifactId must be listed in relatedArtifactIds", path: ["toleranceLoopImage", "artifactId"] });
+    }
+  }
+
+  if (envelope.baselineMetrics?.inputRevision !== undefined && envelope.baselineMetrics.inputRevision !== envelope.inputRevision) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "baselineMetrics must match the envelope inputRevision", path: ["baselineMetrics", "inputRevision"] });
+  }
+  if (envelope.scenarioMetrics?.inputRevision !== undefined && envelope.scenarioMetrics.inputRevision !== envelope.inputRevision) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "scenarioMetrics must match the envelope inputRevision", path: ["scenarioMetrics", "inputRevision"] });
+  }
+  if (envelope.scenarioMetrics !== undefined && envelope.worksheet.calculationReference !== undefined && envelope.scenarioMetrics.calculationReference !== envelope.worksheet.calculationReference) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "scenarioMetrics calculationReference must match the worksheet calculationReference", path: ["scenarioMetrics", "calculationReference"] });
+  }
+
+  if (envelope.worksheet.tableId !== undefined && envelope.worksheet.sourceRow !== undefined && envelope.worksheet.factorName !== undefined) {
+    const selectedFactorExists = envelope.factorTable.some((row) => row.tableId === envelope.worksheet.tableId && row.sourceRow === envelope.worksheet.sourceRow && row.factorName === envelope.worksheet.factorName);
+    if (!selectedFactorExists) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet factor identity must match a factor row in the envelope", path: ["worksheet"] });
+    }
+  }
+});
+
+export type TaModelContextEnvelope = z.infer<typeof taModelContextEnvelopeSchema>;
 
 export const f8SessionStateSchema = z.enum([
   "created",
@@ -70,26 +320,53 @@ const f8WhatIfMetricsSchema = z.object({
   cpk: z.number().finite(),
   statisticalMargin: z.number().finite(),
   worstCaseMargin: z.number().finite(),
+  lowerSpecLimit: z.number().finite().optional(),
+  upperSpecLimit: z.number().finite().optional(),
+  meanShift: z.number().finite().optional(),
+  yield: z.number().finite().optional(),
+  dpm: z.number().finite().nonnegative().optional(),
+  statisticalLower: z.number().finite().optional(),
+  statisticalUpper: z.number().finite().optional(),
+  worstCaseLower: z.number().finite().optional(),
+  worstCaseUpper: z.number().finite().optional(),
+}).strict();
+
+const f8ScenarioFactorOverrideSchema = z.object({
+  worksheetName: boundedContextNameSchema,
+  tableId: boundedContextIdSchema,
+  sourceRow: z.number().int().positive(),
+  nominalValue: z.number().finite().optional(),
+  upperTolerance: z.number().finite().optional(),
+  lowerTolerance: z.number().finite().optional(),
+}).strict();
+
+const f8ScenarioSystemOverrideSchema = z.object({
+  lowerSpecLimit: z.number().finite().optional(),
+  upperSpecLimit: z.number().finite().optional(),
+  additionalMeanShift: z.number().finite().optional(),
 }).strict();
 
 export const f8ScenarioDraftSchema = z
   .object({
     contractVersion: z.literal("f8-scenario-draft-v1"),
-    draftId: nonEmptyStringSchema,
-    sessionId: nonEmptyStringSchema,
-    worksheetName: nonEmptyStringSchema,
+    draftId: promptVisibleIdentitySchema,
+    sessionId: promptVisibleIdentitySchema,
+    worksheetName: boundedContextNameSchema,
     inputRevision: z.number().int().nonnegative(),
     status: f8ScenarioDraftStatusSchema,
     mode: z.literal("WHAT_IF"),
     baselineWorkbookHash: sha256Schema.optional(),
-    baselineRunReference: nonEmptyStringSchema.optional(),
-    calculationReference: nonEmptyStringSchema.optional(),
+    baselineRunReference: promptVisibleIdentitySchema.optional(),
+    calculationReference: boundedContextIdSchema.optional(),
     calculationMetrics: f8WhatIfMetricsSchema.optional(),
+    factorResults: z.array(z.object({ worksheetName: boundedContextNameSchema, tableId: boundedContextIdSchema, sourceRow: z.number().int().positive(), mean: z.number().finite(), tolerance: z.number().finite().nonnegative(), oneSigma: z.number().finite().nonnegative(), contribution: z.number().finite().nonnegative() }).strict()).optional(),
+    factorOverrides: z.array(f8ScenarioFactorOverrideSchema).optional(),
+    systemSpecification: f8ScenarioSystemOverrideSchema.optional(),
     factorIdentity: z.object({
-      worksheetName: nonEmptyStringSchema,
-      tableId: nonEmptyStringSchema,
+      worksheetName: boundedContextNameSchema,
+      tableId: boundedContextIdSchema,
       sourceRow: z.number().int().positive(),
-      factorName: nonEmptyStringSchema,
+      factorName: boundedContextNameSchema,
       unit: nonEmptyStringSchema,
     }).strict().optional(),
     promotionPreview: f6OptimizationTargetsSchema.optional(),
@@ -102,7 +379,7 @@ export const f8ScenarioDraftSchema = z
   })
   .strict()
   .superRefine((draft, context) => {
-    if (draft.change === undefined
+    if (draft.change === undefined && (draft.factorOverrides?.length ?? 0) === 0 && draft.systemSpecification === undefined
       && draft.nominalValue === undefined
       && draft.upperTolerance === undefined
       && draft.lowerTolerance === undefined
@@ -116,11 +393,11 @@ export type F8ScenarioDraft = z.infer<typeof f8ScenarioDraftSchema>;
 const f8PriorRunReferenceSchema = z
   .object({
     featureId: z.enum(["F0", "F1", "F2", "F3", "F4", "F5", "F6", "F7"]),
-    referenceId: nonEmptyStringSchema,
+    referenceId: promptVisibleIdentitySchema,
     contractVersion: nonEmptyStringSchema,
     workbookHash: sha256Schema.optional(),
-    artifactId: nonEmptyStringSchema.optional(),
-    runReference: nonEmptyStringSchema.optional(),
+    artifactId: boundedContextIdSchema.optional(),
+    runReference: promptVisibleIdentitySchema.optional(),
   })
   .strict();
 
@@ -128,22 +405,22 @@ const f8ReviewArtifactKindSchema = z.enum(["f1_image", "f3_report", "f4_calculat
 
 const f8ReviewArtifactRefSchema = z
   .object({
-    artifactId: nonEmptyStringSchema,
+    artifactId: boundedContextIdSchema,
     kind: f8ReviewArtifactKindSchema,
     revision: z.number().int().nonnegative(),
     validated: z.boolean(),
     reviewContextId: sha256Schema,
-    sourceReferenceId: nonEmptyStringSchema.optional(),
+    sourceReferenceId: promptVisibleIdentitySchema.optional(),
   })
   .strict();
 
 const f8NonReviewArtifactRefSchema = z
   .object({
-    artifactId: nonEmptyStringSchema,
+    artifactId: boundedContextIdSchema,
     kind: z.enum(["f2_report", "what_if_draft"]),
     revision: z.number().int().nonnegative(),
     validated: z.boolean(),
-    sourceReferenceId: nonEmptyStringSchema.optional(),
+    sourceReferenceId: promptVisibleIdentitySchema.optional(),
   })
   .strict();
 
@@ -151,18 +428,18 @@ const f8ArtifactRefSchema = z.union([f8ReviewArtifactRefSchema, f8NonReviewArtif
 
 const f8WorksheetCapabilitySchema = z
   .object({
-    worksheetName: nonEmptyStringSchema,
+    worksheetName: boundedContextNameSchema,
     whatIfAvailable: z.boolean(),
   })
   .strict();
 
 const f8StageAttemptSchema = z
   .object({
-    attemptId: nonEmptyStringSchema,
+    attemptId: promptVisibleIdentitySchema,
     stage: f8SessionStateSchema,
     status: z.enum(["running", "completed", "failed", "cancelled"]),
-    commandId: nonEmptyStringSchema.optional(),
-    runReference: nonEmptyStringSchema.optional(),
+    commandId: promptVisibleIdentitySchema.optional(),
+    runReference: promptVisibleIdentitySchema.optional(),
     startedAt: z.string().datetime(),
     endedAt: z.string().datetime().optional(),
   })
@@ -175,12 +452,13 @@ const workbookUploadPayloadSchema = z
       message: "workbookBytes must not be empty",
     }),
     inputClassification: z.literal("confidential"),
+    managedArtifactId: nonEmptyStringSchema.optional(),
   })
   .strict();
 
 const managedWorkbookUploadPayloadSchema = z
   .object({
-    artifactId: nonEmptyStringSchema,
+    artifactId: boundedContextIdSchema,
     inputClassification: z.literal("confidential"),
   })
   .strict();
@@ -192,7 +470,7 @@ const workbookReplacePayloadSchema = workbookUploadPayloadSchema.extend({
 const worksheetScopePayloadSchema = z
   .object({
     workbookHash: sha256Schema,
-    worksheetNames: nonEmptyStringArraySchema.min(1),
+    worksheetNames: z.array(boundedContextNameSchema).min(1),
   })
   .strict()
   .superRefine((payload, context) => {
@@ -204,7 +482,7 @@ const worksheetScopePayloadSchema = z
 const confirmationDecisionPayloadSchema = z
   .object({
     decision: nonEmptyStringSchema,
-    worksheetNames: nonEmptyStringArraySchema.optional(),
+    worksheetNames: z.array(boundedContextNameSchema).optional(),
     rationale: nonEmptyStringSchema.optional(),
     decisionReference: nonEmptyStringSchema.optional(),
   })
@@ -243,16 +521,32 @@ const whatIfPatchSchema = z.object({
   additionalMeanShift: z.number().finite().optional(),
 }).strict().refine((patch) => Object.values(patch).some((value) => value !== undefined), "What-if patch must include one value.");
 
-const saveWhatIfDraftPublicPayloadSchema = z.object({
-  draftId: nonEmptyStringSchema,
-  worksheetName: nonEmptyStringSchema,
-  tableId: nonEmptyStringSchema,
+const saveFactorWhatIfDraftPublicPayloadSchema = z.object({
+  draftId: promptVisibleIdentitySchema,
+  worksheetName: boundedContextNameSchema,
+  tableId: boundedContextIdSchema,
   sourceRow: z.number().int().positive(),
   inputRevision: z.number().int().nonnegative(),
   patch: whatIfPatchSchema,
+  signedDirectionEvidence: z.literal(true).optional(),
 }).strict();
 
-export const f8WhatIfCalculationRequestSchema = saveWhatIfDraftPublicPayloadSchema;
+export const f8WhatIfCalculationRequestSchema = saveFactorWhatIfDraftPublicPayloadSchema.extend({ signedDirectionEvidence: z.literal(true).optional() }).strict();
+export const f8WorksheetWhatIfCalculationRequestSchema = z.object({
+  draftId: promptVisibleIdentitySchema,
+  worksheetName: boundedContextNameSchema,
+  inputRevision: z.number().int().nonnegative(),
+  factorOverrides: z.array(f8ScenarioFactorOverrideSchema),
+  systemSpecification: f8ScenarioSystemOverrideSchema.optional(),
+  signedDirectionEvidence: z.literal(true).optional(),
+}).strict().refine((request) => request.factorOverrides.length > 0 || request.systemSpecification !== undefined, "Worksheet Scenario must include one override.");
+
+export type F8WorksheetWhatIfCalculationRequest = z.infer<typeof f8WorksheetWhatIfCalculationRequestSchema>;
+
+const saveWhatIfDraftPublicPayloadSchema = z.union([
+  saveFactorWhatIfDraftPublicPayloadSchema,
+  f8WorksheetWhatIfCalculationRequestSchema,
+]);
 
 const saveWhatIfDraftInternalPayloadSchema = z.object({ draft: f8ScenarioDraftSchema }).strict();
 
@@ -282,8 +576,10 @@ export const f8SessionCommandSchema = z.discriminatedUnion("command", [
   commandEnvelopeSchema("upload_workbook", z.union([workbookUploadPayloadSchema, managedWorkbookUploadPayloadSchema])),
   commandEnvelopeSchema("replace_workbook", workbookReplacePayloadSchema),
   commandEnvelopeSchema("confirm_initial_scope", worksheetScopePayloadSchema),
+  commandEnvelopeSchema("auto_confirm_initial_scope", worksheetScopePayloadSchema),
   commandEnvelopeSchema("confirm_downstream_scope", worksheetScopePayloadSchema),
   commandEnvelopeSchema("confirm_ado_decision", adoDecisionPayloadSchema),
+  commandEnvelopeSchema("reset_ado_decision", z.object({}).strict()),
   commandEnvelopeSchema("confirm_image_decision", confirmationDecisionPayloadSchema),
   commandEnvelopeSchema("confirm_analysis_context", confirmationDecisionPayloadSchema),
   commandEnvelopeSchema("confirm_optimization_targets", confirmationDecisionPayloadSchema),
@@ -301,6 +597,7 @@ export const f8PublicSessionCommandSchema = z.discriminatedUnion("command", [
   commandEnvelopeSchema("confirm_initial_scope", worksheetScopePayloadSchema),
   commandEnvelopeSchema("confirm_downstream_scope", worksheetScopePayloadSchema),
   commandEnvelopeSchema("confirm_ado_decision", adoDecisionPayloadSchema),
+  commandEnvelopeSchema("reset_ado_decision", z.object({}).strict()),
   commandEnvelopeSchema("confirm_image_decision", confirmationDecisionPayloadSchema),
   commandEnvelopeSchema("confirm_analysis_context", confirmationDecisionPayloadSchema),
   commandEnvelopeSchema("confirm_optimization_targets", confirmationDecisionPayloadSchema),
@@ -328,22 +625,22 @@ const conversationMarkdownPartSchema = z
 const conversationArtifactPartSchema = z
   .object({
     kind: z.literal("artifact_reference"),
-    artifactId: nonEmptyStringSchema,
-    label: nonEmptyStringSchema.optional(),
+    artifactId: boundedContextIdSchema,
+    label: promptVisibleIdentitySchema.optional(),
   })
   .strict();
 
 const conversationDecisionPartSchema = z
   .object({
     kind: z.literal("decision_reference"),
-    decisionReference: nonEmptyStringSchema,
+    decisionReference: promptVisibleIdentitySchema,
   })
   .strict();
 
 const conversationCommandPartSchema = z
   .object({
     kind: z.literal("command"),
-    commandId: nonEmptyStringSchema,
+    commandId: promptVisibleIdentitySchema,
     command: nonEmptyStringSchema,
   })
   .strict();
@@ -371,7 +668,7 @@ const conversationToolActionSchema = z.union([
 
 const conversationToolCommandSchema = z
   .object({
-    id: nonEmptyStringSchema,
+    id: promptVisibleIdentitySchema,
     kind: z.enum(["model_request", "surface_validate", "surface_write"]),
   })
   .strict();
@@ -404,38 +701,43 @@ export const conversationContentPartSchema = z.union([
 export const conversationTurnSchema = z
   .object({
     contractVersion: z.literal("ta-conversation-turn-v1"),
-    turnId: nonEmptyStringSchema,
-    sessionId: nonEmptyStringSchema,
+    turnId: promptVisibleIdentitySchema,
+    sessionId: promptVisibleIdentitySchema,
     sequence: z.number().int().nonnegative(),
     source: z.enum(["web", "vscode", "cli", "system"]),
     role: z.enum(["user", "assistant", "tool"]),
     content: z.array(conversationContentPartSchema),
     createdAt: z.string().datetime(),
     relatedStage: z.enum(["F0", "F1", "F2", "F3", "F4", "F5", "F6", "F7"]).optional(),
-    relatedArtifactIds: z.array(nonEmptyStringSchema),
-    decisionReference: nonEmptyStringSchema.optional(),
+    relatedArtifactIds: z.array(boundedContextIdSchema),
+    decisionReference: promptVisibleIdentitySchema.optional(),
   })
   .strict();
 
 const hostActionRequestBaseSchema = {
   contractVersion: z.literal("f8-host-action-request-v1"),
-  actionId: nonEmptyStringSchema,
-  sessionId: nonEmptyStringSchema,
+  actionId: promptVisibleIdentitySchema,
+  sessionId: promptVisibleIdentitySchema,
   expectedRevision: z.number().int().nonnegative(),
   expiresAt: z.string().datetime(),
 } as const;
 
 const surfacePrepareRequestSchema = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("create"), title: nonEmptyStringSchema, nextContent: nonEmptyStringSchema, factorCount: z.number().int().nonnegative() }).strict(),
-  z.object({ mode: z.literal("existing"), workItemReference: nonEmptyStringSchema, nextContent: nonEmptyStringSchema, factorCount: z.number().int().nonnegative() }).strict(),
+  z.object({ mode: z.literal("existing"), workItemReference: promptVisibleIdentitySchema, nextContent: nonEmptyStringSchema, factorCount: z.number().int().nonnegative() }).strict(),
+]);
+
+const f8AdoTargetSchema = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("create"), title: nonEmptyStringSchema }).strict(),
+  z.object({ mode: z.literal("existing"), workItemReference: promptVisibleIdentitySchema }).strict(),
 ]);
 
 const surfaceConfirmationSchema = z.object({
   status: z.literal("confirmation_required"),
-  workItemReference: nonEmptyStringSchema,
-  ownerReference: nonEmptyStringSchema,
-  commentReference: nonEmptyStringSchema,
-  expectedVersion: nonEmptyStringSchema,
+  workItemReference: promptVisibleIdentitySchema,
+  ownerReference: promptVisibleIdentitySchema,
+  commentReference: promptVisibleIdentitySchema,
+  expectedVersion: promptVisibleIdentitySchema,
   beforeContentHash: sha256Schema,
   nextContent: nonEmptyStringSchema,
   factorCount: z.number().int().nonnegative(),
@@ -445,11 +747,33 @@ const surfaceConfirmationSchema = z.object({
 
 const surfaceUpdateReceiptSchema = z.object({
   status: z.literal("updated"),
-  workItemReference: nonEmptyStringSchema,
-  commentReference: nonEmptyStringSchema,
-  version: nonEmptyStringSchema,
+  workItemReference: promptVisibleIdentitySchema,
+  commentReference: promptVisibleIdentitySchema,
+  version: promptVisibleIdentitySchema,
   contentHash: sha256Schema,
 }).strict();
+
+export const f8AdoProjectionSchema = z.discriminatedUnion("state", [
+  z.object({ contractVersion: z.literal("f8-ado-projection-v1"), sessionId: promptVisibleIdentitySchema, state: z.literal("not_required") }).strict(),
+  z.object({ contractVersion: z.literal("f8-ado-projection-v1"), sessionId: promptVisibleIdentitySchema, state: z.literal("validation_pending"), actionId: promptVisibleIdentitySchema, expectedRevision: z.number().int().nonnegative() }).strict(),
+  z.object({ contractVersion: z.literal("f8-ado-projection-v1"), sessionId: promptVisibleIdentitySchema, state: z.literal("preview_ready"), actionId: promptVisibleIdentitySchema, expectedRevision: z.number().int().nonnegative(), target: f8AdoTargetSchema, markdown: nonEmptyStringSchema, contentHash: sha256Schema, confirmation: surfaceConfirmationSchema }).strict(),
+  z.object({ contractVersion: z.literal("f8-ado-projection-v1"), sessionId: promptVisibleIdentitySchema, state: z.literal("write_pending"), actionId: promptVisibleIdentitySchema, validationActionId: promptVisibleIdentitySchema, expectedRevision: z.number().int().nonnegative(), confirmation: surfaceConfirmationSchema }).strict(),
+  z.object({ contractVersion: z.literal("f8-ado-projection-v1"), sessionId: promptVisibleIdentitySchema, state: z.literal("completed"), actionId: promptVisibleIdentitySchema, validationActionId: promptVisibleIdentitySchema, expectedRevision: z.number().int().nonnegative(), confirmation: surfaceConfirmationSchema, receipt: surfaceUpdateReceiptSchema }).strict(),
+  z.object({ contractVersion: z.literal("f8-ado-projection-v1"), sessionId: promptVisibleIdentitySchema, state: z.enum(["blocked", "failed"]), actionId: promptVisibleIdentitySchema, expectedRevision: z.number().int().nonnegative(), reason: nonEmptyStringSchema }).strict(),
+]);
+
+export const f8AdoWriteConfirmationSchema = z.object({
+  contractVersion: z.literal("f8-ado-write-confirmation-v1"),
+  validationActionId: promptVisibleIdentitySchema,
+  expectedRevision: z.number().int().nonnegative(),
+  target: f8AdoTargetSchema,
+  contentHash: sha256Schema,
+  confirmationHash: sha256Schema,
+  confirmed: z.literal(true),
+}).strict();
+
+export type F8AdoProjection = z.infer<typeof f8AdoProjectionSchema>;
+export type F8AdoWriteConfirmation = z.infer<typeof f8AdoWriteConfirmationSchema>;
 
 export const hostActionRequestSchema = z.discriminatedUnion("kind", [
   z.object({
@@ -471,14 +795,22 @@ export const hostActionRequestSchema = z.discriminatedUnion("kind", [
     ...hostActionRequestBaseSchema,
     kind: z.literal("model_request"),
   }).strict(),
+  z.object({
+    ...hostActionRequestBaseSchema,
+    kind: z.literal("vscode_model_request"),
+    confirmationHash: sha256Schema,
+    expectedTargetVersion: z.literal("vscode-model-v1"),
+    turnId: nonEmptyStringSchema,
+    prompt: nonEmptyStringSchema,
+  }).strict(),
 ]);
 
 export const hostActionClaimSchema = z
   .object({
     contractVersion: z.literal("f8-host-action-claim-v1"),
-    actionId: nonEmptyStringSchema,
-    hostInstanceId: nonEmptyStringSchema,
-    leaseId: nonEmptyStringSchema,
+    actionId: promptVisibleIdentitySchema,
+    hostInstanceId: promptVisibleIdentitySchema,
+    leaseId: promptVisibleIdentitySchema,
     leaseExpiresAt: z.string().datetime(),
     request: hostActionRequestSchema,
   })
@@ -495,6 +827,7 @@ const hostActionResultPayloadSchema = z.discriminatedUnion("status", [
     outcome: z.union([
       z.object({ kind: z.literal("surface_validation"), confirmation: surfaceConfirmationSchema }).strict(),
       z.object({ kind: z.literal("surface_write"), receipt: surfaceUpdateReceiptSchema }).strict(),
+      z.object({ kind: z.literal("model_response"), turnId: nonEmptyStringSchema, responseText: nonEmptyStringSchema }).strict(),
     ]).optional(),
   }).strict(),
   z.object({
@@ -510,9 +843,9 @@ const hostActionResultPayloadSchema = z.discriminatedUnion("status", [
 export const hostActionResultSchema = z
   .object({
     contractVersion: z.literal("f8-host-action-result-v1"),
-    actionId: nonEmptyStringSchema,
-    hostInstanceId: nonEmptyStringSchema,
-    leaseId: nonEmptyStringSchema,
+    actionId: promptVisibleIdentitySchema,
+    hostInstanceId: promptVisibleIdentitySchema,
+    leaseId: promptVisibleIdentitySchema,
     status: z.enum(["completed", "blocked", "failed"]),
     resultHash: sha256Schema,
     payload: hostActionResultPayloadSchema,
@@ -527,7 +860,7 @@ export const hostActionResultSchema = z
 const sessionSnapshotUpdatedEventSchema = z
   .object({
     contractVersion: z.literal("f8-session-event-v1"),
-    sessionId: nonEmptyStringSchema,
+    sessionId: promptVisibleIdentitySchema,
     revision: z.number().int().nonnegative(),
     eventId: nonEmptyStringSchema,
     kind: z.literal("snapshot_updated"),
@@ -539,7 +872,7 @@ const sessionSnapshotUpdatedEventSchema = z
 const sessionCommandAcceptedEventSchema = z
   .object({
     contractVersion: z.literal("f8-session-event-v1"),
-    sessionId: nonEmptyStringSchema,
+    sessionId: promptVisibleIdentitySchema,
     revision: z.number().int().nonnegative(),
     eventId: nonEmptyStringSchema,
     kind: z.literal("command_accepted"),
@@ -552,7 +885,7 @@ const sessionCommandAcceptedEventSchema = z
 const sessionCommandRejectedEventSchema = z
   .object({
     contractVersion: z.literal("f8-session-event-v1"),
-    sessionId: nonEmptyStringSchema,
+    sessionId: promptVisibleIdentitySchema,
     revision: z.number().int().nonnegative(),
     eventId: nonEmptyStringSchema,
     kind: z.literal("command_rejected"),
@@ -565,7 +898,7 @@ const sessionCommandRejectedEventSchema = z
 const sessionStageStartedEventSchema = z
   .object({
     contractVersion: z.literal("f8-session-event-v1"),
-    sessionId: nonEmptyStringSchema,
+    sessionId: promptVisibleIdentitySchema,
     revision: z.number().int().nonnegative(),
     eventId: nonEmptyStringSchema,
     kind: z.literal("stage_started"),
@@ -578,7 +911,7 @@ const sessionStageStartedEventSchema = z
 const sessionStageCompletedEventSchema = z
   .object({
     contractVersion: z.literal("f8-session-event-v1"),
-    sessionId: nonEmptyStringSchema,
+    sessionId: promptVisibleIdentitySchema,
     revision: z.number().int().nonnegative(),
     eventId: nonEmptyStringSchema,
     kind: z.literal("stage_completed"),
@@ -592,7 +925,7 @@ const sessionStageCompletedEventSchema = z
 const sessionStageFailedEventSchema = z
   .object({
     contractVersion: z.literal("f8-session-event-v1"),
-    sessionId: nonEmptyStringSchema,
+    sessionId: promptVisibleIdentitySchema,
     revision: z.number().int().nonnegative(),
     eventId: nonEmptyStringSchema,
     kind: z.literal("stage_failed"),
@@ -606,7 +939,7 @@ const sessionStageFailedEventSchema = z
 const hostActionRequestedEventSchema = z
   .object({
     contractVersion: z.literal("f8-session-event-v1"),
-    sessionId: nonEmptyStringSchema,
+    sessionId: promptVisibleIdentitySchema,
     revision: z.number().int().nonnegative(),
     eventId: nonEmptyStringSchema,
     kind: z.literal("host_action_requested"),
@@ -618,7 +951,7 @@ const hostActionRequestedEventSchema = z
 const hostActionClaimedEventSchema = z
   .object({
     contractVersion: z.literal("f8-session-event-v1"),
-    sessionId: nonEmptyStringSchema,
+    sessionId: promptVisibleIdentitySchema,
     revision: z.number().int().nonnegative(),
     eventId: nonEmptyStringSchema,
     kind: z.literal("host_action_claimed"),
@@ -630,7 +963,7 @@ const hostActionClaimedEventSchema = z
 const hostActionResultedEventSchema = z
   .object({
     contractVersion: z.literal("f8-session-event-v1"),
-    sessionId: nonEmptyStringSchema,
+    sessionId: promptVisibleIdentitySchema,
     revision: z.number().int().nonnegative(),
     eventId: nonEmptyStringSchema,
     kind: z.literal("host_action_resulted"),
@@ -642,7 +975,7 @@ const hostActionResultedEventSchema = z
 const scenarioDraftUpdatedEventSchema = z
   .object({
     contractVersion: z.literal("f8-session-event-v1"),
-    sessionId: nonEmptyStringSchema,
+    sessionId: promptVisibleIdentitySchema,
     revision: z.number().int().nonnegative(),
     eventId: nonEmptyStringSchema,
     kind: z.literal("scenario_draft_updated"),
@@ -654,7 +987,7 @@ const scenarioDraftUpdatedEventSchema = z
 export const f8SessionSnapshotSchema = z
   .object({
     contractVersion: z.literal("f8-session-snapshot-v1"),
-    sessionId: nonEmptyStringSchema,
+    sessionId: promptVisibleIdentitySchema,
     revision: z.number().int().nonnegative(),
     inputRevision: z.number().int().nonnegative(),
     state: f8SessionStateSchema,
@@ -671,8 +1004,15 @@ export const f8SessionSnapshotSchema = z
     if (snapshot.priorRunReferences.some((reference) => reference.featureId === "F7" && reference.runReference === undefined)) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: "F7 prior run references require a runReference" });
     }
+    const artifactIds = new Set<string>();
     const draftIds = new Set<string>();
     let activeDraftCount = 0;
+    snapshot.artifactRefs?.forEach((artifactRef, index) => {
+      if (artifactIds.has(artifactRef.artifactId)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "artifact refs must be unique by artifactId", path: ["artifactRefs", index, "artifactId"] });
+      }
+      artifactIds.add(artifactRef.artifactId);
+    });
     snapshot.scenarioDrafts?.forEach((draft, index) => {
       if (draft.sessionId !== snapshot.sessionId) {
         context.addIssue({ code: z.ZodIssueCode.custom, message: "scenario drafts must belong to the snapshot session", path: ["scenarioDrafts", index, "sessionId"] });

@@ -51,4 +51,24 @@ describe("Surface MCP inspection", () => {
       "workItems.comments.update",
     ]);
   });
+
+  it("requires create capability only for create-mode validation", async () => {
+    const client = {
+      async listCapabilities() {
+        return ["workItems.read", "workItems.comments.read", "workItems.comments.update"];
+      },
+    };
+
+    await expect(inspectSurfaceMcpCapabilities(client, { mode: "existing" })).resolves.toEqual({
+      ready: true,
+      available: ["workItems.read", "workItems.comments.read", "workItems.comments.update"],
+      missing: [],
+    });
+
+    await expect(inspectSurfaceMcpCapabilities(client, { mode: "create" })).resolves.toEqual({
+      ready: false,
+      available: ["workItems.read", "workItems.comments.read", "workItems.comments.update"],
+      missing: ["workItems.create"],
+    });
+  });
 });

@@ -20,7 +20,7 @@ export function AdoDecision({ visible, disabled = false, onSubmit }: AdoDecision
       <div className="panel__header">
         <div>
           <p className="eyebrow">ADO</p>
-          <h2 id="ado-title">治理发布决定</h2>
+          <h2 id="ado-title">Governance publishing decision</h2>
         </div>
       </div>
       <form
@@ -31,18 +31,18 @@ export function AdoDecision({ visible, disabled = false, onSubmit }: AdoDecision
         }}
       >
         <fieldset className="choice-group" disabled={disabled}>
-          <legend>仅在 `governance_required` 时出现</legend>
+          <legend>Shown only when `governance_required` is active</legend>
           <label>
             <input type="radio" name="ado-decision" checked={decision === "create_new"} onChange={() => setDecision("create_new")} />
-            创建新的 ADO work item
+            Create a new ADO work item
           </label>
           <label>
             <input type="radio" name="ado-decision" checked={decision === "use_existing"} onChange={() => setDecision("use_existing")} />
-            使用现有 ADO work item
+            Use an existing ADO work item
           </label>
           <label>
             <input type="radio" name="ado-decision" checked={decision === "local_only"} onChange={() => setDecision("local_only")} />
-            不发布到 ADO
+            Do not publish to ADO
           </label>
         </fieldset>
         {decision === "use_existing" ? <label className="field">
@@ -50,10 +50,10 @@ export function AdoDecision({ visible, disabled = false, onSubmit }: AdoDecision
           <input value={workItemReference} onChange={(event) => setWorkItemReference(event.target.value)} required disabled={disabled} />
         </label> : null}
         <label className="field">
-          <span>决定备注</span>
+          <span>Decision notes</span>
           <textarea value={rationale} onChange={(event) => setRationale(event.target.value)} rows={3} disabled={disabled} />
         </label>
-        <button type="submit" className="button button--primary" disabled={disabled || (decision === "use_existing" && workItemReference.trim().length === 0)}>确认 ADO 决定</button>
+        <button type="submit" className="button button--primary" disabled={disabled || (decision === "use_existing" && workItemReference.trim().length === 0)}>Confirm ADO decision</button>
       </form>
     </section>
   );

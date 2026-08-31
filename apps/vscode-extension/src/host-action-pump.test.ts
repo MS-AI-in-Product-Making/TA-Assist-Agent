@@ -26,7 +26,7 @@ describe("pumpOneHostAction", () => {
   it("rejects a cross-session or unsupported action before execution", async () => {
     const execute = vi.fn();
     await expect(pumpOneHostAction({ sessionId: SESSION_ID, actionId: "action-b" }, {
-      claim: async () => ({ actionId: "action-b", request: { contractVersion: "f8-host-action-request-v1", actionId: "action-b", sessionId: "other", expectedRevision: 1, expiresAt: "2026-08-25T01:00:00.000Z", kind: "model_request" }, hostInstanceId: "vscode-host", leaseId: "lease-b" }),
+      claim: async () => ({ actionId: "action-b", request: { contractVersion: "f8-host-action-request-v1", actionId: "action-b", sessionId: "other", expectedRevision: 1, expiresAt: "2026-08-25T01:00:00.000Z", kind: "vscode_model_request", confirmationHash: "a".repeat(64), expectedTargetVersion: "vscode-model-v1", turnId: "turn-b", prompt: "User request\nquestion\n\nGoverned evidence\n- Session: other\n\nOpen interpretation\n- Use only governed evidence.\n\nMissing evidence\n- None identified in the current governed context.\n\nSuggested checks\n- Confirm the current session binding." }, hostInstanceId: "vscode-host", leaseId: "lease-b" }),
       execute,
       submit: vi.fn(),
       hostInstanceId: "vscode-host",
@@ -42,5 +42,31 @@ describe("pumpOneHostAction", () => {
     await expect(pumpOneHostAction({ sessionId: SESSION_ID, actionId: request.actionId }, { hostInstanceId: "vscode-host", claim: async () => ({ actionId: request.actionId, request, hostInstanceId: "vscode-host", leaseId: "lease-write" }), execute, submit })).resolves.toBe("submitted");
     expect(execute).toHaveBeenCalledOnce();
     expect(submit).toHaveBeenCalledOnce();
+  });
+
+  it("fails closed when a Surface action target version does not match the supported ADO contract", async () => {
+    const execute = vi.fn();
+    await expect(pumpOneHostAction({ sessionId: SESSION_ID, actionId: "action-c" }, {
+      claim: async () => ({
+        actionId: "action-c",
+        request: {
+          contractVersion: "f8-host-action-request-v1",
+          actionId: "action-c",
+          sessionId: SESSION_ID,
+          expectedRevision: 1,
+          expiresAt: "2026-08-25T01:00:00.000Z",
+          kind: "surface_validate",
+          confirmationHash: "a".repeat(64),
+          expectedTargetVersion: "wrong-target-v1",
+          prepareRequest: { mode: "create", title: "TA Drawing Governance", nextContent: "next", factorCount: 1 },
+        },
+        hostInstanceId: "vscode-host",
+        leaseId: "lease-c",
+      }),
+      execute,
+      submit: vi.fn(),
+      hostInstanceId: "vscode-host",
+    })).rejects.toThrow(/unsupported/i);
+    expect(execute).not.toHaveBeenCalled();
   });
 });

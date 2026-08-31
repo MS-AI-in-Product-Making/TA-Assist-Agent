@@ -1,4 +1,5 @@
 import type { ReviewCard, ReviewEvidencePane } from "@ai-assist/workbench/review";
+import { SourceText } from "./SourceText.js";
 
 export interface EvidencePaneProps {
   readonly id?: string;
@@ -22,7 +23,7 @@ export function EvidencePane({ id, labelledBy, evidence, analysisContext, optimi
           <h2 id="review-evidence-title">Read-only Evidence</h2>
         </div>
       </div>
-      {evidence === undefined ? <p className="support-text">当前 worksheet 尚未绑定可展示的只读证据。</p> : (
+      {evidence === undefined ? <p className="support-text">No displayable read-only evidence is bound to the current worksheet yet.</p> : (
         <div className="stack">
           <p><strong>Source Row {evidence.sourceRow}</strong></p>
           <div className="token-row" aria-label="source cells">
@@ -38,8 +39,8 @@ export function EvidencePane({ id, labelledBy, evidence, analysisContext, optimi
             <h3 className="subheading">Bound Factors</h3>
             <ul className="compact-list">
               {evidence.factors.map((factor) => (
-                <li key={`${factor.factorName}-${factor.sourceRow}`}>
-                  {factor.factorName} · Row {factor.sourceRow}{typeof factor.contribution === "number" ? ` · Contribution ${factor.contribution.toFixed(2)}` : ""}
+                <li key={`${factor.sourceRow}`}>
+                  <SourceText value={factor.factorName} /> · Row {factor.sourceRow}{typeof factor.contribution === "number" ? ` · Contribution ${factor.contribution.toFixed(2)}` : ""}
                 </li>
               ))}
             </ul>

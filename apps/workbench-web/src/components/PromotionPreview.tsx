@@ -26,8 +26,8 @@ export function PromotionPreview({ changes, onConfirm }: {
           </tr>
         ))}</tbody>
       </table>
-      <label><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /> 我确认仅提升公差变更</label>
-      <button type="button" className="button button--primary" disabled={!confirmed || changes.length === 0} onClick={onConfirm}>确认 Optimization Targets</button>
+      <label><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /> I confirm that only tolerance changes will be promoted</label>
+      <button type="button" className="button button--primary" disabled={!confirmed || changes.length === 0} onClick={onConfirm}>Confirm optimization targets</button>
     </section>
   );
 }

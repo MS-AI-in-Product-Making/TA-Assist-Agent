@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 
 import type { FastifyRequest } from "fastify";
 
@@ -48,9 +48,12 @@ export class WorkbenchAuth {
 
   private readonly hostBearers = new Map<string, HostBearer>();
 
+  constructor(private readonly signingKey: Uint8Array = randomBytes(32)) {}
+
   issueBrowserSession(sessionId: string = randomUUID()): TestAuthentication {
-    const cookieValue = randomBytes(32).toString("base64url");
-    const csrfToken = randomBytes(32).toString("base64url");
+    const payload = Buffer.from(JSON.stringify({ sessionId, expiresAtMs: Date.now() + 30 * 24 * 60 * 60_000, nonce: randomBytes(16).toString("base64url") })).toString("base64url");
+    const cookieValue = `${payload}.${sign(this.signingKey, payload)}`;
+    const csrfToken = deriveCsrf(this.signingKey, cookieValue);
     this.browserSessions.set(cookieValue, { sessionId, csrfToken });
 
     return {
@@ -86,7 +89,16 @@ export class WorkbenchAuth {
   }
 
   readBrowserSession(cookieValue: string | undefined): BrowserSession | undefined {
-    return cookieValue === undefined ? undefined : this.browserSessions.get(cookieValue);
+    if (cookieValue === undefined) return undefined;
+    const cached = this.browserSessions.get(cookieValue);
+    if (cached !== undefined) return cached;
+    const [payload, signature, ...extra] = cookieValue.split(".");
+    if (payload === undefined || signature === undefined || extra.length > 0 || !safeTextEqual(sign(this.signingKey, payload), signature)) return undefined;
+    try {
+      const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as { sessionId?: unknown; expiresAtMs?: unknown };
+      if (typeof parsed.sessionId !== "string" || typeof parsed.expiresAtMs !== "number" || parsed.expiresAtMs <= Date.now()) return undefined;
+      return { sessionId: parsed.sessionId, csrfToken: deriveCsrf(this.signingKey, cookieValue) };
+    } catch { return undefined; }
   }
 
   authenticate(request: FastifyRequest): AuthenticatedRequest | undefined {
@@ -156,4 +168,12 @@ function safeTokenHashEqual(left: string, right: string): boolean {
   const leftBuffer = Buffer.from(left, "hex");
   const rightBuffer = Buffer.from(right, "hex");
   return leftBuffer.byteLength === rightBuffer.byteLength && timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function sign(key: Uint8Array, value: string): string { return createHmac("sha256", key).update(value).digest("base64url"); }
+function deriveCsrf(key: Uint8Array, cookie: string): string { return createHmac("sha256", key).update(`${cookie}:csrf`).digest("base64url"); }
+function safeTextEqual(left: string, right: string): boolean {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
 }

@@ -64,7 +64,7 @@ export function WhatIfEditor({ baseline, api, factors, onSelectFactor }: { reado
   const calculate = async () => {
     const parsed = parseValues(values);
     if (parsed === undefined) {
-      setError("请输入有效数值");
+      setError("Enter a valid numeric value");
       return;
     }
     setError(undefined);
@@ -73,7 +73,7 @@ export function WhatIfEditor({ baseline, api, factors, onSelectFactor }: { reado
       const result = await api.calculate(parsed);
       if (requestId === requestSequence.current) setLastValidResult(result);
     } catch {
-      if (requestId === requestSequence.current) setError("试算失败，请检查受治理 baseline 后重试");
+      if (requestId === requestSequence.current) setError("Preview failed. Check the governed baseline and try again.");
     }
   };
 
@@ -96,7 +96,7 @@ export function WhatIfEditor({ baseline, api, factors, onSelectFactor }: { reado
 
   return (
     <section className="panel" aria-labelledby="what-if-title">
-      <div className="panel__header"><div><p className="eyebrow">WHAT_IF Draft</p><h2 id="what-if-title">公差试算</h2></div></div>
+      <div className="panel__header"><div><p className="eyebrow">WHAT_IF Draft</p><h2 id="what-if-title">Tolerance preview</h2></div></div>
       {factors !== undefined && factors.length > 1 ? <label>Factor
         <select value={factorKey(baseline)} onChange={(event) => onSelectFactor?.(event.target.value)}>
           {factors.map((factor) => <option key={factorKey(factor)} value={factorKey(factor)}>{factor.factorName}</option>)}
@@ -124,11 +124,11 @@ export function WhatIfEditor({ baseline, api, factors, onSelectFactor }: { reado
       {error === undefined ? null : <p role="alert">{error}</p>}
       <MetricComparison baseline={baseline.metrics} draft={lastValidResult?.metrics} />
       <div className="button-row">
-        <button type="button" className="button" onClick={() => { setValues(baselineInputs(baseline)); setLastValidResult(undefined); setError(undefined); }}>恢复 Baseline</button>
+        <button type="button" className="button" onClick={() => { setValues(baselineInputs(baseline)); setLastValidResult(undefined); setError(undefined); }}>Restore baseline</button>
         <button type="button" className="button button--primary" disabled={lastValidResult === undefined || parseValues(values) === undefined} onClick={() => {
           const parsed = parseValues(values);
           return lastValidResult === undefined || parsed === undefined ? undefined : void api.save(lastValidResult, parsed);
-        }}>保存 Draft</button>
+        }}>Save draft</button>
       </div>
     </section>
   );

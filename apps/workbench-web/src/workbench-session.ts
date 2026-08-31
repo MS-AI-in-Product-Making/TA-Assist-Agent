@@ -1,5 +1,7 @@
 import { createTypedError, f8PublicSessionCommandSchema, f8SessionCommandSchema, f8SessionSnapshotSchema, f8SessionStateSchema, type TypedError } from "@ai-assist/contracts";
 
+import { featureDisplay, reasonDisplay } from "./web-projection.js";
+
 export type F8SessionCommand = ReturnType<typeof f8SessionCommandSchema.parse>;
 export type F8PublicSessionCommand = ReturnType<typeof f8PublicSessionCommandSchema.parse>;
 export type F8SessionSnapshot = ReturnType<typeof f8SessionSnapshotSchema.parse>;
@@ -31,6 +33,8 @@ export interface FeatureLedgerEntry {
   readonly status: string;
   readonly lifecycle?: string;
   readonly actions: readonly string[];
+  readonly displayLabel: string;
+  readonly displayStatus: string;
 }
 
 interface SnapshotMeta {
@@ -95,22 +99,27 @@ export function projectFeatureLedger(snapshot: F8SessionSnapshot): FeatureLedger
         status: "feature_not_available",
         lifecycle: "in_development",
         actions: [],
+        displayLabel: featureDisplay(featureId),
+        displayStatus: reasonDisplay("feature_not_available"),
       };
     }
 
     if (activeFeature === featureId) {
+      const status = statusForActiveFeature(snapshot);
       return {
         featureId,
-        status: statusForActiveFeature(snapshot),
+        status,
         actions: queuedActions.filter((item) => item.featureId === featureId).map((item) => item.action),
+        displayLabel: featureDisplay(featureId),
+        displayStatus: reasonDisplay(status),
       };
     }
 
     if (completedFeatures.has(featureId)) {
-      return { featureId, status: "completed", actions: [] };
+      return { featureId, status: "completed", actions: [], displayLabel: featureDisplay(featureId), displayStatus: reasonDisplay("completed") };
     }
 
-    return { featureId, status: "pending", actions: [] };
+    return { featureId, status: "pending", actions: [], displayLabel: featureDisplay(featureId), displayStatus: reasonDisplay("pending") };
   });
 }
 
@@ -193,6 +202,18 @@ function statusForActiveFeature(snapshot: F8SessionSnapshot): string {
 
   if (snapshot.state === "f7_import_required" || snapshot.state === "f7_preview_required" || snapshot.state === "feedback_review_required") {
     return "pending";
+  }
+
+  if ([
+    "initial_scope_required",
+    "downstream_scope_required",
+    "ado_decision_required",
+    "image_decision_required",
+    "analysis_context_decision_required",
+    "optimization_targets_decision_required",
+    "review_required",
+  ].includes(snapshot.state)) {
+    return "action_required";
   }
 
   return "running";

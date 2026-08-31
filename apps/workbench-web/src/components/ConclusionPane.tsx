@@ -65,7 +65,7 @@ export function ConclusionPane({ sessionId, findings, selectedFindingId, onSelec
               </>
             ) : null}
           </div>
-        ) : <p className="support-text">当前没有需要工程审阅的 finding。</p>}
+        ) : <p className="support-text">No findings currently require engineering review.</p>}
         <F6Options options={options} />
       </div>
     </section>

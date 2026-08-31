@@ -7,7 +7,7 @@ export interface ReportLinkProps {
 
 export function ReportLink({ sessionId, report }: ReportLinkProps) {
   if (report === undefined) {
-    return <p className="support-text">当前没有已验证的报告入口。</p>;
+    return <p className="support-text">No validated report link is available yet.</p>;
   }
 
   return (

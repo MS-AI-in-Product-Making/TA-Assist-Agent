@@ -14,6 +14,14 @@ function context() {
 }
 
 describe("validateF0Capabilities", () => {
+  it("validates the production versioned knowledge loaders", () => {
+    expect(validateF0Capabilities(context())).toMatchObject({
+      featureId: "F0",
+      status: "completed",
+      versions: ["v1", "internal-v1", "interpretation-rules-v1"],
+    });
+  });
+
   it("validates F0 without inventing a workflow artifact", async () => {
     const runnerContext = context();
     const result = await validateF0Capabilities(runnerContext, {

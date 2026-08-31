@@ -12,17 +12,14 @@
     "vscode": "^1.104.0"
   },
   "activationEvents": [
-    "onChatParticipant:ta-assist",
-    "onCommand:ta-assist.analyze",
-    "onCommand:ta-assist.resume",
-    "onCommand:ta-assist.workbench"
-    ,"onCommand:ta-assist.executeHostAction"
+    "onChatParticipant:ta-assist"
   ],
   "contributes": {
     "commands": [
       { "command": "ta-assist.analyze", "title": "TA Assist: Analyze Workbook" },
       { "command": "ta-assist.resume", "title": "TA Assist: Resume Session" },
       { "command": "ta-assist.workbench", "title": "TA Assist: Open Workbench" }
+      ,{ "command": "ta-assist.openSessionRecord", "title": "TA Assist: Open Session Record" }
       ,{ "command": "ta-assist.executeHostAction", "title": "TA Assist: Execute Surface Host Action" }
     ],
     "chatParticipants": [

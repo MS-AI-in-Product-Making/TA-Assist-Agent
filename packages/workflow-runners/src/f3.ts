@@ -11,6 +11,7 @@ import {
 import { createF3DrawingGovernance } from "@ai-assist/workbook-catalog";
 
 import { normalizeRunnerError } from "./error-normalizer.js";
+import { renderF3AdoMarkdown } from "./f3-ado-markdown.js";
 import type { F3AnalysisRequest, F3AnalysisResult, RunContext } from "./types.js";
 
 export interface F3Dependencies {
@@ -156,26 +157,7 @@ export function renderF3Report(report: DrawingGovernanceResultV2, options: { out
 }
 
 export function renderF3AdoReminder(report: DrawingGovernanceResultV2): string {
-  if (report.status === "input_rejected") throw new Error("Cannot render ADO reminder for input_rejected report.");
-  const lines = [
-    "## F3 DIM ID / Drawing Governance Reminder",
-    "",
-    `Workbook: ${report.workbook.fileName}`,
-    `Worksheet count: ${report.summary.worksheetCount}`,
-    `Factor count: ${report.summary.factorCount}`,
-    `Governance required count: ${report.summary.governanceRequiredCount}`,
-    `Duplicate conflict count: ${report.summary.duplicateConflictCount}`,
-    "",
-    "| Device Level Dim | Dimension Description | Part / Subsystem | Drawing Number | Dim ID | Factor Description | Nominal | Upper Tolerance (+) | Lower Tolerance (-) | σ Level | Governance issue |",
-    "| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- |",
-  ];
-  for (const worksheet of report.worksheets) {
-    for (const row of worksheet.rows) {
-      const issue = row.qualitySignals.length === 0 ? "Complete" : row.qualitySignals.join("; ");
-      lines.push(`| ${row.deviceLevelDim} | ${row.dimensionDescription} | ${row.partSubsystem ?? "(missing)"} | ${row.drawingNumber ?? "(missing)"} | ${row.dimId ?? "(missing)"} | ${row.factorDescription} | ${row.nominal} | ${row.upperTolerance} | ${row.lowerTolerance} | ${row.sigmaLevel} | ${issue} |`);
-    }
-  }
-  return `${lines.join("\n")}\n`;
+  return renderF3AdoMarkdown(report).markdown;
 }
 
 export function renderF3AdoHistoryHtml(report: DrawingGovernanceResultV2): string {

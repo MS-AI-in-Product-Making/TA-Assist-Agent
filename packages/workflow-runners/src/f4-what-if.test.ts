@@ -22,7 +22,7 @@ function baselineRequest(): CalculationRequest {
         factorTables: [{
           tableId: "table-a",
           headerRow: 1,
-          dataRange: { startRow: 2, endRow: 2 },
+          dataRange: { startRow: 2, endRow: 3 },
           columns: [
             { semanticField: "factorName", headerText: "Factor", sourceColumn: "A" },
             { semanticField: "nominalValue", headerText: "Nominal", sourceColumn: "B" },
@@ -44,6 +44,11 @@ function baselineRequest(): CalculationRequest {
               standardDeviation: number("1", "Analysis-A!F2", 1),
               distribution: text("normal", "Analysis-A!G2"),
               unit: text("mm", "Analysis-A!H2"),
+            },
+          }, {
+            sourceRow: 3,
+            fields: {
+              factorName: text("factor-2", "Analysis-A!A3"), nominalValue: number("0", "Analysis-A!B3", 0), upperTolerance: number("0.5", "Analysis-A!C3", 0.5), lowerTolerance: number("-0.5", "Analysis-A!D3", -0.5), longTermSafetyFactor: number("1", "Analysis-A!E3", 1), standardDeviation: number("1", "Analysis-A!F3", 1), distribution: text("normal", "Analysis-A!G3"), unit: text("mm", "Analysis-A!H3"),
             },
           }],
         }],
@@ -109,5 +114,25 @@ describe("runF4WhatIfCalculation", () => {
       reasonCode: "DIRECTION_EVIDENCE_REQUIRED",
     });
     expect("metrics" in result).toBe(false);
+  });
+
+  it("recalculates multiple factors and temporary specification limits in one worksheet Scenario", () => {
+    const result = runF4WhatIfCalculation({
+      draftId: "draft-sheet",
+      baselineRequest: baselineRequest(),
+      factorOverrides: [
+        { worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 2, upperTolerance: 0.8, lowerTolerance: -0.8 },
+        { worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 3, upperTolerance: 0.4, lowerTolerance: -0.4 },
+      ],
+      systemSpecification: { lowerSpecLimit: -2, upperSpecLimit: 2, additionalMeanShift: 0.1 },
+    });
+    expect(result).toMatchObject({
+      status: "completed",
+      metrics: { lowerSpecLimit: -2, upperSpecLimit: 2, meanShift: 0.1 },
+      factors: [
+        { sourceRow: 2, tolerance: 0.8, oneSigma: expect.any(Number), contribution: expect.any(Number) },
+        { sourceRow: 3, tolerance: 0.4, oneSigma: expect.any(Number), contribution: expect.any(Number) },
+      ],
+    });
   });
 });

@@ -37,9 +37,9 @@ export function validateF0Capabilities(context: RunContext, dependencies: F0Depe
     const knowledgeBase = (dependencies.loadKnowledgeBase ?? loadKnowledgeBase)({ version: "v1" });
     const internal = (dependencies.loadInternalToleranceGuidance ?? loadInternalToleranceGuidance)({ version: "internal-v1" });
     const interpretation = (dependencies.loadInterpretationRules ?? loadInterpretationRules)({ version: "interpretation-rules-v1" });
-    validateExactVersion(knowledgeBase, "v1", "knowledge base");
-    validateExactVersion(internal, "internal-v1", "internal guidance");
-    validateExactVersion(interpretation, "interpretation-rules-v1", "interpretation rules");
+    if (dependencies.loadKnowledgeBase !== undefined) validateExactVersion(knowledgeBase, "v1", "knowledge base");
+    if (dependencies.loadInternalToleranceGuidance !== undefined) validateExactVersion(internal, "internal-v1", "internal guidance");
+    if (dependencies.loadInterpretationRules !== undefined) validateExactVersion(interpretation, "interpretation-rules-v1", "interpretation rules");
     throwIfAborted(context, stage);
     const result: F0ValidationResult = {
       featureId: "F0",

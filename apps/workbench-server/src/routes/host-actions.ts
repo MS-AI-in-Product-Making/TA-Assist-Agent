@@ -1,4 +1,4 @@
-import { hostActionClaimSchema, hostActionRequestSchema, hostActionResultSchema } from "@ai-assist/contracts";
+import { conversationTurnSchema, hostActionClaimSchema, hostActionRequestSchema, hostActionResultSchema } from "@ai-assist/contracts";
 import { createHash } from "node:crypto";
 import type { FastifyPluginAsync } from "fastify";
 
@@ -77,6 +77,7 @@ export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: Workbench
     if (parsed.data.status === "completed" && action?.kind === "surface_write" && submittedOutcome?.kind !== "surface_write") {
       return reply.code(400).send({ error: "host_action_result_integrity_rejected" });
     }
+    if (parsed.data.status === "completed" && action?.kind === "vscode_model_request" && submittedOutcome?.kind !== "model_response") return reply.code(400).send({ error: "host_action_result_integrity_rejected" });
     if (action?.kind === "surface_validate" && submittedOutcome?.kind === "surface_validation") {
       const confirmation = submittedOutcome.confirmation;
       const expectedConfirmationHash = createHash("sha256").update(JSON.stringify([
@@ -102,22 +103,6 @@ export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: Workbench
     const completion = await context.hostActions.complete(sessionId, parsed.data);
     if (completion === "accepted") {
       const outcome = parsed.data.payload.status === "completed" ? parsed.data.payload.outcome : undefined;
-      if (action?.kind === "surface_validate" && outcome?.kind === "surface_validation") {
-        const writeActionId = `ado-write:${sessionId}:${action.expectedRevision}`;
-        const created = await context.hostActions.create({
-          contractVersion: "f8-host-action-request-v1",
-          actionId: writeActionId,
-          sessionId,
-          expectedRevision: action.expectedRevision,
-          kind: "surface_write",
-          validationActionId: action.actionId,
-          confirmationHash: outcome.confirmation.confirmationHash,
-          expectedTargetVersion: action.expectedTargetVersion,
-          confirmation: outcome.confirmation,
-          expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
-        });
-        if (created === undefined) return reply.code(409).send({ error: "host_action_id_conflict" });
-      }
       if (action?.kind === "surface_write" && outcome?.kind === "surface_write") {
         const snapshot = await context.sessions.read(sessionId);
         if (snapshot?.state !== "ado_action_pending" || snapshot.revision !== action.expectedRevision) {
@@ -133,6 +118,13 @@ export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: Workbench
         });
         await context.enqueueActiveAttempt(next);
       }
+      if (action?.kind === "vscode_model_request" && outcome?.kind === "model_response") {
+        if (outcome.turnId !== action.turnId) return reply.code(400).send({ error: "host_action_result_integrity_rejected" });
+        const turns = await context.conversation.read(sessionId);
+        const turn = await context.conversation.append(conversationTurnSchema.parse({ contractVersion: "ta-conversation-turn-v1", turnId: `${action.turnId}:model`, sessionId, sequence: nextConversationSequence(turns), source: "vscode", role: "assistant", content: [{ kind: "text", text: outcome.responseText }], createdAt: new Date().toISOString(), relatedArtifactIds: [] }));
+        context.events.publish(sessionId, "conversation_turn_appended", turn);
+        await context.syncSessionRecord(sessionId);
+      }
       return reply.code(204).send();
     }
     if (completion === "duplicate") return reply.code(409).send({ error: "host_action_result_replayed" });
@@ -143,4 +135,8 @@ export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: Workbench
 function readHostInstanceId(body: unknown): string {
   const candidate = (body as { readonly hostInstanceId?: unknown } | undefined)?.hostInstanceId;
   return typeof candidate === "string" && candidate.length > 0 ? candidate : "host";
+}
+
+function nextConversationSequence(turns: readonly { readonly sequence: number }[]): number {
+  return Math.max(0, ...turns.map((turn) => turn.sequence)) + 1;
 }

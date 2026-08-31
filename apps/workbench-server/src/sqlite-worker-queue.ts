@@ -36,6 +36,7 @@ export interface PersistentWorkerQueueOptions {
 
 export interface EnqueueOptions {
   readonly deferDrain?: boolean;
+  readonly deferStart?: boolean;
 }
 
 interface PersistedJob extends StageJob {
@@ -59,6 +60,7 @@ interface QueueRow {
 
 export interface PersistentWorkerQueue {
   enqueue(job: StageJob, options?: EnqueueOptions): Promise<QueueReceipt>;
+  recover(job: StageJob): Promise<QueueReceipt>;
   cancel(jobId: string): Promise<boolean>;
   reconcile(): Promise<void>;
 }
@@ -181,7 +183,7 @@ class SqliteWorkerQueue implements PersistentWorkerQueue {
       };
     }
 
-    if (options?.deferDrain !== true) {
+    if (options?.deferDrain !== true && options?.deferStart !== true) {
       const drain = this.drain();
       await new Promise((resolve) => setImmediate(resolve));
       await this.waitForTerminal(canonicalJob.jobId, drain);
@@ -192,6 +194,12 @@ class SqliteWorkerQueue implements PersistentWorkerQueue {
       attemptId: canonicalJob.attemptId,
       status: "failed",
     };
+  }
+
+  async recover(job: StageJob): Promise<QueueReceipt> {
+    const canonicalJob = canonicalizeStageJob(job);
+    const existing = this.readReceipt(canonicalJob.jobId);
+    return existing ?? this.enqueue(canonicalJob);
   }
 
   async cancel(jobId: string): Promise<boolean> {
@@ -282,11 +290,11 @@ class SqliteWorkerQueue implements PersistentWorkerQueue {
       } else if (!this.completeJob(job, canonicalResult)) {
         await this.options.sessionStore.markDependencyFailure(job.attemptId, "Worker terminal state was rejected.", job);
       }
-    } catch {
-      await this.failJob(job, "Worker failed.", this.ownerId);
+    } catch (error) {
+      await this.failJob(job, safeWorkerFailureReason(error), this.ownerId);
     } finally {
       this.terminalPromises.delete(job.jobId);
-      void this.drain();
+      setImmediate(() => { void this.drain(); });
     }
   }
 
@@ -432,6 +440,13 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
+}
+
+function safeWorkerFailureReason(error: unknown): string {
+  const summary = typeof error === "object" && error !== null && "summary" in error && typeof error.summary === "string"
+    ? error.summary
+    : "Worker failed.";
+  return summary.replace(/[\r\n]+/g, " ").slice(0, 500);
 }
 
 function isSafeId(value: unknown): value is string {

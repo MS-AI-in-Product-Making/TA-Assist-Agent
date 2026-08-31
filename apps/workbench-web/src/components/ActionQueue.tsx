@@ -10,10 +10,10 @@ export function ActionQueue({ items }: ActionQueueProps) {
       <div className="panel__header">
         <div>
           <p className="eyebrow">Queue</p>
-          <h2 id="queue-title">待执行动作</h2>
+          <h2 id="queue-title">Pending actions</h2>
         </div>
       </div>
-      {items.length === 0 ? <p className="support-text">当前没有待执行动作。</p> : null}
+      {items.length === 0 ? <p className="support-text">There are no pending actions.</p> : null}
       <ul className="queue-list">
         {items.map((item, index) => (
           <li key={`${item.featureId}-${item.action}-${index}`} className="queue-item">

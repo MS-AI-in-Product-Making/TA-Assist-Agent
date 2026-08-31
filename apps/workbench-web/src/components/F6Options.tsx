@@ -8,7 +8,7 @@ export function F6Options({ options }: F6OptionsProps) {
   return (
     <div className="review-card">
       <h3 className="subheading">F6 Options</h3>
-      {options.length === 0 ? <p className="support-text">当前没有可展示的 F6 方案。</p> : null}
+      {options.length === 0 ? <p className="support-text">No F6 options are available to display.</p> : null}
       <ul className="compact-list">
         {options.map((option) => (
           <li key={option.optionId}>

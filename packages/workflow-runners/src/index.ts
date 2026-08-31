@@ -1,6 +1,12 @@
 export type * from "./types.js";
 export { normalizeRunnerError } from "./error-normalizer.js";
 export { validateF0Capabilities } from "./f0.js";
+export {
+	F3AdoMarkdownLengthError,
+	F3_ADO_MARKDOWN_MAX_LENGTH,
+	F3_ADO_MARKDOWN_TABLE_HEADER,
+	renderF3AdoMarkdown,
+} from "./f3-ado-markdown.js";
 export { runF1F2Selection, runF1F2Confirmed } from "./f1-f2.js";
 export { runF3Analysis } from "./f3.js";
 export { renderF3AdoReminder } from "./f3.js";

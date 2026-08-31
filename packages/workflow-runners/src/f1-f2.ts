@@ -150,7 +150,7 @@ function buildCompletedResult(
   const report = parseCompletedReport(ensureStageArtifactPresent(layout.f2Root, "Feature2-Report.json", "Feature 2 report"));
   return {
     featureId: "F2",
-    status: "completed",
+    status: report.status === "partiallyBlocked" ? "partiallyBlocked" : "completed",
     workbookContentHash: confirmation.workbookContentHash,
     selectedWorksheetNames: [...confirmation.selectedWorksheetNames],
     runId: layout.runId,
@@ -475,11 +475,12 @@ function runStage(
   executeStage: (request: ExecuteStageRequest) => ExecuteStageResult,
   now: () => Date,
 ): void {
+  const featureId = stage === "f1-selection" || stage === "f1" ? "F1" : "F2";
   throwIfAborted(context, stage);
   setExecutionStatus(manifest, EXECUTION_STATUS.running, now, { preserveError: true });
   manifest.stages[stage] = { status: "running", startedAt: now().toISOString() };
   persistManifest(manifest, manifestPath, now);
-  context.emit({ kind: "stage_started", featureId: "F2", stage, timestamp: now().toISOString() });
+  context.emit({ kind: "stage_started", featureId, stage, timestamp: now().toISOString() });
   try {
     const result = executeStage({
       stage,
@@ -492,7 +493,7 @@ function runStage(
     writeFileSync(path.join(validationRoot, `${stage}.stderr.log`), result.stderr ?? "", "utf8");
     manifest.stages[stage] = { ...manifest.stages[stage], status: "completed", completedAt: now().toISOString() };
     persistManifest(manifest, manifestPath, now);
-    context.emit({ kind: "stage_completed", featureId: "F2", stage, timestamp: now().toISOString() });
+    context.emit({ kind: "stage_completed", featureId, stage, timestamp: now().toISOString() });
   } catch (error) {
     const details = errorDetails(error);
     const normalized = normalizeRunnerError(error, { fallbackRunId: context.attemptId, affectedInputReferences: [stage] });
@@ -503,14 +504,14 @@ function runStage(
     manifest.error = details;
     setExecutionStatus(manifest, EXECUTION_STATUS.failedRetryable, now, { error: details });
     persistManifest(manifest, manifestPath, now);
-    context.emit({ kind: "stage_failed", featureId: "F2", stage, timestamp: now().toISOString(), detail: normalized.summary });
+    context.emit({ kind: "stage_failed", featureId, stage, timestamp: now().toISOString(), detail: normalized.summary });
     throw normalized;
   }
 }
 
 function parseCompletedReport(reportPath: string): F2UserReport {
   const parsed = f2UserReportSchema.parse(JSON.parse(readFileSync(reportPath, "utf8")));
-  if (parsed.status !== "completed") throw new Error("Feature 2 report must be completed before downstream use.");
+  if (parsed.status !== "completed" && parsed.status !== "partiallyBlocked") throw new Error("Feature 2 report must contain at least one ready worksheet before downstream use.");
   return parsed as F2UserReport;
 }
 
@@ -540,8 +541,10 @@ export function runF1F2Selection(
       executeStage,
       now,
     );
-    const promptPath = path.join(layout.f1Root, "Feature1-Selection.json");
-    const prompt = worksheetSelectionPromptSchema.parse(JSON.parse(readFileSync(promptPath, "utf8")));
+    const generatedPromptPath = path.join(layout.f1Root, "Feature1-Selection.json");
+    const prompt = worksheetSelectionPromptSchema.parse(JSON.parse(readFileSync(generatedPromptPath, "utf8")));
+    const promptPath = path.join(layout.validationRoot, "Feature1-Selection.json");
+    writeFileSync(promptPath, `${JSON.stringify(prompt, null, 2)}\n`, "utf8");
     manifest.selection = { status: "selectionRequired", promptPath, workbookContentHash: prompt.workbook.contentHash, selectedWorksheetNames: [] };
     manifest.status = "selectionRequired";
     setExecutionStatus(manifest, EXECUTION_STATUS.waitingConfirmation, now);
@@ -589,8 +592,10 @@ export function runF1F2Confirmed(
       selectedWorksheetNames: [...request.selectedWorksheetNames],
       confirmed: true,
     });
-    const { manifest, promptPath } = loadSelectionRun(request, context, workbook);
-    const layout = {
+    const loadedRun = loadSelectionRun(request, context, workbook);
+    let manifest = loadedRun.manifest;
+    const promptPath = loadedRun.promptPath;
+    let layout = {
       runId: manifest.runId,
       runRoot: manifest.runRoot,
       f1Root: manifest.outputs.f1Root,
@@ -598,6 +603,43 @@ export function runF1F2Confirmed(
       validationRoot: manifest.outputs.validationRoot,
       manifestPath: path.resolve(manifest.runRoot, "manifest.json"),
     };
+    if (request.refreshF2 === true && (executionStatus(manifest) === EXECUTION_STATUS.completed || manifest.status === "completed")) {
+      const startedAt = now().toISOString();
+      const runId = `${startedAt.replace(/[:.]/g, "-")}-f2-refresh`;
+      const runRoot = path.join(path.dirname(manifest.runRoot), runId);
+      if (existsSync(runRoot)) throw new Error(`Feature 2 refresh run already exists: ${runRoot}`);
+      layout = {
+        runId,
+        runRoot,
+        f1Root: manifest.outputs.f1Root,
+        f2Root: path.join(runRoot, "f2"),
+        validationRoot: path.join(runRoot, "validation"),
+        manifestPath: path.join(runRoot, "manifest.json"),
+      };
+      manifest = {
+        ...manifest,
+        runId,
+        runRoot,
+        startedAt,
+        updatedAt: startedAt,
+        status: "running",
+        outputs: { f1Root: layout.f1Root, f2Root: layout.f2Root, validationRoot: layout.validationRoot },
+        execution: { status: EXECUTION_STATUS.confirmedPendingExecution, boundAt: startedAt },
+        stages: { f1: { ...manifest.stages.f1, status: "completed" }, f2: { status: "pending" }, validation: { status: "pending" } },
+      };
+      delete manifest.error;
+      mkdirSync(runRoot, { recursive: true });
+      persistManifest(manifest, layout.manifestPath, now);
+      upsertSelectionRegistryEntry(context.managedOutputRoot, {
+        runId,
+        runRoot,
+        manifestPath: layout.manifestPath,
+        promptPath,
+        workbookPath: workbook,
+        workbookContentHash: confirmation.workbookContentHash,
+        status: "confirmed",
+      });
+    }
     mkdirSync(layout.validationRoot, { recursive: true });
     ensureContainedPhysicalPath(context.managedOutputRoot, layout.runRoot, "Feature 2 selection run root", "directory");
     if (executionStatus(manifest) === EXECUTION_STATUS.completed || manifest.status === "completed") {
@@ -678,7 +720,7 @@ export function runF1F2Confirmed(
     context.emit({ kind: "artifact_written", featureId: "F2", stage: "validation", timestamp: now().toISOString(), path: reportPath });
     return {
       featureId: "F2",
-      status: "completed",
+      status: report.status === "partiallyBlocked" ? "partiallyBlocked" : "completed",
       workbookContentHash: confirmation.workbookContentHash,
       selectedWorksheetNames: [...confirmation.selectedWorksheetNames],
       runId: layout.runId,

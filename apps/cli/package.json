@@ -21,6 +21,7 @@
     "@ai-assist/governance": "0.1.0",
     "@ai-assist/memory": "0.1.0",
     "@ai-assist/orchestrator": "0.1.0",
+    "@ai-assist/workbench": "0.1.0",
     "@ai-assist/workbench-server": "0.1.0"
   }
 }

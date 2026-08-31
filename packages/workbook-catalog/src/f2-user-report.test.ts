@@ -194,6 +194,32 @@ describe("createF2UserReport", () => {
     expect(result.f4Handoffs[0]).toMatchObject({ status: "ready", worksheetName: "Analysis-A" });
   });
 
+  it("blocks an empty factor table before creating an F4 handoff", () => {
+    const request = input(completeFields());
+    request.worksheets[0]!.factorTables[0]!.rows = [];
+    const result = createF2UserReport(request);
+    expect(result.worksheets[0]).toMatchObject({ status: "blocked", f4CalculabilityIssues: [{ reasonCode: "factor_table_has_no_rows", tableId: "table-a" }] });
+    expect(result.f4Handoffs).toHaveLength(0);
+  });
+
+  it("blocks a worksheet with no factor tables before creating an F4 handoff", () => {
+    const request = input(completeFields());
+    request.worksheets[0]!.factorTables = [];
+    const result = createF2UserReport(request);
+    expect(result.worksheets[0]).toMatchObject({ status: "blocked", f4CalculabilityIssues: [{ reasonCode: "factor_tables_missing" }] });
+    expect(result.f4Handoffs).toHaveLength(0);
+  });
+
+  it("blocks a zero-width tolerance factor before creating an F4 handoff", () => {
+    const fields = completeFields();
+    fields.upperTolerance = available("Analysis-A!G2", "0", 0);
+    fields.lowerTolerance = available("Analysis-A!H2", "0", 0);
+    const actualFields = { ...completeActualFields(), upperTolerance: 0, lowerTolerance: 0 };
+    const result = createF2UserReport(input(fields, "available", actualFields));
+    expect(result.worksheets[0]).toMatchObject({ status: "blocked", f4CalculabilityIssues: [{ reasonCode: "factor_tolerance_range_invalid", tableId: "table-a", sourceRow: 2 }] });
+    expect(result.f4Handoffs).toHaveLength(0);
+  });
+
   it("blocks once per row while summarizing every required field and image gap", () => {
     const fields = completeFields();
     fields.partName = unavailable("Analysis-A!B2");

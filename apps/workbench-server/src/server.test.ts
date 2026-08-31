@@ -5,10 +5,13 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { describe, expect, it, vi } from "vitest";
 import { get } from "node:http";
+import { DatabaseSync } from "node:sqlite";
 
 import { buildWorkbenchServer } from "./server.js";
 import { createConversationStore } from "@ai-assist/conversation";
-import { openSessionStore, projectWorksheetReview, selectCompleteReviewContext } from "@ai-assist/workbench";
+import { createReviewContextId, createSessionStore, openSessionStore, projectWorksheetReview, reduceSessionCommand, selectCompleteReviewContext } from "@ai-assist/workbench";
+import { renderF3AdoMarkdown } from "@ai-assist/workflow-runners";
+import { createAnonymousWorkbookZip } from "../../../packages/workbook-catalog/src/test-support.js";
 import type { PersistentWorkerQueueOptions, StageJob } from "./sqlite-worker-queue.js";
 
 function testRoot(name: string): string {
@@ -20,6 +23,7 @@ const REVIEW_CONTEXT = {
   downstreamSelectionHash: createHash("sha256").update(JSON.stringify(["Analysis-A"])).digest("hex"),
   baselineRunReference: "f2-run-2026-08-25",
 };
+const REVIEW_CONTEXT_ID = createReviewContextId(REVIEW_CONTEXT);
 
 function structuredReviewResult(featureId: "F4" | "F5" | "F6", includeContext = true) {
   const artifacts = featureId === "F4"
@@ -31,6 +35,52 @@ function structuredReviewResult(featureId: "F4" | "F5" | "F6", includeContext = 
           { artifactId: "f6-report", kind: "f6_report", relativePath: "f6/Feature6-Report.json", contentHash: "4".repeat(64) },
         ];
   return { featureId, status: "completed", ...(includeContext ? { reviewContext: REVIEW_CONTEXT } : {}), artifactReferences: artifacts };
+}
+
+function f3Report(factorDescription: string, overrides: Record<string, unknown> = {}) {
+  const row = {
+    factorInstanceId: "1".repeat(64),
+    drawingDimensionKey: "2".repeat(64),
+    deviceLevelDim: "TP_Gap_X",
+    dimensionDescription: "Gap X",
+    partCategory: "Display",
+    partSubsystem: "Panel",
+    drawingNumber: "DWG-1",
+    dimId: "307",
+    factorDescription,
+    nominal: 3.145,
+    upperTolerance: 0.1,
+    lowerTolerance: -0.1,
+    sigmaLevel: 4,
+    dimIdStatus: "valid",
+    qualitySignals: [],
+    governanceStatus: "complete",
+    imageReference: { artifact: "f1", relativePath: "worksheets/Analysis-A/tolerance-path.png", contentHash: "3".repeat(64), worksheetName: "Analysis-A" },
+    source: { worksheetName: "Analysis-A", tableId: "factor-table-1", sourceRow: 14, sourceCells: { factorName: "Analysis-A!E14" } },
+    ...overrides,
+  };
+  const governanceStatus = row.governanceStatus === "complete" ? "complete" : "needs_governance";
+  const completeCount = governanceStatus === "complete" ? 1 : 0;
+  const governanceRequiredCount = governanceStatus === "complete" ? 0 : 1;
+  return {
+    contractVersion: "v1",
+    modelVersion: "drawing-governance-v2",
+    outputClassification: "confidential",
+    featureId: "F3",
+    status: governanceStatus === "complete" ? "completed" : "governance_required",
+    artifactRoot: "controlled/f1",
+    workbook: { fileName: "Anonymous.xlsx", contentHash: "a".repeat(64) },
+    worksheets: [{ worksheetName: "Analysis-A", toleranceLoopDescription: "Anonymous gap", rows: [row] }],
+    ado: { status: "not_requested" },
+    summary: { worksheetCount: 1, factorCount: 1, completeCount, governanceRequiredCount, duplicateConflictCount: Array.isArray(row.qualitySignals) && row.qualitySignals.includes("duplicate_conflict") ? 1 : 0 },
+  } as const;
+}
+
+async function writeJsonArtifact(rootDir: string, relativePath: string, data: unknown): Promise<string> {
+  const text = `${JSON.stringify(data, null, 2)}\n`;
+  await mkdir(dirname(join(rootDir, relativePath)), { recursive: true });
+  await writeFile(join(rootDir, relativePath), text);
+  return createHash("sha256").update(text).digest("hex");
 }
 
 async function immediateQueue(options: PersistentWorkerQueueOptions) {
@@ -60,7 +110,7 @@ async function immediateQueue(options: PersistentWorkerQueueOptions) {
 }
 
 describe("workbench server routes", () => {
-  it("persists Web turns in the shared TA ConversationStore", async () => {
+  it("rejects client-composed Web context before writing conversation turns", async () => {
     const rootDir = testRoot("workbench-server-shared-conversation");
     await rm(rootDir, { recursive: true, force: true });
     const sessionId = "34343434-3434-4343-8343-343434343434";
@@ -69,13 +119,15 @@ describe("workbench server routes", () => {
     try {
       const browser = await server.testAuthenticate(sessionId);
       const turn = { contractVersion: "ta-conversation-turn-v1", turnId: "web-turn-1", sessionId, sequence: 1, source: "web", role: "user", content: [{ kind: "text", text: "继续分析" }], createdAt: "2026-08-25T00:00:00.000Z", relatedArtifactIds: [] };
-      const response = await server.inject({ method: "POST", url: `/api/sessions/${sessionId}/conversation`, headers: browser.headers, payload: turn });
-      expect(response.statusCode).toBe(201);
+      const response = await server.inject({ method: "POST", url: `/api/sessions/${sessionId}/conversation`, headers: browser.headers, payload: { turn, context: { relatedArtifactIds: [] } } });
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toEqual({ error: "conversation_schema_rejected" });
       await server.close();
       closed = true;
       const conversation = await createConversationStore({ rootDir: join(rootDir, "runtime", "workbench") });
       try {
-        await expect(conversation.readTurns(sessionId)).resolves.toEqual([turn]);
+        const turns = await conversation.readTurns(sessionId);
+        expect(turns).toHaveLength(0);
       } finally {
         await conversation.close();
       }
@@ -130,6 +182,177 @@ describe("workbench server routes", () => {
       expect(whatIfService.calculate).toHaveBeenCalledTimes(2);
       expect(whatIfService.calculate).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ tableId: "table-a", sourceRow: 2 }));
       expect(whatIfService.createPromotionPreview).toHaveBeenCalledOnce();
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("reloads with the governed baseline after transient worksheet preview and exposes a saved scenario only after explicit save", async () => {
+    const rootDir = testRoot("workbench-server-worksheet-preview-reload");
+    await rm(rootDir, { recursive: true, force: true });
+    const sessionId = "35353535-3535-4353-8353-353535353535";
+    const worksheetDraft = {
+      contractVersion: "f8-scenario-draft-v1" as const,
+      draftId: "draft-worksheet",
+      sessionId,
+      worksheetName: "Analysis-A",
+      inputRevision: 1,
+      status: "calculated" as const,
+      mode: "WHAT_IF" as const,
+      baselineWorkbookHash: "a".repeat(64),
+      baselineRunReference: "f4-run-a",
+      calculationReference: "what-if:worksheet-draft",
+      calculationMetrics: { mean: 0, rssSigma: 0.8, cp: 1.2, cpkL: 1.1, cpkU: 1.3, cpk: 1.1, statisticalMargin: 2, worstCaseMargin: 1 },
+      factorOverrides: [{ worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 2, upperTolerance: 0.8 }],
+      factorResults: [{ worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 2, mean: 0, tolerance: 1.8, oneSigma: 0.8, contribution: 0.7 }],
+    };
+    const whatIfService = {
+      calculate: vi.fn(async () => ({ ...worksheetDraft, change: { upperTolerance: 0.8 } })),
+      calculateWorksheet: vi.fn(async () => worksheetDraft),
+      createPromotionPreview: vi.fn(async () => ({
+        contractVersion: "v1" as const,
+        inputClassification: "confidential" as const,
+        targetVersion: "f6-optimization-targets-v1" as const,
+        workbookContentHash: "a".repeat(64),
+        worksheets: [{
+          worksheetName: "Analysis-A",
+          tableId: "table-a",
+          baselineIdentity: { calculationVersion: "excel-ta-v1" as const, projectReference: "project-a", runReference: "f4-run-a", workbookContentHash: "a".repeat(64), worksheetName: "Analysis-A", tableId: "table-a" },
+          targets: [{ targetId: "Analysis-A:table-a:2:tolerance", targetType: "factor_tolerance" as const, factor: { worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 2, factorName: "factor-a", unit: "mm" }, upperTolerance: 0.8, lowerTolerance: -1, unit: "mm" }],
+        }],
+      })),
+    };
+    const server = await buildWorkbenchServer({ rootDir, whatIfService, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate(sessionId);
+      const store = await openSessionStore({ rootDir, sessionId });
+      try {
+        await store.applyCommand({ contractVersion: "f8-session-command-v1", sessionId, commandId: "seed-review", expectedRevision: 0, command: "upload_workbook", payload: { fileName: "book.xlsx", workbookBytes: new Uint8Array([80, 75, 3, 4]), inputClassification: "confidential" } }, async (snapshot) => ({ snapshot: { ...snapshot, revision: 1, inputRevision: 1, state: "review_required", activeAttempt: null } }));
+      } finally {
+        await store.close();
+      }
+
+      const previewPayload = {
+        draftId: "draft-worksheet",
+        worksheetName: "Analysis-A",
+        inputRevision: 1,
+        factorOverrides: [{ worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 2, upperTolerance: 0.8 }],
+      };
+      const preview = await server.inject({ method: "POST", url: `/api/sessions/${sessionId}/what-if/calculate-worksheet`, headers: browser.headers, payload: previewPayload });
+      expect(preview.statusCode).toBe(200);
+      expect(preview.json()).toMatchObject({ status: "calculated", calculationReference: "what-if:worksheet-draft" });
+
+      const afterPreviewStore = await openSessionStore({ rootDir, sessionId });
+      try {
+        const reloaded = await afterPreviewStore.readSnapshot();
+        expect(reloaded.revision).toBe(1);
+        expect(reloaded.scenarioDrafts).toBeUndefined();
+      } finally {
+        await afterPreviewStore.close();
+      }
+
+      const saved = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${sessionId}/commands`,
+        headers: browser.headers,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "save-worksheet-draft",
+          expectedRevision: 1,
+          command: "save_what_if_draft",
+          payload: { draftId: "draft-worksheet", worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 2, inputRevision: 1, patch: { upperTolerance: 0.8 } },
+        },
+      });
+      expect(saved.statusCode).toBe(202);
+      expect(saved.json()).toMatchObject({ revision: 2, scenarioDrafts: [{ draftId: "draft-worksheet", status: "saved" }] });
+
+      const afterSaveStore = await openSessionStore({ rootDir, sessionId });
+      try {
+        const reloaded = await afterSaveStore.readSnapshot();
+        expect(reloaded.revision).toBe(2);
+        expect(reloaded.scenarioDrafts).toMatchObject([{ draftId: "draft-worksheet", status: "saved", factorOverrides: [{ worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 2, upperTolerance: 0.8 }] }]);
+      } finally {
+        await afterSaveStore.close();
+      }
+
+      expect(whatIfService.calculateWorksheet).toHaveBeenCalledOnce();
+      expect(whatIfService.calculate).toHaveBeenCalledOnce();
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("saves a worksheet system-specification Scenario through the public command and reloads it from the session store", async () => {
+    const rootDir = testRoot("workbench-server-system-spec-save-reload");
+    await rm(rootDir, { recursive: true, force: true });
+    const sessionId = "36363636-3636-4363-8363-363636363636";
+    const worksheetDraft = {
+      contractVersion: "f8-scenario-draft-v1" as const,
+      draftId: "draft-system-spec",
+      sessionId,
+      worksheetName: "Analysis-A",
+      inputRevision: 1,
+      status: "calculated" as const,
+      mode: "WHAT_IF" as const,
+      baselineWorkbookHash: "a".repeat(64),
+      baselineRunReference: "f4-run-a",
+      calculationReference: "what-if:system-spec",
+      calculationMetrics: { mean: 0.1, rssSigma: 0.8, cp: 1.4, cpkL: 1.2, cpkU: 1.6, cpk: 1.2, statisticalMargin: 1.25, worstCaseMargin: 0.95, lowerSpecLimit: 1.35, upperSpecLimit: 1.62 },
+      factorOverrides: [],
+      systemSpecification: { lowerSpecLimit: 1.35, upperSpecLimit: 1.62 },
+      factorResults: [],
+    };
+    const whatIfService = {
+      calculate: vi.fn(async () => { throw new Error("factor save should not be used"); }),
+      calculateWorksheet: vi.fn(async () => worksheetDraft),
+      createPromotionPreview: vi.fn(),
+    };
+    const server = await buildWorkbenchServer({ rootDir, whatIfService, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate(sessionId);
+      const store = await openSessionStore({ rootDir, sessionId });
+      try {
+        await store.applyCommand({ contractVersion: "f8-session-command-v1", sessionId, commandId: "seed-review", expectedRevision: 0, command: "upload_workbook", payload: { fileName: "book.xlsx", workbookBytes: new Uint8Array([80, 75, 3, 4]), inputClassification: "confidential" } }, async (snapshot) => ({ snapshot: { ...snapshot, revision: 1, inputRevision: 1, state: "review_required", activeAttempt: null } }));
+      } finally {
+        await store.close();
+      }
+
+      const saved = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${sessionId}/commands`,
+        headers: browser.headers,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "save-system-spec-draft",
+          expectedRevision: 1,
+          command: "save_what_if_draft",
+          payload: {
+            draftId: "draft-system-spec",
+            worksheetName: "Analysis-A",
+            inputRevision: 1,
+            factorOverrides: [],
+            systemSpecification: { lowerSpecLimit: 1.35, upperSpecLimit: 1.62 },
+          },
+        },
+      });
+
+      expect(saved.statusCode).toBe(202);
+      expect(saved.json()).toMatchObject({ revision: 2, scenarioDrafts: [{ draftId: "draft-system-spec", status: "saved", systemSpecification: { lowerSpecLimit: 1.35, upperSpecLimit: 1.62 } }] });
+      const reloadedStore = await openSessionStore({ rootDir, sessionId });
+      try {
+        expect(await reloadedStore.readSnapshot()).toMatchObject({
+          revision: 2,
+          scenarioDrafts: [{ draftId: "draft-system-spec", status: "saved", factorOverrides: [], systemSpecification: { lowerSpecLimit: 1.35, upperSpecLimit: 1.62 } }],
+        });
+      } finally {
+        await reloadedStore.close();
+      }
+      expect(whatIfService.calculateWorksheet).toHaveBeenCalledWith(expect.objectContaining({ sessionId }), expect.objectContaining({ worksheetName: "Analysis-A", factorOverrides: [], systemSpecification: { lowerSpecLimit: 1.35, upperSpecLimit: 1.62 } }));
+      expect(whatIfService.calculate).not.toHaveBeenCalled();
     } finally {
       await server.close();
       await rm(rootDir, { recursive: true, force: true });
@@ -202,10 +425,6 @@ describe("workbench server routes", () => {
       };
 
       expect((await submit("run-f4", "retry", { stage: "f4_running" })).statusCode).toBe(202);
-      const f5Response = await submit("run-f5", "confirm_image_decision", { decision: "not_evaluated" });
-      expect(f5Response.statusCode).toBe(202);
-      expect((await submit("skip-context", "confirm_analysis_context", { decision: "not_provided" })).statusCode).toBe(202);
-      expect((await submit("run-f6", "confirm_optimization_targets", { decision: "not_provided" })).statusCode).toBe(202);
 
       const reopened = await openSessionStore({ rootDir, sessionId });
       try {
@@ -235,6 +454,135 @@ describe("workbench server routes", () => {
         payload: JSON.stringify({ artifactId: "f4-calculation" }),
       });
       expect(artifactResponse.json()).toEqual({ artifactId: "f4-calculation" });
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("imports a host workbook through existing upload validation and queues one upload command", async () => {
+    const rootDir = testRoot("workbench-server-host-import");
+    await rm(rootDir, { recursive: true, force: true });
+    const enqueued: StageJob[] = [];
+    const server = await buildWorkbenchServer({
+      rootDir,
+      runner: async () => ({ status: "ok" }),
+      queueFactory: async (options) => ({
+        async enqueue(job) {
+          enqueued.push(job);
+          await options.sessionStore.persistAttempt({ attemptId: job.attemptId, status: "running", jobId: job.jobId, stage: job.stage });
+          return { jobId: job.jobId, attemptId: job.attemptId, status: "queued" as const };
+        },
+        async cancel() { return false; },
+        async reconcile() {},
+      }),
+      skipWebAssets: true,
+    });
+    try {
+      const auth = await server.testAuthenticate("31313131-3131-4313-8313-313131313131");
+      const bytes = createAnonymousWorkbookZip();
+
+      const receipt = await server.importHostWorkbook({ requestId: "request-1", sessionId: auth.sessionId, fileName: "host.xlsx", bytes });
+      const duplicate = await server.importHostWorkbook({ requestId: "request-1", sessionId: auth.sessionId, fileName: "host.xlsx", bytes: new Uint8Array([80, 75, 3, 4]) });
+
+      expect(receipt).toMatchObject({ artifactId: expect.any(String), contentHash: createHash("sha256").update(bytes).digest("hex"), snapshotRevision: 1, state: "f0_validating" });
+      expect(duplicate).toEqual(receipt);
+      expect(enqueued).toHaveLength(1);
+      expect(JSON.stringify(receipt)).not.toContain("host-import");
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects host workbook import for a missing session with a sanitized error", async () => {
+    const rootDir = testRoot("workbench-server-host-import-missing-session");
+    await rm(rootDir, { recursive: true, force: true });
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      await expect(server.importHostWorkbook({ requestId: "request-1", sessionId: "missing-session", fileName: "host.xlsx", bytes: createAnonymousWorkbookZip() })).rejects.toSatisfy((error: unknown) => {
+        const text = JSON.stringify(error);
+        return text.includes("validation_error") && !text.includes(":\\");
+      });
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects malformed host workbook bytes through the same OOXML validation", async () => {
+    const rootDir = testRoot("workbench-server-host-import-ooxml");
+    await rm(rootDir, { recursive: true, force: true });
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const auth = await server.testAuthenticate("32323232-3232-4323-8323-323232323232");
+      await expect(server.importHostWorkbook({ requestId: "request-1", sessionId: auth.sessionId, fileName: "host.xlsx", bytes: Buffer.from("not a workbook") })).rejects.toMatchObject({ code: "validation_error" });
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects host workbook imports whose filename is not xlsx", async () => {
+    const rootDir = testRoot("workbench-server-host-import-extension");
+    await rm(rootDir, { recursive: true, force: true });
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const auth = await server.testAuthenticate("33323232-3232-4323-8323-323232323232");
+      await expect(server.importHostWorkbook({ requestId: "request-1", sessionId: auth.sessionId, fileName: "host.xlsm", bytes: createAnonymousWorkbookZip() })).rejects.toMatchObject({ code: "validation_error" });
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects host workbook imports whose filename looks like a filesystem path", async () => {
+    const rootDir = testRoot("workbench-server-host-import-pathlike-name");
+    await rm(rootDir, { recursive: true, force: true });
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const auth = await server.testAuthenticate("43434343-4343-4434-8434-434343434343");
+      await expect(server.importHostWorkbook({ requestId: "request-1", sessionId: auth.sessionId, fileName: "C:\\secret\\host.xlsx", bytes: createAnonymousWorkbookZip() })).rejects.toSatisfy((error: unknown) => {
+        const text = JSON.stringify(error);
+        return text.includes("validation_error") && !text.includes("C:\\secret");
+      });
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("single-flights concurrent duplicate host workbook imports by request id", async () => {
+    const rootDir = testRoot("workbench-server-host-import-concurrent-duplicate");
+    await rm(rootDir, { recursive: true, force: true });
+    const enqueued: StageJob[] = [];
+    let releaseUpload: (() => void) | undefined;
+    const uploadGate = new Promise<void>((resolve) => { releaseUpload = resolve; });
+    const server = await buildWorkbenchServer({
+      rootDir,
+      runner: async () => ({ status: "ok" }),
+      queueFactory: async (options) => ({
+        async enqueue(job) {
+          enqueued.push(job);
+          await options.sessionStore.persistAttempt({ attemptId: job.attemptId, status: "running", jobId: job.jobId, stage: job.stage });
+          return { jobId: job.jobId, attemptId: job.attemptId, status: "queued" as const };
+        },
+        async cancel() { return false; },
+        async reconcile() {},
+      }),
+      skipWebAssets: true,
+    });
+    try {
+      const auth = await server.testAuthenticate("45454545-4545-4454-8454-454545454545");
+      const bytes = createAnonymousWorkbookZip();
+      const first = server.importHostWorkbook({ requestId: "request-1", sessionId: auth.sessionId, fileName: "host.xlsx", bytes: new Uint8Array(bytes) });
+      const second = server.importHostWorkbook({ requestId: "request-1", sessionId: auth.sessionId, fileName: "host.xlsx", bytes: new Uint8Array(bytes) });
+
+      releaseUpload?.();
+      const [receiptA, receiptB] = await Promise.all([first, second]);
+
+      expect(receiptA).toEqual(receiptB);
+      expect(enqueued).toHaveLength(1);
     } finally {
       await server.close();
       await rm(rootDir, { recursive: true, force: true });
@@ -466,7 +814,25 @@ describe("workbench server routes", () => {
     }
   });
 
-  it("reconciles a default runner dependency failure after committing the active attempt", async () => {
+  it("restores browser authentication after a Server restart", async () => {
+    const rootDir = testRoot("workbench-server-persistent-auth");
+    await rm(rootDir, { recursive: true, force: true });
+    const sessionId = "15151515-1515-4515-8515-151515151515";
+    const first = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    const auth = await first.testAuthenticate(sessionId);
+    await first.close();
+    const second = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const response = await second.inject({ method: "GET", url: `/api/sessions/${sessionId}`, headers: { host: "127.0.0.1:0", cookie: auth.headers.cookie } });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({ sessionId });
+    } finally {
+      await second.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  }, 15_000);
+
+  it("runs governed F0 and discovers worksheet capabilities with the default runner", async () => {
     const rootDir = testRoot("workbench-server-default-queue");
     await rm(rootDir, { recursive: true, force: true });
     const server = await buildWorkbenchServer({ rootDir });
@@ -476,7 +842,7 @@ describe("workbench server routes", () => {
       server.registerArtifactForTest(auth.sessionId, artifactId, `uploads/${auth.sessionId}/workbook/${artifactId}-book.xlsx`, "book.xlsx", "confidential", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
       const workbookPath = join(rootDir, `uploads/${auth.sessionId}/workbook/${artifactId}-book.xlsx`);
       await mkdir(dirname(workbookPath), { recursive: true });
-      await writeFile(workbookPath, Buffer.from([80, 75, 3, 4]));
+      await writeFile(workbookPath, createAnonymousWorkbookZip());
       const response = await server.inject({
         method: "POST",
         url: `/api/sessions/${auth.sessionId}/commands`,
@@ -484,7 +850,7 @@ describe("workbench server routes", () => {
         payload: {
           contractVersion: "f8-session-command-v1",
           sessionId: auth.sessionId,
-          commandId: "missing-runner-upload",
+          commandId: "default-runner-upload",
           expectedRevision: 0,
           command: "upload_workbook",
           payload: { artifactId, inputClassification: "confidential" },
@@ -492,18 +858,111 @@ describe("workbench server routes", () => {
       });
 
       expect(response.statusCode).toBe(202);
-      expect(response.json()).toMatchObject({ state: "failed", activeAttempt: { status: "failed" } });
-      expect(response.json()).not.toMatchObject({ state: "completed" });
+      const runnerError = await readFile(join(rootDir, "runtime", "workbench", "registries", "runner-errors", `${auth.sessionId}.json`), "utf8").catch(() => undefined);
+      expect(response.json(), runnerError).toMatchObject({
+        state: "initial_scope_required",
+        activeAttempt: null,
+        worksheetCapabilities: expect.arrayContaining([
+          { worksheetName: "Analysis-A", whatIfAvailable: false },
+          { worksheetName: "Analysis-B", whatIfAvailable: false },
+        ]),
+      });
+      const database = new DatabaseSync(join(rootDir, "runtime", "workbench", "workbench.sqlite"), { readOnly: true });
+      try {
+        const progress = database.prepare("SELECT payload_json FROM session_sse_events WHERE session_id = ? AND event_name = 'runner_progress' ORDER BY event_id").all(auth.sessionId) as Array<{ payload_json: string }>;
+        expect(progress.map(({ payload_json }) => JSON.parse(payload_json))).toEqual(expect.arrayContaining([
+          expect.objectContaining({ kind: "stage_started", featureId: "F0", stage: "validate_capabilities" }),
+          expect.objectContaining({ kind: "stage_completed", featureId: "F0", stage: "validate_capabilities" }),
+        ]));
+      } finally {
+        database.close();
+      }
     } finally {
       await server.close();
       await rm(rootDir, { recursive: true, force: true });
     }
-  });
+  }, 15_000);
+
+  it("auto-enters the F1/F2 successor without a public scope confirmation", async () => {
+    const rootDir = testRoot("workbench-server-auto-entry");
+    await rm(rootDir, { recursive: true, force: true });
+    const stages: string[] = [];
+    const runner = vi.fn(async (job: StageJob) => {
+      stages.push(job.stage);
+      if (job.stage === "f0_validating") {
+        return {
+          featureId: "F0",
+          status: "completed",
+          versions: ["v1", "internal-v1", "interpretation-rules-v1"],
+          worksheetCapabilities: [{ worksheetName: "Analysis-A", whatIfAvailable: false }],
+          selectionPrompt: {
+            contractVersion: "v1",
+            inputClassification: "confidential",
+            status: "selectionRequired",
+            workbook: { fileName: "book.xlsx", contentHash: "a".repeat(64) },
+            options: [{ selectionIndex: 1, worksheetName: "Analysis-A", toleranceLoopDescription: "Analysis loop", worksheetKind: "analysis", source: { discoveryMethod: "worksheet_scan", descriptionCell: "Analysis-A!F11", worksheetAnchor: "Analysis-A!A1" } }],
+          },
+        };
+      }
+      return { status: "completed" };
+    });
+    const server = await buildWorkbenchServer({ rootDir, runner, queueFactory: immediateQueue, skipWebAssets: true });
+    try {
+      const auth = await server.testAuthenticate("13131313-1313-4313-8313-131313131313");
+      const artifactId = "managed-workbook";
+      const relativePath = `uploads/${auth.sessionId}/workbook/${artifactId}-book.xlsx`;
+      server.registerArtifactForTest(auth.sessionId, artifactId, relativePath, "book.xlsx", "confidential", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      await mkdir(dirname(join(rootDir, relativePath)), { recursive: true });
+      await writeFile(join(rootDir, relativePath), createAnonymousWorkbookZip());
+
+      const response = await server.inject({ method: "POST", url: `/api/sessions/${auth.sessionId}/commands`, headers: auth.headers, payload: { contractVersion: "f8-session-command-v1", sessionId: auth.sessionId, commandId: "auto-upload", expectedRevision: 0, command: "upload_workbook", payload: { artifactId, inputClassification: "confidential" } } });
+
+      expect(response.statusCode).toBe(202);
+      expect(response.json()).toMatchObject({ state: "downstream_scope_required", initialScopeSelection: { selectedWorksheetNames: ["Analysis-A"], confirmed: true } });
+      expect(stages).toEqual(["f0_validating", "f1_f2_running"]);
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  }, 15_000);
+
+  it("recovers a committed active attempt on restart without an upload registry", async () => {
+    const rootDir = testRoot("workbench-server-session-recovery");
+    await rm(rootDir, { recursive: true, force: true });
+    const sessionId = "14141414-1414-4414-8414-141414141414";
+    const store = await createSessionStore({ rootDir, sessionId });
+    try {
+      await store.applyCommand({ contractVersion: "f8-session-command-v1", sessionId, commandId: "crash-window-upload", expectedRevision: 0, command: "upload_workbook", payload: { fileName: "book.xlsx", workbookBytes: new Uint8Array([80, 75, 3, 4]), inputClassification: "confidential", managedArtifactId: "uploaded-book" } }, async (snapshot, command) => ({ snapshot: reduceSessionCommand(snapshot, command) }));
+    } finally {
+      await store.close();
+    }
+    const artifactRegistry = join(rootDir, "runtime", "workbench", "registries", "artifacts");
+    await mkdir(artifactRegistry, { recursive: true });
+    await writeFile(join(artifactRegistry, `${sessionId}.json`), JSON.stringify({ "uploaded-book": { sessionId, relativePath: `uploads/${sessionId}/workbook/uploaded-book-book.xlsx`, fileName: "book.xlsx", classification: "confidential", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" } }));
+    const recovered: StageJob[] = [];
+    const queueFactory = async () => ({
+      async enqueue(job: StageJob) { return { jobId: job.jobId, attemptId: job.attemptId, status: "queued" as const }; },
+      async recover(job: StageJob) { recovered.push(job); return { jobId: job.jobId, attemptId: job.attemptId, status: "queued" as const }; },
+      async cancel() { return false; },
+      async reconcile() {},
+    });
+
+    const server = await buildWorkbenchServer({ rootDir, queueFactory, skipWebAssets: true });
+    try {
+      expect(recovered).toEqual([expect.objectContaining({ attemptId: "crash-window-upload:f0_validating", stage: "f0_validating", payload: { sessionId } })]);
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  }, 15_000);
 
   it("keeps create/use ADO decisions pending for Task 13 Surface validation and independent Confirm write", async () => {
     const rootDir = testRoot("workbench-server-ado-host-action");
     await rm(rootDir, { recursive: true, force: true });
-    const prepareRequest = { mode: "create" as const, title: "TA Drawing Governance", nextContent: "governed reminder", factorCount: 2 };
+    const report = f3Report("Host action canonical factor");
+    const reportHash = await writeJsonArtifact(rootDir, "f3/current-host-action.json", report);
+    const rendered = renderF3AdoMarkdown(report);
+    const prepareRequest = { mode: "create" as const, title: "TA Drawing Governance - Anonymous.xlsx", nextContent: rendered.markdown, factorCount: 1 };
     const runner = vi.fn(async () => ({ status: "worker-ran" }));
     const server = await buildWorkbenchServer({ rootDir, runner, surfacePrepareService: { create: async () => prepareRequest } });
     try {
@@ -521,10 +980,12 @@ describe("workbench server routes", () => {
           ...snapshot,
           state: "ado_decision_required",
           revision: snapshot.revision + 1,
+          inputRevision: 1,
           activeAttempt: null,
           downstreamScopeSelection: { workbookContentHash: "a".repeat(64), selectedWorksheetNames: ["Analysis-A"], confirmed: true },
           priorRunReferences: [{ featureId: "F2", referenceId: "f2-run-a", contractVersion: "v1", workbookHash: "a".repeat(64), runReference: "f2-baseline-a" }],
-        } }));
+          artifactRefs: [{ artifactId: "f3-current-host-action", kind: "f3_report", revision: 1, validated: true, reviewContextId: REVIEW_CONTEXT_ID }],
+        }, artifactReferenceOps: { upsert: [{ artifactId: "f3-current-host-action", sessionId: browser.sessionId, inputRevision: 1, kind: "f3_report", relativePath: "f3/current-host-action.json", contentHash: reportHash, reviewContext: REVIEW_CONTEXT }] } }));
       } finally {
         await session.close();
       }
@@ -575,17 +1036,119 @@ describe("workbench server routes", () => {
       })).statusCode).toBe(204);
       expect((await server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}`, headers: browser.headers })).json()).toMatchObject({ state: "ado_action_pending" });
 
+      const previewResponse = await server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}/ado`, headers: browser.headers });
+      expect(previewResponse.statusCode, previewResponse.payload).toBe(200);
+      expect(previewResponse.json()).toMatchObject({ state: "preview_ready", actionId, target: { mode: "create", title: prepareRequest.title }, markdown: rendered.markdown, contentHash: rendered.contentHash, confirmation });
+      expect(previewResponse.json()).not.toHaveProperty("leaseId");
+
       const writeActionId = `ado-write:${browser.sessionId}:${response.json<{ revision: number }>().revision}`;
       const writeClaimToken = server.issueHostBearer(browser.sessionId, ["host-actions:claim"], { actionId: writeActionId, hostInstanceId: "host-a" });
+      expect((await server.inject({ method: "POST", url: `/api/sessions/${browser.sessionId}/host-actions/${writeActionId}/claim`, headers: { host: "127.0.0.1:0", authorization: `Bearer ${writeClaimToken}` }, payload: { hostInstanceId: "host-a" } })).statusCode).toBe(409);
+      expect((await server.inject({ method: "POST", url: `/api/sessions/${browser.sessionId}/ado/confirm`, headers: browser.headers, payload: { contractVersion: "f8-ado-write-confirmation-v1", validationActionId: actionId, expectedRevision: response.json<{ revision: number }>().revision, target: { mode: "create", title: prepareRequest.title }, contentHash: rendered.contentHash, confirmationHash, confirmed: true } })).statusCode).toBe(201);
       const writeClaimResponse = await server.inject({ method: "POST", url: `/api/sessions/${browser.sessionId}/host-actions/${writeActionId}/claim`, headers: { host: "127.0.0.1:0", authorization: `Bearer ${writeClaimToken}` }, payload: { hostInstanceId: "host-a" } });
       expect(writeClaimResponse.statusCode).toBe(200);
       expect(writeClaimResponse.json()).toMatchObject({ request: { kind: "surface_write", validationActionId: actionId, confirmation } });
       const writePayload = { status: "completed" as const, outcome: { kind: "surface_write" as const, receipt: { status: "updated" as const, workItemReference: "WI-1", commentReference: "C0", version: "2", contentHash: createHash("sha256").update(prepareRequest.nextContent).digest("hex") } } };
       const writeResultToken = server.issueHostBearer(browser.sessionId, ["host-actions:result"], { actionId: writeActionId, hostInstanceId: "host-a" });
       expect((await server.inject({ method: "POST", url: `/api/sessions/${browser.sessionId}/host-actions/${writeActionId}/result`, headers: { host: "127.0.0.1:0", authorization: `Bearer ${writeResultToken}` }, payload: { contractVersion: "f8-host-action-result-v1", actionId: writeActionId, hostInstanceId: "host-a", leaseId: writeClaimResponse.json<{ leaseId: string }>().leaseId, status: "completed", resultHash: createHash("sha256").update(JSON.stringify(writePayload)).digest("hex"), payload: writePayload } })).statusCode).toBe(204);
-      expect((await server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}`, headers: browser.headers })).json()).toMatchObject({ state: "image_decision_required", activeAttempt: null });
-      expect(runner).toHaveBeenCalledOnce();
+      expect((await server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}`, headers: browser.headers })).json()).not.toMatchObject({ state: "image_decision_required" });
+      expect(runner).toHaveBeenCalled();
       expect(runner).toHaveBeenCalledWith(expect.objectContaining({ stage: "f4_running" }));
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("derives ADO preview from the current validated F3 artifact and rejects stale confirmation identity without a write", async () => {
+    const rootDir = testRoot("workbench-server-ado-preview-identity");
+    await rm(rootDir, { recursive: true, force: true });
+    const runner = vi.fn(async () => ({ status: "worker-ran" }));
+    const server = await buildWorkbenchServer({ rootDir, runner, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate("29292929-2929-4292-8292-292929292929");
+      const oldReport = f3Report("Old stale factor");
+      const currentReport = f3Report("Current canonical factor", { drawingDimensionKey: undefined, drawingNumber: null, qualitySignals: ["drawing_number_missing"], governanceStatus: "needs_governance" });
+      const oldHash = await writeJsonArtifact(rootDir, "f3/old.json", oldReport);
+      const currentHash = await writeJsonArtifact(rootDir, "f3/current.json", currentReport);
+      const rendered = renderF3AdoMarkdown(currentReport);
+      const session = await openSessionStore({ rootDir, sessionId: browser.sessionId });
+      try {
+        await session.applyCommand({
+          contractVersion: "f8-session-command-v1",
+          sessionId: browser.sessionId,
+          commandId: "seed-current-f3",
+          expectedRevision: 0,
+          command: "upload_workbook",
+          payload: { fileName: "book.xlsx", workbookBytes: new Uint8Array([80, 75, 3, 4]), inputClassification: "confidential" },
+        }, async (snapshot) => ({ snapshot: {
+          ...snapshot,
+          revision: 2,
+          inputRevision: 2,
+          state: "ado_decision_required",
+          activeAttempt: null,
+          downstreamScopeSelection: { workbookContentHash: "a".repeat(64), selectedWorksheetNames: ["Analysis-A"], confirmed: true },
+          priorRunReferences: [{ featureId: "F2", referenceId: "f2-run-a", contractVersion: "v1", workbookHash: "a".repeat(64), runReference: "f2-baseline-a" }],
+          artifactRefs: [
+            { artifactId: "f3-old", kind: "f3_report", revision: 1, validated: true, reviewContextId: REVIEW_CONTEXT_ID },
+            { artifactId: "f3-current", kind: "f3_report", revision: 2, validated: true, reviewContextId: REVIEW_CONTEXT_ID },
+          ],
+        }, artifactReferenceOps: { upsert: [
+          { artifactId: "f3-old", sessionId: browser.sessionId, inputRevision: 1, kind: "f3_report", relativePath: "f3/old.json", contentHash: oldHash, reviewContext: REVIEW_CONTEXT },
+          { artifactId: "f3-current", sessionId: browser.sessionId, inputRevision: 2, kind: "f3_report", relativePath: "f3/current.json", contentHash: currentHash, reviewContext: REVIEW_CONTEXT },
+        ] } }));
+      } finally {
+        await session.close();
+      }
+
+      const decided = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${browser.sessionId}/commands`,
+        headers: browser.headers,
+        payload: { contractVersion: "f8-session-command-v1", sessionId: browser.sessionId, commandId: "request-existing-ado-validation", expectedRevision: 1, command: "confirm_ado_decision", payload: { decision: "use_existing", workItemReference: "https://dev.azure.com/org/project/_workitems/edit/42" } },
+      });
+      expect(decided.statusCode, decided.payload).toBe(202);
+      const expectedRevision = decided.json<{ revision: number }>().revision;
+      const actionId = `ado-validation:${browser.sessionId}:${expectedRevision}`;
+      const validationToken = server.issueHostBearer(browser.sessionId, ["host-actions:claim"], { actionId, hostInstanceId: "host-a" });
+      const validationClaim = await server.inject({ method: "POST", url: `/api/sessions/${browser.sessionId}/host-actions/${actionId}/claim`, headers: { host: "127.0.0.1:0", authorization: `Bearer ${validationToken}` }, payload: { hostInstanceId: "host-a" } });
+      expect(validationClaim.statusCode).toBe(200);
+      expect(validationClaim.json()).toMatchObject({ request: { kind: "surface_validate", prepareRequest: { mode: "existing", workItemReference: "https://dev.azure.com/org/project/_workitems/edit/42", nextContent: rendered.markdown, factorCount: 1 } } });
+      expect(validationClaim.json()).not.toMatchObject({ request: { prepareRequest: { nextContent: expect.stringContaining("Old stale factor") } } });
+      const confirmationHash = createHash("sha256").update(JSON.stringify(["WI-42", "C0", "7", rendered.markdown])).digest("hex");
+      const confirmation = { status: "confirmation_required" as const, workItemReference: "WI-42", ownerReference: "owner-1", commentReference: "C0", expectedVersion: "7", beforeContentHash: "b".repeat(64), nextContent: rendered.markdown, factorCount: 1, confirmationHash, diff: [{ before: "old", after: rendered.markdown, changed: true }] };
+      const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };
+      const validationResultToken = server.issueHostBearer(browser.sessionId, ["host-actions:result"], { actionId, hostInstanceId: "host-a" });
+      expect((await server.inject({ method: "POST", url: `/api/sessions/${browser.sessionId}/host-actions/${actionId}/result`, headers: { host: "127.0.0.1:0", authorization: `Bearer ${validationResultToken}` }, payload: { contractVersion: "f8-host-action-result-v1", actionId, hostInstanceId: "host-a", leaseId: validationClaim.json<{ leaseId: string }>().leaseId, status: "completed", resultHash: createHash("sha256").update(JSON.stringify(validationPayload)).digest("hex"), payload: validationPayload } })).statusCode).toBe(204);
+
+      const preview = await server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}/ado`, headers: browser.headers });
+      expect(preview.statusCode).toBe(200);
+      expect(preview.json()).toMatchObject({
+        state: "preview_ready",
+        expectedRevision,
+        target: { mode: "existing", workItemReference: "https://dev.azure.com/org/project/_workitems/edit/42" },
+        markdown: rendered.markdown,
+        contentHash: rendered.contentHash,
+      });
+      expect(preview.json().markdown).toContain("Current canonical factor");
+      expect(preview.json().markdown).not.toContain("Old stale factor");
+
+      for (const payload of [
+        { target: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx" }, contentHash: rendered.contentHash, expectedRevision },
+        { target: { mode: "existing", workItemReference: "https://dev.azure.com/org/project/_workitems/edit/42" }, contentHash: "9".repeat(64), expectedRevision },
+        { target: { mode: "existing", workItemReference: "https://dev.azure.com/org/project/_workitems/edit/42" }, contentHash: rendered.contentHash, expectedRevision: expectedRevision - 1 },
+      ]) {
+        const rejected = await server.inject({ method: "POST", url: `/api/sessions/${browser.sessionId}/ado/confirm`, headers: browser.headers, payload: { contractVersion: "f8-ado-write-confirmation-v1", validationActionId: actionId, confirmationHash, confirmed: true, ...payload } });
+        expect(rejected.statusCode).toBe(409);
+      }
+      const writeActionId = `ado-write:${browser.sessionId}:${expectedRevision}`;
+      const writeClaimToken = server.issueHostBearer(browser.sessionId, ["host-actions:claim"], { actionId: writeActionId, hostInstanceId: "host-a" });
+      expect((await server.inject({ method: "POST", url: `/api/sessions/${browser.sessionId}/host-actions/${writeActionId}/claim`, headers: { host: "127.0.0.1:0", authorization: `Bearer ${writeClaimToken}` }, payload: { hostInstanceId: "host-a" } })).statusCode).toBe(409);
+
+      expect((await server.inject({ method: "POST", url: `/api/sessions/${browser.sessionId}/ado/confirm`, headers: browser.headers, payload: { contractVersion: "f8-ado-write-confirmation-v1", validationActionId: actionId, expectedRevision, target: { mode: "existing", workItemReference: "https://dev.azure.com/org/project/_workitems/edit/42" }, contentHash: rendered.contentHash, confirmationHash, confirmed: true } })).statusCode).toBe(201);
+      const writeClaim = await server.inject({ method: "POST", url: `/api/sessions/${browser.sessionId}/host-actions/${writeActionId}/claim`, headers: { host: "127.0.0.1:0", authorization: `Bearer ${writeClaimToken}` }, payload: { hostInstanceId: "host-a" } });
+      expect(writeClaim.statusCode).toBe(200);
+      expect(writeClaim.json()).toMatchObject({ request: { kind: "surface_write", validationActionId: actionId, confirmation: { nextContent: rendered.markdown } } });
     } finally {
       await server.close();
       await rm(rootDir, { recursive: true, force: true });
@@ -844,6 +1407,38 @@ describe("workbench server routes", () => {
     } finally {
       second.server.server.closeAllConnections();
       await second.server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("projects external SessionStore revisions to an open Web event stream", async () => {
+    const rootDir = testRoot("workbench-server-external-session-progress");
+    const sessionId = "27272727-2727-4272-8272-272727272727";
+    await rm(rootDir, { recursive: true, force: true });
+    const started = await (await import("./server.js")).startWorkbenchServer({ rootDir });
+    try {
+      const auth = await started.server.testAuthenticate(sessionId);
+      const response = await new Promise<import("node:http").IncomingMessage>((resolve, reject) => {
+        const request = get(`${started.url.replace(/\/#.*$/, "")}/api/sessions/${sessionId}/events`, { headers: { cookie: auth.headers.cookie } }, resolve);
+        request.once("error", reject);
+      });
+      let stream = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk: string) => { stream += chunk; });
+      await vi.waitFor(() => expect(stream).toContain('"revision":0'));
+
+      const store = await openSessionStore({ rootDir, sessionId });
+      try {
+        await store.applyCommand({ contractVersion: "f8-session-command-v1", sessionId, commandId: "chat-upload", expectedRevision: 0, command: "upload_workbook", payload: { fileName: "chat.xlsx", workbookBytes: new Uint8Array([80, 75, 3, 4]), inputClassification: "confidential" } }, async (snapshot, command) => ({ snapshot: reduceSessionCommand(snapshot, command) }));
+      } finally {
+        await store.close();
+      }
+
+      await vi.waitFor(() => expect(stream).toContain('"revision":1'), { timeout: 3_000 });
+      response.destroy();
+    } finally {
+      started.server.server.closeAllConnections();
+      await started.server.close();
       await rm(rootDir, { recursive: true, force: true });
     }
   });

@@ -200,7 +200,7 @@ describe("workbench server security boundary", () => {
         },
       });
       expect(stale.statusCode).toBe(409);
-      expect(stale.json()).toMatchObject({ error: { code: "evidence_mismatch" } });
+      expect(stale.json()).toMatchObject({ error: { code: "validation_error" } });
     } finally {
       await server.close();
       await rm(rootDir, { recursive: true, force: true });
@@ -329,6 +329,27 @@ describe("workbench server security boundary", () => {
     }
   });
 
+  it("does not expose host workbook import as an HTTP route", async () => {
+    const rootDir = testRoot("workbench-server-host-import-not-http");
+    await rm(rootDir, { recursive: true, force: true });
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const auth = await server.testAuthenticate("56565656-5656-4565-8565-565656565656");
+      const response = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${auth.sessionId}/host-import`,
+        headers: auth.headers,
+        payload: { workbookPath: "C:\\secret\\host.xlsx" },
+      });
+
+      expect(response.statusCode).toBe(404);
+      expect(response.body).not.toContain("C:\\secret");
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
   it("rejects unknown multipart fields and malformed workbook content without leaking filesystem errors", async () => {
     const rootDir = testRoot("workbench-server-upload-security");
     await rm(rootDir, { recursive: true, force: true });
@@ -366,7 +387,14 @@ describe("workbench server security boundary", () => {
       const artifactDir = join(rootDir, "artifacts", auth.sessionId);
       await mkdir(artifactDir, { recursive: true });
       await writeFile(join(artifactDir, "safe.txt"), "safe");
+      await writeFile(join(artifactDir, "evidence.png"), Buffer.from([137, 80, 78, 71]));
       server.registerArtifactForTest(auth.sessionId, "safe", "artifacts/66666666-6666-4666-8666-666666666666/safe.txt", "safe.txt", "public", "text/plain");
+      server.registerArtifactForTest(auth.sessionId, "f1-image:evidence", "artifacts/66666666-6666-4666-8666-666666666666/evidence.png", "evidence.png", "confidential", "image/png");
+
+      const inlineImage = await server.inject({ method: "GET", url: `/api/sessions/${auth.sessionId}/artifacts/f1-image%3Aevidence?disposition=inline`, headers: auth.headers });
+      expect(inlineImage.statusCode).toBe(200);
+      expect(inlineImage.headers["content-type"]).toContain("image/png");
+      expect(inlineImage.headers["content-disposition"]).toBe("inline; filename=\"evidence.png\"");
 
       const ranged = await server.inject({ method: "GET", url: `/api/sessions/${auth.sessionId}/artifacts/safe`, headers: { ...auth.headers, range: "bytes=0-1" } });
       expect(ranged.statusCode).toBe(416);

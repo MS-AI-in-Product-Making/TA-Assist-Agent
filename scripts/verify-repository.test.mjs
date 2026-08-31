@@ -75,7 +75,18 @@ describe("isForbiddenRepositoryPath", () => {
     expect(existsSync(resolve(process.cwd(), ".github/workflows/ci.example.yml"))).toBe(false);
   });
 
-  it.each([".env", ".ENV", "runtime/projects/a/run.json", "RUNTIME/run.json", "sample.xls", "sample.xlsx", "sample.xlsm"])(
+  it.each([
+    ".env",
+    ".ENV",
+    "runtime/projects/a/run.json",
+    "RUNTIME/run.json",
+    "sample.xls",
+    "sample.xlsx",
+    "sample.xlsm",
+    "F8-session-output/probe.json",
+    "nested/F8-session-output/probe.json",
+    "F8-SESSION-OUTPUT/probe.json",
+  ])(
     "rejects %s",
     (path) => expect(isForbiddenRepositoryPath(path)).toBe(true),
   );
@@ -102,6 +113,11 @@ describe("isForbiddenRepositoryPath", () => {
   it("allows public fixtures", () => {
     expect(isForbiddenRepositoryPath("fixtures/public/smoke-request.json")).toBe(false);
   });
+  it.each([
+    "F8-session-output-notes/probe.json",
+    "nested/F8-session-output-notes/probe.json",
+    "F8-session-output-example/probe.json",
+  ])("allows safe neighbors at %s", (path) => expect(isForbiddenRepositoryPath(path)).toBe(false));
   it.each([
     "fixtures/confidential/sample.json",
     "fixtures/Confidential/sample.json",
@@ -145,11 +161,15 @@ describe("isForbiddenRepositoryPath", () => {
       ["RUNTIME/run.json", "{}\n"],
       ["EXPORTS/bundle.json", "{}\n"],
       ["fixtures/Confidential/sample.json", "{}\n"],
+      ["F8-session-output/probe.json", "{}\n"],
+      ["nested/F8-session-output/probe.json", "{}\n"],
       ["sample.XLS", "anonymous workbook placeholder\n"],
       ["sample.XLSX", "anonymous workbook placeholder\n"],
       [".ENV.EXAMPLE", "EXAMPLE=value\n"],
       ["fixtures/public/smoke-request.json", "{}\n"],
       ["fixtures/confidential-notes/sample.json", "{}\n"],
+      ["F8-session-output-notes/probe.json", "{}\n"],
+      ["nested/F8-session-output-notes/probe.json", "{}\n"],
     ];
 
     try {
@@ -184,11 +204,14 @@ describe("isForbiddenRepositoryPath", () => {
       expect(result.stderr).toContain("RUNTIME/run.json");
       expect(result.stderr).toContain("EXPORTS/bundle.json");
       expect(result.stderr).toContain("fixtures/Confidential/sample.json");
+      expect(result.stderr).toContain("F8-session-output/probe.json");
+      expect(result.stderr).toContain("nested/F8-session-output/probe.json");
       expect(result.stderr).toContain("sample.XLS");
       expect(result.stderr).toContain("sample.XLSX");
       expect(result.stderr).not.toContain(".ENV.EXAMPLE");
       expect(result.stderr).not.toContain("fixtures/public/smoke-request.json");
       expect(result.stderr).not.toContain("fixtures/confidential-notes/sample.json");
+      expect(result.stderr).not.toContain("F8-session-output-notes/probe.json");
     } finally {
       rmSync(repositoryPath, { force: true, recursive: true });
     }

@@ -87,6 +87,7 @@ export interface SessionStore {
   readSnapshot(): Promise<F8SessionSnapshot>;
   readArtifactReference(artifactId: string): Promise<SessionArtifactReference | undefined>;
   readCommandReceipt(commandId: string): Promise<F8SessionSnapshot | null>;
+  readCommittedCommand(commandId: string): Promise<F8SessionCommand | undefined>;
   applyCommand(command: F8SessionCommand, reducer: SessionCommandReducer): Promise<F8SessionSnapshot>;
   recordAttemptResult(result: SessionAttemptResultRecord): Promise<SessionAttemptResultReceipt>;
   close(): Promise<void>;
@@ -375,6 +376,12 @@ class SqliteSessionStore implements SessionStore {
     }
 
     return parseSnapshotJson(row.result_json);
+  }
+
+  async readCommittedCommand(commandId: string): Promise<F8SessionCommand | undefined> {
+    const row = this.readCommandRow(commandId);
+    if (row?.result_json === null || row === undefined) return undefined;
+    return f8SessionCommandSchema.parse(JSON.parse(row.command_json) as unknown);
   }
 
   async applyCommand(commandInput: F8SessionCommand, reducer: SessionCommandReducer): Promise<F8SessionSnapshot> {
@@ -959,6 +966,14 @@ function withArtifactReferences(
   operations.delete?.forEach((artifactId) => references.delete(artifactId));
   operations.upsert?.forEach((reference) => {
     if (!isReviewArtifactKind(reference.kind)) {
+      if (reference.kind === "f2_report" || reference.kind === "what_if_draft") {
+        references.set(reference.artifactId, {
+          artifactId: reference.artifactId,
+          kind: reference.kind,
+          revision: snapshot.inputRevision,
+          validated: true,
+        });
+      }
       return;
     }
     const reviewContextId = reference.metadata?.reviewContextId;

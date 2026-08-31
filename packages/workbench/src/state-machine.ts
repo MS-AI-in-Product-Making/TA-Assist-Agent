@@ -51,11 +51,14 @@ export function reduceSessionCommand(snapshotInput: F8SessionSnapshot, commandIn
     case "replace_workbook":
       return startWorkbookValidation(snapshot, command, true);
     case "confirm_initial_scope":
+    case "auto_confirm_initial_scope":
       return reduceConfirmInitialScope(snapshot, command);
     case "confirm_downstream_scope":
       return reduceConfirmDownstreamScope(snapshot, command);
     case "confirm_ado_decision":
       return reduceConfirmAdoDecision(snapshot, command);
+    case "reset_ado_decision":
+      return nextSnapshot(snapshot, { state: "ado_decision_required", activeAttempt: null });
     case "accept_surface_write":
       return transitionWithAttempt(snapshot, command, "f4_running");
     case "confirm_image_decision":
