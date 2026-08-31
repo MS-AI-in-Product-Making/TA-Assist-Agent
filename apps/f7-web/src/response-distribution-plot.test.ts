@@ -44,7 +44,11 @@ describe("response distribution plot", () => {
     expect(model!.references.find(({ id }) => id === "plus-6-sigma")?.value).toBeCloseTo(0.22, 12);
     expect(model!.curvePath.startsWith("M")).toBe(true);
     expect(model!.curvePath.match(/[ML]/g)).toHaveLength(121);
-    expect(model!.xTicks).toHaveLength(7);
+    expect(model!.xTicks).toEqual([
+      -0.35, -0.3, -0.25, -0.2, -0.15, -0.1, -0.05,
+      0, 0.05, 0.1, 0.15, 0.2, 0.25,
+    ]);
+    expect(model!.domain).toEqual({ minimum: -0.35, maximum: 0.25 });
   });
 
   it("keeps a visible peak when a specification makes the domain extremely wide", () => {

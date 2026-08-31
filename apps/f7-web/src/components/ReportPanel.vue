@@ -47,17 +47,6 @@ function formatPercent(value: number): string {
   return `${formatNumber(percentage)}%`;
 }
 
-function specificationSource(
-  label: string,
-  field: keyof F7ReportProjection["evidence"]["specificationInputOrigins"],
-): string {
-  const origin = props.report.evidence.specificationInputOrigins[field];
-  if (origin === "manual_override") return `${label}: Manual override`;
-  if (origin === "manual_entry") return `${label}: Manual entry`;
-  const sourceCell = props.report.evidence.specificationSourceCells[field];
-  return `${label}: Excel source ${sourceCell!}`;
-}
-
 function safeDownloadBase(fileName: string): string {
   const basename = fileName.split(/[\\/]/).pop() ?? "";
   const withoutExtension = basename.replace(/\.[^.]*$/, "");
@@ -210,43 +199,6 @@ function downloadMarkdown(): void {
         This statistical assessment is not a design or production Release/Hold decision.
       </p>
     </section>
-
-    <details class="evidence-details" data-report-evidence>
-      <summary>Evidence chain</summary>
-      <dl class="evidence-list">
-        <div><dt>Workbook hash</dt><dd class="evidence-value long-value">{{ report.evidence.workbookContentHash }}</dd></div>
-        <div><dt>Worksheet</dt><dd class="evidence-value">{{ report.evidence.worksheetName }}</dd></div>
-        <div>
-          <dt>Specification source cells</dt>
-          <dd class="evidence-value">
-            {{ specificationSource("LSL", "lowerSpecLimit") }};
-            {{ specificationSource("USL", "upperSpecLimit") }};
-            {{ specificationSource("Target sigma", "targetSigmaLevel") }}
-          </dd>
-        </div>
-        <div>
-          <dt>Method IDs</dt>
-          <dd class="evidence-value">
-            {{ report.evidence.methodIds.simulation }};
-            {{ report.evidence.methodIds.histogram }};
-            {{ report.evidence.methodIds.normalFit }}
-          </dd>
-        </div>
-        <div><dt>Seed</dt><dd class="evidence-value long-value">{{ report.evidence.seed }}</dd></div>
-        <div><dt>Iterations</dt><dd class="evidence-value">{{ report.evidence.iterations.toLocaleString("en-US") }}</dd></div>
-        <div>
-          <dt>Factor manifest</dt>
-          <dd class="evidence-value">
-            <ul class="manifest-list">
-              <li v-for="factor in report.evidence.factorManifest" :key="factor.factorId">
-                <span class="long-value">{{ factor.factorId }}</span> · {{ factor.family }} · {{ factor.sourceMode }}
-              </li>
-            </ul>
-          </dd>
-        </div>
-        <div><dt>Generated at</dt><dd class="evidence-value">{{ report.generatedAt }}</dd></div>
-      </dl>
-    </details>
   </section>
 </template>
 
@@ -379,16 +331,6 @@ function downloadMarkdown(): void {
   font-weight: 700;
 }
 
-.evidence-list dt {
-  color: var(--ink-soft);
-  font-size: 0.78rem;
-}
-
-.evidence-list dd {
-  margin: 3px 0 0;
-  font-weight: 700;
-}
-
 .report-table-scroll {
   width: 100%;
   overflow-x: auto;
@@ -420,53 +362,6 @@ function downloadMarkdown(): void {
   background: #edf0f3;
 }
 
-.evidence-details {
-  min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: #f7f8f7;
-}
-
-.evidence-details summary {
-  cursor: pointer;
-  padding: 11px 12px;
-  font-weight: 700;
-}
-
-.evidence-details[open] summary {
-  border-bottom: 1px solid var(--line);
-}
-
-.evidence-list {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px 20px;
-  margin: 0;
-  padding: 12px;
-}
-
-.evidence-list div {
-  min-width: 0;
-}
-
-.evidence-value {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-
-.long-value {
-  min-width: 0;
-  font-family: "Cascadia Mono", "Consolas", monospace;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-
-.manifest-list {
-  margin: 0;
-  padding-left: 18px;
-}
-
 @media (max-width: 720px) {
   .report-header {
     align-items: stretch;
@@ -495,10 +390,6 @@ function downloadMarkdown(): void {
     border-left: 0;
     padding-top: 12px;
     padding-left: 0;
-  }
-
-  .evidence-list {
-    grid-template-columns: 1fr;
   }
 
 }

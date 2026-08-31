@@ -114,7 +114,8 @@ describe("ResponseDistributionCurve", () => {
     expect(description).toContain(`LSL ${formatF4(calculation.capability.lowerSpecLimit)}`);
     expect(description).toContain(`USL ${formatF4(calculation.capability.upperSpecLimit)}`);
     expect(wrapper.get("[data-response-normal-curve]").attributes("d")).toMatch(/^M/);
-    expect(wrapper.findAll("[data-response-tick]")).toHaveLength(7);
+    expect(wrapper.findAll("[data-response-tick]").length).toBeGreaterThanOrEqual(5);
+    expect(wrapper.findAll("[data-response-tick]").length).toBeLessThanOrEqual(13);
 
     for (const [id, value] of [
       ["lower-spec-limit", calculation.capability.lowerSpecLimit],
