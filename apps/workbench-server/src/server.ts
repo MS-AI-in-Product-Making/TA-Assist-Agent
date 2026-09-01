@@ -11,10 +11,10 @@ import { DatabaseSync } from "node:sqlite";
 
 import { createConversationStore, type ConversationStore, type ConversationTurn } from "@ai-assist/conversation";
 import { drawingGovernanceResultV2Schema, f2UserReportSchema, f4WorkflowCalculationResultSchema, f8PublicSessionCommandSchema, f8SessionCommandSchema, f8SessionSnapshotSchema, worksheetSelectionPromptSchema, type F6OptimizationTargets, type F8ScenarioDraft, type F8WorksheetWhatIfCalculationRequest, type hostActionClaimSchema, type hostActionRequestSchema, type hostActionResultSchema } from "@ai-assist/contracts";
-import { acceptAttemptResult, canonicalSelectedWorksheetSetHash, createSessionStore, createToleranceTargetsPreview, openSessionStore, reduceSessionCommand, type F8SessionCommand, type F8SessionSnapshot, type ReviewContextIdentity, type ScenarioBaseline, type SessionArtifactReference, type SessionDeltaOperations } from "@ai-assist/workbench";
+import { acceptAttemptResult, canonicalSelectedWorksheetSetHash, createSessionStore, createTaWorkbookOrchestrator, createToleranceTargetsPreview, openSessionStore, reduceSessionCommand, type F8SessionCommand, type F8SessionSnapshot, type ReviewContextIdentity, type RuntimeSkillResult, type ScenarioBaseline, type SessionArtifactReference, type SessionDeltaOperations, type TaWorkbookOrchestrator } from "@ai-assist/workbench";
 import { createTypedError } from "@ai-assist/contracts";
 import { createHostActionStore, type HostActionRecord } from "@ai-assist/workbench";
-import { createF4WhatIfBaselineRequest, renderF3AdoMarkdown, runF1F2Confirmed, runF1F2Selection, runF3Analysis, runF4Calculation, runF4WhatIfCalculation, runF5Interpretation, runF6Optimization, validateF0Capabilities } from "@ai-assist/workflow-runners";
+import { createF4WhatIfBaselineRequest, renderF3AdoMarkdown, runF4WhatIfCalculation } from "@ai-assist/workflow-runners";
 import { readOoxmlWorkbook } from "@ai-assist/workbook-catalog";
 
 interface RunnerArtifactReference {
@@ -40,6 +40,7 @@ import { createSqliteEventSource, type SqliteEventSource } from "./sse.js";
 import { createAutoEntryDecision } from "./auto-entry.js";
 import { buildConversationContext, type ConversationContextSelection } from "./conversation-context.js";
 import { reviewContextFor, runProductionStage, type ProductionRoots } from "./production-stage-runner.js";
+import { createTaRuntimeSkillFacades } from "./ta-runtime-skill-facades.js";
 import { writeSessionRecord } from "./session-records.js";
 import { storeUpload } from "./uploads.js";
 
@@ -280,12 +281,14 @@ async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth
   const sessions = new StoreBackedSessionRegistry(rootDir);
   const artifacts = new FileBackedArtifactRegistry(rootDir);
   const events = await createSqliteEventSource({ rootDir });
+  const runtimeSkillFacades = createTaRuntimeSkillFacades();
+  const orchestrator = createTaWorkbookOrchestrator(runtimeSkillFacades);
   const effectiveWhatIfService = whatIfService ?? createDefaultWhatIfService(rootDir);
   const queueSessionStore = new StoreBackedQueueSessionStore(rootDir, sessions, allowInternalFixtureAutoConfirmation);
   const queueOptions = {
     rootDir: join(rootDir, "runtime", "workbench"),
     sessionStore: queueSessionStore,
-    worker: runner ?? createDefaultStageRunner(rootDir, sessions, artifacts, events),
+    worker: runner ?? createDefaultStageRunner(rootDir, sessions, artifacts, events, orchestrator),
   } satisfies PersistentWorkerQueueOptions;
   const queue = await (queueFactory ?? createPersistentWorkerQueue)(queueOptions);
   const inflightHostImports = new Map<string, Promise<HostWorkbookImportReceipt>>();
@@ -744,12 +747,12 @@ class FileBackedArtifactRegistry implements ArtifactRegistry {
   }
 }
 
-function createDefaultStageRunner(rootDir: string, sessions: SessionRegistry, artifacts: ArtifactRegistry, events: EventSource): (job: StageJob) => Promise<unknown> {
+function createDefaultStageRunner(rootDir: string, sessions: SessionRegistry, artifacts: ArtifactRegistry, events: EventSource, orchestrator: TaWorkbookOrchestrator): (job: StageJob) => Promise<unknown> {
   return async (job) => {
     const sessionId = readSessionId(job.payload);
     if (sessionId === undefined) throw new Error("Stage job has no session identity.");
     try {
-      return await runDefaultStage(rootDir, sessions, artifacts, events, job, sessionId);
+      return await runDefaultStage(rootDir, sessions, artifacts, events, job, sessionId, orchestrator);
     } catch (error) {
       const typed = error as { readonly code?: unknown; readonly summary?: unknown; readonly affectedInputReferences?: unknown };
       writeRegistry(rootDir, "runner-errors", sessionId, {
@@ -765,7 +768,7 @@ function createDefaultStageRunner(rootDir: string, sessions: SessionRegistry, ar
   };
 }
 
-async function runDefaultStage(rootDir: string, sessions: SessionRegistry, artifacts: ArtifactRegistry, events: EventSource, job: StageJob, sessionId: string): Promise<unknown> {
+async function runDefaultStage(rootDir: string, sessions: SessionRegistry, artifacts: ArtifactRegistry, events: EventSource, job: StageJob, sessionId: string, orchestrator: TaWorkbookOrchestrator): Promise<unknown> {
     const binding = readRegistry<{ readonly artifactId: string }>(rootDir, "active-workbooks", sessionId);
     const artifact = binding === undefined ? undefined : artifacts.read(sessionId, binding.artifactId);
     if (["f0_validating", "f1_f2_running"].includes(job.stage) && (binding === undefined || artifact === undefined)) {
@@ -786,11 +789,22 @@ async function runDefaultStage(rootDir: string, sessions: SessionRegistry, artif
       },
     };
     if (job.stage === "f0_validating") {
-      const f0 = validateF0Capabilities(context);
+      const snapshot = await sessions.read(sessionId);
+      const f0 = requireRuntimeSkillOutput(await orchestrator.runStage("f0_validating", {
+        inputRevision: snapshot?.inputRevision ?? 0,
+        idempotencyKey: `${job.attemptId}:f0_validating`,
+        artifactReferences: [],
+        input: { context },
+      }), "knowledge-and-rules-validation-v1") as { readonly featureId: string; readonly status: string; readonly versions: readonly string[] };
       const workbook = readOoxmlWorkbook(new Uint8Array(readFileSync(workbookPath)), undefined, false, { maxRow: 100, maxColumn: "AZ" });
-      let selection: ReturnType<typeof runF1F2Selection> | undefined;
+      let selection: { readonly selectionReference: unknown; readonly prompt: unknown } | undefined;
       try {
-        selection = runF1F2Selection({ workbookPath }, context);
+        selection = requireRuntimeSkillOutput(await orchestrator.runWorkbookScopeDiscovery({
+          inputRevision: snapshot?.inputRevision ?? 0,
+          idempotencyKey: `${job.attemptId}:f1-scope-discovery`,
+          artifactReferences: [],
+          input: { request: { workbookPath }, context },
+        }), "workbook-scope-discovery-v1") as { readonly selectionReference: unknown; readonly prompt: unknown };
         writeRegistry(rootDir, "f1-f2-selection", sessionId, selection.selectionReference);
       } catch {
         selection = undefined;
@@ -808,17 +822,26 @@ async function runDefaultStage(rootDir: string, sessions: SessionRegistry, artif
       if (snapshot?.initialScopeSelection === undefined) {
         throw createTypedError({ code: "evidence_mismatch", summary: "The confirmed worksheet selection is unavailable.", suggestedAction: "Upload the workbook and confirm the initial worksheet scope again.", affectedInputReferences: [sessionId] });
       }
-      const selectionReference = readRegistry<Parameters<typeof runF1F2Confirmed>[0]["selectionReference"]>(rootDir, "f1-f2-selection", sessionId);
+      const selectionReference = readRegistry(rootDir, "f1-f2-selection", sessionId);
       if (selectionReference === undefined) {
         throw createTypedError({ code: "evidence_mismatch", summary: "The governed worksheet selection reference is unavailable.", suggestedAction: "Upload the workbook and prepare the TA workspace again.", affectedInputReferences: [sessionId] });
       }
-      const result = runF1F2Confirmed({
-        workbookPath,
-        workbookContentHash: snapshot.initialScopeSelection.workbookContentHash,
-        selectedWorksheetNames: snapshot.initialScopeSelection.selectedWorksheetNames,
-        selectionReference,
-        refreshF2: snapshot.priorRunReferences.some((reference) => reference.featureId === "F2"),
-      }, context);
+      const result = requireRuntimeSkillOutput(await orchestrator.runStage("f1_f2_running", {
+        inputRevision: snapshot.inputRevision,
+        idempotencyKey: `${job.attemptId}:f1_f2_running`,
+        artifactReferences: [],
+        worksheetScope: snapshot.initialScopeSelection,
+        input: {
+          request: {
+            workbookPath,
+            workbookContentHash: snapshot.initialScopeSelection.workbookContentHash,
+            selectedWorksheetNames: snapshot.initialScopeSelection.selectedWorksheetNames,
+            selectionReference,
+            refreshF2: snapshot.priorRunReferences.some((reference) => reference.featureId === "F2"),
+          },
+          context,
+        },
+      }), "workbook-analysis-assets-v1") as { readonly f1Root: string; readonly f2Root: string };
       writeRegistry(rootDir, "production-roots", sessionId, { f1Root: result.f1Root, f2Root: result.f2Root });
       return JSON.parse(JSON.stringify(result)) as unknown;
     }
@@ -828,7 +851,7 @@ async function runDefaultStage(rootDir: string, sessions: SessionRegistry, artif
       const baselineRunReference = snapshot?.priorRunReferences.findLast((reference) => reference.featureId === "F2" && typeof reference.runReference === "string")?.runReference;
       if (snapshot === undefined || roots === undefined || baselineRunReference === undefined) throw createTypedError({ code: "evidence_mismatch", summary: "Production stage lineage is unavailable.", suggestedAction: "Prepare the workbook again.", affectedInputReferences: [sessionId, job.stage] });
       const reviewContext = reviewContextFor(snapshot, baselineRunReference);
-      const execution = await runProductionStage(job.stage, { repositoryRoot: process.cwd(), serverRoot: rootDir, sessionId, workbookPath, snapshot, roots, context, baselineRunReference, ...(reviewContext === undefined ? {} : { reviewContext }) });
+      const execution = await runProductionStage(job.stage, { repositoryRoot: process.cwd(), serverRoot: rootDir, sessionId, workbookPath, snapshot, roots, context, baselineRunReference, ...(reviewContext === undefined ? {} : { reviewContext }) }, orchestrator);
       writeRegistry(rootDir, "production-roots", sessionId, execution.roots);
       return JSON.parse(JSON.stringify(execution.result)) as unknown;
     }
@@ -1456,4 +1479,17 @@ function compactScenarioFactorOverride(override: F8WorksheetWhatIfCalculationReq
 
 function compactScenarioSystemOverride(override: NonNullable<F8WorksheetWhatIfCalculationRequest["systemSpecification"]>) {
   return { ...(override.lowerSpecLimit === undefined ? {} : { lowerSpecLimit: override.lowerSpecLimit }), ...(override.upperSpecLimit === undefined ? {} : { upperSpecLimit: override.upperSpecLimit }), ...(override.additionalMeanShift === undefined ? {} : { additionalMeanShift: override.additionalMeanShift }) };
+}
+
+function requireRuntimeSkillOutput<Output>(result: RuntimeSkillResult<Output>, skillId: string): Output {
+  if (result.status === "failed") {
+    if (result.error instanceof Error) {
+      throw result.error;
+    }
+    throw new Error(`${skillId} failed: ${result.summary ?? result.reasonCode ?? "unknown"}`);
+  }
+  if (result.output === undefined) {
+    throw new Error(`${skillId} returned no output.`);
+  }
+  return result.output;
 }
