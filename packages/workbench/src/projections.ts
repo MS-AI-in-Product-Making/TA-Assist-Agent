@@ -23,6 +23,11 @@ export interface ProductStageEntry {
   readonly status: string;
 }
 
+export interface TaProductStageProgress {
+  readonly kind: "stage_started" | "stage_completed" | "stage_failed" | "artifact_written";
+  readonly featureId: typeof FEATURE_IDS[number];
+}
+
 export function projectActionQueue(snapshot: F8SessionSnapshot): ActionQueueItem[] {
   switch (snapshot.state) {
     case "analysis_context_decision_required":
@@ -237,8 +242,32 @@ function featureForState(state: F8SessionState): typeof FEATURE_IDS[number] {
   }
 }
 
-export function projectTaProductStages(snapshot: F8SessionSnapshot): ProductStageEntry[] {
-  const activeStage = projectTaWorkbookStage(snapshot.state);
+export function projectTaProductStages(snapshot: F8SessionSnapshot, progress?: TaProductStageProgress): ProductStageEntry[] {
+  const activeStage = resolveActiveStage(snapshot, progress);
+  if (activeStage === undefined) {
+    const statusByIndex = snapshot.state === "failed" || snapshot.state === "cancelled"
+      ? {
+          prepare_workbook: "action_required",
+          validate_analysis_inputs: "pending",
+          review_dimension_traceability: "pending",
+          calculate_and_interpret: "pending",
+          evaluate_and_publish: "pending",
+        }
+      : {
+          prepare_workbook: "pending",
+          validate_analysis_inputs: "pending",
+          review_dimension_traceability: "pending",
+          calculate_and_interpret: "pending",
+          evaluate_and_publish: "pending",
+        };
+
+    return TA_WORKBOOK_STAGES.map((stageId) => ({
+      stageId,
+      label: TA_WORKBOOK_STAGE_LABELS[stageId],
+      status: statusByIndex[stageId],
+    }));
+  }
+
   const activeIndex = TA_WORKBOOK_STAGES.indexOf(activeStage);
 
   return TA_WORKBOOK_STAGES.map((stageId, index) => {
@@ -248,7 +277,7 @@ export function projectTaProductStages(snapshot: F8SessionSnapshot): ProductStag
     } else if (index < activeIndex) {
       status = "completed";
     } else if (index === activeIndex) {
-      status = stageStatus(snapshot.state);
+      status = stageStatus(snapshot.state, progress);
     }
 
     return {
@@ -259,7 +288,13 @@ export function projectTaProductStages(snapshot: F8SessionSnapshot): ProductStag
   });
 }
 
-function stageStatus(state: F8SessionState): string {
+function stageStatus(state: F8SessionState, progress?: TaProductStageProgress): string {
+  if (progress !== undefined) {
+    if (progress.kind === "stage_completed") return "completed";
+    if (progress.kind === "stage_failed") return "failed";
+    if (progress.kind === "stage_started") return "running";
+  }
+
   if (state === "failed" || state === "cancelled") {
     return state;
   }
@@ -277,4 +312,40 @@ function stageStatus(state: F8SessionState): string {
   }
 
   return "running";
+}
+
+function resolveActiveStage(snapshot: F8SessionSnapshot, progress?: TaProductStageProgress): TaWorkbookStage | undefined {
+  if (progress !== undefined && progress.kind !== "artifact_written") {
+    return stageForFeature(progress.featureId);
+  }
+
+  if (snapshot.state === "failed" || snapshot.state === "cancelled") {
+    const persistedStage = snapshot.activeAttempt?.stage;
+    if (persistedStage !== undefined) {
+      return projectTaWorkbookStage(persistedStage);
+    }
+    return undefined;
+  }
+
+  return projectTaWorkbookStage(snapshot.state);
+}
+
+function stageForFeature(featureId: typeof FEATURE_IDS[number]): TaWorkbookStage {
+  switch (featureId) {
+    case "F0":
+      return "prepare_workbook";
+    case "F1":
+    case "F2":
+      return "validate_analysis_inputs";
+    case "F3":
+      return "review_dimension_traceability";
+    case "F4":
+    case "F5":
+      return "calculate_and_interpret";
+    case "F6":
+    case "F7":
+      return "evaluate_and_publish";
+    default:
+      return "prepare_workbook";
+  }
 }

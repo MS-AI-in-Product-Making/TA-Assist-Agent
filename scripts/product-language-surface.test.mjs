@@ -11,15 +11,21 @@ const PRODUCT_SURFACE_FILES = [
   "apps/workbench-web/src/components/EngineeringWorkspace.tsx",
   "apps/workbench-web/src/components/AnalysisProgress.tsx",
   "apps/workbench-web/src/components/WorksheetReview.tsx",
+  "apps/workbench-web/src/components/F6Summary.tsx",
   "apps/workbench-web/src/components/F6Options.tsx",
   "apps/workbench-web/src/components/F7Placeholder.tsx",
   "apps/workbench-web/src/components/EvidenceImagePane.tsx",
   "apps/workbench-web/src/components/EvidencePane.tsx",
   "apps/workbench-web/src/components/AdoWorkspaceDecision.tsx",
   "apps/workbench-web/src/business-status.ts",
+  "apps/workbench-web/src/web-projection.ts",
+  "apps/workbench-web/src/workbench-session.ts",
   "packages/agent-runtime/src/runtime.ts",
+  "packages/agent-runtime/src/context-builder.ts",
   "apps/vscode-extension/package.json",
   "apps/vscode-extension/src/participant.ts",
+  "docs/governance/evidence/f3-f5-f6-report-readability-f4-baseline.json",
+  "test/demo-output/f6-runs/f5/2026-09-01T07-30-21-518Z/manifest.json",
 ];
 
 describe("product-language surface scan", () => {

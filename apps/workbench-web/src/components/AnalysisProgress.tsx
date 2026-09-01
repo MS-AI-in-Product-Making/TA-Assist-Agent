@@ -23,7 +23,7 @@ export function AnalysisProgress({ stages, progress, adoProjection, activeAttemp
     const handle = setInterval(() => setNow(Date.now()), 1_000);
     return () => clearInterval(handle);
   }, [timerStartedAt]);
-  const visibleStages = stagesForProgress(stages, progress);
+  const visibleStages = stages;
   const active = visibleStages.find((stage) => stage.status === "running" || stage.status === "action_required");
 
   return (
@@ -47,20 +47,6 @@ export function AnalysisProgress({ stages, progress, adoProjection, activeAttemp
       </ol>
     </section>
   );
-}
-
-function stagesForProgress(stages: readonly ProductStageEntry[], progress: RunnerProgressEvent | undefined): readonly ProductStageEntry[] {
-  if (progress === undefined || progress.kind === "artifact_written") return stages;
-  const activeIndex = stages.findIndex((stage) => stage.stageId === stageForFeature(progress.featureId));
-  if (activeIndex < 0) return stages;
-  return stages.map((stage, index) => {
-    if (index < activeIndex) return { ...stage, status: "completed", displayStatus: reasonDisplay("completed") };
-    if (index === activeIndex) {
-      const status = progress.kind === "stage_failed" ? "failed" : progress.kind === "stage_completed" ? "completed" : "running";
-      return { ...stage, status, displayStatus: reasonDisplay(status) };
-    }
-    return { ...stage, status: "pending", displayStatus: reasonDisplay("pending") };
-  });
 }
 
 function statusLabel(stage: ProductStageEntry): string {
@@ -100,24 +86,4 @@ function adoTiming(startedAt: string, expiresAt: string, now: number): string {
 function duration(milliseconds: number): string {
   const seconds = Math.max(0, Math.floor(milliseconds / 1_000));
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
-}
-
-function stageForFeature(featureId: RunnerProgressEvent["featureId"]): ProductStageEntry["stageId"] {
-  switch (featureId) {
-    case "F0":
-      return "prepare_workbook";
-    case "F1":
-    case "F2":
-      return "validate_analysis_inputs";
-    case "F3":
-      return "review_dimension_traceability";
-    case "F4":
-    case "F5":
-      return "calculate_and_interpret";
-    case "F6":
-    case "F7":
-      return "evaluate_and_publish";
-    default:
-      return "prepare_workbook";
-  }
 }
