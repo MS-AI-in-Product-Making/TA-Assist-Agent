@@ -225,7 +225,13 @@ export function useWorkbenchSession(apiOverride?: WorkbenchApi, options: UseWork
 
   const actionQueue = snapshot === undefined ? [] : projectActionQueue(snapshot);
   const featureLedger = snapshot === undefined ? [] : projectFeatureLedger(snapshot);
-  const productStages = snapshot === undefined ? [] : projectTaProductStages(snapshot, runnerProgress);
+  const stageProgress = runnerProgress === undefined
+    ? undefined
+    : {
+        kind: runnerProgress.kind,
+        featureId: runnerProgress.featureId,
+      };
+  const productStages = snapshot === undefined ? [] : projectTaProductStages(snapshot, stageProgress);
 
   return {
     api,
