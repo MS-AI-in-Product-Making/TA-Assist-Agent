@@ -22,5 +22,6 @@
     { "path": "./packages/skills" },
     { "path": "./packages/orchestrator" },
     { "path": "./packages/adapters" }
+    ,{ "path": "./packages/product-export" }
   ]
 }

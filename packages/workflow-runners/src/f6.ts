@@ -35,7 +35,7 @@ export interface F6Dependencies {
   readonly resolveOutputLayout?: (request: F6OptimizationRequest, context: RunContext) => F6Layout;
   readonly loadBundle?: (request: F6OptimizationRequest & { publishRoot?: string }) => any;
   readonly createOptimization?: typeof createF6Optimization;
-  readonly createFinalReport?: (input: any, options: { outputRoot: string; f1ArtifactRoot: string; publishRoot: string }) => { markdown: string; reportSummary: unknown };
+  readonly createFinalReport?: (input: any, options: { outputRoot: string; f1ArtifactRoot: string; publishRoot: string }) => { markdown: string; reportSummary: unknown; projection: unknown };
   readonly renderOptimization?: (optimization: any, options: { outputRoot: string }) => string;
   readonly mkdir?: typeof mkdirSync;
   readonly randomUUID?: typeof randomUUID;

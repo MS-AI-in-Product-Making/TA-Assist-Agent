@@ -45,6 +45,7 @@ import { conversationRoutes } from "./routes/conversation.js";
 import { filesRoutes } from "./routes/files.js";
 import { hostActionsRoutes } from "./routes/host-actions.js";
 import { adoRoutes } from "./routes/ado.js";
+import { productExportRoutes } from "./routes/product-export.js";
 import { sessionsRoutes } from "./routes/sessions.js";
 import { whatIfRoutes } from "./routes/what-if.js";
 import { createPersistentWorkerQueue, type PersistentWorkerQueue, type PersistentWorkerQueueOptions, type QueueSessionStore, type StageJob } from "./sqlite-worker-queue.js";
@@ -271,6 +272,7 @@ export async function buildWorkbenchServer(options: StartWorkbenchServerOptions)
   await app.register(conversationRoutes, { context });
   await app.register(hostActionsRoutes, { context });
   await app.register(adoRoutes, { context });
+  await app.register(productExportRoutes, { context });
   await app.register(artifactsRoutes, { context });
   await app.register(whatIfRoutes, { context });
   app.addHook("onClose", async () => {
