@@ -23,7 +23,7 @@ import {
   type ProductExportRequest,
   type ProductExportResult,
 } from "@ai-assist/product-export";
-import { computeTaReportSemanticDigest, openSessionStore, type SessionArtifactReference } from "@ai-assist/workbench";
+import { canonicalSelectedWorksheetSetHash, computeTaReportSemanticDigest, openSessionStore, type SessionArtifactReference } from "@ai-assist/workbench";
 
 import { createProductExportStore, type ProductExportStoreRecord } from "./product-export-store.js";
 
@@ -514,6 +514,10 @@ async function resolveTrustedSource(command: TaProductExportCommand, options: Ta
     if (initial.workbookContentHash !== downstream.workbookContentHash) {
       evidenceMismatch("Initial and downstream worksheet scope hashes diverged.", command.sessionId);
     }
+    if (new Set(initial.selectedWorksheetNames).size !== initial.selectedWorksheetNames.length
+      || new Set(downstream.selectedWorksheetNames).size !== downstream.selectedWorksheetNames.length) {
+      evidenceMismatch("Worksheet scope contains duplicate worksheet names.", command.sessionId);
+    }
     const initialSet = new Set(initial.selectedWorksheetNames);
     if (downstream.selectedWorksheetNames.length === 0 || downstream.selectedWorksheetNames.some((name) => !initialSet.has(name))) {
       evidenceMismatch("Downstream worksheet scope is not a validated subset of initial scope.", command.sessionId);
@@ -526,7 +530,7 @@ async function resolveTrustedSource(command: TaProductExportCommand, options: Ta
 
     const expectedReviewContext = {
       workbookHash: downstream.workbookContentHash,
-      downstreamSelectionHash: createHash("sha256").update(JSON.stringify([...downstream.selectedWorksheetNames])).digest("hex"),
+      downstreamSelectionHash: canonicalSelectedWorksheetSetHash(downstream.selectedWorksheetNames),
       baselineRunReference: sourceRunReference,
     };
     const productionRoots = await readProductionRoots(options.rootDir, command.sessionId);

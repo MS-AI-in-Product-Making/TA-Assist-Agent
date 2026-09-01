@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { basename, join, relative } from "node:path";
 
 import { describe, expect, it } from "vitest";
-import { createSessionStore, openSessionStore } from "@ai-assist/workbench";
+import { canonicalSelectedWorksheetSetHash, createSessionStore, openSessionStore } from "@ai-assist/workbench";
 
 import { exportTaAnalysisForSession } from "./ta-product-exporter.js";
 
@@ -41,7 +41,17 @@ async function writeArtifact(rootDir: string, absolutePath: string, value: strin
   return { relativePath: relative(rootDir, absolutePath), contentHash: sha256(value) };
 }
 
-async function seedValidatedSession(rootDir: string, sessionId: string, projection = projectionTemplate()) {
+async function seedValidatedSession(
+  rootDir: string,
+  sessionId: string,
+  projection = projectionTemplate(),
+  selection: {
+    readonly initialSelectedWorksheetNames?: readonly string[];
+    readonly downstreamSelectedWorksheetNames?: readonly string[];
+  } = {},
+) {
+  const initialSelectedWorksheetNames = [...(selection.initialSelectedWorksheetNames ?? ["Analysis-A"])];
+  const downstreamSelectedWorksheetNames = [...(selection.downstreamSelectedWorksheetNames ?? ["Analysis-A"])];
   const productionRoot = join(rootDir, "runtime", "workbench", "runner-output", sessionId, "production");
   const f2Root = join(productionRoot, "f2");
   const f3Root = join(productionRoot, "f3");
@@ -63,7 +73,7 @@ async function seedValidatedSession(rootDir: string, sessionId: string, projecti
 
   const reviewContext = {
     workbookHash: "a".repeat(64),
-    downstreamSelectionHash: createHash("sha256").update(JSON.stringify(["Analysis-A"])) .digest("hex"),
+    downstreamSelectionHash: canonicalSelectedWorksheetSetHash(downstreamSelectedWorksheetNames),
     baselineRunReference: "f2-run-2026-09-02",
   };
 
@@ -85,13 +95,13 @@ async function seedValidatedSession(rootDir: string, sessionId: string, projecti
         activeAttempt: null,
         initialScopeSelection: {
           workbookContentHash: "a".repeat(64),
-          selectedWorksheetNames: ["Analysis-A"],
+          selectedWorksheetNames: initialSelectedWorksheetNames,
           confirmed: true,
           provenance: "user",
         },
         downstreamScopeSelection: {
           workbookContentHash: "a".repeat(64),
-          selectedWorksheetNames: ["Analysis-A"],
+          selectedWorksheetNames: downstreamSelectedWorksheetNames,
           confirmed: true,
           provenance: "user",
         },
@@ -139,6 +149,62 @@ async function seedValidatedSession(rootDir: string, sessionId: string, projecti
 }
 
 describe("exportTaAnalysisForSession", () => {
+  it("accepts non-sorted downstream worksheet selection when reviewContext hash uses canonical set hash", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "ta-exporter-nonsorted-selection-"));
+    const sessionId = "50505050-5050-4505-8505-505050505050";
+    try {
+      const projection = {
+        ...projectionTemplate(["F3:Analysis-A:governance", "F3:Analysis-B:governance"]),
+        worksheetDispositions: [
+          { worksheetName: "Analysis-B", disposition: "FAIL" },
+          { worksheetName: "Analysis-A", disposition: "FAIL" },
+        ],
+        worksheets: [
+          {
+            ...projectionTemplate(["F3:Analysis-A:governance", "F3:Analysis-B:governance"]).worksheets[0],
+            worksheetName: "Analysis-B",
+            toleranceLoopDescription: "Loop B",
+            gatingEvidenceReferences: ["F3:Analysis-B:governance"],
+          },
+          {
+            ...projectionTemplate(["F3:Analysis-A:governance", "F3:Analysis-B:governance"]).worksheets[0],
+            worksheetName: "Analysis-A",
+            toleranceLoopDescription: "Loop A",
+            gatingEvidenceReferences: ["F3:Analysis-A:governance"],
+          },
+        ],
+      };
+      await seedValidatedSession(rootDir, sessionId, projection, {
+        initialSelectedWorksheetNames: ["Analysis-A", "Analysis-B"],
+        downstreamSelectedWorksheetNames: ["Analysis-B", "Analysis-A"],
+      });
+
+      const exported = await exportTaAnalysisForSession({
+        contractVersion: "ta-product-export-command-v1",
+        sessionId,
+        expectedRevision: 1,
+        idempotencyKey: "export-nonsorted-selection",
+      }, { rootDir });
+
+      expect(exported.manifest.worksheetScope).toEqual(["Analysis-B", "Analysis-A"]);
+    } finally {
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed when downstream worksheet selection contains duplicate worksheet names", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "ta-exporter-duplicate-selection-"));
+    const sessionId = "50909090-5090-4509-8509-509090909090";
+    try {
+      await expect(seedValidatedSession(rootDir, sessionId, projectionTemplate(), {
+        initialSelectedWorksheetNames: ["Analysis-A"],
+        downstreamSelectedWorksheetNames: ["Analysis-A", "Analysis-A"],
+      })).rejects.toThrow(/worksheet names must be unique/i);
+    } finally {
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
   it("detects real projection mutation drift and rejects stale source", async () => {
     const rootDir = await mkdtemp(join(tmpdir(), "ta-exporter-projection-"));
     const sessionId = "51515151-5151-4515-8515-515151515151";
