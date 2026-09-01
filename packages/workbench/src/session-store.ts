@@ -103,6 +103,12 @@ interface CommandRow {
   readonly result_json: string | null;
 }
 
+interface CommittedScopeCommandRow {
+  readonly command_id: string;
+  readonly command_json: string;
+  readonly committed_revision: number;
+}
+
 interface PreparedSnapshotTransition {
   readonly snapshot: F8SessionSnapshot;
   readonly scenarioDrafts: readonly F8ScenarioDraft[];
@@ -163,6 +169,8 @@ class SqliteSessionStore implements SessionStore {
 
   private readonly insertCommandStatement;
 
+  private readonly selectCommittedScopeCommandsStatement;
+
   private readonly updateSessionStatement;
 
   private readonly updateCommandResultStatement;
@@ -212,6 +220,13 @@ class SqliteSessionStore implements SessionStore {
     this.insertCommandStatement = this.database.prepare(`
       INSERT INTO commands(command_id, session_id, expected_revision, command_json, result_json, committed_revision, created_at, committed_at)
       VALUES (?, ?, ?, ?, NULL, NULL, ?, NULL)
+    `);
+    this.selectCommittedScopeCommandsStatement = this.database.prepare(`
+      SELECT command_id, command_json, committed_revision
+      FROM commands
+      WHERE session_id = ?
+        AND committed_revision IS NOT NULL
+      ORDER BY committed_revision ASC, command_id ASC
     `);
     this.updateSessionStatement = this.database.prepare(`
       UPDATE sessions
@@ -613,7 +628,27 @@ class SqliteSessionStore implements SessionStore {
       });
     }
 
-    return parseSnapshotJson(row.snapshot_json);
+    const snapshot = parseSnapshotJson(row.snapshot_json);
+    return this.backfillHistoricalWorksheetSelectionProvenance(row, snapshot);
+  }
+
+  private backfillHistoricalWorksheetSelectionProvenance(row: SessionRow, snapshot: F8SessionSnapshot): F8SessionSnapshot {
+    const commandRows = parseCommittedScopeCommandRows(this.selectCommittedScopeCommandsStatement.all(this.sessionId) as unknown);
+    const migrated = migrateLegacyWorksheetSelectionProvenance(
+      snapshot,
+      commandRows,
+      row.revision,
+    );
+    if (migrated === snapshot) return snapshot;
+
+    this.updateSessionStatement.run(
+      row.revision,
+      stringifyJson(migrated),
+      new Date().toISOString(),
+      this.sessionId,
+      row.revision,
+    );
+    return migrated;
   }
 
   private readSessionRow(): SessionRow | undefined {
@@ -903,7 +938,37 @@ function isTerminalAttemptStatus(status: SessionAttemptResultRecord["status"]): 
 }
 
 function parseSnapshotJson(value: string): F8SessionSnapshot {
-  return f8SessionSnapshotSchema.parse(JSON.parse(value));
+  const parsed = JSON.parse(value) as Record<string, unknown>;
+  try {
+    return f8SessionSnapshotSchema.parse(parsed);
+  } catch (error) {
+    const normalized = normalizeLegacySelectionProvenanceForValidation(parsed);
+    if (normalized === undefined) {
+      throw error;
+    }
+    f8SessionSnapshotSchema.parse(normalized);
+    return parsed as F8SessionSnapshot;
+  }
+}
+
+function normalizeLegacySelectionProvenanceForValidation(
+  snapshot: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  const normalized = { ...snapshot };
+  let changed = false;
+  const updateSelection = (key: "initialScopeSelection" | "downstreamScopeSelection") => {
+    const selection = normalized[key];
+    if (typeof selection !== "object" || selection === null) return;
+    const selectionRecord = { ...(selection as Record<string, unknown>) };
+    if (selectionRecord.provenance === "legacy_unverified") {
+      selectionRecord.provenance = "user";
+      normalized[key] = selectionRecord;
+      changed = true;
+    }
+  };
+  updateSelection("initialScopeSelection");
+  updateSelection("downstreamScopeSelection");
+  return changed ? normalized : undefined;
 }
 
 function ensureReceiptMatches(expectedJson: string, actualJson: string, commandId: string): void {
@@ -1001,4 +1066,114 @@ function withArtifactReferences(
 
 function isReviewArtifactKind(kind: string): kind is "f1_image" | "f3_report" | "f4_calculation" | "f4_report" | "f5_report" | "f6_optimization" | "f6_report" {
   return ["f1_image", "f3_report", "f4_calculation", "f4_report", "f5_report", "f6_optimization", "f6_report"].includes(kind);
+}
+
+function migrateLegacyWorksheetSelectionProvenance(
+  snapshot: F8SessionSnapshot,
+  commandRows: readonly CommittedScopeCommandRow[],
+  committedSnapshotRevision: number,
+): F8SessionSnapshot {
+  const nextInitial = withInferredSelectionProvenance(snapshot.initialScopeSelection, "initial", commandRows, committedSnapshotRevision);
+  const nextDownstream = withInferredSelectionProvenance(snapshot.downstreamScopeSelection, "downstream", commandRows, committedSnapshotRevision);
+  if (nextInitial === snapshot.initialScopeSelection && nextDownstream === snapshot.downstreamScopeSelection) {
+    return snapshot;
+  }
+  return {
+    ...snapshot,
+    ...(nextInitial === undefined ? {} : { initialScopeSelection: nextInitial }),
+    ...(nextDownstream === undefined ? {} : { downstreamScopeSelection: nextDownstream }),
+  };
+}
+
+function withInferredSelectionProvenance(
+  selection: F8SessionSnapshot["initialScopeSelection"] | undefined,
+  kind: "initial" | "downstream",
+  commandRows: readonly CommittedScopeCommandRow[],
+  committedSnapshotRevision: number,
+): F8SessionSnapshot["initialScopeSelection"] | undefined {
+  if (selection === undefined || selection.provenance !== undefined) return selection;
+  const inferred = inferSelectionProvenance(selection.workbookContentHash, selection.selectedWorksheetNames, kind, commandRows, committedSnapshotRevision);
+  return { ...selection, provenance: inferred } as unknown as F8SessionSnapshot["initialScopeSelection"];
+}
+
+function inferSelectionProvenance(
+  workbookHash: string,
+  worksheetNames: readonly string[],
+  kind: "initial" | "downstream",
+  commandRows: readonly CommittedScopeCommandRow[],
+  committedSnapshotRevision: number,
+): "user" | "internal_fixture" | "legacy_unverified" {
+  const commandMatches = commandRows
+    .filter((row) => row.committed_revision <= committedSnapshotRevision)
+    .flatMap((row) => {
+      const parsed = parseCommittedScopeCommandRow(row);
+      if (parsed === undefined || parsed.payload.workbookHash !== workbookHash) return [];
+      if (!sameWorksheetSet(parsed.payload.worksheetNames, worksheetNames)) return [];
+      if (kind === "initial" && (parsed.command === "confirm_initial_scope" || parsed.command === "auto_confirm_initial_scope")) {
+        return [parsed.command === "auto_confirm_initial_scope" ? "internal_fixture" as const : "user" as const];
+      }
+      if (kind === "downstream" && parsed.command === "confirm_downstream_scope") {
+        return [parsed.commandId.endsWith(":auto-downstream") ? "internal_fixture" as const : "user" as const];
+      }
+      return [];
+    });
+
+  const unique = [...new Set(commandMatches)];
+  return unique.length === 1 ? unique[0]! : "legacy_unverified";
+}
+
+function parseCommittedScopeCommandRow(row: CommittedScopeCommandRow): {
+  readonly commandId: string;
+  readonly command: "confirm_initial_scope" | "auto_confirm_initial_scope" | "confirm_downstream_scope";
+  readonly payload: { readonly workbookHash: string; readonly worksheetNames: string[] };
+} | undefined {
+  try {
+    const parsed = f8SessionCommandSchema.parse(JSON.parse(row.command_json) as unknown);
+    if (!isWorksheetScopeCommand(parsed.command) || !isWorksheetScopePayload(parsed.payload)) {
+      return undefined;
+    }
+    return {
+      commandId: row.command_id,
+      command: parsed.command,
+      payload: parsed.payload,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function parseCommittedScopeCommandRows(rows: unknown): CommittedScopeCommandRow[] {
+  if (!Array.isArray(rows)) return [];
+  return rows.flatMap((row) => {
+    if (typeof row !== "object" || row === null) return [];
+    const candidate = row as Record<string, unknown>;
+    if (typeof candidate.command_id !== "string" || typeof candidate.command_json !== "string") return [];
+    if (typeof candidate.committed_revision !== "number" && typeof candidate.committed_revision !== "bigint") return [];
+    return [{
+      command_id: candidate.command_id,
+      command_json: candidate.command_json,
+      committed_revision: toNumber(candidate.committed_revision),
+    }];
+  });
+}
+
+function isWorksheetScopeCommand(command: unknown): command is "confirm_initial_scope" | "auto_confirm_initial_scope" | "confirm_downstream_scope" {
+  return command === "confirm_initial_scope"
+    || command === "auto_confirm_initial_scope"
+    || command === "confirm_downstream_scope";
+}
+
+function isWorksheetScopePayload(payload: unknown): payload is { readonly workbookHash: string; readonly worksheetNames: string[] } {
+  if (typeof payload !== "object" || payload === null) return false;
+  const candidate = payload as { readonly workbookHash?: unknown; readonly worksheetNames?: unknown };
+  return typeof candidate.workbookHash === "string"
+    && Array.isArray(candidate.worksheetNames)
+    && candidate.worksheetNames.every((name) => typeof name === "string");
+}
+
+function sameWorksheetSet(left: readonly string[], right: readonly string[]): boolean {
+  if (left.length !== right.length) return false;
+  const rightSet = new Set(right);
+  if (rightSet.size !== right.length) return false;
+  return left.every((name) => rightSet.has(name));
 }

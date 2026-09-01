@@ -14,6 +14,12 @@ describe("projectWorksheetReview", () => {
         state: "review_required",
         activeAttempt: null,
         priorRunReferences: [],
+        downstreamScopeSelection: {
+          workbookContentHash: "a".repeat(64),
+          selectedWorksheetNames: ["AJ_GAP"],
+          confirmed: true,
+          provenance: "user",
+        },
         artifactRefs: [
           { artifactId: "img-aj-gap", kind: "f1_image", revision: 4, validated: true, reviewContextId: "context-review-1" },
           { artifactId: "f4-report-aj-gap", kind: "f4_calculation", revision: 4, validated: true, reviewContextId: "context-review-1" },
@@ -327,6 +333,28 @@ describe("projectWorksheetReview", () => {
     expect(result.findings).toEqual([]);
     expect(result.worksheets[0]?.status).toBe("evidence_mismatch");
   });
+
+  it.each([
+    ["internal_fixture"],
+    ["legacy_unverified"],
+  ] as const)("rejects review context when worksheet selection provenance is %s", (provenance) => {
+    const input = createReviewInput();
+    const result = projectWorksheetReview({
+      ...input,
+      snapshot: {
+        ...input.snapshot,
+        downstreamScopeSelection: {
+          workbookContentHash: "a".repeat(64),
+          selectedWorksheetNames: ["AJ_GAP"],
+          confirmed: true,
+          provenance,
+        },
+      },
+    }, { selectedWorksheetName: "AJ_GAP" });
+
+    expect(result.findings).toEqual([]);
+    expect(result.evidence).toBeUndefined();
+  });
 });
 
 function createReviewInput() {
@@ -340,6 +368,12 @@ function createReviewInput() {
       state: "review_required",
       activeAttempt: null,
       priorRunReferences: [],
+      downstreamScopeSelection: {
+        workbookContentHash: "a".repeat(64),
+        selectedWorksheetNames: ["AJ_GAP"],
+        confirmed: true,
+        provenance: "user",
+      },
       artifactRefs: [
         { artifactId: "img-aj-gap", kind: "f1_image", revision: 4, validated: true, reviewContextId: "context-review-1" },
         { artifactId: "f4-report-aj-gap", kind: "f4_calculation", revision: 4, validated: true, reviewContextId: "context-review-1" },

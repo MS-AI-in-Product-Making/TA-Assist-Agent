@@ -483,6 +483,7 @@ const withUniqueWorksheetNames = <T extends z.ZodType<{ worksheetNames: string[]
 const worksheetScopePayloadSchema = withUniqueWorksheetNames(worksheetScopePayloadBaseSchema);
 
 const worksheetDecisionProvenanceSchema = z.enum(["user", "internal_fixture"]);
+const worksheetSnapshotProvenanceSchema = z.enum(["user", "internal_fixture", "legacy_unverified"]);
 
 const worksheetScopeInternalPayloadSchema = withUniqueWorksheetNames(worksheetScopePayloadBaseSchema
   .extend({
@@ -495,7 +496,7 @@ const worksheetSelectionDecisionSchema = z
     workbookContentHash: sha256Schema,
     selectedWorksheetNames: z.array(nonEmptyStringSchema),
     confirmed: z.literal(true),
-    provenance: worksheetDecisionProvenanceSchema.optional(),
+    provenance: worksheetSnapshotProvenanceSchema.optional(),
   })
   .strict()
   .superRefine((selection, context) => {

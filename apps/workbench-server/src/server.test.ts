@@ -526,6 +526,7 @@ describe("workbench server routes", () => {
               workbookContentHash: REVIEW_CONTEXT.workbookHash,
               selectedWorksheetNames: ["Analysis-A"],
               confirmed: true,
+              provenance: "user",
             },
             priorRunReferences: [{ featureId: "F2", referenceId: "f2-run-2026-08-25", contractVersion: "v1", workbookHash: REVIEW_CONTEXT.workbookHash, runReference: REVIEW_CONTEXT.baselineRunReference }],
             activeAttempt: { attemptId: "seed-f4:f4_running", stage: "f4_running", status: "failed", startedAt: "2026-08-25T00:00:00.000Z", endedAt: "2026-08-25T00:00:01.000Z" },
@@ -1166,6 +1167,236 @@ describe("workbench server routes", () => {
     }
   }, 15_000);
 
+  it("keeps production sessions at downstream scope after user initial confirmation until explicit downstream confirmation", async () => {
+    const rootDir = testRoot("workbench-server-second-stop");
+    await rm(rootDir, { recursive: true, force: true });
+    const workbookHash = "a".repeat(64);
+    const runner = vi.fn(async (job: StageJob) => {
+      if (job.stage === "f0_validating") {
+        return {
+          featureId: "F0",
+          status: "completed",
+          versions: ["v1", "internal-v1", "interpretation-rules-v1"],
+          worksheetCapabilities: [{ worksheetName: "Analysis-A", whatIfAvailable: false }],
+          selectionPrompt: {
+            contractVersion: "v1",
+            inputClassification: "confidential",
+            status: "selectionRequired",
+            workbook: { fileName: "book.xlsx", contentHash: workbookHash },
+            options: [{ selectionIndex: 1, worksheetName: "Analysis-A", toleranceLoopDescription: "Analysis loop", worksheetKind: "analysis", source: { discoveryMethod: "worksheet_scan", descriptionCell: "Analysis-A!F11", worksheetAnchor: "Analysis-A!A1" } }],
+          },
+        };
+      }
+      if (job.stage === "f1_f2_running") {
+        const report = f2ImageBindingReportForArtifactTest("1".repeat(64), [{ worksheetName: "Analysis-A", relativePath: "worksheets/analysis-a/tolerance-path.png" }]);
+        const f2Root = join(rootDir, "runtime", "workbench", "runner-output", "second-stop", "f2");
+        await mkdir(f2Root, { recursive: true });
+        await writeFile(join(f2Root, "Feature2-Report.json"), `${JSON.stringify(report, null, 2)}\n`);
+        return {
+          featureId: "F2",
+          status: "completed",
+          runId: "f2-run-second-stop",
+          f2Root,
+          workbookContentHash: workbookHash,
+          report,
+        };
+      }
+      return { status: "completed" };
+    });
+    const server = await buildWorkbenchServer({ rootDir, runner, queueFactory: immediateQueue, skipWebAssets: true });
+    try {
+      const auth = await server.testAuthenticate("88888888-8888-4888-8888-888888888888");
+      const artifactId = "managed-workbook";
+      const relativePath = `uploads/${auth.sessionId}/workbook/${artifactId}-book.xlsx`;
+      server.registerArtifactForTest(auth.sessionId, artifactId, relativePath, "book.xlsx", "confidential", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      await mkdir(dirname(join(rootDir, relativePath)), { recursive: true });
+      await writeFile(join(rootDir, relativePath), createAnonymousWorkbookZip());
+
+      const uploaded = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${auth.sessionId}/commands`,
+        headers: auth.headers,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId: auth.sessionId,
+          commandId: "second-stop-upload",
+          expectedRevision: 0,
+          command: "upload_workbook",
+          payload: { artifactId, inputClassification: "confidential" },
+        },
+      });
+      expect(uploaded.statusCode).toBe(202);
+      expect(uploaded.json()).toMatchObject({ state: "initial_scope_required" });
+
+      const afterInitial = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${auth.sessionId}/commands`,
+        headers: auth.headers,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId: auth.sessionId,
+          commandId: "second-stop-initial-confirm",
+          expectedRevision: uploaded.json<{ revision: number }>().revision,
+          command: "confirm_initial_scope",
+          payload: { workbookHash, worksheetNames: ["Analysis-A"] },
+        },
+      });
+
+      expect(afterInitial.statusCode).toBe(202);
+      expect(afterInitial.json()).toMatchObject({
+        state: "downstream_scope_required",
+        initialScopeSelection: { workbookContentHash: workbookHash, selectedWorksheetNames: ["Analysis-A"], confirmed: true, provenance: "user" },
+      });
+      expect(afterInitial.json()).not.toHaveProperty("downstreamScopeSelection");
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  }, 15_000);
+
+  it("rejects blocked worksheets during downstream confirmation using current F2 readiness evidence", async () => {
+    const rootDir = testRoot("workbench-server-downstream-blocked");
+    await rm(rootDir, { recursive: true, force: true });
+    const sessionId = "89898989-8989-4898-8989-898989898989";
+    const workbookHash = "a".repeat(64);
+    const report = f2ImageBindingReportForArtifactTest("1".repeat(64), [
+      { worksheetName: "Analysis-A", relativePath: "worksheets/analysis-a/tolerance-path.png" },
+      { worksheetName: "Analysis-B", relativePath: "worksheets/analysis-b/tolerance-path.png" },
+    ]);
+    report.status = "partiallyBlocked";
+    report.worksheets = report.worksheets.map((worksheet) => worksheet.worksheetName === "Analysis-B"
+      ? { ...worksheet, status: "blocked", tolerancePathImageStatus: "unavailable" }
+      : worksheet);
+    report.f4Handoffs = report.f4Handoffs.filter((handoff) => handoff.worksheetName !== "Analysis-B");
+    report.summary = { ...report.summary, blockedWorksheetCount: 1, readyWorksheetCount: 1, missingImageWorksheetCount: 1 };
+    const reportRelativePath = "f2/downstream-blocked.json";
+    const reportHash = await writeJsonArtifact(rootDir, reportRelativePath, report);
+
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate(sessionId);
+      const store = await openSessionStore({ rootDir, sessionId });
+      try {
+        await store.applyCommand({
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "seed-downstream-blocked",
+          expectedRevision: 0,
+          command: "upload_workbook",
+          payload: { fileName: "book.xlsx", workbookBytes: new Uint8Array([80, 75, 3, 4]), inputClassification: "confidential" },
+        }, async (snapshot) => ({
+          snapshot: {
+            ...snapshot,
+            revision: 1,
+            inputRevision: 1,
+            state: "downstream_scope_required",
+            activeAttempt: null,
+            initialScopeSelection: {
+              workbookContentHash: workbookHash,
+              selectedWorksheetNames: ["Analysis-A", "Analysis-B"],
+              confirmed: true,
+              provenance: "user",
+            },
+            artifactRefs: [{ artifactId: "f2-current", kind: "f2_report", revision: 1, validated: true }],
+          },
+          artifactReferenceOps: {
+            upsert: [{ artifactId: "f2-current", sessionId, inputRevision: 1, kind: "f2_report", relativePath: reportRelativePath, contentHash: reportHash }],
+          },
+        }));
+      } finally {
+        await store.close();
+      }
+
+      const response = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${sessionId}/commands`,
+        headers: browser.headers,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "confirm-downstream-blocked",
+          expectedRevision: 1,
+          command: "confirm_downstream_scope",
+          payload: { workbookHash, worksheetNames: ["Analysis-B"] },
+        },
+      });
+
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toMatchObject({ error: { code: "validation_error" } });
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects downstream scope drift when worksheet is absent from the current F2 report", async () => {
+    const rootDir = testRoot("workbench-server-downstream-scope-drift");
+    await rm(rootDir, { recursive: true, force: true });
+    const sessionId = "90909090-9090-4909-9090-909090909090";
+    const workbookHash = "a".repeat(64);
+    const report = f2ImageBindingReportForArtifactTest("1".repeat(64), [
+      { worksheetName: "Analysis-A", relativePath: "worksheets/analysis-a/tolerance-path.png" },
+    ]);
+    const reportRelativePath = "f2/downstream-scope-drift.json";
+    const reportHash = await writeJsonArtifact(rootDir, reportRelativePath, report);
+
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate(sessionId);
+      const store = await openSessionStore({ rootDir, sessionId });
+      try {
+        await store.applyCommand({
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "seed-downstream-drift",
+          expectedRevision: 0,
+          command: "upload_workbook",
+          payload: { fileName: "book.xlsx", workbookBytes: new Uint8Array([80, 75, 3, 4]), inputClassification: "confidential" },
+        }, async (snapshot) => ({
+          snapshot: {
+            ...snapshot,
+            revision: 1,
+            inputRevision: 1,
+            state: "downstream_scope_required",
+            activeAttempt: null,
+            initialScopeSelection: {
+              workbookContentHash: workbookHash,
+              selectedWorksheetNames: ["Analysis-A", "Analysis-C"],
+              confirmed: true,
+              provenance: "user",
+            },
+            artifactRefs: [{ artifactId: "f2-current", kind: "f2_report", revision: 1, validated: true }],
+          },
+          artifactReferenceOps: {
+            upsert: [{ artifactId: "f2-current", sessionId, inputRevision: 1, kind: "f2_report", relativePath: reportRelativePath, contentHash: reportHash }],
+          },
+        }));
+      } finally {
+        await store.close();
+      }
+
+      const response = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${sessionId}/commands`,
+        headers: browser.headers,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "confirm-downstream-drift",
+          expectedRevision: 1,
+          command: "confirm_downstream_scope",
+          payload: { workbookHash, worksheetNames: ["Analysis-C"] },
+        },
+      });
+
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toMatchObject({ error: { code: "evidence_mismatch" } });
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
   it("allows fixture-only auto confirmations through explicit injected policy", async () => {
     const rootDir = testRoot("workbench-server-auto-entry-fixture");
     await rm(rootDir, { recursive: true, force: true });
@@ -1268,7 +1499,7 @@ describe("workbench server routes", () => {
           revision: snapshot.revision + 1,
           inputRevision: 1,
           activeAttempt: null,
-          downstreamScopeSelection: { workbookContentHash: "a".repeat(64), selectedWorksheetNames: ["Analysis-A"], confirmed: true },
+          downstreamScopeSelection: { workbookContentHash: "a".repeat(64), selectedWorksheetNames: ["Analysis-A"], confirmed: true, provenance: "user" },
           priorRunReferences: [{ featureId: "F2", referenceId: "f2-run-a", contractVersion: "v1", workbookHash: "a".repeat(64), runReference: "f2-baseline-a" }],
           artifactRefs: [{ artifactId: "f3-current-host-action", kind: "f3_report", revision: 1, validated: true, reviewContextId: REVIEW_CONTEXT_ID }],
         }, artifactReferenceOps: { upsert: [{ artifactId: "f3-current-host-action", sessionId: browser.sessionId, inputRevision: 1, kind: "f3_report", relativePath: "f3/current-host-action.json", contentHash: reportHash, reviewContext: REVIEW_CONTEXT }] } }));
@@ -1376,7 +1607,7 @@ describe("workbench server routes", () => {
           inputRevision: 2,
           state: "ado_decision_required",
           activeAttempt: null,
-          downstreamScopeSelection: { workbookContentHash: "a".repeat(64), selectedWorksheetNames: ["Analysis-A"], confirmed: true },
+          downstreamScopeSelection: { workbookContentHash: "a".repeat(64), selectedWorksheetNames: ["Analysis-A"], confirmed: true, provenance: "user" },
           priorRunReferences: [{ featureId: "F2", referenceId: "f2-run-a", contractVersion: "v1", workbookHash: "a".repeat(64), runReference: "f2-baseline-a" }],
           artifactRefs: [
             { artifactId: "f3-old", kind: "f3_report", revision: 1, validated: true, reviewContextId: REVIEW_CONTEXT_ID },

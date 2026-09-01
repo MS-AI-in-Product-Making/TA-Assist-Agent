@@ -621,6 +621,48 @@ describe("F8 session and host contracts", () => {
     expect(() => f8SessionEventSchema.parse({ ...event, outputRoot: "C:/arbitrary" })).toThrow();
   });
 
+  it("accepts legacy_unverified only on stored snapshot selections", () => {
+    const snapshot = {
+      contractVersion: "f8-session-snapshot-v1",
+      sessionId: SESSION_ID,
+      revision: 4,
+      inputRevision: 2,
+      state: "downstream_scope_required",
+      activeAttempt: null,
+      priorRunReferences: [],
+      initialScopeSelection: {
+        workbookContentHash: WORKBOOK_HASH,
+        selectedWorksheetNames: ["AJ_GAP"],
+        confirmed: true,
+        provenance: "legacy_unverified",
+      },
+      downstreamScopeSelection: {
+        workbookContentHash: WORKBOOK_HASH,
+        selectedWorksheetNames: ["AJ_GAP"],
+        confirmed: true,
+        provenance: "legacy_unverified",
+      },
+    } as const;
+
+    expect(f8SessionSnapshotSchema.parse(snapshot)).toEqual(snapshot);
+
+    const command = {
+      contractVersion: "f8-session-command-v1",
+      sessionId: SESSION_ID,
+      commandId: "invalid-legacy-provenance",
+      expectedRevision: 4,
+      command: "confirm_downstream_scope",
+      payload: {
+        worksheetNames: ["AJ_GAP"],
+        workbookHash: WORKBOOK_HASH,
+        provenance: "legacy_unverified",
+      },
+    };
+
+    expect(() => f8SessionCommandSchema.parse(command)).toThrow();
+    expect(() => f8PublicSessionCommandSchema.parse(command)).toThrow();
+  });
+
   it("allows only one active WHAT_IF draft in a session snapshot", () => {
     const draft = {
       contractVersion: "f8-scenario-draft-v1",

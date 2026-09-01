@@ -149,6 +149,52 @@ describe("workbench state machine", () => {
     });
   });
 
+  it("rejects downstream confirmation when workbook hash drifts from initial scope", () => {
+    const api = requireApi();
+    const snapshot = baseSnapshot({
+      state: "downstream_scope_required",
+      revision: 2,
+      initialScopeSelection: {
+        workbookContentHash: "a".repeat(64),
+        selectedWorksheetNames: ["Analysis-A"],
+        confirmed: true,
+        provenance: "user",
+      },
+    });
+
+    expect(() => api.reduceSessionCommand(snapshot, {
+      contractVersion: "f8-session-command-v1",
+      sessionId: SESSION_ID,
+      commandId: "confirm-downstream-hash-drift",
+      expectedRevision: 2,
+      command: "confirm_downstream_scope",
+      payload: { workbookHash: "b".repeat(64), worksheetNames: ["Analysis-A"] },
+    })).toThrow(/workbook hash/i);
+  });
+
+  it("rejects downstream confirmation that contains worksheets outside initial scope", () => {
+    const api = requireApi();
+    const snapshot = baseSnapshot({
+      state: "downstream_scope_required",
+      revision: 2,
+      initialScopeSelection: {
+        workbookContentHash: "a".repeat(64),
+        selectedWorksheetNames: ["Analysis-A"],
+        confirmed: true,
+        provenance: "user",
+      },
+    });
+
+    expect(() => api.reduceSessionCommand(snapshot, {
+      contractVersion: "f8-session-command-v1",
+      sessionId: SESSION_ID,
+      commandId: "confirm-downstream-out-of-scope",
+      expectedRevision: 2,
+      command: "confirm_downstream_scope",
+      payload: { workbookHash: "a".repeat(64), worksheetNames: ["Analysis-B"] },
+    })).toThrow(/outside the confirmed initial scope/i);
+  });
+
   it("saves one What-if draft and requires a separate promotion confirmation", () => {
     const api = requireApi();
     const draft = {

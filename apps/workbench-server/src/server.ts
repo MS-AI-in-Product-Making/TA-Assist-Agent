@@ -933,6 +933,7 @@ async function createDefaultSurfacePrepareRequest(
   snapshot: F8SessionSnapshot,
   command: F8SessionCommand,
 ): Promise<Extract<HostActionRequest, { kind: "surface_validate" }>["prepareRequest"]> {
+  ensureProductExportEligibleDownstreamScope(snapshot, "Surface validation requires user-confirmed downstream worksheet scope.");
   const f3References = snapshot.artifactRefs?.filter((reference) => reference.kind === "f3_report" && reference.revision === snapshot.inputRevision && reference.validated) ?? [];
   if (f3References.length !== 1) throw reviewContextMismatch(snapshot, "Surface validation requires one current validated F3 report.");
   const report = drawingGovernanceResultV2Schema.parse(await readSessionArtifactJson(rootDir, snapshot.sessionId, f3References[0]!.artifactId));
@@ -949,6 +950,7 @@ async function createAdoPreview(
   snapshot: F8SessionSnapshot,
   prepareRequest: Extract<HostActionRequest, { kind: "surface_validate" }>["prepareRequest"],
 ): Promise<AdoPreviewIdentity> {
+  ensureProductExportEligibleDownstreamScope(snapshot, "ADO preview requires user-confirmed downstream worksheet scope.");
   const f3References = snapshot.artifactRefs?.filter((reference) => reference.kind === "f3_report" && reference.revision === snapshot.inputRevision && reference.validated) ?? [];
   if (f3References.length !== 1) throw reviewContextMismatch(snapshot, "ADO preview requires one current validated F3 report.");
   const report = drawingGovernanceResultV2Schema.parse(await readSessionArtifactJson(rootDir, snapshot.sessionId, f3References[0]!.artifactId));
@@ -1300,6 +1302,9 @@ async function artifactReferenceOpsFromRunnerResult(
   if (scope?.confirmed !== true) {
     throw reviewContextMismatch(snapshot, "Runner review context does not match the current session lineage.");
   }
+  if (!isUserSelectionProvenance(scope.provenance)) {
+    throw reviewContextMismatch(snapshot, "Runner review context requires user-confirmed downstream worksheet scope.");
+  }
   const expectedFromSession: ReviewContextIdentity = {
     workbookHash: scope.workbookContentHash,
     downstreamSelectionHash: canonicalSelectedWorksheetSetHash(scope.selectedWorksheetNames),
@@ -1347,6 +1352,17 @@ function reviewContextMismatch(snapshot: F8SessionSnapshot, summary: string): Er
     suggestedAction: "Rerun the stage using the current workbook, worksheet selection, and F2 baseline.",
     affectedInputReferences: [snapshot.activeAttempt?.attemptId ?? snapshot.sessionId],
   });
+}
+
+function ensureProductExportEligibleDownstreamScope(snapshot: F8SessionSnapshot, summary: string): void {
+  const selection = snapshot.downstreamScopeSelection;
+  if (selection?.confirmed !== true || !isUserSelectionProvenance(selection.provenance)) {
+    throw reviewContextMismatch(snapshot, summary);
+  }
+}
+
+function isUserSelectionProvenance(provenance: unknown): provenance is "user" {
+  return provenance === "user";
 }
 
 function validatedF2BaselineReference(snapshot: F8SessionSnapshot): string {
