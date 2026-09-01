@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -115,9 +115,30 @@ export async function runProductionStage(stage: string, environment: ProductionS
           renderOptimization: scripts.renderF6Report,
         },
       },
-    }), "improvement-evaluation-v1") as { readonly status: string; readonly reasonCode?: string; readonly optimizationJsonPath?: string; readonly finalReportMdPath?: string; readonly outputDirectory: string };
-    if (result.status === "failed" || result.optimizationJsonPath === undefined || result.finalReportMdPath === undefined) throw new Error(`F6 failed: ${result.reasonCode ?? "unknown"}`);
-    return { result: { ...result, reviewContext: environment.reviewContext, artifactReferences: [await artifact(environment.serverRoot, `f6-optimization:${environment.snapshot.inputRevision}`, "f6_optimization", result.optimizationJsonPath), await artifact(environment.serverRoot, `f6-report:${environment.snapshot.inputRevision}`, "f6_report", result.finalReportMdPath)] }, roots: { ...environment.roots, f6Root: result.outputDirectory } };
+    }), "improvement-evaluation-v1") as {
+      readonly status: string;
+      readonly reasonCode?: string;
+      readonly optimizationJsonPath?: string;
+      readonly finalReportMdPath?: string;
+      readonly finalReportProjection?: unknown;
+      readonly outputDirectory: string;
+    };
+    if (result.status === "failed" || result.optimizationJsonPath === undefined || result.finalReportMdPath === undefined || result.finalReportProjection === undefined) {
+      throw new Error(`F6 failed: ${result.reasonCode ?? "unknown"}`);
+    }
+    const projectionPath = await writeManagedProjectionArtifact(environment.serverRoot, environment.sessionId, environment.snapshot.inputRevision, result.finalReportProjection);
+    return {
+      result: {
+        ...result,
+        reviewContext: environment.reviewContext,
+        artifactReferences: [
+          await artifact(environment.serverRoot, `f6-optimization:${environment.snapshot.inputRevision}`, "f6_optimization", result.optimizationJsonPath),
+          await artifact(environment.serverRoot, `f6-report:${environment.snapshot.inputRevision}`, "f6_report", result.finalReportMdPath),
+          await artifact(environment.serverRoot, `engineering-summary-projection:${environment.snapshot.inputRevision}`, "engineering_summary_projection", projectionPath),
+        ],
+      },
+      roots: { ...environment.roots, f6Root: result.outputDirectory },
+    };
   }
   throw new Error(`Unsupported production stage: ${stage}`);
 }
@@ -158,11 +179,37 @@ export function reviewContextFor(snapshot: F8SessionSnapshot, baselineRunReferen
   return { workbookHash: scope.workbookContentHash, downstreamSelectionHash: canonicalSelectedWorksheetSetHash(scope.selectedWorksheetNames), baselineRunReference };
 }
 
-async function artifact(rootDir: string, artifactId: string, kind: "f3_report" | "f4_calculation" | "f4_report" | "f5_report" | "f6_optimization" | "f6_report", absolutePath: string) {
+async function artifact(rootDir: string, artifactId: string, kind: "f3_report" | "f4_calculation" | "f4_report" | "f5_report" | "f6_optimization" | "f6_report" | "engineering_summary_projection", absolutePath: string) {
   const bytes = await readFile(absolutePath);
   const relativePath = relative(resolve(rootDir), resolve(absolutePath));
   if (relativePath.startsWith("..")) throw new Error(`${kind} escaped the managed root.`);
   return { artifactId, kind, relativePath, contentHash: createHash("sha256").update(bytes).digest("hex") };
+}
+
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => stableStringify(entry)).join(",")}]`;
+  }
+  if (value !== null && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right));
+    return `{${entries.map(([key, entryValue]) => `${JSON.stringify(key)}:${stableStringify(entryValue)}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+async function writeManagedProjectionArtifact(rootDir: string, sessionId: string, inputRevision: number, projection: unknown): Promise<string> {
+  const target = join(
+    rootDir,
+    "runtime",
+    "workbench",
+    "managed-artifacts",
+    sessionId,
+    "engineering-summary-projection",
+    `revision-${inputRevision}.json`,
+  );
+  await mkdir(join(target, ".."), { recursive: true });
+  await writeFile(target, `${stableStringify(projection)}\n`, "utf8");
+  return target;
 }
 
 async function modules(root: string, names: readonly string[]) {

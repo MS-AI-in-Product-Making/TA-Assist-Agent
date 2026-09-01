@@ -19,7 +19,7 @@ import { readOoxmlWorkbook } from "@ai-assist/workbook-catalog";
 
 interface RunnerArtifactReference {
   readonly artifactId: string;
-  readonly kind: "f1_image" | "f3_report" | "f4_calculation" | "f4_report" | "f5_report" | "f6_optimization" | "f6_report";
+  readonly kind: "f1_image" | "f3_report" | "f4_calculation" | "f4_report" | "f5_report" | "f6_optimization" | "f6_report" | "engineering_summary_projection";
   readonly relativePath: string;
   readonly contentHash: string;
 }
@@ -1404,6 +1404,7 @@ async function artifactReferenceOpsFromRunnerResult(
       relativePath: artifact.relativePath,
       contentHash: artifact.contentHash,
       reviewContext,
+      ...(artifact.kind === "engineering_summary_projection" ? { metadata: { reviewContext } } : {}),
     })),
   };
 }

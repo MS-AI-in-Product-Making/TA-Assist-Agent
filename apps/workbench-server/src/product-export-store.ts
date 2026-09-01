@@ -13,8 +13,21 @@ export interface ProductExportStoreRecord {
     readonly sourceRunReference: string;
     readonly workbookContentHash: string;
     readonly worksheetScope: readonly string[];
+    readonly reviewContext: {
+      readonly workbookHash: string;
+      readonly downstreamSelectionHash: string;
+      readonly baselineRunReference: string;
+    };
+    readonly productionRoots: {
+      readonly f3Root: string;
+      readonly f4Root: string;
+      readonly f5Root: string;
+      readonly f6Root: string;
+    };
     readonly artifactHashes: Readonly<Record<string, string>>;
   };
+  readonly projectionArtifactId?: string;
+  readonly projectionArtifactSha256?: string;
   readonly sourceReportSha256?: string;
   readonly projectionSchemaVersion?: string;
   readonly semanticDigest?: string;

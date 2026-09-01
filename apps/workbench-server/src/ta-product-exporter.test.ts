@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, relative } from "node:path";
 
 import { describe, expect, it } from "vitest";
-import { createSessionStore } from "@ai-assist/workbench";
+import { createSessionStore, openSessionStore } from "@ai-assist/workbench";
 
 import { exportTaAnalysisForSession } from "./ta-product-exporter.js";
 
@@ -56,7 +56,8 @@ async function seedValidatedSession(rootDir: string, sessionId: string, projecti
   const f5 = await writeArtifact(rootDir, join(f5Root, "Feature5-Report.json"), `${JSON.stringify({ status: "completed" })}\n`);
   const f6Optimization = await writeArtifact(rootDir, join(f6Root, "Feature6-Optimization.json"), `${JSON.stringify({ status: "completed" })}\n`);
   const f6Report = await writeArtifact(rootDir, join(f6Root, "Feature6-Report.md"), "# TA Engineering Analysis Report\n");
-  const f6Projection = await writeArtifact(rootDir, join(f6Root, "Feature6-Report-Projection.json"), `${JSON.stringify(projection, null, 2)}\n`);
+  const projectionRoot = join(rootDir, "runtime", "workbench", "managed-artifacts", sessionId, "engineering-summary-projection");
+  const f6Projection = await writeArtifact(rootDir, join(projectionRoot, "revision-1.json"), `${JSON.stringify(projection, null, 2)}\n`);
   await writeArtifact(rootDir, join(f6Root, "Feature6-Optimization.md"), "# TA Improvement Options\n");
   await writeArtifact(rootDir, join(f6Root, "Feature6-Run-Summary.json"), "{\"status\":\"completed\"}\n");
 
@@ -104,7 +105,16 @@ async function seedValidatedSession(rootDir: string, sessionId: string, projecti
           { artifactId: "f5-report", sessionId, inputRevision: 1, kind: "f5_report", relativePath: f5.relativePath, contentHash: f5.contentHash, reviewContext },
           { artifactId: "f6-optimization", sessionId, inputRevision: 1, kind: "f6_optimization", relativePath: f6Optimization.relativePath, contentHash: f6Optimization.contentHash, reviewContext },
           { artifactId: "f6-report", sessionId, inputRevision: 1, kind: "f6_report", relativePath: f6Report.relativePath, contentHash: f6Report.contentHash, reviewContext },
-          { artifactId: "f6-report-projection", sessionId, inputRevision: 1, kind: "f6_report_projection", relativePath: f6Projection.relativePath, contentHash: f6Projection.contentHash, reviewContext },
+          {
+            artifactId: "engineering-summary-projection:1",
+            sessionId,
+            inputRevision: 1,
+            kind: "engineering_summary_projection",
+            relativePath: f6Projection.relativePath,
+            contentHash: f6Projection.contentHash,
+            reviewContext,
+            metadata: { reviewContext },
+          },
         ],
       },
     }));
@@ -118,7 +128,14 @@ async function seedValidatedSession(rootDir: string, sessionId: string, projecti
     JSON.stringify({ f1Root: join(productionRoot, "f1"), f2Root, f3Root, f4Root, f5Root, f6Root }),
     "utf8",
   );
-  return { f6ProjectionPath: join(f6Root, "Feature6-Report-Projection.json") };
+  return {
+    f6ProjectionPath: join(projectionRoot, "revision-1.json"),
+    productionRoot,
+    f3Root,
+    f4Root,
+    f5Root,
+    f6Root,
+  };
 }
 
 describe("exportTaAnalysisForSession", () => {
@@ -184,4 +201,159 @@ describe("exportTaAnalysisForSession", () => {
       await rm(rootDir, { recursive: true, force: true });
     }
   });
+
+  it("requires one current validated projection artifact registration instead of sibling-path guessing", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "ta-exporter-projection-registration-"));
+    const sessionId = "54545454-5454-4545-8545-545454545454";
+    try {
+      await seedValidatedSession(rootDir, sessionId);
+      const store = await openSessionStore({ rootDir, sessionId });
+      try {
+        await store.applyCommand({
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "remove-projection-registration",
+          expectedRevision: 1,
+          command: "upload_workbook",
+          payload: { fileName: "book.xlsx", workbookBytes: new Uint8Array([80, 75, 3, 4]), inputClassification: "confidential" },
+        }, async (snapshot) => ({
+          snapshot,
+          artifactReferenceOps: { delete: ["engineering-summary-projection:1"] },
+        }));
+      } finally {
+        await store.close();
+      }
+
+      await expect(exportTaAnalysisForSession({
+        contractVersion: "ta-product-export-command-v1",
+        sessionId,
+        expectedRevision: 2,
+        idempotencyKey: "export-projection-registration",
+      }, { rootDir })).rejects.toMatchObject({ code: "evidence_mismatch" });
+    } finally {
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed when production-roots binding is missing or drifted", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "ta-exporter-roots-binding-"));
+    const sessionId = "56565656-5656-4565-8565-565656565656";
+    try {
+      const seeded = await seedValidatedSession(rootDir, sessionId);
+      await rm(join(rootDir, "runtime", "workbench", "registries", "production-roots", `${sessionId}.json`), { force: true });
+      await expect(exportTaAnalysisForSession({
+        contractVersion: "ta-product-export-command-v1",
+        sessionId,
+        expectedRevision: 1,
+        idempotencyKey: "export-roots-missing",
+      }, { rootDir })).rejects.toMatchObject({ code: "evidence_mismatch" });
+
+      await writeFile(
+        join(rootDir, "runtime", "workbench", "registries", "production-roots", `${sessionId}.json`),
+        JSON.stringify({
+          f1Root: join(seeded.productionRoot, "f1"),
+          f2Root: join(seeded.productionRoot, "f2"),
+          f3Root: join(seeded.productionRoot, "f3"),
+          f4Root: join(seeded.productionRoot, "f4"),
+          f5Root: join(seeded.productionRoot, "f5"),
+          f6Root: join(seeded.productionRoot, "f6", "mismatch"),
+        }),
+        "utf8",
+      );
+      await expect(exportTaAnalysisForSession({
+        contractVersion: "ta-product-export-command-v1",
+        sessionId,
+        expectedRevision: 1,
+        idempotencyKey: "export-roots-drift",
+      }, { rootDir })).rejects.toMatchObject({ code: "evidence_mismatch" });
+    } finally {
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects symlink or junction evidence paths based on the original artifact path", async ({ skip }) => {
+    const rootDir = await mkdtemp(join(tmpdir(), "ta-exporter-evidence-symlink-"));
+    const sessionId = "57575757-5757-4575-8575-575757575757";
+    try {
+      const seeded = await seedValidatedSession(rootDir, sessionId);
+      const linkedParent = join(seeded.productionRoot, "links");
+      const linkedEvidenceRoot = join(linkedParent, "evidence-link");
+      await mkdir(linkedParent, { recursive: true });
+      try {
+        await symlink(seeded.f3Root, linkedEvidenceRoot, "junction");
+      } catch {
+        skip("Junction creation unavailable in this environment.");
+        return;
+      }
+
+      const linkedReportPath = join(linkedEvidenceRoot, "Feature3-Report.json");
+      const linkedHash = sha256(await readFile(linkedReportPath, "utf8"));
+      const store = await openSessionStore({ rootDir, sessionId });
+      try {
+        await store.applyCommand({
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "rebind-f3-to-symlink",
+          expectedRevision: 1,
+          command: "upload_workbook",
+          payload: { fileName: "book.xlsx", workbookBytes: new Uint8Array([80, 75, 3, 4]), inputClassification: "confidential" },
+        }, async (snapshot) => ({
+          snapshot,
+          artifactReferenceOps: {
+            upsert: [{
+              artifactId: "f3-report",
+              sessionId,
+              inputRevision: 1,
+              kind: "f3_report",
+              relativePath: relative(rootDir, linkedReportPath),
+              contentHash: linkedHash,
+              reviewContext: {
+                workbookHash: "a".repeat(64),
+                downstreamSelectionHash: createHash("sha256").update(JSON.stringify(["Analysis-A"])) .digest("hex"),
+                baselineRunReference: "f2-run-2026-09-02",
+              },
+            }],
+          },
+        }));
+      } finally {
+        await store.close();
+      }
+
+      await expect(exportTaAnalysisForSession({
+        contractVersion: "ta-product-export-command-v1",
+        sessionId,
+        expectedRevision: 2,
+        idempotencyKey: "export-symlink-evidence",
+      }, { rootDir })).rejects.toMatchObject({ code: "policy_denied" });
+    } finally {
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it.each(["PASS", "FAIL", "CONDITIONAL_PASS", "INCOMPLETE"] as const)(
+    "keeps %s business disposition exportable when execution completed",
+    async (disposition) => {
+      const rootDir = await mkdtemp(join(tmpdir(), "ta-exporter-business-disposition-"));
+      const sessionId = `58${disposition.length.toString().padStart(2, "0")}585858-5858-4585-8585-585858585858`;
+      try {
+        const projection = {
+          ...projectionTemplate(["F3:Analysis-A:governance"]),
+          workbookDisposition: disposition,
+          worksheetDispositions: [{ worksheetName: "Analysis-A", disposition }],
+          worksheets: [{ ...projectionTemplate(["F3:Analysis-A:governance"]).worksheets[0], disposition }],
+        };
+        await seedValidatedSession(rootDir, sessionId, projection);
+        const receipt = await exportTaAnalysisForSession({
+          contractVersion: "ta-product-export-command-v1",
+          sessionId,
+          expectedRevision: 1,
+          idempotencyKey: `export-disposition-${disposition}`,
+        }, { rootDir });
+        expect(receipt.manifest.executionStatus).toBe("completed");
+        expect(receipt.manifest.exportStatus).toBe("completed");
+      } finally {
+        await rm(rootDir, { recursive: true, force: true });
+      }
+    },
+  );
 });

@@ -411,6 +411,7 @@ export function runF6Optimization(
       runSummaryPath: paths.runSummary,
       manifestPath: paths.manifest,
       optimization,
+      finalReportProjection: finalReport.projection,
       inputDecisions,
       summary: optimization.summary,
     };

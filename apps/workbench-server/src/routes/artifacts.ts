@@ -51,7 +51,7 @@ export const artifactsRoutes: FastifyPluginAsync<{ readonly context: WorkbenchSe
 };
 
 const ALLOWED_MIME_TYPES = new Set(["text/plain", "application/json", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "image/png", "image/jpeg"]);
-const JSON_ARTIFACT_KINDS = new Set(["f2_report", "f3_report", "f4_calculation", "f4_report", "f5_report", "f6_optimization", "f6_report"]);
+const JSON_ARTIFACT_KINDS = new Set(["f2_report", "f3_report", "f4_calculation", "f4_report", "f5_report", "f6_optimization", "f6_report", "engineering_summary_projection"]);
 
 async function readPersistedArtifact(
   rootDir: string,
