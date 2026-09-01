@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS host_actions (
   expected_revision INTEGER,
   confirmation_hash TEXT,
   expected_target_version TEXT,
+  dispatched_at TEXT,
   updated_at TEXT NOT NULL
 ) STRICT;
 `;

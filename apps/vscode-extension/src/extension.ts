@@ -14,7 +14,7 @@ import { handleParticipant } from "./participant.js";
 import { launchNewWorkbench, launchWorkbench, resumeWorkbench, type WorkbenchProcessLauncher } from "./workbench-launcher.js";
 import { importWorkbook } from "./workbook-import.js";
 import type { TaAnalyzeIntent } from "./analyze-intent.js";
-import { createSurfaceHostClient } from "./surface-host-client.js";
+import { createSurfaceHostClient, reconcileSurfaceWrite } from "./surface-host-client.js";
 import { pumpOneHostAction, type ClaimedHostAction } from "./host-action-pump.js";
 import { executeSurfaceValidation } from "./surface-validation.js";
 import { resolveWorkspaceWorkbook } from "./workspace-workbook-resolver.js";
@@ -67,6 +67,36 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (claim.request.kind === "surface_write") {
           const receipt = await (await import("@ai-assist/adapters")).createSurfaceMcpDrawingGovernanceAdapter(surface).execute(claim.request.confirmation);
           return { status: "completed", outcome: { kind: "surface_write", receipt } };
+        }
+        if (claim.request.kind === "surface_reconcile") {
+          const reconciliation = await reconcileSurfaceWrite(surface, {
+            workItemReference: claim.request.confirmation.workItemReference,
+            previewMarker: claim.request.previewIdentity.previewMarker,
+            previewHash: claim.request.previewIdentity.previewHash,
+            expectedTarget: claim.request.previewIdentity.targetIdentity,
+          });
+          if (reconciliation.state === "completed") {
+            return {
+              status: "completed",
+              outcome: {
+                kind: "surface_reconcile",
+                state: "matching",
+                receipt: {
+                  status: "updated",
+                  workItemReference: claim.request.confirmation.workItemReference,
+                  commentReference: reconciliation.observedCommentReference,
+                  version: reconciliation.observedCommentVersion,
+                  contentHash: claim.request.previewIdentity.previewHash,
+                },
+                observedCommentReference: reconciliation.observedCommentReference,
+                observedCommentVersion: reconciliation.observedCommentVersion,
+              },
+            };
+          }
+          if (reconciliation.state === "absent") {
+            return { status: "completed", outcome: { kind: "surface_reconcile", state: "absent" } };
+          }
+          return { status: "blocked", reason: reconciliation.reason };
         }
         if (claim.request.kind === "vscode_model_request") {
           const models = await vscode.lm.selectChatModels();
@@ -347,12 +377,12 @@ async function hostRequest<Result>(originValue: string, sessionId: string, actio
   return (response.status === 204 ? undefined : await response.json()) as Result;
 }
 
-async function readPendingHostAction(originValue: string, sessionId: string, bearer: string): Promise<{ readonly actionId: string; readonly kind: "surface_validate" | "surface_write" | "vscode_model_request" } | undefined> {
+async function readPendingHostAction(originValue: string, sessionId: string, bearer: string): Promise<{ readonly actionId: string; readonly kind: "surface_validate" | "surface_write" | "surface_reconcile" | "vscode_model_request" } | undefined> {
   const origin = new URL(originValue).origin;
   const response = await fetch(`${origin}/api/sessions/${encodeURIComponent(sessionId)}/ado/pending`, { headers: { authorization: `Bearer ${bearer}` } });
   if (response.status === 204) return undefined;
   if (!response.ok) throw new Error(`Pending ADO HostAction discovery was rejected (${response.status}).`);
-  return await response.json() as { readonly actionId: string; readonly kind: "surface_validate" | "surface_write" | "vscode_model_request" };
+  return await response.json() as { readonly actionId: string; readonly kind: "surface_validate" | "surface_write" | "surface_reconcile" | "vscode_model_request" };
 }
 
 function outputUrl(stdout: string): string {

@@ -107,6 +107,22 @@ describe("workbench browser API", () => {
     expect(fetchMock.mock.calls[2]).toEqual(["/api/sessions/session-1/ado/confirm", expect.objectContaining({ method: "POST", headers: expect.objectContaining({ "x-csrf-token": "csrf" }) })]);
   });
 
+  it("requests readback reconciliation with CSRF and without retry-write payload", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ csrfToken: "csrf" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ actionId: "ado-reconcile:session-1:2" }), { status: 202 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const api = createWorkbenchApi();
+
+    await api.reconcileAdoWrite("session-1");
+
+    expect(fetchMock.mock.calls[1]).toEqual([
+      "/api/sessions/session-1/ado/reconcile",
+      expect.objectContaining({ method: "POST", headers: expect.objectContaining({ "x-csrf-token": "csrf" }) }),
+    ]);
+    expect((fetchMock.mock.calls[1]?.[1] as RequestInit).body).toBeUndefined();
+  });
+
   it("uploads a multipart workbook then submits only its managed artifact reference", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ csrfToken: "csrf" }), { status: 200 }))

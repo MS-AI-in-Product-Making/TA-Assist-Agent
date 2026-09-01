@@ -805,6 +805,7 @@ export const f8AdoProjectionSchema = z.discriminatedUnion("state", [
   z.object({ contractVersion: z.literal("f8-ado-projection-v1"), sessionId: promptVisibleIdentitySchema, state: z.literal("preview_ready"), actionId: promptVisibleIdentitySchema, expectedRevision: z.number().int().nonnegative(), executionPhase: z.literal("prepare_preview").optional(), target: f8AdoTargetSchema, markdown: nonEmptyStringSchema, contentHash: sha256Schema, confirmation: surfaceConfirmationSchema }).strict(),
   z.object({ contractVersion: z.literal("f8-ado-projection-v1"), sessionId: promptVisibleIdentitySchema, state: z.literal("write_pending"), actionId: promptVisibleIdentitySchema, validationActionId: promptVisibleIdentitySchema, expectedRevision: z.number().int().nonnegative(), executionPhase: z.literal("execute_write").optional(), startedAt: z.string().datetime(), expiresAt: z.string().datetime(), confirmation: surfaceConfirmationSchema }).strict(),
   z.object({ contractVersion: z.literal("f8-ado-projection-v1"), sessionId: promptVisibleIdentitySchema, state: z.literal("write_outcome_unknown"), actionId: promptVisibleIdentitySchema, validationActionId: promptVisibleIdentitySchema, expectedRevision: z.number().int().nonnegative(), executionPhase: z.literal("readback"), previewIdentity: adoPreviewIdentitySchema, writeDispatchedAt: z.string().datetime(), confirmation: surfaceConfirmationSchema }).strict(),
+  z.object({ contractVersion: z.literal("f8-ado-projection-v1"), sessionId: promptVisibleIdentitySchema, state: z.literal("reconciled_absent"), actionId: promptVisibleIdentitySchema, writeActionId: promptVisibleIdentitySchema, validationActionId: promptVisibleIdentitySchema, expectedRevision: z.number().int().nonnegative(), executionPhase: z.literal("reconcile"), previewIdentity: adoPreviewIdentitySchema, confirmation: surfaceConfirmationSchema }).strict(),
   z.object({ contractVersion: z.literal("f8-ado-projection-v1"), sessionId: promptVisibleIdentitySchema, state: z.literal("completed"), actionId: promptVisibleIdentitySchema, validationActionId: promptVisibleIdentitySchema, expectedRevision: z.number().int().nonnegative(), executionPhase: z.literal("reconcile").optional(), confirmation: surfaceConfirmationSchema, receipt: surfaceUpdateReceiptSchema }).strict(),
   z.object({ contractVersion: z.literal("f8-ado-projection-v1"), sessionId: promptVisibleIdentitySchema, state: z.enum(["blocked", "failed"]), actionId: promptVisibleIdentitySchema, expectedRevision: z.number().int().nonnegative(), reason: nonEmptyStringSchema }).strict(),
 ]);
@@ -836,6 +837,16 @@ export const hostActionRequestSchema = z.discriminatedUnion("kind", [
     validationActionId: nonEmptyStringSchema,
     confirmationHash: sha256Schema,
     expectedTargetVersion: nonEmptyStringSchema,
+    confirmation: surfaceConfirmationSchema,
+  }).strict(),
+  z.object({
+    ...hostActionRequestBaseSchema,
+    kind: z.literal("surface_reconcile"),
+    writeActionId: nonEmptyStringSchema,
+    validationActionId: nonEmptyStringSchema,
+    confirmationHash: sha256Schema,
+    expectedTargetVersion: nonEmptyStringSchema,
+    previewIdentity: adoPreviewIdentitySchema,
     confirmation: surfaceConfirmationSchema,
   }).strict(),
   z.object({
@@ -874,6 +885,17 @@ const hostActionResultPayloadSchema = z.discriminatedUnion("status", [
     outcome: z.union([
       z.object({ kind: z.literal("surface_validation"), confirmation: surfaceConfirmationSchema }).strict(),
       z.object({ kind: z.literal("surface_write"), receipt: surfaceUpdateReceiptSchema }).strict(),
+      z.object({
+        kind: z.literal("surface_reconcile"),
+        state: z.literal("matching"),
+        receipt: surfaceUpdateReceiptSchema,
+        observedCommentReference: promptVisibleIdentitySchema,
+        observedCommentVersion: promptVisibleIdentitySchema,
+      }).strict(),
+      z.object({
+        kind: z.literal("surface_reconcile"),
+        state: z.literal("absent"),
+      }).strict(),
       z.object({ kind: z.literal("model_response"), turnId: nonEmptyStringSchema, responseText: nonEmptyStringSchema }).strict(),
     ]).optional(),
   }).strict(),

@@ -2352,7 +2352,76 @@ describe("workbench server routes", () => {
       const revision = await seedAdoActionPendingSnapshot(rootDir, browser.sessionId);
       const validationActionId = `ado-validation:${browser.sessionId}:${revision}`;
       const writeActionId = `ado-write:${browser.sessionId}:${revision}`;
-      const hostActions = await createHostActionStore({ rootDir, sessionId: browser.sessionId });
+      let now = new Date("2026-09-01T00:00:00.000Z");
+      const hostActions = await createHostActionStore({ rootDir, sessionId: browser.sessionId, now: () => now });
+      try {
+        const confirmation = testSurfaceConfirmation();
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: validationActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_validate",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
+        });
+        const validationClaim = await hostActions.claimHostAction(validationActionId, "host-a");
+        const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };
+        await hostActions.completeHostAction({
+          contractVersion: "f8-host-action-result-v1",
+          actionId: validationActionId,
+          hostInstanceId: "host-a",
+          leaseId: validationClaim.leaseId,
+          status: "completed",
+          resultHash: createHash("sha256").update(JSON.stringify(validationPayload)).digest("hex"),
+          payload: validationPayload,
+        });
+
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: writeActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_write",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          validationActionId,
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          confirmation,
+        });
+        now = new Date("2026-09-01T00:00:05.000Z");
+        await hostActions.claimHostAction(writeActionId, "host-a");
+      } finally {
+        await hostActions.close();
+      }
+
+      const response = await server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}/ado`, headers: browser.headers });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        state: "write_outcome_unknown",
+        actionId: writeActionId,
+        validationActionId,
+        expectedRevision: revision,
+        writeDispatchedAt: "2026-09-01T00:00:05.000Z",
+      });
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("creates a typed reconcile host action from write_outcome_unknown and exposes it to host pending", async () => {
+    const rootDir = testRoot("workbench-server-ado-reconcile-route");
+    await rm(rootDir, { recursive: true, force: true });
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate("67676767-6767-4676-8676-676767676767");
+      const revision = await seedAdoActionPendingSnapshot(rootDir, browser.sessionId);
+      const validationActionId = `ado-validation:${browser.sessionId}:${revision}`;
+      const writeActionId = `ado-write:${browser.sessionId}:${revision}`;
+      const hostActions = await createHostActionStore({ rootDir, sessionId: browser.sessionId, now: () => new Date("2026-09-01T00:00:00.000Z") });
       try {
         const confirmation = testSurfaceConfirmation();
         await hostActions.createHostAction({
@@ -2395,13 +2464,19 @@ describe("workbench server routes", () => {
         await hostActions.close();
       }
 
-      const response = await server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}/ado`, headers: browser.headers });
-      expect(response.statusCode).toBe(200);
-      expect(response.json()).toMatchObject({
-        state: "write_outcome_unknown",
-        actionId: writeActionId,
-        validationActionId,
-        expectedRevision: revision,
+      const reconcileResponse = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${browser.sessionId}/ado/reconcile`,
+        headers: browser.headers,
+      });
+      expect(reconcileResponse.statusCode).toBe(202);
+
+      const hostToken = server.issueHostBearer(browser.sessionId, ["sessions:read"]);
+      const pending = await server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}/ado/pending`, headers: { host: "127.0.0.1:0", authorization: `Bearer ${hostToken}` } });
+      expect(pending.statusCode).toBe(200);
+      expect(pending.json()).toMatchObject({
+        actionId: `ado-reconcile:${browser.sessionId}:${revision}`,
+        kind: "surface_reconcile",
       });
     } finally {
       await server.close();

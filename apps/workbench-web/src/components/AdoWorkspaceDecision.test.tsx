@@ -36,6 +36,7 @@ describe("AdoWorkspaceDecision", () => {
   });
 
   it("shows write outcome unknown messaging without a generic retry-write button", () => {
+    const onReconcile = vi.fn(async () => undefined);
     render(
       <AdoWorkspaceDecision
         visible
@@ -67,10 +68,13 @@ describe("AdoWorkspaceDecision", () => {
           writeDispatchedAt: "2026-09-01T00:00:00.000Z",
         }}
         onSubmit={vi.fn(async () => undefined)}
+        onReconcile={onReconcile}
       />,
     );
 
     expect(screen.getByText(/write outcome is unknown/i)).toBeVisible();
     expect(screen.queryByRole("button", { name: /retry write/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Run readback reconciliation" }));
+    expect(onReconcile).toHaveBeenCalledOnce();
   });
 });

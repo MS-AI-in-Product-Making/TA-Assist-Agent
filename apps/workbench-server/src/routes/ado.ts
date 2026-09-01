@@ -23,6 +23,9 @@ export const adoRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServerCo
     const revision = snapshot.revision;
     const writeActionId = `ado-write:${sessionId}:${revision}`;
     const validationActionId = `ado-validation:${sessionId}:${revision}`;
+    const reconcileActionId = `ado-reconcile:${sessionId}:${revision}`;
+    const reconcile = await context.hostActions.readRecord(sessionId, reconcileActionId);
+    if (reconcile?.status === "pending") return reply.send({ actionId: reconcileActionId, kind: "surface_reconcile" });
     const write = await context.hostActions.readRecord(sessionId, writeActionId);
     if (write?.status === "pending") return reply.send({ actionId: writeActionId, kind: "surface_write" });
     const validation = await context.hostActions.readRecord(sessionId, validationActionId);
@@ -42,12 +45,30 @@ export const adoRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServerCo
 
     const validationActionId = `ado-validation:${sessionId}:${snapshot.revision}`;
     const writeActionId = `ado-write:${sessionId}:${snapshot.revision}`;
-    const [validation, write] = await Promise.all([
+    const reconcileActionId = `ado-reconcile:${sessionId}:${snapshot.revision}`;
+    const [validation, write, reconcile] = await Promise.all([
       context.hostActions.readRecord(sessionId, validationActionId),
       context.hostActions.readRecord(sessionId, writeActionId),
+      context.hostActions.readRecord(sessionId, reconcileActionId),
     ]);
     if (write !== undefined) {
       const confirmation = write.request.kind === "surface_write" ? write.request.confirmation : undefined;
+      const previewIdentity = confirmation === undefined ? undefined : previewIdentityFromConfirmation(confirmation);
+      if (confirmation !== undefined && reconcile !== undefined) {
+        const reconcileOutcome = reconcile.result?.payload.status === "completed" && reconcile.result.payload.outcome?.kind === "surface_reconcile"
+          ? reconcile.result.payload.outcome
+          : undefined;
+        if (reconcileOutcome?.state === "matching") {
+          return reply.send(f8AdoProjectionSchema.parse({ contractVersion: "f8-ado-projection-v1", sessionId, state: "completed", actionId: writeActionId, validationActionId, expectedRevision: snapshot.revision, executionPhase: "reconcile", confirmation, receipt: reconcileOutcome.receipt }));
+        }
+        if (reconcileOutcome?.state === "absent" && previewIdentity !== undefined) {
+          return reply.send(f8AdoProjectionSchema.parse({ contractVersion: "f8-ado-projection-v1", sessionId, state: "reconciled_absent", actionId: reconcileActionId, writeActionId, validationActionId, expectedRevision: snapshot.revision, executionPhase: "reconcile", previewIdentity, confirmation }));
+        }
+        const reconcileTerminal = terminalProjection(reconcile.result?.payload, "reconcile");
+        if (reconcileTerminal !== undefined) {
+          return reply.send(f8AdoProjectionSchema.parse({ contractVersion: "f8-ado-projection-v1", sessionId, state: reconcileTerminal.state, actionId: reconcileActionId, expectedRevision: snapshot.revision, reason: reconcileTerminal.reason }));
+        }
+      }
       const receipt = write.result?.payload.status === "completed" && write.result.payload.outcome?.kind === "surface_write"
         ? write.result.payload.outcome.receipt
         : undefined;
@@ -59,7 +80,16 @@ export const adoRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServerCo
         return reply.send(f8AdoProjectionSchema.parse({ contractVersion: "f8-ado-projection-v1", sessionId, state: writeTerminal.state, actionId: writeActionId, expectedRevision: snapshot.revision, reason: writeTerminal.reason }));
       }
       if (confirmation !== undefined && write.status === "claimed") {
-        const previewIdentity = previewIdentityFromConfirmation(confirmation);
+        if (write.dispatchedAt === undefined) {
+          return reply.send(f8AdoProjectionSchema.parse({
+            contractVersion: "f8-ado-projection-v1",
+            sessionId,
+            state: "blocked",
+            actionId: writeActionId,
+            expectedRevision: snapshot.revision,
+            reason: "Surface write dispatch timestamp is unavailable for reconciliation.",
+          }));
+        }
         return reply.send(f8AdoProjectionSchema.parse({
           contractVersion: "f8-ado-projection-v1",
           sessionId,
@@ -68,8 +98,8 @@ export const adoRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServerCo
           validationActionId,
           expectedRevision: snapshot.revision,
           executionPhase: "readback",
-          previewIdentity,
-          writeDispatchedAt: write.leaseExpiresAt ?? new Date().toISOString(),
+          previewIdentity: previewIdentity ?? previewIdentityFromConfirmation(confirmation),
+          writeDispatchedAt: write.dispatchedAt,
           confirmation,
         }));
       }
@@ -146,6 +176,43 @@ export const adoRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServerCo
     });
     return created === undefined ? reply.code(409).send({ error: "host_action_id_conflict" }) : reply.code(201).send({ actionId });
   });
+
+  app.post("/api/sessions/:sessionId/ado/reconcile", async (request, reply) => {
+    const auth = context.requireBrowserMutation(request, reply);
+    if (auth === undefined) return reply;
+    const { sessionId } = request.params as { readonly sessionId: string };
+    if (auth.sessionId !== sessionId) return reply.code(403).send({ error: "session_scope_rejected" });
+
+    const snapshot = await context.sessions.read(sessionId);
+    if (snapshot?.state !== "ado_action_pending") return reply.code(409).send({ error: "ado_reconcile_stale" });
+
+    const writeActionId = `ado-write:${sessionId}:${snapshot.revision}`;
+    const validationActionId = `ado-validation:${sessionId}:${snapshot.revision}`;
+    const reconcileActionId = `ado-reconcile:${sessionId}:${snapshot.revision}`;
+    const write = await context.hostActions.readRecord(sessionId, writeActionId);
+    if (write?.request.kind !== "surface_write" || write.status !== "claimed" || write.result !== undefined) {
+      return reply.code(409).send({ error: "ado_reconcile_unavailable" });
+    }
+
+    const confirmation = write.request.confirmation;
+    const previewIdentity = previewIdentityFromConfirmation(confirmation);
+    const created = await context.hostActions.create({
+      contractVersion: "f8-host-action-request-v1",
+      actionId: reconcileActionId,
+      sessionId,
+      expectedRevision: snapshot.revision,
+      kind: "surface_reconcile",
+      expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+      writeActionId,
+      validationActionId,
+      confirmationHash: write.request.confirmationHash,
+      expectedTargetVersion: write.request.expectedTargetVersion,
+      previewIdentity,
+      confirmation,
+    });
+
+    return created === undefined ? reply.code(409).send({ error: "host_action_id_conflict" }) : reply.code(202).send({ actionId: reconcileActionId });
+  });
 };
 
 function pendingTiming(expiresAt: string | undefined): { readonly startedAt: string; readonly expiresAt: string } {
@@ -158,14 +225,14 @@ function pendingTiming(expiresAt: string | undefined): { readonly startedAt: str
 
 function terminalProjection(
   payload: { readonly status: "completed" | "blocked" | "failed"; readonly reason?: string | undefined; readonly error?: { readonly summary?: string | undefined } | undefined } | undefined,
-  stage: "validation" | "write",
+  stage: "validation" | "write" | "reconcile",
 ): { readonly state: "blocked" | "failed"; readonly reason: string } | undefined {
   if (payload?.status === "blocked") {
-    const fallback = stage === "write" ? "Surface write was blocked." : "Surface validation was blocked.";
+    const fallback = stage === "write" ? "Surface write was blocked." : stage === "reconcile" ? "Surface readback reconciliation was blocked." : "Surface validation was blocked.";
     return { state: "blocked", reason: sanitizeReason(payload.reason, fallback) };
   }
   if (payload?.status === "failed") {
-    const fallback = stage === "write" ? "Surface write failed." : "Surface validation failed.";
+    const fallback = stage === "write" ? "Surface write failed." : stage === "reconcile" ? "Surface readback reconciliation failed." : "Surface validation failed.";
     return { state: "failed", reason: sanitizeReason(payload.error?.summary, fallback) };
   }
   return undefined;

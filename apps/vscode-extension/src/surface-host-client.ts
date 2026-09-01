@@ -24,6 +24,8 @@ const TOOL_SUFFIXES = {
 	updateWorkItem: "p_update_work_item",
 } as const;
 
+const CANONICAL_MARKER_PATTERN = /<!--\s*([^\r\n<>]+?)\s*-->/gu;
+
 const DEFAULT_CREATE_TARGET = {
 	organization: "MSFTDEVICES",
 	project: "Project A",
@@ -285,7 +287,7 @@ export async function reconcileSurfaceWrite(
 	const comments = reconcileClient.listCommentsForReconcile === undefined
 		? normalizeComments(await client.readCommentZero(request.workItemReference))
 		: await reconcileClient.listCommentsForReconcile(request.workItemReference);
-	const matches = comments.filter((comment) => includesPreviewMarker(comment.content, request.previewMarker));
+	const matches = comments.filter((comment) => hasCanonicalPreviewMarker(comment.content, request.previewMarker));
 	if (matches.length === 0) {
 		return { state: "absent" };
 	}
@@ -322,8 +324,11 @@ function normalizeComments(comment: { readonly commentReference: string; readonl
 	}];
 }
 
-function includesPreviewMarker(content: string, marker: string): boolean {
-	return content.includes(`<!-- ${marker} -->`) || content.includes(marker);
+function hasCanonicalPreviewMarker(content: string, marker: string): boolean {
+	for (const match of content.matchAll(CANONICAL_MARKER_PATTERN)) {
+		if (match[1]?.trim() === marker) return true;
+	}
+	return false;
 }
 
 function sha256(value: string): string {

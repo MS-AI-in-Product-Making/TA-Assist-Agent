@@ -101,6 +101,7 @@ export interface WorkbenchApi {
   readConversation(sessionId: string): Promise<readonly ConversationTurn[]>;
   readAdoProjection(sessionId: string): Promise<F8AdoProjection>;
   confirmAdoWrite(sessionId: string, confirmation: F8AdoWriteConfirmation): Promise<void>;
+  reconcileAdoWrite(sessionId: string): Promise<void>;
   artifactUrl(sessionId: string, artifactId: string, disposition?: "inline" | "attachment"): string;
   loadArtifactJson(
     sessionId: string,
@@ -242,6 +243,14 @@ export function createWorkbenchApi(): WorkbenchApi {
         credentials: "same-origin",
         headers: await mutationHeaders(),
         body: JSON.stringify(confirmation),
+      });
+      await parseJsonResponse(response);
+    },
+    async reconcileAdoWrite(sessionId) {
+      const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/ado/reconcile`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: await mutationHeaders(),
       });
       await parseJsonResponse(response);
     },

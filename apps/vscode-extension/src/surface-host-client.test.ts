@@ -215,4 +215,23 @@ describe("createSurfaceHostClient", () => {
       expectedTarget: { organization: "MSFTDEVICES", project: "Project A", workItemId: 42 },
     })).resolves.toMatchObject({ state: "blocked", reasonCode: "preview_hash_mismatch" });
   });
+
+  it("does not treat raw marker substrings as canonical matches", async () => {
+    const nonCanonical = "Preview text includes preview-marker:ado:session-1:3 but no canonical marker token.";
+    const client = createSurfaceHostClient({
+      tools: [tool("mcp_surface_mcp_p_get_work_item"), tool("mcp_surface_mcp_p_list_work_item_comments"), tool("mcp_surface_mcp_p_update_work_item")],
+      invoke: vi.fn(async (name: string) => {
+        if (name.endsWith("p_list_work_item_comments")) return { text: JSON.stringify({ comments: [{ id: 30, version: 3, text: nonCanonical }] }) };
+        if (name.endsWith("p_get_work_item")) return { text: JSON.stringify({ id: 42, rev: 7, fields: {} }) };
+        throw new Error(`Unexpected tool ${name}`);
+      }),
+    });
+
+    await expect(reconcileSurfaceWrite(client, {
+      workItemReference: "https://dev.azure.com/MSFTDEVICES/Project%20A/_workitems/edit/42",
+      previewMarker: "preview-marker:ado:session-1:3",
+      previewHash: createHash("sha256").update(nonCanonical).digest("hex"),
+      expectedTarget: { organization: "MSFTDEVICES", project: "Project A", workItemId: 42 },
+    })).resolves.toMatchObject({ state: "absent" });
+  });
 });

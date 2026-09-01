@@ -40,6 +40,7 @@ export interface UseWorkbenchSessionResult {
   readonly submitCommand: (command: F8CommandKind, payload: Record<string, unknown>) => Promise<void>;
   readonly appendConversation: (message: string, context?: TaConversationContext) => Promise<void>;
   readonly confirmAdoWrite: (confirmation: F8AdoWriteConfirmation) => Promise<void>;
+  readonly reconcileAdoWrite: () => Promise<void>;
   readonly clearError: () => void;
 }
 
@@ -332,6 +333,16 @@ export function useWorkbenchSession(apiOverride?: WorkbenchApi, options: UseWork
         setError(undefined);
       } catch (confirmationError) {
         setError(toTypedError(confirmationError, "ADO write confirmation was rejected.", "Refresh the preview and confirm again."));
+      }
+    },
+    async reconcileAdoWrite() {
+      if (sessionId === undefined) return;
+      try {
+        await api.reconcileAdoWrite(sessionId);
+        setAdoProjection(await api.readAdoProjection(sessionId));
+        setError(undefined);
+      } catch (reconcileError) {
+        setError(toTypedError(reconcileError, "ADO readback reconciliation was rejected.", "Refresh the ADO state and try again."));
       }
     },
     clearError() {

@@ -948,6 +948,25 @@ describe("F8 session and host contracts", () => {
       },
     };
 
+    const reconcileRequest = {
+      contractVersion: "f8-host-action-request-v1",
+      actionId: "action-reconcile-1",
+      sessionId: SESSION_ID,
+      expectedRevision: 4,
+      kind: "surface_reconcile",
+      expiresAt: "2026-08-24T00:10:00.000Z",
+      writeActionId: "action-1",
+      validationActionId: "action-validate-1",
+      confirmationHash: WORKBOOK_HASH,
+      expectedTargetVersion: "f4-handoff-v1",
+      previewIdentity: {
+        targetIdentity: { organization: "MSFTDEVICES", project: "Project A", workItemId: 42 },
+        previewHash: WORKBOOK_HASH,
+        previewMarker: "preview-marker:ado:session:3",
+      },
+      confirmation: hostActionRequest.confirmation,
+    };
+
     const hostActionClaim = {
       contractVersion: "f8-host-action-claim-v1",
       actionId: "action-1",
@@ -965,6 +984,31 @@ describe("F8 session and host contracts", () => {
       status: "completed",
       resultHash: WORKBOOK_HASH,
       payload: { status: "completed" },
+    };
+
+    const reconcileResult = {
+      contractVersion: "f8-host-action-result-v1",
+      actionId: "action-reconcile-1",
+      hostInstanceId: "host-1",
+      leaseId: "lease-1",
+      status: "completed",
+      resultHash: WORKBOOK_HASH,
+      payload: {
+        status: "completed",
+        outcome: {
+          kind: "surface_reconcile",
+          state: "matching",
+          receipt: {
+            status: "updated",
+            workItemReference: "https://dev.azure.com/MSFTDEVICES/Project%20A/_workitems/edit/42",
+            commentReference: "11",
+            version: "2",
+            contentHash: WORKBOOK_HASH,
+          },
+          observedCommentReference: "11",
+          observedCommentVersion: "2",
+        },
+      },
     };
 
     const failedHostActionResult = {
@@ -1003,8 +1047,10 @@ describe("F8 session and host contracts", () => {
 
     expect(conversationTurnSchema.parse(conversationTurn)).toEqual(conversationTurn);
     expect(hostActionRequestSchema.parse(hostActionRequest)).toEqual(hostActionRequest);
+    expect(hostActionRequestSchema.parse(reconcileRequest)).toEqual(reconcileRequest);
     expect(hostActionClaimSchema.parse(hostActionClaim)).toEqual(hostActionClaim);
     expect(hostActionResultSchema.parse(hostActionResult)).toEqual(hostActionResult);
+    expect(hostActionResultSchema.parse(reconcileResult)).toEqual(reconcileResult);
     expect(hostActionResultSchema.parse(failedHostActionResult)).toEqual(failedHostActionResult);
     expect(f8ScenarioDraftSchema.parse(draft)).toEqual(draft);
 
