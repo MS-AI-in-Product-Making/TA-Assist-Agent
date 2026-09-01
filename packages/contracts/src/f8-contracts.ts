@@ -758,6 +758,26 @@ const f8AdoTargetSchema = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("existing"), workItemReference: promptVisibleIdentitySchema }).strict(),
 ]);
 
+const adoExecutionPhaseSchema = z.enum([
+  "validate_target",
+  "prepare_preview",
+  "execute_write",
+  "readback",
+  "reconcile",
+]);
+
+const adoTargetIdentitySchema = z.object({
+  organization: nonEmptyStringSchema,
+  project: nonEmptyStringSchema,
+  workItemId: z.number().int().positive(),
+}).strict();
+
+const adoPreviewIdentitySchema = z.object({
+  targetIdentity: adoTargetIdentitySchema,
+  previewHash: sha256Schema,
+  previewMarker: nonEmptyStringSchema,
+}).strict();
+
 const surfaceConfirmationSchema = z.object({
   status: z.literal("confirmation_required"),
   workItemReference: promptVisibleIdentitySchema,
@@ -781,10 +801,11 @@ const surfaceUpdateReceiptSchema = z.object({
 
 export const f8AdoProjectionSchema = z.discriminatedUnion("state", [
   z.object({ contractVersion: z.literal("f8-ado-projection-v1"), sessionId: promptVisibleIdentitySchema, state: z.literal("not_required") }).strict(),
-  z.object({ contractVersion: z.literal("f8-ado-projection-v1"), sessionId: promptVisibleIdentitySchema, state: z.literal("validation_pending"), actionId: promptVisibleIdentitySchema, expectedRevision: z.number().int().nonnegative(), startedAt: z.string().datetime(), expiresAt: z.string().datetime() }).strict(),
-  z.object({ contractVersion: z.literal("f8-ado-projection-v1"), sessionId: promptVisibleIdentitySchema, state: z.literal("preview_ready"), actionId: promptVisibleIdentitySchema, expectedRevision: z.number().int().nonnegative(), target: f8AdoTargetSchema, markdown: nonEmptyStringSchema, contentHash: sha256Schema, confirmation: surfaceConfirmationSchema }).strict(),
-  z.object({ contractVersion: z.literal("f8-ado-projection-v1"), sessionId: promptVisibleIdentitySchema, state: z.literal("write_pending"), actionId: promptVisibleIdentitySchema, validationActionId: promptVisibleIdentitySchema, expectedRevision: z.number().int().nonnegative(), startedAt: z.string().datetime(), expiresAt: z.string().datetime(), confirmation: surfaceConfirmationSchema }).strict(),
-  z.object({ contractVersion: z.literal("f8-ado-projection-v1"), sessionId: promptVisibleIdentitySchema, state: z.literal("completed"), actionId: promptVisibleIdentitySchema, validationActionId: promptVisibleIdentitySchema, expectedRevision: z.number().int().nonnegative(), confirmation: surfaceConfirmationSchema, receipt: surfaceUpdateReceiptSchema }).strict(),
+  z.object({ contractVersion: z.literal("f8-ado-projection-v1"), sessionId: promptVisibleIdentitySchema, state: z.literal("validation_pending"), actionId: promptVisibleIdentitySchema, expectedRevision: z.number().int().nonnegative(), executionPhase: z.literal("validate_target").optional(), startedAt: z.string().datetime(), expiresAt: z.string().datetime() }).strict(),
+  z.object({ contractVersion: z.literal("f8-ado-projection-v1"), sessionId: promptVisibleIdentitySchema, state: z.literal("preview_ready"), actionId: promptVisibleIdentitySchema, expectedRevision: z.number().int().nonnegative(), executionPhase: z.literal("prepare_preview").optional(), target: f8AdoTargetSchema, markdown: nonEmptyStringSchema, contentHash: sha256Schema, confirmation: surfaceConfirmationSchema }).strict(),
+  z.object({ contractVersion: z.literal("f8-ado-projection-v1"), sessionId: promptVisibleIdentitySchema, state: z.literal("write_pending"), actionId: promptVisibleIdentitySchema, validationActionId: promptVisibleIdentitySchema, expectedRevision: z.number().int().nonnegative(), executionPhase: z.literal("execute_write").optional(), startedAt: z.string().datetime(), expiresAt: z.string().datetime(), confirmation: surfaceConfirmationSchema }).strict(),
+  z.object({ contractVersion: z.literal("f8-ado-projection-v1"), sessionId: promptVisibleIdentitySchema, state: z.literal("write_outcome_unknown"), actionId: promptVisibleIdentitySchema, validationActionId: promptVisibleIdentitySchema, expectedRevision: z.number().int().nonnegative(), executionPhase: z.literal("readback"), previewIdentity: adoPreviewIdentitySchema, writeDispatchedAt: z.string().datetime(), confirmation: surfaceConfirmationSchema }).strict(),
+  z.object({ contractVersion: z.literal("f8-ado-projection-v1"), sessionId: promptVisibleIdentitySchema, state: z.literal("completed"), actionId: promptVisibleIdentitySchema, validationActionId: promptVisibleIdentitySchema, expectedRevision: z.number().int().nonnegative(), executionPhase: z.literal("reconcile").optional(), confirmation: surfaceConfirmationSchema, receipt: surfaceUpdateReceiptSchema }).strict(),
   z.object({ contractVersion: z.literal("f8-ado-projection-v1"), sessionId: promptVisibleIdentitySchema, state: z.enum(["blocked", "failed"]), actionId: promptVisibleIdentitySchema, expectedRevision: z.number().int().nonnegative(), reason: nonEmptyStringSchema }).strict(),
 ]);
 

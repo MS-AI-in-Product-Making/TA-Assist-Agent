@@ -12,7 +12,7 @@ interface AdoWorkspaceDecisionProps {
 export function AdoWorkspaceDecision({ visible, projection, onSubmit, onConfirm, onReset }: AdoWorkspaceDecisionProps) {
   const [reference, setReference] = useState("");
   if (!visible) return null;
-  const confirmation = projection !== undefined && ["preview_ready", "write_pending", "completed"].includes(projection.state)
+  const confirmation = projection !== undefined && ["preview_ready", "write_pending", "write_outcome_unknown", "completed"].includes(projection.state)
     ? projection.confirmation
     : undefined;
   const previewTarget = projection?.state === "preview_ready" ? projection.target : undefined;
@@ -41,6 +41,7 @@ export function AdoWorkspaceDecision({ visible, projection, onSubmit, onConfirm,
         </div>
       )}
       {projection?.state === "write_pending" ? <p role="status">Authorized in the Web surface. Waiting for the Surface MCP to write and verify the readback...</p> : null}
+      {projection?.state === "write_outcome_unknown" ? <p role="status">The write outcome is unknown. Use the VS Code Surface MCP readback reconciliation to confirm whether the comment already landed before starting a new explicit write flow.</p> : null}
       {projection?.state === "completed" ? <p role="status">ADO write verified: {projection.receipt.workItemReference} · Version {projection.receipt.version}</p> : null}
       {projection?.state === "blocked" || projection?.state === "failed" ? <p role="alert">{projection.reason}</p> : null}
     </div>

@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import type { SurfaceMcpDrawingGovernanceClient } from "@ai-assist/adapters";
 
 interface AvailableTool {
@@ -9,6 +11,10 @@ interface AvailableTool {
 interface ToolInvoker {
 	readonly tools: readonly AvailableTool[];
 	invoke(name: string, input: object): Promise<{ readonly text: string }>;
+}
+
+interface ReconcileCapableSurfaceClient extends SurfaceMcpDrawingGovernanceClient {
+	readonly listCommentsForReconcile?: (workItemReference: string) => Promise<Array<{ readonly commentReference: string; readonly version: string; readonly content: string }>>;
 }
 
 const TOOL_SUFFIXES = {
@@ -41,7 +47,22 @@ export function createSurfaceHostClient(surface: ToolInvoker): SurfaceMcpDrawing
 		return parsed as Record<string, unknown>;
 	};
 
-	return {
+	const listCommentsForReconcile = async (reference: string): Promise<Array<{ readonly commentReference: string; readonly version: string; readonly content: string }>> => {
+		const target = parseAdoWorkItemUrl(reference);
+		const comments = readComments(await invoke(tools.listComments, {
+			organization: target.organization,
+			project: target.project,
+			work_item_id: target.workItemId,
+			top: 200,
+		}));
+		return comments.map((comment) => ({
+			commentReference: String(comment.id),
+			version: String(comment.version),
+			content: normalizeText(comment.text),
+		}));
+	};
+
+	const client: ReconcileCapableSurfaceClient = {
 		async listCapabilities() {
 			return tools.createWorkItem === undefined
 				? ["workItems.read", "workItems.comments.read", "workItems.comments.update"]
@@ -90,17 +111,11 @@ export function createSurfaceHostClient(surface: ToolInvoker): SurfaceMcpDrawing
 		},
 
 		async readCommentZero(reference) {
-			const target = parseAdoWorkItemUrl(reference);
-			const comments = readComments(await invoke(tools.listComments, {
-				organization: target.organization,
-				project: target.project,
-				work_item_id: target.workItemId,
-				top: 200,
-			}));
+			const comments = await listCommentsForReconcile(reference);
 			const latest = comments.at(-1);
 			return latest === undefined
 				? { commentReference: "new", version: "0", content: "" }
-				: { commentReference: String(latest.id), version: String(latest.version), content: latest.text };
+				: { commentReference: latest.commentReference, version: latest.version, content: latest.content };
 		},
 
 		async updateCommentZero(input) {
@@ -129,7 +144,10 @@ export function createSurfaceHostClient(surface: ToolInvoker): SurfaceMcpDrawing
 			}
 			return { version: String(added[0]!.version) };
 		},
+		listCommentsForReconcile,
 	};
+
+	return client;
 }
 
 function resolveRequiredTool(tools: readonly AvailableTool[], suffix: string): string {
@@ -218,3 +236,96 @@ function normalizeText(value: string): string {
 }
 
 export const ADO_WORK_ITEM_PATH_MARKER = "_workitems/edit";
+
+export interface SurfaceWriteReconcileRequest {
+	readonly workItemReference: string;
+	readonly previewMarker: string;
+	readonly previewHash: string;
+	readonly expectedTarget: {
+		readonly organization: string;
+		readonly project: string;
+		readonly workItemId: number;
+	};
+}
+
+export type SurfaceWriteReconcileResult =
+	| {
+			readonly state: "completed";
+			readonly writeReplayed: false;
+			readonly observedCommentReference: string;
+			readonly observedCommentVersion: string;
+	  }
+	| {
+			readonly state: "absent";
+	  }
+	| {
+			readonly state: "blocked";
+			readonly reasonCode: "target_mismatch" | "inconclusive" | "preview_hash_mismatch";
+			readonly reason: string;
+	  };
+
+export async function reconcileSurfaceWrite(
+	client: SurfaceMcpDrawingGovernanceClient,
+	request: SurfaceWriteReconcileRequest,
+): Promise<SurfaceWriteReconcileResult> {
+	const observedTarget = parseAdoWorkItemUrl(request.workItemReference);
+	if (
+		observedTarget.organization !== request.expectedTarget.organization
+		|| observedTarget.project !== request.expectedTarget.project
+		|| observedTarget.workItemId !== request.expectedTarget.workItemId
+	) {
+		return {
+			state: "blocked",
+			reasonCode: "target_mismatch",
+			reason: "The current work item target does not match the confirmed write target.",
+		};
+	}
+
+	const reconcileClient = client as ReconcileCapableSurfaceClient;
+	const comments = reconcileClient.listCommentsForReconcile === undefined
+		? normalizeComments(await client.readCommentZero(request.workItemReference))
+		: await reconcileClient.listCommentsForReconcile(request.workItemReference);
+	const matches = comments.filter((comment) => includesPreviewMarker(comment.content, request.previewMarker));
+	if (matches.length === 0) {
+		return { state: "absent" };
+	}
+	if (matches.length > 1) {
+		return {
+			state: "blocked",
+			reasonCode: "inconclusive",
+			reason: "Multiple matching preview markers were found; reconciliation is inconclusive.",
+		};
+	}
+
+	const match = matches[0]!;
+	if (sha256(normalizeText(match.content)) !== request.previewHash) {
+		return {
+			state: "blocked",
+			reasonCode: "preview_hash_mismatch",
+			reason: "A matching marker was found, but the comment content hash no longer matches the confirmed preview.",
+		};
+	}
+
+	return {
+		state: "completed",
+		writeReplayed: false,
+		observedCommentReference: match.commentReference,
+		observedCommentVersion: match.version,
+	};
+}
+
+function normalizeComments(comment: { readonly commentReference: string; readonly version: string; readonly content: string }): Array<{ readonly commentReference: string; readonly version: string; readonly content: string }> {
+	return [{
+		commentReference: comment.commentReference,
+		version: comment.version,
+		content: normalizeText(comment.content),
+	}];
+}
+
+function includesPreviewMarker(content: string, marker: string): boolean {
+	return content.includes(`<!-- ${marker} -->`) || content.includes(marker);
+}
+
+function sha256(value: string): string {
+	return createHash("sha256").update(value).digest("hex");
+}

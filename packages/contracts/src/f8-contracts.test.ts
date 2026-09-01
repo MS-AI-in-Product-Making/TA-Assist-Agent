@@ -889,6 +889,24 @@ describe("F8 session and host contracts", () => {
       expiresAt: "2026-08-31T10:15:00.000Z",
     };
     expect(f8AdoProjectionSchema.parse(pending)).toEqual(pending);
+
+    const writeOutcomeUnknown = {
+      contractVersion: "f8-ado-projection-v1" as const,
+      sessionId: SESSION_ID,
+      state: "write_outcome_unknown" as const,
+      actionId: "ado-write:session:3",
+      validationActionId: "ado-validation:session:3",
+      expectedRevision: 3,
+      executionPhase: "readback" as const,
+      previewIdentity: {
+        targetIdentity: { organization: "MSFTDEVICES", project: "Project A", workItemId: 42 },
+        previewHash: contentHash,
+        previewMarker: "preview-marker:ado:session:3",
+      },
+      writeDispatchedAt: "2026-09-01T00:00:00.000Z",
+      confirmation: projection.confirmation,
+    };
+    expect(f8AdoProjectionSchema.parse(writeOutcomeUnknown)).toEqual(writeOutcomeUnknown);
   });
 
   it("keeps conversation turns, host actions, and drafts strict", () => {

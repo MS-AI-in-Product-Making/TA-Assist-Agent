@@ -34,4 +34,43 @@ describe("AdoWorkspaceDecision", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirm ADO write" }));
     expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ validationActionId: "validation-1", expectedRevision: 2, target: { mode: "existing", workItemReference: "https://dev.azure.com/MSFTDEVICES/Project/_workitems/edit/42" }, contentHash: "c".repeat(64), confirmationHash: "b".repeat(64), confirmed: true }));
   });
+
+  it("shows write outcome unknown messaging without a generic retry-write button", () => {
+    render(
+      <AdoWorkspaceDecision
+        visible
+        projection={{
+          contractVersion: "f8-ado-projection-v1",
+          sessionId: "session-1",
+          state: "write_outcome_unknown",
+          actionId: "ado-write:session-1:3",
+          validationActionId: "ado-validation:session-1:3",
+          expectedRevision: 3,
+          executionPhase: "readback",
+          previewIdentity: {
+            targetIdentity: { organization: "MSFTDEVICES", project: "Project", workItemId: 42 },
+            previewHash: "c".repeat(64),
+            previewMarker: "preview-marker:ado:session-1:3",
+          },
+          confirmation: {
+            status: "confirmation_required",
+            workItemReference: "https://dev.azure.com/MSFTDEVICES/Project/_workitems/edit/42",
+            ownerReference: "owner@example.com",
+            commentReference: "C0",
+            expectedVersion: "7",
+            beforeContentHash: "a".repeat(64),
+            nextContent: "# Complete governance preview\n\n<!-- preview-marker:ado:session-1:3 -->",
+            factorCount: 1,
+            confirmationHash: "b".repeat(64),
+            diff: [{ before: "old", after: "new", changed: true }],
+          },
+          writeDispatchedAt: "2026-09-01T00:00:00.000Z",
+        }}
+        onSubmit={vi.fn(async () => undefined)}
+      />,
+    );
+
+    expect(screen.getByText(/write outcome is unknown/i)).toBeVisible();
+    expect(screen.queryByRole("button", { name: /retry write/i })).not.toBeInTheDocument();
+  });
 });

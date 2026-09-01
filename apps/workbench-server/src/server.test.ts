@@ -2343,6 +2343,72 @@ describe("workbench server routes", () => {
     }
   });
 
+  it("projects write_outcome_unknown when write dispatch happened without receipt persistence", async () => {
+    const rootDir = testRoot("workbench-server-ado-write-outcome-unknown");
+    await rm(rootDir, { recursive: true, force: true });
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate("79797979-7979-4797-8797-797979797979");
+      const revision = await seedAdoActionPendingSnapshot(rootDir, browser.sessionId);
+      const validationActionId = `ado-validation:${browser.sessionId}:${revision}`;
+      const writeActionId = `ado-write:${browser.sessionId}:${revision}`;
+      const hostActions = await createHostActionStore({ rootDir, sessionId: browser.sessionId });
+      try {
+        const confirmation = testSurfaceConfirmation();
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: validationActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_validate",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
+        });
+        const validationClaim = await hostActions.claimHostAction(validationActionId, "host-a");
+        const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };
+        await hostActions.completeHostAction({
+          contractVersion: "f8-host-action-result-v1",
+          actionId: validationActionId,
+          hostInstanceId: "host-a",
+          leaseId: validationClaim.leaseId,
+          status: "completed",
+          resultHash: createHash("sha256").update(JSON.stringify(validationPayload)).digest("hex"),
+          payload: validationPayload,
+        });
+
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: writeActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_write",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          validationActionId,
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          confirmation,
+        });
+        await hostActions.claimHostAction(writeActionId, "host-a");
+      } finally {
+        await hostActions.close();
+      }
+
+      const response = await server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}/ado`, headers: browser.headers });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        state: "write_outcome_unknown",
+        actionId: writeActionId,
+        validationActionId,
+        expectedRevision: revision,
+      });
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
   it("uses write-stage failed fallback text when failed summary is empty", async () => {
     const rootDir = testRoot("workbench-server-ado-write-failed-empty-summary");
     await rm(rootDir, { recursive: true, force: true });

@@ -52,14 +52,29 @@ export const adoRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServerCo
         ? write.result.payload.outcome.receipt
         : undefined;
       if (confirmation !== undefined && receipt !== undefined) {
-        return reply.send(f8AdoProjectionSchema.parse({ contractVersion: "f8-ado-projection-v1", sessionId, state: "completed", actionId: writeActionId, validationActionId, expectedRevision: snapshot.revision, confirmation, receipt }));
+        return reply.send(f8AdoProjectionSchema.parse({ contractVersion: "f8-ado-projection-v1", sessionId, state: "completed", actionId: writeActionId, validationActionId, expectedRevision: snapshot.revision, executionPhase: "reconcile", confirmation, receipt }));
       }
       const writeTerminal = terminalProjection(write.result?.payload, "write");
       if (confirmation !== undefined && writeTerminal !== undefined) {
         return reply.send(f8AdoProjectionSchema.parse({ contractVersion: "f8-ado-projection-v1", sessionId, state: writeTerminal.state, actionId: writeActionId, expectedRevision: snapshot.revision, reason: writeTerminal.reason }));
       }
+      if (confirmation !== undefined && write.status === "claimed") {
+        const previewIdentity = previewIdentityFromConfirmation(confirmation);
+        return reply.send(f8AdoProjectionSchema.parse({
+          contractVersion: "f8-ado-projection-v1",
+          sessionId,
+          state: "write_outcome_unknown",
+          actionId: writeActionId,
+          validationActionId,
+          expectedRevision: snapshot.revision,
+          executionPhase: "readback",
+          previewIdentity,
+          writeDispatchedAt: write.leaseExpiresAt ?? new Date().toISOString(),
+          confirmation,
+        }));
+      }
       if (confirmation !== undefined && write.status === "pending") {
-        return reply.send(f8AdoProjectionSchema.parse({ contractVersion: "f8-ado-projection-v1", sessionId, state: "write_pending", actionId: writeActionId, validationActionId, expectedRevision: snapshot.revision, ...pendingTiming(write.expiresAt), confirmation }));
+        return reply.send(f8AdoProjectionSchema.parse({ contractVersion: "f8-ado-projection-v1", sessionId, state: "write_pending", actionId: writeActionId, validationActionId, expectedRevision: snapshot.revision, executionPhase: "execute_write", ...pendingTiming(write.expiresAt), confirmation }));
       }
     }
 
@@ -81,13 +96,13 @@ export const adoRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServerCo
       if (validation?.request.kind !== "surface_validate" || validation.expectedRevision !== snapshot.revision) return reply.code(409).send({ error: "ado_preview_stale" });
       const preview = await context.createAdoPreview(sessionId, validation.request.prepareRequest);
       if (!preview.matchesPrepareRequest || validationOutcome.confirmation.nextContent !== preview.markdown || validationOutcome.confirmation.factorCount !== preview.factorCount) return reply.code(409).send({ error: "ado_preview_stale" });
-      return reply.send(f8AdoProjectionSchema.parse({ contractVersion: "f8-ado-projection-v1", sessionId, state: "preview_ready", actionId: validationActionId, expectedRevision: snapshot.revision, target: preview.target, markdown: preview.markdown, contentHash: preview.contentHash, confirmation: validationOutcome.confirmation }));
+      return reply.send(f8AdoProjectionSchema.parse({ contractVersion: "f8-ado-projection-v1", sessionId, state: "preview_ready", actionId: validationActionId, expectedRevision: snapshot.revision, executionPhase: "prepare_preview", target: preview.target, markdown: preview.markdown, contentHash: preview.contentHash, confirmation: validationOutcome.confirmation }));
     }
     const validationTerminal = terminalProjection(validation.result?.payload, "validation");
     if (validationTerminal !== undefined) {
       return reply.send(f8AdoProjectionSchema.parse({ contractVersion: "f8-ado-projection-v1", sessionId, state: validationTerminal.state, actionId: validationActionId, expectedRevision: snapshot.revision, reason: validationTerminal.reason }));
     }
-    return reply.send(f8AdoProjectionSchema.parse({ contractVersion: "f8-ado-projection-v1", sessionId, state: "validation_pending", actionId: validationActionId, expectedRevision: snapshot.revision, ...pendingTiming(validation.expiresAt) }));
+    return reply.send(f8AdoProjectionSchema.parse({ contractVersion: "f8-ado-projection-v1", sessionId, state: "validation_pending", actionId: validationActionId, expectedRevision: snapshot.revision, executionPhase: "validate_target", ...pendingTiming(validation.expiresAt) }));
   });
 
   app.post("/api/sessions/:sessionId/ado/confirm", async (request, reply) => {
@@ -159,4 +174,41 @@ function terminalProjection(
 function sanitizeReason(reason: string | undefined, fallback: string): string {
   const sanitized = sanitizePromptVisibleText(reason)?.replace(/[\r\n]+/g, " ").trim();
   return sanitized === undefined || sanitized.length === 0 ? fallback : sanitized;
+}
+
+function previewIdentityFromConfirmation(confirmation: {
+  readonly workItemReference: string;
+  readonly nextContent: string;
+}): {
+  readonly targetIdentity: { readonly organization: string; readonly project: string; readonly workItemId: number };
+  readonly previewHash: string;
+  readonly previewMarker: string;
+} {
+  let organization = "unknown-organization";
+  let project = "unknown-project";
+  let workItemId = 1;
+  try {
+    const url = new URL(confirmation.workItemReference);
+    const segments = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
+    const markerIndex = segments.findIndex((segment, index) => segment.toLowerCase() === "_workitems" && segments[index + 1]?.toLowerCase() === "edit");
+    const parsedId = markerIndex < 0 ? Number.NaN : Number(segments[markerIndex + 2]);
+    const parsedOrganization = url.hostname.toLowerCase() === "dev.azure.com" ? segments[0] : url.hostname.split(".")[0];
+    const parsedProject = url.hostname.toLowerCase() === "dev.azure.com" ? segments[1] : segments[0];
+    organization = typeof parsedOrganization === "string" && parsedOrganization.length > 0 ? parsedOrganization : organization;
+    project = typeof parsedProject === "string" && parsedProject.length > 0 ? parsedProject : project;
+    workItemId = Number.isInteger(parsedId) && parsedId > 0 ? parsedId : workItemId;
+  } catch {
+    // Non-URL references are allowed in some fixtures; keep deterministic fallback identity.
+  }
+  const markerMatch = /<!--\s*([^>]+)\s*-->/.exec(confirmation.nextContent);
+  const previewMarker = markerMatch?.[1]?.trim() ?? "preview-marker:unknown";
+  return {
+    targetIdentity: {
+      organization,
+      project,
+      workItemId,
+    },
+    previewHash: createHash("sha256").update(confirmation.nextContent).digest("hex"),
+    previewMarker,
+  };
 }
