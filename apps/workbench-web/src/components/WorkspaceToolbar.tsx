@@ -15,11 +15,13 @@ export interface WorkspaceToolbarProps {
 }
 
 export function WorkspaceToolbar({ model, loading, onUpload, onSelectWorksheet, onUndo, onReset, onSave, canUndo = false, canSave = false }: WorkspaceToolbarProps) {
+  const workbookName = model.workbookName ?? "No workbook selected";
+
   return (
     <header className="workspace-toolbar">
       <div className="workspace-toolbar__brand">
         <strong>TA Assist</strong>
-        <span>{model.workbookName ?? "No workbook selected"}</span>
+        <span className="workspace-toolbar__workbook-name" title={workbookName}>{workbookName}</span>
         <span className="read-only-badge">Read-only source</span>
       </div>
       <WorksheetPicker worksheets={model.worksheets} selectedWorksheetName={model.selectedWorksheetName} onSelect={onSelectWorksheet} />

@@ -10,6 +10,7 @@ describe("extractResponseSummarySystemSpecification", () => {
   it("extracts only values inside Response Summary and defaults absent mean shift", () => {
     const result = extractResponseSummarySystemSpecification("TP_C_Step_TA", [
       cell("N50", "Response Summary Table"),
+      cell("N51", "Design Nominal:"), cell("P51", "1.627"),
       cell("N54", "*Lower Spec Limit ►"), cell("P54", "-0.15"),
       cell("N55", "*Upper Spec Limit ►"), cell("P55", "0.05"),
       cell("N56", "*Target σ Level ►"), cell("P56", "3", "3"),
@@ -21,6 +22,7 @@ describe("extractResponseSummarySystemSpecification", () => {
 
     expect(result).toMatchObject({
       status: "available",
+      designNominal: { status: "available", actualValue: 1.627, sourceLabel: "Design Nominal:", sourceCell: "TP_C_Step_TA!P51" },
       lowerSpecLimit: { status: "available", actualValue: -0.15, sourceLabel: "*Lower Spec Limit ►", sourceCell: "TP_C_Step_TA!P54" },
       upperSpecLimit: { status: "available", actualValue: 0.05, sourceLabel: "*Upper Spec Limit ►", sourceCell: "TP_C_Step_TA!P55" },
       targetSigmaLevel: { status: "available", actualValue: 3, sourceLabel: "*Target σ Level ►", sourceCell: "TP_C_Step_TA!P56", valueOrigin: "formula_cached" },
@@ -33,17 +35,32 @@ describe("extractResponseSummarySystemSpecification", () => {
     const result = extractResponseSummarySystemSpecification("Analysis-A", [
       cell("AA301", "Additional Mean Shift:"), cell("AC301", "0.02"),
       cell("AA320", "Response Summary ►"),
-      cell("AA321", "Lower Spec Limit*"), cell("AC321", "-1"),
-      cell("AA322", "Upper Spec Limit*"), cell("AC322", "2"),
-      cell("AA323", "Target Sigma Level"), cell("AC323", "4"),
+      cell("AA321", "Design Nominal"), cell("AC321", "1.627"),
+      cell("AA322", "Lower Spec Limit*"), cell("AC322", "-1"),
+      cell("AA323", "Upper Spec Limit*"), cell("AC323", "2"),
+      cell("AA324", "Target Sigma Level"), cell("AC324", "4"),
     ]);
 
     expect(result).toMatchObject({
       status: "available",
-      lowerSpecLimit: { actualValue: -1, sourceLabel: "Lower Spec Limit*", sourceCell: "Analysis-A!AC321" },
-      upperSpecLimit: { actualValue: 2, sourceLabel: "Upper Spec Limit*", sourceCell: "Analysis-A!AC322" },
-      targetSigmaLevel: { actualValue: 4, sourceLabel: "Target Sigma Level", sourceCell: "Analysis-A!AC323" },
+      designNominal: { actualValue: 1.627, sourceLabel: "Design Nominal", sourceCell: "Analysis-A!AC321" },
+      lowerSpecLimit: { actualValue: -1, sourceLabel: "Lower Spec Limit*", sourceCell: "Analysis-A!AC322" },
+      upperSpecLimit: { actualValue: 2, sourceLabel: "Upper Spec Limit*", sourceCell: "Analysis-A!AC323" },
+      targetSigmaLevel: { actualValue: 4, sourceLabel: "Target Sigma Level", sourceCell: "Analysis-A!AC324" },
       additionalMeanShift: { actualValue: 0.02, sourceLabel: "Additional Mean Shift:", sourceCell: "Analysis-A!AC301" },
+    });
+  });
+
+  it("fails closed when design nominal is missing", () => {
+    expect(extractResponseSummarySystemSpecification("A", [
+      cell("A1", "Response Summary"),
+      cell("A2", "Lower Spec Limit"), cell("B2", "0"),
+      cell("A3", "Upper Spec Limit"), cell("B3", "5"),
+      cell("A4", "Target Sigma Level"), cell("B4", "4"),
+    ])).toMatchObject({
+      status: "unavailable",
+      reasonCode: "system_specification_range_invalid",
+      designNominal: { status: "unavailable", reasonCode: "response_summary_label_missing" },
     });
   });
 

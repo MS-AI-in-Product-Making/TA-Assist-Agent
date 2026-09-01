@@ -83,8 +83,8 @@ export function createF4Handoff(input: {
   readonly worksheet: F2ReadyWorksheet;
 }): F4HandoffReady {
   const specification = input.worksheet.systemSpecification;
-  const { lowerSpecLimit, upperSpecLimit, targetSigmaLevel } = specification;
-  if (lowerSpecLimit.status !== "available" || upperSpecLimit.status !== "available" || targetSigmaLevel.status !== "available") {
+  const { designNominal, lowerSpecLimit, upperSpecLimit, targetSigmaLevel } = specification;
+  if (designNominal.status !== "available" || lowerSpecLimit.status !== "available" || upperSpecLimit.status !== "available" || targetSigmaLevel.status !== "available") {
     throw new Error("F4 handoff requires validated system specification evidence.");
   }
   const additionalMeanShift = specification.additionalMeanShift.status === "available"
@@ -100,7 +100,7 @@ export function createF4Handoff(input: {
     worksheetName: input.worksheet.worksheetName,
     ...(input.worksheet.toleranceLoopDescription === undefined ? {} : { toleranceLoopDescription: input.worksheet.toleranceLoopDescription }),
     systemSpecification: {
-      designNominal: canonicalNumber((lowerSpecLimit.actualValue + upperSpecLimit.actualValue) / 2),
+      designNominal: canonicalNumber(designNominal.actualValue),
       lowerSpecLimit,
       upperSpecLimit,
       targetSigmaLevel,

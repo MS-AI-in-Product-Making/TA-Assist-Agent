@@ -9,7 +9,8 @@ import { DatabaseSync } from "node:sqlite";
 
 import { buildWorkbenchServer } from "./server.js";
 import { createConversationStore } from "@ai-assist/conversation";
-import { createReviewContextId, createSessionStore, openSessionStore, projectWorksheetReview, reduceSessionCommand, selectCompleteReviewContext } from "@ai-assist/workbench";
+import { createTypedError } from "@ai-assist/contracts";
+import { createHostActionStore, createReviewContextId, createSessionStore, openSessionStore, projectWorksheetReview, reduceSessionCommand, selectCompleteReviewContext } from "@ai-assist/workbench";
 import { renderF3AdoMarkdown } from "@ai-assist/workflow-runners";
 import { createAnonymousWorkbookZip } from "../../../packages/workbook-catalog/src/test-support.js";
 import type { PersistentWorkerQueueOptions, StageJob } from "./sqlite-worker-queue.js";
@@ -81,6 +82,128 @@ async function writeJsonArtifact(rootDir: string, relativePath: string, data: un
   await mkdir(dirname(join(rootDir, relativePath)), { recursive: true });
   await writeFile(join(rootDir, relativePath), text);
   return createHash("sha256").update(text).digest("hex");
+}
+
+async function writeImageArtifactFixture(rootDir: string, relativePath: string, bytes: Uint8Array): Promise<void> {
+  const target = join(rootDir, relativePath);
+  await mkdir(dirname(target), { recursive: true });
+  await writeFile(target, bytes);
+}
+
+function f2ImageBindingReportForArtifactTest(contentHash: string, entries: Array<{ worksheetName: string; relativePath: string }>) {
+  const worksheets = entries.map((entry, index) => ({
+    worksheetName: entry.worksheetName,
+    toleranceLoopDescription: `${entry.worksheetName} loop`,
+    tolerancePathImageStatus: "available",
+    systemSpecification: { status: "available", ...imageBindingSystemSpec() },
+    systemSpecificationIssues: [],
+    f4CalculabilityIssues: [],
+    missingFieldSummary: [],
+    status: "ready",
+    rows: [{
+      worksheetName: entry.worksheetName,
+      tableId: `factor-table-${index + 1}`,
+      sourceRow: 14,
+      actualFields: imageBindingActualFields(),
+      displayFields: {
+        factorName: "Gap X",
+        partName: "Display cover",
+        drawingNumber: "DWG-1",
+        dimCharacteristicId: "307",
+        partCategory: "Display",
+        nominalValue: "1.2",
+        upperTolerance: "0.2",
+        lowerTolerance: "-0.2",
+        longTermSafetyFactor: "1",
+        sigmaLevel: "4",
+        distribution: "normal",
+        mean: "1.2",
+        tolerance: "0.4",
+        oneSigma: "0.05",
+        percentContributionToSigma: "0.42",
+        notes: "critical display stack",
+      },
+      sourceCells: {},
+      imageReference: { artifact: "f1", relativePath: entry.relativePath, contentHash, worksheetName: entry.worksheetName },
+      missingRequiredFields: [],
+      missingIdentifiers: [],
+      capabilityStatus: "in_library_recommended",
+      f0KnowledgeBaseVersion: "v1",
+      recommendation: { kind: "public", capabilityEntryId: "cap-gap-x", toleranceMin: 0.1, toleranceMax: 0.4, unit: "mm", distribution: "normal" },
+      adoReminderRequested: false,
+    }],
+  }));
+
+  const f4Handoffs = entries.map((entry, index) => ({
+    contractVersion: "v1",
+    handoffVersion: "f4-handoff-v1",
+    inputClassification: "confidential",
+    status: "ready",
+    workbookContentHash: "a".repeat(64),
+    worksheetName: entry.worksheetName,
+    toleranceLoopDescription: `${entry.worksheetName} loop`,
+    systemSpecification: {
+      designNominal: 1.2,
+      lowerSpecLimit: { status: "available", sourceLabel: "LSL", sourceCell: "Analysis-A!B2", displayValue: "0.6", actualValue: 0.6, valueOrigin: "numeric_literal" },
+      upperSpecLimit: { status: "available", sourceLabel: "USL", sourceCell: "Analysis-A!B3", displayValue: "1.8", actualValue: 1.8, valueOrigin: "numeric_literal" },
+      targetSigmaLevel: { status: "available", sourceLabel: "Sigma", sourceCell: "Analysis-A!B4", displayValue: "4.2", actualValue: 4.2, valueOrigin: "numeric_literal" },
+      targetCpk: 1.4,
+      additionalMeanShift: { status: "available", sourceLabel: "Mean shift", sourceCell: "Analysis-A!B5", displayValue: "0", actualValue: 0, valueOrigin: "numeric_literal" },
+    },
+    factors: [{
+      tableId: `factor-table-${index + 1}`,
+      sourceRow: 14,
+      unit: "mm",
+      actualFields: imageBindingActualFields(),
+      sourceCells: {},
+    }],
+  }));
+
+  return {
+    contractVersion: "v1",
+    inputClassification: "confidential",
+    status: "completed",
+    workbook: { fileName: "anonymous.xlsx", contentHash: "a".repeat(64), f1GeneratedAt: "2026-08-31T00:00:00.000Z" },
+    knowledgeBaseVersions: ["v1", "internal-v1"],
+    mappingRuleVersion: "v1",
+    artifactRoot: "managed/f2",
+    worksheets,
+    f4Handoffs,
+    adoEvents: [],
+    summary: {
+      worksheetsChecked: worksheets.length,
+      blockedWorksheetCount: 0,
+      readyWorksheetCount: worksheets.length,
+      factorRowCount: worksheets.length,
+      rowsWithRequiredMissing: 0,
+      requiredMissingFieldCount: 0,
+      missingImageWorksheetCount: 0,
+      internalWithinGuidanceCount: 0,
+      internalGuidanceExceededCount: 0,
+      f0InformationInsufficientCount: 0,
+      publicLibraryMatchCount: worksheets.length,
+      nonF0ProcessCategoryCount: 0,
+      unableToCheckCount: 0,
+      publicToleranceDifferenceCount: 0,
+      publicDistributionDifferenceCount: 0,
+      missingDimIdCount: 0,
+      missingPartNumberCount: 0,
+    },
+  };
+}
+
+function imageBindingActualFields() {
+  return { factorName: "Gap X", partName: "Display cover", drawingNumber: "DWG-1", dimCharacteristicId: "307", partCategory: "Display", nominalValue: 1.2, upperTolerance: 0.2, lowerTolerance: -0.2, longTermSafetyFactor: 1, sigmaLevel: 4, distribution: "normal", mean: 1.2, tolerance: 0.4, oneSigma: 0.05, percentContributionToSigma: 0.42, notes: "critical display stack" };
+}
+
+function imageBindingSystemSpec() {
+  return {
+    designNominal: { status: "available", sourceLabel: "Nominal", sourceCell: "Analysis-A!B1", displayValue: "1.2", actualValue: 1.2, valueOrigin: "numeric_literal" },
+    lowerSpecLimit: { status: "available", sourceLabel: "LSL", sourceCell: "Analysis-A!B2", displayValue: "0.6", actualValue: 0.6, valueOrigin: "numeric_literal" },
+    upperSpecLimit: { status: "available", sourceLabel: "USL", sourceCell: "Analysis-A!B3", displayValue: "1.8", actualValue: 1.8, valueOrigin: "numeric_literal" },
+    targetSigmaLevel: { status: "available", sourceLabel: "Sigma", sourceCell: "Analysis-A!B4", displayValue: "4.2", actualValue: 4.2, valueOrigin: "numeric_literal" },
+    additionalMeanShift: { status: "available", sourceLabel: "Mean shift", sourceCell: "Analysis-A!B5", displayValue: "0", actualValue: 0, valueOrigin: "numeric_literal" },
+  };
 }
 
 async function immediateQueue(options: PersistentWorkerQueueOptions) {
@@ -814,6 +937,122 @@ describe("workbench server routes", () => {
     }
   });
 
+  it("serves worksheet-bound F1 images when two worksheets share one content hash", async () => {
+    const rootDir = testRoot("workbench-server-f1-image-worksheet-bound");
+    await rm(rootDir, { recursive: true, force: true });
+    const sessionId = "56565656-5656-4565-8565-565656565656";
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate(sessionId);
+      const pngBytes = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4//8/AwAI/AL+KDv6VwAAAABJRU5ErkJggg==", "base64");
+      const imageHash = createHash("sha256").update(pngBytes).digest("hex");
+      const report = f2ImageBindingReportForArtifactTest(imageHash, [
+        { worksheetName: "rubber overload 1", relativePath: "worksheets/rubber-overload-1/tolerance-path.png" },
+        { worksheetName: "rubber overload 2", relativePath: "worksheets/rubber-overload-2/tolerance-path.png" },
+      ]);
+      const reportRelativePath = "f2/current-image-binding.json";
+      const reportHash = await writeJsonArtifact(rootDir, reportRelativePath, report);
+      await writeImageArtifactFixture(rootDir, "f1/worksheets/rubber-overload-1/tolerance-path.png", pngBytes);
+      await writeImageArtifactFixture(rootDir, "f1/worksheets/rubber-overload-2/tolerance-path.png", pngBytes);
+
+      const store = await openSessionStore({ rootDir, sessionId });
+      try {
+        await store.applyCommand({
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "seed-f1-image-binding",
+          expectedRevision: 0,
+          command: "upload_workbook",
+          payload: { fileName: "book.xlsx", workbookBytes: new Uint8Array([80, 75, 3, 4]), inputClassification: "confidential" },
+        }, async (snapshot) => ({
+          snapshot: {
+            ...snapshot,
+            revision: 1,
+            inputRevision: 1,
+            state: "review_required",
+            activeAttempt: null,
+            artifactRefs: [{ artifactId: "f2-current", kind: "f2_report", revision: 1, validated: true }],
+          },
+          artifactReferenceOps: {
+            upsert: [{ artifactId: "f2-current", sessionId, inputRevision: 1, kind: "f2_report", relativePath: reportRelativePath, contentHash: reportHash }],
+          },
+        }));
+      } finally {
+        await store.close();
+      }
+
+      const artifactId = `f1-image:${imageHash}`;
+      const urlA = `/api/sessions/${sessionId}/artifacts/${encodeURIComponent(artifactId)}?disposition=inline&worksheet=${encodeURIComponent("rubber overload 1")}&path=${encodeURIComponent("worksheets/rubber-overload-1/tolerance-path.png")}`;
+      const urlB = `/api/sessions/${sessionId}/artifacts/${encodeURIComponent(artifactId)}?disposition=inline&worksheet=${encodeURIComponent("rubber overload 2")}&path=${encodeURIComponent("worksheets/rubber-overload-2/tolerance-path.png")}`;
+      const responseA = await server.inject({ method: "GET", url: urlA, headers: browser.headers });
+      const responseB = await server.inject({ method: "GET", url: urlB, headers: browser.headers });
+
+      expect(responseA.statusCode, responseA.payload).toBe(200);
+      expect(responseB.statusCode, responseB.payload).toBe(200);
+      expect(Buffer.from(responseA.rawPayload)).toEqual(pngBytes);
+      expect(Buffer.from(responseB.rawPayload)).toEqual(pngBytes);
+      expect(responseA.headers["content-disposition"]).toContain("inline");
+      expect(responseB.headers["content-disposition"]).toContain("inline");
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects worksheet/path/hash mismatches for worksheet-bound F1 image requests", async () => {
+    const rootDir = testRoot("workbench-server-f1-image-mismatch");
+    await rm(rootDir, { recursive: true, force: true });
+    const sessionId = "57575757-5757-4575-8575-575757575757";
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate(sessionId);
+      const pngBytes = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4//8/AwAI/AL+KDv6VwAAAABJRU5ErkJggg==", "base64");
+      const imageHash = createHash("sha256").update(pngBytes).digest("hex");
+      const report = f2ImageBindingReportForArtifactTest(imageHash, [{ worksheetName: "rubber overload 1", relativePath: "worksheets/rubber-overload-1/tolerance-path.png" }]);
+      const reportRelativePath = "f2/current-image-binding-mismatch.json";
+      const reportHash = await writeJsonArtifact(rootDir, reportRelativePath, report);
+      await writeImageArtifactFixture(rootDir, "f1/worksheets/rubber-overload-1/tolerance-path.png", pngBytes);
+
+      const store = await openSessionStore({ rootDir, sessionId });
+      try {
+        await store.applyCommand({
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "seed-f1-image-mismatch",
+          expectedRevision: 0,
+          command: "upload_workbook",
+          payload: { fileName: "book.xlsx", workbookBytes: new Uint8Array([80, 75, 3, 4]), inputClassification: "confidential" },
+        }, async (snapshot) => ({
+          snapshot: {
+            ...snapshot,
+            revision: 1,
+            inputRevision: 1,
+            state: "review_required",
+            activeAttempt: null,
+            artifactRefs: [{ artifactId: "f2-current", kind: "f2_report", revision: 1, validated: true }],
+          },
+          artifactReferenceOps: {
+            upsert: [{ artifactId: "f2-current", sessionId, inputRevision: 1, kind: "f2_report", relativePath: reportRelativePath, contentHash: reportHash }],
+          },
+        }));
+      } finally {
+        await store.close();
+      }
+
+      const artifactId = `f1-image:${imageHash}`;
+      const badWorksheet = await server.inject({ method: "GET", url: `/api/sessions/${sessionId}/artifacts/${encodeURIComponent(artifactId)}?disposition=inline&worksheet=${encodeURIComponent("rubber overload 2")}&path=${encodeURIComponent("worksheets/rubber-overload-1/tolerance-path.png")}`, headers: browser.headers });
+      const badPath = await server.inject({ method: "GET", url: `/api/sessions/${sessionId}/artifacts/${encodeURIComponent(artifactId)}?disposition=inline&worksheet=${encodeURIComponent("rubber overload 1")}&path=${encodeURIComponent("worksheets/rubber-overload-2/tolerance-path.png")}`, headers: browser.headers });
+      const badHash = await server.inject({ method: "GET", url: `/api/sessions/${sessionId}/artifacts/${encodeURIComponent(`f1-image:${"f".repeat(64)}`)}?disposition=inline&worksheet=${encodeURIComponent("rubber overload 1")}&path=${encodeURIComponent("worksheets/rubber-overload-1/tolerance-path.png")}`, headers: browser.headers });
+
+      expect(badWorksheet.statusCode, badWorksheet.payload).toBe(404);
+      expect(badPath.statusCode, badPath.payload).toBe(404);
+      expect(badHash.statusCode, badHash.payload).toBe(404);
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
   it("restores browser authentication after a Server restart", async () => {
     const rootDir = testRoot("workbench-server-persistent-auth");
     await rm(rootDir, { recursive: true, force: true });
@@ -1009,6 +1248,9 @@ describe("workbench server routes", () => {
       // Task 10 only projects the action; Task 13 owns Surface validation and the separate Confirm write.
       expect(response.json()).not.toMatchObject({ state: "f4_running" });
       const actionId = `ado-validation:${browser.sessionId}:${response.json<{ revision: number }>().revision}`;
+      const pendingProjection = (await server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}/ado`, headers: browser.headers })).json<{ state: string; startedAt: string; expiresAt: string }>();
+      expect(pendingProjection).toMatchObject({ state: "validation_pending" });
+      expect(Date.parse(pendingProjection.expiresAt) - Date.parse(pendingProjection.startedAt)).toBe(15 * 60_000);
       const token = server.issueHostBearer(browser.sessionId, ["host-actions:claim"], { actionId, hostInstanceId: "host-a" });
       const claimResponse = await server.inject({
         method: "POST",
@@ -1149,6 +1391,351 @@ describe("workbench server routes", () => {
       const writeClaim = await server.inject({ method: "POST", url: `/api/sessions/${browser.sessionId}/host-actions/${writeActionId}/claim`, headers: { host: "127.0.0.1:0", authorization: `Bearer ${writeClaimToken}` }, payload: { hostInstanceId: "host-a" } });
       expect(writeClaim.statusCode).toBe(200);
       expect(writeClaim.json()).toMatchObject({ request: { kind: "surface_write", validationActionId: actionId, confirmation: { nextContent: rendered.markdown } } });
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("projects blocked when the write action reaches a terminal blocked result", async () => {
+    const rootDir = testRoot("workbench-server-ado-write-blocked");
+    await rm(rootDir, { recursive: true, force: true });
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate("67676767-6767-4676-8676-676767676767");
+      const revision = await seedAdoActionPendingSnapshot(rootDir, browser.sessionId);
+      const validationActionId = `ado-validation:${browser.sessionId}:${revision}`;
+      const writeActionId = `ado-write:${browser.sessionId}:${revision}`;
+      const hostActions = await createHostActionStore({ rootDir, sessionId: browser.sessionId });
+      try {
+        const confirmation = testSurfaceConfirmation();
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: validationActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_validate",
+          expiresAt: "2026-09-01T00:15:00.000Z",
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
+        });
+        const validationClaim = await hostActions.claimHostAction(validationActionId, "host-a");
+        const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };
+        await hostActions.completeHostAction({
+          contractVersion: "f8-host-action-result-v1",
+          actionId: validationActionId,
+          hostInstanceId: "host-a",
+          leaseId: validationClaim.leaseId,
+          status: "completed",
+          resultHash: createHash("sha256").update(JSON.stringify(validationPayload)).digest("hex"),
+          payload: validationPayload,
+        });
+
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: writeActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_write",
+          expiresAt: "2026-09-01T00:15:00.000Z",
+          validationActionId,
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          confirmation,
+        });
+        const writeClaim = await hostActions.claimHostAction(writeActionId, "host-a");
+        const blockedPayload = { status: "blocked" as const, reason: "Authorization: Bearer test-token blocked" };
+        await hostActions.completeHostAction({
+          contractVersion: "f8-host-action-result-v1",
+          actionId: writeActionId,
+          hostInstanceId: "host-a",
+          leaseId: writeClaim.leaseId,
+          status: "blocked",
+          resultHash: createHash("sha256").update(JSON.stringify(blockedPayload)).digest("hex"),
+          payload: blockedPayload,
+        });
+      } finally {
+        await hostActions.close();
+      }
+
+      const response = await server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}/ado`, headers: browser.headers });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        state: "blocked",
+        actionId: writeActionId,
+        expectedRevision: revision,
+        reason: "[redacted credential] blocked",
+      });
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("uses write-stage blocked fallback text when blocked reason is empty", async () => {
+    const rootDir = testRoot("workbench-server-ado-write-blocked-empty-reason");
+    await rm(rootDir, { recursive: true, force: true });
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate("76767676-7676-4676-8676-767676767676");
+      const revision = await seedAdoActionPendingSnapshot(rootDir, browser.sessionId);
+      const validationActionId = `ado-validation:${browser.sessionId}:${revision}`;
+      const writeActionId = `ado-write:${browser.sessionId}:${revision}`;
+      const hostActions = await createHostActionStore({ rootDir, sessionId: browser.sessionId });
+      try {
+        const confirmation = testSurfaceConfirmation();
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: validationActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_validate",
+          expiresAt: "2026-09-01T00:15:00.000Z",
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
+        });
+        const validationClaim = await hostActions.claimHostAction(validationActionId, "host-a");
+        const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };
+        await hostActions.completeHostAction({
+          contractVersion: "f8-host-action-result-v1",
+          actionId: validationActionId,
+          hostInstanceId: "host-a",
+          leaseId: validationClaim.leaseId,
+          status: "completed",
+          resultHash: createHash("sha256").update(JSON.stringify(validationPayload)).digest("hex"),
+          payload: validationPayload,
+        });
+
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: writeActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_write",
+          expiresAt: "2026-09-01T00:15:00.000Z",
+          validationActionId,
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          confirmation,
+        });
+        const writeClaim = await hostActions.claimHostAction(writeActionId, "host-a");
+        const blockedPayload = { status: "blocked" as const, reason: " \n\n " };
+        await hostActions.completeHostAction({
+          contractVersion: "f8-host-action-result-v1",
+          actionId: writeActionId,
+          hostInstanceId: "host-a",
+          leaseId: writeClaim.leaseId,
+          status: "blocked",
+          resultHash: createHash("sha256").update(JSON.stringify(blockedPayload)).digest("hex"),
+          payload: blockedPayload,
+        });
+      } finally {
+        await hostActions.close();
+      }
+
+      const response = await server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}/ado`, headers: browser.headers });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        state: "blocked",
+        actionId: writeActionId,
+        expectedRevision: revision,
+        reason: "Surface write was blocked.",
+      });
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("projects failed when the write action reaches a terminal failed result", async () => {
+    const rootDir = testRoot("workbench-server-ado-write-failed");
+    await rm(rootDir, { recursive: true, force: true });
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate("68686868-6868-4686-8686-686868686868");
+      const revision = await seedAdoActionPendingSnapshot(rootDir, browser.sessionId);
+      const validationActionId = `ado-validation:${browser.sessionId}:${revision}`;
+      const writeActionId = `ado-write:${browser.sessionId}:${revision}`;
+      const hostActions = await createHostActionStore({ rootDir, sessionId: browser.sessionId });
+      try {
+        const confirmation = testSurfaceConfirmation();
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: validationActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_validate",
+          expiresAt: "2026-09-01T00:15:00.000Z",
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
+        });
+        const validationClaim = await hostActions.claimHostAction(validationActionId, "host-a");
+        const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };
+        await hostActions.completeHostAction({
+          contractVersion: "f8-host-action-result-v1",
+          actionId: validationActionId,
+          hostInstanceId: "host-a",
+          leaseId: validationClaim.leaseId,
+          status: "completed",
+          resultHash: createHash("sha256").update(JSON.stringify(validationPayload)).digest("hex"),
+          payload: validationPayload,
+        });
+
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: writeActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_write",
+          expiresAt: "2026-09-01T00:15:00.000Z",
+          validationActionId,
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          confirmation,
+        });
+        const writeClaim = await hostActions.claimHostAction(writeActionId, "host-a");
+        const failedPayload = {
+          status: "failed" as const,
+          error: createTypedError({
+            code: "dependency_error",
+            summary: "Authorization: Bearer test-token failed",
+            suggestedAction: "Retry the ADO write.",
+            affectedInputReferences: [writeActionId],
+          }),
+        };
+        await hostActions.completeHostAction({
+          contractVersion: "f8-host-action-result-v1",
+          actionId: writeActionId,
+          hostInstanceId: "host-a",
+          leaseId: writeClaim.leaseId,
+          status: "failed",
+          resultHash: createHash("sha256").update(JSON.stringify(failedPayload)).digest("hex"),
+          payload: failedPayload,
+        });
+      } finally {
+        await hostActions.close();
+      }
+
+      const response = await server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}/ado`, headers: browser.headers });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        state: "failed",
+        actionId: writeActionId,
+        expectedRevision: revision,
+        reason: "[redacted credential] failed",
+      });
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("uses write-stage failed fallback text when failed summary is empty", async () => {
+    const rootDir = testRoot("workbench-server-ado-write-failed-empty-summary");
+    await rm(rootDir, { recursive: true, force: true });
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate("78787878-7878-4787-8787-787878787878");
+      const revision = await seedAdoActionPendingSnapshot(rootDir, browser.sessionId);
+      const validationActionId = `ado-validation:${browser.sessionId}:${revision}`;
+      const writeActionId = `ado-write:${browser.sessionId}:${revision}`;
+      const hostActions = await createHostActionStore({ rootDir, sessionId: browser.sessionId });
+      try {
+        const confirmation = testSurfaceConfirmation();
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: validationActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_validate",
+          expiresAt: "2026-09-01T00:15:00.000Z",
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
+        });
+        const validationClaim = await hostActions.claimHostAction(validationActionId, "host-a");
+        const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };
+        await hostActions.completeHostAction({
+          contractVersion: "f8-host-action-result-v1",
+          actionId: validationActionId,
+          hostInstanceId: "host-a",
+          leaseId: validationClaim.leaseId,
+          status: "completed",
+          resultHash: createHash("sha256").update(JSON.stringify(validationPayload)).digest("hex"),
+          payload: validationPayload,
+        });
+
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: writeActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_write",
+          expiresAt: "2026-09-01T00:15:00.000Z",
+          validationActionId,
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          confirmation,
+        });
+        const writeClaim = await hostActions.claimHostAction(writeActionId, "host-a");
+        const failedPayload = {
+          status: "failed" as const,
+          error: createTypedError({
+            code: "dependency_error",
+            summary: " \n\n ",
+            suggestedAction: "Retry the ADO write.",
+            affectedInputReferences: [writeActionId],
+          }),
+        };
+        await hostActions.completeHostAction({
+          contractVersion: "f8-host-action-result-v1",
+          actionId: writeActionId,
+          hostInstanceId: "host-a",
+          leaseId: writeClaim.leaseId,
+          status: "failed",
+          resultHash: createHash("sha256").update(JSON.stringify(failedPayload)).digest("hex"),
+          payload: failedPayload,
+        });
+      } finally {
+        await hostActions.close();
+      }
+
+      const response = await server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}/ado`, headers: browser.headers });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        state: "failed",
+        actionId: writeActionId,
+        expectedRevision: revision,
+        reason: "Surface write failed.",
+      });
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns a stable blocked projection when validation action is unavailable", async () => {
+    const rootDir = testRoot("workbench-server-ado-missing-validation-action");
+    await rm(rootDir, { recursive: true, force: true });
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate("69696969-6969-4696-8696-696969696969");
+      const revision = await seedAdoActionPendingSnapshot(rootDir, browser.sessionId);
+      const validationActionId = `ado-validation:${browser.sessionId}:${revision}`;
+
+      const response = await server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}/ado`, headers: browser.headers });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        state: "blocked",
+        actionId: validationActionId,
+        expectedRevision: revision,
+        reason: "Surface validation action is unavailable.",
+      });
+      expect(response.json()).not.toHaveProperty("startedAt");
+      expect(response.json()).not.toHaveProperty("expiresAt");
     } finally {
       await server.close();
       await rm(rootDir, { recursive: true, force: true });
@@ -1443,3 +2030,45 @@ describe("workbench server routes", () => {
     }
   });
 });
+
+async function seedAdoActionPendingSnapshot(rootDir: string, sessionId: string): Promise<number> {
+  const store = await openSessionStore({ rootDir, sessionId });
+  try {
+    await store.applyCommand({
+      contractVersion: "f8-session-command-v1",
+      sessionId,
+      commandId: "seed-ado-pending",
+      expectedRevision: 0,
+      command: "upload_workbook",
+      payload: { fileName: "book.xlsx", workbookBytes: new Uint8Array([80, 75, 3, 4]), inputClassification: "confidential" },
+    }, async (snapshot) => ({
+      snapshot: {
+        ...snapshot,
+        revision: snapshot.revision + 1,
+        inputRevision: 1,
+        state: "ado_action_pending",
+        activeAttempt: null,
+      },
+    }));
+    const snapshot = await store.readSnapshot();
+    return snapshot.revision;
+  } finally {
+    await store.close();
+  }
+}
+
+function testSurfaceConfirmation() {
+  const nextContent = "governed markdown";
+  return {
+    status: "confirmation_required" as const,
+    workItemReference: "WI-1",
+    ownerReference: "owner-1",
+    commentReference: "C0",
+    expectedVersion: "1",
+    beforeContentHash: "b".repeat(64),
+    nextContent,
+    factorCount: 1,
+    confirmationHash: createHash("sha256").update(JSON.stringify(["WI-1", "C0", "1", nextContent])).digest("hex"),
+    diff: [{ before: "before", after: nextContent, changed: true }],
+  };
+}

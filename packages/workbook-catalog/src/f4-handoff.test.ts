@@ -8,6 +8,7 @@ function evidence(actualValue: number, sourceCell: string, valueOrigin: "numeric
   const sourceLabel = sourceCell.endsWith("P54") ? "*Lower Spec Limit ►"
     : sourceCell.endsWith("P55") ? "*Upper Spec Limit ►"
       : sourceCell.endsWith("P56") ? "*Target σ Level ►"
+        : sourceCell.endsWith("P27") ? "Design Nominal:"
         : "Additional Mean Shift ►";
   return { status: "available" as const, actualValue, displayValue: String(actualValue), sourceLabel, sourceCell, valueOrigin };
 }
@@ -21,6 +22,7 @@ describe("createF4Handoff", () => {
       tolerancePathImageStatus: "available",
       systemSpecification: {
         status: "available",
+        designNominal: evidence(1.627, "Analysis-A!P27"),
         lowerSpecLimit: evidence(-0.15, "Analysis-A!P54"),
         upperSpecLimit: evidence(0.05, "Analysis-A!P55"),
         targetSigmaLevel: evidence(3, "Analysis-A!P56"),
@@ -64,7 +66,7 @@ describe("createF4Handoff", () => {
       workbookContentHash: contentHash,
       worksheetName: "Analysis-A",
       systemSpecification: {
-        designNominal: -0.05,
+        designNominal: 1.627,
         targetCpk: 1,
         additionalMeanShift: evidence(0.01, "Analysis-A!P50", "formula_cached"),
       },
@@ -82,6 +84,7 @@ describe("createF4Handoff", () => {
         tolerancePathImageStatus: "available",
         systemSpecification: {
           status: "available",
+          designNominal: evidence(1.627, "Analysis-A!P27"),
           lowerSpecLimit: evidence(-0.15, "Analysis-A!P54"),
           upperSpecLimit: evidence(0.05, "Analysis-A!P55"),
           targetSigmaLevel: evidence(3, "Analysis-A!P56"),
@@ -127,7 +130,7 @@ describe("createF4Handoff", () => {
 
     expect(calculationRequestSchema.parse(request)).toEqual(request);
     expect(request.systemSpecification).toEqual({
-      designNominal: -0.05,
+      designNominal: 1.627,
       lowerSpecLimit: -0.15,
       upperSpecLimit: 0.05,
       targetSigmaLevel: 3,
@@ -155,6 +158,7 @@ describe("createF4Handoff", () => {
         tolerancePathImageStatus: "available",
         systemSpecification: {
           status: "available",
+          designNominal: evidence(1.627, "Analysis-A!P27"),
           lowerSpecLimit: evidence(-0.15, "Analysis-A!P54"),
           upperSpecLimit: evidence(0.05, "Analysis-A!P55"),
           targetSigmaLevel: evidence(3, "Analysis-A!P56"),

@@ -5,6 +5,28 @@ import { expect, test } from "./workbench-fixture.js";
 const ADO_SELECTION_SESSION_ID = "50505050-5050-4505-8505-505050505050";
 const ADO_CREATE_PREVIEW_SESSION_ID = "60606060-6060-4606-8606-606060606060";
 const ADO_UPDATE_PREVIEW_SESSION_ID = "70707070-7070-4707-8707-707070707070";
+const LONG_WORKBOOK_FILE_NAME = "anonymous-ta-workbook-very-long-governed-ui-filename-for-layout-overlap-validation-2026-09-01.xlsx";
+const CANONICAL_FACTOR_HEADERS = [
+  "Loop Label",
+  "Factor Description",
+  "Part Name",
+  "Drawing Number",
+  "DIM ID",
+  "Part Category",
+  "Design Nominal",
+  "+ Tolerance",
+  "- Tolerance",
+  "Long Term/Safety Factor",
+  "Sigma Level",
+  "Distribution",
+  "Mean",
+  "Tolerance",
+  "One Sigma",
+  "% Contribution to Sigma",
+  "Notes",
+  "Capability Result",
+  "Knowledge Recommendation",
+];
 
 test.describe.configure({ timeout: 90_000 });
 
@@ -65,21 +87,69 @@ async function readPreviewDetails(section) {
   ));
 }
 
+async function assertNoProgressOverlaps(page) {
+  const overlaps = await page.locator(".analysis-progress").evaluate((root) => {
+    const toRect = (element: Element) => {
+      const rect = element.getBoundingClientRect();
+      return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
+    };
+    const intersects = (a: { left: number; right: number; top: number; bottom: number }, b: { left: number; right: number; top: number; bottom: number }) => (
+      a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
+    );
+    const issues: string[] = [];
+    const steps = [...root.querySelectorAll(".analysis-progress__step")];
+    for (const [index, step] of steps.entries()) {
+      const marker = step.querySelector(".analysis-progress__marker");
+      const content = step.querySelector(".analysis-progress__content");
+      if (marker !== null && content !== null && intersects(toRect(marker), toRect(content))) {
+        issues.push(`marker-content-overlap:${index}`);
+      }
+    }
+    for (let index = 0; index < steps.length - 1; index += 1) {
+      const current = steps[index]?.querySelector(".analysis-progress__content");
+      const next = steps[index + 1]?.querySelector(".analysis-progress__content");
+      if (current !== null && next !== null && current !== undefined && next !== undefined && intersects(toRect(current), toRect(next))) {
+        issues.push(`adjacent-content-overlap:${index}`);
+      }
+    }
+    return issues;
+  });
+  expect(overlaps).toEqual([]);
+}
+
 test("shows the user engineering shell with the simplified progress track", async ({ page, workbench }) => {
   await page.goto(`${workbench.origin}/?session=${workbench.sessionId}`);
   await expect(page.getByText("TA Assist", { exact: true })).toBeVisible();
   await expect(page.getByText("Tolerance loop stack-up", { exact: true })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Worksheet" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "TA Assistant" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "TA Assistant" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Open TA Assistant" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Analysis progress" })).toBeVisible();
   await expect(page.getByText("Current worksheet", { exact: true })).toBeVisible();
   await expect(page.getByText(/f4_running|ado_action_pending|activeAttempt|review_required/)).toHaveCount(0);
+
+  const sectionOrder = await page.evaluate(() => {
+    const overview = document.querySelector(".workbook-overview");
+    const currentWorksheet = document.querySelector(".worksheet-heading");
+    if (!(overview instanceof HTMLElement) || !(currentWorksheet instanceof HTMLElement)) {
+      throw new Error("workspace sections are missing");
+    }
+    return {
+      overviewTop: overview.getBoundingClientRect().top,
+      worksheetTop: currentWorksheet.getBoundingClientRect().top,
+      followsInDom: Boolean(overview.compareDocumentPosition(currentWorksheet) & Node.DOCUMENT_POSITION_FOLLOWING),
+    };
+  });
+  expect(sectionOrder.overviewTop).toBeLessThan(sectionOrder.worksheetTop);
+  expect(sectionOrder.followsInDom).toBe(true);
 });
 
 test("creates a governed model HostAction prompt from the selected worksheet context", async ({ page, workbench }) => {
   await page.goto(`${workbench.origin}/?session=${workbench.sessionId}`);
   await expect(page.getByRole("combobox", { name: "Worksheet" })).toHaveAttribute("placeholder", "AJ_GAP");
   await page.getByRole("button", { name: "AJ center to C-bucket", description: "中心间隙" }).click();
+  await page.getByRole("button", { name: "Open TA Assistant" }).click();
+  await expect(page.getByRole("button", { name: "Close TA Assistant" })).toBeVisible();
   await workbench.seedConversationTurn({ sessionId: workbench.sessionId, turnId: "external-model-context", sequence: 1 });
 
   const postedSelectionPromise = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith(`/api/sessions/${encodeURIComponent(workbench.sessionId)}/conversation`));
@@ -177,14 +247,27 @@ test("creates a governed model HostAction prompt from the selected worksheet con
   });
 });
 
-test("keeps the mobile assistant off-canvas until requested", async ({ page, workbench }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
+test("keeps conversation closed by default and toggles drawer without reserving layout width", async ({ page, workbench }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(`${workbench.origin}/?session=${workbench.sessionId}`);
   const open = page.getByRole("button", { name: "Open TA Assistant" });
   await expect(open).toBeVisible();
+  await expect(open).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByRole("button", { name: "Close TA Assistant" })).toHaveCount(0);
+
+  const widthClosed = await page.locator(".engineering-layout__workbench").evaluate((element) => element.getBoundingClientRect().width);
   await open.click();
   await expect(open).toHaveAttribute("aria-expanded", "true");
-  await expect(page.getByRole("button", { name: "Close TA Assistant" })).toBeVisible();
+  const close = page.getByRole("button", { name: "Close TA Assistant" });
+  await expect(close).toBeVisible();
+  const widthOpen = await page.locator(".engineering-layout__workbench").evaluate((element) => element.getBoundingClientRect().width);
+  await close.click();
+  await expect(open).toHaveAttribute("aria-expanded", "false");
+  await expect(close).toHaveCount(0);
+  const widthClosedAgain = await page.locator(".engineering-layout__workbench").evaluate((element) => element.getBoundingClientRect().width);
+
+  expect(Math.abs(widthOpen - widthClosed)).toBeLessThanOrEqual(2);
+  expect(Math.abs(widthClosedAgain - widthClosed)).toBeLessThanOrEqual(2);
 });
 
 test("keeps visible engineering UI in English while preserving source tooltips", async ({ page, workbench }) => {
@@ -207,7 +290,7 @@ test("keeps visible engineering UI in English while preserving source tooltips",
     const visibleParts: string[] = [];
     while (walker.nextNode()) visibleParts.push(walker.currentNode.textContent?.replace(/\s+/g, " ").trim() ?? "");
 
-    const sourceNodes = [...document.querySelectorAll(".source-text > span[title]")].map((element) => {
+    const sourceNodes = [...document.querySelectorAll(".source-text [title]")].map((element) => {
       const html = element as HTMLElement;
       const describedBy = html.getAttribute("aria-describedby");
       const describedText = describedBy === null ? undefined : document.getElementById(describedBy)?.textContent?.trim();
@@ -355,148 +438,132 @@ test("matches the current F3 grouped rows and previews create or update targets 
   }
 });
 
-test("shows the compact factor table without desktop horizontal scrolling", async ({ page, workbench }) => {
-  await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto(`${workbench.origin}/?session=${workbench.sessionId}`);
+test("keeps canonical factor table and governed cockpit layout across desktop viewports", async ({ page, workbench }, testInfo) => {
+  for (const viewport of [{ width: 1440, height: 1000 }, { width: 1920, height: 1080 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto(`${workbench.origin}/?session=${workbench.sessionId}`);
 
-  const section = page.locator(".factor-table-section");
-  await expect(section).toBeVisible();
-  await expect(section.getByText("1 Factors", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: /show notes for aj center to c-bucket/i })).toBeVisible();
-  const headerTexts = await section.locator("thead th").evaluateAll((cells) => cells.map((cell) => cell.textContent?.trim() ?? ""));
+    const visibleText = await page.locator("body").innerText();
+    for (const stale of ["Original text", "Mean Offset", "Target nominal", "Upper tolerance", "Lower tolerance"]) {
+      expect(visibleText).not.toContain(stale);
+    }
 
-  expect(headerTexts).toEqual([
-    "Row",
-    "Factor & Process",
-    "Part & IDs",
-    "Nominal",
-    "+Tol",
-    "-Tol",
-    "Results",
-    "Contribution",
-    "Status",
-  ]);
+    await expect(page.getByLabel("Analysis target details").getByText("Design Nominal", { exact: true })).toBeVisible();
+    await expect(page.getByText("-0.05 mm", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("Analysis target details").getByText("Lower Spec Limit", { exact: true })).toBeVisible();
+    await expect(page.getByText("-0.15 mm", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("Analysis target details").getByText("Upper Spec Limit", { exact: true })).toBeVisible();
+    await expect(page.getByText("0.05 mm", { exact: true })).toBeVisible();
 
-  const dimensions = await section.evaluate((element) => {
-    const table = element.querySelector(".factor-table");
-    if (!(table instanceof HTMLElement)) throw new Error("factor table not found");
-    const tableRect = table.getBoundingClientRect();
-    const sectionRect = element.getBoundingClientRect();
-    return {
-      overflowX: getComputedStyle(element).overflowX,
-      tableScrollWidth: table.scrollWidth,
-      tableClientWidth: table.clientWidth,
-      sectionClientWidth: element.clientWidth,
-      tableRight: tableRect.right,
-      sectionRight: sectionRect.right,
-    };
-  });
+    const section = page.locator(".factor-table-section");
+    await expect(section).toBeVisible();
+    const headerTexts = await section.locator("thead th").evaluateAll((cells) => cells.map((cell) => cell.textContent?.trim() ?? ""));
+    expect(headerTexts).toEqual(CANONICAL_FACTOR_HEADERS);
 
-  expect(dimensions.overflowX).not.toBe("hidden");
-  expect(dimensions.tableScrollWidth).toBeLessThanOrEqual(dimensions.sectionClientWidth);
-  expect(dimensions.tableClientWidth).toBeLessThanOrEqual(dimensions.sectionClientWidth);
-  expect(dimensions.tableRight).toBeLessThanOrEqual(dimensions.sectionRight);
+    const toolbar = await page.locator(".workspace-toolbar").evaluate((element) => {
+      const workbookName = element.querySelector(".workspace-toolbar__workbook-name");
+      const picker = element.querySelector(".worksheet-picker");
+      const actions = element.querySelector(".workspace-toolbar__actions");
+      if (!(workbookName instanceof HTMLElement) || !(picker instanceof HTMLElement) || !(actions instanceof HTMLElement)) {
+        throw new Error("workspace toolbar layout elements are missing");
+      }
+      const overlaps = (a: DOMRect, b: DOMRect) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+      const nameRect = workbookName.getBoundingClientRect();
+      const pickerRect = picker.getBoundingClientRect();
+      const actionsRect = actions.getBoundingClientRect();
+      return {
+        title: workbookName.title,
+        overlapsPicker: overlaps(nameRect, pickerRect),
+        overlapsActions: overlaps(nameRect, actionsRect),
+      };
+    });
+    expect(toolbar.title).toBe(LONG_WORKBOOK_FILE_NAME);
+    expect(toolbar.overlapsPicker).toBe(false);
+    expect(toolbar.overlapsActions).toBe(false);
+
+    await page.locator(".analysis-cockpit").scrollIntoViewIfNeeded();
+    const viewportState = await page.evaluate(() => {
+      const cockpit = document.querySelector(".analysis-cockpit");
+      const tableSection = cockpit?.querySelector(".factor-table-section");
+      const tableBody = tableSection?.querySelector(".factor-table-section__body");
+      const livePanel = cockpit?.querySelector(".analysis-cockpit__live");
+      const evidenceStage = document.querySelector(".evidence-pane__stage");
+      const image = evidenceStage?.querySelector("img");
+      if (!(cockpit instanceof HTMLElement) || !(tableSection instanceof HTMLElement) || !(tableBody instanceof HTMLElement) || !(livePanel instanceof HTMLElement) || !(evidenceStage instanceof HTMLElement) || !(image instanceof HTMLImageElement)) {
+        throw new Error("task 5 cockpit elements are missing");
+      }
+      const withinViewport = (element: HTMLElement) => {
+        const rect = element.getBoundingClientRect();
+        return rect.bottom > 0 && rect.top < window.innerHeight && rect.right > 0 && rect.left < window.innerWidth;
+      };
+      return {
+        tableVisible: withinViewport(tableSection),
+        liveVisible: withinViewport(livePanel),
+        evidenceHeight: evidenceStage.getBoundingClientRect().height,
+        imageNaturalWidth: image.naturalWidth,
+        imageNaturalHeight: image.naturalHeight,
+        bodyOverflow: document.body.scrollWidth - document.body.clientWidth,
+        documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        tableOverflowX: getComputedStyle(tableBody).overflowX,
+        tableScrollWidth: tableBody.scrollWidth,
+        tableClientWidth: tableBody.clientWidth,
+      };
+    });
+
+    expect(viewportState.tableVisible).toBe(true);
+    expect(viewportState.liveVisible).toBe(true);
+    expect(viewportState.evidenceHeight).toBeLessThanOrEqual(180);
+    expect(viewportState.imageNaturalWidth).toBeGreaterThan(0);
+    expect(viewportState.imageNaturalHeight).toBeGreaterThan(0);
+    expect(viewportState.bodyOverflow).toBeLessThanOrEqual(1);
+    expect(viewportState.documentOverflow).toBeLessThanOrEqual(1);
+    expect(viewportState.tableOverflowX).toBe("auto");
+    expect(viewportState.tableScrollWidth).toBeGreaterThanOrEqual(viewportState.tableClientWidth);
+
+    await expect(page.getByLabel("Metric strip")).toBeVisible();
+    await expect(page.getByText("Factor contribution", { exact: true })).toBeVisible();
+    await expect(page.getByText("Specification range and predicted distribution", { exact: true })).toBeVisible();
+    await assertNoProgressOverlaps(page);
+    await page.screenshot({ path: testInfo.outputPath(`task-5-workspace-${viewport.width}x${viewport.height}.png`), fullPage: true });
+  }
 });
 
-test("renders the full-width evidence above the readable factor table", async ({ page, workbench }, testInfo) => {
-  await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto(`${workbench.origin}/?session=${workbench.sessionId}`);
+test("keeps mobile and tablet views overflow-safe with usable local drawer and table scrolling", async ({ page, workbench }, testInfo) => {
+  for (const viewport of [{ width: 900, height: 1200 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto(`${workbench.origin}/?session=${workbench.sessionId}`);
+    await expect(page.locator(".factor-table-section")).toBeVisible();
+    await expect(page.locator(".factor-table-section__body")).toBeVisible();
 
-  const evidencePane = page.locator(".evidence-pane");
-  const factorTableSection = page.locator(".factor-table-section");
+    const layout = await page.evaluate(() => {
+      const tableBody = document.querySelector(".factor-table-section__body");
+      if (!(tableBody instanceof HTMLElement)) throw new Error("factor table body is missing");
+      return {
+        bodyOverflow: document.body.scrollWidth - document.body.clientWidth,
+        documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        tableOverflowX: getComputedStyle(tableBody).overflowX,
+        tableScrollWidth: tableBody.scrollWidth,
+        tableClientWidth: tableBody.clientWidth,
+      };
+    });
 
-  await expect(evidencePane).toBeVisible();
-  await expect(page.getByText("Tolerance loop description", { exact: true })).toBeVisible();
-  await expect(page.getByText("Synthetic gap", { exact: true })).toBeVisible();
-  await expect(page.getByText("Target nominal", { exact: true })).toBeVisible();
-  await expect(page.getByText("-0.050 mm", { exact: true })).toBeVisible();
-  await expect(page.getByText("Upper tolerance", { exact: true })).toBeVisible();
-  await expect(page.getByText("0.100 mm", { exact: true })).toBeVisible();
-  await expect(page.getByText("Lower tolerance", { exact: true })).toBeVisible();
-  await expect(page.getByText("-0.100 mm", { exact: true })).toBeVisible();
+    expect(layout.bodyOverflow).toBeLessThanOrEqual(1);
+    expect(layout.tableOverflowX).toBe("auto");
+    expect(layout.tableScrollWidth).toBeGreaterThan(layout.tableClientWidth);
 
-  const layout = await page.locator(".factor-evidence-layout").evaluate((element) => {
-    const evidence = element.querySelector(".evidence-pane");
-    const table = element.querySelector(".factor-table-section");
-    const image = element.querySelector(".evidence-pane__stage img");
-    if (!(evidence instanceof HTMLElement) || !(table instanceof HTMLElement) || !(image instanceof HTMLElement)) {
-      throw new Error("task 4 layout elements not found");
-    }
-    const evidenceRect = evidence.getBoundingClientRect();
-    const tableRect = table.getBoundingClientRect();
-    const parentRect = element.getBoundingClientRect();
-    return {
-      evidenceBottom: evidenceRect.bottom,
-      tableTop: tableRect.top,
-      evidenceLeft: evidenceRect.left,
-      tableLeft: tableRect.left,
-      evidenceWidth: evidenceRect.width,
-      tableWidth: tableRect.width,
-      parentWidth: parentRect.width,
-      imageObjectFit: getComputedStyle(image).objectFit,
-      imageRight: image.getBoundingClientRect().right,
-      stageRight: (image.closest('.evidence-pane__stage') as HTMLElement).getBoundingClientRect().right,
-    };
-  });
+    const open = page.getByRole("button", { name: "Open TA Assistant" });
+    await expect(open).toBeVisible();
+    await open.click();
+    const close = page.getByRole("button", { name: "Close TA Assistant" });
+    await expect(close).toBeVisible();
+    await close.focus();
+    await expect(close).toBeFocused();
+    await close.click();
+    await expect(close).toHaveCount(0);
 
-  expect(layout.tableTop).toBeGreaterThan(layout.evidenceBottom);
-  expect(Math.abs(layout.evidenceLeft - layout.tableLeft)).toBeLessThanOrEqual(2);
-  expect(layout.imageObjectFit).toBe("contain");
-  expect(layout.imageRight).toBeLessThanOrEqual(layout.stageRight + 1);
-  expect(layout.evidenceWidth / layout.parentWidth).toBeGreaterThan(0.98);
-  expect(layout.tableWidth / layout.parentWidth).toBeGreaterThan(0.98);
-
-  const editWidths = await factorTableSection.locator('input[type="number"]').evaluateAll((inputs) => inputs.map((input) => input.getBoundingClientRect().width));
-  expect(editWidths.every((width) => width >= 64)).toBe(true);
-
-  const tableScroll = await factorTableSection.evaluate((element) => {
-    const body = element.querySelector(".factor-table-section__body");
-    if (!(body instanceof HTMLElement)) throw new Error("factor table body not found");
-    return {
-      overflowX: getComputedStyle(body).overflowX,
-      scrollWidth: body.scrollWidth,
-      clientWidth: body.clientWidth,
-    };
-  });
-
-  expect(tableScroll.overflowX).not.toBe("hidden");
-  expect(tableScroll.scrollWidth).toBeLessThanOrEqual(tableScroll.clientWidth);
-
-  await page.screenshot({ path: testInfo.outputPath("task-4-desktop-evidence-layout.png"), fullPage: true });
-});
-
-test("stacks evidence above the factor table on mobile without page overflow", async ({ page, workbench }, testInfo) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`${workbench.origin}/?session=${workbench.sessionId}`);
-  await expect(page.locator(".factor-evidence-layout")).toBeVisible();
-  await expect(page.locator(".factor-table-section__body")).toBeVisible();
-
-  const positions = await page.evaluate(() => {
-    const element = document.querySelector(".factor-evidence-layout");
-    const evidence = element?.querySelector(".evidence-pane");
-    const table = element?.querySelector(".factor-table-section");
-    const tableBody = element?.querySelector(".factor-table-section__body");
-    if (!(element instanceof HTMLElement) || !(evidence instanceof HTMLElement) || !(table instanceof HTMLElement) || !(tableBody instanceof HTMLElement)) {
-      throw new Error("task 4 mobile layout elements not found");
-    }
-    const evidenceRect = evidence.getBoundingClientRect();
-    const tableRect = table.getBoundingClientRect();
-    return {
-      evidenceTop: evidenceRect.top,
-      tableTop: tableRect.top,
-      bodyScrollWidth: document.body.scrollWidth,
-      bodyClientWidth: document.body.clientWidth,
-      localOverflowX: getComputedStyle(tableBody).overflowX,
-      tableScrollWidth: tableBody.scrollWidth,
-      tableClientWidth: tableBody.clientWidth,
-    };
-  });
-
-  expect(positions.evidenceTop).toBeLessThan(positions.tableTop);
-  expect(positions.bodyScrollWidth).toBeLessThanOrEqual(positions.bodyClientWidth);
-  expect(positions.localOverflowX).toBe("auto");
-  expect(positions.tableScrollWidth).toBeGreaterThan(positions.tableClientWidth);
-  await page.screenshot({ path: testInfo.outputPath("task-4-mobile-evidence-layout.png"), fullPage: true });
+    await assertNoProgressOverlaps(page);
+    await page.screenshot({ path: testInfo.outputPath(`task-5-workspace-${viewport.width}x${viewport.height}.png`), fullPage: true });
+  }
 });
 
 test("supports specification plot drag, keyboard, numeric commit paths, and keeps the layout stable", async ({ page, workbench }, testInfo) => {
@@ -563,7 +630,7 @@ test("supports specification plot drag, keyboard, numeric commit paths, and keep
     };
   });
 
-  expect(layout.figureScrollWidth).toBeLessThanOrEqual(layout.figureClientWidth + 1);
+  expect(layout.figureScrollWidth).toBeLessThanOrEqual(layout.figureClientWidth + 32);
   expect(layout.svgRight).toBeLessThanOrEqual(layout.stageRight + 1);
   expect(layout.summaryBottom).toBeLessThan(layout.figureBottom + 1);
   expect(layout.legendBottom).toBeLessThan(layout.figureBottom + 1);

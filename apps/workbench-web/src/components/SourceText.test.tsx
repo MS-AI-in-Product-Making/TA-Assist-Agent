@@ -1,7 +1,9 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { SourceText } from "./SourceText.js";
+
+afterEach(cleanup);
 
 describe("SourceText", () => {
   it("shows projected text while exposing the exact source text on focus and via title", () => {
@@ -16,10 +18,17 @@ describe("SourceText", () => {
     expect(text).toHaveAccessibleDescription("支架");
   });
 
-  it("marks untranslated fallback text as original text", () => {
+  it("renders plain text without activation semantics when onActivate is missing", () => {
+    const rendered = render(<SourceText value={{ displayText: "Bracket", sourceText: "支架", translated: true }} />);
+
+    expect(rendered.container.querySelector("button")).toBeNull();
+    expect(screen.getByText("Bracket")).toBeVisible();
+  });
+
+  it("does not append visible original-text suffix for untranslated values", () => {
     const rendered = render(<SourceText value={{ displayText: "支架", sourceText: "支架", translated: false }} />);
 
-    expect(rendered.container.querySelector(".source-text > span")?.textContent).toBe("支架 Original text");
-    expect(screen.getByText("Original text")).toBeVisible();
+    expect(rendered.container.querySelector(".source-text > span")?.textContent).toBe("支架");
+    expect(screen.queryByText("Original text")).toBeNull();
   });
 });

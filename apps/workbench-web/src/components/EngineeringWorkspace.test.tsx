@@ -53,14 +53,15 @@ describe("EngineeringWorkspace", () => {
     expect(screen.getByRole("status", { name: "Worksheet blocking reasons" })).toHaveTextContent("Required field missing");
   }, 15_000);
 
-  it("shows a read-only mean offset and removes the editable additional mean shift control", () => {
+  it("shows Mean Response and Additional Mean Shift and removes Mean Offset", () => {
     render(<EngineeringWorkspace {...handlers} model={readyModelWithFactor()} />);
 
     fireEvent.click(screen.getByRole("spinbutton", { name: "Gap factor nominalValue" }));
 
     expect(screen.queryByRole("spinbutton", { name: "Additional Mean Shift" })).not.toBeInTheDocument();
-    expect(screen.getAllByText("Mean Offset").length).toBeGreaterThan(0);
-    expect(screen.getAllByLabelText("Mean Offset source values").some((element) => element.textContent?.includes("Calculated Mean 1.627 minus Target Nominal 1.500") ?? false)).toBe(true);
+    expect(screen.queryByText("Mean Offset")).toBeNull();
+    expect(screen.getByText("Mean Response")).toBeVisible();
+    expect(screen.getByText("Additional Mean Shift")).toBeVisible();
   }, 15_000);
 
   it("keeps ADO controls inside the F3 workspace without hiding the engineering worksheet", () => {
@@ -74,6 +75,64 @@ describe("EngineeringWorkspace", () => {
     expect(within(adoWorkspace).getByRole("button", { name: "Create work item" })).toBeVisible();
     expect(within(adoWorkspace).getByRole("button", { name: "Validate existing work item" })).toBeDisabled();
     expect(screen.getAllByRole("button", { name: "Local analysis only" })).toHaveLength(1);
+  }, 15_000);
+
+  it("shows live ADO host progress with elapsed and remaining time", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-31T10:05:00.000Z"));
+    try {
+      render(<EngineeringWorkspace
+        {...handlers}
+        model={readyModel()}
+        f3Report={governanceReport()}
+        adoProjection={{
+          contractVersion: "f8-ado-projection-v1",
+          sessionId: "session-1",
+          state: "validation_pending",
+          actionId: "ado-validation:session-1:7",
+          expectedRevision: 7,
+          startedAt: "2026-08-31T10:00:00.000Z",
+          expiresAt: "2026-08-31T10:15:00.000Z",
+        }}
+      />);
+
+      expect(screen.getByText("Waiting for VS Code host")).toBeVisible();
+      expect(screen.getByText("Elapsed 05:00 · timeout in 10:00")).toBeVisible();
+      expect(screen.getByRole("status")).toHaveTextContent("Surface MCP host");
+    } finally {
+      vi.useRealTimers();
+    }
+  }, 15_000);
+
+  it("distinguishes validation and write blocked or failed summary labels", () => {
+    const cases = [
+      { state: "blocked", actionId: "ado-validation:session-1:7", expected: "ADO validation blocked" },
+      { state: "blocked", actionId: "ado-write:session-1:7", expected: "ADO write blocked" },
+      { state: "failed", actionId: "ado-validation:session-1:7", expected: "ADO validation failed" },
+      { state: "failed", actionId: "ado-write:session-1:7", expected: "ADO write failed" },
+    ] as const;
+
+    for (const sample of cases) {
+      const { unmount } = render(
+        <EngineeringWorkspace
+          {...handlers}
+          model={readyModel()}
+          f3Report={governanceReport()}
+          adoProjection={{
+            contractVersion: "f8-ado-projection-v1",
+            sessionId: "session-1",
+            state: sample.state,
+            actionId: sample.actionId,
+            expectedRevision: 7,
+            startedAt: "2026-08-31T10:00:00.000Z",
+            expiresAt: "2026-08-31T10:15:00.000Z",
+          }}
+        />,
+      );
+
+      expect(screen.getByText(sample.expected)).toBeVisible();
+      unmount();
+    }
   }, 15_000);
 
   it("submits governed source identity and the current saved Scenario reference", async () => {
@@ -108,6 +167,7 @@ describe("EngineeringWorkspace", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Gap factor", description: "间隙因子" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open TA Assistant" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Ask TA Assist from governed evidence" }), { target: { value: "Compare baseline and scenario." } });
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
 
@@ -118,6 +178,81 @@ describe("EngineeringWorkspace", () => {
       factorName: "间隙因子",
       calculationReference: "what-if:current",
     }));
+  }, 15_000);
+
+  it("does not use a cross-worksheet image reference for F1 evidence", () => {
+    render(
+      <EngineeringWorkspace
+        {...handlers}
+        model={readyModelWithCrossWorksheetImage()}
+        api={{} as any}
+        sessionId="session-1"
+      />,
+    );
+
+    expect(screen.queryByRole("img", { name: "Analysis-A tolerance loop stack-up" })).not.toBeInTheDocument();
+    expect(screen.getByText("This worksheet is missing a tolerance loop stack-up image")).toBeVisible();
+  }, 15_000);
+
+  it("renders workbook overview before the current worksheet region without duplicating F6 summary", () => {
+    render(
+      <EngineeringWorkspace
+        {...handlers}
+        model={readyModelWithFactor()}
+        f2Report={f2ReportForOverview() as never}
+        f6Report={f6ReportForOverview() as never}
+      />,
+    );
+
+    const workbookOverview = screen.getByRole("region", { name: "Workbook overview" });
+  const worksheetHeading = screen.getByRole("heading", { name: "Analysis-A", level: 1 });
+    const f6Summary = screen.getByRole("region", { name: "Optimization summary" });
+
+    expect(workbookOverview.compareDocumentPosition(worksheetHeading) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(f6Summary).toBeVisible();
+    expect(screen.getAllByRole("region", { name: "Optimization summary" })).toHaveLength(1);
+  }, 15_000);
+
+  it("keeps workbook full name accessible in the toolbar", () => {
+    const workbookName = "anonymous-workbook-with-a-very-long-name-for-layout-verification-v2026-09-01.xlsx";
+    render(<EngineeringWorkspace {...handlers} model={{ ...readyModelWithFactor(), workbookName }} />);
+
+    const workbookNameNode = screen.getByText(workbookName);
+    expect(workbookNameNode).toHaveAttribute("title", workbookName);
+  }, 15_000);
+
+  it("uses a content wrapper for each progress step", () => {
+    const { container } = render(<EngineeringWorkspace {...handlers} model={readyModelWithFactor()} />);
+    const firstStep = container.querySelector(".analysis-progress__step");
+
+    expect(firstStep).not.toBeNull();
+    expect(firstStep?.querySelector(".analysis-progress__content")).not.toBeNull();
+  }, 15_000);
+
+  it("keeps TA Assistant closed by default and toggles it from the floating control", () => {
+    render(<EngineeringWorkspace {...handlers} model={readyModelWithFactor()} />);
+
+    const openButton = screen.getByRole("button", { name: "Open TA Assistant" });
+    expect(openButton).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("region", { name: "TA Assistant" })).not.toBeInTheDocument();
+
+    fireEvent.click(openButton);
+    expect(openButton).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("region", { name: "TA Assistant" })).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close TA Assistant" }));
+    expect(openButton).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("region", { name: "TA Assistant" })).not.toBeInTheDocument();
+  }, 15_000);
+
+  it("renders an analysis cockpit with factor table and a live analysis panel", () => {
+    const { container } = render(<EngineeringWorkspace {...handlers} model={readyModelWithFactor()} />);
+    const cockpit = container.querySelector(".analysis-cockpit");
+
+    expect(cockpit).not.toBeNull();
+    expect(within(cockpit as HTMLElement).getByRole("region", { name: "TA Factor Table" })).toBeVisible();
+    expect(within(cockpit as HTMLElement).getByRole("region", { name: "Engineering analysis charts" })).toBeVisible();
+    expect(cockpit?.querySelector(".analysis-cockpit__live")).not.toBeNull();
   }, 15_000);
 });
 
@@ -182,14 +317,26 @@ function readyModel(): EngineeringWorkspaceModel {
       {
         worksheetName: "Analysis-A",
         status: "ready",
-        analysisTarget: { description: "Analysis-A loop", nominal: -0.05, nominalDisplay: "-0.050", upperTolerance: 0.1, upperToleranceDisplay: "0.100", lowerTolerance: -0.1, lowerToleranceDisplay: "-0.100", unit: "mm" },
+        analysisTarget: {
+          description: "Analysis-A loop",
+          designNominal: { actual: -0.05, display: "-0.050", sourceLabel: "*Design Nominal ►", sourceCell: "Analysis-A!P53" },
+          lowerSpecLimit: { actual: -0.15, display: "-0.150", sourceLabel: "*Lower Spec Limit ►", sourceCell: "Analysis-A!P54" },
+          upperSpecLimit: { actual: 0.05, display: "0.050", sourceLabel: "*Upper Spec Limit ►", sourceCell: "Analysis-A!P55" },
+          unit: "mm",
+        },
         factors: [],
         issues: [],
       },
       {
         worksheetName: "Blocked-B",
         status: "blocked",
-        analysisTarget: { description: "Blocked-B loop", nominalDisplay: "Not available", nominalReason: "Worksheet system specification is unavailable.", upperToleranceDisplay: "Not available", upperToleranceReason: "Worksheet system specification is unavailable.", lowerToleranceDisplay: "Not available", lowerToleranceReason: "Worksheet system specification is unavailable.", unit: "mm" },
+        analysisTarget: {
+          description: "Blocked-B loop",
+          designNominal: { display: "Not available", reason: "Worksheet system specification is unavailable." },
+          lowerSpecLimit: { display: "Not available", reason: "Worksheet system specification is unavailable." },
+          upperSpecLimit: { display: "Not available", reason: "Worksheet system specification is unavailable." },
+          unit: "mm",
+        },
         factors: [],
         issues: ["required_field_missing"],
       },
@@ -204,7 +351,13 @@ function readyModelWithFactor(): EngineeringWorkspaceModel {
     worksheets: [{
       worksheetName: "Analysis-A",
       status: "ready",
-      analysisTarget: { description: "Analysis-A loop", nominal: 1.5, nominalDisplay: "1.500", upperTolerance: 0.1, upperToleranceDisplay: "0.100", lowerTolerance: -0.1, lowerToleranceDisplay: "-0.100", unit: "mm" },
+      analysisTarget: {
+        description: "Analysis-A loop",
+        designNominal: { actual: 1.5, display: "1.500", sourceLabel: "*Design Nominal ►", sourceCell: "Analysis-A!P53" },
+        lowerSpecLimit: { actual: 1.4, display: "1.400", sourceLabel: "*Lower Spec Limit ►", sourceCell: "Analysis-A!P54" },
+        upperSpecLimit: { actual: 1.6, display: "1.600", sourceLabel: "*Upper Spec Limit ►", sourceCell: "Analysis-A!P55" },
+        unit: "mm",
+      },
       factors: [{
         key: "Analysis-A\u0000table\u00001",
         worksheetName: "Analysis-A",
@@ -238,7 +391,6 @@ function readyModelWithFactor(): EngineeringWorkspaceModel {
       }],
       metrics: {
         mean: 1.627,
-        meanOffset: 0.127,
         rssSigma: 0.05,
         cp: 1.4,
         cpkL: 1.2,
@@ -256,6 +408,61 @@ function readyModelWithFactor(): EngineeringWorkspaceModel {
         worstCaseLower: 1.3,
         worstCaseUpper: 1.9,
       },
+      issues: [],
+    }],
+  };
+}
+
+function readyModelWithCrossWorksheetImage(): EngineeringWorkspaceModel {
+  return {
+    workbookName: "anonymous.xlsx",
+    selectedWorksheetName: "Analysis-A",
+    worksheets: [{
+      worksheetName: "Analysis-A",
+      status: "ready",
+      analysisTarget: {
+        description: "Analysis-A loop",
+        designNominal: { actual: 1.5, display: "1.500", sourceLabel: "*Design Nominal ►", sourceCell: "Analysis-A!P53" },
+        lowerSpecLimit: { actual: 1.4, display: "1.400", sourceLabel: "*Lower Spec Limit ►", sourceCell: "Analysis-A!P54" },
+        upperSpecLimit: { actual: 1.6, display: "1.600", sourceLabel: "*Upper Spec Limit ►", sourceCell: "Analysis-A!P55" },
+        unit: "mm",
+      },
+      factors: [{
+        key: "Analysis-A\u0000table\u00001",
+        worksheetName: "Analysis-A",
+        tableId: "table",
+        sourceRow: 1,
+        factorName: { displayText: "Gap factor", sourceText: "间隙因子", translated: true },
+        partName: { displayText: "Bracket", sourceText: "支架", translated: true },
+        partCategory: "CNC",
+        unit: "mm",
+        nominalValue: 1,
+        nominalDisplay: "1.000",
+        upperTolerance: 0.2,
+        upperToleranceDisplay: "0.200",
+        lowerTolerance: -0.2,
+        lowerToleranceDisplay: "-0.200",
+        longTermSafetyFactorDisplay: "1.0",
+        sigmaLevelDisplay: "4.0",
+        distribution: "Normal",
+        mean: 1.627,
+        meanDisplay: "1.627",
+        toleranceDisplay: "0.200",
+        oneSigmaDisplay: "0.050",
+        contributionDisplay: "50.0%",
+        capabilityResult: "ready",
+        editable: true,
+        additionalMeanShift: 0.02,
+        directionLabel: "positive",
+        directionAvailable: true,
+        contribution: 0.5,
+        status: "pass",
+        imageReference: {
+          worksheetName: "Analysis-B",
+          relativePath: "worksheets/Analysis-B/loop.png",
+          contentHash: "b".repeat(64),
+        },
+      }],
       issues: [],
     }],
   };
@@ -295,5 +502,66 @@ function governanceRow(): Exclude<DrawingGovernanceResultV2, { status: "input_re
     governanceStatus: "needs_governance",
     imageReference: { worksheetName: "Analysis-A", imageArtifactId: "image-a", contentHash: "b".repeat(64) },
     source: { worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 1, sourceCells: {} },
+  };
+}
+
+function f2ReportForOverview() {
+  return {
+    status: "completed",
+    worksheets: [{
+      worksheetName: "Analysis-A",
+      status: "ready",
+      toleranceLoopDescription: "Gap",
+      tolerancePathImageStatus: "available",
+      systemSpecification: { status: "available" },
+      systemSpecificationIssues: [],
+      missingFieldSummary: [],
+      f4CalculabilityIssues: [],
+      rows: [],
+    }],
+    summary: {
+      worksheetsChecked: 1,
+      readyWorksheetCount: 1,
+      blockedWorksheetCount: 0,
+      requiredMissingFieldCount: 0,
+      missingImageWorksheetCount: 0,
+      missingDimIdCount: 0,
+      missingPartNumberCount: 0,
+      f0InformationInsufficientCount: 0,
+      nonF0ProcessCategoryCount: 0,
+    },
+    f4Handoffs: [],
+    adoEvents: [],
+  };
+}
+
+function f6ReportForOverview() {
+  return {
+    runStatus: "completed",
+    summary: {
+      candidateOptionCount: 1,
+      worksheetCount: 1,
+      completedWorksheetCount: 1,
+      partiallyCompletedWorksheetCount: 0,
+      insufficientEvidenceOptionCount: 0,
+      calculationFailedOptionCount: 0,
+    },
+    worksheets: [{
+      worksheetName: "Analysis-A",
+      runStatus: "completed",
+      baselineMetrics: { cpk: 1.2, rssSigma: 0.05, dpm: 1 },
+      options: [{
+        optionId: "opt:1",
+        status: "completed",
+        resultMetrics: {
+          cp: 1.3,
+          lowerCpk: 1.2,
+          upperCpk: 1.4,
+          cpk: 1.2,
+          rssSigma: 0.04,
+          dpm: 0.5,
+        },
+      }],
+    }],
   };
 }

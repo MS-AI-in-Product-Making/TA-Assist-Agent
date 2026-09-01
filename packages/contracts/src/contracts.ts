@@ -727,6 +727,7 @@ const tolerancePathImageSchema = z.discriminatedUnion("status", [
   ]);
 
   const worksheetSystemSpecificationFields = {
+    designNominal: worksheetEvidenceNumberSchema,
     lowerSpecLimit: worksheetEvidenceNumberSchema,
     upperSpecLimit: worksheetEvidenceNumberSchema,
     targetSigmaLevel: worksheetEvidenceNumberSchema,
@@ -739,6 +740,7 @@ const tolerancePathImageSchema = z.discriminatedUnion("status", [
     z.object({
       status: z.literal("unavailable"),
       reasonCode: z.enum(["response_summary_label_missing", "response_summary_label_ambiguous", "system_specification_range_invalid", "legacy_artifact_missing_system_specification"]),
+      designNominal: worksheetEvidenceNumberSchema.optional(),
       lowerSpecLimit: worksheetEvidenceNumberSchema.optional(),
       upperSpecLimit: worksheetEvidenceNumberSchema.optional(),
       targetSigmaLevel: worksheetEvidenceNumberSchema.optional(),
@@ -4151,7 +4153,7 @@ const f2MissingFieldSummarySchema = z.object({
 }).strict();
 
 export const f2SystemSpecificationIssueSchema = z.object({
-  field: z.enum(["lowerSpecLimit", "upperSpecLimit", "targetSigmaLevel"]),
+  field: z.enum(["designNominal", "lowerSpecLimit", "upperSpecLimit", "targetSigmaLevel"]),
   reasonCode: z.enum([
     "response_summary_label_missing",
     "response_summary_label_ambiguous",
@@ -4196,16 +4198,12 @@ export const f4HandoffReadySchema = z.object({
   factors: z.array(f4HandoffFactorSchema),
 }).strict().superRefine((handoff, context) => {
   const specification = handoff.systemSpecification;
-  const expectedNominal = (specification.lowerSpecLimit.actualValue + specification.upperSpecLimit.actualValue) / 2;
   const expectedCpk = specification.targetSigmaLevel.actualValue / 3;
   if (specification.lowerSpecLimit.actualValue >= specification.upperSpecLimit.actualValue) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "lowerSpecLimit must be less than upperSpecLimit", path: ["systemSpecification", "lowerSpecLimit"] });
   }
   if (specification.targetSigmaLevel.actualValue <= 0) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "targetSigmaLevel must be positive", path: ["systemSpecification", "targetSigmaLevel"] });
-  }
-  if (Math.abs(specification.designNominal - expectedNominal) > 1e-12) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: "designNominal must be derived from specification limits", path: ["systemSpecification", "designNominal"] });
   }
   if (Math.abs(specification.targetCpk - expectedCpk) > 1e-12) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "targetCpk must be derived from targetSigmaLevel", path: ["systemSpecification", "targetCpk"] });

@@ -18,13 +18,12 @@ export function EngineeringCharts({ worksheet, scenario, scenarioContributions, 
   const draft = scenario?.metrics;
   const contributions = contributionData(worksheet.factors, scenarioContributions);
   const specification = specificationModel(worksheet, draft);
-  const meanOffsetSource = baseline === undefined ? undefined : meanOffsetSourceValues(worksheet, baseline);
   const hasScenario = scenario !== undefined;
-  const metrics: readonly [string, keyof NonNullable<typeof baseline>][] = [["Mean", "mean"], ["Mean Offset", "meanOffset"], ["RSS", "rssSigma"], ["Cp", "cp"], ["CpkL", "cpkL"], ["CpkU", "cpkU"], ["Cpk", "cpk"], ["Margin", "statisticalMargin"], ["Yield", "yield"], ["DPM", "dpm"]];
+  const metrics: readonly [string, keyof NonNullable<typeof baseline>][] = [["Mean Response", "mean"], ["Additional Mean Shift", "meanShift"], ["RSS", "rssSigma"], ["Cp", "cp"], ["CpkL", "cpkL"], ["CpkU", "cpkU"], ["Cpk", "cpk"], ["Margin", "statisticalMargin"], ["Yield", "yield"], ["DPM", "dpm"]];
 
   return (
     <section className="engineering-charts" aria-label="Engineering analysis charts">
-      {baseline === undefined ? <p>No visual calculation results are available for this worksheet yet.</p> : <div className="metric-strip metric-strip--compact" aria-label="Metric strip">{metrics.map(([label, key]) => metric(label, baseline[key], draft?.[key], label === "Mean Offset" ? meanOffsetSource : undefined))}</div>}
+      {baseline === undefined ? <p>No visual calculation results are available for this worksheet yet.</p> : <div className="metric-strip metric-strip--compact" aria-label="Metric strip">{metrics.map(([label, key]) => metric(label, baseline[key], draft?.[key]))}</div>}
       <div className="chart-grid">
         <figure>
           <figcaption>Factor contribution</figcaption>
@@ -47,13 +46,8 @@ export function EngineeringCharts({ worksheet, scenario, scenarioContributions, 
   );
 }
 
-function metric(label: string, baseline: number | undefined, scenario: number | undefined, accessibleSource?: string) {
+function metric(label: string, baseline: number | undefined, scenario: number | undefined) {
   if (baseline === undefined) return null;
   const delta = scenario === undefined ? undefined : scenario - baseline;
-  return <div key={label}><span>{label}</span><strong>{label === "Yield" ? `${(baseline * 100).toFixed(2)}%` : baseline.toFixed(3)}</strong>{delta === undefined ? null : <small className={delta >= 0 ? "metric-delta--positive" : "metric-delta--negative"}>{delta >= 0 ? "+" : ""}{delta.toFixed(3)}</small>}{accessibleSource === undefined ? null : <span className="visually-hidden" aria-label="Mean Offset source values">{accessibleSource}</span>}</div>;
-}
-
-function meanOffsetSourceValues(worksheet: WorksheetWorkspaceModel, baseline: NonNullable<WorksheetWorkspaceModel["metrics"]>): string | undefined {
-  if (worksheet.analysisTarget.nominal === undefined || baseline.meanOffset === undefined) return undefined;
-  return `Calculated Mean ${baseline.mean.toFixed(3)} minus Target Nominal ${worksheet.analysisTarget.nominal.toFixed(3)} equals ${baseline.meanOffset.toFixed(3)}`;
+  return <div key={label}><span>{label}</span><strong>{label === "Yield" ? `${(baseline * 100).toFixed(2)}%` : baseline.toFixed(3)}</strong>{delta === undefined ? null : <small className={delta >= 0 ? "metric-delta--positive" : "metric-delta--negative"}>{delta >= 0 ? "+" : ""}{delta.toFixed(3)}</small>}</div>;
 }

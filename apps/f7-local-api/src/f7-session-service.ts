@@ -117,6 +117,14 @@ function measurementRowCount(text: string): number {
   return text.split(/\r\n|\n|\r/).filter((row) => row.trim().length > 0).length;
 }
 
+function hasVerifiedDesignNominal(
+  specification: NonNullable<F7SessionSnapshot["systemSpecification"]>,
+): specification is Extract<NonNullable<F7SessionSnapshot["systemSpecification"]>, { status: "available" }> & {
+  designNominal: { status: "available"; actualValue: number; displayValue: string; sourceLabel: string; sourceCell?: string; valueOrigin: "numeric_literal" | "formula_cached" | "defaulted" };
+} {
+  return specification.status === "available" && specification.designNominal.status === "available";
+}
+
 function cloneFrozenSnapshot(snapshot: F7SessionSnapshot): F7SessionSnapshot {
   return deepFreeze(structuredClone(snapshot));
 }
@@ -369,6 +377,7 @@ export function createF7SessionService(dependencies: {
     });
 
     const specificationOverride = parsedRequest.data.systemSpecification;
+    const currentSystemSpecification = current.snapshot.systemSpecification;
     const availableLiteral = (actualValue: number, sourceLabel: string) => ({
       status: "available" as const,
       actualValue,
@@ -376,16 +385,28 @@ export function createF7SessionService(dependencies: {
       sourceLabel,
       valueOrigin: "numeric_literal" as const,
     });
-    const systemSpecification = specificationOverride && current.snapshot.systemSpecification
-      ? {
-          ...current.snapshot.systemSpecification,
-          status: "available" as const,
-          lowerSpecLimit: availableLiteral(specificationOverride.lowerSpecLimit, "Lower Specification Limit"),
-          upperSpecLimit: availableLiteral(specificationOverride.upperSpecLimit, "Upper Specification Limit"),
-          targetSigmaLevel: availableLiteral(specificationOverride.targetSigmaLevel, "Target Sigma Level"),
-          additionalMeanShift: current.snapshot.systemSpecification.additionalMeanShift ?? availableLiteral(0, "Additional Mean Shift"),
-        }
-      : current.snapshot.systemSpecification;
+    const systemSpecification = specificationOverride && currentSystemSpecification
+      ? hasVerifiedDesignNominal(currentSystemSpecification)
+        ? {
+            status: "available" as const,
+            designNominal: currentSystemSpecification.designNominal,
+            lowerSpecLimit: availableLiteral(specificationOverride.lowerSpecLimit, "Lower Specification Limit"),
+            upperSpecLimit: availableLiteral(specificationOverride.upperSpecLimit, "Upper Specification Limit"),
+            targetSigmaLevel: availableLiteral(specificationOverride.targetSigmaLevel, "Target Sigma Level"),
+            additionalMeanShift: currentSystemSpecification.additionalMeanShift,
+            ...(currentSystemSpecification.volume === undefined ? {} : { volume: currentSystemSpecification.volume }),
+          }
+        : {
+            status: "unavailable" as const,
+            reasonCode: "legacy_artifact_missing_system_specification" as const,
+            ...(currentSystemSpecification.designNominal === undefined ? {} : { designNominal: currentSystemSpecification.designNominal }),
+            ...(currentSystemSpecification.lowerSpecLimit === undefined ? {} : { lowerSpecLimit: currentSystemSpecification.lowerSpecLimit }),
+            ...(currentSystemSpecification.upperSpecLimit === undefined ? {} : { upperSpecLimit: currentSystemSpecification.upperSpecLimit }),
+            ...(currentSystemSpecification.targetSigmaLevel === undefined ? {} : { targetSigmaLevel: currentSystemSpecification.targetSigmaLevel }),
+            ...(currentSystemSpecification.additionalMeanShift === undefined ? {} : { additionalMeanShift: currentSystemSpecification.additionalMeanShift }),
+            ...(currentSystemSpecification.volume === undefined ? {} : { volume: currentSystemSpecification.volume }),
+          }
+      : currentSystemSpecification;
     const snapshot = normalizeSnapshot({
       ...current.snapshot,
       status: "measurement_entry",

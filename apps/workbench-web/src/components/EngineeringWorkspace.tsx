@@ -2,7 +2,7 @@ import type { ConversationTurn } from "@ai-assist/conversation";
 import { useState } from "react";
 
 import type { EngineeringWorkspaceModel } from "../workspace-model.js";
-import type { TaConversationSelection, WorkbenchApi } from "../api.js";
+import { buildWorksheetBoundF1ImageArtifactUrl, type TaConversationSelection, type WorkbenchApi } from "../api.js";
 import { useScenarioWorkspace } from "../hooks/use-scenario-workspace.js";
 import { FactorTable } from "./FactorTable.js";
 import { EngineeringCharts } from "./EngineeringCharts.js";
@@ -62,8 +62,16 @@ export function EngineeringWorkspace(props: EngineeringWorkspaceProps) {
   const selectedCalculation = props.f4Report?.calculations.find((candidate) => candidate.worksheetSelection.worksheetName === worksheet?.worksheetName);
   const savedScenario = resolveCurrentSavedScenario(props.snapshot, props.scenarioDrafts, worksheet?.worksheetName, selectedCalculation?.runReference);
   const evidenceFactor = selectedFactor ?? worksheet?.factors.find(({ imageReference }) => imageReference !== undefined);
-  const evidenceUrl = props.api !== undefined && props.sessionId !== undefined && evidenceFactor?.imageReference !== undefined
-    ? props.api.artifactUrl(props.sessionId, `f1-image:${evidenceFactor.imageReference.contentHash}`, "inline")
+  const worksheetBoundImage = evidenceFactor?.imageReference !== undefined && evidenceFactor.imageReference.worksheetName === worksheet?.worksheetName
+    ? evidenceFactor.imageReference
+    : undefined;
+  const evidenceUrl = props.api !== undefined && props.sessionId !== undefined && worksheetBoundImage !== undefined
+    ? buildWorksheetBoundF1ImageArtifactUrl({
+        sessionId: props.sessionId,
+        contentHash: worksheetBoundImage.contentHash,
+        worksheetName: worksheetBoundImage.worksheetName,
+        relativePath: worksheetBoundImage.relativePath,
+      })
     : undefined;
   const scenarioResult = scenario.scenarioResult ?? [...scenario.factorStates.values()].find(({ lastValidResult }) => lastValidResult !== undefined)?.lastValidResult;
   const scenarioContributions = new Map([...scenario.factorStates].flatMap(([key, state]) => state.calculated === undefined ? [] : [[key, state.calculated.contribution] as const]));
@@ -80,7 +88,7 @@ export function EngineeringWorkspace(props: EngineeringWorkspaceProps) {
   return (
     <main className="engineering-shell">
       <WorkspaceToolbar model={props.model} loading={props.loading} onUpload={props.onUpload} onSelectWorksheet={props.onSelectWorksheet} onUndo={scenario.undo} onReset={() => scenario.reset()} onSave={() => { void scenario.save(selectedFactor?.key); }} canUndo={scenario.canUndo} canSave={scenario.dirty && scenarioResult !== undefined} />
-      <AnalysisProgress entries={props.featureLedger} connected={props.connected} {...(props.runnerProgress === undefined ? {} : { progress: props.runnerProgress })} {...(props.activeAttemptStartedAt === undefined ? {} : { activeAttemptStartedAt: props.activeAttemptStartedAt })} />
+      <AnalysisProgress entries={props.featureLedger} connected={props.connected} {...(props.runnerProgress === undefined ? {} : { progress: props.runnerProgress })} {...(props.adoProjection === undefined ? {} : { adoProjection: props.adoProjection })} {...(props.activeAttemptStartedAt === undefined ? {} : { activeAttemptStartedAt: props.activeAttemptStartedAt })} />
       <WorkspaceIssuePanel issue={props.issue} />
       <div className="engineering-layout">
         <section className="engineering-layout__workbench">
@@ -88,6 +96,10 @@ export function EngineeringWorkspace(props: EngineeringWorkspaceProps) {
             <WorkspacePreparation message="Open a workbook to start analysis" />
           ) : (
             <>
+              <section className="workbook-overview" aria-label="Workbook overview">
+                <WorkbookHealth model={projectWorkbookHealth(props.f2Report)} onNavigate={props.onSelectWorksheet} />
+                <F6Summary report={props.f6Report} selectedWorksheetName={worksheet.worksheetName} />
+              </section>
               <header className="worksheet-heading">
                 <div><span>Current worksheet</span><h1>{worksheet.worksheetName}</h1></div>
                 <span className={`worksheet-status worksheet-status--${worksheet.status}`}>{worksheet.status}</span>
@@ -98,19 +110,21 @@ export function EngineeringWorkspace(props: EngineeringWorkspaceProps) {
                   <span>{worksheet.issues.map(issueLabel).join("; ")}</span>
                 </div>
               )}
-              <div className="factor-evidence-layout">
-                <EvidenceImagePane worksheetName={worksheet.worksheetName} imageUrl={evidenceUrl} focusedLabel={evidenceFactor === undefined ? undefined : `${evidenceFactor.factorName.displayText} · ${evidenceFactor.partName.displayText}`} analysisTarget={worksheet.analysisTarget} />
+              <EvidenceImagePane worksheetName={worksheet.worksheetName} imageUrl={evidenceUrl} focusedLabel={evidenceFactor === undefined ? undefined : `${evidenceFactor.factorName.displayText} · ${evidenceFactor.partName.displayText}`} analysisTarget={worksheet.analysisTarget} />
+              <div className="analysis-cockpit">
                 <FactorTable factors={worksheet.factors} states={scenario.factorStates} onEdit={scenario.edit} onCommit={scenario.commit} onSelect={setSelectedFactorKey} onEvidenceFocus={setSelectedFactorKey} />
+                <section className="analysis-cockpit__live" aria-label="Live analysis panel">
+                  {selectedFactor === undefined ? null : <section className="selected-factor-strip"><SourceText value={selectedFactor.factorName} /><button type="button" className="button" onClick={() => scenario.reset(selectedFactor.key)}>Reset</button><button type="button" className="button button--primary" disabled={scenario.factorStates.get(selectedFactor.key)?.lastValidResult === undefined} onClick={() => { void scenario.save(selectedFactor.key); }}>Save scenario</button></section>}
+                  <EngineeringCharts worksheet={worksheet} scenario={scenarioResult} scenarioContributions={scenarioContributions} systemValues={scenario.systemValues} systemSpecificationError={scenario.systemSpecificationError} onSystemEdit={scenario.editSystem} onSystemCommit={scenario.commitSystemSpecification} />
+                </section>
               </div>
-              {selectedFactor === undefined ? null : <section className="selected-factor-strip"><SourceText value={selectedFactor.factorName} />{worksheet.metrics?.meanOffset === undefined ? null : <div className="selected-factor-strip__metric"><span>Mean Offset</span><strong>{worksheet.metrics.meanOffset.toFixed(3)}</strong><span className="visually-hidden" aria-label="Mean Offset source values">{`Calculated Mean ${worksheet.metrics.mean.toFixed(3)} minus Target Nominal ${worksheet.analysisTarget.nominal?.toFixed(3) ?? "Not available"}`}</span></div>}<button type="button" className="button" onClick={() => scenario.reset(selectedFactor.key)}>Reset</button><button type="button" className="button button--primary" disabled={scenario.factorStates.get(selectedFactor.key)?.lastValidResult === undefined} onClick={() => { void scenario.save(selectedFactor.key); }}>Save scenario</button></section>}
-              <EngineeringCharts worksheet={worksheet} scenario={scenarioResult} scenarioContributions={scenarioContributions} systemValues={scenario.systemValues} systemSpecificationError={scenario.systemSpecificationError} onSystemEdit={scenario.editSystem} onSystemCommit={scenario.commitSystemSpecification} />
-              <F6Summary report={props.f6Report} selectedWorksheetName={worksheet.worksheetName} />
-              <WorkbookHealth model={projectWorkbookHealth(props.f2Report)} onNavigate={props.onSelectWorksheet} />
               <F3Governance report={props.f3Report} adoDecisionRequired={props.adoDecisionRequired} adoProjection={props.adoProjection} onAdoDecision={props.onAdoDecision} onAdoConfirm={props.onAdoConfirm} onAdoReset={props.onAdoReset} />
             </>
           )}
         </section>
-        <aside className={`engineering-layout__assistant ${assistantOpen ? "engineering-layout__assistant--open" : ""}`}>
+      </div>
+      {assistantOpen ? (
+        <aside className="assistant-drawer" aria-label="TA Assistant drawer">
           <button type="button" className="assistant-drawer__close" aria-label="Close TA Assistant" onClick={() => setAssistantOpen(false)}>×</button>
           <TaAssistantPanel worksheetName={worksheet?.worksheetName} factorName={selectedFactor?.factorName.displayText} turns={props.conversation} disabled={props.loading} onSubmit={(message) => props.onSubmitConversation(message, {
             ...(worksheet === undefined ? {} : { worksheetName: worksheet.worksheetName }),
@@ -118,7 +132,7 @@ export function EngineeringWorkspace(props: EngineeringWorkspaceProps) {
             ...(savedScenario?.calculationReference === undefined ? {} : { calculationReference: savedScenario.calculationReference }),
           })} requestContextChips={requestContextChips} />
         </aside>
-      </div>
+      ) : null}
       <button type="button" className="assistant-drawer__open icon-button" aria-label="Open TA Assistant" aria-expanded={assistantOpen} onClick={() => setAssistantOpen(true)}>?</button>
       <div className={`connection-indicator ${props.connected ? "connection-indicator--online" : ""}`}>{props.connected ? "Connected" : "Reconnecting"}</div>
     </main>

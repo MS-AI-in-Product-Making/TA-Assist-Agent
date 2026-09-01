@@ -56,6 +56,10 @@ function actualFields(worksheetName, overrides = {}) {
 function systemSpecification(worksheetName, overrides = {}) {
   return {
     status: "available",
+    designNominal: {
+      status: "available", actualValue: -0.05, displayValue: "-0.05",
+      sourceLabel: "Design Nominal", sourceCell: `${worksheetName}!P53`, valueOrigin: "numeric_literal",
+    },
     lowerSpecLimit: {
       status: "available", actualValue: -1, displayValue: "-1",
       sourceLabel: "Lower", sourceCell: `${worksheetName}!P54`, valueOrigin: "numeric_literal",
@@ -96,6 +100,7 @@ function readyWorksheet(worksheetName, tableId, sourceRow, options = {}) {
       adoReminderRequested: false,
     }],
     missingFieldSummary: [],
+    f4CalculabilityIssues: [],
   };
 }
 

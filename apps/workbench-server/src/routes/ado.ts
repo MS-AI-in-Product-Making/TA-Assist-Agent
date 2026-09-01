@@ -4,6 +4,7 @@ import type { FastifyPluginAsync } from "fastify";
 
 import type { WorkbenchServerContext } from "../server.js";
 import { hasScope } from "../auth.js";
+import { sanitizePromptVisibleText } from "../prompt-sanitizer.js";
 
 export const adoRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServerContext }> = async (app, { context }) => {
   app.get("/api/sessions/:sessionId/ado/pending", async (request, reply) => {
@@ -53,9 +54,24 @@ export const adoRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServerCo
       if (confirmation !== undefined && receipt !== undefined) {
         return reply.send(f8AdoProjectionSchema.parse({ contractVersion: "f8-ado-projection-v1", sessionId, state: "completed", actionId: writeActionId, validationActionId, expectedRevision: snapshot.revision, confirmation, receipt }));
       }
-      if (confirmation !== undefined) {
-        return reply.send(f8AdoProjectionSchema.parse({ contractVersion: "f8-ado-projection-v1", sessionId, state: "write_pending", actionId: writeActionId, validationActionId, expectedRevision: snapshot.revision, confirmation }));
+      const writeTerminal = terminalProjection(write.result?.payload, "write");
+      if (confirmation !== undefined && writeTerminal !== undefined) {
+        return reply.send(f8AdoProjectionSchema.parse({ contractVersion: "f8-ado-projection-v1", sessionId, state: writeTerminal.state, actionId: writeActionId, expectedRevision: snapshot.revision, reason: writeTerminal.reason }));
       }
+      if (confirmation !== undefined && write.status === "pending") {
+        return reply.send(f8AdoProjectionSchema.parse({ contractVersion: "f8-ado-projection-v1", sessionId, state: "write_pending", actionId: writeActionId, validationActionId, expectedRevision: snapshot.revision, ...pendingTiming(write.expiresAt), confirmation }));
+      }
+    }
+
+    if (validation === undefined) {
+      return reply.send(f8AdoProjectionSchema.parse({
+        contractVersion: "f8-ado-projection-v1",
+        sessionId,
+        state: "blocked",
+        actionId: validationActionId,
+        expectedRevision: snapshot.revision,
+        reason: "Surface validation action is unavailable.",
+      }));
     }
 
     const validationOutcome = validation?.result?.payload.status === "completed" && validation.result.payload.outcome?.kind === "surface_validation"
@@ -67,15 +83,11 @@ export const adoRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServerCo
       if (!preview.matchesPrepareRequest || validationOutcome.confirmation.nextContent !== preview.markdown || validationOutcome.confirmation.factorCount !== preview.factorCount) return reply.code(409).send({ error: "ado_preview_stale" });
       return reply.send(f8AdoProjectionSchema.parse({ contractVersion: "f8-ado-projection-v1", sessionId, state: "preview_ready", actionId: validationActionId, expectedRevision: snapshot.revision, target: preview.target, markdown: preview.markdown, contentHash: preview.contentHash, confirmation: validationOutcome.confirmation }));
     }
-    const terminalReason = validation?.result?.payload.status === "blocked"
-      ? validation.result.payload.reason ?? "Surface validation was blocked."
-      : validation?.result?.payload.status === "failed"
-        ? validation.result.payload.error.summary
-        : undefined;
-    if (terminalReason !== undefined) {
-      return reply.send(f8AdoProjectionSchema.parse({ contractVersion: "f8-ado-projection-v1", sessionId, state: validation?.result?.payload.status === "blocked" ? "blocked" : "failed", actionId: validationActionId, expectedRevision: snapshot.revision, reason: terminalReason }));
+    const validationTerminal = terminalProjection(validation.result?.payload, "validation");
+    if (validationTerminal !== undefined) {
+      return reply.send(f8AdoProjectionSchema.parse({ contractVersion: "f8-ado-projection-v1", sessionId, state: validationTerminal.state, actionId: validationActionId, expectedRevision: snapshot.revision, reason: validationTerminal.reason }));
     }
-    return reply.send(f8AdoProjectionSchema.parse({ contractVersion: "f8-ado-projection-v1", sessionId, state: "validation_pending", actionId: validationActionId, expectedRevision: snapshot.revision }));
+    return reply.send(f8AdoProjectionSchema.parse({ contractVersion: "f8-ado-projection-v1", sessionId, state: "validation_pending", actionId: validationActionId, expectedRevision: snapshot.revision, ...pendingTiming(validation.expiresAt) }));
   });
 
   app.post("/api/sessions/:sessionId/ado/confirm", async (request, reply) => {
@@ -120,3 +132,31 @@ export const adoRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServerCo
     return created === undefined ? reply.code(409).send({ error: "host_action_id_conflict" }) : reply.code(201).send({ actionId });
   });
 };
+
+function pendingTiming(expiresAt: string | undefined): { readonly startedAt: string; readonly expiresAt: string } {
+  const effectiveExpiresAt = expiresAt ?? new Date(Date.now() + 15 * 60_000).toISOString();
+  return {
+    startedAt: new Date(Date.parse(effectiveExpiresAt) - 15 * 60_000).toISOString(),
+    expiresAt: effectiveExpiresAt,
+  };
+}
+
+function terminalProjection(
+  payload: { readonly status: "completed" | "blocked" | "failed"; readonly reason?: string | undefined; readonly error?: { readonly summary?: string | undefined } | undefined } | undefined,
+  stage: "validation" | "write",
+): { readonly state: "blocked" | "failed"; readonly reason: string } | undefined {
+  if (payload?.status === "blocked") {
+    const fallback = stage === "write" ? "Surface write was blocked." : "Surface validation was blocked.";
+    return { state: "blocked", reason: sanitizeReason(payload.reason, fallback) };
+  }
+  if (payload?.status === "failed") {
+    const fallback = stage === "write" ? "Surface write failed." : "Surface validation failed.";
+    return { state: "failed", reason: sanitizeReason(payload.error?.summary, fallback) };
+  }
+  return undefined;
+}
+
+function sanitizeReason(reason: string | undefined, fallback: string): string {
+  const sanitized = sanitizePromptVisibleText(reason)?.replace(/[\r\n]+/g, " ").trim();
+  return sanitized === undefined || sanitized.length === 0 ? fallback : sanitized;
+}

@@ -87,6 +87,14 @@ describe("loadF6ArtifactBundle", () => {
     expect(result.request.worksheets.map(({ worksheetName }) => worksheetName)).toEqual(["Analysis-A"]);
     expect(result.request.worksheets[0].f4CalculationIndex).toBe(1);
     expect(result.request.worksheets[0].baselineCalculationRequest.runReference).toBe(`${RUN_ID}-1`);
+    expect(result.f2Report.worksheets[0].systemSpecification.designNominal).toMatchObject({
+      status: "available",
+      actualValue: -0.05,
+      displayValue: "-0.05",
+    });
+    expect(result.request.worksheets[0].baselineCalculationRequest.systemSpecification.designNominal).toBe(
+      result.f2Report.worksheets[0].systemSpecification.designNominal.actualValue,
+    );
     expect(createCalculation(result.request.worksheets[0].baselineCalculationRequest)).toEqual(
       result.request.worksheets[0].baselineCalculation,
     );

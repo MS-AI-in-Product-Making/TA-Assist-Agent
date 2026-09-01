@@ -1,5 +1,6 @@
 import type { FeatureLedgerEntry } from "../workbench-session.js";
 import type { RunnerProgressEvent } from "../api.js";
+import type { F8AdoProjection } from "@ai-assist/contracts";
 import { useEffect, useState } from "react";
 
 import { reasonDisplay } from "../web-projection.js";
@@ -7,13 +8,15 @@ import { reasonDisplay } from "../web-projection.js";
 export interface AnalysisProgressProps {
   readonly entries: readonly FeatureLedgerEntry[];
   readonly progress?: RunnerProgressEvent;
+  readonly adoProjection?: F8AdoProjection;
   readonly activeAttemptStartedAt?: string;
   readonly connected: boolean;
 }
 
-export function AnalysisProgress({ entries, progress, activeAttemptStartedAt, connected }: AnalysisProgressProps) {
+export function AnalysisProgress({ entries, progress, adoProjection, activeAttemptStartedAt, connected }: AnalysisProgressProps) {
   const [now, setNow] = useState(() => Date.now());
-  const timerStartedAt = progress?.kind === "stage_started" ? progress.timestamp : activeAttemptStartedAt;
+  const pendingAdo = adoProjection?.state === "validation_pending" || adoProjection?.state === "write_pending" ? adoProjection : undefined;
+  const timerStartedAt = pendingAdo?.startedAt ?? (progress?.kind === "stage_started" ? progress.timestamp : activeAttemptStartedAt);
   useEffect(() => {
     if (timerStartedAt === undefined) return () => undefined;
     setNow(Date.now());
@@ -28,17 +31,19 @@ export function AnalysisProgress({ entries, progress, activeAttemptStartedAt, co
     <section className="analysis-progress" aria-label="Analysis progress">
       <div className="analysis-progress__summary">
         <strong>{activeFeatureId === undefined ? "Analysis flow" : `${activeFeatureId} running`}</strong>
-        <span>{active === undefined ? summaryFor(visibleEntries) : stageLabel(progress)}</span>
-        {timerStartedAt === undefined ? null : <time>{elapsed(timerStartedAt, now)}</time>}
+        <span>{adoStageLabel(adoProjection) ?? (active === undefined ? summaryFor(visibleEntries) : stageLabel(progress))}</span>
+        {pendingAdo !== undefined ? <time>{adoTiming(pendingAdo.startedAt, pendingAdo.expiresAt, now)}</time> : timerStartedAt === undefined ? null : <time>{elapsed(timerStartedAt, now)}</time>}
         <span className={connected ? "analysis-progress__live" : "analysis-progress__reconnecting"}>{connected ? "Live sync" : "Reconnecting"}</span>
       </div>
       <ol className="analysis-progress__track">
         {visibleEntries.map((entry) => (
           <li key={entry.featureId} className={`analysis-progress__step analysis-progress__step--${entry.status}`}>
             <span className="analysis-progress__marker" aria-hidden="true" />
-            <strong>{entry.featureId}</strong>
-            <span>{entry.displayLabel}</span>
-            <span>{statusLabel(entry)}</span>
+            <div className="analysis-progress__content">
+              <strong>{entry.featureId}</strong>
+              <span>{entry.displayLabel}</span>
+              <span>{statusLabel(entry)}</span>
+            </div>
           </li>
         ))}
       </ol>
@@ -84,4 +89,27 @@ function elapsed(startedAt: string, now: number): string {
   const seconds = Math.max(0, Math.floor((now - Date.parse(startedAt)) / 1_000));
   const minutes = Math.floor(seconds / 60);
   return `${String(minutes).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+function adoStageLabel(projection: F8AdoProjection | undefined): string | undefined {
+  if (projection?.state === "validation_pending") return "Waiting for VS Code host";
+  if (projection?.state === "preview_ready") return "ADO preview ready";
+  if (projection?.state === "write_pending") return "Writing and verifying ADO update";
+  if (projection?.state === "completed") return "ADO update completed";
+  if (projection?.state === "blocked") return isAdoWriteAction(projection.actionId) ? "ADO write blocked" : "ADO validation blocked";
+  if (projection?.state === "failed") return isAdoWriteAction(projection.actionId) ? "ADO write failed" : "ADO validation failed";
+  return undefined;
+}
+
+function isAdoWriteAction(actionId: string | undefined): boolean {
+  return actionId?.startsWith("ado-write:") ?? false;
+}
+
+function adoTiming(startedAt: string, expiresAt: string, now: number): string {
+  return `Elapsed ${duration(now - Date.parse(startedAt))} · timeout in ${duration(Date.parse(expiresAt) - now)}`;
+}
+
+function duration(milliseconds: number): string {
+  const seconds = Math.max(0, Math.floor(milliseconds / 1_000));
+  return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }

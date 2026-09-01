@@ -91,6 +91,7 @@ export function renderF2Report(report, { outputRoot } = {}) {
     const specification = worksheet.systemSpecification;
     const handoff = report.f4Handoffs.find((candidate) => candidate.worksheetName === worksheet.worksheetName);
     lines.push("#### 系统规格", "", "| 规格 | 值 | Source cell |", "|---|---:|---|",
+      `| ${specificationLabel(specification.designNominal)} | ${specificationValue(specification.designNominal)} | ${specificationSource(specification.designNominal)} |`,
       `| ${specificationLabel(specification.lowerSpecLimit)} | ${specificationValue(specification.lowerSpecLimit)} | ${specificationSource(specification.lowerSpecLimit)} |`,
       `| ${specificationLabel(specification.upperSpecLimit)} | ${specificationValue(specification.upperSpecLimit)} | ${specificationSource(specification.upperSpecLimit)} |`,
       `| ${specificationLabel(specification.targetSigmaLevel)} | ${specificationValue(specification.targetSigmaLevel)} | ${specificationSource(specification.targetSigmaLevel)} |`,

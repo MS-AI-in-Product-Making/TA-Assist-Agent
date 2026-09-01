@@ -177,6 +177,7 @@ describe("F2 artifact user report contracts", () => {
   const contentHash = "a".repeat(64);
   const systemSpecification = {
     status: "available" as const,
+    designNominal: { status: "available" as const, actualValue: 1.627, displayValue: "1.627", sourceLabel: "Design Nominal:", sourceCell: "Analysis-A!P27", valueOrigin: "numeric_literal" as const },
     lowerSpecLimit: { status: "available" as const, actualValue: -0.15, displayValue: "-0.15", sourceLabel: "*Lower Spec Limit ►", sourceCell: "Analysis-A!P54", valueOrigin: "numeric_literal" as const },
     upperSpecLimit: { status: "available" as const, actualValue: 0.05, displayValue: "0.05", sourceLabel: "*Upper Spec Limit ►", sourceCell: "Analysis-A!P55", valueOrigin: "numeric_literal" as const },
     targetSigmaLevel: { status: "available" as const, actualValue: 3, displayValue: "3.0σ", sourceLabel: "*Target σ Level ►", sourceCell: "Analysis-A!P56", valueOrigin: "numeric_literal" as const },
@@ -269,7 +270,7 @@ describe("F2 artifact user report contracts", () => {
     workbookContentHash: contentHash,
     worksheetName: "Analysis-A",
     systemSpecification: {
-      designNominal: -0.05,
+      designNominal: 1.627,
       lowerSpecLimit: systemSpecification.lowerSpecLimit,
       upperSpecLimit: systemSpecification.upperSpecLimit,
       targetSigmaLevel: systemSpecification.targetSigmaLevel,

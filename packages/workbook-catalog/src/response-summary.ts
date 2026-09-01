@@ -3,6 +3,7 @@ import type { OoxmlCell } from "./ooxml-reader.js";
 const CELL_REFERENCE = /^([A-Z]+)([1-9]\d*)$/;
 const RESPONSE_SUMMARY_ANCHORS = new Set(["response summary", "response summary table"]);
 const LABELS = {
+  designNominal: new Set(["design nominal"]),
   lowerSpecLimit: new Set(["lower spec limit", "lsl"]),
   upperSpecLimit: new Set(["upper spec limit", "usl"]),
   targetSigmaLevel: new Set(["target σ level", "target sigma level"]),
@@ -15,8 +16,8 @@ type EvidenceNumber =
   | { readonly status: "unavailable"; readonly reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid"; readonly sourceCell?: string };
 
 export type WorksheetSystemSpecification =
-  | { readonly status: "available"; readonly lowerSpecLimit: EvidenceNumber; readonly upperSpecLimit: EvidenceNumber; readonly targetSigmaLevel: EvidenceNumber; readonly additionalMeanShift: EvidenceNumber; readonly volume?: EvidenceNumber }
-  | { readonly status: "unavailable"; readonly reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "system_specification_range_invalid"; readonly lowerSpecLimit?: EvidenceNumber; readonly upperSpecLimit?: EvidenceNumber; readonly targetSigmaLevel?: EvidenceNumber; readonly additionalMeanShift?: EvidenceNumber; readonly volume?: EvidenceNumber };
+  | { readonly status: "available"; readonly designNominal: EvidenceNumber; readonly lowerSpecLimit: EvidenceNumber; readonly upperSpecLimit: EvidenceNumber; readonly targetSigmaLevel: EvidenceNumber; readonly additionalMeanShift: EvidenceNumber; readonly volume?: EvidenceNumber }
+  | { readonly status: "unavailable"; readonly reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "system_specification_range_invalid"; readonly designNominal?: EvidenceNumber; readonly lowerSpecLimit?: EvidenceNumber; readonly upperSpecLimit?: EvidenceNumber; readonly targetSigmaLevel?: EvidenceNumber; readonly additionalMeanShift?: EvidenceNumber; readonly volume?: EvidenceNumber };
 
 function normalize(value: string): string {
   return value.replace(/[▼►*:]/g, " ").trim().replace(/\s+/g, " ").toLowerCase();
@@ -60,6 +61,7 @@ export function extractResponseSummarySystemSpecification(worksheetName: string,
     return row > anchorRow && row < endRow;
   });
   const labels = (key: keyof typeof LABELS) => sectionCells.filter((cell) => LABELS[key].has(normalize(cell.value)));
+  const designNominal = evidence(worksheetName, labels("designNominal"), sectionCells);
   const lowerSpecLimit = evidence(worksheetName, labels("lowerSpecLimit"), sectionCells);
   const upperSpecLimit = evidence(worksheetName, labels("upperSpecLimit"), sectionCells);
   const targetSigmaLevel = evidence(worksheetName, labels("targetSigmaLevel"), sectionCells);
@@ -70,11 +72,11 @@ export function extractResponseSummarySystemSpecification(worksheetName: string,
   const additionalMeanShift = meanShiftLabels.length === 0
     ? { status: "available" as const, actualValue: 0, displayValue: "0", sourceLabel: "Additional Mean Shift", valueOrigin: "defaulted" as const }
     : evidence(worksheetName, meanShiftLabels, located);
-  const values = { lowerSpecLimit, upperSpecLimit, targetSigmaLevel, additionalMeanShift, ...(volume ? { volume } : {}) };
+  const values = { designNominal, lowerSpecLimit, upperSpecLimit, targetSigmaLevel, additionalMeanShift, ...(volume ? { volume } : {}) };
   if (lowerSpecLimit.status === "available" && upperSpecLimit.status === "available" && lowerSpecLimit.actualValue >= upperSpecLimit.actualValue) {
     return { status: "unavailable", reasonCode: "system_specification_range_invalid", ...values };
   }
-  if ([lowerSpecLimit, upperSpecLimit, targetSigmaLevel, additionalMeanShift].some((value) => value.status === "unavailable")) {
+  if ([designNominal, lowerSpecLimit, upperSpecLimit, targetSigmaLevel, additionalMeanShift].some((value) => value.status === "unavailable")) {
     return { status: "unavailable", reasonCode: "system_specification_range_invalid", ...values };
   }
   return { status: "available", ...values };

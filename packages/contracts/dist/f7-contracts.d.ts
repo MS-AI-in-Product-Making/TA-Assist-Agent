@@ -64,11 +64,11 @@ export declare const f7FactorCandidateSchema: z.ZodEffects<z.ZodObject<{
     lowerTolerance: number;
     distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
     standardDeviation: number;
+    designNominal: number;
     lowerSpecLimit: number;
     upperSpecLimit: number;
     tableId: string;
     sourceRow: number;
-    designNominal: number;
     sourceCells: Record<string, string>;
     factorCandidateId: string;
     excelSignedMean: number;
@@ -84,11 +84,11 @@ export declare const f7FactorCandidateSchema: z.ZodEffects<z.ZodObject<{
     lowerTolerance: number;
     distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
     standardDeviation: number;
+    designNominal: number;
     lowerSpecLimit: number;
     upperSpecLimit: number;
     tableId: string;
     sourceRow: number;
-    designNominal: number;
     sourceCells: Record<string, string>;
     factorCandidateId: string;
     excelSignedMean: number;
@@ -104,11 +104,11 @@ export declare const f7FactorCandidateSchema: z.ZodEffects<z.ZodObject<{
     lowerTolerance: number;
     distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
     standardDeviation: number;
+    designNominal: number;
     lowerSpecLimit: number;
     upperSpecLimit: number;
     tableId: string;
     sourceRow: number;
-    designNominal: number;
     sourceCells: Record<string, string>;
     factorCandidateId: string;
     excelSignedMean: number;
@@ -124,11 +124,11 @@ export declare const f7FactorCandidateSchema: z.ZodEffects<z.ZodObject<{
     lowerTolerance: number;
     distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
     standardDeviation: number;
+    designNominal: number;
     lowerSpecLimit: number;
     upperSpecLimit: number;
     tableId: string;
     sourceRow: number;
-    designNominal: number;
     sourceCells: Record<string, string>;
     factorCandidateId: string;
     excelSignedMean: number;
@@ -249,11 +249,11 @@ export declare const f7FactorEvidenceSchema: z.ZodEffects<z.ZodObject<{
     oneSigma: number;
     percentContributionToSigma: number;
     longTermSafetyFactor: number;
+    designNominal: number;
     lowerSpecLimit: number;
     upperSpecLimit: number;
     tableId: string;
     sourceRow: number;
-    designNominal: number;
     sigmaLevel: number;
     sourceCells: Record<string, string>;
     physicalMean: number;
@@ -282,11 +282,11 @@ export declare const f7FactorEvidenceSchema: z.ZodEffects<z.ZodObject<{
     oneSigma: number;
     percentContributionToSigma: number;
     longTermSafetyFactor: number;
+    designNominal: number;
     lowerSpecLimit: number;
     upperSpecLimit: number;
     tableId: string;
     sourceRow: number;
-    designNominal: number;
     sigmaLevel: number;
     sourceCells: Record<string, string>;
     physicalMean: number;
@@ -315,11 +315,11 @@ export declare const f7FactorEvidenceSchema: z.ZodEffects<z.ZodObject<{
     oneSigma: number;
     percentContributionToSigma: number;
     longTermSafetyFactor: number;
+    designNominal: number;
     lowerSpecLimit: number;
     upperSpecLimit: number;
     tableId: string;
     sourceRow: number;
-    designNominal: number;
     sigmaLevel: number;
     sourceCells: Record<string, string>;
     physicalMean: number;
@@ -348,11 +348,11 @@ export declare const f7FactorEvidenceSchema: z.ZodEffects<z.ZodObject<{
     oneSigma: number;
     percentContributionToSigma: number;
     longTermSafetyFactor: number;
+    designNominal: number;
     lowerSpecLimit: number;
     upperSpecLimit: number;
     tableId: string;
     sourceRow: number;
-    designNominal: number;
     sigmaLevel: number;
     sourceCells: Record<string, string>;
     physicalMean: number;
@@ -5355,6 +5355,40 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         url: string;
     }>>;
     systemSpecification: z.ZodOptional<z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
+        designNominal: z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
+            status: z.ZodLiteral<"available">;
+            actualValue: z.ZodNumber;
+            displayValue: z.ZodString;
+            sourceLabel: z.ZodString;
+            sourceCell: z.ZodOptional<z.ZodString>;
+            valueOrigin: z.ZodEnum<["numeric_literal", "formula_cached", "defaulted"]>;
+        }, "strict", z.ZodTypeAny, {
+            status: "available";
+            actualValue: number;
+            displayValue: string;
+            sourceLabel: string;
+            valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+            sourceCell?: string | undefined;
+        }, {
+            status: "available";
+            actualValue: number;
+            displayValue: string;
+            sourceLabel: string;
+            valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+            sourceCell?: string | undefined;
+        }>, z.ZodObject<{
+            status: z.ZodLiteral<"unavailable">;
+            reasonCode: z.ZodEnum<["response_summary_label_missing", "response_summary_label_ambiguous", "response_summary_value_missing", "response_summary_value_invalid"]>;
+            sourceCell: z.ZodOptional<z.ZodString>;
+        }, "strict", z.ZodTypeAny, {
+            status: "unavailable";
+            reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+            sourceCell?: string | undefined;
+        }, {
+            status: "unavailable";
+            reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+            sourceCell?: string | undefined;
+        }>]>;
         lowerSpecLimit: z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
             status: z.ZodLiteral<"available">;
             actualValue: z.ZodNumber;
@@ -5528,6 +5562,18 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         status: z.ZodLiteral<"available">;
     }, "strict", z.ZodTypeAny, {
         status: "available";
+        designNominal: {
+            status: "available";
+            actualValue: number;
+            displayValue: string;
+            sourceLabel: string;
+            valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+            sourceCell?: string | undefined;
+        } | {
+            status: "unavailable";
+            reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+            sourceCell?: string | undefined;
+        };
         lowerSpecLimit: {
             status: "available";
             actualValue: number;
@@ -5590,6 +5636,18 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
         } | undefined;
     }, {
         status: "available";
+        designNominal: {
+            status: "available";
+            actualValue: number;
+            displayValue: string;
+            sourceLabel: string;
+            valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+            sourceCell?: string | undefined;
+        } | {
+            status: "unavailable";
+            reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+            sourceCell?: string | undefined;
+        };
         lowerSpecLimit: {
             status: "available";
             actualValue: number;
@@ -5653,6 +5711,40 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
     }>, z.ZodObject<{
         status: z.ZodLiteral<"unavailable">;
         reasonCode: z.ZodEnum<["response_summary_label_missing", "response_summary_label_ambiguous", "system_specification_range_invalid", "legacy_artifact_missing_system_specification"]>;
+        designNominal: z.ZodOptional<z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
+            status: z.ZodLiteral<"available">;
+            actualValue: z.ZodNumber;
+            displayValue: z.ZodString;
+            sourceLabel: z.ZodString;
+            sourceCell: z.ZodOptional<z.ZodString>;
+            valueOrigin: z.ZodEnum<["numeric_literal", "formula_cached", "defaulted"]>;
+        }, "strict", z.ZodTypeAny, {
+            status: "available";
+            actualValue: number;
+            displayValue: string;
+            sourceLabel: string;
+            valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+            sourceCell?: string | undefined;
+        }, {
+            status: "available";
+            actualValue: number;
+            displayValue: string;
+            sourceLabel: string;
+            valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+            sourceCell?: string | undefined;
+        }>, z.ZodObject<{
+            status: z.ZodLiteral<"unavailable">;
+            reasonCode: z.ZodEnum<["response_summary_label_missing", "response_summary_label_ambiguous", "response_summary_value_missing", "response_summary_value_invalid"]>;
+            sourceCell: z.ZodOptional<z.ZodString>;
+        }, "strict", z.ZodTypeAny, {
+            status: "unavailable";
+            reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+            sourceCell?: string | undefined;
+        }, {
+            status: "unavailable";
+            reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+            sourceCell?: string | undefined;
+        }>]>>;
         lowerSpecLimit: z.ZodOptional<z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
             status: z.ZodLiteral<"available">;
             actualValue: z.ZodNumber;
@@ -5826,6 +5918,18 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
     }, "strict", z.ZodTypeAny, {
         status: "unavailable";
         reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "system_specification_range_invalid" | "legacy_artifact_missing_system_specification";
+        designNominal?: {
+            status: "available";
+            actualValue: number;
+            displayValue: string;
+            sourceLabel: string;
+            valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+            sourceCell?: string | undefined;
+        } | {
+            status: "unavailable";
+            reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+            sourceCell?: string | undefined;
+        } | undefined;
         lowerSpecLimit?: {
             status: "available";
             actualValue: number;
@@ -5889,6 +5993,18 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
     }, {
         status: "unavailable";
         reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "system_specification_range_invalid" | "legacy_artifact_missing_system_specification";
+        designNominal?: {
+            status: "available";
+            actualValue: number;
+            displayValue: string;
+            sourceLabel: string;
+            valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+            sourceCell?: string | undefined;
+        } | {
+            status: "unavailable";
+            reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+            sourceCell?: string | undefined;
+        } | undefined;
         lowerSpecLimit?: {
             status: "available";
             actualValue: number;
@@ -5979,11 +6095,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             lowerTolerance: number;
             distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
             standardDeviation: number;
+            designNominal: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
             tableId: string;
             sourceRow: number;
-            designNominal: number;
             sourceCells: Record<string, string>;
             factorCandidateId: string;
             excelSignedMean: number;
@@ -5999,11 +6115,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             lowerTolerance: number;
             distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
             standardDeviation: number;
+            designNominal: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
             tableId: string;
             sourceRow: number;
-            designNominal: number;
             sourceCells: Record<string, string>;
             factorCandidateId: string;
             excelSignedMean: number;
@@ -6019,11 +6135,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             lowerTolerance: number;
             distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
             standardDeviation: number;
+            designNominal: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
             tableId: string;
             sourceRow: number;
-            designNominal: number;
             sourceCells: Record<string, string>;
             factorCandidateId: string;
             excelSignedMean: number;
@@ -6039,11 +6155,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             lowerTolerance: number;
             distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
             standardDeviation: number;
+            designNominal: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
             tableId: string;
             sourceRow: number;
-            designNominal: number;
             sourceCells: Record<string, string>;
             factorCandidateId: string;
             excelSignedMean: number;
@@ -6531,11 +6647,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             oneSigma: number;
             percentContributionToSigma: number;
             longTermSafetyFactor: number;
+            designNominal: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
             tableId: string;
             sourceRow: number;
-            designNominal: number;
             sigmaLevel: number;
             sourceCells: Record<string, string>;
             physicalMean: number;
@@ -6564,11 +6680,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             oneSigma: number;
             percentContributionToSigma: number;
             longTermSafetyFactor: number;
+            designNominal: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
             tableId: string;
             sourceRow: number;
-            designNominal: number;
             sigmaLevel: number;
             sourceCells: Record<string, string>;
             physicalMean: number;
@@ -6597,11 +6713,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             oneSigma: number;
             percentContributionToSigma: number;
             longTermSafetyFactor: number;
+            designNominal: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
             tableId: string;
             sourceRow: number;
-            designNominal: number;
             sigmaLevel: number;
             sourceCells: Record<string, string>;
             physicalMean: number;
@@ -6630,11 +6746,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             oneSigma: number;
             percentContributionToSigma: number;
             longTermSafetyFactor: number;
+            designNominal: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
             tableId: string;
             sourceRow: number;
-            designNominal: number;
             sigmaLevel: number;
             sourceCells: Record<string, string>;
             physicalMean: number;
@@ -7867,11 +7983,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             lowerTolerance: number;
             distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
             standardDeviation: number;
+            designNominal: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
             tableId: string;
             sourceRow: number;
-            designNominal: number;
             sourceCells: Record<string, string>;
             factorCandidateId: string;
             excelSignedMean: number;
@@ -7943,11 +8059,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             oneSigma: number;
             percentContributionToSigma: number;
             longTermSafetyFactor: number;
+            designNominal: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
             tableId: string;
             sourceRow: number;
-            designNominal: number;
             sigmaLevel: number;
             sourceCells: Record<string, string>;
             physicalMean: number;
@@ -8143,11 +8259,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             lowerTolerance: number;
             distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
             standardDeviation: number;
+            designNominal: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
             tableId: string;
             sourceRow: number;
-            designNominal: number;
             sourceCells: Record<string, string>;
             factorCandidateId: string;
             excelSignedMean: number;
@@ -8219,11 +8335,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             oneSigma: number;
             percentContributionToSigma: number;
             longTermSafetyFactor: number;
+            designNominal: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
             tableId: string;
             sourceRow: number;
-            designNominal: number;
             sigmaLevel: number;
             sourceCells: Record<string, string>;
             physicalMean: number;
@@ -8419,11 +8535,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             lowerTolerance: number;
             distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
             standardDeviation: number;
+            designNominal: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
             tableId: string;
             sourceRow: number;
-            designNominal: number;
             sourceCells: Record<string, string>;
             factorCandidateId: string;
             excelSignedMean: number;
@@ -8495,11 +8611,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             oneSigma: number;
             percentContributionToSigma: number;
             longTermSafetyFactor: number;
+            designNominal: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
             tableId: string;
             sourceRow: number;
-            designNominal: number;
             sigmaLevel: number;
             sourceCells: Record<string, string>;
             physicalMean: number;
@@ -8695,11 +8811,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             lowerTolerance: number;
             distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
             standardDeviation: number;
+            designNominal: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
             tableId: string;
             sourceRow: number;
-            designNominal: number;
             sourceCells: Record<string, string>;
             factorCandidateId: string;
             excelSignedMean: number;
@@ -8771,11 +8887,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             oneSigma: number;
             percentContributionToSigma: number;
             longTermSafetyFactor: number;
+            designNominal: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
             tableId: string;
             sourceRow: number;
-            designNominal: number;
             sigmaLevel: number;
             sourceCells: Record<string, string>;
             physicalMean: number;
@@ -9432,11 +9548,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             lowerTolerance: number;
             distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
             standardDeviation: number;
+            designNominal: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
             tableId: string;
             sourceRow: number;
-            designNominal: number;
             sourceCells: Record<string, string>;
             factorCandidateId: string;
             excelSignedMean: number;
@@ -9508,11 +9624,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             oneSigma: number;
             percentContributionToSigma: number;
             longTermSafetyFactor: number;
+            designNominal: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
             tableId: string;
             sourceRow: number;
-            designNominal: number;
             sigmaLevel: number;
             sourceCells: Record<string, string>;
             physicalMean: number;
@@ -9717,6 +9833,18 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
     }[];
     systemSpecification?: {
         status: "available";
+        designNominal: {
+            status: "available";
+            actualValue: number;
+            displayValue: string;
+            sourceLabel: string;
+            valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+            sourceCell?: string | undefined;
+        } | {
+            status: "unavailable";
+            reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+            sourceCell?: string | undefined;
+        };
         lowerSpecLimit: {
             status: "available";
             actualValue: number;
@@ -9780,6 +9908,18 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
     } | {
         status: "unavailable";
         reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "system_specification_range_invalid" | "legacy_artifact_missing_system_specification";
+        designNominal?: {
+            status: "available";
+            actualValue: number;
+            displayValue: string;
+            sourceLabel: string;
+            valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+            sourceCell?: string | undefined;
+        } | {
+            status: "unavailable";
+            reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+            sourceCell?: string | undefined;
+        } | undefined;
         lowerSpecLimit?: {
             status: "available";
             actualValue: number;
@@ -9934,11 +10074,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             lowerTolerance: number;
             distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
             standardDeviation: number;
+            designNominal: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
             tableId: string;
             sourceRow: number;
-            designNominal: number;
             sourceCells: Record<string, string>;
             factorCandidateId: string;
             excelSignedMean: number;
@@ -10010,11 +10150,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             oneSigma: number;
             percentContributionToSigma: number;
             longTermSafetyFactor: number;
+            designNominal: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
             tableId: string;
             sourceRow: number;
-            designNominal: number;
             sigmaLevel: number;
             sourceCells: Record<string, string>;
             physicalMean: number;
@@ -10219,6 +10359,18 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
     }[];
     systemSpecification?: {
         status: "available";
+        designNominal: {
+            status: "available";
+            actualValue: number;
+            displayValue: string;
+            sourceLabel: string;
+            valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+            sourceCell?: string | undefined;
+        } | {
+            status: "unavailable";
+            reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+            sourceCell?: string | undefined;
+        };
         lowerSpecLimit: {
             status: "available";
             actualValue: number;
@@ -10282,6 +10434,18 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
     } | {
         status: "unavailable";
         reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "system_specification_range_invalid" | "legacy_artifact_missing_system_specification";
+        designNominal?: {
+            status: "available";
+            actualValue: number;
+            displayValue: string;
+            sourceLabel: string;
+            valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+            sourceCell?: string | undefined;
+        } | {
+            status: "unavailable";
+            reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+            sourceCell?: string | undefined;
+        } | undefined;
         lowerSpecLimit?: {
             status: "available";
             actualValue: number;
@@ -10436,11 +10600,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             lowerTolerance: number;
             distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
             standardDeviation: number;
+            designNominal: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
             tableId: string;
             sourceRow: number;
-            designNominal: number;
             sourceCells: Record<string, string>;
             factorCandidateId: string;
             excelSignedMean: number;
@@ -10512,11 +10676,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             oneSigma: number;
             percentContributionToSigma: number;
             longTermSafetyFactor: number;
+            designNominal: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
             tableId: string;
             sourceRow: number;
-            designNominal: number;
             sigmaLevel: number;
             sourceCells: Record<string, string>;
             physicalMean: number;
@@ -10721,6 +10885,18 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
     }[];
     systemSpecification?: {
         status: "available";
+        designNominal: {
+            status: "available";
+            actualValue: number;
+            displayValue: string;
+            sourceLabel: string;
+            valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+            sourceCell?: string | undefined;
+        } | {
+            status: "unavailable";
+            reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+            sourceCell?: string | undefined;
+        };
         lowerSpecLimit: {
             status: "available";
             actualValue: number;
@@ -10784,6 +10960,18 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
     } | {
         status: "unavailable";
         reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "system_specification_range_invalid" | "legacy_artifact_missing_system_specification";
+        designNominal?: {
+            status: "available";
+            actualValue: number;
+            displayValue: string;
+            sourceLabel: string;
+            valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+            sourceCell?: string | undefined;
+        } | {
+            status: "unavailable";
+            reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+            sourceCell?: string | undefined;
+        } | undefined;
         lowerSpecLimit?: {
             status: "available";
             actualValue: number;
@@ -10938,11 +11126,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             lowerTolerance: number;
             distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
             standardDeviation: number;
+            designNominal: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
             tableId: string;
             sourceRow: number;
-            designNominal: number;
             sourceCells: Record<string, string>;
             factorCandidateId: string;
             excelSignedMean: number;
@@ -11014,11 +11202,11 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             oneSigma: number;
             percentContributionToSigma: number;
             longTermSafetyFactor: number;
+            designNominal: number;
             lowerSpecLimit: number;
             upperSpecLimit: number;
             tableId: string;
             sourceRow: number;
-            designNominal: number;
             sigmaLevel: number;
             sourceCells: Record<string, string>;
             physicalMean: number;
@@ -11223,6 +11411,18 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
     }[];
     systemSpecification?: {
         status: "available";
+        designNominal: {
+            status: "available";
+            actualValue: number;
+            displayValue: string;
+            sourceLabel: string;
+            valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+            sourceCell?: string | undefined;
+        } | {
+            status: "unavailable";
+            reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+            sourceCell?: string | undefined;
+        };
         lowerSpecLimit: {
             status: "available";
             actualValue: number;
@@ -11286,6 +11486,18 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
     } | {
         status: "unavailable";
         reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "system_specification_range_invalid" | "legacy_artifact_missing_system_specification";
+        designNominal?: {
+            status: "available";
+            actualValue: number;
+            displayValue: string;
+            sourceLabel: string;
+            valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+            sourceCell?: string | undefined;
+        } | {
+            status: "unavailable";
+            reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+            sourceCell?: string | undefined;
+        } | undefined;
         lowerSpecLimit?: {
             status: "available";
             actualValue: number;
@@ -11631,6 +11843,40 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             url: string;
         }>>;
         systemSpecification: z.ZodOptional<z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
+            designNominal: z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
+                status: z.ZodLiteral<"available">;
+                actualValue: z.ZodNumber;
+                displayValue: z.ZodString;
+                sourceLabel: z.ZodString;
+                sourceCell: z.ZodOptional<z.ZodString>;
+                valueOrigin: z.ZodEnum<["numeric_literal", "formula_cached", "defaulted"]>;
+            }, "strict", z.ZodTypeAny, {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            }, {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            }>, z.ZodObject<{
+                status: z.ZodLiteral<"unavailable">;
+                reasonCode: z.ZodEnum<["response_summary_label_missing", "response_summary_label_ambiguous", "response_summary_value_missing", "response_summary_value_invalid"]>;
+                sourceCell: z.ZodOptional<z.ZodString>;
+            }, "strict", z.ZodTypeAny, {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            }, {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            }>]>;
             lowerSpecLimit: z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
                 status: z.ZodLiteral<"available">;
                 actualValue: z.ZodNumber;
@@ -11804,6 +12050,18 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             status: z.ZodLiteral<"available">;
         }, "strict", z.ZodTypeAny, {
             status: "available";
+            designNominal: {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            } | {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            };
             lowerSpecLimit: {
                 status: "available";
                 actualValue: number;
@@ -11866,6 +12124,18 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
             } | undefined;
         }, {
             status: "available";
+            designNominal: {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            } | {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            };
             lowerSpecLimit: {
                 status: "available";
                 actualValue: number;
@@ -11929,6 +12199,40 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
         }>, z.ZodObject<{
             status: z.ZodLiteral<"unavailable">;
             reasonCode: z.ZodEnum<["response_summary_label_missing", "response_summary_label_ambiguous", "system_specification_range_invalid", "legacy_artifact_missing_system_specification"]>;
+            designNominal: z.ZodOptional<z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
+                status: z.ZodLiteral<"available">;
+                actualValue: z.ZodNumber;
+                displayValue: z.ZodString;
+                sourceLabel: z.ZodString;
+                sourceCell: z.ZodOptional<z.ZodString>;
+                valueOrigin: z.ZodEnum<["numeric_literal", "formula_cached", "defaulted"]>;
+            }, "strict", z.ZodTypeAny, {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            }, {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            }>, z.ZodObject<{
+                status: z.ZodLiteral<"unavailable">;
+                reasonCode: z.ZodEnum<["response_summary_label_missing", "response_summary_label_ambiguous", "response_summary_value_missing", "response_summary_value_invalid"]>;
+                sourceCell: z.ZodOptional<z.ZodString>;
+            }, "strict", z.ZodTypeAny, {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            }, {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            }>]>>;
             lowerSpecLimit: z.ZodOptional<z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
                 status: z.ZodLiteral<"available">;
                 actualValue: z.ZodNumber;
@@ -12102,6 +12406,18 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
         }, "strict", z.ZodTypeAny, {
             status: "unavailable";
             reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "system_specification_range_invalid" | "legacy_artifact_missing_system_specification";
+            designNominal?: {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            } | {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            } | undefined;
             lowerSpecLimit?: {
                 status: "available";
                 actualValue: number;
@@ -12165,6 +12481,18 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
         }, {
             status: "unavailable";
             reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "system_specification_range_invalid" | "legacy_artifact_missing_system_specification";
+            designNominal?: {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            } | {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            } | undefined;
             lowerSpecLimit?: {
                 status: "available";
                 actualValue: number;
@@ -12255,11 +12583,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 lowerTolerance: number;
                 distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
                 standardDeviation: number;
+                designNominal: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
-                designNominal: number;
                 sourceCells: Record<string, string>;
                 factorCandidateId: string;
                 excelSignedMean: number;
@@ -12275,11 +12603,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 lowerTolerance: number;
                 distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
                 standardDeviation: number;
+                designNominal: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
-                designNominal: number;
                 sourceCells: Record<string, string>;
                 factorCandidateId: string;
                 excelSignedMean: number;
@@ -12295,11 +12623,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 lowerTolerance: number;
                 distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
                 standardDeviation: number;
+                designNominal: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
-                designNominal: number;
                 sourceCells: Record<string, string>;
                 factorCandidateId: string;
                 excelSignedMean: number;
@@ -12315,11 +12643,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 lowerTolerance: number;
                 distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
                 standardDeviation: number;
+                designNominal: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
-                designNominal: number;
                 sourceCells: Record<string, string>;
                 factorCandidateId: string;
                 excelSignedMean: number;
@@ -12807,11 +13135,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 oneSigma: number;
                 percentContributionToSigma: number;
                 longTermSafetyFactor: number;
+                designNominal: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
-                designNominal: number;
                 sigmaLevel: number;
                 sourceCells: Record<string, string>;
                 physicalMean: number;
@@ -12840,11 +13168,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 oneSigma: number;
                 percentContributionToSigma: number;
                 longTermSafetyFactor: number;
+                designNominal: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
-                designNominal: number;
                 sigmaLevel: number;
                 sourceCells: Record<string, string>;
                 physicalMean: number;
@@ -12873,11 +13201,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 oneSigma: number;
                 percentContributionToSigma: number;
                 longTermSafetyFactor: number;
+                designNominal: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
-                designNominal: number;
                 sigmaLevel: number;
                 sourceCells: Record<string, string>;
                 physicalMean: number;
@@ -12906,11 +13234,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 oneSigma: number;
                 percentContributionToSigma: number;
                 longTermSafetyFactor: number;
+                designNominal: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
-                designNominal: number;
                 sigmaLevel: number;
                 sourceCells: Record<string, string>;
                 physicalMean: number;
@@ -14143,11 +14471,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 lowerTolerance: number;
                 distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
                 standardDeviation: number;
+                designNominal: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
-                designNominal: number;
                 sourceCells: Record<string, string>;
                 factorCandidateId: string;
                 excelSignedMean: number;
@@ -14219,11 +14547,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 oneSigma: number;
                 percentContributionToSigma: number;
                 longTermSafetyFactor: number;
+                designNominal: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
-                designNominal: number;
                 sigmaLevel: number;
                 sourceCells: Record<string, string>;
                 physicalMean: number;
@@ -14419,11 +14747,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 lowerTolerance: number;
                 distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
                 standardDeviation: number;
+                designNominal: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
-                designNominal: number;
                 sourceCells: Record<string, string>;
                 factorCandidateId: string;
                 excelSignedMean: number;
@@ -14495,11 +14823,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 oneSigma: number;
                 percentContributionToSigma: number;
                 longTermSafetyFactor: number;
+                designNominal: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
-                designNominal: number;
                 sigmaLevel: number;
                 sourceCells: Record<string, string>;
                 physicalMean: number;
@@ -14695,11 +15023,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 lowerTolerance: number;
                 distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
                 standardDeviation: number;
+                designNominal: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
-                designNominal: number;
                 sourceCells: Record<string, string>;
                 factorCandidateId: string;
                 excelSignedMean: number;
@@ -14771,11 +15099,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 oneSigma: number;
                 percentContributionToSigma: number;
                 longTermSafetyFactor: number;
+                designNominal: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
-                designNominal: number;
                 sigmaLevel: number;
                 sourceCells: Record<string, string>;
                 physicalMean: number;
@@ -14971,11 +15299,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 lowerTolerance: number;
                 distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
                 standardDeviation: number;
+                designNominal: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
-                designNominal: number;
                 sourceCells: Record<string, string>;
                 factorCandidateId: string;
                 excelSignedMean: number;
@@ -15047,11 +15375,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 oneSigma: number;
                 percentContributionToSigma: number;
                 longTermSafetyFactor: number;
+                designNominal: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
-                designNominal: number;
                 sigmaLevel: number;
                 sourceCells: Record<string, string>;
                 physicalMean: number;
@@ -15708,11 +16036,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 lowerTolerance: number;
                 distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
                 standardDeviation: number;
+                designNominal: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
-                designNominal: number;
                 sourceCells: Record<string, string>;
                 factorCandidateId: string;
                 excelSignedMean: number;
@@ -15784,11 +16112,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 oneSigma: number;
                 percentContributionToSigma: number;
                 longTermSafetyFactor: number;
+                designNominal: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
-                designNominal: number;
                 sigmaLevel: number;
                 sourceCells: Record<string, string>;
                 physicalMean: number;
@@ -15993,6 +16321,18 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
         }[];
         systemSpecification?: {
             status: "available";
+            designNominal: {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            } | {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            };
             lowerSpecLimit: {
                 status: "available";
                 actualValue: number;
@@ -16056,6 +16396,18 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
         } | {
             status: "unavailable";
             reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "system_specification_range_invalid" | "legacy_artifact_missing_system_specification";
+            designNominal?: {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            } | {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            } | undefined;
             lowerSpecLimit?: {
                 status: "available";
                 actualValue: number;
@@ -16210,11 +16562,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 lowerTolerance: number;
                 distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
                 standardDeviation: number;
+                designNominal: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
-                designNominal: number;
                 sourceCells: Record<string, string>;
                 factorCandidateId: string;
                 excelSignedMean: number;
@@ -16286,11 +16638,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 oneSigma: number;
                 percentContributionToSigma: number;
                 longTermSafetyFactor: number;
+                designNominal: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
-                designNominal: number;
                 sigmaLevel: number;
                 sourceCells: Record<string, string>;
                 physicalMean: number;
@@ -16495,6 +16847,18 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
         }[];
         systemSpecification?: {
             status: "available";
+            designNominal: {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            } | {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            };
             lowerSpecLimit: {
                 status: "available";
                 actualValue: number;
@@ -16558,6 +16922,18 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
         } | {
             status: "unavailable";
             reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "system_specification_range_invalid" | "legacy_artifact_missing_system_specification";
+            designNominal?: {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            } | {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            } | undefined;
             lowerSpecLimit?: {
                 status: "available";
                 actualValue: number;
@@ -16712,11 +17088,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 lowerTolerance: number;
                 distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
                 standardDeviation: number;
+                designNominal: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
-                designNominal: number;
                 sourceCells: Record<string, string>;
                 factorCandidateId: string;
                 excelSignedMean: number;
@@ -16788,11 +17164,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 oneSigma: number;
                 percentContributionToSigma: number;
                 longTermSafetyFactor: number;
+                designNominal: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
-                designNominal: number;
                 sigmaLevel: number;
                 sourceCells: Record<string, string>;
                 physicalMean: number;
@@ -16997,6 +17373,18 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
         }[];
         systemSpecification?: {
             status: "available";
+            designNominal: {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            } | {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            };
             lowerSpecLimit: {
                 status: "available";
                 actualValue: number;
@@ -17060,6 +17448,18 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
         } | {
             status: "unavailable";
             reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "system_specification_range_invalid" | "legacy_artifact_missing_system_specification";
+            designNominal?: {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            } | {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            } | undefined;
             lowerSpecLimit?: {
                 status: "available";
                 actualValue: number;
@@ -17214,11 +17614,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 lowerTolerance: number;
                 distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
                 standardDeviation: number;
+                designNominal: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
-                designNominal: number;
                 sourceCells: Record<string, string>;
                 factorCandidateId: string;
                 excelSignedMean: number;
@@ -17290,11 +17690,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 oneSigma: number;
                 percentContributionToSigma: number;
                 longTermSafetyFactor: number;
+                designNominal: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
-                designNominal: number;
                 sigmaLevel: number;
                 sourceCells: Record<string, string>;
                 physicalMean: number;
@@ -17499,6 +17899,18 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
         }[];
         systemSpecification?: {
             status: "available";
+            designNominal: {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            } | {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            };
             lowerSpecLimit: {
                 status: "available";
                 actualValue: number;
@@ -17562,6 +17974,18 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
         } | {
             status: "unavailable";
             reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "system_specification_range_invalid" | "legacy_artifact_missing_system_specification";
+            designNominal?: {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            } | {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            } | undefined;
             lowerSpecLimit?: {
                 status: "available";
                 actualValue: number;
@@ -17720,11 +18144,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 lowerTolerance: number;
                 distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
                 standardDeviation: number;
+                designNominal: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
-                designNominal: number;
                 sourceCells: Record<string, string>;
                 factorCandidateId: string;
                 excelSignedMean: number;
@@ -17796,11 +18220,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 oneSigma: number;
                 percentContributionToSigma: number;
                 longTermSafetyFactor: number;
+                designNominal: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
-                designNominal: number;
                 sigmaLevel: number;
                 sourceCells: Record<string, string>;
                 physicalMean: number;
@@ -18005,6 +18429,18 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
         }[];
         systemSpecification?: {
             status: "available";
+            designNominal: {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            } | {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            };
             lowerSpecLimit: {
                 status: "available";
                 actualValue: number;
@@ -18068,6 +18504,18 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
         } | {
             status: "unavailable";
             reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "system_specification_range_invalid" | "legacy_artifact_missing_system_specification";
+            designNominal?: {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            } | {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            } | undefined;
             lowerSpecLimit?: {
                 status: "available";
                 actualValue: number;
@@ -18226,11 +18674,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 lowerTolerance: number;
                 distribution: "Normal" | "Uniform" | "Triangular" | "Trapezoidal" | "Elliptical" | "Beta";
                 standardDeviation: number;
+                designNominal: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
-                designNominal: number;
                 sourceCells: Record<string, string>;
                 factorCandidateId: string;
                 excelSignedMean: number;
@@ -18302,11 +18750,11 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 oneSigma: number;
                 percentContributionToSigma: number;
                 longTermSafetyFactor: number;
+                designNominal: number;
                 lowerSpecLimit: number;
                 upperSpecLimit: number;
                 tableId: string;
                 sourceRow: number;
-                designNominal: number;
                 sigmaLevel: number;
                 sourceCells: Record<string, string>;
                 physicalMean: number;
@@ -18511,6 +18959,18 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
         }[];
         systemSpecification?: {
             status: "available";
+            designNominal: {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            } | {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            };
             lowerSpecLimit: {
                 status: "available";
                 actualValue: number;
@@ -18574,6 +19034,18 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
         } | {
             status: "unavailable";
             reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "system_specification_range_invalid" | "legacy_artifact_missing_system_specification";
+            designNominal?: {
+                status: "available";
+                actualValue: number;
+                displayValue: string;
+                sourceLabel: string;
+                valueOrigin: "numeric_literal" | "formula_cached" | "defaulted";
+                sourceCell?: string | undefined;
+            } | {
+                status: "unavailable";
+                reasonCode: "response_summary_label_missing" | "response_summary_label_ambiguous" | "response_summary_value_missing" | "response_summary_value_invalid";
+                sourceCell?: string | undefined;
+            } | undefined;
             lowerSpecLimit?: {
                 status: "available";
                 actualValue: number;

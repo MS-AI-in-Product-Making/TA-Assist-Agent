@@ -49,6 +49,7 @@ function displayFields(overrides = {}) {
 function systemSpecification(worksheetName = "Analysis-A") {
   return {
     status: "available",
+    designNominal: { status: "available", actualValue: 1.627, displayValue: "1.627", sourceLabel: "Design Nominal:", sourceCell: `${worksheetName}!P27`, valueOrigin: "numeric_literal" },
     lowerSpecLimit: { status: "available", actualValue: -0.15, displayValue: "-0.15", sourceLabel: "*Lower Spec Limit ►", sourceCell: `${worksheetName}!P54`, valueOrigin: "numeric_literal" },
     upperSpecLimit: { status: "available", actualValue: 0.05, displayValue: "0.05", sourceLabel: "*Upper Spec Limit ►", sourceCell: `${worksheetName}!P55`, valueOrigin: "numeric_literal" },
     targetSigmaLevel: { status: "available", actualValue: 3, displayValue: "3.0σ", sourceLabel: "*Target σ Level ►", sourceCell: `${worksheetName}!P56`, valueOrigin: "numeric_literal" },
@@ -94,6 +95,9 @@ describe("renderF2Report", () => {
     }
     expect(markdown).toContain("请修正 TA Excel 源文件并重新运行 F1");
     expect(markdown).toContain("系统规格");
+    expect(markdown).toContain("Design Nominal:");
+    expect(markdown).toContain("1.627");
+    expect(markdown).toContain("A\\|B!P27");
     expect(markdown).toContain("*Target σ Level ►");
     expect(markdown).toContain("A\\|B!P56");
     expect(markdown).toContain("未生成 F4 handoff");
@@ -124,6 +128,8 @@ describe("renderF2Report", () => {
     const markdown = renderF2Report(report, { outputRoot: "artifacts/f2" });
     expect(markdown).toContain("F0 内部指导-符合");
     expect(markdown).toContain("最大总公差带 0.2 mm · internal-v1 · cnc-linear-6");
+    expect(markdown).toContain("Design Nominal:");
+    expect(markdown).toContain("1.627");
     expect(markdown).toContain("*Lower Spec Limit ►");
     expect(markdown).toContain("-0.15");
     expect(markdown).toContain("*Upper Spec Limit ►");

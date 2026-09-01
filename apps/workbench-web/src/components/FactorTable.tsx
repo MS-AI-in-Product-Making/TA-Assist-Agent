@@ -32,66 +32,83 @@ export function FactorTable({ factors, states, onEdit, onCommit, onSelect, onEvi
       <div className="factor-table-section__body">
         <table className="factor-table factor-table--compact">
           <colgroup>
-            <col className="factor-table__col factor-table__col--row" />
-            <col className="factor-table__col factor-table__col--factor" />
-            <col className="factor-table__col factor-table__col--identity" />
-            <col className="factor-table__col factor-table__col--edit" />
-            <col className="factor-table__col factor-table__col--edit" />
-            <col className="factor-table__col factor-table__col--edit" />
-            <col className="factor-table__col factor-table__col--results" />
-            <col className="factor-table__col factor-table__col--contribution" />
-            <col className="factor-table__col factor-table__col--status" />
+            {Array.from({ length: 19 }).map((_, index) => <col key={index} className="factor-table__col" />)}
           </colgroup>
-          <thead><tr><th>Row</th><th>Factor &amp; Process</th><th>Part &amp; IDs</th><th>Nominal</th><th>+Tol</th><th>-Tol</th><th>Results</th><th>Contribution</th><th>Status</th></tr></thead>
+          <thead>
+            <tr>
+              <th>Loop Label</th>
+              <th>Factor Description</th>
+              <th>Part Name</th>
+              <th>Drawing Number</th>
+              <th>DIM ID</th>
+              <th>Part Category</th>
+              <th>Design Nominal</th>
+              <th>+ Tolerance</th>
+              <th>- Tolerance</th>
+              <th>Long Term/Safety Factor</th>
+              <th>Sigma Level</th>
+              <th>Distribution</th>
+              <th>Mean</th>
+              <th>Tolerance</th>
+              <th>One Sigma</th>
+              <th>% Contribution to Sigma</th>
+              <th>Notes</th>
+              <th>Capability Result</th>
+              <th>Knowledge Recommendation</th>
+            </tr>
+          </thead>
           <tbody>
             {factors.map((factor) => {
               const state = states.get(factor.key);
               const notesId = `${factor.key}-notes`;
               const hasNotes = typeof factor.notes === "string" && factor.notes.trim().length > 0;
               const notesExpanded = expandedNotesKey === factor.key;
+              const activateFactor = () => {
+                onSelect(factor.key);
+                onEvidenceFocus?.(factor.key);
+              };
+              const loopRowTitle = `Excel source row ${factor.sourceRow}`;
               return (
-                <tr key={factor.key} className={state?.dirty ? "factor-row--modified" : undefined} onClick={() => onSelect(factor.key)}>
-                  <th scope="row">{factor.sourceRow}</th>
+                <tr key={factor.key} className={state?.dirty ? "factor-row--modified" : undefined}>
+                  <td title={loopRowTitle}>
+                    <span>{factor.loopLabel ?? "Not available"}</span>
+                    <span className="sr-only">{loopRowTitle}</span>
+                  </td>
                   <td>
                     <div className="factor-summary-cell">
-                      <SourceText value={factor.factorName} onActivate={() => onEvidenceFocus?.(factor.key)} />
-                      <span>{factor.partCategory} · {factor.distribution}</span>
-                      <span>LT/SF {factor.longTermSafetyFactorDisplay}</span>
-                      <span>Sigma {factor.sigmaLevelDisplay}</span>
+                      <SourceText value={factor.factorName} onActivate={activateFactor} />
                     </div>
                   </td>
-                  <td>
-                    <div className="factor-identity-cell">
-                      <SourceText value={factor.partName} onActivate={() => onEvidenceFocus?.(factor.key)} />
-                      <span><strong>Drawing</strong> {factor.drawingNumber ?? "—"}</span>
-                      <span><strong>DIM ID</strong> {factor.dimId ?? "—"}</span>
-                    </div>
-                  </td>
-                  {(["nominalValue", "upperTolerance", "lowerTolerance"] as const).map((field) => <td key={field} className="factor-table__cell--numeric"><input aria-label={`${factor.factorName.displayText} ${field}`} aria-describedby={state?.error === undefined ? undefined : `${factor.key}-error`} disabled={!factor.editable} type="number" step="any" value={state?.values[field] ?? String(factor[field])} onChange={(event) => onEdit(factor.key, field, event.target.value)} onBlur={() => onCommit(factor.key)} /></td>)}
-                  <td className={state?.calculated === undefined ? "factor-table__cell--numeric" : "factor-table__cell--numeric scenario-value"}>
-                    <div className="factor-results-cell">
-                      <span>Mean <strong>{state?.calculated?.mean.toFixed(3) ?? factor.meanDisplay}</strong></span>
-                      <span>Tol. <strong>{state?.calculated?.tolerance.toFixed(3) ?? factor.toleranceDisplay}</strong></span>
-                      <span>1σ <strong>{state?.calculated?.oneSigma.toFixed(3) ?? factor.oneSigmaDisplay}</strong></span>
-                    </div>
-                  </td>
+                  <td><SourceText value={factor.partName} onActivate={activateFactor} /></td>
+                  <td>{factor.drawingNumber ?? "—"}</td>
+                  <td>{factor.dimId ?? "—"}</td>
+                  <td>{factor.partCategory}</td>
+                  {(["nominalValue", "upperTolerance", "lowerTolerance"] as const).map((field) => <td key={field} className="factor-table__cell--numeric"><input aria-label={`${factor.factorName.displayText} ${field}`} aria-describedby={state?.error === undefined ? undefined : `${factor.key}-error`} disabled={!factor.editable} type="number" name={field} autoComplete="off" step="any" value={state?.values[field] ?? String(factor[field])} onChange={(event) => onEdit(factor.key, field, event.target.value)} onBlur={() => onCommit(factor.key)} /></td>)}
+                  <td className="factor-table__cell--numeric">{factor.longTermSafetyFactorDisplay}</td>
+                  <td className="factor-table__cell--numeric">{factor.sigmaLevelDisplay}</td>
+                  <td>{factor.distribution}</td>
+                  <td className={state?.calculated === undefined ? "factor-table__cell--numeric" : "factor-table__cell--numeric scenario-value"}>{state?.calculated?.mean.toFixed(3) ?? factor.meanDisplay}</td>
+                  <td className={state?.calculated === undefined ? "factor-table__cell--numeric" : "factor-table__cell--numeric scenario-value"}>{state?.calculated?.tolerance.toFixed(3) ?? factor.toleranceDisplay}</td>
+                  <td className={state?.calculated === undefined ? "factor-table__cell--numeric" : "factor-table__cell--numeric scenario-value"}>{state?.calculated?.oneSigma.toFixed(3) ?? factor.oneSigmaDisplay}</td>
                   <td className={state?.calculated === undefined ? "factor-table__cell--numeric" : "factor-table__cell--numeric scenario-value"}>{state?.calculated === undefined ? factor.contributionDisplay : `${(state.calculated.contribution * 100).toFixed(1)}%`}</td>
+                  <td>
+                    {hasNotes ? (
+                      <div className="factor-notes">
+                        <button type="button" className="factor-notes__toggle" aria-expanded={notesExpanded} aria-controls={notesId} onClick={() => setExpandedNotesKey(notesExpanded ? undefined : factor.key)}>
+                          {notesExpanded ? `Hide notes for ${factor.factorName.displayText}` : `Show notes for ${factor.factorName.displayText}`}
+                        </button>
+                        {notesExpanded ? <p id={notesId} className="factor-notes__detail">{factor.notes}</p> : null}
+                      </div>
+                    ) : "—"}
+                  </td>
                   <td>
                     <div className="factor-status-cell">
                       <span className={`factor-status factor-status--${factor.status}`}>{statusLabel(factor.status)}</span>
                       <span>{factor.capabilityResult}</span>
-                      <span>{factor.knowledgeRecommendation === undefined ? "—" : <SourceText value={factor.knowledgeRecommendation} />}</span>
-                      {hasNotes ? (
-                        <div className="factor-notes">
-                          <button type="button" className="factor-notes__toggle" aria-expanded={notesExpanded} aria-controls={notesId} onClick={(event) => { event.stopPropagation(); setExpandedNotesKey(notesExpanded ? undefined : factor.key); }}>
-                            {notesExpanded ? `Hide notes for ${factor.factorName.displayText}` : `Show notes for ${factor.factorName.displayText}`}
-                          </button>
-                          {notesExpanded ? <p id={notesId} className="factor-notes__detail">{factor.notes}</p> : null}
-                        </div>
-                      ) : null}
                       <span id={`${factor.key}-error`} className="factor-row-state">{state?.calculating ? "Updating" : state?.error ?? ""}</span>
                     </div>
                   </td>
+                  <td>{factor.knowledgeRecommendation === undefined ? "—" : <SourceText value={factor.knowledgeRecommendation} />}</td>
                 </tr>
               );
             })}

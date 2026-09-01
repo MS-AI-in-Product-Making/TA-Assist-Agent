@@ -42,6 +42,7 @@ function completeActualFields() {
 function systemSpecification(worksheetName = "Analysis-A") {
   return {
     status: "available" as const,
+    designNominal: { status: "available" as const, actualValue: 1.627, displayValue: "1.627", sourceLabel: "Design Nominal:", sourceCell: `${worksheetName}!P27`, valueOrigin: "numeric_literal" as const },
     lowerSpecLimit: { status: "available" as const, actualValue: -0.15, displayValue: "-0.15", sourceLabel: "*Lower Spec Limit ►", sourceCell: `${worksheetName}!P54`, valueOrigin: "numeric_literal" as const },
     upperSpecLimit: { status: "available" as const, actualValue: 0.05, displayValue: "0.05", sourceLabel: "*Upper Spec Limit ►", sourceCell: `${worksheetName}!P55`, valueOrigin: "numeric_literal" as const },
     targetSigmaLevel: { status: "available" as const, actualValue: 3, displayValue: "3.0σ", sourceLabel: "*Target σ Level ►", sourceCell: `${worksheetName}!P56`, valueOrigin: "numeric_literal" as const },
@@ -95,6 +96,8 @@ function completeFields() {
 
 describe("createF2UserReport", () => {
   it.each([
+    ["designNominal", "response_summary_value_missing"],
+    ["designNominal", "response_summary_value_invalid"],
     ["lowerSpecLimit", "response_summary_value_missing"],
     ["lowerSpecLimit", "response_summary_value_invalid"],
     ["upperSpecLimit", "response_summary_value_missing"],

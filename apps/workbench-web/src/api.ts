@@ -113,6 +113,20 @@ export interface TaConversationSelection { readonly worksheetName: string; reado
 
 const SESSION_QUERY_KEY = "session";
 
+export function buildWorksheetBoundF1ImageArtifactUrl(input: {
+  readonly sessionId: string;
+  readonly contentHash: string;
+  readonly worksheetName: string;
+  readonly relativePath: string;
+}): string {
+  const params = new URLSearchParams({
+    disposition: "inline",
+    worksheet: input.worksheetName,
+    path: input.relativePath,
+  });
+  return `/api/sessions/${encodeURIComponent(input.sessionId)}/artifacts/${encodeURIComponent(`f1-image:${input.contentHash}`)}?${params.toString()}`;
+}
+
 export function createWorkbenchApi(): WorkbenchApi {
   let csrfToken: string | undefined;
 

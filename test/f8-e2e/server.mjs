@@ -25,6 +25,7 @@ const f3RelativePath = "e2e/f3.json";
 const f3AdoReminderRelativePath = "e2e/Feature3-ADO-Reminder.json";
 const f5RelativePath = "e2e/f5.json";
 const f6ReportRelativePath = "e2e/f6-report.json";
+const longWorkbookFileName = "anonymous-ta-workbook-very-long-governed-ui-filename-for-layout-overlap-validation-2026-09-01.xlsx";
 const downstreamFixture = createF6ArtifactBundleFixture({ worksheetNames: ["AJ_GAP"] });
 const calculatedDraft = {
   contractVersion: "f8-scenario-draft-v1", draftId: "e2e-draft", sessionId: SESSION_ID, worksheetName: "AJ_GAP", inputRevision: 1, status: "calculated", mode: "WHAT_IF",
@@ -173,7 +174,7 @@ function buildReviewArtifactUpserts(sessionId) {
 async function seedReviewSession(sessionId, state) {
   const store = await openSessionStore({ rootDir, sessionId });
   try {
-    await store.applyCommand({ contractVersion: "f8-session-command-v1", sessionId, commandId: `seed-${state}-${sessionId}`, expectedRevision: 0, command: "upload_workbook", payload: { fileName: "anonymous-ta-workbook.xlsx", workbookBytes: sourceWorkbookBytes, inputClassification: "confidential" } }, async (snapshot) => ({
+    await store.applyCommand({ contractVersion: "f8-session-command-v1", sessionId, commandId: `seed-${state}-${sessionId}`, expectedRevision: 0, command: "upload_workbook", payload: { fileName: longWorkbookFileName, workbookBytes: sourceWorkbookBytes, inputClassification: "confidential" } }, async (snapshot) => ({
       snapshot: {
         ...snapshot,
         revision: 1,
@@ -364,14 +365,19 @@ function buildF3Report() {
   };
 }
 
-function buildF2Report() {
-  const systemSpecification = {
+function buildSystemSpecification(worksheetName) {
+  return {
     status: "available",
-    lowerSpecLimit: { status: "available", actualValue: -0.15, displayValue: "-0.15", sourceLabel: "*Lower Spec Limit ►", sourceCell: "AJ_GAP!P54", valueOrigin: "numeric_literal" },
-    upperSpecLimit: { status: "available", actualValue: 0.05, displayValue: "0.05", sourceLabel: "*Upper Spec Limit ►", sourceCell: "AJ_GAP!P55", valueOrigin: "numeric_literal" },
-    targetSigmaLevel: { status: "available", actualValue: 3, displayValue: "3.0σ", sourceLabel: "*Target σ Level ►", sourceCell: "AJ_GAP!P56", valueOrigin: "numeric_literal" },
+    designNominal: { status: "available", actualValue: -0.05, displayValue: "-0.05", sourceLabel: "*Design Nominal ►", sourceCell: `${worksheetName}!P53`, valueOrigin: "numeric_literal" },
+    lowerSpecLimit: { status: "available", actualValue: -0.15, displayValue: "-0.15", sourceLabel: "*Lower Spec Limit ►", sourceCell: `${worksheetName}!P54`, valueOrigin: "numeric_literal" },
+    upperSpecLimit: { status: "available", actualValue: 0.05, displayValue: "0.05", sourceLabel: "*Upper Spec Limit ►", sourceCell: `${worksheetName}!P55`, valueOrigin: "numeric_literal" },
+    targetSigmaLevel: { status: "available", actualValue: 3, displayValue: "3.0σ", sourceLabel: "*Target σ Level ►", sourceCell: `${worksheetName}!P56`, valueOrigin: "numeric_literal" },
     additionalMeanShift: { status: "available", actualValue: 0, displayValue: "0", sourceLabel: "Additional Mean Shift", valueOrigin: "defaulted" },
   };
+}
+
+function buildF2Report() {
+  const systemSpecification = buildSystemSpecification("AJ_GAP");
   const actualFields = {
     factorName: "中心间隙",
     partName: "支架加强组件",
@@ -439,7 +445,7 @@ function buildF2Report() {
     workbookContentHash: HASH,
     worksheetName: "AJ_GAP",
     systemSpecification: {
-      designNominal: -0.05,
+      designNominal: systemSpecification.designNominal.actualValue,
       lowerSpecLimit: systemSpecification.lowerSpecLimit,
       upperSpecLimit: systemSpecification.upperSpecLimit,
       targetSigmaLevel: systemSpecification.targetSigmaLevel,
@@ -486,7 +492,16 @@ function buildF4Report() {
   const text = (rawText, sourceCell) => ({ status: "available", rawText, sourceCell });
   const number = (numericValue, sourceCell) => ({ status: "available", rawText: String(numericValue), sourceCell, numericValue, unit: "mm" });
   const request = { contractVersion: "v1", inputClassification: "confidential", projectReference: "project", runReference: "run-1", worksheetAnalysisAssets: { contractVersion: "v1", workbook: { classification: "confidential", contentHash: HASH, catalogContractVersion: "v1" }, worksheets: [{ worksheetName: "AJ_GAP", toleranceLoopDescription: "Synthetic gap", factorTables: [{ tableId: "table-a", headerRow: 1, dataRange: { startRow: 2, endRow: 2 }, columns: [{ semanticField: "factorName", headerText: "Factor", sourceColumn: "A" }, { semanticField: "nominalValue", headerText: "Nominal", sourceColumn: "B" }, { semanticField: "upperTolerance", headerText: "Upper", sourceColumn: "C" }, { semanticField: "lowerTolerance", headerText: "Lower", sourceColumn: "D" }, { semanticField: "longTermSafetyFactor", headerText: "LTSF", sourceColumn: "E" }, { semanticField: "standardDeviation", headerText: "Sigma", sourceColumn: "F" }, { semanticField: "distribution", headerText: "Distribution", sourceColumn: "G" }, { semanticField: "unit", headerText: "Unit", sourceColumn: "H" }], rows: [{ sourceRow: 2, fields: { factorName: text("AJ center to C-bucket", "AJ_GAP!A2"), nominalValue: number(0, "AJ_GAP!B2"), upperTolerance: number(0.05, "AJ_GAP!C2"), lowerTolerance: number(-0.05, "AJ_GAP!D2"), longTermSafetyFactor: number(1, "AJ_GAP!E2"), standardDeviation: number(3, "AJ_GAP!F2"), distribution: text("normal", "AJ_GAP!G2"), unit: text("mm", "AJ_GAP!H2") } }] }], formulaCells: [], imageAssets: [] }] }, requiredFieldCheck: { contractVersion: "v1", inputClassification: "confidential", workbookContentHash: HASH, status: "readyForNextCheck", blockingIssues: [], advisoryIssues: [], summary: { worksheetsChecked: 1, factorTablesChecked: 1, factorRowsChecked: 1, blockingIssueCount: 0, advisoryIssueCount: 0 } }, exceptionResolution: { contractVersion: "v1", inputClassification: "confidential", workbookContentHash: HASH, knowledgeBaseVersion: "v1", status: "readyToContinue", readyToContinue: true, acceptedExceptions: [], pendingExceptions: [], summary: { actionableSignalCount: 0, acceptedExceptionCount: 0, pendingExceptionCount: 0, invalidCandidateCount: 0 } }, worksheetSelection: { worksheetName: "AJ_GAP", tableId: "table-a" }, systemSpecification: { designNominal: 0, lowerSpecLimit: -0.1, upperSpecLimit: 0.1, targetSigmaLevel: 3, targetCpk: 1, additionalMeanShift: 0 }, criticality: "none", scenarioOverrides: [] };
+  const systemSpecification = buildSystemSpecification("AJ_GAP");
+  request.systemSpecification = {
+    designNominal: systemSpecification.designNominal.actualValue,
+    lowerSpecLimit: systemSpecification.lowerSpecLimit.actualValue,
+    upperSpecLimit: systemSpecification.upperSpecLimit.actualValue,
+    targetSigmaLevel: systemSpecification.targetSigmaLevel.actualValue,
+    targetCpk: systemSpecification.targetSigmaLevel.actualValue / 3,
+    additionalMeanShift: systemSpecification.additionalMeanShift.actualValue,
+  };
   const calculation = createCalculation(request);
   if (calculation.status !== "completed") throw new Error("synthetic calculation failed");
-  return f4WorkflowCalculationResultSchema.parse({ contractVersion: "v1", workflowVersion: "f4-f2-v1", outputClassification: "confidential", featureId: "F4", status: "completed", runId: "e2e-run", generatedAt: "2026-08-25T00:00:00.000Z", source: { artifactReference: "Feature2-Report.json", workbookFileName: "anonymous-ta-workbook.xlsx", workbookContentHash: HASH }, calculations: [calculation], summary: { selectedWorksheetCount: 1, completedWorksheetCount: 1 } });
+  return f4WorkflowCalculationResultSchema.parse({ contractVersion: "v1", workflowVersion: "f4-f2-v1", outputClassification: "confidential", featureId: "F4", status: "completed", runId: "e2e-run", generatedAt: "2026-08-25T00:00:00.000Z", source: { artifactReference: "Feature2-Report.json", workbookFileName: longWorkbookFileName, workbookContentHash: HASH }, calculations: [calculation], summary: { selectedWorksheetCount: 1, completedWorksheetCount: 1 } });
 }

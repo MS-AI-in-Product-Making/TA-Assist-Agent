@@ -70,7 +70,7 @@ function sheetRows(includeResponseSummary = true, includeErrorCell = false): str
     ? `<row r="53">${cell("O53", "Response Summary")}</row>`
     : "";
   const errorRow = includeErrorCell ? '<row r="52"><c r="P52" t="e"><v>#N/A</v></c></row>' : "";
-  return `<row r="11">${cell("G11", "Tolerance Loop Description")}${cell("H11", "Anonymous loop")}</row><row r="13">${cell("G13", "Factor Description (TA Loop)")}${cell("L13", "Design Nominal")}${cell("M13", "+ Tolerance")}${cell("N13", "- Tolerance")}${cell("O13", "Long Term/Safety Factor")}${cell("P13", "Sigma level")}${cell("Q13", "Distribution")}${cell("R13", "Mean")}${cell("S13", "Tolerance")}${cell("T13", "1 Sigma")}</row>${factorRows}${errorRow}${responseSummaryAnchor}<row r="54">${cell("O54", "LSL")}${cell("P54", "-0.15")}</row><row r="55">${cell("O55", "USL")}${cell("P55", "0.05")}</row><row r="56">${cell("O56", "Target Sigma Level")}${cell("P56", "3")}</row>`;
+  return `<row r="11">${cell("G11", "Tolerance Loop Description")}${cell("H11", "Anonymous loop")}</row><row r="13">${cell("G13", "Factor Description (TA Loop)")}${cell("L13", "Design Nominal")}${cell("M13", "+ Tolerance")}${cell("N13", "- Tolerance")}${cell("O13", "Long Term/Safety Factor")}${cell("P13", "Sigma level")}${cell("Q13", "Distribution")}${cell("R13", "Mean")}${cell("S13", "Tolerance")}${cell("T13", "1 Sigma")}</row>${factorRows}${errorRow}${responseSummaryAnchor}<row r="54">${cell("O54", "Design Nominal")}${cell("P54", "1.627")}</row><row r="55">${cell("O55", "LSL")}${cell("P55", "-0.15")}</row><row r="56">${cell("O56", "USL")}${cell("P56", "0.05")}</row><row r="57">${cell("O57", "Target Sigma Level")}${cell("P57", "3")}</row>`;
 }
 
 function buildWorkbook(options: { readonly includeResponseSummary?: boolean; readonly includeErrorCell?: boolean } = {}): Uint8Array {
@@ -368,12 +368,20 @@ describe("createF7SessionService", () => {
     expect(next.worksheetOptions[0]?.worksheetName).toBe("Anonymous_TA");
     expect(next.systemSpecification).toEqual({
       status: "available",
+      designNominal: {
+        status: "available",
+        actualValue: 1.627,
+        displayValue: "1.627",
+        sourceLabel: "Design Nominal",
+        sourceCell: "Anonymous_TA!P54",
+        valueOrigin: "numeric_literal",
+      },
       lowerSpecLimit: {
         status: "available",
         actualValue: -0.15,
         displayValue: "-0.15",
         sourceLabel: "LSL",
-        sourceCell: "Anonymous_TA!P54",
+        sourceCell: "Anonymous_TA!P55",
         valueOrigin: "numeric_literal",
       },
       upperSpecLimit: {
@@ -381,7 +389,7 @@ describe("createF7SessionService", () => {
         actualValue: 0.05,
         displayValue: "0.05",
         sourceLabel: "USL",
-        sourceCell: "Anonymous_TA!P55",
+        sourceCell: "Anonymous_TA!P56",
         valueOrigin: "numeric_literal",
       },
       targetSigmaLevel: {
@@ -389,7 +397,7 @@ describe("createF7SessionService", () => {
         actualValue: 3,
         displayValue: "3",
         sourceLabel: "Target Sigma Level",
-        sourceCell: "Anonymous_TA!P56",
+        sourceCell: "Anonymous_TA!P57",
         valueOrigin: "numeric_literal",
       },
       additionalMeanShift: {
@@ -508,6 +516,7 @@ describe("createF7SessionService", () => {
     expect(good.status).toBe("measurement_entry");
     expect(good.systemSpecification).toMatchObject({
       status: "available",
+      designNominal: { status: "available", actualValue: 1.627, sourceCell: "Anonymous_TA!P54" },
       lowerSpecLimit: { status: "available", actualValue: -0.2 },
       upperSpecLimit: { status: "available", actualValue: 0.1 },
       targetSigmaLevel: { status: "available", actualValue: 4 },
@@ -563,6 +572,70 @@ describe("createF7SessionService", () => {
       confirmations: [confirmAll(duplicateSetup)[0]!, confirmAll(duplicateSetup)[0]!],
     })).toThrow();
     expect(duplicateService.getSession(duplicateImport.sessionId)).toEqual(before);
+  });
+
+  it("confirmFactorSetup system specification override preserves verified designNominal", () => {
+    const service = createService();
+    const imported = service.importWorkbook(importRequest(buildWorkbook()));
+    const worksheetReady = service.confirmWorksheet({
+      sessionId: imported.sessionId,
+      confirmation: worksheetConfirmation(imported.workbook.workbookContentHash),
+    });
+
+    const next = service.confirmFactorSetup({
+      sessionId: imported.sessionId,
+      confirmations: confirmAll(worksheetReady),
+      systemSpecification: {
+        lowerSpecLimit: -0.2,
+        upperSpecLimit: 0.1,
+        targetSigmaLevel: 4,
+      },
+    });
+
+    expect(next.systemSpecification).toMatchObject({
+      status: "available",
+      designNominal: {
+        status: "available",
+        actualValue: 1.627,
+        sourceCell: "Anonymous_TA!P54",
+      },
+      lowerSpecLimit: {
+        status: "available",
+        actualValue: -0.2,
+      },
+      upperSpecLimit: {
+        status: "available",
+        actualValue: 0.1,
+      },
+      targetSigmaLevel: {
+        status: "available",
+        actualValue: 4,
+      },
+    });
+  });
+
+  it("confirmFactorSetup system specification override remains fail-closed when designNominal is missing", () => {
+    const service = createService();
+    const imported = service.importWorkbook(importRequest(buildWorkbook({ includeResponseSummary: false })));
+    const worksheetReady = service.confirmWorksheet({
+      sessionId: imported.sessionId,
+      confirmation: worksheetConfirmation(imported.workbook.workbookContentHash),
+    });
+
+    const next = service.confirmFactorSetup({
+      sessionId: imported.sessionId,
+      confirmations: confirmAll(worksheetReady),
+      systemSpecification: {
+        lowerSpecLimit: -0.2,
+        upperSpecLimit: 0.1,
+        targetSigmaLevel: 4,
+      },
+    });
+
+    expect(next.systemSpecification).toEqual({
+      status: "unavailable",
+      reasonCode: "legacy_artifact_missing_system_specification",
+    });
   });
 
   it("reconfirms factor setup after analysis and clears all downstream results", () => {

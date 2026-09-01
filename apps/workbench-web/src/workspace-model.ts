@@ -51,6 +51,7 @@ export interface FactorRowModel {
   readonly contribution?: number;
   readonly cp?: number;
   readonly cpk?: number;
+  readonly loopLabel?: string;
   readonly status: "pass" | "risk" | "blocked" | "modified";
 }
 
@@ -66,16 +67,18 @@ export interface WorksheetWorkspaceModel {
 export interface AnalysisTargetModel {
   readonly description: string;
   readonly descriptionReason?: string;
-  readonly nominal?: number;
-  readonly nominalDisplay: string;
-  readonly nominalReason?: string;
-  readonly upperTolerance?: number;
-  readonly upperToleranceDisplay: string;
-  readonly upperToleranceReason?: string;
-  readonly lowerTolerance?: number;
-  readonly lowerToleranceDisplay: string;
-  readonly lowerToleranceReason?: string;
+  readonly designNominal: AnalysisTargetFieldModel;
+  readonly lowerSpecLimit: AnalysisTargetFieldModel;
+  readonly upperSpecLimit: AnalysisTargetFieldModel;
   readonly unit: string;
+}
+
+export interface AnalysisTargetFieldModel {
+  readonly actual?: number;
+  readonly display: string;
+  readonly sourceLabel?: string;
+  readonly sourceCell?: string;
+  readonly reason?: string;
 }
 
 export interface EngineeringWorkspaceModel {
@@ -97,6 +100,7 @@ export interface EngineeringWorkspaceInput {
 export function projectEngineeringWorkspace(input: EngineeringWorkspaceInput): EngineeringWorkspaceModel {
   const f2Worksheets = input.f2Report !== undefined && input.f2Report.status !== "inputRejected" ? input.f2Report.worksheets : [];
   const calculations = new Map((input.f4Report?.calculations ?? []).map((calculation) => [calculation.worksheetSelection.worksheetName, calculation]));
+  const loopLabelByFactor = buildLoopLabelMap(input.f5Report);
   const worksheetNames = new Set<string>();
 
   for (const worksheet of f2Worksheets) worksheetNames.add(worksheet.worksheetName);
@@ -159,10 +163,11 @@ export function projectEngineeringWorkspace(input: EngineeringWorkspaceInput): E
         directionLabel: "Direction evidence unavailable",
         directionAvailable: false,
         ...(factor?.contribution === undefined ? {} : { contribution: factor.contribution }),
+        ...(loopLabelByFactor.get(key) === undefined ? {} : { loopLabel: loopLabelByFactor.get(key) }),
         status: blocked ? "blocked" : calculation?.capability.status === "PASS" ? "pass" : calculation === undefined ? "blocked" : "risk",
       };
     });
-    const metrics = calculation === undefined ? undefined : calculationMetrics(calculation, analysisTarget.nominal);
+    const metrics = calculation === undefined ? undefined : calculationMetrics(calculation);
     return {
       worksheetName,
       status: blocked ? "blocked" : calculation?.capability.status === "FAIL" ? "risk" : "ready",
@@ -176,11 +181,13 @@ export function projectEngineeringWorkspace(input: EngineeringWorkspaceInput): E
   const requestedWorksheet = input.selectedWorksheetName;
   const selectedWorksheetName = requestedWorksheet !== undefined && worksheets.some(({ worksheetName }) => worksheetName === requestedWorksheet)
     ? requestedWorksheet
-    : worksheets.find(({ status }) => status === "ready")?.worksheetName;
+    : worksheets.find(({ status }) => status === "ready")?.worksheetName
+      ?? worksheets.find(({ status }) => status === "risk")?.worksheetName
+      ?? worksheets[0]?.worksheetName;
   const workbookName = input.f4Report?.source.workbookFileName.replace(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}-/i, "");
   const preparing = input.snapshot !== undefined
     && input.snapshot.inputRevision > 0
-    && !["created", "workbook_required", "review_required", "completed"].includes(input.snapshot.state)
+    && !["created", "workbook_required", "ado_decision_required", "ado_action_pending", "review_required", "completed"].includes(input.snapshot.state)
     && calculations.size === 0;
 
   return {
@@ -191,10 +198,9 @@ export function projectEngineeringWorkspace(input: EngineeringWorkspaceInput): E
   };
 }
 
-function calculationMetrics(calculation: F4WorkflowCalculationResult["calculations"][number], targetNominal?: number): WhatIfMetrics {
+function calculationMetrics(calculation: F4WorkflowCalculationResult["calculations"][number]): WhatIfMetrics {
   return {
     mean: calculation.system.mean,
-    ...(targetNominal === undefined ? {} : { meanOffset: canonicalNumber(calculation.system.mean - targetNominal) }),
     rssSigma: calculation.system.rssSigma,
     cp: calculation.capability.cp,
     cpkL: calculation.capability.lowerCpk,
@@ -232,36 +238,14 @@ function collectIssues(worksheet: F2CompletedWorksheet | undefined): string[] {
 function projectAnalysisTarget(worksheet: F2CompletedWorksheet | undefined): AnalysisTargetModel {
   const description = worksheet?.toleranceLoopDescription?.trim();
   const specification = worksheet?.systemSpecification;
-  const lowerSpecLimit = specification?.lowerSpecLimit;
-  const upperSpecLimit = specification?.upperSpecLimit;
   const unit = "mm";
-
-  if (lowerSpecLimit?.status === "available" && upperSpecLimit?.status === "available") {
-    const nominal = canonicalNumber((lowerSpecLimit.actualValue + upperSpecLimit.actualValue) / 2);
-    const upperTolerance = canonicalNumber(upperSpecLimit.actualValue - nominal);
-    const lowerTolerance = canonicalNumber(lowerSpecLimit.actualValue - nominal);
-    return {
-      description: description ?? "Not available",
-      ...(description === undefined ? { descriptionReason: "Tolerance loop description is missing from the worksheet evidence." } : {}),
-      nominal,
-      nominalDisplay: formatTargetNumber(nominal),
-      upperTolerance,
-      upperToleranceDisplay: formatTargetNumber(upperTolerance),
-      lowerTolerance,
-      lowerToleranceDisplay: formatTargetNumber(lowerTolerance),
-      unit,
-    };
-  }
 
   return {
     description: description ?? "Not available",
     ...(description === undefined ? { descriptionReason: "Tolerance loop description is missing from the worksheet evidence." } : {}),
-    nominalDisplay: "Not available",
-    nominalReason: analysisTargetReason(specification, lowerSpecLimit, upperSpecLimit),
-    upperToleranceDisplay: "Not available",
-    upperToleranceReason: analysisTargetReason(specification, upperSpecLimit, lowerSpecLimit),
-    lowerToleranceDisplay: "Not available",
-    lowerToleranceReason: analysisTargetReason(specification, lowerSpecLimit, upperSpecLimit),
+    designNominal: projectSystemSpecificationField(specification?.designNominal, specification),
+    lowerSpecLimit: projectSystemSpecificationField(specification?.lowerSpecLimit, specification),
+    upperSpecLimit: projectSystemSpecificationField(specification?.upperSpecLimit, specification),
     unit,
   };
 }
@@ -273,24 +257,58 @@ function factorKey(worksheetName: string, tableId: string, sourceRow: number): s
   return `${worksheetName}\u0000${tableId}\u0000${sourceRow}`;
 }
 
+function buildLoopLabelMap(f5Report: F5DataInterpretationResult | undefined): ReadonlyMap<string, string> {
+  const labelsByKey = new Map<string, Set<string>>();
+  for (const worksheet of f5Report?.worksheets ?? []) {
+    if (worksheet.status !== "completed") continue;
+    for (const statement of worksheet.statements) {
+      if (statement.type !== "SIGNAL") continue;
+      if (!("signalKind" in statement.content) || statement.content.signalKind !== "image_text_context_review") continue;
+      for (const linkedLabel of statement.content.linkedVisualLabels) {
+        const key = factorKey(worksheet.worksheetName, linkedLabel.tableId, linkedLabel.sourceRow);
+        const labels = labelsByKey.get(key) ?? new Set<string>();
+        labels.add(linkedLabel.label);
+        labelsByKey.set(key, labels);
+      }
+    }
+  }
+  const resolved = new Map<string, string>();
+  for (const [key, labels] of labelsByKey) {
+    if (labels.size === 1) resolved.set(key, [...labels][0]!);
+  }
+  return resolved;
+}
+
 function canonicalNumber(value: number): number {
   return Number(value.toFixed(12));
 }
 
-function formatTargetNumber(value: number): string {
-  return value.toFixed(3);
-}
-
-function analysisTargetReason(
-  specification: F2CompletedWorksheet["systemSpecification"] | undefined,
-  primary: F2CompletedWorksheet["systemSpecification"]["lowerSpecLimit"] | F2CompletedWorksheet["systemSpecification"]["upperSpecLimit"] | undefined,
-  secondary: F2CompletedWorksheet["systemSpecification"]["lowerSpecLimit"] | F2CompletedWorksheet["systemSpecification"]["upperSpecLimit"] | undefined,
-): string {
+function analysisTargetReason(specification: F2CompletedWorksheet["systemSpecification"] | undefined): string {
   if (specification === undefined) return "Worksheet system specification is unavailable.";
   if (specification.status === "unavailable") return systemSpecificationReason(specification.reasonCode);
-  if (primary?.status === "unavailable") return worksheetEvidenceReason(primary.reasonCode);
-  if (secondary?.status === "unavailable") return worksheetEvidenceReason(secondary.reasonCode);
   return "Worksheet system specification is incomplete.";
+}
+
+function projectSystemSpecificationField(
+  field:
+    | F2CompletedWorksheet["systemSpecification"]["designNominal"]
+    | F2CompletedWorksheet["systemSpecification"]["lowerSpecLimit"]
+    | F2CompletedWorksheet["systemSpecification"]["upperSpecLimit"]
+    | undefined,
+  specification: F2CompletedWorksheet["systemSpecification"] | undefined,
+): AnalysisTargetFieldModel {
+  if (field?.status === "available") {
+    return {
+      actual: field.actualValue,
+      display: field.displayValue,
+      sourceLabel: field.sourceLabel,
+      ...(field.sourceCell === undefined ? {} : { sourceCell: field.sourceCell }),
+    };
+  }
+  return {
+    display: "Not available",
+    reason: field?.status === "unavailable" ? worksheetEvidenceReason(field.reasonCode) : analysisTargetReason(specification),
+  };
 }
 
 function systemSpecificationReason(reasonCode: string): string {

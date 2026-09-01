@@ -266,14 +266,19 @@ function artifactRef(sessionId, stage) {
   return { artifactId: `${kind}:synthetic`, kind, relativePath, contentHash: artifactContentHash(readManagedWorkbookHash(rootDir, sessionId), stage) };
 }
 
-function buildF2Report(workbookHash) {
-  const systemSpecification = {
+function buildSystemSpecification(worksheetName) {
+  return {
     status: "available",
-    lowerSpecLimit: { status: "available", actualValue: -0.15, displayValue: "-0.15", sourceLabel: "*Lower Spec Limit ►", sourceCell: "Synthetic_A!P54", valueOrigin: "numeric_literal" },
-    upperSpecLimit: { status: "available", actualValue: 0.05, displayValue: "0.05", sourceLabel: "*Upper Spec Limit ►", sourceCell: "Synthetic_A!P55", valueOrigin: "numeric_literal" },
-    targetSigmaLevel: { status: "available", actualValue: 3, displayValue: "3.0σ", sourceLabel: "*Target σ Level ►", sourceCell: "Synthetic_A!P56", valueOrigin: "numeric_literal" },
+    designNominal: { status: "available", actualValue: -0.05, displayValue: "-0.05", sourceLabel: "*Design Nominal ►", sourceCell: `${worksheetName}!P53`, valueOrigin: "numeric_literal" },
+    lowerSpecLimit: { status: "available", actualValue: -0.15, displayValue: "-0.15", sourceLabel: "*Lower Spec Limit ►", sourceCell: `${worksheetName}!P54`, valueOrigin: "numeric_literal" },
+    upperSpecLimit: { status: "available", actualValue: 0.05, displayValue: "0.05", sourceLabel: "*Upper Spec Limit ►", sourceCell: `${worksheetName}!P55`, valueOrigin: "numeric_literal" },
+    targetSigmaLevel: { status: "available", actualValue: 3, displayValue: "3.0σ", sourceLabel: "*Target σ Level ►", sourceCell: `${worksheetName}!P56`, valueOrigin: "numeric_literal" },
     additionalMeanShift: { status: "available", actualValue: 0, displayValue: "0", sourceLabel: "Additional Mean Shift", valueOrigin: "defaulted" },
   };
+}
+
+function buildF2Report(workbookHash) {
+  const systemSpecification = buildSystemSpecification("Synthetic_A");
   const actualFields = buildActualFields();
   const displayFields = {
     factorName: "AJ center to C-bucket",
@@ -324,7 +329,7 @@ function buildF2Report(workbookHash) {
     workbookContentHash: workbookHash,
     worksheetName: "Synthetic_A",
     systemSpecification: {
-      designNominal: -0.05,
+      designNominal: systemSpecification.designNominal.actualValue,
       lowerSpecLimit: systemSpecification.lowerSpecLimit,
       upperSpecLimit: systemSpecification.upperSpecLimit,
       targetSigmaLevel: systemSpecification.targetSigmaLevel,
@@ -341,7 +346,6 @@ function buildF2Report(workbookHash) {
     workbook: { fileName: "anonymous-ta-workbook.xlsx", contentHash: workbookHash, f1GeneratedAt: "2026-08-31T00:00:00.000Z" },
     knowledgeBaseVersions: ["v1", "internal-v1"],
     mappingRuleVersion: "v1",
-    artifactRoot: "synthetic/f2",
     artifactRoot: "test/f8-e2e/generated",
     worksheets: [{ worksheetName: "Synthetic_A", status: "ready", toleranceLoopDescription: "Synthetic tolerance loop", tolerancePathImageStatus: "available", systemSpecification, systemSpecificationIssues: [], rows: [row], missingFieldSummary: [], f4CalculabilityIssues: [] }],
     f4Handoffs: [handoff],
@@ -482,6 +486,15 @@ function buildF4Report(workbookHash) {
     systemSpecification: { designNominal: 0, lowerSpecLimit: -0.1, upperSpecLimit: 0.1, targetSigmaLevel: 3, targetCpk: 1, additionalMeanShift: 0 },
     criticality: "none",
     scenarioOverrides: [],
+  };
+  const systemSpecification = buildSystemSpecification("Synthetic_A");
+  request.systemSpecification = {
+    designNominal: systemSpecification.designNominal.actualValue,
+    lowerSpecLimit: systemSpecification.lowerSpecLimit.actualValue,
+    upperSpecLimit: systemSpecification.upperSpecLimit.actualValue,
+    targetSigmaLevel: systemSpecification.targetSigmaLevel.actualValue,
+    targetCpk: systemSpecification.targetSigmaLevel.actualValue / 3,
+    additionalMeanShift: systemSpecification.additionalMeanShift.actualValue,
   };
   const calculation = createCalculation(request);
   if (calculation.status !== "completed") throw new Error("synthetic calculation failed");

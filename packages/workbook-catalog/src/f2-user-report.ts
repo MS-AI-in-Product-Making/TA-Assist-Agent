@@ -119,7 +119,7 @@ export function validateWorksheetSystemSpecification(
   specification: WorksheetSystemSpecification,
 ): readonly F2SystemSpecificationIssue[] {
   const issues: F2SystemSpecificationIssue[] = [];
-  const requiredFields = ["lowerSpecLimit", "upperSpecLimit", "targetSigmaLevel"] as const;
+  const requiredFields = ["designNominal", "lowerSpecLimit", "upperSpecLimit", "targetSigmaLevel"] as const;
   for (const field of requiredFields) {
     const evidence = specification[field];
     if (evidence?.status === "unavailable") {

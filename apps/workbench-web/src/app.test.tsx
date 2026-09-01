@@ -242,6 +242,7 @@ describe("App", () => {
     fireEvent.blur(upper);
 
     await waitFor(() => expect(calculatedPatches).toEqual([[{ worksheetName: "AJ_GAP", tableId: "table-a", sourceRow: 2, upperTolerance: 0.04 }]]));
+  fireEvent.click(screen.getByRole("button", { name: /AJ center to C-bucket|中心间隙/ }));
     await waitFor(() => expect(screen.getAllByRole("button", { name: "Save scenario" }).some((button) => !button.hasAttribute("disabled"))).toBe(true));
     const saveButton = screen.getAllByRole("button", { name: "Save scenario" }).find((button) => !button.hasAttribute("disabled"));
     expect(saveButton).toBeDefined();
@@ -509,6 +510,7 @@ describe("App", () => {
     }} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Gap", description: "中心间隙" }));
+  fireEvent.click(screen.getByRole("button", { name: "Open TA Assistant" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Ask TA Assist from governed evidence" }), { target: { value: "Explain the current tolerance risk." } });
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
 
@@ -544,8 +546,8 @@ describe("App", () => {
 
     expect(screen.getByRole("heading", { name: "AJ_GAP" })).toBeVisible();
     expect(screen.getByRole("region", { name: "TA Factor Table" })).toBeVisible();
-    const assistant = screen.getByRole("complementary");
-    expect(within(assistant).getByRole("region", { name: "TA Assistant" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Open TA Assistant" }));
+    expect(screen.getByRole("region", { name: "TA Assistant" })).toBeVisible();
   }, 15_000);
 
   it("shows next-request context chips from current governed evidence instead of unsaved client scenario state", () => {
@@ -675,7 +677,8 @@ describe("App", () => {
       } as never,
     }} />);
 
-    const assistant = within(screen.getByRole("complementary")).getByRole("region", { name: "TA Assistant" });
+    fireEvent.click(screen.getByRole("button", { name: "Open TA Assistant" }));
+    const assistant = screen.getByRole("region", { name: "TA Assistant" });
     expect(within(assistant).getByText("Knowledge: 1 item")).toBeVisible();
     expect(within(assistant).getByText("Loop image: Requested")).toBeVisible();
     expect(within(assistant).getByText("Factor table: 1 row")).toBeVisible();

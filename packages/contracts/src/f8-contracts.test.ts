@@ -814,6 +814,17 @@ describe("F8 session and host contracts", () => {
       confirmationHash: projection.confirmation.confirmationHash,
       confirmed: true,
     })).toThrow();
+
+    const pending = {
+      contractVersion: "f8-ado-projection-v1" as const,
+      sessionId: "session-1",
+      state: "validation_pending" as const,
+      actionId: "ado-validation:session-1:3",
+      expectedRevision: 3,
+      startedAt: "2026-08-31T10:00:00.000Z",
+      expiresAt: "2026-08-31T10:15:00.000Z",
+    };
+    expect(f8AdoProjectionSchema.parse(pending)).toEqual(pending);
   });
 
   it("keeps conversation turns, host actions, and drafts strict", () => {

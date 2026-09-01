@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { F2UserReport, F4WorkflowCalculationResult } from "@ai-assist/contracts";
+import type { F2UserReport, F4WorkflowCalculationResult, F5DataInterpretationResult } from "@ai-assist/contracts";
 
 import { projectEngineeringWorkspace, type EngineeringWorkspaceInput } from "./workspace-model.js";
 
@@ -16,10 +16,11 @@ function fixtureInput(): EngineeringWorkspaceInput {
   };
 }
 
-function meanOffsetInput(): EngineeringWorkspaceInput {
+function metricsInput(): EngineeringWorkspaceInput {
   return {
     f2Report: report([
       worksheet("Ready-A", "ready", [factorRow(12, "间隙因子", "支架", "Gap factor", "Bracket")], {
+        designNominal: 1.5,
         lowerSpecLimit: 1.3,
         upperSpecLimit: 1.7,
       }),
@@ -65,33 +66,73 @@ describe("projectEngineeringWorkspace", () => {
     });
   });
 
-  it("projects the worksheet analysis target from system specification instead of the selected factor", () => {
-    const model = projectEngineeringWorkspace(fixtureInput());
+  it("projects worksheet analysis target fields directly from system specification evidence", () => {
+    const model = projectEngineeringWorkspace({
+      f2Report: report([
+        worksheet("Ready-A", "ready", [factorRow(12, "间隙因子", "支架", "Gap factor", "Bracket")], {
+          designNominal: 1.627,
+          lowerSpecLimit: 0,
+          upperSpecLimit: 5,
+        }),
+      ]),
+      f4Report: calculationReport("Ready-A", [12]),
+    });
     const readyWorksheet = model.worksheets.find(({ worksheetName }) => worksheetName === "Ready-A");
 
     expect(readyWorksheet).toMatchObject({
       analysisTarget: {
         description: "Ready-A loop",
-        nominal: -0.05,
-        nominalDisplay: "-0.050",
-        upperTolerance: 0.1,
-        upperToleranceDisplay: "0.100",
-        lowerTolerance: -0.1,
-        lowerToleranceDisplay: "-0.100",
+        designNominal: {
+          actual: 1.627,
+          display: "1.627",
+          sourceLabel: "*Design Nominal ►",
+          sourceCell: "Ready-A!P53",
+        },
+        lowerSpecLimit: {
+          actual: 0,
+          display: "0.000",
+          sourceLabel: "*Lower Spec Limit ►",
+          sourceCell: "Ready-A!P54",
+        },
+        upperSpecLimit: {
+          actual: 5,
+          display: "5.000",
+          sourceLabel: "*Upper Spec Limit ►",
+          sourceCell: "Ready-A!P55",
+        },
         unit: "mm",
       },
     });
-    expect((readyWorksheet as any)?.analysisTarget?.nominal).not.toBe(1);
+    expect((readyWorksheet as any)?.analysisTarget?.designNominal?.actual).not.toBe(2.5);
   });
 
-  it("derives read-only mean offset from calculated mean and target nominal", () => {
-    const model = projectEngineeringWorkspace(meanOffsetInput());
+  it("maps loop label only from exact F5 linkedVisualLabels and falls back to not available", () => {
+    const model = projectEngineeringWorkspace(fixtureInput());
+    const readyWorksheet = model.worksheets.find(({ worksheetName }) => worksheetName === "Ready-A");
+
+    expect(readyWorksheet?.factors[0]?.loopLabel).toBeUndefined();
+
+    const mapped = projectEngineeringWorkspace({ ...fixtureInput(), f5Report: f5LoopLabels([
+      { worksheetName: "Ready-A", tableId: "factor-table-1", sourceRow: 12, label: "Loop A" },
+    ]) });
+    expect(mapped.worksheets.find(({ worksheetName }) => worksheetName === "Ready-A")?.factors[0]?.loopLabel).toBe("Loop A");
+
+    const ambiguous = projectEngineeringWorkspace({ ...fixtureInput(), f5Report: f5LoopLabels([
+      { worksheetName: "Ready-A", tableId: "factor-table-1", sourceRow: 12, label: "Loop A" },
+      { worksheetName: "Ready-A", tableId: "factor-table-1", sourceRow: 12, label: "Loop B" },
+    ]) });
+    expect(ambiguous.worksheets.find(({ worksheetName }) => worksheetName === "Ready-A")?.factors[0]?.loopLabel).toBeUndefined();
+  });
+
+  it("exposes Mean Response and Additional Mean Shift without Mean Offset", () => {
+    const model = projectEngineeringWorkspace(metricsInput());
     const readyWorksheet = model.worksheets.find(({ worksheetName }) => worksheetName === "Ready-A");
 
     expect(readyWorksheet?.metrics).toMatchObject({
       mean: 1.627,
-      meanOffset: 0.127,
+      meanShift: 0.02,
     });
+    expect(readyWorksheet?.metrics).not.toHaveProperty("meanOffset");
   });
 
   it("maps blocked F2 worksheets without inventing factors", () => {
@@ -103,6 +144,59 @@ describe("projectEngineeringWorkspace", () => {
   it("uses the first ready worksheet when no valid selection exists", () => {
     expect(projectEngineeringWorkspace(fixtureInput()).selectedWorksheetName).toBe("Ready-A");
     expect(projectEngineeringWorkspace({ ...fixtureInput(), selectedWorksheetName: "missing" }).selectedWorksheetName).toBe("Ready-A");
+  });
+
+  it("selects a risk worksheet when no ready worksheet exists", () => {
+    const f4Report = calculationReport("Risk-A");
+    (f4Report.calculations[0] as any).capability.status = "FAIL";
+
+    const model = projectEngineeringWorkspace({
+      f2Report: report([
+        worksheet("Blocked-A", "blocked"),
+        worksheet("Risk-A", "ready", [factorRow(12, "风险因子", "支架", "Risk factor", "Bracket")]),
+      ]),
+      f4Report,
+    });
+
+    expect(model.worksheets[1]).toMatchObject({ worksheetName: "Risk-A", status: "risk" });
+    expect(model.selectedWorksheetName).toBe("Risk-A");
+  });
+
+  it("does not hide the F3 ADO decision workspace while F4 is pending", () => {
+    const input = fixtureInput();
+    const model = projectEngineeringWorkspace({
+      snapshot: {
+        contractVersion: "f8-session-snapshot-v1",
+        sessionId: "session",
+        revision: 6,
+        inputRevision: 1,
+        state: "ado_decision_required",
+        activeAttempt: null,
+        priorRunReferences: [],
+      },
+      f2Report: input.f2Report,
+    });
+
+    expect(model.worksheets).not.toHaveLength(0);
+    expect(model).not.toHaveProperty("preparationMessage");
+  });
+
+  it("does not hide live ADO validation progress while F4 is pending", () => {
+    const input = fixtureInput();
+    const model = projectEngineeringWorkspace({
+      snapshot: {
+        contractVersion: "f8-session-snapshot-v1",
+        sessionId: "session",
+        revision: 7,
+        inputRevision: 1,
+        state: "ado_action_pending",
+        activeAttempt: null,
+        priorRunReferences: [],
+      },
+      f2Report: input.f2Report,
+    });
+
+    expect(model).not.toHaveProperty("preparationMessage");
   });
 
   it("drops structural inventory sheets after governed F2 worksheets are available", () => {
@@ -131,8 +225,9 @@ function worksheet(
   worksheetName: string,
   status: "ready" | "blocked",
   rows: ReturnType<typeof factorRow>[] = [],
-  specification: { readonly lowerSpecLimit: number; readonly upperSpecLimit: number } = { lowerSpecLimit: -0.15, upperSpecLimit: 0.05 },
+  specification: { readonly designNominal?: number; readonly lowerSpecLimit: number; readonly upperSpecLimit: number } = { designNominal: -0.05, lowerSpecLimit: -0.15, upperSpecLimit: 0.05 },
 ) {
+  const designNominal = specification.designNominal ?? 0;
   return {
     worksheetName,
     toleranceLoopDescription: `${worksheetName} loop`,
@@ -140,6 +235,7 @@ function worksheet(
     tolerancePathImageStatus: "available",
     systemSpecification: {
       status: "available",
+      designNominal: { status: "available", actualValue: designNominal, displayValue: designNominal.toFixed(3), sourceLabel: "*Design Nominal ►", sourceCell: `${worksheetName}!P53`, valueOrigin: "numeric_literal" },
       lowerSpecLimit: { status: "available", actualValue: specification.lowerSpecLimit, displayValue: specification.lowerSpecLimit.toFixed(3), sourceLabel: "*Lower Spec Limit ►", sourceCell: `${worksheetName}!P54`, valueOrigin: "numeric_literal" },
       upperSpecLimit: { status: "available", actualValue: specification.upperSpecLimit, displayValue: specification.upperSpecLimit.toFixed(3), sourceLabel: "*Upper Spec Limit ►", sourceCell: `${worksheetName}!P55`, valueOrigin: "numeric_literal" },
       targetSigmaLevel: { status: "available", actualValue: 3, displayValue: "3.0σ", sourceLabel: "*Target σ Level ►", sourceCell: `${worksheetName}!P56`, valueOrigin: "numeric_literal" },
@@ -149,6 +245,28 @@ function worksheet(
     rows,
     missingFieldSummary: [],
   };
+}
+
+function f5LoopLabels(mappings: Array<{ worksheetName: string; tableId: string; sourceRow: number; label: string }>): F5DataInterpretationResult {
+  return {
+    status: "completed",
+    worksheets: mappings.reduce<Array<{ worksheetName: string; status: string; statements: Array<Record<string, unknown>> }>>((acc, mapping) => {
+      const entry = acc.find((item) => item.worksheetName === mapping.worksheetName);
+      const statement = {
+        type: "SIGNAL",
+        content: {
+          signalKind: "image_text_context_review",
+          linkedVisualLabels: [{ label: mapping.label, tableId: mapping.tableId, sourceRow: mapping.sourceRow }],
+        },
+      };
+      if (entry === undefined) {
+        acc.push({ worksheetName: mapping.worksheetName, status: "completed", statements: [statement] });
+      } else {
+        entry.statements.push(statement);
+      }
+      return acc;
+    }, []),
+  } as unknown as F5DataInterpretationResult;
 }
 
 function factorRow(sourceRow: number, sourceFactorName: string, sourcePartName: string, displayFactorName: string, displayPartName: string) {

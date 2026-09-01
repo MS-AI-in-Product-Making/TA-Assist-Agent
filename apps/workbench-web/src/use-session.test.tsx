@@ -81,6 +81,37 @@ describe("useWorkbenchSession review artifacts", () => {
     ]);
   });
 
+  it("loads the current validated F3 report before a complete review context exists", async () => {
+    const contextId = "d".repeat(64);
+    const snapshot = {
+      contractVersion: "f8-session-snapshot-v1" as const,
+      sessionId: "session-ado-decision",
+      revision: 6,
+      inputRevision: 1,
+      state: "ado_decision_required" as const,
+      activeAttempt: null,
+      priorRunReferences: [],
+      artifactRefs: [
+        { artifactId: "f2-current", kind: "f2_report", revision: 1, validated: true },
+        { artifactId: "f3-current", kind: "f3_report", revision: 1, validated: true, reviewContextId: contextId },
+      ],
+    };
+    const loadArtifactJson = vi.fn(async (_sessionId: string, artifactId: string) => ({ artifactId }));
+    const api = {
+      bootstrap: vi.fn(async () => ({ sessionId: snapshot.sessionId, snapshot, conversation: [] })),
+      subscribe: vi.fn(() => () => undefined),
+      loadArtifactJson,
+    } as unknown as WorkbenchApi;
+
+    const { result } = renderHook(() => useWorkbenchSession(api));
+
+    await waitFor(() => expect(result.current.f3Report).toEqual({ artifactId: "f3-current" }));
+    expect(loadArtifactJson.mock.calls.map(([, artifactId, kind]) => [artifactId, kind])).toEqual([
+      ["f2-current", "f2_report"],
+      ["f3-current", "f3_report"],
+    ]);
+  });
+
   it("keeps successfully loaded worksheet data when one downstream artifact fails", async () => {
     const contextId = "c".repeat(64);
     const snapshot = {
@@ -110,6 +141,80 @@ describe("useWorkbenchSession review artifacts", () => {
     await waitFor(() => expect(result.current.f2Report).toEqual({ artifactId: "f2-current" }));
     expect(result.current.f4Report).toEqual({ artifactId: "f4-current" });
     expect(result.current.f6Report).toBeUndefined();
+  });
+
+  it("clears only stale ADO read errors after a later successful poll", async () => {
+    const projection = {
+      contractVersion: "f8-ado-projection-v1" as const,
+      sessionId: "session-ado-poll",
+      state: "blocked" as const,
+      actionId: "ado-validation:session-ado-poll:3",
+      expectedRevision: 3,
+      reason: "Surface validation action is unavailable.",
+    };
+    const api = {
+      bootstrap: vi.fn(async () => ({
+        sessionId: "session-ado-poll",
+        snapshot: {
+          contractVersion: "f8-session-snapshot-v1" as const,
+          sessionId: "session-ado-poll",
+          revision: 3,
+          inputRevision: 1,
+          state: "ado_action_pending" as const,
+          activeAttempt: null,
+          priorRunReferences: [],
+          artifactRefs: [],
+        },
+        conversation: [],
+      })),
+      subscribe: vi.fn(() => () => undefined),
+      readAdoProjection: vi.fn()
+        .mockRejectedValueOnce(new Error("temporary ado read failure"))
+        .mockResolvedValue(projection),
+    } as unknown as WorkbenchApi;
+
+    const { result } = renderHook(() => useWorkbenchSession(api));
+
+    await waitFor(() => expect(result.current.error?.summary).toBe("ADO status read failed."));
+    await waitFor(() => expect(result.current.adoProjection?.state).toBe("blocked"), { timeout: 15_000 });
+    expect(result.current.error).toBeUndefined();
+    expect(api.readAdoProjection).toHaveBeenCalledTimes(2);
+  });
+
+  it("preserves unrelated errors when ADO reads succeed", async () => {
+    const api = {
+      bootstrap: vi.fn(async () => ({
+        sessionId: "session-ado-preserve-error",
+        snapshot: {
+          contractVersion: "f8-session-snapshot-v1" as const,
+          sessionId: "session-ado-preserve-error",
+          revision: 2,
+          inputRevision: 1,
+          state: "ado_action_pending" as const,
+          activeAttempt: null,
+          priorRunReferences: [],
+          artifactRefs: [{ artifactId: "f2-current", kind: "f2_report", revision: 1, validated: true }],
+        },
+        conversation: [],
+      })),
+      subscribe: vi.fn(() => () => undefined),
+      loadArtifactJson: vi.fn(async () => {
+        throw new Error("f2 artifact unavailable");
+      }),
+      readAdoProjection: vi.fn(async () => ({
+        contractVersion: "f8-ado-projection-v1" as const,
+        sessionId: "session-ado-preserve-error",
+        state: "blocked" as const,
+        actionId: "ado-validation:session-ado-preserve-error:2",
+        expectedRevision: 2,
+        reason: "Surface validation action is unavailable.",
+      })),
+    } as unknown as WorkbenchApi;
+
+    const { result } = renderHook(() => useWorkbenchSession(api));
+
+    await waitFor(() => expect(result.current.adoProjection?.state).toBe("blocked"));
+    await waitFor(() => expect(result.current.error?.summary).toBe("Governed artifact read failed."));
   });
 });
 

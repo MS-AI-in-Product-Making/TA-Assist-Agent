@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { SseEventParser, createWorkbenchApi } from "./api.js";
+import { SseEventParser, buildWorksheetBoundF1ImageArtifactUrl, createWorkbenchApi } from "./api.js";
 
 describe("SseEventParser", () => {
   it("parses event, id, and data across chunk boundaries", () => {
@@ -32,6 +32,20 @@ describe("SseEventParser", () => {
 });
 
 describe("workbench browser API", () => {
+  it("encodes worksheet-bound F1 image artifact URLs with URLSearchParams", () => {
+    const url = buildWorksheetBoundF1ImageArtifactUrl({
+      sessionId: "session 1",
+      contentHash: "a".repeat(64),
+      worksheetName: "Analysis A (rev 2)",
+      relativePath: "worksheets/Analysis A\\loop image (1).png",
+    });
+
+    expect(url).toContain("/api/sessions/session%201/artifacts/f1-image%3A");
+    expect(url).toContain("disposition=inline");
+    expect(url).toContain("worksheet=Analysis+A+%28rev+2%29");
+    expect(url).toContain("path=worksheets%2FAnalysis+A%5Cloop+image+%281%29.png");
+  });
+
   it("creates a session with a valid empty JSON request body", async () => {
     vi.stubGlobal("location", { href: "http://127.0.0.1/" });
     vi.stubGlobal("history", { replaceState: vi.fn() });
@@ -63,7 +77,15 @@ describe("workbench browser API", () => {
   });
 
   it("reads the sanitized ADO projection and confirms a preview with CSRF", async () => {
-    const projection = { contractVersion: "f8-ado-projection-v1", sessionId: "session-1", state: "validation_pending", actionId: "ado-validation:session-1:2", expectedRevision: 2 };
+    const projection = {
+      contractVersion: "f8-ado-projection-v1",
+      sessionId: "session-1",
+      state: "validation_pending",
+      actionId: "ado-validation:session-1:2",
+      expectedRevision: 2,
+      startedAt: "2026-08-31T00:00:00.000Z",
+      expiresAt: "2026-08-31T00:15:00.000Z",
+    };
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify(projection), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ csrfToken: "csrf" }), { status: 200 }))

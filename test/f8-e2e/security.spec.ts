@@ -23,7 +23,8 @@ test("renders the Workbench after a one-time browser bootstrap", async ({ browse
   page.on("pageerror", (error) => errors.push(error.message));
   const nonce = await workbench.issueBootstrap();
   await page.goto(`${workbench.origin}/#bootstrap=${nonce}`);
-  await expect(page.getByRole("heading", { name: "F0 - F3 Guided Workbench" })).toBeVisible();
+  await expect(page.getByText("TA Assist", { exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Analysis progress" })).toBeVisible();
   expect(errors).toEqual([]);
   await context.close();
 });

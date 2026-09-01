@@ -168,7 +168,8 @@ export function useWorkbenchSession(apiOverride?: WorkbenchApi, options: UseWork
       const refs = snapshot.artifactRefs ?? [];
       const f2Artifact = [...refs].reverse().find((artifact) => artifact.kind === "f2_report" && artifact.validated);
       const reviewContext = selectCompleteReviewContext(snapshot);
-      const f3Artifact = reviewContext?.artifacts.get("f3_report");
+      const f3Artifact = reviewContext?.artifacts.get("f3_report")
+        ?? [...refs].reverse().find((artifact) => artifact.kind === "f3_report" && artifact.validated && artifact.revision === snapshot.inputRevision);
       const f4Artifact = reviewContext?.artifacts.get("f4_calculation")
         ?? [...refs].reverse().find((artifact) => artifact.kind === "f4_calculation" && artifact.validated && artifact.revision === snapshot.inputRevision);
       const f5Artifact = reviewContext?.artifacts.get("f5_report");
@@ -208,7 +209,10 @@ export function useWorkbenchSession(apiOverride?: WorkbenchApi, options: UseWork
     const load = async () => {
       try {
         const projection = await api.readAdoProjection(sessionId);
-        if (!cancelled) setAdoProjection(projection);
+        if (!cancelled) {
+          setAdoProjection(projection);
+          setError((current) => current?.summary === "ADO status read failed." ? undefined : current);
+        }
       } catch (projectionError) {
         if (!cancelled) setError(toTypedError(projectionError, "ADO status read failed.", "Wait for automatic retry or refresh the workspace."));
       }

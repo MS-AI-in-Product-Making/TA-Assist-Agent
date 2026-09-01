@@ -16,6 +16,7 @@ export const artifactsRoutes: FastifyPluginAsync<{ readonly context: WorkbenchSe
     }
 
     const { sessionId, artifactId } = request.params as { readonly sessionId: string; readonly artifactId: string };
+    const query = request.query as { readonly disposition?: unknown; readonly worksheet?: unknown; readonly path?: unknown };
     if (request.headers.range !== undefined) {
       return reply.code(416).send({ error: "range_not_supported" });
     }
@@ -24,7 +25,7 @@ export const artifactsRoutes: FastifyPluginAsync<{ readonly context: WorkbenchSe
       return reply.code(403).send({ error: "session_scope_rejected" });
     }
 
-    const artifact = context.artifacts.read(sessionId, artifactId) ?? await readPersistedArtifact(context.rootDir, sessionId, artifactId);
+    const artifact = context.artifacts.read(sessionId, artifactId) ?? await readPersistedArtifact(context.rootDir, sessionId, artifactId, query);
     if (artifact === undefined) {
       return reply.code(404).send({ error: "artifact_not_found" });
     }
@@ -42,7 +43,7 @@ export const artifactsRoutes: FastifyPluginAsync<{ readonly context: WorkbenchSe
       return reply.code(409).send({ error: "artifact_hash_mismatch" });
     }
 
-    const disposition = (request.query as { readonly disposition?: unknown }).disposition === "inline" && artifact.mimeType.startsWith("image/") ? "inline" : "attachment";
+    const disposition = query.disposition === "inline" && artifact.mimeType.startsWith("image/") ? "inline" : "attachment";
     reply.header("content-disposition", `${disposition}; filename="${artifact.fileName.replace(/"/g, "_")}"`);
     reply.type(artifact.mimeType);
     return reply.send(bytes);
@@ -52,8 +53,21 @@ export const artifactsRoutes: FastifyPluginAsync<{ readonly context: WorkbenchSe
 const ALLOWED_MIME_TYPES = new Set(["text/plain", "application/json", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "image/png", "image/jpeg"]);
 const JSON_ARTIFACT_KINDS = new Set(["f2_report", "f3_report", "f4_calculation", "f4_report", "f5_report", "f6_optimization", "f6_report"]);
 
-async function readPersistedArtifact(rootDir: string, sessionId: string, artifactId: string) {
-  if (artifactId.startsWith("f1-image:")) return readF1ImageArtifact(rootDir, sessionId, artifactId.slice("f1-image:".length));
+async function readPersistedArtifact(
+  rootDir: string,
+  sessionId: string,
+  artifactId: string,
+  query: { readonly worksheet?: unknown; readonly path?: unknown },
+) {
+  if (artifactId.startsWith("f1-image:")) {
+    return readF1ImageArtifact(
+      rootDir,
+      sessionId,
+      artifactId.slice("f1-image:".length),
+      typeof query.worksheet === "string" ? query.worksheet : undefined,
+      typeof query.path === "string" ? query.path : undefined,
+    );
+  }
   const store = await openSessionStore({ rootDir, sessionId });
   try {
     const reference = await store.readArtifactReference(artifactId);
@@ -108,8 +122,16 @@ async function readManagedArtifact(rootDir: string, targetPath: string): Promise
   }
 }
 
-async function readF1ImageArtifact(rootDir: string, sessionId: string, contentHash: string) {
+async function readF1ImageArtifact(
+  rootDir: string,
+  sessionId: string,
+  contentHash: string,
+  worksheetName: string | undefined,
+  requestedRelativePath: string | undefined,
+) {
   if (!/^[a-f0-9]{64}$/.test(contentHash)) return undefined;
+  if (worksheetName === undefined || worksheetName.length === 0) return undefined;
+  if (requestedRelativePath === undefined || requestedRelativePath.length === 0) return undefined;
   const store = await openSessionStore({ rootDir, sessionId });
   try {
     const snapshot = await store.readSnapshot();
@@ -122,8 +144,18 @@ async function readF1ImageArtifact(rootDir: string, sessionId: string, contentHa
     if (reportBytes === undefined || createHash("sha256").update(reportBytes).digest("hex") !== reference.contentHash) return undefined;
     const report = f2UserReportSchema.parse(JSON.parse(reportBytes.toString("utf8")) as unknown);
     if (report.status === "inputRejected") return undefined;
-    const matches = report.worksheets.flatMap((worksheet) => worksheet.rows).map((row) => row.imageReference).filter((image) => image?.contentHash === contentHash);
-    const paths = [...new Set(matches.map((image) => image!.relativePath))];
+
+    const worksheets = report.worksheets.filter((worksheet) => worksheet.worksheetName === worksheetName);
+    if (worksheets.length !== 1) return undefined;
+    const paths = [...new Set(worksheets[0]!.rows.flatMap((row) => {
+      const image = row.imageReference;
+      return image !== undefined
+        && image.worksheetName === worksheetName
+        && image.relativePath === requestedRelativePath
+        && image.contentHash === contentHash
+        ? [image.relativePath]
+        : [];
+    }))];
     if (paths.length !== 1) return undefined;
     const relativePath = join(dirname(dirname(reference.relativePath)), "f1", paths[0]!);
     const extension = extname(relativePath).toLowerCase();
