@@ -733,6 +733,8 @@ describe("F7 workbench shell", () => {
   it("1) initial import UI has file label and no marketing landing", () => {
     const client = createMockClient(createSnapshot({ status: "worksheet_selection" }));
     const wrapper = mount(App, { props: { client } });
+    expect(wrapper.get(".workbench-header h1").text()).toBe("Closed-Loop TA Intelligence");
+    expect(wrapper.get(".workbench-header .subtle").text()).toBe("From Measured Data to Engineer Decisions.");
     const workflowRail = wrapper.get(".workflow-rail");
     const workflowContent = wrapper.get(".workflow-content");
     const workflowSteps = workflowRail.findAll("ol.workflow-steps > li");

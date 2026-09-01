@@ -248,8 +248,8 @@ async function openReport(): Promise<void> {
   <main class="workbench-root" :aria-busy="store.isBusy.value ? 'true' : 'false'">
     <header class="workbench-header">
       <div>
-        <h1>F7 Measurement Workbench</h1>
-        <p class="subtle">Industrial metrology phase 1 setup shell</p>
+        <h1>Closed-Loop TA Intelligence</h1>
+        <p class="subtle">From Measured Data to Engineer Decisions.</p>
       </div>
       <div class="header-meta">
         <span class="status-chip chip-pending">{{ statusText }}</span>
