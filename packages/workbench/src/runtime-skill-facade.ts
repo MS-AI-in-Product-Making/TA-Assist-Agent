@@ -51,6 +51,7 @@ export interface RuntimeSkillFacade<Input, Output> {
 export interface RuntimeSkillValidationOptions {
   readonly requireWorksheetScope?: boolean;
   readonly requiredArtifactKinds?: readonly string[];
+  readonly requireConfirmedUserScope?: boolean;
 }
 
 export const TA_RUNTIME_SKILLS: readonly RuntimeSkillMetadata[] = [
@@ -98,6 +99,12 @@ export function validateRuntimeSkillInvocation<Input>(
     if (!Number.isInteger(reference.revision) || reference.revision < 0) {
       errors.push("artifact reference revision must be a non-negative integer");
     }
+    if (reference.revision !== invocation.inputRevision) {
+      errors.push(`artifact reference revision must match inputRevision: ${reference.artifactId}`);
+    }
+    if (reference.validated !== true) {
+      errors.push(`artifact reference must be validated: ${reference.artifactId}`);
+    }
     if (artifactIds.has(reference.artifactId)) {
       errors.push(`duplicate artifact reference id: ${reference.artifactId}`);
     }
@@ -133,6 +140,14 @@ export function validateRuntimeSkillInvocation<Input>(
         errors.push(`worksheetScope.selectedWorksheetNames contains duplicate: ${worksheetName}`);
       }
       dedupe.add(worksheetName);
+    }
+    if (options.requireConfirmedUserScope === true) {
+      if (worksheetScope.confirmed !== true) {
+        errors.push("worksheetScope.confirmed must be true");
+      }
+      if (worksheetScope.provenance !== "user") {
+        errors.push("worksheetScope.provenance must be user");
+      }
     }
   }
 

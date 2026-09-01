@@ -129,6 +129,9 @@ function requireRuntimeSkillOutput<Output>(result: RuntimeSkillResult<Output>, s
     }
     throw new Error(`${skillId} failed: ${result.summary ?? result.reasonCode ?? "unknown"}`);
   }
+  if (result.status === "blocked") {
+    throw new Error(`${skillId} blocked: ${result.summary ?? result.reasonCode ?? "unknown"}`);
+  }
   if (result.output === undefined) {
     throw new Error(`${skillId} returned no output.`);
   }

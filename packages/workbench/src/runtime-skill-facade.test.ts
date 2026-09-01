@@ -56,4 +56,47 @@ describe("validateRuntimeSkillInvocation", () => {
       },
     })).toThrow(/runtime skill invocation/i);
   });
+
+  it("rejects stale artifact revisions and unvalidated artifact references", () => {
+    expect(() => validateRuntimeSkillInvocation({
+      ...validInvocation,
+      inputRevision: 8,
+      artifactReferences: [{ artifactId: "f2-report", kind: "f2_report", revision: 7, validated: true }],
+    })).toThrow(/runtime skill invocation/i);
+
+    expect(() => validateRuntimeSkillInvocation({
+      ...validInvocation,
+      artifactReferences: [{ artifactId: "f2-report", kind: "f2_report", revision: 3, validated: false }],
+    })).toThrow(/runtime skill invocation/i);
+  });
+
+  it("rejects unconfirmed or non-user worksheet scope when production scope confirmation is required", () => {
+    expect(() => validateRuntimeSkillInvocation({
+      ...validInvocation,
+      worksheetScope: {
+        ...validInvocation.worksheetScope,
+        confirmed: false,
+      },
+    }, { requireWorksheetScope: true, requireConfirmedUserScope: true })).toThrow(/runtime skill invocation/i);
+
+    expect(() => validateRuntimeSkillInvocation({
+      ...validInvocation,
+      worksheetScope: {
+        ...validInvocation.worksheetScope,
+        confirmed: true,
+        provenance: "legacy_unverified",
+      },
+    }, { requireWorksheetScope: true, requireConfirmedUserScope: true })).toThrow(/runtime skill invocation/i);
+  });
+
+  it("accepts scope discovery invocation without worksheet scope", () => {
+    expect(() => validateRuntimeSkillInvocation({
+      inputRevision: 1,
+      idempotencyKey: "attempt-1:f1-scope-discovery",
+      artifactReferences: [],
+      input: {
+        request: { workbookPath: "managed/input.xlsx" },
+      },
+    })).not.toThrow();
+  });
 });

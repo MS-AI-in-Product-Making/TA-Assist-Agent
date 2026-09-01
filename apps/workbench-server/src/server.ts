@@ -24,6 +24,18 @@ interface RunnerArtifactReference {
   readonly contentHash: string;
 }
 
+interface F1ScopeDiscoveryWarning {
+  readonly kind: "f1_scope_discovery_warning";
+  readonly status: "blocked" | "failed";
+  readonly code: "scope_discovery_unavailable";
+  readonly summary: string;
+}
+
+function classifyScopeDiscoveryWarningStatus(error: unknown): F1ScopeDiscoveryWarning["status"] {
+  const message = error instanceof Error ? error.message.toLowerCase() : "";
+  return message.includes(" failed:") ? "failed" : "blocked";
+}
+
 import { WorkbenchAuth, SESSION_COOKIE_NAME, type HostBearerOptions, type AuthenticatedRequest, type TestAuthentication } from "./auth.js";
 import { createBrowserBootstrapRendezvous, renderBootstrapPage, renderBootstrapScript, type BrowserBootstrapRendezvous } from "./bootstrap.js";
 import { applySecurityHeaders, isMutation, LOOPBACK_HOST, rejectIfUnsafeBrowserBoundary, safeErrorResponse } from "./security.js";
@@ -59,6 +71,7 @@ export interface StartWorkbenchServerOptions {
   readonly queueFactory?: (options: PersistentWorkerQueueOptions) => Promise<PersistentWorkerQueue>;
   readonly whatIfService?: WhatIfService;
   readonly surfacePrepareService?: SurfacePrepareService;
+  readonly orchestrator?: TaWorkbookOrchestrator;
   readonly resumeSessionId?: string;
 }
 
@@ -183,6 +196,7 @@ export async function buildWorkbenchServer(options: StartWorkbenchServerOptions)
     options.queueFactory,
     options.whatIfService,
     options.surfacePrepareService,
+    options.orchestrator,
     options.allowInternalFixtureAutoConfirmation === true,
   );
   const app = Fastify({ logger: false, bodyLimit: 1024 * 1024 }) as unknown as WorkbenchServer;
@@ -277,12 +291,11 @@ export async function startWorkbenchServer(options: StartWorkbenchServerOptions)
   return { server, url: `http://${LOOPBACK_HOST}:${port}/${sessionQuery}#bootstrap=${bootstrapNonce}`, bootstrapNonce };
 }
 
-async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth, runner: StartWorkbenchServerOptions["runner"], queueFactory: StartWorkbenchServerOptions["queueFactory"], whatIfService: WhatIfService | undefined, surfacePrepareService: SurfacePrepareService | undefined, allowInternalFixtureAutoConfirmation: boolean): Promise<WorkbenchServerContext> {
+async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth, runner: StartWorkbenchServerOptions["runner"], queueFactory: StartWorkbenchServerOptions["queueFactory"], whatIfService: WhatIfService | undefined, surfacePrepareService: SurfacePrepareService | undefined, orchestratorOverride: TaWorkbookOrchestrator | undefined, allowInternalFixtureAutoConfirmation: boolean): Promise<WorkbenchServerContext> {
   const sessions = new StoreBackedSessionRegistry(rootDir);
   const artifacts = new FileBackedArtifactRegistry(rootDir);
   const events = await createSqliteEventSource({ rootDir });
-  const runtimeSkillFacades = createTaRuntimeSkillFacades();
-  const orchestrator = createTaWorkbookOrchestrator(runtimeSkillFacades);
+  const orchestrator = orchestratorOverride ?? createTaWorkbookOrchestrator(createTaRuntimeSkillFacades());
   const effectiveWhatIfService = whatIfService ?? createDefaultWhatIfService(rootDir);
   const queueSessionStore = new StoreBackedQueueSessionStore(rootDir, sessions, allowInternalFixtureAutoConfirmation);
   const queueOptions = {
@@ -780,9 +793,17 @@ async function runDefaultStage(rootDir: string, sessions: SessionRegistry, artif
       repositoryRoot: process.cwd(),
       managedOutputRoot: join(rootDir, "runtime", "workbench", "runner-output", sessionId),
       signal: new AbortController().signal,
-      emit: (event: { readonly kind: string; readonly featureId: string; readonly stage: string; readonly timestamp: string }) => {
+      emit: (event: { readonly kind: string; readonly featureId: string; readonly stage: string; readonly timestamp: string; readonly status?: "blocked" | "failed"; readonly code?: string; readonly summary?: string }) => {
         try {
-          events.publish(sessionId, "runner_progress", { kind: event.kind, featureId: event.featureId, stage: event.stage, timestamp: event.timestamp });
+          events.publish(sessionId, "runner_progress", {
+            kind: event.kind,
+            featureId: event.featureId,
+            stage: event.stage,
+            timestamp: event.timestamp,
+            ...(event.status === undefined ? {} : { status: event.status }),
+            ...(event.code === undefined ? {} : { code: event.code }),
+            ...(event.summary === undefined ? {} : { summary: event.summary }),
+          });
         } catch {
           // Progress is observational and must never fail governed analysis.
         }
@@ -798,6 +819,7 @@ async function runDefaultStage(rootDir: string, sessions: SessionRegistry, artif
       }), "knowledge-and-rules-validation-v1") as { readonly featureId: string; readonly status: string; readonly versions: readonly string[] };
       const workbook = readOoxmlWorkbook(new Uint8Array(readFileSync(workbookPath)), undefined, false, { maxRow: 100, maxColumn: "AZ" });
       let selection: { readonly selectionReference: unknown; readonly prompt: unknown } | undefined;
+      let scopeDiscoveryWarning: F1ScopeDiscoveryWarning | undefined;
       try {
         selection = requireRuntimeSkillOutput(await orchestrator.runWorkbookScopeDiscovery({
           inputRevision: snapshot?.inputRevision ?? 0,
@@ -806,14 +828,30 @@ async function runDefaultStage(rootDir: string, sessions: SessionRegistry, artif
           input: { request: { workbookPath }, context },
         }), "workbook-scope-discovery-v1") as { readonly selectionReference: unknown; readonly prompt: unknown };
         writeRegistry(rootDir, "f1-f2-selection", sessionId, selection.selectionReference);
-      } catch {
+      } catch (error) {
         selection = undefined;
+        scopeDiscoveryWarning = {
+          kind: "f1_scope_discovery_warning",
+          status: classifyScopeDiscoveryWarningStatus(error),
+          code: "scope_discovery_unavailable",
+          summary: error instanceof Error ? error.message : "Workbook scope discovery is unavailable.",
+        };
+        context.emit({
+          kind: "stage_warning",
+          featureId: "F1",
+          stage: "scope_discovery",
+          timestamp: new Date().toISOString(),
+          status: scopeDiscoveryWarning.status,
+          code: scopeDiscoveryWarning.code,
+          summary: scopeDiscoveryWarning.summary,
+        });
       }
       return {
         featureId: f0.featureId,
         status: f0.status,
         versions: f0.versions,
         worksheetCapabilities: workbook.worksheetInventory.map((worksheet) => ({ worksheetName: worksheet.worksheetName, whatIfAvailable: false })),
+        ...(scopeDiscoveryWarning === undefined ? {} : { scopeDiscoveryWarning }),
         ...(selection === undefined ? {} : { selectionPrompt: selection.prompt }),
       };
     }

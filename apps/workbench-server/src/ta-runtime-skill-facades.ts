@@ -14,6 +14,7 @@ import {
   type RuntimeSkillFacade,
   type RuntimeSkillInvocation,
   type RuntimeSkillResult,
+  type RuntimeSkillValidationOptions,
 } from "@ai-assist/workbench";
 
 export interface TaRuntimeRunnerDependencies {
@@ -28,10 +29,7 @@ export interface TaRuntimeRunnerDependencies {
 
 interface RunnerRequest<Input, Output> {
   readonly metadataSkillId: string;
-  readonly validate: {
-    readonly requireWorksheetScope?: boolean;
-    readonly requiredArtifactKinds?: readonly string[];
-  };
+  readonly validate: RuntimeSkillValidationOptions;
   readonly execute: (invocation: RuntimeSkillInvocation<Input>) => Output | Promise<Output>;
 }
 
@@ -154,7 +152,7 @@ export function createTaRuntimeSkillFacades(dependencies: TaRuntimeRunnerDepende
     }),
     workbookAnalysisAssets: createRunnerFacade({
       metadataSkillId: "workbook-analysis-assets-v1",
-      validate: { requireWorksheetScope: true },
+      validate: { requireWorksheetScope: true, requireConfirmedUserScope: true },
       execute: (invocation) => f1f2Confirmed(invocation.input.request, invocation.input.context, invocation.input.dependencies as never),
     }),
     analysisInputValidation: pendingBoundaryFacade(
@@ -164,7 +162,7 @@ export function createTaRuntimeSkillFacades(dependencies: TaRuntimeRunnerDepende
     ),
     dimensionTraceabilityReview: createRunnerFacade({
       metadataSkillId: "dimension-traceability-review-v1",
-      validate: { requireWorksheetScope: true, requiredArtifactKinds: ["f2_report"] },
+      validate: { requireWorksheetScope: true, requiredArtifactKinds: ["f2_report"], requireConfirmedUserScope: true },
       execute: (invocation) => f3(invocation.input.request, invocation.input.context, invocation.input.dependencies as never),
     }),
     adoGovernancePublication: pendingBoundaryFacade(
@@ -174,17 +172,17 @@ export function createTaRuntimeSkillFacades(dependencies: TaRuntimeRunnerDepende
     ),
     tolerancePerformanceCalculation: createRunnerFacade({
       metadataSkillId: "tolerance-performance-calculation-v1",
-      validate: { requireWorksheetScope: true, requiredArtifactKinds: ["f2_report"] },
+      validate: { requireWorksheetScope: true, requiredArtifactKinds: ["f2_report"], requireConfirmedUserScope: true },
       execute: (invocation) => f4(invocation.input.request, invocation.input.context, invocation.input.dependencies as never),
     }),
     engineeringInterpretation: createRunnerFacade({
       metadataSkillId: "engineering-interpretation-v1",
-      validate: { requireWorksheetScope: true, requiredArtifactKinds: ["f3_report", "f4_calculation"] },
+      validate: { requireWorksheetScope: true, requiredArtifactKinds: ["f3_report", "f4_calculation"], requireConfirmedUserScope: true },
       execute: (invocation) => f5(invocation.input.request, invocation.input.context, invocation.input.dependencies as never),
     }),
     improvementEvaluation: createRunnerFacade({
       metadataSkillId: "improvement-evaluation-v1",
-      validate: { requireWorksheetScope: true, requiredArtifactKinds: ["f3_report", "f4_calculation", "f5_report"] },
+      validate: { requireWorksheetScope: true, requiredArtifactKinds: ["f3_report", "f4_calculation", "f5_report"], requireConfirmedUserScope: true },
       execute: (invocation) => f6(invocation.input.request, invocation.input.context, invocation.input.dependencies as never),
     }),
     engineeringSummaryReport: pendingBoundaryFacade(

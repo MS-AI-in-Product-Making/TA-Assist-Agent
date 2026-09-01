@@ -14,6 +14,7 @@ import { createHostActionStore, createReviewContextId, createSessionStore, openS
 import { renderF3AdoMarkdown } from "@ai-assist/workflow-runners";
 import { createAnonymousWorkbookZip } from "../../../packages/workbook-catalog/src/test-support.js";
 import type { PersistentWorkerQueueOptions, StageJob } from "./sqlite-worker-queue.js";
+import type { TaWorkbookOrchestrator } from "@ai-assist/workbench";
 
 function testRoot(name: string): string {
   return join(".tmp", `${name}-${randomUUID()}`);
@@ -1113,6 +1114,97 @@ describe("workbench server routes", () => {
         expect(progress.map(({ payload_json }) => JSON.parse(payload_json))).toEqual(expect.arrayContaining([
           expect.objectContaining({ kind: "stage_started", featureId: "F0", stage: "validate_capabilities" }),
           expect.objectContaining({ kind: "stage_completed", featureId: "F0", stage: "validate_capabilities" }),
+        ]));
+      } finally {
+        database.close();
+      }
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  }, 15_000);
+
+  it("keeps F0 success and returns structured warning when F1 discovery is unavailable", async () => {
+    const rootDir = testRoot("workbench-server-f1-discovery-warning");
+    await rm(rootDir, { recursive: true, force: true });
+    const orchestrator: TaWorkbookOrchestrator = {
+      async runStage(stage) {
+        if (stage !== "f0_validating") {
+          throw new Error(`unexpected stage: ${stage}`);
+        }
+        return {
+          status: "completed",
+          skillId: "knowledge-and-rules-validation-v1",
+          inputRevision: 1,
+          idempotencyKey: "attempt:f0",
+          output: { featureId: "F0", status: "completed", versions: ["v1", "internal-v1", "interpretation-rules-v1"] },
+        };
+      },
+      async runWorkbookScopeDiscovery() {
+        return {
+          status: "failed",
+          skillId: "workbook-scope-discovery-v1",
+          inputRevision: 1,
+          idempotencyKey: "attempt:f1",
+          reasonCode: "scope_runner_unavailable",
+          summary: "scope runner unavailable",
+        };
+      },
+      async runAnalysisInputValidation() {
+        return {
+          status: "blocked",
+          skillId: "analysis-input-validation-v1",
+          inputRevision: 1,
+          idempotencyKey: "attempt:f2",
+          reasonCode: "delegated",
+          summary: "delegated",
+        };
+      },
+    };
+
+    const server = await buildWorkbenchServer({ rootDir, orchestrator });
+    try {
+      const auth = await server.testAuthenticate("14141414-1414-4414-8414-141414141414");
+      const artifactId = "managed-workbook";
+      const relativePath = `uploads/${auth.sessionId}/workbook/${artifactId}-book.xlsx`;
+      server.registerArtifactForTest(auth.sessionId, artifactId, relativePath, "book.xlsx", "confidential", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      await mkdir(dirname(join(rootDir, relativePath)), { recursive: true });
+      await writeFile(join(rootDir, relativePath), createAnonymousWorkbookZip());
+
+      const response = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${auth.sessionId}/commands`,
+        headers: auth.headers,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId: auth.sessionId,
+          commandId: "f1-warning-upload",
+          expectedRevision: 0,
+          command: "upload_workbook",
+          payload: { artifactId, inputClassification: "confidential" },
+        },
+      });
+
+      expect(response.statusCode).toBe(202);
+      expect(response.json()).toMatchObject({
+        state: "initial_scope_required",
+        worksheetCapabilities: expect.arrayContaining([{ worksheetName: "Analysis-A", whatIfAvailable: false }]),
+      });
+      expect(response.json()).not.toHaveProperty("selectionPrompt");
+      const selectionRegistry = await readFile(join(rootDir, "runtime", "workbench", "registries", "f1-f2-selection", `${auth.sessionId}.json`), "utf8").catch(() => undefined);
+      expect(selectionRegistry).toBeUndefined();
+      const database = new DatabaseSync(join(rootDir, "runtime", "workbench", "workbench.sqlite"), { readOnly: true });
+      try {
+        const progress = database.prepare("SELECT payload_json FROM session_sse_events WHERE session_id = ? AND event_name = 'runner_progress' ORDER BY event_id").all(auth.sessionId) as Array<{ payload_json: string }>;
+        expect(progress.map(({ payload_json }) => JSON.parse(payload_json))).toEqual(expect.arrayContaining([
+          expect.objectContaining({
+            kind: "stage_warning",
+            featureId: "F1",
+            stage: "scope_discovery",
+            status: "failed",
+            code: "scope_discovery_unavailable",
+            summary: expect.stringContaining("workbook-scope-discovery-v1 failed:"),
+          }),
         ]));
       } finally {
         database.close();
