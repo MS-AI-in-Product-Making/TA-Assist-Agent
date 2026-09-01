@@ -1,7 +1,11 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { mount } from "@vue/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import DimensionChainPanel from "./DimensionChainPanel.vue";
 import type { DimensionChainFactor } from "./dimension-chain";
+
+const STYLE_SOURCE = readFileSync(join(process.cwd(), "apps/f7-web/src/style.css"), "utf8");
 
 function dispatchPointer(
   element: Element,
@@ -253,7 +257,7 @@ describe("DimensionChainPanel", () => {
     for (let index = 0; index < 40; index += 1) {
       await wrapper.get("button[aria-label='Zoom out']").trigger("click");
     }
-    expect(svg.attributes("data-view-zoom")).toBe("0.5");
+    expect(svg.attributes("data-view-zoom")).toBe("0.25");
 
     await wrapper.get("button[aria-label='Fit full dimension chain']").trigger("click");
     expect(svg.attributes("data-view-zoom")).toBe("1");
@@ -583,19 +587,54 @@ describe("DimensionChainPanel", () => {
     expect(wrapper.get("[data-dimension-segment='2']").attributes("data-direction")).toBe("subtractive");
   });
 
-  it("reverses arrows without moving their lines or guides", async () => {
+  it("keeps reversed arrows connected head-to-tail through their shared guides", async () => {
     const wrapper = mount(DimensionChainPanel, {
       props: { factors, valid: true, editable: true },
     });
     await wrapper.get("[data-generate-dimension-chain]").trigger("click");
+    const canvas = wrapper.get("[data-dimension-chain-canvas]");
+    setCanvasBounds(canvas.element);
+    Object.defineProperties(canvas.element, {
+      setPointerCapture: { configurable: true, value: vi.fn() },
+      releasePointerCapture: { configurable: true, value: vi.fn() },
+    });
+    const firstGuide = wrapper.get("[data-dimension-guide-handle='factor-1::factor-2']");
+    dispatchPointer(firstGuide.element, "pointerdown", {
+      button: 0, buttons: 1, clientX: 244, clientY: 77, pointerId: 42,
+    });
+    dispatchPointer(canvas.element, "pointermove", {
+      button: 0, buttons: 1, clientX: 44, clientY: 77, pointerId: 42,
+    });
+    dispatchPointer(canvas.element, "pointerup", {
+      button: 0, buttons: 0, clientX: 44, clientY: 77, pointerId: 42,
+    });
+    await wrapper.vm.$nextTick();
+    expect(wrapper.get("[data-dimension-segment='1']").attributes("data-direction")).toBe("subtractive");
+    expect(wrapper.get("[data-dimension-segment='2']").attributes("data-direction")).toBe("additive");
+
+    const positionsBefore = wrapper.findAll("[data-dimension-segment] .dimension-chain-component")
+      .map((line) => ({
+        x1: line.attributes("x1"), x2: line.attributes("x2"),
+        y1: line.attributes("y1"), y2: line.attributes("y2"),
+      }));
+    const guidesBefore = wrapper.findAll("[data-dimension-guide-handle]").map((guide) => ({
+      x1: guide.attributes("x1"), x2: guide.attributes("x2"),
+      y1: guide.attributes("y1"), y2: guide.attributes("y2"),
+    }));
+    const closureBefore = wrapper.get("[data-dimension-closure]");
+    const closurePositionBefore = {
+      x1: closureBefore.attributes("x1"), x2: closureBefore.attributes("x2"),
+      y1: closureBefore.attributes("y1"), y2: closureBefore.attributes("y2"),
+    };
+    await wrapper.get("button[aria-label='Vertical dimension chain']").trigger("click");
+    const verticalClosureBefore = wrapper.get("[data-dimension-closure]");
+    const verticalClosurePositionBefore = {
+      x1: verticalClosureBefore.attributes("x1"), x2: verticalClosureBefore.attributes("x2"),
+      y1: verticalClosureBefore.attributes("y1"), y2: verticalClosureBefore.attributes("y2"),
+    };
+    await wrapper.get("button[aria-label='Horizontal dimension chain']").trigger("click");
     await wrapper.get("button[aria-label='Zoom in']").trigger("click");
     const zoomBefore = wrapper.get("[data-dimension-chain-svg]").attributes("data-view-zoom");
-    const firstLine = wrapper.get("[data-dimension-segment='1'] .dimension-chain-component");
-    const guide = wrapper.get("[data-dimension-guide-handle='factor-1::factor-2']");
-    const closure = wrapper.get("[data-dimension-closure]");
-    const firstLineBefore = { x1: firstLine.attributes("x1"), x2: firstLine.attributes("x2"), y1: firstLine.attributes("y1") };
-    const guideBefore = { x1: guide.attributes("x1"), x2: guide.attributes("x2"), y1: guide.attributes("y1"), y2: guide.attributes("y2") };
-    const closureBefore = { x1: closure.attributes("x1"), x2: closure.attributes("x2"), y1: closure.attributes("y1"), y2: closure.attributes("y2") };
 
     await wrapper.get("button[aria-label='Reverse all factors']").trigger("click");
     await wrapper.setProps({
@@ -606,22 +645,70 @@ describe("DimensionChainPanel", () => {
     const second = wrapper.get("[data-dimension-segment='2']");
     const last = wrapper.get("[data-dimension-segment='3']");
     expect(first.attributes("data-value")).toBe("-2");
-    expect(first.attributes("data-direction")).toBe("subtractive");
-    expect(first.classes()).toContain("dimension-chain-subtractive");
+    expect(first.attributes("data-direction")).toBe("additive");
+    expect(first.classes()).toContain("dimension-chain-additive");
     expect(second.attributes("data-value")).toBe("1");
-    expect(second.attributes("data-direction")).toBe("additive");
-    expect(second.classes()).toContain("dimension-chain-additive");
+    expect(second.attributes("data-direction")).toBe("subtractive");
+    expect(second.classes()).toContain("dimension-chain-subtractive");
     expect(last.attributes("data-value")).toBe("-0.5");
     expect(last.attributes("data-direction")).toBe("subtractive");
     expect(last.classes()).toContain("dimension-chain-subtractive");
-    expect(firstLine.attributes("x1")).toBe(firstLineBefore.x2);
-    expect(firstLine.attributes("x2")).toBe(firstLineBefore.x1);
-    expect(firstLine.attributes("y1")).toBe(firstLineBefore.y1);
-    expect({ x1: guide.attributes("x1"), x2: guide.attributes("x2"), y1: guide.attributes("y1"), y2: guide.attributes("y2") })
-      .toEqual(guideBefore);
-    expect({ x1: closure.attributes("x1"), x2: closure.attributes("x2"), y1: closure.attributes("y1"), y2: closure.attributes("y2") })
-      .toEqual(closureBefore);
+
+    const segments = wrapper.findAll("[data-dimension-segment]");
+    const guides = wrapper.findAll("[data-dimension-guide-handle]");
+    expect(segments.map((segment) => {
+      const line = segment.get(".dimension-chain-component");
+      return {
+        x1: line.attributes("x1"), x2: line.attributes("x2"),
+        y1: line.attributes("y1"), y2: line.attributes("y2"),
+      };
+    })).toEqual(positionsBefore.map(({ x1, x2, y1, y2 }) => ({ x1: x2, x2: x1, y1: y2, y2: y1 })));
+    expect(guides.map((guide) => ({
+      x1: guide.attributes("x1"), x2: guide.attributes("x2"),
+      y1: guide.attributes("y1"), y2: guide.attributes("y2"),
+    }))).toEqual(guidesBefore);
+    const closure = wrapper.get("[data-dimension-closure]");
+    expect({
+      x1: closure.attributes("x1"), x2: closure.attributes("x2"),
+      y1: closure.attributes("y1"), y2: closure.attributes("y2"),
+    }).toEqual({
+      x1: closurePositionBefore.x2, x2: closurePositionBefore.x1,
+      y1: closurePositionBefore.y2, y2: closurePositionBefore.y1,
+    });
+    const closureStartGuide = wrapper.get("[data-dimension-closure-guide-handle='start']");
+    const closureEndGuide = wrapper.get("[data-dimension-closure-guide-handle='end']");
+    const firstLine = segments[0]!.get(".dimension-chain-component");
+    const lastLine = segments[segments.length - 1]!.get(".dimension-chain-component");
+    expect(lastLine.attributes("x1")).toBe(closureStartGuide.attributes("x1"));
+    expect(closure.attributes("x2")).toBe(closureStartGuide.attributes("x2"));
+    expect(closure.attributes("x1")).toBe(closureEndGuide.attributes("x2"));
+    expect(firstLine.attributes("x2")).toBe(closureEndGuide.attributes("x1"));
+    for (let index = 0; index < guides.length; index += 1) {
+      const previousLine = segments[index]!.get(".dimension-chain-component");
+      const nextLine = segments[index + 1]!.get(".dimension-chain-component");
+      const guide = guides[index]!;
+      const previousHeadAtGuide = previousLine.attributes("x2") === guide.attributes("x1")
+        && previousLine.attributes("y2") === guide.attributes("y1");
+      const nextHeadAtGuide = nextLine.attributes("x2") === guide.attributes("x2")
+        && nextLine.attributes("y2") === guide.attributes("y2");
+      expect(previousHeadAtGuide).not.toBe(nextHeadAtGuide);
+    }
     expect(wrapper.get("[data-dimension-chain-svg]").attributes("data-view-zoom")).toBe(zoomBefore);
+    await wrapper.get("button[aria-label='Vertical dimension chain']").trigger("click");
+    const verticalClosure = wrapper.get("[data-dimension-closure]");
+    expect({
+      x1: verticalClosure.attributes("x1"), x2: verticalClosure.attributes("x2"),
+      y1: verticalClosure.attributes("y1"), y2: verticalClosure.attributes("y2"),
+    }).toEqual({
+      x1: verticalClosurePositionBefore.x2, x2: verticalClosurePositionBefore.x1,
+      y1: verticalClosurePositionBefore.y2, y2: verticalClosurePositionBefore.y1,
+    });
+    await wrapper.get("button[aria-label='Reverse all factors']").trigger("click");
+    await wrapper.setProps({ factors });
+    expect({
+      x1: verticalClosure.attributes("x1"), x2: verticalClosure.attributes("x2"),
+      y1: verticalClosure.attributes("y1"), y2: verticalClosure.attributes("y2"),
+    }).toEqual(verticalClosurePositionBefore);
     expect(wrapper.find("[data-dimension-chain-stale]").exists()).toBe(false);
   });
 
@@ -726,22 +813,13 @@ describe("DimensionChainPanel", () => {
     expect(wrapper.find("[data-dimension-chain-stale]").exists()).toBe(true);
   });
 
-  it("Reset layout advances layout state without resetting the viewport or snapshot", async () => {
+  it("does not expose a layout reset control", async () => {
     const wrapper = mount(DimensionChainPanel, {
       props: { factors, valid: true, editable: true },
     });
     await wrapper.get("[data-generate-dimension-chain]").trigger("click");
-    await wrapper.get("button[aria-label='Zoom in']").trigger("click");
-    const svg = wrapper.get("[data-dimension-chain-svg]");
-    const zoomBefore = svg.attributes("data-view-zoom");
-    const reset = wrapper.get("button[aria-label='Reset layout']");
 
-    expect(reset.attributes("data-layout-revision")).toBe("0");
-    await reset.trigger("click");
-
-    expect(reset.attributes("data-layout-revision")).toBe("1");
-    expect(svg.attributes("data-view-zoom")).toBe(zoomBefore);
-    expect(wrapper.findAll("[data-dimension-segment]")).toHaveLength(3);
+    expect(wrapper.find("button[aria-label='Reset layout']").exists()).toBe(false);
   });
 
   it("keeps a shared guide at its dragged position without changing factor signs", async () => {
@@ -1094,11 +1172,6 @@ describe("DimensionChainPanel", () => {
     expect(closure.attributes("data-end-offset")).toBe("-15");
     expect(closure.attributes("data-lane-offset")).toBe("30");
 
-    await wrapper.get("button[aria-label='Reset layout']").trigger("click");
-    expect(closure.attributes("data-start-offset")).toBe("0");
-    expect(closure.attributes("data-end-offset")).toBe("0");
-    expect(closure.attributes("data-lane-offset")).toBe("0");
-
     await wrapper.get("button[aria-label='Vertical dimension chain']").trigger("click");
     dispatchPointer(wrapper.get("[data-dimension-closure-guide-handle='start']").element, "pointerdown", {
       button: 0, buttons: 1, clientX: 222, clientY: 199, pointerId: 33,
@@ -1216,7 +1289,6 @@ describe("DimensionChainPanel", () => {
     await wrapper.vm.$nextTick();
     expect(Number(startGuide.attributes("x2")) - Number(endGuide.attributes("x2"))).toBeCloseTo(1, 10);
 
-    await wrapper.get("button[aria-label='Reset layout']").trigger("click");
     await wrapper.get("button[aria-label='Vertical dimension chain']").trigger("click");
     const verticalStartGuide = wrapper.get("[data-dimension-closure-guide-handle='start']");
     const verticalEndGuide = wrapper.get("[data-dimension-closure-guide-handle='end']");
@@ -1460,10 +1532,35 @@ describe("DimensionChainPanel", () => {
     expect(wrapper.get("[data-dimension-segment='2']").attributes("data-lane-offset")).toBe("30");
     expect(setupState.manualLayouts.horizontal.laneOffsets).toEqual({ "factor-2": 30 });
 
-    await wrapper.get("button[aria-label='Reset layout']").trigger("click");
-    expect(wrapper.get("[data-dimension-segment='2']").attributes("data-lane-offset")).toBe("0");
-    expect(setupState.manualLayouts.horizontal.laneOffsets).toEqual({});
-    expect(setupState.manualLayouts.vertical.laneOffsets).toEqual({});
+  });
+
+  it("hides and restores dimension annotations while keeping the background image visible", async () => {
+    installImageEnvironment(["blob:visibility"], {
+      "blob:visibility": { width: 640, height: 360 },
+    });
+    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true } });
+    const visibilityToggle = wrapper.get("button[aria-label='Hide dimension chain']");
+    expect(visibilityToggle.attributes("disabled")).toBeDefined();
+
+    await chooseBackgroundFile(wrapper, new File(["png"], "section.png", { type: "image/png" }));
+    await vi.waitFor(() => expect(wrapper.find("[data-dimension-chain-background]").exists()).toBe(true));
+    await wrapper.get("[data-generate-dimension-chain]").trigger("click");
+
+    expect(visibilityToggle.attributes("disabled")).toBeUndefined();
+    expect(visibilityToggle.attributes("aria-pressed")).toBe("true");
+    expect(wrapper.find("[data-dimension-chain-overlay]").exists()).toBe(true);
+    expect(wrapper.find("[data-dimension-chain-accessible-list]").exists()).toBe(true);
+
+    await visibilityToggle.trigger("click");
+    expect(wrapper.get("button[aria-label='Show dimension chain']").attributes("aria-pressed")).toBe("false");
+    expect(wrapper.find("[data-dimension-chain-overlay]").exists()).toBe(false);
+    expect(wrapper.find("[data-dimension-chain-accessible-list]").exists()).toBe(false);
+    expect(wrapper.find("[data-dimension-chain-background]").exists()).toBe(true);
+
+    await wrapper.get("button[aria-label='Show dimension chain']").trigger("click");
+    expect(wrapper.get("button[aria-label='Hide dimension chain']").attributes("aria-pressed")).toBe("true");
+    expect(wrapper.find("[data-dimension-chain-overlay]").exists()).toBe(true);
+    expect(wrapper.find("[data-dimension-segment='1']").exists()).toBe(true);
   });
 
   it("imports PNG, JPEG, and WebP before Generate and renders the image as the first fitted visual layer", async () => {
@@ -1770,6 +1867,15 @@ describe("DimensionChainPanel", () => {
     expect(opacity.attributes("min")).toBe("10");
     expect(opacity.attributes("max")).toBe("100");
     expect(opacity.element).toHaveProperty("value", "60");
+    const opacityOutput = opacity.element.parentElement?.querySelector("output");
+    expect(opacityOutput?.textContent).toBe("60%");
+    expect(opacityOutput?.nextElementSibling).toBe(opacity.element);
+    expect(STYLE_SOURCE).toMatch(
+      /\.dimension-chain-background-opacity\s*\{[^}]*grid-template-areas:\s*"label value"\s*"slider slider"/s,
+    );
+    expect(STYLE_SOURCE).toMatch(
+      /\.dimension-chain-background-opacity\s*\+\s*\.dimension-chain-background-opacity\s*\{[^}]*border-left:/s,
+    );
     expect(wrapper.get("[data-dimension-chain-background]").attributes("opacity")).toBe("0.6");
 
     await opacity.setValue("85");
@@ -1785,16 +1891,16 @@ describe("DimensionChainPanel", () => {
     expectPersistentImage();
     await wrapper.get("button[aria-label='Vertical dimension chain']").trigger("click");
     expectPersistentImage();
-    await wrapper.get("button[aria-label='Reset layout']").trigger("click");
-    expectPersistentImage();
     await wrapper.get("button[aria-label='Reverse all factors']").trigger("click");
     expectPersistentImage();
     const svg = wrapper.get("[data-dimension-chain-svg]");
     const image = wrapper.get("[data-dimension-chain-background]");
+    const overlay = wrapper.get("[data-dimension-chain-overlay]");
     const closureLoop = wrapper.get("[data-dimension-closure-loop]");
     expect(Array.from(svg.element.children).indexOf(image.element)).toBeLessThan(
-      Array.from(svg.element.children).indexOf(closureLoop.element),
+      Array.from(svg.element.children).indexOf(overlay.element),
     );
+    expect(overlay.element.contains(closureLoop.element)).toBe(true);
   });
 
   it("scales the background image around its center and resets scale for a new image", async () => {
@@ -1814,6 +1920,9 @@ describe("DimensionChainPanel", () => {
     expect(scale.attributes("min")).toBe("25");
     expect(scale.attributes("max")).toBe("300");
     expect(scale.element).toHaveProperty("value", "100");
+    const scaleOutput = scale.element.parentElement?.querySelector("output");
+    expect(scaleOutput?.textContent).toBe("100%");
+    expect(scaleOutput?.nextElementSibling).toBe(scale.element);
     const image = wrapper.get("[data-dimension-chain-background]");
     const initial = {
       x: Number(image.attributes("x")),
@@ -1833,6 +1942,26 @@ describe("DimensionChainPanel", () => {
     expect(scaled.height).toBeCloseTo(initial.height * 2, 10);
     expect(scaled.x + scaled.width / 2).toBeCloseTo(initial.x + initial.width / 2, 10);
     expect(scaled.y + scaled.height / 2).toBeCloseTo(initial.y + initial.height / 2, 10);
+
+    await scale.setValue("300");
+    for (let index = 0; index < 12; index += 1) {
+      await wrapper.get("button[aria-label='Zoom out']").trigger("click");
+    }
+    const svg = wrapper.get("[data-dimension-chain-svg]");
+    const viewBox = svg.attributes("viewBox");
+    expect(viewBox).toBeDefined();
+    const [viewX, viewY, viewWidth, viewHeight] = viewBox!.split(" ").map(Number) as [number, number, number, number];
+    const enlarged = {
+      x: Number(image.attributes("x")),
+      y: Number(image.attributes("y")),
+      width: Number(image.attributes("width")),
+      height: Number(image.attributes("height")),
+    };
+    expect(svg.attributes("data-view-zoom")).toBe("0.25");
+    expect(enlarged.x).toBeGreaterThanOrEqual(viewX);
+    expect(enlarged.y).toBeGreaterThanOrEqual(viewY);
+    expect(enlarged.x + enlarged.width).toBeLessThanOrEqual(viewX + viewWidth);
+    expect(enlarged.y + enlarged.height).toBeLessThanOrEqual(viewY + viewHeight);
 
     await chooseBackgroundFile(wrapper, new File(["jpeg"], "second.jpg", { type: "image/jpeg" }));
     await vi.waitFor(() => {

@@ -182,7 +182,6 @@ describe("ReportPanel", () => {
   it("contains wide report content within the mobile report column", () => {
     expect(REPORT_PANEL_SOURCE).toContain("grid-template-columns: minmax(0, 1fr);");
     expect(REPORT_PANEL_SOURCE).toMatch(/\.assessment-banner\s*\{[^}]*min-width:\s*0;/s);
-    expect(REPORT_PANEL_SOURCE).toMatch(/\.evidence-details\s*\{[^}]*min-width:\s*0;/s);
   });
 
   it.each([
@@ -242,46 +241,11 @@ describe("ReportPanel", () => {
     expect(unavailable.text()).toContain("Resolve variation evidence");
   });
 
-  it("renders the closed evidence details", () => {
+  it("does not expose the internal evidence chain", () => {
     const wrapper = mountReport();
-    const details = wrapper.get("details[data-report-evidence]");
-    const evidenceRows = details.findAll(".evidence-list > div");
-    const worksheetValue = evidenceRows.find((row) => row.get("dt").text() === "Worksheet")?.get("dd");
-    const specificationSourceValue = evidenceRows
-      .find((row) => row.get("dt").text() === "Specification source cells")
-      ?.get("dd");
 
-    expect(details.attributes("open")).toBeUndefined();
-    expect(details.text()).toContain(WORKBOOK_HASH);
-    expect(details.text()).toContain("LSL: Excel source Analysis-A!B2");
-    expect(details.text()).toContain("USL: Excel source Analysis-A!B3");
-    expect(details.text()).toContain("Target sigma: Excel source Analysis-A!B4");
-    expect(details.text()).toContain("F7_MONTE_CARLO_V1");
-    expect(details.text()).toContain(RUN_SEED);
-    expect(details.text()).toContain("10,000");
-    expect(details.text()).toContain("Generated at");
-    expect(details.text()).toContain("2026-08-25");
-    expect(details.text()).toContain("Factor manifest");
-    expect(worksheetValue?.classes()).toContain("evidence-value");
-    expect(specificationSourceValue?.classes()).toContain("evidence-value");
-  });
-
-  it("distinguishes manual specification overrides and entries from Excel sources", () => {
-    const report = createReport();
-    report.evidence.specificationInputOrigins = {
-      lowerSpecLimit: "manual_override",
-      upperSpecLimit: "manual_entry",
-      targetSigmaLevel: "excel_source",
-    };
-    delete report.evidence.specificationSourceCells.lowerSpecLimit;
-    delete report.evidence.specificationSourceCells.upperSpecLimit;
-    const details = mountReport(report).get("details[data-report-evidence]").text();
-
-    expect(details).toContain("LSL: Manual override");
-    expect(details).toContain("USL: Manual entry");
-    expect(details).toContain("Target sigma: Excel source Analysis-A!B4");
-    expect(details).not.toContain("LSL: Not available");
-    expect(details).not.toContain("USL: Not available");
+    expect(wrapper.find("[data-report-evidence]").exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("Evidence chain");
   });
 
   it("downloads exact Markdown bytes with a safe filename and revokes the object URL", async () => {
@@ -369,10 +333,6 @@ describe("ReportPanel", () => {
   it("uses an effective mobile header layout and permits long values to wrap", () => {
     expect(REPORT_PANEL_SOURCE).toMatch(/\.report-header\s*>\s*div,[^{]*{[^}]*min-width:\s*0/s);
     expect(REPORT_PANEL_SOURCE).toMatch(/\.report-header\s+\.subtle\s*{[^}]*overflow-wrap:\s*anywhere/s);
-    expect(REPORT_PANEL_SOURCE).toMatch(/\.long-value\s*{[^}]*min-width:\s*0/s);
-    expect(REPORT_PANEL_SOURCE).toMatch(
-      /\.evidence-value\s*{[^}]*min-width:\s*0[^}]*overflow-wrap:\s*anywhere[^}]*word-break:\s*break-word/s,
-    );
     expect(REPORT_PANEL_SOURCE).toMatch(/@media\s*\(max-width:\s*720px\)[\s\S]*?\.report-header\s*{[^}]*flex-direction:\s*column/s);
     expect(REPORT_PANEL_SOURCE).not.toMatch(/@media\s*\(max-width:\s*720px\)[\s\S]*?\.report-header[^}]*grid-template-columns/s);
     expect(REPORT_PANEL_SOURCE).not.toMatch(/font-size:\s*[^;]*(?:vw|dvw|svw|lvw)/);

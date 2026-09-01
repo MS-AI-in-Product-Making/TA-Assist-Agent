@@ -371,12 +371,23 @@ function applyFactorSigns(changes: readonly { factorId: string; sign: 1 | -1 }[]
 }
 
 function reverseAllFactors(): void {
+  if (!setupEditable.value || props.busy) return;
   applyFactorSigns(activeFactors.value.flatMap((factor) => {
     const value = candidateDraft(factor).designNominal;
     return typeof value === "number" && Number.isFinite(value) && value !== 0
       ? [{ factorId: factor.factorCandidate.factorCandidateId, sign: (value > 0 ? -1 : 1) as 1 | -1 }]
       : [];
   }));
+  const { lowerSpecLimit, upperSpecLimit } = systemSpecificationDraft;
+  if (
+    typeof lowerSpecLimit === "number"
+    && Number.isFinite(lowerSpecLimit)
+    && typeof upperSpecLimit === "number"
+    && Number.isFinite(upperSpecLimit)
+  ) {
+    systemSpecificationDraft.lowerSpecLimit = -upperSpecLimit;
+    systemSpecificationDraft.upperSpecLimit = -lowerSpecLimit;
+  }
 }
 
 function toggleFactorSign(factor: DeepReadonly<F7FactorState>): void {

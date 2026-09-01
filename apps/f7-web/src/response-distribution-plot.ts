@@ -66,10 +66,6 @@ function midpoint(left: number, right: number): number {
   return left / 2 + right / 2;
 }
 
-function interpolate(minimum: number, maximum: number, fraction: number): number {
-  return minimum * (1 - fraction) + maximum * fraction;
-}
-
 function relativePosition(value: number, minimum: number, maximum: number): number {
   const range = maximum - minimum;
   if (range > 0 && Number.isFinite(range)) return (value - minimum) / range;
@@ -86,6 +82,70 @@ function paddedDomain(minimum: number, maximum: number): readonly [number, numbe
     paddedMinimum < minimum ? paddedMinimum : minimum,
     paddedMaximum > maximum ? paddedMaximum : maximum,
   ];
+}
+
+function niceAxis(minimum: number, maximum: number): {
+  readonly minimum: number;
+  readonly maximum: number;
+  readonly ticks: readonly number[];
+} {
+  const scaledRange = maximum / 2 - minimum / 2;
+  const rawStep = scaledRange / 6;
+  const exponent = Math.floor(Math.log10(rawStep));
+  const magnitude = 10 ** exponent;
+  const normalizedStep = rawStep / magnitude;
+  const multiplier = normalizedStep <= 1
+    ? 1
+    : normalizedStep <= 2
+      ? 2
+      : normalizedStep <= 2.5
+        ? 2.5
+        : normalizedStep <= 5
+          ? 5
+          : 10;
+  const step = multiplier * magnitude;
+  const startIndex = Math.floor(minimum / step);
+  const endIndex = Math.ceil(maximum / step);
+  const tickCount = endIndex - startIndex + 1;
+
+  if (
+    !Number.isFinite(step)
+    || step <= 0
+    || !Number.isFinite(startIndex)
+    || !Number.isFinite(endIndex)
+    || tickCount < 2
+    || tickCount > 100
+  ) {
+    return {
+      minimum,
+      maximum,
+      ticks: Array.from({ length: 7 }, (_, index) => (
+        minimum * (1 - index / 6) + maximum * (index / 6)
+      )),
+    };
+  }
+
+  const ticks = Array.from({ length: tickCount }, (_, index) => (
+    Number(((startIndex + index) * step).toPrecision(15))
+  ));
+  const axisMinimum = ticks[0]!;
+  const axisMaximum = ticks.at(-1)!;
+  if (
+    !ticks.every(Number.isFinite)
+    || axisMinimum > minimum
+    || axisMaximum < maximum
+    || !(axisMaximum > axisMinimum)
+  ) {
+    return {
+      minimum,
+      maximum,
+      ticks: Array.from({ length: 7 }, (_, index) => (
+        minimum * (1 - index / 6) + maximum * (index / 6)
+      )),
+    };
+  }
+
+  return { minimum: axisMinimum, maximum: axisMaximum, ticks };
 }
 
 export function buildResponseDistributionPlot(
@@ -116,8 +176,11 @@ export function buildResponseDistributionPlot(
   ];
   const rawMinimum = Math.min(...referenceValues.map(({ value }) => value));
   const rawMaximum = Math.max(...referenceValues.map(({ value }) => value));
-  const [domainMinimum, domainMaximum] = paddedDomain(rawMinimum, rawMaximum);
-  if (!(domainMaximum > domainMinimum)) return undefined;
+  const [paddedMinimum, paddedMaximum] = paddedDomain(rawMinimum, rawMaximum);
+  if (!(paddedMaximum > paddedMinimum)) return undefined;
+  const axis = niceAxis(paddedMinimum, paddedMaximum);
+  const domainMinimum = axis.minimum;
+  const domainMaximum = axis.maximum;
 
   const plotWidth = plotBounds.right - plotBounds.left;
   const plotHeight = plotBounds.bottom - plotBounds.top;
@@ -156,7 +219,7 @@ export function buildResponseDistributionPlot(
     plotBounds,
     domain: { minimum: domainMinimum, maximum: domainMaximum },
     target,
-    xTicks: Array.from({ length: 7 }, (_, index) => interpolate(domainMinimum, domainMaximum, index / 6)),
+    xTicks: axis.ticks,
     curvePath,
     references: referenceValues.map((reference) => ({
       ...reference,

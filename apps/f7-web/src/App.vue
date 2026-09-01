@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, nextTick, ref } from "vue";
 import { createF7Client, type F7Client, type F7MeasurementStructure, type F7MsaStatus, type F7RationalSubgroupConfig, type F7SetupDistribution, type F7SourceMode, type F7SystemSpecificationInput } from "./api/f7-client";
 import WorksheetConfirmation from "./components/WorksheetConfirmation.vue";
 import FactorInputTable from "./components/FactorInputTable.vue";
@@ -19,6 +19,9 @@ const fitActionFactorId = ref("");
 const activeMeasurementStage = ref<"measurement" | "capability" | "distribution" | "monteCarlo">("measurement");
 const editingFactorSetup = ref(false);
 const reportRetryAvailable = ref(false);
+const workbookInput = ref<HTMLInputElement>();
+const restartConfirmationVisible = ref(false);
+const restartContinueButton = ref<HTMLButtonElement>();
 let reportRequestToken = 0;
 
 const simulationReady = computed(() => {
@@ -31,8 +34,8 @@ const simulationReady = computed(() => {
 
 const workflowSteps = [
   { id: 1, label: "Select worksheet" },
-  { id: 2, label: "Measurement analysis" },
-  { id: 3, label: "Monte Carlo & Report" },
+  { id: 2, label: "Measurement Data Import & Analysis" },
+  { id: 3, label: "Monte Carlo Calculation & Report" },
 ] as const;
 
 const currentPhaseStep = computed(() => {
@@ -45,7 +48,7 @@ const currentPhaseStep = computed(() => {
 
 function workflowStepState(stepId: number): "current" | "complete" | "pending" | "locked" {
   if (stepId === 3 && !simulationReady.value) return "locked";
-  if (stepId === 2 && store.session.value?.status === "worksheet_selection") return "locked";
+  if (stepId === 2 && (!store.session.value || store.session.value.status === "worksheet_selection")) return "locked";
   if (stepId < currentPhaseStep.value) return "complete";
   if (stepId === currentPhaseStep.value) return "current";
   return "pending";
@@ -53,9 +56,10 @@ function workflowStepState(stepId: number): "current" | "complete" | "pending" |
 
 function workflowStepStatusText(stepId: number, state: "current" | "complete" | "pending" | "locked"): string {
   if (state === "locked") return "Locked";
+  if (state === "complete" && stepId === 1) return "Change workbook or worksheet";
   if (state === "complete") return "Complete";
   if (state === "pending") return stepId === 3 ? "Available when analysis is ready" : "Available";
-  if (stepId === 2) return "Measure · Capability · Fit";
+  if (stepId === 2) return "Import · Capability · Fit";
   if (stepId === 3) return "Simulation · Automatic report";
   return "Current";
 }
@@ -90,6 +94,24 @@ async function onImportFile(event: Event): Promise<void> {
   } finally {
     target.value = "";
   }
+}
+
+function restartFromWorksheetSelection(): void {
+  if (store.isBusy.value) return;
+  restartConfirmationVisible.value = true;
+  void nextTick(() => restartContinueButton.value?.focus());
+}
+
+function cancelWorksheetRestart(): void {
+  restartConfirmationVisible.value = false;
+}
+
+function confirmWorksheetRestart(): void {
+  const input = workbookInput.value;
+  if (!input) return;
+  restartConfirmationVisible.value = false;
+  input.value = "";
+  input.click();
 }
 
 async function onConfirmWorksheet(worksheetName: string): Promise<void> {
@@ -234,24 +256,7 @@ async function openReport(): Promise<void> {
       </div>
     </header>
 
-    <section class="workbench-panel">
-      <h2>Import Workbook</h2>
-      <label for="workbook-file">Workbook file</label>
-      <input
-        id="workbook-file"
-        type="file"
-        accept=".xlsx"
-        :disabled="store.isBusy.value"
-        @change="onImportFile"
-      >
-      <p class="subtle">Workbook bytes are uploaded only for local session parsing.</p>
-    </section>
-
-    <p v-if="store.error.value" class="error-banner" role="status" aria-live="polite">
-      {{ store.error.value.summary }}
-    </p>
-
-    <div v-if="store.session.value" class="layout-grid">
+    <div class="layout-grid">
       <aside class="workflow-rail">
         <h2 class="rail-title">Workflow</h2>
         <ol class="workflow-steps">
@@ -267,7 +272,17 @@ async function openReport(): Promise<void> {
               aria-hidden="true"
             >{{ step.id }}</span>
             <button
-              v-if="step.id === 3 && simulationReady"
+              v-if="step.id === 1 && workflowStepState(step.id) === 'complete'"
+              type="button"
+              class="step-label step-link"
+              data-workflow-restart
+              :disabled="store.isBusy.value"
+              @click="restartFromWorksheetSelection"
+            >
+              {{ step.label }}
+            </button>
+            <button
+              v-else-if="step.id === 3 && simulationReady"
               type="button"
               class="step-label step-link"
               data-workflow-open-monte-carlo
@@ -283,7 +298,7 @@ async function openReport(): Promise<void> {
             <span class="step-status">{{ workflowStepStatusText(step.id, workflowStepState(step.id)) }}</span>
           </li>
         </ol>
-        <div class="workflow-metadata">
+        <div v-if="store.session.value" class="workflow-metadata">
           <p><strong>Classification</strong> {{ store.session.value.outputClassification }}</p>
           <p><strong>Workbook</strong> <span data-workbook-name>{{ store.session.value.workbook.fileName }}</span></p>
           <p>
@@ -297,6 +312,29 @@ async function openReport(): Promise<void> {
         </div>
       </aside>
       <section class="workflow-content">
+        <section
+          v-show="!store.session.value || store.session.value.status === 'worksheet_selection'"
+          class="workbench-panel"
+          data-workbook-import
+        >
+          <h2>Import Workbook</h2>
+          <label for="workbook-file">Workbook file</label>
+          <input
+            id="workbook-file"
+            ref="workbookInput"
+            type="file"
+            accept=".xlsx"
+            :disabled="store.isBusy.value"
+            @change="onImportFile"
+          >
+          <p class="subtle">Workbook bytes are uploaded only for local session parsing.</p>
+        </section>
+
+        <p v-if="store.error.value" class="error-banner" role="status" aria-live="polite">
+          {{ store.error.value.summary }}
+        </p>
+
+        <template v-if="store.session.value">
         <WorksheetConfirmation
           v-if="store.session.value.status === 'worksheet_selection'"
           :session="store.session.value"
@@ -379,6 +417,31 @@ async function openReport(): Promise<void> {
             Open Monte Carlo
           </button>
         </section>
+        </template>
+      </section>
+    </div>
+    <div
+      v-if="restartConfirmationVisible"
+      class="confirmation-backdrop"
+      @click.self="cancelWorksheetRestart"
+      @keydown.esc="cancelWorksheetRestart"
+    >
+      <section
+        class="confirmation-dialog"
+        data-workflow-restart-confirmation
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="workflow-restart-title"
+        aria-describedby="workflow-restart-description"
+      >
+        <h2 id="workflow-restart-title">Open another worksheet?</h2>
+        <p id="workflow-restart-description">
+          Opening another workbook or worksheet will discard the current worksheet data and analysis results.
+        </p>
+        <div class="confirmation-dialog-actions">
+          <button type="button" class="confirmation-cancel" data-workflow-restart-cancel @click="cancelWorksheetRestart">Cancel</button>
+          <button ref="restartContinueButton" type="button" class="action-button" data-workflow-restart-continue @click="confirmWorksheetRestart">Continue</button>
+        </div>
       </section>
     </div>
   </main>
