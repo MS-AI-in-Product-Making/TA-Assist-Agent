@@ -3,6 +3,7 @@ import { z } from "zod";
 const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 const nonEmptyStringSchema = z.string().trim().min(1);
 const isoDateTimeSchema = z.string().datetime({ offset: true });
+const controlledArtifactIdSchema = z.string().regex(/^[a-z0-9][a-z0-9_-]{1,63}$/);
 
 export const taProductRunReferenceSchema = z.string().regex(/^ta-run-[a-z0-9]{8}$/);
 
@@ -15,7 +16,7 @@ export const taProductExportRecordSchema = z.object({
 }).strict();
 
 const controlledSourceArtifactSchema = z.object({
-  artifactId: nonEmptyStringSchema,
+  artifactId: controlledArtifactIdSchema,
   sha256: sha256Schema,
 }).strict();
 

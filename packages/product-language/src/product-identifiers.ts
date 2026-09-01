@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { TA_INTERNAL_WORKFLOW_STATES } from "./ta-workbook-language.js";
 
 const WINDOWS_RESERVED_NAMES = new Set([
   "CON",
@@ -28,9 +29,25 @@ const WINDOWS_RESERVED_NAMES = new Set([
 const PROHIBITED_PRODUCT_PATTERNS = [
   /\bF[0-7]\b/iu,
   /\bFeature[ _-]?[0-7]\b/iu,
-  /\b(?:created|workbook_required|workbook_validating|f0_validating|f0_validated|f1_f2_running|f3_running|f4_running|f5_running|f6_running|f7_running|review_required|completed|failed|cancelled)\b/iu,
-  /\b(?:f1_image|f2_user_report|f3_drawing_governance|f4_calculation|f5_interpretation|f6_optimization|f7_import_dataset|f7_measurement_summary)\b/iu,
 ];
+
+export const TA_INTERNAL_REVIEW_ARTIFACT_KINDS = [
+  "f1_image",
+  "f2_report",
+  "f3_report",
+  "f4_calculation",
+  "f4_report",
+  "f5_report",
+  "f6_optimization",
+  "f6_report",
+  "f7_import_dataset",
+  "f7_measurement_summary",
+] as const;
+
+const INTERNAL_STATE_TOKEN_SET = new Set<string>(TA_INTERNAL_WORKFLOW_STATES);
+const INTERNAL_ARTIFACT_KIND_SET = new Set<string>(TA_INTERNAL_REVIEW_ARTIFACT_KINDS);
+const MACHINE_STATE_ASSIGNMENT = /\b(?:state|status|workflow_state|internal_state)\s*[:=]\s*([a-z0-9_-]+)/giu;
+const TOKEN_PATTERN = /[a-z0-9_-]+/gu;
 
 const WINDOWS_UNSAFE_CHARACTERS = /[<>:"/\\|?*\u0000-\u001F]/g;
 const COLLAPSIBLE_SEPARATOR = /[-_.\s]+/g;
@@ -85,6 +102,24 @@ export function createProductRunReference(seed: string): string {
 export function assertNoProhibitedProductIdentifiers(value: string): void {
   for (const pattern of PROHIBITED_PRODUCT_PATTERNS) {
     if (pattern.test(value)) {
+      throw new Error(`Prohibited internal identifier found in product surface: ${value}`);
+    }
+  }
+
+  for (const match of value.matchAll(MACHINE_STATE_ASSIGNMENT)) {
+    const token = match[1]?.toLowerCase();
+    if (token !== undefined && INTERNAL_STATE_TOKEN_SET.has(token)) {
+      throw new Error(`Prohibited internal identifier found in product surface: ${value}`);
+    }
+  }
+
+  for (const match of value.matchAll(TOKEN_PATTERN)) {
+    const token = match[0].toLowerCase();
+    if (INTERNAL_ARTIFACT_KIND_SET.has(token)) {
+      throw new Error(`Prohibited internal identifier found in product surface: ${value}`);
+    }
+
+    if (token.includes("_") && INTERNAL_STATE_TOKEN_SET.has(token)) {
       throw new Error(`Prohibited internal identifier found in product surface: ${value}`);
     }
   }
