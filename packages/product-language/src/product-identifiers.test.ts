@@ -6,6 +6,12 @@ import {
 } from "./product-identifiers.js";
 import { TA_INTERNAL_WORKFLOW_STATES } from "./ta-workbook-language.js";
 
+function toDeterministicMixedCase(value: string): string {
+  return [...value]
+    .map((char, index) => (/[a-z]/iu.test(char) ? (index % 2 === 0 ? char.toUpperCase() : char.toLowerCase()) : char))
+    .join("");
+}
+
 describe("productSafeNameV1", () => {
   it("creates stable Windows-safe names", () => {
     expect(productSafeNameV1("Gearbox TA.xlsx")).toBe("Gearbox-TA");
@@ -59,6 +65,14 @@ describe("assertNoProhibitedProductIdentifiers", () => {
 
   it.each(TA_INTERNAL_REVIEW_ARTIFACT_KINDS)("rejects internal artifact kind: %s", (kind) => {
     expect(() => assertNoProhibitedProductIdentifiers(`kind=${kind}`)).toThrow();
+  });
+
+  it.each(TA_INTERNAL_REVIEW_ARTIFACT_KINDS)("rejects uppercase internal artifact kind: %s", (kind) => {
+    expect(() => assertNoProhibitedProductIdentifiers(`kind=${kind.toUpperCase()}`)).toThrow();
+  });
+
+  it.each(TA_INTERNAL_REVIEW_ARTIFACT_KINDS)("rejects mixed-case internal artifact kind: %s", (kind) => {
+    expect(() => assertNoProhibitedProductIdentifiers(`kind=${toDeterministicMixedCase(kind)}`)).toThrow();
   });
 
   it("does not reject ordinary product language", () => {

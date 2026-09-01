@@ -47,7 +47,7 @@ export const TA_INTERNAL_REVIEW_ARTIFACT_KINDS = [
 const INTERNAL_STATE_TOKEN_SET = new Set<string>(TA_INTERNAL_WORKFLOW_STATES);
 const INTERNAL_ARTIFACT_KIND_SET = new Set<string>(TA_INTERNAL_REVIEW_ARTIFACT_KINDS);
 const MACHINE_STATE_ASSIGNMENT = /\b(?:state|status|workflow_state|internal_state)\s*[:=]\s*([a-z0-9_-]+)/giu;
-const TOKEN_PATTERN = /[a-z0-9_-]+/gu;
+const TOKEN_PATTERN = /[a-z0-9_-]+/giu;
 
 const WINDOWS_UNSAFE_CHARACTERS = /[<>:"/\\|?*\u0000-\u001F]/g;
 const COLLAPSIBLE_SEPARATOR = /[-_.\s]+/g;
