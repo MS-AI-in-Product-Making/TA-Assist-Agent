@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  taProductExportCommandSchema,
   taProductExportManifestSchema,
+  taProductExportReceiptSchema,
   taProductExportRecordSchema,
   taProductRunReferenceSchema,
   validatedTaBaselineReferenceSchema,
@@ -121,6 +123,38 @@ describe("TA product export contracts", () => {
         sourceArtifacts: validBaseline().sourceArtifacts,
       }).success,
     ).toBe(false);
+  });
+
+  it("accepts strict product-export command payload and rejects forged source fields", () => {
+    expect(taProductExportCommandSchema.parse({
+      contractVersion: "ta-product-export-command-v1",
+      sessionId: "session-01",
+      expectedRevision: 3,
+      idempotencyKey: "export-1",
+    })).toBeDefined();
+
+    expect(taProductExportCommandSchema.safeParse({
+      contractVersion: "ta-product-export-command-v1",
+      sessionId: "session-01",
+      expectedRevision: 3,
+      idempotencyKey: "export-1",
+      sourceRunReference: "forged",
+    }).success).toBe(false);
+  });
+
+  it("treats exportManifestSha256 as out-of-band receipt hash", () => {
+    const manifest = validManifest();
+    expect(taProductExportReceiptSchema.parse({
+      root: "C:/managed/ta-run-7m4k2p9q",
+      manifest,
+      semanticDigest: "a".repeat(64),
+      exportManifestSha256: "b".repeat(64),
+    })).toBeDefined();
+
+    expect(taProductExportManifestSchema.safeParse({
+      ...manifest,
+      exportManifestSha256: "c".repeat(64),
+    }).success).toBe(false);
   });
 
   it("rejects path-style artifact IDs", () => {

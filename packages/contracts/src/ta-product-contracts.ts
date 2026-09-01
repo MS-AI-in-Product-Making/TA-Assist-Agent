@@ -50,7 +50,24 @@ export const taProductExportManifestSchema = z.object({
   files: z.array(taProductExportRecordSchema).min(1),
 }).strict();
 
+export const taProductExportCommandSchema = z.object({
+  contractVersion: z.literal("ta-product-export-command-v1"),
+  sessionId: nonEmptyStringSchema,
+  expectedRevision: z.number().int().nonnegative(),
+  idempotencyKey: nonEmptyStringSchema.max(160),
+}).strict();
+
+export const taProductExportReceiptSchema = z.object({
+  root: nonEmptyStringSchema,
+  manifest: taProductExportManifestSchema,
+  semanticDigest: sha256Schema,
+  // Out-of-band receipt hash over exact on-disk export-manifest.json bytes.
+  exportManifestSha256: sha256Schema,
+}).strict();
+
 export type TaProductRunReference = z.infer<typeof taProductRunReferenceSchema>;
 export type TaProductExportRecord = z.infer<typeof taProductExportRecordSchema>;
 export type TaProductExportManifest = z.infer<typeof taProductExportManifestSchema>;
+export type TaProductExportCommand = z.infer<typeof taProductExportCommandSchema>;
+export type TaProductExportReceipt = z.infer<typeof taProductExportReceiptSchema>;
 export type ValidatedTaBaselineReference = z.infer<typeof validatedTaBaselineReferenceSchema>;

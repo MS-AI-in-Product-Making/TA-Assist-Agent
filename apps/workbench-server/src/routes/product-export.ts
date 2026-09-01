@@ -2,7 +2,9 @@ import type { FastifyPluginAsync } from "fastify";
 
 import { errorStatusCode, safeErrorResponse } from "../security.js";
 import type { WorkbenchServerContext } from "../server.js";
-import { exportTaAnalysis, type TaAnalysisExportSource } from "../ta-product-exporter.js";
+import { taProductExportCommandSchema } from "@ai-assist/contracts";
+
+import { exportTaAnalysisForSession } from "../ta-product-exporter.js";
 
 export const productExportRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServerContext }> = async (app, { context }) => {
   app.post("/api/sessions/:sessionId/product-export", async (request, reply) => {
@@ -13,8 +15,11 @@ export const productExportRoutes: FastifyPluginAsync<{ readonly context: Workben
     if (auth.sessionId !== sessionId) return reply.code(403).send({ error: "session_scope_rejected" });
 
     try {
-      const source = request.body as TaAnalysisExportSource;
-      const exported = await exportTaAnalysis(source, { rootDir: context.rootDir });
+      const parsed = taProductExportCommandSchema.safeParse(request.body);
+      if (!parsed.success || parsed.data.sessionId !== sessionId) {
+        return reply.code(400).send({ error: "product_export_schema_rejected" });
+      }
+      const exported = await exportTaAnalysisForSession(parsed.data, { rootDir: context.rootDir });
       return reply.code(200).send(exported);
     } catch (error) {
       return reply.code(errorStatusCode(error)).send(safeErrorResponse(error));
