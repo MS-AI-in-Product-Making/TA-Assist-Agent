@@ -1215,6 +1215,213 @@ describe("workbench server routes", () => {
     }
   }, 15_000);
 
+  it("treats blocked F1 discovery output as warning and does not persist selection", async () => {
+    const rootDir = testRoot("workbench-server-f1-discovery-blocked-output");
+    await rm(rootDir, { recursive: true, force: true });
+    const orchestrator: TaWorkbookOrchestrator = {
+      async runStage(stage) {
+        if (stage !== "f0_validating") {
+          throw new Error(`unexpected stage: ${stage}`);
+        }
+        return {
+          status: "completed",
+          skillId: "knowledge-and-rules-validation-v1",
+          inputRevision: 1,
+          idempotencyKey: "attempt:f0",
+          output: { featureId: "F0", status: "completed", versions: ["v1", "internal-v1", "interpretation-rules-v1"] },
+        };
+      },
+      async runWorkbookScopeDiscovery() {
+        return {
+          status: "blocked",
+          skillId: "workbook-scope-discovery-v1",
+          inputRevision: 1,
+          idempotencyKey: "attempt:f1",
+          reasonCode: "scope_runner_blocked",
+          summary: "scope runner blocked",
+          output: {
+            selectionReference: { selectionId: "should-not-persist" },
+            prompt: {
+              contractVersion: "v1",
+              inputClassification: "confidential",
+              status: "selectionRequired",
+              workbook: { fileName: "book.xlsx", contentHash: "a".repeat(64) },
+              options: [{ selectionIndex: 1, worksheetName: "Analysis-A", toleranceLoopDescription: "Analysis loop", worksheetKind: "analysis", source: { discoveryMethod: "worksheet_scan", descriptionCell: "Analysis-A!F11", worksheetAnchor: "Analysis-A!A1" } }],
+            },
+          },
+        };
+      },
+      async runAnalysisInputValidation() {
+        return {
+          status: "blocked",
+          skillId: "analysis-input-validation-v1",
+          inputRevision: 1,
+          idempotencyKey: "attempt:f2",
+          reasonCode: "delegated",
+          summary: "delegated",
+        };
+      },
+    };
+
+    const server = await buildWorkbenchServer({ rootDir, orchestrator });
+    try {
+      const auth = await server.testAuthenticate("15151515-1515-4515-8515-151515151515");
+      const artifactId = "managed-workbook";
+      const relativePath = `uploads/${auth.sessionId}/workbook/${artifactId}-book.xlsx`;
+      server.registerArtifactForTest(auth.sessionId, artifactId, relativePath, "book.xlsx", "confidential", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      await mkdir(dirname(join(rootDir, relativePath)), { recursive: true });
+      await writeFile(join(rootDir, relativePath), createAnonymousWorkbookZip());
+
+      const response = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${auth.sessionId}/commands`,
+        headers: auth.headers,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId: auth.sessionId,
+          commandId: "f1-blocked-warning-upload",
+          expectedRevision: 0,
+          command: "upload_workbook",
+          payload: { artifactId, inputClassification: "confidential" },
+        },
+      });
+
+      expect(response.statusCode).toBe(202);
+      expect(response.json()).toMatchObject({
+        state: "initial_scope_required",
+        worksheetCapabilities: expect.arrayContaining([{ worksheetName: "Analysis-A", whatIfAvailable: false }]),
+      });
+      expect(response.json()).not.toHaveProperty("selectionPrompt");
+      const selectionRegistry = await readFile(join(rootDir, "runtime", "workbench", "registries", "f1-f2-selection", `${auth.sessionId}.json`), "utf8").catch(() => undefined);
+      expect(selectionRegistry).toBeUndefined();
+      const database = new DatabaseSync(join(rootDir, "runtime", "workbench", "workbench.sqlite"), { readOnly: true });
+      try {
+        const progress = database.prepare("SELECT payload_json FROM session_sse_events WHERE session_id = ? AND event_name = 'runner_progress' ORDER BY event_id").all(auth.sessionId) as Array<{ payload_json: string }>;
+        expect(progress.map(({ payload_json }) => JSON.parse(payload_json))).toEqual(expect.arrayContaining([
+          expect.objectContaining({
+            kind: "stage_warning",
+            featureId: "F1",
+            stage: "scope_discovery",
+            status: "blocked",
+            code: "scope_discovery_unavailable",
+            summary: expect.stringContaining("workbook-scope-discovery-v1 blocked:"),
+          }),
+        ]));
+      } finally {
+        database.close();
+      }
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  }, 15_000);
+
+  it("rejects blocked F1/F2 output and does not persist production roots", async () => {
+    const rootDir = testRoot("workbench-server-f1f2-blocked-output");
+    await rm(rootDir, { recursive: true, force: true });
+    const workbookHash = "a".repeat(64);
+    const orchestrator: TaWorkbookOrchestrator = {
+      async runStage(stage) {
+        if (stage === "f0_validating") {
+          return {
+            status: "completed",
+            skillId: "knowledge-and-rules-validation-v1",
+            inputRevision: 1,
+            idempotencyKey: "attempt:f0",
+            output: { featureId: "F0", status: "completed", versions: ["v1", "internal-v1", "interpretation-rules-v1"] },
+          };
+        }
+        if (stage === "f1_f2_running") {
+          return {
+            status: "blocked",
+            skillId: "workbook-analysis-assets-v1",
+            inputRevision: 1,
+            idempotencyKey: "attempt:f1f2",
+            reasonCode: "f2_blocked",
+            summary: "f1-f2 blocked",
+            output: { f1Root: "managed/f1", f2Root: "managed/f2" },
+          };
+        }
+        throw new Error(`unexpected stage: ${stage}`);
+      },
+      async runWorkbookScopeDiscovery() {
+        return {
+          status: "completed",
+          skillId: "workbook-scope-discovery-v1",
+          inputRevision: 1,
+          idempotencyKey: "attempt:f1",
+          output: {
+            selectionReference: { selectionId: "selection-ok" },
+            prompt: {
+              contractVersion: "v1",
+              inputClassification: "confidential",
+              status: "selectionRequired",
+              workbook: { fileName: "book.xlsx", contentHash: workbookHash },
+              options: [{ selectionIndex: 1, worksheetName: "Analysis-A", toleranceLoopDescription: "Analysis loop", worksheetKind: "analysis", source: { discoveryMethod: "worksheet_scan", descriptionCell: "Analysis-A!F11", worksheetAnchor: "Analysis-A!A1" } }],
+            },
+          },
+        };
+      },
+      async runAnalysisInputValidation() {
+        return {
+          status: "blocked",
+          skillId: "analysis-input-validation-v1",
+          inputRevision: 1,
+          idempotencyKey: "attempt:f2",
+          reasonCode: "delegated",
+          summary: "delegated",
+        };
+      },
+    };
+
+    const server = await buildWorkbenchServer({ rootDir, orchestrator, queueFactory: immediateQueue, skipWebAssets: true });
+    try {
+      const auth = await server.testAuthenticate("16161616-1616-4616-8616-161616161616");
+      const artifactId = "managed-workbook";
+      const relativePath = `uploads/${auth.sessionId}/workbook/${artifactId}-book.xlsx`;
+      server.registerArtifactForTest(auth.sessionId, artifactId, relativePath, "book.xlsx", "confidential", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      await mkdir(dirname(join(rootDir, relativePath)), { recursive: true });
+      await writeFile(join(rootDir, relativePath), createAnonymousWorkbookZip());
+
+      const uploaded = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${auth.sessionId}/commands`,
+        headers: auth.headers,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId: auth.sessionId,
+          commandId: "f1f2-blocked-upload",
+          expectedRevision: 0,
+          command: "upload_workbook",
+          payload: { artifactId, inputClassification: "confidential" },
+        },
+      });
+      expect(uploaded.statusCode).toBe(202);
+      expect(uploaded.json()).toMatchObject({ state: "initial_scope_required" });
+
+      const confirmed = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${auth.sessionId}/commands`,
+        headers: auth.headers,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId: auth.sessionId,
+          commandId: "f1f2-blocked-confirm-initial",
+          expectedRevision: uploaded.json<{ revision: number }>().revision,
+          command: "confirm_initial_scope",
+          payload: { workbookHash, worksheetNames: ["Analysis-A"] },
+        },
+      });
+
+      expect(confirmed.statusCode).toBe(202);
+      const rootsRegistry = await readFile(join(rootDir, "runtime", "workbench", "registries", "production-roots", `${auth.sessionId}.json`), "utf8").catch(() => undefined);
+      expect(rootsRegistry).toBeUndefined();
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  }, 15_000);
+
   it("keeps production sessions at initial scope until user confirmation", async () => {
     const rootDir = testRoot("workbench-server-auto-entry");
     await rm(rootDir, { recursive: true, force: true });

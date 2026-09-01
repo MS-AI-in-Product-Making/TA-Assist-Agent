@@ -1524,10 +1524,28 @@ function requireRuntimeSkillOutput<Output>(result: RuntimeSkillResult<Output>, s
     if (result.error instanceof Error) {
       throw result.error;
     }
-    throw new Error(`${skillId} failed: ${result.summary ?? result.reasonCode ?? "unknown"}`);
+    throw createTypedError({
+      code: "dependency_error",
+      summary: `${skillId} failed: ${result.summary ?? result.reasonCode ?? "unknown"}`,
+      suggestedAction: `Retry ${skillId} with governed inputs.`,
+      affectedInputReferences: [skillId],
+    });
+  }
+  if (result.status === "blocked") {
+    throw createTypedError({
+      code: "dependency_error",
+      summary: `${skillId} blocked: ${result.summary ?? result.reasonCode ?? "unknown"}`,
+      suggestedAction: `Resolve ${skillId} prerequisites and retry.`,
+      affectedInputReferences: [skillId],
+    });
   }
   if (result.output === undefined) {
-    throw new Error(`${skillId} returned no output.`);
+    throw createTypedError({
+      code: "dependency_error",
+      summary: `${skillId} returned no output.`,
+      suggestedAction: `Retry ${skillId} and verify output generation.`,
+      affectedInputReferences: [skillId],
+    });
   }
   return result.output;
 }
