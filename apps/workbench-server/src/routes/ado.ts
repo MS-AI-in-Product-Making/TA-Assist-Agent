@@ -208,7 +208,7 @@ export const adoRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServerCo
 
     const confirmation = write.request.confirmation;
     const previewIdentity = previewIdentityFromConfirmation(confirmation);
-    const created = await context.hostActions.create({
+    const reconcileRequest = {
       contractVersion: "f8-host-action-request-v1",
       actionId: reconcileActionId,
       sessionId,
@@ -221,9 +221,30 @@ export const adoRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServerCo
       previewIdentity,
       confirmation,
       expiresAt: new Date(adoRouteClock() + DEFAULT_LEASE_MS).toISOString(),
-    });
+    } as const;
 
-    return created === undefined ? reply.code(409).send({ error: "host_action_id_conflict" }) : reply.code(202).send({ actionId: reconcileActionId });
+    const existing = await context.hostActions.readRecord(sessionId, reconcileActionId);
+    if (existing !== undefined) {
+      if (!isSameReconcileIdentity(existing, reconcileRequest)) {
+        return reply.code(409).send({ error: "ado_reconcile_identity_mismatch" });
+      }
+      return reply.code(existing.status === "pending" || existing.status === "claimed" ? 202 : 200).send({ actionId: reconcileActionId, status: existing.status });
+    }
+
+    const created = await context.hostActions.create(reconcileRequest);
+
+    if (created === undefined) {
+      const reloaded = await context.hostActions.readRecord(sessionId, reconcileActionId);
+      if (reloaded !== undefined) {
+        if (!isSameReconcileIdentity(reloaded, reconcileRequest)) {
+          return reply.code(409).send({ error: "ado_reconcile_identity_mismatch" });
+        }
+        return reply.code(reloaded.status === "pending" || reloaded.status === "claimed" ? 202 : 200).send({ actionId: reconcileActionId, status: reloaded.status });
+      }
+      return reply.code(409).send({ error: "host_action_id_conflict" });
+    }
+
+    return reply.code(202).send({ actionId: reconcileActionId, status: "pending" });
   });
 
   app.post("/api/sessions/:sessionId/ado/start-new-write-generation", async (request, reply) => {
@@ -375,4 +396,45 @@ function hasActiveLease(leaseExpiresAt: string | undefined, nowMs: number): bool
   const expiresAt = Date.parse(leaseExpiresAt);
   if (!Number.isFinite(expiresAt)) return true;
   return expiresAt > nowMs;
+}
+
+function isSameReconcileIdentity(
+  existing: { readonly request: unknown },
+  expected: {
+    readonly writeActionId: string;
+    readonly validationActionId: string;
+    readonly confirmationHash: string;
+    readonly expectedTargetVersion: string;
+    readonly previewIdentity: {
+      readonly targetIdentity: { readonly organization: string; readonly project: string; readonly workItemId: number };
+      readonly previewHash: string;
+      readonly previewMarker: string;
+    };
+  },
+): boolean {
+  const request = existing.request;
+  if (typeof request !== "object" || request === null || (request as { kind?: unknown }).kind !== "surface_reconcile") {
+    return false;
+  }
+  const reconcileRequest = request as {
+    writeActionId?: unknown;
+    validationActionId?: unknown;
+    confirmationHash?: unknown;
+    expectedTargetVersion?: unknown;
+    previewIdentity?: {
+      targetIdentity?: { organization?: unknown; project?: unknown; workItemId?: unknown };
+      previewHash?: unknown;
+      previewMarker?: unknown;
+    };
+  };
+  const targetIdentity = reconcileRequest.previewIdentity?.targetIdentity;
+  return reconcileRequest.writeActionId === expected.writeActionId
+    && reconcileRequest.validationActionId === expected.validationActionId
+    && reconcileRequest.confirmationHash === expected.confirmationHash
+    && reconcileRequest.expectedTargetVersion === expected.expectedTargetVersion
+    && targetIdentity?.organization === expected.previewIdentity.targetIdentity.organization
+    && targetIdentity?.project === expected.previewIdentity.targetIdentity.project
+    && targetIdentity?.workItemId === expected.previewIdentity.targetIdentity.workItemId
+    && reconcileRequest.previewIdentity?.previewHash === expected.previewIdentity.previewHash
+    && reconcileRequest.previewIdentity?.previewMarker === expected.previewIdentity.previewMarker;
 }

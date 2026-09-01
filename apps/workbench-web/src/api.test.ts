@@ -123,6 +123,23 @@ describe("workbench browser API", () => {
     expect((fetchMock.mock.calls[1]?.[1] as RequestInit).body).toBeUndefined();
   });
 
+  it("starts a new ADO write generation through the dedicated browser mutation with CSRF", async () => {
+    const nextSnapshot = snapshot({ revision: 9, state: "ado_action_pending" });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ csrfToken: "csrf" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(nextSnapshot), { status: 202 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const api = createWorkbenchApi();
+
+    await api.startNewAdoWriteGeneration("session-1");
+
+    expect(fetchMock.mock.calls[1]).toEqual([
+      "/api/sessions/session-1/ado/start-new-write-generation",
+      expect.objectContaining({ method: "POST", headers: expect.objectContaining({ "x-csrf-token": "csrf" }) }),
+    ]);
+    expect((fetchMock.mock.calls[1]?.[1] as RequestInit).body).toBeUndefined();
+  });
+
   it("uploads a multipart workbook then submits only its managed artifact reference", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ csrfToken: "csrf" }), { status: 200 }))

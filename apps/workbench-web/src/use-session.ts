@@ -41,6 +41,7 @@ export interface UseWorkbenchSessionResult {
   readonly appendConversation: (message: string, context?: TaConversationContext) => Promise<void>;
   readonly confirmAdoWrite: (confirmation: F8AdoWriteConfirmation) => Promise<void>;
   readonly reconcileAdoWrite: () => Promise<void>;
+  readonly startNewAdoWriteGeneration: () => Promise<void>;
   readonly clearError: () => void;
 }
 
@@ -343,6 +344,17 @@ export function useWorkbenchSession(apiOverride?: WorkbenchApi, options: UseWork
         setError(undefined);
       } catch (reconcileError) {
         setError(toTypedError(reconcileError, "ADO readback reconciliation was rejected.", "Refresh the ADO state and try again."));
+      }
+    },
+    async startNewAdoWriteGeneration() {
+      if (sessionId === undefined) return;
+      try {
+        const nextSnapshot = await api.startNewAdoWriteGeneration(sessionId);
+        setSnapshot(nextSnapshot);
+        setAdoProjection(await api.readAdoProjection(sessionId));
+        setError(undefined);
+      } catch (generationError) {
+        setError(toTypedError(generationError, "Preparing a new validated preview was rejected.", "Refresh the ADO state and try again."));
       }
     },
     clearError() {

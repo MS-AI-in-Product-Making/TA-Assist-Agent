@@ -50,7 +50,7 @@ export function AdoWorkspaceDecision({ visible, projection, onSubmit, onConfirm,
       {projection?.state === "reconciled_absent" ? (
         <div>
           <p role="status">Readback did not find the confirmed preview marker. Prepare a new validated preview, then confirm in Web before any write.</p>
-          <button type="button" className="button" onClick={() => { void (onStartNewWriteGeneration ?? onReset)?.(); }}>Prepare a new validated preview</button>
+          <button type="button" className="button" disabled={onStartNewWriteGeneration === undefined} onClick={() => { void onStartNewWriteGeneration?.(); }}>Prepare a new validated preview</button>
         </div>
       ) : null}
       {projection?.state === "completed" ? <p role="status">ADO write verified: {projection.receipt.workItemReference} · Version {projection.receipt.version}</p> : null}

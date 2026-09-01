@@ -97,6 +97,7 @@ export function App({ api, preloadedState, initialWorksheetOptions, downstreamWo
         onAdoDecision={(decision, workItemReference) => session.submitCommand("confirm_ado_decision", decision === "use_existing" ? { decision, workItemReference } : { decision })}
         onAdoConfirm={session.confirmAdoWrite}
         onAdoReconcile={session.reconcileAdoWrite}
+        onAdoStartNewWriteGeneration={session.startNewAdoWriteGeneration}
         onAdoReset={() => session.submitCommand("reset_ado_decision", {})}
       />
     </>

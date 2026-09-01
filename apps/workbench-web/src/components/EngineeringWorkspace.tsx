@@ -51,6 +51,7 @@ export interface EngineeringWorkspaceProps {
   readonly onAdoDecision?: (decision: "local_only" | "create_new" | "use_existing", workItemReference?: string) => Promise<void>;
   readonly onAdoConfirm?: (confirmation: F8AdoWriteConfirmation) => Promise<void>;
   readonly onAdoReconcile?: () => Promise<void>;
+  readonly onAdoStartNewWriteGeneration?: () => Promise<void>;
   readonly onAdoReset?: () => Promise<void>;
 }
 
@@ -120,7 +121,7 @@ export function EngineeringWorkspace(props: EngineeringWorkspaceProps) {
                   <EngineeringCharts worksheet={worksheet} scenario={scenarioResult} scenarioContributions={scenarioContributions} systemValues={scenario.systemValues} systemSpecificationError={scenario.systemSpecificationError} onSystemEdit={scenario.editSystem} onSystemCommit={scenario.commitSystemSpecification} />
                 </section>
               </div>
-              <F3Governance report={props.f3Report} adoDecisionRequired={props.adoDecisionRequired} adoProjection={props.adoProjection} onAdoDecision={props.onAdoDecision} onAdoConfirm={props.onAdoConfirm} onAdoReconcile={props.onAdoReconcile} onAdoReset={props.onAdoReset} />
+              <F3Governance report={props.f3Report} adoDecisionRequired={props.adoDecisionRequired} adoProjection={props.adoProjection} onAdoDecision={props.onAdoDecision} onAdoConfirm={props.onAdoConfirm} onAdoReconcile={props.onAdoReconcile} onStartNewAdoWriteGeneration={props.onAdoStartNewWriteGeneration} onAdoReset={props.onAdoReset} />
             </>
           )}
         </section>
