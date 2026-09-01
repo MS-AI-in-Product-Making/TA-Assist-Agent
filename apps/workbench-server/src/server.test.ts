@@ -8,6 +8,7 @@ import { get } from "node:http";
 import { DatabaseSync } from "node:sqlite";
 
 import { buildWorkbenchServer } from "./server.js";
+import { setAdoRouteClockForTest } from "./routes/ado.js";
 import { createConversationStore } from "@ai-assist/conversation";
 import { createTypedError } from "@ai-assist/contracts";
 import { createHostActionStore, createReviewContextId, createSessionStore, openSessionStore, projectWorksheetReview, reduceSessionCommand, selectCompleteReviewContext } from "@ai-assist/workbench";
@@ -2413,6 +2414,8 @@ describe("workbench server routes", () => {
   });
 
   it("creates a typed reconcile host action from write_outcome_unknown and exposes it to host pending", async () => {
+    const routeNowMs = Date.now();
+    setAdoRouteClockForTest(() => routeNowMs);
     const rootDir = testRoot("workbench-server-ado-reconcile-route");
     await rm(rootDir, { recursive: true, force: true });
     const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
@@ -2421,7 +2424,7 @@ describe("workbench server routes", () => {
       const revision = await seedAdoActionPendingSnapshot(rootDir, browser.sessionId);
       const validationActionId = `ado-validation:${browser.sessionId}:${revision}`;
       const writeActionId = `ado-write:${browser.sessionId}:${revision}`;
-      const hostActions = await createHostActionStore({ rootDir, sessionId: browser.sessionId, now: () => new Date("2026-09-01T00:00:00.000Z") });
+      const hostActions = await createHostActionStore({ rootDir, sessionId: browser.sessionId, now: () => new Date(routeNowMs - 120_000) });
       try {
         const confirmation = testSurfaceConfirmation();
         await hostActions.createHostAction({
@@ -2479,6 +2482,412 @@ describe("workbench server routes", () => {
         kind: "surface_reconcile",
       });
     } finally {
+      setAdoRouteClockForTest(undefined);
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects reconcile while the original write lease is still active", async () => {
+    const routeNowMs = Date.now();
+    setAdoRouteClockForTest(() => routeNowMs);
+    const rootDir = testRoot("workbench-server-ado-reconcile-active-lease");
+    await rm(rootDir, { recursive: true, force: true });
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate("65656565-6565-4656-8656-656565656565");
+      const revision = await seedAdoActionPendingSnapshot(rootDir, browser.sessionId);
+      const validationActionId = `ado-validation:${browser.sessionId}:${revision}`;
+      const writeActionId = `ado-write:${browser.sessionId}:${revision}`;
+      const hostActions = await createHostActionStore({ rootDir, sessionId: browser.sessionId, now: () => new Date(routeNowMs - 20_000) });
+      try {
+        const confirmation = testSurfaceConfirmation();
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: validationActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_validate",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
+        });
+        const validationClaim = await hostActions.claimHostAction(validationActionId, "host-a");
+        const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };
+        await hostActions.completeHostAction({
+          contractVersion: "f8-host-action-result-v1",
+          actionId: validationActionId,
+          hostInstanceId: "host-a",
+          leaseId: validationClaim.leaseId,
+          status: "completed",
+          resultHash: createHash("sha256").update(JSON.stringify(validationPayload)).digest("hex"),
+          payload: validationPayload,
+        });
+
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: writeActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_write",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          validationActionId,
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          confirmation,
+        });
+        await hostActions.claimHostAction(writeActionId, "host-a");
+      } finally {
+        await hostActions.close();
+      }
+
+      const reconcileResponse = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${browser.sessionId}/ado/reconcile`,
+        headers: browser.headers,
+      });
+      expect(reconcileResponse.statusCode).toBe(409);
+      expect(reconcileResponse.json()).toMatchObject({ error: "ado_reconcile_unavailable" });
+    } finally {
+      setAdoRouteClockForTest(undefined);
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps original completed write projection even if a late reconcile result is absent", async () => {
+    const rootDir = testRoot("workbench-server-ado-reconcile-late-absent");
+    await rm(rootDir, { recursive: true, force: true });
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate("64646464-6464-4646-8646-646464646464");
+      const revision = await seedAdoActionPendingSnapshot(rootDir, browser.sessionId);
+      const validationActionId = `ado-validation:${browser.sessionId}:${revision}`;
+      const writeActionId = `ado-write:${browser.sessionId}:${revision}`;
+      const reconcileActionId = `ado-reconcile:${browser.sessionId}:${revision}`;
+      const hostActions = await createHostActionStore({ rootDir, sessionId: browser.sessionId, now: () => new Date("2026-09-01T00:00:00.000Z") });
+      try {
+        const confirmation = testSurfaceConfirmation();
+        const expectedContentHash = createHash("sha256").update(confirmation.nextContent).digest("hex");
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: validationActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_validate",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
+        });
+        const validationClaim = await hostActions.claimHostAction(validationActionId, "host-a");
+        const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };
+        await hostActions.completeHostAction({
+          contractVersion: "f8-host-action-result-v1",
+          actionId: validationActionId,
+          hostInstanceId: "host-a",
+          leaseId: validationClaim.leaseId,
+          status: "completed",
+          resultHash: createHash("sha256").update(JSON.stringify(validationPayload)).digest("hex"),
+          payload: validationPayload,
+        });
+
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: writeActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_write",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          validationActionId,
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          confirmation,
+        });
+        const writeClaim = await hostActions.claimHostAction(writeActionId, "host-a");
+        const writePayload = {
+          status: "completed" as const,
+          outcome: {
+            kind: "surface_write" as const,
+            receipt: {
+              status: "updated" as const,
+              workItemReference: confirmation.workItemReference,
+              commentReference: confirmation.commentReference,
+              version: "9",
+              contentHash: expectedContentHash,
+            },
+          },
+        };
+        await hostActions.completeHostAction({
+          contractVersion: "f8-host-action-result-v1",
+          actionId: writeActionId,
+          hostInstanceId: "host-a",
+          leaseId: writeClaim.leaseId,
+          status: "completed",
+          resultHash: createHash("sha256").update(JSON.stringify(writePayload)).digest("hex"),
+          payload: writePayload,
+        });
+
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: reconcileActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_reconcile",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          writeActionId,
+          validationActionId,
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          previewIdentity: {
+            targetIdentity: { organization: "MSFTDEVICES", project: "Project A", workItemId: 42 },
+            previewHash: expectedContentHash,
+            previewMarker: "preview-marker:ado:session:late",
+          },
+          confirmation,
+        });
+        const reconcileClaim = await hostActions.claimHostAction(reconcileActionId, "host-a");
+        const reconcilePayload = {
+          status: "completed" as const,
+          outcome: {
+            kind: "surface_reconcile" as const,
+            state: "absent" as const,
+          },
+        };
+        await hostActions.completeHostAction({
+          contractVersion: "f8-host-action-result-v1",
+          actionId: reconcileActionId,
+          hostInstanceId: "host-a",
+          leaseId: reconcileClaim.leaseId,
+          status: "completed",
+          resultHash: createHash("sha256").update(JSON.stringify(reconcilePayload)).digest("hex"),
+          payload: reconcilePayload,
+        });
+      } finally {
+        await hostActions.close();
+      }
+
+      const projection = await server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}/ado`, headers: browser.headers });
+      expect(projection.statusCode).toBe(200);
+      expect(projection.json()).toMatchObject({
+        state: "completed",
+        actionId: writeActionId,
+        validationActionId,
+        expectedRevision: revision,
+      });
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("allows a new validation generation only after reconciled_absent and still blocks generation when reconcile is blocked", async () => {
+    const routeNowMs = Date.now();
+    setAdoRouteClockForTest(() => routeNowMs);
+    const rootDir = testRoot("workbench-server-ado-reconcile-new-generation");
+    await rm(rootDir, { recursive: true, force: true });
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate("63636363-6363-4636-8636-636363636363");
+      const revision = await seedAdoActionPendingSnapshot(rootDir, browser.sessionId);
+      const validationActionId = `ado-validation:${browser.sessionId}:${revision}`;
+      const writeActionId = `ado-write:${browser.sessionId}:${revision}`;
+      const reconcileActionId = `ado-reconcile:${browser.sessionId}:${revision}`;
+      const hostActions = await createHostActionStore({ rootDir, sessionId: browser.sessionId, now: () => new Date(routeNowMs - 120_000) });
+      try {
+        const confirmation = testSurfaceConfirmation();
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: validationActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_validate",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
+        });
+        const validationClaim = await hostActions.claimHostAction(validationActionId, "host-a");
+        const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };
+        await hostActions.completeHostAction({
+          contractVersion: "f8-host-action-result-v1",
+          actionId: validationActionId,
+          hostInstanceId: "host-a",
+          leaseId: validationClaim.leaseId,
+          status: "completed",
+          resultHash: createHash("sha256").update(JSON.stringify(validationPayload)).digest("hex"),
+          payload: validationPayload,
+        });
+
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: writeActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_write",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          validationActionId,
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          confirmation,
+        });
+        await hostActions.claimHostAction(writeActionId, "host-a");
+
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: reconcileActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_reconcile",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          writeActionId,
+          validationActionId,
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          previewIdentity: {
+            targetIdentity: { organization: "MSFTDEVICES", project: "Project A", workItemId: 42 },
+            previewHash: createHash("sha256").update(confirmation.nextContent).digest("hex"),
+            previewMarker: "preview-marker:ado:session:absent",
+          },
+          confirmation,
+        });
+        const reconcileClaim = await hostActions.claimHostAction(reconcileActionId, "host-a");
+        const absentPayload = {
+          status: "completed" as const,
+          outcome: {
+            kind: "surface_reconcile" as const,
+            state: "absent" as const,
+          },
+        };
+        await hostActions.completeHostAction({
+          contractVersion: "f8-host-action-result-v1",
+          actionId: reconcileActionId,
+          hostInstanceId: "host-a",
+          leaseId: reconcileClaim.leaseId,
+          status: "completed",
+          resultHash: createHash("sha256").update(JSON.stringify(absentPayload)).digest("hex"),
+          payload: absentPayload,
+        });
+      } finally {
+        await hostActions.close();
+      }
+
+      const beforeReset = await server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}/ado`, headers: browser.headers });
+      expect(beforeReset.statusCode).toBe(200);
+      expect(beforeReset.json()).toMatchObject({ state: "reconciled_absent", actionId: reconcileActionId, writeActionId });
+
+      const regenerate = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${browser.sessionId}/ado/start-new-write-generation`,
+        headers: browser.headers,
+      });
+      expect(regenerate.statusCode).toBe(202);
+      const nextRevision = regenerate.json<{ revision: number }>().revision;
+      const projection = await server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}/ado`, headers: browser.headers });
+      expect(projection.statusCode).toBe(200);
+      expect(projection.json()).toMatchObject({
+        state: "validation_pending",
+        actionId: `ado-validation:${browser.sessionId}:${nextRevision}`,
+        expectedRevision: nextRevision,
+      });
+
+      const blockedRootDir = testRoot("workbench-server-ado-reconcile-blocked-generation");
+      await rm(blockedRootDir, { recursive: true, force: true });
+      const blockedServer = await buildWorkbenchServer({ rootDir: blockedRootDir, skipWebAssets: true });
+      try {
+        const blockedBrowser = await blockedServer.testAuthenticate("62626262-6262-4626-8626-626262626262");
+        const blockedRevision = await seedAdoActionPendingSnapshot(blockedRootDir, blockedBrowser.sessionId);
+        const blockedValidationActionId = `ado-validation:${blockedBrowser.sessionId}:${blockedRevision}`;
+        const blockedWriteActionId = `ado-write:${blockedBrowser.sessionId}:${blockedRevision}`;
+        const blockedReconcileActionId = `ado-reconcile:${blockedBrowser.sessionId}:${blockedRevision}`;
+        const blockedActions = await createHostActionStore({ rootDir: blockedRootDir, sessionId: blockedBrowser.sessionId, now: () => new Date(routeNowMs - 120_000) });
+        try {
+          const confirmation = testSurfaceConfirmation();
+          await blockedActions.createHostAction({
+            contractVersion: "f8-host-action-request-v1",
+            actionId: blockedValidationActionId,
+            sessionId: blockedBrowser.sessionId,
+            expectedRevision: blockedRevision,
+            kind: "surface_validate",
+            expiresAt: new Date(Date.now() + 60_000).toISOString(),
+            confirmationHash: confirmation.confirmationHash,
+            expectedTargetVersion: "comment-v1",
+            prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
+          });
+          const validationClaim = await blockedActions.claimHostAction(blockedValidationActionId, "host-a");
+          const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };
+          await blockedActions.completeHostAction({
+            contractVersion: "f8-host-action-result-v1",
+            actionId: blockedValidationActionId,
+            hostInstanceId: "host-a",
+            leaseId: validationClaim.leaseId,
+            status: "completed",
+            resultHash: createHash("sha256").update(JSON.stringify(validationPayload)).digest("hex"),
+            payload: validationPayload,
+          });
+          await blockedActions.createHostAction({
+            contractVersion: "f8-host-action-request-v1",
+            actionId: blockedWriteActionId,
+            sessionId: blockedBrowser.sessionId,
+            expectedRevision: blockedRevision,
+            kind: "surface_write",
+            expiresAt: new Date(Date.now() + 60_000).toISOString(),
+            validationActionId: blockedValidationActionId,
+            confirmationHash: confirmation.confirmationHash,
+            expectedTargetVersion: "comment-v1",
+            confirmation,
+          });
+          await blockedActions.claimHostAction(blockedWriteActionId, "host-a");
+          await blockedActions.createHostAction({
+            contractVersion: "f8-host-action-request-v1",
+            actionId: blockedReconcileActionId,
+            sessionId: blockedBrowser.sessionId,
+            expectedRevision: blockedRevision,
+            kind: "surface_reconcile",
+            expiresAt: new Date(Date.now() + 60_000).toISOString(),
+            writeActionId: blockedWriteActionId,
+            validationActionId: blockedValidationActionId,
+            confirmationHash: confirmation.confirmationHash,
+            expectedTargetVersion: "comment-v1",
+            previewIdentity: {
+              targetIdentity: { organization: "MSFTDEVICES", project: "Project A", workItemId: 42 },
+              previewHash: createHash("sha256").update(confirmation.nextContent).digest("hex"),
+              previewMarker: "preview-marker:ado:session:blocked",
+            },
+            confirmation,
+          });
+          const blockedClaim = await blockedActions.claimHostAction(blockedReconcileActionId, "host-a");
+          const blockedPayload = {
+            status: "blocked" as const,
+            reason: "Readback reconciliation was inconclusive.",
+          };
+          await blockedActions.completeHostAction({
+            contractVersion: "f8-host-action-result-v1",
+            actionId: blockedReconcileActionId,
+            hostInstanceId: "host-a",
+            leaseId: blockedClaim.leaseId,
+            status: "blocked",
+            resultHash: createHash("sha256").update(JSON.stringify(blockedPayload)).digest("hex"),
+            payload: blockedPayload,
+          });
+        } finally {
+          await blockedActions.close();
+        }
+
+        const blockedRegenerate = await blockedServer.inject({
+          method: "POST",
+          url: `/api/sessions/${blockedBrowser.sessionId}/ado/start-new-write-generation`,
+          headers: blockedBrowser.headers,
+        });
+        expect(blockedRegenerate.statusCode).toBe(409);
+        expect(blockedRegenerate.json()).toMatchObject({ error: "ado_new_generation_unavailable" });
+      } finally {
+        await blockedServer.close();
+        await rm(blockedRootDir, { recursive: true, force: true });
+      }
+    } finally {
+      setAdoRouteClockForTest(undefined);
       await server.close();
       await rm(rootDir, { recursive: true, force: true });
     }

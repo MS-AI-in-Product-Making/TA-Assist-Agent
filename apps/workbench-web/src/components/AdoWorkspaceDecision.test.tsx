@@ -77,4 +77,47 @@ describe("AdoWorkspaceDecision", () => {
     fireEvent.click(screen.getByRole("button", { name: "Run readback reconciliation" }));
     expect(onReconcile).toHaveBeenCalledOnce();
   });
+
+  it("requires a new validation generation after reconciled_absent instead of direct write", () => {
+    const onStartNewWriteGeneration = vi.fn(async () => undefined);
+    render(
+      <AdoWorkspaceDecision
+        visible
+        projection={{
+          contractVersion: "f8-ado-projection-v1",
+          sessionId: "session-1",
+          state: "reconciled_absent",
+          actionId: "ado-reconcile:session-1:3",
+          writeActionId: "ado-write:session-1:3",
+          validationActionId: "ado-validation:session-1:3",
+          expectedRevision: 3,
+          executionPhase: "reconcile",
+          previewIdentity: {
+            targetIdentity: { organization: "MSFTDEVICES", project: "Project", workItemId: 42 },
+            previewHash: "c".repeat(64),
+            previewMarker: "preview-marker:ado:session-1:3",
+          },
+          confirmation: {
+            status: "confirmation_required",
+            workItemReference: "https://dev.azure.com/MSFTDEVICES/Project/_workitems/edit/42",
+            ownerReference: "owner@example.com",
+            commentReference: "C0",
+            expectedVersion: "7",
+            beforeContentHash: "a".repeat(64),
+            nextContent: "# Complete governance preview\n\n<!-- preview-marker:ado:session-1:3 -->",
+            factorCount: 1,
+            confirmationHash: "b".repeat(64),
+            diff: [{ before: "old", after: "new", changed: true }],
+          },
+        }}
+        onSubmit={vi.fn(async () => undefined)}
+        onStartNewWriteGeneration={onStartNewWriteGeneration}
+      />,
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent(/prepare a new validated preview/i);
+    expect(screen.queryByRole("button", { name: "Confirm ADO write" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Prepare a new validated preview" }));
+    expect(onStartNewWriteGeneration).toHaveBeenCalledOnce();
+  });
 });

@@ -1,10 +1,19 @@
 import { f8AdoProjectionSchema, f8AdoWriteConfirmationSchema } from "@ai-assist/contracts";
-import { createHash } from "node:crypto";
+import type { F8SessionCommand } from "@ai-assist/workbench";
+import { createHash, randomUUID } from "node:crypto";
 import type { FastifyPluginAsync } from "fastify";
 
 import type { WorkbenchServerContext } from "../server.js";
 import { hasScope } from "../auth.js";
 import { sanitizePromptVisibleText } from "../prompt-sanitizer.js";
+import { errorStatusCode, safeErrorResponse } from "../security.js";
+
+const DEFAULT_LEASE_MS = 15 * 60_000;
+let adoRouteClock: () => number = () => Date.now();
+
+export function setAdoRouteClockForTest(clock: (() => number) | undefined): void {
+  adoRouteClock = clock ?? (() => Date.now());
+}
 
 export const adoRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServerContext }> = async (app, { context }) => {
   app.get("/api/sessions/:sessionId/ado/pending", async (request, reply) => {
@@ -54,6 +63,12 @@ export const adoRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServerCo
     if (write !== undefined) {
       const confirmation = write.request.kind === "surface_write" ? write.request.confirmation : undefined;
       const previewIdentity = confirmation === undefined ? undefined : previewIdentityFromConfirmation(confirmation);
+      const receipt = write.result?.payload.status === "completed" && write.result.payload.outcome?.kind === "surface_write"
+        ? write.result.payload.outcome.receipt
+        : undefined;
+      if (confirmation !== undefined && receipt !== undefined) {
+        return reply.send(f8AdoProjectionSchema.parse({ contractVersion: "f8-ado-projection-v1", sessionId, state: "completed", actionId: writeActionId, validationActionId, expectedRevision: snapshot.revision, executionPhase: "reconcile", confirmation, receipt }));
+      }
       if (confirmation !== undefined && reconcile !== undefined) {
         const reconcileOutcome = reconcile.result?.payload.status === "completed" && reconcile.result.payload.outcome?.kind === "surface_reconcile"
           ? reconcile.result.payload.outcome
@@ -69,17 +84,14 @@ export const adoRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServerCo
           return reply.send(f8AdoProjectionSchema.parse({ contractVersion: "f8-ado-projection-v1", sessionId, state: reconcileTerminal.state, actionId: reconcileActionId, expectedRevision: snapshot.revision, reason: reconcileTerminal.reason }));
         }
       }
-      const receipt = write.result?.payload.status === "completed" && write.result.payload.outcome?.kind === "surface_write"
-        ? write.result.payload.outcome.receipt
-        : undefined;
-      if (confirmation !== undefined && receipt !== undefined) {
-        return reply.send(f8AdoProjectionSchema.parse({ contractVersion: "f8-ado-projection-v1", sessionId, state: "completed", actionId: writeActionId, validationActionId, expectedRevision: snapshot.revision, executionPhase: "reconcile", confirmation, receipt }));
-      }
       const writeTerminal = terminalProjection(write.result?.payload, "write");
       if (confirmation !== undefined && writeTerminal !== undefined) {
         return reply.send(f8AdoProjectionSchema.parse({ contractVersion: "f8-ado-projection-v1", sessionId, state: writeTerminal.state, actionId: writeActionId, expectedRevision: snapshot.revision, reason: writeTerminal.reason }));
       }
       if (confirmation !== undefined && write.status === "claimed") {
+        if (hasActiveLease(write.leaseExpiresAt, adoRouteClock())) {
+          return reply.send(f8AdoProjectionSchema.parse({ contractVersion: "f8-ado-projection-v1", sessionId, state: "write_pending", actionId: writeActionId, validationActionId, expectedRevision: snapshot.revision, executionPhase: "execute_write", ...pendingTiming(write.leaseExpiresAt), confirmation }));
+        }
         if (write.dispatchedAt === undefined) {
           return reply.send(f8AdoProjectionSchema.parse({
             contractVersion: "f8-ado-projection-v1",
@@ -172,7 +184,7 @@ export const adoRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServerCo
       confirmationHash: outcome.confirmation.confirmationHash,
       expectedTargetVersion: validation.request.expectedTargetVersion,
       confirmation: outcome.confirmation,
-      expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+      expiresAt: new Date(adoRouteClock() + DEFAULT_LEASE_MS).toISOString(),
     });
     return created === undefined ? reply.code(409).send({ error: "host_action_id_conflict" }) : reply.code(201).send({ actionId });
   });
@@ -190,7 +202,7 @@ export const adoRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServerCo
     const validationActionId = `ado-validation:${sessionId}:${snapshot.revision}`;
     const reconcileActionId = `ado-reconcile:${sessionId}:${snapshot.revision}`;
     const write = await context.hostActions.readRecord(sessionId, writeActionId);
-    if (write?.request.kind !== "surface_write" || write.status !== "claimed" || write.result !== undefined) {
+    if (write?.request.kind !== "surface_write" || write.status !== "claimed" || write.result !== undefined || hasActiveLease(write.leaseExpiresAt, adoRouteClock())) {
       return reply.code(409).send({ error: "ado_reconcile_unavailable" });
     }
 
@@ -202,23 +214,101 @@ export const adoRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServerCo
       sessionId,
       expectedRevision: snapshot.revision,
       kind: "surface_reconcile",
-      expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
       writeActionId,
       validationActionId,
       confirmationHash: write.request.confirmationHash,
       expectedTargetVersion: write.request.expectedTargetVersion,
       previewIdentity,
       confirmation,
+      expiresAt: new Date(adoRouteClock() + DEFAULT_LEASE_MS).toISOString(),
     });
 
     return created === undefined ? reply.code(409).send({ error: "host_action_id_conflict" }) : reply.code(202).send({ actionId: reconcileActionId });
   });
+
+  app.post("/api/sessions/:sessionId/ado/start-new-write-generation", async (request, reply) => {
+    const auth = context.requireBrowserMutation(request, reply);
+    if (auth === undefined) return reply;
+    const { sessionId } = request.params as { readonly sessionId: string };
+    if (auth.sessionId !== sessionId) return reply.code(403).send({ error: "session_scope_rejected" });
+
+    const snapshot = await context.sessions.read(sessionId);
+    if (snapshot?.state !== "ado_action_pending") return reply.code(409).send({ error: "ado_generation_stale" });
+
+    const revision = snapshot.revision;
+    const writeActionId = `ado-write:${sessionId}:${revision}`;
+    const validationActionId = `ado-validation:${sessionId}:${revision}`;
+    const reconcileActionId = `ado-reconcile:${sessionId}:${revision}`;
+    const [write, validation, reconcile] = await Promise.all([
+      context.hostActions.readRecord(sessionId, writeActionId),
+      context.hostActions.readRecord(sessionId, validationActionId),
+      context.hostActions.readRecord(sessionId, reconcileActionId),
+    ]);
+    const reconcileOutcome = reconcile?.result?.payload.status === "completed" && reconcile.result.payload.outcome?.kind === "surface_reconcile"
+      ? reconcile.result.payload.outcome
+      : undefined;
+    if (
+      write?.request.kind !== "surface_write"
+      || write.status !== "claimed"
+      || write.result !== undefined
+      || hasActiveLease(write.leaseExpiresAt, adoRouteClock())
+      || validation?.request.kind !== "surface_validate"
+      || reconcileOutcome?.state !== "absent"
+    ) {
+      return reply.code(409).send({ error: "ado_new_generation_unavailable" });
+    }
+
+    try {
+      const decisionPayload = validation.request.prepareRequest.mode === "existing"
+        ? { decision: "use_existing" as const, workItemReference: validation.request.prepareRequest.workItemReference }
+        : { decision: "create_new" as const };
+
+      const resetCommand: F8SessionCommand = {
+        contractVersion: "f8-session-command-v1",
+        sessionId,
+        commandId: `start-new-generation-reset-${randomUUID()}`,
+        expectedRevision: revision,
+        command: "reset_ado_decision",
+        payload: {},
+      };
+      const resetSnapshot = await context.sessions.applyCommand(resetCommand);
+      const regenerateCommand: F8SessionCommand = {
+        contractVersion: "f8-session-command-v1",
+        sessionId,
+        commandId: `start-new-generation-confirm-${randomUUID()}`,
+        expectedRevision: resetSnapshot.revision,
+        command: "confirm_ado_decision",
+        payload: decisionPayload,
+      };
+      const nextSnapshot = await context.sessions.applyCommand(regenerateCommand);
+      const nextValidationActionId = `ado-validation:${sessionId}:${nextSnapshot.revision}`;
+      const confirmationHash = createHash("sha256").update(JSON.stringify(validation.request.prepareRequest)).digest("hex");
+      const created = await context.hostActions.create({
+        contractVersion: "f8-host-action-request-v1",
+        actionId: nextValidationActionId,
+        sessionId,
+        expectedRevision: nextSnapshot.revision,
+        kind: "surface_validate",
+        confirmationHash,
+        expectedTargetVersion: validation.request.expectedTargetVersion,
+        prepareRequest: validation.request.prepareRequest,
+        expiresAt: new Date(adoRouteClock() + DEFAULT_LEASE_MS).toISOString(),
+      });
+      if (created === undefined) {
+        return reply.code(409).send({ error: "host_action_id_conflict" });
+      }
+      await context.syncSessionRecord(sessionId);
+      return reply.code(202).send((await context.sessions.read(sessionId)) ?? nextSnapshot);
+    } catch (error) {
+      return reply.code(errorStatusCode(error)).send(safeErrorResponse(error));
+    }
+  });
 };
 
 function pendingTiming(expiresAt: string | undefined): { readonly startedAt: string; readonly expiresAt: string } {
-  const effectiveExpiresAt = expiresAt ?? new Date(Date.now() + 15 * 60_000).toISOString();
+  const effectiveExpiresAt = expiresAt ?? new Date(adoRouteClock() + DEFAULT_LEASE_MS).toISOString();
   return {
-    startedAt: new Date(Date.parse(effectiveExpiresAt) - 15 * 60_000).toISOString(),
+    startedAt: new Date(Date.parse(effectiveExpiresAt) - DEFAULT_LEASE_MS).toISOString(),
     expiresAt: effectiveExpiresAt,
   };
 }
@@ -278,4 +368,11 @@ function previewIdentityFromConfirmation(confirmation: {
     previewHash: createHash("sha256").update(confirmation.nextContent).digest("hex"),
     previewMarker,
   };
+}
+
+function hasActiveLease(leaseExpiresAt: string | undefined, nowMs: number): boolean {
+  if (leaseExpiresAt === undefined) return true;
+  const expiresAt = Date.parse(leaseExpiresAt);
+  if (!Number.isFinite(expiresAt)) return true;
+  return expiresAt > nowMs;
 }
