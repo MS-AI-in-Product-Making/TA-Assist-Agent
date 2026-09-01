@@ -204,4 +204,48 @@ describe("extension workbench binding", () => {
     expect(importWorkbookMock).toHaveBeenCalledWith({ sessionId: SESSION_ID, workbookPath: WORKBOOK_PATH }, expect.any(Object));
     context.subscriptions.forEach((subscription) => subscription.dispose());
   });
+
+  it("returns without import when duplicate-name Quick Pick is cancelled", async () => {
+    const context = await activateExtension();
+    findFilesMock.mockResolvedValueOnce([{ fsPath: "C:\\A\\report.xlsx" }, { fsPath: WORKBOOK_PATH }]);
+    showQuickPickMock.mockResolvedValueOnce(undefined);
+
+    const response = await invokeParticipant({ prompt: "Analyze report.xlsx" });
+
+    expect(launchNewWorkbenchMock).toHaveBeenCalledTimes(1);
+    expect(showQuickPickMock).toHaveBeenCalledTimes(1);
+    expect(importWorkbookMock).not.toHaveBeenCalled();
+    expect(response.markdown).toHaveBeenCalledWith("TA Assist Workbench is ready. Upload a workbook to begin.");
+    context.subscriptions.forEach((subscription) => subscription.dispose());
+  });
+
+  it("returns without import when Open Dialog is cancelled", async () => {
+    const context = await activateExtension();
+    findFilesMock.mockResolvedValueOnce([]);
+    showOpenDialogMock.mockResolvedValueOnce(undefined);
+
+    const response = await invokeParticipant({ prompt: "Analyze report.xlsx" });
+
+    expect(launchNewWorkbenchMock).toHaveBeenCalledTimes(1);
+    expect(showOpenDialogMock).toHaveBeenCalledTimes(1);
+    expect(importWorkbookMock).not.toHaveBeenCalled();
+    expect(response.markdown).toHaveBeenCalledWith("TA Assist Workbench is ready. Upload a workbook to begin.");
+    context.subscriptions.forEach((subscription) => subscription.dispose());
+  });
+
+  it("routes Open Dialog selection through importWorkbook even when selected URI is non-xlsx", async () => {
+    const context = await activateExtension();
+    findFilesMock.mockResolvedValueOnce([]);
+    showOpenDialogMock.mockResolvedValueOnce([{ fsPath: "C:\\TA Reports\\report.csv" }]);
+    importWorkbookMock.mockRejectedValueOnce(Object.assign(new Error("unsafe"), {
+      summary: "Workbook import failed for C:\\TA Reports\\report.csv",
+      suggestedAction: "Open TA Assist Workbench and upload the workbook again.",
+    }));
+
+    const response = await invokeParticipant({ prompt: "Analyze report.xlsx" });
+
+    expect(importWorkbookMock).toHaveBeenCalledWith({ sessionId: SESSION_ID, workbookPath: "C:\\TA Reports\\report.csv" }, expect.any(Object));
+    expect(response.markdown).toHaveBeenCalledWith("Workbook import failed. Open TA Assist Workbench and upload the workbook again.");
+    context.subscriptions.forEach((subscription) => subscription.dispose());
+  });
 });

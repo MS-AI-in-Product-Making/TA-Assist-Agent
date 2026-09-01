@@ -35,12 +35,15 @@ export function classifyAnalyzeIntent(text: string): TaAnalyzeIntentClassificati
   const workbookFileNames = collectWorkbookFileNames(nonAbsoluteXlsxTokens);
   const nonWorkbookFileNameTokens = nonAbsoluteXlsxTokens.filter((token) => !workbookFileNames.includes(token));
 
+  if (SESSION_FIRST_INTENT_PATTERN.test(text) && nonWorkbookFileNameTokens.length === 0 && absolutePaths.length + workbookFileNames.length <= 1) {
+    return undefined;
+  }
+
   if (nonWorkbookFileNameTokens.length > 0) {
     return { kind: "invalid_analyze_ta", reason: absolutePaths.length === 1 ? "multiple_paths" : "relative_path" };
   }
 
   if (absolutePaths.length + workbookFileNames.length > 1) return { kind: "invalid_analyze_ta", reason: "multiple_paths" };
-  if (absolutePaths.length === 0 && workbookFileNames.length === 0 && SESSION_FIRST_INTENT_PATTERN.test(text)) return undefined;
 
   if (absolutePaths.length === 1) {
     const workbookPath = absolutePaths[0]!;

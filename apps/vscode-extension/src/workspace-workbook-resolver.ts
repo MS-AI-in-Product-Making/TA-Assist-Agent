@@ -36,12 +36,16 @@ function normalizeWorkbookFileName(value: string): string {
 }
 
 function escapeGlobSegment(value: string): string {
-  return value
-    .replaceAll("[", "[[]")
-    .replaceAll("]", "[]]")
-    .replaceAll("{", "[{]")
-    .replaceAll("}", "[}]")
-    .replaceAll("*", "[*]")
-    .replaceAll("?", "[?]")
-    .replaceAll(",", "[,]");
+  let escaped = "";
+  for (const char of value) {
+    if (char === "[") escaped += "[[]";
+    else if (char === "]") escaped += "[]]";
+    else if (char === "{") escaped += "[{]";
+    else if (char === "}") escaped += "[}]";
+    else if (char === "*") escaped += "[*]";
+    else if (char === "?") escaped += "[?]";
+    else if (char === ",") escaped += "[,]";
+    else escaped += char;
+  }
+  return escaped;
 }

@@ -77,4 +77,12 @@ describe("parseAnalyzeIntent", () => {
   it("does not convert current-session continuation into a new analysis", () => {
     expect(parseAnalyzeIntent("继续分析当前 session 的 factor table")).toBeUndefined();
   });
+
+  it.each([
+    "继续分析当前 session 的 report.xlsx",
+    "查看当前报告 C:\\TA\\report.xlsx",
+    "当前分析为什么被阻塞 report.xlsx",
+  ])("keeps explicit current-session operations out of new analyze routing: %s", (input) => {
+    expect(parseAnalyzeIntent(input)).toBeUndefined();
+  });
 });
