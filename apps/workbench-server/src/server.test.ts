@@ -1122,7 +1122,7 @@ describe("workbench server routes", () => {
     }
   }, 15_000);
 
-  it("auto-enters the F1/F2 successor without a public scope confirmation", async () => {
+  it("keeps production sessions at initial scope until user confirmation", async () => {
     const rootDir = testRoot("workbench-server-auto-entry");
     await rm(rootDir, { recursive: true, force: true });
     const stages: string[] = [];
@@ -1157,7 +1157,54 @@ describe("workbench server routes", () => {
       const response = await server.inject({ method: "POST", url: `/api/sessions/${auth.sessionId}/commands`, headers: auth.headers, payload: { contractVersion: "f8-session-command-v1", sessionId: auth.sessionId, commandId: "auto-upload", expectedRevision: 0, command: "upload_workbook", payload: { artifactId, inputClassification: "confidential" } } });
 
       expect(response.statusCode).toBe(202);
-      expect(response.json()).toMatchObject({ state: "downstream_scope_required", initialScopeSelection: { selectedWorksheetNames: ["Analysis-A"], confirmed: true } });
+      expect(response.json()).toMatchObject({ state: "initial_scope_required" });
+      expect(response.json()).not.toHaveProperty("initialScopeSelection");
+      expect(stages).toEqual(["f0_validating"]);
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  }, 15_000);
+
+  it("allows fixture-only auto confirmations through explicit injected policy", async () => {
+    const rootDir = testRoot("workbench-server-auto-entry-fixture");
+    await rm(rootDir, { recursive: true, force: true });
+    const stages: string[] = [];
+    const runner = vi.fn(async (job: StageJob) => {
+      stages.push(job.stage);
+      if (job.stage === "f0_validating") {
+        return {
+          featureId: "F0",
+          status: "completed",
+          versions: ["v1", "internal-v1", "interpretation-rules-v1"],
+          worksheetCapabilities: [{ worksheetName: "Analysis-A", whatIfAvailable: false }],
+          selectionPrompt: {
+            contractVersion: "v1",
+            inputClassification: "confidential",
+            status: "selectionRequired",
+            workbook: { fileName: "book.xlsx", contentHash: "a".repeat(64) },
+            options: [{ selectionIndex: 1, worksheetName: "Analysis-A", toleranceLoopDescription: "Analysis loop", worksheetKind: "analysis", source: { discoveryMethod: "worksheet_scan", descriptionCell: "Analysis-A!F11", worksheetAnchor: "Analysis-A!A1" } }],
+          },
+        };
+      }
+      return { status: "completed" };
+    });
+    const server = await buildWorkbenchServer({ rootDir, runner, queueFactory: immediateQueue, skipWebAssets: true, allowInternalFixtureAutoConfirmation: true });
+    try {
+      const auth = await server.testAuthenticate("13131313-1313-4313-8313-131313131314");
+      const artifactId = "managed-workbook";
+      const relativePath = `uploads/${auth.sessionId}/workbook/${artifactId}-book.xlsx`;
+      server.registerArtifactForTest(auth.sessionId, artifactId, relativePath, "book.xlsx", "confidential", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      await mkdir(dirname(join(rootDir, relativePath)), { recursive: true });
+      await writeFile(join(rootDir, relativePath), createAnonymousWorkbookZip());
+
+      const response = await server.inject({ method: "POST", url: `/api/sessions/${auth.sessionId}/commands`, headers: auth.headers, payload: { contractVersion: "f8-session-command-v1", sessionId: auth.sessionId, commandId: "auto-upload-fixture", expectedRevision: 0, command: "upload_workbook", payload: { artifactId, inputClassification: "confidential" } } });
+
+      expect(response.statusCode).toBe(202);
+      expect(response.json()).toMatchObject({
+        state: "downstream_scope_required",
+        initialScopeSelection: { selectedWorksheetNames: ["Analysis-A"], confirmed: true, provenance: "internal_fixture" },
+      });
       expect(stages).toEqual(["f0_validating", "f1_f2_running"]);
     } finally {
       await server.close();

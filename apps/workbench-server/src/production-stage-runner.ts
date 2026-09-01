@@ -76,8 +76,22 @@ export async function runProductionStage(stage: string, environment: ProductionS
 }
 
 export function reviewContextFor(snapshot: F8SessionSnapshot, baselineRunReference: string) {
+  const initial = snapshot.initialScopeSelection;
   const scope = snapshot.downstreamScopeSelection;
-  if (scope === undefined) throw new Error("Downstream selection is unavailable.");
+  if (initial === undefined || scope === undefined) throw new Error("Worksheet selections are unavailable for production export.");
+  if (initial.provenance !== "user" || scope.provenance !== "user") {
+    throw new Error("Production export requires user-confirmed worksheet selections.");
+  }
+  if (initial.workbookContentHash !== scope.workbookContentHash) {
+    throw new Error("Downstream selection workbook hash does not match the initial confirmation.");
+  }
+  if (scope.selectedWorksheetNames.length === 0 || new Set(scope.selectedWorksheetNames).size !== scope.selectedWorksheetNames.length) {
+    throw new Error("Downstream worksheet selection must include a unique non-empty worksheet list.");
+  }
+  const initialWorksheets = new Set(initial.selectedWorksheetNames);
+  if (scope.selectedWorksheetNames.some((worksheetName) => !initialWorksheets.has(worksheetName))) {
+    throw new Error("Downstream worksheet selection contains out-of-scope worksheets.");
+  }
   return { workbookHash: scope.workbookContentHash, downstreamSelectionHash: canonicalSelectedWorksheetSetHash(scope.selectedWorksheetNames), baselineRunReference };
 }
 

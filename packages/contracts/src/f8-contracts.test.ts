@@ -556,6 +556,28 @@ describe("F8 session and host contracts", () => {
     expect(() => f8PublicSessionCommandSchema.parse(internal)).toThrow();
   });
 
+  it("accepts internal worksheet decision provenance and blocks public injection", () => {
+    const internal = {
+      contractVersion: "f8-session-command-v1",
+      sessionId: SESSION_ID,
+      commandId: "internal-downstream",
+      expectedRevision: 4,
+      command: "confirm_downstream_scope",
+      payload: {
+        worksheetNames: ["AJ_GAP"],
+        workbookHash: WORKBOOK_HASH,
+        provenance: "internal_fixture",
+      },
+    } as const;
+
+    expect(f8SessionCommandSchema.parse(internal)).toEqual(internal);
+    expect(() => f8PublicSessionCommandSchema.parse(internal)).toThrow();
+    expect(() => f8SessionCommandSchema.parse({
+      ...internal,
+      payload: { ...internal.payload, provenance: "external" },
+    })).toThrow();
+  });
+
   it("keeps the session snapshot and event surfaces strict", () => {
     const snapshot = {
       contractVersion: "f8-session-snapshot-v1",

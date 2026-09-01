@@ -467,15 +467,40 @@ const workbookReplacePayloadSchema = workbookUploadPayloadSchema.extend({
   previousWorkbookHash: sha256Schema,
 }).strict();
 
-const worksheetScopePayloadSchema = z
+const worksheetScopePayloadBaseSchema = z
   .object({
     workbookHash: sha256Schema,
     worksheetNames: z.array(boundedContextNameSchema).min(1),
   })
+  .strict();
+
+const withUniqueWorksheetNames = <T extends z.ZodType<{ worksheetNames: string[] }>>(schema: T) => schema.superRefine((payload, context) => {
+  if (new Set(payload.worksheetNames).size !== payload.worksheetNames.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheetNames must be unique", path: ["worksheetNames"] });
+  }
+});
+
+const worksheetScopePayloadSchema = withUniqueWorksheetNames(worksheetScopePayloadBaseSchema);
+
+const worksheetDecisionProvenanceSchema = z.enum(["user", "internal_fixture"]);
+
+const worksheetScopeInternalPayloadSchema = withUniqueWorksheetNames(worksheetScopePayloadBaseSchema
+  .extend({
+    provenance: worksheetDecisionProvenanceSchema.optional(),
+  })
+  .strict());
+
+const worksheetSelectionDecisionSchema = z
+  .object({
+    workbookContentHash: sha256Schema,
+    selectedWorksheetNames: z.array(nonEmptyStringSchema),
+    confirmed: z.literal(true),
+    provenance: worksheetDecisionProvenanceSchema.optional(),
+  })
   .strict()
-  .superRefine((payload, context) => {
-    if (new Set(payload.worksheetNames).size !== payload.worksheetNames.length) {
-      context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheetNames must be unique", path: ["worksheetNames"] });
+  .superRefine((selection, context) => {
+    if (new Set(selection.selectedWorksheetNames).size !== selection.selectedWorksheetNames.length) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet names must be unique", path: ["selectedWorksheetNames"] });
     }
   });
 
@@ -575,9 +600,9 @@ const commandEnvelopeSchema = <T extends z.ZodTypeAny>(command: string, payloadS
 export const f8SessionCommandSchema = z.discriminatedUnion("command", [
   commandEnvelopeSchema("upload_workbook", z.union([workbookUploadPayloadSchema, managedWorkbookUploadPayloadSchema])),
   commandEnvelopeSchema("replace_workbook", workbookReplacePayloadSchema),
-  commandEnvelopeSchema("confirm_initial_scope", worksheetScopePayloadSchema),
-  commandEnvelopeSchema("auto_confirm_initial_scope", worksheetScopePayloadSchema),
-  commandEnvelopeSchema("confirm_downstream_scope", worksheetScopePayloadSchema),
+  commandEnvelopeSchema("confirm_initial_scope", worksheetScopeInternalPayloadSchema),
+  commandEnvelopeSchema("auto_confirm_initial_scope", worksheetScopeInternalPayloadSchema),
+  commandEnvelopeSchema("confirm_downstream_scope", worksheetScopeInternalPayloadSchema),
   commandEnvelopeSchema("confirm_ado_decision", adoDecisionPayloadSchema),
   commandEnvelopeSchema("reset_ado_decision", z.object({}).strict()),
   commandEnvelopeSchema("confirm_image_decision", confirmationDecisionPayloadSchema),
@@ -995,8 +1020,8 @@ export const f8SessionSnapshotSchema = z
     priorRunReferences: z.array(f8PriorRunReferenceSchema),
     artifactRefs: z.array(f8ArtifactRefSchema).optional(),
     worksheetCapabilities: z.array(f8WorksheetCapabilitySchema).optional(),
-    initialScopeSelection: worksheetSelectionConfirmationSchema.optional(),
-    downstreamScopeSelection: worksheetSelectionConfirmationSchema.optional(),
+    initialScopeSelection: worksheetSelectionDecisionSchema.optional(),
+    downstreamScopeSelection: worksheetSelectionDecisionSchema.optional(),
     scenarioDrafts: z.array(z.lazy(() => f8ScenarioDraftSchema)).optional(),
   })
   .strict()

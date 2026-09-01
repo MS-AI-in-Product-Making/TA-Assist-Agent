@@ -250,6 +250,28 @@ describe("runF1F2Confirmed", () => {
     expect(executeStage.mock.calls.map(([request]) => request.stage)).toEqual(["f1-selection"]);
   });
 
+  it("fails closed when confirmation repeats worksheet names", async () => {
+    const setup = setupRepo();
+    const executeStage = vi.fn(({ stage, env }) => {
+      if (stage === "f1-selection") {
+        mkdirSync(env.AI_TVA_F1_OUTPUT_ROOT, { recursive: true });
+        writeFileSync(path.join(env.AI_TVA_F1_OUTPUT_ROOT, "Feature1-Selection.json"), JSON.stringify(selectionPrompt()));
+        return { stdout: "selection complete", stderr: "" };
+      }
+      return { stdout: "unexpected", stderr: "" };
+    });
+    const selection = await runF1F2Selection({ workbookPath: setup.workbookPath, now: fixedNow }, context(setup.repositoryRoot), { executeStage });
+
+    expect(() => runF1F2Confirmed({
+      workbookPath: setup.workbookPath,
+      workbookContentHash: HASH,
+      selectedWorksheetNames: ["Analysis-A", "Analysis-A"],
+      selectionReference: selection.selectionReference,
+      now: fixedNow,
+    }, context(setup.repositoryRoot), { executeStage })).toThrow(expect.objectContaining({ retryable: false }));
+    expect(executeStage.mock.calls.map(([request]) => request.stage)).toEqual(["f1-selection"]);
+  });
+
   it("normalizes ordinary and unknown stage failures to typed errors", async () => {
     const setup = setupRepo();
     const selectionExecuteStage = vi.fn(({ env }) => {

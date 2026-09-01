@@ -52,6 +52,7 @@ export interface StartWorkbenchServerOptions {
   readonly port?: number;
   readonly webAssetsRoot?: string;
   readonly skipWebAssets?: boolean;
+  readonly allowInternalFixtureAutoConfirmation?: boolean;
   readonly bootstrap?: BrowserBootstrapRendezvous;
   readonly runner?: (job: StageJob) => Promise<unknown>;
   readonly queueFactory?: (options: PersistentWorkerQueueOptions) => Promise<PersistentWorkerQueue>;
@@ -174,7 +175,15 @@ export async function buildWorkbenchServer(options: StartWorkbenchServerOptions)
   await mkdir(options.rootDir, { recursive: true });
 
   const auth = new WorkbenchAuth(loadOrCreateAuthKey(options.rootDir));
-  const context = await createWorkbenchServerContext(options.rootDir, auth, options.runner, options.queueFactory, options.whatIfService, options.surfacePrepareService);
+  const context = await createWorkbenchServerContext(
+    options.rootDir,
+    auth,
+    options.runner,
+    options.queueFactory,
+    options.whatIfService,
+    options.surfacePrepareService,
+    options.allowInternalFixtureAutoConfirmation === true,
+  );
   const app = Fastify({ logger: false, bodyLimit: 1024 * 1024 }) as unknown as WorkbenchServer;
   const bootstrap = options.bootstrap ?? createBrowserBootstrapRendezvous();
 
@@ -267,12 +276,12 @@ export async function startWorkbenchServer(options: StartWorkbenchServerOptions)
   return { server, url: `http://${LOOPBACK_HOST}:${port}/${sessionQuery}#bootstrap=${bootstrapNonce}`, bootstrapNonce };
 }
 
-async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth, runner: StartWorkbenchServerOptions["runner"], queueFactory: StartWorkbenchServerOptions["queueFactory"], whatIfService: WhatIfService | undefined, surfacePrepareService: SurfacePrepareService | undefined): Promise<WorkbenchServerContext> {
+async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth, runner: StartWorkbenchServerOptions["runner"], queueFactory: StartWorkbenchServerOptions["queueFactory"], whatIfService: WhatIfService | undefined, surfacePrepareService: SurfacePrepareService | undefined, allowInternalFixtureAutoConfirmation: boolean): Promise<WorkbenchServerContext> {
   const sessions = new StoreBackedSessionRegistry(rootDir);
   const artifacts = new FileBackedArtifactRegistry(rootDir);
   const events = await createSqliteEventSource({ rootDir });
   const effectiveWhatIfService = whatIfService ?? createDefaultWhatIfService(rootDir);
-  const queueSessionStore = new StoreBackedQueueSessionStore(rootDir, sessions);
+  const queueSessionStore = new StoreBackedQueueSessionStore(rootDir, sessions, allowInternalFixtureAutoConfirmation);
   const queueOptions = {
     rootDir: join(rootDir, "runtime", "workbench"),
     sessionStore: queueSessionStore,
@@ -1027,7 +1036,11 @@ function writeRegistry(rootDir: string, registry: string, sessionId: string, val
 class StoreBackedQueueSessionStore implements QueueSessionStore {
   private followUp: ((snapshot: F8SessionSnapshot) => Promise<void>) | undefined;
 
-  constructor(private readonly rootDir: string, private readonly sessions: SessionRegistry) {}
+  constructor(
+    private readonly rootDir: string,
+    private readonly sessions: SessionRegistry,
+    private readonly allowInternalFixtureAutoConfirmation: boolean,
+  ) {}
 
   setFollowUp(followUp: (snapshot: F8SessionSnapshot) => Promise<void>): void {
     this.followUp = followUp;
@@ -1095,6 +1108,7 @@ class StoreBackedQueueSessionStore implements QueueSessionStore {
   }
 
   private async applyAutoEntry(snapshot: F8SessionSnapshot, result: unknown, completedAttemptId: string): Promise<void> {
+    if (!this.allowInternalFixtureAutoConfirmation) return;
     if (snapshot.state !== "initial_scope_required") return;
     const selectionPrompt = typeof result === "object" && result !== null && "selectionPrompt" in result ? result.selectionPrompt : undefined;
     const parsed = worksheetSelectionPromptSchema.safeParse(selectionPrompt);
@@ -1107,19 +1121,20 @@ class StoreBackedQueueSessionStore implements QueueSessionStore {
       commandId: `${completedAttemptId}:auto-scope`,
       expectedRevision: snapshot.revision,
       command: "auto_confirm_initial_scope",
-      payload: { workbookHash: decision.workbookHash, worksheetNames: [...decision.worksheetNames] },
+      payload: { workbookHash: decision.workbookHash, worksheetNames: [...decision.worksheetNames], provenance: "internal_fixture" },
     });
     await this.followUp?.(next);
   }
 
   private async applyAutoDownstream(snapshot: F8SessionSnapshot, result: unknown, completedAttemptId: string): Promise<void> {
+    if (!this.allowInternalFixtureAutoConfirmation) return;
     if (snapshot.state !== "downstream_scope_required") return;
     const candidate = result as { readonly report?: unknown };
     const report = f2UserReportSchema.safeParse(candidate.report);
     if (!report.success || report.data.status === "inputRejected") return;
     const worksheetNames = report.data.worksheets.filter(({ status }) => status === "ready").map(({ worksheetName }) => worksheetName);
     if (worksheetNames.length === 0 || snapshot.initialScopeSelection === undefined) return;
-    const next = await this.sessions.applyCommand({ contractVersion: "f8-session-command-v1", sessionId: snapshot.sessionId, commandId: `${completedAttemptId}:auto-downstream`, expectedRevision: snapshot.revision, command: "confirm_downstream_scope", payload: { workbookHash: snapshot.initialScopeSelection.workbookContentHash, worksheetNames } });
+    const next = await this.sessions.applyCommand({ contractVersion: "f8-session-command-v1", sessionId: snapshot.sessionId, commandId: `${completedAttemptId}:auto-downstream`, expectedRevision: snapshot.revision, command: "confirm_downstream_scope", payload: { workbookHash: snapshot.initialScopeSelection.workbookContentHash, worksheetNames, provenance: "internal_fixture" } });
     await this.followUp?.(next);
   }
 
