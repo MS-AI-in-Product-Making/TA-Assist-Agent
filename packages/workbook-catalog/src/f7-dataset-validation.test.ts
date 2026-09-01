@@ -106,6 +106,7 @@ function makeDataset(options: {
     factorId: FACTOR_ID,
     unit: "mm",
     structure,
+    ...(structure === "RATIONAL_SUBGROUP" ? { rationalSubgroupConfig: { subgroupSize: 2, estimator: "RANGE_D2" as const } } : {}),
     sourceReference: "clipboard",
     importedAt: "2026-08-19T08:05:00.000Z",
     msaStatus: options.msaStatus ?? "available",

@@ -49,6 +49,7 @@ function createArtifactBundle() {
     toleranceLoopDescription: "Anonymous device gap",
     systemSpecification: {
       status: "available",
+      designNominal: { status: "available", actualValue: -0.05, displayValue: "-0.05", sourceLabel: "*Design Nominal ►", sourceCell: "Analysis-A!P53", valueOrigin: "numeric_literal" },
       lowerSpecLimit: { status: "available", actualValue: -0.15, displayValue: "-0.15", sourceLabel: "*Lower Spec Limit ►", sourceCell: "Analysis-A!P54", valueOrigin: "numeric_literal" },
       upperSpecLimit: { status: "available", actualValue: 0.05, displayValue: "0.05", sourceLabel: "*Upper Spec Limit ►", sourceCell: "Analysis-A!P55", valueOrigin: "numeric_literal" },
       targetSigmaLevel: { status: "available", actualValue: 3, displayValue: "3.0σ", sourceLabel: "*Target σ Level ►", sourceCell: "Analysis-A!P56", valueOrigin: "numeric_literal" },

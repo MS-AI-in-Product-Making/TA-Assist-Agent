@@ -475,6 +475,13 @@ describe("F7 phase 1 factor contracts", () => {
   it("optionally preserves the governed worksheet system specification", () => {
     const systemSpecification = {
       status: "available",
+      designNominal: {
+        status: "available",
+        actualValue: -0.57,
+        displayValue: "-0.57",
+        sourceLabel: "Design nominal",
+        valueOrigin: "numeric_literal",
+      },
       lowerSpecLimit: {
         status: "available",
         actualValue: -0.5,

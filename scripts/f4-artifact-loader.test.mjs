@@ -47,6 +47,14 @@ function enhancedRow(worksheetName, tableId, sourceRow) {
 function readySystemSpecification(worksheetName) {
   return {
     status: "available",
+    designNominal: {
+      status: "available",
+      actualValue: -0.05,
+      displayValue: "-0.05",
+      sourceLabel: "*Design Nominal ->",
+      sourceCell: `${worksheetName}!P53`,
+      valueOrigin: "numeric_literal",
+    },
     lowerSpecLimit: {
       status: "available",
       actualValue: -0.15,

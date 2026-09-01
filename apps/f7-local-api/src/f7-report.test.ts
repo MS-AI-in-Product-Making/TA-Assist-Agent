@@ -344,6 +344,14 @@ function createSnapshot(
     }],
     ...(!options.withoutSystemSpecification ? { systemSpecification: {
       status: "available" as const,
+      designNominal: {
+        status: "available" as const,
+        actualValue: -0.57,
+        displayValue: "-0.57",
+        sourceLabel: "Design nominal",
+        sourceCell: "Analysis-A!B1",
+        valueOrigin: "numeric_literal" as const,
+      },
       lowerSpecLimit: {
         status: "available" as const,
         actualValue: -0.5,

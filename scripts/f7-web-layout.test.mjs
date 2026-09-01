@@ -8,6 +8,6 @@ describe("F7 workbench layout CSS", () => {
     const workbenchRule = stylesheet.match(/\.workbench-root\s*\{([^}]*)\}/)?.[1] ?? "";
 
     expect(workbenchRule).toContain("width: 100%");
-    expect(workbenchRule).toContain("max-width: 1760px");
+    expect(workbenchRule).toContain("max-width: 1888px");
   });
 });
