@@ -6,6 +6,9 @@ const WORKBOOK_PATH = "C:\\TA Reports\\report.xlsx";
 
 const registeredCommands = new Map<string, (...args: unknown[]) => unknown>();
 const globalStateValues = new Map<string, unknown>();
+const findFilesMock = vi.fn(async () => [] as Array<{ fsPath: string }>);
+const showQuickPickMock = vi.fn();
+const showOpenDialogMock = vi.fn();
 const launchNewWorkbenchMock = vi.fn(async () => ({ sessionId: SESSION_ID, url: WORKBENCH_URL }));
 const launchWorkbenchMock = vi.fn(async () => ({ url: "http://127.0.0.1:4317/" }));
 const resumeWorkbenchMock = vi.fn(async (_rootDir: string, sessionId: string) => ({ sessionId, url: `http://127.0.0.1:4317/?session=${sessionId}` }));
@@ -34,8 +37,13 @@ vi.mock("vscode", () => ({
     showErrorMessage: vi.fn(),
     showInformationMessage: vi.fn(),
     showInputBox: vi.fn(),
+    showQuickPick: showQuickPickMock,
+    showOpenDialog: showOpenDialogMock,
   },
-  workspace: { workspaceFolders: [{ uri: { fsPath: "repo" } }] },
+  workspace: {
+    workspaceFolders: [{ uri: { fsPath: "repo" } }],
+    findFiles: findFilesMock,
+  },
 }));
 
 vi.mock("@ai-assist/conversation", () => ({
@@ -57,6 +65,10 @@ afterEach(() => {
   launchNewWorkbenchMock.mockClear();
   launchWorkbenchMock.mockClear();
   resumeWorkbenchMock.mockClear();
+  findFilesMock.mockReset();
+  findFilesMock.mockResolvedValue([]);
+  showQuickPickMock.mockReset();
+  showOpenDialogMock.mockReset();
   importWorkbookMock.mockReset();
   importWorkbookMock.mockResolvedValue({ artifactId: "artifact-1", contentHash: "a".repeat(64), snapshotRevision: 1, state: "f0_validating" });
   handleAgentTurnMock.mockClear();
@@ -166,6 +178,30 @@ describe("extension workbench binding", () => {
 
     expect(importWorkbookMock).toHaveBeenCalledWith({ sessionId: SESSION_ID, workbookPath: WORKBOOK_PATH }, expect.any(Object));
     expect(response.markdown).toHaveBeenCalledWith(`Workbook accepted. Session ${SESSION_ID} is running in TA Assist Workbench.`);
+    context.subscriptions.forEach((subscription) => subscription.dispose());
+  });
+
+  it("resolves a unique workspace workbook name before import", async () => {
+    const context = await activateExtension();
+    findFilesMock.mockResolvedValueOnce([{ fsPath: WORKBOOK_PATH }]);
+
+    const response = await invokeParticipant({ prompt: "请帮我分析 report.xlsx 的 TA" });
+
+    expect(findFilesMock).toHaveBeenCalled();
+    expect(importWorkbookMock).toHaveBeenCalledWith({ sessionId: SESSION_ID, workbookPath: WORKBOOK_PATH }, expect.any(Object));
+    expect(response.markdown).toHaveBeenCalledWith(`Workbook accepted. Session ${SESSION_ID} is running in TA Assist Workbench.`);
+    context.subscriptions.forEach((subscription) => subscription.dispose());
+  });
+
+  it("requires manual selection when duplicate workbook names are found", async () => {
+    const context = await activateExtension();
+    findFilesMock.mockResolvedValueOnce([{ fsPath: "C:\\A\\report.xlsx" }, { fsPath: WORKBOOK_PATH }]);
+    showQuickPickMock.mockResolvedValueOnce({ label: WORKBOOK_PATH, uri: { fsPath: WORKBOOK_PATH } });
+
+    await invokeParticipant({ prompt: "Analyze report.xlsx" });
+
+    expect(showQuickPickMock).toHaveBeenCalled();
+    expect(importWorkbookMock).toHaveBeenCalledWith({ sessionId: SESSION_ID, workbookPath: WORKBOOK_PATH }, expect.any(Object));
     context.subscriptions.forEach((subscription) => subscription.dispose());
   });
 });

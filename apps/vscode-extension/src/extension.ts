@@ -17,6 +17,7 @@ import type { TaAnalyzeIntent } from "./analyze-intent.js";
 import { createSurfaceHostClient } from "./surface-host-client.js";
 import { pumpOneHostAction, type ClaimedHostAction } from "./host-action-pump.js";
 import { executeSurfaceValidation } from "./surface-validation.js";
+import { resolveWorkspaceWorkbook } from "./workspace-workbook-resolver.js";
 
 let activeSessionId: string | undefined;
 let activeWorkbenchUrl: string | undefined;
@@ -110,9 +111,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   };
   const handleAnalyzeIntent = async (intent: TaAnalyzeIntent): Promise<string> => {
     const launched = await bindNewSession();
-    if (intent.workbookPath === undefined) return "TA Assist Workbench is ready. Upload a workbook to begin.";
+    const resolvedWorkbookPath = await resolveAnalyzeWorkbookPath(intent);
+    if (resolvedWorkbookPath === undefined) return "TA Assist Workbench is ready. Upload a workbook to begin.";
     try {
-      await importWorkbook({ sessionId: launched.sessionId, workbookPath: intent.workbookPath }, processLauncher);
+      await importWorkbook({ sessionId: launched.sessionId, workbookPath: resolvedWorkbookPath }, processLauncher);
       return `Workbook accepted. Session ${launched.sessionId} is running in TA Assist Workbench.`;
     } catch (error) {
       return formatWorkbookImportFailure(error);
@@ -200,6 +202,30 @@ function isLoopbackWorkbenchUrl(value: string): boolean {
 
 
 export function deactivate(): void {}
+
+async function resolveAnalyzeWorkbookPath(intent: TaAnalyzeIntent): Promise<string | undefined> {
+  if (intent.workbookPath !== undefined) return intent.workbookPath;
+  if (intent.workbookFileName === undefined) return undefined;
+
+  const resolution = await resolveWorkspaceWorkbook(intent.workbookFileName, (pattern) => vscode.workspace.findFiles(pattern));
+  if (resolution.kind === "unique") return resolution.uri.fsPath;
+  if (resolution.kind === "ambiguous") {
+    const picked = await vscode.window.showQuickPick(resolution.candidates.map((candidate) => ({ label: candidate.fsPath, uri: candidate })), {
+      title: `Select workbook for ${intent.workbookFileName}`,
+      ignoreFocusOut: true,
+      canPickMany: false,
+    });
+    return picked?.uri.fsPath;
+  }
+
+  const selected = await vscode.window.showOpenDialog({
+    canSelectMany: false,
+    openLabel: "Select Workbook",
+    title: `Workbook ${intent.workbookFileName} was not found. Select one workbook to continue`,
+    filters: { "Excel Workbook": ["xlsx"] },
+  });
+  return selected?.[0]?.fsPath;
+}
 
 function formatWorkbookImportFailure(error: unknown): string {
   const typed = error as { readonly summary?: unknown; readonly suggestedAction?: unknown };

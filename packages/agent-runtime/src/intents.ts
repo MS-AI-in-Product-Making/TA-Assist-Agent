@@ -18,6 +18,7 @@ export interface AgentIntent {
 }
 
 const WRITE_PATTERN = /(确认|写入|发布|delete|export|confirm|write|publish)/i;
+const CURRENT_SESSION_PATTERN = /current[-\s]*session|当前\s*session|当前会话/i;
 
 export function detectAgentIntent(text: string): AgentIntent {
 	const normalized = text.trim();
@@ -25,7 +26,7 @@ export function detectAgentIntent(text: string): AgentIntent {
 	const matchedPhrases: string[] = [];
 	const wantsWrite = WRITE_PATTERN.test(normalized);
 
-	if (matchAny(normalized, ["继续", "resume"])) {
+	if (matchAny(normalized, ["继续", "resume", "continue"]) || CURRENT_SESSION_PATTERN.test(normalized)) {
 		matchedPhrases.push("resume");
 		return { type: "resume", executable: false, wantsWrite, matchedPhrases };
 	}

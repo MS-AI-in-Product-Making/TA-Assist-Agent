@@ -67,8 +67,8 @@ async function handleAnalyzeIntent(
   if (classification === undefined) return false;
   if (classification.kind === "invalid_analyze_ta") {
     stream.markdown(classification.reason === "multiple_paths"
-      ? "Provide exactly one Windows absolute .xlsx workbook path, or omit the path and upload in TA Assist Workbench."
-      : "TA Assist analyze accepts one Windows absolute .xlsx workbook path, or no path.");
+      ? "Provide exactly one Windows absolute .xlsx workbook path or one exact .xlsx workbook file name, or omit it and upload in TA Assist Workbench."
+      : "TA Assist analyze accepts one Windows absolute .xlsx workbook path, one exact .xlsx workbook file name, or no path.");
     return true;
   }
   if (dependencies.handleAnalyzeIntent === undefined) return false;

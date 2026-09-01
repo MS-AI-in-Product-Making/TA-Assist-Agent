@@ -10,6 +10,13 @@ describe("detectAgentIntent", () => {
     });
   });
 
+  it("keeps current-session continuation on resume intent", () => {
+    expect(detectAgentIntent("continue analyzing current session factor table")).toMatchObject({
+      type: "resume",
+      wantsWrite: false,
+    });
+  });
+
   it("keeps free text write language out of executable intents", () => {
     expect(detectAgentIntent("全部确认并写入 ADO")).toMatchObject({
       type: "ado_guidance",
