@@ -29,8 +29,8 @@ export const TA_INTERNAL_WORKFLOW_STATES = [
 const TA_STAGE_TO_INTERNAL_STATES = {
   prepare_workbook: ["created", "workbook_required", "workbook_validating", "initial_scope_required"],
   validate_analysis_inputs: ["f0_validating", "f0_validated", "f1_f2_running", "downstream_scope_required"],
-  review_dimension_traceability: ["f3_running", "ado_decision_required", "ado_action_pending", "f4_running", "image_decision_required"],
-  calculate_and_interpret: ["f5_running", "analysis_context_decision_required"],
+  review_dimension_traceability: ["f3_running", "ado_decision_required", "ado_action_pending"],
+  calculate_and_interpret: ["f4_running", "image_decision_required", "f5_running", "analysis_context_decision_required"],
   evaluate_and_publish: [
     "optimization_targets_decision_required",
     "f6_running",

@@ -63,7 +63,7 @@ export function WorksheetReview({ review, onSelectWorksheet, onSelectFinding }: 
           detail={evidenceDetail}
           onFocusSource={(cell) => setEvidenceDetail(`Source evidence focused: ${cell}`)}
           onShowFormula={(formulaId) => setEvidenceDetail(`Formula evidence: ${formulaId}`)}
-          onShowRule={(ruleEntryId) => setEvidenceDetail(`F0 rule evidence: ${ruleEntryId}`)}
+          onShowRule={(ruleEntryId) => setEvidenceDetail(`Rule evidence: ${ruleEntryId}`)}
           onOpenArtifact={(artifactId) => setEvidenceDetail(`Authenticated artifact route: /api/sessions/${encodeURIComponent(review.sessionId)}/artifacts/${encodeURIComponent(artifactId)}`)}
         />
 

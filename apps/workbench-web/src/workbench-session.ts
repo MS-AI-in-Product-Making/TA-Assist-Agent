@@ -1,4 +1,5 @@
 import { createTypedError, f8PublicSessionCommandSchema, f8SessionCommandSchema, f8SessionSnapshotSchema, f8SessionStateSchema, type TypedError } from "@ai-assist/contracts";
+import { TA_WORKBOOK_STAGES, TA_WORKBOOK_STAGE_LABELS, projectTaWorkbookStage, type TaWorkbookStage } from "@ai-assist/product-language";
 
 import { featureDisplay, reasonDisplay } from "./web-projection.js";
 
@@ -34,6 +35,13 @@ export interface FeatureLedgerEntry {
   readonly lifecycle?: string;
   readonly actions: readonly string[];
   readonly displayLabel: string;
+  readonly displayStatus: string;
+}
+
+export interface ProductStageEntry {
+  readonly stageId: TaWorkbookStage;
+  readonly label: string;
+  readonly status: string;
   readonly displayStatus: string;
 }
 
@@ -303,4 +311,76 @@ export function normalizeTypedError(
 
 export function parseSnapshot(snapshot: F8SessionSnapshot): F8SessionSnapshot {
   return f8SessionSnapshotSchema.parse(snapshot);
+}
+
+export function projectTaProductStages(snapshot: F8SessionSnapshot, progress?: { readonly kind: "stage_started" | "stage_completed" | "stage_failed" | "artifact_written"; readonly featureId: typeof FEATURE_IDS[number] }): ProductStageEntry[] {
+  const activeStageFromProgress = progress === undefined || progress.kind === "artifact_written"
+    ? undefined
+    : stageForFeature(progress.featureId);
+  const activeStage = activeStageFromProgress ?? projectTaWorkbookStage(snapshot.state);
+  const activeIndex = TA_WORKBOOK_STAGES.indexOf(activeStage);
+
+  return TA_WORKBOOK_STAGES.map((stageId, index) => {
+    let status = "pending";
+    if (snapshot.state === "completed") {
+      status = "completed";
+    } else if (index < activeIndex) {
+      status = "completed";
+    } else if (index === activeIndex) {
+      status = stageStatus(snapshot.state, progress);
+    }
+
+    return {
+      stageId,
+      label: TA_WORKBOOK_STAGE_LABELS[stageId],
+      status,
+      displayStatus: reasonDisplay(status),
+    };
+  });
+}
+
+function stageStatus(state: F8SessionState, progress?: { readonly kind: "stage_started" | "stage_completed" | "stage_failed" | "artifact_written" }): string {
+  if (progress !== undefined) {
+    if (progress.kind === "stage_completed") return "completed";
+    if (progress.kind === "stage_failed") return "failed";
+    if (progress.kind === "stage_started") return "running";
+  }
+
+  if (state === "failed" || state === "cancelled") {
+    return state;
+  }
+
+  if ([
+    "initial_scope_required",
+    "downstream_scope_required",
+    "ado_decision_required",
+    "image_decision_required",
+    "analysis_context_decision_required",
+    "optimization_targets_decision_required",
+    "review_required",
+  ].includes(state)) {
+    return "action_required";
+  }
+
+  return "running";
+}
+
+function stageForFeature(featureId: typeof FEATURE_IDS[number]): TaWorkbookStage {
+  switch (featureId) {
+    case "F0":
+      return "prepare_workbook";
+    case "F1":
+    case "F2":
+      return "validate_analysis_inputs";
+    case "F3":
+      return "review_dimension_traceability";
+    case "F4":
+    case "F5":
+      return "calculate_and_interpret";
+    case "F6":
+    case "F7":
+      return "evaluate_and_publish";
+    default:
+      return "prepare_workbook";
+  }
 }

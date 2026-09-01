@@ -51,6 +51,12 @@ describe("useWorkbenchSession review artifacts", () => {
       revision: 8,
       inputRevision: 4,
       state: "review_required" as const,
+      downstreamScopeSelection: {
+        workbookContentHash: "c".repeat(64),
+        selectedWorksheetNames: ["AJ_GAP"],
+        confirmed: true,
+        provenance: "user" as const,
+      },
       activeAttempt: null,
       priorRunReferences: [],
       artifactRefs: [

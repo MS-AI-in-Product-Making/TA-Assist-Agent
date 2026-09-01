@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@ai-assist/contracts": "0.1.0",
-    "@ai-assist/governance": "0.1.0"
+    "@ai-assist/governance": "0.1.0",
+    "@ai-assist/product-language": "0.1.0"
   }
 }

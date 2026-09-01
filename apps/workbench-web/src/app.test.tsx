@@ -29,7 +29,13 @@ const KNOWN_CHINESE_UI_TEXT = [
   "已连接",
   "连接恢复中",
 ];
-const FEATURE_LABELS = ["Load Library", "Extract Data", "Check Inputs", "Drawing Governance", "Calculate TA", "Interpret Results", "Optimize Design", "Apply Feedback"];
+const PRODUCT_STAGE_LABELS = [
+  "Prepare workbook",
+  "Validate analysis inputs",
+  "Review dimension traceability",
+  "Calculate and interpret tolerance performance",
+  "Evaluate improvement options and publish report",
+];
 
 afterEach(cleanup);
 
@@ -254,12 +260,18 @@ describe("App", () => {
     render(<App preloadedState={{ snapshot: snapshot("f1_f2_running"), conversation: [], loading: false, connected: true, runnerProgress: { kind: "stage_started", featureId: "F2", stage: "report", timestamp: "2026-08-28T00:00:00.000Z" } }} />);
 
     expect(screen.getByText("Preparing TA workspace...")).toBeVisible();
-    expect(screen.getByRole("region", { name: "Analysis progress" })).toBeVisible();
-    for (const featureId of ["F0", "F1", "F2", "F3", "F4", "F5", "F6", "F7"]) expect(screen.getByText(featureId)).toBeVisible();
-    for (const label of FEATURE_LABELS) expect(screen.getByText(label)).toBeVisible();
-    expect(screen.getByText("Generating user report")).toBeVisible();
-    expect(screen.getByText("F1").closest("li")).toHaveTextContent("Completed");
-    expect(screen.getByText("F2").closest("li")).toHaveTextContent("Running");
+    const analysisProgress = screen.getByRole("region", { name: "Analysis progress" });
+    expect(analysisProgress).toBeVisible();
+    for (const label of PRODUCT_STAGE_LABELS) {
+      if (label === "Validate analysis inputs") {
+        expect(within(analysisProgress).getAllByText(label).length).toBeGreaterThanOrEqual(2);
+        continue;
+      }
+      expect(within(analysisProgress).getByText(label)).toBeVisible();
+    }
+    const [summaryCurrentStep, runningStageLabel] = within(analysisProgress).getAllByText("Validate analysis inputs");
+    expect(summaryCurrentStep.tagName).toBe("SPAN");
+    expect(runningStageLabel.closest("li")).toHaveTextContent("Running");
   }, 15_000);
 
   it("keeps visible shell copy in English while allowing source text tooltips", () => {
@@ -356,7 +368,7 @@ describe("App", () => {
     const visibleText = collectVisibleText(container);
     expect(visibleText).toContain("Gap");
     expect(visibleText).toContain("Bracket");
-    for (const label of FEATURE_LABELS) expect(visibleText).toContain(label);
+    for (const label of PRODUCT_STAGE_LABELS) expect(visibleText).toContain(label);
     for (const blocked of KNOWN_CHINESE_UI_TEXT) expect(visibleText).not.toContain(blocked);
     expect(screen.getAllByText("Gap").find((element) => element.getAttribute("title") === "间隙")).toBeDefined();
     expect(screen.getAllByText("Bracket").find((element) => element.getAttribute("title") === "支架")).toBeDefined();

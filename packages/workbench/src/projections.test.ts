@@ -7,6 +7,7 @@ const SESSION_ID = "session-task-4-projections";
 type WorkbenchExports = typeof import("./index.js") & {
   projectActionQueue?: (snapshot: SessionSnapshot) => ActionQueueItem[];
   projectFeatureLedger?: (snapshot: SessionSnapshot) => FeatureLedgerEntry[];
+  projectTaProductStages?: (snapshot: SessionSnapshot) => ProductStageEntry[];
   acceptAttemptResult?: (snapshot: SessionSnapshot, result: AttemptResult) => SessionSnapshot;
 };
 
@@ -25,6 +26,12 @@ type FeatureLedgerEntry = {
   actions: readonly string[];
 };
 
+type ProductStageEntry = {
+  stageId: string;
+  label: string;
+  status: string;
+};
+
 type AttemptResult = {
   attemptId: string;
   status?: "completed" | "failed" | "cancelled";
@@ -38,6 +45,29 @@ describe("workbench projections", () => {
 
     expect(typeof api.projectActionQueue).toBe("function");
     expect(typeof api.projectFeatureLedger).toBe("function");
+    expect(typeof api.projectTaProductStages).toBe("function");
+  });
+
+  it("projects internal workflow into five product stages", () => {
+    const api = requireApi();
+
+    const stages = api.projectTaProductStages(baseSnapshot({ state: "f4_running" }));
+    expect(stages).toHaveLength(5);
+    expect(stages).toEqual([
+      expect.objectContaining({ label: "Prepare workbook", status: "completed" }),
+      expect.objectContaining({ label: "Validate analysis inputs", status: "completed" }),
+      expect.objectContaining({ label: "Review dimension traceability", status: "completed" }),
+      expect.objectContaining({ label: "Calculate and interpret tolerance performance", status: "running" }),
+      expect.objectContaining({ label: "Evaluate improvement options and publish report", status: "pending" }),
+    ]);
+  });
+
+  it("keeps F7 placeholder out of TA main product-stage progress", () => {
+    const api = requireApi();
+
+    const stages = api.projectTaProductStages(baseSnapshot({ state: "f7_preview_required" }));
+    expect(stages).toHaveLength(5);
+    expect(stages.some((stage) => /\bF7\b/.test(stage.label))).toBe(false);
   });
 
   it("projects F7 as a non-executable placeholder", () => {
@@ -208,6 +238,7 @@ function requireApi(): Required<WorkbenchExports> {
   if (
     typeof api.projectActionQueue !== "function"
     || typeof api.projectFeatureLedger !== "function"
+    || typeof api.projectTaProductStages !== "function"
     || typeof api.acceptAttemptResult !== "function"
   ) {
     throw new Error("Expected workbench projection exports to be defined.");

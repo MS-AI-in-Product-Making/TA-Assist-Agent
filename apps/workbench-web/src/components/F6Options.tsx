@@ -7,8 +7,8 @@ export interface F6OptionsProps {
 export function F6Options({ options }: F6OptionsProps) {
   return (
     <div className="review-card">
-      <h3 className="subheading">F6 Options</h3>
-      {options.length === 0 ? <p className="support-text">No F6 options are available to display.</p> : null}
+      <h3 className="subheading">Improvement options</h3>
+      {options.length === 0 ? <p className="support-text">No improvement options are available to display.</p> : null}
       <ul className="compact-list">
         {options.map((option) => (
           <li key={option.optionId}>

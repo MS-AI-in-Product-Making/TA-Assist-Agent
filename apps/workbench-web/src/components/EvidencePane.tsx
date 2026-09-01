@@ -32,7 +32,7 @@ export function EvidencePane({ id, labelledBy, evidence, analysisContext, optimi
           <div className="token-row" aria-label="formula ids">
             {evidence.formulaIds.map((formulaId) => onShowFormula === undefined ? <span key={formulaId} className="token-chip">{formulaId}</span> : <button key={formulaId} type="button" className="token-chip" onClick={() => onShowFormula(formulaId)}>{formulaId}</button>)}
           </div>
-          {evidence.ruleEntryId === undefined ? null : onShowRule === undefined ? <p>F0 Rule: {evidence.ruleEntryId}</p> : <button type="button" onClick={() => onShowRule(evidence.ruleEntryId!)}>F0 Rule: {evidence.ruleEntryId}</button>}
+          {evidence.ruleEntryId === undefined ? null : onShowRule === undefined ? <p>Rule evidence: {evidence.ruleEntryId}</p> : <button type="button" onClick={() => onShowRule(evidence.ruleEntryId!)}>Rule evidence: {evidence.ruleEntryId}</button>}
           {evidence.imageArtifactId === undefined ? null : onOpenArtifact === undefined ? <p>Image Artifact: {evidence.imageArtifactId}</p> : <button type="button" onClick={() => onOpenArtifact(evidence.imageArtifactId!)}>Image Artifact: {evidence.imageArtifactId}</button>}
           {detail === undefined ? null : <p role="status" className="support-text">{detail}</p>}
           <div>

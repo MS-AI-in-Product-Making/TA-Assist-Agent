@@ -15,7 +15,7 @@ import type { ConversationTurn } from "@ai-assist/conversation";
 import { selectCompleteReviewContext } from "@ai-assist/workbench/review";
 
 import { createWorkbenchApi, type RunnerProgressEvent, type TaConversationContext, type WorkbenchApi } from "./api.js";
-import { projectActionQueue, projectFeatureLedger, type F8CommandKind, type F8SessionSnapshot } from "./workbench-session.js";
+import { projectActionQueue, projectFeatureLedger, projectTaProductStages, type F8CommandKind, type F8SessionSnapshot } from "./workbench-session.js";
 
 export interface UseWorkbenchSessionResult {
   readonly api: WorkbenchApi;
@@ -35,6 +35,7 @@ export interface UseWorkbenchSessionResult {
   readonly error?: TypedError;
   readonly actionQueue: ReturnType<typeof projectActionQueue>;
   readonly featureLedger: ReturnType<typeof projectFeatureLedger>;
+  readonly productStages: ReturnType<typeof projectTaProductStages>;
   readonly uploadWorkbook: (file: File) => Promise<void>;
   readonly submitCommand: (command: F8CommandKind, payload: Record<string, unknown>) => Promise<void>;
   readonly appendConversation: (message: string, context?: TaConversationContext) => Promise<void>;
@@ -224,6 +225,7 @@ export function useWorkbenchSession(apiOverride?: WorkbenchApi, options: UseWork
 
   const actionQueue = snapshot === undefined ? [] : projectActionQueue(snapshot);
   const featureLedger = snapshot === undefined ? [] : projectFeatureLedger(snapshot);
+  const productStages = snapshot === undefined ? [] : projectTaProductStages(snapshot, runnerProgress);
 
   return {
     api,
@@ -243,6 +245,7 @@ export function useWorkbenchSession(apiOverride?: WorkbenchApi, options: UseWork
     error,
     actionQueue,
     featureLedger,
+    productStages,
     async uploadWorkbook(file) {
       if (snapshot === undefined || sessionId === undefined) {
         setError(createTypedError({

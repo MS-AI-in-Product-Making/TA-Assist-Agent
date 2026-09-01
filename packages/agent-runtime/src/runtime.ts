@@ -220,7 +220,7 @@ function buildDeterministicResponse(
 		|| snapshot.state === "feedback_review_required"
 		|| intent === "f7_status") {
 		return {
-			responseText: "F7 当前不可用，工作台只保留占位状态，不会执行实测闭环。",
+				responseText: "实测能力闭环当前未开放，工作台会继续保留既有分析结果与下一步建议。",
 			actions: [],
 			commands: [],
 		};
@@ -228,14 +228,14 @@ function buildDeterministicResponse(
 
 	if (primaryAction !== undefined) {
 		return {
-			responseText: `当前阶段为 ${snapshot.state}。下一步请先${primaryAction.label}。`,
+				responseText: `当前分析已同步。下一步请先${primaryAction.label}。`,
 			actions: [primaryAction],
 			commands: [],
 		};
 	}
 
 	return {
-		responseText: `当前阶段为 ${snapshot.state}。可继续查看状态、证据或报告，模型不会直接生成受治理写入命令。`,
+			responseText: "当前分析已同步。可继续查看状态、证据或报告，模型不会直接生成受治理写入命令。",
 		actions: [],
 		commands: [],
 	};

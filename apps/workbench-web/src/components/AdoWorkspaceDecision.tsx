@@ -22,7 +22,7 @@ export function AdoWorkspaceDecision({ visible, projection, onSubmit, onConfirm,
       <div><span>ADO target</span><h3>Governance write decision</h3></div>
       {projection === undefined || projection.state === "not_required" ? (
         <div className="ado-workspace__selection">
-          <p>Choose whether this governed F3 reminder stays local or moves through the VS Code Surface MCP host for Azure DevOps validation.</p>
+          <p>Choose whether this governed drawing-governance reminder stays local or moves through the VS Code Surface MCP host for Azure DevOps validation.</p>
           <div className="ado-workspace__actions">
             <button type="button" className="button" onClick={() => { void onSubmit("local_only"); }}>Local analysis only</button>
             <button type="button" className="button" onClick={() => { void onSubmit("create_new"); }}>Create work item</button>

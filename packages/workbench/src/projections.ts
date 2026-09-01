@@ -1,4 +1,5 @@
 import { f7PlaceholderStatusSchema } from "@ai-assist/contracts";
+import { TA_WORKBOOK_STAGES, TA_WORKBOOK_STAGE_LABELS, projectTaWorkbookStage, type TaWorkbookStage } from "@ai-assist/product-language";
 
 import { canRetryAttempt } from "./attempts.js";
 import { FEATURE_IDS, type F8SessionSnapshot, type F8SessionState } from "./commands.js";
@@ -14,6 +15,12 @@ export interface FeatureLedgerEntry {
   readonly status: string;
   readonly lifecycle?: string;
   readonly actions: readonly string[];
+}
+
+export interface ProductStageEntry {
+  readonly stageId: TaWorkbookStage;
+  readonly label: string;
+  readonly status: string;
 }
 
 export function projectActionQueue(snapshot: F8SessionSnapshot): ActionQueueItem[] {
@@ -228,4 +235,46 @@ function featureForState(state: F8SessionState): typeof FEATURE_IDS[number] {
     default:
       return "F0";
   }
+}
+
+export function projectTaProductStages(snapshot: F8SessionSnapshot): ProductStageEntry[] {
+  const activeStage = projectTaWorkbookStage(snapshot.state);
+  const activeIndex = TA_WORKBOOK_STAGES.indexOf(activeStage);
+
+  return TA_WORKBOOK_STAGES.map((stageId, index) => {
+    let status = "pending";
+    if (snapshot.state === "completed") {
+      status = "completed";
+    } else if (index < activeIndex) {
+      status = "completed";
+    } else if (index === activeIndex) {
+      status = stageStatus(snapshot.state);
+    }
+
+    return {
+      stageId,
+      label: TA_WORKBOOK_STAGE_LABELS[stageId],
+      status,
+    };
+  });
+}
+
+function stageStatus(state: F8SessionState): string {
+  if (state === "failed" || state === "cancelled") {
+    return state;
+  }
+
+  if ([
+    "initial_scope_required",
+    "downstream_scope_required",
+    "ado_decision_required",
+    "image_decision_required",
+    "analysis_context_decision_required",
+    "optimization_targets_decision_required",
+    "review_required",
+  ].includes(state)) {
+    return "action_required";
+  }
+
+  return "running";
 }
