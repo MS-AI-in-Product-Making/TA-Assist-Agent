@@ -1397,6 +1397,139 @@ describe("workbench server routes", () => {
     }
   });
 
+  it("fails closed when no current validated F2 report evidence is available for downstream confirmation", async () => {
+    const rootDir = testRoot("workbench-server-downstream-no-current-f2");
+    await rm(rootDir, { recursive: true, force: true });
+    const sessionId = "91919191-9191-4919-9191-919191919191";
+    const workbookHash = "a".repeat(64);
+
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate(sessionId);
+      const store = await openSessionStore({ rootDir, sessionId });
+      try {
+        await store.applyCommand({
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "seed-downstream-no-current-f2",
+          expectedRevision: 0,
+          command: "upload_workbook",
+          payload: { fileName: "book.xlsx", workbookBytes: new Uint8Array([80, 75, 3, 4]), inputClassification: "confidential" },
+        }, async (snapshot) => ({
+          snapshot: {
+            ...snapshot,
+            revision: 1,
+            inputRevision: 1,
+            state: "downstream_scope_required",
+            activeAttempt: null,
+            initialScopeSelection: {
+              workbookContentHash: workbookHash,
+              selectedWorksheetNames: ["Analysis-A"],
+              confirmed: true,
+              provenance: "user",
+            },
+            artifactRefs: [],
+          },
+        }));
+      } finally {
+        await store.close();
+      }
+
+      const response = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${sessionId}/commands`,
+        headers: browser.headers,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "confirm-downstream-no-current-f2",
+          expectedRevision: 1,
+          command: "confirm_downstream_scope",
+          payload: { workbookHash, worksheetNames: ["Analysis-A"] },
+        },
+      });
+
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toMatchObject({ error: { code: "evidence_mismatch" } });
+
+      const after = await server.inject({ method: "GET", url: `/api/sessions/${sessionId}`, headers: browser.headers });
+      expect(after.statusCode).toBe(200);
+      expect(after.json()).toMatchObject({ revision: 1, state: "downstream_scope_required" });
+      expect(after.json()).not.toHaveProperty("downstreamScopeSelection");
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed when multiple current validated F2 report references are present", async () => {
+    const rootDir = testRoot("workbench-server-downstream-multi-current-f2");
+    await rm(rootDir, { recursive: true, force: true });
+    const sessionId = "92929292-9292-4929-9292-929292929292";
+    const workbookHash = "a".repeat(64);
+
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate(sessionId);
+      const store = await openSessionStore({ rootDir, sessionId });
+      try {
+        await store.applyCommand({
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "seed-downstream-multi-current-f2",
+          expectedRevision: 0,
+          command: "upload_workbook",
+          payload: { fileName: "book.xlsx", workbookBytes: new Uint8Array([80, 75, 3, 4]), inputClassification: "confidential" },
+        }, async (snapshot) => ({
+          snapshot: {
+            ...snapshot,
+            revision: 1,
+            inputRevision: 1,
+            state: "downstream_scope_required",
+            activeAttempt: null,
+            initialScopeSelection: {
+              workbookContentHash: workbookHash,
+              selectedWorksheetNames: ["Analysis-A"],
+              confirmed: true,
+              provenance: "user",
+            },
+            artifactRefs: [
+              { artifactId: "f2-current-a", kind: "f2_report", revision: 1, validated: true },
+              { artifactId: "f2-current-b", kind: "f2_report", revision: 1, validated: true },
+            ],
+          },
+        }));
+      } finally {
+        await store.close();
+      }
+
+      const response = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${sessionId}/commands`,
+        headers: browser.headers,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "confirm-downstream-multi-current-f2",
+          expectedRevision: 1,
+          command: "confirm_downstream_scope",
+          payload: { workbookHash, worksheetNames: ["Analysis-A"] },
+        },
+      });
+
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toMatchObject({ error: { code: "evidence_mismatch" } });
+
+      const after = await server.inject({ method: "GET", url: `/api/sessions/${sessionId}`, headers: browser.headers });
+      expect(after.statusCode).toBe(200);
+      expect(after.json()).toMatchObject({ revision: 1, state: "downstream_scope_required" });
+      expect(after.json()).not.toHaveProperty("downstreamScopeSelection");
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
   it("allows fixture-only auto confirmations through explicit injected policy", async () => {
     const rootDir = testRoot("workbench-server-auto-entry-fixture");
     await rm(rootDir, { recursive: true, force: true });

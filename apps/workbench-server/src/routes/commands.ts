@@ -105,7 +105,12 @@ async function validateDownstreamScopeReadiness(
     reference.kind === "f2_report" && reference.validated && reference.revision === snapshot.inputRevision,
   ) ?? [];
   if (f2References.length !== 1) {
-    return;
+    throw createTypedError({
+      code: "evidence_mismatch",
+      summary: "Downstream confirmation requires exactly one current validated F2 report.",
+      suggestedAction: "Rerun F2 for the current workbook revision and retry downstream confirmation.",
+      affectedInputReferences: [snapshot.sessionId],
+    });
   }
 
   const store = await openSessionStore({ rootDir: context.rootDir, sessionId: command.sessionId });
