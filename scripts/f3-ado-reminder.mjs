@@ -1,20 +1,12 @@
 import { drawingGovernanceResultV2Schema } from "../packages/contracts/dist/contracts.js";
+import {
+  F3_ADO_HTML_TABLE_HEADERS,
+  renderF3AdoHistoryHtml as renderCanonicalF3AdoHistoryHtml,
+} from "../packages/workflow-runners/dist/index.js";
 
 export const ADO_TABLE_HEADER = "| Device Level Dim | Dimension Description | Part / Subsystem | Drawing Number | Dim ID | Factor Description | Nominal | Upper Tolerance (+) | Lower Tolerance (-) | σ Level | Governance issue |";
 const ADO_TABLE_SEPARATOR = "| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- |";
-export const ADO_HTML_TABLE_HEADERS = [
-  "Device Level Dim",
-  "Dimension Description",
-  "Part / Subsystem",
-  "Drawing Number",
-  "Dim ID",
-  "Factor Description",
-  "Nominal",
-  "Upper Tolerance (+)",
-  "Lower Tolerance (-)",
-  "σ Level",
-  "Governance issue",
-];
+export const ADO_HTML_TABLE_HEADERS = F3_ADO_HTML_TABLE_HEADERS;
 
 const QUALITY_SIGNAL_MESSAGES = {
   drawing_number_missing: "Drawing Number missing",
@@ -44,19 +36,6 @@ function redactSensitiveText(value) {
 function cell(value) {
   if (value === null || value === undefined || value === "") return "(missing)";
   return redactSensitiveText(value).replaceAll("|", "\\|").replaceAll(/\r?\n/g, "<br>");
-}
-
-function htmlCell(value) {
-  const text = value === null || value === undefined || value === ""
-    ? "(missing)"
-    : redactSensitiveText(value);
-  return text
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;")
-    .replaceAll(/\r?\n/g, "<br>");
 }
 
 export function normalizeAdoHistoryHtmlForVerification(value) {
@@ -141,42 +120,5 @@ export function renderF3AdoReminder(report) {
 }
 
 export function renderF3AdoHistoryHtml(report) {
-  const parsed = drawingGovernanceResultV2Schema.parse(report);
-  if (parsed.status === "input_rejected") {
-    throw new Error("Cannot render ADO history HTML for input_rejected report.");
-  }
-
-  const groups = groupedPartSubsystemRows(parsed.worksheets);
-  const header = `<thead><tr>${ADO_HTML_TABLE_HEADERS.map((name) => `<th>${htmlCell(name)}</th>`).join("")}</tr></thead>`;
-  const bodyRows = [];
-  for (const group of groups) {
-    bodyRows.push(`<tr data-f3-group-row="true"><td colspan="11">${htmlCell(`Part / Subsystem: ${group.subsystem} (${group.rows.length} factors)`)}</td></tr>`);
-    for (const row of group.rows) {
-      bodyRows.push(`<tr data-f3-factor-row="true">${[
-        row.deviceLevelDim,
-        row.dimensionDescription,
-        partSubsystemLabel(row.partSubsystem),
-        row.drawingNumber,
-        row.dimId,
-        row.factorDescription,
-        row.nominal,
-        row.upperTolerance,
-        row.lowerTolerance,
-        row.sigmaLevel,
-        governanceIssue(row),
-      ].map((value) => `<td>${htmlCell(value)}</td>`).join("")}</tr>`);
-    }
-  }
-  const body = `<tbody>${bodyRows.join("")}</tbody>`;
-  const actions = requestedActions(parsed.summary.governanceRequiredCount)
-    .map((action) => `<li>${htmlCell(action)}</li>`)
-    .join("");
-
-  return [
-    "<h2>F3 DIM ID / Drawing Governance Reminder</h2>",
-    `<p><strong>Workbook:</strong> ${htmlCell(parsed.workbook.fileName)}</p>`,
-    `<p><strong>Worksheet count:</strong> ${parsed.summary.worksheetCount}<br><strong>Factor count:</strong> ${parsed.summary.factorCount}<br><strong>Governance required count:</strong> ${parsed.summary.governanceRequiredCount}<br><strong>Duplicate conflict count:</strong> ${parsed.summary.duplicateConflictCount}</p>`,
-    `<p><strong>Requested actions:</strong></p><ul>${actions}</ul>`,
-    `<table>${header}${body}</table>`,
-  ].join("\n") + "\n";
+  return renderCanonicalF3AdoHistoryHtml(report);
 }

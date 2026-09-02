@@ -11,6 +11,7 @@ import {
 import { createF3DrawingGovernance } from "@ai-assist/workbook-catalog";
 
 import { normalizeRunnerError } from "./error-normalizer.js";
+import { renderF3AdoHistoryHtml } from "./f3-ado-html.js";
 import { renderF3AdoMarkdown } from "./f3-ado-markdown.js";
 import type { F3AnalysisRequest, F3AnalysisResult, RunContext } from "./types.js";
 
@@ -158,12 +159,6 @@ export function renderF3Report(report: DrawingGovernanceResultV2, options: { out
 
 export function renderF3AdoReminder(report: DrawingGovernanceResultV2): string {
   return renderF3AdoMarkdown(report).markdown;
-}
-
-export function renderF3AdoHistoryHtml(report: DrawingGovernanceResultV2): string {
-  if (report.status === "input_rejected") throw new Error("Cannot render ADO history HTML for input_rejected report.");
-  const rows = report.worksheets.flatMap((worksheet) => worksheet.rows.map((row) => `<tr><td>${row.deviceLevelDim}</td><td>${row.dimensionDescription}</td><td>${row.partSubsystem ?? "(missing)"}</td><td>${row.drawingNumber ?? "(missing)"}</td><td>${row.dimId ?? "(missing)"}</td><td>${row.factorDescription}</td><td>${row.nominal}</td><td>${row.upperTolerance}</td><td>${row.lowerTolerance}</td><td>${row.sigmaLevel}</td><td>${row.qualitySignals.length === 0 ? "Complete" : row.qualitySignals.join("; ")}</td></tr>`));
-  return `<h2>F3 DIM ID / Drawing Governance Reminder</h2>\n<table><thead><tr><th>Device Level Dim</th><th>Dimension Description</th><th>Part / Subsystem</th><th>Drawing Number</th><th>Dim ID</th><th>Factor Description</th><th>Nominal</th><th>Upper Tolerance (+)</th><th>Lower Tolerance (-)</th><th>σ Level</th><th>Governance issue</th></tr></thead><tbody>${rows.join("")}</tbody></table>\n`;
 }
 
 function defaultWriteOutputs(
