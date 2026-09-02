@@ -195,6 +195,16 @@ function normalizePath(value: string): string {
   return process.platform === "win32" ? value.toLowerCase() : value;
 }
 
+function toPublicExportRoot(rootDir: string, absoluteRoot: string): string {
+  const rootBase = resolve(rootDir);
+  const exportRoot = resolve(absoluteRoot);
+  const relativeRoot = relative(rootBase, exportRoot);
+  if (relativeRoot.length === 0 || relativeRoot.startsWith("..") || path.isAbsolute(relativeRoot)) {
+    deny("Product export root escaped the controlled workspace root.", absoluteRoot);
+  }
+  return relativeRoot.replace(/\\+/g, "/");
+}
+
 function isContainedPath(rootReal: string, targetReal: string): boolean {
   const delta = relative(rootReal, targetReal);
   return delta.length > 0 && !delta.startsWith("..") && !delta.split(/[\\/]/).includes("..");
@@ -326,6 +336,39 @@ function extractEvidenceFeatures(projection: TaEngineeringReportProjectionConten
   return [...features].sort();
 }
 
+function safeWorksheetCount(value: unknown): number | undefined {
+  if (typeof value !== "object" || value === null || !Array.isArray((value as { readonly worksheets?: unknown }).worksheets)) {
+    return undefined;
+  }
+  return (value as { readonly worksheets: readonly unknown[] }).worksheets.length;
+}
+
+function sanitizeEvidenceJson(feature: "F3" | "F4" | "F5", rawText: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawText) as unknown;
+  } catch {
+    parsed = undefined;
+  }
+
+  const reportType = feature === "F3"
+    ? "drawing-traceability-review"
+    : feature === "F4"
+      ? "tolerance-calculation"
+      : "engineering-interpretation";
+  const worksheetCount = safeWorksheetCount(parsed);
+  const status = typeof parsed === "object" && parsed !== null && typeof (parsed as { readonly status?: unknown }).status === "string"
+    ? (parsed as { readonly status: string }).status
+    : "completed";
+
+  return `${JSON.stringify({
+    reportType,
+    status,
+    worksheetCount,
+    trustedSourceVerified: true,
+  }, null, 2)}\n`;
+}
+
 function buildEvidenceFiles(
   requested: readonly EvidenceFeature[],
   inputs: {
@@ -360,9 +403,12 @@ function buildEvidenceFiles(
             ? "Engineering-Interpretation.json"
             : "Engineering-Summary-Report.md";
       const displayName = fileName;
+      const content = feature === "F3" || feature === "F4" || feature === "F5"
+        ? sanitizeEvidenceJson(feature, artifact.text)
+        : artifact.text;
       return {
         relativePath: `evidence/${fileName}`,
-        content: artifact.text,
+        content,
         displayName,
         mediaType: artifact.mediaType,
       };
@@ -690,7 +736,7 @@ export async function exportTaAnalysis(source: TaAnalysisExportSource, options: 
   void summaryHash;
 
   return {
-    root: result.root,
+    root: toPublicExportRoot(options.rootDir, result.root),
     manifest,
     semanticDigest: digest,
   };
@@ -740,7 +786,7 @@ export async function exportTaAnalysisForSession(commandInput: unknown, options:
     });
 
     return taProductExportReceiptSchema.parse({
-      root: result.root,
+      root: toPublicExportRoot(options.rootDir, result.root),
       manifest,
       semanticDigest: source.semanticDigest,
       exportManifestSha256,

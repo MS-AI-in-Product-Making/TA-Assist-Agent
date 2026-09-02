@@ -5,7 +5,7 @@ import { join, relative } from "node:path";
 import { f2UserReportSchema, f4WorkflowCalculationResultSchema, hostActionResultSchema, hostActionRequestSchema } from "@ai-assist/contracts";
 import { createConversationStore } from "@ai-assist/conversation";
 import { createCalculation } from "@ai-assist/workbook-catalog";
-import { createHostActionStore, openSessionStore } from "@ai-assist/workbench";
+import { acceptAttemptResult, createHostActionStore, openSessionStore, reduceSessionCommand } from "@ai-assist/workbench";
 import { renderF3AdoMarkdown } from "@ai-assist/workflow-runners";
 import { startWorkbenchServer } from "@ai-assist/workbench-server";
 import { createF6ArtifactBundleFixture } from "../../scripts/f6-artifact-test-fixture.mjs";
@@ -14,6 +14,7 @@ const SESSION_ID = "40404040-4040-4404-8404-404040404040";
 const ADO_SELECTION_SESSION_ID = "50505050-5050-4505-8505-505050505050";
 const ADO_CREATE_PREVIEW_SESSION_ID = "60606060-6060-4606-8606-606060606060";
 const ADO_UPDATE_PREVIEW_SESSION_ID = "70707070-7070-4707-8707-707070707070";
+const PRODUCT_EXPORT_FAILED_SESSION_ID = "80808080-8080-4808-8808-808080808080";
 const sourceWorkbookPath = "test/f8-e2e/fixtures/anonymous-ta-workbook.xlsx";
 const sourceWorkbookBytes = await readFile(sourceWorkbookPath);
 const HASH = createHash("sha256").update(sourceWorkbookBytes).digest("hex");
@@ -40,6 +41,7 @@ const auth = await started.server.testAuthenticate(SESSION_ID);
 const adoSelectionAuth = await started.server.testAuthenticate(ADO_SELECTION_SESSION_ID);
 const adoCreatePreviewAuth = await started.server.testAuthenticate(ADO_CREATE_PREVIEW_SESSION_ID);
 const adoUpdatePreviewAuth = await started.server.testAuthenticate(ADO_UPDATE_PREVIEW_SESSION_ID);
+const productExportFailedAuth = await started.server.testAuthenticate(PRODUCT_EXPORT_FAILED_SESSION_ID);
 const f2Report = buildF2Report();
 const f3Report = buildF3Report();
 const f3AdoReminder = renderF3AdoMarkdown(f3Report);
@@ -53,12 +55,16 @@ const f3Bytes = Buffer.from(JSON.stringify(f3Report));
 const f3AdoReminderBytes = Buffer.from(JSON.stringify(f3AdoReminder));
 const f4Bytes = Buffer.from(JSON.stringify(f4Report));
 const f5Bytes = await readFile(downstreamFixture.paths.f5);
-const f6ReportBytes = Buffer.from("# F6 E2E review complete\n", "utf8");
+const f6ReportBytes = Buffer.from("# TA engineering review complete\n", "utf8");
 const f1Bytes = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4////fwAJ+wP9KobjigAAAABJRU5ErkJggg==", "base64");
 const f3ContentHash = createHash("sha256").update(f3Bytes).digest("hex");
 const f4ContentHash = createHash("sha256").update(f4Bytes).digest("hex");
 const f5ContentHash = createHash("sha256").update(f5Bytes).digest("hex");
 const f6ContentHash = createHash("sha256").update(f6ReportBytes).digest("hex");
+const trustedF3ContentHash = createHash("sha256").update(`${JSON.stringify(f3Report)}\n`, "utf8").digest("hex");
+const trustedF4ContentHash = createHash("sha256").update(`${JSON.stringify(f4Report)}\n`, "utf8").digest("hex");
+const trustedF6OptimizationContentHash = createHash("sha256").update('{"status":"completed"}\n', "utf8").digest("hex");
+const trustedProjectionContentHash = createHash("sha256").update(`${JSON.stringify(projectionTemplate(), null, 2)}\n`, "utf8").digest("hex");
 await writeFile(join(rootDir, f2RelativePath), f2Bytes);
 await writeFile(join(rootDir, f3RelativePath), f3Bytes);
 await writeFile(join(rootDir, f3AdoReminderRelativePath), f3AdoReminderBytes);
@@ -71,14 +77,17 @@ registerWorkbookUploadArtifact(SESSION_ID);
 registerWorkbookUploadArtifact(ADO_SELECTION_SESSION_ID);
 registerWorkbookUploadArtifact(ADO_CREATE_PREVIEW_SESSION_ID);
 registerWorkbookUploadArtifact(ADO_UPDATE_PREVIEW_SESSION_ID);
+registerWorkbookUploadArtifact(PRODUCT_EXPORT_FAILED_SESSION_ID);
 await seedReviewSession(SESSION_ID, "review_required", auth.headers.cookie);
 await seedReviewSession(ADO_SELECTION_SESSION_ID, "ado_decision_required", adoSelectionAuth.headers.cookie);
 await seedPreviewSession(ADO_CREATE_PREVIEW_SESSION_ID, { mode: "create", title: `TA Drawing Governance - ${f3Report.workbook.fileName}` }, adoCreatePreviewAuth.headers.cookie);
 await seedPreviewSession(ADO_UPDATE_PREVIEW_SESSION_ID, { mode: "existing", workItemReference: "https://dev.azure.com/MSFTDEVICES/Project/_workitems/edit/42" }, adoUpdatePreviewAuth.headers.cookie);
+await seedFailedExecutionSession(PRODUCT_EXPORT_FAILED_SESSION_ID, productExportFailedAuth.headers.cookie);
 registerRunnerF2Artifact(SESSION_ID);
 registerRunnerF2Artifact(ADO_SELECTION_SESSION_ID);
 registerRunnerF2Artifact(ADO_CREATE_PREVIEW_SESSION_ID);
 registerRunnerF2Artifact(ADO_UPDATE_PREVIEW_SESSION_ID);
+registerRunnerF2Artifact(PRODUCT_EXPORT_FAILED_SESSION_ID);
 started.server.registerArtifactForTest(SESSION_ID, reviewArtifactId("f2-e2e", SESSION_ID), f2RelativePath, "f2.json", "confidential", "application/json");
 started.server.registerArtifactForTest(SESSION_ID, reviewArtifactId("f3-e2e", SESSION_ID), f3RelativePath, "f3.json", "confidential", "application/json");
 started.server.registerArtifactForTest(SESSION_ID, reviewArtifactId("f4-e2e", SESSION_ID), f4RelativePath, "f4.json", "confidential", "application/json");
@@ -110,7 +119,10 @@ process.on("SIGTERM", () => { void close(); });
 process.on("SIGINT", () => { void close(); });
 process.on("message", async (message) => {
   if (message?.type === "readCookie" && typeof message.requestId === "string") {
-    const sessionId = message.sessionId === ADO_SELECTION_SESSION_ID || message.sessionId === ADO_CREATE_PREVIEW_SESSION_ID || message.sessionId === ADO_UPDATE_PREVIEW_SESSION_ID
+    const sessionId = message.sessionId === ADO_SELECTION_SESSION_ID
+      || message.sessionId === ADO_CREATE_PREVIEW_SESSION_ID
+      || message.sessionId === ADO_UPDATE_PREVIEW_SESSION_ID
+      || message.sessionId === PRODUCT_EXPORT_FAILED_SESSION_ID
       ? message.sessionId
       : SESSION_ID;
     const cookie = sessionId === ADO_SELECTION_SESSION_ID
@@ -119,6 +131,8 @@ process.on("message", async (message) => {
         ? adoCreatePreviewAuth.headers.cookie
         : sessionId === ADO_UPDATE_PREVIEW_SESSION_ID
           ? adoUpdatePreviewAuth.headers.cookie
+          : sessionId === PRODUCT_EXPORT_FAILED_SESSION_ID
+            ? productExportFailedAuth.headers.cookie
           : auth.headers.cookie;
     process.send?.({ type: "cookie", requestId: message.requestId, cookie });
     return;
@@ -173,6 +187,20 @@ function seededF2RunReference(sessionId) {
   return `f2-run-e2e-${sessionId}`;
 }
 
+function trustedF6Stamp() {
+  return "2026-09-02T00-00-00-000Z";
+}
+
+function trustedProductionRelativePath(sessionId, feature) {
+  if (feature === "f3") return `runtime/workbench/runner-output/${sessionId}/production/f3/Feature3-Report.json`;
+  if (feature === "f4") return `runtime/workbench/runner-output/${sessionId}/production/f4/Feature4-Calculation.json`;
+  if (feature === "f5") return `runtime/workbench/runner-output/${sessionId}/production/f5/Feature5-Report.json`;
+  if (feature === "f6-optimization") return `runtime/workbench/runner-output/${sessionId}/production/f6/${trustedF6Stamp()}/Feature6-Optimization.json`;
+  if (feature === "f6-report") return `runtime/workbench/runner-output/${sessionId}/production/f6/${trustedF6Stamp()}/Feature6-Report.md`;
+  if (feature === "projection") return `runtime/workbench/managed-artifacts/${sessionId}/engineering-summary-projection/revision-1.json`;
+  throw new Error(`unsupported trusted feature ${feature}`);
+}
+
 function reviewIdentityForSession(sessionId) {
   return { workbookHash: HASH, downstreamSelectionHash, baselineRunReference: seededF2RunReference(sessionId) };
 }
@@ -225,7 +253,7 @@ async function seedTrustedProductionArtifacts(sessionId) {
   const f3Root = join(productionRoot, "f3");
   const f4Root = join(productionRoot, "f4");
   const f5Root = join(productionRoot, "f5");
-  const f6Root = join(productionRoot, "f6", "2026-09-02T00-00-00-000Z");
+  const f6Root = join(productionRoot, "f6", trustedF6Stamp());
   const projectionRoot = join(rootDir, "runtime", "workbench", "managed-artifacts", sessionId, "engineering-summary-projection");
 
   const f2 = await writeArtifact(join(f2Root, "Feature2-Report.json"), `${JSON.stringify(f2Report)}\n`, "utf8");
@@ -250,18 +278,24 @@ async function seedTrustedProductionArtifacts(sessionId) {
 
 function buildReviewArtifactUpserts(sessionId, trustedArtifacts) {
   const reviewIdentity = reviewIdentityForSession(sessionId);
-  return [
+  const reviewArtifacts = [
     { artifactId: reviewArtifactId("f3-e2e", sessionId), sessionId, inputRevision: 1, kind: "f3_report", relativePath: f3RelativePath, contentHash: createHash("sha256").update(f3Bytes).digest("hex"), reviewContext: reviewIdentity },
     { artifactId: reviewArtifactId("f4-e2e", sessionId), sessionId, inputRevision: 1, kind: "f4_calculation", relativePath: f4RelativePath, contentHash: createHash("sha256").update(f4Bytes).digest("hex"), reviewContext: reviewIdentity },
     { artifactId: reviewArtifactId("f5-e2e", sessionId), sessionId, inputRevision: 1, kind: "f5_report", relativePath: f5RelativePath, contentHash: createHash("sha256").update(f5Bytes).digest("hex"), reviewContext: reviewIdentity },
     { artifactId: reviewArtifactId("f6-report-e2e", sessionId), sessionId, inputRevision: 1, kind: "f6_report", relativePath: f6ReportRelativePath, contentHash: createHash("sha256").update(f6ReportBytes).digest("hex"), reviewContext: reviewIdentity },
+  ];
+  if (sessionId !== SESSION_ID) {
+    return reviewArtifacts;
+  }
+  return [
+    ...reviewArtifacts,
     { artifactId: "f3-report", sessionId, inputRevision: 1, kind: "f3_report", relativePath: trustedArtifacts.f3.relativePath, contentHash: trustedArtifacts.f3.contentHash, reviewContext: reviewIdentity },
     { artifactId: "f4-calculation", sessionId, inputRevision: 1, kind: "f4_calculation", relativePath: trustedArtifacts.f4.relativePath, contentHash: trustedArtifacts.f4.contentHash, reviewContext: reviewIdentity },
     { artifactId: "f5-report", sessionId, inputRevision: 1, kind: "f5_report", relativePath: trustedArtifacts.f5.relativePath, contentHash: trustedArtifacts.f5.contentHash, reviewContext: reviewIdentity },
     { artifactId: "f6-optimization", sessionId, inputRevision: 1, kind: "f6_optimization", relativePath: trustedArtifacts.f6Optimization.relativePath, contentHash: trustedArtifacts.f6Optimization.contentHash, reviewContext: reviewIdentity },
     { artifactId: "f6-report", sessionId, inputRevision: 1, kind: "f6_report", relativePath: trustedArtifacts.f6Report.relativePath, contentHash: trustedArtifacts.f6Report.contentHash, reviewContext: reviewIdentity },
     { artifactId: "engineering-summary-projection:1", sessionId, inputRevision: 1, kind: "engineering_summary_projection", relativePath: trustedArtifacts.projection.relativePath, contentHash: trustedArtifacts.projection.contentHash, reviewContext: reviewIdentity, metadata: { reviewContext: reviewIdentity } },
-    ...(sessionId === SESSION_ID ? [{ artifactId: `f1-image:${f1ContentHash}`, sessionId, inputRevision: 1, kind: "f1_image", relativePath: f1RelativePath, contentHash: f1ContentHash, reviewContext: reviewIdentity, metadata: { mediaType: "image/png", description: "AJ_GAP tolerance loop image" } }] : []),
+    { artifactId: `f1-image:${f1ContentHash}`, sessionId, inputRevision: 1, kind: "f1_image", relativePath: f1RelativePath, contentHash: f1ContentHash, reviewContext: reviewIdentity, metadata: { mediaType: "image/png", description: "AJ_GAP tolerance loop image" } },
   ];
 }
 
@@ -289,7 +323,9 @@ async function seedReviewSession(sessionId, targetState, cookie) {
           ...(sessionId === SESSION_ID ? [{ artifactId: `f1-image:${f1ContentHash}`, kind: "f1_image", revision: 1, validated: true, reviewContextId }] : []),
         ],
       },
-      artifactReferences: buildReviewArtifactUpserts(sessionId, trustedArtifacts),
+      artifactReferenceOps: {
+        upsert: buildReviewArtifactUpserts(sessionId, trustedArtifacts),
+      },
     }));
   } finally {
     await store.close();
@@ -325,7 +361,7 @@ function registerRunnerF2Artifact(sessionId) {
 }
 
 async function seedPreviewSession(sessionId, target, cookie) {
-  const trustedArtifacts = await seedReviewSession(sessionId, "ado_decision_required", cookie);
+  await seedReviewSession(sessionId, "ado_decision_required", cookie);
   const beforeDecision = await readSessionSnapshot(sessionId, cookie);
   await postSessionCommand(sessionId, cookie, {
     commandId: `seed-preview-${target.mode}-${sessionId}`,
@@ -363,6 +399,55 @@ async function seedPreviewSession(sessionId, target, cookie) {
   } finally {
     await hostActions.close();
   }
+}
+
+async function seedFailedExecutionSession(sessionId, cookie) {
+  await seedReviewSession(sessionId, "ado_decision_required", cookie);
+
+  const store = await openSessionStore({ rootDir, sessionId });
+  try {
+    const adoRequired = await store.readSnapshot();
+    await store.applyCommand({
+      contractVersion: "f8-session-command-v1",
+      sessionId,
+      commandId: `seed-failed-local-only-${sessionId}`,
+      expectedRevision: adoRequired.revision,
+      command: "confirm_ado_decision",
+      payload: { decision: "local_only" },
+    }, (snapshot, command) => ({
+      snapshot: reduceSessionCommand(snapshot, command),
+    }));
+
+    const running = await store.readSnapshot();
+    const attemptId = running.activeAttempt?.attemptId;
+    if (running.state !== "f4_running" || typeof attemptId !== "string") {
+      throw new Error(`seeded failed execution expected f4_running active attempt for ${sessionId}`);
+    }
+    const endedAt = "2026-09-02T00:00:03.000Z";
+    const failedSnapshot = acceptAttemptResult(running, {
+      attemptId,
+      status: "failed",
+      result: {
+        code: "seeded_execution_failed",
+        summary: "Synthetic execution failure for product export denial test.",
+      },
+      endedAt,
+    });
+    await store.recordAttemptResult({
+      attemptId,
+      status: "failed",
+      result: {
+        code: "seeded_execution_failed",
+        summary: "Synthetic execution failure for product export denial test.",
+      },
+      endedAt,
+      snapshot: failedSnapshot,
+    });
+  } finally {
+    await store.close();
+  }
+
+  await waitForSessionState(sessionId, cookie, "failed");
 }
 
 async function readCsrfToken(cookie) {
@@ -479,7 +564,10 @@ async function runSeededAttempt(job) {
       status: "completed",
       governance: { status: "governance_required" },
       reviewContext: reviewIdentityForSession(sessionId),
-      artifactReferences: [{ artifactId: reviewArtifactId("f3-e2e", sessionId), kind: "f3_report", relativePath: f3RelativePath, contentHash: f3ContentHash }],
+      artifactReferences: [
+        { artifactId: reviewArtifactId("f3-e2e", sessionId), kind: "f3_report", relativePath: f3RelativePath, contentHash: f3ContentHash },
+        ...(sessionId === SESSION_ID ? [{ artifactId: "f3-report", kind: "f3_report", relativePath: trustedProductionRelativePath(sessionId, "f3"), contentHash: trustedF3ContentHash }] : []),
+      ],
     };
   }
 
@@ -488,7 +576,10 @@ async function runSeededAttempt(job) {
       featureId: "F4",
       status: "completed",
       reviewContext: reviewIdentityForSession(sessionId),
-      artifactReferences: [{ artifactId: reviewArtifactId("f4-e2e", sessionId), kind: "f4_calculation", relativePath: f4RelativePath, contentHash: f4ContentHash }],
+      artifactReferences: [
+        { artifactId: reviewArtifactId("f4-e2e", sessionId), kind: "f4_calculation", relativePath: f4RelativePath, contentHash: f4ContentHash },
+        ...(sessionId === SESSION_ID ? [{ artifactId: "f4-calculation", kind: "f4_calculation", relativePath: trustedProductionRelativePath(sessionId, "f4"), contentHash: trustedF4ContentHash }] : []),
+      ],
     };
   }
 
@@ -497,7 +588,10 @@ async function runSeededAttempt(job) {
       featureId: "F5",
       status: "completed",
       reviewContext: reviewIdentityForSession(sessionId),
-      artifactReferences: [{ artifactId: reviewArtifactId("f5-e2e", sessionId), kind: "f5_report", relativePath: f5RelativePath, contentHash: f5ContentHash }],
+      artifactReferences: [
+        { artifactId: reviewArtifactId("f5-e2e", sessionId), kind: "f5_report", relativePath: f5RelativePath, contentHash: f5ContentHash },
+        ...(sessionId === SESSION_ID ? [{ artifactId: "f5-report", kind: "f5_report", relativePath: trustedProductionRelativePath(sessionId, "f5"), contentHash: f5ContentHash }] : []),
+      ],
     };
   }
 
@@ -506,7 +600,22 @@ async function runSeededAttempt(job) {
       featureId: "F6",
       status: "completed",
       reviewContext: reviewIdentityForSession(sessionId),
-      artifactReferences: [{ artifactId: reviewArtifactId("f6-report-e2e", sessionId), kind: "f6_report", relativePath: f6ReportRelativePath, contentHash: f6ContentHash }],
+      artifactReferences: [
+        { artifactId: reviewArtifactId("f6-report-e2e", sessionId), kind: "f6_report", relativePath: f6ReportRelativePath, contentHash: f6ContentHash },
+        ...(sessionId === SESSION_ID
+          ? [
+              { artifactId: "f6-optimization", kind: "f6_optimization", relativePath: trustedProductionRelativePath(sessionId, "f6-optimization"), contentHash: trustedF6OptimizationContentHash },
+              { artifactId: "f6-report", kind: "f6_report", relativePath: trustedProductionRelativePath(sessionId, "f6-report"), contentHash: f6ContentHash },
+              {
+                artifactId: "engineering-summary-projection:1",
+                kind: "engineering_summary_projection",
+                relativePath: trustedProductionRelativePath(sessionId, "projection"),
+                contentHash: trustedProjectionContentHash,
+                metadata: { reviewContext: reviewIdentityForSession(sessionId) },
+              },
+            ]
+          : []),
+      ],
     };
   }
 
