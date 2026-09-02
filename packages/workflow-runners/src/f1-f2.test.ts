@@ -87,6 +87,7 @@ function validF2Report(artifactRoot: string) {
       tolerancePathImageStatus: "available",
       systemSpecification: {
         status: "available",
+        designNominal: { status: "available", actualValue: -0.05, displayValue: "-0.05", sourceLabel: "*Design Nominal ►", sourceCell: "Analysis-A!P53", valueOrigin: "numeric_literal" },
         lowerSpecLimit: { status: "available", actualValue: -0.15, displayValue: "-0.15", sourceLabel: "*Lower Spec Limit ►", sourceCell: "Analysis-A!P54", valueOrigin: "numeric_literal" },
         upperSpecLimit: { status: "available", actualValue: 0.05, displayValue: "0.05", sourceLabel: "*Upper Spec Limit ►", sourceCell: "Analysis-A!P55", valueOrigin: "numeric_literal" },
         targetSigmaLevel: { status: "available", actualValue: 3, displayValue: "3.0σ", sourceLabel: "*Target σ Level ►", sourceCell: "Analysis-A!P56", valueOrigin: "numeric_literal" },
@@ -246,6 +247,28 @@ describe("runF1F2Confirmed", () => {
       code: "evidence_mismatch",
       retryable: false,
     }));
+    expect(executeStage.mock.calls.map(([request]) => request.stage)).toEqual(["f1-selection"]);
+  });
+
+  it("fails closed when confirmation repeats worksheet names", async () => {
+    const setup = setupRepo();
+    const executeStage = vi.fn(({ stage, env }) => {
+      if (stage === "f1-selection") {
+        mkdirSync(env.AI_TVA_F1_OUTPUT_ROOT, { recursive: true });
+        writeFileSync(path.join(env.AI_TVA_F1_OUTPUT_ROOT, "Feature1-Selection.json"), JSON.stringify(selectionPrompt()));
+        return { stdout: "selection complete", stderr: "" };
+      }
+      return { stdout: "unexpected", stderr: "" };
+    });
+    const selection = await runF1F2Selection({ workbookPath: setup.workbookPath, now: fixedNow }, context(setup.repositoryRoot), { executeStage });
+
+    expect(() => runF1F2Confirmed({
+      workbookPath: setup.workbookPath,
+      workbookContentHash: HASH,
+      selectedWorksheetNames: ["Analysis-A", "Analysis-A"],
+      selectionReference: selection.selectionReference,
+      now: fixedNow,
+    }, context(setup.repositoryRoot), { executeStage })).toThrow(expect.objectContaining({ retryable: false }));
     expect(executeStage.mock.calls.map(([request]) => request.stage)).toEqual(["f1-selection"]);
   });
 

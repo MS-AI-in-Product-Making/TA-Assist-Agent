@@ -4,3 +4,5 @@ export * from "./f7-contracts.js";
 export * from "./f8-contracts.js";
 export * from "./f7-handoff-contracts.js";
 export * from "./f3-ado-governance.js";
+export * from "./ta-product-contracts.js";
+export * from "./ta-report-contracts.js";

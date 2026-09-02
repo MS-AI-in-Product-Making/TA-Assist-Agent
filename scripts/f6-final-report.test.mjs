@@ -396,6 +396,18 @@ describe("createF6FinalReportProjection policy", () => {
 });
 
 describe("createF6FinalReportProjection final report template", () => {
+  it("returns a structured projection without parsing markdown", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"], f5Variant: "supported" });
+    const projection = createF6FinalReportProjection(inputs);
+
+    expect(projection.projection).toBeDefined();
+    expect(projection.projection.workbookDisposition).toBe(projection.reportSummary.workbookDisposition);
+    expect(projection.projection.worksheetDispositions).toEqual(projection.reportSummary.worksheetDispositions);
+    expect(projection.projection.worksheets.map((worksheet) => worksheet.worksheetName)).toEqual([
+      "Analysis-A",
+    ]);
+  });
+
   it("renders the revised document control and continuous worksheet structure", () => {
     const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"], f5Variant: "supported" });
     inputs.f2Report.workbook.revision = "D";

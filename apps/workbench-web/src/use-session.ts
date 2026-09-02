@@ -15,7 +15,7 @@ import type { ConversationTurn } from "@ai-assist/conversation";
 import { selectCompleteReviewContext } from "@ai-assist/workbench/review";
 
 import { createWorkbenchApi, type RunnerProgressEvent, type TaConversationContext, type WorkbenchApi } from "./api.js";
-import { projectActionQueue, projectFeatureLedger, type F8CommandKind, type F8SessionSnapshot } from "./workbench-session.js";
+import { projectActionQueue, projectFeatureLedger, projectTaProductStages, type F8CommandKind, type F8SessionSnapshot } from "./workbench-session.js";
 
 export interface UseWorkbenchSessionResult {
   readonly api: WorkbenchApi;
@@ -35,10 +35,13 @@ export interface UseWorkbenchSessionResult {
   readonly error?: TypedError;
   readonly actionQueue: ReturnType<typeof projectActionQueue>;
   readonly featureLedger: ReturnType<typeof projectFeatureLedger>;
+  readonly productStages: ReturnType<typeof projectTaProductStages>;
   readonly uploadWorkbook: (file: File) => Promise<void>;
   readonly submitCommand: (command: F8CommandKind, payload: Record<string, unknown>) => Promise<void>;
   readonly appendConversation: (message: string, context?: TaConversationContext) => Promise<void>;
   readonly confirmAdoWrite: (confirmation: F8AdoWriteConfirmation) => Promise<void>;
+  readonly reconcileAdoWrite: () => Promise<void>;
+  readonly startNewAdoWriteGeneration: () => Promise<void>;
   readonly clearError: () => void;
 }
 
@@ -224,6 +227,13 @@ export function useWorkbenchSession(apiOverride?: WorkbenchApi, options: UseWork
 
   const actionQueue = snapshot === undefined ? [] : projectActionQueue(snapshot);
   const featureLedger = snapshot === undefined ? [] : projectFeatureLedger(snapshot);
+  const stageProgress = runnerProgress === undefined
+    ? undefined
+    : {
+        kind: runnerProgress.kind,
+        featureId: runnerProgress.featureId,
+      };
+  const productStages = snapshot === undefined ? [] : projectTaProductStages(snapshot, stageProgress);
 
   return {
     api,
@@ -243,6 +253,7 @@ export function useWorkbenchSession(apiOverride?: WorkbenchApi, options: UseWork
     error,
     actionQueue,
     featureLedger,
+    productStages,
     async uploadWorkbook(file) {
       if (snapshot === undefined || sessionId === undefined) {
         setError(createTypedError({
@@ -323,6 +334,27 @@ export function useWorkbenchSession(apiOverride?: WorkbenchApi, options: UseWork
         setError(undefined);
       } catch (confirmationError) {
         setError(toTypedError(confirmationError, "ADO write confirmation was rejected.", "Refresh the preview and confirm again."));
+      }
+    },
+    async reconcileAdoWrite() {
+      if (sessionId === undefined) return;
+      try {
+        await api.reconcileAdoWrite(sessionId);
+        setAdoProjection(await api.readAdoProjection(sessionId));
+        setError(undefined);
+      } catch (reconcileError) {
+        setError(toTypedError(reconcileError, "ADO readback reconciliation was rejected.", "Refresh the ADO state and try again."));
+      }
+    },
+    async startNewAdoWriteGeneration() {
+      if (sessionId === undefined) return;
+      try {
+        const nextSnapshot = await api.startNewAdoWriteGeneration(sessionId);
+        setSnapshot(nextSnapshot);
+        setAdoProjection(await api.readAdoProjection(sessionId));
+        setError(undefined);
+      } catch (generationError) {
+        setError(toTypedError(generationError, "Preparing a new validated preview was rejected.", "Refresh the ADO state and try again."));
       }
     },
     clearError() {

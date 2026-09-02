@@ -1,18 +1,23 @@
 import type { F8AdoProjection, F8AdoWriteConfirmation } from "@ai-assist/contracts";
 import { useState } from "react";
 
+const PROJECTION_STATES_WITH_CONFIRMATION = ["preview_ready", "write_pending", "write_outcome_unknown", "completed"] as const;
+type ProjectionStateWithConfirmation = (typeof PROJECTION_STATES_WITH_CONFIRMATION)[number];
+
 interface AdoWorkspaceDecisionProps {
   readonly visible: boolean;
   readonly projection?: F8AdoProjection;
   readonly onSubmit: (decision: "local_only" | "create_new" | "use_existing", workItemReference?: string) => Promise<void>;
   readonly onConfirm?: (confirmation: F8AdoWriteConfirmation) => Promise<void>;
+  readonly onReconcile?: () => Promise<void>;
   readonly onReset?: () => Promise<void>;
+  readonly onStartNewWriteGeneration?: () => Promise<void>;
 }
 
-export function AdoWorkspaceDecision({ visible, projection, onSubmit, onConfirm, onReset }: AdoWorkspaceDecisionProps) {
+export function AdoWorkspaceDecision({ visible, projection, onSubmit, onConfirm, onReconcile, onReset, onStartNewWriteGeneration }: AdoWorkspaceDecisionProps) {
   const [reference, setReference] = useState("");
   if (!visible) return null;
-  const confirmation = projection !== undefined && ["preview_ready", "write_pending", "completed"].includes(projection.state)
+  const confirmation = projection !== undefined && isProjectionStateWithConfirmation(projection.state)
     ? projection.confirmation
     : undefined;
   const previewTarget = projection?.state === "preview_ready" ? projection.target : undefined;
@@ -22,7 +27,7 @@ export function AdoWorkspaceDecision({ visible, projection, onSubmit, onConfirm,
       <div><span>ADO target</span><h3>Governance write decision</h3></div>
       {projection === undefined || projection.state === "not_required" ? (
         <div className="ado-workspace__selection">
-          <p>Choose whether this governed F3 reminder stays local or moves through the VS Code Surface MCP host for Azure DevOps validation.</p>
+          <p>Choose whether this governed drawing-governance reminder stays local or moves through the VS Code Surface MCP host for Azure DevOps validation.</p>
           <div className="ado-workspace__actions">
             <button type="button" className="button" onClick={() => { void onSubmit("local_only"); }}>Local analysis only</button>
             <button type="button" className="button" onClick={() => { void onSubmit("create_new"); }}>Create work item</button>
@@ -41,10 +46,21 @@ export function AdoWorkspaceDecision({ visible, projection, onSubmit, onConfirm,
         </div>
       )}
       {projection?.state === "write_pending" ? <p role="status">Authorized in the Web surface. Waiting for the Surface MCP to write and verify the readback...</p> : null}
+      {projection?.state === "write_outcome_unknown" ? <div><p role="status">The write outcome is unknown. Use the VS Code Surface MCP readback reconciliation to confirm whether the comment already landed before starting a new explicit write flow.</p><button type="button" className="button" onClick={() => { void onReconcile?.(); }}>Run readback reconciliation</button></div> : null}
+      {projection?.state === "reconciled_absent" ? (
+        <div>
+          <p role="status">Readback did not find the confirmed preview marker. Prepare a new validated preview, then confirm in Web before any write.</p>
+          <button type="button" className="button" disabled={onStartNewWriteGeneration === undefined} onClick={() => { void onStartNewWriteGeneration?.(); }}>Prepare a new validated preview</button>
+        </div>
+      ) : null}
       {projection?.state === "completed" ? <p role="status">ADO write verified: {projection.receipt.workItemReference} · Version {projection.receipt.version}</p> : null}
       {projection?.state === "blocked" || projection?.state === "failed" ? <p role="alert">{projection.reason}</p> : null}
     </div>
   );
+}
+
+function isProjectionStateWithConfirmation(state: F8AdoProjection["state"]): state is ProjectionStateWithConfirmation {
+  return (PROJECTION_STATES_WITH_CONFIRMATION as readonly string[]).includes(state);
 }
 
 function isAdoWorkItemUrl(value: string): boolean {

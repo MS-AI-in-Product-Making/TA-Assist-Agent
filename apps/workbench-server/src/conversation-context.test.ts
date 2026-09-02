@@ -278,7 +278,7 @@ function f2Report() {
     mappingRuleVersion: "v1",
     artifactRoot: "managed/f2",
     worksheets: [{ worksheetName: "Analysis-A", toleranceLoopDescription: "Display gap", tolerancePathImageStatus: "available", systemSpecification: { status: "available", ...worksheetSystemSpecification() }, systemSpecificationIssues: [], f4CalculabilityIssues: [], rows: [row], missingFieldSummary: [], status: "ready" }],
-    f4Handoffs: [{ contractVersion: "v1", handoffVersion: "f4-handoff-v1", inputClassification: "confidential", status: "ready", workbookContentHash: WORKBOOK_HASH, worksheetName: "Analysis-A", toleranceLoopDescription: "Display gap", systemSpecification: { designNominal: 1.2, ...worksheetSystemSpecification(), targetCpk: 1.4 }, factors: [{ tableId: "factor-table-1", sourceRow: 14, unit: "mm", actualFields: actualFields(), sourceCells: {} }] }],
+    f4Handoffs: [{ contractVersion: "v1", handoffVersion: "f4-handoff-v1", inputClassification: "confidential", status: "ready", workbookContentHash: WORKBOOK_HASH, worksheetName: "Analysis-A", toleranceLoopDescription: "Display gap", systemSpecification: { designNominal: 1.2, lowerSpecLimit: worksheetSystemSpecification().lowerSpecLimit, upperSpecLimit: worksheetSystemSpecification().upperSpecLimit, targetSigmaLevel: worksheetSystemSpecification().targetSigmaLevel, targetCpk: 1.4, additionalMeanShift: worksheetSystemSpecification().additionalMeanShift }, factors: [{ tableId: "factor-table-1", sourceRow: 14, unit: "mm", actualFields: actualFields(), sourceCells: {} }] }],
     adoEvents: [],
     summary: { worksheetsChecked: 1, blockedWorksheetCount: 0, readyWorksheetCount: 1, factorRowCount: 1, rowsWithRequiredMissing: 0, requiredMissingFieldCount: 0, missingImageWorksheetCount: 0, internalWithinGuidanceCount: 0, internalGuidanceExceededCount: 0, f0InformationInsufficientCount: 0, publicLibraryMatchCount: 1, nonF0ProcessCategoryCount: 0, unableToCheckCount: 0, publicToleranceDifferenceCount: 0, publicDistributionDifferenceCount: 0, missingDimIdCount: 0, missingPartNumberCount: 0 },
   };
@@ -305,6 +305,7 @@ function actualFields() {
 
 function worksheetSystemSpecification() {
   return {
+    designNominal: { status: "available", sourceLabel: "Design nominal", sourceCell: "Analysis-A!B1", displayValue: "1.2", actualValue: 1.2, valueOrigin: "numeric_literal" },
     lowerSpecLimit: { status: "available", sourceLabel: "LSL", sourceCell: "Analysis-A!B2", displayValue: "0.6", actualValue: 0.6, valueOrigin: "numeric_literal" },
     upperSpecLimit: { status: "available", sourceLabel: "USL", sourceCell: "Analysis-A!B3", displayValue: "1.8", actualValue: 1.8, valueOrigin: "numeric_literal" },
     targetSigmaLevel: { status: "available", sourceLabel: "Sigma", sourceCell: "Analysis-A!B4", displayValue: "4.2", actualValue: 4.2, valueOrigin: "numeric_literal" },

@@ -8,6 +8,8 @@
   ],
   "scripts": {
     "build": "tsc -b",
+    "build:beta": "npm --workspace apps/vscode-extension run build:beta",
+    "package:vsix": "npm --workspace apps/vscode-extension run package:vsix",
     "dev:f7": "concurrently --kill-others-on-fail --names api,web \"npm run dev:f7:api\" \"npm run dev:f7:web\"",
     "dev:f7:api": "npm run dev --workspace @ai-assist/f7-local-api",
     "dev:f7:web": "npm run dev --workspace @ai-assist/f7-web",
@@ -44,5 +46,13 @@
     "vue-eslint-parser": "^10.0.0",
     "vitest": "^3.0.0",
     "xlsx": "^0.18.5"
+  },
+  "overrides": {
+    "@vscode/vsce@3.9.2": {
+      "js-yaml": "4.3.1",
+      "@secretlint/node": {
+        "js-yaml": "4.3.1"
+      }
+    }
   }
 }

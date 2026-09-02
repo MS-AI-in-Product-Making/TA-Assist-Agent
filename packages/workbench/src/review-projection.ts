@@ -289,6 +289,10 @@ function collectWorksheetNames(input: ReviewProjectionInput): string[] {
 }
 
 export function selectCompleteReviewContext(snapshot: F8SessionSnapshot): CompleteReviewContext | undefined {
+  if (!hasExportEligibleWorksheetSelection(snapshot)) {
+    return undefined;
+  }
+
   const currentRevision = snapshot.inputRevision;
   const contexts = new Map<ReviewContextId, Map<ReviewArtifactKind, ReviewContextArtifact>>();
   for (const artifact of snapshot.artifactRefs ?? []) {
@@ -309,6 +313,14 @@ export function selectCompleteReviewContext(snapshot: F8SessionSnapshot): Comple
 
   const [reviewContextId, artifacts] = complete[0]!;
   return { reviewContextId, artifacts };
+}
+
+function hasExportEligibleWorksheetSelection(snapshot: F8SessionSnapshot): boolean {
+  const selection = snapshot.downstreamScopeSelection ?? snapshot.initialScopeSelection;
+  if (selection?.confirmed !== true) {
+    return false;
+  }
+  return selection.provenance === "user";
 }
 
 function isReviewArtifact(artifact: NonNullable<F8SessionSnapshot["artifactRefs"]>[number]): artifact is ReviewContextArtifact {

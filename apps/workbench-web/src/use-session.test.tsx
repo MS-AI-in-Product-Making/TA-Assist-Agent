@@ -51,6 +51,12 @@ describe("useWorkbenchSession review artifacts", () => {
       revision: 8,
       inputRevision: 4,
       state: "review_required" as const,
+      downstreamScopeSelection: {
+        workbookContentHash: "c".repeat(64),
+        selectedWorksheetNames: ["AJ_GAP"],
+        confirmed: true,
+        provenance: "user" as const,
+      },
       activeAttempt: null,
       priorRunReferences: [],
       artifactRefs: [
@@ -215,6 +221,56 @@ describe("useWorkbenchSession review artifacts", () => {
 
     await waitFor(() => expect(result.current.adoProjection?.state).toBe("blocked"));
     await waitFor(() => expect(result.current.error?.summary).toBe("Governed artifact read failed."));
+  });
+
+  it("invokes start_new_ado_write_generation and refreshes ADO projection", async () => {
+    const api = {
+      bootstrap: vi.fn(async () => ({
+        sessionId: "session-start-new-generation",
+        snapshot: {
+          contractVersion: "f8-session-snapshot-v1" as const,
+          sessionId: "session-start-new-generation",
+          revision: 4,
+          inputRevision: 1,
+          state: "ado_action_pending" as const,
+          activeAttempt: null,
+          priorRunReferences: [],
+          artifactRefs: [],
+        },
+        conversation: [],
+      })),
+      subscribe: vi.fn(() => () => undefined),
+      readAdoProjection: vi.fn(async () => ({
+        contractVersion: "f8-ado-projection-v1" as const,
+        sessionId: "session-start-new-generation",
+        state: "validation_pending" as const,
+        actionId: "ado-validation:session-start-new-generation:5",
+        expectedRevision: 5,
+        startedAt: "2026-09-01T00:00:00.000Z",
+        expiresAt: "2026-09-01T00:15:00.000Z",
+      })),
+      startNewAdoWriteGeneration: vi.fn(async () => ({
+        contractVersion: "f8-session-snapshot-v1" as const,
+        sessionId: "session-start-new-generation",
+        revision: 5,
+        inputRevision: 1,
+        state: "ado_action_pending" as const,
+        activeAttempt: null,
+        priorRunReferences: [],
+        artifactRefs: [],
+      })),
+    } as unknown as WorkbenchApi;
+
+    const { result } = renderHook(() => useWorkbenchSession(api));
+
+    await waitFor(() => expect(result.current.sessionId).toBe("session-start-new-generation"));
+    await act(async () => {
+      await result.current.startNewAdoWriteGeneration();
+    });
+
+    expect(api.startNewAdoWriteGeneration).toHaveBeenCalledWith("session-start-new-generation");
+    expect(api.readAdoProjection).toHaveBeenCalled();
+    await waitFor(() => expect(result.current.adoProjection?.state).toBe("validation_pending"));
   });
 });
 

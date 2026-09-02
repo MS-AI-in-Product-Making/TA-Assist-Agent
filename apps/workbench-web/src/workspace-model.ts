@@ -340,7 +340,7 @@ function displayPercent(value: number | null): string {
 }
 
 function capabilityLabel(status: string): string {
-  return ({ internal_within_guidance: "F0 internal within guidance", internal_guidance_exceeded: "F0 internal guidance exceeded", f0_information_insufficient: "F0 information insufficient", non_f0_process_category: "Non-F0 process category", unable_to_check: "Unable to check" } as Record<string, string>)[status] ?? status;
+  return ({ internal_within_guidance: "Internal within guidance", internal_guidance_exceeded: "Internal guidance exceeded", f0_information_insufficient: "Information insufficient", non_f0_process_category: "Non-F0 process category", unable_to_check: "Unable to check" } as Record<string, string>)[status] ?? status;
 }
 
 function recommendationText(value: unknown): string | undefined {

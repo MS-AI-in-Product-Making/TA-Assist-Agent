@@ -100,6 +100,8 @@ F8 通过 CLI `agent analyze|resume|status|workbench` 或 VS Code `@ta-assist` �
 
 运行顺序保持独立门禁：上传与 F0 validation -> 初次 worksheet 确认 -> F1/F2 -> 下游 worksheet 确认 -> F3 -> optional Surface MCP ADO `validate -> independent write` -> F4 -> image decision -> F5 -> Analysis Context -> Optimization Targets -> F6 -> evidence review/What-if。What-if 复用 F4 kernel；只有 tolerance diff 可生成现有 F6 targets preview，nominal/mean shift 不晋级且不写回 workbook。F7 显示 `feature_not_available / in_development`，不提供或伪造 measured result。
 
+产品导出 (Task8B2b) 只接受同一 session 的已验证 production lineage，且 execution status 必须为 `completed`。`failed` 或 `cancelled` session 必须拒绝导出并不生成新的 `runtime/workbench/product-exports/*` 根目录。该门禁由 Playwright `test/f8-e2e/product-output.spec.ts` 覆盖，并通过 test-only seeded failed execution session 验证 fail-closed 行为。
+
 **Objective evidence provider + verifiable decision support** — not a black-box adviser.
 Every statement is tagged **FACT** (computed) / **RULE** (threshold check) → asserted, or
 **SIGNAL** (needs engineering judgment) / **OPTION** (parallel path) → flagged only. Options are

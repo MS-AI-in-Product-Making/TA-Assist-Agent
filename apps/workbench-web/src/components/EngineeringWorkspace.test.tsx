@@ -9,6 +9,13 @@ const handlers = {
   loading: false,
   connected: true,
   featureLedger: ["F0", "F1", "F2", "F3", "F4", "F5", "F6", "F7"].map((featureId) => ({ featureId, status: featureId === "F7" ? "feature_not_available" : "pending", lifecycle: featureId === "F7" ? "in_development" : undefined, actions: [] })) as never,
+  productStages: [
+    { stageId: "prepare_workbook", label: "Prepare workbook", status: "pending", displayStatus: "Pending" },
+    { stageId: "validate_analysis_inputs", label: "Validate analysis inputs", status: "pending", displayStatus: "Pending" },
+    { stageId: "review_dimension_traceability", label: "Review dimension traceability", status: "pending", displayStatus: "Pending" },
+    { stageId: "calculate_and_interpret", label: "Calculate and interpret tolerance performance", status: "pending", displayStatus: "Pending" },
+    { stageId: "evaluate_and_publish", label: "Evaluate improvement options and publish report", status: "pending", displayStatus: "Pending" },
+  ] as never,
   conversation: [],
   onUpload: vi.fn(async () => undefined),
   onSelectWorksheet: vi.fn(),
@@ -23,8 +30,8 @@ describe("EngineeringWorkspace", () => {
 
     expect(screen.getByText("Preparing TA workspace...")).toBeVisible();
     expect(screen.getByRole("region", { name: "Analysis progress" })).toBeVisible();
-    expect(screen.getByText("F0")).toBeVisible();
-    expect(screen.getByText("F7")).toBeVisible();
+    expect(screen.getByText("Prepare workbook")).toBeVisible();
+    expect(screen.getByText("Evaluate improvement options and publish report")).toBeVisible();
   }, 15_000);
 
   it("renders a searchable worksheet picker with business statuses", () => {

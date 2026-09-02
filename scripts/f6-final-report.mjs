@@ -750,6 +750,61 @@ function renderMarkdown(context) {
   return `${lines.join("\n").trimEnd()}\n`;
 }
 
+function worksheetProjection(worksheet) {
+  const findings = [primaryFinding(worksheet)];
+  const assumptions = [];
+  const clarifications = [];
+  const gatingEvidenceReferences = [];
+
+  if (worksheet.f2Worksheet.status !== "ready") {
+    if (Array.isArray(worksheet.f2Worksheet.missingFieldSummary) && worksheet.f2Worksheet.missingFieldSummary.length > 0) {
+      clarifications.push(...worksheet.f2Worksheet.missingFieldSummary.map((item) => String(item)));
+    }
+    gatingEvidenceReferences.push(`F2:${worksheet.worksheetName}`);
+  } else {
+    const openAssumptions = worksheet.f5Worksheet.assumptions
+      .filter((assumption) => assumption.status !== "confirmed")
+      .map((assumption) => assumption.text);
+    assumptions.push(...openAssumptions);
+    clarifications.push(...worksheet.f5Worksheet.clarifications.map((item) => item.text));
+    if (worksheet.f5Worksheet.statements.some((statement) => statement.type === "SIGNAL")) {
+      gatingEvidenceReferences.push(`F5:${worksheet.worksheetName}:SIGNAL`);
+    }
+    if (worksheet.f3Worksheet.rows.some((row) => row.governanceStatus !== "complete")) {
+      gatingEvidenceReferences.push(`F3:${worksheet.worksheetName}:governance`);
+    }
+  }
+
+  const base = {
+    worksheetName: worksheet.worksheetName,
+    toleranceLoopDescription: clean(worksheet.f2Worksheet.toleranceLoopDescription, NA),
+    disposition: worksheet.disposition,
+    requiredAction: requiredAction(worksheet),
+    findings,
+    assumptions,
+    clarifications,
+    gatingEvidenceReferences,
+  };
+
+  if (worksheet.f4Calculation === undefined) {
+    return base;
+  }
+
+  return {
+    ...base,
+    metrics: {
+      mean: worksheet.f4Calculation.system.mean,
+      rssSigma: worksheet.f4Calculation.system.rssSigma,
+      worstCaseLower: worksheet.f4Calculation.system.worstCaseLower,
+      worstCaseUpper: worksheet.f4Calculation.system.worstCaseUpper,
+      cp: worksheet.f4Calculation.capability.cp,
+      cpk: worksheet.f4Calculation.capability.cpk,
+      yield: worksheet.f4Calculation.capability.yield,
+      dpm: worksheet.f4Calculation.capability.totalDpm,
+    },
+  };
+}
+
 export function createF6FinalReportProjection(input = {}, options = {}) {
   const f2Report = parseOrThrow(f2UserReportSchema, input.f2Report, "f2Report");
   const f3Report = parseOrThrow(drawingGovernanceResultV2Schema, input.f3Report, "f3Report");
@@ -768,6 +823,18 @@ export function createF6FinalReportProjection(input = {}, options = {}) {
     workbookDisposition,
     worksheetDispositions,
   };
+  const projection = {
+    schemaVersion: "ta-engineering-report-projection-v1",
+    title: "TA Engineering Analysis Report",
+    workbookDisposition,
+    worksheetDispositions,
+    workbook: {
+      fileName: f2Report.workbook.fileName,
+      ...(f2Report.workbook.revision === undefined ? {} : { revision: f2Report.workbook.revision }),
+      contentHash: f2Report.workbook.contentHash,
+    },
+    worksheets: worksheets.map((worksheet) => worksheetProjection(worksheet)),
+  };
 
   return {
     markdown: renderMarkdown({
@@ -782,5 +849,6 @@ export function createF6FinalReportProjection(input = {}, options = {}) {
       worksheets,
     }),
     reportSummary,
+    projection,
   };
 }

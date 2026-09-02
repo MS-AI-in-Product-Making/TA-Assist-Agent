@@ -94,6 +94,49 @@ describe("F3Governance", () => {
     expect(onSubmit).toHaveBeenCalledWith("create_new");
     expect(onSubmit).toHaveBeenCalledWith("use_existing", "https://dev.azure.com/MSFTDEVICES/Project/_workitems/edit/123");
   });
+
+  it("uses start_new_ado_write_generation callback from reconciled_absent and never falls back to reset", () => {
+    const onStartNewWriteGeneration = vi.fn(async () => undefined);
+    const onReset = vi.fn(async () => undefined);
+    render(
+      <F3Governance
+        report={governanceReport()}
+        adoProjection={{
+          contractVersion: "f8-ado-projection-v1",
+          sessionId: "session-1",
+          state: "reconciled_absent",
+          actionId: "ado-reconcile:session-1:3",
+          writeActionId: "ado-write:session-1:3",
+          validationActionId: "ado-validation:session-1:3",
+          expectedRevision: 3,
+          executionPhase: "reconcile",
+          previewIdentity: {
+            targetIdentity: { organization: "MSFTDEVICES", project: "Project", workItemId: 42 },
+            previewHash: "c".repeat(64),
+            previewMarker: "preview-marker:ado:session-1:3",
+          },
+          confirmation: {
+            status: "confirmation_required",
+            workItemReference: "https://dev.azure.com/MSFTDEVICES/Project/_workitems/edit/42",
+            ownerReference: "owner@example.com",
+            commentReference: "C0",
+            expectedVersion: "7",
+            beforeContentHash: "a".repeat(64),
+            nextContent: "# Complete governance preview\n\n<!-- preview-marker:ado:session-1:3 -->",
+            factorCount: 1,
+            confirmationHash: "b".repeat(64),
+            diff: [{ before: "old", after: "new", changed: true }],
+          },
+        }}
+        onAdoReset={onReset}
+        onStartNewAdoWriteGeneration={onStartNewWriteGeneration}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Prepare a new validated preview" }));
+    expect(onStartNewWriteGeneration).toHaveBeenCalledOnce();
+    expect(onReset).not.toHaveBeenCalled();
+  });
 });
 
 function governanceReport(summaryOverrides: Partial<DrawingGovernanceResultV2["summary"]> = {}): DrawingGovernanceResultV2 {

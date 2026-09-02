@@ -5,7 +5,7 @@ import type { WorkbenchApi } from "./api.js";
 import { EngineeringWorkspace } from "./components/EngineeringWorkspace.js";
 import { WorksheetSelection, type WorksheetOption } from "./components/WorksheetSelection.js";
 import { useWorkbenchSession, type UseWorkbenchSessionResult } from "./use-session.js";
-import { projectActionQueue, projectFeatureLedger, type F8SessionSnapshot } from "./workbench-session.js";
+import { projectActionQueue, projectFeatureLedger, projectTaProductStages, type F8SessionSnapshot } from "./workbench-session.js";
 import { projectEngineeringWorkspace } from "./workspace-model.js";
 import { projectWorkspaceIssue } from "./business-status.js";
 
@@ -59,7 +59,7 @@ export function App({ api, preloadedState, initialWorksheetOptions, downstreamWo
       {session.snapshot?.state !== "downstream_scope_required" ? null : (
         <WorksheetSelection
           title="Downstream worksheet selection"
-          description="The second selection only allows F2-ready worksheets. Blocked worksheets stay in the status panel and do not enter engineering analysis."
+             description="The second selection only allows worksheets that passed input validation. Blocked worksheets stay in the status panel and do not enter engineering analysis."
           actionLabel="Confirm engineering scope"
           options={downstreamOptions}
           blockedReason={!canSubmitDownstreamScope ? "The previously confirmed workbook identity is missing, so the downstream selection cannot be sent." : undefined}
@@ -74,6 +74,7 @@ export function App({ api, preloadedState, initialWorksheetOptions, downstreamWo
         loading={session.loading}
         connected={session.connected}
         featureLedger={session.featureLedger}
+        productStages={session.productStages}
         snapshot={session.snapshot}
         {...(session.runnerProgress === undefined ? {} : { runnerProgress: session.runnerProgress })}
         {...(session.snapshot?.activeAttempt?.startedAt === undefined ? {} : { activeAttemptStartedAt: session.snapshot.activeAttempt.startedAt })}
@@ -95,6 +96,8 @@ export function App({ api, preloadedState, initialWorksheetOptions, downstreamWo
         adoProjection={session.adoProjection}
         onAdoDecision={(decision, workItemReference) => session.submitCommand("confirm_ado_decision", decision === "use_existing" ? { decision, workItemReference } : { decision })}
         onAdoConfirm={session.confirmAdoWrite}
+        onAdoReconcile={session.reconcileAdoWrite}
+        onAdoStartNewWriteGeneration={session.startNewAdoWriteGeneration}
         onAdoReset={() => session.submitCommand("reset_ado_decision", {})}
       />
     </>
@@ -129,6 +132,7 @@ function createPreloadedSession(
     connected: preloadedState.connected ?? true,
     actionQueue: preloadedState.actionQueue ?? projectActionQueue(preloadedState.snapshot),
     featureLedger: preloadedState.featureLedger ?? projectFeatureLedger(preloadedState.snapshot),
+    productStages: preloadedState.productStages ?? projectTaProductStages(preloadedState.snapshot, preloadedState.runnerProgress),
     uploadWorkbook: preloadedState.uploadWorkbook ?? liveSession.uploadWorkbook,
     submitCommand: preloadedState.submitCommand ?? liveSession.submitCommand,
     appendConversation: preloadedState.appendConversation ?? liveSession.appendConversation,

@@ -556,6 +556,28 @@ describe("F8 session and host contracts", () => {
     expect(() => f8PublicSessionCommandSchema.parse(internal)).toThrow();
   });
 
+  it("accepts internal worksheet decision provenance and blocks public injection", () => {
+    const internal = {
+      contractVersion: "f8-session-command-v1",
+      sessionId: SESSION_ID,
+      commandId: "internal-downstream",
+      expectedRevision: 4,
+      command: "confirm_downstream_scope",
+      payload: {
+        worksheetNames: ["AJ_GAP"],
+        workbookHash: WORKBOOK_HASH,
+        provenance: "internal_fixture",
+      },
+    } as const;
+
+    expect(f8SessionCommandSchema.parse(internal)).toEqual(internal);
+    expect(() => f8PublicSessionCommandSchema.parse(internal)).toThrow();
+    expect(() => f8SessionCommandSchema.parse({
+      ...internal,
+      payload: { ...internal.payload, provenance: "external" },
+    })).toThrow();
+  });
+
   it("keeps the session snapshot and event surfaces strict", () => {
     const snapshot = {
       contractVersion: "f8-session-snapshot-v1",
@@ -597,6 +619,48 @@ describe("F8 session and host contracts", () => {
     expect(f8SessionEventSchema.parse(event)).toEqual(event);
     expect(() => f8SessionSnapshotSchema.parse({ ...snapshot, outputRoot: "C:/arbitrary" })).toThrow();
     expect(() => f8SessionEventSchema.parse({ ...event, outputRoot: "C:/arbitrary" })).toThrow();
+  });
+
+  it("accepts legacy_unverified only on stored snapshot selections", () => {
+    const snapshot = {
+      contractVersion: "f8-session-snapshot-v1",
+      sessionId: SESSION_ID,
+      revision: 4,
+      inputRevision: 2,
+      state: "downstream_scope_required",
+      activeAttempt: null,
+      priorRunReferences: [],
+      initialScopeSelection: {
+        workbookContentHash: WORKBOOK_HASH,
+        selectedWorksheetNames: ["AJ_GAP"],
+        confirmed: true,
+        provenance: "legacy_unverified",
+      },
+      downstreamScopeSelection: {
+        workbookContentHash: WORKBOOK_HASH,
+        selectedWorksheetNames: ["AJ_GAP"],
+        confirmed: true,
+        provenance: "legacy_unverified",
+      },
+    } as const;
+
+    expect(f8SessionSnapshotSchema.parse(snapshot)).toEqual(snapshot);
+
+    const command = {
+      contractVersion: "f8-session-command-v1",
+      sessionId: SESSION_ID,
+      commandId: "invalid-legacy-provenance",
+      expectedRevision: 4,
+      command: "confirm_downstream_scope",
+      payload: {
+        worksheetNames: ["AJ_GAP"],
+        workbookHash: WORKBOOK_HASH,
+        provenance: "legacy_unverified",
+      },
+    };
+
+    expect(() => f8SessionCommandSchema.parse(command)).toThrow();
+    expect(() => f8PublicSessionCommandSchema.parse(command)).toThrow();
   });
 
   it("allows only one active WHAT_IF draft in a session snapshot", () => {
@@ -825,6 +889,24 @@ describe("F8 session and host contracts", () => {
       expiresAt: "2026-08-31T10:15:00.000Z",
     };
     expect(f8AdoProjectionSchema.parse(pending)).toEqual(pending);
+
+    const writeOutcomeUnknown = {
+      contractVersion: "f8-ado-projection-v1" as const,
+      sessionId: SESSION_ID,
+      state: "write_outcome_unknown" as const,
+      actionId: "ado-write:session:3",
+      validationActionId: "ado-validation:session:3",
+      expectedRevision: 3,
+      executionPhase: "readback" as const,
+      previewIdentity: {
+        targetIdentity: { organization: "MSFTDEVICES", project: "Project A", workItemId: 42 },
+        previewHash: contentHash,
+        previewMarker: "preview-marker:ado:session:3",
+      },
+      writeDispatchedAt: "2026-09-01T00:00:00.000Z",
+      confirmation: projection.confirmation,
+    };
+    expect(f8AdoProjectionSchema.parse(writeOutcomeUnknown)).toEqual(writeOutcomeUnknown);
   });
 
   it("keeps conversation turns, host actions, and drafts strict", () => {
@@ -866,6 +948,25 @@ describe("F8 session and host contracts", () => {
       },
     };
 
+    const reconcileRequest = {
+      contractVersion: "f8-host-action-request-v1",
+      actionId: "action-reconcile-1",
+      sessionId: SESSION_ID,
+      expectedRevision: 4,
+      kind: "surface_reconcile",
+      expiresAt: "2026-08-24T00:10:00.000Z",
+      writeActionId: "action-1",
+      validationActionId: "action-validate-1",
+      confirmationHash: WORKBOOK_HASH,
+      expectedTargetVersion: "f4-handoff-v1",
+      previewIdentity: {
+        targetIdentity: { organization: "MSFTDEVICES", project: "Project A", workItemId: 42 },
+        previewHash: WORKBOOK_HASH,
+        previewMarker: "preview-marker:ado:session:3",
+      },
+      confirmation: hostActionRequest.confirmation,
+    };
+
     const hostActionClaim = {
       contractVersion: "f8-host-action-claim-v1",
       actionId: "action-1",
@@ -883,6 +984,31 @@ describe("F8 session and host contracts", () => {
       status: "completed",
       resultHash: WORKBOOK_HASH,
       payload: { status: "completed" },
+    };
+
+    const reconcileResult = {
+      contractVersion: "f8-host-action-result-v1",
+      actionId: "action-reconcile-1",
+      hostInstanceId: "host-1",
+      leaseId: "lease-1",
+      status: "completed",
+      resultHash: WORKBOOK_HASH,
+      payload: {
+        status: "completed",
+        outcome: {
+          kind: "surface_reconcile",
+          state: "matching",
+          receipt: {
+            status: "updated",
+            workItemReference: "https://dev.azure.com/MSFTDEVICES/Project%20A/_workitems/edit/42",
+            commentReference: "11",
+            version: "2",
+            contentHash: WORKBOOK_HASH,
+          },
+          observedCommentReference: "11",
+          observedCommentVersion: "2",
+        },
+      },
     };
 
     const failedHostActionResult = {
@@ -921,8 +1047,10 @@ describe("F8 session and host contracts", () => {
 
     expect(conversationTurnSchema.parse(conversationTurn)).toEqual(conversationTurn);
     expect(hostActionRequestSchema.parse(hostActionRequest)).toEqual(hostActionRequest);
+    expect(hostActionRequestSchema.parse(reconcileRequest)).toEqual(reconcileRequest);
     expect(hostActionClaimSchema.parse(hostActionClaim)).toEqual(hostActionClaim);
     expect(hostActionResultSchema.parse(hostActionResult)).toEqual(hostActionResult);
+    expect(hostActionResultSchema.parse(reconcileResult)).toEqual(reconcileResult);
     expect(hostActionResultSchema.parse(failedHostActionResult)).toEqual(failedHostActionResult);
     expect(f8ScenarioDraftSchema.parse(draft)).toEqual(draft);
 

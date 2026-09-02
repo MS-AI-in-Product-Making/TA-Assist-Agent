@@ -8,3 +8,6 @@ export * from "./projections.js";
 export * from "./review-projection.js";
 export * from "./review-context.js";
 export * from "./scenario-draft.js";
+export * from "./runtime-skill-facade.js";
+export * from "./ta-workbook-orchestrator.js";
+export * from "./report-semantic-digest.js";

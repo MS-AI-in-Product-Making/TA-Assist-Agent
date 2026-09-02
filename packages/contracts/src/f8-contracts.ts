@@ -467,15 +467,41 @@ const workbookReplacePayloadSchema = workbookUploadPayloadSchema.extend({
   previousWorkbookHash: sha256Schema,
 }).strict();
 
-const worksheetScopePayloadSchema = z
+const worksheetScopePayloadBaseSchema = z
   .object({
     workbookHash: sha256Schema,
     worksheetNames: z.array(boundedContextNameSchema).min(1),
   })
+  .strict();
+
+const withUniqueWorksheetNames = <T extends z.ZodType<{ worksheetNames: string[] }>>(schema: T) => schema.superRefine((payload, context) => {
+  if (new Set(payload.worksheetNames).size !== payload.worksheetNames.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheetNames must be unique", path: ["worksheetNames"] });
+  }
+});
+
+const worksheetScopePayloadSchema = withUniqueWorksheetNames(worksheetScopePayloadBaseSchema);
+
+const worksheetDecisionProvenanceSchema = z.enum(["user", "internal_fixture"]);
+const worksheetSnapshotProvenanceSchema = z.enum(["user", "internal_fixture", "legacy_unverified"]);
+
+const worksheetScopeInternalPayloadSchema = withUniqueWorksheetNames(worksheetScopePayloadBaseSchema
+  .extend({
+    provenance: worksheetDecisionProvenanceSchema.optional(),
+  })
+  .strict());
+
+const worksheetSelectionDecisionSchema = z
+  .object({
+    workbookContentHash: sha256Schema,
+    selectedWorksheetNames: z.array(nonEmptyStringSchema),
+    confirmed: z.literal(true),
+    provenance: worksheetSnapshotProvenanceSchema.optional(),
+  })
   .strict()
-  .superRefine((payload, context) => {
-    if (new Set(payload.worksheetNames).size !== payload.worksheetNames.length) {
-      context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheetNames must be unique", path: ["worksheetNames"] });
+  .superRefine((selection, context) => {
+    if (new Set(selection.selectedWorksheetNames).size !== selection.selectedWorksheetNames.length) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet names must be unique", path: ["selectedWorksheetNames"] });
     }
   });
 
@@ -575,9 +601,9 @@ const commandEnvelopeSchema = <T extends z.ZodTypeAny>(command: string, payloadS
 export const f8SessionCommandSchema = z.discriminatedUnion("command", [
   commandEnvelopeSchema("upload_workbook", z.union([workbookUploadPayloadSchema, managedWorkbookUploadPayloadSchema])),
   commandEnvelopeSchema("replace_workbook", workbookReplacePayloadSchema),
-  commandEnvelopeSchema("confirm_initial_scope", worksheetScopePayloadSchema),
-  commandEnvelopeSchema("auto_confirm_initial_scope", worksheetScopePayloadSchema),
-  commandEnvelopeSchema("confirm_downstream_scope", worksheetScopePayloadSchema),
+  commandEnvelopeSchema("confirm_initial_scope", worksheetScopeInternalPayloadSchema),
+  commandEnvelopeSchema("auto_confirm_initial_scope", worksheetScopeInternalPayloadSchema),
+  commandEnvelopeSchema("confirm_downstream_scope", worksheetScopeInternalPayloadSchema),
   commandEnvelopeSchema("confirm_ado_decision", adoDecisionPayloadSchema),
   commandEnvelopeSchema("reset_ado_decision", z.object({}).strict()),
   commandEnvelopeSchema("confirm_image_decision", confirmationDecisionPayloadSchema),
@@ -732,6 +758,26 @@ const f8AdoTargetSchema = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("existing"), workItemReference: promptVisibleIdentitySchema }).strict(),
 ]);
 
+const adoExecutionPhaseSchema = z.enum([
+  "validate_target",
+  "prepare_preview",
+  "execute_write",
+  "readback",
+  "reconcile",
+]);
+
+const adoTargetIdentitySchema = z.object({
+  organization: nonEmptyStringSchema,
+  project: nonEmptyStringSchema,
+  workItemId: z.number().int().positive(),
+}).strict();
+
+const adoPreviewIdentitySchema = z.object({
+  targetIdentity: adoTargetIdentitySchema,
+  previewHash: sha256Schema,
+  previewMarker: nonEmptyStringSchema,
+}).strict();
+
 const surfaceConfirmationSchema = z.object({
   status: z.literal("confirmation_required"),
   workItemReference: promptVisibleIdentitySchema,
@@ -755,10 +801,12 @@ const surfaceUpdateReceiptSchema = z.object({
 
 export const f8AdoProjectionSchema = z.discriminatedUnion("state", [
   z.object({ contractVersion: z.literal("f8-ado-projection-v1"), sessionId: promptVisibleIdentitySchema, state: z.literal("not_required") }).strict(),
-  z.object({ contractVersion: z.literal("f8-ado-projection-v1"), sessionId: promptVisibleIdentitySchema, state: z.literal("validation_pending"), actionId: promptVisibleIdentitySchema, expectedRevision: z.number().int().nonnegative(), startedAt: z.string().datetime(), expiresAt: z.string().datetime() }).strict(),
-  z.object({ contractVersion: z.literal("f8-ado-projection-v1"), sessionId: promptVisibleIdentitySchema, state: z.literal("preview_ready"), actionId: promptVisibleIdentitySchema, expectedRevision: z.number().int().nonnegative(), target: f8AdoTargetSchema, markdown: nonEmptyStringSchema, contentHash: sha256Schema, confirmation: surfaceConfirmationSchema }).strict(),
-  z.object({ contractVersion: z.literal("f8-ado-projection-v1"), sessionId: promptVisibleIdentitySchema, state: z.literal("write_pending"), actionId: promptVisibleIdentitySchema, validationActionId: promptVisibleIdentitySchema, expectedRevision: z.number().int().nonnegative(), startedAt: z.string().datetime(), expiresAt: z.string().datetime(), confirmation: surfaceConfirmationSchema }).strict(),
-  z.object({ contractVersion: z.literal("f8-ado-projection-v1"), sessionId: promptVisibleIdentitySchema, state: z.literal("completed"), actionId: promptVisibleIdentitySchema, validationActionId: promptVisibleIdentitySchema, expectedRevision: z.number().int().nonnegative(), confirmation: surfaceConfirmationSchema, receipt: surfaceUpdateReceiptSchema }).strict(),
+  z.object({ contractVersion: z.literal("f8-ado-projection-v1"), sessionId: promptVisibleIdentitySchema, state: z.literal("validation_pending"), actionId: promptVisibleIdentitySchema, expectedRevision: z.number().int().nonnegative(), executionPhase: z.literal("validate_target").optional(), startedAt: z.string().datetime(), expiresAt: z.string().datetime() }).strict(),
+  z.object({ contractVersion: z.literal("f8-ado-projection-v1"), sessionId: promptVisibleIdentitySchema, state: z.literal("preview_ready"), actionId: promptVisibleIdentitySchema, expectedRevision: z.number().int().nonnegative(), executionPhase: z.literal("prepare_preview").optional(), target: f8AdoTargetSchema, markdown: nonEmptyStringSchema, contentHash: sha256Schema, confirmation: surfaceConfirmationSchema }).strict(),
+  z.object({ contractVersion: z.literal("f8-ado-projection-v1"), sessionId: promptVisibleIdentitySchema, state: z.literal("write_pending"), actionId: promptVisibleIdentitySchema, validationActionId: promptVisibleIdentitySchema, expectedRevision: z.number().int().nonnegative(), executionPhase: z.literal("execute_write").optional(), startedAt: z.string().datetime(), expiresAt: z.string().datetime(), confirmation: surfaceConfirmationSchema }).strict(),
+  z.object({ contractVersion: z.literal("f8-ado-projection-v1"), sessionId: promptVisibleIdentitySchema, state: z.literal("write_outcome_unknown"), actionId: promptVisibleIdentitySchema, validationActionId: promptVisibleIdentitySchema, expectedRevision: z.number().int().nonnegative(), executionPhase: z.literal("readback"), previewIdentity: adoPreviewIdentitySchema, writeDispatchedAt: z.string().datetime(), confirmation: surfaceConfirmationSchema }).strict(),
+  z.object({ contractVersion: z.literal("f8-ado-projection-v1"), sessionId: promptVisibleIdentitySchema, state: z.literal("reconciled_absent"), actionId: promptVisibleIdentitySchema, writeActionId: promptVisibleIdentitySchema, validationActionId: promptVisibleIdentitySchema, expectedRevision: z.number().int().nonnegative(), executionPhase: z.literal("reconcile"), previewIdentity: adoPreviewIdentitySchema, confirmation: surfaceConfirmationSchema }).strict(),
+  z.object({ contractVersion: z.literal("f8-ado-projection-v1"), sessionId: promptVisibleIdentitySchema, state: z.literal("completed"), actionId: promptVisibleIdentitySchema, validationActionId: promptVisibleIdentitySchema, expectedRevision: z.number().int().nonnegative(), executionPhase: z.literal("reconcile").optional(), confirmation: surfaceConfirmationSchema, receipt: surfaceUpdateReceiptSchema }).strict(),
   z.object({ contractVersion: z.literal("f8-ado-projection-v1"), sessionId: promptVisibleIdentitySchema, state: z.enum(["blocked", "failed"]), actionId: promptVisibleIdentitySchema, expectedRevision: z.number().int().nonnegative(), reason: nonEmptyStringSchema }).strict(),
 ]);
 
@@ -789,6 +837,16 @@ export const hostActionRequestSchema = z.discriminatedUnion("kind", [
     validationActionId: nonEmptyStringSchema,
     confirmationHash: sha256Schema,
     expectedTargetVersion: nonEmptyStringSchema,
+    confirmation: surfaceConfirmationSchema,
+  }).strict(),
+  z.object({
+    ...hostActionRequestBaseSchema,
+    kind: z.literal("surface_reconcile"),
+    writeActionId: nonEmptyStringSchema,
+    validationActionId: nonEmptyStringSchema,
+    confirmationHash: sha256Schema,
+    expectedTargetVersion: nonEmptyStringSchema,
+    previewIdentity: adoPreviewIdentitySchema,
     confirmation: surfaceConfirmationSchema,
   }).strict(),
   z.object({
@@ -827,6 +885,17 @@ const hostActionResultPayloadSchema = z.discriminatedUnion("status", [
     outcome: z.union([
       z.object({ kind: z.literal("surface_validation"), confirmation: surfaceConfirmationSchema }).strict(),
       z.object({ kind: z.literal("surface_write"), receipt: surfaceUpdateReceiptSchema }).strict(),
+      z.object({
+        kind: z.literal("surface_reconcile"),
+        state: z.literal("matching"),
+        receipt: surfaceUpdateReceiptSchema,
+        observedCommentReference: promptVisibleIdentitySchema,
+        observedCommentVersion: promptVisibleIdentitySchema,
+      }).strict(),
+      z.object({
+        kind: z.literal("surface_reconcile"),
+        state: z.literal("absent"),
+      }).strict(),
       z.object({ kind: z.literal("model_response"), turnId: nonEmptyStringSchema, responseText: nonEmptyStringSchema }).strict(),
     ]).optional(),
   }).strict(),
@@ -995,8 +1064,8 @@ export const f8SessionSnapshotSchema = z
     priorRunReferences: z.array(f8PriorRunReferenceSchema),
     artifactRefs: z.array(f8ArtifactRefSchema).optional(),
     worksheetCapabilities: z.array(f8WorksheetCapabilitySchema).optional(),
-    initialScopeSelection: worksheetSelectionConfirmationSchema.optional(),
-    downstreamScopeSelection: worksheetSelectionConfirmationSchema.optional(),
+    initialScopeSelection: worksheetSelectionDecisionSchema.optional(),
+    downstreamScopeSelection: worksheetSelectionDecisionSchema.optional(),
     scenarioDrafts: z.array(z.lazy(() => f8ScenarioDraftSchema)).optional(),
   })
   .strict()

@@ -98,8 +98,8 @@ describe("WorksheetReview", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Source evidence focused: AJ_GAP!J15");
     fireEvent.click(screen.getByRole("button", { name: "cpk-v1" }));
     expect(screen.getByRole("status")).toHaveTextContent("Formula evidence: cpk-v1");
-    fireEvent.click(screen.getByRole("button", { name: /F0 Rule/ }));
-    expect(screen.getByRole("status")).toHaveTextContent("F0 rule evidence: performance-cpk-below-target");
+    fireEvent.click(screen.getByRole("button", { name: /Rule evidence/ }));
+    expect(screen.getByRole("status")).toHaveTextContent("Rule evidence: performance-cpk-below-target");
     fireEvent.click(screen.getByRole("button", { name: /Image Artifact/ }));
     expect(screen.getByRole("status")).toHaveTextContent("/api/sessions/session-review-1/artifacts/img-aj-gap");
 
@@ -111,7 +111,7 @@ describe("WorksheetReview", () => {
   it("shows F7 as unavailable without measured values", () => {
     render(<F7Placeholder status={{ status: "feature_not_available", lifecycle: "in_development" }} />);
 
-    expect(screen.getByText("F7 in development")).toBeVisible();
+    expect(screen.getByText("Measured feedback import unavailable")).toBeVisible();
     expect(screen.queryByText(/Measured Cpk/)).not.toBeInTheDocument();
   }, 15_000);
 });

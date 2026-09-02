@@ -11,17 +11,29 @@ import { DatabaseSync } from "node:sqlite";
 
 import { createConversationStore, type ConversationStore, type ConversationTurn } from "@ai-assist/conversation";
 import { drawingGovernanceResultV2Schema, f2UserReportSchema, f4WorkflowCalculationResultSchema, f8PublicSessionCommandSchema, f8SessionCommandSchema, f8SessionSnapshotSchema, worksheetSelectionPromptSchema, type F6OptimizationTargets, type F8ScenarioDraft, type F8WorksheetWhatIfCalculationRequest, type hostActionClaimSchema, type hostActionRequestSchema, type hostActionResultSchema } from "@ai-assist/contracts";
-import { acceptAttemptResult, canonicalSelectedWorksheetSetHash, createSessionStore, createToleranceTargetsPreview, openSessionStore, reduceSessionCommand, type F8SessionCommand, type F8SessionSnapshot, type ReviewContextIdentity, type ScenarioBaseline, type SessionArtifactReference, type SessionDeltaOperations } from "@ai-assist/workbench";
+import { acceptAttemptResult, canonicalSelectedWorksheetSetHash, createSessionStore, createTaWorkbookOrchestrator, createToleranceTargetsPreview, openSessionStore, reduceSessionCommand, type F8SessionCommand, type F8SessionSnapshot, type ReviewContextIdentity, type RuntimeSkillResult, type ScenarioBaseline, type SessionArtifactReference, type SessionDeltaOperations, type TaWorkbookOrchestrator } from "@ai-assist/workbench";
 import { createTypedError } from "@ai-assist/contracts";
 import { createHostActionStore, type HostActionRecord } from "@ai-assist/workbench";
-import { createF4WhatIfBaselineRequest, renderF3AdoMarkdown, runF1F2Confirmed, runF1F2Selection, runF3Analysis, runF4Calculation, runF4WhatIfCalculation, runF5Interpretation, runF6Optimization, validateF0Capabilities } from "@ai-assist/workflow-runners";
+import { createF4WhatIfBaselineRequest, renderF3AdoMarkdown, runF4WhatIfCalculation } from "@ai-assist/workflow-runners";
 import { readOoxmlWorkbook } from "@ai-assist/workbook-catalog";
 
 interface RunnerArtifactReference {
   readonly artifactId: string;
-  readonly kind: "f1_image" | "f3_report" | "f4_calculation" | "f4_report" | "f5_report" | "f6_optimization" | "f6_report";
+  readonly kind: "f1_image" | "f3_report" | "f4_calculation" | "f4_report" | "f5_report" | "f6_optimization" | "f6_report" | "engineering_summary_projection";
   readonly relativePath: string;
   readonly contentHash: string;
+}
+
+interface F1ScopeDiscoveryWarning {
+  readonly kind: "f1_scope_discovery_warning";
+  readonly status: "blocked" | "failed";
+  readonly code: "scope_discovery_unavailable";
+  readonly summary: string;
+}
+
+function classifyScopeDiscoveryWarningStatus(error: unknown): F1ScopeDiscoveryWarning["status"] {
+  const message = error instanceof Error ? error.message.toLowerCase() : "";
+  return message.includes(" failed:") ? "failed" : "blocked";
 }
 
 import { WorkbenchAuth, SESSION_COOKIE_NAME, type HostBearerOptions, type AuthenticatedRequest, type TestAuthentication } from "./auth.js";
@@ -33,6 +45,7 @@ import { conversationRoutes } from "./routes/conversation.js";
 import { filesRoutes } from "./routes/files.js";
 import { hostActionsRoutes } from "./routes/host-actions.js";
 import { adoRoutes } from "./routes/ado.js";
+import { productExportRoutes } from "./routes/product-export.js";
 import { sessionsRoutes } from "./routes/sessions.js";
 import { whatIfRoutes } from "./routes/what-if.js";
 import { createPersistentWorkerQueue, type PersistentWorkerQueue, type PersistentWorkerQueueOptions, type QueueSessionStore, type StageJob } from "./sqlite-worker-queue.js";
@@ -40,6 +53,7 @@ import { createSqliteEventSource, type SqliteEventSource } from "./sse.js";
 import { createAutoEntryDecision } from "./auto-entry.js";
 import { buildConversationContext, type ConversationContextSelection } from "./conversation-context.js";
 import { reviewContextFor, runProductionStage, type ProductionRoots } from "./production-stage-runner.js";
+import { createTaRuntimeSkillFacades } from "./ta-runtime-skill-facades.js";
 import { writeSessionRecord } from "./session-records.js";
 import { storeUpload } from "./uploads.js";
 
@@ -52,11 +66,13 @@ export interface StartWorkbenchServerOptions {
   readonly port?: number;
   readonly webAssetsRoot?: string;
   readonly skipWebAssets?: boolean;
+  readonly allowInternalFixtureAutoConfirmation?: boolean;
   readonly bootstrap?: BrowserBootstrapRendezvous;
   readonly runner?: (job: StageJob) => Promise<unknown>;
   readonly queueFactory?: (options: PersistentWorkerQueueOptions) => Promise<PersistentWorkerQueue>;
   readonly whatIfService?: WhatIfService;
   readonly surfacePrepareService?: SurfacePrepareService;
+  readonly orchestrator?: TaWorkbookOrchestrator;
   readonly resumeSessionId?: string;
 }
 
@@ -174,7 +190,16 @@ export async function buildWorkbenchServer(options: StartWorkbenchServerOptions)
   await mkdir(options.rootDir, { recursive: true });
 
   const auth = new WorkbenchAuth(loadOrCreateAuthKey(options.rootDir));
-  const context = await createWorkbenchServerContext(options.rootDir, auth, options.runner, options.queueFactory, options.whatIfService, options.surfacePrepareService);
+  const context = await createWorkbenchServerContext(
+    options.rootDir,
+    auth,
+    options.runner,
+    options.queueFactory,
+    options.whatIfService,
+    options.surfacePrepareService,
+    options.orchestrator,
+    options.allowInternalFixtureAutoConfirmation === true,
+  );
   const app = Fastify({ logger: false, bodyLimit: 1024 * 1024 }) as unknown as WorkbenchServer;
   const bootstrap = options.bootstrap ?? createBrowserBootstrapRendezvous();
 
@@ -247,6 +272,7 @@ export async function buildWorkbenchServer(options: StartWorkbenchServerOptions)
   await app.register(conversationRoutes, { context });
   await app.register(hostActionsRoutes, { context });
   await app.register(adoRoutes, { context });
+  await app.register(productExportRoutes, { context });
   await app.register(artifactsRoutes, { context });
   await app.register(whatIfRoutes, { context });
   app.addHook("onClose", async () => {
@@ -267,16 +293,17 @@ export async function startWorkbenchServer(options: StartWorkbenchServerOptions)
   return { server, url: `http://${LOOPBACK_HOST}:${port}/${sessionQuery}#bootstrap=${bootstrapNonce}`, bootstrapNonce };
 }
 
-async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth, runner: StartWorkbenchServerOptions["runner"], queueFactory: StartWorkbenchServerOptions["queueFactory"], whatIfService: WhatIfService | undefined, surfacePrepareService: SurfacePrepareService | undefined): Promise<WorkbenchServerContext> {
+async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth, runner: StartWorkbenchServerOptions["runner"], queueFactory: StartWorkbenchServerOptions["queueFactory"], whatIfService: WhatIfService | undefined, surfacePrepareService: SurfacePrepareService | undefined, orchestratorOverride: TaWorkbookOrchestrator | undefined, allowInternalFixtureAutoConfirmation: boolean): Promise<WorkbenchServerContext> {
   const sessions = new StoreBackedSessionRegistry(rootDir);
   const artifacts = new FileBackedArtifactRegistry(rootDir);
   const events = await createSqliteEventSource({ rootDir });
+  const orchestrator = orchestratorOverride ?? createTaWorkbookOrchestrator(createTaRuntimeSkillFacades());
   const effectiveWhatIfService = whatIfService ?? createDefaultWhatIfService(rootDir);
-  const queueSessionStore = new StoreBackedQueueSessionStore(rootDir, sessions);
+  const queueSessionStore = new StoreBackedQueueSessionStore(rootDir, sessions, allowInternalFixtureAutoConfirmation);
   const queueOptions = {
     rootDir: join(rootDir, "runtime", "workbench"),
     sessionStore: queueSessionStore,
-    worker: runner ?? createDefaultStageRunner(rootDir, sessions, artifacts, events),
+    worker: runner ?? createDefaultStageRunner(rootDir, sessions, artifacts, events, orchestrator),
   } satisfies PersistentWorkerQueueOptions;
   const queue = await (queueFactory ?? createPersistentWorkerQueue)(queueOptions);
   const inflightHostImports = new Map<string, Promise<HostWorkbookImportReceipt>>();
@@ -735,12 +762,12 @@ class FileBackedArtifactRegistry implements ArtifactRegistry {
   }
 }
 
-function createDefaultStageRunner(rootDir: string, sessions: SessionRegistry, artifacts: ArtifactRegistry, events: EventSource): (job: StageJob) => Promise<unknown> {
+function createDefaultStageRunner(rootDir: string, sessions: SessionRegistry, artifacts: ArtifactRegistry, events: EventSource, orchestrator: TaWorkbookOrchestrator): (job: StageJob) => Promise<unknown> {
   return async (job) => {
     const sessionId = readSessionId(job.payload);
     if (sessionId === undefined) throw new Error("Stage job has no session identity.");
     try {
-      return await runDefaultStage(rootDir, sessions, artifacts, events, job, sessionId);
+      return await runDefaultStage(rootDir, sessions, artifacts, events, job, sessionId, orchestrator);
     } catch (error) {
       const typed = error as { readonly code?: unknown; readonly summary?: unknown; readonly affectedInputReferences?: unknown };
       writeRegistry(rootDir, "runner-errors", sessionId, {
@@ -756,7 +783,7 @@ function createDefaultStageRunner(rootDir: string, sessions: SessionRegistry, ar
   };
 }
 
-async function runDefaultStage(rootDir: string, sessions: SessionRegistry, artifacts: ArtifactRegistry, events: EventSource, job: StageJob, sessionId: string): Promise<unknown> {
+async function runDefaultStage(rootDir: string, sessions: SessionRegistry, artifacts: ArtifactRegistry, events: EventSource, job: StageJob, sessionId: string, orchestrator: TaWorkbookOrchestrator): Promise<unknown> {
     const binding = readRegistry<{ readonly artifactId: string }>(rootDir, "active-workbooks", sessionId);
     const artifact = binding === undefined ? undefined : artifacts.read(sessionId, binding.artifactId);
     if (["f0_validating", "f1_f2_running"].includes(job.stage) && (binding === undefined || artifact === undefined)) {
@@ -768,29 +795,65 @@ async function runDefaultStage(rootDir: string, sessions: SessionRegistry, artif
       repositoryRoot: process.cwd(),
       managedOutputRoot: join(rootDir, "runtime", "workbench", "runner-output", sessionId),
       signal: new AbortController().signal,
-      emit: (event: { readonly kind: string; readonly featureId: string; readonly stage: string; readonly timestamp: string }) => {
+      emit: (event: { readonly kind: string; readonly featureId: string; readonly stage: string; readonly timestamp: string; readonly status?: "blocked" | "failed"; readonly code?: string; readonly summary?: string }) => {
         try {
-          events.publish(sessionId, "runner_progress", { kind: event.kind, featureId: event.featureId, stage: event.stage, timestamp: event.timestamp });
+          events.publish(sessionId, "runner_progress", {
+            kind: event.kind,
+            featureId: event.featureId,
+            stage: event.stage,
+            timestamp: event.timestamp,
+            ...(event.status === undefined ? {} : { status: event.status }),
+            ...(event.code === undefined ? {} : { code: event.code }),
+            ...(event.summary === undefined ? {} : { summary: event.summary }),
+          });
         } catch {
           // Progress is observational and must never fail governed analysis.
         }
       },
     };
     if (job.stage === "f0_validating") {
-      const f0 = validateF0Capabilities(context);
+      const snapshot = await sessions.read(sessionId);
+      const f0 = requireRuntimeSkillOutput(await orchestrator.runStage("f0_validating", {
+        inputRevision: snapshot?.inputRevision ?? 0,
+        idempotencyKey: `${job.attemptId}:f0_validating`,
+        artifactReferences: [],
+        input: { context },
+      }), "knowledge-and-rules-validation-v1") as { readonly featureId: string; readonly status: string; readonly versions: readonly string[] };
       const workbook = readOoxmlWorkbook(new Uint8Array(readFileSync(workbookPath)), undefined, false, { maxRow: 100, maxColumn: "AZ" });
-      let selection: ReturnType<typeof runF1F2Selection> | undefined;
+      let selection: { readonly selectionReference: unknown; readonly prompt: unknown } | undefined;
+      let scopeDiscoveryWarning: F1ScopeDiscoveryWarning | undefined;
       try {
-        selection = runF1F2Selection({ workbookPath }, context);
+        selection = requireRuntimeSkillOutput(await orchestrator.runWorkbookScopeDiscovery({
+          inputRevision: snapshot?.inputRevision ?? 0,
+          idempotencyKey: `${job.attemptId}:f1-scope-discovery`,
+          artifactReferences: [],
+          input: { request: { workbookPath }, context },
+        }), "workbook-scope-discovery-v1") as { readonly selectionReference: unknown; readonly prompt: unknown };
         writeRegistry(rootDir, "f1-f2-selection", sessionId, selection.selectionReference);
-      } catch {
+      } catch (error) {
         selection = undefined;
+        scopeDiscoveryWarning = {
+          kind: "f1_scope_discovery_warning",
+          status: classifyScopeDiscoveryWarningStatus(error),
+          code: "scope_discovery_unavailable",
+          summary: error instanceof Error ? error.message : "Workbook scope discovery is unavailable.",
+        };
+        context.emit({
+          kind: "stage_warning",
+          featureId: "F1",
+          stage: "scope_discovery",
+          timestamp: new Date().toISOString(),
+          status: scopeDiscoveryWarning.status,
+          code: scopeDiscoveryWarning.code,
+          summary: scopeDiscoveryWarning.summary,
+        });
       }
       return {
         featureId: f0.featureId,
         status: f0.status,
         versions: f0.versions,
         worksheetCapabilities: workbook.worksheetInventory.map((worksheet) => ({ worksheetName: worksheet.worksheetName, whatIfAvailable: false })),
+        ...(scopeDiscoveryWarning === undefined ? {} : { scopeDiscoveryWarning }),
         ...(selection === undefined ? {} : { selectionPrompt: selection.prompt }),
       };
     }
@@ -799,17 +862,26 @@ async function runDefaultStage(rootDir: string, sessions: SessionRegistry, artif
       if (snapshot?.initialScopeSelection === undefined) {
         throw createTypedError({ code: "evidence_mismatch", summary: "The confirmed worksheet selection is unavailable.", suggestedAction: "Upload the workbook and confirm the initial worksheet scope again.", affectedInputReferences: [sessionId] });
       }
-      const selectionReference = readRegistry<Parameters<typeof runF1F2Confirmed>[0]["selectionReference"]>(rootDir, "f1-f2-selection", sessionId);
+      const selectionReference = readRegistry(rootDir, "f1-f2-selection", sessionId);
       if (selectionReference === undefined) {
         throw createTypedError({ code: "evidence_mismatch", summary: "The governed worksheet selection reference is unavailable.", suggestedAction: "Upload the workbook and prepare the TA workspace again.", affectedInputReferences: [sessionId] });
       }
-      const result = runF1F2Confirmed({
-        workbookPath,
-        workbookContentHash: snapshot.initialScopeSelection.workbookContentHash,
-        selectedWorksheetNames: snapshot.initialScopeSelection.selectedWorksheetNames,
-        selectionReference,
-        refreshF2: snapshot.priorRunReferences.some((reference) => reference.featureId === "F2"),
-      }, context);
+      const result = requireRuntimeSkillOutput(await orchestrator.runStage("f1_f2_running", {
+        inputRevision: snapshot.inputRevision,
+        idempotencyKey: `${job.attemptId}:f1_f2_running`,
+        artifactReferences: [],
+        worksheetScope: snapshot.initialScopeSelection,
+        input: {
+          request: {
+            workbookPath,
+            workbookContentHash: snapshot.initialScopeSelection.workbookContentHash,
+            selectedWorksheetNames: snapshot.initialScopeSelection.selectedWorksheetNames,
+            selectionReference,
+            refreshF2: snapshot.priorRunReferences.some((reference) => reference.featureId === "F2"),
+          },
+          context,
+        },
+      }), "workbook-analysis-assets-v1") as { readonly f1Root: string; readonly f2Root: string };
       writeRegistry(rootDir, "production-roots", sessionId, { f1Root: result.f1Root, f2Root: result.f2Root });
       return JSON.parse(JSON.stringify(result)) as unknown;
     }
@@ -819,7 +891,7 @@ async function runDefaultStage(rootDir: string, sessions: SessionRegistry, artif
       const baselineRunReference = snapshot?.priorRunReferences.findLast((reference) => reference.featureId === "F2" && typeof reference.runReference === "string")?.runReference;
       if (snapshot === undefined || roots === undefined || baselineRunReference === undefined) throw createTypedError({ code: "evidence_mismatch", summary: "Production stage lineage is unavailable.", suggestedAction: "Prepare the workbook again.", affectedInputReferences: [sessionId, job.stage] });
       const reviewContext = reviewContextFor(snapshot, baselineRunReference);
-      const execution = await runProductionStage(job.stage, { repositoryRoot: process.cwd(), serverRoot: rootDir, sessionId, workbookPath, snapshot, roots, context, baselineRunReference, ...(reviewContext === undefined ? {} : { reviewContext }) });
+      const execution = await runProductionStage(job.stage, { repositoryRoot: process.cwd(), serverRoot: rootDir, sessionId, workbookPath, snapshot, roots, context, baselineRunReference, ...(reviewContext === undefined ? {} : { reviewContext }) }, orchestrator);
       writeRegistry(rootDir, "production-roots", sessionId, execution.roots);
       return JSON.parse(JSON.stringify(execution.result)) as unknown;
     }
@@ -924,6 +996,7 @@ async function createDefaultSurfacePrepareRequest(
   snapshot: F8SessionSnapshot,
   command: F8SessionCommand,
 ): Promise<Extract<HostActionRequest, { kind: "surface_validate" }>["prepareRequest"]> {
+  ensureProductExportEligibleDownstreamScope(snapshot, "Surface validation requires user-confirmed downstream worksheet scope.");
   const f3References = snapshot.artifactRefs?.filter((reference) => reference.kind === "f3_report" && reference.revision === snapshot.inputRevision && reference.validated) ?? [];
   if (f3References.length !== 1) throw reviewContextMismatch(snapshot, "Surface validation requires one current validated F3 report.");
   const report = drawingGovernanceResultV2Schema.parse(await readSessionArtifactJson(rootDir, snapshot.sessionId, f3References[0]!.artifactId));
@@ -940,6 +1013,7 @@ async function createAdoPreview(
   snapshot: F8SessionSnapshot,
   prepareRequest: Extract<HostActionRequest, { kind: "surface_validate" }>["prepareRequest"],
 ): Promise<AdoPreviewIdentity> {
+  ensureProductExportEligibleDownstreamScope(snapshot, "ADO preview requires user-confirmed downstream worksheet scope.");
   const f3References = snapshot.artifactRefs?.filter((reference) => reference.kind === "f3_report" && reference.revision === snapshot.inputRevision && reference.validated) ?? [];
   if (f3References.length !== 1) throw reviewContextMismatch(snapshot, "ADO preview requires one current validated F3 report.");
   const report = drawingGovernanceResultV2Schema.parse(await readSessionArtifactJson(rootDir, snapshot.sessionId, f3References[0]!.artifactId));
@@ -1016,9 +1090,23 @@ function writeRegistry(rootDir: string, registry: string, sessionId: string, val
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   const target = join(directory, `${sessionId}.json`);
   const temporary = `${target}.${randomUUID()}.tmp`;
+  const sleep = (milliseconds: number) => {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+  };
   try {
     writeFileSync(temporary, JSON.stringify(value), { encoding: "utf8", mode: 0o600, flag: "wx" });
-    renameSync(temporary, target);
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        renameSync(temporary, target);
+        break;
+      } catch (error) {
+        const code = typeof error === "object" && error !== null && "code" in error ? (error as { readonly code?: unknown }).code : undefined;
+        if ((code !== "EPERM" && code !== "EBUSY") || attempt >= 4) {
+          throw error;
+        }
+        sleep(10 * (attempt + 1));
+      }
+    }
   } finally {
     rmSync(temporary, { force: true });
   }
@@ -1027,7 +1115,11 @@ function writeRegistry(rootDir: string, registry: string, sessionId: string, val
 class StoreBackedQueueSessionStore implements QueueSessionStore {
   private followUp: ((snapshot: F8SessionSnapshot) => Promise<void>) | undefined;
 
-  constructor(private readonly rootDir: string, private readonly sessions: SessionRegistry) {}
+  constructor(
+    private readonly rootDir: string,
+    private readonly sessions: SessionRegistry,
+    private readonly allowInternalFixtureAutoConfirmation: boolean,
+  ) {}
 
   setFollowUp(followUp: (snapshot: F8SessionSnapshot) => Promise<void>): void {
     this.followUp = followUp;
@@ -1095,6 +1187,7 @@ class StoreBackedQueueSessionStore implements QueueSessionStore {
   }
 
   private async applyAutoEntry(snapshot: F8SessionSnapshot, result: unknown, completedAttemptId: string): Promise<void> {
+    if (!this.allowInternalFixtureAutoConfirmation) return;
     if (snapshot.state !== "initial_scope_required") return;
     const selectionPrompt = typeof result === "object" && result !== null && "selectionPrompt" in result ? result.selectionPrompt : undefined;
     const parsed = worksheetSelectionPromptSchema.safeParse(selectionPrompt);
@@ -1107,19 +1200,20 @@ class StoreBackedQueueSessionStore implements QueueSessionStore {
       commandId: `${completedAttemptId}:auto-scope`,
       expectedRevision: snapshot.revision,
       command: "auto_confirm_initial_scope",
-      payload: { workbookHash: decision.workbookHash, worksheetNames: [...decision.worksheetNames] },
+      payload: { workbookHash: decision.workbookHash, worksheetNames: [...decision.worksheetNames], provenance: "internal_fixture" },
     });
     await this.followUp?.(next);
   }
 
   private async applyAutoDownstream(snapshot: F8SessionSnapshot, result: unknown, completedAttemptId: string): Promise<void> {
+    if (!this.allowInternalFixtureAutoConfirmation) return;
     if (snapshot.state !== "downstream_scope_required") return;
     const candidate = result as { readonly report?: unknown };
     const report = f2UserReportSchema.safeParse(candidate.report);
     if (!report.success || report.data.status === "inputRejected") return;
     const worksheetNames = report.data.worksheets.filter(({ status }) => status === "ready").map(({ worksheetName }) => worksheetName);
     if (worksheetNames.length === 0 || snapshot.initialScopeSelection === undefined) return;
-    const next = await this.sessions.applyCommand({ contractVersion: "f8-session-command-v1", sessionId: snapshot.sessionId, commandId: `${completedAttemptId}:auto-downstream`, expectedRevision: snapshot.revision, command: "confirm_downstream_scope", payload: { workbookHash: snapshot.initialScopeSelection.workbookContentHash, worksheetNames } });
+    const next = await this.sessions.applyCommand({ contractVersion: "f8-session-command-v1", sessionId: snapshot.sessionId, commandId: `${completedAttemptId}:auto-downstream`, expectedRevision: snapshot.revision, command: "confirm_downstream_scope", payload: { workbookHash: snapshot.initialScopeSelection.workbookContentHash, worksheetNames, provenance: "internal_fixture" } });
     await this.followUp?.(next);
   }
 
@@ -1285,6 +1379,9 @@ async function artifactReferenceOpsFromRunnerResult(
   if (scope?.confirmed !== true) {
     throw reviewContextMismatch(snapshot, "Runner review context does not match the current session lineage.");
   }
+  if (!isUserSelectionProvenance(scope.provenance)) {
+    throw reviewContextMismatch(snapshot, "Runner review context requires user-confirmed downstream worksheet scope.");
+  }
   const expectedFromSession: ReviewContextIdentity = {
     workbookHash: scope.workbookContentHash,
     downstreamSelectionHash: canonicalSelectedWorksheetSetHash(scope.selectedWorksheetNames),
@@ -1321,6 +1418,7 @@ async function artifactReferenceOpsFromRunnerResult(
       relativePath: artifact.relativePath,
       contentHash: artifact.contentHash,
       reviewContext,
+      ...(artifact.kind === "engineering_summary_projection" ? { metadata: { reviewContext } } : {}),
     })),
   };
 }
@@ -1332,6 +1430,17 @@ function reviewContextMismatch(snapshot: F8SessionSnapshot, summary: string): Er
     suggestedAction: "Rerun the stage using the current workbook, worksheet selection, and F2 baseline.",
     affectedInputReferences: [snapshot.activeAttempt?.attemptId ?? snapshot.sessionId],
   });
+}
+
+function ensureProductExportEligibleDownstreamScope(snapshot: F8SessionSnapshot, summary: string): void {
+  const selection = snapshot.downstreamScopeSelection;
+  if (selection?.confirmed !== true || !isUserSelectionProvenance(selection.provenance)) {
+    throw reviewContextMismatch(snapshot, summary);
+  }
+}
+
+function isUserSelectionProvenance(provenance: unknown): provenance is "user" {
+  return provenance === "user";
 }
 
 function validatedF2BaselineReference(snapshot: F8SessionSnapshot): string {
@@ -1425,4 +1534,35 @@ function compactScenarioFactorOverride(override: F8WorksheetWhatIfCalculationReq
 
 function compactScenarioSystemOverride(override: NonNullable<F8WorksheetWhatIfCalculationRequest["systemSpecification"]>) {
   return { ...(override.lowerSpecLimit === undefined ? {} : { lowerSpecLimit: override.lowerSpecLimit }), ...(override.upperSpecLimit === undefined ? {} : { upperSpecLimit: override.upperSpecLimit }), ...(override.additionalMeanShift === undefined ? {} : { additionalMeanShift: override.additionalMeanShift }) };
+}
+
+function requireRuntimeSkillOutput<Output>(result: RuntimeSkillResult<Output>, skillId: string): Output {
+  if (result.status === "failed") {
+    if (result.error instanceof Error) {
+      throw result.error;
+    }
+    throw createTypedError({
+      code: "dependency_error",
+      summary: `${skillId} failed: ${result.summary ?? result.reasonCode ?? "unknown"}`,
+      suggestedAction: `Retry ${skillId} with governed inputs.`,
+      affectedInputReferences: [skillId],
+    });
+  }
+  if (result.status === "blocked") {
+    throw createTypedError({
+      code: "dependency_error",
+      summary: `${skillId} blocked: ${result.summary ?? result.reasonCode ?? "unknown"}`,
+      suggestedAction: `Resolve ${skillId} prerequisites and retry.`,
+      affectedInputReferences: [skillId],
+    });
+  }
+  if (result.output === undefined) {
+    throw createTypedError({
+      code: "dependency_error",
+      summary: `${skillId} returned no output.`,
+      suggestedAction: `Retry ${skillId} and verify output generation.`,
+      affectedInputReferences: [skillId],
+    });
+  }
+  return result.output;
 }

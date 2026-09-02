@@ -14,9 +14,10 @@ import { handleParticipant } from "./participant.js";
 import { launchNewWorkbench, launchWorkbench, resumeWorkbench, type WorkbenchProcessLauncher } from "./workbench-launcher.js";
 import { importWorkbook } from "./workbook-import.js";
 import type { TaAnalyzeIntent } from "./analyze-intent.js";
-import { createSurfaceHostClient } from "./surface-host-client.js";
+import { createSurfaceHostClient, reconcileSurfaceWrite } from "./surface-host-client.js";
 import { pumpOneHostAction, type ClaimedHostAction } from "./host-action-pump.js";
 import { executeSurfaceValidation } from "./surface-validation.js";
+import { resolveWorkspaceWorkbook } from "./workspace-workbook-resolver.js";
 
 let activeSessionId: string | undefined;
 let activeWorkbenchUrl: string | undefined;
@@ -30,7 +31,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   status.command = "ta-assist.workbench";
   status.show();
   context.subscriptions.push(status);
-  const processLauncher = createCliProcessLauncher(workspaceRoot);
+  const cliUri = vscode.Uri.joinPath(context.extensionUri, "runtime", "cli", "index.cjs");
+  const processLauncher = createCliProcessLauncher(workspaceRoot, cliUri.fsPath);
   context.subscriptions.push({ dispose: () => processLauncher.dispose() });
   const conversation = await createConversationStore({ rootDir: join(workspaceRoot, "runtime", "workbench") });
   context.subscriptions.push({ dispose: () => { void conversation.close(); } });
@@ -66,6 +68,36 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (claim.request.kind === "surface_write") {
           const receipt = await (await import("@ai-assist/adapters")).createSurfaceMcpDrawingGovernanceAdapter(surface).execute(claim.request.confirmation);
           return { status: "completed", outcome: { kind: "surface_write", receipt } };
+        }
+        if (claim.request.kind === "surface_reconcile") {
+          const reconciliation = await reconcileSurfaceWrite(surface, {
+            workItemReference: claim.request.confirmation.workItemReference,
+            previewMarker: claim.request.previewIdentity.previewMarker,
+            previewHash: claim.request.previewIdentity.previewHash,
+            expectedTarget: claim.request.previewIdentity.targetIdentity,
+          });
+          if (reconciliation.state === "completed") {
+            return {
+              status: "completed",
+              outcome: {
+                kind: "surface_reconcile",
+                state: "matching",
+                receipt: {
+                  status: "updated",
+                  workItemReference: claim.request.confirmation.workItemReference,
+                  commentReference: reconciliation.observedCommentReference,
+                  version: reconciliation.observedCommentVersion,
+                  contentHash: claim.request.previewIdentity.previewHash,
+                },
+                observedCommentReference: reconciliation.observedCommentReference,
+                observedCommentVersion: reconciliation.observedCommentVersion,
+              },
+            };
+          }
+          if (reconciliation.state === "absent") {
+            return { status: "completed", outcome: { kind: "surface_reconcile", state: "absent" } };
+          }
+          return { status: "blocked", reason: reconciliation.reason };
         }
         if (claim.request.kind === "vscode_model_request") {
           const models = await vscode.lm.selectChatModels();
@@ -110,9 +142,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   };
   const handleAnalyzeIntent = async (intent: TaAnalyzeIntent): Promise<string> => {
     const launched = await bindNewSession();
-    if (intent.workbookPath === undefined) return "TA Assist Workbench is ready. Upload a workbook to begin.";
+    const resolvedWorkbookPath = await resolveAnalyzeWorkbookPath(intent);
+    if (resolvedWorkbookPath === undefined) return "TA Assist Workbench is ready. Upload a workbook to begin.";
     try {
-      await importWorkbook({ sessionId: launched.sessionId, workbookPath: intent.workbookPath }, processLauncher);
+      await importWorkbook({ sessionId: launched.sessionId, workbookPath: resolvedWorkbookPath }, processLauncher);
       return `Workbook accepted. Session ${launched.sessionId} is running in TA Assist Workbench.`;
     } catch (error) {
       return formatWorkbookImportFailure(error);
@@ -201,6 +234,30 @@ function isLoopbackWorkbenchUrl(value: string): boolean {
 
 export function deactivate(): void {}
 
+async function resolveAnalyzeWorkbookPath(intent: TaAnalyzeIntent): Promise<string | undefined> {
+  if (intent.workbookPath !== undefined) return intent.workbookPath;
+  if (intent.workbookFileName === undefined) return undefined;
+
+  const resolution = await resolveWorkspaceWorkbook(intent.workbookFileName, (pattern) => vscode.workspace.findFiles(pattern));
+  if (resolution.kind === "unique") return resolution.uri.fsPath;
+  if (resolution.kind === "ambiguous") {
+    const picked = await vscode.window.showQuickPick(resolution.candidates.map((candidate) => ({ label: candidate.fsPath, uri: candidate })), {
+      title: `Select workbook for ${intent.workbookFileName}`,
+      ignoreFocusOut: true,
+      canPickMany: false,
+    });
+    return picked?.uri.fsPath;
+  }
+
+  const selected = await vscode.window.showOpenDialog({
+    canSelectMany: false,
+    openLabel: "Select Workbook",
+    title: `Workbook ${intent.workbookFileName} was not found. Select one workbook to continue`,
+    filters: { "Excel Workbook": ["xlsx"] },
+  });
+  return selected?.[0]?.fsPath;
+}
+
 function formatWorkbookImportFailure(error: unknown): string {
   const typed = error as { readonly summary?: unknown; readonly suggestedAction?: unknown };
   const summary = safeChatFailureText(typed.summary, "Workbook import failed.");
@@ -219,7 +276,7 @@ function trimTerminalPeriod(value: string): string {
   return value.trim().replace(/[.。]+$/u, "");
 }
 
-function createCliProcessLauncher(workspaceRoot: string): WorkbenchProcessLauncher & { dispose(): void } {
+function createCliProcessLauncher(workspaceRoot: string, cliPath: string): WorkbenchProcessLauncher & { dispose(): void } {
   let child: ChildProcess | undefined;
   let origin: string | undefined;
   const children = new Set<ChildProcess>();
@@ -231,7 +288,6 @@ function createCliProcessLauncher(workspaceRoot: string): WorkbenchProcessLaunch
         const url = action === "resume" && requestedSession !== undefined ? `${origin}/?session=${encodeURIComponent(requestedSession)}` : origin;
         return { ...(requestedSession === undefined ? {} : { sessionId: requestedSession }), url };
       }
-      const cliPath = join(workspaceRoot, "apps", "cli", "dist", "index.js");
       const started = await startCliHost(process.execPath, [cliPath, ...args], workspaceRoot);
       child = started.child;
       children.add(child);
@@ -321,12 +377,12 @@ async function hostRequest<Result>(originValue: string, sessionId: string, actio
   return (response.status === 204 ? undefined : await response.json()) as Result;
 }
 
-async function readPendingHostAction(originValue: string, sessionId: string, bearer: string): Promise<{ readonly actionId: string; readonly kind: "surface_validate" | "surface_write" | "vscode_model_request" } | undefined> {
+async function readPendingHostAction(originValue: string, sessionId: string, bearer: string): Promise<{ readonly actionId: string; readonly kind: "surface_validate" | "surface_write" | "surface_reconcile" | "vscode_model_request" } | undefined> {
   const origin = new URL(originValue).origin;
   const response = await fetch(`${origin}/api/sessions/${encodeURIComponent(sessionId)}/ado/pending`, { headers: { authorization: `Bearer ${bearer}` } });
   if (response.status === 204) return undefined;
   if (!response.ok) throw new Error(`Pending ADO HostAction discovery was rejected (${response.status}).`);
-  return await response.json() as { readonly actionId: string; readonly kind: "surface_validate" | "surface_write" | "vscode_model_request" };
+  return await response.json() as { readonly actionId: string; readonly kind: "surface_validate" | "surface_write" | "surface_reconcile" | "vscode_model_request" };
 }
 
 function outputUrl(stdout: string): string {

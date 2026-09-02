@@ -44,6 +44,45 @@ describe("pumpOneHostAction", () => {
     expect(submit).toHaveBeenCalledOnce();
   });
 
+  it("supports a typed surface_reconcile action and submits its terminal result", async () => {
+    const confirmation = { status: "confirmation_required" as const, workItemReference: "https://dev.azure.com/MSFTDEVICES/Project%20A/_workitems/edit/42", ownerReference: "owner", commentReference: "C0", expectedVersion: "1", beforeContentHash: "b".repeat(64), nextContent: "next", factorCount: 1, confirmationHash: "a".repeat(64), diff: [{ before: "before", after: "next", changed: true }] };
+    const request = {
+      contractVersion: "f8-host-action-request-v1" as const,
+      actionId: "reconcile-a",
+      sessionId: SESSION_ID,
+      expectedRevision: 2,
+      expiresAt: "2026-08-25T01:00:00.000Z",
+      kind: "surface_reconcile" as const,
+      writeActionId: "write-a",
+      validationActionId: "validate-a",
+      confirmationHash: confirmation.confirmationHash,
+      expectedTargetVersion: "ado-decision-v1",
+      previewIdentity: {
+        targetIdentity: { organization: "MSFTDEVICES", project: "Project A", workItemId: 42 },
+        previewHash: "c".repeat(64),
+        previewMarker: "preview-marker:ado:session-1:3",
+      },
+      confirmation,
+    };
+    const execute = vi.fn(async () => ({
+      status: "completed" as const,
+      outcome: {
+        kind: "surface_reconcile" as const,
+        state: "absent" as const,
+      },
+    }));
+    const submit = vi.fn(async () => undefined);
+
+    await expect(
+      pumpOneHostAction(
+        { sessionId: SESSION_ID, actionId: request.actionId },
+        { hostInstanceId: "vscode-host", claim: async () => ({ actionId: request.actionId, request, hostInstanceId: "vscode-host", leaseId: "lease-reconcile" }), execute, submit },
+      ),
+    ).resolves.toBe("submitted");
+    expect(execute).toHaveBeenCalledOnce();
+    expect(submit).toHaveBeenCalledOnce();
+  });
+
   it("fails closed when a Surface action target version does not match the supported ADO contract", async () => {
     const execute = vi.fn();
     await expect(pumpOneHostAction({ sessionId: SESSION_ID, actionId: "action-c" }, {

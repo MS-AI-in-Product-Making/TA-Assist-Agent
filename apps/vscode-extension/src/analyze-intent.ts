@@ -1,6 +1,7 @@
 export interface TaAnalyzeIntent {
   readonly kind: "analyze_ta";
   readonly workbookPath?: string;
+  readonly workbookFileName?: string;
 }
 
 export type TaAnalyzeIntentClassification = TaAnalyzeIntent | {
@@ -15,6 +16,7 @@ const ANALYZE_CONTEXT = /(\bta\b|报告|報告|\breport\b|\bworkbook\b|\.xlsx\b)
 const URL_PATTERN = /(?:file|https?):\/\//i;
 const RELATIVE_XLSX_PATTERN = /(^|[\s"'])(?:\.\.?\\)[^"\r\n]*\.xlsx\b/i;
 const CONTROL_CHAR_PATTERN = /[\u0000-\u001f\u007f]/;
+const SESSION_FIRST_INTENT_PATTERN = /(继续|resume|continue|当前\s*session|current[-\s]*session|status|状态|进度|blocker|阻塞|卡住)/i;
 
 export function parseAnalyzeIntent(text: string): TaAnalyzeIntent | undefined {
   const classification = classifyAnalyzeIntent(text);
@@ -29,16 +31,29 @@ export function classifyAnalyzeIntent(text: string): TaAnalyzeIntentClassificati
 
   const absolutePathMatches = collectWindowsAbsolutePaths(text);
   const absolutePaths = absolutePathMatches.map(({ path }) => path);
-  if (absolutePaths.length > 1) return { kind: "invalid_analyze_ta", reason: "multiple_paths" };
   const nonAbsoluteXlsxTokens = collectNonAbsoluteXlsxTokens(text, absolutePathMatches);
-  if (nonAbsoluteXlsxTokens.length > 0) {
+  const workbookFileNames = collectWorkbookFileNames(nonAbsoluteXlsxTokens);
+  const nonWorkbookFileNameTokens = nonAbsoluteXlsxTokens.filter((token) => !workbookFileNames.includes(token));
+
+  if (SESSION_FIRST_INTENT_PATTERN.test(text) && nonWorkbookFileNameTokens.length === 0 && absolutePaths.length + workbookFileNames.length <= 1) {
+    return undefined;
+  }
+
+  if (nonWorkbookFileNameTokens.length > 0) {
     return { kind: "invalid_analyze_ta", reason: absolutePaths.length === 1 ? "multiple_paths" : "relative_path" };
   }
+
+  if (absolutePaths.length + workbookFileNames.length > 1) return { kind: "invalid_analyze_ta", reason: "multiple_paths" };
+
   if (absolutePaths.length === 1) {
     const workbookPath = absolutePaths[0]!;
     return workbookPath.toLowerCase().endsWith(".xlsx")
       ? { kind: "analyze_ta", workbookPath }
       : { kind: "invalid_analyze_ta", reason: "non_xlsx_path" };
+  }
+
+  if (workbookFileNames.length === 1) {
+    return { kind: "analyze_ta", workbookFileName: workbookFileNames[0]! };
   }
 
   return { kind: "analyze_ta" };
@@ -99,6 +114,21 @@ function collectNonAbsoluteXlsxTokens(text: string, absolutePathMatches: readonl
   }
 
   return [...tokens];
+}
+
+function collectWorkbookFileNames(tokens: readonly string[]): string[] {
+  const fileNames = new Set<string>();
+  for (const token of tokens) {
+    if (isExactWorkbookFileName(token)) fileNames.add(token);
+  }
+  return [...fileNames];
+}
+
+function isExactWorkbookFileName(token: string): boolean {
+  if (!token.toLowerCase().endsWith(".xlsx")) return false;
+  if (token.includes("\\") || token.includes("/") || token.includes(":")) return false;
+  if (token.length <= ".xlsx".length) return false;
+  return !/[<>:"|?*\u0000-\u001f]/.test(token);
 }
 
 function readBareAbsolutePath(text: string, start: number): string | undefined {

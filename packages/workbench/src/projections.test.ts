@@ -7,6 +7,10 @@ const SESSION_ID = "session-task-4-projections";
 type WorkbenchExports = typeof import("./index.js") & {
   projectActionQueue?: (snapshot: SessionSnapshot) => ActionQueueItem[];
   projectFeatureLedger?: (snapshot: SessionSnapshot) => FeatureLedgerEntry[];
+  projectTaProductStages?: (
+    snapshot: SessionSnapshot,
+    progress?: { readonly kind: "stage_started" | "stage_completed" | "stage_failed" | "artifact_written"; readonly featureId: string },
+  ) => ProductStageEntry[];
   acceptAttemptResult?: (snapshot: SessionSnapshot, result: AttemptResult) => SessionSnapshot;
 };
 
@@ -25,6 +29,12 @@ type FeatureLedgerEntry = {
   actions: readonly string[];
 };
 
+type ProductStageEntry = {
+  stageId: string;
+  label: string;
+  status: string;
+};
+
 type AttemptResult = {
   attemptId: string;
   status?: "completed" | "failed" | "cancelled";
@@ -38,6 +48,89 @@ describe("workbench projections", () => {
 
     expect(typeof api.projectActionQueue).toBe("function");
     expect(typeof api.projectFeatureLedger).toBe("function");
+    expect(typeof api.projectTaProductStages).toBe("function");
+  });
+
+  it("projects internal workflow into five product stages", () => {
+    const api = requireApi();
+
+    const stages = api.projectTaProductStages(baseSnapshot({ state: "f4_running" }));
+    expect(stages).toHaveLength(5);
+    expect(stages).toEqual([
+      expect.objectContaining({ label: "Prepare workbook", status: "completed" }),
+      expect.objectContaining({ label: "Validate analysis inputs", status: "completed" }),
+      expect.objectContaining({ label: "Review dimension traceability", status: "completed" }),
+      expect.objectContaining({ label: "Calculate and interpret tolerance performance", status: "running" }),
+      expect.objectContaining({ label: "Evaluate improvement options and publish report", status: "pending" }),
+    ]);
+  });
+
+  it("keeps F7 placeholder out of TA main product-stage progress", () => {
+    const api = requireApi();
+
+    const stages = api.projectTaProductStages(baseSnapshot({ state: "f7_preview_required" }));
+    expect(stages).toHaveLength(5);
+    expect(stages.some((stage) => /\bF7\b/.test(stage.label))).toBe(false);
+  });
+
+  it("anchors failed terminal stage to persisted activeAttempt stage when progress is absent", () => {
+    const api = requireApi();
+    const snapshot = baseSnapshot({
+      state: "failed",
+      activeAttempt: {
+        attemptId: "attempt-f4",
+        stage: "f4_running",
+        status: "failed",
+        startedAt: "2026-09-01T00:00:00.000Z",
+        endedAt: "2026-09-01T00:03:00.000Z",
+      },
+    });
+
+    const stages = api.projectTaProductStages(snapshot);
+    expect(stages[3]).toMatchObject({
+      stageId: "calculate_and_interpret",
+      status: "failed",
+    });
+    expect(stages[4]).toMatchObject({
+      stageId: "evaluate_and_publish",
+      status: "pending",
+    });
+  });
+
+  it("anchors cancelled terminal stage to persisted activeAttempt stage when progress is absent", () => {
+    const api = requireApi();
+    const snapshot = baseSnapshot({
+      state: "cancelled",
+      activeAttempt: {
+        attemptId: "attempt-f3",
+        stage: "f3_running",
+        status: "cancelled",
+        startedAt: "2026-09-01T00:00:00.000Z",
+        endedAt: "2026-09-01T00:02:00.000Z",
+      },
+    });
+
+    const stages = api.projectTaProductStages(snapshot);
+    expect(stages[2]).toMatchObject({
+      stageId: "review_dimension_traceability",
+      status: "cancelled",
+    });
+    expect(stages[4]).toMatchObject({
+      stageId: "evaluate_and_publish",
+      status: "pending",
+    });
+  });
+
+  it("keeps failed terminal state as workflow attention when no stage evidence exists", () => {
+    const api = requireApi();
+    const stages = api.projectTaProductStages(baseSnapshot({ state: "failed", activeAttempt: null }));
+
+    expect(stages[0]).toMatchObject({
+      stageId: "prepare_workbook",
+      status: "action_required",
+    });
+    expect(stages.every((stage) => stage.status !== "failed")).toBe(true);
+    expect(stages.every((stage) => stage.status !== "cancelled")).toBe(true);
   });
 
   it("projects F7 as a non-executable placeholder", () => {
@@ -208,6 +301,7 @@ function requireApi(): Required<WorkbenchExports> {
   if (
     typeof api.projectActionQueue !== "function"
     || typeof api.projectFeatureLedger !== "function"
+    || typeof api.projectTaProductStages !== "function"
     || typeof api.acceptAttemptResult !== "function"
   ) {
     throw new Error("Expected workbench projection exports to be defined.");

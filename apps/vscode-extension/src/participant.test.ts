@@ -50,6 +50,29 @@ describe("handleParticipant", () => {
     expect(stream.markdown).toHaveBeenCalledWith("TA Assist Workbench is ready. Upload a workbook to begin.");
   });
 
+  it("prioritizes current-session continuation over natural-language analyze", async () => {
+    const handleTurn = vi.fn(async () => ({ responseText: "继续沿用当前 session。", actions: [], commands: [] }));
+    const handleAnalyzeIntent = vi.fn(async () => "should not run");
+    const stream = { progress: vi.fn(), markdown: vi.fn(), button: vi.fn() };
+
+    await handleParticipant({ prompt: "继续分析当前 session 的 factor table", command: undefined, model: {} }, {
+      history: [],
+    }, stream, { isCancellationRequested: false }, {
+      sessionId: SESSION_ID,
+      handleTurn,
+      handleAnalyzeIntent,
+      commandId: () => "participant-current-session-priority",
+    });
+
+    expect(handleAnalyzeIntent).not.toHaveBeenCalled();
+    expect(handleTurn).toHaveBeenCalledWith({
+      text: "继续分析当前 session 的 factor table",
+      sessionId: SESSION_ID,
+      commandId: "participant-current-session-priority",
+      source: "vscode",
+    }, expect.objectContaining({ model: {} }));
+  });
+
   it("rejects malformed natural-language analyze requests before ordinary conversation handling", async () => {
     const handleTurn = vi.fn(async () => ({ responseText: "should not run", actions: [], commands: [] }));
     const stream = { progress: vi.fn(), markdown: vi.fn(), button: vi.fn() };
@@ -63,7 +86,7 @@ describe("handleParticipant", () => {
     });
 
     expect(handleTurn).not.toHaveBeenCalled();
-    expect(stream.markdown).toHaveBeenCalledWith("Provide exactly one Windows absolute .xlsx workbook path, or omit the path and upload in TA Assist Workbench.");
+    expect(stream.markdown).toHaveBeenCalledWith("Provide exactly one Windows absolute .xlsx workbook path or one exact .xlsx workbook file name, or omit it and upload in TA Assist Workbench.");
   });
 
   it("uses the current request model and returns without persistence when cancelled", async () => {

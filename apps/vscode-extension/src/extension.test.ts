@@ -6,16 +6,24 @@ const WORKBOOK_PATH = "C:\\TA Reports\\report.xlsx";
 
 const registeredCommands = new Map<string, (...args: unknown[]) => unknown>();
 const globalStateValues = new Map<string, unknown>();
+const findFilesMock = vi.fn(async () => [] as Array<{ fsPath: string }>);
+const showQuickPickMock = vi.fn();
+const showOpenDialogMock = vi.fn();
 const launchNewWorkbenchMock = vi.fn(async () => ({ sessionId: SESSION_ID, url: WORKBENCH_URL }));
 const launchWorkbenchMock = vi.fn(async () => ({ url: "http://127.0.0.1:4317/" }));
 const resumeWorkbenchMock = vi.fn(async (_rootDir: string, sessionId: string) => ({ sessionId, url: `http://127.0.0.1:4317/?session=${sessionId}` }));
 const importWorkbookMock = vi.fn(async () => ({ artifactId: "artifact-1", contentHash: "a".repeat(64), snapshotRevision: 1, state: "f0_validating" }));
 const handleAgentTurnMock = vi.fn(async () => ({ responseText: "Session is active.", actions: [], commands: [] }));
 let participantHandler: ((request: { readonly prompt: string; readonly command?: string; readonly model?: unknown }, context: { readonly history: readonly unknown[] }, response: { readonly markdown: (text: string) => void }, token: { readonly isCancellationRequested: boolean }) => Promise<void>) | undefined;
+const joinPathMock = vi.fn((base: { fsPath: string }, ...segments: string[]) => ({ fsPath: `${base.fsPath}/${segments.join("/")}`.replace(/\\/g, "/") }));
 
 vi.mock("vscode", () => ({
   StatusBarAlignment: { Left: 1 },
-  Uri: { file: (fsPath: string) => ({ fsPath }), parse: (value: string) => ({ value }) },
+  Uri: {
+    file: (fsPath: string) => ({ fsPath }),
+    parse: (value: string) => ({ value }),
+    joinPath: joinPathMock,
+  },
   chat: { createChatParticipant: vi.fn((_id: string, callback: NonNullable<typeof participantHandler>) => {
     participantHandler = callback;
     return { dispose: vi.fn() };
@@ -34,8 +42,13 @@ vi.mock("vscode", () => ({
     showErrorMessage: vi.fn(),
     showInformationMessage: vi.fn(),
     showInputBox: vi.fn(),
+    showQuickPick: showQuickPickMock,
+    showOpenDialog: showOpenDialogMock,
   },
-  workspace: { workspaceFolders: [{ uri: { fsPath: "repo" } }] },
+  workspace: {
+    workspaceFolders: [{ uri: { fsPath: "repo" } }],
+    findFiles: findFilesMock,
+  },
 }));
 
 vi.mock("@ai-assist/conversation", () => ({
@@ -57,9 +70,14 @@ afterEach(() => {
   launchNewWorkbenchMock.mockClear();
   launchWorkbenchMock.mockClear();
   resumeWorkbenchMock.mockClear();
+  findFilesMock.mockReset();
+  findFilesMock.mockResolvedValue([]);
+  showQuickPickMock.mockReset();
+  showOpenDialogMock.mockReset();
   importWorkbookMock.mockReset();
   importWorkbookMock.mockResolvedValue({ artifactId: "artifact-1", contentHash: "a".repeat(64), snapshotRevision: 1, state: "f0_validating" });
   handleAgentTurnMock.mockClear();
+  joinPathMock.mockClear();
   participantHandler = undefined;
   vi.resetModules();
 });
@@ -67,6 +85,7 @@ afterEach(() => {
 function extensionContext() {
   return {
     subscriptions: [] as { dispose(): void }[],
+    extensionUri: { fsPath: "repo/apps/vscode-extension" },
     globalState: {
       get: vi.fn((key: string) => globalStateValues.get(key)),
       update: vi.fn(async (key: string, value: unknown) => { globalStateValues.set(key, value); }),
@@ -93,6 +112,13 @@ async function invokeParticipant(request: { readonly prompt: string; readonly co
 }
 
 describe("extension workbench binding", () => {
+  it("derives CLI entrypoint from extensionUri runtime folder", async () => {
+    const context = await activateExtension();
+
+    expect(joinPathMock).toHaveBeenCalledWith(context.extensionUri, "runtime", "cli", "index.cjs");
+    context.subscriptions.forEach((subscription) => subscription.dispose());
+  });
+
   it("stores active session and URL immediately when analyze opens a new workbench", async () => {
     const context = await activateExtension();
 
@@ -166,6 +192,74 @@ describe("extension workbench binding", () => {
 
     expect(importWorkbookMock).toHaveBeenCalledWith({ sessionId: SESSION_ID, workbookPath: WORKBOOK_PATH }, expect.any(Object));
     expect(response.markdown).toHaveBeenCalledWith(`Workbook accepted. Session ${SESSION_ID} is running in TA Assist Workbench.`);
+    context.subscriptions.forEach((subscription) => subscription.dispose());
+  });
+
+  it("resolves a unique workspace workbook name before import", async () => {
+    const context = await activateExtension();
+    findFilesMock.mockResolvedValueOnce([{ fsPath: WORKBOOK_PATH }]);
+
+    const response = await invokeParticipant({ prompt: "请帮我分析 report.xlsx 的 TA" });
+
+    expect(findFilesMock).toHaveBeenCalled();
+    expect(importWorkbookMock).toHaveBeenCalledWith({ sessionId: SESSION_ID, workbookPath: WORKBOOK_PATH }, expect.any(Object));
+    expect(response.markdown).toHaveBeenCalledWith(`Workbook accepted. Session ${SESSION_ID} is running in TA Assist Workbench.`);
+    context.subscriptions.forEach((subscription) => subscription.dispose());
+  });
+
+  it("requires manual selection when duplicate workbook names are found", async () => {
+    const context = await activateExtension();
+    findFilesMock.mockResolvedValueOnce([{ fsPath: "C:\\A\\report.xlsx" }, { fsPath: WORKBOOK_PATH }]);
+    showQuickPickMock.mockResolvedValueOnce({ label: WORKBOOK_PATH, uri: { fsPath: WORKBOOK_PATH } });
+
+    await invokeParticipant({ prompt: "Analyze report.xlsx" });
+
+    expect(showQuickPickMock).toHaveBeenCalled();
+    expect(importWorkbookMock).toHaveBeenCalledWith({ sessionId: SESSION_ID, workbookPath: WORKBOOK_PATH }, expect.any(Object));
+    context.subscriptions.forEach((subscription) => subscription.dispose());
+  });
+
+  it("returns without import when duplicate-name Quick Pick is cancelled", async () => {
+    const context = await activateExtension();
+    findFilesMock.mockResolvedValueOnce([{ fsPath: "C:\\A\\report.xlsx" }, { fsPath: WORKBOOK_PATH }]);
+    showQuickPickMock.mockResolvedValueOnce(undefined);
+
+    const response = await invokeParticipant({ prompt: "Analyze report.xlsx" });
+
+    expect(launchNewWorkbenchMock).toHaveBeenCalledTimes(1);
+    expect(showQuickPickMock).toHaveBeenCalledTimes(1);
+    expect(importWorkbookMock).not.toHaveBeenCalled();
+    expect(response.markdown).toHaveBeenCalledWith("TA Assist Workbench is ready. Upload a workbook to begin.");
+    context.subscriptions.forEach((subscription) => subscription.dispose());
+  });
+
+  it("returns without import when Open Dialog is cancelled", async () => {
+    const context = await activateExtension();
+    findFilesMock.mockResolvedValueOnce([]);
+    showOpenDialogMock.mockResolvedValueOnce(undefined);
+
+    const response = await invokeParticipant({ prompt: "Analyze report.xlsx" });
+
+    expect(launchNewWorkbenchMock).toHaveBeenCalledTimes(1);
+    expect(showOpenDialogMock).toHaveBeenCalledTimes(1);
+    expect(importWorkbookMock).not.toHaveBeenCalled();
+    expect(response.markdown).toHaveBeenCalledWith("TA Assist Workbench is ready. Upload a workbook to begin.");
+    context.subscriptions.forEach((subscription) => subscription.dispose());
+  });
+
+  it("routes Open Dialog selection through importWorkbook even when selected URI is non-xlsx", async () => {
+    const context = await activateExtension();
+    findFilesMock.mockResolvedValueOnce([]);
+    showOpenDialogMock.mockResolvedValueOnce([{ fsPath: "C:\\TA Reports\\report.csv" }]);
+    importWorkbookMock.mockRejectedValueOnce(Object.assign(new Error("unsafe"), {
+      summary: "Workbook import failed for C:\\TA Reports\\report.csv",
+      suggestedAction: "Open TA Assist Workbench and upload the workbook again.",
+    }));
+
+    const response = await invokeParticipant({ prompt: "Analyze report.xlsx" });
+
+    expect(importWorkbookMock).toHaveBeenCalledWith({ sessionId: SESSION_ID, workbookPath: "C:\\TA Reports\\report.csv" }, expect.any(Object));
+    expect(response.markdown).toHaveBeenCalledWith("Workbook import failed. Open TA Assist Workbench and upload the workbook again.");
     context.subscriptions.forEach((subscription) => subscription.dispose());
   });
 });

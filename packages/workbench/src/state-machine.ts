@@ -98,12 +98,16 @@ function reduceConfirmInitialScope(
   snapshot: F8SessionSnapshot,
   command: F8SessionCommand,
 ): F8SessionSnapshot {
-  const payload = command.payload as { workbookHash: string; worksheetNames: string[] };
+  const payload = command.payload as { workbookHash: string; worksheetNames: string[]; provenance?: "user" | "internal_fixture" };
+  const provenance = command.command === "auto_confirm_initial_scope"
+    ? "internal_fixture"
+    : payload.provenance ?? "user";
   return transitionWithAttempt(snapshot, command, "f1_f2_running", {
     initialScopeSelection: {
       workbookContentHash: payload.workbookHash,
       selectedWorksheetNames: payload.worksheetNames,
       confirmed: true,
+      provenance,
     },
   });
 }
@@ -112,12 +116,40 @@ function reduceConfirmDownstreamScope(
   snapshot: F8SessionSnapshot,
   command: F8SessionCommand,
 ): F8SessionSnapshot {
-  const payload = command.payload as { workbookHash: string; worksheetNames: string[] };
+  const payload = command.payload as { workbookHash: string; worksheetNames: string[]; provenance?: "user" | "internal_fixture" };
+  const initial = snapshot.initialScopeSelection;
+  if (initial === undefined || initial.confirmed !== true) {
+    throw createTypedError({
+      code: "evidence_mismatch",
+      summary: "The initial worksheet confirmation is unavailable.",
+      suggestedAction: "Confirm the initial worksheet scope before downstream confirmation.",
+      affectedInputReferences: [command.commandId, snapshot.sessionId],
+    });
+  }
+  if (payload.workbookHash !== initial.workbookContentHash) {
+    throw createTypedError({
+      code: "evidence_mismatch",
+      summary: "Downstream worksheet confirmation does not match the initial workbook hash.",
+      suggestedAction: "Refresh the session and confirm downstream worksheets for the current workbook.",
+      affectedInputReferences: [command.commandId, snapshot.sessionId],
+    });
+  }
+  const initialWorksheetSet = new Set(initial.selectedWorksheetNames);
+  const outOfScope = payload.worksheetNames.filter((worksheetName) => !initialWorksheetSet.has(worksheetName));
+  if (outOfScope.length > 0) {
+    throw createTypedError({
+      code: "validation_error",
+      summary: "Downstream worksheet confirmation contains worksheets outside the confirmed initial scope.",
+      suggestedAction: "Select only worksheets that were included in the initial worksheet confirmation.",
+      affectedInputReferences: [command.commandId, ...outOfScope],
+    });
+  }
   return transitionWithAttempt(snapshot, command, "f3_running", {
     downstreamScopeSelection: {
       workbookContentHash: payload.workbookHash,
       selectedWorksheetNames: payload.worksheetNames,
       confirmed: true,
+      provenance: payload.provenance ?? "user",
     },
   });
 }

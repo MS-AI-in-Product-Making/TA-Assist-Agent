@@ -26,6 +26,7 @@ export interface HostActionRow {
   readonly expected_revision: number | null;
   readonly confirmation_hash: string | null;
   readonly expected_target_version: string | null;
+  readonly dispatched_at: string | null;
 }
 
 export function validateCreateRequest(request: HostActionRequest, now: Date): void {

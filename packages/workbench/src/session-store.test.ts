@@ -35,6 +35,103 @@ describe("SessionStore", () => {
     await reopened.close();
   });
 
+  it("backfills historical worksheet selection provenance from committed command evidence", async () => {
+    const rootDir = await createTempRoot();
+    const store = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+    await store.close();
+
+    seedLegacySnapshot(rootDir, {
+      ...snapshotWithAttempt({ revision: 0, state: "downstream_scope_required", activeAttempt: null }),
+      revision: 2,
+      inputRevision: 1,
+      initialScopeSelection: {
+        workbookContentHash: "a".repeat(64),
+        selectedWorksheetNames: ["Analysis-A"],
+        confirmed: true,
+      },
+      downstreamScopeSelection: {
+        workbookContentHash: "a".repeat(64),
+        selectedWorksheetNames: ["Analysis-A"],
+        confirmed: true,
+      },
+    });
+    insertCommittedCommand(rootDir, {
+      commandId: "legacy-initial-user",
+      expectedRevision: 1,
+      committedRevision: 1,
+      command: "confirm_initial_scope",
+      payload: { workbookHash: "a".repeat(64), worksheetNames: ["Analysis-A"] },
+    });
+    insertCommittedCommand(rootDir, {
+      commandId: "legacy-f1f2-attempt:auto-downstream",
+      expectedRevision: 2,
+      committedRevision: 2,
+      command: "confirm_downstream_scope",
+      payload: { workbookHash: "a".repeat(64), worksheetNames: ["Analysis-A"] },
+    });
+
+    const reopened = await openSessionStore({ rootDir, sessionId: SESSION_ID });
+    const migrated = await reopened.readSnapshot();
+    await reopened.close();
+
+    expect(migrated.initialScopeSelection).toMatchObject({ provenance: "user" });
+    expect(migrated.downstreamScopeSelection).toMatchObject({ provenance: "internal_fixture" });
+    expect(readPersistedSnapshot(rootDir).initialScopeSelection).toMatchObject({ provenance: "user" });
+    expect(readPersistedSnapshot(rootDir).downstreamScopeSelection).toMatchObject({ provenance: "internal_fixture" });
+  });
+
+  it("marks ambiguous or missing historical evidence as legacy_unverified and persists migration", async () => {
+    const rootDir = await createTempRoot();
+    const store = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+    await store.close();
+
+    seedLegacySnapshot(rootDir, {
+      ...snapshotWithAttempt({ revision: 0, state: "downstream_scope_required", activeAttempt: null }),
+      revision: 3,
+      inputRevision: 1,
+      initialScopeSelection: {
+        workbookContentHash: "b".repeat(64),
+        selectedWorksheetNames: ["Analysis-B"],
+        confirmed: true,
+      },
+      downstreamScopeSelection: {
+        workbookContentHash: "b".repeat(64),
+        selectedWorksheetNames: ["Analysis-B"],
+        confirmed: true,
+      },
+    });
+    insertCommittedCommand(rootDir, {
+      commandId: "legacy-1:auto-downstream",
+      expectedRevision: 2,
+      committedRevision: 2,
+      command: "confirm_downstream_scope",
+      payload: { workbookHash: "b".repeat(64), worksheetNames: ["Analysis-B"] },
+    });
+    insertCommittedCommand(rootDir, {
+      commandId: "legacy-2-manual",
+      expectedRevision: 3,
+      committedRevision: 3,
+      command: "confirm_downstream_scope",
+      payload: { workbookHash: "b".repeat(64), worksheetNames: ["Analysis-B"] },
+    });
+
+    const reopened = await openSessionStore({ rootDir, sessionId: SESSION_ID });
+    const migrated = await reopened.readSnapshot();
+    await reopened.close();
+
+    expect(migrated.initialScopeSelection).toMatchObject({ provenance: "legacy_unverified" });
+    expect(migrated.downstreamScopeSelection).toMatchObject({ provenance: "legacy_unverified" });
+
+    clearCommands(rootDir);
+
+    const readWithoutEvidence = await openSessionStore({ rootDir, sessionId: SESSION_ID });
+    const persisted = await readWithoutEvidence.readSnapshot();
+    await readWithoutEvidence.close();
+
+    expect(persisted.initialScopeSelection).toMatchObject({ provenance: "legacy_unverified" });
+    expect(persisted.downstreamScopeSelection).toMatchObject({ provenance: "legacy_unverified" });
+  });
+
   it("rejects stale revisions and late worker results", async () => {
     const rootDir = await createTempRoot();
     const store = await createSessionStore({ rootDir, sessionId: SESSION_ID });
@@ -615,6 +712,74 @@ function readArtifactRefMetadata(rootDir: string): unknown[] {
   const database = openDatabase(rootDir);
   try {
     return (database.prepare("SELECT metadata_json FROM artifact_refs ORDER BY artifact_id").all() as Array<{ metadata_json: string }>).map((row) => JSON.parse(row.metadata_json));
+  } finally {
+    database.close();
+  }
+}
+
+function seedLegacySnapshot(rootDir: string, snapshot: Record<string, unknown>): void {
+  const database = openDatabase(rootDir);
+  try {
+    database.prepare("UPDATE sessions SET revision = ?, snapshot_json = ?, updated_at = ? WHERE session_id = ?").run(
+      Number(snapshot.revision),
+      JSON.stringify(snapshot),
+      "2026-08-24T00:00:00.000Z",
+      SESSION_ID,
+    );
+  } finally {
+    database.close();
+  }
+}
+
+function insertCommittedCommand(rootDir: string, input: {
+  commandId: string;
+  expectedRevision: number;
+  committedRevision: number;
+  command: "confirm_initial_scope" | "auto_confirm_initial_scope" | "confirm_downstream_scope";
+  payload: { workbookHash: string; worksheetNames: string[] };
+}): void {
+  const database = openDatabase(rootDir);
+  try {
+    const command = {
+      contractVersion: "f8-session-command-v1",
+      sessionId: SESSION_ID,
+      commandId: input.commandId,
+      expectedRevision: input.expectedRevision,
+      command: input.command,
+      payload: input.payload,
+    };
+    database.prepare(`
+      INSERT INTO commands(command_id, session_id, expected_revision, command_json, result_json, committed_revision, created_at, committed_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      input.commandId,
+      SESSION_ID,
+      input.expectedRevision,
+      JSON.stringify(command),
+      JSON.stringify({ contractVersion: "f8-session-snapshot-v1", sessionId: SESSION_ID }),
+      input.committedRevision,
+      "2026-08-24T00:00:00.000Z",
+      "2026-08-24T00:00:01.000Z",
+    );
+  } finally {
+    database.close();
+  }
+}
+
+function readPersistedSnapshot(rootDir: string): Record<string, unknown> {
+  const database = openDatabase(rootDir);
+  try {
+    const row = database.prepare("SELECT snapshot_json FROM sessions WHERE session_id = ?").get(SESSION_ID) as { snapshot_json: string };
+    return JSON.parse(row.snapshot_json) as Record<string, unknown>;
+  } finally {
+    database.close();
+  }
+}
+
+function clearCommands(rootDir: string): void {
+  const database = openDatabase(rootDir);
+  try {
+    database.prepare("DELETE FROM commands WHERE session_id = ?").run(SESSION_ID);
   } finally {
     database.close();
   }

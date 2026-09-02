@@ -34,6 +34,7 @@ function validF2Report(artifactRoot) {
   });
   const systemSpecification = {
     status: "available",
+    designNominal: evidence(-0.05, "Analysis-A!P53"),
     lowerSpecLimit: evidence(-0.15, "Analysis-A!P54"),
     upperSpecLimit: evidence(0.05, "Analysis-A!P55"),
     targetSigmaLevel: evidence(3, "Analysis-A!P56", "3.0σ"),
@@ -107,7 +108,7 @@ describe("runF2ExcelWorkflow", () => {
 
     expect(result.status).toBe("selectionRequired");
     expect(executeStage.mock.calls.map(([request]) => request.stage)).toEqual(["f1-selection"]);
-    expect(result.promptPath).toBe(path.join(result.f1Root, "Feature1-Selection.json"));
+    expect(result.promptPath).toBe(path.join(result.validationRoot, "Feature1-Selection.json"));
     expect(result.selectionReference).toMatchObject({ manifestPath: result.manifestPath, promptPath: result.promptPath });
     expect(JSON.parse(readFileSync(result.manifestPath, "utf8"))).toMatchObject({
       status: "selectionRequired",

@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
@@ -351,6 +351,99 @@ describe("host action lease lifecycle", () => {
     await hostActions.close();
   });
 
+  it("persists dispatched_at at the write claim timestamp before completion", async () => {
+    const rootDir = await createTempRoot();
+    const sessionStore = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+    await sessionStore.close();
+
+    let now = new Date("2026-08-24T00:00:00.000Z");
+    const hostActions = await createHostActionStore({
+      rootDir,
+      sessionId: SESSION_ID,
+      leaseDurationMs: 60_000,
+      now: () => now,
+    });
+
+    const validationAction = await hostActions.createHostAction(surfaceValidateRequest("action-validate-dispatch"));
+    const validationClaim = await hostActions.claimHostAction(validationAction.actionId, "vscode-1");
+    await hostActions.completeHostAction(completedResult(validationClaim, validationAction.actionId));
+
+    const writeAction = await hostActions.createHostAction(surfaceWriteRequest("action-write-dispatch", {
+      validationActionId: validationAction.actionId,
+    }));
+    now = new Date("2026-08-24T00:00:05.000Z");
+    const writeClaim = await hostActions.claimHostAction(writeAction.actionId, "vscode-1");
+    const claimedRow = readPersistedHostActionRow(rootDir, writeAction.actionId);
+    expect(claimedRow.dispatched_at).toBe("2026-08-24T00:00:05.000Z");
+
+    now = new Date("2026-08-24T00:00:10.000Z");
+    await hostActions.completeHostAction(completedResult(writeClaim, writeAction.actionId));
+    const completedRow = readPersistedHostActionRow(rootDir, writeAction.actionId);
+    expect(completedRow.dispatched_at).toBe("2026-08-24T00:00:05.000Z");
+
+    await hostActions.close();
+  });
+
+  it("adds dispatched_at when opening a legacy host_actions table", async () => {
+    const rootDir = await createTempRoot();
+    const paths = resolveManagedWorkbenchPaths(rootDir);
+    await mkdir(paths.workbenchRoot, { recursive: true });
+
+    const legacyDatabase = new DatabaseSync(paths.databasePath);
+    try {
+      legacyDatabase.exec(`
+        CREATE TABLE sessions (
+          session_id TEXT PRIMARY KEY,
+          revision INTEGER NOT NULL,
+          snapshot_json TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        ) STRICT;
+
+        CREATE TABLE host_actions (
+          action_id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
+          status TEXT NOT NULL,
+          request_json TEXT,
+          claim_json TEXT,
+          result_json TEXT,
+          expires_at TEXT,
+          lease_id TEXT,
+          lease_expires_at TEXT,
+          expected_revision INTEGER,
+          confirmation_hash TEXT,
+          expected_target_version TEXT,
+          updated_at TEXT NOT NULL
+        ) STRICT;
+      `);
+      legacyDatabase.prepare("INSERT INTO sessions(session_id, revision, snapshot_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)").run(
+        SESSION_ID,
+        0,
+        JSON.stringify({ contractVersion: "f8-session-snapshot-v1", sessionId: SESSION_ID, revision: 0, inputRevision: 0, state: "created", activeAttempt: null, priorRunReferences: [] }),
+        "2026-08-24T00:00:00.000Z",
+        "2026-08-24T00:00:00.000Z",
+      );
+    } finally {
+      legacyDatabase.close();
+    }
+
+    const hostActions = await createHostActionStore({
+      rootDir,
+      sessionId: SESSION_ID,
+      leaseDurationMs: 60_000,
+      now: () => new Date("2026-08-24T00:00:00.000Z"),
+    });
+    await hostActions.close();
+
+    const migrated = openDatabase(rootDir);
+    try {
+      const columns = migrated.prepare("PRAGMA table_info('host_actions')").all() as Array<{ readonly name?: unknown }>;
+      expect(columns.some((column) => column.name === "dispatched_at")).toBe(true);
+    } finally {
+      migrated.close();
+    }
+  });
+
   it("rejects a completion from the wrong host even with a valid lease", async () => {
     const rootDir = await createTempRoot();
     const sessionStore = await createSessionStore({ rootDir, sessionId: SESSION_ID });
@@ -386,7 +479,7 @@ function readPersistedHostActionRow(rootDir: string, actionId: string) {
   const database = openDatabase(rootDir);
   try {
     return database.prepare(`
-      SELECT action_id, status, result_json, updated_at
+      SELECT action_id, status, result_json, updated_at, dispatched_at
       FROM host_actions
       WHERE action_id = ?
     `).get(actionId) as {
@@ -394,6 +487,7 @@ function readPersistedHostActionRow(rootDir: string, actionId: string) {
       status: string;
       result_json: string | null;
       updated_at: string;
+      dispatched_at: string | null;
     };
   } finally {
     database.close();

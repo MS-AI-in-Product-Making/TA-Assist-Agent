@@ -1,9 +1,9 @@
-import { readFile, readdir } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 
 import { test, expect, sha256File } from "./workbench-fixture.js";
+import { expectedAnonymousWorkbookSha256 } from "./fixtures/anonymous-workbook-fixture.ts";
 
 test("renders governed F4 evidence and runs fixture-backed What-if without workbook writeback", async ({ page, workbench }) => {
-  const hashes = JSON.parse(await readFile("test/f8-e2e/fixtures/fixture-hashes.json", "utf8")) as Record<string, string>;
   await page.goto(`${workbench.origin}/?session=${workbench.sessionId}`);
   await expect(page.getByRole("region", { name: "Analysis progress" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Live analysis panel" })).toBeVisible();
@@ -23,7 +23,7 @@ test("renders governed F4 evidence and runs fixture-backed What-if without workb
   await expect(page.getByText("Mean Response", { exact: true })).toBeVisible();
 
   expect(await sha256File(workbench.sourceWorkbook)).toBe(originalHash);
-  expect(originalHash).toBe(hashes["anonymous-ta-workbook.xlsx"]);
+  expect(originalHash).toBe(expectedAnonymousWorkbookSha256());
   const managedPaths = await readdir(workbench.rootDir, { recursive: true });
   expect(managedPaths.filter((path) => /\.xlsx$/i.test(path))).toEqual([]);
 });

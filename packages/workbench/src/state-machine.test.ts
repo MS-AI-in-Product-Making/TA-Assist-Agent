@@ -82,6 +82,119 @@ describe("workbench state machine", () => {
     ).state).toBe("f6_running");
   });
 
+  it("records two distinct worksheet confirmations with user provenance", () => {
+    const api = requireApi();
+    const initial = api.reduceSessionCommand(
+      baseSnapshot({ state: "initial_scope_required" }),
+      {
+        contractVersion: "f8-session-command-v1",
+        sessionId: SESSION_ID,
+        commandId: "confirm-initial-user",
+        expectedRevision: 0,
+        command: "confirm_initial_scope",
+        payload: { workbookHash: "a".repeat(64), worksheetNames: ["Analysis-A"] },
+      },
+    );
+    const ready = api.acceptAttemptResult(initial, {
+      attemptId: initial.activeAttempt!.attemptId,
+      status: "completed",
+      result: {},
+      endedAt: "2026-08-24T00:05:00.000Z",
+    });
+    const downstream = api.reduceSessionCommand(
+      ready,
+      {
+        contractVersion: "f8-session-command-v1",
+        sessionId: SESSION_ID,
+        commandId: "confirm-downstream-user",
+        expectedRevision: ready.revision,
+        command: "confirm_downstream_scope",
+        payload: { workbookHash: "a".repeat(64), worksheetNames: ["Analysis-A"] },
+      },
+    );
+
+    expect(initial.initialScopeSelection).toMatchObject({
+      workbookContentHash: "a".repeat(64),
+      selectedWorksheetNames: ["Analysis-A"],
+      confirmed: true,
+      provenance: "user",
+    });
+    expect(downstream.downstreamScopeSelection).toMatchObject({
+      workbookContentHash: "a".repeat(64),
+      selectedWorksheetNames: ["Analysis-A"],
+      confirmed: true,
+      provenance: "user",
+    });
+  });
+
+  it("records fixture provenance for auto initial confirmation", () => {
+    const api = requireApi();
+    const auto = api.reduceSessionCommand(
+      baseSnapshot({ state: "initial_scope_required" }),
+      {
+        contractVersion: "f8-session-command-v1",
+        sessionId: SESSION_ID,
+        commandId: "auto-initial",
+        expectedRevision: 0,
+        command: "auto_confirm_initial_scope",
+        payload: { workbookHash: "a".repeat(64), worksheetNames: ["Analysis-A"] },
+      } as SessionCommand,
+    );
+
+    expect(auto.initialScopeSelection).toMatchObject({
+      workbookContentHash: "a".repeat(64),
+      selectedWorksheetNames: ["Analysis-A"],
+      confirmed: true,
+      provenance: "internal_fixture",
+    });
+  });
+
+  it("rejects downstream confirmation when workbook hash drifts from initial scope", () => {
+    const api = requireApi();
+    const snapshot = baseSnapshot({
+      state: "downstream_scope_required",
+      revision: 2,
+      initialScopeSelection: {
+        workbookContentHash: "a".repeat(64),
+        selectedWorksheetNames: ["Analysis-A"],
+        confirmed: true,
+        provenance: "user",
+      },
+    });
+
+    expect(() => api.reduceSessionCommand(snapshot, {
+      contractVersion: "f8-session-command-v1",
+      sessionId: SESSION_ID,
+      commandId: "confirm-downstream-hash-drift",
+      expectedRevision: 2,
+      command: "confirm_downstream_scope",
+      payload: { workbookHash: "b".repeat(64), worksheetNames: ["Analysis-A"] },
+    })).toThrow(/workbook hash/i);
+  });
+
+  it("rejects downstream confirmation that contains worksheets outside initial scope", () => {
+    const api = requireApi();
+    const snapshot = baseSnapshot({
+      state: "downstream_scope_required",
+      revision: 2,
+      initialScopeSelection: {
+        workbookContentHash: "a".repeat(64),
+        selectedWorksheetNames: ["Analysis-A"],
+        confirmed: true,
+        provenance: "user",
+      },
+    });
+
+    expect(() => api.reduceSessionCommand(snapshot, {
+      contractVersion: "f8-session-command-v1",
+      sessionId: SESSION_ID,
+      commandId: "confirm-downstream-out-of-scope",
+      expectedRevision: 2,
+      command: "confirm_downstream_scope",
+      payload: { workbookHash: "a".repeat(64), worksheetNames: ["Analysis-B"] },
+    })).toThrow(/outside the confirmed initial scope/i);
+  });
+
   it("saves one What-if draft and requires a separate promotion confirmation", () => {
     const api = requireApi();
     const draft = {

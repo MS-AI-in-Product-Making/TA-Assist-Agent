@@ -21,7 +21,7 @@ export function EvidenceImagePane({ worksheetName, imageUrl, focusedLabel, analy
   return (
     <section className={`evidence-pane ${expanded ? "evidence-pane--expanded" : ""}`} aria-label="Tolerance loop evidence">
       <header className="evidence-pane__header">
-        <div><span>F1 Evidence</span><h2>Tolerance loop stack-up</h2></div>
+        <div><span>Workbook evidence</span><h2>Tolerance loop stack-up</h2></div>
         <div className="evidence-pane__tools">
           <button type="button" className="icon-button" aria-label="Zoom out" onClick={() => setScale((value) => Math.max(0.5, value - 0.25))}>−</button>
           <button type="button" className="icon-button" aria-label="Fit to frame" onClick={() => setScale(1)}>↙</button>

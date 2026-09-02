@@ -119,14 +119,31 @@ async function assertNoProgressOverlaps(page) {
 
 test("shows the user engineering shell with the simplified progress track", async ({ page, workbench }) => {
   await page.goto(`${workbench.origin}/?session=${workbench.sessionId}`);
+  const snapshotResponse = await page.request.get(`${workbench.origin}/api/sessions/${encodeURIComponent(workbench.sessionId)}`);
+  expect(snapshotResponse.status()).toBe(200);
+  const snapshot = await snapshotResponse.json();
+  expect(snapshot.initialScopeSelection?.provenance).toBe("user");
+  expect(snapshot.downstreamScopeSelection?.provenance).toBe("user");
+
   await expect(page.getByText("TA Assist", { exact: true })).toBeVisible();
   await expect(page.getByText("Tolerance loop stack-up", { exact: true })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Worksheet" })).toBeVisible();
   await expect(page.getByRole("region", { name: "TA Assistant" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Open TA Assistant" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Analysis progress" })).toBeVisible();
+  const progressRegion = page.getByRole("region", { name: "Analysis progress" });
+  await expect(progressRegion.locator(".analysis-progress__content strong")).toHaveText([
+    "Prepare workbook",
+    "Validate analysis inputs",
+    "Review dimension traceability",
+    "Calculate and interpret tolerance performance",
+    "Evaluate improvement options and publish report",
+  ]);
   await expect(page.getByText("Current worksheet", { exact: true })).toBeVisible();
   await expect(page.getByText(/f4_running|ado_action_pending|activeAttempt|review_required/)).toHaveCount(0);
+
+  const normalUiText = await page.locator("main.engineering-shell").innerText();
+  expect(normalUiText).not.toMatch(/\bF[1-7](?:\.[0-9]+)?\b/);
 
   const sectionOrder = await page.evaluate(() => {
     const overview = document.querySelector(".workbook-overview");
@@ -186,11 +203,12 @@ test("creates a governed model HostAction prompt from the selected worksheet con
   expect(prompt).toContain("Open interpretation");
   expect(prompt).toContain("Missing evidence");
   expect(prompt).toContain("Suggested checks");
-  expect(prompt).toContain(`Session: ${workbench.sessionId} (revision 1, inputRevision 1)`);
+  expect(prompt).toContain(`Session: ${workbench.sessionId} (revision `);
+  expect(prompt).toContain("inputRevision 1)");
   expect(prompt).toContain("Worksheet: AJ_GAP");
   expect(prompt).toContain("Selected factor identity: table-a / row 2 / 中心间隙");
   expect(prompt).toContain("Scenario identity: what-if:e2e-draft");
-  expect(prompt).toContain(`Related artifact IDs: f2-e2e:${workbench.sessionId}, f4-e2e:${workbench.sessionId}, f1-image:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff`);
+  expect(prompt).toContain(`Related artifact IDs: f2-report:1:f2-run-e2e-${workbench.sessionId}, f4-calculation:1:${workbench.sessionId}, f1-image:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff`);
   expect(prompt).toContain('"capabilityStatus":"internal_within_guidance"');
   expect(prompt).toContain('"f0KnowledgeBaseVersion":"internal-v1"');
   expect(prompt).toContain("F1 managed image reference");
@@ -369,6 +387,7 @@ test("matches the current F3 grouped rows and previews create or update targets 
     expect(visibleText).toContain("ADO workspace");
     expect(visibleText).toContain("Governance write decision");
     expect(visibleText).not.toMatch(/[\u4e00-\u9fff]/);
+    expect(visibleText).not.toMatch(/\bF[1-7](?:\.[0-9]+)?\b/);
 
     for (const group of expectedGroups) {
       const details = adoSection.locator("details").filter({ has: selectionPage.locator("summary strong", { hasText: group.partSubsystem }) }).first();
@@ -587,7 +606,7 @@ test("supports specification plot drag, keyboard, numeric commit paths, and keep
 
   await uslInput.fill("-0.120");
   await uslInput.press("Enter");
-  await expect(page.getByRole("alert")).toHaveText("USL must stay above LSL.");
+  await expect(page.getByText("USL must stay above LSL.", { exact: true })).toBeVisible();
   await expect(uslInput).toHaveValue("-0.119");
 
   await uslSlider.focus();

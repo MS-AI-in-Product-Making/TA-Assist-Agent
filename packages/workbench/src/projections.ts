@@ -1,4 +1,5 @@
 import { f7PlaceholderStatusSchema } from "@ai-assist/contracts";
+import { TA_WORKBOOK_STAGES, TA_WORKBOOK_STAGE_LABELS, projectTaWorkbookStage, type TaWorkbookStage } from "@ai-assist/product-language/ta-workbook-language";
 
 import { canRetryAttempt } from "./attempts.js";
 import { FEATURE_IDS, type F8SessionSnapshot, type F8SessionState } from "./commands.js";
@@ -14,6 +15,17 @@ export interface FeatureLedgerEntry {
   readonly status: string;
   readonly lifecycle?: string;
   readonly actions: readonly string[];
+}
+
+export interface ProductStageEntry {
+  readonly stageId: TaWorkbookStage;
+  readonly label: string;
+  readonly status: string;
+}
+
+export interface TaProductStageProgress {
+  readonly kind: "stage_started" | "stage_completed" | "stage_failed" | "artifact_written";
+  readonly featureId: typeof FEATURE_IDS[number];
 }
 
 export function projectActionQueue(snapshot: F8SessionSnapshot): ActionQueueItem[] {
@@ -227,5 +239,113 @@ function featureForState(state: F8SessionState): typeof FEATURE_IDS[number] {
       return "F0";
     default:
       return "F0";
+  }
+}
+
+export function projectTaProductStages(snapshot: F8SessionSnapshot, progress?: TaProductStageProgress): ProductStageEntry[] {
+  const activeStage = resolveActiveStage(snapshot, progress);
+  if (activeStage === undefined) {
+    const statusByIndex = snapshot.state === "failed" || snapshot.state === "cancelled"
+      ? {
+          prepare_workbook: "action_required",
+          validate_analysis_inputs: "pending",
+          review_dimension_traceability: "pending",
+          calculate_and_interpret: "pending",
+          evaluate_and_publish: "pending",
+        }
+      : {
+          prepare_workbook: "pending",
+          validate_analysis_inputs: "pending",
+          review_dimension_traceability: "pending",
+          calculate_and_interpret: "pending",
+          evaluate_and_publish: "pending",
+        };
+
+    return TA_WORKBOOK_STAGES.map((stageId) => ({
+      stageId,
+      label: TA_WORKBOOK_STAGE_LABELS[stageId],
+      status: statusByIndex[stageId],
+    }));
+  }
+
+  const activeIndex = TA_WORKBOOK_STAGES.indexOf(activeStage);
+
+  return TA_WORKBOOK_STAGES.map((stageId, index) => {
+    let status = "pending";
+    if (snapshot.state === "completed") {
+      status = "completed";
+    } else if (index < activeIndex) {
+      status = "completed";
+    } else if (index === activeIndex) {
+      status = stageStatus(snapshot.state, progress);
+    }
+
+    return {
+      stageId,
+      label: TA_WORKBOOK_STAGE_LABELS[stageId],
+      status,
+    };
+  });
+}
+
+function stageStatus(state: F8SessionState, progress?: TaProductStageProgress): string {
+  if (progress !== undefined) {
+    if (progress.kind === "stage_completed") return "completed";
+    if (progress.kind === "stage_failed") return "failed";
+    if (progress.kind === "stage_started") return "running";
+  }
+
+  if (state === "failed" || state === "cancelled") {
+    return state;
+  }
+
+  if ([
+    "initial_scope_required",
+    "downstream_scope_required",
+    "ado_decision_required",
+    "image_decision_required",
+    "analysis_context_decision_required",
+    "optimization_targets_decision_required",
+    "review_required",
+  ].includes(state)) {
+    return "action_required";
+  }
+
+  return "running";
+}
+
+function resolveActiveStage(snapshot: F8SessionSnapshot, progress?: TaProductStageProgress): TaWorkbookStage | undefined {
+  if (progress !== undefined && progress.kind !== "artifact_written") {
+    return stageForFeature(progress.featureId);
+  }
+
+  if (snapshot.state === "failed" || snapshot.state === "cancelled") {
+    const persistedStage = snapshot.activeAttempt?.stage;
+    if (persistedStage !== undefined) {
+      return projectTaWorkbookStage(persistedStage);
+    }
+    return undefined;
+  }
+
+  return projectTaWorkbookStage(snapshot.state);
+}
+
+function stageForFeature(featureId: typeof FEATURE_IDS[number]): TaWorkbookStage {
+  switch (featureId) {
+    case "F0":
+      return "prepare_workbook";
+    case "F1":
+    case "F2":
+      return "validate_analysis_inputs";
+    case "F3":
+      return "review_dimension_traceability";
+    case "F4":
+    case "F5":
+      return "calculate_and_interpret";
+    case "F6":
+    case "F7":
+      return "evaluate_and_publish";
+    default:
+      return "prepare_workbook";
   }
 }

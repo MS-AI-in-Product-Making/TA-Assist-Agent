@@ -8,12 +8,14 @@ import { get } from "node:http";
 import { DatabaseSync } from "node:sqlite";
 
 import { buildWorkbenchServer } from "./server.js";
+import { setAdoRouteClockForTest } from "./routes/ado.js";
 import { createConversationStore } from "@ai-assist/conversation";
 import { createTypedError } from "@ai-assist/contracts";
 import { createHostActionStore, createReviewContextId, createSessionStore, openSessionStore, projectWorksheetReview, reduceSessionCommand, selectCompleteReviewContext } from "@ai-assist/workbench";
 import { renderF3AdoMarkdown } from "@ai-assist/workflow-runners";
 import { createAnonymousWorkbookZip } from "../../../packages/workbook-catalog/src/test-support.js";
 import type { PersistentWorkerQueueOptions, StageJob } from "./sqlite-worker-queue.js";
+import type { TaWorkbookOrchestrator } from "@ai-assist/workbench";
 
 function testRoot(name: string): string {
   return join(".tmp", `${name}-${randomUUID()}`);
@@ -526,6 +528,7 @@ describe("workbench server routes", () => {
               workbookContentHash: REVIEW_CONTEXT.workbookHash,
               selectedWorksheetNames: ["Analysis-A"],
               confirmed: true,
+              provenance: "user",
             },
             priorRunReferences: [{ featureId: "F2", referenceId: "f2-run-2026-08-25", contractVersion: "v1", workbookHash: REVIEW_CONTEXT.workbookHash, runReference: REVIEW_CONTEXT.baselineRunReference }],
             activeAttempt: { attemptId: "seed-f4:f4_running", stage: "f4_running", status: "failed", startedAt: "2026-08-25T00:00:00.000Z", endedAt: "2026-08-25T00:00:01.000Z" },
@@ -1122,7 +1125,305 @@ describe("workbench server routes", () => {
     }
   }, 15_000);
 
-  it("auto-enters the F1/F2 successor without a public scope confirmation", async () => {
+  it("keeps F0 success and returns structured warning when F1 discovery is unavailable", async () => {
+    const rootDir = testRoot("workbench-server-f1-discovery-warning");
+    await rm(rootDir, { recursive: true, force: true });
+    const orchestrator: TaWorkbookOrchestrator = {
+      async runStage(stage) {
+        if (stage !== "f0_validating") {
+          throw new Error(`unexpected stage: ${stage}`);
+        }
+        return {
+          status: "completed",
+          skillId: "knowledge-and-rules-validation-v1",
+          inputRevision: 1,
+          idempotencyKey: "attempt:f0",
+          output: { featureId: "F0", status: "completed", versions: ["v1", "internal-v1", "interpretation-rules-v1"] },
+        };
+      },
+      async runWorkbookScopeDiscovery() {
+        return {
+          status: "failed",
+          skillId: "workbook-scope-discovery-v1",
+          inputRevision: 1,
+          idempotencyKey: "attempt:f1",
+          reasonCode: "scope_runner_unavailable",
+          summary: "scope runner unavailable",
+        };
+      },
+      async runAnalysisInputValidation() {
+        return {
+          status: "blocked",
+          skillId: "analysis-input-validation-v1",
+          inputRevision: 1,
+          idempotencyKey: "attempt:f2",
+          reasonCode: "delegated",
+          summary: "delegated",
+        };
+      },
+    };
+
+    const server = await buildWorkbenchServer({ rootDir, orchestrator });
+    try {
+      const auth = await server.testAuthenticate("14141414-1414-4414-8414-141414141414");
+      const artifactId = "managed-workbook";
+      const relativePath = `uploads/${auth.sessionId}/workbook/${artifactId}-book.xlsx`;
+      server.registerArtifactForTest(auth.sessionId, artifactId, relativePath, "book.xlsx", "confidential", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      await mkdir(dirname(join(rootDir, relativePath)), { recursive: true });
+      await writeFile(join(rootDir, relativePath), createAnonymousWorkbookZip());
+
+      const response = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${auth.sessionId}/commands`,
+        headers: auth.headers,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId: auth.sessionId,
+          commandId: "f1-warning-upload",
+          expectedRevision: 0,
+          command: "upload_workbook",
+          payload: { artifactId, inputClassification: "confidential" },
+        },
+      });
+
+      expect(response.statusCode).toBe(202);
+      expect(response.json()).toMatchObject({
+        state: "initial_scope_required",
+        worksheetCapabilities: expect.arrayContaining([{ worksheetName: "Analysis-A", whatIfAvailable: false }]),
+      });
+      expect(response.json()).not.toHaveProperty("selectionPrompt");
+      const selectionRegistry = await readFile(join(rootDir, "runtime", "workbench", "registries", "f1-f2-selection", `${auth.sessionId}.json`), "utf8").catch(() => undefined);
+      expect(selectionRegistry).toBeUndefined();
+      const database = new DatabaseSync(join(rootDir, "runtime", "workbench", "workbench.sqlite"), { readOnly: true });
+      try {
+        const progress = database.prepare("SELECT payload_json FROM session_sse_events WHERE session_id = ? AND event_name = 'runner_progress' ORDER BY event_id").all(auth.sessionId) as Array<{ payload_json: string }>;
+        expect(progress.map(({ payload_json }) => JSON.parse(payload_json))).toEqual(expect.arrayContaining([
+          expect.objectContaining({
+            kind: "stage_warning",
+            featureId: "F1",
+            stage: "scope_discovery",
+            status: "failed",
+            code: "scope_discovery_unavailable",
+            summary: expect.stringContaining("workbook-scope-discovery-v1 failed:"),
+          }),
+        ]));
+      } finally {
+        database.close();
+      }
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  }, 15_000);
+
+  it("treats blocked F1 discovery output as warning and does not persist selection", async () => {
+    const rootDir = testRoot("workbench-server-f1-discovery-blocked-output");
+    await rm(rootDir, { recursive: true, force: true });
+    const orchestrator: TaWorkbookOrchestrator = {
+      async runStage(stage) {
+        if (stage !== "f0_validating") {
+          throw new Error(`unexpected stage: ${stage}`);
+        }
+        return {
+          status: "completed",
+          skillId: "knowledge-and-rules-validation-v1",
+          inputRevision: 1,
+          idempotencyKey: "attempt:f0",
+          output: { featureId: "F0", status: "completed", versions: ["v1", "internal-v1", "interpretation-rules-v1"] },
+        };
+      },
+      async runWorkbookScopeDiscovery() {
+        return {
+          status: "blocked",
+          skillId: "workbook-scope-discovery-v1",
+          inputRevision: 1,
+          idempotencyKey: "attempt:f1",
+          reasonCode: "scope_runner_blocked",
+          summary: "scope runner blocked",
+          output: {
+            selectionReference: { selectionId: "should-not-persist" },
+            prompt: {
+              contractVersion: "v1",
+              inputClassification: "confidential",
+              status: "selectionRequired",
+              workbook: { fileName: "book.xlsx", contentHash: "a".repeat(64) },
+              options: [{ selectionIndex: 1, worksheetName: "Analysis-A", toleranceLoopDescription: "Analysis loop", worksheetKind: "analysis", source: { discoveryMethod: "worksheet_scan", descriptionCell: "Analysis-A!F11", worksheetAnchor: "Analysis-A!A1" } }],
+            },
+          },
+        };
+      },
+      async runAnalysisInputValidation() {
+        return {
+          status: "blocked",
+          skillId: "analysis-input-validation-v1",
+          inputRevision: 1,
+          idempotencyKey: "attempt:f2",
+          reasonCode: "delegated",
+          summary: "delegated",
+        };
+      },
+    };
+
+    const server = await buildWorkbenchServer({ rootDir, orchestrator });
+    try {
+      const auth = await server.testAuthenticate("15151515-1515-4515-8515-151515151515");
+      const artifactId = "managed-workbook";
+      const relativePath = `uploads/${auth.sessionId}/workbook/${artifactId}-book.xlsx`;
+      server.registerArtifactForTest(auth.sessionId, artifactId, relativePath, "book.xlsx", "confidential", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      await mkdir(dirname(join(rootDir, relativePath)), { recursive: true });
+      await writeFile(join(rootDir, relativePath), createAnonymousWorkbookZip());
+
+      const response = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${auth.sessionId}/commands`,
+        headers: auth.headers,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId: auth.sessionId,
+          commandId: "f1-blocked-warning-upload",
+          expectedRevision: 0,
+          command: "upload_workbook",
+          payload: { artifactId, inputClassification: "confidential" },
+        },
+      });
+
+      expect(response.statusCode).toBe(202);
+      expect(response.json()).toMatchObject({
+        state: "initial_scope_required",
+        worksheetCapabilities: expect.arrayContaining([{ worksheetName: "Analysis-A", whatIfAvailable: false }]),
+      });
+      expect(response.json()).not.toHaveProperty("selectionPrompt");
+      const selectionRegistry = await readFile(join(rootDir, "runtime", "workbench", "registries", "f1-f2-selection", `${auth.sessionId}.json`), "utf8").catch(() => undefined);
+      expect(selectionRegistry).toBeUndefined();
+      const database = new DatabaseSync(join(rootDir, "runtime", "workbench", "workbench.sqlite"), { readOnly: true });
+      try {
+        const progress = database.prepare("SELECT payload_json FROM session_sse_events WHERE session_id = ? AND event_name = 'runner_progress' ORDER BY event_id").all(auth.sessionId) as Array<{ payload_json: string }>;
+        expect(progress.map(({ payload_json }) => JSON.parse(payload_json))).toEqual(expect.arrayContaining([
+          expect.objectContaining({
+            kind: "stage_warning",
+            featureId: "F1",
+            stage: "scope_discovery",
+            status: "blocked",
+            code: "scope_discovery_unavailable",
+            summary: expect.stringContaining("workbook-scope-discovery-v1 blocked:"),
+          }),
+        ]));
+      } finally {
+        database.close();
+      }
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  }, 15_000);
+
+  it("rejects blocked F1/F2 output and does not persist production roots", async () => {
+    const rootDir = testRoot("workbench-server-f1f2-blocked-output");
+    await rm(rootDir, { recursive: true, force: true });
+    const workbookHash = "a".repeat(64);
+    const orchestrator: TaWorkbookOrchestrator = {
+      async runStage(stage) {
+        if (stage === "f0_validating") {
+          return {
+            status: "completed",
+            skillId: "knowledge-and-rules-validation-v1",
+            inputRevision: 1,
+            idempotencyKey: "attempt:f0",
+            output: { featureId: "F0", status: "completed", versions: ["v1", "internal-v1", "interpretation-rules-v1"] },
+          };
+        }
+        if (stage === "f1_f2_running") {
+          return {
+            status: "blocked",
+            skillId: "workbook-analysis-assets-v1",
+            inputRevision: 1,
+            idempotencyKey: "attempt:f1f2",
+            reasonCode: "f2_blocked",
+            summary: "f1-f2 blocked",
+            output: { f1Root: "managed/f1", f2Root: "managed/f2" },
+          };
+        }
+        throw new Error(`unexpected stage: ${stage}`);
+      },
+      async runWorkbookScopeDiscovery() {
+        return {
+          status: "completed",
+          skillId: "workbook-scope-discovery-v1",
+          inputRevision: 1,
+          idempotencyKey: "attempt:f1",
+          output: {
+            selectionReference: { selectionId: "selection-ok" },
+            prompt: {
+              contractVersion: "v1",
+              inputClassification: "confidential",
+              status: "selectionRequired",
+              workbook: { fileName: "book.xlsx", contentHash: workbookHash },
+              options: [{ selectionIndex: 1, worksheetName: "Analysis-A", toleranceLoopDescription: "Analysis loop", worksheetKind: "analysis", source: { discoveryMethod: "worksheet_scan", descriptionCell: "Analysis-A!F11", worksheetAnchor: "Analysis-A!A1" } }],
+            },
+          },
+        };
+      },
+      async runAnalysisInputValidation() {
+        return {
+          status: "blocked",
+          skillId: "analysis-input-validation-v1",
+          inputRevision: 1,
+          idempotencyKey: "attempt:f2",
+          reasonCode: "delegated",
+          summary: "delegated",
+        };
+      },
+    };
+
+    const server = await buildWorkbenchServer({ rootDir, orchestrator, queueFactory: immediateQueue, skipWebAssets: true });
+    try {
+      const auth = await server.testAuthenticate("16161616-1616-4616-8616-161616161616");
+      const artifactId = "managed-workbook";
+      const relativePath = `uploads/${auth.sessionId}/workbook/${artifactId}-book.xlsx`;
+      server.registerArtifactForTest(auth.sessionId, artifactId, relativePath, "book.xlsx", "confidential", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      await mkdir(dirname(join(rootDir, relativePath)), { recursive: true });
+      await writeFile(join(rootDir, relativePath), createAnonymousWorkbookZip());
+
+      const uploaded = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${auth.sessionId}/commands`,
+        headers: auth.headers,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId: auth.sessionId,
+          commandId: "f1f2-blocked-upload",
+          expectedRevision: 0,
+          command: "upload_workbook",
+          payload: { artifactId, inputClassification: "confidential" },
+        },
+      });
+      expect(uploaded.statusCode).toBe(202);
+      expect(uploaded.json()).toMatchObject({ state: "initial_scope_required" });
+
+      const confirmed = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${auth.sessionId}/commands`,
+        headers: auth.headers,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId: auth.sessionId,
+          commandId: "f1f2-blocked-confirm-initial",
+          expectedRevision: uploaded.json<{ revision: number }>().revision,
+          command: "confirm_initial_scope",
+          payload: { workbookHash, worksheetNames: ["Analysis-A"] },
+        },
+      });
+
+      expect(confirmed.statusCode).toBe(202);
+      const rootsRegistry = await readFile(join(rootDir, "runtime", "workbench", "registries", "production-roots", `${auth.sessionId}.json`), "utf8").catch(() => undefined);
+      expect(rootsRegistry).toBeUndefined();
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  }, 15_000);
+
+  it("keeps production sessions at initial scope until user confirmation", async () => {
     const rootDir = testRoot("workbench-server-auto-entry");
     await rm(rootDir, { recursive: true, force: true });
     const stages: string[] = [];
@@ -1157,7 +1458,417 @@ describe("workbench server routes", () => {
       const response = await server.inject({ method: "POST", url: `/api/sessions/${auth.sessionId}/commands`, headers: auth.headers, payload: { contractVersion: "f8-session-command-v1", sessionId: auth.sessionId, commandId: "auto-upload", expectedRevision: 0, command: "upload_workbook", payload: { artifactId, inputClassification: "confidential" } } });
 
       expect(response.statusCode).toBe(202);
-      expect(response.json()).toMatchObject({ state: "downstream_scope_required", initialScopeSelection: { selectedWorksheetNames: ["Analysis-A"], confirmed: true } });
+      expect(response.json()).toMatchObject({ state: "initial_scope_required" });
+      expect(response.json()).not.toHaveProperty("initialScopeSelection");
+      expect(stages).toEqual(["f0_validating"]);
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  }, 15_000);
+
+  it("keeps production sessions at downstream scope after user initial confirmation until explicit downstream confirmation", async () => {
+    const rootDir = testRoot("workbench-server-second-stop");
+    await rm(rootDir, { recursive: true, force: true });
+    const workbookHash = "a".repeat(64);
+    const runner = vi.fn(async (job: StageJob) => {
+      if (job.stage === "f0_validating") {
+        return {
+          featureId: "F0",
+          status: "completed",
+          versions: ["v1", "internal-v1", "interpretation-rules-v1"],
+          worksheetCapabilities: [{ worksheetName: "Analysis-A", whatIfAvailable: false }],
+          selectionPrompt: {
+            contractVersion: "v1",
+            inputClassification: "confidential",
+            status: "selectionRequired",
+            workbook: { fileName: "book.xlsx", contentHash: workbookHash },
+            options: [{ selectionIndex: 1, worksheetName: "Analysis-A", toleranceLoopDescription: "Analysis loop", worksheetKind: "analysis", source: { discoveryMethod: "worksheet_scan", descriptionCell: "Analysis-A!F11", worksheetAnchor: "Analysis-A!A1" } }],
+          },
+        };
+      }
+      if (job.stage === "f1_f2_running") {
+        const report = f2ImageBindingReportForArtifactTest("1".repeat(64), [{ worksheetName: "Analysis-A", relativePath: "worksheets/analysis-a/tolerance-path.png" }]);
+        const f2Root = join(rootDir, "runtime", "workbench", "runner-output", "second-stop", "f2");
+        await mkdir(f2Root, { recursive: true });
+        await writeFile(join(f2Root, "Feature2-Report.json"), `${JSON.stringify(report, null, 2)}\n`);
+        return {
+          featureId: "F2",
+          status: "completed",
+          runId: "f2-run-second-stop",
+          f2Root,
+          workbookContentHash: workbookHash,
+          report,
+        };
+      }
+      return { status: "completed" };
+    });
+    const server = await buildWorkbenchServer({ rootDir, runner, queueFactory: immediateQueue, skipWebAssets: true });
+    try {
+      const auth = await server.testAuthenticate("88888888-8888-4888-8888-888888888888");
+      const artifactId = "managed-workbook";
+      const relativePath = `uploads/${auth.sessionId}/workbook/${artifactId}-book.xlsx`;
+      server.registerArtifactForTest(auth.sessionId, artifactId, relativePath, "book.xlsx", "confidential", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      await mkdir(dirname(join(rootDir, relativePath)), { recursive: true });
+      await writeFile(join(rootDir, relativePath), createAnonymousWorkbookZip());
+
+      const uploaded = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${auth.sessionId}/commands`,
+        headers: auth.headers,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId: auth.sessionId,
+          commandId: "second-stop-upload",
+          expectedRevision: 0,
+          command: "upload_workbook",
+          payload: { artifactId, inputClassification: "confidential" },
+        },
+      });
+      expect(uploaded.statusCode).toBe(202);
+      expect(uploaded.json()).toMatchObject({ state: "initial_scope_required" });
+
+      const afterInitial = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${auth.sessionId}/commands`,
+        headers: auth.headers,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId: auth.sessionId,
+          commandId: "second-stop-initial-confirm",
+          expectedRevision: uploaded.json<{ revision: number }>().revision,
+          command: "confirm_initial_scope",
+          payload: { workbookHash, worksheetNames: ["Analysis-A"] },
+        },
+      });
+
+      expect(afterInitial.statusCode).toBe(202);
+      expect(afterInitial.json()).toMatchObject({
+        state: "downstream_scope_required",
+        initialScopeSelection: { workbookContentHash: workbookHash, selectedWorksheetNames: ["Analysis-A"], confirmed: true, provenance: "user" },
+      });
+      expect(afterInitial.json()).not.toHaveProperty("downstreamScopeSelection");
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  }, 15_000);
+
+  it("rejects blocked worksheets during downstream confirmation using current F2 readiness evidence", async () => {
+    const rootDir = testRoot("workbench-server-downstream-blocked");
+    await rm(rootDir, { recursive: true, force: true });
+    const sessionId = "89898989-8989-4898-8989-898989898989";
+    const workbookHash = "a".repeat(64);
+    const report = f2ImageBindingReportForArtifactTest("1".repeat(64), [
+      { worksheetName: "Analysis-A", relativePath: "worksheets/analysis-a/tolerance-path.png" },
+      { worksheetName: "Analysis-B", relativePath: "worksheets/analysis-b/tolerance-path.png" },
+    ]);
+    report.status = "partiallyBlocked";
+    report.worksheets = report.worksheets.map((worksheet) => worksheet.worksheetName === "Analysis-B"
+      ? { ...worksheet, status: "blocked", tolerancePathImageStatus: "unavailable" }
+      : worksheet);
+    report.f4Handoffs = report.f4Handoffs.filter((handoff) => handoff.worksheetName !== "Analysis-B");
+    report.summary = { ...report.summary, blockedWorksheetCount: 1, readyWorksheetCount: 1, missingImageWorksheetCount: 1 };
+    const reportRelativePath = "f2/downstream-blocked.json";
+    const reportHash = await writeJsonArtifact(rootDir, reportRelativePath, report);
+
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate(sessionId);
+      const store = await openSessionStore({ rootDir, sessionId });
+      try {
+        await store.applyCommand({
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "seed-downstream-blocked",
+          expectedRevision: 0,
+          command: "upload_workbook",
+          payload: { fileName: "book.xlsx", workbookBytes: new Uint8Array([80, 75, 3, 4]), inputClassification: "confidential" },
+        }, async (snapshot) => ({
+          snapshot: {
+            ...snapshot,
+            revision: 1,
+            inputRevision: 1,
+            state: "downstream_scope_required",
+            activeAttempt: null,
+            initialScopeSelection: {
+              workbookContentHash: workbookHash,
+              selectedWorksheetNames: ["Analysis-A", "Analysis-B"],
+              confirmed: true,
+              provenance: "user",
+            },
+            artifactRefs: [{ artifactId: "f2-current", kind: "f2_report", revision: 1, validated: true }],
+          },
+          artifactReferenceOps: {
+            upsert: [{ artifactId: "f2-current", sessionId, inputRevision: 1, kind: "f2_report", relativePath: reportRelativePath, contentHash: reportHash }],
+          },
+        }));
+      } finally {
+        await store.close();
+      }
+
+      const response = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${sessionId}/commands`,
+        headers: browser.headers,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "confirm-downstream-blocked",
+          expectedRevision: 1,
+          command: "confirm_downstream_scope",
+          payload: { workbookHash, worksheetNames: ["Analysis-B"] },
+        },
+      });
+
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toMatchObject({ error: { code: "validation_error" } });
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects downstream scope drift when worksheet is absent from the current F2 report", async () => {
+    const rootDir = testRoot("workbench-server-downstream-scope-drift");
+    await rm(rootDir, { recursive: true, force: true });
+    const sessionId = "90909090-9090-4909-9090-909090909090";
+    const workbookHash = "a".repeat(64);
+    const report = f2ImageBindingReportForArtifactTest("1".repeat(64), [
+      { worksheetName: "Analysis-A", relativePath: "worksheets/analysis-a/tolerance-path.png" },
+    ]);
+    const reportRelativePath = "f2/downstream-scope-drift.json";
+    const reportHash = await writeJsonArtifact(rootDir, reportRelativePath, report);
+
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate(sessionId);
+      const store = await openSessionStore({ rootDir, sessionId });
+      try {
+        await store.applyCommand({
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "seed-downstream-drift",
+          expectedRevision: 0,
+          command: "upload_workbook",
+          payload: { fileName: "book.xlsx", workbookBytes: new Uint8Array([80, 75, 3, 4]), inputClassification: "confidential" },
+        }, async (snapshot) => ({
+          snapshot: {
+            ...snapshot,
+            revision: 1,
+            inputRevision: 1,
+            state: "downstream_scope_required",
+            activeAttempt: null,
+            initialScopeSelection: {
+              workbookContentHash: workbookHash,
+              selectedWorksheetNames: ["Analysis-A", "Analysis-C"],
+              confirmed: true,
+              provenance: "user",
+            },
+            artifactRefs: [{ artifactId: "f2-current", kind: "f2_report", revision: 1, validated: true }],
+          },
+          artifactReferenceOps: {
+            upsert: [{ artifactId: "f2-current", sessionId, inputRevision: 1, kind: "f2_report", relativePath: reportRelativePath, contentHash: reportHash }],
+          },
+        }));
+      } finally {
+        await store.close();
+      }
+
+      const response = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${sessionId}/commands`,
+        headers: browser.headers,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "confirm-downstream-drift",
+          expectedRevision: 1,
+          command: "confirm_downstream_scope",
+          payload: { workbookHash, worksheetNames: ["Analysis-C"] },
+        },
+      });
+
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toMatchObject({ error: { code: "evidence_mismatch" } });
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed when no current validated F2 report evidence is available for downstream confirmation", async () => {
+    const rootDir = testRoot("workbench-server-downstream-no-current-f2");
+    await rm(rootDir, { recursive: true, force: true });
+    const sessionId = "91919191-9191-4919-9191-919191919191";
+    const workbookHash = "a".repeat(64);
+
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate(sessionId);
+      const store = await openSessionStore({ rootDir, sessionId });
+      try {
+        await store.applyCommand({
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "seed-downstream-no-current-f2",
+          expectedRevision: 0,
+          command: "upload_workbook",
+          payload: { fileName: "book.xlsx", workbookBytes: new Uint8Array([80, 75, 3, 4]), inputClassification: "confidential" },
+        }, async (snapshot) => ({
+          snapshot: {
+            ...snapshot,
+            revision: 1,
+            inputRevision: 1,
+            state: "downstream_scope_required",
+            activeAttempt: null,
+            initialScopeSelection: {
+              workbookContentHash: workbookHash,
+              selectedWorksheetNames: ["Analysis-A"],
+              confirmed: true,
+              provenance: "user",
+            },
+            artifactRefs: [],
+          },
+        }));
+      } finally {
+        await store.close();
+      }
+
+      const response = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${sessionId}/commands`,
+        headers: browser.headers,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "confirm-downstream-no-current-f2",
+          expectedRevision: 1,
+          command: "confirm_downstream_scope",
+          payload: { workbookHash, worksheetNames: ["Analysis-A"] },
+        },
+      });
+
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toMatchObject({ error: { code: "evidence_mismatch" } });
+
+      const after = await server.inject({ method: "GET", url: `/api/sessions/${sessionId}`, headers: browser.headers });
+      expect(after.statusCode).toBe(200);
+      expect(after.json()).toMatchObject({ revision: 1, state: "downstream_scope_required" });
+      expect(after.json()).not.toHaveProperty("downstreamScopeSelection");
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed when multiple current validated F2 report references are present", async () => {
+    const rootDir = testRoot("workbench-server-downstream-multi-current-f2");
+    await rm(rootDir, { recursive: true, force: true });
+    const sessionId = "92929292-9292-4929-9292-929292929292";
+    const workbookHash = "a".repeat(64);
+
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate(sessionId);
+      const store = await openSessionStore({ rootDir, sessionId });
+      try {
+        await store.applyCommand({
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "seed-downstream-multi-current-f2",
+          expectedRevision: 0,
+          command: "upload_workbook",
+          payload: { fileName: "book.xlsx", workbookBytes: new Uint8Array([80, 75, 3, 4]), inputClassification: "confidential" },
+        }, async (snapshot) => ({
+          snapshot: {
+            ...snapshot,
+            revision: 1,
+            inputRevision: 1,
+            state: "downstream_scope_required",
+            activeAttempt: null,
+            initialScopeSelection: {
+              workbookContentHash: workbookHash,
+              selectedWorksheetNames: ["Analysis-A"],
+              confirmed: true,
+              provenance: "user",
+            },
+            artifactRefs: [
+              { artifactId: "f2-current-a", kind: "f2_report", revision: 1, validated: true },
+              { artifactId: "f2-current-b", kind: "f2_report", revision: 1, validated: true },
+            ],
+          },
+        }));
+      } finally {
+        await store.close();
+      }
+
+      const response = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${sessionId}/commands`,
+        headers: browser.headers,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "confirm-downstream-multi-current-f2",
+          expectedRevision: 1,
+          command: "confirm_downstream_scope",
+          payload: { workbookHash, worksheetNames: ["Analysis-A"] },
+        },
+      });
+
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toMatchObject({ error: { code: "evidence_mismatch" } });
+
+      const after = await server.inject({ method: "GET", url: `/api/sessions/${sessionId}`, headers: browser.headers });
+      expect(after.statusCode).toBe(200);
+      expect(after.json()).toMatchObject({ revision: 1, state: "downstream_scope_required" });
+      expect(after.json()).not.toHaveProperty("downstreamScopeSelection");
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("allows fixture-only auto confirmations through explicit injected policy", async () => {
+    const rootDir = testRoot("workbench-server-auto-entry-fixture");
+    await rm(rootDir, { recursive: true, force: true });
+    const stages: string[] = [];
+    const runner = vi.fn(async (job: StageJob) => {
+      stages.push(job.stage);
+      if (job.stage === "f0_validating") {
+        return {
+          featureId: "F0",
+          status: "completed",
+          versions: ["v1", "internal-v1", "interpretation-rules-v1"],
+          worksheetCapabilities: [{ worksheetName: "Analysis-A", whatIfAvailable: false }],
+          selectionPrompt: {
+            contractVersion: "v1",
+            inputClassification: "confidential",
+            status: "selectionRequired",
+            workbook: { fileName: "book.xlsx", contentHash: "a".repeat(64) },
+            options: [{ selectionIndex: 1, worksheetName: "Analysis-A", toleranceLoopDescription: "Analysis loop", worksheetKind: "analysis", source: { discoveryMethod: "worksheet_scan", descriptionCell: "Analysis-A!F11", worksheetAnchor: "Analysis-A!A1" } }],
+          },
+        };
+      }
+      return { status: "completed" };
+    });
+    const server = await buildWorkbenchServer({ rootDir, runner, queueFactory: immediateQueue, skipWebAssets: true, allowInternalFixtureAutoConfirmation: true });
+    try {
+      const auth = await server.testAuthenticate("13131313-1313-4313-8313-131313131314");
+      const artifactId = "managed-workbook";
+      const relativePath = `uploads/${auth.sessionId}/workbook/${artifactId}-book.xlsx`;
+      server.registerArtifactForTest(auth.sessionId, artifactId, relativePath, "book.xlsx", "confidential", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      await mkdir(dirname(join(rootDir, relativePath)), { recursive: true });
+      await writeFile(join(rootDir, relativePath), createAnonymousWorkbookZip());
+
+      const response = await server.inject({ method: "POST", url: `/api/sessions/${auth.sessionId}/commands`, headers: auth.headers, payload: { contractVersion: "f8-session-command-v1", sessionId: auth.sessionId, commandId: "auto-upload-fixture", expectedRevision: 0, command: "upload_workbook", payload: { artifactId, inputClassification: "confidential" } } });
+
+      expect(response.statusCode).toBe(202);
+      expect(response.json()).toMatchObject({
+        state: "downstream_scope_required",
+        initialScopeSelection: { selectedWorksheetNames: ["Analysis-A"], confirmed: true, provenance: "internal_fixture" },
+      });
       expect(stages).toEqual(["f0_validating", "f1_f2_running"]);
     } finally {
       await server.close();
@@ -1221,7 +1932,7 @@ describe("workbench server routes", () => {
           revision: snapshot.revision + 1,
           inputRevision: 1,
           activeAttempt: null,
-          downstreamScopeSelection: { workbookContentHash: "a".repeat(64), selectedWorksheetNames: ["Analysis-A"], confirmed: true },
+          downstreamScopeSelection: { workbookContentHash: "a".repeat(64), selectedWorksheetNames: ["Analysis-A"], confirmed: true, provenance: "user" },
           priorRunReferences: [{ featureId: "F2", referenceId: "f2-run-a", contractVersion: "v1", workbookHash: "a".repeat(64), runReference: "f2-baseline-a" }],
           artifactRefs: [{ artifactId: "f3-current-host-action", kind: "f3_report", revision: 1, validated: true, reviewContextId: REVIEW_CONTEXT_ID }],
         }, artifactReferenceOps: { upsert: [{ artifactId: "f3-current-host-action", sessionId: browser.sessionId, inputRevision: 1, kind: "f3_report", relativePath: "f3/current-host-action.json", contentHash: reportHash, reviewContext: REVIEW_CONTEXT }] } }));
@@ -1329,7 +2040,7 @@ describe("workbench server routes", () => {
           inputRevision: 2,
           state: "ado_decision_required",
           activeAttempt: null,
-          downstreamScopeSelection: { workbookContentHash: "a".repeat(64), selectedWorksheetNames: ["Analysis-A"], confirmed: true },
+          downstreamScopeSelection: { workbookContentHash: "a".repeat(64), selectedWorksheetNames: ["Analysis-A"], confirmed: true, provenance: "user" },
           priorRunReferences: [{ featureId: "F2", referenceId: "f2-run-a", contractVersion: "v1", workbookHash: "a".repeat(64), runReference: "f2-baseline-a" }],
           artifactRefs: [
             { artifactId: "f3-old", kind: "f3_report", revision: 1, validated: true, reviewContextId: REVIEW_CONTEXT_ID },
@@ -1415,7 +2126,7 @@ describe("workbench server routes", () => {
           sessionId: browser.sessionId,
           expectedRevision: revision,
           kind: "surface_validate",
-          expiresAt: "2026-09-01T00:15:00.000Z",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
           confirmationHash: confirmation.confirmationHash,
           expectedTargetVersion: "comment-v1",
           prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
@@ -1438,7 +2149,7 @@ describe("workbench server routes", () => {
           sessionId: browser.sessionId,
           expectedRevision: revision,
           kind: "surface_write",
-          expiresAt: "2026-09-01T00:15:00.000Z",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
           validationActionId,
           confirmationHash: confirmation.confirmationHash,
           expectedTargetVersion: "comment-v1",
@@ -1491,7 +2202,7 @@ describe("workbench server routes", () => {
           sessionId: browser.sessionId,
           expectedRevision: revision,
           kind: "surface_validate",
-          expiresAt: "2026-09-01T00:15:00.000Z",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
           confirmationHash: confirmation.confirmationHash,
           expectedTargetVersion: "comment-v1",
           prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
@@ -1514,7 +2225,7 @@ describe("workbench server routes", () => {
           sessionId: browser.sessionId,
           expectedRevision: revision,
           kind: "surface_write",
-          expiresAt: "2026-09-01T00:15:00.000Z",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
           validationActionId,
           confirmationHash: confirmation.confirmationHash,
           expectedTargetVersion: "comment-v1",
@@ -1567,7 +2278,7 @@ describe("workbench server routes", () => {
           sessionId: browser.sessionId,
           expectedRevision: revision,
           kind: "surface_validate",
-          expiresAt: "2026-09-01T00:15:00.000Z",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
           confirmationHash: confirmation.confirmationHash,
           expectedTargetVersion: "comment-v1",
           prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
@@ -1590,7 +2301,7 @@ describe("workbench server routes", () => {
           sessionId: browser.sessionId,
           expectedRevision: revision,
           kind: "surface_write",
-          expiresAt: "2026-09-01T00:15:00.000Z",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
           validationActionId,
           confirmationHash: confirmation.confirmationHash,
           expectedTargetVersion: "comment-v1",
@@ -1633,16 +2344,17 @@ describe("workbench server routes", () => {
     }
   });
 
-  it("uses write-stage failed fallback text when failed summary is empty", async () => {
-    const rootDir = testRoot("workbench-server-ado-write-failed-empty-summary");
+  it("projects write_outcome_unknown when write dispatch happened without receipt persistence", async () => {
+    const rootDir = testRoot("workbench-server-ado-write-outcome-unknown");
     await rm(rootDir, { recursive: true, force: true });
     const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
     try {
-      const browser = await server.testAuthenticate("78787878-7878-4787-8787-787878787878");
+      const browser = await server.testAuthenticate("79797979-7979-4797-8797-797979797979");
       const revision = await seedAdoActionPendingSnapshot(rootDir, browser.sessionId);
       const validationActionId = `ado-validation:${browser.sessionId}:${revision}`;
       const writeActionId = `ado-write:${browser.sessionId}:${revision}`;
-      const hostActions = await createHostActionStore({ rootDir, sessionId: browser.sessionId });
+      let now = new Date("2026-09-01T00:00:00.000Z");
+      const hostActions = await createHostActionStore({ rootDir, sessionId: browser.sessionId, now: () => now });
       try {
         const confirmation = testSurfaceConfirmation();
         await hostActions.createHostAction({
@@ -1651,7 +2363,7 @@ describe("workbench server routes", () => {
           sessionId: browser.sessionId,
           expectedRevision: revision,
           kind: "surface_validate",
-          expiresAt: "2026-09-01T00:15:00.000Z",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
           confirmationHash: confirmation.confirmationHash,
           expectedTargetVersion: "comment-v1",
           prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
@@ -1674,7 +2386,831 @@ describe("workbench server routes", () => {
           sessionId: browser.sessionId,
           expectedRevision: revision,
           kind: "surface_write",
-          expiresAt: "2026-09-01T00:15:00.000Z",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          validationActionId,
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          confirmation,
+        });
+        now = new Date("2026-09-01T00:00:05.000Z");
+        await hostActions.claimHostAction(writeActionId, "host-a");
+      } finally {
+        await hostActions.close();
+      }
+
+      const response = await server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}/ado`, headers: browser.headers });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        state: "write_outcome_unknown",
+        actionId: writeActionId,
+        validationActionId,
+        expectedRevision: revision,
+        writeDispatchedAt: "2026-09-01T00:00:05.000Z",
+      });
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("creates a typed reconcile host action from write_outcome_unknown and exposes it to host pending", async () => {
+    const routeNowMs = Date.now();
+    setAdoRouteClockForTest(() => routeNowMs);
+    const rootDir = testRoot("workbench-server-ado-reconcile-route");
+    await rm(rootDir, { recursive: true, force: true });
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate("67676767-6767-4676-8676-676767676767");
+      const revision = await seedAdoActionPendingSnapshot(rootDir, browser.sessionId);
+      const validationActionId = `ado-validation:${browser.sessionId}:${revision}`;
+      const writeActionId = `ado-write:${browser.sessionId}:${revision}`;
+      const hostActions = await createHostActionStore({ rootDir, sessionId: browser.sessionId, now: () => new Date(routeNowMs - 120_000) });
+      try {
+        const confirmation = testSurfaceConfirmation();
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: validationActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_validate",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
+        });
+        const validationClaim = await hostActions.claimHostAction(validationActionId, "host-a");
+        const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };
+        await hostActions.completeHostAction({
+          contractVersion: "f8-host-action-result-v1",
+          actionId: validationActionId,
+          hostInstanceId: "host-a",
+          leaseId: validationClaim.leaseId,
+          status: "completed",
+          resultHash: createHash("sha256").update(JSON.stringify(validationPayload)).digest("hex"),
+          payload: validationPayload,
+        });
+
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: writeActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_write",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          validationActionId,
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          confirmation,
+        });
+        await hostActions.claimHostAction(writeActionId, "host-a");
+      } finally {
+        await hostActions.close();
+      }
+
+      const reconcileResponse = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${browser.sessionId}/ado/reconcile`,
+        headers: browser.headers,
+      });
+      expect(reconcileResponse.statusCode).toBe(202);
+
+      const hostToken = server.issueHostBearer(browser.sessionId, ["sessions:read"]);
+      const pending = await server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}/ado/pending`, headers: { host: "127.0.0.1:0", authorization: `Bearer ${hostToken}` } });
+      expect(pending.statusCode).toBe(200);
+      expect(pending.json()).toMatchObject({
+        actionId: `ado-reconcile:${browser.sessionId}:${revision}`,
+        kind: "surface_reconcile",
+      });
+    } finally {
+      setAdoRouteClockForTest(undefined);
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects reconcile while the original write lease is still active", async () => {
+    const routeNowMs = Date.now();
+    setAdoRouteClockForTest(() => routeNowMs);
+    const rootDir = testRoot("workbench-server-ado-reconcile-active-lease");
+    await rm(rootDir, { recursive: true, force: true });
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate("65656565-6565-4656-8656-656565656565");
+      const revision = await seedAdoActionPendingSnapshot(rootDir, browser.sessionId);
+      const validationActionId = `ado-validation:${browser.sessionId}:${revision}`;
+      const writeActionId = `ado-write:${browser.sessionId}:${revision}`;
+      const hostActions = await createHostActionStore({ rootDir, sessionId: browser.sessionId, now: () => new Date(routeNowMs - 20_000) });
+      try {
+        const confirmation = testSurfaceConfirmation();
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: validationActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_validate",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
+        });
+        const validationClaim = await hostActions.claimHostAction(validationActionId, "host-a");
+        const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };
+        await hostActions.completeHostAction({
+          contractVersion: "f8-host-action-result-v1",
+          actionId: validationActionId,
+          hostInstanceId: "host-a",
+          leaseId: validationClaim.leaseId,
+          status: "completed",
+          resultHash: createHash("sha256").update(JSON.stringify(validationPayload)).digest("hex"),
+          payload: validationPayload,
+        });
+
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: writeActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_write",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          validationActionId,
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          confirmation,
+        });
+        await hostActions.claimHostAction(writeActionId, "host-a");
+      } finally {
+        await hostActions.close();
+      }
+
+      const reconcileResponse = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${browser.sessionId}/ado/reconcile`,
+        headers: browser.headers,
+      });
+      expect(reconcileResponse.statusCode).toBe(409);
+      expect(reconcileResponse.json()).toMatchObject({ error: "ado_reconcile_unavailable" });
+    } finally {
+      setAdoRouteClockForTest(undefined);
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns the same reconcile action for repeated reconcile requests while pending", async () => {
+    const routeNowMs = Date.now();
+    setAdoRouteClockForTest(() => routeNowMs);
+    const rootDir = testRoot("workbench-server-ado-reconcile-idempotent-pending");
+    await rm(rootDir, { recursive: true, force: true });
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate("61616161-6161-4616-8616-616161616161");
+      const revision = await seedAdoActionPendingSnapshot(rootDir, browser.sessionId);
+      const validationActionId = `ado-validation:${browser.sessionId}:${revision}`;
+      const writeActionId = `ado-write:${browser.sessionId}:${revision}`;
+      const reconcileActionId = `ado-reconcile:${browser.sessionId}:${revision}`;
+      const hostActions = await createHostActionStore({ rootDir, sessionId: browser.sessionId, now: () => new Date(routeNowMs - 120_000) });
+      try {
+        const confirmation = testSurfaceConfirmation();
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: validationActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_validate",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
+        });
+        const validationClaim = await hostActions.claimHostAction(validationActionId, "host-a");
+        const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };
+        await hostActions.completeHostAction({
+          contractVersion: "f8-host-action-result-v1",
+          actionId: validationActionId,
+          hostInstanceId: "host-a",
+          leaseId: validationClaim.leaseId,
+          status: "completed",
+          resultHash: createHash("sha256").update(JSON.stringify(validationPayload)).digest("hex"),
+          payload: validationPayload,
+        });
+
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: writeActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_write",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          validationActionId,
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          confirmation,
+        });
+        await hostActions.claimHostAction(writeActionId, "host-a");
+      } finally {
+        await hostActions.close();
+      }
+
+      const first = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${browser.sessionId}/ado/reconcile`,
+        headers: browser.headers,
+      });
+      expect(first.statusCode).toBe(202);
+      expect(first.json()).toMatchObject({ actionId: reconcileActionId, status: "pending" });
+
+      const second = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${browser.sessionId}/ado/reconcile`,
+        headers: browser.headers,
+      });
+      expect(second.statusCode).toBe(202);
+      expect(second.json()).toMatchObject({ actionId: reconcileActionId, status: "pending" });
+
+      const verifyStore = await createHostActionStore({ rootDir, sessionId: browser.sessionId });
+      try {
+        const reconcileRecord = await verifyStore.getHostAction(reconcileActionId);
+        const writeRecord = await verifyStore.getHostAction(writeActionId);
+        expect(reconcileRecord.request.kind).toBe("surface_reconcile");
+        expect(reconcileRecord.result).toBeUndefined();
+        expect(writeRecord.request.kind).toBe("surface_write");
+        expect(writeRecord.result).toBeUndefined();
+      } finally {
+        await verifyStore.close();
+      }
+    } finally {
+      setAdoRouteClockForTest(undefined);
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns the same reconcile action for repeated reconcile requests after terminal completion", async () => {
+    const routeNowMs = Date.now();
+    setAdoRouteClockForTest(() => routeNowMs);
+    const rootDir = testRoot("workbench-server-ado-reconcile-idempotent-terminal");
+    await rm(rootDir, { recursive: true, force: true });
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate("60606060-6060-4606-8606-606060606060");
+      const revision = await seedAdoActionPendingSnapshot(rootDir, browser.sessionId);
+      const validationActionId = `ado-validation:${browser.sessionId}:${revision}`;
+      const writeActionId = `ado-write:${browser.sessionId}:${revision}`;
+      const reconcileActionId = `ado-reconcile:${browser.sessionId}:${revision}`;
+      const hostActions = await createHostActionStore({ rootDir, sessionId: browser.sessionId, now: () => new Date(routeNowMs - 120_000) });
+      try {
+        const confirmation = testSurfaceConfirmation();
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: validationActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_validate",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
+        });
+        const validationClaim = await hostActions.claimHostAction(validationActionId, "host-a");
+        const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };
+        await hostActions.completeHostAction({
+          contractVersion: "f8-host-action-result-v1",
+          actionId: validationActionId,
+          hostInstanceId: "host-a",
+          leaseId: validationClaim.leaseId,
+          status: "completed",
+          resultHash: createHash("sha256").update(JSON.stringify(validationPayload)).digest("hex"),
+          payload: validationPayload,
+        });
+
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: writeActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_write",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          validationActionId,
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          confirmation,
+        });
+        await hostActions.claimHostAction(writeActionId, "host-a");
+      } finally {
+        await hostActions.close();
+      }
+
+      const first = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${browser.sessionId}/ado/reconcile`,
+        headers: browser.headers,
+      });
+      expect(first.statusCode).toBe(202);
+      expect(first.json()).toMatchObject({ actionId: reconcileActionId, status: "pending" });
+
+      const store = await createHostActionStore({ rootDir, sessionId: browser.sessionId });
+      try {
+        const claim = await store.claimHostAction(reconcileActionId, "host-a");
+        const payload = {
+          status: "completed" as const,
+          outcome: {
+            kind: "surface_reconcile" as const,
+            state: "absent" as const,
+          },
+        };
+        await store.completeHostAction({
+          contractVersion: "f8-host-action-result-v1",
+          actionId: reconcileActionId,
+          hostInstanceId: "host-a",
+          leaseId: claim.leaseId,
+          status: "completed",
+          resultHash: createHash("sha256").update(JSON.stringify(payload)).digest("hex"),
+          payload,
+        });
+      } finally {
+        await store.close();
+      }
+
+      const second = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${browser.sessionId}/ado/reconcile`,
+        headers: browser.headers,
+      });
+      expect(second.statusCode).toBe(200);
+      expect(second.json()).toMatchObject({ actionId: reconcileActionId, status: "completed" });
+    } finally {
+      setAdoRouteClockForTest(undefined);
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed when an existing reconcile action identity differs from the current write identity", async () => {
+    const routeNowMs = Date.now();
+    setAdoRouteClockForTest(() => routeNowMs);
+    const rootDir = testRoot("workbench-server-ado-reconcile-identity-mismatch");
+    await rm(rootDir, { recursive: true, force: true });
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate("51515151-5151-4515-8515-515151515151");
+      const revision = await seedAdoActionPendingSnapshot(rootDir, browser.sessionId);
+      const validationActionId = `ado-validation:${browser.sessionId}:${revision}`;
+      const writeActionId = `ado-write:${browser.sessionId}:${revision}`;
+      const reconcileActionId = `ado-reconcile:${browser.sessionId}:${revision}`;
+      const hostActions = await createHostActionStore({ rootDir, sessionId: browser.sessionId, now: () => new Date(routeNowMs - 120_000) });
+      try {
+        const confirmation = testSurfaceConfirmation();
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: validationActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_validate",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
+        });
+        const validationClaim = await hostActions.claimHostAction(validationActionId, "host-a");
+        const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };
+        await hostActions.completeHostAction({
+          contractVersion: "f8-host-action-result-v1",
+          actionId: validationActionId,
+          hostInstanceId: "host-a",
+          leaseId: validationClaim.leaseId,
+          status: "completed",
+          resultHash: createHash("sha256").update(JSON.stringify(validationPayload)).digest("hex"),
+          payload: validationPayload,
+        });
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: writeActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_write",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          validationActionId,
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          confirmation,
+        });
+        await hostActions.claimHostAction(writeActionId, "host-a");
+
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: reconcileActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_reconcile",
+          expiresAt: new Date(routeNowMs + 15 * 60_000).toISOString(),
+          writeActionId,
+          validationActionId,
+          confirmationHash: "f".repeat(64),
+          expectedTargetVersion: "comment-v1",
+          previewIdentity: {
+            targetIdentity: { organization: "MSFTDEVICES", project: "Project A", workItemId: 404 },
+            previewHash: "0".repeat(64),
+            previewMarker: "preview-marker:ado:session:mismatch",
+          },
+          confirmation,
+        });
+      } finally {
+        await hostActions.close();
+      }
+
+      const response = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${browser.sessionId}/ado/reconcile`,
+        headers: browser.headers,
+      });
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toMatchObject({ error: "ado_reconcile_identity_mismatch" });
+    } finally {
+      setAdoRouteClockForTest(undefined);
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps original completed write projection even if a late reconcile result is absent", async () => {
+    const rootDir = testRoot("workbench-server-ado-reconcile-late-absent");
+    await rm(rootDir, { recursive: true, force: true });
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate("64646464-6464-4646-8646-646464646464");
+      const revision = await seedAdoActionPendingSnapshot(rootDir, browser.sessionId);
+      const validationActionId = `ado-validation:${browser.sessionId}:${revision}`;
+      const writeActionId = `ado-write:${browser.sessionId}:${revision}`;
+      const reconcileActionId = `ado-reconcile:${browser.sessionId}:${revision}`;
+      const hostActions = await createHostActionStore({ rootDir, sessionId: browser.sessionId, now: () => new Date("2026-09-01T00:00:00.000Z") });
+      try {
+        const confirmation = testSurfaceConfirmation();
+        const expectedContentHash = createHash("sha256").update(confirmation.nextContent).digest("hex");
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: validationActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_validate",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
+        });
+        const validationClaim = await hostActions.claimHostAction(validationActionId, "host-a");
+        const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };
+        await hostActions.completeHostAction({
+          contractVersion: "f8-host-action-result-v1",
+          actionId: validationActionId,
+          hostInstanceId: "host-a",
+          leaseId: validationClaim.leaseId,
+          status: "completed",
+          resultHash: createHash("sha256").update(JSON.stringify(validationPayload)).digest("hex"),
+          payload: validationPayload,
+        });
+
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: writeActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_write",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          validationActionId,
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          confirmation,
+        });
+        const writeClaim = await hostActions.claimHostAction(writeActionId, "host-a");
+        const writePayload = {
+          status: "completed" as const,
+          outcome: {
+            kind: "surface_write" as const,
+            receipt: {
+              status: "updated" as const,
+              workItemReference: confirmation.workItemReference,
+              commentReference: confirmation.commentReference,
+              version: "9",
+              contentHash: expectedContentHash,
+            },
+          },
+        };
+        await hostActions.completeHostAction({
+          contractVersion: "f8-host-action-result-v1",
+          actionId: writeActionId,
+          hostInstanceId: "host-a",
+          leaseId: writeClaim.leaseId,
+          status: "completed",
+          resultHash: createHash("sha256").update(JSON.stringify(writePayload)).digest("hex"),
+          payload: writePayload,
+        });
+
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: reconcileActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_reconcile",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          writeActionId,
+          validationActionId,
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          previewIdentity: {
+            targetIdentity: { organization: "MSFTDEVICES", project: "Project A", workItemId: 42 },
+            previewHash: expectedContentHash,
+            previewMarker: "preview-marker:ado:session:late",
+          },
+          confirmation,
+        });
+        const reconcileClaim = await hostActions.claimHostAction(reconcileActionId, "host-a");
+        const reconcilePayload = {
+          status: "completed" as const,
+          outcome: {
+            kind: "surface_reconcile" as const,
+            state: "absent" as const,
+          },
+        };
+        await hostActions.completeHostAction({
+          contractVersion: "f8-host-action-result-v1",
+          actionId: reconcileActionId,
+          hostInstanceId: "host-a",
+          leaseId: reconcileClaim.leaseId,
+          status: "completed",
+          resultHash: createHash("sha256").update(JSON.stringify(reconcilePayload)).digest("hex"),
+          payload: reconcilePayload,
+        });
+      } finally {
+        await hostActions.close();
+      }
+
+      const projection = await server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}/ado`, headers: browser.headers });
+      expect(projection.statusCode).toBe(200);
+      expect(projection.json()).toMatchObject({
+        state: "completed",
+        actionId: writeActionId,
+        validationActionId,
+        expectedRevision: revision,
+      });
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("allows a new validation generation only after reconciled_absent and still blocks generation when reconcile is blocked", async () => {
+    const routeNowMs = Date.now();
+    setAdoRouteClockForTest(() => routeNowMs);
+    const rootDir = testRoot("workbench-server-ado-reconcile-new-generation");
+    await rm(rootDir, { recursive: true, force: true });
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate("63636363-6363-4636-8636-636363636363");
+      const revision = await seedAdoActionPendingSnapshot(rootDir, browser.sessionId);
+      const validationActionId = `ado-validation:${browser.sessionId}:${revision}`;
+      const writeActionId = `ado-write:${browser.sessionId}:${revision}`;
+      const reconcileActionId = `ado-reconcile:${browser.sessionId}:${revision}`;
+      const hostActions = await createHostActionStore({ rootDir, sessionId: browser.sessionId, now: () => new Date(routeNowMs - 120_000) });
+      try {
+        const confirmation = testSurfaceConfirmation();
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: validationActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_validate",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
+        });
+        const validationClaim = await hostActions.claimHostAction(validationActionId, "host-a");
+        const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };
+        await hostActions.completeHostAction({
+          contractVersion: "f8-host-action-result-v1",
+          actionId: validationActionId,
+          hostInstanceId: "host-a",
+          leaseId: validationClaim.leaseId,
+          status: "completed",
+          resultHash: createHash("sha256").update(JSON.stringify(validationPayload)).digest("hex"),
+          payload: validationPayload,
+        });
+
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: writeActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_write",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          validationActionId,
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          confirmation,
+        });
+        await hostActions.claimHostAction(writeActionId, "host-a");
+
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: reconcileActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_reconcile",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          writeActionId,
+          validationActionId,
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          previewIdentity: {
+            targetIdentity: { organization: "MSFTDEVICES", project: "Project A", workItemId: 42 },
+            previewHash: createHash("sha256").update(confirmation.nextContent).digest("hex"),
+            previewMarker: "preview-marker:ado:session:absent",
+          },
+          confirmation,
+        });
+        const reconcileClaim = await hostActions.claimHostAction(reconcileActionId, "host-a");
+        const absentPayload = {
+          status: "completed" as const,
+          outcome: {
+            kind: "surface_reconcile" as const,
+            state: "absent" as const,
+          },
+        };
+        await hostActions.completeHostAction({
+          contractVersion: "f8-host-action-result-v1",
+          actionId: reconcileActionId,
+          hostInstanceId: "host-a",
+          leaseId: reconcileClaim.leaseId,
+          status: "completed",
+          resultHash: createHash("sha256").update(JSON.stringify(absentPayload)).digest("hex"),
+          payload: absentPayload,
+        });
+      } finally {
+        await hostActions.close();
+      }
+
+      const beforeReset = await server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}/ado`, headers: browser.headers });
+      expect(beforeReset.statusCode).toBe(200);
+      expect(beforeReset.json()).toMatchObject({ state: "reconciled_absent", actionId: reconcileActionId, writeActionId });
+
+      const regenerate = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${browser.sessionId}/ado/start-new-write-generation`,
+        headers: browser.headers,
+      });
+      expect(regenerate.statusCode).toBe(202);
+      const nextRevision = regenerate.json<{ revision: number }>().revision;
+      const projection = await server.inject({ method: "GET", url: `/api/sessions/${browser.sessionId}/ado`, headers: browser.headers });
+      expect(projection.statusCode).toBe(200);
+      expect(projection.json()).toMatchObject({
+        state: "validation_pending",
+        actionId: `ado-validation:${browser.sessionId}:${nextRevision}`,
+        expectedRevision: nextRevision,
+      });
+
+      const blockedRootDir = testRoot("workbench-server-ado-reconcile-blocked-generation");
+      await rm(blockedRootDir, { recursive: true, force: true });
+      const blockedServer = await buildWorkbenchServer({ rootDir: blockedRootDir, skipWebAssets: true });
+      try {
+        const blockedBrowser = await blockedServer.testAuthenticate("62626262-6262-4626-8626-626262626262");
+        const blockedRevision = await seedAdoActionPendingSnapshot(blockedRootDir, blockedBrowser.sessionId);
+        const blockedValidationActionId = `ado-validation:${blockedBrowser.sessionId}:${blockedRevision}`;
+        const blockedWriteActionId = `ado-write:${blockedBrowser.sessionId}:${blockedRevision}`;
+        const blockedReconcileActionId = `ado-reconcile:${blockedBrowser.sessionId}:${blockedRevision}`;
+        const blockedActions = await createHostActionStore({ rootDir: blockedRootDir, sessionId: blockedBrowser.sessionId, now: () => new Date(routeNowMs - 120_000) });
+        try {
+          const confirmation = testSurfaceConfirmation();
+          await blockedActions.createHostAction({
+            contractVersion: "f8-host-action-request-v1",
+            actionId: blockedValidationActionId,
+            sessionId: blockedBrowser.sessionId,
+            expectedRevision: blockedRevision,
+            kind: "surface_validate",
+            expiresAt: new Date(Date.now() + 60_000).toISOString(),
+            confirmationHash: confirmation.confirmationHash,
+            expectedTargetVersion: "comment-v1",
+            prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
+          });
+          const validationClaim = await blockedActions.claimHostAction(blockedValidationActionId, "host-a");
+          const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };
+          await blockedActions.completeHostAction({
+            contractVersion: "f8-host-action-result-v1",
+            actionId: blockedValidationActionId,
+            hostInstanceId: "host-a",
+            leaseId: validationClaim.leaseId,
+            status: "completed",
+            resultHash: createHash("sha256").update(JSON.stringify(validationPayload)).digest("hex"),
+            payload: validationPayload,
+          });
+          await blockedActions.createHostAction({
+            contractVersion: "f8-host-action-request-v1",
+            actionId: blockedWriteActionId,
+            sessionId: blockedBrowser.sessionId,
+            expectedRevision: blockedRevision,
+            kind: "surface_write",
+            expiresAt: new Date(Date.now() + 60_000).toISOString(),
+            validationActionId: blockedValidationActionId,
+            confirmationHash: confirmation.confirmationHash,
+            expectedTargetVersion: "comment-v1",
+            confirmation,
+          });
+          await blockedActions.claimHostAction(blockedWriteActionId, "host-a");
+          await blockedActions.createHostAction({
+            contractVersion: "f8-host-action-request-v1",
+            actionId: blockedReconcileActionId,
+            sessionId: blockedBrowser.sessionId,
+            expectedRevision: blockedRevision,
+            kind: "surface_reconcile",
+            expiresAt: new Date(Date.now() + 60_000).toISOString(),
+            writeActionId: blockedWriteActionId,
+            validationActionId: blockedValidationActionId,
+            confirmationHash: confirmation.confirmationHash,
+            expectedTargetVersion: "comment-v1",
+            previewIdentity: {
+              targetIdentity: { organization: "MSFTDEVICES", project: "Project A", workItemId: 42 },
+              previewHash: createHash("sha256").update(confirmation.nextContent).digest("hex"),
+              previewMarker: "preview-marker:ado:session:blocked",
+            },
+            confirmation,
+          });
+          const blockedClaim = await blockedActions.claimHostAction(blockedReconcileActionId, "host-a");
+          const blockedPayload = {
+            status: "blocked" as const,
+            reason: "Readback reconciliation was inconclusive.",
+          };
+          await blockedActions.completeHostAction({
+            contractVersion: "f8-host-action-result-v1",
+            actionId: blockedReconcileActionId,
+            hostInstanceId: "host-a",
+            leaseId: blockedClaim.leaseId,
+            status: "blocked",
+            resultHash: createHash("sha256").update(JSON.stringify(blockedPayload)).digest("hex"),
+            payload: blockedPayload,
+          });
+        } finally {
+          await blockedActions.close();
+        }
+
+        const blockedRegenerate = await blockedServer.inject({
+          method: "POST",
+          url: `/api/sessions/${blockedBrowser.sessionId}/ado/start-new-write-generation`,
+          headers: blockedBrowser.headers,
+        });
+        expect(blockedRegenerate.statusCode).toBe(409);
+        expect(blockedRegenerate.json()).toMatchObject({ error: "ado_new_generation_unavailable" });
+      } finally {
+        await blockedServer.close();
+        await rm(blockedRootDir, { recursive: true, force: true });
+      }
+    } finally {
+      setAdoRouteClockForTest(undefined);
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("uses write-stage failed fallback text when failed summary is empty", async () => {
+    const rootDir = testRoot("workbench-server-ado-write-failed-empty-summary");
+    await rm(rootDir, { recursive: true, force: true });
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate("78787878-7878-4787-8787-787878787878");
+      const revision = await seedAdoActionPendingSnapshot(rootDir, browser.sessionId);
+      const validationActionId = `ado-validation:${browser.sessionId}:${revision}`;
+      const writeActionId = `ado-write:${browser.sessionId}:${revision}`;
+      const hostActions = await createHostActionStore({ rootDir, sessionId: browser.sessionId });
+      try {
+        const confirmation = testSurfaceConfirmation();
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: validationActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_validate",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          confirmationHash: confirmation.confirmationHash,
+          expectedTargetVersion: "comment-v1",
+          prepareRequest: { mode: "create", title: "TA Drawing Governance - Anonymous.xlsx", nextContent: confirmation.nextContent, factorCount: confirmation.factorCount },
+        });
+        const validationClaim = await hostActions.claimHostAction(validationActionId, "host-a");
+        const validationPayload = { status: "completed" as const, outcome: { kind: "surface_validation" as const, confirmation } };
+        await hostActions.completeHostAction({
+          contractVersion: "f8-host-action-result-v1",
+          actionId: validationActionId,
+          hostInstanceId: "host-a",
+          leaseId: validationClaim.leaseId,
+          status: "completed",
+          resultHash: createHash("sha256").update(JSON.stringify(validationPayload)).digest("hex"),
+          payload: validationPayload,
+        });
+
+        await hostActions.createHostAction({
+          contractVersion: "f8-host-action-request-v1",
+          actionId: writeActionId,
+          sessionId: browser.sessionId,
+          expectedRevision: revision,
+          kind: "surface_write",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
           validationActionId,
           confirmationHash: confirmation.confirmationHash,
           expectedTargetVersion: "comment-v1",

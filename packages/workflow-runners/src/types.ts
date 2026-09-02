@@ -185,6 +185,7 @@ export interface F6OptimizationResult {
   readonly runSummaryPath?: string;
   readonly manifestPath?: string;
   readonly optimization?: F6OptimizationResultV2;
+  readonly finalReportProjection?: unknown;
   readonly inputDecisions?: {
     readonly analysisContext: { readonly outcome: string; readonly artifactReference?: { readonly artifact: string; readonly contentHash: string } };
     readonly optimizationTargets: { readonly outcome: string; readonly artifactReference?: { readonly artifact: string; readonly contentHash: string } };

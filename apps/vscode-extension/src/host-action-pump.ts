@@ -18,6 +18,15 @@ export type HostExecutionPayload = { readonly status: "completed"; readonly outc
   readonly kind: "surface_write";
   readonly receipt: SurfaceMcpUpdateReceipt;
 } | {
+  readonly kind: "surface_reconcile";
+  readonly state: "matching";
+  readonly receipt: SurfaceMcpUpdateReceipt;
+  readonly observedCommentReference: string;
+  readonly observedCommentVersion: string;
+} | {
+  readonly kind: "surface_reconcile";
+  readonly state: "absent";
+} | {
   readonly kind: "model_response";
   readonly turnId: string;
   readonly responseText: string;
@@ -50,7 +59,7 @@ export async function pumpOneHostAction(
   if (claimed.request.sessionId !== target.sessionId || claimed.actionId !== target.actionId || claimed.request.actionId !== target.actionId || claimed.hostInstanceId !== dependencies.hostInstanceId) {
     throw new Error("Host action scope does not match the claimed target.");
   }
-  const supportedSurface = (claimed.request.kind === "surface_validate" || claimed.request.kind === "surface_write") && claimed.request.expectedTargetVersion === "ado-decision-v1";
+  const supportedSurface = (claimed.request.kind === "surface_validate" || claimed.request.kind === "surface_write" || claimed.request.kind === "surface_reconcile") && claimed.request.expectedTargetVersion === "ado-decision-v1";
   const supportedModel = claimed.request.kind === "vscode_model_request" && claimed.request.expectedTargetVersion === "vscode-model-v1";
   if (!supportedSurface && !supportedModel) {
     throw new Error("Host action kind or target version is unsupported.");

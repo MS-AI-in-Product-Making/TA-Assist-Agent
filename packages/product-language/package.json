@@ -1,0 +1,19 @@
+{
+  "name": "@ai-assist/product-language",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./ta-workbook-language": {
+      "types": "./dist/ta-workbook-language.d.ts",
+      "import": "./dist/ta-workbook-language.js"
+    }
+  }
+}

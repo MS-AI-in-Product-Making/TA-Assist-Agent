@@ -1,4 +1,6 @@
 import { createTypedError, f8PublicSessionCommandSchema, f8SessionCommandSchema, f8SessionSnapshotSchema, f8SessionStateSchema, type TypedError } from "@ai-assist/contracts";
+import type { TaWorkbookStage } from "@ai-assist/product-language";
+import { projectTaProductStages as projectWorkbenchTaProductStages, type TaProductStageProgress } from "@ai-assist/workbench/projections";
 
 import { featureDisplay, reasonDisplay } from "./web-projection.js";
 
@@ -34,6 +36,13 @@ export interface FeatureLedgerEntry {
   readonly lifecycle?: string;
   readonly actions: readonly string[];
   readonly displayLabel: string;
+  readonly displayStatus: string;
+}
+
+export interface ProductStageEntry {
+  readonly stageId: TaWorkbookStage;
+  readonly label: string;
+  readonly status: string;
   readonly displayStatus: string;
 }
 
@@ -303,4 +312,11 @@ export function normalizeTypedError(
 
 export function parseSnapshot(snapshot: F8SessionSnapshot): F8SessionSnapshot {
   return f8SessionSnapshotSchema.parse(snapshot);
+}
+
+export function projectTaProductStages(snapshot: F8SessionSnapshot, progress?: TaProductStageProgress): ProductStageEntry[] {
+  return projectWorkbenchTaProductStages(snapshot, progress).map((stage) => ({
+    ...stage,
+    displayStatus: reasonDisplay(stage.status),
+  }));
 }

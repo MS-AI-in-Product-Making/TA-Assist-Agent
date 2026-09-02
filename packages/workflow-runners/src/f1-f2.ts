@@ -448,6 +448,9 @@ function loadSelectionRun(
   if (prompt.workbook.contentHash !== request.workbookContentHash) {
     throw new Error("Feature 2 selection workbookContentHash mismatch.");
   }
+  if (new Set(request.selectedWorksheetNames).size !== request.selectedWorksheetNames.length) {
+    throw new Error("Feature 2 selected worksheet names must be unique.");
+  }
   const availableNames = new Set(prompt.options.map((option) => option.worksheetName));
   if (request.selectedWorksheetNames.length === 0 || request.selectedWorksheetNames.some((name) => !availableNames.has(name))) {
     throw new Error("Feature 2 selected worksheet names do not match the selection prompt.");

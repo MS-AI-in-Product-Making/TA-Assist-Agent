@@ -20,7 +20,7 @@ import { projectWorkbookHealth } from "../workbook-health.js";
 import { F3Governance } from "./F3Governance.js";
 import { AnalysisProgress } from "./AnalysisProgress.js";
 import { SourceText } from "./SourceText.js";
-import type { FeatureLedgerEntry } from "../workbench-session.js";
+import type { FeatureLedgerEntry, ProductStageEntry } from "../workbench-session.js";
 import type { RunnerProgressEvent } from "../api.js";
 
 export interface EngineeringWorkspaceProps {
@@ -28,6 +28,7 @@ export interface EngineeringWorkspaceProps {
   readonly loading: boolean;
   readonly connected: boolean;
   readonly featureLedger: readonly FeatureLedgerEntry[];
+  readonly productStages: readonly ProductStageEntry[];
   readonly runnerProgress?: RunnerProgressEvent;
   readonly activeAttemptStartedAt?: string;
   readonly conversation: readonly ConversationTurn[];
@@ -49,6 +50,8 @@ export interface EngineeringWorkspaceProps {
   readonly adoProjection?: F8AdoProjection;
   readonly onAdoDecision?: (decision: "local_only" | "create_new" | "use_existing", workItemReference?: string) => Promise<void>;
   readonly onAdoConfirm?: (confirmation: F8AdoWriteConfirmation) => Promise<void>;
+  readonly onAdoReconcile?: () => Promise<void>;
+  readonly onAdoStartNewWriteGeneration?: () => Promise<void>;
   readonly onAdoReset?: () => Promise<void>;
 }
 
@@ -88,7 +91,7 @@ export function EngineeringWorkspace(props: EngineeringWorkspaceProps) {
   return (
     <main className="engineering-shell">
       <WorkspaceToolbar model={props.model} loading={props.loading} onUpload={props.onUpload} onSelectWorksheet={props.onSelectWorksheet} onUndo={scenario.undo} onReset={() => scenario.reset()} onSave={() => { void scenario.save(selectedFactor?.key); }} canUndo={scenario.canUndo} canSave={scenario.dirty && scenarioResult !== undefined} />
-      <AnalysisProgress entries={props.featureLedger} connected={props.connected} {...(props.runnerProgress === undefined ? {} : { progress: props.runnerProgress })} {...(props.adoProjection === undefined ? {} : { adoProjection: props.adoProjection })} {...(props.activeAttemptStartedAt === undefined ? {} : { activeAttemptStartedAt: props.activeAttemptStartedAt })} />
+      <AnalysisProgress stages={props.productStages} connected={props.connected} {...(props.runnerProgress === undefined ? {} : { progress: props.runnerProgress })} {...(props.adoProjection === undefined ? {} : { adoProjection: props.adoProjection })} {...(props.activeAttemptStartedAt === undefined ? {} : { activeAttemptStartedAt: props.activeAttemptStartedAt })} />
       <WorkspaceIssuePanel issue={props.issue} />
       <div className="engineering-layout">
         <section className="engineering-layout__workbench">
@@ -106,7 +109,7 @@ export function EngineeringWorkspace(props: EngineeringWorkspaceProps) {
               </header>
               {worksheet.status !== "blocked" || worksheet.issues.length === 0 ? null : (
                 <div className="worksheet-blocked-reasons" role="status" aria-label="Worksheet blocking reasons">
-                  <strong>This worksheet did not enter F4 calculation</strong>
+                  <strong>This worksheet did not enter tolerance calculation</strong>
                   <span>{worksheet.issues.map(issueLabel).join("; ")}</span>
                 </div>
               )}
@@ -118,7 +121,7 @@ export function EngineeringWorkspace(props: EngineeringWorkspaceProps) {
                   <EngineeringCharts worksheet={worksheet} scenario={scenarioResult} scenarioContributions={scenarioContributions} systemValues={scenario.systemValues} systemSpecificationError={scenario.systemSpecificationError} onSystemEdit={scenario.editSystem} onSystemCommit={scenario.commitSystemSpecification} />
                 </section>
               </div>
-              <F3Governance report={props.f3Report} adoDecisionRequired={props.adoDecisionRequired} adoProjection={props.adoProjection} onAdoDecision={props.onAdoDecision} onAdoConfirm={props.onAdoConfirm} onAdoReset={props.onAdoReset} />
+              <F3Governance report={props.f3Report} adoDecisionRequired={props.adoDecisionRequired} adoProjection={props.adoProjection} onAdoDecision={props.onAdoDecision} onAdoConfirm={props.onAdoConfirm} onAdoReconcile={props.onAdoReconcile} onStartNewAdoWriteGeneration={props.onAdoStartNewWriteGeneration} onAdoReset={props.onAdoReset} />
             </>
           )}
         </section>
@@ -150,7 +153,7 @@ function unavailableApi(): WorkbenchApi {
 
 function issueLabel(issue: string): string {
   if (issue === "required_field_missing") return "Required field missing";
-  const issueLabels: Record<string, string> = { tolerance_path_image_unavailable: "Tolerance loop image missing", factor_tables_missing: "Factor table missing", factor_table_has_no_rows: "Factor table has no rows", factor_tolerance_range_invalid: "Factor tolerance range is invalid", long_term_safety_factor_invalid: "Long Term / Safety Factor is invalid", sigma_level_invalid: "Sigma Level is invalid", f4_calculation_not_possible: "The current input cannot run F4 calculation" };
+  const issueLabels: Record<string, string> = { tolerance_path_image_unavailable: "Tolerance loop image missing", factor_tables_missing: "Factor table missing", factor_table_has_no_rows: "Factor table has no rows", factor_tolerance_range_invalid: "Factor tolerance range is invalid", long_term_safety_factor_invalid: "Long Term / Safety Factor is invalid", sigma_level_invalid: "Sigma Level is invalid", f4_calculation_not_possible: "The current input cannot run tolerance calculation" };
   if (issueLabels[issue] !== undefined) return issueLabels[issue];
   const fieldLabels: Record<string, string> = { factorName: "Factor Description", partName: "Part Name", nominalValue: "Design Nominal", upperTolerance: "+ Tolerance", lowerTolerance: "- Tolerance" };
   return fieldLabels[issue] === undefined ? issue : `Required field missing: ${fieldLabels[issue]}`;
@@ -181,14 +184,14 @@ function buildAssistantRequestContextChips(input: {
       label: "Knowledge",
       value: countLabel(knowledgeCount, "item"),
       included: knowledgeCount > 0,
-      detail: knowledgeCount > 0 ? `${countLabel(knowledgeCount, "governed F0 knowledge item")} are available for validation.` : "No governed F0 knowledge items are available for validation.",
+      detail: knowledgeCount > 0 ? `${countLabel(knowledgeCount, "governed knowledge item")} are available for validation.` : "No governed knowledge items are available for validation.",
     },
     {
       key: "loop-image",
       label: "Loop image",
       value: imageRow !== undefined ? "Requested" : "Not requested",
       included: imageRow !== undefined,
-      detail: imageRow !== undefined ? "The F1 loop image is requested for the next request." : "The F1 loop image is not requested for the next request.",
+      detail: imageRow !== undefined ? "The tolerance loop image is requested for the next request." : "The tolerance loop image is not requested for the next request.",
     },
     {
       key: "factor-table",
@@ -202,7 +205,7 @@ function buildAssistantRequestContextChips(input: {
       label: "Baseline",
       value: calculation === undefined ? "Not requested" : "Available for validation",
       included: calculation !== undefined,
-      detail: calculation === undefined ? "No current F4 baseline metrics are requested for the next request." : `Current baseline run ${calculation.runReference} is available for validation.`,
+      detail: calculation === undefined ? "No current baseline metrics are requested for the next request." : `Current baseline run ${calculation.runReference} is available for validation.`,
     },
     {
       key: "scenario",

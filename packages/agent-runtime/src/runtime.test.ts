@@ -330,7 +330,7 @@ describe("handleAgentTurn", () => {
       source: "web",
     }, deps);
 
-    expect(retry.responseText).toContain("当前阶段为 review_required");
+    expect(retry.responseText).toContain("下一步请先完成评审");
     expect((await conversationStore.readTurns(SESSION_ID)).map((turn) => turn.turnId)).toEqual([
       "retry-after-failure-1:user",
       "retry-after-failure-1:assistant",

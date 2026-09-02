@@ -3,6 +3,7 @@ import { fork, type ChildProcess } from "node:child_process";
 import { readFile, rm } from "node:fs/promises";
 
 import { test as base, expect, type BrowserContext } from "@playwright/test";
+import { ANONYMOUS_WORKBOOK_RELATIVE_PATH, ensureAnonymousWorkbookFixture } from "./fixtures/anonymous-workbook-fixture.ts";
 
 interface Fixtures {
   workbench: { readonly child: ChildProcess; readonly origin: string; readonly sessionId: string; readonly rootDir: string; readonly sourceWorkbook: string; issueBootstrap(sessionId?: string): Promise<string>; issueHostBearer(input: HostBearerInput): Promise<string>; seedConversationTurn(input: SeedConversationInput): Promise<void> };
@@ -27,6 +28,7 @@ interface WorkerFixtures {
 
 export const test = base.extend<Fixtures, WorkerFixtures>({
   workbenchServer: [async ({}, use) => {
+    await ensureAnonymousWorkbookFixture();
     const child = fork("test/f8-e2e/server.mjs", [], { cwd: process.cwd(), silent: true });
     const started = await readStartup(child);
     try {
@@ -40,7 +42,7 @@ export const test = base.extend<Fixtures, WorkerFixtures>({
     await installBrowserCookie(context, workbenchServer.origin, await readCookie(workbenchServer.child));
     await use({
       ...workbenchServer,
-      sourceWorkbook: "test/f8-e2e/fixtures/anonymous-ta-workbook.xlsx",
+      sourceWorkbook: ANONYMOUS_WORKBOOK_RELATIVE_PATH,
       issueBootstrap: (sessionId) => issueBootstrap(workbenchServer.child, sessionId),
       issueHostBearer: (input) => issueHostBearer(workbenchServer.child, input),
       seedConversationTurn: (input) => seedConversationTurn(workbenchServer.child, input),

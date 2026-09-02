@@ -57,9 +57,9 @@ describe("f7 project wiring", () => {
 
     const projects = vitestConfig?.test?.projects;
     expect(Array.isArray(projects)).toBe(true);
-    expect(projects).toHaveLength(2);
+    expect(projects).toHaveLength(3);
 
-    const [nodeProject, webProject] = projects;
+    const [nodeProject, workbenchWebProject, webProject] = projects;
     expect(nodeProject?.test?.name).toBe("node");
     expect(nodeProject?.test?.testTimeout).toBe(60_000);
     expect(nodeProject?.test?.maxWorkers).toBe(4);
@@ -70,8 +70,16 @@ describe("f7 project wiring", () => {
     ]);
     expect(nodeProject?.test?.exclude).toEqual([
       "apps/f7-web/**/*.test.ts",
+      "apps/workbench-web/**/*.test.ts",
       "scripts/f4-excel-regression.test.mjs",
     ]);
+
+    expect(workbenchWebProject?.test?.name).toBe("workbench-web");
+    expect(workbenchWebProject?.test?.include).toEqual([
+      "apps/workbench-web/src/**/*.test.ts",
+      "apps/workbench-web/src/**/*.test.tsx",
+    ]);
+    expect(workbenchWebProject?.test?.environment).toBe("jsdom");
 
     expect(webProject?.test?.name).toBe("f7-web");
     expect(webProject?.test?.include).toEqual(["apps/f7-web/**/*.test.ts"]);

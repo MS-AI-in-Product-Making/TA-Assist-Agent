@@ -1,8 +1,22 @@
-import { createTypedError, f8PublicSessionCommandSchema, f8SessionCommandSchema } from "@ai-assist/contracts";
+import { open } from "node:fs/promises";
+import { resolve } from "node:path";
+
+import { createTypedError, f2UserReportSchema, f8PublicSessionCommandSchema, f8SessionCommandSchema } from "@ai-assist/contracts";
+import { openSessionStore } from "@ai-assist/workbench";
 import type { FastifyPluginAsync } from "fastify";
 
 import { errorStatusCode, safeErrorResponse } from "../security.js";
 import type { WorkbenchServerContext } from "../server.js";
+
+type PublicSessionCommand = ReturnType<typeof f8PublicSessionCommandSchema.parse>;
+type DownstreamScopePayload = {
+  readonly workbookHash: string;
+  readonly worksheetNames: readonly string[];
+};
+type ConfirmDownstreamScopeCommand = PublicSessionCommand & {
+  readonly command: "confirm_downstream_scope";
+  readonly payload: DownstreamScopePayload;
+};
 
 export const commandsRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServerContext }> = async (app, { context }) => {
   app.post("/api/sessions/:sessionId/commands", async (request, reply) => {
@@ -44,7 +58,7 @@ export const commandsRoutes: FastifyPluginAsync<{ readonly context: WorkbenchSer
   });
 };
 
-async function createInternalCommand(command: ReturnType<typeof f8PublicSessionCommandSchema.parse>, context: WorkbenchServerContext): Promise<unknown> {
+async function createInternalCommand(command: PublicSessionCommand, context: WorkbenchServerContext): Promise<unknown> {
   if (command.command === "reset_ado_decision") {
     const snapshot = await context.sessions.read(command.sessionId);
     if (snapshot?.state !== "ado_action_pending" || snapshot.revision !== command.expectedRevision) return command;
@@ -72,11 +86,107 @@ async function createInternalCommand(command: ReturnType<typeof f8PublicSessionC
     const { promotionPreview } = await context.createWhatIfPromotion(command.sessionId, payload.draftId);
     return { ...command, payload: { ...payload, promotionPreview } };
   }
+  if (isConfirmDownstreamScopeCommand(command)) {
+    await validateDownstreamScopeReadiness(command, context);
+  }
   return command;
 }
 
-function bindUploadedWorkbook(command: ReturnType<typeof f8PublicSessionCommandSchema.parse>, context: WorkbenchServerContext): void {
+async function validateDownstreamScopeReadiness(
+  command: ConfirmDownstreamScopeCommand,
+  context: WorkbenchServerContext,
+): Promise<void> {
+  const snapshot = await context.sessions.read(command.sessionId);
+  if (snapshot === undefined) {
+    return;
+  }
+
+  const f2References = snapshot.artifactRefs?.filter((reference) =>
+    reference.kind === "f2_report" && reference.validated && reference.revision === snapshot.inputRevision,
+  ) ?? [];
+  if (f2References.length !== 1) {
+    throw createTypedError({
+      code: "evidence_mismatch",
+      summary: "Downstream confirmation requires exactly one current validated F2 report.",
+      suggestedAction: "Rerun F2 for the current workbook revision and retry downstream confirmation.",
+      affectedInputReferences: [snapshot.sessionId],
+    });
+  }
+
+  const store = await openSessionStore({ rootDir: context.rootDir, sessionId: command.sessionId });
+  try {
+    const persisted = await store.readArtifactReference(f2References[0]!.artifactId);
+    if (persisted?.contentHash === undefined) {
+      return;
+    }
+
+    const handle = await open(resolve(context.rootDir, persisted.relativePath), "r");
+    let report: ReturnType<typeof f2UserReportSchema.parse>;
+    try {
+      const bytes = await handle.readFile();
+      report = f2UserReportSchema.parse(JSON.parse(bytes.toString("utf8")) as unknown);
+    } finally {
+      await handle.close();
+    }
+
+    if (report.status === "inputRejected") {
+      throw createTypedError({
+        code: "evidence_mismatch",
+        summary: "Downstream confirmation requires a current accepted F2 report.",
+        suggestedAction: "Resolve F2 input issues and rerun F1/F2 before confirming downstream worksheets.",
+        affectedInputReferences: [persisted.artifactId],
+      });
+    }
+
+    if (command.payload.workbookHash !== report.workbook.contentHash) {
+      throw createTypedError({
+        code: "evidence_mismatch",
+        summary: "Downstream confirmation workbook hash does not match the current F2 report.",
+        suggestedAction: "Refresh the session and confirm downstream worksheets for the current workbook.",
+        affectedInputReferences: [persisted.artifactId],
+      });
+    }
+
+    const worksheetStatus = new Map(report.worksheets.map((worksheet) => [worksheet.worksheetName, worksheet.status]));
+    for (const worksheetName of command.payload.worksheetNames) {
+      const status = worksheetStatus.get(worksheetName);
+      if (status === undefined) {
+        throw createTypedError({
+          code: "evidence_mismatch",
+          summary: "Downstream confirmation worksheet set drifted from the current F2 report.",
+          suggestedAction: "Reconfirm downstream worksheets from the current F2 ready worksheet list.",
+          affectedInputReferences: [worksheetName, persisted.artifactId],
+        });
+      }
+      if (status !== "ready") {
+        throw createTypedError({
+          code: "validation_error",
+          summary: "Downstream confirmation includes blocked worksheets from the current F2 report.",
+          suggestedAction: "Select only F2-ready worksheets for downstream confirmation.",
+          affectedInputReferences: [worksheetName, persisted.artifactId],
+        });
+      }
+    }
+  } finally {
+    await store.close();
+  }
+}
+
+function bindUploadedWorkbook(command: PublicSessionCommand, context: WorkbenchServerContext): void {
   if (command.command !== "upload_workbook" || typeof command.payload !== "object" || command.payload === null || !("artifactId" in command.payload)) return;
   const artifactId = command.payload.artifactId;
   if (typeof artifactId === "string") context.bindManagedWorkbook(command.sessionId, artifactId);
+}
+
+function isConfirmDownstreamScopeCommand(command: PublicSessionCommand): command is ConfirmDownstreamScopeCommand {
+  if (command.command !== "confirm_downstream_scope") return false;
+  return isDownstreamScopePayload(command.payload);
+}
+
+function isDownstreamScopePayload(payload: unknown): payload is DownstreamScopePayload {
+  if (typeof payload !== "object" || payload === null) return false;
+  const candidate = payload as { readonly workbookHash?: unknown; readonly worksheetNames?: unknown };
+  return typeof candidate.workbookHash === "string"
+    && Array.isArray(candidate.worksheetNames)
+    && candidate.worksheetNames.every((value) => typeof value === "string");
 }

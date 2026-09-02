@@ -1,4 +1,4 @@
-import type { FeatureLedgerEntry } from "../workbench-session.js";
+import type { ProductStageEntry } from "../workbench-session.js";
 import type { RunnerProgressEvent } from "../api.js";
 import type { F8AdoProjection } from "@ai-assist/contracts";
 import { useEffect, useState } from "react";
@@ -6,14 +6,14 @@ import { useEffect, useState } from "react";
 import { reasonDisplay } from "../web-projection.js";
 
 export interface AnalysisProgressProps {
-  readonly entries: readonly FeatureLedgerEntry[];
+  readonly stages: readonly ProductStageEntry[];
   readonly progress?: RunnerProgressEvent;
   readonly adoProjection?: F8AdoProjection;
   readonly activeAttemptStartedAt?: string;
   readonly connected: boolean;
 }
 
-export function AnalysisProgress({ entries, progress, adoProjection, activeAttemptStartedAt, connected }: AnalysisProgressProps) {
+export function AnalysisProgress({ stages, progress, adoProjection, activeAttemptStartedAt, connected }: AnalysisProgressProps) {
   const [now, setNow] = useState(() => Date.now());
   const pendingAdo = adoProjection?.state === "validation_pending" || adoProjection?.state === "write_pending" ? adoProjection : undefined;
   const timerStartedAt = pendingAdo?.startedAt ?? (progress?.kind === "stage_started" ? progress.timestamp : activeAttemptStartedAt);
@@ -23,26 +23,24 @@ export function AnalysisProgress({ entries, progress, adoProjection, activeAttem
     const handle = setInterval(() => setNow(Date.now()), 1_000);
     return () => clearInterval(handle);
   }, [timerStartedAt]);
-  const visibleEntries = entriesForProgress(entries, progress);
-  const active = visibleEntries.find((entry) => entry.status === "running");
-  const activeFeatureId = active === undefined ? undefined : progress?.featureId ?? active.featureId;
+  const visibleStages = stages;
+  const active = visibleStages.find((stage) => stage.status === "running" || stage.status === "action_required");
 
   return (
     <section className="analysis-progress" aria-label="Analysis progress">
       <div className="analysis-progress__summary">
-        <strong>{activeFeatureId === undefined ? "Analysis flow" : `${activeFeatureId} running`}</strong>
-        <span>{adoStageLabel(adoProjection) ?? (active === undefined ? summaryFor(visibleEntries) : stageLabel(progress))}</span>
+        <strong>TA workbook analysis</strong>
+        <span>{adoStageLabel(adoProjection) ?? (active === undefined ? summaryFor(visibleStages) : active.label)}</span>
         {pendingAdo !== undefined ? <time>{adoTiming(pendingAdo.startedAt, pendingAdo.expiresAt, now)}</time> : timerStartedAt === undefined ? null : <time>{elapsed(timerStartedAt, now)}</time>}
         <span className={connected ? "analysis-progress__live" : "analysis-progress__reconnecting"}>{connected ? "Live sync" : "Reconnecting"}</span>
       </div>
       <ol className="analysis-progress__track">
-        {visibleEntries.map((entry) => (
-          <li key={entry.featureId} className={`analysis-progress__step analysis-progress__step--${entry.status}`}>
+        {visibleStages.map((stage) => (
+          <li key={stage.stageId} className={`analysis-progress__step analysis-progress__step--${stage.status}`}>
             <span className="analysis-progress__marker" aria-hidden="true" />
             <div className="analysis-progress__content">
-              <strong>{entry.featureId}</strong>
-              <span>{entry.displayLabel}</span>
-              <span>{statusLabel(entry)}</span>
+              <strong>{stage.label}</strong>
+              <span>{statusLabel(stage)}</span>
             </div>
           </li>
         ))}
@@ -51,38 +49,14 @@ export function AnalysisProgress({ entries, progress, adoProjection, activeAttem
   );
 }
 
-function entriesForProgress(entries: readonly FeatureLedgerEntry[], progress: RunnerProgressEvent | undefined): readonly FeatureLedgerEntry[] {
-  if (progress === undefined || progress.kind === "artifact_written") return entries;
-  const activeIndex = entries.findIndex((entry) => entry.featureId === progress.featureId);
-  if (activeIndex < 0) return entries;
-  return entries.map((entry, index) => {
-    if (entry.lifecycle === "in_development") return entry;
-    if (index < activeIndex) return { ...entry, status: "completed", displayStatus: reasonDisplay("completed") };
-    if (index === activeIndex) {
-      const status = progress.kind === "stage_failed" ? "failed" : progress.kind === "stage_completed" ? "completed" : "running";
-      return { ...entry, status, displayStatus: reasonDisplay(status) };
-    }
-    return { ...entry, status: "pending", displayStatus: reasonDisplay("pending") };
-  });
+function statusLabel(stage: ProductStageEntry): string {
+  return stage.displayStatus;
 }
 
-function statusLabel(entry: FeatureLedgerEntry): string {
-  return entry.displayStatus;
-}
-
-function summaryFor(entries: readonly FeatureLedgerEntry[]): string {
-  const action = entries.find((entry) => entry.status === "action_required");
-  if (action !== undefined) return `${action.featureId} needs action`;
-  return entries.some((entry) => entry.status === "failed") ? "Analysis needs attention" : "Progress synced";
-}
-
-function stageLabel(progress: RunnerProgressEvent | undefined): string {
-  if (progress === undefined) return "Running governed analysis";
-  if (progress.stage === "f1-selection") return "Reading Worksheet";
-  if (progress.stage === "report" && progress.featureId === "F2") return "Generating user report";
-  const stage = progress.stage;
-  const labels: Record<string, string> = { selection: "Reading Worksheet", f1: "Extracting Workbook", f2: "Generating user report", validation: "Validating output", report: "Generating analysis report" };
-  return labels[stage] ?? `Running ${stage}`;
+function summaryFor(stages: readonly ProductStageEntry[]): string {
+  const action = stages.find((stage) => stage.status === "action_required");
+  if (action !== undefined) return `${action.label} requires action`;
+  return stages.some((stage) => stage.status === "failed") ? "Analysis needs attention" : "Progress synced";
 }
 
 function elapsed(startedAt: string, now: number): string {

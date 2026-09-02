@@ -60,6 +60,7 @@ export interface HostActionRecord {
   readonly expectedRevision: number;
   readonly confirmationHash: string | undefined;
   readonly expectedTargetVersion: string | undefined;
+  readonly dispatchedAt: string | undefined;
 }
 
 export interface HostActionStore {
@@ -85,6 +86,7 @@ export async function createHostActionStore(options: HostActionStoreOptions): Pr
     database.exec("PRAGMA synchronous = FULL;");
     database.exec("PRAGMA foreign_keys = ON;");
     database.exec(CREATE_SESSION_STORE_SCHEMA_SQL);
+    ensureHostActionsDispatchedAtColumn(database);
     return new SqliteHostActionStore(database, options);
   } catch (error) {
     database.close();
@@ -132,7 +134,8 @@ class SqliteHostActionStore implements HostActionStore {
         lease_expires_at,
         expected_revision,
         confirmation_hash,
-        expected_target_version
+        expected_target_version,
+        dispatched_at
       FROM host_actions
       WHERE action_id = ?
     `);
@@ -150,8 +153,9 @@ class SqliteHostActionStore implements HostActionStore {
         expected_revision,
         confirmation_hash,
         expected_target_version,
+        dispatched_at,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     this.updateHostActionStatement = this.database.prepare(`
       UPDATE host_actions
@@ -166,6 +170,7 @@ class SqliteHostActionStore implements HostActionStore {
         expected_revision = ?,
         confirmation_hash = ?,
         expected_target_version = ?,
+        dispatched_at = ?,
         updated_at = ?
       WHERE action_id = ? AND session_id = ?
     `);
@@ -181,7 +186,8 @@ class SqliteHostActionStore implements HostActionStore {
         lease_expires_at,
         expected_revision,
         confirmation_hash,
-        expected_target_version
+        expected_target_version,
+        dispatched_at
       FROM host_actions
       WHERE action_id = ?
         AND session_id = ?
@@ -244,6 +250,7 @@ class SqliteHostActionStore implements HostActionStore {
         request.expectedRevision,
         readConfirmationHash(request),
         readExpectedTargetVersion(request),
+        null,
         toIso(this.now()),
       );
 
@@ -294,6 +301,7 @@ class SqliteHostActionStore implements HostActionStore {
         expectedRevision: request.expectedRevision,
         confirmationHash: readConfirmationHash(request) ?? undefined,
         expectedTargetVersion: readExpectedTargetVersion(request) ?? undefined,
+        dispatchedAt: request.kind === "surface_write" ? toIso(this.now()) : undefined,
       }, this.now());
 
       this.database.exec("COMMIT");
@@ -382,6 +390,7 @@ class SqliteHostActionStore implements HostActionStore {
         expectedRevision: request.expectedRevision,
         confirmationHash: readConfirmationHash(request) ?? undefined,
         expectedTargetVersion: readExpectedTargetVersion(request) ?? undefined,
+        dispatchedAt: row.dispatched_at ?? undefined,
       }, this.now());
 
       this.database.exec("COMMIT");
@@ -465,6 +474,7 @@ class SqliteHostActionStore implements HostActionStore {
         expectedRevision: request.expectedRevision,
         confirmationHash: readConfirmationHash(request) ?? undefined,
         expectedTargetVersion: readExpectedTargetVersion(request) ?? undefined,
+        dispatchedAt: row.dispatched_at ?? undefined,
       }, this.now());
 
       this.database.exec("COMMIT");
@@ -553,6 +563,7 @@ function persistHostAction(
     readonly expectedRevision: number;
     readonly confirmationHash: string | undefined;
     readonly expectedTargetVersion: string | undefined;
+    readonly dispatchedAt: string | undefined;
   },
   now: Date,
 ): void {
@@ -567,6 +578,7 @@ function persistHostAction(
     action.expectedRevision,
     action.confirmationHash ?? null,
     action.expectedTargetVersion ?? null,
+    action.dispatchedAt ?? null,
     toIso(now),
     action.actionId,
     action.sessionId,
@@ -588,7 +600,16 @@ function toHostActionRecord(row: HostActionRow, actionId: string): HostActionRec
     expectedRevision: row.expected_revision ?? request.expectedRevision,
     confirmationHash: row.confirmation_hash ?? undefined,
     expectedTargetVersion: row.expected_target_version ?? undefined,
+    dispatchedAt: row.dispatched_at ?? undefined,
   };
+}
+
+function ensureHostActionsDispatchedAtColumn(database: DatabaseSync): void {
+  const columns = database.prepare("PRAGMA table_info('host_actions')").all() as Array<{ readonly name?: unknown }>;
+  const hasDispatchedAt = columns.some((column) => column.name === "dispatched_at");
+  if (!hasDispatchedAt) {
+    database.exec("ALTER TABLE host_actions ADD COLUMN dispatched_at TEXT;");
+  }
 }
 
 function readConfirmationHash(request: HostActionRequest): string | null {

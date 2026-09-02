@@ -101,6 +101,8 @@ export interface WorkbenchApi {
   readConversation(sessionId: string): Promise<readonly ConversationTurn[]>;
   readAdoProjection(sessionId: string): Promise<F8AdoProjection>;
   confirmAdoWrite(sessionId: string, confirmation: F8AdoWriteConfirmation): Promise<void>;
+  reconcileAdoWrite(sessionId: string): Promise<void>;
+  startNewAdoWriteGeneration(sessionId: string): Promise<F8SessionSnapshot>;
   artifactUrl(sessionId: string, artifactId: string, disposition?: "inline" | "attachment"): string;
   loadArtifactJson(
     sessionId: string,
@@ -244,6 +246,22 @@ export function createWorkbenchApi(): WorkbenchApi {
         body: JSON.stringify(confirmation),
       });
       await parseJsonResponse(response);
+    },
+    async reconcileAdoWrite(sessionId) {
+      const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/ado/reconcile`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: await mutationHeaders(),
+      });
+      await parseJsonResponse(response);
+    },
+    async startNewAdoWriteGeneration(sessionId) {
+      const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/ado/start-new-write-generation`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: await mutationHeaders(),
+      });
+      return f8SessionSnapshotSchema.parse(await parseJsonResponse(response));
     },
     artifactUrl(sessionId, artifactId, disposition = "attachment") {
       return `/api/sessions/${encodeURIComponent(sessionId)}/artifacts/${encodeURIComponent(artifactId)}?disposition=${disposition}`;
