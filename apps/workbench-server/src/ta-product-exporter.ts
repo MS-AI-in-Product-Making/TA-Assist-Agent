@@ -260,9 +260,8 @@ async function resolveArtifact(
     readonly downstreamSelectionHash: string;
     readonly baselineRunReference: string;
   },
-  additionalCandidates: readonly string[] = [],
 ): Promise<ResolvedArtifact> {
-  const candidates = [`${artifactBaseId}:${inputRevision}:${sessionId}`, `${artifactBaseId}:${inputRevision}`, artifactBaseId, ...additionalCandidates];
+  const candidates = [`${artifactBaseId}:${inputRevision}:${sessionId}`, `${artifactBaseId}:${inputRevision}`, artifactBaseId];
   let reference: SessionArtifactReference | undefined;
   for (const artifactId of candidates) {
     reference = await readReference(artifactId);
@@ -549,7 +548,7 @@ async function resolveTrustedSource(command: TaProductExportCommand, options: Ta
 
     const [f3, f4, f5, f6Optimization, f6Report, projectionArtifact] = await Promise.all([
       resolveArtifact(options.rootDir, command.sessionId, (artifactId) => store.readArtifactReference(artifactId), snapshot.inputRevision, "f3-report", "f3_report", "application/json", expectedReviewContext),
-      resolveArtifact(options.rootDir, command.sessionId, (artifactId) => store.readArtifactReference(artifactId), snapshot.inputRevision, "f4-calculation", "f4_calculation", "application/json", expectedReviewContext, [`f4-e2e:${command.sessionId}`]),
+      resolveArtifact(options.rootDir, command.sessionId, (artifactId) => store.readArtifactReference(artifactId), snapshot.inputRevision, "f4-calculation", "f4_calculation", "application/json", expectedReviewContext),
       resolveArtifact(options.rootDir, command.sessionId, (artifactId) => store.readArtifactReference(artifactId), snapshot.inputRevision, "f5-report", "f5_report", "application/json", expectedReviewContext),
       resolveArtifact(options.rootDir, command.sessionId, (artifactId) => store.readArtifactReference(artifactId), snapshot.inputRevision, "f6-optimization", "f6_optimization", "application/json", expectedReviewContext),
       resolveArtifact(options.rootDir, command.sessionId, (artifactId) => store.readArtifactReference(artifactId), snapshot.inputRevision, "f6-report", "f6_report", "text/markdown", expectedReviewContext),

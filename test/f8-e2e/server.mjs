@@ -90,26 +90,26 @@ registerRunnerF2Artifact(ADO_UPDATE_PREVIEW_SESSION_ID);
 registerRunnerF2Artifact(PRODUCT_EXPORT_FAILED_SESSION_ID);
 started.server.registerArtifactForTest(SESSION_ID, reviewArtifactId("f2-e2e", SESSION_ID), f2RelativePath, "f2.json", "confidential", "application/json");
 started.server.registerArtifactForTest(SESSION_ID, reviewArtifactId("f3-e2e", SESSION_ID), f3RelativePath, "f3.json", "confidential", "application/json");
-started.server.registerArtifactForTest(SESSION_ID, reviewArtifactId("f4-e2e", SESSION_ID), f4RelativePath, "f4.json", "confidential", "application/json");
+started.server.registerArtifactForTest(SESSION_ID, trustedArtifactId("f4-calculation", SESSION_ID), trustedProductionRelativePath(SESSION_ID, "f4"), "Tolerance-Calculation.json", "confidential", "application/json");
 started.server.registerArtifactForTest(SESSION_ID, reviewArtifactId("f5-e2e", SESSION_ID), f5RelativePath, "f5.json", "confidential", "application/json");
 started.server.registerArtifactForTest(SESSION_ID, reviewArtifactId("f6-report-e2e", SESSION_ID), f6ReportRelativePath, "f6-report.json", "confidential", "application/json");
 started.server.registerArtifactForTest(SESSION_ID, `f1-image:${f1ContentHash}`, f1RelativePath, "f1.png", "confidential", "image/png");
 started.server.registerArtifactForTest(ADO_SELECTION_SESSION_ID, reviewArtifactId("f2-e2e", ADO_SELECTION_SESSION_ID), f2RelativePath, "f2.json", "confidential", "application/json");
 started.server.registerArtifactForTest(ADO_SELECTION_SESSION_ID, reviewArtifactId("f3-e2e", ADO_SELECTION_SESSION_ID), f3RelativePath, "f3.json", "confidential", "application/json");
 started.server.registerArtifactForTest(ADO_SELECTION_SESSION_ID, reviewArtifactId("f3-ado-reminder-e2e", ADO_SELECTION_SESSION_ID), f3AdoReminderRelativePath, "Feature3-ADO-Reminder.json", "confidential", "application/json");
-started.server.registerArtifactForTest(ADO_SELECTION_SESSION_ID, reviewArtifactId("f4-e2e", ADO_SELECTION_SESSION_ID), f4RelativePath, "f4.json", "confidential", "application/json");
+started.server.registerArtifactForTest(ADO_SELECTION_SESSION_ID, reviewArtifactId("f4-calculation", ADO_SELECTION_SESSION_ID), f4RelativePath, "f4.json", "confidential", "application/json");
 started.server.registerArtifactForTest(ADO_SELECTION_SESSION_ID, reviewArtifactId("f5-e2e", ADO_SELECTION_SESSION_ID), f5RelativePath, "f5.json", "confidential", "application/json");
 started.server.registerArtifactForTest(ADO_SELECTION_SESSION_ID, reviewArtifactId("f6-report-e2e", ADO_SELECTION_SESSION_ID), f6ReportRelativePath, "f6-report.json", "confidential", "application/json");
 started.server.registerArtifactForTest(ADO_SELECTION_SESSION_ID, `f1-image:${f1ContentHash}`, f1RelativePath, "f1.png", "confidential", "image/png");
 started.server.registerArtifactForTest(ADO_CREATE_PREVIEW_SESSION_ID, reviewArtifactId("f2-e2e", ADO_CREATE_PREVIEW_SESSION_ID), f2RelativePath, "f2.json", "confidential", "application/json");
 started.server.registerArtifactForTest(ADO_CREATE_PREVIEW_SESSION_ID, reviewArtifactId("f3-e2e", ADO_CREATE_PREVIEW_SESSION_ID), f3RelativePath, "f3.json", "confidential", "application/json");
-started.server.registerArtifactForTest(ADO_CREATE_PREVIEW_SESSION_ID, reviewArtifactId("f4-e2e", ADO_CREATE_PREVIEW_SESSION_ID), f4RelativePath, "f4.json", "confidential", "application/json");
+started.server.registerArtifactForTest(ADO_CREATE_PREVIEW_SESSION_ID, reviewArtifactId("f4-calculation", ADO_CREATE_PREVIEW_SESSION_ID), f4RelativePath, "f4.json", "confidential", "application/json");
 started.server.registerArtifactForTest(ADO_CREATE_PREVIEW_SESSION_ID, reviewArtifactId("f5-e2e", ADO_CREATE_PREVIEW_SESSION_ID), f5RelativePath, "f5.json", "confidential", "application/json");
 started.server.registerArtifactForTest(ADO_CREATE_PREVIEW_SESSION_ID, reviewArtifactId("f6-report-e2e", ADO_CREATE_PREVIEW_SESSION_ID), f6ReportRelativePath, "f6-report.json", "confidential", "application/json");
 started.server.registerArtifactForTest(ADO_CREATE_PREVIEW_SESSION_ID, `f1-image:${f1ContentHash}`, f1RelativePath, "f1.png", "confidential", "image/png");
 started.server.registerArtifactForTest(ADO_UPDATE_PREVIEW_SESSION_ID, reviewArtifactId("f2-e2e", ADO_UPDATE_PREVIEW_SESSION_ID), f2RelativePath, "f2.json", "confidential", "application/json");
 started.server.registerArtifactForTest(ADO_UPDATE_PREVIEW_SESSION_ID, reviewArtifactId("f3-e2e", ADO_UPDATE_PREVIEW_SESSION_ID), f3RelativePath, "f3.json", "confidential", "application/json");
-started.server.registerArtifactForTest(ADO_UPDATE_PREVIEW_SESSION_ID, reviewArtifactId("f4-e2e", ADO_UPDATE_PREVIEW_SESSION_ID), f4RelativePath, "f4.json", "confidential", "application/json");
+started.server.registerArtifactForTest(ADO_UPDATE_PREVIEW_SESSION_ID, reviewArtifactId("f4-calculation", ADO_UPDATE_PREVIEW_SESSION_ID), f4RelativePath, "f4.json", "confidential", "application/json");
 started.server.registerArtifactForTest(ADO_UPDATE_PREVIEW_SESSION_ID, reviewArtifactId("f5-e2e", ADO_UPDATE_PREVIEW_SESSION_ID), f5RelativePath, "f5.json", "confidential", "application/json");
 started.server.registerArtifactForTest(ADO_UPDATE_PREVIEW_SESSION_ID, reviewArtifactId("f6-report-e2e", ADO_UPDATE_PREVIEW_SESSION_ID), f6ReportRelativePath, "f6-report.json", "confidential", "application/json");
 started.server.registerArtifactForTest(ADO_UPDATE_PREVIEW_SESSION_ID, `f1-image:${f1ContentHash}`, f1RelativePath, "f1.png", "confidential", "image/png");
@@ -288,7 +288,9 @@ function buildReviewArtifactUpserts(sessionId, trustedArtifacts) {
   const reviewIdentity = reviewIdentityForSession(sessionId);
   const reviewArtifacts = [
     { artifactId: reviewArtifactId("f3-e2e", sessionId), sessionId, inputRevision: 1, kind: "f3_report", relativePath: f3RelativePath, contentHash: createHash("sha256").update(f3Bytes).digest("hex"), reviewContext: reviewIdentity },
-    { artifactId: reviewArtifactId("f4-e2e", sessionId), sessionId, inputRevision: 1, kind: "f4_calculation", relativePath: f4RelativePath, contentHash: createHash("sha256").update(f4Bytes).digest("hex"), reviewContext: reviewIdentity },
+    sessionId === SESSION_ID
+      ? { artifactId: trustedArtifactId("f4-calculation", sessionId), sessionId, inputRevision: 1, kind: "f4_calculation", relativePath: trustedArtifacts.f4.relativePath, contentHash: trustedArtifacts.f4.contentHash, reviewContext: reviewIdentity }
+      : { artifactId: reviewArtifactId("f4-calculation", sessionId), sessionId, inputRevision: 1, kind: "f4_calculation", relativePath: f4RelativePath, contentHash: createHash("sha256").update(f4Bytes).digest("hex"), reviewContext: reviewIdentity },
     { artifactId: reviewArtifactId("f5-e2e", sessionId), sessionId, inputRevision: 1, kind: "f5_report", relativePath: f5RelativePath, contentHash: createHash("sha256").update(f5Bytes).digest("hex"), reviewContext: reviewIdentity },
     { artifactId: reviewArtifactId("f6-report-e2e", sessionId), sessionId, inputRevision: 1, kind: "f6_report", relativePath: f6ReportRelativePath, contentHash: createHash("sha256").update(f6ReportBytes).digest("hex"), reviewContext: reviewIdentity },
   ];
@@ -298,7 +300,6 @@ function buildReviewArtifactUpserts(sessionId, trustedArtifacts) {
   return [
     ...reviewArtifacts,
     { artifactId: trustedArtifactId("f3-report", sessionId), sessionId, inputRevision: 1, kind: "f3_report", relativePath: trustedArtifacts.f3.relativePath, contentHash: trustedArtifacts.f3.contentHash, reviewContext: reviewIdentity },
-    { artifactId: trustedArtifactId("f4-calculation", sessionId), sessionId, inputRevision: 1, kind: "f4_calculation", relativePath: trustedArtifacts.f4.relativePath, contentHash: trustedArtifacts.f4.contentHash, reviewContext: reviewIdentity },
     { artifactId: trustedArtifactId("f5-report", sessionId), sessionId, inputRevision: 1, kind: "f5_report", relativePath: trustedArtifacts.f5.relativePath, contentHash: trustedArtifacts.f5.contentHash, reviewContext: reviewIdentity },
     { artifactId: trustedArtifactId("f6-optimization", sessionId), sessionId, inputRevision: 1, kind: "f6_optimization", relativePath: trustedArtifacts.f6Optimization.relativePath, contentHash: trustedArtifacts.f6Optimization.contentHash, reviewContext: reviewIdentity },
     { artifactId: trustedArtifactId("f6-report", sessionId), sessionId, inputRevision: 1, kind: "f6_report", relativePath: trustedArtifacts.f6Report.relativePath, contentHash: trustedArtifacts.f6Report.contentHash, reviewContext: reviewIdentity },
@@ -325,7 +326,7 @@ async function seedReviewSession(sessionId, targetState, cookie) {
         scenarioDrafts: [savedScenarioDraft(sessionId)],
         artifactRefs: [
           { artifactId: reviewArtifactId("f3-e2e", sessionId), kind: "f3_report", revision: 1, validated: true, reviewContextId },
-          { artifactId: reviewArtifactId("f4-e2e", sessionId), kind: "f4_calculation", revision: 1, validated: true, reviewContextId },
+          { artifactId: sessionId === SESSION_ID ? trustedArtifactId("f4-calculation", sessionId) : reviewArtifactId("f4-calculation", sessionId), kind: "f4_calculation", revision: 1, validated: true, reviewContextId },
           { artifactId: reviewArtifactId("f5-e2e", sessionId), kind: "f5_report", revision: 1, validated: true, reviewContextId },
           { artifactId: reviewArtifactId("f6-report-e2e", sessionId), kind: "f6_report", revision: 1, validated: true, reviewContextId },
           ...(sessionId === SESSION_ID ? [{ artifactId: `f1-image:${f1ContentHash}`, kind: "f1_image", revision: 1, validated: true, reviewContextId }] : []),
@@ -585,7 +586,9 @@ async function runSeededAttempt(job) {
       status: "completed",
       reviewContext: reviewIdentityForSession(sessionId),
       artifactReferences: [
-        { artifactId: reviewArtifactId("f4-e2e", sessionId), kind: "f4_calculation", relativePath: f4RelativePath, contentHash: f4ContentHash },
+        sessionId === SESSION_ID
+          ? { artifactId: trustedArtifactId("f4-calculation", sessionId), kind: "f4_calculation", relativePath: trustedProductionRelativePath(sessionId, "f4"), contentHash: trustedF4ContentHash }
+          : { artifactId: reviewArtifactId("f4-e2e", sessionId), kind: "f4_calculation", relativePath: f4RelativePath, contentHash: f4ContentHash },
       ],
     };
   }

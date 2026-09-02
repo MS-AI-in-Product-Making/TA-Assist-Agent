@@ -208,7 +208,7 @@ test("creates a governed model HostAction prompt from the selected worksheet con
   expect(prompt).toContain("Worksheet: AJ_GAP");
   expect(prompt).toContain("Selected factor identity: table-a / row 2 / 中心间隙");
   expect(prompt).toContain("Scenario identity: what-if:e2e-draft");
-  expect(prompt).toContain(`Related artifact IDs: f2-report:1:f2-run-e2e-${workbench.sessionId}, f4-e2e:${workbench.sessionId}, f1-image:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff`);
+  expect(prompt).toContain(`Related artifact IDs: f2-report:1:f2-run-e2e-${workbench.sessionId}, f4-calculation:1:${workbench.sessionId}, f1-image:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff`);
   expect(prompt).toContain('"capabilityStatus":"internal_within_guidance"');
   expect(prompt).toContain('"f0KnowledgeBaseVersion":"internal-v1"');
   expect(prompt).toContain("F1 managed image reference");
