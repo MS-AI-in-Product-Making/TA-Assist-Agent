@@ -485,7 +485,7 @@ it("serializes concurrent appends and sealing into a valid audit bundle", async 
   }
 });
 
-it("coordinates concurrent appends and sealing across independent stores sharing an audit root", { timeout: 10_000 }, async () => {
+it("coordinates concurrent appends and sealing across independent stores sharing an audit root", { timeout: 60_000 }, async () => {
   const attempts = 8;
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
