@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -25,6 +25,9 @@ const PRODUCT_SURFACE_FILES = [
   "apps/vscode-extension/package.json",
   "apps/vscode-extension/src/participant.ts",
   "docs/governance/evidence/f3-f5-f6-report-readability-f4-baseline.json",
+];
+
+const OPTIONAL_GENERATED_PRODUCT_SURFACE_FILES = [
   "test/demo-output/f6-runs/f5/2026-09-01T07-30-21-518Z/manifest.json",
 ];
 
@@ -32,7 +35,12 @@ describe("product-language surface scan", () => {
   it("rejects prohibited internal identifiers from real user surfaces", () => {
     const failures = [];
 
-    for (const relativePath of PRODUCT_SURFACE_FILES) {
+    const surfaceFiles = [
+      ...PRODUCT_SURFACE_FILES,
+      ...OPTIONAL_GENERATED_PRODUCT_SURFACE_FILES.filter((relativePath) => existsSync(path.join(root, relativePath))),
+    ];
+
+    for (const relativePath of surfaceFiles) {
       const absolutePath = path.join(root, relativePath);
       const content = readFileSync(absolutePath, "utf8");
       const candidates = collectUserFacingText(content).filter((text) => text.length > 0);
