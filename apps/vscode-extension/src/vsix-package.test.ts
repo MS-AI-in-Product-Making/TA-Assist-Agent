@@ -41,11 +41,13 @@ describe("vsix package", () => {
     ]));
   });
 
-  it("boots bundled runtime CLI with deterministic smoke command", async () => {
+  it("invokes the bundled runtime CLI through its CJS wrapper", async () => {
     const runtimeEntry = resolve(artifacts.extractDir, "extension", "runtime", "cli", "index.cjs");
-    const { stdout, stderr } = await execFileAsync(process.execPath, [runtimeEntry, "--help"], { windowsHide: true });
-    const output = `${stdout}\n${stderr}`;
+    const execution = await captureFailedExecution(process.execPath, [runtimeEntry, "agent", "analyze"]);
+    const output = `${execution.stdout}\n${execution.stderr}`;
 
+    expect(execution.code).toBe(2);
+    expect(execution.stderr).toContain("internal_error: operation failed");
     expect(output).not.toMatch(/Dynamic require of\s+"node:[^"]+"\s+is not supported/ui);
     expect(output).not.toMatch(/Cannot find module|MODULE_NOT_FOUND/ui);
   }, 20_000);
@@ -108,6 +110,20 @@ async function trackedStatus(): Promise<string> {
     .filter((line) => line.trim().length > 0)
     .filter((line) => !line.startsWith("?? "))
     .join("\n");
+}
+
+async function captureFailedExecution(command: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+  try {
+    await execFileAsync(command, args, { windowsHide: true });
+    return { code: 0, stdout: "", stderr: "" };
+  } catch (error) {
+    const failed = error as { readonly code?: unknown; readonly stdout?: unknown; readonly stderr?: unknown };
+    return {
+      code: typeof failed.code === "number" ? failed.code : -1,
+      stdout: typeof failed.stdout === "string" ? failed.stdout : "",
+      stderr: typeof failed.stderr === "string" ? failed.stderr : "",
+    };
+  }
 }
 
 async function extractVsix(vsixPath: string, destination: string): Promise<void> {
