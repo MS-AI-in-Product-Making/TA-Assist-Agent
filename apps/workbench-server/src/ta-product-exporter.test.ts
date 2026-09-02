@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, join, relative } from "node:path";
+import { basename, join, relative, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import { describe, expect, it, vi } from "vitest";
@@ -343,7 +343,7 @@ describe("exportTaAnalysisForSession", () => {
     try {
       await seedValidatedSession(rootDir, sessionId);
       const exported = await exportTaAnalysisForSession({ contractVersion: "ta-product-export-command-v1", sessionId, expectedRevision: 1, idempotencyKey: "export-3" }, { rootDir });
-      const manifestPath = join(exported.root, "export-manifest.json");
+      const manifestPath = resolve(rootDir, exported.root, "export-manifest.json");
       const manifestBytes = await readFile(manifestPath);
       const expectedManifestSha = createHash("sha256").update(manifestBytes).digest("hex");
       expect(exported.exportManifestSha256).toBe(expectedManifestSha);

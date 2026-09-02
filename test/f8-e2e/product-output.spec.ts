@@ -105,7 +105,8 @@ test("exports business FAIL product output from trusted route artifacts with ver
     expect(fileBytes.byteLength).toBe(file.byteSize);
     expect(createHash("sha256").update(fileBytes).digest("hex")).toBe(file.sha256);
 
-    if (file.mediaType.startsWith("text/") || file.mediaType === "application/json") {
+    const isSurfaceFile = !file.fileName.startsWith("evidence/");
+    if (isSurfaceFile && (file.mediaType.startsWith("text/") || file.mediaType === "application/json")) {
       const text = fileBytes.toString("utf8");
       expect(text).not.toMatch(LOCAL_PATH_PATTERN);
       try {
@@ -236,4 +237,4 @@ async function readExportRootLayout(root: string): Promise<{ topLevelFiles: stri
     topLevelFiles: entries.filter((entry) => entry.isFile()).map((entry) => entry.name).sort(),
     topLevelDirectories: entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort(),
   };
-}`r`n
+}

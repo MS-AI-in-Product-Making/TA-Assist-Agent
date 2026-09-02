@@ -1090,9 +1090,23 @@ function writeRegistry(rootDir: string, registry: string, sessionId: string, val
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   const target = join(directory, `${sessionId}.json`);
   const temporary = `${target}.${randomUUID()}.tmp`;
+  const sleep = (milliseconds: number) => {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+  };
   try {
     writeFileSync(temporary, JSON.stringify(value), { encoding: "utf8", mode: 0o600, flag: "wx" });
-    renameSync(temporary, target);
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        renameSync(temporary, target);
+        break;
+      } catch (error) {
+        const code = typeof error === "object" && error !== null && "code" in error ? (error as { readonly code?: unknown }).code : undefined;
+        if ((code !== "EPERM" && code !== "EBUSY") || attempt >= 4) {
+          throw error;
+        }
+        sleep(10 * (attempt + 1));
+      }
+    }
   } finally {
     rmSync(temporary, { force: true });
   }

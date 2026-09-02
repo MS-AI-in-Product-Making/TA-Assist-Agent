@@ -25,7 +25,7 @@ const f3RelativePath = "e2e/f3.json";
 const f3AdoReminderRelativePath = "e2e/Feature3-ADO-Reminder.json";
 const f5RelativePath = "e2e/f5.json";
 const f6ReportRelativePath = "e2e/f6-report.json";
-const workbookUploadRelativePath = "e2e/upload-workbook.xlsx";
+const workbookUploadRelativePath = "e2e/upload-workbook.bytes";
 const longWorkbookFileName = "anonymous-ta-workbook-very-long-governed-ui-filename-for-layout-overlap-validation-2026-09-01.xlsx";
 const downstreamFixture = createF6ArtifactBundleFixture({ worksheetNames: ["AJ_GAP"] });
 const calculatedDraft = {
@@ -183,6 +183,14 @@ function reviewArtifactId(kind, sessionId) {
   return `${kind}:${sessionId}`;
 }
 
+function trustedArtifactId(baseId, sessionId) {
+  return `${baseId}:1:${sessionId}`;
+}
+
+function trustedProjectionArtifactId(sessionId) {
+  return `engineering-summary-projection:1:${sessionId}`;
+}
+
 function seededF2RunReference(sessionId) {
   return `f2-run-e2e-${sessionId}`;
 }
@@ -289,12 +297,12 @@ function buildReviewArtifactUpserts(sessionId, trustedArtifacts) {
   }
   return [
     ...reviewArtifacts,
-    { artifactId: "f3-report", sessionId, inputRevision: 1, kind: "f3_report", relativePath: trustedArtifacts.f3.relativePath, contentHash: trustedArtifacts.f3.contentHash, reviewContext: reviewIdentity },
-    { artifactId: "f4-calculation", sessionId, inputRevision: 1, kind: "f4_calculation", relativePath: trustedArtifacts.f4.relativePath, contentHash: trustedArtifacts.f4.contentHash, reviewContext: reviewIdentity },
-    { artifactId: "f5-report", sessionId, inputRevision: 1, kind: "f5_report", relativePath: trustedArtifacts.f5.relativePath, contentHash: trustedArtifacts.f5.contentHash, reviewContext: reviewIdentity },
-    { artifactId: "f6-optimization", sessionId, inputRevision: 1, kind: "f6_optimization", relativePath: trustedArtifacts.f6Optimization.relativePath, contentHash: trustedArtifacts.f6Optimization.contentHash, reviewContext: reviewIdentity },
-    { artifactId: "f6-report", sessionId, inputRevision: 1, kind: "f6_report", relativePath: trustedArtifacts.f6Report.relativePath, contentHash: trustedArtifacts.f6Report.contentHash, reviewContext: reviewIdentity },
-    { artifactId: "engineering-summary-projection:1", sessionId, inputRevision: 1, kind: "engineering_summary_projection", relativePath: trustedArtifacts.projection.relativePath, contentHash: trustedArtifacts.projection.contentHash, reviewContext: reviewIdentity, metadata: { reviewContext: reviewIdentity } },
+    { artifactId: trustedArtifactId("f3-report", sessionId), sessionId, inputRevision: 1, kind: "f3_report", relativePath: trustedArtifacts.f3.relativePath, contentHash: trustedArtifacts.f3.contentHash, reviewContext: reviewIdentity },
+    { artifactId: trustedArtifactId("f4-calculation", sessionId), sessionId, inputRevision: 1, kind: "f4_calculation", relativePath: trustedArtifacts.f4.relativePath, contentHash: trustedArtifacts.f4.contentHash, reviewContext: reviewIdentity },
+    { artifactId: trustedArtifactId("f5-report", sessionId), sessionId, inputRevision: 1, kind: "f5_report", relativePath: trustedArtifacts.f5.relativePath, contentHash: trustedArtifacts.f5.contentHash, reviewContext: reviewIdentity },
+    { artifactId: trustedArtifactId("f6-optimization", sessionId), sessionId, inputRevision: 1, kind: "f6_optimization", relativePath: trustedArtifacts.f6Optimization.relativePath, contentHash: trustedArtifacts.f6Optimization.contentHash, reviewContext: reviewIdentity },
+    { artifactId: trustedArtifactId("f6-report", sessionId), sessionId, inputRevision: 1, kind: "f6_report", relativePath: trustedArtifacts.f6Report.relativePath, contentHash: trustedArtifacts.f6Report.contentHash, reviewContext: reviewIdentity },
+    { artifactId: trustedProjectionArtifactId(sessionId), sessionId, inputRevision: 1, kind: "engineering_summary_projection", relativePath: trustedArtifacts.projection.relativePath, contentHash: trustedArtifacts.projection.contentHash, reviewContext: reviewIdentity, metadata: { reviewContext: reviewIdentity } },
     { artifactId: `f1-image:${f1ContentHash}`, sessionId, inputRevision: 1, kind: "f1_image", relativePath: f1RelativePath, contentHash: f1ContentHash, reviewContext: reviewIdentity, metadata: { mediaType: "image/png", description: "AJ_GAP tolerance loop image" } },
   ];
 }
@@ -566,7 +574,7 @@ async function runSeededAttempt(job) {
       reviewContext: reviewIdentityForSession(sessionId),
       artifactReferences: [
         { artifactId: reviewArtifactId("f3-e2e", sessionId), kind: "f3_report", relativePath: f3RelativePath, contentHash: f3ContentHash },
-        ...(sessionId === SESSION_ID ? [{ artifactId: "f3-report", kind: "f3_report", relativePath: trustedProductionRelativePath(sessionId, "f3"), contentHash: trustedF3ContentHash }] : []),
+        ...(sessionId === SESSION_ID ? [{ artifactId: trustedArtifactId("f3-report", sessionId), kind: "f3_report", relativePath: trustedProductionRelativePath(sessionId, "f3"), contentHash: trustedF3ContentHash }] : []),
       ],
     };
   }
@@ -578,7 +586,6 @@ async function runSeededAttempt(job) {
       reviewContext: reviewIdentityForSession(sessionId),
       artifactReferences: [
         { artifactId: reviewArtifactId("f4-e2e", sessionId), kind: "f4_calculation", relativePath: f4RelativePath, contentHash: f4ContentHash },
-        ...(sessionId === SESSION_ID ? [{ artifactId: "f4-calculation", kind: "f4_calculation", relativePath: trustedProductionRelativePath(sessionId, "f4"), contentHash: trustedF4ContentHash }] : []),
       ],
     };
   }
@@ -590,7 +597,7 @@ async function runSeededAttempt(job) {
       reviewContext: reviewIdentityForSession(sessionId),
       artifactReferences: [
         { artifactId: reviewArtifactId("f5-e2e", sessionId), kind: "f5_report", relativePath: f5RelativePath, contentHash: f5ContentHash },
-        ...(sessionId === SESSION_ID ? [{ artifactId: "f5-report", kind: "f5_report", relativePath: trustedProductionRelativePath(sessionId, "f5"), contentHash: f5ContentHash }] : []),
+        ...(sessionId === SESSION_ID ? [{ artifactId: trustedArtifactId("f5-report", sessionId), kind: "f5_report", relativePath: trustedProductionRelativePath(sessionId, "f5"), contentHash: f5ContentHash }] : []),
       ],
     };
   }
@@ -604,10 +611,10 @@ async function runSeededAttempt(job) {
         { artifactId: reviewArtifactId("f6-report-e2e", sessionId), kind: "f6_report", relativePath: f6ReportRelativePath, contentHash: f6ContentHash },
         ...(sessionId === SESSION_ID
           ? [
-              { artifactId: "f6-optimization", kind: "f6_optimization", relativePath: trustedProductionRelativePath(sessionId, "f6-optimization"), contentHash: trustedF6OptimizationContentHash },
-              { artifactId: "f6-report", kind: "f6_report", relativePath: trustedProductionRelativePath(sessionId, "f6-report"), contentHash: f6ContentHash },
+              { artifactId: trustedArtifactId("f6-optimization", sessionId), kind: "f6_optimization", relativePath: trustedProductionRelativePath(sessionId, "f6-optimization"), contentHash: trustedF6OptimizationContentHash },
+              { artifactId: trustedArtifactId("f6-report", sessionId), kind: "f6_report", relativePath: trustedProductionRelativePath(sessionId, "f6-report"), contentHash: f6ContentHash },
               {
-                artifactId: "engineering-summary-projection:1",
+                artifactId: trustedProjectionArtifactId(sessionId),
                 kind: "engineering_summary_projection",
                 relativePath: trustedProductionRelativePath(sessionId, "projection"),
                 contentHash: trustedProjectionContentHash,

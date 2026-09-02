@@ -4,8 +4,9 @@ import { readFile, readdir, rm } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 
 import { expect, test, type APIRequestContext, type BrowserContext, type Page } from "@playwright/test";
+import { ANONYMOUS_WORKBOOK_RELATIVE_PATH, ensureAnonymousWorkbookFixture } from "./fixtures/anonymous-workbook-fixture.ts";
 
-const FIXTURE_WORKBOOK = resolve("test/f8-e2e/fixtures/anonymous-ta-workbook.xlsx");
+const FIXTURE_WORKBOOK = resolve(ANONYMOUS_WORKBOOK_RELATIVE_PATH);
 const LOCAL_PATH_PATTERN = /(?:[A-Za-z]:\\|file:\/\/|\\\\|\/Users\/|\/home\/|\/tmp\/|\/var\/)/i;
 
 type F8SessionSnapshot = {
@@ -42,6 +43,10 @@ type ChatHarness = {
 };
 
 test.describe.configure({ mode: "serial", timeout: 120_000 });
+
+test.beforeAll(async () => {
+  await ensureAnonymousWorkbookFixture();
+});
 
 test("Case A accepts an explicit workbook path into one managed session with live Web progress and governed artifacts", async ({ page, context }) => {
   const harness = await startChatHarness();

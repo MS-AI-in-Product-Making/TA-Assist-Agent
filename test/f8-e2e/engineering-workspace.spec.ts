@@ -606,7 +606,7 @@ test("supports specification plot drag, keyboard, numeric commit paths, and keep
 
   await uslInput.fill("-0.120");
   await uslInput.press("Enter");
-  await expect(page.getByRole("alert")).toHaveText("USL must stay above LSL.");
+  await expect(page.getByText("USL must stay above LSL.", { exact: true })).toBeVisible();
   await expect(uslInput).toHaveValue("-0.119");
 
   await uslSlider.focus();

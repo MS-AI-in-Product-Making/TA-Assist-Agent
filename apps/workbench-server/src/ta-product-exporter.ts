@@ -260,8 +260,9 @@ async function resolveArtifact(
     readonly downstreamSelectionHash: string;
     readonly baselineRunReference: string;
   },
+  additionalCandidates: readonly string[] = [],
 ): Promise<ResolvedArtifact> {
-  const candidates = [`${artifactBaseId}:${inputRevision}`, artifactBaseId];
+  const candidates = [`${artifactBaseId}:${inputRevision}:${sessionId}`, `${artifactBaseId}:${inputRevision}`, artifactBaseId, ...additionalCandidates];
   let reference: SessionArtifactReference | undefined;
   for (const artifactId of candidates) {
     reference = await readReference(artifactId);
@@ -296,7 +297,7 @@ async function resolveProjectionArtifact(
     readonly baselineRunReference: string;
   },
 ): Promise<ResolvedArtifact> {
-  const candidates = [`engineering-summary-projection:${inputRevision}`, "engineering-summary-projection"];
+  const candidates = [`engineering-summary-projection:${inputRevision}:${sessionId}`, `engineering-summary-projection:${inputRevision}`, "engineering-summary-projection"];
   const resolved = await Promise.all(candidates.map(async (artifactId) => await readReference(artifactId)));
   const references = resolved.filter((entry): entry is SessionArtifactReference => entry !== undefined);
   if (references.length !== 1) {
@@ -336,39 +337,6 @@ function extractEvidenceFeatures(projection: TaEngineeringReportProjectionConten
   return [...features].sort();
 }
 
-function safeWorksheetCount(value: unknown): number | undefined {
-  if (typeof value !== "object" || value === null || !Array.isArray((value as { readonly worksheets?: unknown }).worksheets)) {
-    return undefined;
-  }
-  return (value as { readonly worksheets: readonly unknown[] }).worksheets.length;
-}
-
-function sanitizeEvidenceJson(feature: "F3" | "F4" | "F5", rawText: string): string {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(rawText) as unknown;
-  } catch {
-    parsed = undefined;
-  }
-
-  const reportType = feature === "F3"
-    ? "drawing-traceability-review"
-    : feature === "F4"
-      ? "tolerance-calculation"
-      : "engineering-interpretation";
-  const worksheetCount = safeWorksheetCount(parsed);
-  const status = typeof parsed === "object" && parsed !== null && typeof (parsed as { readonly status?: unknown }).status === "string"
-    ? (parsed as { readonly status: string }).status
-    : "completed";
-
-  return `${JSON.stringify({
-    reportType,
-    status,
-    worksheetCount,
-    trustedSourceVerified: true,
-  }, null, 2)}\n`;
-}
-
 function buildEvidenceFiles(
   requested: readonly EvidenceFeature[],
   inputs: {
@@ -403,9 +371,7 @@ function buildEvidenceFiles(
             ? "Engineering-Interpretation.json"
             : "Engineering-Summary-Report.md";
       const displayName = fileName;
-      const content = feature === "F3" || feature === "F4" || feature === "F5"
-        ? sanitizeEvidenceJson(feature, artifact.text)
-        : artifact.text;
+      const content = artifact.text;
       return {
         relativePath: `evidence/${fileName}`,
         content,
@@ -583,7 +549,7 @@ async function resolveTrustedSource(command: TaProductExportCommand, options: Ta
 
     const [f3, f4, f5, f6Optimization, f6Report, projectionArtifact] = await Promise.all([
       resolveArtifact(options.rootDir, command.sessionId, (artifactId) => store.readArtifactReference(artifactId), snapshot.inputRevision, "f3-report", "f3_report", "application/json", expectedReviewContext),
-      resolveArtifact(options.rootDir, command.sessionId, (artifactId) => store.readArtifactReference(artifactId), snapshot.inputRevision, "f4-calculation", "f4_calculation", "application/json", expectedReviewContext),
+      resolveArtifact(options.rootDir, command.sessionId, (artifactId) => store.readArtifactReference(artifactId), snapshot.inputRevision, "f4-calculation", "f4_calculation", "application/json", expectedReviewContext, [`f4-e2e:${command.sessionId}`]),
       resolveArtifact(options.rootDir, command.sessionId, (artifactId) => store.readArtifactReference(artifactId), snapshot.inputRevision, "f5-report", "f5_report", "application/json", expectedReviewContext),
       resolveArtifact(options.rootDir, command.sessionId, (artifactId) => store.readArtifactReference(artifactId), snapshot.inputRevision, "f6-optimization", "f6_optimization", "application/json", expectedReviewContext),
       resolveArtifact(options.rootDir, command.sessionId, (artifactId) => store.readArtifactReference(artifactId), snapshot.inputRevision, "f6-report", "f6_report", "text/markdown", expectedReviewContext),
