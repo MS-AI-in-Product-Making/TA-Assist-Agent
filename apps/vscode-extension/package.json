@@ -4,8 +4,15 @@
   "version": "0.1.0",
   "type": "module",
   "main": "./dist/extension.js",
+  "files": [
+    "dist",
+    "runtime",
+    "package.json"
+  ],
   "scripts": {
     "build": "tsc -b",
+    "build:beta": "node ./scripts/build.mjs",
+    "package:vsix": "node ./scripts/package-vsix.mjs",
     "test": "vitest run --workspace ../../vitest.workspace.ts src"
   },
   "engines": {

@@ -1,6 +1,6 @@
 import { createTypedError, f8PublicSessionCommandSchema, f8SessionCommandSchema, f8SessionSnapshotSchema, f8SessionStateSchema, type TypedError } from "@ai-assist/contracts";
 import type { TaWorkbookStage } from "@ai-assist/product-language";
-import { projectTaProductStages as projectWorkbenchTaProductStages, type TaProductStageProgress } from "@ai-assist/workbench";
+import { projectTaProductStages as projectWorkbenchTaProductStages, type TaProductStageProgress } from "@ai-assist/workbench/projections";
 
 import { featureDisplay, reasonDisplay } from "./web-projection.js";
 

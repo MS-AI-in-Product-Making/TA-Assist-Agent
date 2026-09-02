@@ -1,5 +1,5 @@
 import { f7PlaceholderStatusSchema } from "@ai-assist/contracts";
-import { TA_WORKBOOK_STAGES, TA_WORKBOOK_STAGE_LABELS, projectTaWorkbookStage, type TaWorkbookStage } from "@ai-assist/product-language";
+import { TA_WORKBOOK_STAGES, TA_WORKBOOK_STAGE_LABELS, projectTaWorkbookStage, type TaWorkbookStage } from "@ai-assist/product-language/ta-workbook-language";
 
 import { canRetryAttempt } from "./attempts.js";
 import { FEATURE_IDS, type F8SessionSnapshot, type F8SessionState } from "./commands.js";

@@ -15,10 +15,15 @@ const resumeWorkbenchMock = vi.fn(async (_rootDir: string, sessionId: string) =>
 const importWorkbookMock = vi.fn(async () => ({ artifactId: "artifact-1", contentHash: "a".repeat(64), snapshotRevision: 1, state: "f0_validating" }));
 const handleAgentTurnMock = vi.fn(async () => ({ responseText: "Session is active.", actions: [], commands: [] }));
 let participantHandler: ((request: { readonly prompt: string; readonly command?: string; readonly model?: unknown }, context: { readonly history: readonly unknown[] }, response: { readonly markdown: (text: string) => void }, token: { readonly isCancellationRequested: boolean }) => Promise<void>) | undefined;
+const joinPathMock = vi.fn((base: { fsPath: string }, ...segments: string[]) => ({ fsPath: `${base.fsPath}/${segments.join("/")}`.replace(/\\/g, "/") }));
 
 vi.mock("vscode", () => ({
   StatusBarAlignment: { Left: 1 },
-  Uri: { file: (fsPath: string) => ({ fsPath }), parse: (value: string) => ({ value }) },
+  Uri: {
+    file: (fsPath: string) => ({ fsPath }),
+    parse: (value: string) => ({ value }),
+    joinPath: joinPathMock,
+  },
   chat: { createChatParticipant: vi.fn((_id: string, callback: NonNullable<typeof participantHandler>) => {
     participantHandler = callback;
     return { dispose: vi.fn() };
@@ -72,6 +77,7 @@ afterEach(() => {
   importWorkbookMock.mockReset();
   importWorkbookMock.mockResolvedValue({ artifactId: "artifact-1", contentHash: "a".repeat(64), snapshotRevision: 1, state: "f0_validating" });
   handleAgentTurnMock.mockClear();
+  joinPathMock.mockClear();
   participantHandler = undefined;
   vi.resetModules();
 });
@@ -79,6 +85,7 @@ afterEach(() => {
 function extensionContext() {
   return {
     subscriptions: [] as { dispose(): void }[],
+    extensionUri: { fsPath: "repo/apps/vscode-extension" },
     globalState: {
       get: vi.fn((key: string) => globalStateValues.get(key)),
       update: vi.fn(async (key: string, value: unknown) => { globalStateValues.set(key, value); }),
@@ -105,6 +112,13 @@ async function invokeParticipant(request: { readonly prompt: string; readonly co
 }
 
 describe("extension workbench binding", () => {
+  it("derives CLI entrypoint from extensionUri runtime folder", async () => {
+    const context = await activateExtension();
+
+    expect(joinPathMock).toHaveBeenCalledWith(context.extensionUri, "runtime", "cli", "index.js");
+    context.subscriptions.forEach((subscription) => subscription.dispose());
+  });
+
   it("stores active session and URL immediately when analyze opens a new workbench", async () => {
     const context = await activateExtension();
 

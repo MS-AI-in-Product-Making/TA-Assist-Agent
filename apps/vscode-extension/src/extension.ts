@@ -31,7 +31,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   status.command = "ta-assist.workbench";
   status.show();
   context.subscriptions.push(status);
-  const processLauncher = createCliProcessLauncher(workspaceRoot);
+  const cliUri = vscode.Uri.joinPath(context.extensionUri, "runtime", "cli", "index.js");
+  const processLauncher = createCliProcessLauncher(workspaceRoot, cliUri.fsPath);
   context.subscriptions.push({ dispose: () => processLauncher.dispose() });
   const conversation = await createConversationStore({ rootDir: join(workspaceRoot, "runtime", "workbench") });
   context.subscriptions.push({ dispose: () => { void conversation.close(); } });
@@ -275,7 +276,7 @@ function trimTerminalPeriod(value: string): string {
   return value.trim().replace(/[.。]+$/u, "");
 }
 
-function createCliProcessLauncher(workspaceRoot: string): WorkbenchProcessLauncher & { dispose(): void } {
+function createCliProcessLauncher(workspaceRoot: string, cliPath: string): WorkbenchProcessLauncher & { dispose(): void } {
   let child: ChildProcess | undefined;
   let origin: string | undefined;
   const children = new Set<ChildProcess>();
@@ -287,7 +288,6 @@ function createCliProcessLauncher(workspaceRoot: string): WorkbenchProcessLaunch
         const url = action === "resume" && requestedSession !== undefined ? `${origin}/?session=${encodeURIComponent(requestedSession)}` : origin;
         return { ...(requestedSession === undefined ? {} : { sessionId: requestedSession }), url };
       }
-      const cliPath = join(workspaceRoot, "apps", "cli", "dist", "index.js");
       const started = await startCliHost(process.execPath, [cliPath, ...args], workspaceRoot);
       child = started.child;
       children.add(child);

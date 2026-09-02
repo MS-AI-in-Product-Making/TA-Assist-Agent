@@ -11,6 +11,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./projections": {
+      "types": "./dist/projections.d.ts",
+      "import": "./dist/projections.js"
+    },
     "./review": {
       "types": "./dist/review.d.ts",
       "import": "./dist/review.js"
