@@ -2,8 +2,11 @@ import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, relative } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import * as workbench from "@ai-assist/workbench";
+
 import { canonicalSelectedWorksheetSetHash, createSessionStore, openSessionStore } from "@ai-assist/workbench";
 
 import { exportTaAnalysisForSession } from "./ta-product-exporter.js";
@@ -148,6 +151,65 @@ async function seedValidatedSession(
   };
 }
 
+async function corruptPersistedSnapshotWithDuplicateDownstreamSelection(
+  rootDir: string,
+  sessionId: string,
+  duplicateSelection: readonly string[] = ["Analysis-A", "Analysis-A"],
+): Promise<void> {
+  const databasePath = join(rootDir, "runtime", "workbench", "workbench.sqlite");
+  const database = new DatabaseSync(databasePath, {
+    enableForeignKeyConstraints: true,
+    timeout: 5_000,
+  });
+  try {
+    const row = database.prepare(`SELECT snapshot_json FROM sessions WHERE session_id = ?`).get(sessionId) as { snapshot_json: string } | undefined;
+    if (row === undefined) {
+      throw new Error(`Missing persisted snapshot for session ${sessionId}`);
+    }
+
+    const snapshot = JSON.parse(row.snapshot_json) as {
+      readonly downstreamScopeSelection?: {
+        readonly workbookContentHash: string;
+        readonly selectedWorksheetNames: readonly string[];
+        readonly confirmed: boolean;
+        readonly provenance: "user" | "system";
+      };
+    };
+    const downstream = snapshot.downstreamScopeSelection;
+    if (downstream === undefined) {
+      throw new Error(`Missing downstream scope selection for session ${sessionId}`);
+    }
+
+    const mutated = {
+      ...snapshot,
+      downstreamScopeSelection: {
+        ...downstream,
+        selectedWorksheetNames: [...duplicateSelection],
+      },
+    };
+    database.prepare(`UPDATE sessions SET snapshot_json = ? WHERE session_id = ?`).run(JSON.stringify(mutated), sessionId);
+  } finally {
+    database.close();
+  }
+}
+
+function readPersistedSnapshotJson(rootDir: string, sessionId: string): unknown {
+  const databasePath = join(rootDir, "runtime", "workbench", "workbench.sqlite");
+  const database = new DatabaseSync(databasePath, {
+    enableForeignKeyConstraints: true,
+    timeout: 5_000,
+  });
+  try {
+    const row = database.prepare(`SELECT snapshot_json FROM sessions WHERE session_id = ?`).get(sessionId) as { snapshot_json: string } | undefined;
+    if (row === undefined) {
+      throw new Error(`Missing persisted snapshot for session ${sessionId}`);
+    }
+    return JSON.parse(row.snapshot_json) as unknown;
+  } finally {
+    database.close();
+  }
+}
+
 describe("exportTaAnalysisForSession", () => {
   it("accepts non-sorted downstream worksheet selection when reviewContext hash uses canonical set hash", async () => {
     const rootDir = await mkdtemp(join(tmpdir(), "ta-exporter-nonsorted-selection-"));
@@ -195,12 +257,41 @@ describe("exportTaAnalysisForSession", () => {
   it("fails closed when downstream worksheet selection contains duplicate worksheet names", async () => {
     const rootDir = await mkdtemp(join(tmpdir(), "ta-exporter-duplicate-selection-"));
     const sessionId = "50909090-5090-4509-8509-509090909090";
+    const actualOpenSessionStore = workbench.openSessionStore;
+    const openSessionStoreSpy = vi.spyOn(workbench, "openSessionStore");
     try {
-      await expect(seedValidatedSession(rootDir, sessionId, projectionTemplate(), {
+      await seedValidatedSession(rootDir, sessionId, projectionTemplate(), {
         initialSelectedWorksheetNames: ["Analysis-A"],
-        downstreamSelectedWorksheetNames: ["Analysis-A", "Analysis-A"],
-      })).rejects.toThrow(/worksheet names must be unique/i);
+        downstreamSelectedWorksheetNames: ["Analysis-A"],
+      });
+
+      await corruptPersistedSnapshotWithDuplicateDownstreamSelection(rootDir, sessionId, ["Analysis-A", "Analysis-A"]);
+
+      openSessionStoreSpy.mockImplementation(async (options) => {
+        const store = await actualOpenSessionStore(options);
+        const corruptedSnapshot = readPersistedSnapshotJson(options.rootDir, options.sessionId) as Awaited<ReturnType<typeof store.readSnapshot>>;
+        return {
+          readSnapshot: async () => corruptedSnapshot,
+          readArtifactReference: store.readArtifactReference.bind(store),
+          readCommandReceipt: store.readCommandReceipt.bind(store),
+          readCommittedCommand: store.readCommittedCommand.bind(store),
+          applyCommand: store.applyCommand.bind(store),
+          recordAttemptResult: store.recordAttemptResult.bind(store),
+          close: store.close.bind(store),
+        };
+      });
+
+      await expect(exportTaAnalysisForSession({
+        contractVersion: "ta-product-export-command-v1",
+        sessionId,
+        expectedRevision: 1,
+        idempotencyKey: "export-duplicate-selection",
+      }, { rootDir })).rejects.toMatchObject({
+        code: "evidence_mismatch",
+        summary: expect.stringMatching(/duplicate worksheet names/i),
+      });
     } finally {
+      openSessionStoreSpy.mockRestore();
       await rm(rootDir, { recursive: true, force: true });
     }
   });
