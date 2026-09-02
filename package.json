@@ -46,5 +46,13 @@
     "vue-eslint-parser": "^10.0.0",
     "vitest": "^3.0.0",
     "xlsx": "^0.18.5"
+  },
+  "overrides": {
+    "@vscode/vsce@3.9.2": {
+      "js-yaml": "4.3.1",
+      "@secretlint/node": {
+        "js-yaml": "4.3.1"
+      }
+    }
   }
 }
