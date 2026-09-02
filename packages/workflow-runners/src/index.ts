@@ -7,6 +7,7 @@ export {
 	F3_ADO_MARKDOWN_TABLE_HEADER,
 	renderF3AdoMarkdown,
 } from "./f3-ado-markdown.js";
+export { F3_ADO_HTML_TABLE_HEADERS, renderF3AdoHistoryHtml } from "./f3-ado-html.js";
 export { runF1F2Selection, runF1F2Confirmed } from "./f1-f2.js";
 export { runF3Analysis } from "./f3.js";
 export { renderF3AdoReminder } from "./f3.js";

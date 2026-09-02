@@ -1,5 +1,3 @@
-/* global structuredClone */
-
 import { afterEach, describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -135,6 +133,8 @@ describe("Feature 3 local artifact flow", () => {
     expect(reminder).toContain("| Device Level Dim | Dimension Description |");
     expect(historyHtml).toContain("<table>");
     expect(historyHtml.match(/<th>/g)).toHaveLength(11);
+    expect(historyHtml.match(/<tr data-f3-factor-row=true>/g)).toHaveLength(json.summary.factorCount);
+    expect(historyHtml.match(/<tr data-f3-group-row=true>/g)).toHaveLength(1);
   });
 
   it("writes only the selected ready worksheet", () => {
