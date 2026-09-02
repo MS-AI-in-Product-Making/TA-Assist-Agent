@@ -6,7 +6,7 @@ import type { FactorRowModel } from "../workspace-model.js";
 import { projectSourceText } from "../web-projection.js";
 import { FactorTable } from "./FactorTable.js";
 
-const factor: FactorRowModel = { key: "sheet\u0000table\u00001", worksheetName: "sheet", tableId: "table", sourceRow: 1, factorName: projectSourceText("间隙", "Gap"), partName: projectSourceText("支架", "Bracket"), drawingNumber: "DRW-001", dimId: "DIM-17", partCategory: "CNC", unit: "mm", nominalValue: 1, nominalDisplay: "1.000", upperTolerance: 0.2, upperToleranceDisplay: "0.200", lowerTolerance: -0.2, lowerToleranceDisplay: "-0.200", longTermSafetyFactor: 1, longTermSafetyFactorDisplay: "1.0", sigmaLevel: 4, sigmaLevelDisplay: "4.0", distribution: "Normal", mean: 1, meanDisplay: "1.000", tolerance: 0.2, toleranceDisplay: "0.200", oneSigma: 0.05, oneSigmaDisplay: "0.050", contributionDisplay: "50.0%", notes: "Check stack-up at room temperature", capabilityResult: "F0 internal within guidance", knowledgeRecommendation: projectSourceText("最大总公差带 0.5 mm · internal-v1 · v1", "Maximum total tolerance band 0.5 mm · internal-v1 · v1"), editable: true, additionalMeanShift: 0, directionLabel: "positive", directionAvailable: true, contribution: 0.5, loopLabel: undefined, status: "pass" };
+const factor: FactorRowModel = { key: "sheet\u0000table\u00001", worksheetName: "sheet", tableId: "table", sourceRow: 1, factorName: projectSourceText("间隙", "Gap"), partName: projectSourceText("支架", "Bracket"), drawingNumber: "DRW-001", dimId: "DIM-17", partCategory: "CNC", unit: "mm", nominalValue: 1, nominalDisplay: "1.000", upperTolerance: 0.2, upperToleranceDisplay: "0.200", lowerTolerance: -0.2, lowerToleranceDisplay: "-0.200", longTermSafetyFactor: 1, longTermSafetyFactorDisplay: "1.0", sigmaLevel: 4, sigmaLevelDisplay: "4.0", distribution: "Normal", mean: 1, meanDisplay: "1.000", tolerance: 0.2, toleranceDisplay: "0.200", oneSigma: 0.05, oneSigmaDisplay: "0.050", contributionDisplay: "50.0%", notes: "Check stack-up at room temperature", capabilityResult: "Internal within guidance", knowledgeRecommendation: projectSourceText("最大总公差带 0.5 mm · internal-v1 · v1", "Maximum total tolerance band 0.5 mm · internal-v1 · v1"), editable: true, additionalMeanShift: 0, directionLabel: "positive", directionAvailable: true, contribution: 0.5, loopLabel: undefined, status: "pass" };
 const state: FactorScenarioState = { values: { nominalValue: "1", upperTolerance: "0.2", lowerTolerance: "-0.2", additionalMeanShift: "0" }, dirty: false, calculating: false };
 
 describe("FactorTable", () => {
@@ -48,7 +48,7 @@ describe("FactorTable", () => {
       "Capability Result",
       "Knowledge Recommendation",
     ]);
-    expect(within(rendered.container).getByText("F0 internal within guidance")).toBeVisible();
+    expect(within(rendered.container).getByText("Internal within guidance")).toBeVisible();
     const loopLabelText = within(rendered.container).getByText("Not available");
     expect(loopLabelText).toBeVisible();
     const loopCell = loopLabelText.closest("td");

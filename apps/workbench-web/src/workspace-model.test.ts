@@ -45,7 +45,7 @@ describe("projectEngineeringWorkspace", () => {
     expect((factors?.[0]?.factorName as any)?.sourceText).toBe("间隙因子");
     expect((factors?.[0]?.partName as any)?.displayText).toBe("Bracket");
     expect((factors?.[0]?.partName as any)?.sourceText).toBe("支架");
-    expect(factors?.[0]?.capabilityResult).toBe("F0 internal within guidance");
+    expect(factors?.[0]?.capabilityResult).toBe("Internal within guidance");
     expect((factors?.[0]?.knowledgeRecommendation as any)?.displayText).toBe("Maximum total tolerance band 0.5 mm · internal-v1 · v1");
     expect((factors?.[0]?.knowledgeRecommendation as any)?.sourceText).toBe("Maximum total tolerance band 0.5 mm · internal-v1 · v1");
     expect(factors?.[0]).toMatchObject({
