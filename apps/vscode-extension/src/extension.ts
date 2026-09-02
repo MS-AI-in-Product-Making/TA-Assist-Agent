@@ -31,7 +31,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   status.command = "ta-assist.workbench";
   status.show();
   context.subscriptions.push(status);
-  const cliUri = vscode.Uri.joinPath(context.extensionUri, "runtime", "cli", "index.js");
+  const cliUri = vscode.Uri.joinPath(context.extensionUri, "runtime", "cli", "index.cjs");
   const processLauncher = createCliProcessLauncher(workspaceRoot, cliUri.fsPath);
   context.subscriptions.push({ dispose: () => processLauncher.dispose() });
   const conversation = await createConversationStore({ rootDir: join(workspaceRoot, "runtime", "workbench") });

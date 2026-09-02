@@ -1,5 +1,4 @@
-import { cp, mkdir, rm } from "node:fs/promises";
-import { access } from "node:fs/promises";
+import { cp, mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFile } from "node:child_process";
@@ -10,23 +9,23 @@ const execFileAsync = promisify(execFile);
 const extensionRoot = resolve(dirname(dirname(fileURLToPath(import.meta.url))));
 const workspaceRoot = resolve(extensionRoot, "..", "..");
 const runtimeRoot = join(extensionRoot, "runtime");
+const extensionDistRoot = join(extensionRoot, "dist");
 const require = createRequire(import.meta.url);
 const tscCli = require.resolve("typescript/bin/tsc");
-const npmCli = await resolveNpmCli();
 const { build } = await import("esbuild");
 
-await runNode([tscCli, "-b", "--force"], workspaceRoot);
-await runNode([npmCli, "--workspace", "@ai-assist/workbench-server", "run", "build"], workspaceRoot);
+await runNode([tscCli, "-b"], workspaceRoot);
 
 await rm(runtimeRoot, { recursive: true, force: true });
 await mkdir(runtimeRoot, { recursive: true });
 await mkdir(join(runtimeRoot, "cli"), { recursive: true });
 await mkdir(join(runtimeRoot, "workbench"), { recursive: true });
 await mkdir(join(runtimeRoot, "assets", "workbench"), { recursive: true });
+await mkdir(extensionDistRoot, { recursive: true });
 
 await build({
-  entryPoints: [join(workspaceRoot, "apps", "cli", "dist", "index.js")],
-  outfile: join(runtimeRoot, "cli", "index.js"),
+  entryPoints: [join(extensionRoot, "src", "extension.ts")],
+  outfile: join(extensionDistRoot, "extension.js"),
   bundle: true,
   platform: "node",
   format: "esm",
@@ -36,6 +35,34 @@ await build({
   external: runtimeExternalModules(),
 });
 
+await build({
+  entryPoints: [join(workspaceRoot, "apps", "cli", "dist", "index.js")],
+  outfile: join(runtimeRoot, "cli", "index.mjs"),
+  bundle: true,
+  platform: "node",
+  format: "esm",
+  target: "node22",
+  sourcemap: false,
+  minify: false,
+  banner: {
+    js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);",
+  },
+  external: runtimeExternalModules(),
+});
+
+await writeFile(join(runtimeRoot, "cli", "index.cjs"), [
+  "#!/usr/bin/env node",
+  "const { pathToFileURL } = require('node:url');",
+  "const { join } = require('node:path');",
+  "(async () => {",
+  "  await import(pathToFileURL(join(__dirname, 'index.mjs')).href);",
+  "})().catch((error) => {",
+  "  console.error(error);",
+  "  process.exitCode = 1;",
+  "});",
+  "",
+].join("\n"), "utf8");
+
 await cp(join(workspaceRoot, "apps", "workbench-server", "assets", "workbench", "workbench.js"), join(runtimeRoot, "workbench", "workbench.js"), { force: true });
 await cp(join(workspaceRoot, "apps", "workbench-server", "assets", "workbench", "workbench.css"), join(runtimeRoot, "workbench", "workbench.css"), { force: true });
 await cp(join(workspaceRoot, "apps", "workbench-server", "assets", "workbench", "workbench.js"), join(runtimeRoot, "assets", "workbench", "workbench.js"), { force: true });
@@ -43,25 +70,6 @@ await cp(join(workspaceRoot, "apps", "workbench-server", "assets", "workbench", 
 
 async function runNode(args, cwd) {
   await execFileAsync(process.execPath, args, { cwd, windowsHide: true });
-}
-
-async function resolveNpmCli() {
-  const candidates = [];
-  if (typeof process.env.npm_execpath === "string" && process.env.npm_execpath.length > 0) {
-    candidates.push(process.env.npm_execpath);
-  }
-  candidates.push(join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js"));
-
-  for (const candidate of candidates) {
-    try {
-      await access(candidate);
-      return candidate;
-    } catch {
-      // Try the next candidate.
-    }
-  }
-
-  throw new Error("Unable to locate npm CLI script for workspace build.");
 }
 
 function runtimeExternalModules() {

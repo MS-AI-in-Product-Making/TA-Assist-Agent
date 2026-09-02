@@ -115,7 +115,7 @@ describe("extension workbench binding", () => {
   it("derives CLI entrypoint from extensionUri runtime folder", async () => {
     const context = await activateExtension();
 
-    expect(joinPathMock).toHaveBeenCalledWith(context.extensionUri, "runtime", "cli", "index.js");
+    expect(joinPathMock).toHaveBeenCalledWith(context.extensionUri, "runtime", "cli", "index.cjs");
     context.subscriptions.forEach((subscription) => subscription.dispose());
   });
 
