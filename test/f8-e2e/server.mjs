@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 
 import { f2UserReportSchema, f4WorkflowCalculationResultSchema, hostActionResultSchema, hostActionRequestSchema } from "@ai-assist/contracts";
 import { createConversationStore } from "@ai-assist/conversation";
@@ -160,18 +160,89 @@ function savedScenarioDraft(sessionId) {
   return { ...calculatedDraft, draftId: `e2e-draft-${sessionId}`, sessionId, status: "saved" };
 }
 
-function buildReviewArtifactUpserts(sessionId) {
+function projectionTemplate() {
+  return {
+    schemaVersion: "ta-engineering-report-projection-v1",
+    title: "TA Engineering Analysis Report",
+    workbookDisposition: "FAIL",
+    worksheetDispositions: [{ worksheetName: "AJ_GAP", disposition: "FAIL" }],
+    workbook: {
+      fileName: "Anonymous.xlsx",
+      contentHash: HASH,
+    },
+    worksheets: [{
+      worksheetName: "AJ_GAP",
+      toleranceLoopDescription: "Synthetic gap",
+      disposition: "FAIL",
+      requiredAction: "Engineering review required before release decision",
+      findings: ["Finding A"],
+      assumptions: ["Assumption A"],
+      clarifications: ["Clarification A"],
+      gatingEvidenceReferences: ["F3:AJ_GAP:governance", "F4:AJ_GAP:calculation", "F5:AJ_GAP:SIGNAL", "F6:AJ_GAP:summary"],
+    }],
+  };
+}
+
+async function writeArtifact(absolutePath, content, encoding = undefined) {
+  await mkdir(join(absolutePath, ".."), { recursive: true });
+  if (encoding === undefined) {
+    await writeFile(absolutePath, content);
+    const bytes = content instanceof Uint8Array ? content : Buffer.from(content);
+    return { relativePath: relative(rootDir, absolutePath), contentHash: createHash("sha256").update(bytes).digest("hex") };
+  }
+  await writeFile(absolutePath, content, encoding);
+  return { relativePath: relative(rootDir, absolutePath), contentHash: createHash("sha256").update(content, encoding).digest("hex") };
+}
+
+async function seedTrustedProductionArtifacts(sessionId) {
+  const productionRoot = join(rootDir, "runtime", "workbench", "runner-output", sessionId, "production");
+  const f2Root = join(productionRoot, "f2");
+  const f3Root = join(productionRoot, "f3");
+  const f4Root = join(productionRoot, "f4");
+  const f5Root = join(productionRoot, "f5");
+  const f6Root = join(productionRoot, "f6", "2026-09-02T00-00-00-000Z");
+  const projectionRoot = join(rootDir, "runtime", "workbench", "managed-artifacts", sessionId, "engineering-summary-projection");
+
+  const f2 = await writeArtifact(join(f2Root, "Feature2-Report.json"), `${JSON.stringify(f2Report)}\n`, "utf8");
+  const f3 = await writeArtifact(join(f3Root, "Feature3-Report.json"), `${JSON.stringify(f3Report)}\n`, "utf8");
+  const f4 = await writeArtifact(join(f4Root, "Feature4-Calculation.json"), `${JSON.stringify(f4Report)}\n`, "utf8");
+  const f5 = await writeArtifact(join(f5Root, "Feature5-Report.json"), Buffer.from(f5Bytes));
+  const f6Optimization = await writeArtifact(join(f6Root, "Feature6-Optimization.json"), "{\"status\":\"completed\"}\n", "utf8");
+  const f6Report = await writeArtifact(join(f6Root, "Feature6-Report.md"), f6ReportBytes);
+  await writeArtifact(join(f6Root, "Feature6-Optimization.md"), "# TA Improvement Options\n", "utf8");
+  await writeArtifact(join(f6Root, "Feature6-Run-Summary.json"), "{\"status\":\"completed\"}\n", "utf8");
+  const projection = await writeArtifact(join(projectionRoot, "revision-1.json"), `${JSON.stringify(projectionTemplate(), null, 2)}\n`, "utf8");
+
+  await mkdir(join(rootDir, "runtime", "workbench", "registries", "production-roots"), { recursive: true });
+  await writeFile(
+    join(rootDir, "runtime", "workbench", "registries", "production-roots", `${sessionId}.json`),
+    JSON.stringify({ f1Root: join(productionRoot, "f1"), f2Root, f3Root, f4Root, f5Root, f6Root }),
+    "utf8",
+  );
+
+  return { f2, f3, f4, f5, f6Optimization, f6Report, projection };
+}
+
+function buildReviewArtifactUpserts(sessionId, trustedArtifacts) {
   return [
     { artifactId: reviewArtifactId("f2-e2e", sessionId), sessionId, inputRevision: 1, kind: "f2_report", relativePath: f2RelativePath, contentHash: createHash("sha256").update(f2Bytes).digest("hex") },
     { artifactId: reviewArtifactId("f3-e2e", sessionId), sessionId, inputRevision: 1, kind: "f3_report", relativePath: f3RelativePath, contentHash: createHash("sha256").update(f3Bytes).digest("hex"), reviewContext: reviewIdentity },
     { artifactId: reviewArtifactId("f4-e2e", sessionId), sessionId, inputRevision: 1, kind: "f4_calculation", relativePath: f4RelativePath, contentHash: createHash("sha256").update(f4Bytes).digest("hex"), reviewContext: reviewIdentity },
     { artifactId: reviewArtifactId("f5-e2e", sessionId), sessionId, inputRevision: 1, kind: "f5_report", relativePath: f5RelativePath, contentHash: createHash("sha256").update(f5Bytes).digest("hex"), reviewContext: reviewIdentity },
     { artifactId: reviewArtifactId("f6-report-e2e", sessionId), sessionId, inputRevision: 1, kind: "f6_report", relativePath: f6ReportRelativePath, contentHash: createHash("sha256").update(f6ReportBytes).digest("hex"), reviewContext: reviewIdentity },
+    { artifactId: "f2-report", sessionId, inputRevision: 1, kind: "f2_report", relativePath: trustedArtifacts.f2.relativePath, contentHash: trustedArtifacts.f2.contentHash },
+    { artifactId: "f3-report", sessionId, inputRevision: 1, kind: "f3_report", relativePath: trustedArtifacts.f3.relativePath, contentHash: trustedArtifacts.f3.contentHash, reviewContext: reviewIdentity },
+    { artifactId: "f4-calculation", sessionId, inputRevision: 1, kind: "f4_calculation", relativePath: trustedArtifacts.f4.relativePath, contentHash: trustedArtifacts.f4.contentHash, reviewContext: reviewIdentity },
+    { artifactId: "f5-report", sessionId, inputRevision: 1, kind: "f5_report", relativePath: trustedArtifacts.f5.relativePath, contentHash: trustedArtifacts.f5.contentHash, reviewContext: reviewIdentity },
+    { artifactId: "f6-optimization", sessionId, inputRevision: 1, kind: "f6_optimization", relativePath: trustedArtifacts.f6Optimization.relativePath, contentHash: trustedArtifacts.f6Optimization.contentHash, reviewContext: reviewIdentity },
+    { artifactId: "f6-report", sessionId, inputRevision: 1, kind: "f6_report", relativePath: trustedArtifacts.f6Report.relativePath, contentHash: trustedArtifacts.f6Report.contentHash, reviewContext: reviewIdentity },
+    { artifactId: "engineering-summary-projection:1", sessionId, inputRevision: 1, kind: "engineering_summary_projection", relativePath: trustedArtifacts.projection.relativePath, contentHash: trustedArtifacts.projection.contentHash, reviewContext: reviewIdentity, metadata: { reviewContext: reviewIdentity } },
     ...(sessionId === SESSION_ID ? [{ artifactId: `f1-image:${f1ContentHash}`, sessionId, inputRevision: 1, kind: "f1_image", relativePath: f1RelativePath, contentHash: f1ContentHash, reviewContext: reviewIdentity, metadata: { mediaType: "image/png", description: "AJ_GAP tolerance loop image" } }] : []),
   ];
 }
 
 async function seedReviewSession(sessionId, state) {
+  const trustedArtifacts = await seedTrustedProductionArtifacts(sessionId);
   const store = await openSessionStore({ rootDir, sessionId });
   try {
     await store.applyCommand({ contractVersion: "f8-session-command-v1", sessionId, commandId: `seed-${state}-${sessionId}`, expectedRevision: 0, command: "upload_workbook", payload: { fileName: longWorkbookFileName, workbookBytes: sourceWorkbookBytes, inputClassification: "confidential" } }, async (snapshot) => ({
@@ -181,7 +252,9 @@ async function seedReviewSession(sessionId, state) {
         inputRevision: 1,
         state,
         activeAttempt: null,
-        downstreamScopeSelection: { workbookContentHash: HASH, selectedWorksheetNames: ["AJ_GAP"], confirmed: true },
+        initialScopeSelection: { workbookContentHash: HASH, selectedWorksheetNames: ["AJ_GAP", "B_STACK"], confirmed: true, provenance: "user" },
+        downstreamScopeSelection: { workbookContentHash: HASH, selectedWorksheetNames: ["AJ_GAP"], confirmed: true, provenance: "user" },
+        priorRunReferences: [{ featureId: "F2", referenceId: "f2-ref", contractVersion: "v1", workbookHash: HASH, runReference: "f2-run-e2e" }],
         scenarioDrafts: [savedScenarioDraft(sessionId)],
         artifactRefs: [
           { artifactId: reviewArtifactId("f2-e2e", sessionId), kind: "f2_report", revision: 1, validated: true },
@@ -193,7 +266,7 @@ async function seedReviewSession(sessionId, state) {
         ],
       },
       artifactReferenceOps: {
-        upsert: buildReviewArtifactUpserts(sessionId),
+        upsert: buildReviewArtifactUpserts(sessionId, trustedArtifacts),
       },
     }));
   } finally {
@@ -222,7 +295,7 @@ async function seedPreviewSession(sessionId, target) {
         activeAttempt: null,
       },
       artifactReferenceOps: {
-        upsert: buildReviewArtifactUpserts(sessionId),
+        upsert: buildReviewArtifactUpserts(sessionId, trustedArtifacts),
       },
     }));
   } finally {
