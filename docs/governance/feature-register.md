@@ -32,6 +32,7 @@ Feature Register 是 Phase 0 对 F0-F8 的唯一可查询能力清单。它提�
 | F5 | 客观结果解释 | `available` | `interpretation-rules-v1`, `worksheet-analysis-assets-v1`, `drawing-governance-v2`, `calculation-service-v1`; `approved-knowledge-base`, `approved-me-review` | `f5-data-interpretation-request-v1` / `f5-data-interpretation-result-v1` | `confidential` | `f5-artifact-association-check`, `f5-rule-traceability-check`, `f5-clarification-gate-check`, `f5-skill-contract-check` | `return feature_not_available` |
 | F5.1 | 客观结果解读 | `available` | `calculation-service-v1`, `knowledge-base-v1`, `interpretation-rules-v1`, `objective-interpretation-v1`; `approved-knowledge-base` | `interpretation-request-v1` / `interpretation-result-v1` | `confidential` | `anonymous-interpretation-fixture`, `interpretation-rule-traceability-check`, `interpretation-privacy-check` | `return feature_not_available` |
 | F6 | 可比较的方案选项 | `available` | `f2-user-report-v1`, `drawing-governance-v2`, `calculation-service-v1`, `f5-data-interpretation-v1`, `f6-analysis-context-v1`, `f6-optimization-targets-v1`, `f6-optimization-v2`; `approved-knowledge-base` | `f6-analysis-context-v1` / `f6-optimization-v2` | `confidential` | `anonymous-f6-optimization-fixture`, `f6-artifact-association-check`, `f6-optimization-contract-check`, `f6-privacy-check`, `f6-no-write-network-check`, `f6-supplier-datum-evidence-gate-check`, `f6-roi-gate-check`, `f6-skill-contract-check`, `f0-f6-real-workbook-flow`, `f6-final-report-check` | `return feature_not_available` |
+|   | 产品能力名称：Design Optimization。 |   |   |   |   |   |   |
 | F7 | 实测 Cpk 闭环 | `unavailable` | `measurement-store-v1`, `dim-id-service-v1`; `approved-measurement-store`, `canonical-dim-id-policy` | `cpk-request-v1` / `cpk-result-v1` | `confidential` | `anonymous-cpk-fixture` | `return feature_not_available` |
 | F8 | TA Assist Workbench | `available` | F8 session/snapshot/conversation/Surface contracts; approved OOXML and Surface MCP access | `f8-session-command-v1` / `f8-session-snapshot-v1` | `confidential` | `f8-browser-integration`, `f8-security-e2e`, `f8-f7-placeholder-e2e`, `f8-what-if-no-writeback`, `f8-product-output-fail-closed-e2e` | `return feature_not_available` |
 | F8.public-smoke | TA Public Workflow Smoke Fixture | `available` | `orchestrator-v1`, `skill-runtime-v1`; `approved-skill-manifests` | `workflow-request-v1` / `workflow-result-v1` | `public` | `anonymous-workflow-fixture`, `anonymous-governed-skill` | `return feature_not_available` |
@@ -105,7 +106,7 @@ F0 解读规则范围与维护边界见 [F0 TA 结果解读规则库设计](../s
   `prepare -> confirm -> execute`；真实写入仍需 Surface MCP capability、策略审批和逐次用户确认。
   无 ADO、负责人、能力、确认或写入失败时保存同一份 confidential 清单并继续 TA。F3 不依赖
   Azure DevOps MCP，不读取日期、不做截止临近判断，也不运行 scheduler。
-  F3 治理发布的固定摘要为：用户经 `.github/skills/f3-analysis/SKILL.md` 进入；Question call 1 在
+  F3 治理发布的固定摘要为：用户经 `.github/skills/drawing-governance/SKILL.md` 进入；Question call 1 在
   `Create a new ADO work item` / `Use an existing ADO work item` / `Do not publish to ADO` 中三选一，且
   Surface MCP entity calls may start only after Question call 1 returns；existing 模式必须从 HTTPS ADO work item URL
   解析 organization/project/ID，与 Surface readback 目标一致，且不持久化 URL；校验范围限定为

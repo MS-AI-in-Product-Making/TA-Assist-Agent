@@ -1,31 +1,47 @@
 ---
-name: f6-analysis
-description: "Use when F6, 使用F6分析报告, 使用 F6 分析报告, use F6 analysis report, or complete governed F0-F6 TA workbook analysis is requested."
+name: design-optimization
+description: Use when a user asks for a complete governed TA analysis, design improvement options, optimization targets, or a final engineering report.
 user-invocable: true
-argument-hint: "[<ta-workbook-path> | <f6-output-dir>]"
+argument-hint: "[<ta-workbook-path> | <optimization-output-dir>]"
 ---
 
-# F6 Analysis
+# Design Optimization
 
-References:
-
-- [F3 analysis and ADO publishing protocol](../f3-analysis/SKILL.md)
-- [F3 ADO publishing reference](../f3-analysis/references/ado-publishing.md)
+Use the language of the user's current request for every response, question, progress update, and action description.
 
 ## Purpose
 
-Run or present the complete governed TA analysis through F6. In workbook mode the agent owns interaction and sequencing while repository workflow commands remain deterministic executors. The user does not assemble commands manually, but must supply the workbook and answer the governed worksheet and optional-evidence questions.
+Run or present the complete governed TA optimization flow as a single product capability. In workbook mode, this skill owns the end-to-end orchestration and all confirmations. In existing-artifact mode, this skill validates and presents the governed optimization output without rerunning upstream work.
 
-F0 is controlled capability and rule consumption, not a standalone artifact runner. Never invent `workflow:f0`. Record the validated public knowledge base `v1`, internal tolerance guidance `internal-v1`, and interpretation rules `interpretation-rules-v1` as the `F0` output disclosure.
+This skill must keep deterministic execution behavior unchanged while ensuring user-facing planning, questions, progress updates, operation descriptions, and results use product capability language only.
 
 ## Entry routing
 
 Choose exactly one mode from the supplied path:
 
-- **Entry mode 1 - TA workbook**: the input is one `.xlsx` TA workbook. Follow W0-W10 in order.
-- **Entry mode 2 - Existing F6 artifact**: the input is an F6 output directory or `Feature6-Optimization.json`. Follow the existing-artifact protocol only.
+- Entry mode 1 - TA workbook: the input is one `.xlsx` TA workbook.
+- Entry mode 2 - Existing optimization artifact: the input is one optimization output directory or optimization JSON artifact.
 
-If the trigger phrase contains no path, ask for one workbook or one existing F6 artifact path. Do not infer a workbook from editor state, previous runs, similarly named files, or historical artifacts. Resolve canonical paths and reject ambiguous, missing, out-of-root, linked-out, or identity-mismatched inputs.
+If no path is supplied, ask for exactly one workbook path or one existing optimization artifact path. Do not infer paths from editor state, historical runs, similarly named files, or partial artifacts.
+
+## Agent planning
+
+Plan and communicate using product capability names only:
+
+1. Knowledge Library: confirm required controlled knowledge versions are available.
+2. Data Parsing: complete workbook path and worksheet-selection governance with the first worksheet confirmation.
+3. Data Cleaning: validate selected scope and build ready downstream worksheet candidates.
+4. Drawing Governance: execute current-run drawing governance analysis and, when required, run the optional ADO publishing gate.
+5. TA Calculation: execute governed calculation for the confirmed downstream scope.
+6. Result Interpretation: optionally collect image observations, then execute and validate interpreted outputs.
+7. Design Optimization: collect optional Analysis Context and optional Optimization Targets through two independent confirmations, run optimization, and validate final outputs.
+8. Feedback Application: present final governed output ledger and preserve required decision and evidence disclosures.
+
+Workbook mode must preserve two worksheet gates, optional ADO publishing gate behavior, optional image-observation behavior, independent Analysis Context and Optimization Targets confirmations, built-in top-contributor policy behavior, and final output disposition reporting.
+
+## Internal executor contract
+
+The remainder of this document is machine-facing execution contract text. Literal commands, artifact names, schema identifiers, policy IDs, and reason codes in this section must not be copied into user-facing plan, question, progress, action description, or result text.
 
 ## Entry mode 1 - TA workbook
 
@@ -65,7 +81,11 @@ Only `governance_required` enters W4A. A completed F3 skips W4A and proceeds dir
 
 ### Phase W4A - Govern optional F3 ADO publishing
 
-This phase is an optional external side effect after the current F3 analysis has passed validation. Never publish automatically or implicitly. Load and follow the complete [F3 analysis and ADO publishing protocol](../f3-analysis/SKILL.md), its [F3 ADO publishing reference](../f3-analysis/references/ado-publishing.md), and exactly Phases 2 through 6 of that skill; do not copy, weaken, reorder, or bypass those rules.
+This phase is an optional external side effect after the current F3 analysis has passed validation. Never publish automatically or implicitly.
+
+REQUIRED SUB-SKILL: Use drawing-governance.
+
+Follow the drawing-governance ADO publishing protocol with identical controls: organization/project/target validation, deterministic preview, explicit mode choice, separate final write confirmation, single write, and single readback verification.
 
 Make F3 `Question call 1` with exactly these choices:
 
@@ -73,9 +93,9 @@ Make F3 `Question call 1` with exactly these choices:
 - `Use an existing ADO work item`
 - `Do not publish to ADO`
 
-Surface MCP entity calls may start only after Question call 1 selects a publishing mode. The `Do not publish to ADO` branch records the F3 `not_requested` local fallback and proceeds to W5. Create and existing modes must use the F3 protocol's organization/project/target validation, capability gate, complete deterministic preview, and separate `Question call 2` with the exact `Confirm write` choice. Credentials, tokens, verification codes, and MFA responses never pass through chat or tool arguments.
+Surface MCP entity calls may start only after Question call 1 selects a publishing mode. The `Do not publish to ADO` branch records the F3 `not_requested` local fallback and proceeds to W5. Create and existing modes must use organization/project/target validation, capability gate, complete deterministic preview, and a separate `Question call 2` with the exact `Confirm write` choice. Credentials, tokens, verification codes, and MFA responses never pass through chat or tool arguments.
 
-After `Confirm write`, use only the qualified Surface MCP channel, write exactly once, then read back exactly once and verify the complete body and hash under the F3 protocol. Authentication failure, unavailable capability, unsupported comment body, user-declined write, or write verification failure must use the corresponding governed F3 local fallback with no retry. W4A outcome does not change the validated F3 analysis result or its worksheet scope; after the protocol records a terminal `not_requested`, `updated`, `blocked`, or `failed` publishing outcome, continue deterministic analysis at W5. An invalid or unverifiable local fallback artifact stops the run.
+After `Confirm write`, use only the qualified Surface MCP channel, write exactly once, then read back exactly once and verify the complete body and hash. Authentication failure, unavailable capability, unsupported comment body, user-declined write, or write verification failure must use the corresponding governed F3 local fallback with no retry. W4A outcome does not change the validated F3 analysis result or its worksheet scope; after the protocol records a terminal `not_requested`, `updated`, `blocked`, or `failed` publishing outcome, continue deterministic analysis at W5. An invalid or unverifiable local fallback artifact stops the run.
 
 ### Phase W5 - Run F4
 
@@ -157,7 +177,7 @@ If validation succeeds, present the validated F6 report without rerunning F0, F1
 
 The two F2 commands are separate gates and must not be merged, omitted, or reordered. Do not add an F4 worksheet flag. Workbook mode always supplies the exact downstream worksheet set to F3, F5, and F6. Only W9 may append the two documented, separately authorized V2 input pairs to the final allowed command.
 
-W4A does not add F3 ADO commands to this local runner list. When W4A is entered, the referenced F3 skill is the authoritative allowlist for its local reminder commands and Surface MCP operations. F6 must not invent, duplicate, or broaden that allowlist.
+W4A does not add F3 ADO commands to this local runner list. When W4A is entered, use drawing-governance as the required sub-skill authority for local reminder commands and Surface MCP operations. F6 must not invent, duplicate, or broaden that allowlist.
 
 ## Safety boundaries
 
@@ -165,7 +185,7 @@ W4A does not add F3 ADO commands to this local runner list. When W4A is entered,
 - No REST, browser network, shell HTTP, curl, or Invoke-WebRequest for ADO.
 - Never modify the source workbook.
 - F3 and F6 repository runners remain deterministic and network-free.
-- Never publish automatically or implicitly; optional ADO publishing is available only through W4A and the complete F3 protocol.
+- Never publish automatically or implicitly; optional ADO publishing is available only through W4A and the required drawing-governance protocol.
 - Treat all inputs and outputs as confidential.
 - Validate canonical containment, linked-path ancestry, artifact identity, contracts, manifests, and hashes before use.
 - Run commands only in the documented phase order.

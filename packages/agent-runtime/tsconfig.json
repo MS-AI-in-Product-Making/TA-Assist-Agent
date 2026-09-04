@@ -8,6 +8,7 @@
   "references": [
     { "path": "../contracts" },
     { "path": "../conversation" },
+    { "path": "../product-language" },
     { "path": "../workbench" }
   ],
   "include": ["src/**/*.ts"],

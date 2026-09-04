@@ -211,10 +211,10 @@ test("creates a governed model HostAction prompt from the selected worksheet con
   expect(prompt).toContain(`Related artifact IDs: f2-report:1:f2-run-e2e-${workbench.sessionId}, f4-calculation:1:${workbench.sessionId}, f1-image:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff`);
   expect(prompt).toContain('"capabilityStatus":"internal_within_guidance"');
   expect(prompt).toContain('"f0KnowledgeBaseVersion":"internal-v1"');
-  expect(prompt).toContain("F1 managed image reference");
+  expect(prompt).toContain("Data Parsing managed image reference");
   expect(prompt).toContain('"mediaType":"image/png"');
-  expect(prompt).toContain("F2 factor table excerpts (1 of 1)");
-  expect(prompt).toContain("F4 baseline metrics");
+  expect(prompt).toContain("Data Cleaning factor table excerpts (1 of 1)");
+  expect(prompt).toContain("TA Calculation baseline metrics");
   expect(prompt).toContain('"calculationReference":"run-1"');
   expect(prompt).toContain("Scenario metrics");
   expect(prompt).toContain('"calculationReference":"what-if:e2e-draft"');
@@ -228,7 +228,7 @@ test("creates a governed model HostAction prompt from the selected worksheet con
       kind: "model_response" as const,
       turnId,
       responseText: [
-        "Governed evidence: F0, F1, F2, F4, and saved Scenario identities were provided.",
+        "Governed evidence: Knowledge Library, Data Parsing, Data Cleaning, TA Calculation, and saved Scenario identities were provided.",
         "Open interpretation: Risk appears driven by the selected factor and Scenario delta.",
         "Missing evidence: None identified in the current governed context.",
         "Suggested checks: Confirm the selected factor identity before action.",
@@ -261,7 +261,7 @@ test("creates a governed model HostAction prompt from the selected worksheet con
   ]);
   expect(conversation.turns.at(-1)).toMatchObject({
     role: "assistant",
-    content: [{ kind: "text", text: expect.stringContaining("Governed evidence: F0, F1, F2, F4, and saved Scenario identities were provided.") }],
+    content: [{ kind: "text", text: expect.stringContaining("Governed evidence: Knowledge Library, Data Parsing, Data Cleaning, TA Calculation, and saved Scenario identities were provided.") }],
   });
 });
 

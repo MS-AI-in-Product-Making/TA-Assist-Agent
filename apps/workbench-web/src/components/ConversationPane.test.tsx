@@ -32,7 +32,8 @@ describe("ConversationPane", () => {
             content: [
               { kind: "text", text: "等待 VS Code 模型回答…" },
               { kind: "artifact_reference", artifactId: "f2-current", label: "F2 factor table" },
-              { kind: "decision_reference", decisionReference: "review:current" },
+              { kind: "decision_reference", decisionReference: "f6-review:current" },
+              { kind: "command", command: "npm run workflow:f6" },
             ],
             createdAt: "2026-08-31T00:00:05.000Z",
             relatedArtifactIds: ["f2-current", "f4-current"],
@@ -43,8 +44,10 @@ describe("ConversationPane", () => {
 
     expect(screen.getByText("Waiting for VS Code model response...")).toBeVisible();
     expect(screen.getByText("Pending model response")).toBeVisible();
-    expect(screen.getByText("Evidence: F2 factor table")).toBeVisible();
-    expect(screen.getByText("Decision record: review:current")).toBeVisible();
+    expect(screen.getByText("Evidence: Data Cleaning factor table")).toBeVisible();
+    expect(screen.getByText("Decision record available.")).toBeVisible();
+    expect(screen.getByText("Governed command available.")).toBeVisible();
+    expect(screen.queryByText(/f6-review|workflow:f6/i)).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByRole("textbox", { name: "Ask TA Assist from governed evidence" }), {
       target: { value: "Compare the baseline and Scenario." },

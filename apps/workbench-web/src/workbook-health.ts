@@ -14,7 +14,7 @@ export function projectWorkbookHealth(report: F2UserReport | undefined): Workboo
     if (worksheet.tolerancePathImageStatus !== "available") findings.push({ worksheetName: worksheet.worksheetName, sourceRows: [], message: "Tolerance loop stack-up image is missing", kind: "image" });
   }
   if (summary.missingDimIdCount > 0 || summary.missingPartNumberCount > 0) findings.push({ sourceRows: [], message: `DIM ID missing ${summary.missingDimIdCount}; Drawing / Part Number missing ${summary.missingPartNumberCount}`, kind: "identifier" });
-  if (summary.f0InformationInsufficientCount > 0 || summary.nonF0ProcessCategoryCount > 0) findings.push({ sourceRows: [], message: `F0 information insufficient ${summary.f0InformationInsufficientCount}; Non-F0 process category ${summary.nonF0ProcessCategoryCount}`, kind: "capability" });
+  if (summary.f0InformationInsufficientCount > 0 || summary.nonF0ProcessCategoryCount > 0) findings.push({ sourceRows: [], message: `Knowledge Library information insufficient ${summary.f0InformationInsufficientCount}; Unrecognized process category ${summary.nonF0ProcessCategoryCount}`, kind: "capability" });
   return {
     summary: [
       { label: "Worksheets", value: summary.worksheetsChecked, tone: "neutral" },

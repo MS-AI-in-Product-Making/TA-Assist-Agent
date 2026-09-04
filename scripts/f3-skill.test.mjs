@@ -6,8 +6,8 @@ import path from "node:path";
 import { writeF3AdoReminder } from "./write-f3-ado-reminder.mjs";
 
 const root = process.cwd();
-const skillPath = path.join(root, ".github", "skills", "f3-analysis", "SKILL.md");
-const referencePath = path.join(root, ".github", "skills", "f3-analysis", "references", "ado-publishing.md");
+const skillPath = path.join(root, ".github", "skills", "drawing-governance", "SKILL.md");
+const referencePath = path.join(root, ".github", "skills", "drawing-governance", "references", "ado-publishing.md");
 const englishFlowPath = path.join(root, "docs", "02-end-to-end-flow.md");
 const chineseFlowPath = path.join(root, "docs", "02-端到端流程.md");
 const featureRegisterPath = path.join(root, "docs", "governance", "feature-register.md");
@@ -215,10 +215,10 @@ function extractFirstMermaidBlock(markdown) {
   return match?.[1] ?? "";
 }
 
-describe("f3-analysis skill contract", () => {
+describe("Drawing Governance skill contract", () => {
   it("starts RED when skill/reference are absent", () => {
-    expect(existsSync(skillPath), "SKILL.md must exist at .github/skills/f3-analysis/SKILL.md").toBe(true);
-    expect(existsSync(referencePath), "reference must exist at .github/skills/f3-analysis/references/ado-publishing.md").toBe(true);
+    expect(existsSync(skillPath), "SKILL.md must exist at .github/skills/drawing-governance/SKILL.md").toBe(true);
+    expect(existsSync(referencePath), "reference must exist at .github/skills/drawing-governance/references/ado-publishing.md").toBe(true);
   });
 
   it("uses valid skill frontmatter for VS Code discovery", () => {
@@ -226,19 +226,16 @@ describe("f3-analysis skill contract", () => {
     const frontmatter = getFrontmatter(skill);
 
     expect(frontmatter.length).toBeGreaterThan(0);
-    expect(frontmatter).toMatch(/^name:\s*f3-analysis\s*$/m);
+    expect(frontmatter).toMatch(/^name:\s*drawing-governance\s*$/m);
     expect(frontmatter).toMatch(/^user-invocable:\s*true\s*$/m);
     expect(frontmatter).toMatch(/^argument-hint:\s*.+\s*$/m);
 
     const descriptionLine = frontmatter.match(/^description:\s*(.+)$/m)?.[1] ?? "";
     const normalizedDescription = descriptionLine.replace(/^"|"$/g, "").trim();
     expect(normalizedDescription.startsWith("Use when")).toBe(true);
-    expect(normalizedDescription).toContain("F3");
-    expect(normalizedDescription).toContain("使用 F3 分析报告");
-    expect(normalizedDescription).toContain("TA workbook/report");
     expect(normalizedDescription).toContain("DIM ID");
     expect(normalizedDescription).toContain("Drawing Number");
-    expect(normalizedDescription).toContain("ADO Work Item");
+    expect(normalizedDescription).toContain("ADO publication");
 
     // Description should be trigger-only and must not summarize process steps.
     expect(normalizedDescription).not.toMatch(/run\s+f0|run\s+f1|run\s+f2|run\s+f3|step\s*1|workflow\s+steps|prepare\s*->\s*confirm\s*->\s*execute/i);
@@ -317,7 +314,7 @@ describe("f3-analysis skill contract", () => {
     expect(skill).not.toMatch(/npm\s+run\s+workflow:f3:ado-reminder\s+--\s+<f3-dir>\s+--status\s+cancel/i);
   });
 
-  it("requires the F1 selection handshake before F2 validation and F3 selection", () => {
+  it("requires the F1 selection handshake before F2 validation and governed worksheet execution", () => {
     const skill = readUtf8(skillPath);
     const markers = [
       "Workbook step 1 - generate F1 selection",
@@ -743,8 +740,8 @@ describe("f3-analysis skill contract", () => {
     const chineseMermaid = extractFirstMermaidBlock(chineseFlow);
     const englishKeyHeading = "## Key Decision Points";
     const chineseKeyHeading = "## 关键决策点";
-    const englishContractHeading = "## F3 Governed ADO Publishing Contract";
-    const chineseContractHeading = "## F3 受治理 ADO 发布契约";
+    const englishContractHeading = "## Drawing Governance ADO Publishing Contract";
+    const chineseContractHeading = "## Drawing Governance 受治理 ADO 发布契约";
 
     expect(englishMermaid.length).toBeGreaterThan(0);
     expect(chineseMermaid.length).toBeGreaterThan(0);
@@ -767,7 +764,7 @@ describe("f3-analysis skill contract", () => {
       "## Flow Diagram",
       "## F8 Workbench Confirmation Order",
       "## Key Decision Points",
-      "## F3 Governed ADO Publishing Contract",
+      "## Drawing Governance ADO Publishing Contract",
     ]);
     expect(chineseHeadings).toEqual([
       "## F1 到 F2 证据契约",
@@ -775,7 +772,7 @@ describe("f3-analysis skill contract", () => {
       "## 流程图",
       "## F8 Workbench 独立确认顺序",
       "## 关键决策点",
-      "## F3 受治理 ADO 发布契约",
+      "## Drawing Governance 受治理 ADO 发布契约",
     ]);
 
     expect(englishHeadings.length).toBe(chineseHeadings.length);
@@ -823,7 +820,7 @@ describe("f3-analysis skill contract", () => {
     expectContainsAny(chineseGovernanceBoundaryText, ["F4 calculation/handoff mutation", "F4 计算/交接变更"], "missing CN no F4 mutation boundary");
 
     for (const flowSection of [englishF3Section, chineseF3Section]) {
-      expect(flowSection).toContain(".github/skills/f3-analysis/SKILL.md");
+      expect(flowSection).toContain(".github/skills/drawing-governance/SKILL.md");
 
       const question1Marker = "Question call 1 - publishing mode";
       const boundaryMarker = "Surface MCP entity calls may start only after Question call 1 returns";
@@ -947,7 +944,7 @@ describe("f3-analysis skill contract", () => {
     }
 
     // Governance register should stay concise but still lock key F3 contract points.
-    expect(featureRegister).toContain(".github/skills/f3-analysis/SKILL.md");
+    expect(featureRegister).toContain(".github/skills/drawing-governance/SKILL.md");
     expect(featureRegister).toContain("F3");
     expect(featureRegister).toContain("drawing-governance-v2");
     expect(featureRegister).toContain("surface-mcp-adapter-v1");

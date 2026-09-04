@@ -17,6 +17,38 @@ afterEach(async () => {
 });
 
 describe("handleAgentTurn", () => {
+  it("returns an English fallback and English actions for an English request", async () => {
+    const deps = await createDeps(baseSnapshot({ state: "initial_scope_required" }));
+
+    const result = await handleAgentTurn({
+      text: "Continue the analysis",
+      sessionId: SESSION_ID,
+      commandId: "turn-english-fallback-1",
+      source: "web",
+    }, { ...deps, model: undefined });
+
+    expect(result.responseText).toBe("The current analysis is synchronized. Select worksheets before continuing.");
+    expect(result.actions).toEqual([{ type: "navigate", target: "/scope", label: "Select worksheets" }]);
+    expect(result.responseText).not.toMatch(/\bF[0-7]\b/u);
+  });
+
+  it("rejects model responses containing internal feature identifiers", async () => {
+    const deps = await createDeps(baseSnapshot({ state: "review_required" }));
+
+    const result = await handleAgentTurn({
+      text: "Show the status",
+      sessionId: SESSION_ID,
+      commandId: "turn-internal-id-1",
+      source: "web",
+    }, {
+      ...deps,
+      model: { complete: async () => ({ responseText: "F6 is complete." }) },
+    });
+
+    expect(result.responseText).toBe("The current analysis is synchronized. Complete review before continuing.");
+    expect(result.responseText).not.toMatch(/\bF[0-7]\b/u);
+  });
+
   it("opens the next required action without a model", async () => {
     const deps = await createDeps(baseSnapshot({ state: "initial_scope_required" }));
 

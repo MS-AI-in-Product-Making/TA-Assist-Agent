@@ -31,6 +31,8 @@ F6 owns target-driven options, the single versioned built-in Top-3 policy, rever
 
 Supplier, datum, and cost behavior is evidence-limited. Missing or mismatched support is `insufficient_evidence`; ROI remains `not_computed` unless all supported ranked options have known positive governed cost. F6 atomically publishes five confidential artifacts: `Feature6-Report.md`, `Feature6-Optimization.json/.md`, `Feature6-Run-Summary.json`, and `manifest.json`. Run Summary owns the structured Workbook/Worksheet dispositions, and the final report presents workbook summary plus fixed ready-worksheet sections with `PASS`, `CONDITIONAL_PASS`, `FAIL`, and `INCOMPLETE` engineering statuses; an F2-blocked worksheet appears only in input integrity. Source workbooks remain read-only. The deterministic F3/F6 runners and direct CLIs perform no ADO, network, or workbook write; the optional external side effect belongs only to the governed agent publishing gate. Identity, hash, association, schema, controlled-root, staging, atomic, and post-commit identity gates fail closed.
 
+The product capability name is Design Optimization.
+
 ## Flow Diagram
 
 ```mermaid
@@ -163,9 +165,9 @@ What-if calculation replays the current validated F2/F4 lineage and calls the F4
 | Optimization and versioning | Whether design or capability changes are needed | F5 remains `delegated_to_f6`; the available F6 workflow generates deterministic centering/tolerance/reverse/RSS options from bound F2-F5 evidence. Supplier/datum/cost gaps remain explicit, and the legacy comparison placeholder alone returns `feature_not_available`. Future roadmap: any ADO date/milestone/version persistence remains outside current F3 scope. |
 | Measured data feedback | Whether measured Cpk is available after optimization | Compare estimated and actual capability, output actual tolerance range and optimization report, and upgrade the capability-library entry; otherwise retain the baseline report. |
 
-## F3 Governed ADO Publishing Contract
+## Drawing Governance ADO Publishing Contract
 
-- User entry is the project Skill `.github/skills/f3-analysis/SKILL.md`.
+- User entry is the project Skill `.github/skills/drawing-governance/SKILL.md`.
 - Before a new F3 run, the user must select at least one worksheet from the F2 `ready` set; F3 analyzes only that selected subset.
 - The local F3 Markdown links `Device Level Dim`, `Dimension Description`, and `Factor Description` to the corresponding F1 worksheet image. F1 remains the only image owner; `Source Evidence` shows worksheet, table, row, and field-to-cell mappings.
 - Question call 1 - publishing mode: choose exactly one:

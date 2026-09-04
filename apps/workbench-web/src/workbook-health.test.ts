@@ -7,4 +7,5 @@ it("projects workbook summary and linked missing evidence", () => {
   const model = projectWorkbookHealth(report)!;
   expect(model.summary.map(({ value }) => value)).toEqual([7, 5, 2, 1, 1]);
   expect(model.findings).toEqual(expect.arrayContaining([expect.objectContaining({ worksheetName: "gap w foam_static", kind: "image" }), expect.objectContaining({ worksheetName: "gap w foam_TPoverload500g", sourceRows: [16] }), expect.objectContaining({ message: expect.stringContaining("DIM ID missing 50") })]));
+  expect(model.findings.map(({ message }) => message).join(" ")).not.toMatch(/\b(?:F|Feature)[0-7]\b/i);
 });

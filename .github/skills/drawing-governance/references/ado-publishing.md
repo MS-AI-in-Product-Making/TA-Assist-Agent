@@ -1,6 +1,6 @@
 # ADO publishing protocol
 
-This protocol defines deterministic, validated Surface MCP publishing for F3 governance output.
+This protocol defines deterministic, validated Surface MCP publishing for Drawing Governance output.
 
 ## Connection and authentication order
 

@@ -130,7 +130,7 @@ function evidenceMismatch(summary: string, reference: string): never {
   throw createTypedError({
     code: "evidence_mismatch",
     summary,
-    suggestedAction: "Rerun F3-F6 and retry product export for the current workbook revision.",
+    suggestedAction: "Rerun Drawing Governance through Design Optimization and retry product export for the current workbook revision.",
     affectedInputReferences: [reference],
   });
 }

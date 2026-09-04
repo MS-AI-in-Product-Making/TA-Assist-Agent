@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 const root = process.cwd();
-const skillPath = path.join(root, ".github", "skills", "f5-analysis", "SKILL.md");
+const skillPath = path.join(root, ".github", "skills", "result-interpretation", "SKILL.md");
 
 const allowedCommands = [
   "npm run workflow:f2:excel -- <ta-workbook-path>",
@@ -90,7 +90,7 @@ function parseFrontmatter(markdown) {
 }
 
 function commandLines(markdown) {
-  const section = markdown.match(/## Allowed commands\r?\n([\s\S]*?)(?=\r?\n## |$)/)?.[1] ?? "";
+  const section = markdown.match(/### Allowed commands\r?\n([\s\S]*?)(?=\r?\n## |\r?\n### |$)/)?.[1] ?? "";
   return section
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -280,28 +280,28 @@ function structuralScopeList(markdown) {
   return [...line.matchAll(/`([^`]+)`/g)].map((match) => match[1]);
 }
 
-describe("f5-analysis skill contract", () => {
+describe("result-interpretation skill contract", () => {
   it("starts RED while the skill file is absent", () => {
-    expect(existsSync(skillPath), "SKILL.md must exist at .github/skills/f5-analysis/SKILL.md").toBe(true);
+    expect(existsSync(skillPath), "SKILL.md must exist at .github/skills/result-interpretation/SKILL.md").toBe(true);
   });
 
   it("uses exact discoverable frontmatter with trigger-only description", () => {
     const metadata = parseFrontmatter(readSkill());
-    expect(metadata.name).toBe("f5-analysis");
+    expect(metadata.name).toBe("result-interpretation");
     expect(metadata.argumentHint).not.toBe("");
     expect(Buffer.byteLength(metadata.raw, "utf8")).toBeLessThanOrEqual(1024);
 
     const description = metadata.description;
     expect(description.startsWith("Use when")).toBe(true);
     for (const trigger of [
-      "F5",
-      "使用F5分析报告",
-      "使用 F5 分析报告",
-      "use F5 analysis report",
-      "F0/F1/F3/F4 TA data interpretation",
+      "interpret TA calculations",
+      "explain risks and drivers",
+      "evaluate drawing evidence",
+      "governed engineering findings",
     ]) {
       expect(description).toContain(trigger);
     }
+    expect(description).not.toMatch(/\bF[0-7]\b|\bFeature[ _-]?[0-7]\b/iu);
     expect(description).not.toMatch(/workflow|run |select|validate|image observation|step\s*\d/i);
 
     const base = readSkill();
@@ -309,7 +309,7 @@ describe("f5-analysis skill contract", () => {
     expect(() => parseFrontmatter(base.replace(/description: .*\r?\n/, 'description: "unterminated\n'))).toThrow(/double quoted|closed quoted/);
     expect(() => parseFrontmatter(base.replace("user-invocable: true", "name: duplicate\nuser-invocable: true"))).toThrow(/Duplicate/);
     expect(() => parseFrontmatter(base.replace("user-invocable: true", "unknown-key: value\nuser-invocable: true"))).toThrow(/Unexpected/);
-    expect(() => parseFrontmatter(base.replace('argument-hint: "[<ta-workbook-path> | <f5-output-dir>]"', 'argument-hint: ""'))).toThrow(/nonempty/);
+    expect(() => parseFrontmatter(base.replace('argument-hint: "[<ta-workbook-path> | <interpretation-output-dir>]"', 'argument-hint: ""'))).toThrow(/nonempty/);
   });
 
   it("lists only repository-backed workflow command shapes", () => {
@@ -427,8 +427,8 @@ describe("f5-analysis skill contract", () => {
     ]);
     expect(skill).toContain("Feature2-Report.json");
     expect(skill).toContain("status: readyForNextFeature");
-    expect(skill).toContain("F1/F2 scope call - `vscode_askQuestions` (`multiSelect: true`)");
-    expect(skill).toContain("F3/F4/F5 scope call - `vscode_askQuestions` (`multiSelect: true`)");
+    expect(skill).toContain("Worksheet Selection scope call - `vscode_askQuestions` (`multiSelect: true`)");
+    expect(skill).toContain("Result Interpretation scope call - `vscode_askQuestions` (`multiSelect: true`)");
     expect(skill).toContain("at least one worksheet");
     expect(skill).toContain("No complete F1, F2, F3, F4, or F5 execution may begin before the first selection succeeds");
     expect(skill).toContain("No F3, F4, or F5 execution may begin before the second selection succeeds");

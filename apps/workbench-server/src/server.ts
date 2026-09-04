@@ -334,7 +334,7 @@ async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth
       if (snapshot === undefined || snapshot.state !== "review_required" || snapshot.inputRevision !== input.inputRevision) {
         throw createTypedError({ code: "evidence_mismatch", summary: "Worksheet Scenario input revision is not current.", suggestedAction: "Refresh the review before recalculating.", affectedInputReferences: [sessionId, input.draftId] });
       }
-      if (effectiveWhatIfService.calculateWorksheet === undefined) throw createTypedError({ code: "feature_not_available", summary: "Worksheet Scenario calculation is unavailable.", suggestedAction: "Use the production F4 calculation service.", affectedInputReferences: [sessionId] });
+      if (effectiveWhatIfService.calculateWorksheet === undefined) throw createTypedError({ code: "feature_not_available", summary: "Worksheet Scenario calculation is unavailable.", suggestedAction: "Use the production TA Calculation service.", affectedInputReferences: [sessionId] });
       return effectiveWhatIfService.calculateWorksheet(snapshot, input);
     },
     async createWhatIfPromotion(sessionId, draftId) {
@@ -904,7 +904,7 @@ function createDefaultWhatIfService(rootDir: string): WhatIfService {
     const f2References = references.filter((reference) => reference.kind === "f2_report" && reference.revision === snapshot.inputRevision && reference.validated);
     const f4References = references.filter((reference) => reference.kind === "f4_calculation" && reference.revision === snapshot.inputRevision && reference.validated);
     if (f2References.length !== 1 || f4References.length !== 1) {
-      throw createTypedError({ code: "evidence_mismatch", summary: "What-if requires one current validated F2 and F4 artifact.", suggestedAction: "Rerun F2 through F4 for the current workbook revision.", affectedInputReferences: [snapshot.sessionId] });
+      throw createTypedError({ code: "evidence_mismatch", summary: "What-if requires current validated Data Cleaning and TA Calculation artifacts.", suggestedAction: "Rerun Data Cleaning through TA Calculation for the current workbook revision.", affectedInputReferences: [snapshot.sessionId] });
     }
     const [f2Report, f4Result] = await Promise.all([
       readSessionArtifactJson(rootDir, snapshot.sessionId, f2References[0]!.artifactId),
@@ -914,7 +914,7 @@ function createDefaultWhatIfService(rootDir: string): WhatIfService {
     const worksheet = baselineRequest.worksheetAnalysisAssets.worksheets[0];
     const table = worksheet?.factorTables.find((candidate) => candidate.tableId === baselineRequest.worksheetSelection.tableId);
     if (worksheet?.worksheetName !== worksheetName || table === undefined) {
-      throw createTypedError({ code: "evidence_mismatch", summary: "What-if worksheet baseline is unavailable.", suggestedAction: "Select a worksheet with a validated F4 baseline.", affectedInputReferences: [worksheetName] });
+      throw createTypedError({ code: "evidence_mismatch", summary: "What-if worksheet baseline is unavailable.", suggestedAction: "Select a worksheet with a validated TA Calculation baseline.", affectedInputReferences: [worksheetName] });
     }
     return { baselineRequest, table };
   };
@@ -1239,20 +1239,20 @@ async function f2ProjectionFromRunnerResult(
   const candidate = result as { readonly featureId?: unknown; readonly status?: unknown; readonly runId?: unknown; readonly f2Root?: unknown; readonly workbookContentHash?: unknown; readonly report?: unknown };
   if (candidate.featureId !== "F2" || (candidate.status !== "completed" && candidate.status !== "partiallyBlocked")) return undefined;
   if (typeof candidate.runId !== "string" || candidate.runId.length === 0 || typeof candidate.f2Root !== "string") {
-    throw createTypedError({ code: "evidence_mismatch", summary: "F2 runner result is missing its governed run identity.", suggestedAction: "Rerun F1 and F2 for the current workbook.", affectedInputReferences: [snapshot.activeAttempt?.attemptId ?? snapshot.sessionId] });
+    throw createTypedError({ code: "evidence_mismatch", summary: "Data Cleaning runner result is missing its governed run identity.", suggestedAction: "Rerun Data Parsing and Data Cleaning for the current workbook.", affectedInputReferences: [snapshot.activeAttempt?.attemptId ?? snapshot.sessionId] });
   }
   const report = f2UserReportSchema.parse(candidate.report);
   if (report.status !== "completed" && report.status !== "partiallyBlocked") {
-    throw createTypedError({ code: "evidence_mismatch", summary: "F2 runner did not produce any ready worksheet.", suggestedAction: "Resolve the reported input issues and rerun F2.", affectedInputReferences: [candidate.runId] });
+    throw createTypedError({ code: "evidence_mismatch", summary: "Data Cleaning did not produce any ready worksheet.", suggestedAction: "Resolve the reported input issues and rerun Data Cleaning.", affectedInputReferences: [candidate.runId] });
   }
   const scope = snapshot.initialScopeSelection;
   if (scope?.confirmed !== true || candidate.workbookContentHash !== scope.workbookContentHash || report.workbook.contentHash !== scope.workbookContentHash) {
-    throw createTypedError({ code: "evidence_mismatch", summary: "F2 report does not match the confirmed workbook lineage.", suggestedAction: "Rerun F1 and F2 for the current workbook.", affectedInputReferences: [candidate.runId] });
+    throw createTypedError({ code: "evidence_mismatch", summary: "Data Cleaning report does not match the confirmed workbook lineage.", suggestedAction: "Rerun Data Parsing and Data Cleaning for the current workbook.", affectedInputReferences: [candidate.runId] });
   }
   const reportPath = resolve(candidate.f2Root, "Feature2-Report.json");
   const relativePath = relative(resolve(rootDir), reportPath);
   if (relativePath.startsWith("..") || resolve(rootDir, relativePath) !== reportPath) {
-    throw createTypedError({ code: "policy_denied", summary: "F2 report path is outside the managed workbench root.", suggestedAction: "Rerun F2 using the managed output root.", affectedInputReferences: [candidate.runId] });
+    throw createTypedError({ code: "policy_denied", summary: "Data Cleaning report path is outside the managed workbench root.", suggestedAction: "Rerun Data Cleaning using the managed output root.", affectedInputReferences: [candidate.runId] });
   }
   const handle = await open(reportPath, "r");
   let bytes: Buffer;
@@ -1264,7 +1264,7 @@ async function f2ProjectionFromRunnerResult(
   }
   const persistedReport = f2UserReportSchema.parse(JSON.parse(bytes.toString("utf8")) as unknown);
   if (JSON.stringify(persistedReport) !== JSON.stringify(report)) {
-    throw createTypedError({ code: "evidence_mismatch", summary: "F2 report content does not match the governed runner result.", suggestedAction: "Rerun F2 for the current workbook.", affectedInputReferences: [candidate.runId] });
+    throw createTypedError({ code: "evidence_mismatch", summary: "Data Cleaning report content does not match the governed runner result.", suggestedAction: "Rerun Data Cleaning for the current workbook.", affectedInputReferences: [candidate.runId] });
   }
   const artifactId = `f2-report:${snapshot.inputRevision}:${candidate.runId}`;
   const supersededArtifactIds = snapshot.artifactRefs
@@ -1427,7 +1427,7 @@ function reviewContextMismatch(snapshot: F8SessionSnapshot, summary: string): Er
   return createTypedError({
     code: "evidence_mismatch",
     summary,
-    suggestedAction: "Rerun the stage using the current workbook, worksheet selection, and F2 baseline.",
+    suggestedAction: "Rerun the stage using the current workbook, worksheet selection, and Data Cleaning baseline.",
     affectedInputReferences: [snapshot.activeAttempt?.attemptId ?? snapshot.sessionId],
   });
 }

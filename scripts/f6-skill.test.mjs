@@ -3,7 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 const root = process.cwd();
-const skillPath = path.join(root, ".github", "skills", "f6-analysis", "SKILL.md");
+const skillPath = path.join(root, ".github", "skills", "design-optimization", "SKILL.md");
 const deprecatedF6ReportArtifactJsonName = [["Feature6", "Composed", "Report"].join("-"), "json"].join(".");
 
 const allowedCommands = [
@@ -18,6 +18,16 @@ const allowedCommands = [
 
 function readSkill() {
   return readFileSync(skillPath, "utf8");
+}
+
+function splitSkillSections(markdown) {
+  const marker = "## Internal executor contract";
+  const index = markdown.indexOf(marker);
+  if (index < 0) throw new Error("Missing internal executor contract section.");
+  return {
+    userFacing: markdown.slice(0, index),
+    internal: markdown.slice(index),
+  };
 }
 
 function frontmatter(markdown) {
@@ -47,28 +57,56 @@ function expectOrdered(markdown, markers) {
   }
 }
 
-describe("F6 analysis skill contract", () => {
-  it("exists with the exact user-invocable phrase contract", () => {
+describe("Design Optimization skill contract", () => {
+  it("exists with product discovery metadata and no legacy stage codenames", () => {
     expect(existsSync(skillPath)).toBe(true);
     const metadata = frontmatter(readSkill());
-    expect(metadata.name).toBe("f6-analysis");
+    expect(metadata.name).toBe("design-optimization");
     expect(metadata["user-invocable"]).toBe("true");
-    expect(metadata.description).toContain("使用F6分析报告");
-    expect(metadata.description).toContain("使用 F6 分析报告");
-    expect(metadata.description).toContain("use F6 analysis report");
+    expect(metadata.description).toContain("complete governed TA analysis");
+    expect(metadata.description).toContain("design improvement options");
+    expect(metadata.description).toContain("optimization targets");
+    expect(metadata.description).toContain("final engineering report");
+    expect(metadata.description).not.toMatch(/\bF[0-7]\b/u);
+    expect(metadata.description).not.toMatch(/\bFeature[ _-]?[0-7]\b/iu);
+    expect(metadata.description).not.toContain("使用F6分析报告");
+    expect(metadata.description).not.toContain("使用 F6 分析报告");
+    expect(metadata.description).not.toContain("use F6 analysis report");
     expect(metadata["argument-hint"]).toContain("ta-workbook-path");
   });
 
-  it("allows only the governed F1 through F6 workflow command shapes", () => {
+  it("uses product-capability user flow markers before the internal contract", () => {
     const skill = readSkill();
-    expect(commandLines(skill)).toEqual(allowedCommands);
-    expect(skill).not.toMatch(/npm\s+run\s+workflow:f0\b/i);
-    expect(skill).not.toMatch(/npm\s+run\s+[^\n`]*ado/i);
+    const { userFacing } = splitSkillSections(skill);
+    expect(userFacing).toContain("Use the language of the user's current request for every response, question, progress update, and action description.");
+    expectOrdered(userFacing, [
+      "## Purpose",
+      "## Entry routing",
+      "## Agent planning",
+      "1. Knowledge Library:",
+      "2. Data Parsing:",
+      "3. Data Cleaning:",
+      "4. Drawing Governance:",
+      "5. TA Calculation:",
+      "6. Result Interpretation:",
+      "7. Design Optimization:",
+      "8. Feedback Application:",
+    ]);
+    expect(userFacing).not.toMatch(/\bF[0-7]\b/u);
+    expect(userFacing).not.toMatch(/\bFeature[ _-]?[0-7]\b/iu);
+    expect(userFacing).not.toMatch(/\bW[0-9A-Z]*\b/u);
+  });
+
+  it("allows only the governed F1 through F6 workflow command shapes", () => {
+    const { internal } = splitSkillSections(readSkill());
+    expect(commandLines(internal)).toEqual(allowedCommands);
+    expect(internal).not.toMatch(/npm\s+run\s+workflow:f0\b/i);
+    expect(internal).not.toMatch(/npm\s+run\s+[^\n`]*ado/i);
   });
 
   it("orders the complete workbook flow and preserves both worksheet gates", () => {
-    const skill = readSkill();
-    expectOrdered(skill, [
+    const { internal } = splitSkillSections(readSkill());
+    expectOrdered(internal, [
       "### Phase W0 - Validate workbook and F0 capabilities",
       "### Phase W1 - Generate F1 worksheet selection",
       "### Phase W2 - Confirm and run F1 plus F2",
@@ -85,52 +123,52 @@ describe("F6 analysis skill contract", () => {
       "### Phase W9 - Run and validate F6",
       "### Phase W10 - Present every Feature output",
     ]);
-    expect(skill).toContain("F1/F2 scope call");
-    expect(skill).toContain("F3/F4/F5/F6 scope call");
-    expect(skill).toContain("`vscode_askQuestions` (`multiSelect: true`)");
-    expect(skill).toContain("No complete F1, F2, F3, F4, F5, or F6 execution may begin before the first selection succeeds");
-    expect(skill).toContain("No F3, F4, F5, or F6 execution may begin before the second selection succeeds");
-    expect(skill).toContain("The exact downstream worksheet set is reused by F3, F5, and F6");
+    expect(internal).toContain("F1/F2 scope call");
+    expect(internal).toContain("F3/F4/F5/F6 scope call");
+    expect(internal).toContain("`vscode_askQuestions` (`multiSelect: true`)");
+    expect(internal).toContain("No complete F1, F2, F3, F4, F5, or F6 execution may begin before the first selection succeeds");
+    expect(internal).toContain("No F3, F4, F5, or F6 execution may begin before the second selection succeeds");
+    expect(internal).toContain("The exact downstream worksheet set is reused by F3, F5, and F6");
   });
 
   it("governs context and targets with separate confirmations before any scenario", () => {
-    const skill = readSkill();
-    expectOrdered(skill, [
+    const { internal } = splitSkillSections(readSkill());
+    expectOrdered(internal, [
       "Collect optional TA Analysis Context",
       "Confirm analysis context",
       "Collect optional Optimization Targets",
       "Confirm optimization targets",
       "### Phase W9 - Run and validate F6",
     ]);
-    expect(skill).toContain("two separate `vscode_askQuestions` calls");
-    expect(skill).toContain("Declined analysis context omits `--analysis-context`");
-    expect(skill).toContain("Declined optimization targets omit `--optimization-targets`");
-    expect(skill).toContain("Caller-target optimization scenarios may not be generated before target confirmation");
-    expect(skill).toContain("`CALLER_AUTHORIZED`, `DECLINED`, `REJECTED`, or `NOT_PROVIDED`");
-    expect(skill).toContain("must not be combined with the F3 ADO confirmation");
-    expect(skill).toContain("f6-optimization-v2");
-    expect(skill).not.toContain("reduce_top_contributor_20");
+    expect(internal).toContain("two separate `vscode_askQuestions` calls");
+    expect(internal).toContain("Declined analysis context omits `--analysis-context`");
+    expect(internal).toContain("Declined optimization targets omit `--optimization-targets`");
+    expect(internal).toContain("Caller-target optimization scenarios may not be generated before target confirmation");
+    expect(internal).toContain("`CALLER_AUTHORIZED`, `DECLINED`, `REJECTED`, or `NOT_PROVIDED`");
+    expect(internal).toContain("must not be combined with the F3 ADO confirmation");
+    expect(internal).toContain("f6-optimization-v2");
+    expect(internal).not.toContain("reduce_top_contributor_20");
   });
 
   it("requires current-run F3 execution before the optional ADO gate and F4", () => {
-    const skill = readSkill();
-    expectOrdered(skill, [
+    const { internal } = splitSkillSections(readSkill());
+    expectOrdered(internal, [
       "npm run workflow:f3 -- <f2-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...]",
       "Feature3-Report.json",
       "`governance_required`",
       "### Phase W4A - Govern optional F3 ADO publishing",
       "### Phase W5 - Run F4",
     ]);
-    expect(skill).toContain("must execute F3 for the current confirmed run");
-    expect(skill).toContain("Never reuse a historical F3 root");
-    expect(skill).toContain("Only `governance_required` enters W4A");
-    expect(skill).toContain("A completed F3 skips W4A");
+    expect(internal).toContain("must execute F3 for the current confirmed run");
+    expect(internal).toContain("Never reuse a historical F3 root");
+    expect(internal).toContain("Only `governance_required` enters W4A");
+    expect(internal).toContain("A completed F3 skips W4A");
   });
 
-  it("reuses the governed F3 ADO protocol without automatic or implicit writes", () => {
-    const skill = readSkill();
-    expect(skill).toContain("[F3 analysis and ADO publishing protocol](../f3-analysis/SKILL.md)");
-    expect(skill).toContain("[F3 ADO publishing reference](../f3-analysis/references/ado-publishing.md)");
+  it("reuses the governed drawing governance protocol without automatic or implicit writes", () => {
+    const { internal } = splitSkillSections(readSkill());
+    expect(internal).toContain("REQUIRED SUB-SKILL: Use drawing-governance");
+    expect(internal).not.toMatch(/\.\.\/f3-analysis/u);
     for (const marker of [
       "Create a new ADO work item",
       "Use an existing ADO work item",
@@ -141,58 +179,58 @@ describe("F6 analysis skill contract", () => {
       "Surface MCP",
       "write exactly once",
       "read back",
-    ]) expect(skill).toContain(marker);
-    expect(skill).toContain("Never publish automatically or implicitly");
-    expect(skill).toContain("W4A outcome does not change the validated F3 analysis result");
+    ]) expect(internal).toContain(marker);
+    expect(internal).toContain("Never publish automatically or implicitly");
+    expect(internal).toContain("W4A outcome does not change the validated F3 analysis result");
   });
 
   it("requires immutable F5 v2 observations and target-gated F6 scenarios", () => {
-    const skill = readSkill();
-    expect(skill).toContain("New image mode creates only `f5-image-observation-v2`");
-    expect(skill).toContain("all active factor rows");
+    const { internal } = splitSkillSections(readSkill());
+    expect(internal).toContain("New image mode creates only `f5-image-observation-v2`");
+    expect(internal).toContain("all active factor rows");
     for (const scope of [
       "tolerance_loop_closure",
       "datum_chain",
       "assembly_datum_face",
       "stack_start",
       "direction",
-    ]) expect(skill).toContain(`\`${scope}\``);
-    expect(skill).toContain("f6-analysis-context-v1");
-    expect(skill).toContain("f6-optimization-targets-v1");
-    expect(skill).toContain("f6-top3-tolerance-policy-v1");
-    expect(skill).toContain("CpkL");
-    expect(skill).toContain("CpkU");
-    expect(skill).toContain("OP1");
-    expect(skill).toContain("OP2");
-    expect(skill).toContain("OP3");
-    expect(skill).toContain("No other automatic percentage scenario is permitted");
+    ]) expect(internal).toContain(`\`${scope}\``);
+    expect(internal).toContain("f6-analysis-context-v1");
+    expect(internal).toContain("f6-optimization-targets-v1");
+    expect(internal).toContain("f6-top3-tolerance-policy-v1");
+    expect(internal).toContain("CpkL");
+    expect(internal).toContain("CpkU");
+    expect(internal).toContain("OP1");
+    expect(internal).toContain("OP2");
+    expect(internal).toContain("OP3");
+    expect(internal).toContain("No other automatic percentage scenario is permitted");
   });
 
   it("validates every Feature output and supports an existing F6 artifact fast path", () => {
-    const skill = readSkill();
-    expect(skill).toContain("Entry mode 1 - TA workbook");
-    expect(skill).toContain("Entry mode 2 - Existing F6 artifact");
-    expect(skill).toContain("Feature6-Report.md");
-    expect(skill).toContain("five-file");
-    expect(skill).toContain("reportSummary");
-    expect(skill).not.toContain(deprecatedF6ReportArtifactJsonName);
-    expect(skill).toContain("without rerunning F0, F1, F2, F3, F4, F5, or F6");
+    const { internal } = splitSkillSections(readSkill());
+    expect(internal).toContain("Entry mode 1 - TA workbook");
+    expect(internal).toContain("Entry mode 2 - Existing F6 artifact");
+    expect(internal).toContain("Feature6-Report.md");
+    expect(internal).toContain("five-file");
+    expect(internal).toContain("reportSummary");
+    expect(internal).not.toContain(deprecatedF6ReportArtifactJsonName);
+    expect(internal).toContain("without rerunning F0, F1, F2, F3, F4, F5, or F6");
     for (const feature of ["F1", "F2", "F3", "F4", "F5", "F6"]) {
-      expect(skill).toContain(`\`${feature}\` output`);
+      expect(internal).toContain(`\`${feature}\` output`);
     }
-    expect(skill).toContain("contract, containment, identity, manifest, and recorded hashes");
+    expect(internal).toContain("contract, containment, identity, manifest, and recorded hashes");
   });
 
   it("documents final report scope from validated summary and manifest instead of Optimization alone", () => {
-    const skill = readSkill();
-    expect(skill).toContain("Optimization worksheet names must be a unique subset of reportSummary worksheet names");
-    expect(skill).toContain("Any reportSummary worksheet not present in Optimization is blocked FAIL");
-    expect(skill).toContain("reportSummary extras with any other disposition are blocked FAIL");
-    expect(skill).toContain("The exact full report scope comes from the validated run summary and manifest, not from Optimization alone");
+    const { internal } = splitSkillSections(readSkill());
+    expect(internal).toContain("Optimization worksheet names must be a unique subset of reportSummary worksheet names");
+    expect(internal).toContain("Any reportSummary worksheet not present in Optimization is blocked FAIL");
+    expect(internal).toContain("reportSummary extras with any other disposition are blocked FAIL");
+    expect(internal).toContain("The exact full report scope comes from the validated run summary and manifest, not from Optimization alone");
   });
 
   it("keeps deterministic runners local and the optional ADO adapter fail closed", () => {
-    const skill = readSkill();
+    const { internal } = splitSkillSections(readSkill());
     for (const rule of [
       "Never request or expose credentials",
       "No REST, browser network, shell HTTP, curl, or Invoke-WebRequest for ADO",
@@ -202,17 +240,21 @@ describe("F6 analysis skill contract", () => {
       "Treat all inputs and outputs as confidential",
       "Stop on command failure or validation failure",
       "Do not continue from a historical or partial run",
-    ]) expect(skill).toContain(rule);
+    ]) expect(internal).toContain(rule);
   });
 
-  it("documents the phrase-driven F0-F6 orchestration and governance mapping", () => {
+  it("documents product-triggered orchestration and governance mapping", () => {
     const documents = {
       readme: readFileSync(path.join(root, "README.md"), "utf8"),
       englishFlow: readFileSync(path.join(root, "docs", "02-end-to-end-flow.md"), "utf8"),
       chineseFlow: readFileSync(path.join(root, "docs", "02-端到端流程.md"), "utf8"),
       register: readFileSync(path.join(root, "docs", "governance", "feature-register.md"), "utf8"),
     };
-    for (const markdown of Object.values(documents)) expect(markdown).toContain("使用F6分析报告");
+    for (const markdown of Object.values(documents)) expect(markdown).toContain("Design Optimization");
+    expect(documents.readme).not.toContain(".github/skills/f6-analysis/SKILL.md");
+    expect(documents.englishFlow).not.toContain(".github/skills/f6-analysis/SKILL.md");
+    expect(documents.chineseFlow).not.toContain(".github/skills/f6-analysis/SKILL.md");
+    expect(documents.register).not.toContain(".github/skills/f6-analysis/SKILL.md");
     for (const markdown of [documents.readme, documents.englishFlow, documents.chineseFlow]) {
       expect(markdown).toContain("F0 -> F1 -> F2 -> F3 -> F4 -> F5 -> F6");
       expect(markdown).toContain("two worksheet confirmations");

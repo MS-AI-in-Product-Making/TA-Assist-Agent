@@ -1,4 +1,5 @@
 import type { TaModelContextEnvelope } from "@ai-assist/contracts";
+import { detectUserLanguage, productCapabilityLabel, projectProductCapabilityReferences, type UserLanguage } from "@ai-assist/product-language";
 
 import { isSupportedGovernedImageMediaType, sanitizePromptVisibleText } from "./prompt-sanitizer.js";
 
@@ -6,6 +7,9 @@ const MAX_F0_EXCERPTS = 6;
 const MAX_FACTOR_EXCERPTS = 8;
 
 export function buildEvidenceLabeledModelPrompt(userText: string, context: TaModelContextEnvelope): string {
+  const language = detectUserLanguage(userText);
+  const projectedUserText = projectProductCapabilityReferences(userText, language);
+  const capability = (internalId: "F0" | "F1" | "F2" | "F4") => productCapabilityLabel(internalId, language);
   const supportedToleranceLoopImage = context.toleranceLoopImage !== undefined && isSupportedGovernedImageMediaType(context.toleranceLoopImage.mediaType)
     ? {
       artifactId: context.toleranceLoopImage.artifactId,
@@ -23,23 +27,23 @@ export function buildEvidenceLabeledModelPrompt(userText: string, context: TaMod
       : [`- Selected factor identity: ${context.worksheet.tableId} / row ${context.worksheet.sourceRow} / ${context.worksheet.factorName}`]),
     ...(context.worksheet.calculationReference === undefined ? [] : [`- Scenario identity: ${context.worksheet.calculationReference}`]),
     `- Related artifact IDs: ${context.relatedArtifactIds.join(", ")}`,
-    `- F0 knowledge excerpts (${Math.min(context.f0Knowledge.length, MAX_F0_EXCERPTS)} of ${context.f0Knowledge.length}):`,
+    `- ${capability("F0")}${language === "zh" ? "摘录" : " excerpts"} (${Math.min(context.f0Knowledge.length, MAX_F0_EXCERPTS)} of ${context.f0Knowledge.length}):`,
     ...formatNestedExcerpts(context.f0Knowledge.slice(0, MAX_F0_EXCERPTS).map((item) => ({
       factorName: item.factorName,
       tableId: item.tableId,
       sourceRow: item.sourceRow,
       capabilityStatus: item.capabilityStatus,
       ...(item.f0KnowledgeBaseVersion === undefined ? {} : { f0KnowledgeBaseVersion: item.f0KnowledgeBaseVersion }),
-      summary: sanitizePromptVisibleText(item.summary) ?? "[redacted credential]",
+      summary: productizeEvidenceText(sanitizePromptVisibleText(item.summary) ?? "[redacted credential]", language),
       ...(item.recommendation === undefined ? {} : { recommendation: item.recommendation }),
     }))),
     ...(supportedToleranceLoopImage === undefined
       ? []
       : [
-        "- F1 managed image reference:",
+        `- ${capability("F1")} managed image reference:`,
         ...formatNestedExcerpts([supportedToleranceLoopImage]),
       ]),
-    `- F2 factor table excerpts (${Math.min(context.factorTable.length, MAX_FACTOR_EXCERPTS)} of ${context.factorTable.length}):`,
+    `- ${capability("F2")} factor table excerpts (${Math.min(context.factorTable.length, MAX_FACTOR_EXCERPTS)} of ${context.factorTable.length}):`,
     ...formatNestedExcerpts(context.factorTable.slice(0, MAX_FACTOR_EXCERPTS).map((row) => ({
       factorName: row.factorName,
       tableId: row.tableId,
@@ -59,7 +63,7 @@ export function buildEvidenceLabeledModelPrompt(userText: string, context: TaMod
     ...(context.baselineMetrics === undefined
       ? []
       : [
-        "- F4 baseline metrics:",
+        `- ${capability("F4")} baseline metrics:`,
         ...formatNestedExcerpts([formatMetricExcerpt(context.baselineMetrics)]),
       ]),
     ...(context.scenarioMetrics === undefined
@@ -71,8 +75,8 @@ export function buildEvidenceLabeledModelPrompt(userText: string, context: TaMod
   ];
 
   const missingEvidence = [
-    ...(supportedToleranceLoopImage === undefined ? ["- F1 managed image reference is unavailable in the current governed context."] : []),
-    ...(context.baselineMetrics === undefined ? ["- F4 baseline metrics are unavailable in the current governed context."] : []),
+    ...(supportedToleranceLoopImage === undefined ? [`- ${capability("F1")} managed image reference is unavailable in the current governed context.`] : []),
+    ...(context.baselineMetrics === undefined ? [`- ${capability("F4")} baseline metrics are unavailable in the current governed context.`] : []),
     ...(context.scenarioMetrics === undefined ? ["- Scenario metrics are unavailable in the current governed context."] : []),
   ];
 
@@ -88,7 +92,13 @@ export function buildEvidenceLabeledModelPrompt(userText: string, context: TaMod
 
   return [
     "User request",
-    userText.trim(),
+    projectedUserText.trim(),
+    "",
+    "Response language",
+    language === "zh"
+      ? "- 全部使用中文回答，包括解释、建议、进度和操作说明。"
+      : "- Respond entirely in English, including explanations, recommendations, progress, and action text.",
+    "- Use product capability names only. Never expose internal feature identifiers.",
     "",
     "Governed evidence",
     ...governedEvidence,
@@ -131,4 +141,8 @@ function formatMetricExcerpt(metric: NonNullable<TaModelContextEnvelope["baselin
 function formatNestedExcerpts(excerpts: readonly Record<string, unknown>[]): string[] {
   if (excerpts.length === 0) return ["  - none"];
   return excerpts.map((excerpt) => `  - ${JSON.stringify(excerpt)}`);
+}
+
+function productizeEvidenceText(text: string, language: UserLanguage): string {
+  return projectProductCapabilityReferences(text, language);
 }

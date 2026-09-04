@@ -9,15 +9,15 @@ export function F2WorksheetStatus({ report }: F2WorksheetStatusProps) {
     <section className="panel" aria-labelledby="f2-title">
       <div className="panel__header">
         <div>
-          <p className="eyebrow">F2</p>
+          <p className="eyebrow">Data Cleaning</p>
           <h2 id="f2-title">Ready / Blocked worksheets</h2>
         </div>
       </div>
-      {report === undefined ? <p className="support-text">The F2 artifact is not visible yet.</p> : null}
+      {report === undefined ? <p className="support-text">The Data Cleaning report is not visible yet.</p> : null}
       {report !== undefined ? (
         <>
           <p className="support-text">Ready {report.summary.readyWorksheetCount} / Blocked {report.summary.blockedWorksheetCount}</p>
-          <div className="table-scroll" tabIndex={0} aria-label="F2 worksheet status table">
+          <div className="table-scroll" tabIndex={0} aria-label="Data Cleaning worksheet status table">
           <table className="data-table">
             <thead>
               <tr>

@@ -1,4 +1,5 @@
 import type { ActionQueueItem } from "../workbench-session.js";
+import { actionDisplay, featureDisplay } from "../web-projection.js";
 
 export interface ActionQueueProps {
   readonly items: readonly ActionQueueItem[];
@@ -17,8 +18,8 @@ export function ActionQueue({ items }: ActionQueueProps) {
       <ul className="queue-list">
         {items.map((item, index) => (
           <li key={`${item.featureId}-${item.action}-${index}`} className="queue-item">
-            <span>{item.featureId}</span>
-            <span>{item.action}</span>
+            <span>{featureDisplay(item.featureId)}</span>
+            <span>{actionDisplay(item.action)}</span>
             <span>{item.blocking ? "blocking" : "non-blocking"}</span>
           </li>
         ))}

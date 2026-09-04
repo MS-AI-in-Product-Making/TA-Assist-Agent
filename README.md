@@ -309,6 +309,8 @@ The workflow executes Task 1.1-1.7 with real workbook inputs and emits a final r
 
 ## Feature 6 Governed Optimization Workflow
 
+- Product capability name: Design Optimization.
+
 - Agent Skill 入口为“使用F6分析报告”。用户无需手工拼接命令；agent 在取得 TA workbook 后按 `F0 -> F1 -> F2 -> F3 -> F4 -> F5 -> F6` 执行，保留 two worksheet confirmations：第一次确认 F1/F2 解析范围，第二次只从 F2 ready 且 F1 图片有效的 worksheets 中确认 F3/F4/F5/F6 范围。Workbook mode 必须执行并验证 current-run F3；仅当结果为 `governance_required` 时进入复用 F3 双确认协议的 optional ADO publishing gate，发布 never automatic or implicit。新图片评估只创建 immutable `f5-image-observation-v2`。
 - Skill 完成后展示 F1-F6 output ledger，并单独披露 F0 的 `v1`、`internal-v1`、`interpretation-rules-v1` 版本；F0 没有虚构的独立 workflow artifact。每个 Feature 的 contract、identity、manifest 和 hash 必须验证后才标记完成。已有 F6 output directory 或 `Feature6-Optimization.json` 走 read-and-validate 快速路径，不重跑上游。
 - F6 在完成 F5 后运行。直接 CLI：`npm run workflow:f6 -- "<f2-root>" "<f3-root>" "<f4-root>" "<f5-root>" --worksheet "Analysis-A"`；四个 root 顺序固定，`--worksheet` 至少一个、可重复且 trim 后唯一。Skill 先分别收集并验证 `f6-analysis-context-v1` 与 `f6-optimization-targets-v1`，再以 `Confirm analysis context` 和 `Confirm optimization targets` 两次独立确认决定是否追加 `--analysis-context` 与 `--optimization-targets`。
