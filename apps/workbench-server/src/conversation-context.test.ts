@@ -47,7 +47,7 @@ describe("buildConversationContext", () => {
         factorName: "Gap X",
         capabilityStatus: "in_library_recommended",
         f0KnowledgeBaseVersion: "v1",
-        summary: "F0 public guidance in_library_recommended for Gap X.",
+        summary: "Knowledge Library guidance in_library_recommended for Gap X.",
         recommendation: { kind: "public", capabilityEntryId: "cap-gap-x", toleranceMin: 0.1, toleranceMax: 0.4, unit: "mm", distribution: "normal" },
       }],
       toleranceLoopImage: {

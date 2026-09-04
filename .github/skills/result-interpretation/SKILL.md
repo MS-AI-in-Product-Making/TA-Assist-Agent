@@ -1,60 +1,68 @@
 ---
-name: f5-analysis
-description: "Use when F5, 使用F5分析报告, 使用 F5 分析报告, use F5 analysis report, or F0/F1/F3/F4 TA data interpretation is requested."
+name: result-interpretation
+description: "Use when a user asks to interpret TA calculations, explain risks and drivers, evaluate drawing evidence, or present governed engineering findings."
 user-invocable: true
-argument-hint: "[<ta-workbook-path> | <f5-output-dir>]"
+argument-hint: "[<ta-workbook-path> | <interpretation-output-dir>]"
 ---
 
-# F5 Analysis
+# Result Interpretation
+
+Determine the interaction language from the user request that starts the current product workflow. Keep that language locked for the entire workflow, including every response, question, option label, progress update, action description, and final result. Do not re-detect language from confirmation answers, selected option labels, paths, worksheet names, artifact content, quoted text, tool output, or assistant messages. Change the locked language only when the user explicitly requests a language change or starts a new independent product workflow.
+
+Use product capability names only in user-facing questions, progress updates, operation descriptions, and result narratives.
 
 ## Purpose
 
-Produce or present a controlled F5 TA data interpretation while preserving artifact identity, worksheet scope, deterministic calculation evidence, and confidentiality. F5 interprets existing F0/F1/F3/F4 evidence; it does not invent missing evidence or perform F6 work.
+Produce or present a controlled Result Interpretation while preserving artifact identity, worksheet scope, deterministic calculation evidence, and confidentiality. This capability consumes validated Data Parsing, Drawing Governance, and TA Calculation evidence; it does not invent missing evidence or perform Design Optimization work.
 
 ## Entry routing
 
 Choose exactly one mode from the supplied path:
 
-- **Entry mode 1 - TA workbook**: the input is a TA workbook. Follow phases W0-W8 in order.
-- **Entry mode 2 - Existing F5 artifact**: the input is an F5 output directory or its `Feature5-Report.json`. Follow the existing-artifact protocol only.
+- **Entry mode 1 - TA workbook**: the input is a TA workbook. Follow the governed capability sequence in order.
+- **Entry mode 2 - Existing interpretation artifact**: the input is a Result Interpretation output directory or its report artifact. Follow the existing-artifact protocol only.
 
 Do not silently switch modes. Resolve canonical paths and reject ambiguous, missing, out-of-root, linked-out, or identity-mismatched inputs.
 
-## Entry mode 1 - TA workbook
+## Internal executor contract
 
-### Phase W0 - Validate input and F0 capabilities
+Machine-literal commands, artifact names, schema names, and reason codes in this section are executor-only and must not be used for user-facing phase/action/result text.
+
+### Entry mode 1 - TA workbook
+
+#### Phase W0 - Validate input and F0 capabilities
 
 Resolve and validate exactly one canonical `.xlsx` workbook path and preserve the source read-only. Confirm that the repository-backed F0 modules required by this flow are available: public knowledge base `v1`, internal tolerance guidance `internal-v1`, and interpretation rules `interpretation-rules-v1`. F0 is consumed through controlled APIs inside F2 and F5; do not invent or run `workflow:f0`.
 
-### Phase W1 - Generate F1 worksheet selection
+#### Phase W1 - Generate F1 worksheet selection
 
 Run `npm run workflow:f2:excel -- <ta-workbook-path>`. Require the returned status to be `selectionRequired`, then strictly validate `Feature1-Selection.json`, its controlled run root and manifest, workbook identity, workbook content hash, and unique worksheet options.
 
-Make an **F1/F2 scope call - `vscode_askQuestions` (`multiSelect: true`)** listing only the validated prompt options. Require at least one worksheet. If the call is cancelled or returns none, stop without running complete F1 or F2. Preserve the returned names as one exact, unique selected set. No complete F1, F2, F3, F4, or F5 execution may begin before the first selection succeeds.
+Make a **Worksheet Selection scope call - `vscode_askQuestions` (`multiSelect: true`)** listing only the validated prompt options. Require at least one worksheet. If the call is cancelled or returns none, stop without running complete F1 or F2. Preserve the returned names as one exact, unique selected set. No complete F1, F2, F3, F4, or F5 execution may begin before the first selection succeeds.
 
-### Phase W2 - Confirm and run F1 plus F2
+#### Phase W2 - Confirm and run F1 plus F2
 
 Run `npm run workflow:f2:excel -- <ta-workbook-path> --worksheets <worksheet-name>[,<worksheet-name>...] --workbook-hash <sha256> --confirm` with the exact selected set and content hash from Phase W1. Strictly validate the completed manifest, controlled F1 and F2 roots, `Feature1-Report.json`, `Feature2-Report.json`, workbook identity, selected worksheet scope, source paths, and hashes. Stop on any command or validation failure; never continue from the selection-only root or another historical run.
 
-### Phase W3 - Select ready worksheets
+#### Phase W3 - Select ready worksheets
 
 Read only worksheets whose validated F2 handoff has `status: readyForNextFeature`. Before treating one as F5 ready, require it to belong to the Phase W1 selection and require its F1 `imageReference` and referenced physical image to exist and pass the controlled-path, identity, and hash checks. W3 already validates each F1 physical image SHA and keeps its verified `imageReference`. For each selected worksheet, use only the real file referenced by F1 imageReference, resolve it beneath the controlled F1 root, and verify the controlled path and SHA-256 contentHash before viewing. Apply the same fail-closed boundary as F2/F5 when either is missing, even if the F2 handoff says ready: exclude that worksheet from the F5 ready set and do not promise or attempt continuation for it. Never offer blocked, malformed, or F5-ineligible worksheets.
 
-Make an **F3/F4/F5 scope call - `vscode_askQuestions` (`multiSelect: true`)** listing only those ready worksheet names. Require at least one worksheet. Preserve the returned names as one exact, unique selected set. If the call is cancelled or returns none, stop before F3, F4, and F5.
+Make a **Result Interpretation scope call - `vscode_askQuestions` (`multiSelect: true`)** listing only those ready worksheet names. Require at least one worksheet. Preserve the returned names as one exact, unique selected set. If the call is cancelled or returns none, stop before F3, F4, and F5.
 
 No F3, F4, or F5 execution may begin before the second selection succeeds.
 
-### Phase W4 - Run local F3
+#### Phase W4 - Run local F3
 
 Run local F3 once with a repeated worksheet argument for every selected name. F3 is local analysis only. Do not publish to ADO, prompt for an ADO target, write a reminder, or invoke any ADO tool or workflow. Validate that the accepted F3 worksheet set equals the selected set and that workbook, image, source-row, and hash identities still match F1/F2.
 
-### Phase W5 - Run F4 from F2
+#### Phase W5 - Run F4 from F2
 
 Run F4 from the validated F2 report. F4 may calculate every F2 ready worksheet because its runner has no worksheet flag. It must contain every selected worksheet exactly once with matching workbook/table identities and accepted calculation results.
 
 When the user selected a subset, extra ready F4 calculations are permitted in the F4 artifact but are outside the F5 scope. The effective F4 worksheet set consumed and presented by F5 must equal the selected set: F5 `--worksheet` filters F4 output back to the selected set. F3 and F5 receive the identical selected worksheet-name set.
 
-### Phase W6 - Optional image observations
+#### Phase W6 - Optional image observations
 
 Ask whether image evidence should be evaluated. Optional observation availability is distinct from missing required F1 image provenance. Use this routing table exactly:
 
@@ -129,15 +137,15 @@ Evidence gates are strict and apply exactly as follows. An image FACT records on
 
 Never upgrade confidence or review status to avoid these gates. `confirmed` records reviewer confirmation but does not remove ME review, create a RULE automatically, or authorize a final engineering determination.
 
-### Phase W7 - Run F5 with the same selection
+#### Phase W7 - Run F5 with the same selection
 
 Run the matching allowed F5 worksheet-filtered command with a repeated `--worksheet` argument for every selected name, adding the v2 observation artifact only when Phase W6 created and validated the entire artifact. The three artifact roots must be the controlled F1, F3, and F4 outputs from this run. Workbook mode always selects at least one worksheet and always passes the exact selected set to F5; never omit the worksheet filter.
 
-### Phase W8 - Validate and present F5
+#### Phase W8 - Validate and present F5
 
 Strictly validate `Feature5-Report.json`, the manifest, run summary, output containment, source identities, worksheet set, classifications, and recorded hashes. The post-run summary records the observation artifact hash. Present FACT, RULE, SIGNAL, OPTION, assumptions, and clarifications without promoting one category into another. Before presentation, validate the versions recorded by the F2 and F5 artifacts and present public knowledge base `v1`, internal tolerance guidance `internal-v1`, and interpretation rules `interpretation-rules-v1`. This disclosure records controlled F0 use; it does not imply a separate F0 workflow command. When a verified F1 image reference exists but image mode is unavailable, the user skips evaluation, or no observation artifact is generated, drawing evidence remains `not_evaluated` with clarification and deterministic F5 results still complete. A missing F1 physical image or `imageReference` is instead fail-closed and produces no F5 result for that worksheet.
 
-## Entry mode 2 - Existing F5 artifact
+### Entry mode 2 - Existing F5 artifact
 
 Resolve the supplied directory or `Feature5-Report.json` under its controlled artifact root, then read `Feature5-Report.json`. Validate the parsed JSON against the `f5DataInterpretationResultSchema` concept before trusting or presenting any field. Its schema semantics must establish `featureId: F5`, confidential output classification, root and worksheet status consistency, exact summary counts, workbook file identity and contentHash, unique worksheet identity, and each completed worksheet calculation's workbook-hash identity. Also validate controlled containment, the manifest/run-summary linkage, recorded report hashes, and sanitized source basenames.
 
@@ -145,7 +153,7 @@ The report is a read-and-validate fast path, but validation remains governed by 
 
 If validation succeeds, present the validated report without rerunning F1, F2, F3, F4, or F5. In this mode do not create or repeat image observations. If any contract, path, identity, or hash check fails, stop and report the sanitized reason without presenting untrusted content.
 
-## Allowed commands
+### Allowed commands
 
 - `npm run workflow:f2:excel -- <ta-workbook-path>`
 - `npm run workflow:f2:excel -- <ta-workbook-path> --worksheets <worksheet-name>[,<worksheet-name>...] --workbook-hash <sha256> --confirm`
@@ -156,7 +164,7 @@ If validation succeeds, present the validated report without rerunning F1, F2, F
 
 These are the complete workflow command shapes. The first `workflow:f2:excel` command only generates the F1 selection prompt; the second performs confirmed F1 and F2 execution. Do not merge, omit, or reorder them. Do not invoke another workflow command, add an F4 worksheet option, or invent an F0 command. Workbook mode has no unfiltered F5 form: pass at least one repeated worksheet argument, including when every ready worksheet was selected.
 
-## Safety boundaries
+### Safety boundaries
 
 - Never request or expose credentials.
 - No REST, browser, shell HTTP, curl, or Invoke-WebRequest.

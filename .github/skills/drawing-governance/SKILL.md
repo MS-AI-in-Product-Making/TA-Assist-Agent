@@ -1,15 +1,27 @@
 ---
-name: f3-analysis
-description: "Use when the user asks for F3, 使用 F3 分析报告, TA workbook/report governance, DIM ID checks, Drawing Number checks, or ADO Work Item publishing for F3 results."
+name: drawing-governance
+description: Use when a user asks for DIM ID checks, Drawing Number governance, traceability review, or governed ADO publication.
 user-invocable: true
-argument-hint: "<ta-workbook-or-f3-report-path>"
+argument-hint: "<ta-workbook-or-governance-report-path>"
 ---
 
-# f3-analysis
+# Drawing Governance
 
-Follow this skill when the user invokes F3 analysis or F3 ADO publishing for TA workbook/report governance.
+Follow this skill when the user invokes Drawing Governance publishing for TA workbook/report governance.
+
+Determine the interaction language from the user request that starts the current product workflow. Keep that language locked for the entire workflow, including every response, question, option label, progress update, action description, and final result. Do not re-detect language from confirmation answers, selected option labels, paths, worksheet names, artifact content, quoted text, tool output, or assistant messages. Change the locked language only when the user explicitly requests a language change or starts a new independent product workflow.
+
+For user-facing questions, progress, actions, and results:
+
+- Use only the current user language.
+- Use product capability names.
+- Keep internal command keys, artifact base names, status/reason codes, and tool names unchanged.
 
 Reference: [ADO publishing protocol](./references/ado-publishing.md)
+
+## Internal executor contract
+
+The identifiers below are machine contracts. Never use them to name a capability, phase, action, or result in user-facing text.
 
 ## Supported local workflow commands (repository-verified)
 

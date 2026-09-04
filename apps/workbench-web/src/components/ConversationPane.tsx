@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 
 import type { ConversationTurn } from "@ai-assist/conversation";
 
+import { projectProductText } from "../web-projection.js";
+
 export interface ConversationPaneProps {
   readonly turns: readonly ConversationTurn[];
   readonly disabled?: boolean;
@@ -35,9 +37,9 @@ export function ConversationPane({ turns, disabled = false, suggestedMessage, on
                 if (part.kind === "text") return <p key={`${turn.turnId}-${index}`}>{isPendingAssistantTurn(turn) ? "Waiting for VS Code model response..." : part.text}</p>;
                 if (part.kind === "markdown") return <p key={`${turn.turnId}-${index}`}>{part.markdown}</p>;
                 if (part.kind === "error") return <p key={`${turn.turnId}-${index}`}>Error: {part.error.summary}</p>;
-                if (part.kind === "decision_reference") return <p key={`${turn.turnId}-${index}`}>Decision record: {part.decisionReference}</p>;
-                if (part.kind === "artifact_reference") return <p key={`${turn.turnId}-${index}`}>Evidence: {part.label ?? part.artifactId}</p>;
-                if (part.kind === "command") return <p key={`${turn.turnId}-${index}`}>Command: {part.command}</p>;
+                if (part.kind === "decision_reference") return <p key={`${turn.turnId}-${index}`}>Decision record available.</p>;
+                if (part.kind === "artifact_reference") return <p key={`${turn.turnId}-${index}`}>Evidence: {projectProductText(part.label ?? part.artifactId)}</p>;
+                if (part.kind === "command") return <p key={`${turn.turnId}-${index}`}>Governed command available.</p>;
                 return <p key={`${turn.turnId}-${index}`}>Generated governed tool action.</p>;
               })}
             </div>

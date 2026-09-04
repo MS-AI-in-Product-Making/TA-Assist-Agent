@@ -40,21 +40,21 @@ export async function buildConversationContext(
 
   const f2 = f2UserReportSchema.parse(await artifacts.readJson(f2Ref.artifactId, f2Ref.contentHash));
   if (f2.status === "inputRejected") {
-    throw contextError("evidence_mismatch", "The current F2 report was rejected and cannot provide model context.", [f2Ref.artifactId]);
+    throw contextError("evidence_mismatch", "The current Data Cleaning report was rejected and cannot provide model context.", [f2Ref.artifactId]);
   }
   const f4 = f4WorkflowCalculationResultSchema.parse(await artifacts.readJson(f4Ref.artifactId, f4Ref.contentHash));
   validateWorkbookLineage(snapshot, f2, f4, [f2Ref.artifactId, f4Ref.artifactId]);
 
   const worksheet = f2.worksheets.find((candidate) => candidate.worksheetName === selection.worksheetName);
   if (worksheet === undefined) {
-    throw contextError("evidence_mismatch", "The selected worksheet is not present in the current F2 report.", [selection.worksheetName]);
+    throw contextError("evidence_mismatch", "The selected worksheet is not present in the current Data Cleaning report.", [selection.worksheetName]);
   }
   const calculation = f4.calculations.find((candidate) => candidate.worksheetSelection.worksheetName === selection.worksheetName);
   if (calculation === undefined) {
-    throw contextError("evidence_mismatch", "The selected worksheet is not present in the current F4 baseline.", [selection.worksheetName]);
+    throw contextError("evidence_mismatch", "The selected worksheet is not present in the current TA Calculation baseline.", [selection.worksheetName]);
   }
   if (selection.tableId !== undefined && calculation.worksheetSelection.tableId !== selection.tableId) {
-    throw contextError("evidence_mismatch", "The selected factor table does not match the current F4 baseline.", [selection.tableId]);
+    throw contextError("evidence_mismatch", "The selected factor table does not match the current TA Calculation baseline.", [selection.tableId]);
   }
 
   const factorTable = buildFactorRows(snapshot.inputRevision, selection.worksheetName, worksheet, calculation);
@@ -127,10 +127,10 @@ function ensureSameReviewContext(snapshot: F8SessionSnapshot, refs: readonly Ses
 function validateWorkbookLineage(snapshot: F8SessionSnapshot, f2: F2Report, f4: F4Result, references: readonly string[]): void {
   const scopeHash = snapshot.downstreamScopeSelection?.workbookContentHash ?? snapshot.initialScopeSelection?.workbookContentHash;
   if (scopeHash !== undefined && f2.workbook.contentHash !== scopeHash) {
-    throw contextError("evidence_mismatch", "The current F2 report workbook hash does not match the selected session scope.", references);
+    throw contextError("evidence_mismatch", "The current Data Cleaning report workbook hash does not match the selected session scope.", references);
   }
   if (f4.source.workbookContentHash !== f2.workbook.contentHash) {
-    throw contextError("evidence_mismatch", "The current F4 baseline does not match the current F2 report workbook hash.", references);
+    throw contextError("evidence_mismatch", "The current TA Calculation baseline does not match the current Data Cleaning report workbook hash.", references);
   }
 }
 
@@ -211,7 +211,7 @@ async function buildImageContext(
   if (snapshotRef === undefined) return undefined;
   const ref = await validatePersistedReference(snapshot, artifacts, snapshotRef);
   if (ref.contentHash !== image.contentHash || ref.metadata?.reviewContextId !== f4Ref.metadata?.reviewContextId) {
-    throw contextError("evidence_mismatch", "F1 image artifact metadata does not match the current worksheet image.", [ref.artifactId]);
+    throw contextError("evidence_mismatch", "Data Parsing image artifact metadata does not match the current worksheet image.", [ref.artifactId]);
   }
   const mediaType = typeof ref.metadata?.mediaType === "string" ? ref.metadata.mediaType : "image/png";
   if (!isSupportedGovernedImageMediaType(mediaType)) return undefined;
@@ -263,7 +263,7 @@ function metricContext(inputRevision: number, calculationReference: string, calc
 }
 
 function f0Summary(status: string, factorName: string): string {
-  return `F0 public guidance ${status} for ${factorName}.`;
+  return `Knowledge Library guidance ${status} for ${factorName}.`;
 }
 
 function textValue(value: unknown): string | undefined {

@@ -12,7 +12,7 @@ export function F0Status({ stateLabel, entries, connected }: F0StatusProps) {
       <div className="panel__header">
         <div>
           <p className="eyebrow">Metrology</p>
-          <h2 id="f0-title">F0-F6 Status</h2>
+          <h2 id="f0-title">Analysis status</h2>
         </div>
         <span className={`status-pill ${connected ? "status-pill--ready" : "status-pill--blocked"}`}>{connected ? "SSE connected" : "Reconnecting"}</span>
       </div>

@@ -1,3 +1,5 @@
+import { productCapabilityLabel } from "@ai-assist/product-language/ta-workbook-language";
+
 export interface ProjectedText {
   readonly displayText: string;
   readonly sourceText: string;
@@ -5,17 +7,6 @@ export interface ProjectedText {
 }
 
 type FeatureId = "F0" | "F1" | "F2" | "F3" | "F4" | "F5" | "F6" | "F7";
-
-const FEATURE_LABELS: Record<FeatureId, string> = {
-  F0: "Load Library",
-  F1: "Extract Data",
-  F2: "Check Inputs",
-  F3: "Drawing Governance",
-  F4: "Calculate TA",
-  F5: "Interpret Results",
-  F6: "Optimize Design",
-  F7: "Apply Feedback",
-};
 
 const REASON_LABELS: Record<string, string> = {
   completed: "Completed",
@@ -74,7 +65,17 @@ export function projectSourceText(sourceText: string, translation?: string): Pro
 }
 
 export function featureDisplay(featureId: FeatureId): string {
-  return FEATURE_LABELS[featureId] ?? featureId;
+  return productCapabilityLabel(featureId, "en");
+}
+
+export function projectProductText(text: string): string {
+  return text.replace(/\b(?:F|Feature)([0-7])\b/gi, (_match, capabilityNumber: string) => productCapabilityLabel(`F${capabilityNumber}` as FeatureId, "en"));
+}
+
+export function actionDisplay(action: string): string {
+  if (action === "cancel") return "Cancel analysis";
+  const words = action.split(/[_-]+/).filter((part) => part.length > 0).map((part) => part.toLowerCase());
+  return words.length === 0 ? "Action required" : `${words[0]![0]!.toUpperCase()}${words[0]!.slice(1)}${words.length > 1 ? ` ${words.slice(1).join(" ")}` : ""}`;
 }
 
 export function reasonDisplay(reasonCode: string): string {

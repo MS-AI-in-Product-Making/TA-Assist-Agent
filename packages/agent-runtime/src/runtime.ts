@@ -1,4 +1,5 @@
 import { conversationTurnSchema, type conversationTurnSchema as conversationTurnSchemaType, type f8SessionSnapshotSchema } from "@ai-assist/contracts";
+import { detectUserLanguage, type UserLanguage } from "@ai-assist/product-language";
 
 import { buildAgentContext, projectPendingActions, type AgentContext } from "./context-builder.js";
 import { detectAgentIntent, type AgentIntentType } from "./intents.js";
@@ -82,9 +83,10 @@ export async function handleAgentTurn(
 	const snapshot = await dependencies.snapshotStore.readSnapshot(request.sessionId);
 	const existingTurns = await dependencies.conversationStore.readTurns(request.sessionId, { afterSequence: 0 });
 	const intent = detectAgentIntent(request.text);
-	const storedResult = readStoredResult(existingTurns, request.commandId, snapshot, intent.type);
+	const language = detectUserLanguage(request.text);
+	const storedResult = readStoredResult(existingTurns, request.commandId, snapshot, intent.type, language);
 	if (storedResult !== undefined) {
-		return storedResult;
+		return localizeAgentResult(storedResult, language);
 	}
 
 	const singleFlightKey = `${request.sessionId}:${request.commandId}`;
@@ -138,9 +140,10 @@ async function handleAgentTurnOnce(
 	const context = buildAgentContext({ snapshot, turns: turnsAfterUser });
 	const policy = createToolPolicy({ state: snapshot.state, intent: intentType });
 
-	const deterministic = buildDeterministicResponse(snapshot, intentType, wantsWrite);
+	const language = detectUserLanguage(request.text);
+	const deterministic = buildDeterministicResponse(snapshot, intentType, wantsWrite, language);
 	const modelResponse = await maybeCompleteWithModel(wantsWrite, dependencies.model, request.text, context, policy);
-	const resolved = resolveTurnResult(snapshot, intentType, deterministic, modelResponse);
+	const resolved = resolveTurnResult(snapshot, intentType, deterministic, modelResponse, language);
 
 	await dependencies.conversationStore.appendTurn(
 		createAssistantTurn({
@@ -159,7 +162,7 @@ async function handleAgentTurnOnce(
 		`${request.commandId}:assistant`,
 	);
 
-	return resolved;
+	return localizeAgentResult(resolved, language);
 }
 
 async function maybeCompleteWithModel(
@@ -185,12 +188,13 @@ function resolveTurnResult(
 	intent: AgentIntentType,
 	deterministic: AgentTurnResult,
 	modelResponse: { readonly responseText: string; readonly actions?: readonly ModelActionCandidate[] } | undefined,
+	language: UserLanguage,
 ): AgentTurnResult {
-	if (modelResponse === undefined || !isSafeResponseText(modelResponse.responseText)) {
+	if (modelResponse === undefined || !isSafeResponseText(modelResponse.responseText, language)) {
 		return deterministic;
 	}
 
-	const actions = sanitizeActions(snapshot, intent, modelResponse.actions, deterministic.actions);
+	const actions = sanitizeActions(snapshot, intent, modelResponse.actions, deterministic.actions, language);
 	return {
 		responseText: sanitizeResponseText(modelResponse.responseText),
 		actions,
@@ -202,13 +206,16 @@ function buildDeterministicResponse(
 	snapshot: RuntimeSnapshot,
 	intent: AgentIntentType,
 	wantsWrite: boolean,
+	language: UserLanguage,
 ): AgentTurnResult {
 	const pendingActions = projectPendingActions(snapshot.state);
-	const primaryAction = selectPrimaryAction(snapshot, snapshot.state, intent, pendingActions);
+	const primaryAction = selectPrimaryAction(snapshot, snapshot.state, intent, pendingActions, language);
 
 	if (snapshot.state === "ado_decision_required" && wantsWrite) {
 		return {
-			responseText: "当前只能查看 ADO 预览，模型不能直接确认、写入或绕过独立门控。请先检查预览后再通过单独确认步骤执行。",
+			responseText: language === "zh"
+				? "当前只能查看 ADO 预览，模型不能直接确认、写入或绕过独立门控。请先检查预览后再通过单独确认步骤执行。"
+				: "Only the ADO preview is available. The model cannot confirm, write, or bypass the independent gate. Review the preview and use the separate confirmation step.",
 			actions: [{ type: "navigate", target: "/ado/preview", label: "查看 ADO 预览" }],
 			commands: [],
 		};
@@ -220,22 +227,29 @@ function buildDeterministicResponse(
 		|| snapshot.state === "feedback_review_required"
 		|| intent === "f7_status") {
 		return {
-				responseText: "实测能力闭环当前未开放，工作台会继续保留既有分析结果与下一步建议。",
+			responseText: language === "zh"
+				? "实测能力闭环当前未开放，工作台会继续保留既有分析结果与下一步建议。"
+				: "Feedback Application is not currently available. The workbench will retain the existing analysis results and next-step recommendations.",
 			actions: [],
 			commands: [],
 		};
 	}
 
 	if (primaryAction !== undefined) {
+		const responseActionLabel = language === "zh" ? primaryAction.label : englishActionLabel(primaryAction);
 		return {
-				responseText: `当前分析已同步。下一步请先${primaryAction.label}。`,
+			responseText: language === "zh"
+				? `当前分析已同步。下一步请先${primaryAction.label}。`
+				: `The current analysis is synchronized. ${responseActionLabel} before continuing.`,
 			actions: [primaryAction],
 			commands: [],
 		};
 	}
 
 	return {
-			responseText: "当前分析已同步。可继续查看状态、证据或报告，模型不会直接生成受治理写入命令。",
+		responseText: language === "zh"
+			? "当前分析已同步。可继续查看状态、证据或报告，模型不会直接生成受治理写入命令。"
+			: "The current analysis is synchronized. You can review its status, evidence, or report. The model cannot create governed write commands directly.",
 		actions: [],
 		commands: [],
 	};
@@ -246,6 +260,7 @@ function selectPrimaryAction(
 	state: RuntimeSnapshot["state"],
 	intent: AgentIntentType,
 	pendingActions: readonly { action: string }[],
+	language: UserLanguage = "zh",
 ): AgentAction | undefined {
 	if (state === "review_required" && intent === "open_report" && hasValidatedReport(snapshot)) {
 		return { type: "open_report", target: "/report/current", label: "打开当前报告" };
@@ -337,12 +352,13 @@ function sanitizeActions(
 	intent: AgentIntentType,
 	actions: readonly ModelActionCandidate[] | undefined,
 	fallbackActions: readonly AgentAction[],
+	language: UserLanguage,
 ): readonly AgentAction[] {
 	if (actions === undefined || actions.length === 0) {
 		return fallbackActions;
 	}
 
-	const allowedByKey = new Map(allowedActionsFor(snapshot, intent).map((action) => [actionKey(action), action]));
+	const allowedByKey = new Map(allowedActionsFor(snapshot, intent, language).map((action) => [actionKey(action), action]));
 	const sanitized: AgentAction[] = [];
 	for (const candidate of actions) {
 		if (typeof candidate?.type !== "string" || typeof candidate?.target !== "string") {
@@ -358,10 +374,10 @@ function sanitizeActions(
 	return sanitized.length > 0 ? sanitized : fallbackActions;
 }
 
-function allowedActionsFor(snapshot: RuntimeSnapshot, intent: AgentIntentType): readonly AgentAction[] {
+function allowedActionsFor(snapshot: RuntimeSnapshot, intent: AgentIntentType, language: UserLanguage = "zh"): readonly AgentAction[] {
 	const pendingActions = projectPendingActions(snapshot.state);
 	const allowed: AgentAction[] = [];
-	const primary = selectPrimaryAction(snapshot, snapshot.state, intent, pendingActions);
+	const primary = selectPrimaryAction(snapshot, snapshot.state, intent, pendingActions, language);
 	if (primary !== undefined) {
 		allowed.push(primary);
 	}
@@ -413,6 +429,7 @@ function readStoredResult(
 	commandId: string,
 	snapshot: RuntimeSnapshot,
 	intent: AgentIntentType,
+	language: UserLanguage,
 ): AgentTurnResult | undefined {
 	const assistantTurn = turns.find((turn) => turn.turnId === `${commandId}:assistant`);
 	if (assistantTurn === undefined) {
@@ -426,7 +443,7 @@ function readStoredResult(
 
 	return {
 		responseText,
-		...(readAssistantReceipt(assistantTurn, snapshot, intent) ?? { actions: [], commands: [] }),
+		...(readAssistantReceipt(assistantTurn, snapshot, intent, language) ?? { actions: [], commands: [] }),
 	};
 }
 
@@ -437,14 +454,14 @@ function readAssistantResponseText(turn: RuntimeTurn): string {
 		.join(" "));
 }
 
-function readAssistantReceipt(turn: RuntimeTurn, snapshot: RuntimeSnapshot, intent: AgentIntentType): StoredResultReceipt | undefined {
+function readAssistantReceipt(turn: RuntimeTurn, snapshot: RuntimeSnapshot, intent: AgentIntentType, language: UserLanguage): StoredResultReceipt | undefined {
 	const receiptPart = turn.content.find((part) => part.kind === "tool_result");
 	if (receiptPart === undefined || receiptPart.kind !== "tool_result") {
 		return undefined;
 	}
 
 	return {
-		actions: canonicalizeStoredActions(snapshot, intent, receiptPart.actions),
+		actions: canonicalizeStoredActions(snapshot, intent, receiptPart.actions, language),
 		commands: [],
 	};
 }
@@ -453,12 +470,13 @@ function canonicalizeStoredActions(
 	snapshot: RuntimeSnapshot,
 	intent: AgentIntentType,
 	actions: readonly StoredActionCandidate[] | undefined,
+	language: UserLanguage,
 ): readonly AgentAction[] {
 	if (actions === undefined || actions.length === 0) {
 		return [];
 	}
 
-	const allowedByKey = new Map(allowedActionsFor(snapshot, intent).map((action) => [actionKey(action), action]));
+	const allowedByKey = new Map(allowedActionsFor(snapshot, intent, language).map((action) => [actionKey(action), action]));
 	const canonical: AgentAction[] = [];
 	for (const candidate of actions) {
 		if (typeof candidate?.type !== "string" || typeof candidate?.target !== "string") {
@@ -474,7 +492,42 @@ function canonicalizeStoredActions(
 	return canonical;
 }
 
-function isSafeResponseText(text: string): boolean {
+function isSafeResponseText(text: string, language: UserLanguage): boolean {
 	const sanitized = sanitizeResponseText(text);
-	return sanitized.length > 0 && sanitized.length <= 1600 && sanitized === text.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+	const languageMatches = language === "zh" ? /\p{Script=Han}/u.test(sanitized) : !/\p{Script=Han}/u.test(sanitized);
+	return sanitized.length > 0
+		&& sanitized.length <= 1600
+		&& sanitized === text.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim()
+		&& !/\b(?:F[0-7]|Feature[ _-]?[0-7])\b/iu.test(sanitized)
+		&& languageMatches;
+}
+
+function localizeAgentResult(result: AgentTurnResult, language: UserLanguage): AgentTurnResult {
+	if (language === "zh") {
+		return result;
+	}
+
+	return {
+		...result,
+		actions: result.actions.map((action) => ({
+			...action,
+			label: englishActionLabel(action),
+		})),
+	};
+}
+
+function englishActionLabel(action: AgentAction): string {
+	const englishLabels: Readonly<Record<string, string>> = {
+		"/scope": "Select worksheets",
+		"/scope/downstream": "Confirm downstream worksheets",
+		"/ado/preview": "Review ADO preview",
+		"/images/decision": "Confirm image context",
+		"/analysis/context": "Confirm analysis context",
+		"/optimization/targets": "Confirm optimization targets",
+		"/review": "Complete review",
+		"/status": "Review run status",
+		"/report/current": "Open current report",
+		"/what-if": "Open What-if Draft",
+	};
+	return englishLabels[action.target] ?? action.label;
 }

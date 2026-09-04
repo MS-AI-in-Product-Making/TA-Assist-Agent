@@ -1,18 +1,18 @@
 import { describe, expect, it } from "vitest";
 
-import { featureDisplay, projectSourceText, reasonDisplay } from "./web-projection.js";
+import { actionDisplay, featureDisplay, projectProductText, projectSourceText, reasonDisplay } from "./web-projection.js";
 
 describe("web-projection", () => {
-  it("projects all F0-F7 labels into short English copy", () => {
+  it("projects all internal capability identifiers into stable product names", () => {
     const labels = {
-      F0: "Load Library",
-      F1: "Extract Data",
-      F2: "Check Inputs",
+      F0: "Knowledge Library",
+      F1: "Data Parsing",
+      F2: "Data Cleaning",
       F3: "Drawing Governance",
-      F4: "Calculate TA",
-      F5: "Interpret Results",
-      F6: "Optimize Design",
-      F7: "Apply Feedback",
+      F4: "TA Calculation",
+      F5: "Result Interpretation",
+      F6: "Design Optimization",
+      F7: "Feedback Application",
     } as const;
 
     for (const [featureId, expected] of Object.entries(labels)) {
@@ -21,6 +21,17 @@ describe("web-projection", () => {
       expect(displayText.split(/\s+/).length).toBeLessThanOrEqual(2);
       expect(displayText).not.toMatch(/\p{Script=Han}/u);
     }
+  });
+
+  it("replaces internal capability identifiers in user-visible system text", () => {
+    expect(projectProductText("F2 factor table and Feature6-Report.md")).toBe("Data Cleaning factor table and Design Optimization-Report.md");
+    expect(projectProductText("Ordinary engineering text")).toBe("Ordinary engineering text");
+  });
+
+  it("projects internal action values into human-readable labels", () => {
+    expect(actionDisplay("confirm_optimization_targets")).toBe("Confirm optimization targets");
+    expect(actionDisplay("complete_review")).toBe("Complete review");
+    expect(actionDisplay("cancel")).toBe("Cancel analysis");
   });
 
   it("projects all fixed reason and state codes into English copy", () => {

@@ -107,8 +107,8 @@ async function validateDownstreamScopeReadiness(
   if (f2References.length !== 1) {
     throw createTypedError({
       code: "evidence_mismatch",
-      summary: "Downstream confirmation requires exactly one current validated F2 report.",
-      suggestedAction: "Rerun F2 for the current workbook revision and retry downstream confirmation.",
+      summary: "Downstream confirmation requires exactly one current validated Data Cleaning report.",
+      suggestedAction: "Rerun Data Cleaning for the current workbook revision and retry downstream confirmation.",
       affectedInputReferences: [snapshot.sessionId],
     });
   }
@@ -132,8 +132,8 @@ async function validateDownstreamScopeReadiness(
     if (report.status === "inputRejected") {
       throw createTypedError({
         code: "evidence_mismatch",
-        summary: "Downstream confirmation requires a current accepted F2 report.",
-        suggestedAction: "Resolve F2 input issues and rerun F1/F2 before confirming downstream worksheets.",
+        summary: "Downstream confirmation requires a current accepted Data Cleaning report.",
+        suggestedAction: "Resolve Data Cleaning input issues and rerun Data Parsing and Data Cleaning before confirming downstream worksheets.",
         affectedInputReferences: [persisted.artifactId],
       });
     }
@@ -141,7 +141,7 @@ async function validateDownstreamScopeReadiness(
     if (command.payload.workbookHash !== report.workbook.contentHash) {
       throw createTypedError({
         code: "evidence_mismatch",
-        summary: "Downstream confirmation workbook hash does not match the current F2 report.",
+        summary: "Downstream confirmation workbook hash does not match the current Data Cleaning report.",
         suggestedAction: "Refresh the session and confirm downstream worksheets for the current workbook.",
         affectedInputReferences: [persisted.artifactId],
       });
@@ -153,16 +153,16 @@ async function validateDownstreamScopeReadiness(
       if (status === undefined) {
         throw createTypedError({
           code: "evidence_mismatch",
-          summary: "Downstream confirmation worksheet set drifted from the current F2 report.",
-          suggestedAction: "Reconfirm downstream worksheets from the current F2 ready worksheet list.",
+          summary: "Downstream confirmation worksheet set drifted from the current Data Cleaning report.",
+          suggestedAction: "Reconfirm downstream worksheets from the current Data Cleaning ready worksheet list.",
           affectedInputReferences: [worksheetName, persisted.artifactId],
         });
       }
       if (status !== "ready") {
         throw createTypedError({
           code: "validation_error",
-          summary: "Downstream confirmation includes blocked worksheets from the current F2 report.",
-          suggestedAction: "Select only F2-ready worksheets for downstream confirmation.",
+          summary: "Downstream confirmation includes blocked worksheets from the current Data Cleaning report.",
+          suggestedAction: "Select only Data Cleaning-ready worksheets for downstream confirmation.",
           affectedInputReferences: [worksheetName, persisted.artifactId],
         });
       }

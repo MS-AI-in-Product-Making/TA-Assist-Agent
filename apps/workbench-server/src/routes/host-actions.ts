@@ -1,4 +1,5 @@
 import { conversationTurnSchema, hostActionClaimSchema, hostActionRequestSchema, hostActionResultSchema } from "@ai-assist/contracts";
+import { detectUserLanguage, projectProductCapabilityReferences } from "@ai-assist/product-language";
 import { createHash } from "node:crypto";
 import type { FastifyPluginAsync } from "fastify";
 
@@ -121,7 +122,8 @@ export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: Workbench
       if (action?.kind === "vscode_model_request" && outcome?.kind === "model_response") {
         if (outcome.turnId !== action.turnId) return reply.code(400).send({ error: "host_action_result_integrity_rejected" });
         const turns = await context.conversation.read(sessionId);
-        const turn = await context.conversation.append(conversationTurnSchema.parse({ contractVersion: "ta-conversation-turn-v1", turnId: `${action.turnId}:model`, sessionId, sequence: nextConversationSequence(turns), source: "vscode", role: "assistant", content: [{ kind: "text", text: outcome.responseText }], createdAt: new Date().toISOString(), relatedArtifactIds: [] }));
+        const responseText = projectProductCapabilityReferences(outcome.responseText, detectUserLanguage(outcome.responseText));
+        const turn = await context.conversation.append(conversationTurnSchema.parse({ contractVersion: "ta-conversation-turn-v1", turnId: `${action.turnId}:model`, sessionId, sequence: nextConversationSequence(turns), source: "vscode", role: "assistant", content: [{ kind: "text", text: responseText }], createdAt: new Date().toISOString(), relatedArtifactIds: [] }));
         context.events.publish(sessionId, "conversation_turn_appended", turn);
         await context.syncSessionRecord(sessionId);
       }

@@ -181,7 +181,7 @@ describe("conversation routes", () => {
 
       const modelPayload = {
         status: "completed" as const,
-        outcome: { kind: "model_response" as const, turnId: "turn-route-1", responseText: "Model answer." },
+        outcome: { kind: "model_response" as const, turnId: "turn-route-1", responseText: "Review the F6 recommendation." },
       };
       const resultResponse = await app.inject({
         method: "POST",
@@ -202,7 +202,7 @@ describe("conversation routes", () => {
       expect(app.turns()).toMatchObject([
         { turnId: "turn-route-1", role: "user", relatedArtifactIds: ["f2-current", "f4-current"] },
         { turnId: "turn-route-1:assistant", role: "assistant", relatedArtifactIds: ["f2-current", "f4-current"] },
-        { turnId: "turn-route-1:model", role: "assistant", content: [{ kind: "text", text: "Model answer." }] },
+        { turnId: "turn-route-1:model", role: "assistant", content: [{ kind: "text", text: "Review the Design Optimization recommendation." }] },
       ]);
     } finally {
       await app.close();
