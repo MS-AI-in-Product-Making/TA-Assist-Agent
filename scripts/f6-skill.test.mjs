@@ -78,7 +78,10 @@ describe("Design Optimization skill contract", () => {
   it("uses product-capability user flow markers before the internal contract", () => {
     const skill = readSkill();
     const { userFacing } = splitSkillSections(skill);
-    expect(userFacing).toContain("Use the language of the user's current request for every response, question, progress update, and action description.");
+    expect(userFacing).toContain("Determine the interaction language from the user request that starts the current product workflow");
+    expect(userFacing).toContain("Keep that language locked for the entire workflow");
+    expect(userFacing).toContain("Do not re-detect language from confirmation answers");
+    expect(userFacing).toContain("Change the locked language only when the user explicitly requests a language change");
     expectOrdered(userFacing, [
       "## Purpose",
       "## Entry routing",

@@ -30,7 +30,10 @@ describe("product Agent Skills", () => {
 
     expect(skill).toMatch(new RegExp(`^---\\r?\\nname: ${name}\\r?$`, "m"));
     expect(skill).toMatch(new RegExp(`\\r?\\n# ${title}\\r?\\n`));
-    expect(skill).toContain("Use the language of the user's current request");
+    expect(skill).toContain("Determine the interaction language from the user request that starts the current product workflow");
+    expect(skill).toContain("Keep that language locked for the entire workflow");
+    expect(skill).toContain("Do not re-detect language from confirmation answers");
+    expect(skill).toContain("Change the locked language only when the user explicitly requests a language change");
     expect(userFacingSkill).not.toMatch(/\bF[0-7]\b/u);
     expect(userFacingSkill).not.toMatch(/\bFeature[ _-]?[0-7]\b/iu);
   });

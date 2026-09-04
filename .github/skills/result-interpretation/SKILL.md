@@ -7,7 +7,7 @@ argument-hint: "[<ta-workbook-path> | <interpretation-output-dir>]"
 
 # Result Interpretation
 
-Use the language of the user's current request for every response, question, progress update, and action description.
+Determine the interaction language from the user request that starts the current product workflow. Keep that language locked for the entire workflow, including every response, question, option label, progress update, action description, and final result. Do not re-detect language from confirmation answers, selected option labels, paths, worksheet names, artifact content, quoted text, tool output, or assistant messages. Change the locked language only when the user explicitly requests a language change or starts a new independent product workflow.
 
 Use product capability names only in user-facing questions, progress updates, operation descriptions, and result narratives.
 
