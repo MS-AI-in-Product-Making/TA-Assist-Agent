@@ -2,12 +2,12 @@ import type {
   F6AnalysisContextProposal,
   F6AnalysisContextV2,
   DrawingGovernanceResultV2,
+  F6FactorIdentity,
   F4ExcelComparisonResult,
   F4WorkflowCalculationResult,
   F2UserReport,
   F6InputClarification,
   F6InputProposal,
-  F6MaterializedDraft,
   F6OptimizationTargetV2,
   F6OptimizationTargetsProposal,
   F6OptimizationTargetsV2,
@@ -292,16 +292,21 @@ export interface F6OptimizationTargetsMaterializationPreview {
   readonly qualitativeDirections: readonly {
     readonly adjustmentClass: F6OptimizationTargetsProposal["directions"][number]["adjustmentClass"];
     readonly worksheetName: string;
-    readonly factorName?: string;
+    readonly factor?: F6FactorIdentity;
   }[];
-  readonly artifact: F6OptimizationTargetsV2;
+  readonly artifact?: F6OptimizationTargetsV2;
 }
 
-export interface F6InputMaterializationDraftReadyResult<TArtifact, TPreview> {
+export interface F6AnalysisContextMaterializationDraftReadyResult {
   readonly status: "draft_ready";
-  readonly draft: F6MaterializedDraft;
-  readonly artifact: TArtifact;
-  readonly preview: TPreview;
+  readonly artifact: F6AnalysisContextV2;
+  readonly preview: F6AnalysisContextMaterializationPreview;
+}
+
+export interface F6OptimizationTargetsMaterializationDraftReadyResult {
+  readonly status: "draft_ready";
+  readonly artifact?: F6OptimizationTargetsV2;
+  readonly preview: F6OptimizationTargetsMaterializationPreview;
 }
 
 export interface F6InputMaterializationClarificationResult {
@@ -310,11 +315,11 @@ export interface F6InputMaterializationClarificationResult {
 }
 
 export type F6AnalysisContextMaterializationResult =
-  | F6InputMaterializationDraftReadyResult<F6AnalysisContextV2, F6AnalysisContextMaterializationPreview>
+  | F6AnalysisContextMaterializationDraftReadyResult
   | F6InputMaterializationClarificationResult;
 
 export type F6OptimizationTargetsMaterializationResult =
-  | F6InputMaterializationDraftReadyResult<F6OptimizationTargetsV2, F6OptimizationTargetsMaterializationPreview>
+  | F6OptimizationTargetsMaterializationDraftReadyResult
   | F6InputMaterializationClarificationResult;
 
 export type F6InputMaterializationResult =

@@ -1,7 +1,7 @@
-import { createHash } from "node:crypto";
-
 import {
+  f6AnalysisContextProposalSchema,
   f6AnalysisContextV2Schema,
+  f6OptimizationTargetsProposalSchema,
   f6OptimizationTargetsV2Schema,
   type F6AnalysisContextProposal,
   type F6OptimizationTargetsProposal,
@@ -18,78 +18,8 @@ import type {
   ResolvedWorksheet,
 } from "./types.js";
 
-function sha256(content: string): string {
-  return createHash("sha256").update(content).digest("hex");
-}
-
 function normalize(value: string): string {
   return value.trim().toLowerCase();
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function hasOnlyKeys(candidate: Record<string, unknown>, allowedKeys: readonly string[]): boolean {
-  return Object.keys(candidate).every((key) => allowedKeys.includes(key));
-}
-
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0;
-}
-
-function isValidAnalysisContextProposal(proposal: unknown): proposal is F6AnalysisContextProposal {
-  if (!isObject(proposal)) return false;
-  if (!hasOnlyKeys(proposal, [
-    "proposalVersion",
-    "userText",
-    "worksheetSelectors",
-    "analysisObjectKind",
-    "functionalBoundary",
-    "operatingConditions",
-    "clarifications",
-  ])) return false;
-  if (proposal.proposalVersion !== "f6-analysis-context-proposal-v1") return false;
-  if (!isNonEmptyString(proposal.userText)) return false;
-  if (!Array.isArray(proposal.worksheetSelectors) || proposal.worksheetSelectors.length === 0
-    || proposal.worksheetSelectors.some((value) => !isNonEmptyString(value))) return false;
-  if (!Array.isArray(proposal.clarifications)) return false;
-  if (proposal.operatingConditions !== undefined
-    && (!Array.isArray(proposal.operatingConditions)
-      || proposal.operatingConditions.some((value) => !isNonEmptyString(value)))) return false;
-  return true;
-}
-
-function isValidTargetsProposal(proposal: unknown): proposal is F6OptimizationTargetsProposal {
-  if (!isObject(proposal)) return false;
-  if (!hasOnlyKeys(proposal, ["proposalVersion", "userText", "directions", "clarifications"])) return false;
-  if (proposal.proposalVersion !== "f6-optimization-targets-proposal-v1") return false;
-  if (!isNonEmptyString(proposal.userText)) return false;
-  if (!Array.isArray(proposal.clarifications)) return false;
-  if (!Array.isArray(proposal.directions) || proposal.directions.length === 0) return false;
-  const allowedAdjustment = new Set([
-    "factor_tolerance",
-    "factor_nominal",
-    "system_mean_shift",
-    "system_specification",
-    "factor_sigma",
-    "improvement_ratio",
-  ]);
-  for (const direction of proposal.directions) {
-    if (!isObject(direction)) return false;
-    if (!hasOnlyKeys(direction, ["adjustmentClass", "worksheetSelector", "factorSelector", "numericTarget"])) return false;
-    if (!isNonEmptyString(direction.worksheetSelector)) return false;
-    if (!isNonEmptyString(direction.adjustmentClass) || !allowedAdjustment.has(direction.adjustmentClass)) return false;
-    if (direction.factorSelector !== undefined && !isNonEmptyString(direction.factorSelector)) return false;
-    if (direction.numericTarget !== undefined) {
-      if (!isObject(direction.numericTarget)) return false;
-      if (!hasOnlyKeys(direction.numericTarget, ["field", "value", "unit"])) return false;
-      if (!isNonEmptyString(direction.numericTarget.field)) return false;
-      if (typeof direction.numericTarget.value !== "number" || !Number.isFinite(direction.numericTarget.value)) return false;
-      if (!isNonEmptyString(direction.numericTarget.unit)) return false;
-    }
-  }
-  return true;
 }
 
 function createClarification(
@@ -144,21 +74,6 @@ function ensureUniqueSelectors(selectors: readonly string[]): F6InputMaterializa
   );
 }
 
-function makeDraft(
-  kind: "analysis_context" | "optimization_targets",
-  proposal: F6AnalysisContextProposal | F6OptimizationTargetsProposal,
-  artifact: unknown,
-) {
-  const artifactHash = sha256(JSON.stringify(artifact));
-  const prefix = kind === "analysis_context" ? "f6-context-draft" : "f6-targets-draft";
-  return {
-    draftVersion: "f6-materialized-draft-v1" as const,
-    draftId: `${prefix}:${artifactHash.slice(0, 16)}`,
-    draftHash: artifactHash,
-    kind,
-    proposal,
-  };
-}
 
 export function resolveWorksheet(
   selector: string,
@@ -223,22 +138,24 @@ export function materializeF6AnalysisContext(
   proposal: F6AnalysisContextProposal,
   lineage: F6InputMaterializationLineage,
 ): F6AnalysisContextMaterializationResult {
-  if (!isValidAnalysisContextProposal(proposal)) {
+  const proposalParsed = f6AnalysisContextProposalSchema.safeParse(proposal);
+  if (!proposalParsed.success) {
     return clarificationResult([createClarification(
       "proposal_ambiguous",
       "Analysis context proposal shape is invalid; regenerate proposal without identity or authority fields.",
       ["proposal"],
     )]);
   }
+  const parsedProposal = proposalParsed.data;
 
   const stale = staleContextClarification(lineage);
   if (stale !== undefined) return clarificationResult([stale]);
 
-  const duplicate = ensureUniqueSelectors(proposal.worksheetSelectors);
+  const duplicate = ensureUniqueSelectors(parsedProposal.worksheetSelectors);
   if (duplicate !== undefined) return clarificationResult([duplicate]);
 
   const resolved: Array<{ selector: string; worksheet: ResolvedWorksheet }> = [];
-  for (const selector of proposal.worksheetSelectors) {
+  for (const selector of parsedProposal.worksheetSelectors) {
     const worksheet = resolveWorksheet(selector, lineage);
     if ("reasonCode" in worksheet) return clarificationResult([worksheet]);
     resolved.push({ selector, worksheet });
@@ -253,7 +170,7 @@ export function materializeF6AnalysisContext(
       worksheetName: worksheet.worksheetName,
       tableId: worksheet.tableId,
       baselineIdentity: worksheet.baselineIdentity,
-      engineeringNarrative: proposal.userText,
+      engineeringNarrative: parsedProposal.userText,
       operatingConditions: [],
       correlationRequirement: { mode: "NOT_PROVIDED" as const },
     })),
@@ -270,7 +187,6 @@ export function materializeF6AnalysisContext(
 
   return {
     status: "draft_ready",
-    draft: makeDraft("analysis_context", proposal, parsed.data),
     artifact: parsed.data,
     preview: {
       reviewContextId: lineage.reviewContextId,
@@ -312,19 +228,31 @@ export function materializeF6OptimizationTargets(
   proposal: F6OptimizationTargetsProposal,
   lineage: F6InputMaterializationLineage,
 ): F6OptimizationTargetsMaterializationResult {
-  if (!isValidTargetsProposal(proposal)) {
+  const proposalParsed = f6OptimizationTargetsProposalSchema.safeParse(proposal);
+  if (!proposalParsed.success) {
     return clarificationResult([createClarification(
       "proposal_ambiguous",
       "Optimization targets proposal shape is invalid; regenerate proposal without identity or authority fields.",
       ["proposal"],
     )]);
   }
+  const parsedProposal = proposalParsed.data;
 
   const stale = staleContextClarification(lineage);
   if (stale !== undefined) return clarificationResult([stale]);
 
   const clarifications: F6InputMaterializationClarification[] = [];
-  const qualitativeDirections: Array<{ adjustmentClass: F6OptimizationTargetsProposal["directions"][number]["adjustmentClass"]; worksheetName: string; factorName?: string }> = [];
+  const qualitativeDirections: Array<{
+    adjustmentClass: F6OptimizationTargetsProposal["directions"][number]["adjustmentClass"];
+    worksheetName: string;
+    factor?: {
+      worksheetName: string;
+      tableId: string;
+      sourceRow: number;
+      factorName: string;
+      unit: string;
+    };
+  }> = [];
   const worksheetTargets = new Map<string, {
     worksheet: ResolvedWorksheet;
     targets: Array<unknown>;
@@ -333,7 +261,7 @@ export function materializeF6OptimizationTargets(
   const specificationAccumulators = new Map<string, SpecificationAccumulator>();
   const emittedTargetKeys = new Set<string>();
 
-  for (const direction of proposal.directions) {
+  for (const direction of parsedProposal.directions) {
     const worksheet = resolveWorksheet(direction.worksheetSelector, lineage);
     if ("reasonCode" in worksheet) {
       clarifications.push(worksheet);
@@ -343,10 +271,18 @@ export function materializeF6OptimizationTargets(
     const worksheetKey = `${worksheet.worksheetName}\u0000${worksheet.tableId}`;
     if (!worksheetTargets.has(worksheetKey)) worksheetTargets.set(worksheetKey, { worksheet, targets: [] });
 
-    const addQualitative = (factorName?: string) => qualitativeDirections.push({
+    const addQualitative = (factor?: ResolvedFactor) => qualitativeDirections.push({
       adjustmentClass: direction.adjustmentClass,
       worksheetName: worksheet.worksheetName,
-      ...(factorName === undefined ? {} : { factorName }),
+      ...(factor === undefined ? {} : {
+        factor: {
+          worksheetName: factor.worksheetName,
+          tableId: factor.tableId,
+          sourceRow: factor.sourceRow,
+          factorName: factor.factorName,
+          unit: factor.unit,
+        },
+      }),
     });
 
     if (direction.adjustmentClass === "factor_tolerance") {
@@ -355,7 +291,12 @@ export function materializeF6OptimizationTargets(
         continue;
       }
       if (direction.numericTarget === undefined) {
-        addQualitative(direction.factorSelector);
+        const factor = resolveFactor(worksheet, direction.factorSelector, undefined);
+        if ("reasonCode" in factor) {
+          clarifications.push(factor);
+          continue;
+        }
+        addQualitative(factor);
         continue;
       }
       if (direction.numericTarget.field !== "upper_tolerance" && direction.numericTarget.field !== "lower_tolerance") {
@@ -391,7 +332,12 @@ export function materializeF6OptimizationTargets(
         continue;
       }
       if (direction.numericTarget === undefined) {
-        addQualitative(direction.factorSelector);
+        const factor = resolveFactor(worksheet, direction.factorSelector, undefined);
+        if ("reasonCode" in factor) {
+          clarifications.push(factor);
+          continue;
+        }
+        addQualitative(factor);
         continue;
       }
       if (direction.numericTarget.field !== "factor_nominal") {
@@ -426,11 +372,25 @@ export function materializeF6OptimizationTargets(
     }
 
     if (direction.adjustmentClass === "factor_sigma" || direction.adjustmentClass === "improvement_ratio") {
+      if (direction.factorSelector === undefined) {
+        pushClarification(
+          clarifications,
+          "proposal_ambiguous",
+          `${direction.adjustmentClass} direction requires factorSelector for exact factor binding.`,
+          ["factorSelector"],
+        );
+        continue;
+      }
       if (direction.numericTarget !== undefined) {
         pushClarification(clarifications, "proposal_ambiguous", "Numeric target is not supported for this adjustment class in chat proposal v1.", ["numericTarget"]);
         continue;
       }
-      addQualitative(direction.factorSelector);
+      const factor = resolveFactor(worksheet, direction.factorSelector, undefined);
+      if ("reasonCode" in factor) {
+        clarifications.push(factor);
+        continue;
+      }
+      addQualitative(factor);
       continue;
     }
 
@@ -584,12 +544,9 @@ export function materializeF6OptimizationTargets(
   if (worksheetRecords.length === 0) {
     return {
       status: "draft_ready",
-      draft: makeDraft("optimization_targets", proposal, artifactCandidate),
-      artifact: artifactCandidate as unknown as ReturnType<typeof f6OptimizationTargetsV2Schema.parse>,
       preview: {
         reviewContextId: lineage.reviewContextId,
         qualitativeDirections,
-        artifact: artifactCandidate as unknown as ReturnType<typeof f6OptimizationTargetsV2Schema.parse>,
       },
     };
   }
@@ -605,7 +562,6 @@ export function materializeF6OptimizationTargets(
 
   return {
     status: "draft_ready",
-    draft: makeDraft("optimization_targets", proposal, parsed.data),
     artifact: parsed.data,
     preview: {
       reviewContextId: lineage.reviewContextId,

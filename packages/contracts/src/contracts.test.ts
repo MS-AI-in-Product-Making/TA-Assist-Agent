@@ -6367,11 +6367,67 @@ describe("F5.1 objective interpretation contracts", () => {
           },
         }).success).toBe(false);
 
-        const materializationResult = {
+        const contextArtifact = {
+          contractVersion: "v1",
+          inputClassification: "confidential",
+          contextVersion: "f6-analysis-context-v2",
+          workbookContentHash: "a".repeat(64),
+          worksheets: [{
+            worksheetName: "gap w rubber_TPoverload500g",
+            tableId: "table-gap-1",
+            baselineIdentity: {
+              calculationVersion: "excel-ta-v1",
+              projectReference: "project-a",
+              runReference: "f4-run-a",
+              workbookContentHash: "a".repeat(64),
+              worksheetName: "gap w rubber_TPoverload500g",
+              tableId: "table-gap-1",
+            },
+            engineeringNarrative: "请按 500g load 定义 GAP 分析上下文。",
+            operatingConditions: [],
+            correlationRequirement: { mode: "NOT_PROVIDED" },
+          }],
+        } as const;
+
+        const contextResult = {
+          status: "draft_ready",
+          artifact: contextArtifact,
+          preview: {
+            reviewContextId: "review-context-2",
+            worksheetBindings: [{
+              selector: "gap w rubber_TPoverload500g",
+              worksheetName: "gap w rubber_TPoverload500g",
+              tableId: "table-gap-1",
+            }],
+            artifact: contextArtifact,
+          },
+        } as const;
+        expect(f6MaterializationResultSchema.parse(contextResult)).toEqual(contextResult);
+
+        const qualitativeOnlyResult = {
+          status: "draft_ready",
+          preview: {
+            reviewContextId: "review-context-2",
+            qualitativeDirections: [{
+              adjustmentClass: "factor_sigma",
+              worksheetName: "gap w rubber_TPoverload500g",
+              factor: {
+                worksheetName: "gap w rubber_TPoverload500g",
+                tableId: "table-gap-1",
+                sourceRow: 14,
+                factorName: "battery flatness",
+                unit: "mm",
+              },
+            }],
+          },
+        } as const;
+        expect(f6MaterializationResultSchema.parse(qualitativeOnlyResult)).toEqual(qualitativeOnlyResult);
+
+        const materializationResultWithDraft = {
           status: "draft_ready",
           draft,
         } as const;
-        expect(f6MaterializationResultSchema.parse(materializationResult)).toEqual(materializationResult);
+        expect(f6MaterializationResultSchema.safeParse(materializationResultWithDraft).success).toBe(false);
       });
 
       it("preserves the legacy feature_not_available comparison contracts", () => {

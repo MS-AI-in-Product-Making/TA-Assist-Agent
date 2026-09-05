@@ -6706,10 +6706,50 @@ export const f6MaterializedDraftSchema = z.object({
   }
 });
 
+const f6MaterializationQualitativeDirectionSchema = z.object({
+  adjustmentClass: z.enum(["factor_tolerance", "factor_nominal", "system_mean_shift", "system_specification", "factor_sigma", "improvement_ratio"]),
+  worksheetName: z.string().min(1),
+  factor: f6FactorIdentitySchema.optional(),
+}).strict();
+
+const f6AnalysisContextMaterializationPreviewSchema = z.object({
+  reviewContextId: z.string().min(1),
+  worksheetBindings: z.array(z.object({
+    selector: z.string().min(1),
+    worksheetName: z.string().min(1),
+    tableId: z.string().min(1),
+  }).strict()),
+  artifact: f6AnalysisContextV2Schema,
+}).strict();
+
+const f6OptimizationTargetsMaterializationPreviewSchema = z.object({
+  reviewContextId: z.string().min(1),
+  qualitativeDirections: z.array(f6MaterializationQualitativeDirectionSchema),
+  artifact: f6OptimizationTargetsV2Schema.optional(),
+}).strict();
+
 export const f6MaterializationResultSchema = z.discriminatedUnion("status", [
-  z.object({ status: z.literal("draft_ready"), draft: f6MaterializedDraftSchema }).strict(),
+  z.object({
+    status: z.literal("draft_ready"),
+    artifact: z.union([f6AnalysisContextV2Schema, f6OptimizationTargetsV2Schema]).optional(),
+    preview: z.union([f6AnalysisContextMaterializationPreviewSchema, f6OptimizationTargetsMaterializationPreviewSchema]),
+  }).strict(),
   z.object({ status: z.literal("clarification_required"), clarifications: z.array(f6InputClarificationSchema).min(1) }).strict(),
-]);
+]).superRefine((result, context) => {
+  if (result.status !== "draft_ready") return;
+  if ("worksheetBindings" in result.preview) {
+    if (result.artifact === undefined || !("contextVersion" in result.artifact)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "analysis context draft_ready requires f6-analysis-context-v2 artifact", path: ["artifact"] });
+    }
+    return;
+  }
+  if (result.artifact !== undefined && !("targetVersion" in result.artifact)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "optimization targets draft_ready artifact must be f6-optimization-targets-v2", path: ["artifact"] });
+  }
+  if (("artifact" in result.preview) && result.preview.artifact !== undefined && result.artifact === undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "preview artifact requires root artifact", path: ["artifact"] });
+  }
+});
 
 export const f6InputDecisionSchema = z.discriminatedUnion("outcome", [
   z.object({ outcome: z.literal("NOT_PROVIDED") }).strict(),
