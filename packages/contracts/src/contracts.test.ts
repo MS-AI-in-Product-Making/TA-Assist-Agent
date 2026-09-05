@@ -5116,6 +5116,34 @@ describe("F5.1 objective interpretation contracts", () => {
         expect(f6OptimizationResultSchema.safeParse({ ...resultV2, optimizationVersion: "f6-optimization-v1" }).success).toBe(false);
       });
 
+      it("accepts governed observation and model-ledger rejected reason codes in provenance decisions", () => {
+        const decisionTemplate = {
+          outcome: "REJECTED" as const,
+          artifactReference: artifactReference("Feature5-Image-Observations.json"),
+          inputReferenceHash: "f".repeat(64),
+        };
+        const candidate = {
+          ...resultV2,
+          provenance: {
+            ...resultV2.provenance,
+            modelInterpretationDecision: {
+              ...decisionTemplate,
+              reasonCode: "model_interpretation_evidence_mismatch" as const,
+            },
+            analysisContextDecision: {
+              ...decisionTemplate,
+              reasonCode: "observation_hash_mismatch" as const,
+            },
+            optimizationTargetsDecision: {
+              ...decisionTemplate,
+              reasonCode: "observation_identity_mismatch" as const,
+            },
+          },
+        };
+
+        expect(f6OptimizationResultSchema.parse(candidate)).toEqual(candidate);
+      });
+
       it("accepts truthful caller-target scenario evidence and rejects empty evidence", () => {
         const completedOption = {
           optionId: "Analysis-A:caller-target",

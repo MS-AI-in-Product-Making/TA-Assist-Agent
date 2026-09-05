@@ -20,7 +20,9 @@ import {
 import {
   createF6ArtifactBundleFixture,
   fixtureFileSha256,
+  installF5CurrentObservationLedger,
   installF6V2Evidence,
+  installF6ModelInterpretation,
   rewriteFixtureJson,
 } from "./f6-artifact-test-fixture.mjs";
 import { runF6Cli, runF6FullValidation } from "./run-f6-full-validation.mjs";
@@ -105,8 +107,17 @@ function createRealBundle(options) {
 
 function runRealF6(bundle, runId, dependencyOverrides = {}, parsedOverrides = {}) {
   const runRoot = path.join(bundle.publishRoot, "f6-runs", runId);
+  const parsed = { ...bundle, ...parsedOverrides };
+  if (!Object.hasOwn(parsedOverrides, "modelInterpretationArtifact")
+    && typeof bundle.modelInterpretationArtifactRoot === "string"
+    && typeof bundle.modelInterpretationArtifact === "string") {
+    parsed.modelInterpretationArtifact = path.join(
+      bundle.modelInterpretationArtifactRoot,
+      bundle.modelInterpretationArtifact,
+    );
+  }
   const result = runF6FullValidation({}, {
-    parseArgs: () => ({ ...bundle, ...parsedOverrides }),
+    parseArgs: () => parsed,
     resolveLayout: () => ({
       runId,
       runRoot,
@@ -656,6 +667,26 @@ describe("F6 real artifact full flow", () => {
         finalReportMarkdown: "Feature6-Report.md",
         runSummary: "Feature6-Run-Summary.json",
       },
+    });
+  });
+
+  it("keeps model interpretation caller-authorized by auto-inheriting the current F5 observation ledger", () => {
+    const bundle = createRealBundle();
+    installF5CurrentObservationLedger(bundle);
+    installF6ModelInterpretation(bundle);
+    bundle.imageObservationArtifact = undefined;
+    bundle.evidenceArtifactRoot = undefined;
+
+    const { result, runRoot } = runRealF6(bundle, "auto-inherit-f5-observation", {}, {
+      imageObservationArtifact: undefined,
+    });
+    const summary = readJson(path.join(runRoot, "Feature6-Run-Summary.json"));
+
+    expect(result.status).toBe("completed");
+    expect(summary.inputDecisions.modelInterpretation).toMatchObject({ outcome: "CALLER_AUTHORIZED" });
+    expect(summary.sources.imageObservation).toEqual({
+      artifact: "Feature5-Image-Observations.json",
+      contentHash: fixtureFileSha256(path.join(bundle.f5ArtifactRoot, "Feature5-Image-Observations.json")),
     });
   });
 

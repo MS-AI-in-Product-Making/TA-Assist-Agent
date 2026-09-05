@@ -6759,7 +6759,16 @@ export const f6InputDecisionSchema = z.discriminatedUnion("outcome", [
     outcome: z.literal("REJECTED"),
     artifactReference: f6ArtifactReferenceSchema.optional(),
     inputReferenceHash: sha256Schema,
-    reasonCode: z.enum(["schema_invalid", "identity_mismatch", "unit_mismatch", "path_invalid"]),
+    reasonCode: z.enum([
+      "schema_invalid",
+      "identity_mismatch",
+      "unit_mismatch",
+      "path_invalid",
+      "observation_evidence_missing",
+      "observation_hash_mismatch",
+      "observation_identity_mismatch",
+      "model_interpretation_evidence_mismatch",
+    ]),
   }).strict(),
 ]);
 

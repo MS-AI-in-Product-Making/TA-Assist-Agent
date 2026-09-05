@@ -16,6 +16,9 @@ const CORE_SCOPES = [
   "stack_start",
   "direction",
 ];
+const F5_OBSERVATION_COPY_NAME = "Feature5-Image-Observations.json";
+const F5_RUN_SUMMARY_NAME = "Feature5-Run-Summary.json";
+const F5_MANIFEST_NAME = "manifest.json";
 
 function sourceCells(worksheetName, sourceRow) {
   return {
@@ -369,6 +372,73 @@ export function installF6V2Evidence(bundle) {
   return { artifact, evidenceArtifactRoot, imageObservationArtifact };
 }
 
+export function installF5CurrentObservationLedger(bundle) {
+  const artifact = createF6V2ObservationArtifact(bundle);
+  const f5 = createF5DataInterpretation({
+    contractVersion: "v1",
+    inputClassification: "confidential",
+    workbook: { fileName: "Anonymous.xlsx", contentHash: F6_FIXTURE_WORKBOOK_HASH },
+    knowledgeBaseVersion: "interpretation-rules-v1",
+    worksheets: artifact.worksheets.map((worksheet, index) => ({
+      worksheetName: worksheet.worksheetName,
+      imageReference: worksheet.imageReference,
+      governanceRows: bundle.f3Worksheets[index].rows,
+      calculationResult: bundle.calculations[index],
+      observationVersion: artifact.observationVersion,
+      contextSnapshot: worksheet.contextSnapshot,
+      imageObservations: worksheet.observations,
+    })),
+  });
+  writeFixtureJson(bundle.paths.f5, f5);
+
+  const observationPath = path.join(bundle.f5ArtifactRoot, F5_OBSERVATION_COPY_NAME);
+  writeFixtureJson(observationPath, artifact);
+  const imageObservationsSha256 = fixtureFileSha256(observationPath);
+  writeFixtureJson(path.join(bundle.f5ArtifactRoot, F5_RUN_SUMMARY_NAME), {
+    contractVersion: "v1",
+    featureId: "F5",
+    status: "completed",
+    sources: {
+      f1: "Feature1-Report.json",
+      f3: "Feature3-Report.json",
+      f4: "Feature4-Calculation.json",
+      observation: F5_OBSERVATION_COPY_NAME,
+    },
+    counts: {
+      worksheetCount: bundle.selectedWorksheetNames.length,
+      completedWorksheetCount: bundle.selectedWorksheetNames.length,
+      inputRejectedWorksheetCount: 0,
+      statementCount: f5.summary.statementCount,
+      clarificationCount: f5.summary.clarificationCount,
+      assumptionCount: f5.summary.assumptionCount,
+    },
+    hashes: {
+      reportJsonSha256: fixtureFileSha256(bundle.paths.f5),
+      reportMarkdownSha256: "0".repeat(64),
+      imageObservationsSha256,
+    },
+  });
+  writeFixtureJson(path.join(bundle.f5ArtifactRoot, F5_MANIFEST_NAME), {
+    contractVersion: "v1",
+    featureId: "F5",
+    status: "completed",
+    runId: "2026-09-05T07-35-30-533Z",
+    artifacts: {
+      reportJson: "Feature5-Report.json",
+      reportMarkdown: "Feature5-Report.md",
+      imageObservations: F5_OBSERVATION_COPY_NAME,
+      runSummary: F5_RUN_SUMMARY_NAME,
+    },
+  });
+  Object.assign(bundle, { imageObservationArtifact: F5_OBSERVATION_COPY_NAME });
+  return {
+    artifact,
+    observationPath,
+    runSummaryPath: path.join(bundle.f5ArtifactRoot, F5_RUN_SUMMARY_NAME),
+    manifestPath: path.join(bundle.f5ArtifactRoot, F5_MANIFEST_NAME),
+  };
+}
+
 function baselineIdentity(calculation, worksheetName) {
   return {
     calculationVersion: calculation.calculationVersion,
@@ -505,6 +575,11 @@ export function installF6ModelInterpretation(bundle, { version = "v1" } = {}) {
     "00000000-0000-4000-8000-000000000001",
   );
   const modelInterpretationArtifact = "Feature6-Model-Interpretation.json";
+  const observationPath = bundle.imageObservationArtifact === undefined
+    ? undefined
+    : bundle.evidenceArtifactRoot !== undefined
+      ? path.join(bundle.evidenceArtifactRoot, bundle.imageObservationArtifact)
+      : path.join(bundle.f5ArtifactRoot, bundle.imageObservationArtifact);
   const artifact = {
     contractVersion: "v1",
     inputClassification: "confidential",
@@ -542,7 +617,7 @@ export function installF6ModelInterpretation(bundle, { version = "v1" } = {}) {
           ...(bundle.imageObservationArtifact === undefined ? {} : {
             imageObservation: {
               artifact: bundle.imageObservationArtifact,
-              contentHash: fixtureFileSha256(path.join(bundle.evidenceArtifactRoot, bundle.imageObservationArtifact)),
+              contentHash: fixtureFileSha256(observationPath),
               observationVersion: "f5-image-observation-v2",
             },
           }),

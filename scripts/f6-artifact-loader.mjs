@@ -30,9 +30,73 @@ const ARTIFACTS = Object.freeze({
   f4: "Feature4-Calculation.json",
   f5: "Feature5-Report.json",
 });
+const F5_MANIFEST_ARTIFACT = "manifest.json";
 const MAX_JSON_BYTES = 10 * 1024 * 1024;
 const REPOSITORY_ROOT = path.resolve(process.cwd());
 const CONTROLLED_OUTPUT_ROOT = path.join(REPOSITORY_ROOT, "test", "demo-output");
+
+function isRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+const f5ManifestSchema = {
+  safeParse(value) {
+    if (!isRecord(value) || value.contractVersion !== "v1" || value.featureId !== "F5") {
+      return { success: false };
+    }
+    if (!isRecord(value.artifacts)) return { success: false };
+    const { artifacts } = value;
+    const asArtifactName = (raw) => (
+      typeof raw === "string"
+      && raw.trim().length > 0
+      && raw === path.basename(raw)
+      && !raw.includes("/")
+      && !raw.includes("\\")
+    )
+      ? raw
+      : undefined;
+    const reportJson = asArtifactName(artifacts.reportJson);
+    const runSummary = asArtifactName(artifacts.runSummary);
+    const imageObservations = asArtifactName(artifacts.imageObservations);
+    if (reportJson === undefined) return { success: false };
+    if ((runSummary === undefined) !== (imageObservations === undefined)) return { success: false };
+    return {
+      success: true,
+      data: {
+        reportJson,
+        runSummary,
+        imageObservations,
+      },
+    };
+  },
+};
+
+const f5RunSummarySchema = {
+  safeParse(value) {
+    if (!isRecord(value) || value.contractVersion !== "v1" || value.featureId !== "F5") {
+      return { success: false };
+    }
+    if (!isRecord(value.hashes)) return { success: false };
+    const reportJsonSha256 = value.hashes.reportJsonSha256;
+    const imageObservationsSha256 = value.hashes.imageObservationsSha256;
+    if (typeof reportJsonSha256 !== "string" || !/^[a-f0-9]{64}$/.test(reportJsonSha256)) {
+      return { success: false };
+    }
+    if (imageObservationsSha256 !== undefined
+      && (typeof imageObservationsSha256 !== "string" || !/^[a-f0-9]{64}$/.test(imageObservationsSha256))) {
+      return { success: false };
+    }
+    return {
+      success: true,
+      data: {
+        hashes: {
+          reportJsonSha256,
+          imageObservationsSha256,
+        },
+      },
+    };
+  },
+};
 
 function inputRejected(reasonCode, artifactReference) {
   return { status: "inputRejected", reasonCode, artifactReference };
@@ -520,29 +584,12 @@ export function loadF6ArtifactBundle({
   }
 
   const optionalRequestFields = {};
-  const hasOptionalEvidence = [
-    imageObservationArtifact,
-    supplierCapabilityArtifact,
-    datumStrategyArtifact,
-    costArtifact,
-    analysisContextArtifact,
-    optimizationTargetsArtifact,
-  ].some((artifact) => artifact !== undefined);
-  let evidenceRoot;
-  if (evidenceArtifactRoot !== undefined || hasOptionalEvidence) {
-    const validatedRoot = validatedGovernedRoot(evidenceArtifactRoot, "evidenceArtifactRoot", publishRoot);
-    if (validatedRoot.rejection) return validatedRoot.rejection;
-    evidenceRoot = validatedRoot.filePath;
-  }
-  if (imageObservationArtifact !== undefined) {
-    const loaded = readOptionalArtifact(evidenceRoot, imageObservationArtifact, f5ImageObservationArtifactSchema, hooks);
-    if (loaded.rejection) return loaded.rejection;
-    const observation = loaded.value;
+  const validateObservationIdentity = (observation, artifactReference) => {
     const observationByName = indexExactlyOnce(observation.worksheets, selection);
     if (observation.workbookContentHash !== workbook.contentHash
       || observation.worksheets.length !== selection.length
       || !observationByName) {
-      return inputRejected("artifact_identity_mismatch", loaded.reference.artifact);
+      return inputRejected("observation_identity_mismatch", artifactReference);
     }
     const expectedWorksheets = [];
     for (const worksheetName of selection) {
@@ -550,7 +597,7 @@ export function loadF6ArtifactBundle({
       const f3Worksheet = f3ByName.get(worksheetName);
       const baselineCalculation = f4ByName.get(worksheetName).calculation;
       if (!isDeepStrictEqual(observed.imageReference, f5ByName.get(worksheetName).imageReference)) {
-        return inputRejected("artifact_identity_mismatch", loaded.reference.artifact);
+        return inputRejected("observation_identity_mismatch", artifactReference);
       }
       expectedWorksheets.push({
         worksheetName,
@@ -576,15 +623,99 @@ export function loadF6ArtifactBundle({
         worksheets: expectedWorksheets,
       });
     } catch {
-      return inputRejected("artifact_identity_mismatch", loaded.reference.artifact);
+      return inputRejected("observation_identity_mismatch", artifactReference);
     }
     if (expectedF5.status === "input_rejected"
       || expectedF5.worksheets.some((worksheet) =>
         !isDeepStrictEqual(worksheet, f5ByName.get(worksheet.worksheetName)))) {
-      return inputRejected("artifact_identity_mismatch", loaded.reference.artifact);
+      return inputRejected("observation_identity_mismatch", artifactReference);
     }
+    return undefined;
+  };
+
+  let inheritedObservation;
+  const f5ManifestLoaded = readArtifact(f5Root, F5_MANIFEST_ARTIFACT, f5ManifestSchema, hooks);
+  if (!f5ManifestLoaded.rejection) {
+    const declared = f5ManifestLoaded.value;
+    if (declared.reportJson !== ARTIFACTS.f5) {
+      return inputRejected("observation_identity_mismatch", F5_MANIFEST_ARTIFACT);
+    }
+    if (declared.imageObservations !== undefined) {
+      const summaryLoaded = readArtifact(f5Root, declared.runSummary, f5RunSummarySchema, hooks);
+      if (summaryLoaded.rejection) {
+        return observationLoadRejection(summaryLoaded.rejection.reasonCode, declared.runSummary);
+      }
+      if (summaryLoaded.value.hashes.reportJsonSha256 !== f5Loaded.reference.contentHash) {
+        return inputRejected("observation_hash_mismatch", ARTIFACTS.f5);
+      }
+      if (typeof summaryLoaded.value.hashes.imageObservationsSha256 !== "string") {
+        return inputRejected("observation_evidence_missing", declared.runSummary);
+      }
+      const observationLoaded = readArtifact(
+        f5Root,
+        declared.imageObservations,
+        f5ImageObservationArtifactSchema,
+        hooks,
+      );
+      if (observationLoaded.rejection) {
+        return observationLoadRejection(observationLoaded.rejection.reasonCode, declared.imageObservations);
+      }
+      if (observationLoaded.reference.contentHash !== summaryLoaded.value.hashes.imageObservationsSha256) {
+        return inputRejected("observation_hash_mismatch", declared.imageObservations);
+      }
+      const identityRejection = validateObservationIdentity(
+        observationLoaded.value,
+        observationLoaded.reference.artifact,
+      );
+      if (identityRejection) return identityRejection;
+      inheritedObservation = {
+        value: observationLoaded.value,
+        reference: observationLoaded.reference,
+      };
+    }
+  } else if (f5ManifestLoaded.rejection.reasonCode !== "artifact_missing") {
+    return inputRejected("observation_identity_mismatch", F5_MANIFEST_ARTIFACT);
+  }
+
+  const hasOptionalEvidence = [
+    imageObservationArtifact,
+    supplierCapabilityArtifact,
+    datumStrategyArtifact,
+    costArtifact,
+    analysisContextArtifact,
+    optimizationTargetsArtifact,
+  ].some((artifact) => artifact !== undefined);
+  let evidenceRoot;
+  if (evidenceArtifactRoot !== undefined || hasOptionalEvidence) {
+    const validatedRoot = validatedGovernedRoot(evidenceArtifactRoot, "evidenceArtifactRoot", publishRoot);
+    if (validatedRoot.rejection) return validatedRoot.rejection;
+    evidenceRoot = validatedRoot.filePath;
+  }
+  const useObservation = (loaded) => {
     optionalRequestFields.imageObservationReference = loaded.reference;
     sourceReferences.imageObservation = loaded.reference;
+  };
+  if (imageObservationArtifact !== undefined) {
+    const loaded = readOptionalArtifact(evidenceRoot, imageObservationArtifact, f5ImageObservationArtifactSchema, hooks);
+    if (loaded.rejection) return observationLoadRejection(loaded.rejection.reasonCode, imageObservationArtifact);
+    const identityRejection = validateObservationIdentity(loaded.value, loaded.reference.artifact);
+    if (identityRejection) return identityRejection;
+    if (inheritedObservation !== undefined) {
+      if (loaded.reference.artifact !== inheritedObservation.reference.artifact) {
+        return inputRejected("observation_identity_mismatch", loaded.reference.artifact);
+      }
+      if (loaded.reference.contentHash !== inheritedObservation.reference.contentHash) {
+        return inputRejected("observation_hash_mismatch", loaded.reference.artifact);
+      }
+      if (!isDeepStrictEqual(loaded.value, inheritedObservation.value)) {
+        return inputRejected("observation_identity_mismatch", loaded.reference.artifact);
+      }
+      useObservation(inheritedObservation);
+    } else {
+      useObservation(loaded);
+    }
+  } else if (inheritedObservation !== undefined) {
+    useObservation(inheritedObservation);
   }
 
   if (supplierCapabilityArtifact !== undefined) {
@@ -821,9 +952,12 @@ export function loadF6ArtifactBundle({
             || !isDeepStrictEqual(worksheet.sourceReferences.f2, sourceReferences.f2)
             || !isDeepStrictEqual(worksheet.sourceReferences.f4, sourceReferences.f4)
             || !isDeepStrictEqual(worksheet.sourceReferences.f5, sourceReferences.f5)
-            || !isDeepStrictEqual(worksheet.sourceReferences.image, expectedImageReference)
-            || !isDeepStrictEqual(worksheet.sourceReferences.imageObservation, expectedObservationReference)) {
+            || !isDeepStrictEqual(worksheet.sourceReferences.image, expectedImageReference)) {
             rejectionReason = "identity_mismatch";
+            break;
+          }
+          if (!isDeepStrictEqual(worksheet.sourceReferences.imageObservation, expectedObservationReference)) {
+            rejectionReason = "model_interpretation_evidence_mismatch";
             break;
           }
           for (const claim of worksheet.calculationClaims) {
@@ -916,4 +1050,13 @@ export function loadF6ArtifactBundle({
     modelInterpretation,
     inputDecisions,
   };
+}
+
+function observationLoadRejection(reasonCode, artifactReference) {
+  return inputRejected(
+    reasonCode === "artifact_missing"
+      ? "observation_evidence_missing"
+      : "observation_identity_mismatch",
+    artifactReference,
+  );
 }

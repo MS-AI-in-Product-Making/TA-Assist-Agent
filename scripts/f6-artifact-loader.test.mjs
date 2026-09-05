@@ -24,6 +24,7 @@ import {
   createF6ArtifactBundleFixture,
   F6_FIXTURE_RUN_ID,
   F6_FIXTURE_WORKBOOK_HASH,
+  installF5CurrentObservationLedger,
   installF6ModelInterpretation,
   installF6V2Evidence,
   installF6VersionedContextAndTargets,
@@ -770,6 +771,55 @@ describe("F6 optional governed evidence", () => {
     expect(result.request).not.toHaveProperty("costEvidence");
   });
 
+  it("auto-inherits current F5 observation copy without explicit compatibility input", () => {
+    const bundle = setupBundle();
+    installF5CurrentObservationLedger(bundle);
+    installF6ModelInterpretation(bundle);
+    bundle.imageObservationArtifact = undefined;
+    bundle.evidenceArtifactRoot = undefined;
+
+    const result = loadF6ArtifactBundle(bundle);
+
+    expect(result.status, JSON.stringify(result)).toBe("accepted");
+    expect(result.sourceReferences.imageObservation).toEqual({
+      artifact: "Feature5-Image-Observations.json",
+      contentHash: sha256(path.join(bundle.f5ArtifactRoot, "Feature5-Image-Observations.json")),
+    });
+    expect(result.request.imageObservationReference).toEqual(result.sourceReferences.imageObservation);
+    expect(result.inputDecisions.modelInterpretation).toMatchObject({ outcome: "CALLER_AUTHORIZED" });
+  });
+
+  it("rejects when current F5 manifest declares observation but copied artifact is missing", () => {
+    const bundle = setupBundle();
+    const installed = installF5CurrentObservationLedger(bundle);
+    rmSync(installed.observationPath);
+
+    expectRejected(loadF6ArtifactBundle(bundle), "observation_evidence_missing", "Feature5-Image-Observations.json");
+  });
+
+  it("rejects when current F5 summary hash mismatches copied observation bytes", () => {
+    const bundle = setupBundle();
+    const installed = installF5CurrentObservationLedger(bundle);
+    rewriteJson(installed.runSummaryPath, (summary) => {
+      summary.hashes.imageObservationsSha256 = "f".repeat(64);
+    });
+
+    expectRejected(loadF6ArtifactBundle(bundle), "observation_hash_mismatch", "Feature5-Image-Observations.json");
+  });
+
+  it("rejects explicit compatibility input when source identity differs from current F5 copy", () => {
+    const bundle = setupBundle();
+    installF5CurrentObservationLedger(bundle);
+    bundle.evidenceArtifactRoot = setupEvidenceRoot(bundle);
+    bundle.imageObservationArtifact = "observations.json";
+    writeJson(
+      path.join(bundle.evidenceArtifactRoot, bundle.imageObservationArtifact),
+      readJson(path.join(bundle.f5ArtifactRoot, "Feature5-Image-Observations.json")),
+    );
+
+    expectRejected(loadF6ArtifactBundle(bundle), "observation_identity_mismatch", "observations.json");
+  });
+
   it("loads an identity-bound model interpretation from its independent root", () => {
     const bundle = setupBundle();
     const installed = installF6ModelInterpretation(bundle);
@@ -842,6 +892,26 @@ describe("F6 optional governed evidence", () => {
     expect(result.modelInterpretation.worksheets[0].sourceReferences.imageObservation).toEqual({
       ...result.sourceReferences.imageObservation,
       observationVersion: "f5-image-observation-v2",
+    });
+  });
+
+  it("soft-rejects model interpretation with mismatched observation ledger reference", () => {
+    const bundle = setupBundle();
+    installF5CurrentObservationLedger(bundle);
+    const installed = installF6ModelInterpretation(bundle);
+    rewriteJson(installed.filePath, (artifact) => {
+      artifact.worksheets[0].sourceReferences.imageObservation.contentHash = "f".repeat(64);
+    });
+    bundle.imageObservationArtifact = undefined;
+    bundle.evidenceArtifactRoot = undefined;
+
+    const result = loadF6ArtifactBundle(bundle);
+
+    expect(result.status).toBe("accepted");
+    expect(result.modelInterpretation).toBeUndefined();
+    expect(result.inputDecisions.modelInterpretation).toMatchObject({
+      outcome: "REJECTED",
+      reasonCode: "model_interpretation_evidence_mismatch",
     });
   });
 
@@ -965,34 +1035,34 @@ describe("F6 optional governed evidence", () => {
       artifact.worksheets[0].contextSnapshot.dimensionDescription = "Other loop";
     });
 
-    expectRejected(loadF6ArtifactBundle(bundle), "artifact_identity_mismatch", "observations.json");
+    expectRejected(loadF6ArtifactBundle(bundle), "observation_identity_mismatch", "observations.json");
   });
 
   it.each([
-    ["imageObservationArtifact"],
-    ["supplierCapabilityArtifact"],
-    ["datumStrategyArtifact"],
-    ["costArtifact"],
-  ])("rejects an explicitly supplied missing %s", (field) => {
+    ["imageObservationArtifact", "observation_evidence_missing"],
+    ["supplierCapabilityArtifact", "artifact_missing"],
+    ["datumStrategyArtifact", "artifact_missing"],
+    ["costArtifact", "artifact_missing"],
+  ])("rejects an explicitly supplied missing %s", (field, reasonCode) => {
     const bundle = setupBundle();
     setupEvidenceRoot(bundle);
     bundle[field] = `${field}.json`;
 
-    expectRejected(loadF6ArtifactBundle(bundle), "artifact_missing", `${field}.json`);
+    expectRejected(loadF6ArtifactBundle(bundle), reasonCode, `${field}.json`);
   });
 
   it.each([
-    ["imageObservationArtifact"],
-    ["supplierCapabilityArtifact"],
-    ["datumStrategyArtifact"],
-    ["costArtifact"],
-  ])("rejects malformed supplied %s", (field) => {
+    ["imageObservationArtifact", "observation_identity_mismatch"],
+    ["supplierCapabilityArtifact", "artifact_contract_invalid"],
+    ["datumStrategyArtifact", "artifact_contract_invalid"],
+    ["costArtifact", "artifact_contract_invalid"],
+  ])("rejects malformed supplied %s", (field, reasonCode) => {
     const bundle = setupBundle();
     setupEvidenceRoot(bundle);
     bundle[field] = `${field}.json`;
     writeFileSync(path.join(bundle.evidenceArtifactRoot, bundle[field]), "{", "utf8");
 
-    expectRejected(loadF6ArtifactBundle(bundle), "artifact_contract_invalid", `${field}.json`);
+    expectRejected(loadF6ArtifactBundle(bundle), reasonCode, `${field}.json`);
   });
 
   it("loads strict supplier evidence but does not guess row bindings", () => {
