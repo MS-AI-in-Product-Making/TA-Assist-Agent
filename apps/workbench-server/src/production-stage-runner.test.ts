@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -136,6 +136,104 @@ describe("runProductionStage output gating", () => {
       );
 
       expect(result.result).toBeDefined();
+    } finally {
+      await rm(serverRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("passes only caller-authorized F6 input references and registers the governed five-pack", async () => {
+    const serverRoot = await mkdtemp(join(tmpdir(), "ta-task5-f6-"));
+    try {
+      const sessionId = createEnvironment("f6_running").sessionId;
+      const publishRoot = join(serverRoot, "runtime", "workbench", "runner-output", sessionId);
+      const managedRoot = join(publishRoot, "managed");
+      const outputDir = join(managedRoot, "f6");
+      await Promise.all([
+        mkdir(outputDir, { recursive: true }),
+        mkdir(join(managedRoot, "f2"), { recursive: true }),
+        mkdir(join(managedRoot, "f3"), { recursive: true }),
+        mkdir(join(managedRoot, "f4"), { recursive: true }),
+        mkdir(join(managedRoot, "f5"), { recursive: true }),
+      ]);
+      const optimizationJsonPath = join(outputDir, "Feature6-Optimization.json");
+      const optimizationMdPath = join(outputDir, "Feature6-Optimization.md");
+      const finalReportMdPath = join(outputDir, "Feature6-Report.md");
+      const runSummaryPath = join(outputDir, "Feature6-Run-Summary.json");
+      const manifestPath = join(outputDir, "manifest.json");
+      await Promise.all([
+        writeFile(optimizationJsonPath, "{}\n", "utf8"),
+        writeFile(optimizationMdPath, "# optimization\n", "utf8"),
+        writeFile(finalReportMdPath, "# report\n", "utf8"),
+        writeFile(runSummaryPath, "{}\n", "utf8"),
+        writeFile(manifestPath, "{}\n", "utf8"),
+      ]);
+
+      let capturedRequest: Record<string, unknown> | undefined;
+      const result = await runProductionStage(
+        "f6_running",
+        {
+          ...createEnvironment("f6_running"),
+          serverRoot,
+          roots: {
+            f1Root: join(managedRoot, "f1"),
+            f2Root: join(managedRoot, "f2"),
+            f3Root: join(managedRoot, "f3"),
+            f4Root: join(managedRoot, "f4"),
+            f5Root: join(managedRoot, "f5"),
+            f6Root: outputDir,
+          },
+          callerAuthorizedF6Inputs: {
+            analysisContextPath: "uploads/session/analysis-context-v2.json",
+            optimizationTargetsPath: "uploads/session/optimization-targets-v2.json",
+          },
+        },
+        {
+          runStage: async (_stage, input) => {
+            capturedRequest = (input.input as { request?: Record<string, unknown> }).request;
+            return {
+              status: "completed",
+              skillId: "improvement-evaluation-v1",
+              inputRevision: 2,
+              idempotencyKey: "attempt-1:f6_running",
+              output: {
+                status: "completed",
+                outputDirectory: outputDir,
+                optimizationJsonPath,
+                optimizationMdPath,
+                finalReportMdPath,
+                runSummaryPath,
+                manifestPath,
+                finalReportProjection: { summary: "ok" },
+              },
+            } as never;
+          },
+          runWorkbookScopeDiscovery: async () => ({ status: "completed", skillId: "workbook-scope-discovery-v1", inputRevision: 2, idempotencyKey: "attempt-1" }),
+          runAnalysisInputValidation: async () => ({ status: "completed", skillId: "analysis-input-validation-v1", inputRevision: 2, idempotencyKey: "attempt-1" }),
+        },
+      );
+
+      expect(capturedRequest).toMatchObject({
+        analysisContextPath: "uploads/session/analysis-context-v2.json",
+        optimizationTargetsPath: "uploads/session/optimization-targets-v2.json",
+      });
+
+      const artifactReferences = (result.result as { artifactReferences: Array<{ artifactId: string; relativePath: string }> }).artifactReferences;
+      expect(artifactReferences.map((artifact) => artifact.artifactId)).toEqual([
+        "f6-optimization:2",
+        "f6-optimization-markdown:2",
+        "f6-report:2",
+        "f6-run-summary:2",
+        "f6-manifest:2",
+        "engineering-summary-projection:2",
+      ]);
+      const normalizedPaths = artifactReferences.map((artifact) => artifact.relativePath.replace(/\\/g, "/"));
+      expect(normalizedPaths.some((path) => path.endsWith("/managed/f6/Feature6-Optimization.json"))).toBe(true);
+      expect(normalizedPaths.some((path) => path.endsWith("/managed/f6/Feature6-Optimization.md"))).toBe(true);
+      expect(normalizedPaths.some((path) => path.endsWith("/managed/f6/Feature6-Report.md"))).toBe(true);
+      expect(normalizedPaths.some((path) => path.endsWith("/managed/f6/Feature6-Run-Summary.json"))).toBe(true);
+      expect(normalizedPaths.some((path) => path.endsWith("/managed/f6/manifest.json"))).toBe(true);
+      const projection = await readFile(join(serverRoot, "runtime", "workbench", "managed-artifacts", createEnvironment("f6_running").sessionId, "engineering-summary-projection", "revision-2.json"), "utf8");
+      expect(projection).toContain("summary");
     } finally {
       await rm(serverRoot, { recursive: true, force: true });
     }

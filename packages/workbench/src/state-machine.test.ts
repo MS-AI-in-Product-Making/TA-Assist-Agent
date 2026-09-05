@@ -503,6 +503,37 @@ describe("workbench state machine", () => {
       }),
     ]);
   });
+
+  it("requires a bound path/hash decisionReference for non-not_provided F6 decisions", () => {
+    const api = requireApi();
+
+    expect(() => api.reduceSessionCommand(
+      baseSnapshot({ state: "analysis_context_decision_required", inputRevision: 2 }),
+      {
+        contractVersion: "f8-session-command-v1",
+        sessionId: SESSION_ID,
+        commandId: "analysis-context-unbound",
+        expectedRevision: 0,
+        command: "confirm_analysis_context",
+        payload: { decision: "approve" },
+      },
+    )).toThrow(/bind a relative artifact path and SHA-256 hash/i);
+
+    expect(() => api.reduceSessionCommand(
+      baseSnapshot({ state: "analysis_context_decision_required", inputRevision: 2 }),
+      {
+        contractVersion: "f8-session-command-v1",
+        sessionId: SESSION_ID,
+        commandId: "analysis-context-not-provided-with-reference",
+        expectedRevision: 0,
+        command: "confirm_analysis_context",
+        payload: {
+          decision: "not_provided",
+          decisionReference: "uploads/session/analysis-context.json#sha256:aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899",
+        },
+      },
+    )).toThrow(/must be omitted when decision is not_provided/i);
+  });
 });
 
 afterEach(() => {
@@ -609,7 +640,10 @@ function analysisContextCommand(expectedRevision: number, decision: "approve" | 
     commandId: `analysis-context-${decision}`,
     expectedRevision,
     command: "confirm_analysis_context",
-    payload: { decision },
+    payload: {
+      decision,
+      decisionReference: "uploads/session/analysis-context.json#sha256:aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899",
+    },
   };
 }
 
@@ -620,7 +654,10 @@ function optimizationTargetsCommand(expectedRevision: number): SessionCommand {
     commandId: "optimization-targets-approve",
     expectedRevision,
     command: "confirm_optimization_targets",
-    payload: { decision: "approve" },
+    payload: {
+      decision: "approve",
+      decisionReference: "uploads/session/optimization-targets.json#sha256:11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff",
+    },
   };
 }
 

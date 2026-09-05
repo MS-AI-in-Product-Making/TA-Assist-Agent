@@ -551,6 +551,8 @@ describe("workbench server routes", () => {
       };
 
       expect((await submit("run-f4", "retry", { stage: "f4_running" })).statusCode).toBe(202);
+      expect((await submit("confirm-analysis-context", "confirm_analysis_context", { decision: "not_provided", rationale: "No additional analysis context supplied." })).statusCode).toBe(202);
+      expect((await submit("confirm-optimization-targets", "confirm_optimization_targets", { decision: "not_provided", rationale: "Use governed default optimization targets." })).statusCode).toBe(202);
 
       const reopened = await openSessionStore({ rootDir, sessionId });
       try {

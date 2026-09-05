@@ -10,7 +10,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import { DatabaseSync } from "node:sqlite";
 
 import { createConversationStore, type ConversationStore, type ConversationTurn } from "@ai-assist/conversation";
-import { drawingGovernanceResultV2Schema, f2UserReportSchema, f4WorkflowCalculationResultSchema, f8PublicSessionCommandSchema, f8SessionCommandSchema, f8SessionSnapshotSchema, worksheetSelectionPromptSchema, type F6OptimizationTargets, type F8ScenarioDraft, type F8WorksheetWhatIfCalculationRequest, type hostActionClaimSchema, type hostActionRequestSchema, type hostActionResultSchema } from "@ai-assist/contracts";
+import { drawingGovernanceResultV2Schema, f2UserReportSchema, f4WorkflowCalculationResultSchema, f6AnalysisContextSchema, f6OptimizationTargetsSchema, f8PublicSessionCommandSchema, f8SessionCommandSchema, f8SessionSnapshotSchema, worksheetSelectionPromptSchema, type F6OptimizationTargets, type F8ScenarioDraft, type F8WorksheetWhatIfCalculationRequest, type hostActionClaimSchema, type hostActionRequestSchema, type hostActionResultSchema } from "@ai-assist/contracts";
 import { acceptAttemptResult, canonicalSelectedWorksheetSetHash, createSessionStore, createTaWorkbookOrchestrator, createToleranceTargetsPreview, openSessionStore, reduceSessionCommand, type F8SessionCommand, type F8SessionSnapshot, type ReviewContextIdentity, type RuntimeSkillResult, type ScenarioBaseline, type SessionArtifactReference, type SessionDeltaOperations, type TaWorkbookOrchestrator } from "@ai-assist/workbench";
 import { createTypedError } from "@ai-assist/contracts";
 import { createHostActionStore, type HostActionRecord } from "@ai-assist/workbench";
@@ -29,6 +29,16 @@ interface F1ScopeDiscoveryWarning {
   readonly status: "blocked" | "failed";
   readonly code: "scope_discovery_unavailable";
   readonly summary: string;
+}
+
+const F6_INPUT_DECISION_CONTRACT_VERSION = "f6-input-decision-v1";
+const F6_ANALYSIS_CONTEXT_REFERENCE_PREFIX = "f6-analysis-context:";
+const F6_OPTIMIZATION_TARGETS_REFERENCE_PREFIX = "f6-optimization-targets:";
+const F6_BOUND_REFERENCE_PATTERN = /^(?![A-Za-z]:)(?!file:\/\/)(?!\\\\)(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))([^#\r\n]+)#sha256:([a-f0-9]{64})$/;
+
+interface BoundF6DecisionReference {
+  readonly relativePath: string;
+  readonly contentHash: string;
 }
 
 function classifyScopeDiscoveryWarningStatus(error: unknown): F1ScopeDiscoveryWarning["status"] {
@@ -891,7 +901,21 @@ async function runDefaultStage(rootDir: string, sessions: SessionRegistry, artif
       const baselineRunReference = snapshot?.priorRunReferences.findLast((reference) => reference.featureId === "F2" && typeof reference.runReference === "string")?.runReference;
       if (snapshot === undefined || roots === undefined || baselineRunReference === undefined) throw createTypedError({ code: "evidence_mismatch", summary: "Production stage lineage is unavailable.", suggestedAction: "Prepare the workbook again.", affectedInputReferences: [sessionId, job.stage] });
       const reviewContext = reviewContextFor(snapshot, baselineRunReference);
-      const execution = await runProductionStage(job.stage, { repositoryRoot: process.cwd(), serverRoot: rootDir, sessionId, workbookPath, snapshot, roots, context, baselineRunReference, ...(reviewContext === undefined ? {} : { reviewContext }) }, orchestrator);
+      const callerAuthorizedF6Inputs = job.stage === "f6_running"
+        ? await resolveCallerAuthorizedF6Inputs(rootDir, snapshot)
+        : undefined;
+      const execution = await runProductionStage(job.stage, {
+        repositoryRoot: process.cwd(),
+        serverRoot: rootDir,
+        sessionId,
+        workbookPath,
+        snapshot,
+        roots,
+        context,
+        baselineRunReference,
+        ...(reviewContext === undefined ? {} : { reviewContext }),
+        ...(callerAuthorizedF6Inputs === undefined ? {} : { callerAuthorizedF6Inputs }),
+      }, orchestrator);
       writeRegistry(rootDir, "production-roots", sessionId, execution.roots);
       return JSON.parse(JSON.stringify(execution.result)) as unknown;
     }
@@ -1221,12 +1245,6 @@ class StoreBackedQueueSessionStore implements QueueSessionStore {
     if (snapshot.state === "image_decision_required") {
       const next = await this.sessions.applyCommand({ contractVersion: "f8-session-command-v1", sessionId: snapshot.sessionId, commandId: `${completedAttemptId}:image-default`, expectedRevision: snapshot.revision, command: "confirm_image_decision", payload: { decision: "not_evaluated", rationale: "No additional image observation supplied." } });
       await this.followUp?.(next);
-      return;
-    }
-    if (snapshot.state === "analysis_context_decision_required") {
-      const contextDecision = await this.sessions.applyCommand({ contractVersion: "f8-session-command-v1", sessionId: snapshot.sessionId, commandId: `${completedAttemptId}:context-default`, expectedRevision: snapshot.revision, command: "confirm_analysis_context", payload: { decision: "not_provided", rationale: "No additional analysis context supplied." } });
-      const next = await this.sessions.applyCommand({ contractVersion: "f8-session-command-v1", sessionId: snapshot.sessionId, commandId: `${completedAttemptId}:targets-default`, expectedRevision: contextDecision.revision, command: "confirm_optimization_targets", payload: { decision: "not_provided", rationale: "Use governed default optimization targets." } });
-      await this.followUp?.(next);
     }
   }
 }
@@ -1421,6 +1439,151 @@ async function artifactReferenceOpsFromRunnerResult(
       ...(artifact.kind === "engineering_summary_projection" ? { metadata: { reviewContext } } : {}),
     })),
   };
+}
+
+async function resolveCallerAuthorizedF6Inputs(rootDir: string, snapshot: F8SessionSnapshot): Promise<{ readonly analysisContextPath?: string; readonly optimizationTargetsPath?: string }> {
+  const analysisReference = readF6InputDecisionReference(snapshot, F6_ANALYSIS_CONTEXT_REFERENCE_PREFIX, "analysis context");
+  const optimizationReference = readF6InputDecisionReference(snapshot, F6_OPTIMIZATION_TARGETS_REFERENCE_PREFIX, "optimization targets");
+  return {
+    ...(analysisReference === undefined ? {} : {
+      analysisContextPath: await resolveAndValidateBoundF6Artifact(
+        rootDir,
+        parseF6BoundReference(analysisReference, "analysis context"),
+        "analysis context",
+        (value) => f6AnalysisContextSchema.safeParse(value).success,
+      ),
+    }),
+    ...(optimizationReference === undefined ? {} : {
+      optimizationTargetsPath: await resolveAndValidateBoundF6Artifact(
+        rootDir,
+        parseF6BoundReference(optimizationReference, "optimization targets"),
+        "optimization targets",
+        (value) => f6OptimizationTargetsSchema.safeParse(value).success,
+      ),
+    }),
+  };
+}
+
+function readF6InputDecisionReference(
+  snapshot: F8SessionSnapshot,
+  decisionPrefix: string,
+  label: "analysis context" | "optimization targets",
+): string | undefined {
+  const workbookHash = snapshot.downstreamScopeSelection?.workbookContentHash;
+  if (workbookHash === undefined) {
+    throw createTypedError({
+      code: "evidence_mismatch",
+      summary: `Feature 6 ${label} decision has no current workbook lineage.`,
+      suggestedAction: "Confirm downstream worksheet scope before running Feature 6.",
+      affectedInputReferences: [snapshot.sessionId],
+    });
+  }
+  const decision = snapshot.priorRunReferences.findLast((reference) =>
+    reference.featureId === "F6"
+      && reference.contractVersion === F6_INPUT_DECISION_CONTRACT_VERSION
+      && reference.workbookHash === workbookHash
+      && reference.referenceId.startsWith(decisionPrefix));
+  if (decision === undefined) {
+    throw createTypedError({
+      code: "evidence_mismatch",
+      summary: `Feature 6 ${label} decision is missing for the current workbook lineage.`,
+      suggestedAction: "Confirm analysis context and optimization targets before running Feature 6.",
+      affectedInputReferences: [snapshot.sessionId],
+    });
+  }
+  const outcome = decision.referenceId.slice(decisionPrefix.length);
+  if (outcome === "not_provided") {
+    if (decision.runReference !== undefined) {
+      throw createTypedError({
+        code: "validation_error",
+        summary: `Feature 6 ${label} not_provided decision must not include a decisionReference.`,
+        suggestedAction: "Resubmit the decision without a decisionReference.",
+        affectedInputReferences: [decision.referenceId],
+      });
+    }
+    return undefined;
+  }
+  if (typeof decision.runReference !== "string" || decision.runReference.trim().length === 0) {
+    throw createTypedError({
+      code: "validation_error",
+      summary: `Feature 6 ${label} decision must include a bound decisionReference.`,
+      suggestedAction: "Use decisionReference format relative/path.json#sha256:<64-hex>.",
+      affectedInputReferences: [decision.referenceId],
+    });
+  }
+  return decision.runReference;
+}
+
+function parseF6BoundReference(reference: string, label: "analysis context" | "optimization targets"): BoundF6DecisionReference {
+  const match = F6_BOUND_REFERENCE_PATTERN.exec(reference.trim());
+  if (match === null) {
+    throw createTypedError({
+      code: "validation_error",
+      summary: `Feature 6 ${label} decisionReference must include a relative path and SHA-256 hash.`,
+      suggestedAction: "Use decisionReference format relative/path.json#sha256:<64-hex>.",
+      affectedInputReferences: [reference],
+    });
+  }
+  return { relativePath: match[1]!, contentHash: match[2]! };
+}
+
+async function resolveAndValidateBoundF6Artifact(
+  rootDir: string,
+  reference: BoundF6DecisionReference,
+  label: "analysis context" | "optimization targets",
+  validateSchema: (value: unknown) => boolean,
+): Promise<string> {
+  const managedRoot = resolve(rootDir);
+  const absolutePath = resolve(managedRoot, reference.relativePath);
+  const boundedPath = relative(managedRoot, absolutePath);
+  if (boundedPath.startsWith("..") || resolve(managedRoot, boundedPath) !== absolutePath) {
+    throw createTypedError({
+      code: "policy_denied",
+      summary: `Feature 6 ${label} artifact path escaped the managed workbench root.`,
+      suggestedAction: "Use a managed relative path inside the current workbench root.",
+      affectedInputReferences: [reference.relativePath],
+    });
+  }
+  let bytes: Buffer;
+  try {
+    bytes = await readFile(absolutePath);
+  } catch {
+    throw createTypedError({
+      code: "evidence_mismatch",
+      summary: `Feature 6 ${label} artifact is unavailable at the confirmed path.`,
+      suggestedAction: "Reconfirm the decision with an existing managed artifact.",
+      affectedInputReferences: [reference.relativePath],
+    });
+  }
+  const contentHash = createHash("sha256").update(bytes).digest("hex");
+  if (contentHash !== reference.contentHash) {
+    throw createTypedError({
+      code: "evidence_mismatch",
+      summary: `Feature 6 ${label} artifact hash does not match the confirmed decision reference.`,
+      suggestedAction: "Reconfirm the decision with the current artifact hash.",
+      affectedInputReferences: [reference.relativePath],
+    });
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(bytes.toString("utf8")) as unknown;
+  } catch {
+    throw createTypedError({
+      code: "validation_error",
+      summary: `Feature 6 ${label} artifact is not valid JSON.`,
+      suggestedAction: "Provide a governed v1/v2 JSON artifact.",
+      affectedInputReferences: [reference.relativePath],
+    });
+  }
+  if (!validateSchema(parsed)) {
+    throw createTypedError({
+      code: "validation_error",
+      summary: `Feature 6 ${label} artifact is not a valid governed v1/v2 contract.`,
+      suggestedAction: "Provide a valid analysis context or optimization targets artifact.",
+      affectedInputReferences: [reference.relativePath],
+    });
+  }
+  return boundedPath.replace(/\\/g, "/");
 }
 
 function reviewContextMismatch(snapshot: F8SessionSnapshot, summary: string): Error {

@@ -7,6 +7,11 @@ import { canonicalSelectedWorksheetSetHash, type F8SessionSnapshot, type Runtime
 import type { RunContext } from "@ai-assist/workflow-runners";
 
 export interface ProductionRoots { readonly f1Root: string; readonly f2Root: string; readonly f3Root?: string; readonly f4Root?: string; readonly f5Root?: string; readonly f6Root?: string }
+export interface CallerAuthorizedF6Inputs {
+  readonly analysisContextPath?: string;
+  readonly optimizationTargetsPath?: string;
+}
+
 export interface ProductionStageEnvironment {
   readonly repositoryRoot: string;
   readonly serverRoot: string;
@@ -17,6 +22,7 @@ export interface ProductionStageEnvironment {
   readonly context: RunContext;
   readonly baselineRunReference: string;
   readonly reviewContext?: { readonly workbookHash: string; readonly downstreamSelectionHash: string; readonly baselineRunReference: string };
+  readonly callerAuthorizedF6Inputs?: CallerAuthorizedF6Inputs;
 }
 
 export async function runProductionStage(stage: string, environment: ProductionStageEnvironment, orchestrator: TaWorkbookOrchestrator): Promise<{ readonly result: unknown; readonly roots: ProductionRoots }> {
@@ -95,7 +101,15 @@ export async function runProductionStage(stage: string, environment: ProductionS
     const scripts = await loadF6(environment.repositoryRoot);
     const f6Base = join(outputBase, "f6");
     const layout = scripts.resolveFeature6OutputLayout({ f2ArtifactRoot: environment.roots.f2Root, f3ArtifactRoot: environment.roots.f3Root, f4ArtifactRoot: environment.roots.f4Root, f5ArtifactRoot: environment.roots.f5Root }, f6Base, () => new Date(), publishRoot);
-    const request = { f2ArtifactRoot: environment.roots.f2Root, f3ArtifactRoot: environment.roots.f3Root, f4ArtifactRoot: environment.roots.f4Root, f5ArtifactRoot: environment.roots.f5Root, selectedWorksheetNames: selected };
+    const request = {
+      f2ArtifactRoot: environment.roots.f2Root,
+      f3ArtifactRoot: environment.roots.f3Root,
+      f4ArtifactRoot: environment.roots.f4Root,
+      f5ArtifactRoot: environment.roots.f5Root,
+      selectedWorksheetNames: selected,
+      ...(environment.callerAuthorizedF6Inputs?.analysisContextPath === undefined ? {} : { analysisContextPath: environment.callerAuthorizedF6Inputs.analysisContextPath }),
+      ...(environment.callerAuthorizedF6Inputs?.optimizationTargetsPath === undefined ? {} : { optimizationTargetsPath: environment.callerAuthorizedF6Inputs.optimizationTargetsPath }),
+    };
     const result = requireRuntimeSkillOutput(await orchestrator.runStage("f6_running", {
       inputRevision: environment.snapshot.inputRevision,
       idempotencyKey,
@@ -110,7 +124,13 @@ export async function runProductionStage(stage: string, environment: ProductionS
         context: { ...environment.context, managedOutputRoot: f6Base },
         dependencies: {
           resolveOutputLayout: () => layout,
-          loadBundle: (value: { readonly publishRoot?: string }) => scripts.loadF6ArtifactBundle({ ...value, ...request, publishRoot: layout.publishRoot } as never),
+          loadBundle: (value: { readonly publishRoot?: string }) => scripts.loadF6ArtifactBundle({
+            ...value,
+            ...request,
+            publishRoot: layout.publishRoot,
+            analysisContextArtifact: request.analysisContextPath,
+            optimizationTargetsArtifact: request.optimizationTargetsPath,
+          } as never),
           createFinalReport: scripts.createF6FinalReportProjection,
           renderOptimization: scripts.renderF6Report,
         },
@@ -123,7 +143,13 @@ export async function runProductionStage(stage: string, environment: ProductionS
       readonly finalReportProjection?: unknown;
       readonly outputDirectory: string;
     };
-    if (result.status === "failed" || result.optimizationJsonPath === undefined || result.finalReportMdPath === undefined || result.finalReportProjection === undefined) {
+    if (result.status === "failed"
+      || result.optimizationJsonPath === undefined
+      || result.optimizationMdPath === undefined
+      || result.finalReportMdPath === undefined
+      || result.runSummaryPath === undefined
+      || result.manifestPath === undefined
+      || result.finalReportProjection === undefined) {
       throw new Error(`F6 failed: ${result.reasonCode ?? "unknown"}`);
     }
     const projectionPath = await writeManagedProjectionArtifact(environment.serverRoot, environment.sessionId, environment.snapshot.inputRevision, result.finalReportProjection);
@@ -133,7 +159,10 @@ export async function runProductionStage(stage: string, environment: ProductionS
         reviewContext: environment.reviewContext,
         artifactReferences: [
           await artifact(environment.serverRoot, `f6-optimization:${environment.snapshot.inputRevision}`, "f6_optimization", result.optimizationJsonPath),
+          await artifact(environment.serverRoot, `f6-optimization-markdown:${environment.snapshot.inputRevision}`, "f6_report", result.optimizationMdPath),
           await artifact(environment.serverRoot, `f6-report:${environment.snapshot.inputRevision}`, "f6_report", result.finalReportMdPath),
+          await artifact(environment.serverRoot, `f6-run-summary:${environment.snapshot.inputRevision}`, "f6_report", result.runSummaryPath),
+          await artifact(environment.serverRoot, `f6-manifest:${environment.snapshot.inputRevision}`, "f6_report", result.manifestPath),
           await artifact(environment.serverRoot, `engineering-summary-projection:${environment.snapshot.inputRevision}`, "engineering_summary_projection", projectionPath),
         ],
       },

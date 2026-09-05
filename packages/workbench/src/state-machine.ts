@@ -22,6 +22,11 @@ import {
 export { canRetryAttempt } from "./attempts.js";
 export type { SessionAttemptResult } from "./attempts.js";
 
+const F6_ANALYSIS_CONTEXT_REFERENCE_PREFIX = "f6-analysis-context:";
+const F6_OPTIMIZATION_TARGETS_REFERENCE_PREFIX = "f6-optimization-targets:";
+const F6_INPUT_DECISION_CONTRACT_VERSION = "f6-input-decision-v1";
+const F6_BOUND_REFERENCE_PATTERN = /^(?![A-Za-z]:)(?!file:\/\/)(?!\\\\)(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[^#\r\n]+#sha256:[a-f0-9]{64}$/;
+
 export function reduceSessionCommand(snapshotInput: F8SessionSnapshot, commandInput: F8SessionCommand): F8SessionSnapshot {
   const snapshot = parseSnapshot(snapshotInput);
   const command = parseCommand(commandInput);
@@ -67,9 +72,12 @@ export function reduceSessionCommand(snapshotInput: F8SessionSnapshot, commandIn
       return nextSnapshot(snapshot, {
         state: "optimization_targets_decision_required",
         activeAttempt: null,
+        priorRunReferences: appendF6InputDecisionReference(snapshot, command, F6_ANALYSIS_CONTEXT_REFERENCE_PREFIX),
       });
     case "confirm_optimization_targets":
-      return transitionWithAttempt(snapshot, command, "f6_running");
+      return transitionWithAttempt(snapshot, command, "f6_running", {
+        priorRunReferences: appendF6InputDecisionReference(snapshot, command, F6_OPTIMIZATION_TARGETS_REFERENCE_PREFIX),
+      });
     case "retry": {
       const retryStage = resolveRetryStage(snapshot, (command.payload as { stage?: F8SessionState }).stage);
       return transitionWithAttempt(snapshot, command, retryStage);
@@ -398,4 +406,55 @@ function reduceConfirmWhatIfPromotion(snapshot: F8SessionSnapshot, command: F8Se
       ? { ...candidate, status: "promoted_to_f6_targets" as const, promotionPreview: payload.promotionPreview }
       : candidate),
   });
+}
+
+function appendF6InputDecisionReference(
+  snapshot: F8SessionSnapshot,
+  command: F8SessionCommand,
+  referencePrefix: typeof F6_ANALYSIS_CONTEXT_REFERENCE_PREFIX | typeof F6_OPTIMIZATION_TARGETS_REFERENCE_PREFIX,
+): F8SessionSnapshot["priorRunReferences"] {
+  const payload = command.payload as {
+    readonly decision: string;
+    readonly decisionReference?: string;
+  };
+  const decision = payload.decision.trim();
+  const decisionReference = payload.decisionReference?.trim();
+
+  if (decision === "not_provided") {
+    if (decisionReference !== undefined) {
+      throw createTypedError({
+        code: "validation_error",
+        summary: "F6 input decision reference must be omitted when decision is not_provided.",
+        suggestedAction: "Provide no decisionReference for not_provided decisions.",
+        affectedInputReferences: [command.commandId],
+      });
+    }
+  } else {
+    if (decisionReference === undefined || !F6_BOUND_REFERENCE_PATTERN.test(decisionReference)) {
+      throw createTypedError({
+        code: "validation_error",
+        summary: "F6 input decision must bind a relative artifact path and SHA-256 hash.",
+        suggestedAction: "Provide decisionReference as relative/path.json#sha256:<64-hex> or use not_provided.",
+        affectedInputReferences: [command.commandId],
+      });
+    }
+  }
+
+  const workbookHash = snapshot.downstreamScopeSelection?.workbookContentHash ?? snapshot.initialScopeSelection?.workbookContentHash;
+  const currentReferenceId = `${referencePrefix}${decision}`;
+  const retained = snapshot.priorRunReferences.filter((reference) =>
+    !(reference.featureId === "F6"
+      && reference.contractVersion === F6_INPUT_DECISION_CONTRACT_VERSION
+      && reference.referenceId.startsWith(referencePrefix)));
+
+  return [
+    ...retained,
+    {
+      featureId: "F6",
+      referenceId: currentReferenceId,
+      contractVersion: F6_INPUT_DECISION_CONTRACT_VERSION,
+      ...(workbookHash === undefined ? {} : { workbookHash }),
+      ...(decisionReference === undefined ? {} : { runReference: decisionReference }),
+    },
+  ];
 }
