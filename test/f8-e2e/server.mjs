@@ -548,6 +548,20 @@ async function driveSessionScopeByHttp(sessionId, cookie, targetState) {
     command: "confirm_ado_decision",
     payload: { decision: "local_only" },
   });
+  snapshot = await waitForSessionState(sessionId, cookie, "analysis_context_decision_required");
+  await postSessionCommand(sessionId, cookie, {
+    commandId: `seed-analysis-context-not-provided-${sessionId}`,
+    expectedRevision: snapshot.revision,
+    command: "confirm_analysis_context",
+    payload: { decision: "not_provided", rationale: "No additional analysis context supplied." },
+  });
+  snapshot = await waitForSessionState(sessionId, cookie, "optimization_targets_decision_required");
+  await postSessionCommand(sessionId, cookie, {
+    commandId: `seed-optimization-targets-not-provided-${sessionId}`,
+    expectedRevision: snapshot.revision,
+    command: "confirm_optimization_targets",
+    payload: { decision: "not_provided", rationale: "Use governed default optimization targets." },
+  });
   await waitForSessionState(sessionId, cookie, "review_required");
 }
 

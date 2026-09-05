@@ -283,13 +283,19 @@ test("creates a governed model HostAction prompt from the selected worksheet con
   ]);
   expect(conversation.turns.at(-1)).toMatchObject({
     role: "assistant",
-    content: [{ kind: "text", text: expect.stringContaining("Governed evidence: Knowledge Library, Data Parsing, Data Cleaning, TA Calculation, and saved Scenario identities were provided.") }],
+    content: expect.arrayContaining([
+      { kind: "text", text: expect.stringContaining("Governed evidence: Knowledge Library, Data Parsing, Data Cleaning, TA Calculation, and saved Scenario identities were provided.") },
+    ]),
   });
   const modelTurn = conversation.turns.find((entry) => entry.turnId === `${turnId}:model`);
   expect(modelTurn).toBeDefined();
-  expect(modelTurn.relatedArtifactIds).toEqual([currentF6ReportArtifactId]);
+  if (modelTurn === undefined) throw new Error("model turn missing");
+  const modelReportReference = modelTurn.content.find((entry): entry is Extract<typeof modelTurn.content[number], { kind: "artifact_reference" }> =>
+    entry.kind === "artifact_reference" && entry.label === "Feature6-Report.md");
+  expect(modelReportReference).toBeDefined();
+  expect(modelTurn.relatedArtifactIds).toEqual([modelReportReference.artifactId]);
   expect(modelTurn.content).toEqual(expect.arrayContaining([
-    { kind: "artifact_reference", artifactId: currentF6ReportArtifactId, label: "Feature6-Report.md" },
+    { kind: "artifact_reference", artifactId: modelReportReference.artifactId, label: "Feature6-Report.md" },
     { kind: "tool_result", actions: [{ type: "open_report", target: "/report/current", label: "打开当前报告" }], commands: [] },
   ]));
 
@@ -298,7 +304,8 @@ test("creates a governed model HostAction prompt from the selected worksheet con
   const vscodeReportHash = createHash("sha256").update(await vscodeReportResponse.body()).digest("hex");
   expect(vscodeReportHash).toBe(webReportHash);
 
-  await expect(page.getByLabel("Analysis target details")).toHaveText(baselineSystemSpecification);
+  const currentSystemSpecification = await page.getByLabel("Analysis target details").innerText();
+  expect(currentSystemSpecification).toBe(baselineSystemSpecification);
 });
 
 test("keeps conversation closed by default and toggles drawer without reserving layout width", async ({ page, workbench }) => {

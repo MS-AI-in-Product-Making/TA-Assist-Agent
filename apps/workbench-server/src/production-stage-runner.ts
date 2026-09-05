@@ -139,7 +139,10 @@ export async function runProductionStage(stage: string, environment: ProductionS
       readonly status: string;
       readonly reasonCode?: string;
       readonly optimizationJsonPath?: string;
+      readonly optimizationMdPath?: string;
       readonly finalReportMdPath?: string;
+      readonly runSummaryPath?: string;
+      readonly manifestPath?: string;
       readonly finalReportProjection?: unknown;
       readonly outputDirectory: string;
     };

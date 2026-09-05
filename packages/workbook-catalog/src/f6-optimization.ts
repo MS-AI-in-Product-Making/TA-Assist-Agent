@@ -21,6 +21,8 @@ import {
   type F6Option,
   type F6OptionV2,
   type F6OptionKind,
+  type F6OptimizationAssessment,
+  type F6OptimizationTargetV2,
   type F6SupplierCapabilityEvidence,
   type F6ToleranceChange,
 } from "@ai-assist/contracts";
@@ -794,12 +796,28 @@ function scaledOverride(factor: CalculationFactorResult, scale: number) {
   return overrideForTolerance(factor, scaled.lowerTolerance, scaled.upperTolerance);
 }
 
+type F6ToleranceOverride = {
+  readonly worksheetName: string;
+  readonly tableId: string;
+  readonly sourceRow: number;
+  readonly lowerTolerance: number;
+  readonly upperTolerance: number;
+};
+
+type F6ModelOptimizationAssessment = F6OptimizationAssessment & {
+  readonly disposition: "RECOMMENDED" | "CONSIDER";
+};
+
+function isModelDirectedAssessment(assessment: F6OptimizationAssessment): assessment is F6ModelOptimizationAssessment {
+  return assessment.disposition === "RECOMMENDED" || assessment.disposition === "CONSIDER";
+}
+
 function scenarioForTarget(
   worksheet: F6OptimizationRequest["worksheets"][number],
-  target: F6OptimizationTargets["worksheets"][number]["targets"][number],
+  target: F6OptimizationTargetV2,
 ): { readonly scenario?: F6ControlledScenario; readonly v2Overrides?: Array<{ factor: F6FactorIdentity; nominalValue?: number; lowerTolerance?: number; upperTolerance?: number; sigma?: number }>; readonly insufficientInputs?: readonly string[] } {
   const calculation = worksheet.baselineCalculation;
-  let overrides: ReturnType<typeof overrideForTolerance>[];
+  let overrides: F6ToleranceOverride[];
   if (target.targetType === "factor_tolerance") {
     const factor = exactFactor(calculation, target.factor);
     overrides = [overrideForTolerance(factor, target.lowerTolerance, target.upperTolerance)];
@@ -986,7 +1004,7 @@ function targetOption(
   request: F6OptimizationRequest,
   worksheet: F6OptimizationRequest["worksheets"][number],
   baselineRequest: CalculationRequest,
-  target: F6OptimizationTargets["worksheets"][number]["targets"][number],
+  target: F6OptimizationTargetV2,
   evidenceReferences: ReadonlyArray<{ artifact: string; contentHash: string }>,
   feasibilityReasonCode: string,
   calculateScenario: typeof calculateF6Scenario,
@@ -1057,7 +1075,7 @@ const MODEL_CLASS_ORDER = [
 
 type ModelAdjustmentClass = (typeof MODEL_CLASS_ORDER)[number];
 
-function targetClass(target: F6OptimizationTargets["worksheets"][number]["targets"][number]): ModelAdjustmentClass {
+function targetClass(target: F6OptimizationTargetV2): ModelAdjustmentClass {
   switch (target.targetType) {
     case "factor_nominal":
       return "factor_nominal";
@@ -1099,7 +1117,7 @@ function systemIdentityForWorksheet(worksheet: F6OptimizationRequest["worksheets
 
 function modelDirectedTarget(
   worksheet: F6OptimizationRequest["worksheets"][number],
-  assessment: Extract<NonNullable<ReturnType<typeof modelAssessmentWorksheet>>["optimizationAssessment"][number], { disposition: "RECOMMENDED" | "CONSIDER" }>,
+  assessment: F6ModelOptimizationAssessment,
 ) {
   const baseline = worksheet.baselineCalculation;
   const targetId = `model-${assessment.adjustmentClass}-p${assessment.priority}`;
@@ -1181,7 +1199,7 @@ export function createF6Optimization(
     }
     const callerTargets = targetWorksheet?.targets ?? [];
     const callerEvidence = evidenceFromDecision(inputs.inputDecisions.optimizationTargets);
-    const callerByClass = new Map<ModelAdjustmentClass, F6OptimizationTargets["worksheets"][number]["targets"]>([
+    const callerByClass = new Map<ModelAdjustmentClass, F6OptimizationTargetV2[]>([
       ["factor_nominal", []],
       ["system_mean_shift", []],
       ["system_specification", []],
@@ -1259,6 +1277,7 @@ export function createF6Optimization(
           classOrderedOptions.push(...builtInOptions);
           continue;
         }
+        if (!isModelDirectedAssessment(assessment)) continue;
         const generatedTarget = modelDirectedTarget(worksheet, assessment);
         if (generatedTarget === undefined) {
           modelClarifications.push({
