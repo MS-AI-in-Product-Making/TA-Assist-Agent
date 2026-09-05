@@ -361,6 +361,13 @@ describe("createF6FinalReportProjection policy", () => {
       worksheetNames: ["Analysis-A"],
       modelInterpretationVersion: "v2",
     });
+    inputs.f6Optimization.worksheets[0].clarifications.push({
+      clarificationId: "Analysis-A:system-specification-target",
+      reasonCode: "system_specification_target_required",
+      requiredInputs: ["system_specification_target"],
+      questionForReviewer: "Provide governed system specification target before approving requirement changes.",
+      evidenceReferences: [structuredClone(inputs.f6Optimization.provenance.f4Reference)],
+    });
     inputs.modelInterpretation.worksheets[0].optimizationAssessment = [
       {
         adjustmentClass: "factor_nominal",
