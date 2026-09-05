@@ -4669,6 +4669,65 @@ describe("F5.1 objective interpretation contracts", () => {
         expect(f6OptimizationTargetsSchema.parse(optimizationTargetsV2)).toEqual(optimizationTargetsV2);
       });
 
+      it("accepts retained v1 target kinds in a v2 optimization targets artifact", () => {
+        const optimizationTargetsV2WithRetainedKinds = {
+          ...optimizationTargetsV2,
+          worksheets: [
+            {
+              ...optimizationTargetsV2.worksheets[0],
+              targets: [
+                {
+                  targetId: "target-factor-tolerance",
+                  targetType: "factor_tolerance" as const,
+                  factor: factorIdentity,
+                  upperTolerance: 0.08,
+                  lowerTolerance: -0.08,
+                  unit: "mm",
+                },
+                {
+                  targetId: "target-factor-sigma",
+                  targetType: "factor_sigma" as const,
+                  factor: factorIdentity,
+                  sigma: 0.018,
+                  unit: "mm",
+                },
+                {
+                  targetId: "target-improvement-ratio",
+                  targetType: "improvement_ratio" as const,
+                  factor: factorIdentity,
+                  ratio: 0.2,
+                  appliesTo: "tolerance_band" as const,
+                },
+                {
+                  targetId: "target-system-capability",
+                  targetType: "system_target" as const,
+                  systemIdentity: {
+                    baselineIdentity,
+                    designNominal: 0,
+                    mean: 0,
+                    rssSigma: 0.05,
+                    lowerSpecLimit: -0.1,
+                    upperSpecLimit: 0.2,
+                    targetCpk: 1,
+                    traceReferences: [],
+                  },
+                  target: {
+                    targetCpk: 1.33,
+                  },
+                  apportionment: {
+                    policy: "PROPORTIONAL" as const,
+                    selectedFactors: [factorIdentity],
+                  },
+                },
+              ],
+            },
+          ],
+        };
+
+        expect(f6OptimizationTargetsV2Schema.parse(optimizationTargetsV2WithRetainedKinds)).toEqual(optimizationTargetsV2WithRetainedKinds);
+        expect(f6OptimizationTargetsSchema.parse(optimizationTargetsV2WithRetainedKinds)).toEqual(optimizationTargetsV2WithRetainedKinds);
+      });
+
       it("rejects v2 mean/system target invariants and identity drift", () => {
         const worksheet = optimizationTargetsV2.worksheets[0];
         const meanTarget = worksheet.targets[1];

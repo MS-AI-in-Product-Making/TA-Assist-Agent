@@ -6312,13 +6312,6 @@ const f6SystemSpecificationTargetSchema = z.object({
 
 export const f6OptimizationTargetV2Schema = z.discriminatedUnion("targetType", [
   f6FactorToleranceTargetSchema,
-  f6FactorNominalTargetSchema,
-  f6SystemMeanShiftTargetSchema,
-  f6SystemSpecificationTargetSchema,
-]);
-
-const f6OptimizationTargetSchema = z.discriminatedUnion("targetType", [
-  f6FactorToleranceTargetSchema,
   f6FactorSigmaTargetSchema,
   f6ImprovementRatioTargetSchema,
   f6SystemTargetSchema,
@@ -6452,10 +6445,29 @@ const validateF6OptimizationTargetsV2 = (
       }
       targetIds.add(target.targetId);
 
-      if (target.targetType === "factor_tolerance" || target.targetType === "factor_nominal") {
+      if (target.targetType === "system_target") {
+        if (!sameF6BaselineIdentity(target.systemIdentity.baselineIdentity, artifact.workbookContentHash, worksheet.worksheetName, worksheet.tableId)
+          || JSON.stringify(target.systemIdentity.baselineIdentity) !== JSON.stringify(worksheet.baselineIdentity)) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "system target baseline identity must match the containing worksheet", path: [...targetPath, "systemIdentity", "baselineIdentity"] });
+        }
+        target.apportionment.selectedFactors.forEach((factor, factorIndex) => {
+          if (!factorBelongsToF6Worksheet(factor, worksheet.worksheetName, worksheet.tableId)) {
+            context.addIssue({ code: z.ZodIssueCode.custom, message: "selected factors must belong to the containing worksheet", path: [...targetPath, "apportionment", "selectedFactors", factorIndex] });
+          }
+        });
+        return;
+      }
+
+      if (target.targetType === "factor_tolerance"
+        || target.targetType === "factor_sigma"
+        || target.targetType === "improvement_ratio"
+        || target.targetType === "factor_nominal") {
         if (!factorBelongsToF6Worksheet(target.factor, worksheet.worksheetName, worksheet.tableId)) {
           context.addIssue({ code: z.ZodIssueCode.custom, message: "target factor must belong to the containing worksheet", path: [...targetPath, "factor"] });
         }
+      }
+
+      if (target.targetType === "factor_tolerance" || target.targetType === "factor_nominal") {
         if (target.unit !== target.factor.unit) {
           context.addIssue({ code: z.ZodIssueCode.custom, message: "target unit must match factor unit", path: [...targetPath, "unit"] });
         }
@@ -6465,6 +6477,10 @@ const validateF6OptimizationTargetsV2 = (
         if (!(target.upperTolerance > target.lowerTolerance)) {
           context.addIssue({ code: z.ZodIssueCode.custom, message: "upperTolerance must be greater than lowerTolerance", path: [...targetPath, "upperTolerance"] });
         }
+      }
+
+      if (target.targetType === "factor_sigma" && target.unit !== target.factor.unit) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "target unit must match factor unit", path: [...targetPath, "unit"] });
       }
 
       if (target.targetType === "system_mean_shift" || target.targetType === "system_specification") {
@@ -6485,7 +6501,10 @@ const validateF6OptimizationTargetsV2 = (
         }
       }
 
-      if (target.targetType === "factor_tolerance" || target.targetType === "factor_nominal") {
+      if (target.targetType === "factor_tolerance"
+        || target.targetType === "factor_sigma"
+        || target.targetType === "improvement_ratio"
+        || target.targetType === "factor_nominal") {
         const factorTargetKey = `${worksheetKey}\u0000${target.factor.sourceRow}\u0000${target.targetType}`;
         if (factorTargetKeys.has(factorTargetKey)) {
           context.addIssue({ code: z.ZodIssueCode.custom, message: "a factor may have only one target of each type", path: targetPath as unknown as Array<string | number> });
@@ -6714,10 +6733,6 @@ const validateF6ModelInterpretationWorksheet = (
     context.addIssue({ code: z.ZodIssueCode.custom, message: "calculation claims and narrative placeholders must match one-to-one", path: ["narrativeMarkdown"] });
   }
 };
-
-const f6ModelInterpretationWorksheetSchema = f6ModelInterpretationWorksheetBaseSchema.superRefine((worksheet, context) => {
-  validateF6ModelInterpretationWorksheet(worksheet, context);
-});
 
 const f6ModelInterpretationV1ArtifactBaseSchema = z.object({
   contractVersion: contractVersionSchema,
@@ -8008,7 +8023,7 @@ const f6CompletedOptionV2Schema = z.object({
   baselineMetrics: f6MetricsV2Schema,
   resultMetrics: f6MetricsV2Schema,
   scenarioEvidence: f6ScenarioEvidenceV2Schema,
-  targetContext: f6OptimizationTargetSchema.optional(),
+  targetContext: f6OptimizationTargetV2Schema.optional(),
   feasibility: f6FeasibilityAssessmentSchema,
   evidenceReferences: z.array(f6ArtifactReferenceSchema),
   impactRank: z.number().int().positive().nullable(),
@@ -8018,7 +8033,7 @@ const f6InsufficientEvidenceOptionV2Schema = z.object({
   optionId: z.string().min(1),
   status: z.literal("insufficient_evidence"),
   targetId: z.string().min(1).optional(),
-  targetContext: f6OptimizationTargetSchema.optional(),
+  targetContext: f6OptimizationTargetV2Schema.optional(),
   requiredInputs: z.array(z.string().min(1)).min(1),
   baselineMetrics: f6MetricsV2Schema,
   evidenceReferences: z.array(f6ArtifactReferenceSchema),
@@ -8031,7 +8046,7 @@ const f6CalculationFailedOptionV2Schema = z.object({
   targetId: z.string().min(1),
   optionSource: z.enum(["BUILT_IN_POLICY", "CALLER_TARGET"]).optional(),
   policyContext: f6BuiltInPolicyContextSchema.optional(),
-  targetContext: f6OptimizationTargetSchema.optional(),
+  targetContext: f6OptimizationTargetV2Schema.optional(),
   reasonCode: z.string().min(1),
   baselineMetrics: f6MetricsV2Schema,
   evidenceReferences: z.array(f6ArtifactReferenceSchema),
