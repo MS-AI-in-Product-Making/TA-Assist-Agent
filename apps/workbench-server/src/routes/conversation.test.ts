@@ -277,6 +277,79 @@ describe("conversation routes", () => {
       await app.close();
     }
   });
+
+  it.each([
+    ["stale revision", reviewSnapshotVariant({ f6Revision: 1 })],
+    ["unvalidated report", reviewSnapshotVariant({ f6Validated: false })],
+    ["incomplete review context", reviewSnapshotVariant({ f6ReviewContextId: undefined })],
+    ["mismatched review context", reviewSnapshotVariant({ f6ReviewContextId: "e".repeat(64) })],
+  ])(
+    "does not persist report reference/action on host-action model result when report is invalid (%s)",
+    async (_caseName, snapshot) => {
+      const modelContext = taModelContextEnvelopeSchema.parse({
+        contractVersion: "ta-model-context-envelope-v1",
+        session: { sessionId: SESSION_ID, revision: 5 },
+        inputRevision: 2,
+        worksheet: { worksheetName: "Analysis-A" },
+        f0Knowledge: [],
+        factorTable: [],
+        relatedArtifactIds: ["f2-current", "f4-current"],
+      });
+      const app = await routeHarness(modelContext, { snapshot });
+      try {
+        const createResponse = await app.inject({
+          method: "POST",
+          url: `/api/sessions/${SESSION_ID}/conversation`,
+          payload: { turn: turn(), selection: { worksheetName: "Analysis-A" } },
+        });
+        expect(createResponse.statusCode).toBe(201);
+
+        const claimResponse = await app.inject({
+          method: "POST",
+          url: `/api/sessions/${SESSION_ID}/host-actions/model:turn-route-1/claim`,
+          headers: { authorization: "Bearer host-claim" },
+          payload: { hostInstanceId: "host-a" },
+        });
+        expect(claimResponse.statusCode).toBe(200);
+
+        const modelPayload = {
+          status: "completed" as const,
+          outcome: { kind: "model_response" as const, turnId: "turn-route-1", responseText: "Review complete." },
+        };
+        const resultResponse = await app.inject({
+          method: "POST",
+          url: `/api/sessions/${SESSION_ID}/host-actions/model:turn-route-1/result`,
+          headers: { authorization: "Bearer host-result" },
+          payload: {
+            contractVersion: "f8-host-action-result-v1",
+            actionId: "model:turn-route-1",
+            hostInstanceId: "host-a",
+            leaseId: claimResponse.json<{ leaseId: string }>().leaseId,
+            status: "completed",
+            resultHash: createHash("sha256").update(JSON.stringify(modelPayload)).digest("hex"),
+            payload: modelPayload,
+          },
+        });
+
+        expect(resultResponse.statusCode).toBe(204);
+        const modelTurn = app.turns().find((entry) => entry.turnId === "turn-route-1:model");
+        expect(modelTurn).toBeDefined();
+        expect(modelTurn?.relatedArtifactIds ?? []).not.toContain("f6-report:7");
+        expect(modelTurn?.content).not.toContainEqual({
+          kind: "artifact_reference",
+          artifactId: "f6-report:7",
+          label: "Feature6-Report.md",
+        });
+        expect(modelTurn?.content).not.toContainEqual({
+          kind: "tool_result",
+          actions: [{ type: "open_report", target: "/report/current", label: "打开当前报告" }],
+          commands: [],
+        });
+      } finally {
+        await app.close();
+      }
+    },
+  );
 });
 
 async function routeHarness(
@@ -554,6 +627,40 @@ function reviewReadySnapshot() {
       { artifactId: "f4-calculation:7", kind: "f4_calculation", revision: 2, validated: true, reviewContextId: REVIEW_CONTEXT_ID },
       { artifactId: "f5-report:7", kind: "f5_report", revision: 2, validated: true, reviewContextId: REVIEW_CONTEXT_ID },
       { artifactId: "f6-report:7", kind: "f6_report", revision: 2, validated: true, reviewContextId: REVIEW_CONTEXT_ID },
+    ],
+    worksheetCapabilities: [],
+  };
+}
+
+function reviewSnapshotVariant(options: {
+  readonly f6Revision?: number;
+  readonly f6Validated?: boolean;
+  readonly f6ReviewContextId?: string;
+}) {
+  return {
+    contractVersion: "f8-session-snapshot-v1",
+    sessionId: SESSION_ID,
+    revision: 5,
+    inputRevision: 2,
+    state: "review_required",
+    activeAttempt: null,
+    priorRunReferences: [],
+    downstreamScopeSelection: {
+      workbookContentHash: "d".repeat(64),
+      selectedWorksheetNames: ["Analysis-A"],
+      confirmed: true,
+      provenance: "user",
+    },
+    artifactRefs: [
+      { artifactId: "f4-calculation:7", kind: "f4_calculation", revision: 2, validated: true, reviewContextId: REVIEW_CONTEXT_ID },
+      { artifactId: "f5-report:7", kind: "f5_report", revision: 2, validated: true, reviewContextId: REVIEW_CONTEXT_ID },
+      {
+        artifactId: "f6-report:7",
+        kind: "f6_report",
+        revision: options.f6Revision ?? 2,
+        validated: options.f6Validated ?? true,
+        ...(options.f6ReviewContextId === undefined ? {} : { reviewContextId: options.f6ReviewContextId }),
+      },
     ],
     worksheetCapabilities: [],
   };
