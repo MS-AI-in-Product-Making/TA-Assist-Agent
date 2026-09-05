@@ -17,5 +17,12 @@ export { createF4WhatIfBaselineRequest } from "./f4-what-if-baseline.js";
 export type { F4WhatIfPatch, F4WhatIfRequest, F4WhatIfResult } from "./f4-what-if.js";
 export { runF5Interpretation } from "./f5.js";
 export { runF6Optimization } from "./f6.js";
+export {
+	materializeF6AnalysisContext,
+	materializeF6InputProposal,
+	materializeF6OptimizationTargets,
+	resolveFactor,
+	resolveWorksheet,
+} from "./f6-input-materializer.js";
 export { validateExistingF6 } from "./existing-f6.js";
 export { getF7PlaceholderStatus } from "./f7-placeholder.js";

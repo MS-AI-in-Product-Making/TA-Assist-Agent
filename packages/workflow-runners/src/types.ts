@@ -1,8 +1,16 @@
 import type {
+  F6AnalysisContextProposal,
+  F6AnalysisContextV2,
   DrawingGovernanceResultV2,
   F4ExcelComparisonResult,
   F4WorkflowCalculationResult,
   F2UserReport,
+  F6InputClarification,
+  F6InputProposal,
+  F6MaterializedDraft,
+  F6OptimizationTargetV2,
+  F6OptimizationTargetsProposal,
+  F6OptimizationTargetsV2,
   F5DataInterpretationResult,
   F5ImageObservationArtifact,
   F6InputDecision,
@@ -223,3 +231,120 @@ export interface RunnerFailure {
   readonly status: "failed";
   readonly error: TypedError;
 }
+
+export interface F6InputMaterializationFormulaReference {
+  readonly outputField: string;
+  readonly formulaId: string;
+  readonly formulaVersion: string;
+}
+
+export interface F6InputMaterializationFactor {
+  readonly sourceRow: number;
+  readonly factorName: string;
+  readonly unit: string;
+  readonly lowerTolerance: number;
+  readonly upperTolerance: number;
+}
+
+export interface F6InputMaterializationWorksheet {
+  readonly worksheetName: string;
+  readonly tableId: string;
+  readonly factors: readonly F6InputMaterializationFactor[];
+  readonly system: {
+    readonly designNominal: number;
+    readonly mean: number;
+    readonly rssSigma: number;
+    readonly lowerSpecLimit: number;
+    readonly upperSpecLimit: number;
+    readonly targetCpk: number;
+    readonly traceReferences: readonly F6InputMaterializationFormulaReference[];
+  };
+}
+
+export interface F6InputMaterializationLineage {
+  readonly reviewContextId: string;
+  readonly expectedReviewContextId: string;
+  readonly workbookContentHash: string;
+  readonly calculationVersion: "excel-ta-v1";
+  readonly projectReference: string;
+  readonly runReference: string;
+  readonly worksheets: readonly F6InputMaterializationWorksheet[];
+}
+
+export type F6InputMaterializationReasonCode = "proposal_ambiguous" | "draft_identity_mismatch";
+
+export type F6InputMaterializationClarification = F6InputClarification & {
+  readonly reasonCode: F6InputMaterializationReasonCode;
+};
+
+export interface F6AnalysisContextMaterializationPreview {
+  readonly reviewContextId: string;
+  readonly worksheetBindings: readonly {
+    readonly selector: string;
+    readonly worksheetName: string;
+    readonly tableId: string;
+  }[];
+  readonly artifact: F6AnalysisContextV2;
+}
+
+export interface F6OptimizationTargetsMaterializationPreview {
+  readonly reviewContextId: string;
+  readonly qualitativeDirections: readonly {
+    readonly adjustmentClass: F6OptimizationTargetsProposal["directions"][number]["adjustmentClass"];
+    readonly worksheetName: string;
+    readonly factorName?: string;
+  }[];
+  readonly artifact: F6OptimizationTargetsV2;
+}
+
+export interface F6InputMaterializationDraftReadyResult<TArtifact, TPreview> {
+  readonly status: "draft_ready";
+  readonly draft: F6MaterializedDraft;
+  readonly artifact: TArtifact;
+  readonly preview: TPreview;
+}
+
+export interface F6InputMaterializationClarificationResult {
+  readonly status: "clarification_required";
+  readonly clarifications: readonly F6InputMaterializationClarification[];
+}
+
+export type F6AnalysisContextMaterializationResult =
+  | F6InputMaterializationDraftReadyResult<F6AnalysisContextV2, F6AnalysisContextMaterializationPreview>
+  | F6InputMaterializationClarificationResult;
+
+export type F6OptimizationTargetsMaterializationResult =
+  | F6InputMaterializationDraftReadyResult<F6OptimizationTargetsV2, F6OptimizationTargetsMaterializationPreview>
+  | F6InputMaterializationClarificationResult;
+
+export type F6InputMaterializationResult =
+  | F6AnalysisContextMaterializationResult
+  | F6OptimizationTargetsMaterializationResult;
+
+export interface ResolvedWorksheet {
+  readonly worksheetName: string;
+  readonly tableId: string;
+  readonly baselineIdentity: {
+    readonly calculationVersion: "excel-ta-v1";
+    readonly projectReference: string;
+    readonly runReference: string;
+    readonly workbookContentHash: string;
+    readonly worksheetName: string;
+    readonly tableId: string;
+  };
+  readonly factors: readonly F6InputMaterializationFactor[];
+  readonly system: F6InputMaterializationWorksheet["system"];
+}
+
+export interface ResolvedFactor {
+  readonly worksheetName: string;
+  readonly tableId: string;
+  readonly sourceRow: number;
+  readonly factorName: string;
+  readonly unit: string;
+  readonly lowerTolerance: number;
+  readonly upperTolerance: number;
+}
+
+export type F6InputProposalForMaterialization = F6AnalysisContextProposal | F6OptimizationTargetsProposal | F6InputProposal;
+export type F6MaterializedOptimizationTarget = F6OptimizationTargetV2;
