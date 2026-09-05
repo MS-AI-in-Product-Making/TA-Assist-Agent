@@ -1662,7 +1662,7 @@ describe("createF6Optimization V2", () => {
         modelInterpretation: { outcome: "CALLER_AUTHORIZED", artifactReference: { artifact: "model-v2.json", contentHash: "d".repeat(64) } },
       },
       modelInterpretation: model,
-    } as any);
+    } as Parameters<typeof createF6OptimizationV2>[1]);
     const worksheet = result.worksheets[0]!;
 
     expect(worksheet.options.slice(0, 2).map((option) => option.status === "completed" ? option.targetContext?.targetType : undefined)).toEqual([

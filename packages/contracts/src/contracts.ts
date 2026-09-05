@@ -6854,10 +6854,6 @@ const validateF6ModelInterpretationWorksheetV2 = (
   });
 };
 
-const f6ModelInterpretationWorksheetV2Schema = f6ModelInterpretationWorksheetV2BaseSchema.superRefine((worksheet, context) => {
-  validateF6ModelInterpretationWorksheetV2(worksheet, context);
-});
-
 const f6ModelInterpretationV2ArtifactBaseSchema = z.object({
   contractVersion: contractVersionSchema,
   inputClassification: z.literal("confidential"),

@@ -12,7 +12,7 @@ export interface RequestContextChip {
   readonly detail: string;
 }
 
-export function TaAssistantPanel({ worksheetName, factorName, turns, disabled, onSubmit }: {
+export function TaAssistantPanel({ worksheetName, factorName, turns, api, sessionId, disabled, onSubmit }: {
   readonly worksheetName?: string;
   readonly factorName?: string;
   readonly turns: readonly ConversationTurn[];
@@ -24,7 +24,6 @@ export function TaAssistantPanel({ worksheetName, factorName, turns, disabled, o
 }) {
   const [suggestedMessage, setSuggestedMessage] = useState<string>();
   const contextChips = arguments[0].requestContextChips ?? [];
-  const { api, sessionId } = arguments[0];
   return (
     <section className="ta-assistant" aria-label="TA Assistant">
       <div className="assistant-context">
