@@ -205,6 +205,58 @@ describe("calculateF6Scenario", () => {
     expect(result.scenarios[1]?.overrides.systemSpecification).toEqual({ additionalMeanShift: 0.25, targetCpk: 1.33 });
   });
 
+  it("runs a nominal-only factor override without introducing tolerance field changes", () => {
+    const baseline = baselineRequest();
+
+    const result = calculateF6Scenario({
+      baselineRequest: baseline,
+      scenario: {
+        scenarioId: "f6-nominal-only",
+        optionKind: "requirement_change",
+        factorOverrides: [{
+          worksheetName: "Analysis-A",
+          tableId: "table-a",
+          sourceRow: 2,
+          nominalValue: 0.75,
+        }],
+      },
+    });
+
+    const scenario = result.scenarios.find(({ scenarioId }) => scenarioId === "f6-nominal-only");
+    expect(scenario?.overrides).toEqual({
+      factors: [{
+        source: { worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 2 },
+        fields: ["nominalValue"],
+      }],
+    });
+    const scenarioCalculation = scenario?.calculation;
+    expect(scenarioCalculation?.factors[0]!.input.nominalValue).toBe(0.75);
+    expect(scenarioCalculation?.factors[0]!.input.lowerTolerance).toBe(-1);
+    expect(scenarioCalculation?.factors[0]!.input.upperTolerance).toBe(1);
+  });
+
+  it("runs a one-sided system specification override", () => {
+    const baseline = baselineRequest();
+    const result = calculateF6Scenario({
+      baselineRequest: baseline,
+      scenario: {
+        scenarioId: "f6-system-lsl-only",
+        optionKind: "requirement_change",
+        factorOverrides: [],
+        systemSpecification: { lowerSpecLimit: -2.5 },
+      },
+    });
+
+    const scenario = result.scenarios.find(({ scenarioId }) => scenarioId === "f6-system-lsl-only");
+    expect(scenario?.overrides).toEqual({
+      factors: [],
+      systemSpecification: { lowerSpecLimit: -2.5 },
+    });
+    const scenarioCalculation = scenario?.calculation;
+    expect(scenarioCalculation?.capability.lowerSpecLimit).toBe(-2.5);
+    expect(scenarioCalculation?.capability.upperSpecLimit).toBe(3);
+  });
+
   it.each([
     ["worksheet", { factorOverrides: [{ ...factorScenario().factorOverrides[0], worksheetName: "Other" }] }],
     ["table", { factorOverrides: [{ ...factorScenario().factorOverrides[0], tableId: "other-table" }] }],

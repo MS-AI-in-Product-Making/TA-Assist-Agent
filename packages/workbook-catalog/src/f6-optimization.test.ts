@@ -1199,6 +1199,123 @@ describe("createF6Optimization V2", () => {
     },
   };
 
+  function v2BaselineIdentity(input: F6OptimizationRequest) {
+    const baseline = input.worksheets[0]!.baselineCalculation;
+    return {
+      calculationVersion: baseline.calculationVersion,
+      projectReference: baseline.projectReference,
+      runReference: baseline.runReference,
+      workbookContentHash: baseline.workbookContentHash,
+      worksheetName: baseline.worksheetSelection.worksheetName,
+      tableId: baseline.worksheetSelection.tableId,
+    };
+  }
+
+  function v2FactorIdentity(input: F6OptimizationRequest, factorIndex = 0) {
+    const factor = input.worksheets[0]!.baselineCalculation.factors[factorIndex]!;
+    return {
+      worksheetName: factor.source.worksheetName,
+      tableId: factor.source.tableId,
+      sourceRow: factor.source.sourceRow,
+      factorName: factor.factorName,
+      unit: factor.unit,
+    };
+  }
+
+  function v2SystemIdentity(input: F6OptimizationRequest) {
+    const baseline = input.worksheets[0]!.baselineCalculation;
+    return {
+      baselineIdentity: v2BaselineIdentity(input),
+      designNominal: baseline.system.designNominal,
+      mean: baseline.system.mean,
+      rssSigma: baseline.system.rssSigma,
+      lowerSpecLimit: baseline.capability.lowerSpecLimit,
+      upperSpecLimit: baseline.capability.upperSpecLimit,
+      targetCpk: baseline.capability.targetCpk,
+      traceReferences: baseline.traceRecords.map(({ outputField, formulaId, formulaVersion }) => ({
+        outputField,
+        formulaId,
+        formulaVersion,
+      })),
+    };
+  }
+
+  function modelInterpretationV2(input: F6OptimizationRequest, overrides: Partial<{
+    nominalDisposition: "RECOMMENDED" | "CONSIDER" | "INSUFFICIENT_EVIDENCE" | "NOT_RECOMMENDED";
+    meanShiftDisposition: "RECOMMENDED" | "CONSIDER" | "INSUFFICIENT_EVIDENCE" | "NOT_RECOMMENDED";
+    specificationDisposition: "RECOMMENDED" | "CONSIDER" | "INSUFFICIENT_EVIDENCE" | "NOT_RECOMMENDED";
+    toleranceDisposition: "RECOMMENDED" | "CONSIDER" | "INSUFFICIENT_EVIDENCE" | "NOT_RECOMMENDED";
+  }> = {}) {
+    const worksheet = input.worksheets[0]!;
+    const baseline = worksheet.baselineCalculation;
+    const factor = baseline.factors[0]!;
+    const identity = v2BaselineIdentity(input);
+    const factorIdentity = v2FactorIdentity(input);
+    return {
+      contractVersion: "v1" as const,
+      inputClassification: "confidential" as const,
+      interpretationVersion: "f6-model-interpretation-v2" as const,
+      workbookContentHash: input.workbook.contentHash,
+      generatedAt: "2026-09-05T00:00:00.000Z",
+      worksheets: [{
+        worksheetName: worksheet.worksheetName,
+        tableId: baseline.worksheetSelection.tableId,
+        baselineIdentity: identity,
+        sourceReferences: {
+          f2: input.f2Reference,
+          f4: input.f4Reference,
+          f5: input.f5Reference,
+          image: {
+            artifact: worksheet.f5Worksheet.imageReference.artifact,
+            contentHash: worksheet.f5Worksheet.imageReference.contentHash,
+            worksheetName: worksheet.worksheetName,
+          },
+        },
+        narrativeMarkdown: "Governed {{calc:top-contribution}} assessment.",
+        calculationClaims: [{
+          claimId: "top-contribution",
+          outputField: "factors[0].contribution",
+          rawValue: factor.contribution,
+          displayFormat: "percent" as const,
+          unit: null,
+        }],
+        optimizationAssessment: [
+          {
+            adjustmentClass: "factor_nominal" as const,
+            disposition: overrides.nominalDisposition ?? "RECOMMENDED",
+            priority: 1,
+            rationale: "Center by nominal shift on top contributor.",
+            factor: factorIdentity,
+            evidenceReferences: [input.f4Reference],
+          },
+          {
+            adjustmentClass: "system_mean_shift" as const,
+            disposition: overrides.meanShiftDisposition ?? "CONSIDER",
+            priority: 2,
+            rationale: "Mean shift is controllable.",
+            evidenceReferences: [input.f4Reference],
+          },
+          {
+            adjustmentClass: "system_specification" as const,
+            disposition: overrides.specificationDisposition ?? "INSUFFICIENT_EVIDENCE",
+            priority: 3,
+            rationale: "Requirement authority may be missing.",
+            evidenceReferences: [input.f5Reference],
+          },
+          {
+            adjustmentClass: "factor_tolerance" as const,
+            disposition: overrides.toleranceDisposition ?? "RECOMMENDED",
+            priority: 4,
+            rationale: "Top contributors should be tightened.",
+            factor: factorIdentity,
+            evidenceReferences: [input.f4Reference],
+          },
+        ],
+        reviewStatus: "ME_REVIEW_REQUIRED" as const,
+      }],
+    };
+  }
+
   it("generates governed OP1 OP2 OP3 scenarios when either side Cpk is below the worksheet target", () => {
     const result = createF6OptimizationV2(
       request("Analysis-A", { lowerSpecLimit: -10, upperSpecLimit: 10, targetCpk: 10, targetSigmaLevel: 30 }),
@@ -1355,5 +1472,218 @@ describe("createF6Optimization V2", () => {
 
   it("exports only the V2 optimizer from the package entrypoint", () => {
     expect(packageRoot.createF6Optimization).toBe(createF6OptimizationV2);
+  });
+
+  it("maps caller factor_nominal target to a nominal-only F4 scenario without mutating inputs", () => {
+    const input = request();
+    const inputBefore = structuredClone(input);
+    const baseline = input.worksheets[0]!.baselineCalculation;
+    const factor = v2FactorIdentity(input);
+    const targets = {
+      contractVersion: "v1" as const,
+      inputClassification: "confidential" as const,
+      targetVersion: "f6-optimization-targets-v2" as const,
+      workbookContentHash: input.workbook.contentHash,
+      worksheets: [{
+        worksheetName: input.worksheets[0]!.worksheetName,
+        tableId: baseline.worksheetSelection.tableId,
+        baselineIdentity: v2BaselineIdentity(input),
+        targets: [{
+          targetId: "caller-factor-nominal",
+          targetType: "factor_nominal" as const,
+          factor,
+          nominalValue: 0.9,
+          unit: factor.unit,
+        }],
+      }],
+    };
+    const targetsBefore = structuredClone(targets);
+
+    const result = createF6OptimizationV2(input, {
+      optimizationTargets: targets,
+      inputDecisions: {
+        analysisContext: { outcome: "NOT_PROVIDED" },
+        optimizationTargets: { outcome: "CALLER_AUTHORIZED", artifactReference: { artifact: "targets-v2.json", contentHash: "c".repeat(64) } },
+      },
+    });
+    const option = result.worksheets[0]!.options.find(({ optionId }) => optionId === "Analysis-A:caller-factor-nominal");
+
+    expect(option).toMatchObject({ status: "completed", targetId: "caller-factor-nominal" });
+    if (option?.status !== "completed") throw new Error("expected completed nominal option");
+    const scenarioCalculation = calculateF6Scenario({
+      baselineRequest: input.worksheets[0]!.baselineCalculationRequest,
+      scenario: {
+        scenarioId: option.optionId,
+        optionKind: "requirement_change",
+        factorOverrides: [{
+          worksheetName: factor.worksheetName,
+          tableId: factor.tableId,
+          sourceRow: factor.sourceRow,
+          nominalValue: 0.9,
+        }],
+      },
+    });
+    const scenario = scenarioCalculation.scenarios.find(({ scenarioId }) => scenarioId === option.optionId);
+    expect(scenario?.overrides).toEqual({
+      factors: [{
+        source: { worksheetName: factor.worksheetName, tableId: factor.tableId, sourceRow: factor.sourceRow },
+        fields: ["nominalValue"],
+      }],
+    });
+    const changedFactor = scenarioCalculation.scenarios[0]!.calculation.factors.find(({ source }) =>
+      source.worksheetName === factor.worksheetName && source.tableId === factor.tableId && source.sourceRow === factor.sourceRow,
+    )!;
+    expect(changedFactor.input.nominalValue).toBe(0.9);
+    expect(changedFactor.input.lowerTolerance).toBe(baseline.factors[0]!.input.lowerTolerance);
+    expect(changedFactor.input.upperTolerance).toBe(baseline.factors[0]!.input.upperTolerance);
+    expect(option.resultMetrics).toEqual(expect.objectContaining({
+      mean: scenarioCalculation.scenarios[0]!.calculation.system.mean,
+      cpk: scenarioCalculation.scenarios[0]!.calculation.capability.cpk,
+    }));
+    expect(input).toEqual(inputBefore);
+    expect(targets).toEqual(targetsBefore);
+  });
+
+  it("maps caller system_mean_shift.targetMean to additionalMeanShift deterministically", () => {
+    const input = request();
+    const baseline = input.worksheets[0]!.baselineCalculation;
+    const systemIdentity = v2SystemIdentity(input);
+    const targetMean = baseline.system.mean + 1.25;
+    const expectedAdditionalMeanShift = baseline.system.additionalMeanShift + targetMean - baseline.system.mean;
+    const targets = {
+      contractVersion: "v1" as const,
+      inputClassification: "confidential" as const,
+      targetVersion: "f6-optimization-targets-v2" as const,
+      workbookContentHash: input.workbook.contentHash,
+      worksheets: [{
+        worksheetName: input.worksheets[0]!.worksheetName,
+        tableId: baseline.worksheetSelection.tableId,
+        baselineIdentity: v2BaselineIdentity(input),
+        targets: [{
+          targetId: "caller-mean-center",
+          targetType: "system_mean_shift" as const,
+          systemIdentity,
+          target: { targetMean, unit: baseline.factors[0]!.unit },
+        }],
+      }],
+    };
+
+    const result = createF6OptimizationV2(input, {
+      optimizationTargets: targets,
+      inputDecisions: {
+        analysisContext: { outcome: "NOT_PROVIDED" },
+        optimizationTargets: { outcome: "CALLER_AUTHORIZED", artifactReference: { artifact: "targets-v2.json", contentHash: "c".repeat(64) } },
+      },
+    });
+    const option = result.worksheets[0]!.options.find(({ optionId }) => optionId === "Analysis-A:caller-mean-center");
+    expect(option).toMatchObject({ status: "completed", targetId: "caller-mean-center" });
+    if (option?.status !== "completed") throw new Error("expected completed mean shift option");
+    const scenarioCalculation = calculateF6Scenario({
+      baselineRequest: input.worksheets[0]!.baselineCalculationRequest,
+      scenario: {
+        scenarioId: option.optionId,
+        optionKind: "requirement_change",
+        factorOverrides: [],
+        systemSpecification: { additionalMeanShift: expectedAdditionalMeanShift },
+      },
+    });
+    const scenario = scenarioCalculation.scenarios.find(({ scenarioId }) => scenarioId === option.optionId);
+    expect(scenario?.overrides.systemSpecification).toEqual({ additionalMeanShift: expectedAdditionalMeanShift });
+    expect(option.resultMetrics.mean).toBe(targetMean);
+  });
+
+  it("maps caller system_specification to caller-authorized limits only", () => {
+    const input = request();
+    const baseline = input.worksheets[0]!.baselineCalculation;
+    const systemIdentity = v2SystemIdentity(input);
+    const targets = {
+      contractVersion: "v1" as const,
+      inputClassification: "confidential" as const,
+      targetVersion: "f6-optimization-targets-v2" as const,
+      workbookContentHash: input.workbook.contentHash,
+      worksheets: [{
+        worksheetName: input.worksheets[0]!.worksheetName,
+        tableId: baseline.worksheetSelection.tableId,
+        baselineIdentity: v2BaselineIdentity(input),
+        targets: [{
+          targetId: "caller-spec-tighten",
+          targetType: "system_specification" as const,
+          systemIdentity,
+          lowerSpecLimit: -9,
+          unit: baseline.factors[0]!.unit,
+        }],
+      }],
+    };
+
+    const result = createF6OptimizationV2(input, {
+      optimizationTargets: targets,
+      inputDecisions: {
+        analysisContext: { outcome: "NOT_PROVIDED" },
+        optimizationTargets: { outcome: "CALLER_AUTHORIZED", artifactReference: { artifact: "targets-v2.json", contentHash: "c".repeat(64) } },
+      },
+    });
+    const option = result.worksheets[0]!.options.find(({ optionId }) => optionId === "Analysis-A:caller-spec-tighten");
+    expect(option).toMatchObject({ status: "completed", targetId: "caller-spec-tighten" });
+    if (option?.status !== "completed") throw new Error("expected completed specification option");
+    const scenarioCalculation = calculateF6Scenario({
+      baselineRequest: input.worksheets[0]!.baselineCalculationRequest,
+      scenario: {
+        scenarioId: option.optionId,
+        optionKind: "requirement_change",
+        factorOverrides: [],
+        systemSpecification: { lowerSpecLimit: -9 },
+      },
+    });
+    const scenario = scenarioCalculation.scenarios.find(({ scenarioId }) => scenarioId === option.optionId);
+    expect(scenario?.overrides.systemSpecification).toEqual({ lowerSpecLimit: -9 });
+    expect(scenario?.overrides.factors).toEqual([]);
+    expect(option.resultMetrics).toEqual(expect.objectContaining({
+      mean: scenarioCalculation.scenarios[0]!.calculation.system.mean,
+      cpk: scenarioCalculation.scenarios[0]!.calculation.capability.cpk,
+    }));
+  });
+
+  it("consumes v2 optimizationAssessment with stable class ordering and no implicit specification relaxation", () => {
+    const input = request("Analysis-A", { lowerSpecLimit: -10, upperSpecLimit: 10, targetCpk: 10, targetSigmaLevel: 30 });
+    const model = modelInterpretationV2(input);
+
+    const result = createF6OptimizationV2(input, {
+      inputDecisions: {
+        analysisContext: { outcome: "NOT_PROVIDED" },
+        optimizationTargets: { outcome: "NOT_PROVIDED" },
+        modelInterpretation: { outcome: "CALLER_AUTHORIZED", artifactReference: { artifact: "model-v2.json", contentHash: "d".repeat(64) } },
+      },
+      modelInterpretation: model,
+    } as any);
+    const worksheet = result.worksheets[0]!;
+
+    expect(worksheet.options.slice(0, 2).map((option) => option.status === "completed" ? option.targetContext?.targetType : undefined)).toEqual([
+      "factor_nominal",
+      "system_mean_shift",
+    ]);
+    expect(worksheet.options.some((option) => option.status === "completed" && option.targetContext?.targetType === "system_specification")).toBe(false);
+    expect(worksheet.options.filter((option) => option.optionSource === "BUILT_IN_POLICY").map(({ optionId }) => optionId)).toEqual([
+      "Analysis-A:builtin-top3:OP1",
+      "Analysis-A:builtin-top3:OP2",
+      "Analysis-A:builtin-top3:OP3",
+    ]);
+    expect(worksheet.clarifications.some(({ reasonCode }) => reasonCode.includes("specification"))).toBe(true);
+  });
+
+  it("keeps the existing Top 3 fallback when v2 model assessment is absent", () => {
+    const input = request("Analysis-A", { lowerSpecLimit: -10, upperSpecLimit: 10, targetCpk: 10, targetSigmaLevel: 30 });
+
+    const result = createF6OptimizationV2(input, {
+      inputDecisions: {
+        analysisContext: { outcome: "NOT_PROVIDED" },
+        optimizationTargets: { outcome: "NOT_PROVIDED" },
+      },
+    });
+
+    expect(result.worksheets[0]!.options.map(({ optionId }) => optionId)).toEqual([
+      "Analysis-A:builtin-top3:OP1",
+      "Analysis-A:builtin-top3:OP2",
+      "Analysis-A:builtin-top3:OP3",
+    ]);
   });
 });
