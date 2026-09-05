@@ -1510,6 +1510,10 @@ describe("createF6Optimization V2", () => {
 
     expect(option).toMatchObject({ status: "completed", targetId: "caller-factor-nominal" });
     if (option?.status !== "completed") throw new Error("expected completed nominal option");
+    expect(option.scenarioEvidence.factorOverrides).toEqual([{
+      factor,
+      nominalValue: 0.9,
+    }]);
     const scenarioCalculation = calculateF6Scenario({
       baselineRequest: input.worksheets[0]!.baselineCalculationRequest,
       scenario: {
@@ -1578,6 +1582,8 @@ describe("createF6Optimization V2", () => {
     const option = result.worksheets[0]!.options.find(({ optionId }) => optionId === "Analysis-A:caller-mean-center");
     expect(option).toMatchObject({ status: "completed", targetId: "caller-mean-center" });
     if (option?.status !== "completed") throw new Error("expected completed mean shift option");
+    expect(option.scenarioEvidence.factorOverrides).toEqual([]);
+    expect(option.scenarioEvidence.systemSpecification).toEqual({ additionalMeanShift: expectedAdditionalMeanShift });
     const scenarioCalculation = calculateF6Scenario({
       baselineRequest: input.worksheets[0]!.baselineCalculationRequest,
       scenario: {
@@ -1625,6 +1631,8 @@ describe("createF6Optimization V2", () => {
     const option = result.worksheets[0]!.options.find(({ optionId }) => optionId === "Analysis-A:caller-spec-tighten");
     expect(option).toMatchObject({ status: "completed", targetId: "caller-spec-tighten" });
     if (option?.status !== "completed") throw new Error("expected completed specification option");
+    expect(option.scenarioEvidence.factorOverrides).toEqual([]);
+    expect(option.scenarioEvidence.systemSpecification).toEqual({ lowerSpecLimit: -9 });
     const scenarioCalculation = calculateF6Scenario({
       baselineRequest: input.worksheets[0]!.baselineCalculationRequest,
       scenario: {

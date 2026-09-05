@@ -7986,15 +7986,32 @@ const f6ScenarioEvidenceV2Schema = z.object({
   baselineIdentity: f6InputBaselineIdentitySchema,
   factorOverrides: z.array(z.object({
     factor: f6FactorIdentitySchema,
+    nominalValue: z.number().finite().optional(),
     upperTolerance: z.number().finite().optional(),
     lowerTolerance: z.number().finite().optional(),
     sigma: z.number().finite().positive().optional(),
-  }).strict().refine((override) => override.upperTolerance !== undefined
+  }).strict().refine((override) => override.nominalValue !== undefined
+    || override.upperTolerance !== undefined
     || override.lowerTolerance !== undefined
-    || override.sigma !== undefined, { message: "factor override requires at least one numeric field" })).min(1),
+    || override.sigma !== undefined, { message: "factor override requires at least one numeric field" })),
+  systemSpecification: z.object({
+    additionalMeanShift: z.number().finite().optional(),
+    lowerSpecLimit: z.number().finite().optional(),
+    upperSpecLimit: z.number().finite().optional(),
+  }).strict().refine((specification) => specification.additionalMeanShift !== undefined
+    || specification.lowerSpecLimit !== undefined
+    || specification.upperSpecLimit !== undefined, { message: "systemSpecification must include at least one override value" }).optional(),
   calculationReference: f6ArtifactReferenceSchema,
   formulaReferences: z.array(f6V2FormulaReferenceSchema),
-}).strict();
+}).strict().superRefine((evidence, context) => {
+  if (evidence.factorOverrides.length === 0 && evidence.systemSpecification === undefined) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "scenario evidence must include at least one factor override or systemSpecification override",
+      path: ["factorOverrides"],
+    });
+  }
+});
 
 const f6BuiltInPolicyContextSchema = z.object({
   policyId: z.literal("f6-top3-tolerance-policy-v1"),

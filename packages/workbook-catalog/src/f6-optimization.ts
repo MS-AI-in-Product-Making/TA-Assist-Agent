@@ -797,13 +797,8 @@ function scaledOverride(factor: CalculationFactorResult, scale: number) {
 function scenarioForTarget(
   worksheet: F6OptimizationRequest["worksheets"][number],
   target: F6OptimizationTargets["worksheets"][number]["targets"][number],
-): { readonly scenario?: F6ControlledScenario; readonly v2Overrides?: Array<{ factor: F6FactorIdentity; lowerTolerance?: number; upperTolerance?: number; sigma?: number }>; readonly insufficientInputs?: readonly string[] } {
+): { readonly scenario?: F6ControlledScenario; readonly v2Overrides?: Array<{ factor: F6FactorIdentity; nominalValue?: number; lowerTolerance?: number; upperTolerance?: number; sigma?: number }>; readonly insufficientInputs?: readonly string[] } {
   const calculation = worksheet.baselineCalculation;
-  const seededEvidenceOverride = () => {
-    const seededFactor = calculation.factors[0];
-    if (seededFactor === undefined) throw new Error("Baseline factors are unavailable for governed scenario evidence.");
-    return { factor: factorIdentity(seededFactor), sigma: seededFactor.sigma };
-  };
   let overrides: ReturnType<typeof overrideForTolerance>[];
   if (target.targetType === "factor_tolerance") {
     const factor = exactFactor(calculation, target.factor);
@@ -828,7 +823,10 @@ function scenarioForTarget(
           nominalValue: target.nominalValue,
         }],
       },
-      v2Overrides: [seededEvidenceOverride()],
+      v2Overrides: [{
+        factor: factorIdentity(factor),
+        nominalValue: target.nominalValue,
+      }],
     };
   } else if (target.targetType === "system_mean_shift") {
     const resultingAdditionalMeanShift = "targetMean" in target.target
@@ -842,7 +840,7 @@ function scenarioForTarget(
         factorOverrides: [],
         systemSpecification: { additionalMeanShift: resultingAdditionalMeanShift },
       },
-      v2Overrides: [seededEvidenceOverride()],
+      v2Overrides: [],
     };
   } else if (target.targetType === "system_specification") {
     const scenarioId = `${worksheet.worksheetName}:${target.targetId}`;
@@ -856,7 +854,7 @@ function scenarioForTarget(
           ...(target.upperSpecLimit === undefined ? {} : { upperSpecLimit: target.upperSpecLimit }),
         },
       },
-      v2Overrides: [seededEvidenceOverride()],
+      v2Overrides: [],
     };
   } else {
     if (target.apportionment.policy === "CAPABILITY_BOUNDED") {
@@ -1024,6 +1022,9 @@ function targetOption(
         targetId: target.targetId,
         baselineIdentity: inputBaselineIdentity(worksheet.baselineCalculation),
         factorOverrides: built.v2Overrides,
+        ...(built.scenario.systemSpecification === undefined
+          ? {}
+          : { systemSpecification: structuredClone(built.scenario.systemSpecification) }),
         calculationReference: artifactReference(request.f4Reference),
         formulaReferences: scenario.calculation.traceRecords.map(({ outputField, formulaId, formulaVersion }) => ({ outputField, formulaId, formulaVersion })),
       },

@@ -5110,6 +5110,100 @@ describe("F5.1 objective interpretation contracts", () => {
         expect(f6OptimizationResultSchema.safeParse({ ...resultV2, optimizationVersion: "f6-optimization-v1" }).success).toBe(false);
       });
 
+      it("accepts truthful caller-target scenario evidence and rejects empty evidence", () => {
+        const completedOption = {
+          optionId: "Analysis-A:caller-target",
+          status: "completed" as const,
+          optionSource: "CALLER_TARGET" as const,
+          targetId: "caller-factor-nominal",
+          baselineMetrics: metrics,
+          resultMetrics: { ...metrics, cpk: 1.1 },
+          scenarioEvidence: {
+            targetId: "caller-factor-nominal",
+            baselineIdentity,
+            factorOverrides: [{
+              factor,
+              nominalValue: 0.25,
+            }],
+            calculationReference: artifactReference("Feature4-Calculation.json"),
+            formulaReferences: [],
+          },
+          feasibility: { status: "supported" as const, reasonCodes: ["caller_provided_target"], evidenceReferences: [] },
+          evidenceReferences: [],
+          impactRank: 1,
+        };
+        const completedResult = {
+          ...resultV2,
+          worksheets: [{
+            ...resultV2.worksheets[0],
+            options: [completedOption],
+            highestImpactAction: { optionId: completedOption.optionId, impactRank: 1 },
+            recommendations: [{
+              recommendationId: "recommend-caller-target",
+              optionId: completedOption.optionId,
+              text: "Review governed target.",
+              evidenceReferences: [artifactReference("Feature4-Calculation.json")],
+            }],
+          }],
+          summary: { ...resultV2.summary, candidateOptionCount: 0, completedOptionCount: 1 },
+        };
+
+        expect(f6OptimizationResultSchema.safeParse(completedResult).success).toBe(true);
+
+        const systemOnly = {
+          ...completedOption,
+          optionId: "Analysis-A:caller-system-shift",
+          targetId: "caller-system-shift",
+          scenarioEvidence: {
+            ...completedOption.scenarioEvidence,
+            targetId: "caller-system-shift",
+            factorOverrides: [],
+            systemSpecification: { additionalMeanShift: 0.4 },
+          },
+        };
+        const systemOnlyResult = {
+          ...completedResult,
+          worksheets: [{
+            ...completedResult.worksheets[0],
+            options: [systemOnly],
+            highestImpactAction: { optionId: systemOnly.optionId, impactRank: 1 },
+            recommendations: [{
+              recommendationId: "recommend-system-shift",
+              optionId: systemOnly.optionId,
+              text: "Review governed target.",
+              evidenceReferences: [artifactReference("Feature4-Calculation.json")],
+            }],
+          }],
+        };
+        expect(f6OptimizationResultSchema.safeParse(systemOnlyResult).success).toBe(true);
+
+        const emptyEvidence = {
+          ...completedOption,
+          optionId: "Analysis-A:caller-empty",
+          targetId: "caller-empty",
+          scenarioEvidence: {
+            ...completedOption.scenarioEvidence,
+            targetId: "caller-empty",
+            factorOverrides: [],
+          },
+        };
+        const emptyEvidenceResult = {
+          ...completedResult,
+          worksheets: [{
+            ...completedResult.worksheets[0],
+            options: [emptyEvidence],
+            highestImpactAction: { optionId: emptyEvidence.optionId, impactRank: 1 },
+            recommendations: [{
+              recommendationId: "recommend-empty",
+              optionId: emptyEvidence.optionId,
+              text: "Review governed target.",
+              evidenceReferences: [artifactReference("Feature4-Calculation.json")],
+            }],
+          }],
+        };
+        expect(f6OptimizationResultSchema.safeParse(emptyEvidenceResult).success).toBe(false);
+      });
+
       it("requires unique V2 report scope names and blocked names as a subset", () => {
         expect(f6OptimizationResultSchema.safeParse({
           ...resultV2,
