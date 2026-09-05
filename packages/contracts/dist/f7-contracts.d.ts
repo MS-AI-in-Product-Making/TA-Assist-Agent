@@ -4,7 +4,7 @@ export declare const F7_SELECTION_NORMAL_SKEWNESS_MAX = 0.5;
 export declare const F7_SELECTION_NORMAL_COEFFICIENT_OF_VARIATION_MAX = 0.1;
 export declare const F7_SELECTION_NORMAL_MEAN_MEDIAN_RELATIVE_DIFFERENCE_MAX = 0.02;
 export declare const F7_SELECTION_NORMAL_QQ_CURVATURE_MAX = 0.1;
-export declare const f7LoopCoefficientSchema: z.ZodUnion<[z.ZodLiteral<-1>, z.ZodLiteral<1>]>;
+export declare const f7LoopCoefficientSchema: z.ZodUnion<[z.ZodLiteral<-1>, z.ZodLiteral<0>, z.ZodLiteral<1>]>;
 export declare const f7FactorSourceModeSchema: z.ZodEnum<["MEASURED", "BASELINE_ASSUMPTION"]>;
 export declare const f7MeasurementStructureSchema: z.ZodEnum<["RATIONAL_SUBGROUP", "ORDERED_INDIVIDUALS", "UNORDERED_SAMPLE"]>;
 export declare const f7RationalSubgroupEstimatorSchema: z.ZodEnum<["RANGE_D2", "S_C4"]>;
@@ -43,7 +43,7 @@ export declare const f7FactorCandidateSchema: z.ZodEffects<z.ZodObject<{
     distribution: z.ZodEnum<["Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta"]>;
     lowerSpecLimit: z.ZodNumber;
     upperSpecLimit: z.ZodNumber;
-    designNominal: z.ZodEffects<z.ZodNumber, number, number>;
+    designNominal: z.ZodNumber;
     upperTolerance: z.ZodNumber;
     lowerTolerance: z.ZodNumber;
     workbookContentHash: z.ZodString;
@@ -142,7 +142,7 @@ export declare const f7FactorSetupConfirmationSchema: z.ZodEffects<z.ZodObject<{
     sigmaLevel: z.ZodOptional<z.ZodNumber>;
     distribution: z.ZodOptional<z.ZodEnum<["Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta"]>>;
     confirmed: z.ZodLiteral<true>;
-    designNominal: z.ZodEffects<z.ZodNumber, number, number>;
+    designNominal: z.ZodNumber;
     upperTolerance: z.ZodNumber;
     lowerTolerance: z.ZodNumber;
     factorCandidateId: z.ZodString;
@@ -195,7 +195,7 @@ export declare const f7FactorSetupConfirmationSchema: z.ZodEffects<z.ZodObject<{
 }>;
 export declare const f7UnitSourceSchema: z.ZodEnum<["workbook", "user_confirmed", "unspecified"]>;
 export declare const f7FactorEvidenceSchema: z.ZodEffects<z.ZodObject<{
-    loopCoefficient: z.ZodUnion<[z.ZodLiteral<-1>, z.ZodLiteral<1>]>;
+    loopCoefficient: z.ZodUnion<[z.ZodLiteral<-1>, z.ZodLiteral<0>, z.ZodLiteral<1>]>;
     physicalMean: z.ZodNumber;
     signedContributionMean: z.ZodNumber;
     baselineSampler: z.ZodObject<{
@@ -223,7 +223,7 @@ export declare const f7FactorEvidenceSchema: z.ZodEffects<z.ZodObject<{
     longTermSafetyFactor: z.ZodNumber;
     sigmaLevel: z.ZodNumber;
     distribution: z.ZodEnum<["Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta"]>;
-    designNominal: z.ZodEffects<z.ZodNumber, number, number>;
+    designNominal: z.ZodNumber;
     upperTolerance: z.ZodNumber;
     lowerTolerance: z.ZodNumber;
     workbookContentHash: z.ZodString;
@@ -260,7 +260,7 @@ export declare const f7FactorEvidenceSchema: z.ZodEffects<z.ZodObject<{
     factorCandidateId: string;
     factorId: string;
     unitSource: "workbook" | "user_confirmed" | "unspecified";
-    loopCoefficient: 1 | -1;
+    loopCoefficient: 0 | 1 | -1;
     signedContributionMean: number;
     baselineSampler: {
         standardDeviation: number;
@@ -293,7 +293,7 @@ export declare const f7FactorEvidenceSchema: z.ZodEffects<z.ZodObject<{
     factorCandidateId: string;
     factorId: string;
     unitSource: "workbook" | "user_confirmed" | "unspecified";
-    loopCoefficient: 1 | -1;
+    loopCoefficient: 0 | 1 | -1;
     signedContributionMean: number;
     baselineSampler: {
         standardDeviation: number;
@@ -326,7 +326,7 @@ export declare const f7FactorEvidenceSchema: z.ZodEffects<z.ZodObject<{
     factorCandidateId: string;
     factorId: string;
     unitSource: "workbook" | "user_confirmed" | "unspecified";
-    loopCoefficient: 1 | -1;
+    loopCoefficient: 0 | 1 | -1;
     signedContributionMean: number;
     baselineSampler: {
         standardDeviation: number;
@@ -359,7 +359,7 @@ export declare const f7FactorEvidenceSchema: z.ZodEffects<z.ZodObject<{
     factorCandidateId: string;
     factorId: string;
     unitSource: "workbook" | "user_confirmed" | "unspecified";
-    loopCoefficient: 1 | -1;
+    loopCoefficient: 0 | 1 | -1;
     signedContributionMean: number;
     baselineSampler: {
         standardDeviation: number;
@@ -3366,21 +3366,21 @@ export declare const f7ReportSummarySchema: z.ZodEffects<z.ZodObject<{
 export declare const f7ReportFactorSchema: z.ZodObject<{
     factorId: z.ZodString;
     factorName: z.ZodString;
-    loopCoefficient: z.ZodUnion<[z.ZodLiteral<-1>, z.ZodLiteral<1>]>;
+    loopCoefficient: z.ZodUnion<[z.ZodLiteral<-1>, z.ZodLiteral<0>, z.ZodLiteral<1>]>;
     sourceMode: z.ZodEnum<["MEASURED", "BASELINE_ASSUMPTION"]>;
     approvedDistribution: z.ZodEnum<["normal", "lognormal", "weibull", "gamma", "uniform"]>;
     sourceReferences: z.ZodArray<z.ZodString, "many">;
 }, "strict", z.ZodTypeAny, {
     factorName: string;
     factorId: string;
-    loopCoefficient: 1 | -1;
+    loopCoefficient: 0 | 1 | -1;
     sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
     approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
     sourceReferences: string[];
 }, {
     factorName: string;
     factorId: string;
-    loopCoefficient: 1 | -1;
+    loopCoefficient: 0 | 1 | -1;
     sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
     approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
     sourceReferences: string[];
@@ -4254,21 +4254,21 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
     factors: z.ZodArray<z.ZodObject<{
         factorId: z.ZodString;
         factorName: z.ZodString;
-        loopCoefficient: z.ZodUnion<[z.ZodLiteral<-1>, z.ZodLiteral<1>]>;
+        loopCoefficient: z.ZodUnion<[z.ZodLiteral<-1>, z.ZodLiteral<0>, z.ZodLiteral<1>]>;
         sourceMode: z.ZodEnum<["MEASURED", "BASELINE_ASSUMPTION"]>;
         approvedDistribution: z.ZodEnum<["normal", "lognormal", "weibull", "gamma", "uniform"]>;
         sourceReferences: z.ZodArray<z.ZodString, "many">;
     }, "strict", z.ZodTypeAny, {
         factorName: string;
         factorId: string;
-        loopCoefficient: 1 | -1;
+        loopCoefficient: 0 | 1 | -1;
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         sourceReferences: string[];
     }, {
         factorName: string;
         factorId: string;
-        loopCoefficient: 1 | -1;
+        loopCoefficient: 0 | 1 | -1;
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         sourceReferences: string[];
@@ -4600,7 +4600,7 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
     factors: {
         factorName: string;
         factorId: string;
-        loopCoefficient: 1 | -1;
+        loopCoefficient: 0 | 1 | -1;
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         sourceReferences: string[];
@@ -4756,7 +4756,7 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
     factors: {
         factorName: string;
         factorId: string;
-        loopCoefficient: 1 | -1;
+        loopCoefficient: 0 | 1 | -1;
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         sourceReferences: string[];
@@ -4912,7 +4912,7 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
     factors: {
         factorName: string;
         factorId: string;
-        loopCoefficient: 1 | -1;
+        loopCoefficient: 0 | 1 | -1;
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         sourceReferences: string[];
@@ -5068,7 +5068,7 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
     factors: {
         factorName: string;
         factorId: string;
-        loopCoefficient: 1 | -1;
+        loopCoefficient: 0 | 1 | -1;
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
         sourceReferences: string[];
@@ -6074,7 +6074,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             distribution: z.ZodEnum<["Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta"]>;
             lowerSpecLimit: z.ZodNumber;
             upperSpecLimit: z.ZodNumber;
-            designNominal: z.ZodEffects<z.ZodNumber, number, number>;
+            designNominal: z.ZodNumber;
             upperTolerance: z.ZodNumber;
             lowerTolerance: z.ZodNumber;
             workbookContentHash: z.ZodString;
@@ -6173,7 +6173,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             sigmaLevel: z.ZodOptional<z.ZodNumber>;
             distribution: z.ZodOptional<z.ZodEnum<["Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta"]>>;
             confirmed: z.ZodLiteral<true>;
-            designNominal: z.ZodEffects<z.ZodNumber, number, number>;
+            designNominal: z.ZodNumber;
             upperTolerance: z.ZodNumber;
             lowerTolerance: z.ZodNumber;
             factorCandidateId: z.ZodString;
@@ -6593,7 +6593,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             };
         }>]>>;
         evidence: z.ZodOptional<z.ZodEffects<z.ZodObject<{
-            loopCoefficient: z.ZodUnion<[z.ZodLiteral<-1>, z.ZodLiteral<1>]>;
+            loopCoefficient: z.ZodUnion<[z.ZodLiteral<-1>, z.ZodLiteral<0>, z.ZodLiteral<1>]>;
             physicalMean: z.ZodNumber;
             signedContributionMean: z.ZodNumber;
             baselineSampler: z.ZodObject<{
@@ -6621,7 +6621,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             longTermSafetyFactor: z.ZodNumber;
             sigmaLevel: z.ZodNumber;
             distribution: z.ZodEnum<["Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta"]>;
-            designNominal: z.ZodEffects<z.ZodNumber, number, number>;
+            designNominal: z.ZodNumber;
             upperTolerance: z.ZodNumber;
             lowerTolerance: z.ZodNumber;
             workbookContentHash: z.ZodString;
@@ -6658,7 +6658,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorCandidateId: string;
             factorId: string;
             unitSource: "workbook" | "user_confirmed" | "unspecified";
-            loopCoefficient: 1 | -1;
+            loopCoefficient: 0 | 1 | -1;
             signedContributionMean: number;
             baselineSampler: {
                 standardDeviation: number;
@@ -6691,7 +6691,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorCandidateId: string;
             factorId: string;
             unitSource: "workbook" | "user_confirmed" | "unspecified";
-            loopCoefficient: 1 | -1;
+            loopCoefficient: 0 | 1 | -1;
             signedContributionMean: number;
             baselineSampler: {
                 standardDeviation: number;
@@ -6724,7 +6724,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorCandidateId: string;
             factorId: string;
             unitSource: "workbook" | "user_confirmed" | "unspecified";
-            loopCoefficient: 1 | -1;
+            loopCoefficient: 0 | 1 | -1;
             signedContributionMean: number;
             baselineSampler: {
                 standardDeviation: number;
@@ -6757,7 +6757,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorCandidateId: string;
             factorId: string;
             unitSource: "workbook" | "user_confirmed" | "unspecified";
-            loopCoefficient: 1 | -1;
+            loopCoefficient: 0 | 1 | -1;
             signedContributionMean: number;
             baselineSampler: {
                 standardDeviation: number;
@@ -8070,7 +8070,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorCandidateId: string;
             factorId: string;
             unitSource: "workbook" | "user_confirmed" | "unspecified";
-            loopCoefficient: 1 | -1;
+            loopCoefficient: 0 | 1 | -1;
             signedContributionMean: number;
             baselineSampler: {
                 standardDeviation: number;
@@ -8346,7 +8346,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorCandidateId: string;
             factorId: string;
             unitSource: "workbook" | "user_confirmed" | "unspecified";
-            loopCoefficient: 1 | -1;
+            loopCoefficient: 0 | 1 | -1;
             signedContributionMean: number;
             baselineSampler: {
                 standardDeviation: number;
@@ -8622,7 +8622,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorCandidateId: string;
             factorId: string;
             unitSource: "workbook" | "user_confirmed" | "unspecified";
-            loopCoefficient: 1 | -1;
+            loopCoefficient: 0 | 1 | -1;
             signedContributionMean: number;
             baselineSampler: {
                 standardDeviation: number;
@@ -8898,7 +8898,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorCandidateId: string;
             factorId: string;
             unitSource: "workbook" | "user_confirmed" | "unspecified";
-            loopCoefficient: 1 | -1;
+            loopCoefficient: 0 | 1 | -1;
             signedContributionMean: number;
             baselineSampler: {
                 standardDeviation: number;
@@ -9635,7 +9635,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorCandidateId: string;
             factorId: string;
             unitSource: "workbook" | "user_confirmed" | "unspecified";
-            loopCoefficient: 1 | -1;
+            loopCoefficient: 0 | 1 | -1;
             signedContributionMean: number;
             baselineSampler: {
                 standardDeviation: number;
@@ -10161,7 +10161,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorCandidateId: string;
             factorId: string;
             unitSource: "workbook" | "user_confirmed" | "unspecified";
-            loopCoefficient: 1 | -1;
+            loopCoefficient: 0 | 1 | -1;
             signedContributionMean: number;
             baselineSampler: {
                 standardDeviation: number;
@@ -10687,7 +10687,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorCandidateId: string;
             factorId: string;
             unitSource: "workbook" | "user_confirmed" | "unspecified";
-            loopCoefficient: 1 | -1;
+            loopCoefficient: 0 | 1 | -1;
             signedContributionMean: number;
             baselineSampler: {
                 standardDeviation: number;
@@ -11213,7 +11213,7 @@ export declare const f7SessionSnapshotSchema: z.ZodEffects<z.ZodObject<{
             factorCandidateId: string;
             factorId: string;
             unitSource: "workbook" | "user_confirmed" | "unspecified";
-            loopCoefficient: 1 | -1;
+            loopCoefficient: 0 | 1 | -1;
             signedContributionMean: number;
             baselineSampler: {
                 standardDeviation: number;
@@ -12562,7 +12562,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 distribution: z.ZodEnum<["Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta"]>;
                 lowerSpecLimit: z.ZodNumber;
                 upperSpecLimit: z.ZodNumber;
-                designNominal: z.ZodEffects<z.ZodNumber, number, number>;
+                designNominal: z.ZodNumber;
                 upperTolerance: z.ZodNumber;
                 lowerTolerance: z.ZodNumber;
                 workbookContentHash: z.ZodString;
@@ -12661,7 +12661,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 sigmaLevel: z.ZodOptional<z.ZodNumber>;
                 distribution: z.ZodOptional<z.ZodEnum<["Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta"]>>;
                 confirmed: z.ZodLiteral<true>;
-                designNominal: z.ZodEffects<z.ZodNumber, number, number>;
+                designNominal: z.ZodNumber;
                 upperTolerance: z.ZodNumber;
                 lowerTolerance: z.ZodNumber;
                 factorCandidateId: z.ZodString;
@@ -13081,7 +13081,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 };
             }>]>>;
             evidence: z.ZodOptional<z.ZodEffects<z.ZodObject<{
-                loopCoefficient: z.ZodUnion<[z.ZodLiteral<-1>, z.ZodLiteral<1>]>;
+                loopCoefficient: z.ZodUnion<[z.ZodLiteral<-1>, z.ZodLiteral<0>, z.ZodLiteral<1>]>;
                 physicalMean: z.ZodNumber;
                 signedContributionMean: z.ZodNumber;
                 baselineSampler: z.ZodObject<{
@@ -13109,7 +13109,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 longTermSafetyFactor: z.ZodNumber;
                 sigmaLevel: z.ZodNumber;
                 distribution: z.ZodEnum<["Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta"]>;
-                designNominal: z.ZodEffects<z.ZodNumber, number, number>;
+                designNominal: z.ZodNumber;
                 upperTolerance: z.ZodNumber;
                 lowerTolerance: z.ZodNumber;
                 workbookContentHash: z.ZodString;
@@ -13146,7 +13146,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorCandidateId: string;
                 factorId: string;
                 unitSource: "workbook" | "user_confirmed" | "unspecified";
-                loopCoefficient: 1 | -1;
+                loopCoefficient: 0 | 1 | -1;
                 signedContributionMean: number;
                 baselineSampler: {
                     standardDeviation: number;
@@ -13179,7 +13179,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorCandidateId: string;
                 factorId: string;
                 unitSource: "workbook" | "user_confirmed" | "unspecified";
-                loopCoefficient: 1 | -1;
+                loopCoefficient: 0 | 1 | -1;
                 signedContributionMean: number;
                 baselineSampler: {
                     standardDeviation: number;
@@ -13212,7 +13212,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorCandidateId: string;
                 factorId: string;
                 unitSource: "workbook" | "user_confirmed" | "unspecified";
-                loopCoefficient: 1 | -1;
+                loopCoefficient: 0 | 1 | -1;
                 signedContributionMean: number;
                 baselineSampler: {
                     standardDeviation: number;
@@ -13245,7 +13245,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorCandidateId: string;
                 factorId: string;
                 unitSource: "workbook" | "user_confirmed" | "unspecified";
-                loopCoefficient: 1 | -1;
+                loopCoefficient: 0 | 1 | -1;
                 signedContributionMean: number;
                 baselineSampler: {
                     standardDeviation: number;
@@ -14558,7 +14558,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorCandidateId: string;
                 factorId: string;
                 unitSource: "workbook" | "user_confirmed" | "unspecified";
-                loopCoefficient: 1 | -1;
+                loopCoefficient: 0 | 1 | -1;
                 signedContributionMean: number;
                 baselineSampler: {
                     standardDeviation: number;
@@ -14834,7 +14834,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorCandidateId: string;
                 factorId: string;
                 unitSource: "workbook" | "user_confirmed" | "unspecified";
-                loopCoefficient: 1 | -1;
+                loopCoefficient: 0 | 1 | -1;
                 signedContributionMean: number;
                 baselineSampler: {
                     standardDeviation: number;
@@ -15110,7 +15110,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorCandidateId: string;
                 factorId: string;
                 unitSource: "workbook" | "user_confirmed" | "unspecified";
-                loopCoefficient: 1 | -1;
+                loopCoefficient: 0 | 1 | -1;
                 signedContributionMean: number;
                 baselineSampler: {
                     standardDeviation: number;
@@ -15386,7 +15386,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorCandidateId: string;
                 factorId: string;
                 unitSource: "workbook" | "user_confirmed" | "unspecified";
-                loopCoefficient: 1 | -1;
+                loopCoefficient: 0 | 1 | -1;
                 signedContributionMean: number;
                 baselineSampler: {
                     standardDeviation: number;
@@ -16123,7 +16123,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorCandidateId: string;
                 factorId: string;
                 unitSource: "workbook" | "user_confirmed" | "unspecified";
-                loopCoefficient: 1 | -1;
+                loopCoefficient: 0 | 1 | -1;
                 signedContributionMean: number;
                 baselineSampler: {
                     standardDeviation: number;
@@ -16649,7 +16649,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorCandidateId: string;
                 factorId: string;
                 unitSource: "workbook" | "user_confirmed" | "unspecified";
-                loopCoefficient: 1 | -1;
+                loopCoefficient: 0 | 1 | -1;
                 signedContributionMean: number;
                 baselineSampler: {
                     standardDeviation: number;
@@ -17175,7 +17175,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorCandidateId: string;
                 factorId: string;
                 unitSource: "workbook" | "user_confirmed" | "unspecified";
-                loopCoefficient: 1 | -1;
+                loopCoefficient: 0 | 1 | -1;
                 signedContributionMean: number;
                 baselineSampler: {
                     standardDeviation: number;
@@ -17701,7 +17701,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorCandidateId: string;
                 factorId: string;
                 unitSource: "workbook" | "user_confirmed" | "unspecified";
-                loopCoefficient: 1 | -1;
+                loopCoefficient: 0 | 1 | -1;
                 signedContributionMean: number;
                 baselineSampler: {
                     standardDeviation: number;
@@ -18231,7 +18231,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorCandidateId: string;
                 factorId: string;
                 unitSource: "workbook" | "user_confirmed" | "unspecified";
-                loopCoefficient: 1 | -1;
+                loopCoefficient: 0 | 1 | -1;
                 signedContributionMean: number;
                 baselineSampler: {
                     standardDeviation: number;
@@ -18761,7 +18761,7 @@ export declare const f7AnalysisResultSchema: z.ZodObject<{
                 factorCandidateId: string;
                 factorId: string;
                 unitSource: "workbook" | "user_confirmed" | "unspecified";
-                loopCoefficient: 1 | -1;
+                loopCoefficient: 0 | 1 | -1;
                 signedContributionMean: number;
                 baselineSampler: {
                     standardDeviation: number;
@@ -19238,7 +19238,7 @@ export declare const f7FactorConfirmRouteRequestSchema: z.ZodEffects<z.ZodObject
         sigmaLevel: z.ZodOptional<z.ZodNumber>;
         distribution: z.ZodOptional<z.ZodEnum<["Normal", "Uniform", "Triangular", "Trapezoidal", "Elliptical", "Beta"]>>;
         confirmed: z.ZodLiteral<true>;
-        designNominal: z.ZodEffects<z.ZodNumber, number, number>;
+        designNominal: z.ZodNumber;
         upperTolerance: z.ZodNumber;
         lowerTolerance: z.ZodNumber;
         factorCandidateId: z.ZodString;

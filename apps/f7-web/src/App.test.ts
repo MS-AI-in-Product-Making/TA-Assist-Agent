@@ -216,6 +216,7 @@ function factorSetupSnapshot(options?: { includeVolume?: boolean }) {
     selectedWorksheetNames: ["Anonymous_TA"],
     systemSpecification: {
       status: "available",
+      designNominal: { status: "available", actualValue: -0.57, displayValue: "-0.57", sourceLabel: "*Design Nominal ►", sourceCell: "Anonymous_TA!P53", valueOrigin: "numeric_literal" },
       lowerSpecLimit: { status: "available", actualValue: -0.62, displayValue: "-0.62", sourceLabel: "*Lower Spec Limit ►", sourceCell: "Anonymous_TA!P54", valueOrigin: "numeric_literal" },
       upperSpecLimit: { status: "available", actualValue: -0.52, displayValue: "-0.52", sourceLabel: "*Upper Spec Limit ►", sourceCell: "Anonymous_TA!P55", valueOrigin: "numeric_literal" },
       targetSigmaLevel: { status: "available", actualValue: 3, displayValue: "3", sourceLabel: "*Target σ Level ►", sourceCell: "Anonymous_TA!P56", valueOrigin: "numeric_literal" },
@@ -428,6 +429,14 @@ function approvedDistributionSnapshot(): F7SessionSnapshot {
     ...fitted,
     systemSpecification: {
       status: "available",
+      designNominal: {
+        status: "available",
+        actualValue: -0.57,
+        displayValue: "-0.57",
+        sourceLabel: "*Design Nominal ►",
+        sourceCell: "Anonymous_TA!P53",
+        valueOrigin: "numeric_literal",
+      },
       lowerSpecLimit: {
         status: "available",
         actualValue: -0.15,
@@ -725,6 +734,15 @@ async function uploadWorkbook(wrapper: ReturnType<typeof mount>, file = new File
   await wrapper.get("#workbook-file").trigger("change");
 }
 
+async function editFactorSetup(wrapper: ReturnType<typeof mount>): Promise<void> {
+  await vi.waitFor(() => {
+    const button = wrapper.find("[data-edit-factor-setup]");
+    expect(button.exists()).toBe(true);
+    expect(button.attributes("disabled")).toBeUndefined();
+  });
+  await wrapper.get("[data-edit-factor-setup]").trigger("click");
+}
+
 async function openMeasurementWorkspace(wrapper: ReturnType<typeof mount>): Promise<void> {
   await wrapper.get(`[data-open-measurement='${HASH_C}']`).trigger("click");
 }
@@ -749,10 +767,33 @@ describe("F7 workbench shell", () => {
     expect(wrapper.text().toLowerCase()).not.toContain("welcome");
   });
 
+  it("shows the complete selected workbook filename in the custom file control", async () => {
+    const longFileName = "Maera_cosmetic_critical_TA_Rev_E_0110_measurement_analysis_workbook.xlsx";
+    const client = createMockClient(createSnapshot({
+      status: "worksheet_selection",
+      workbook: {
+        fileName: longFileName,
+        workbookContentHash: HASH_A,
+      },
+    }));
+    const wrapper = mount(App, { props: { client } });
+
+    expect(wrapper.get("label.workbook-file-button[for='workbook-file']").text()).toBe("Choose File");
+    expect(wrapper.get("#workbook-file").classes()).toContain("sr-only");
+    expect(wrapper.get("[data-workbook-file-name]").text()).toBe("No file chosen");
+
+    await uploadWorkbook(wrapper, new File([new Uint8Array([1, 2, 3])], longFileName));
+
+    const fileName = wrapper.get("[data-workbook-file-name]");
+    expect(fileName.text()).toBe(longFileName);
+    expect(fileName.attributes("title")).toBe(longFileName);
+  });
+
   it("2) import->worksheet_selection allows explicit pick and confirm with exact DTO", async () => {
     const client = createMockClient(createSnapshot({ status: "worksheet_selection" }), {
       importWorkbook: createSnapshot({ status: "worksheet_selection" }),
       confirmWorksheet: factorSetupSnapshot(),
+      confirmFactors: measurementEntrySnapshot(),
     });
     const wrapper = mount(App, { props: { client } });
     await uploadWorkbook(wrapper);
@@ -776,6 +817,29 @@ describe("F7 workbench shell", () => {
       selectedWorksheetName: "Loop_B",
       confirmed: true,
     });
+    await vi.waitFor(() => expect(client.confirmFactors).toHaveBeenCalledTimes(1));
+    expect(client.confirmFactors).toHaveBeenCalledWith({
+      sessionId: "session-01",
+      systemSpecification: {
+        lowerSpecLimit: -0.62,
+        upperSpecLimit: -0.52,
+        targetSigmaLevel: 3,
+      },
+      confirmations: [{
+        factorCandidateId: HASH_B,
+        designNominal: -0.57,
+        upperTolerance: 0.05,
+        lowerTolerance: -0.05,
+        longTermSafetyFactor: 1,
+        sigmaLevel: 4,
+        distribution: "Normal",
+        confirmed: true,
+      }],
+    });
+    await vi.waitFor(() => expect(wrapper.find("fieldset.source-mode-options").exists()).toBe(true));
+    expect(wrapper.find("#confirm-factor-setup").exists()).toBe(false);
+    expect(wrapper.get("[data-edit-factor-setup]").text()).toBe("Edit setup");
+    expect(wrapper.find("input.factor-spec-input").exists()).toBe(false);
     expect(wrapper.get("[data-worksheet-selection]").text()).toBe("Anonymous_TA");
   });
 
@@ -798,6 +862,7 @@ describe("F7 workbench shell", () => {
     vi.mocked(client.confirmWorksheet).mockImplementation(() => new Promise((resolve) => {
       resolveConfirmation = resolve;
     }));
+    vi.mocked(client.confirmFactors).mockResolvedValue(measurementEntrySnapshot());
     const wrapper = mount(App, { props: { client } });
     await uploadWorkbook(wrapper);
     await wrapper.get("input[type='radio'][name='worksheet-option'][value='Loop_B']").setValue(true);
@@ -815,7 +880,27 @@ describe("F7 workbench shell", () => {
 
     resolveConfirmation(factorSetupSnapshot());
     await submission;
+    await vi.waitFor(() => expect(client.confirmFactors).toHaveBeenCalledTimes(1));
     await vi.waitFor(() => expect(wrapper.find("[aria-label='Worksheet confirmation']").exists()).toBe(false));
+  });
+
+  it("2d) returns to editable setup when automatic factor confirmation fails", async () => {
+    const worksheetSelection = createSnapshot({ status: "worksheet_selection" });
+    const client = createMockClient(worksheetSelection, {
+      importWorkbook: worksheetSelection,
+      confirmWorksheet: factorSetupSnapshot(),
+    });
+    vi.mocked(client.confirmFactors).mockRejectedValueOnce(new Error("Automatic factor confirmation failed."));
+    const wrapper = mount(App, { props: { client } });
+    await uploadWorkbook(wrapper);
+    await wrapper.get("input[type='radio'][name='worksheet-option'][value='Loop_B']").setValue(true);
+    await wrapper.get("[aria-label='Worksheet confirmation'] button.action-button").trigger("click");
+
+    await vi.waitFor(() => expect(client.confirmFactors).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(wrapper.find("input.factor-spec-input").exists()).toBe(true));
+    expect(wrapper.get("#confirm-factor-setup").text()).toBe("Save setup");
+    expect(wrapper.find("fieldset.source-mode-options").exists()).toBe(false);
+    expect(wrapper.get(".error-banner").text()).toBe("Unable to complete the F7 workbench request.");
   });
 
   it("3) factor_setup exposes editable specifications and confirms their values", async () => {
@@ -825,6 +910,7 @@ describe("F7 workbench shell", () => {
     });
     const wrapper = mount(App, { props: { client } });
     await uploadWorkbook(wrapper);
+    await editFactorSetup(wrapper);
 
     const saveSetupButton = wrapper.get("#confirm-factor-setup");
     expect(saveSetupButton.text()).toBe("Save setup");
@@ -994,6 +1080,8 @@ describe("F7 workbench shell", () => {
     const client = createMockClient(snapshot, { importWorkbook: snapshot });
     const wrapper = mount(App, { props: { client } });
     await uploadWorkbook(wrapper);
+    await editFactorSetup(wrapper);
+    vi.mocked(client.confirmFactors).mockClear();
 
     const outputLayout = wrapper.get("[data-factor-output-layout]");
     const responseSummary = wrapper.get("[data-factor-response-summary]");
@@ -1043,6 +1131,7 @@ describe("F7 workbench shell", () => {
     const client = createMockClient(snapshot, { importWorkbook: snapshot });
     const wrapper = mount(App, { props: { client } });
     await uploadWorkbook(wrapper);
+    await editFactorSetup(wrapper);
 
     const reverse = wrapper.get("button[aria-label='Reverse all factors']");
     expect(reverse.attributes("title")).toBe("Reverse all factors");
@@ -1118,14 +1207,12 @@ describe("F7 workbench shell", () => {
     const busyWrapper = mount(App, { props: { client: busyClient } });
     await uploadWorkbook(busyWrapper);
 
-    const submission = busyWrapper.get("#confirm-factor-setup").trigger("click");
-    await busyWrapper.vm.$nextTick();
+    await vi.waitFor(() => expect(busyClient.confirmFactors).toHaveBeenCalledTimes(1));
     expect(busyWrapper.attributes("aria-busy")).toBe("true");
     expect(busyWrapper.get("button[aria-label='Reverse all factors']").attributes("disabled")).toBeDefined();
     expect(busyWrapper.getComponent(DimensionChainPanel).props("editable")).toBe(false);
 
     resolveConfirmation(measurementEntrySnapshot());
-    await submission;
     await vi.waitFor(() => expect(busyWrapper.attributes("aria-busy")).toBe("false"));
   });
 
@@ -1157,6 +1244,9 @@ describe("F7 workbench shell", () => {
       sessionId: "session-01",
       confirmations: [expect.objectContaining({ designNominal: -0.6, confirmed: true })],
     }));
+    await vi.waitFor(() => expect(wrapper.find("[data-edit-factor-setup]").exists()).toBe(true));
+    expect(wrapper.find("input.factor-spec-input").exists()).toBe(false);
+    expect(wrapper.find("fieldset.source-mode-options").exists()).toBe(true);
   });
 
   it("3a.1) toggles each Design Nominal value between positive and negative", async () => {
@@ -1164,6 +1254,7 @@ describe("F7 workbench shell", () => {
     const client = createMockClient(snapshot, { importWorkbook: snapshot });
     const wrapper = mount(App, { props: { client } });
     await uploadWorkbook(wrapper);
+    await editFactorSetup(wrapper);
 
     const input = wrapper.get<HTMLInputElement>("input[aria-label='C-cover height Design Nominal']");
     const toggle = wrapper.get("button[aria-label='Toggle C-cover height Design Nominal sign']");
@@ -1185,6 +1276,7 @@ describe("F7 workbench shell", () => {
     });
     const wrapper = mount(App, { props: { client } });
     await uploadWorkbook(wrapper);
+    await editFactorSetup(wrapper);
 
     expect(wrapper.get("th[data-column-key='index']").text()).toBe("Item");
     expect(wrapper.get("button[aria-label='Move C-cover height up']").attributes("disabled")).toBeDefined();
@@ -1286,7 +1378,7 @@ describe("F7 workbench shell", () => {
         expect.objectContaining({ factorCandidateId: HASH_B }),
       ],
     });
-    expect(wrapper.findAll(".factor-table tbody tr")).toHaveLength(1);
+    await vi.waitFor(() => expect(wrapper.findAll(".factor-table tbody tr")).toHaveLength(1));
     expect(wrapper.find("button[data-add-factor]").exists()).toBe(false);
     expect(wrapper.find(".factor-row-control").exists()).toBe(false);
   });
@@ -1295,6 +1387,7 @@ describe("F7 workbench shell", () => {
     const client = createMockClient(factorSetupSnapshot(), { importWorkbook: factorSetupSnapshot() });
     const wrapper = mount(App, { props: { client } });
     await uploadWorkbook(wrapper);
+    await editFactorSetup(wrapper);
 
     const undo = wrapper.get("[data-factor-undo]");
     const redo = wrapper.get("[data-factor-redo]");
@@ -1394,6 +1487,7 @@ describe("F7 workbench shell", () => {
     const client = createMockClient(snapshot, { importWorkbook: snapshot });
     const wrapper = mount(App, { props: { client } });
     await uploadWorkbook(wrapper);
+    await editFactorSetup(wrapper);
     await wrapper.get("[data-generate-dimension-chain]").trigger("click");
 
     await wrapper.get("button[aria-label='Delete Second factor']").trigger("click");
@@ -1427,6 +1521,9 @@ describe("F7 workbench shell", () => {
     const wrapper = mount(App, { props: { client } });
     await uploadWorkbook(wrapper);
 
+    expect(client.confirmFactors).not.toHaveBeenCalled();
+    expect(wrapper.get("#confirm-factor-setup").text()).toBe("Save setup");
+    expect(wrapper.find("input.factor-spec-input").exists()).toBe(true);
     expect(wrapper.find("[data-response-distribution-curve]").exists()).toBe(true);
     expect(wrapper.get("[data-response-distribution-unavailable]").text()).toContain("unavailable");
   });
@@ -1435,6 +1532,7 @@ describe("F7 workbench shell", () => {
     const client = createMockClient(factorSetupSnapshot(), { importWorkbook: factorSetupSnapshot() });
     const wrapper = mount(App, { props: { client }, attachTo: document.body });
     await uploadWorkbook(wrapper);
+    await editFactorSetup(wrapper);
 
     expect(wrapper.get(".factor-table").classes()).toContain("factor-table-centered");
     expect(wrapper.findAll("col[data-factor-column-index]").map((column) => column.attributes("style"))).toEqual([
@@ -1586,22 +1684,28 @@ describe("F7 workbench shell", () => {
     expect(wrapper.get(`[data-open-measurement='${HASH_C}']`).attributes("disabled")).toBeDefined();
   });
 
-  it("5b) nominal sign controls its subtractive/additive color and zero is rejected", async () => {
+  it("5b) nominal sign controls its direction color and zero is a neutral Assembly Shift", async () => {
     const client = createMockClient(factorSetupSnapshot(), {
       importWorkbook: factorSetupSnapshot(),
     });
     const wrapper = mount(App, { props: { client } });
     await uploadWorkbook(wrapper);
+    await editFactorSetup(wrapper);
+    vi.mocked(client.confirmFactors).mockClear();
 
     const nominal = wrapper.get("input[aria-label='C-cover height Design Nominal']");
     expect(nominal.classes()).toContain("nominal-negative");
     await nominal.setValue("0.57");
     expect(nominal.classes()).toContain("nominal-positive");
     await nominal.setValue("0");
-    expect(wrapper.get("button#confirm-factor-setup").attributes("disabled")).toBeDefined();
-    expect(wrapper.text()).toContain("Design Nominal must be non-zero.");
+    expect(nominal.classes()).toContain("nominal-neutral");
+    expect(wrapper.get("button#confirm-factor-setup").attributes("disabled")).toBeUndefined();
     await wrapper.get("button#confirm-factor-setup").trigger("click");
-    expect(client.confirmFactors).not.toHaveBeenCalled();
+    expect(client.confirmFactors).toHaveBeenCalledWith(expect.objectContaining({
+      confirmations: expect.arrayContaining([
+        expect.objectContaining({ designNominal: 0 }),
+      ]),
+    }));
   });
 
   it("5ba) uses green for additive dimensions and blue for subtractive dimensions and arrows", () => {
@@ -1611,6 +1715,7 @@ describe("F7 workbench shell", () => {
     expect(STYLE_SOURCE).toMatch(/\.dimension-chain-additive \.dimension-chain-component[^}]*stroke:\s*var\(--additive\)/s);
     expect(STYLE_SOURCE).toMatch(/\.dimension-chain-additive \.dimension-chain-start,[^}]*fill:\s*var\(--additive\)/s);
     expect(STYLE_SOURCE).toMatch(/\.nominal-negative\s*\{[^}]*color:\s*var\(--subtractive\)/s);
+    expect(STYLE_SOURCE).toMatch(/\.nominal-neutral\s*\{[^}]*color:\s*var\(--ink\)/s);
     expect(STYLE_SOURCE).toMatch(/\.dimension-chain-subtractive \.dimension-chain-component[^}]*stroke:\s*var\(--subtractive\)/s);
     expect(STYLE_SOURCE).toMatch(/\.dimension-chain-subtractive \.dimension-chain-start,[^}]*fill:\s*var\(--subtractive\)/s);
   });
@@ -1627,6 +1732,8 @@ describe("F7 workbench shell", () => {
     const client = createMockClient(factorSetupSnapshot(), { importWorkbook: factorSetupSnapshot() });
     const wrapper = mount(App, { props: { client } });
     await uploadWorkbook(wrapper);
+    await editFactorSetup(wrapper);
+    vi.mocked(client.confirmFactors).mockClear();
 
     const factorInputs = wrapper.get(".factor-table tbody tr").findAll("input.factor-spec-input");
     const upperTolerance = factorInputs[1]!;
@@ -2631,11 +2738,213 @@ describe("F7 workbench shell", () => {
     (wrapper.vm as unknown as { activeMeasurementFactorId: string }).activeMeasurementFactorId = HASH_C;
 
     await uploadWorkbook(wrapper, new File([new Uint8Array([4, 5, 6])], "replacement.xlsx"));
+    await wrapper.get("[data-workflow-restart-continue]").trigger("click");
 
-    await vi.waitFor(() => expect(wrapper.find("[aria-label='Worksheet confirmation']").exists()).toBe(true));
+    await vi.waitFor(() => {
+      expect(wrapper.find("[aria-label='Worksheet confirmation']").exists()).toBe(true);
+      expect(wrapper.findAll(".workflow-steps li")[0]?.attributes("aria-current")).toBe("step");
+      expect((wrapper.vm as unknown as { activeMeasurementFactorId: string }).activeMeasurementFactorId).toBe("");
+    });
     expect(wrapper.find("#report-title").exists()).toBe(false);
-    expect(wrapper.findAll(".workflow-steps li")[0]?.attributes("aria-current")).toBe("step");
-    expect((wrapper.vm as unknown as { activeMeasurementFactorId: string }).activeMeasurementFactorId).toBe("");
+  });
+
+  it("confirms before replacing an existing workbook", async () => {
+    const current = measurementEntrySnapshot();
+    const replacement = createSnapshot({
+      status: "worksheet_selection",
+      sessionId: "session-02",
+      workbook: {
+        fileName: "replacement.xlsx",
+        workbookContentHash: HASH_B,
+      },
+    });
+    const client = createMockClient(current);
+    vi.mocked(client.importWorkbook)
+      .mockResolvedValueOnce(current)
+      .mockResolvedValueOnce(replacement);
+    const wrapper = mount(App, { props: { client } });
+    await uploadWorkbook(wrapper);
+    const replacementFile = new File([new Uint8Array([4, 5, 6])], "replacement.xlsx");
+    const workbookInput = wrapper.get<HTMLInputElement>("#workbook-file").element;
+    Object.defineProperty(workbookInput, "value", {
+      configurable: true,
+      writable: true,
+      value: "C:\\fakepath\\replacement.xlsx",
+    });
+
+    await uploadWorkbook(wrapper, replacementFile);
+
+    expect(client.importWorkbook).toHaveBeenCalledTimes(1);
+    const confirmation = wrapper.get("[data-workflow-restart-confirmation]");
+    expect(confirmation.get("h2").text()).toBe("Replace current workbook?");
+    expect(confirmation.text()).toContain(
+      "Continuing will discard the current workbook, worksheet selection, and analysis results.",
+    );
+    expect(wrapper.get("[data-workbook-file-name]").text()).toBe("replacement.xlsx");
+    expect(wrapper.findAll(".workflow-steps li")[1]?.attributes("aria-current")).toBe("step");
+
+    await confirmation.get("[data-workflow-restart-cancel]").trigger("click");
+    expect(wrapper.find("[data-workflow-restart-confirmation]").exists()).toBe(false);
+    expect(workbookInput.value).toBe("");
+    expect(wrapper.get("[data-workbook-file-name]").text()).toBe(current.workbook.fileName);
+    expect(wrapper.get("[data-workbook-name]").text()).toBe(current.workbook.fileName);
+    expect(wrapper.find("[aria-label='Factor setup and source mode']").exists()).toBe(true);
+    expect(client.importWorkbook).toHaveBeenCalledTimes(1);
+
+    await uploadWorkbook(wrapper, replacementFile);
+    expect(wrapper.find("[data-workflow-restart-confirmation]").exists()).toBe(true);
+    await wrapper.get(".confirmation-backdrop").trigger("keydown.esc");
+    expect(wrapper.find("[data-workflow-restart-confirmation]").exists()).toBe(false);
+    expect(workbookInput.value).toBe("");
+    expect(wrapper.get("[data-workbook-name]").text()).toBe(current.workbook.fileName);
+    expect(wrapper.find("[aria-label='Factor setup and source mode']").exists()).toBe(true);
+    expect(client.importWorkbook).toHaveBeenCalledTimes(1);
+
+    await uploadWorkbook(wrapper, replacementFile);
+    expect(wrapper.find("[data-workflow-restart-confirmation]").exists()).toBe(true);
+    await wrapper.get("[data-workflow-restart-continue]").trigger("click");
+
+    await vi.waitFor(() => expect(client.importWorkbook).toHaveBeenCalledTimes(2));
+    expect(client.importWorkbook).toHaveBeenLastCalledWith({ file: replacementFile });
+  });
+
+  it("traps confirmation focus and restores the workflow opener on Cancel and Escape", async () => {
+    const current = measurementEntrySnapshot();
+    const client = createMockClient(current);
+    const wrapper = mount(App, { props: { client }, attachTo: document.body });
+    await uploadWorkbook(wrapper);
+
+    const restart = wrapper.get<HTMLButtonElement>("[data-workflow-restart]");
+    restart.element.focus();
+    await restart.trigger("click");
+
+    const continueButton = wrapper.get<HTMLButtonElement>("[data-workflow-restart-continue]");
+    const cancelButton = wrapper.get<HTMLButtonElement>("[data-workflow-restart-cancel]");
+    const backdrop = wrapper.get(".confirmation-backdrop");
+    expect(document.activeElement).toBe(continueButton.element);
+
+    await backdrop.trigger("keydown", { key: "Tab" });
+    expect(document.activeElement).toBe(cancelButton.element);
+    await backdrop.trigger("keydown", { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(continueButton.element);
+
+    await cancelButton.trigger("click");
+    expect(document.activeElement).toBe(restart.element);
+
+    await restart.trigger("click");
+    expect(document.activeElement).toBe(wrapper.get("[data-workflow-restart-continue]").element);
+    await wrapper.get(".confirmation-backdrop").trigger("keydown", { key: "Escape" });
+    expect(document.activeElement).toBe(restart.element);
+    wrapper.unmount();
+  });
+
+  it("keeps replacement import progress visible and ignores duplicate Continue while pending", async () => {
+    const current = measurementEntrySnapshot();
+    const replacement = createSnapshot({
+      status: "worksheet_selection",
+      sessionId: "session-02",
+      workbook: {
+        fileName: "replacement.xlsx",
+        workbookContentHash: HASH_B,
+      },
+    });
+    let resolveReplacement!: (snapshot: F7SessionSnapshot) => void;
+    const client = createMockClient(current);
+    vi.mocked(client.importWorkbook)
+      .mockResolvedValueOnce(current)
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolveReplacement = resolve;
+      }));
+    const wrapper = mount(App, { props: { client }, attachTo: document.body });
+    await uploadWorkbook(wrapper);
+
+    const replacementFile = new File([new Uint8Array([4, 5, 6])], "replacement.xlsx");
+    const workbookInput = wrapper.get<HTMLInputElement>("#workbook-file").element;
+    const openPicker = vi.spyOn(workbookInput, "click").mockImplementation(() => undefined);
+    workbookInput.focus();
+    await uploadWorkbook(wrapper, replacementFile);
+    const app = wrapper.vm as unknown as {
+      confirmWorksheetRestart: () => Promise<void>;
+      store: { importWorkbook: (file: File) => Promise<void> };
+    };
+    const importWorkbook = app.store.importWorkbook;
+    const guardedImport = vi.spyOn(app.store, "importWorkbook").mockImplementation(async (file) => {
+      await Promise.resolve();
+      await importWorkbook(file);
+    });
+    const firstConfirmation = app.confirmWorksheetRestart();
+    const duplicateConfirmation = app.confirmWorksheetRestart();
+    await duplicateConfirmation;
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.find("[data-workflow-restart-confirmation]").exists()).toBe(false);
+    expect(guardedImport).toHaveBeenCalledOnce();
+    expect(client.importWorkbook).toHaveBeenCalledTimes(2);
+    expect(client.importWorkbook).toHaveBeenLastCalledWith({ file: replacementFile });
+    expect(wrapper.attributes("aria-busy")).toBe("true");
+    expect(wrapper.find("[data-workflow-restart]").exists()).toBe(false);
+    expect(wrapper.get("#workbook-file").attributes("disabled")).toBeDefined();
+    const importPanel = wrapper.get("[data-workbook-import]");
+    expect(importPanel.isVisible()).toBe(true);
+    expect(importPanel.attributes("aria-busy")).toBe("true");
+    expect(importPanel.get("[data-workbook-import-progress]").attributes("role")).toBe("progressbar");
+    expect(importPanel.get("[data-workbook-import-status]").text()).toContain("Reading and parsing workbook");
+    expect(wrapper.get(".status-chip").text()).toBe("Importing workbook");
+    expect(wrapper.find("[data-workbook-name]").exists()).toBe(false);
+    expect(wrapper.find("[data-worksheet-selection]").exists()).toBe(false);
+    expect(wrapper.find("[aria-label='Worksheet confirmation']").exists()).toBe(false);
+    expect(wrapper.find("[aria-label='Factor setup and source mode']").exists()).toBe(false);
+    const workflowSteps = wrapper.findAll("ol.workflow-steps > li");
+    expect(workflowSteps[0]?.attributes("aria-current")).toBe("step");
+    expect(workflowSteps[1]?.attributes("aria-disabled")).toBe("true");
+    expect(workflowSteps[2]?.attributes("aria-disabled")).toBe("true");
+    expect(client.importWorkbook).toHaveBeenCalledTimes(2);
+    expect(openPicker).not.toHaveBeenCalled();
+
+    resolveReplacement(replacement);
+    await firstConfirmation;
+    await vi.waitFor(() => expect(wrapper.attributes("aria-busy")).toBe("false"));
+    expect(workbookInput.value).toBe("");
+    expect(document.activeElement).toBe(workbookInput);
+    wrapper.unmount();
+  });
+
+  it("keeps the current analysis and permits retry when replacement import fails", async () => {
+    const current = measurementEntrySnapshot();
+    const replacementError = {
+      code: "validation_error",
+      summary: "Replacement workbook is invalid.",
+      suggestedAction: "Choose a valid workbook.",
+      affectedInputReferences: ["replacement.xlsx"],
+    };
+    const client = createMockClient(current);
+    vi.mocked(client.importWorkbook)
+      .mockResolvedValueOnce(current)
+      .mockRejectedValueOnce(replacementError);
+    const wrapper = mount(App, { props: { client } });
+    await uploadWorkbook(wrapper);
+
+    const replacementFile = new File([new Uint8Array([4, 5, 6])], "replacement.xlsx");
+    const workbookInput = wrapper.get<HTMLInputElement>("#workbook-file").element;
+    Object.defineProperty(workbookInput, "value", {
+      configurable: true,
+      writable: true,
+      value: "C:\\fakepath\\replacement.xlsx",
+    });
+    await uploadWorkbook(wrapper, replacementFile);
+    await wrapper.get("[data-workflow-restart-continue]").trigger("click");
+
+    await vi.waitFor(() => expect(wrapper.text()).toContain(replacementError.summary));
+    expect(wrapper.find("[data-workflow-restart-confirmation]").exists()).toBe(false);
+    expect(wrapper.get("[data-workbook-name]").text()).toBe(current.workbook.fileName);
+    expect(wrapper.find("[aria-label='Factor setup and source mode']").exists()).toBe(true);
+    expect(wrapper.findAll(".workflow-steps li")[1]?.attributes("aria-current")).toBe("step");
+    expect(workbookInput.value).toBe("");
+
+    await uploadWorkbook(wrapper, replacementFile);
+    expect(wrapper.find("[data-workflow-restart-confirmation]").exists()).toBe(true);
+    expect(wrapper.get("[data-workflow-restart-confirmation] h2").text()).toBe("Replace current workbook?");
+    expect(client.importWorkbook).toHaveBeenCalledTimes(2);
   });
 
   it("8ea) keeps Monte Carlo specifications empty when Excel evidence is unavailable", async () => {
@@ -2970,6 +3279,22 @@ describe("F7 workbench shell", () => {
     expect(workbookInput.value).toBe("");
     expect(openPicker).toHaveBeenCalledOnce();
     expect(listItems[0]?.text()).toContain("Change workbook or worksheet");
+
+    const replacementFile = new File([new Uint8Array([4, 5, 6])], "replacement.xlsx");
+    await wrapper.get("#workbook-file").trigger("cancel");
+    await uploadWorkbook(wrapper, replacementFile);
+
+    expect(wrapper.find("[data-workflow-restart-confirmation]").exists()).toBe(true);
+    expect(client.importWorkbook).toHaveBeenCalledTimes(1);
+    await wrapper.get("[data-workflow-restart-cancel]").trigger("click");
+
+    await restart.trigger("click");
+    await wrapper.get("[data-workflow-restart-continue]").trigger("click");
+    await uploadWorkbook(wrapper, replacementFile);
+
+    expect(wrapper.find("[data-workflow-restart-confirmation]").exists()).toBe(false);
+    expect(client.importWorkbook).toHaveBeenCalledTimes(2);
+    expect(client.importWorkbook).toHaveBeenLastCalledWith({ file: replacementFile });
   });
 
   it("10) aria-live polite validation region and aria-busy with duplicate submission disabled", async () => {
@@ -2987,10 +3312,27 @@ describe("F7 workbench shell", () => {
       generateReport: vi.fn(async () => { throw new Error("Report generation is not used by App tests."); }),
       getSession: vi.fn(async () => createSnapshot({ status: "worksheet_selection" })),
     };
-    const wrapper = mount(App, { props: { client } });
+    const wrapper = mount(App, { props: { client }, attachTo: document.body });
     await uploadWorkbook(wrapper);
 
     expect(wrapper.attributes("aria-busy")).toBe("true");
+    const importPanel = wrapper.get("[data-workbook-import]");
+    expect(importPanel.attributes("aria-busy")).toBe("true");
+    expect(importPanel.get("[data-workbook-import-progress]").attributes("role")).toBe("progressbar");
+    const visibleStatus = importPanel.get("[data-workbook-import-status]");
+    expect(visibleStatus.attributes("role")).toBeUndefined();
+    expect(visibleStatus.attributes("aria-live")).toBeUndefined();
+    expect(visibleStatus.text()).toContain("Reading and parsing workbook");
+    expect(importPanel.text()).toContain("Large workbooks may take a moment.");
+    const liveAnnouncement = document.querySelector<HTMLElement>("[data-workbook-import-announcement]");
+    expect(liveAnnouncement).not.toBeNull();
+    expect(liveAnnouncement?.classList).toContain("sr-only");
+    expect(liveAnnouncement?.getAttribute("role")).toBe("status");
+    expect(liveAnnouncement?.getAttribute("aria-live")).toBe("polite");
+    expect(liveAnnouncement?.textContent?.replace(/\s+/g, " ").trim()).toBe(
+      "Reading and parsing workbook… Large workbooks may take a moment.",
+    );
+    expect(liveAnnouncement?.closest("main")).toBeNull();
     expect(wrapper.get("#workbook-file").attributes("disabled")).toBeDefined();
     const resumeImport = resolveImport;
     if (!resumeImport) {
@@ -3000,8 +3342,9 @@ describe("F7 workbench shell", () => {
     await vi.waitFor(() => {
       expect(wrapper.attributes("aria-busy")).toBe("false");
     });
-    const live = wrapper.find("[aria-live='polite']");
-    expect(live.exists()).toBe(true);
+    expect(wrapper.find("[data-workbook-import-progress]").exists()).toBe(false);
+    expect(document.querySelector("[data-workbook-import-announcement]")).toBeNull();
+    wrapper.unmount();
   });
 
   it("11) controlled error message visible and retry removes raw message leak", async () => {

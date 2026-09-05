@@ -41,7 +41,7 @@ function formulaCell(reference: string, formula: string, cachedValue: string): s
   return `<c r="${reference}" t="n"><f>${formula}</f><v>${cachedValue}</v></c>`;
 }
 
-function sheetRows(options: { readonly startRow?: number; readonly headerRow?: number; readonly distributionOverride?: string; readonly duplicateFactorHeader?: boolean; readonly includeUpperSpec?: boolean; readonly includeSecondFactorTable?: boolean; readonly markerInCell?: string; readonly formulaCachedInFirstFactor?: boolean; readonly factorSpecifications?: boolean; readonly specRowsXml?: string; readonly tailRowsXml?: string } = {}): string {
+function sheetRows(options: { readonly startRow?: number; readonly headerRow?: number; readonly distributionOverride?: string; readonly duplicateFactorHeader?: boolean; readonly includeUpperSpec?: boolean; readonly includeSecondFactorTable?: boolean; readonly markerInCell?: string; readonly formulaCachedInFirstFactor?: boolean; readonly factorSpecifications?: boolean; readonly zeroFirstFactor?: boolean; readonly specRowsXml?: string; readonly tailRowsXml?: string } = {}): string {
   const headerRow = options.headerRow ?? 13;
   const start = options.startRow ?? headerRow + 1;
   const factors = [
@@ -60,11 +60,13 @@ function sheetRows(options: { readonly startRow?: number; readonly headerRow?: n
     const distribution = index === 0 && options.distributionOverride ? options.distributionOverride : "Normal";
     const meanCell = index === 0 && options.formulaCachedInFirstFactor
       ? formulaCell(`R${row}`, "ABS(-0.57)*-1", "-0.57")
-      : cell(`R${row}`, factor[1]);
+      : cell(`R${row}`, index === 0 && options.zeroFirstFactor ? "0" : factor[1]);
     const sigmaCell = index === 0 && options.formulaCachedInFirstFactor
       ? formulaCell(`T${row}`, "1/80", ".0125")
       : cell(`T${row}`, factor[2]);
-    const nominal = options.factorSpecifications ? factor[1] : "0";
+    const nominal = options.factorSpecifications
+      ? index === 0 && options.zeroFirstFactor ? "0" : factor[1]
+      : "0";
     const upperTolerance = options.factorSpecifications ? (index === 1 || index === 3 ? "0.1" : "0.05") : "0";
     const lowerTolerance = options.factorSpecifications ? `-${upperTolerance}` : "0";
     return `<row r="${row}">${cell(`G${row}`, index === 0 && options.markerInCell ? options.markerInCell : factor[0])}${cell(`L${row}`, nominal)}${cell(`M${row}`, upperTolerance)}${cell(`N${row}`, lowerTolerance)}${cell(`O${row}`, "1")}${cell(`P${row}`, "0")}${cell(`Q${row}`, distribution)}${meanCell}${cell(`S${row}`, factor[4])}${sigmaCell}</row>`;
@@ -79,7 +81,7 @@ function sheetRows(options: { readonly startRow?: number; readonly headerRow?: n
   return `<row r="11">${cell("G11", "Tolerance Loop Description")}${cell("H11", "Anonymous loop")}</row>${header}${dataRows}${specRows}${secondHeader}${options.tailRowsXml ?? ""}`;
 }
 
-function buildWorkbook(options: { readonly startRow?: number; readonly headerRow?: number; readonly distributionOverride?: string; readonly duplicateFactorHeader?: boolean; readonly includeUpperSpec?: boolean; readonly includeSecondWorksheet?: boolean; readonly includeSecondFactorTable?: boolean; readonly markerInCell?: string; readonly formulaCachedInFirstFactor?: boolean; readonly factorSpecifications?: boolean; readonly specRowsXml?: string; readonly tailRowsXml?: string } = {}): Uint8Array {
+function buildWorkbook(options: { readonly startRow?: number; readonly headerRow?: number; readonly distributionOverride?: string; readonly duplicateFactorHeader?: boolean; readonly includeUpperSpec?: boolean; readonly includeSecondWorksheet?: boolean; readonly includeSecondFactorTable?: boolean; readonly markerInCell?: string; readonly formulaCachedInFirstFactor?: boolean; readonly factorSpecifications?: boolean; readonly zeroFirstFactor?: boolean; readonly specRowsXml?: string; readonly tailRowsXml?: string } = {}): Uint8Array {
   const workbookXml = options.includeSecondWorksheet
     ? `<?xml version="1.0"?><workbook xmlns="${NS}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Title Page" sheetId="1" r:id="rId1"/><sheet name="Auto Summary" sheetId="2" r:id="rId2"/><sheet name="Anonymous_TA" sheetId="3" r:id="rId3"/><sheet name="Anonymous_TA_2" sheetId="4" r:id="rId4"/></sheets></workbook>`
     : `<?xml version="1.0"?><workbook xmlns="${NS}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Title Page" sheetId="1" r:id="rId1"/><sheet name="Auto Summary" sheetId="2" r:id="rId2"/><sheet name="Anonymous_TA" sheetId="3" r:id="rId3"/></sheets></workbook>`;
@@ -193,6 +195,40 @@ describe("F7 interim excel adapter", () => {
 
     expect(extracted.candidates[0]?.excelSignedMean).toBe(-0.57);
     expect(extracted.candidates[0]?.standardDeviation).toBe(0.0125);
+  });
+
+  it("extracts and confirms a zero-nominal Assembly Shift factor", () => {
+    const workbookBytes = buildWorkbook({ factorSpecifications: true, zeroFirstFactor: true });
+    const imported = importWorkbook(workbookBytes);
+    const extracted = extractF7FactorCandidates({
+      workbookBytes,
+      importResult: imported,
+      confirmation: {
+        workbookContentHash: imported.workbook.contentHash,
+        selectedWorksheetNames: ["Anonymous_TA"],
+        confirmed: true,
+      },
+    });
+
+    expect(extracted.candidates[0]).toMatchObject({
+      designNominal: 0,
+      excelSignedMean: 0,
+      upperTolerance: 0.05,
+      lowerTolerance: -0.05,
+    });
+
+    const result = confirmF7FactorSetup({
+      extractionResult: extracted,
+      confirmations: confirmCandidates(extracted),
+    });
+    expect(result.factors[0]).toMatchObject({
+      designNominal: 0,
+      calculatedMean: 0,
+      loopCoefficient: 0,
+      physicalMean: 0,
+      signedContributionMean: 0,
+      oneSigma: 0.0125,
+    });
   });
 
   it("keeps candidate IDs deterministic and sensitive to source-row movement", () => {

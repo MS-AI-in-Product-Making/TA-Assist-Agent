@@ -3,13 +3,14 @@ import {
   f7MonteCarloResultSchema,
   type F7DistributionCandidateFamily,
   type F7FactorSourceMode,
+  type F7LoopCoefficient,
   type F7MonteCarloIterations,
   type F7MonteCarloResult,
 } from "@ai-assist/contracts";
 
 interface SimulationFactor {
   readonly factorId: string;
-  readonly coefficient: -1 | 1;
+  readonly coefficient: F7LoopCoefficient;
   readonly sourceMode: F7FactorSourceMode;
   readonly family: F7DistributionCandidateFamily;
   readonly parameters: Readonly<Record<string, number>>;
@@ -299,7 +300,10 @@ export function runF7MonteCarlo(request: F7MonteCarloRequest): F7MonteCarloResul
 
   for (let iteration = 0; iteration < request.iterations; iteration += 1) {
     let response = request.additionalMeanShift ?? 0;
-    for (const factor of request.factors) response += factor.coefficient * sampleFactor(factor, random);
+    for (const factor of request.factors) {
+      const statisticalCoefficient = factor.coefficient === 0 ? 1 : factor.coefficient;
+      response += statisticalCoefficient * sampleFactor(factor, random);
+    }
     assertFiniteDerived(response);
     values[iteration] = response;
     const delta = response - mean;

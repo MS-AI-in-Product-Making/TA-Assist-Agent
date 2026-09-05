@@ -1031,7 +1031,7 @@ function segmentLabel(segment: DimensionChainDisplaySegment): string {
     ? "additive"
     : segment.displayDirection === "subtractive"
       ? "subtractive"
-      : "zero";
+      : "assembly shift";
   return `Item ${segment.itemNumber}, ${segment.name}, ${signedValue(segment.designNominal)}, ${role}`;
 }
 
@@ -1078,7 +1078,7 @@ function componentMarkerId(segment: DimensionChainDisplaySegment): string {
         type="button"
         class="action-button dimension-chain-action"
         data-generate-dimension-chain
-        :disabled="(!valid && !emptyStateActionEnabled) || (generatedFactors !== undefined && !stale)"
+        :disabled="!editable || (!valid && !emptyStateActionEnabled) || (generatedFactors !== undefined && !stale)"
         @click="generate"
       >{{ actionLabel }}</button>
       <div class="dimension-chain-orientation" aria-label="Dimension chain orientation">
@@ -1087,6 +1087,7 @@ function componentMarkerId(segment: DimensionChainDisplaySegment): string {
           aria-label="Horizontal dimension chain"
           :aria-pressed="orientation === 'horizontal'"
           :class="{ 'is-active': orientation === 'horizontal' }"
+          :disabled="!editable"
           @click="setOrientation('horizontal')"
         >Horizontal</button>
         <button
@@ -1094,6 +1095,7 @@ function componentMarkerId(segment: DimensionChainDisplaySegment): string {
           aria-label="Vertical dimension chain"
           :aria-pressed="orientation === 'vertical'"
           :class="{ 'is-active': orientation === 'vertical' }"
+          :disabled="!editable"
           @click="setOrientation('vertical')"
         >Vertical</button>
       </div>

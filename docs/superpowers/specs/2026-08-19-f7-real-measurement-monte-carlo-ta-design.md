@@ -151,11 +151,13 @@ When F2/F3 integration replaces the Excel adapter, F7 also stores Drawing Number
 Loop direction is explicit:
 
 ```text
-loopCoefficient: -1 | +1
+loopCoefficient: -1 | 0 | +1
 measurementConvention: unsigned_physical_value
 ```
 
-Users enter physical measurements such as `0.57`. F7 applies the coefficient during system simulation. It must not require users to enter negative thickness values and must not infer loop direction from nominal sign at runtime.
+`-1` is subtractive, `+1` is additive, and `0` identifies a neutral Assembly Shift factor whose Design Nominal is zero. Assembly Shift does not advance Dimension Chain geometry, but its tolerance and sampled variation still contribute to RSS and Monte Carlo results.
+
+Users enter physical measurements such as `0.57`. F7 applies the coefficient during system simulation. It must not require users to enter negative thickness values and must not infer loop direction from nominal sign at runtime. Measurements for a neutral Assembly Shift are signed offsets centered around zero.
 
 The canonical baseline coordinate is also physical. For the interim workbook adapter only, a signed Excel contribution is converted as:
 
@@ -293,10 +295,15 @@ AICc is primary for small samples; BIC and diagnostics are supporting evidence. 
 For iteration $j$, the system response is:
 
 $$
-Y_j = \Delta\mu + \sum_{i=1}^{k} c_i X_{i,j}
+Y_j = \Delta\mu + \sum_{i=1}^{k} s(c_i) X_{i,j},
+\qquad
+s(c_i)=\begin{cases}
+1, & c_i=0 \\
+c_i, & c_i\in\{-1,+1\}
+\end{cases}
 $$
 
-where $c_i$ is the explicit loop coefficient, $X_{i,j}$ is sampled from either the approved measured fit or F4-compatible baseline distribution, and $\Delta\mu$ is the verified system additional mean shift.
+where $c_i$ is the explicit loop coefficient, $X_{i,j}$ is sampled from either the approved measured fit or F4-compatible baseline distribution, and $\Delta\mu$ is the verified system additional mean shift. For Assembly Shift, $c_i=0$ expresses neutral geometry while $s(c_i)=1$ preserves its signed random offset and variance.
 
 Default settings:
 

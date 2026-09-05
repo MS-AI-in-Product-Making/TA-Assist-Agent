@@ -27,7 +27,7 @@ When a guide drag crosses one or both adjacent arrow endpoints, `DimensionChainP
 
 A sign change initiated from Dimension Chain updates the generated chart snapshot's matching signs immediately after the parent confirms the new props. This keeps the visible arrow and Factor Setup synchronized. Other Factor edits retain existing stale-snapshot behavior and require `Update`.
 
-Sign-changing controls are enabled only while Factor Setup is editable and not busy. Image and viewport controls remain available in read-only states.
+Sign-changing controls are enabled only while Factor Setup is editable and not busy. `Generate`/`Update`, `Horizontal`, and `Vertical` follow the same edit-state boundary: they are disabled while Factor Setup is locked and become available only after the user selects `Edit setup`. Generate/Update continues to apply its existing validity and stale-snapshot constraints after editing is enabled. Image and viewport controls remain available in read-only states.
 
 ## Reverse Controls
 
@@ -161,6 +161,7 @@ For those operations, only signs in the generated snapshot are synchronized. Mag
 ### Integration
 
 - Factor Setup and Dimension Chain reverse buttons produce identical draft signs and calculations.
+- Generate/Update and both orientation buttons are disabled in locked Factor Setup and enabled in Edit setup, while viewport and visibility controls remain usable.
 - Diagram sign commits update Factor inputs and arrow colors/directions.
 - Undo/Redo treats each reverse-all or guide-release commit as one operation.
 - Read-only setup disables sign edits but permits image and viewport controls.

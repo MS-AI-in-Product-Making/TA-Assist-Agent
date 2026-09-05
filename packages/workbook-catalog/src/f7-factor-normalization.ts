@@ -1,8 +1,8 @@
-import { createTypedError } from "@ai-assist/contracts";
+import { createTypedError, type F7LoopCoefficient } from "@ai-assist/contracts";
 
 export interface F7FactorNormalizationInput {
   readonly excelSignedMean: number;
-  readonly loopCoefficient: -1 | 1;
+  readonly loopCoefficient: F7LoopCoefficient;
   readonly standardDeviation: number;
 }
 
@@ -38,11 +38,13 @@ export function normalizeF7Factor(input: F7FactorNormalizationInput): F7FactorNo
 
   if (!isFiniteNumber(excelSignedMean)) throw invalidInputError(INPUT_SUMMARY);
   if (!isFiniteNumber(standardDeviation) || standardDeviation <= 0) throw invalidInputError(INPUT_SUMMARY);
-  if (loopCoefficient !== -1 && loopCoefficient !== 1) throw invalidInputError(INPUT_SUMMARY);
+  if (loopCoefficient !== -1 && loopCoefficient !== 0 && loopCoefficient !== 1) throw invalidInputError(INPUT_SUMMARY);
 
   const signedContributionMean = normalizeNegativeZero(excelSignedMean);
   const physicalMean = normalizeNegativeZero(loopCoefficient * signedContributionMean);
-  if (physicalMean < 0) throw invalidInputError(DIRECTION_SUMMARY);
+  if (physicalMean < 0 || (loopCoefficient === 0 && signedContributionMean !== 0)) {
+    throw invalidInputError(DIRECTION_SUMMARY);
+  }
 
   return Object.freeze({
     physicalMean,

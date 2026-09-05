@@ -110,7 +110,7 @@ const addedFactors = reactive<F7FactorState[]>([]);
 const factorOrder = reactive(props.session.factors.map((factor) => factor.factorCandidate.factorCandidateId));
 const dimensionChainResetRevision = ref(0);
 let addedFactorSequence = 0;
-const setupEditable = computed(() => props.session.status === "factor_setup" || props.editingSetup);
+const setupEditable = computed(() => props.editingSetup);
 
 const activeFactors = computed(() => {
   if (!setupEditable.value) return props.session.factors;
@@ -446,8 +446,6 @@ function specificationErrors(draft: FactorSpecificationDraft): Partial<Record<Fa
   const errors: Partial<Record<FactorSpecificationField, string>> = {};
   if (typeof draft.designNominal !== "number" || !Number.isFinite(draft.designNominal)) {
     errors.designNominal = "Design Nominal must be a finite number.";
-  } else if (draft.designNominal === 0) {
-    errors.designNominal = "Design Nominal must be non-zero.";
   }
   if (typeof draft.upperTolerance !== "number" || !Number.isFinite(draft.upperTolerance)) {
     errors.upperTolerance = "+Tolerance must be a finite number.";
@@ -776,11 +774,11 @@ function formatFactorContribution(
   return hideDraftCalculation(factor) ? "" : formatPercent(value);
 }
 
-function nominalClass(value: number | ""): "nominal-negative" | "nominal-positive" | "" {
+function nominalClass(value: number | ""): "nominal-negative" | "nominal-neutral" | "nominal-positive" | "" {
   if (typeof value !== "number") return "";
   if (value < 0) return "nominal-negative";
   if (value > 0) return "nominal-positive";
-  return "";
+  return "nominal-neutral";
 }
 
 function factorReadiness(factor: DeepReadonly<F7SessionSnapshot["factors"][number]>): "ready" | "pending" {
@@ -813,6 +811,21 @@ function submitSetup(): void {
   });
   emit("confirmFactors", payload, systemSpecification);
 }
+
+const automaticConfirmationRequested = ref(false);
+watch(
+  () => [props.session.status, props.busy, props.editingSetup] as const,
+  ([status, busy, editingSetup]) => {
+    if (automaticConfirmationRequested.value || status !== "factor_setup" || busy || editingSetup) return;
+    automaticConfirmationRequested.value = true;
+    if (!setupIsValid.value) {
+      emit("editSetup");
+      return;
+    }
+    submitSetup();
+  },
+  { immediate: true },
+);
 
 function onModeChange(factorId: string, event: Event): void {
   const target = event.target as HTMLInputElement;

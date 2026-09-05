@@ -144,8 +144,31 @@ function setCanvasBounds(element: Element, width = 360, height = 300): void {
 }
 
 describe("DimensionChainPanel", () => {
+  it("enables generation and orientation only while Factor Setup is editable", async () => {
+    const wrapper = mount(DimensionChainPanel, {
+      props: { factors, valid: true, editable: false },
+    });
+    const generate = wrapper.get("[data-generate-dimension-chain]");
+    const horizontal = wrapper.get("button[aria-label='Horizontal dimension chain']");
+    const vertical = wrapper.get("button[aria-label='Vertical dimension chain']");
+
+    expect(generate.attributes("disabled")).toBeDefined();
+    expect(horizontal.attributes("disabled")).toBeDefined();
+    expect(vertical.attributes("disabled")).toBeDefined();
+
+    await wrapper.setProps({ editable: true });
+    expect(generate.attributes("disabled")).toBeUndefined();
+    expect(horizontal.attributes("disabled")).toBeUndefined();
+    expect(vertical.attributes("disabled")).toBeUndefined();
+
+    await wrapper.setProps({ valid: false });
+    expect(generate.attributes("disabled")).toBeDefined();
+    expect(horizontal.attributes("disabled")).toBeUndefined();
+    expect(vertical.attributes("disabled")).toBeUndefined();
+  });
+
   it("generates a labeled cumulative chain with component and closure arrows", async () => {
-    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true } });
+    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true, editable: true } });
 
     expect(wrapper.find("[data-dimension-chain-svg]").exists()).toBe(false);
     await wrapper.get("[data-generate-dimension-chain]").trigger("click");
@@ -171,7 +194,7 @@ describe("DimensionChainPanel", () => {
   });
 
   it("keeps the generated snapshot until the user updates it", async () => {
-    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true } });
+    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true, editable: true } });
     await wrapper.get("[data-generate-dimension-chain]").trigger("click");
 
     await wrapper.setProps({ factors: [{ ...factors[0]!, designNominal: 9 }, ...factors.slice(1)] });
@@ -188,7 +211,7 @@ describe("DimensionChainPanel", () => {
 
   it("recalculates all arrow proportions when the user updates", async () => {
     const initial = [factor(1, 100), factor(2, 1)];
-    const wrapper = mount(DimensionChainPanel, { props: { factors: initial, valid: true } });
+    const wrapper = mount(DimensionChainPanel, { props: { factors: initial, valid: true, editable: true } });
     await wrapper.get("[data-generate-dimension-chain]").trigger("click");
     expect(wrapper.get("[data-dimension-segment='2']").attributes("data-length")).toBe("36");
 
@@ -200,7 +223,7 @@ describe("DimensionChainPanel", () => {
   });
 
   it("switches orientation without making the generated snapshot stale", async () => {
-    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true } });
+    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true, editable: true } });
     await wrapper.get("[data-generate-dimension-chain]").trigger("click");
     await wrapper.get("button[aria-label='Vertical dimension chain']").trigger("click");
 
@@ -210,7 +233,7 @@ describe("DimensionChainPanel", () => {
   });
 
   it("keeps the two arrow label lines at normal line spacing in both orientations", async () => {
-    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true } });
+    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true, editable: true } });
     await wrapper.get("[data-generate-dimension-chain]").trigger("click");
     const lineGap = () => {
       const segment = wrapper.get("[data-dimension-segment='1']");
@@ -224,7 +247,7 @@ describe("DimensionChainPanel", () => {
   });
 
   it("keeps viewport controls without exposing a page-layout expansion action", async () => {
-    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true } });
+    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true, editable: true } });
     await wrapper.get("[data-generate-dimension-chain]").trigger("click");
     await wrapper.get("button[aria-label='Zoom in']").trigger("click");
 
@@ -235,7 +258,7 @@ describe("DimensionChainPanel", () => {
   });
 
   it("uses toolbar pan, bounds zoom, selects a local view, and restores the full view", async () => {
-    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true } });
+    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true, editable: true } });
     await wrapper.get("[data-generate-dimension-chain]").trigger("click");
 
     const title = wrapper.get("#dimension-chain-title");
@@ -287,7 +310,7 @@ describe("DimensionChainPanel", () => {
   });
 
   it("keeps the viewport unchanged when the left button drags empty canvas", async () => {
-    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true } });
+    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true, editable: true } });
     await wrapper.get("[data-generate-dimension-chain]").trigger("click");
 
     const canvas = wrapper.get("[data-dimension-chain-canvas]");
@@ -312,7 +335,7 @@ describe("DimensionChainPanel", () => {
   });
 
   it("pans empty canvas only with the middle button", async () => {
-    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true } });
+    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true, editable: true } });
     await wrapper.get("[data-generate-dimension-chain]").trigger("click");
 
     const canvas = wrapper.get("[data-dimension-chain-canvas]");
@@ -360,7 +383,7 @@ describe("DimensionChainPanel", () => {
   });
 
   it("finishes the owner pan when a real pointermove reports no pressed buttons", async () => {
-    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true } });
+    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true, editable: true } });
     await wrapper.get("[data-generate-dimension-chain]").trigger("click");
 
     const canvas = wrapper.get("[data-dimension-chain-canvas]");
@@ -384,7 +407,7 @@ describe("DimensionChainPanel", () => {
   });
 
   it("keeps panning when a synthetic owner move omits buttons", async () => {
-    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true } });
+    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true, editable: true } });
     await wrapper.get("[data-generate-dimension-chain]").trigger("click");
 
     const canvas = wrapper.get("[data-dimension-chain-canvas]");
@@ -408,7 +431,7 @@ describe("DimensionChainPanel", () => {
   });
 
   it("clears a lost pointer capture without releasing it again", async () => {
-    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true } });
+    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true, editable: true } });
     await wrapper.get("[data-generate-dimension-chain]").trigger("click");
 
     const canvas = wrapper.get("[data-dimension-chain-canvas]");
@@ -431,7 +454,7 @@ describe("DimensionChainPanel", () => {
   });
 
   it("preserves a pre-enabled selection mode after middle-button panning", async () => {
-    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true } });
+    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true, editable: true } });
     await wrapper.get("[data-generate-dimension-chain]").trigger("click");
 
     const selectButton = wrapper.get("button[aria-label='Select area to zoom']");
@@ -451,7 +474,7 @@ describe("DimensionChainPanel", () => {
   });
 
   it("lets only the owner pointer move and finish a selection drag", async () => {
-    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true } });
+    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true, editable: true } });
     await wrapper.get("[data-generate-dimension-chain]").trigger("click");
 
     const selectButton = wrapper.get("button[aria-label='Select area to zoom']");
@@ -489,7 +512,7 @@ describe("DimensionChainPanel", () => {
   });
 
   it("stops panning when the middle-button pointer is cancelled", async () => {
-    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true } });
+    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true, editable: true } });
     await wrapper.get("[data-generate-dimension-chain]").trigger("click");
 
     const canvas = wrapper.get("[data-dimension-chain-canvas]");
@@ -523,7 +546,7 @@ describe("DimensionChainPanel", () => {
 
   it("uses the raw Factor Setup signature to detect non-geometric changes", async () => {
     const wrapper = mount(DimensionChainPanel, {
-      props: { factors, valid: true, sourceSignature: "original-drafts" },
+      props: { factors, valid: true, editable: true, sourceSignature: "original-drafts" },
     });
     await wrapper.get("[data-generate-dimension-chain]").trigger("click");
 
@@ -1205,7 +1228,7 @@ describe("DimensionChainPanel", () => {
 
   it("closes the chain from the last dimension endpoint to the first dimension start", async () => {
     const wrapper = mount(DimensionChainPanel, {
-      props: { factors, valid: true },
+      props: { factors, valid: true, editable: true },
     });
     await wrapper.get("[data-generate-dimension-chain]").trigger("click");
 
@@ -1235,7 +1258,7 @@ describe("DimensionChainPanel", () => {
       .toBe(verticalStartGuide.attributes("y2"));
 
     const coincident = mount(DimensionChainPanel, {
-      props: { factors: [factor(1, 1), factor(2, -1)], valid: true },
+      props: { factors: [factor(1, 1), factor(2, -1)], valid: true, editable: true },
     });
     await coincident.get("[data-generate-dimension-chain]").trigger("click");
     const coincidentClosure = coincident.get("[data-dimension-closure]");
@@ -1382,9 +1405,10 @@ describe("DimensionChainPanel", () => {
 
   it("exposes disabled edit handles without allowing non-editable pointer changes", async () => {
     const wrapper = mount(DimensionChainPanel, {
-      props: { factors, valid: true, editable: false },
+      props: { factors, valid: true, editable: true },
     });
     await wrapper.get("[data-generate-dimension-chain]").trigger("click");
+    await wrapper.setProps({ editable: false });
     const canvas = wrapper.get("[data-dimension-chain-canvas]");
     setCanvasBounds(canvas.element);
     const setPointerCapture = vi.fn();
@@ -1538,7 +1562,7 @@ describe("DimensionChainPanel", () => {
     installImageEnvironment(["blob:visibility"], {
       "blob:visibility": { width: 640, height: 360 },
     });
-    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true } });
+    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true, editable: true } });
     const visibilityToggle = wrapper.get("button[aria-label='Hide dimension chain']");
     expect(visibilityToggle.attributes("disabled")).toBeDefined();
 
@@ -1572,7 +1596,7 @@ describe("DimensionChainPanel", () => {
         "blob:webp": { width: 640, height: 360 },
       },
     );
-    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true } });
+    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true, editable: true } });
     const importButton = wrapper.get("button[aria-label='Import background image']");
     const input = wrapper.get("input[type='file']");
 
@@ -1628,7 +1652,7 @@ describe("DimensionChainPanel", () => {
       ["blob:pasted"],
       { "blob:pasted": { width: 800, height: 500 } },
     );
-    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true } });
+    const wrapper = mount(DimensionChainPanel, { props: { factors, valid: true, editable: true } });
     await wrapper.get("[data-generate-dimension-chain]").trigger("click");
     const canvas = wrapper.get("[data-dimension-chain-canvas]");
     const textInput = document.createElement("input");
@@ -1690,7 +1714,7 @@ describe("DimensionChainPanel", () => {
       { "blob:centered": { width: 640, height: 360 } },
     );
     const wrapper = mount(DimensionChainPanel, {
-      props: { factors, valid: true },
+      props: { factors, valid: true, editable: true },
     });
     await chooseBackgroundFile(wrapper, new File(["png"], "section.png", { type: "image/png" }));
     await vi.waitFor(() => expect(wrapper.find("[data-dimension-chain-background]").exists()).toBe(true));
@@ -1971,13 +1995,16 @@ describe("DimensionChainPanel", () => {
   });
 
   it("disables generation for invalid factors and renders zero items once valid", async () => {
-    const wrapper = mount(DimensionChainPanel, { props: { factors: [factor(1, 0)], valid: false } });
+    const wrapper = mount(DimensionChainPanel, {
+      props: { factors: [factor(1, 0)], valid: false, editable: true },
+    });
     expect(wrapper.get("[data-generate-dimension-chain]").attributes("disabled")).toBeDefined();
 
     await wrapper.setProps({ valid: true });
     await wrapper.get("[data-generate-dimension-chain]").trigger("click");
 
     expect(wrapper.get("[data-dimension-segment='1']").attributes("data-direction")).toBe("zero");
+    expect(wrapper.get("[data-dimension-segment='1']").attributes("aria-label")).toContain("assembly shift");
     expect(wrapper.find("[data-dimension-zero]").exists()).toBe(true);
   });
 });

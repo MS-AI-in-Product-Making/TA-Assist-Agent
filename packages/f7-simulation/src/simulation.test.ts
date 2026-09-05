@@ -115,6 +115,26 @@ describe("runF7MonteCarlo", () => {
     expect(second.quantiles).not.toEqual(first.quantiles);
   });
 
+  it("preserves sampled variation for a neutral Assembly Shift factor", () => {
+    const factor = {
+      factorId: FACTOR_A,
+      sourceMode: "BASELINE_ASSUMPTION" as const,
+      family: "normal" as const,
+      parameters: { mean: 0, standardDeviation: 0.04 },
+    };
+    const neutral = runF7MonteCarlo({
+      ...request,
+      factors: [{ ...factor, coefficient: 0 as const }],
+    });
+    const additive = runF7MonteCarlo({
+      ...request,
+      factors: [{ ...factor, coefficient: 1 as const }],
+    });
+
+    expect(neutral.standardDeviation).toBeGreaterThan(0.03);
+    expect(empiricalFields(neutral)).toEqual(empiricalFields(additive));
+  });
+
   it("applies the system additional mean shift once to every simulated response", () => {
     const baseline = runF7MonteCarlo(request);
     const shifted = runF7MonteCarlo({ ...request, additionalMeanShift: 0.025 });

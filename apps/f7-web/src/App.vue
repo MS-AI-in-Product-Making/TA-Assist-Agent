@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { LoaderCircle } from "lucide-vue-next";
 import { computed, nextTick, ref } from "vue";
 import { createF7Client, type F7Client, type F7MeasurementStructure, type F7MsaStatus, type F7RationalSubgroupConfig, type F7SetupDistribution, type F7SourceMode, type F7SystemSpecificationInput } from "./api/f7-client";
 import WorksheetConfirmation from "./components/WorksheetConfirmation.vue";
@@ -20,11 +21,28 @@ const activeMeasurementStage = ref<"measurement" | "capability" | "distribution"
 const editingFactorSetup = ref(false);
 const reportRetryAvailable = ref(false);
 const workbookInput = ref<HTMLInputElement>();
+const pendingWorkbookFile = ref<File>();
+const importingWorkbookFileName = ref("");
 const restartConfirmationVisible = ref(false);
+const restartConfirmationMode = ref<"replaceWorkbook" | "openPicker">();
+const restartCancelButton = ref<HTMLButtonElement>();
 const restartContinueButton = ref<HTMLButtonElement>();
+let restartDialogOpener: HTMLElement | undefined;
+let restartConfirmationPending = false;
+let workbookReplacementAuthorized = false;
 let reportRequestToken = 0;
 
+const workbookImportBusy = computed(() => store.busyAction.value === "importWorkbook");
+const workbookReplacementBusy = computed(() => workbookImportBusy.value && pendingWorkbookFile.value !== undefined);
+const displayedWorkbookFileName = computed(() => (
+  pendingWorkbookFile.value?.name
+  || importingWorkbookFileName.value
+  || store.session.value?.workbook.fileName
+  || "No file chosen"
+));
+
 const simulationReady = computed(() => {
+  if (workbookReplacementBusy.value) return false;
   const session = store.session.value;
   return session?.status === "phase_1_ready" && session.factors.every((factor) => (
     factor.sourceMode === "BASELINE_ASSUMPTION"
@@ -39,6 +57,7 @@ const workflowSteps = [
 ] as const;
 
 const currentPhaseStep = computed(() => {
+  if (workbookReplacementBusy.value) return 1;
   if (activeMeasurementStage.value === "monteCarlo") return 3;
   const status = store.session.value?.status;
   if (!status || status === "worksheet_selection") return 1;
@@ -47,6 +66,7 @@ const currentPhaseStep = computed(() => {
 });
 
 function workflowStepState(stepId: number): "current" | "complete" | "pending" | "locked" {
+  if (workbookReplacementBusy.value && stepId > 1) return "locked";
   if (stepId === 3 && !simulationReady.value) return "locked";
   if (stepId === 2 && (!store.session.value || store.session.value.status === "worksheet_selection")) return "locked";
   if (stepId < currentPhaseStep.value) return "complete";
@@ -65,9 +85,21 @@ function workflowStepStatusText(stepId: number, state: "current" | "complete" | 
 }
 
 const statusText = computed(() => {
+  if (workbookReplacementBusy.value) return "Importing workbook";
   if (!store.session.value) return "No workbook imported";
   return store.session.value.status;
 });
+
+function asFocusableElement(candidate: unknown): HTMLElement | undefined {
+  return candidate instanceof HTMLElement ? candidate : undefined;
+}
+
+function captureRestartDialogOpener(fallback: unknown): void {
+  const activeElement = asFocusableElement(globalThis.document.activeElement);
+  restartDialogOpener = activeElement && activeElement !== globalThis.document.body
+    ? activeElement
+    : asFocusableElement(fallback);
+}
 
 async function swallowHandledError(operation: () => Promise<void>): Promise<void> {
   fitActionFactorId.value = "";
@@ -78,11 +110,9 @@ async function swallowHandledError(operation: () => Promise<void>): Promise<void
   }
 }
 
-async function onImportFile(event: Event): Promise<void> {
-  const target = event.target as HTMLInputElement;
-  const file = target.files?.[0];
-  if (!file) return;
+async function importWorkbookFile(file: File): Promise<void> {
   fitActionFactorId.value = "";
+  importingWorkbookFileName.value = file.name;
   try {
     await store.importWorkbook(file);
     reportRequestToken += 1;
@@ -92,26 +122,95 @@ async function onImportFile(event: Event): Promise<void> {
   } catch {
     // Store already captures and exposes a controlled UI error.
   } finally {
-    target.value = "";
+    importingWorkbookFileName.value = "";
+    if (workbookInput.value) workbookInput.value.value = "";
   }
 }
 
-function restartFromWorksheetSelection(): void {
+async function onImportFile(event: Event): Promise<void> {
+  const file = (event.target as HTMLInputElement).files?.[0];
+  if (!file) return;
+  if (workbookReplacementAuthorized) {
+    workbookReplacementAuthorized = false;
+    await importWorkbookFile(file);
+    return;
+  }
+  if (store.session.value) {
+    captureRestartDialogOpener(event.target);
+    pendingWorkbookFile.value = file;
+    restartConfirmationMode.value = "replaceWorkbook";
+    restartConfirmationVisible.value = true;
+    void nextTick(() => restartContinueButton.value?.focus());
+    return;
+  }
+  await importWorkbookFile(file);
+}
+
+function onWorkbookPickerCancel(): void {
+  workbookReplacementAuthorized = false;
+}
+
+function restartFromWorksheetSelection(event: Event): void {
   if (store.isBusy.value) return;
+  captureRestartDialogOpener(event.currentTarget);
+  restartConfirmationMode.value = "openPicker";
   restartConfirmationVisible.value = true;
   void nextTick(() => restartContinueButton.value?.focus());
 }
 
 function cancelWorksheetRestart(): void {
+  const opener = restartDialogOpener;
   restartConfirmationVisible.value = false;
+  restartConfirmationMode.value = undefined;
+  pendingWorkbookFile.value = undefined;
+  restartDialogOpener = undefined;
+  if (workbookInput.value) workbookInput.value.value = "";
+  void nextTick(() => {
+    if (opener?.isConnected) opener.focus();
+  });
 }
 
-function confirmWorksheetRestart(): void {
-  const input = workbookInput.value;
-  if (!input) return;
+function trapRestartDialogFocus(event: { readonly shiftKey: boolean }): void {
+  const cancelButton = restartCancelButton.value;
+  const continueButton = restartContinueButton.value;
+  if (!cancelButton || !continueButton) return;
+  if (event.shiftKey) {
+    (globalThis.document.activeElement === cancelButton ? continueButton : cancelButton).focus();
+    return;
+  }
+  (globalThis.document.activeElement === continueButton ? cancelButton : continueButton).focus();
+}
+
+async function confirmWorksheetRestart(): Promise<void> {
+  if (store.isBusy.value || restartConfirmationPending) return;
+  const confirmationMode = restartConfirmationMode.value;
+  if (!confirmationMode) return;
+  const pendingFile = pendingWorkbookFile.value;
+  restartConfirmationPending = true;
   restartConfirmationVisible.value = false;
-  input.value = "";
-  input.click();
+  restartConfirmationMode.value = undefined;
+  restartDialogOpener = undefined;
+  if (confirmationMode === "replaceWorkbook" && pendingFile) {
+    try {
+      await importWorkbookFile(pendingFile);
+    } finally {
+      if (!restartConfirmationVisible.value) pendingWorkbookFile.value = undefined;
+      restartConfirmationPending = false;
+      await nextTick();
+      workbookInput.value?.focus();
+    }
+    return;
+  }
+  pendingWorkbookFile.value = undefined;
+  const input = workbookInput.value;
+  try {
+    if (!input) return;
+    input.value = "";
+    workbookReplacementAuthorized = true;
+    input.click();
+  } finally {
+    restartConfirmationPending = false;
+  }
 }
 
 async function onConfirmWorksheet(worksheetName: string): Promise<void> {
@@ -131,10 +230,13 @@ async function onConfirmFactors(confirmations: ReadonlyArray<{
   readonly factorName?: string;
   readonly userAdded?: true;
 }>, systemSpecification: F7SystemSpecificationInput): Promise<void> {
-  await swallowHandledError(async () => {
+  fitActionFactorId.value = "";
+  try {
     await store.confirmFactors(confirmations, systemSpecification);
     editingFactorSetup.value = false;
-  });
+  } catch {
+    editingFactorSetup.value = true;
+  }
 }
 
 function onEditFactorSetup(): void {
@@ -298,7 +400,7 @@ async function openReport(): Promise<void> {
             <span class="step-status">{{ workflowStepStatusText(step.id, workflowStepState(step.id)) }}</span>
           </li>
         </ol>
-        <div v-if="store.session.value" class="workflow-metadata">
+        <div v-if="store.session.value && !workbookReplacementBusy" class="workflow-metadata">
           <p><strong>Classification</strong> {{ store.session.value.outputClassification }}</p>
           <p><strong>Workbook</strong> <span data-workbook-name>{{ store.session.value.workbook.fileName }}</span></p>
           <p>
@@ -313,20 +415,50 @@ async function openReport(): Promise<void> {
       </aside>
       <section class="workflow-content">
         <section
-          v-show="!store.session.value || store.session.value.status === 'worksheet_selection'"
+          v-show="workbookImportBusy || !store.session.value || store.session.value.status === 'worksheet_selection'"
           class="workbench-panel"
+          :class="{ 'workbook-import-busy': workbookImportBusy }"
           data-workbook-import
+          :aria-busy="workbookImportBusy ? 'true' : 'false'"
         >
           <h2>Import Workbook</h2>
           <label for="workbook-file">Workbook file</label>
-          <input
-            id="workbook-file"
-            ref="workbookInput"
-            type="file"
-            accept=".xlsx"
-            :disabled="store.isBusy.value"
-            @change="onImportFile"
+          <div class="workbook-file-control">
+            <input
+              id="workbook-file"
+              ref="workbookInput"
+              class="sr-only"
+              type="file"
+              accept=".xlsx"
+              :disabled="store.isBusy.value"
+              @change="onImportFile"
+              @cancel="onWorkbookPickerCancel"
+            >
+            <label
+              class="workbook-file-button"
+              for="workbook-file"
+              :aria-disabled="store.isBusy.value ? 'true' : undefined"
+            >Choose File</label>
+            <span
+              class="workbook-file-name"
+              data-workbook-file-name
+              :title="displayedWorkbookFileName"
+            >{{ displayedWorkbookFileName }}</span>
+          </div>
+          <div
+            v-if="workbookImportBusy"
+            class="workbook-import-feedback"
+            data-workbook-import-status
           >
+            <p><LoaderCircle class="workbook-import-spinner" :size="16" aria-hidden="true" /> Reading and parsing workbook…</p>
+            <div
+              class="workbook-import-progress"
+              data-workbook-import-progress
+              role="progressbar"
+              aria-label="Workbook import in progress"
+            ><span /></div>
+            <p class="subtle">Large workbooks may take a moment.</p>
+          </div>
           <p class="subtle">Workbook bytes are uploaded only for local session parsing.</p>
         </section>
 
@@ -334,7 +466,7 @@ async function openReport(): Promise<void> {
           {{ store.error.value.summary }}
         </p>
 
-        <template v-if="store.session.value">
+        <template v-if="store.session.value && !workbookReplacementBusy">
         <WorksheetConfirmation
           v-if="store.session.value.status === 'worksheet_selection'"
           :session="store.session.value"
@@ -424,7 +556,8 @@ async function openReport(): Promise<void> {
       v-if="restartConfirmationVisible"
       class="confirmation-backdrop"
       @click.self="cancelWorksheetRestart"
-      @keydown.esc="cancelWorksheetRestart"
+      @keydown.esc.prevent="cancelWorksheetRestart"
+      @keydown.tab.prevent="trapRestartDialogFocus"
     >
       <section
         class="confirmation-dialog"
@@ -434,15 +567,30 @@ async function openReport(): Promise<void> {
         aria-labelledby="workflow-restart-title"
         aria-describedby="workflow-restart-description"
       >
-        <h2 id="workflow-restart-title">Open another worksheet?</h2>
+        <h2 id="workflow-restart-title">
+          {{ restartConfirmationMode === "replaceWorkbook" ? "Replace current workbook?" : "Open another worksheet?" }}
+        </h2>
         <p id="workflow-restart-description">
-          Opening another workbook or worksheet will discard the current worksheet data and analysis results.
+          {{ restartConfirmationMode === "replaceWorkbook"
+            ? "Continuing will discard the current workbook, worksheet selection, and analysis results."
+            : "Opening another workbook or worksheet will discard the current worksheet data and analysis results." }}
         </p>
         <div class="confirmation-dialog-actions">
-          <button type="button" class="confirmation-cancel" data-workflow-restart-cancel @click="cancelWorksheetRestart">Cancel</button>
-          <button ref="restartContinueButton" type="button" class="action-button" data-workflow-restart-continue @click="confirmWorksheetRestart">Continue</button>
+          <button ref="restartCancelButton" type="button" class="confirmation-cancel" data-workflow-restart-cancel :disabled="store.isBusy.value" @click="cancelWorksheetRestart">Cancel</button>
+          <button ref="restartContinueButton" type="button" class="action-button" data-workflow-restart-continue :disabled="store.isBusy.value" @click="confirmWorksheetRestart">Continue</button>
         </div>
       </section>
     </div>
+    <Teleport to="body">
+      <p
+        v-if="workbookImportBusy"
+        class="sr-only"
+        data-workbook-import-announcement
+        role="status"
+        aria-live="polite"
+      >
+        Reading and parsing workbook… Large workbooks may take a moment.
+      </p>
+    </Teleport>
   </main>
 </template>

@@ -85,7 +85,7 @@ const requireLowerSpecLessThanUpperSpec = (
   }
 };
 
-export const f7LoopCoefficientSchema = z.union([z.literal(-1), z.literal(1)]);
+export const f7LoopCoefficientSchema = z.union([z.literal(-1), z.literal(0), z.literal(1)]);
 
 export const f7FactorSourceModeSchema = z.enum([
   "MEASURED",
@@ -110,7 +110,7 @@ export const f7RationalSubgroupConfigSchema = z
 export const f7MsaStatusSchema = z.enum(["available", "not_available", "unknown"]);
 
 const editableFactorSpecificationFields = {
-  designNominal: finiteNumberSchema.refine((value) => value !== 0, "designNominal must be non-zero"),
+  designNominal: finiteNumberSchema,
   upperTolerance: z.number().finite().nonnegative(),
   lowerTolerance: z.number().finite().nonpositive(),
 } as const;
