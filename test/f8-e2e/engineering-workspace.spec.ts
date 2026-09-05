@@ -170,9 +170,10 @@ test("creates a governed model HostAction prompt from the selected worksheet con
   await expect(page.getByRole("button", { name: "Close TA Assistant" })).toBeVisible();
   await workbench.seedConversationTurn({ sessionId: workbench.sessionId, turnId: "external-model-context", sequence: 1 });
 
-  const currentF6ReportArtifactId = reviewArtifactId("f6-report-e2e", workbench.sessionId);
+  const currentF6ReportArtifactId = `f6-report:1:${workbench.sessionId}`;
+  const currentF6ReportAliasArtifactId = reviewArtifactId("f6-report-e2e", workbench.sessionId);
   const projectionArtifactId = `engineering-summary-projection:1:${workbench.sessionId}`;
-  const webReportResponse = await page.request.get(`${workbench.origin}/api/sessions/${encodeURIComponent(workbench.sessionId)}/artifacts/${encodeURIComponent(currentF6ReportArtifactId)}`);
+  const webReportResponse = await page.request.get(`${workbench.origin}/api/sessions/${encodeURIComponent(workbench.sessionId)}/artifacts/${encodeURIComponent(currentF6ReportAliasArtifactId)}`);
   if (!webReportResponse.ok()) throw new Error(`f6 report fetch failed (${webReportResponse.status()})`);
   const webReportHash = createHash("sha256").update(await webReportResponse.body()).digest("hex");
   const projectionResponse = await page.request.get(`${workbench.origin}/api/sessions/${encodeURIComponent(workbench.sessionId)}/artifacts/${encodeURIComponent(projectionArtifactId)}`);
@@ -293,6 +294,7 @@ test("creates a governed model HostAction prompt from the selected worksheet con
   const modelReportReference = modelTurn.content.find((entry): entry is Extract<typeof modelTurn.content[number], { kind: "artifact_reference" }> =>
     entry.kind === "artifact_reference" && entry.label === "Feature6-Report.md");
   expect(modelReportReference).toBeDefined();
+  expect(modelReportReference.artifactId).toBe(currentF6ReportArtifactId);
   expect(modelTurn.relatedArtifactIds).toEqual([modelReportReference.artifactId]);
   expect(modelTurn.content).toEqual(expect.arrayContaining([
     { kind: "artifact_reference", artifactId: modelReportReference.artifactId, label: "Feature6-Report.md" },
