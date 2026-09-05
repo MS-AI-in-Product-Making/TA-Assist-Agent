@@ -518,18 +518,3 @@ git commit -m "test(f6): verify optimization recommendations and report links"
 ```
 
 仅在确有修正文件时执行该提交；没有修正时保持工作区干净。
-
-## Task 8 执行报告（2026-09-05）
-
-- 问题定位：`scripts/f6-final-report.test.mjs` 用例 `renders structured recommendation basis for v2 model assessments without trusting model numeric prose` 依赖了陈旧 fixture/dist 副作用。`loadRealF6Inputs` 在测试改写 `modelInterpretation.optimizationAssessment` 前已构建 F6 optimization，而用例未显式注入 `system_specification_target_required` clarification。
-- 最小修复：仅修改测试，在渲染前向 `inputs.f6Optimization.worksheets[0].clarifications` 显式追加一条合法 clarification：
-  - `reasonCode: "system_specification_target_required"`
-  - `requiredInputs: ["system_specification_target"]`
-  - `evidenceReferences: [inputs.f6Optimization.provenance.f4Reference]`
-- 生产代码变更：无。
-- 断言策略：未放宽任何现有断言，继续要求报告仅渲染受治理结构化澄清依据。
-
-已执行验证：
-
-1. `npx vitest run scripts/f6-final-report.test.mjs` → PASS（29 passed）。
-2. `npx vitest run scripts/f6-full-flow.test.mjs packages/workflow-runners/src/existing-f6.test.ts scripts/verify-current-f6.test.mjs` → PASS（71 passed, 1 skipped）。
