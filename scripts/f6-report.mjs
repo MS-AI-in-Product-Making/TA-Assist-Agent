@@ -2,6 +2,79 @@ import { f6LegacyOptimizationResultSchema, f6OptimizationResultSchema } from "..
 import { cell } from "./f6-markdown-sanitizer.mjs";
 import { evidenceLabel, formatEngineering, formatPercent } from "./engineering-format.mjs";
 
+const RECOMMENDATION_CLASS_ORDER = [
+  "factor_nominal",
+  "system_mean_shift",
+  "system_specification",
+  "factor_tolerance",
+];
+
+function optionClass(option) {
+  if (option.optionSource === "BUILT_IN_POLICY") return "factor_tolerance";
+  if (option.targetContext?.targetType === "factor_nominal") return "factor_nominal";
+  if (option.targetContext?.targetType === "system_mean_shift") return "system_mean_shift";
+  if (option.targetContext?.targetType === "system_specification") return "system_specification";
+  return "factor_tolerance";
+}
+
+function classClarifications(worksheet, adjustmentClass) {
+  return worksheet.clarifications.filter((item) => {
+    const reasonCode = String(item.reasonCode ?? "");
+    if (adjustmentClass === "factor_nominal") return reasonCode.includes("nominal");
+    if (adjustmentClass === "system_mean_shift") return reasonCode.includes("mean_shift");
+    if (adjustmentClass === "system_specification") {
+      return reasonCode.includes("system_specification")
+        || reasonCode.includes("specification")
+        || reasonCode === "optimization_target_required"
+        || (Array.isArray(item.requiredInputs) && item.requiredInputs.includes("system_specification_target"));
+    }
+    return reasonCode.includes("tolerance") || reasonCode.includes("optimization_target");
+  });
+}
+
+function clarificationReasonCode(item, adjustmentClass) {
+  const reasonCode = String(item.reasonCode ?? "");
+  if (adjustmentClass === "system_specification" && reasonCode === "optimization_target_required") {
+    return "system_specification_target_required";
+  }
+  return reasonCode;
+}
+
+function optionValueSummary(option) {
+  if (option.status !== "completed") return option.status;
+  const baseline = option.baselineMetrics;
+  const result = option.resultMetrics;
+  return `Cpk ${result.cpk.toFixed(3)} (Δ${(result.cpk - baseline.cpk).toFixed(3)}); RSS ${result.rssSigma.toFixed(6)} (Δ${(result.rssSigma - baseline.rssSigma).toFixed(6)})`;
+}
+
+function classGovernanceNote(adjustmentClass) {
+  if (adjustmentClass === "system_specification") {
+    return "Requirement Change; caller authorization and ME review required; no automatic change.";
+  }
+  return "Deterministic scenario evidence only; model narrative cannot override numeric truth.";
+}
+
+function renderRecommendationBasis(lines, worksheet) {
+  lines.push(
+    "",
+    "### 3. 建议依据",
+    "",
+    "| Adjustment Class | Deterministic Option Evidence | Clarifications | Governance Note |",
+    "|---|---|---|---|",
+  );
+  for (const adjustmentClass of RECOMMENDATION_CLASS_ORDER) {
+    const options = worksheet.options.filter((option) => optionClass(option) === adjustmentClass);
+    const optionText = options.length === 0
+      ? "No deterministic scenario executed."
+      : options.map((option) => `${option.optionId}: ${optionValueSummary(option)}`).join("; ");
+    const clarifications = classClarifications(worksheet, adjustmentClass);
+    const clarificationText = clarifications.length === 0
+      ? "None"
+      : clarifications.map((item) => clarificationReasonCode(item, adjustmentClass)).join("; ");
+    lines.push(`| ${cell(adjustmentClass)} | ${cell(optionText)} | ${cell(clarificationText)} | ${cell(classGovernanceNote(adjustmentClass))} |`);
+  }
+}
+
 function optionName(kind) {
   return {
     reduce_top_contributor_20: "Reduce Top Contributor 20%",
@@ -239,6 +312,7 @@ export function renderF6Report(result, options = {}) {
       `- Analysis Context decision：${cell(parsed.provenance.analysisContextDecision.outcome)}`,
       `- Model Interpretation decision：${cell(parsed.provenance.modelInterpretationDecision?.outcome ?? "NOT_PROVIDED")}`,
     );
+    renderRecommendationBasis(lines, worksheet);
   }
   return `${lines.join("\n").trimEnd()}\n`;
 }

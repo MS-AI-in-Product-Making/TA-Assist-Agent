@@ -14,7 +14,12 @@ import {
 import { formatEngineering, formatPercent } from "./engineering-format.mjs";
 import { createF5DataInterpretation } from "../packages/workbook-catalog/dist/f5-data-interpretation.js";
 import { createF6ReportProjection } from "../packages/workbook-catalog/dist/index.js";
-import { createF6ArtifactBundleFixture, createF6V2ObservationArtifact, F6_FIXTURE_WORKBOOK_HASH } from "./f6-artifact-test-fixture.mjs";
+import {
+  createF6ArtifactBundleFixture,
+  createF6V2ObservationArtifact,
+  F6_FIXTURE_WORKBOOK_HASH,
+  installF6ModelInterpretation,
+} from "./f6-artifact-test-fixture.mjs";
 import { createF6FinalReportProjection, worstDisposition } from "./f6-final-report.mjs";
 import { runF6FullValidation } from "./run-f6-full-validation.mjs";
 
@@ -118,13 +123,21 @@ function buildOpenF5Report(bundle, { directionConflict = false } = {}) {
   }));
 }
 
-function loadRealF6Inputs({ worksheetNames = ["Analysis-A"], blockedWorksheetNames = [], f5Variant = "default", actualFieldOverrides = {}, systemSpecificationOverrides = {} } = {}) {
+function loadRealF6Inputs({ worksheetNames = ["Analysis-A"], blockedWorksheetNames = [], f5Variant = "default", actualFieldOverrides = {}, systemSpecificationOverrides = {}, modelInterpretationVersion } = {}) {
   const bundle = createF6ArtifactBundleFixture({ worksheetNames, blockedWorksheetNames, actualFieldOverrides, systemSpecificationOverrides });
+  const modelInterpretation = modelInterpretationVersion === undefined
+    ? undefined
+    : installF6ModelInterpretation(bundle, { version: modelInterpretationVersion });
   const runId = `2026-08-20T00-00-00-000Z-${worksheetNames.join("-")}`;
   const runRoot = path.join(bundle.publishRoot, "f6-runs", runId);
 
   const result = runF6FullValidation({}, {
-    parseArgs: () => ({ ...bundle }),
+    parseArgs: () => ({
+      ...bundle,
+      ...(modelInterpretation === undefined
+        ? {}
+        : { modelInterpretationArtifact: modelInterpretation.filePath }),
+    }),
     resolveLayout: () => ({
       runId,
       runRoot,
@@ -150,6 +163,7 @@ function loadRealF6Inputs({ worksheetNames = ["Analysis-A"], blockedWorksheetNam
         ? buildOpenF5Report(bundle, { directionConflict: f5Variant === "open-conflict" })
       : f5DataInterpretationResultSchema.parse(readJson(bundle.paths.f5)),
     f6Optimization: f6OptimizationResultSchema.parse(readJson(path.join(runRoot, "Feature6-Optimization.json"))),
+    ...(modelInterpretation === undefined ? {} : { modelInterpretation: f6ModelInterpretationArtifactSchema.parse(modelInterpretation.artifact) }),
   };
 }
 
@@ -340,6 +354,63 @@ describe("createF6FinalReportProjection policy", () => {
     const blocked = markdown.slice(markdown.indexOf("## 4.2 Worksheet：Blocked-A"));
 
     expect(blocked).toContain("模型解读 unavailable");
+  });
+
+  it("renders structured recommendation basis for v2 model assessments without trusting model numeric prose", () => {
+    const inputs = loadRealF6Inputs({
+      worksheetNames: ["Analysis-A"],
+      modelInterpretationVersion: "v2",
+    });
+    inputs.modelInterpretation.worksheets[0].optimizationAssessment = [
+      {
+        adjustmentClass: "factor_nominal",
+        factor: structuredClone(inputs.modelInterpretation.worksheets[0].optimizationAssessment.find((item) => item.adjustmentClass === "factor_nominal").factor),
+        disposition: "CONSIDER",
+        priority: 1,
+        rationale: "Use governed centering target only; do not trust freeform numbers.",
+        evidenceReferences: structuredClone(inputs.modelInterpretation.worksheets[0].optimizationAssessment[0].evidenceReferences),
+      },
+      {
+        adjustmentClass: "system_mean_shift",
+        disposition: "INSUFFICIENT_EVIDENCE",
+        priority: 2,
+        rationale: "Need additional measured evidence before shifting mean.",
+        evidenceReferences: structuredClone(inputs.modelInterpretation.worksheets[0].optimizationAssessment[1].evidenceReferences),
+      },
+      {
+        adjustmentClass: "system_specification",
+        disposition: "CONSIDER",
+        priority: 3,
+        rationale: "This class is a requirement change and requires authority.",
+        evidenceReferences: structuredClone(inputs.modelInterpretation.worksheets[0].optimizationAssessment[2].evidenceReferences),
+      },
+      {
+        adjustmentClass: "factor_tolerance",
+        factor: structuredClone(inputs.modelInterpretation.worksheets[0].optimizationAssessment.find((item) => item.adjustmentClass === "factor_tolerance").factor),
+        disposition: "RECOMMENDED",
+        priority: 4,
+        rationale: "Variance concentration supports tolerance action.",
+        evidenceReferences: structuredClone(inputs.modelInterpretation.worksheets[0].optimizationAssessment[3].evidenceReferences),
+      },
+    ];
+    inputs.modelInterpretation.worksheets[0].narrativeMarkdown = [
+      "### 模型段落（仅用于文本）",
+      "",
+      "模型文本写入 9.99 不应成为受控数值依据。",
+      "受控占位符 {{calc:rss-sigma}} 仍可替换。",
+    ].join("\n");
+
+    const { markdown } = createF6FinalReportProjection(inputs);
+
+    expect(markdown).toContain("### 4.1.1 模型建议依据");
+    expect(markdown).toContain(String.raw`factor\_nominal`);
+    expect(markdown).toContain(String.raw`system\_mean\_shift`);
+    expect(markdown).toContain(String.raw`system\_specification`);
+    expect(markdown).toContain(String.raw`factor\_tolerance`);
+    expect(markdown).toContain("Requirement Change");
+    expect(markdown).toContain("ME review required");
+    expect(markdown).toContain(String.raw`system\_specification\_target\_required`);
+    expect(markdown).not.toContain("9.99");
   });
 
   it("keeps supported structural SIGNALs on pass", () => {

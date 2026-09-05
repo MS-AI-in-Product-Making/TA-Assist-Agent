@@ -28,6 +28,12 @@ export { F6_DISPOSITION_RANK, worstDisposition };
 const NOT_PROVIDED = "NOT_PROVIDED";
 const INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE";
 const NA = "N/A";
+const RECOMMENDATION_CLASS_ORDER = [
+  "factor_nominal",
+  "system_mean_shift",
+  "system_specification",
+  "factor_tolerance",
+];
 
 function indexByWorksheetName(records) {
   return new Map(records.map((record) => [record.worksheetName, record]));
@@ -843,9 +849,99 @@ function modelInterpretationByWorksheet(context) {
   return new Map(context.modelInterpretation.worksheets.map((worksheet) => [worksheet.worksheetName, worksheet]));
 }
 
+function usesModelInterpretationV2(context) {
+  return context.modelInterpretation?.interpretationVersion === "f6-model-interpretation-v2";
+}
+
+function classFromOption(option) {
+  if (option.optionSource === "BUILT_IN_POLICY") return "factor_tolerance";
+  if (option.targetContext?.targetType === "factor_nominal") return "factor_nominal";
+  if (option.targetContext?.targetType === "system_mean_shift") return "system_mean_shift";
+  if (option.targetContext?.targetType === "system_specification") return "system_specification";
+  return "factor_tolerance";
+}
+
+function classClarifications(worksheet, adjustmentClass) {
+  return worksheet.f6Worksheet.clarifications.filter((item) => {
+    const reasonCode = String(item.reasonCode ?? "");
+    if (adjustmentClass === "factor_nominal") return reasonCode.includes("nominal");
+    if (adjustmentClass === "system_mean_shift") return reasonCode.includes("mean_shift");
+    if (adjustmentClass === "system_specification") {
+      return reasonCode.includes("system_specification")
+        || reasonCode.includes("specification")
+        || reasonCode === "optimization_target_required"
+        || (Array.isArray(item.requiredInputs) && item.requiredInputs.includes("system_specification_target"));
+    }
+    return reasonCode.includes("tolerance") || reasonCode.includes("optimization_target");
+  });
+}
+
+function clarificationReasonCode(item, adjustmentClass) {
+  const reasonCode = String(item.reasonCode ?? "");
+  if (adjustmentClass === "system_specification" && reasonCode === "optimization_target_required") {
+    return "system_specification_target_required";
+  }
+  return reasonCode;
+}
+
+function optionEvidenceText(option) {
+  if (option.status === "completed") {
+    const baseline = option.baselineMetrics;
+    const result = option.resultMetrics;
+    return `${option.optionId}: Cpk ${numberText(result.cpk)} (Δ${numberText(result.cpk - baseline.cpk)}); RSS ${numberText(result.rssSigma)} (Δ${numberText(result.rssSigma - baseline.rssSigma)})`;
+  }
+  if (option.status === "insufficient_evidence") {
+    return `${option.optionId}: insufficient_evidence (${option.requiredInputs.join(", ")})`;
+  }
+  if (option.status === "calculation_failed") {
+    return `${option.optionId}: calculation_failed (${option.reasonCode})`;
+  }
+  return `${option.optionId}: ${option.status}`;
+}
+
+function governanceNote(adjustmentClass) {
+  if (adjustmentClass === "system_specification") {
+    return "Requirement Change; caller authorization and ME review required; no automatic change.";
+  }
+  return "Deterministic option values come from F4-backed scenario evidence only.";
+}
+
+function renderStructuredRecommendationBasis(lines, worksheet, interpretation, prefix) {
+  lines.push(
+    `### ${prefix}.1 模型建议依据`,
+    "",
+    "| Adjustment Class | Model Disposition | Priority | Rationale | Deterministic Option Evidence | Clarifications | Governance Note |",
+    "|---|---|---:|---|---|---|---|",
+  );
+
+  const assessmentByClass = new Map(interpretation.optimizationAssessment.map((assessment) => [assessment.adjustmentClass, assessment]));
+  for (const adjustmentClass of RECOMMENDATION_CLASS_ORDER) {
+    const assessment = assessmentByClass.get(adjustmentClass);
+    if (assessment === undefined) continue;
+    const options = worksheet.f6Worksheet.options.filter((option) => classFromOption(option) === adjustmentClass);
+    const optionText = options.length === 0
+      ? "No deterministic scenario executed."
+      : options.map((option) => optionEvidenceText(option)).join("; ");
+    const clarifications = classClarifications(worksheet, adjustmentClass);
+    const clarificationText = clarifications.length === 0
+      ? "None"
+      : clarifications.map((item) => clarificationReasonCode(item, adjustmentClass)).join("; ");
+    lines.push(row([
+      clean(adjustmentClass),
+      clean(assessment.disposition),
+      clean(assessment.priority),
+      clean(assessment.rationale),
+      clean(optionText),
+      clean(clarificationText),
+      clean(governanceNote(adjustmentClass)),
+    ]));
+  }
+}
+
 function renderAnalysisSummary(context) {
   const lines = ["# 4. TA 总结性分析"];
   const interpretations = modelInterpretationByWorksheet(context);
+  const useV2 = usesModelInterpretationV2(context);
   context.worksheets.forEach((worksheet, index) => {
     const section = `4.${index + 1}`;
     lines.push("", `## ${section} Worksheet：${clean(worksheet.worksheetName)}`, "");
@@ -857,6 +953,12 @@ function renderAnalysisSummary(context) {
       lines.push("模型解读 unavailable");
       return;
     }
+
+    if (useV2) {
+      renderStructuredRecommendationBasis(lines, worksheet, interpretation, section);
+      return;
+    }
+
     const declaredLinks = Object.values(interpretation.sourceReferences).map(({ artifact }) => artifact);
     const validated = validateModelMarkdown(interpretation.narrativeMarkdown, declaredLinks);
     lines.push(renderCalculationClaims(validated, interpretation.calculationClaims));
@@ -886,7 +988,27 @@ function renderMarkdown(context) {
   return `${lines.join("\n").trimEnd()}\n`;
 }
 
-function worksheetProjection(worksheet) {
+function worksheetRecommendationBasis(worksheet, interpretation, modelInterpretationVersion) {
+  if (interpretation === undefined || modelInterpretationVersion !== "f6-model-interpretation-v2") return undefined;
+  const assessmentByClass = new Map(interpretation.optimizationAssessment.map((assessment) => [assessment.adjustmentClass, assessment]));
+  return RECOMMENDATION_CLASS_ORDER
+    .map((adjustmentClass) => {
+      const assessment = assessmentByClass.get(adjustmentClass);
+      if (assessment === undefined) return undefined;
+      return {
+        adjustmentClass,
+        disposition: assessment.disposition,
+        priority: assessment.priority,
+        rationale: assessment.rationale,
+        optionIds: worksheet.f6Worksheet.options.filter((option) => classFromOption(option) === adjustmentClass).map((option) => option.optionId),
+        clarifications: classClarifications(worksheet, adjustmentClass).map((item) => clarificationReasonCode(item, adjustmentClass)),
+        governanceNote: governanceNote(adjustmentClass),
+      };
+    })
+    .filter((item) => item !== undefined);
+}
+
+function worksheetProjection(worksheet, interpretation, modelInterpretationVersion) {
   const findings = [primaryFinding(worksheet)];
   const assumptions = [];
   const clarifications = [];
@@ -938,6 +1060,9 @@ function worksheetProjection(worksheet) {
       yield: worksheet.f4Calculation.capability.yield,
       dpm: worksheet.f4Calculation.capability.totalDpm,
     },
+    ...(worksheetRecommendationBasis(worksheet, interpretation, modelInterpretationVersion) === undefined
+      ? {}
+      : { recommendationBasis: worksheetRecommendationBasis(worksheet, interpretation, modelInterpretationVersion) }),
   };
 }
 
@@ -956,6 +1081,7 @@ export function createF6FinalReportProjection(input = {}, options = {}) {
   void analysisContext;
 
   const worksheets = buildWorksheetPolicyInputs({ f2Report, f3Report, f4Report, f5Report, f6Optimization });
+  const interpretations = modelInterpretationByWorksheet({ f6Optimization, modelInterpretation });
   const worksheetDispositions = worksheets.map(({ worksheetName, disposition }) => ({ worksheetName, disposition }));
   const workbookDisposition = worstDisposition(worksheetDispositions.map(({ disposition }) => disposition));
   const reportSummary = {
@@ -972,7 +1098,11 @@ export function createF6FinalReportProjection(input = {}, options = {}) {
       ...(f2Report.workbook.revision === undefined ? {} : { revision: f2Report.workbook.revision }),
       contentHash: f2Report.workbook.contentHash,
     },
-    worksheets: worksheets.map((worksheet) => worksheetProjection(worksheet)),
+    worksheets: worksheets.map((worksheet) => worksheetProjection(
+      worksheet,
+      interpretations.get(worksheet.worksheetName),
+      modelInterpretation?.interpretationVersion,
+    )),
   };
 
   return {

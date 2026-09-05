@@ -218,7 +218,6 @@ describe("runF6FullValidation", () => {
         analysisContext: { outcome: "NOT_PROVIDED" },
         optimizationTargets: { outcome: "NOT_PROVIDED" },
         modelInterpretation: { outcome: "NOT_PROVIDED" },
-        modelInterpretation: { outcome: "NOT_PROVIDED" },
       },
     });
   });
@@ -251,7 +250,7 @@ describe("runF6FullValidation", () => {
 
     expect(context.deps.createOptimization).toHaveBeenCalledWith(
       { request: true },
-      { analysisContext, optimizationTargets, inputDecisions },
+      { analysisContext, optimizationTargets, modelInterpretation, inputDecisions },
     );
     expect(context.deps.createFinalReport).toHaveBeenCalledWith({
       f2Report: { f2: true },

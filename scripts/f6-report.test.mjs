@@ -435,4 +435,78 @@ describe("renderF6Report V2", () => {
     expect(markdown).toContain(String.raw`Model Interpretation decision：CALLER\_AUTHORIZED`);
     expect(markdown).not.toContain("Feature6-Model-Interpretation.json");
   });
+
+  it("renders recommendation basis with requirement-change guardrails from governed scenario evidence", () => {
+    const input = governedResultV2();
+    const worksheet = input.worksheets[0];
+    const baseline = worksheet.baselineMetrics;
+    worksheet.options.push({
+      optionId: "Analysis-A:scenario-spec",
+      status: "completed",
+      targetId: "scenario-spec",
+      baselineMetrics: structuredClone(baseline),
+      resultMetrics: {
+        ...structuredClone(baseline),
+        rssSigma: baseline.rssSigma * 0.95,
+        cpk: baseline.cpk + 0.08,
+        yield: Math.min(1, baseline.yield + 0.001),
+        dpm: Math.max(0, baseline.dpm - 5),
+      },
+      scenarioEvidence: {
+        targetId: "scenario-spec",
+        baselineIdentity: structuredClone(worksheet.baselineIdentity),
+        factorOverrides: [],
+        systemSpecification: { lowerSpecLimit: -0.45, upperSpecLimit: 0.55 },
+        calculationReference: structuredClone(input.provenance.f4Reference),
+        formulaReferences: [{ outputField: "capability.cpk", formulaId: "cpk-v1", formulaVersion: "excel-ta-v1" }],
+      },
+      feasibility: { status: "supported", reasonCodes: ["caller_provided_target"], evidenceReferences: ["Feature6-Optimization-Targets.json"] },
+      evidenceReferences: [structuredClone(input.provenance.f4Reference)],
+      impactRank: 4,
+      optionSource: "CALLER_TARGET",
+      targetContext: {
+        targetId: "scenario-spec",
+        targetType: "system_specification",
+        systemIdentity: {
+          baselineIdentity: structuredClone(worksheet.baselineIdentity),
+          designNominal: 0,
+          mean: 0,
+          rssSigma: baseline.rssSigma,
+          lowerSpecLimit: -0.5,
+          upperSpecLimit: 0.5,
+          targetCpk: 1.33333333333333,
+          traceReferences: [{ outputField: "capability.cpk", formulaId: "cpk-v1", formulaVersion: "excel-ta-v1" }],
+        },
+        lowerSpecLimit: -0.45,
+        upperSpecLimit: 0.55,
+        unit: "mm",
+      },
+    });
+    worksheet.clarifications.push({
+      clarificationId: "Analysis-A:assessment:system-specification-authority",
+      reasonCode: "system_specification_target_required",
+      requiredInputs: ["system_specification_target"],
+      questionForReviewer: "Provide caller-authorized system specification limits before running this scenario.",
+      evidenceReferences: [structuredClone(input.provenance.f4Reference)],
+    });
+    input.summary = {
+      worksheetCount: 1,
+      completedWorksheetCount: 1,
+      partiallyCompletedWorksheetCount: 0,
+      inputRejectedWorksheetCount: 0,
+      candidateOptionCount: 0,
+      completedOptionCount: 4,
+      insufficientEvidenceOptionCount: 0,
+      calculationFailedOptionCount: 0,
+    };
+
+    const markdown = renderF6ReportV2(input);
+
+    expect(markdown).toContain("### 3. 建议依据");
+    expect(markdown).toContain(String.raw`system\_specification`);
+    expect(markdown).toContain("Requirement Change");
+    expect(markdown).toContain("ME review required");
+    expect(markdown).toContain("Cpk 1.020");
+    expect(markdown).toContain(String.raw`system\_specification\_target\_required`);
+  });
 });
