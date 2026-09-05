@@ -5,6 +5,7 @@ import type {
   F2UserReport,
   F5DataInterpretationResult,
   F5ImageObservationArtifact,
+  F6InputDecision,
   F6OptimizationResultV2,
   TypedError,
   WorksheetSelectionPrompt,
@@ -188,9 +189,9 @@ export interface F6OptimizationResult {
   readonly optimization?: F6OptimizationResultV2;
   readonly finalReportProjection?: unknown;
   readonly inputDecisions?: {
-    readonly analysisContext: { readonly outcome: string; readonly artifactReference?: { readonly artifact: string; readonly contentHash: string } };
-    readonly optimizationTargets: { readonly outcome: string; readonly artifactReference?: { readonly artifact: string; readonly contentHash: string } };
-    readonly modelInterpretation: { readonly outcome: string; readonly artifactReference?: { readonly artifact: string; readonly contentHash: string } };
+    readonly analysisContext: F6InputDecision;
+    readonly optimizationTargets: F6InputDecision;
+    readonly modelInterpretation: F6InputDecision;
   };
   readonly summary?: F6OptimizationResultV2["summary"];
 }

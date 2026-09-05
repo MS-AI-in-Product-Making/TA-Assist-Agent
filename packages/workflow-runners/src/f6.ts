@@ -357,8 +357,9 @@ export function runF6Optimization(
     const optimization = createOptimization(loaded.request, {
       ...(loaded.analysisContext === undefined ? {} : { analysisContext: loaded.analysisContext }),
       ...(loaded.optimizationTargets === undefined ? {} : { optimizationTargets: loaded.optimizationTargets }),
+      ...(loaded.modelInterpretation === undefined ? {} : { modelInterpretation: loaded.modelInterpretation }),
       inputDecisions,
-    } as never);
+    } as any);
 
     failureStage = "report";
     const finalReport = createFinalReport({

@@ -212,7 +212,9 @@ describe("Design Optimization skill contract", () => {
       "direction",
     ]) expect(internal).toContain(`\`${scope}\``);
     expect(internal).toContain("f6-analysis-context-v1");
+    expect(internal).toContain("f6-analysis-context-v2");
     expect(internal).toContain("f6-optimization-targets-v1");
+    expect(internal).toContain("f6-optimization-targets-v2");
     expect(internal).toContain("f6-top3-tolerance-policy-v1");
     expect(internal).toContain("CpkL");
     expect(internal).toContain("CpkU");
@@ -232,13 +234,19 @@ describe("Design Optimization skill contract", () => {
       "### Phase W9 - Run and validate F6",
     ]);
     for (const marker of [
-      "f6-model-interpretation-v1",
+      "f6-model-interpretation-v2",
       "test/demo-output/f6-model-interpretations/<workbook-content-hash>/<system-generated-uuid>/Feature6-Model-Interpretation.json",
       "f6ModelInterpretationArtifactSchema",
       "each selected worksheet independently",
       "all active Factor rows",
       "validated F4 calculation",
       "validated F5 evidence",
+      "optimizationAssessment",
+      "factor_nominal",
+      "system_mean_shift",
+      "system_specification",
+      "factor_tolerance",
+      "must not fill governed numeric values",
       "calculation claim placeholders",
       "must be reviewed by ME",
       "hallucinations, label mismatches, or omissions",
@@ -258,6 +266,7 @@ describe("Design Optimization skill contract", () => {
     expect(internal).toContain("Entry mode 2 - Existing F6 artifact");
     expect(internal).toContain("Feature6-Report.md");
     expect(internal).toContain("five-file");
+    expect(internal).toContain("final report link");
     expect(internal).toContain("reportSummary");
     expect(internal).not.toContain(deprecatedF6ReportArtifactJsonName);
     expect(internal).toContain("without rerunning F0, F1, F2, F3, F4, F5, or F6");

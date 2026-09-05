@@ -26,6 +26,7 @@ import {
   F6_FIXTURE_WORKBOOK_HASH,
   installF6ModelInterpretation,
   installF6V2Evidence,
+  installF6VersionedContextAndTargets,
   readFixtureJson as readJson,
   rewriteFixtureJson as rewriteJson,
   writeFixtureJson as writeJson,
@@ -175,6 +176,33 @@ describe("loadF6ArtifactBundle", () => {
     expect(result.inputDecisions.optimizationTargets.outcome).toBe("CALLER_AUTHORIZED");
     expect(result.sourceReferences.analysisContext.contentHash).toBe(sha256(path.join(evidenceArtifactRoot, bundle.analysisContextArtifact)));
     expect(result.sourceReferences.optimizationTargets.contentHash).toBe(sha256(path.join(evidenceArtifactRoot, bundle.optimizationTargetsArtifact)));
+  });
+
+  it("accepts v2 Analysis Context and v2 Optimization Targets including system-only target identities", () => {
+    const bundle = setupBundle();
+    const installed = installF6VersionedContextAndTargets(bundle, {
+      contextVersion: "v2",
+      targetVersion: "v2",
+    });
+
+    const result = loadF6ArtifactBundle(bundle);
+
+    expect(result.status, JSON.stringify(result)).toBe("accepted");
+    expect(result.analysisContext.contextVersion).toBe("f6-analysis-context-v2");
+    expect(result.optimizationTargets.targetVersion).toBe("f6-optimization-targets-v2");
+    expect(result.inputDecisions.analysisContext.outcome).toBe("CALLER_AUTHORIZED");
+    expect(result.inputDecisions.optimizationTargets.outcome).toBe("CALLER_AUTHORIZED");
+    expect(result.optimizationTargets.worksheets[0].targets.map(({ targetType }) => targetType)).toEqual([
+      "system_mean_shift",
+      "system_specification",
+      "factor_nominal",
+    ]);
+    expect(result.sourceReferences.analysisContext.contentHash).toBe(
+      sha256(path.join(installed.evidenceArtifactRoot, installed.analysisContextArtifact)),
+    );
+    expect(result.sourceReferences.optimizationTargets.contentHash).toBe(
+      sha256(path.join(installed.evidenceArtifactRoot, installed.optimizationTargetsArtifact)),
+    );
   });
 
   it("closes each descriptor exactly once after a normal bounded read", () => {
@@ -677,6 +705,24 @@ describe("F6 optional governed evidence", () => {
     );
   });
 
+  it("loads a v2 model interpretation with strict four-class optimization assessment", () => {
+    const bundle = setupBundle();
+    const installed = installF6ModelInterpretation(bundle, { version: "v2" });
+
+    const result = loadF6ArtifactBundle(bundle);
+
+    expect(result.status, JSON.stringify(result)).toBe("accepted");
+    expect(result.modelInterpretation).toEqual(installed.artifact);
+    expect(result.modelInterpretation.interpretationVersion).toBe("f6-model-interpretation-v2");
+    expect(result.modelInterpretation.worksheets[0].optimizationAssessment.map(({ adjustmentClass }) =>
+      adjustmentClass)).toEqual([
+      "factor_nominal",
+      "system_mean_shift",
+      "system_specification",
+      "factor_tolerance",
+    ]);
+  });
+
   it("loads model interpretation bound to accepted v2 image observations", () => {
     const bundle = setupBundle();
     installF6V2Evidence(bundle);
@@ -759,6 +805,24 @@ describe("F6 optional governed evidence", () => {
     expect(result.status).toBe("accepted");
     expect(result.modelInterpretation).toBeUndefined();
     expect(result.inputDecisions.modelInterpretation).toMatchObject({ outcome: "REJECTED", reasonCode });
+  });
+
+  it("soft-rejects a v2 model interpretation when optimization assessment classes are incomplete", () => {
+    const bundle = setupBundle();
+    const installed = installF6ModelInterpretation(bundle, { version: "v2" });
+    rewriteJson(installed.filePath, (artifact) => {
+      artifact.worksheets[0].optimizationAssessment = artifact.worksheets[0].optimizationAssessment
+        .filter(({ adjustmentClass }) => adjustmentClass !== "system_specification");
+    });
+
+    const result = loadF6ArtifactBundle(bundle);
+
+    expect(result.status, JSON.stringify(result)).toBe("accepted");
+    expect(result.modelInterpretation).toBeUndefined();
+    expect(result.inputDecisions.modelInterpretation).toMatchObject({
+      outcome: "REJECTED",
+      reasonCode: "schema_invalid",
+    });
   });
 
   it("validates a supplied evidence root even when optional evidence is absent", () => {

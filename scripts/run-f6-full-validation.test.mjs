@@ -73,6 +73,35 @@ describe("runF6FullValidation", () => {
     }));
   });
 
+  it("forwards versioned context and target artifacts without changing governed path normalization", () => {
+    const bundle = createF6ArtifactBundleFixture();
+    cleanup.push(bundle.root);
+    const layout = layoutFor(bundle);
+    const contextPath = path.join(bundle.root, "shared-evidence", "f6-analysis-context-v2.json");
+    const targetsPath = path.join(bundle.root, "shared-evidence", "f6-optimization-targets-v2.json");
+    const modelPath = path.join(bundle.root, "model-evidence", "run-id", "Feature6-Model-Interpretation.json");
+    const loadBundle = vi.fn(() => ({ status: "rejected", reasonCode: "test_rejection" }));
+
+    runF6FullValidation({}, {
+      parseArgs: () => ({
+        ...bundle,
+        analysisContextArtifact: contextPath,
+        optimizationTargetsArtifact: targetsPath,
+        modelInterpretationArtifact: modelPath,
+      }),
+      resolveLayout: () => layout,
+      loadBundle,
+    });
+
+    expect(loadBundle).toHaveBeenCalledWith(expect.objectContaining({
+      evidenceArtifactRoot: path.dirname(contextPath),
+      analysisContextArtifact: path.basename(contextPath),
+      optimizationTargetsArtifact: path.basename(targetsPath),
+      modelInterpretationArtifactRoot: path.dirname(modelPath),
+      modelInterpretationArtifact: path.basename(modelPath),
+    }));
+  });
+
   it("does not rewrite a failure manifest produced by the governed runner", () => {
     const bundle = createF6ArtifactBundleFixture();
     cleanup.push(bundle.root);

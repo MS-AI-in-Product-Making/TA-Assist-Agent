@@ -369,7 +369,133 @@ export function installF6V2Evidence(bundle) {
   return { artifact, evidenceArtifactRoot, imageObservationArtifact };
 }
 
-export function installF6ModelInterpretation(bundle) {
+function baselineIdentity(calculation, worksheetName) {
+  return {
+    calculationVersion: calculation.calculationVersion,
+    projectReference: calculation.projectReference,
+    runReference: calculation.runReference,
+    workbookContentHash: calculation.workbookContentHash,
+    worksheetName,
+    tableId: calculation.worksheetSelection.tableId,
+  };
+}
+
+function factorIdentity(calculation) {
+  const factor = calculation.factors[0];
+  return {
+    worksheetName: factor.source.worksheetName,
+    tableId: factor.source.tableId,
+    sourceRow: factor.source.sourceRow,
+    factorName: factor.factorName,
+    unit: factor.unit,
+  };
+}
+
+export function installF6VersionedContextAndTargets(
+  bundle,
+  { contextVersion = "v1", targetVersion = "v1" } = {},
+) {
+  const evidenceParent = path.join(bundle.publishRoot, "inputs");
+  mkdirSync(evidenceParent, { recursive: true });
+  const evidenceArtifactRoot = bundle.evidenceArtifactRoot
+    ?? mkdtempSync(path.join(evidenceParent, "evidence-"));
+  const analysisContextArtifact = "context.json";
+  const optimizationTargetsArtifact = "targets.json";
+  const worksheet = bundle.selectedWorksheetNames[0];
+  const calculation = bundle.calculations.find((item) => item.worksheetSelection.worksheetName === worksheet);
+  const baseline = baselineIdentity(calculation, worksheet);
+  const factor = factorIdentity(calculation);
+  const evidence = {
+    artifactReference: { artifact: "Feature4-Calculation.json", contentHash: fixtureFileSha256(bundle.paths.f4) },
+    worksheetName: worksheet,
+    sourceRows: [{ worksheetName: worksheet, tableId: factor.tableId, sourceRow: factor.sourceRow }],
+  };
+  const baseWorksheet = {
+    worksheetName: worksheet,
+    tableId: calculation.worksheetSelection.tableId,
+    baselineIdentity: baseline,
+    analysisObject: {
+      kind: "GAP",
+      name: "Gap A",
+      physicalMeaning: "Controlled clearance.",
+      measurementDirection: "Z",
+      positiveDirectionDefinition: "Increasing clearance.",
+      negativeDirectionDefinition: "Increasing interference.",
+      evidence,
+    },
+    operatingConditions: [],
+    correlationRequirement: { mode: "NOT_PROVIDED" },
+  };
+  const context = {
+    contractVersion: "v1",
+    inputClassification: "confidential",
+    contextVersion: contextVersion === "v2" ? "f6-analysis-context-v2" : "f6-analysis-context-v1",
+    workbookContentHash: F6_FIXTURE_WORKBOOK_HASH,
+    worksheets: [
+      contextVersion === "v2"
+        ? { ...baseWorksheet, engineeringNarrative: "Keep worksheet-local engineering context only." }
+        : baseWorksheet,
+    ],
+  };
+  const targets = {
+    contractVersion: "v1",
+    inputClassification: "confidential",
+    targetVersion: targetVersion === "v2" ? "f6-optimization-targets-v2" : "f6-optimization-targets-v1",
+    workbookContentHash: F6_FIXTURE_WORKBOOK_HASH,
+    worksheets: [{
+      worksheetName: worksheet,
+      tableId: calculation.worksheetSelection.tableId,
+      baselineIdentity: baseline,
+      targets: targetVersion === "v2"
+        ? [
+          {
+            targetId: "target-system-mean-shift",
+            targetType: "system_mean_shift",
+            systemIdentity: {
+              baselineIdentity: baseline,
+              designNominal: calculation.system.designNominal,
+              lowerSpecLimit: calculation.capability.lowerSpecLimit,
+              upperSpecLimit: calculation.capability.upperSpecLimit,
+            },
+            target: { resultingAdditionalMeanShift: 0, unit: factor.unit },
+          },
+          {
+            targetId: "target-system-specification",
+            targetType: "system_specification",
+            systemIdentity: {
+              baselineIdentity: baseline,
+              designNominal: calculation.system.designNominal,
+              lowerSpecLimit: calculation.capability.lowerSpecLimit,
+              upperSpecLimit: calculation.capability.upperSpecLimit,
+            },
+            lowerSpecLimit: calculation.capability.lowerSpecLimit + 0.05,
+            unit: factor.unit,
+          },
+          {
+            targetId: "target-factor-nominal",
+            targetType: "factor_nominal",
+            factor,
+            nominalValue: calculation.factors[0].mean,
+            unit: factor.unit,
+          },
+        ]
+        : [{
+          targetId: "target-a",
+          targetType: "improvement_ratio",
+          factor,
+          ratio: 0.2,
+          appliesTo: "tolerance_band",
+        }],
+    }],
+  };
+
+  writeFixtureJson(path.join(evidenceArtifactRoot, analysisContextArtifact), context);
+  writeFixtureJson(path.join(evidenceArtifactRoot, optimizationTargetsArtifact), targets);
+  Object.assign(bundle, { evidenceArtifactRoot, analysisContextArtifact, optimizationTargetsArtifact });
+  return { context, targets, analysisContextArtifact, optimizationTargetsArtifact, evidenceArtifactRoot };
+}
+
+export function installF6ModelInterpretation(bundle, { version = "v1" } = {}) {
   const f4 = readFixtureJson(bundle.paths.f4);
   const f5 = readFixtureJson(bundle.paths.f5);
   const modelInterpretationArtifactRoot = path.join(
@@ -382,23 +508,19 @@ export function installF6ModelInterpretation(bundle) {
   const artifact = {
     contractVersion: "v1",
     inputClassification: "confidential",
-    interpretationVersion: "f6-model-interpretation-v1",
+    interpretationVersion: version === "v2"
+      ? "f6-model-interpretation-v2"
+      : "f6-model-interpretation-v1",
     workbookContentHash: F6_FIXTURE_WORKBOOK_HASH,
     generatedAt: "2026-09-04T12:00:00.000Z",
     worksheets: bundle.selectedWorksheetNames.map((worksheetName) => {
       const calculation = bundle.calculations.find((item) => item.worksheetSelection.worksheetName === worksheetName);
       const interpretation = f5.worksheets.find((item) => item.worksheetName === worksheetName);
+      const factor = factorIdentity(calculation);
       return {
         worksheetName,
         tableId: calculation.worksheetSelection.tableId,
-        baselineIdentity: {
-          calculationVersion: calculation.calculationVersion,
-          projectReference: calculation.projectReference,
-          runReference: calculation.runReference,
-          workbookContentHash: calculation.workbookContentHash,
-          worksheetName,
-          tableId: calculation.worksheetSelection.tableId,
-        },
+        baselineIdentity: baselineIdentity(calculation, worksheetName),
         sourceReferences: {
           f2: { artifact: "Feature2-Report.json", contentHash: fixtureFileSha256(bundle.paths.f2) },
           f4: {
@@ -434,6 +556,59 @@ export function installF6ModelInterpretation(bundle) {
           unit: calculation.factors[0]?.unit ?? null,
         }],
         reviewStatus: "ME_REVIEW_REQUIRED",
+        ...(version === "v2"
+          ? {
+            optimizationAssessment: [
+              {
+                adjustmentClass: "factor_nominal",
+                factor,
+                disposition: "CONSIDER",
+                priority: 1,
+                rationale: "Evaluate nominal centering with governed traceability.",
+                evidenceReferences: [{
+                  artifact: "Feature4-Calculation.json",
+                  contentHash: fixtureFileSha256(bundle.paths.f4),
+                  runId: f4.runId,
+                  calculationVersion: calculation.calculationVersion,
+                }],
+              },
+              {
+                adjustmentClass: "system_mean_shift",
+                disposition: "INSUFFICIENT_EVIDENCE",
+                priority: 2,
+                rationale: "System-level shift needs additional measured evidence.",
+                evidenceReferences: [{
+                  artifact: "Feature5-Report.json",
+                  contentHash: fixtureFileSha256(bundle.paths.f5),
+                  interpretationVersion: f5.interpretationVersion,
+                }],
+              },
+              {
+                adjustmentClass: "system_specification",
+                disposition: "NOT_RECOMMENDED",
+                priority: 3,
+                rationale: "Specification changes require requirement-owner decision.",
+                evidenceReferences: [{
+                  artifact: "Feature2-Report.json",
+                  contentHash: fixtureFileSha256(bundle.paths.f2),
+                }],
+              },
+              {
+                adjustmentClass: "factor_tolerance",
+                factor,
+                disposition: "RECOMMENDED",
+                priority: 4,
+                rationale: "Tolerance adjustment remains the primary governed lever.",
+                evidenceReferences: [{
+                  artifact: "Feature4-Calculation.json",
+                  contentHash: fixtureFileSha256(bundle.paths.f4),
+                  runId: f4.runId,
+                  calculationVersion: calculation.calculationVersion,
+                }],
+              },
+            ],
+          }
+          : {}),
       };
     }),
   };

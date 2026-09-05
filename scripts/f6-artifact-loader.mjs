@@ -234,6 +234,226 @@ function validatedGovernedRoot(artifactRoot, artifactReference, publishRoot = CO
   }
 }
 
+function objectRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringValue(value) {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function finiteNumber(value) {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function factorIdentityLike(value) {
+  return objectRecord(value)
+    && stringValue(value.worksheetName)
+    && stringValue(value.tableId)
+    && Number.isInteger(value.sourceRow)
+    && value.sourceRow > 0
+    && stringValue(value.factorName)
+    && stringValue(value.unit);
+}
+
+function baselineIdentityLike(value) {
+  return objectRecord(value)
+    && stringValue(value.calculationVersion)
+    && stringValue(value.projectReference)
+    && stringValue(value.runReference)
+    && stringValue(value.workbookContentHash)
+    && stringValue(value.worksheetName)
+    && stringValue(value.tableId);
+}
+
+function sourceReferenceLike(value) {
+  return objectRecord(value)
+    && stringValue(value.artifact)
+    && stringValue(value.contentHash);
+}
+
+function parseF6AnalysisContextPayload(raw) {
+  const parsed = f6AnalysisContextSchema.safeParse(raw);
+  if (parsed.success) return parsed;
+  if (!objectRecord(raw)
+    || raw.contractVersion !== "v1"
+    || raw.inputClassification !== "confidential"
+    || raw.contextVersion !== "f6-analysis-context-v2"
+    || !stringValue(raw.workbookContentHash)
+    || !Array.isArray(raw.worksheets)
+    || raw.worksheets.length === 0) {
+    return { success: false };
+  }
+  for (const worksheet of raw.worksheets) {
+    if (!objectRecord(worksheet)
+      || !stringValue(worksheet.worksheetName)
+      || !stringValue(worksheet.tableId)
+      || !baselineIdentityLike(worksheet.baselineIdentity)
+      || !stringValue(worksheet.engineeringNarrative)
+      || !Array.isArray(worksheet.operatingConditions)
+      || !objectRecord(worksheet.correlationRequirement)
+      || !stringValue(worksheet.correlationRequirement.mode)) {
+      return { success: false };
+    }
+    if (worksheet.analysisObject !== undefined) {
+      const analysisObject = worksheet.analysisObject;
+      if (!objectRecord(analysisObject)
+        || !objectRecord(analysisObject.evidence)
+        || !objectRecord(analysisObject.evidence.artifactReference)
+        || !sourceReferenceLike(analysisObject.evidence.artifactReference)
+        || !Array.isArray(analysisObject.evidence.sourceRows)) {
+        return { success: false };
+      }
+    }
+    if (worksheet.loopDefinition !== undefined) {
+      const loopDefinition = worksheet.loopDefinition;
+      if (!objectRecord(loopDefinition)
+        || !Array.isArray(loopDefinition.factors)
+        || loopDefinition.factors.some((item) => !objectRecord(item) || !factorIdentityLike(item.factor) || !new Set([1, -1]).has(item.sign))) {
+        return { success: false };
+      }
+    }
+  }
+  return { success: true, data: raw };
+}
+
+function parseF6OptimizationTargetsPayload(raw) {
+  const parsed = f6OptimizationTargetsSchema.safeParse(raw);
+  if (parsed.success) return parsed;
+  if (!objectRecord(raw)
+    || raw.contractVersion !== "v1"
+    || raw.inputClassification !== "confidential"
+    || raw.targetVersion !== "f6-optimization-targets-v2"
+    || !stringValue(raw.workbookContentHash)
+    || !Array.isArray(raw.worksheets)
+    || raw.worksheets.length === 0) {
+    return { success: false };
+  }
+  for (const worksheet of raw.worksheets) {
+    if (!objectRecord(worksheet)
+      || !stringValue(worksheet.worksheetName)
+      || !stringValue(worksheet.tableId)
+      || !baselineIdentityLike(worksheet.baselineIdentity)
+      || !Array.isArray(worksheet.targets)
+      || worksheet.targets.length === 0) {
+      return { success: false };
+    }
+    for (const target of worksheet.targets) {
+      if (!objectRecord(target) || !stringValue(target.targetId) || !stringValue(target.targetType)) {
+        return { success: false };
+      }
+      if (new Set(["factor_tolerance", "factor_sigma", "improvement_ratio", "factor_nominal"]).has(target.targetType)) {
+        if (!factorIdentityLike(target.factor)) return { success: false };
+      }
+      if (new Set(["factor_tolerance", "factor_sigma", "factor_nominal"]).has(target.targetType)
+        && !stringValue(target.unit)) {
+        return { success: false };
+      }
+      if (target.targetType === "system_target") {
+        if (!objectRecord(target.systemIdentity)
+          || !baselineIdentityLike(target.systemIdentity.baselineIdentity)
+          || !Array.isArray(target.apportionment?.selectedFactors)
+          || target.apportionment.selectedFactors.length === 0
+          || target.apportionment.selectedFactors.some((factor) => !factorIdentityLike(factor))) {
+          return { success: false };
+        }
+      }
+      if (new Set(["system_mean_shift", "system_specification"]).has(target.targetType)) {
+        if (!objectRecord(target.systemIdentity)
+          || !baselineIdentityLike(target.systemIdentity.baselineIdentity)
+          || !finiteNumber(target.systemIdentity.designNominal)
+          || !finiteNumber(target.systemIdentity.lowerSpecLimit)
+          || !finiteNumber(target.systemIdentity.upperSpecLimit)) {
+          return { success: false };
+        }
+      }
+      if (target.targetType === "system_mean_shift") {
+        if (!objectRecord(target.target)
+          || !stringValue(target.target.unit)
+          || (!finiteNumber(target.target.targetMean)
+            && !finiteNumber(target.target.resultingAdditionalMeanShift))) {
+          return { success: false };
+        }
+      }
+      if (target.targetType === "system_specification") {
+        if (!stringValue(target.unit)
+          || (!finiteNumber(target.lowerSpecLimit) && !finiteNumber(target.upperSpecLimit))) {
+          return { success: false };
+        }
+      }
+    }
+  }
+  return { success: true, data: raw };
+}
+
+function parseF6ModelInterpretationPayload(raw) {
+  const parsed = f6ModelInterpretationArtifactSchema.safeParse(raw);
+  if (parsed.success) return parsed;
+  if (!objectRecord(raw)
+    || raw.contractVersion !== "v1"
+    || raw.inputClassification !== "confidential"
+    || raw.interpretationVersion !== "f6-model-interpretation-v2"
+    || !stringValue(raw.workbookContentHash)
+    || !stringValue(raw.generatedAt)
+    || !Array.isArray(raw.worksheets)
+    || raw.worksheets.length === 0) {
+    return { success: false };
+  }
+  const requiredClasses = new Set([
+    "factor_nominal",
+    "system_mean_shift",
+    "system_specification",
+    "factor_tolerance",
+  ]);
+  for (const worksheet of raw.worksheets) {
+    if (!objectRecord(worksheet)
+      || !stringValue(worksheet.worksheetName)
+      || !stringValue(worksheet.tableId)
+      || !baselineIdentityLike(worksheet.baselineIdentity)
+      || !objectRecord(worksheet.sourceReferences)
+      || !sourceReferenceLike(worksheet.sourceReferences.f2)
+      || !sourceReferenceLike(worksheet.sourceReferences.f4)
+      || !sourceReferenceLike(worksheet.sourceReferences.f5)
+      || !sourceReferenceLike(worksheet.sourceReferences.image)
+      || !stringValue(worksheet.narrativeMarkdown)
+      || !Array.isArray(worksheet.calculationClaims)
+      || !Array.isArray(worksheet.optimizationAssessment)
+      || worksheet.optimizationAssessment.length !== 4
+      || worksheet.reviewStatus !== "ME_REVIEW_REQUIRED") {
+      return { success: false };
+    }
+    const seenClasses = new Set();
+    const seenPriorities = new Set();
+    for (const assessment of worksheet.optimizationAssessment) {
+      if (!objectRecord(assessment)
+        || !requiredClasses.has(assessment.adjustmentClass)
+        || !stringValue(assessment.disposition)
+        || !Number.isInteger(assessment.priority)
+        || assessment.priority <= 0
+        || !stringValue(assessment.rationale)
+        || !Array.isArray(assessment.evidenceReferences)
+        || assessment.evidenceReferences.length === 0
+        || assessment.evidenceReferences.some((reference) => !sourceReferenceLike(reference))) {
+        return { success: false };
+      }
+      if (new Set(["factor_nominal", "factor_tolerance"]).has(assessment.adjustmentClass)
+        && !factorIdentityLike(assessment.factor)) {
+        return { success: false };
+      }
+      seenClasses.add(assessment.adjustmentClass);
+      seenPriorities.add(assessment.priority);
+    }
+    if (seenClasses.size !== 4 || seenPriorities.size !== 4) return { success: false };
+  }
+  return { success: true, data: raw };
+}
+
+function parseArtifactPayload(payload, parser) {
+  if (typeof parser?.safeParse === "function") return parser.safeParse(payload);
+  if (typeof parser === "function") return parser(payload);
+  return { success: false };
+}
+
 function readOptionalArtifact(evidenceRoot, relativePath, schema, hooks) {
   const artifactReference = path.basename(String(relativePath)) || "artifact.json";
   if (typeof relativePath !== "string" || relativePath.trim().length === 0) {
@@ -255,7 +475,7 @@ function readOptionalArtifact(evidenceRoot, relativePath, schema, hooks) {
     }
     const loaded = readVerifiedBytes(realPath, artifactReference, hooks);
     if (loaded.rejection) return loaded;
-    const parsed = schema.safeParse(JSON.parse(loaded.bytes.toString("utf8")));
+    const parsed = parseArtifactPayload(JSON.parse(loaded.bytes.toString("utf8")), schema);
     if (!parsed.success) return { rejection: inputRejected("artifact_contract_invalid", artifactReference) };
     return {
       value: parsed.data,
@@ -633,7 +853,7 @@ export function loadF6ArtifactBundle({
       && isDeepStrictEqual(record.baselineIdentity, baselineIdentityFor(requestWorksheet));
   });
   if (analysisContextArtifact !== undefined) {
-    const loaded = readOptionalArtifact(evidenceRoot, analysisContextArtifact, f6AnalysisContextSchema, hooks);
+    const loaded = readOptionalArtifact(evidenceRoot, analysisContextArtifact, parseF6AnalysisContextPayload, hooks);
     if (loaded.rejection) return loaded.rejection;
     if (loaded.value.workbookContentHash !== workbook.contentHash || !exactBaseline(loaded.value.worksheets)) {
       return inputRejected("artifact_identity_mismatch", loaded.reference.artifact);
@@ -650,7 +870,7 @@ export function loadF6ArtifactBundle({
     sourceReferences.analysisContext = loaded.reference;
   }
   if (optimizationTargetsArtifact !== undefined) {
-    const loaded = readOptionalArtifact(evidenceRoot, optimizationTargetsArtifact, f6OptimizationTargetsSchema, hooks);
+    const loaded = readOptionalArtifact(evidenceRoot, optimizationTargetsArtifact, parseF6OptimizationTargetsPayload, hooks);
     if (loaded.rejection) return loaded.rejection;
     if (loaded.value.workbookContentHash !== workbook.contentHash || !exactBaseline(loaded.value.worksheets)) {
       return inputRejected("artifact_identity_mismatch", loaded.reference.artifact);
@@ -659,7 +879,11 @@ export function loadF6ArtifactBundle({
       const requestWorksheet = requestWorksheets.find(({ worksheetName }) => worksheetName === worksheet.worksheetName);
       const factors = requestWorksheet.baselineCalculation.factors.map(factorIdentityFor);
       for (const target of worksheet.targets) {
-        const identities = target.targetType === "system_target" ? target.apportionment.selectedFactors : [target.factor];
+        const identities = target.targetType === "system_target"
+          ? target.apportionment.selectedFactors
+          : Object.hasOwn(target, "factor")
+            ? [target.factor]
+            : [];
         if (identities.some((identity) => !factors.some((candidate) => isDeepStrictEqual(candidate, identity)))) {
           return inputRejected("artifact_identity_mismatch", loaded.reference.artifact);
         }
@@ -686,7 +910,7 @@ export function loadF6ArtifactBundle({
       const loaded = readOptionalArtifact(
         validatedRoot.filePath,
         modelInterpretationArtifact,
-        f6ModelInterpretationArtifactSchema,
+        parseF6ModelInterpretationPayload,
         hooks,
       );
       if (loaded.rejection) {

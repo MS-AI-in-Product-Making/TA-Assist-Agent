@@ -27,7 +27,7 @@ function json(value) {
 }
 
 function loaderOptions(parsed) {
-  const fields = [
+  const evidenceFields = [
     "supplierCapabilityArtifact",
     "datumStrategyArtifact",
     "costArtifact",
@@ -35,7 +35,7 @@ function loaderOptions(parsed) {
     "analysisContextArtifact",
     "optimizationTargetsArtifact",
   ];
-  const paths = fields.map((field) => parsed[field]).filter((value) => value !== undefined);
+  const paths = evidenceFields.map((field) => parsed[field]).filter((value) => value !== undefined);
   let normalized = parsed;
   if (paths.length > 0) {
     const parents = new Set(paths.map((value) => path.resolve(path.dirname(value))));
@@ -43,7 +43,7 @@ function loaderOptions(parsed) {
     normalized = {
       ...normalized,
       evidenceArtifactRoot: [...parents][0],
-      ...Object.fromEntries(fields.map((field) => [
+      ...Object.fromEntries(evidenceFields.map((field) => [
         field,
         parsed[field] === undefined ? undefined : path.basename(parsed[field]),
       ])),
