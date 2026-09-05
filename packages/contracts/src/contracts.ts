@@ -6646,6 +6646,71 @@ export const f6AnalysisContextSchema = z.discriminatedUnion("contextVersion", [
   validateAnalysisContextWorksheets(artifact, context);
 });
 
+export const f6InputClarificationSchema = z.object({
+  clarificationId: z.string().min(1),
+  question: z.string().min(1),
+  requiredFields: z.array(z.string().min(1)).min(1),
+}).strict();
+
+const f6ExplicitNumericTargetSchema = z.discriminatedUnion("field", [
+  z.object({ field: z.literal("factor_nominal"), value: z.number().finite(), unit: z.string().min(1) }).strict(),
+  z.object({ field: z.literal("target_mean"), value: z.number().finite(), unit: z.string().min(1) }).strict(),
+  z.object({ field: z.literal("additional_mean_shift"), value: z.number().finite(), unit: z.string().min(1) }).strict(),
+  z.object({ field: z.literal("lower_spec_limit"), value: z.number().finite(), unit: z.string().min(1) }).strict(),
+  z.object({ field: z.literal("upper_spec_limit"), value: z.number().finite(), unit: z.string().min(1) }).strict(),
+  z.object({ field: z.literal("upper_tolerance"), value: z.number().finite(), unit: z.string().min(1) }).strict(),
+  z.object({ field: z.literal("lower_tolerance"), value: z.number().finite(), unit: z.string().min(1) }).strict(),
+]);
+
+export const f6AnalysisContextProposalSchema = z.object({
+  proposalVersion: z.literal("f6-analysis-context-proposal-v1"),
+  userText: z.string().min(1),
+  worksheetSelectors: z.array(z.string().min(1)).min(1),
+  analysisObjectKind: z.enum(["GAP", "STEP", "INTERFERENCE", "ALIGNMENT", "POSITION", "CLEARANCE", "COMPRESSION", "ENGAGEMENT", "FUNCTIONAL_DIMENSION"]).optional(),
+  functionalBoundary: z.string().min(1).optional(),
+  operatingConditions: z.array(z.string().min(1)).optional(),
+  clarifications: z.array(f6InputClarificationSchema),
+}).strict();
+
+const f6OptimizationDirectionSchema = z.object({
+  adjustmentClass: z.enum(["factor_tolerance", "factor_nominal", "system_mean_shift", "system_specification", "factor_sigma", "improvement_ratio"]),
+  worksheetSelector: z.string().min(1),
+  factorSelector: z.string().min(1).optional(),
+  numericTarget: f6ExplicitNumericTargetSchema.optional(),
+}).strict();
+
+export const f6OptimizationTargetsProposalSchema = z.object({
+  proposalVersion: z.literal("f6-optimization-targets-proposal-v1"),
+  userText: z.string().min(1),
+  directions: z.array(f6OptimizationDirectionSchema).min(1),
+  clarifications: z.array(f6InputClarificationSchema),
+}).strict();
+
+export const f6InputProposalSchema = z.discriminatedUnion("proposalVersion", [
+  f6AnalysisContextProposalSchema,
+  f6OptimizationTargetsProposalSchema,
+]);
+
+export const f6MaterializedDraftSchema = z.object({
+  draftVersion: z.literal("f6-materialized-draft-v1"),
+  draftId: z.string().min(1),
+  draftHash: sha256Schema,
+  kind: z.enum(["analysis_context", "optimization_targets"]),
+  proposal: f6InputProposalSchema,
+}).strict().superRefine((draft, context) => {
+  if (draft.kind === "analysis_context" && draft.proposal.proposalVersion !== "f6-analysis-context-proposal-v1") {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "analysis_context drafts require an analysis context proposal", path: ["proposal", "proposalVersion"] });
+  }
+  if (draft.kind === "optimization_targets" && draft.proposal.proposalVersion !== "f6-optimization-targets-proposal-v1") {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "optimization_targets drafts require an optimization targets proposal", path: ["proposal", "proposalVersion"] });
+  }
+});
+
+export const f6MaterializationResultSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("draft_ready"), draft: f6MaterializedDraftSchema }).strict(),
+  z.object({ status: z.literal("clarification_required"), clarifications: z.array(f6InputClarificationSchema).min(1) }).strict(),
+]);
+
 export const f6InputDecisionSchema = z.discriminatedUnion("outcome", [
   z.object({ outcome: z.literal("NOT_PROVIDED") }).strict(),
   z.object({ outcome: z.enum(["CONFIRMED", "CALLER_AUTHORIZED"]), artifactReference: f6ArtifactReferenceSchema }).strict(),
@@ -8296,6 +8361,12 @@ export type F6OptimizationTargetsV2 = z.infer<typeof f6OptimizationTargetsV2Sche
 export type F6AnalysisContext = z.infer<typeof f6AnalysisContextSchema>;
 export type F6AnalysisContextV1 = z.infer<typeof f6AnalysisContextV1Schema>;
 export type F6AnalysisContextV2 = z.infer<typeof f6AnalysisContextV2Schema>;
+export type F6InputClarification = z.infer<typeof f6InputClarificationSchema>;
+export type F6AnalysisContextProposal = z.infer<typeof f6AnalysisContextProposalSchema>;
+export type F6OptimizationTargetsProposal = z.infer<typeof f6OptimizationTargetsProposalSchema>;
+export type F6InputProposal = z.infer<typeof f6InputProposalSchema>;
+export type F6MaterializedDraft = z.infer<typeof f6MaterializedDraftSchema>;
+export type F6MaterializationResult = z.infer<typeof f6MaterializationResultSchema>;
 export type F6ModelInterpretationArtifact = z.infer<typeof f6ModelInterpretationArtifactSchema>;
 export type F6ModelInterpretationV1Artifact = z.infer<typeof f6ModelInterpretationV1ArtifactSchema>;
 export type F6ModelInterpretationV2Artifact = z.infer<typeof f6ModelInterpretationV2ArtifactSchema>;

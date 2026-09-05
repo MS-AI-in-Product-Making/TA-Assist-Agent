@@ -26,6 +26,7 @@ import {
   f5DataInterpretationResultSchema,
   f6ApportionmentResultSchema,
   f6AnalysisContextSchema,
+  f6AnalysisContextProposalSchema,
   f6AnalysisContextV1Schema,
   f6AnalysisContextV2Schema,
   f6CapabilityBoundSchema,
@@ -33,12 +34,17 @@ import {
   f6CostEvidenceSchema,
   f6DatumEvidenceSchema,
   f6FeasibilityAssessmentSchema,
+  f6InputClarificationSchema,
   f6InputFindingSchema,
+  f6InputProposalSchema,
   f6LegacyOptimizationResultSchema,
+  f6MaterializationResultSchema,
+  f6MaterializedDraftSchema,
   f6ModelInterpretationArtifactSchema,
   f6ModelInterpretationV2ArtifactSchema,
   f6OptimizationRequestSchema,
   f6OptimizationResultSchema,
+  f6OptimizationTargetsProposalSchema,
   f6OptimizationTargetsSchema,
   f6OptimizationTargetsV1Schema,
   f6OptimizationTargetsV2Schema,
@@ -6249,6 +6255,123 @@ describe("F5.1 objective interpretation contracts", () => {
           { ...insufficientOption, optionId: "datum-insufficient", optionKind: "tighten_datum_strategy", evidenceReferences: [datumReference], evidenceScope: { ...datumScope, factorSources: [{ ...datumScope.factorSources[0], direction: -1 }] } },
           { datumEvidence: [datumEvidence] },
         ).success).toBe(false);
+      });
+
+      it("accepts strict chat proposals while rejecting governed authority leakage", () => {
+        const contextProposal = {
+          proposalVersion: "f6-analysis-context-proposal-v1",
+          userText: "橡胶压缩会影响装配间隙，500g load 是关键工况。",
+          worksheetSelectors: ["gap w rubber_TPoverload500g"],
+          analysisObjectKind: "GAP",
+          functionalBoundary: "TP bracket to battery gap",
+          operatingConditions: ["500g load"],
+          clarifications: [],
+        } as const;
+
+        const targetsProposal = {
+          proposalVersion: "f6-optimization-targets-proposal-v1",
+          userText: "优先评估 mean shift，再看 battery flatness tolerance。",
+          directions: [
+            { adjustmentClass: "system_mean_shift", worksheetSelector: "gap w rubber_TPoverload500g" },
+            { adjustmentClass: "factor_tolerance", worksheetSelector: "gap w rubber_TPoverload500g", factorSelector: "battery flatness" },
+          ],
+          clarifications: [],
+        } as const;
+
+        expect(f6AnalysisContextProposalSchema.parse(contextProposal)).toEqual(contextProposal);
+        expect(f6OptimizationTargetsProposalSchema.parse(targetsProposal)).toEqual(targetsProposal);
+        expect(f6InputProposalSchema.parse(contextProposal)).toEqual(contextProposal);
+        expect(f6InputProposalSchema.parse(targetsProposal)).toEqual(targetsProposal);
+
+        expect(f6AnalysisContextProposalSchema.safeParse({ ...contextProposal, workbookContentHash: "a".repeat(64) }).success).toBe(false);
+        expect(f6OptimizationTargetsProposalSchema.safeParse({ ...targetsProposal, contentHash: "b".repeat(64) }).success).toBe(false);
+        expect(f6OptimizationTargetsProposalSchema.safeParse({ ...targetsProposal, cpk: 1.33 }).success).toBe(false);
+        expect(f6OptimizationTargetsProposalSchema.safeParse({ ...targetsProposal, deltaCpk: 0.12 }).success).toBe(false);
+        expect(f6AnalysisContextProposalSchema.safeParse({ ...contextProposal, baselineIdentity: { workbookContentHash: "a".repeat(64) } }).success).toBe(false);
+        expect(f6AnalysisContextProposalSchema.safeParse({ ...contextProposal, unknownField: true }).success).toBe(false);
+      });
+
+      it("allows explicit numeric targets but blocks model-authored calculation outputs", () => {
+        const targetsProposal = {
+          proposalVersion: "f6-optimization-targets-proposal-v1",
+          userText: "请把均值拉到目标值并收紧平坦度公差。",
+          directions: [
+            {
+              adjustmentClass: "system_mean_shift",
+              worksheetSelector: "gap w rubber_TPoverload500g",
+              numericTarget: { field: "target_mean", value: 0.13, unit: "mm" },
+            },
+            {
+              adjustmentClass: "factor_tolerance",
+              worksheetSelector: "gap w rubber_TPoverload500g",
+              factorSelector: "battery flatness",
+              numericTarget: { field: "upper_tolerance", value: 0.05, unit: "mm" },
+            },
+          ],
+          clarifications: [],
+        } as const;
+
+        expect(f6OptimizationTargetsProposalSchema.parse(targetsProposal)).toEqual(targetsProposal);
+        expect(f6OptimizationTargetsProposalSchema.safeParse({
+          ...targetsProposal,
+          directions: [{ ...targetsProposal.directions[0], numericTarget: { field: "cpk", value: 1.67, unit: "" } }],
+        }).success).toBe(false);
+        expect(f6OptimizationTargetsProposalSchema.safeParse({
+          ...targetsProposal,
+          directions: [{ ...targetsProposal.directions[0], calculationResult: { cpk: 1.67 } }],
+        }).success).toBe(false);
+      });
+
+      it("materializes proposal drafts without workbook/table/source-row authority", () => {
+        const clarification = {
+          clarificationId: "clarify-analysis-object",
+          question: "请确认分析对象边界与方向。",
+          requiredFields: ["analysisObjectKind", "functionalBoundary"],
+        } as const;
+        expect(f6InputClarificationSchema.parse(clarification)).toEqual(clarification);
+
+        const draft = {
+          draftVersion: "f6-materialized-draft-v1",
+          draftId: "f6-context-draft-1",
+          draftHash: "a".repeat(64),
+          kind: "analysis_context",
+          proposal: {
+            proposalVersion: "f6-analysis-context-proposal-v1",
+            userText: "请按 500g load 定义 GAP 分析上下文。",
+            worksheetSelectors: ["gap w rubber_TPoverload500g"],
+            analysisObjectKind: "GAP",
+            clarifications: [clarification],
+          },
+        } as const;
+
+        expect(f6MaterializedDraftSchema.parse(draft)).toEqual(draft);
+        expect(f6MaterializedDraftSchema.safeParse({
+          ...draft,
+          proposal: {
+            ...draft.proposal,
+            tableId: "table-a",
+          },
+        }).success).toBe(false);
+        expect(f6MaterializedDraftSchema.safeParse({
+          ...draft,
+          proposal: {
+            ...draft.proposal,
+            sourceRow: 2,
+          },
+        }).success).toBe(false);
+        expect(f6MaterializedDraftSchema.safeParse({
+          ...draft,
+          proposal: {
+            ...draft.proposal,
+            artifactPath: "artifacts/f6.json",
+          },
+        }).success).toBe(false);
+
+        const materializationResult = {
+          status: "draft_ready",
+          draft,
+        } as const;
+        expect(f6MaterializationResultSchema.parse(materializationResult)).toEqual(materializationResult);
       });
 
       it("preserves the legacy feature_not_available comparison contracts", () => {

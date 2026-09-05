@@ -10,6 +10,8 @@ import {
   hostActionRequestSchema,
   hostActionClaimSchema,
   hostActionResultSchema,
+  f8PendingF6InputDraftSchema,
+  f6InputProposalSchema,
   f8ScenarioDraftSchema,
   f8AdoProjectionSchema,
   f8AdoWriteConfirmationSchema,
@@ -539,6 +541,137 @@ describe("F8 session and host contracts", () => {
 
     expect(f8SessionCommandSchema.parse(command)).toEqual(command);
     expect(() => f8SessionCommandSchema.parse({ ...command, outputRoot: "C:/arbitrary" })).toThrow();
+  });
+
+  it("accepts pending F6 context draft snapshots and rejects client-governed fields", () => {
+    const pendingAnalysisContextDraft = {
+      draftId: "f6-context-draft-1",
+      kind: "analysis_context",
+      inputRevision: 7,
+      reviewContextId: "a".repeat(64),
+      artifactId: "f6-context-draft:7",
+      contentHash: "b".repeat(64),
+      status: "preview_required",
+    } as const;
+
+    expect(f8PendingF6InputDraftSchema.parse(pendingAnalysisContextDraft)).toEqual(pendingAnalysisContextDraft);
+    expect(f8PendingF6InputDraftSchema.safeParse({
+      ...pendingAnalysisContextDraft,
+      artifactPath: "artifacts/f6/context.md",
+    }).success).toBe(false);
+    expect(f8PendingF6InputDraftSchema.safeParse({
+      ...pendingAnalysisContextDraft,
+      decisionReference: "decision-1",
+    }).success).toBe(false);
+  });
+
+  it("requires dedicated context/targets confirm payload with matching draft identity", () => {
+    const confirmContext = {
+      contractVersion: "f8-session-command-v1",
+      sessionId: SESSION_ID,
+      commandId: "confirm-context-draft",
+      expectedRevision: 9,
+      command: "confirm_analysis_context",
+      payload: {
+        decision: "confirm",
+        draftId: "f6-context-draft-1",
+        draftHash: "c".repeat(64),
+      },
+    } as const;
+
+    expect(f8PublicSessionCommandSchema.parse(confirmContext)).toEqual(confirmContext);
+    expect(f8PublicSessionCommandSchema.parse({
+      ...confirmContext,
+      payload: { decision: "not_provided" },
+    })).toEqual({
+      ...confirmContext,
+      payload: { decision: "not_provided" },
+    });
+    expect(f8PublicSessionCommandSchema.parse({
+      ...confirmContext,
+      payload: { decision: "decline" },
+    })).toEqual({
+      ...confirmContext,
+      payload: { decision: "decline" },
+    });
+    expect(() => f8PublicSessionCommandSchema.parse({
+      ...confirmContext,
+      payload: {
+        ...confirmContext.payload,
+        artifactPath: "artifacts/f6/context.md",
+      },
+    })).toThrow();
+    expect(() => f8PublicSessionCommandSchema.parse({
+      ...confirmContext,
+      payload: {
+        ...confirmContext.payload,
+        decisionReference: "decision-1",
+      },
+    })).toThrow();
+
+    const confirmTargets = {
+      ...confirmContext,
+      commandId: "confirm-targets-draft",
+      command: "confirm_optimization_targets",
+      payload: {
+        decision: "confirm",
+        draftId: "f6-targets-draft-1",
+        draftHash: "d".repeat(64),
+      },
+    } as const;
+    expect(f8PublicSessionCommandSchema.parse(confirmTargets)).toEqual(confirmTargets);
+  });
+
+  it("allows model outcomes to carry proposals but never session commands", () => {
+    const proposal = {
+      proposalVersion: "f6-analysis-context-proposal-v1",
+      userText: "请确认 analysis context。",
+      worksheetSelectors: ["gap w rubber_TPoverload500g"],
+      analysisObjectKind: "GAP",
+      clarifications: [],
+    } as const;
+    expect(f6InputProposalSchema.parse(proposal)).toEqual(proposal);
+
+    const result = {
+      contractVersion: "f8-host-action-result-v1",
+      actionId: "action-model-1",
+      hostInstanceId: "host-1",
+      leaseId: "lease-1",
+      status: "completed",
+      resultHash: "e".repeat(64),
+      payload: {
+        status: "completed",
+        outcome: {
+          kind: "model_response",
+          turnId: "turn-model-1",
+          responseText: "已生成 proposal。",
+          proposal,
+        },
+      },
+    } as const;
+
+    expect(hostActionResultSchema.parse(result)).toEqual(result);
+    expect(() => hostActionResultSchema.parse({
+      ...result,
+      payload: {
+        ...result.payload,
+        outcome: {
+          ...result.payload.outcome,
+          command: {
+            contractVersion: "f8-session-command-v1",
+            sessionId: SESSION_ID,
+            commandId: "bad-inline-command",
+            expectedRevision: 9,
+            command: "confirm_analysis_context",
+            payload: {
+              decision: "confirm",
+              draftId: "f6-context-draft-1",
+              draftHash: "f".repeat(64),
+            },
+          },
+        },
+      },
+    })).toThrow();
   });
 
   it("requires an explicit existing Work Item reference and keeps Surface write acceptance internal", () => {

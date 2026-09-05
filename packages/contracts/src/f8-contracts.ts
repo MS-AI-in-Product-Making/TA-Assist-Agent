@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { distributionSchema, f6OptimizationTargetsSchema, worksheetSelectionConfirmationSchema, workbookCatalogFileNameSchema } from "./contracts.js";
+import { distributionSchema, f6InputProposalSchema, f6OptimizationTargetsSchema, worksheetSelectionConfirmationSchema, workbookCatalogFileNameSchema } from "./contracts.js";
 import { typedErrorSchema } from "./errors.js";
 
 const nonEmptyStringSchema = z.string().min(1);
@@ -390,6 +390,21 @@ export const f8ScenarioDraftSchema = z
 
 export type F8ScenarioDraft = z.infer<typeof f8ScenarioDraftSchema>;
 
+const f8PendingF6InputDraftKindSchema = z.enum(["analysis_context", "optimization_targets"]);
+
+const f8PendingF6InputDraftBaseSchema = z.object({
+  draftId: promptVisibleIdentitySchema,
+  kind: f8PendingF6InputDraftKindSchema,
+  inputRevision: z.number().int().nonnegative(),
+  reviewContextId: sha256Schema,
+  artifactId: boundedContextIdSchema,
+  contentHash: sha256Schema,
+  status: z.literal("preview_required"),
+}).strict();
+
+export const f8PendingF6InputDraftSchema = f8PendingF6InputDraftBaseSchema;
+export type F8PendingF6InputDraft = z.infer<typeof f8PendingF6InputDraftSchema>;
+
 const f8PriorRunReferenceSchema = z
   .object({
     featureId: z.enum(["F0", "F1", "F2", "F3", "F4", "F5", "F6", "F7"]),
@@ -514,6 +529,12 @@ const confirmationDecisionPayloadSchema = z
   })
   .strict();
 
+const f8F6DraftConfirmationPayloadSchema = z.discriminatedUnion("decision", [
+  z.object({ decision: z.literal("confirm"), draftId: promptVisibleIdentitySchema, draftHash: sha256Schema, rationale: nonEmptyStringSchema.optional() }).strict(),
+  z.object({ decision: z.literal("not_provided"), rationale: nonEmptyStringSchema.optional() }).strict(),
+  z.object({ decision: z.literal("decline"), rationale: nonEmptyStringSchema.optional() }).strict(),
+]);
+
 const adoDecisionPayloadSchema = z.discriminatedUnion("decision", [
   z.object({ decision: z.literal("create_new"), rationale: nonEmptyStringSchema.optional() }).strict(),
   z.object({ decision: z.literal("use_existing"), workItemReference: nonEmptyStringSchema, rationale: nonEmptyStringSchema.optional() }).strict(),
@@ -610,8 +631,8 @@ export const f8SessionCommandSchema = z.discriminatedUnion("command", [
   commandEnvelopeSchema("confirm_ado_decision", adoDecisionPayloadSchema),
   commandEnvelopeSchema("reset_ado_decision", z.object({}).strict()),
   commandEnvelopeSchema("confirm_image_decision", confirmationDecisionPayloadSchema),
-  commandEnvelopeSchema("confirm_analysis_context", confirmationDecisionPayloadSchema),
-  commandEnvelopeSchema("confirm_optimization_targets", confirmationDecisionPayloadSchema),
+  commandEnvelopeSchema("confirm_analysis_context", f8F6DraftConfirmationPayloadSchema),
+  commandEnvelopeSchema("confirm_optimization_targets", f8F6DraftConfirmationPayloadSchema),
   commandEnvelopeSchema("retry", retryPayloadSchema),
   commandEnvelopeSchema("cancel", cancelPayloadSchema),
   commandEnvelopeSchema("complete_review", completeReviewPayloadSchema),
@@ -628,8 +649,8 @@ export const f8PublicSessionCommandSchema = z.discriminatedUnion("command", [
   commandEnvelopeSchema("confirm_ado_decision", adoDecisionPayloadSchema),
   commandEnvelopeSchema("reset_ado_decision", z.object({}).strict()),
   commandEnvelopeSchema("confirm_image_decision", confirmationDecisionPayloadSchema),
-  commandEnvelopeSchema("confirm_analysis_context", confirmationDecisionPayloadSchema),
-  commandEnvelopeSchema("confirm_optimization_targets", confirmationDecisionPayloadSchema),
+  commandEnvelopeSchema("confirm_analysis_context", f8F6DraftConfirmationPayloadSchema),
+  commandEnvelopeSchema("confirm_optimization_targets", f8F6DraftConfirmationPayloadSchema),
   commandEnvelopeSchema("retry", retryPayloadSchema),
   commandEnvelopeSchema("cancel", cancelPayloadSchema),
   commandEnvelopeSchema("complete_review", completeReviewPayloadSchema),
@@ -899,7 +920,7 @@ const hostActionResultPayloadSchema = z.discriminatedUnion("status", [
         kind: z.literal("surface_reconcile"),
         state: z.literal("absent"),
       }).strict(),
-      z.object({ kind: z.literal("model_response"), turnId: nonEmptyStringSchema, responseText: nonEmptyStringSchema }).strict(),
+      z.object({ kind: z.literal("model_response"), turnId: nonEmptyStringSchema, responseText: nonEmptyStringSchema, proposal: f6InputProposalSchema.optional() }).strict(),
     ]).optional(),
   }).strict(),
   z.object({
@@ -1069,6 +1090,8 @@ export const f8SessionSnapshotSchema = z
     worksheetCapabilities: z.array(f8WorksheetCapabilitySchema).optional(),
     initialScopeSelection: worksheetSelectionDecisionSchema.optional(),
     downstreamScopeSelection: worksheetSelectionDecisionSchema.optional(),
+    pendingAnalysisContextDraft: f8PendingF6InputDraftSchema.optional(),
+    pendingOptimizationTargetsDraft: f8PendingF6InputDraftSchema.optional(),
     scenarioDrafts: z.array(z.lazy(() => f8ScenarioDraftSchema)).optional(),
   })
   .strict()
@@ -1097,6 +1120,18 @@ export const f8SessionSnapshotSchema = z
         activeDraftCount += 1;
       }
     });
+    if (snapshot.pendingAnalysisContextDraft?.kind !== undefined && snapshot.pendingAnalysisContextDraft.kind !== "analysis_context") {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "pendingAnalysisContextDraft must use analysis_context kind", path: ["pendingAnalysisContextDraft", "kind"] });
+    }
+    if (snapshot.pendingOptimizationTargetsDraft?.kind !== undefined && snapshot.pendingOptimizationTargetsDraft.kind !== "optimization_targets") {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "pendingOptimizationTargetsDraft must use optimization_targets kind", path: ["pendingOptimizationTargetsDraft", "kind"] });
+    }
+    if (snapshot.pendingAnalysisContextDraft?.inputRevision !== undefined && snapshot.pendingAnalysisContextDraft.inputRevision !== snapshot.inputRevision) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "pendingAnalysisContextDraft must match snapshot inputRevision", path: ["pendingAnalysisContextDraft", "inputRevision"] });
+    }
+    if (snapshot.pendingOptimizationTargetsDraft?.inputRevision !== undefined && snapshot.pendingOptimizationTargetsDraft.inputRevision !== snapshot.inputRevision) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "pendingOptimizationTargetsDraft must match snapshot inputRevision", path: ["pendingOptimizationTargetsDraft", "inputRevision"] });
+    }
     if (activeDraftCount > 1) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: "session snapshots allow only one active WHAT_IF draft", path: ["scenarioDrafts"] });
     }
