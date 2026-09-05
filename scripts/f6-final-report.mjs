@@ -35,6 +35,43 @@ const RECOMMENDATION_CLASS_ORDER = [
   "factor_tolerance",
 ];
 
+const CLARIFICATION_REASON_CODES_BY_CLASS = {
+  factor_nominal: new Set([
+    "factor_nominal_target_required",
+    "model_factor_nominal_insufficient_evidence",
+    "model_factor_nominal_deterministic_target_unavailable",
+  ]),
+  system_mean_shift: new Set([
+    "system_mean_shift_target_required",
+    "model_system_mean_shift_insufficient_evidence",
+    "model_system_mean_shift_deterministic_target_unavailable",
+  ]),
+  system_specification: new Set([
+    "system_specification_target_required",
+    "model_system_specification_insufficient_evidence",
+    "model_system_specification_deterministic_target_unavailable",
+    "optimization_target_required",
+  ]),
+  factor_tolerance: new Set([
+    "factor_tolerance_target_required",
+    "model_factor_tolerance_insufficient_evidence",
+    "model_factor_tolerance_deterministic_target_unavailable",
+  ]),
+};
+
+const CLARIFICATION_REQUIRED_INPUTS_BY_CLASS = {
+  factor_nominal: new Set(["factor_nominal_target"]),
+  system_mean_shift: new Set(["system_mean_shift_target"]),
+  system_specification: new Set(["system_specification_target"]),
+  factor_tolerance: new Set(["factor_tolerance_target"]),
+};
+
+function hasClassRequiredInput(item, adjustmentClass) {
+  const expected = CLARIFICATION_REQUIRED_INPUTS_BY_CLASS[adjustmentClass];
+  if (expected === undefined || !Array.isArray(item.requiredInputs)) return false;
+  return item.requiredInputs.some((input) => expected.has(String(input)));
+}
+
 function indexByWorksheetName(records) {
   return new Map(records.map((record) => [record.worksheetName, record]));
 }
@@ -864,15 +901,9 @@ function classFromOption(option) {
 function classClarifications(worksheet, adjustmentClass) {
   return worksheet.f6Worksheet.clarifications.filter((item) => {
     const reasonCode = String(item.reasonCode ?? "");
-    if (adjustmentClass === "factor_nominal") return reasonCode.includes("nominal");
-    if (adjustmentClass === "system_mean_shift") return reasonCode.includes("mean_shift");
-    if (adjustmentClass === "system_specification") {
-      return reasonCode.includes("system_specification")
-        || reasonCode.includes("specification")
-        || reasonCode === "optimization_target_required"
-        || (Array.isArray(item.requiredInputs) && item.requiredInputs.includes("system_specification_target"));
-    }
-    return reasonCode.includes("tolerance") || reasonCode.includes("optimization_target");
+    const allowedReasonCodes = CLARIFICATION_REASON_CODES_BY_CLASS[adjustmentClass];
+    if (allowedReasonCodes?.has(reasonCode)) return true;
+    return hasClassRequiredInput(item, adjustmentClass);
   });
 }
 

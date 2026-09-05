@@ -413,6 +413,42 @@ describe("createF6FinalReportProjection policy", () => {
     expect(markdown).not.toContain("9.99");
   });
 
+  it("maps generic optimization target clarification only to system specification basis row", () => {
+    const inputs = loadRealF6Inputs({
+      worksheetNames: ["Analysis-A"],
+      modelInterpretationVersion: "v2",
+    });
+    const worksheet = inputs.f6Optimization.worksheets[0];
+    worksheet.clarifications.push(
+      {
+        clarificationId: "Analysis-A:generic-target",
+        reasonCode: "optimization_target_required",
+        requiredInputs: ["optimization_target"],
+        questionForReviewer: "Provide governed optimization target.",
+        evidenceReferences: [structuredClone(inputs.f6Optimization.provenance.f4Reference)],
+      },
+      {
+        clarificationId: "Analysis-A:tolerance-target",
+        reasonCode: "factor_tolerance_target_required",
+        requiredInputs: ["factor_tolerance_target"],
+        questionForReviewer: "Provide tolerance target for factor class.",
+        evidenceReferences: [structuredClone(inputs.f6Optimization.provenance.f4Reference)],
+      },
+    );
+
+    const { markdown } = createF6FinalReportProjection(inputs);
+    const rows = markdown.split("\n");
+    const systemRow = rows.find((line) => line.includes("| system\\_specification |"));
+    const toleranceRow = rows.find((line) => line.includes("| factor\\_tolerance |"));
+
+    expect(systemRow).toBeDefined();
+    expect(toleranceRow).toBeDefined();
+    expect(systemRow).toContain(String.raw`system\_specification\_target\_required`);
+    expect(toleranceRow).toContain(String.raw`factor\_tolerance\_target\_required`);
+    expect(toleranceRow).not.toContain(String.raw`optimization\_target\_required`);
+    expect(toleranceRow).not.toContain(String.raw`system\_specification\_target\_required`);
+  });
+
   it("keeps supported structural SIGNALs on pass", () => {
     const inputs = loadRealF6Inputs({
       worksheetNames: ["Analysis-A", "Analysis-B"],

@@ -509,4 +509,37 @@ describe("renderF6Report V2", () => {
     expect(markdown).toContain("Cpk 1.020");
     expect(markdown).toContain(String.raw`system\_specification\_target\_required`);
   });
+
+  it("classifies generic optimization target clarification only under system specification", () => {
+    const input = governedResultV2();
+    const worksheet = input.worksheets[0];
+    worksheet.clarifications.push(
+      {
+        clarificationId: "Analysis-A:generic-target",
+        reasonCode: "optimization_target_required",
+        requiredInputs: ["optimization_target"],
+        questionForReviewer: "Provide a governed optimization target.",
+        evidenceReferences: [structuredClone(input.provenance.f4Reference)],
+      },
+      {
+        clarificationId: "Analysis-A:tolerance-target",
+        reasonCode: "factor_tolerance_target_required",
+        requiredInputs: ["factor_tolerance_target"],
+        questionForReviewer: "Provide tolerance target for factor scenario.",
+        evidenceReferences: [structuredClone(input.provenance.f4Reference)],
+      },
+    );
+
+    const markdown = renderF6ReportV2(input);
+    const rows = markdown.split("\n");
+    const systemRow = rows.find((line) => line.includes("| system\\_specification |"));
+    const toleranceRow = rows.find((line) => line.includes("| factor\\_tolerance |"));
+
+    expect(systemRow).toBeDefined();
+    expect(toleranceRow).toBeDefined();
+    expect(systemRow).toContain(String.raw`system\_specification\_target\_required`);
+    expect(toleranceRow).toContain(String.raw`factor\_tolerance\_target\_required`);
+    expect(toleranceRow).not.toContain(String.raw`optimization\_target\_required`);
+    expect(toleranceRow).not.toContain(String.raw`system\_specification\_target\_required`);
+  });
 });
