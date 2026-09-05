@@ -565,7 +565,10 @@ export const f8WorksheetWhatIfCalculationRequestSchema = z.object({
   factorOverrides: z.array(f8ScenarioFactorOverrideSchema),
   systemSpecification: f8ScenarioSystemOverrideSchema.optional(),
   signedDirectionEvidence: z.literal(true).optional(),
-}).strict().refine((request) => request.factorOverrides.length > 0 || request.systemSpecification !== undefined, "Worksheet Scenario must include one override.");
+}).strict().refine(
+  (request) => request.factorOverrides.length > 0 || request.systemSpecification !== undefined,
+  "Worksheet Scenario must include factor or system overrides.",
+);
 
 export type F8WorksheetWhatIfCalculationRequest = z.infer<typeof f8WorksheetWhatIfCalculationRequestSchema>;
 

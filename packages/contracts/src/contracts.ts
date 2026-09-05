@@ -6247,23 +6247,25 @@ const f6ImprovementRatioTargetSchema = z.object({
   appliesTo: z.enum(["tolerance_band", "sigma"]),
 }).strict();
 
+const f6SystemIdentitySchema = z.object({
+  baselineIdentity: f6InputBaselineIdentitySchema,
+  designNominal: z.number().finite(),
+  mean: z.number().finite(),
+  rssSigma: z.number().finite().nonnegative(),
+  lowerSpecLimit: z.number().finite(),
+  upperSpecLimit: z.number().finite(),
+  targetCpk: z.number().finite().positive(),
+  traceReferences: z.array(f6V2FormulaReferenceSchema),
+}).strict().superRefine((identity, context) => {
+  if (!(identity.upperSpecLimit > identity.lowerSpecLimit)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "upperSpecLimit must be greater than lowerSpecLimit", path: ["upperSpecLimit"] });
+  }
+});
+
 const f6SystemTargetSchema = z.object({
   targetId: z.string().min(1),
   targetType: z.literal("system_target"),
-  systemIdentity: z.object({
-    baselineIdentity: f6InputBaselineIdentitySchema,
-    designNominal: z.number().finite(),
-    mean: z.number().finite(),
-    rssSigma: z.number().finite().nonnegative(),
-    lowerSpecLimit: z.number().finite(),
-    upperSpecLimit: z.number().finite(),
-    targetCpk: z.number().finite().positive(),
-    traceReferences: z.array(f6V2FormulaReferenceSchema),
-  }).strict().superRefine((identity, context) => {
-    if (!(identity.upperSpecLimit > identity.lowerSpecLimit)) {
-      context.addIssue({ code: z.ZodIssueCode.custom, message: "upperSpecLimit must be greater than lowerSpecLimit", path: ["upperSpecLimit"] });
-    }
-  }),
+  systemIdentity: f6SystemIdentitySchema,
   target: z.union([
     z.object({ targetCpk: z.number().finite().positive() }).strict(),
     z.object({ targetRssSigma: z.number().finite().positive(), unit: z.string().min(1) }).strict(),
@@ -6274,11 +6276,55 @@ const f6SystemTargetSchema = z.object({
   }).strict(),
 }).strict();
 
+export const f6OptimizationTargetV1Schema = z.discriminatedUnion("targetType", [
+  f6FactorToleranceTargetSchema,
+  f6FactorSigmaTargetSchema,
+  f6ImprovementRatioTargetSchema,
+  f6SystemTargetSchema,
+]);
+
+const f6FactorNominalTargetSchema = z.object({
+  targetId: z.string().min(1),
+  targetType: z.literal("factor_nominal"),
+  factor: f6FactorIdentitySchema,
+  nominalValue: z.number().finite(),
+  unit: z.string().min(1),
+}).strict();
+
+const f6SystemMeanShiftTargetSchema = z.object({
+  targetId: z.string().min(1),
+  targetType: z.literal("system_mean_shift"),
+  systemIdentity: f6SystemIdentitySchema,
+  target: z.union([
+    z.object({ targetMean: z.number().finite(), unit: z.string().min(1) }).strict(),
+    z.object({ resultingAdditionalMeanShift: z.number().finite(), unit: z.string().min(1) }).strict(),
+  ]),
+}).strict();
+
+const f6SystemSpecificationTargetSchema = z.object({
+  targetId: z.string().min(1),
+  targetType: z.literal("system_specification"),
+  systemIdentity: f6SystemIdentitySchema,
+  lowerSpecLimit: z.number().finite().optional(),
+  upperSpecLimit: z.number().finite().optional(),
+  unit: z.string().min(1),
+}).strict();
+
+export const f6OptimizationTargetV2Schema = z.discriminatedUnion("targetType", [
+  f6FactorToleranceTargetSchema,
+  f6FactorNominalTargetSchema,
+  f6SystemMeanShiftTargetSchema,
+  f6SystemSpecificationTargetSchema,
+]);
+
 const f6OptimizationTargetSchema = z.discriminatedUnion("targetType", [
   f6FactorToleranceTargetSchema,
   f6FactorSigmaTargetSchema,
   f6ImprovementRatioTargetSchema,
   f6SystemTargetSchema,
+  f6FactorNominalTargetSchema,
+  f6SystemMeanShiftTargetSchema,
+  f6SystemSpecificationTargetSchema,
 ]);
 
 const sameF6BaselineIdentity = (
@@ -6296,7 +6342,7 @@ const factorBelongsToF6Worksheet = (
   tableId: string,
 ): boolean => factor.worksheetName === worksheetName && factor.tableId === tableId;
 
-export const f6OptimizationTargetsSchema = z.object({
+const f6OptimizationTargetsV1BaseSchema = z.object({
   contractVersion: contractVersionSchema,
   inputClassification: z.literal("confidential"),
   targetVersion: z.literal("f6-optimization-targets-v1"),
@@ -6305,9 +6351,14 @@ export const f6OptimizationTargetsSchema = z.object({
     worksheetName: z.string().min(1),
     tableId: z.string().min(1),
     baselineIdentity: f6InputBaselineIdentitySchema,
-    targets: z.array(f6OptimizationTargetSchema).min(1),
+    targets: z.array(f6OptimizationTargetV1Schema).min(1),
   }).strict()).min(1),
-}).strict().superRefine((artifact, context) => {
+}).strict();
+
+const validateF6OptimizationTargetsV1 = (
+  artifact: z.infer<typeof f6OptimizationTargetsV1BaseSchema>,
+  context: z.RefinementCtx,
+): void => {
   const worksheetKeys = new Set<string>();
   const targetIds = new Set<string>();
   const factorTargetKeys = new Set<string>();
@@ -6359,6 +6410,105 @@ export const f6OptimizationTargetsSchema = z.object({
       factorTargetKeys.add(factorTargetKey);
     });
   });
+};
+
+export const f6OptimizationTargetsV1Schema = f6OptimizationTargetsV1BaseSchema.superRefine((artifact, context) => {
+  validateF6OptimizationTargetsV1(artifact, context);
+});
+
+const f6OptimizationTargetsV2BaseSchema = z.object({
+  contractVersion: contractVersionSchema,
+  inputClassification: z.literal("confidential"),
+  targetVersion: z.literal("f6-optimization-targets-v2"),
+  workbookContentHash: sha256Schema,
+  worksheets: z.array(z.object({
+    worksheetName: z.string().min(1),
+    tableId: z.string().min(1),
+    baselineIdentity: f6InputBaselineIdentitySchema,
+    targets: z.array(f6OptimizationTargetV2Schema).min(1),
+  }).strict()).min(1),
+}).strict();
+
+const validateF6OptimizationTargetsV2 = (
+  artifact: z.infer<typeof f6OptimizationTargetsV2BaseSchema>,
+  context: z.RefinementCtx,
+): void => {
+  const worksheetKeys = new Set<string>();
+  const targetIds = new Set<string>();
+  const factorTargetKeys = new Set<string>();
+  artifact.worksheets.forEach((worksheet, worksheetIndex) => {
+    const worksheetKey = `${worksheet.worksheetName}\u0000${worksheet.tableId}`;
+    if (worksheetKeys.has(worksheetKey)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet and table identities must be unique", path: ["worksheets", worksheetIndex] });
+    }
+    worksheetKeys.add(worksheetKey);
+    if (!sameF6BaselineIdentity(worksheet.baselineIdentity, artifact.workbookContentHash, worksheet.worksheetName, worksheet.tableId)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline identity must match the containing workbook and worksheet", path: ["worksheets", worksheetIndex, "baselineIdentity"] });
+    }
+    worksheet.targets.forEach((target, targetIndex) => {
+      const targetPath = ["worksheets", worksheetIndex, "targets", targetIndex] as const;
+      if (targetIds.has(target.targetId)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "target IDs must be unique", path: [...targetPath, "targetId"] });
+      }
+      targetIds.add(target.targetId);
+
+      if (target.targetType === "factor_tolerance" || target.targetType === "factor_nominal") {
+        if (!factorBelongsToF6Worksheet(target.factor, worksheet.worksheetName, worksheet.tableId)) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "target factor must belong to the containing worksheet", path: [...targetPath, "factor"] });
+        }
+        if (target.unit !== target.factor.unit) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "target unit must match factor unit", path: [...targetPath, "unit"] });
+        }
+      }
+
+      if (target.targetType === "factor_tolerance") {
+        if (!(target.upperTolerance > target.lowerTolerance)) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "upperTolerance must be greater than lowerTolerance", path: [...targetPath, "upperTolerance"] });
+        }
+      }
+
+      if (target.targetType === "system_mean_shift" || target.targetType === "system_specification") {
+        if (!sameF6BaselineIdentity(target.systemIdentity.baselineIdentity, artifact.workbookContentHash, worksheet.worksheetName, worksheet.tableId)
+          || JSON.stringify(target.systemIdentity.baselineIdentity) !== JSON.stringify(worksheet.baselineIdentity)) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "system target baseline identity must match the containing worksheet", path: [...targetPath, "systemIdentity", "baselineIdentity"] });
+        }
+      }
+
+      if (target.targetType === "system_specification") {
+        if (target.lowerSpecLimit === undefined && target.upperSpecLimit === undefined) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "system specification target requires at least one limit", path: [...targetPath] });
+        }
+        const effectiveLower = target.lowerSpecLimit ?? target.systemIdentity.lowerSpecLimit;
+        const effectiveUpper = target.upperSpecLimit ?? target.systemIdentity.upperSpecLimit;
+        if (!(effectiveUpper > effectiveLower)) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "effective system specification requires lowerSpecLimit < upperSpecLimit", path: [...targetPath, "upperSpecLimit"] });
+        }
+      }
+
+      if (target.targetType === "factor_tolerance" || target.targetType === "factor_nominal") {
+        const factorTargetKey = `${worksheetKey}\u0000${target.factor.sourceRow}\u0000${target.targetType}`;
+        if (factorTargetKeys.has(factorTargetKey)) {
+          context.addIssue({ code: z.ZodIssueCode.custom, message: "a factor may have only one target of each type", path: targetPath as unknown as Array<string | number> });
+        }
+        factorTargetKeys.add(factorTargetKey);
+      }
+    });
+  });
+};
+
+export const f6OptimizationTargetsV2Schema = f6OptimizationTargetsV2BaseSchema.superRefine((artifact, context) => {
+  validateF6OptimizationTargetsV2(artifact, context);
+});
+
+export const f6OptimizationTargetsSchema = z.discriminatedUnion("targetVersion", [
+  f6OptimizationTargetsV1BaseSchema,
+  f6OptimizationTargetsV2BaseSchema,
+]).superRefine((artifact, context) => {
+  if (artifact.targetVersion === "f6-optimization-targets-v1") {
+    validateF6OptimizationTargetsV1(artifact, context);
+    return;
+  }
+  validateF6OptimizationTargetsV2(artifact, context);
 });
 
 const f6AnalysisObjectSchema = z.object({
@@ -6384,34 +6534,32 @@ const f6CorrelationRequirementSchema = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("NOT_PROVIDED") }).strict(),
 ]);
 
-export const f6AnalysisContextSchema = z.object({
-  contractVersion: contractVersionSchema,
-  inputClassification: z.literal("confidential"),
-  contextVersion: z.literal("f6-analysis-context-v1"),
-  workbookContentHash: sha256Schema,
-  projectName: z.string().min(1).optional(),
-  worksheets: z.array(z.object({
-    worksheetName: z.string().min(1),
-    tableId: z.string().min(1),
-    baselineIdentity: f6InputBaselineIdentitySchema,
-    analysisObject: f6AnalysisObjectSchema.optional(),
-    functionalRequirements: z.object({
-      requirementIds: z.array(z.string().min(1)),
-      functionalBoundary: z.string().min(1).optional(),
-      passFailCriteria: z.string().min(1).optional(),
-      evidence: z.array(f6EvidenceLocatorSchema).min(1),
-    }).strict().optional(),
-    operatingConditions: z.array(f6OperatingConditionSchema),
-    correlationRequirement: f6CorrelationRequirementSchema,
-    loopDefinition: z.object({
-      start: z.string().min(1),
-      end: z.string().min(1),
-      responseDirection: z.string().min(1),
-      factors: z.array(z.object({ factor: f6FactorIdentitySchema, sign: z.union([z.literal(1), z.literal(-1)]) }).strict()).min(1),
-      evidence: z.array(f6EvidenceLocatorSchema).min(1),
-    }).strict().optional(),
-  }).strict()).min(1),
-}).strict().superRefine((artifact, context) => {
+const f6AnalysisContextWorksheetV1Schema = z.object({
+  worksheetName: z.string().min(1),
+  tableId: z.string().min(1),
+  baselineIdentity: f6InputBaselineIdentitySchema,
+  analysisObject: f6AnalysisObjectSchema.optional(),
+  functionalRequirements: z.object({
+    requirementIds: z.array(z.string().min(1)),
+    functionalBoundary: z.string().min(1).optional(),
+    passFailCriteria: z.string().min(1).optional(),
+    evidence: z.array(f6EvidenceLocatorSchema).min(1),
+  }).strict().optional(),
+  operatingConditions: z.array(f6OperatingConditionSchema),
+  correlationRequirement: f6CorrelationRequirementSchema,
+  loopDefinition: z.object({
+    start: z.string().min(1),
+    end: z.string().min(1),
+    responseDirection: z.string().min(1),
+    factors: z.array(z.object({ factor: f6FactorIdentitySchema, sign: z.union([z.literal(1), z.literal(-1)]) }).strict()).min(1),
+    evidence: z.array(f6EvidenceLocatorSchema).min(1),
+  }).strict().optional(),
+}).strict();
+
+const validateAnalysisContextWorksheets = (
+  artifact: { workbookContentHash: string; worksheets: Array<z.infer<typeof f6AnalysisContextWorksheetV1Schema>> },
+  context: z.RefinementCtx,
+): void => {
   const worksheetKeys = new Set<string>();
   artifact.worksheets.forEach((worksheet, worksheetIndex) => {
     const worksheetKey = `${worksheet.worksheetName}\u0000${worksheet.tableId}`;
@@ -6440,6 +6588,43 @@ export const f6AnalysisContextSchema = z.object({
     });
     worksheet.loopDefinition?.evidence.forEach((evidence, evidenceIndex) => validateEvidence(evidence, ["worksheets", worksheetIndex, "loopDefinition", "evidence", evidenceIndex]));
   });
+};
+
+const f6AnalysisContextV1BaseSchema = z.object({
+  contractVersion: contractVersionSchema,
+  inputClassification: z.literal("confidential"),
+  contextVersion: z.literal("f6-analysis-context-v1"),
+  workbookContentHash: sha256Schema,
+  projectName: z.string().min(1).optional(),
+  worksheets: z.array(f6AnalysisContextWorksheetV1Schema).min(1),
+}).strict();
+
+export const f6AnalysisContextV1Schema = f6AnalysisContextV1BaseSchema.superRefine((artifact, context) => {
+  validateAnalysisContextWorksheets(artifact, context);
+});
+
+const f6AnalysisContextWorksheetV2Schema = f6AnalysisContextWorksheetV1Schema.extend({
+  engineeringNarrative: z.string().trim().min(1),
+}).strict();
+
+const f6AnalysisContextV2BaseSchema = z.object({
+  contractVersion: contractVersionSchema,
+  inputClassification: z.literal("confidential"),
+  contextVersion: z.literal("f6-analysis-context-v2"),
+  workbookContentHash: sha256Schema,
+  projectName: z.string().min(1).optional(),
+  worksheets: z.array(f6AnalysisContextWorksheetV2Schema).min(1),
+}).strict();
+
+export const f6AnalysisContextV2Schema = f6AnalysisContextV2BaseSchema.superRefine((artifact, context) => {
+  validateAnalysisContextWorksheets(artifact, context);
+});
+
+export const f6AnalysisContextSchema = z.discriminatedUnion("contextVersion", [
+  f6AnalysisContextV1BaseSchema,
+  f6AnalysisContextV2BaseSchema,
+]).superRefine((artifact, context) => {
+  validateAnalysisContextWorksheets(artifact, context);
 });
 
 export const f6InputDecisionSchema = z.discriminatedUnion("outcome", [
@@ -6475,7 +6660,7 @@ const f6ModelInterpretationClaimSchema = z.object({
   unit: z.string().min(1).nullable(),
 }).strict();
 
-const f6ModelInterpretationWorksheetSchema = z.object({
+const f6ModelInterpretationWorksheetBaseSchema = z.object({
   worksheetName: z.string().min(1),
   tableId: z.string().min(1),
   baselineIdentity: f6InputBaselineIdentitySchema,
@@ -6491,7 +6676,12 @@ const f6ModelInterpretationWorksheetSchema = z.object({
   narrativeMarkdown: z.string().trim().min(1),
   calculationClaims: z.array(f6ModelInterpretationClaimSchema),
   reviewStatus: z.literal("ME_REVIEW_REQUIRED"),
-}).strict().superRefine((worksheet, context) => {
+}).strict();
+
+const validateF6ModelInterpretationWorksheet = (
+  worksheet: z.infer<typeof f6ModelInterpretationWorksheetBaseSchema>,
+  context: z.RefinementCtx,
+): void => {
   if (!sameF6BaselineIdentity(
     worksheet.baselineIdentity,
     worksheet.baselineIdentity.workbookContentHash,
@@ -6523,18 +6713,178 @@ const f6ModelInterpretationWorksheetSchema = z.object({
     || referencedClaimIds.some((claimId) => !claimIdSet.has(claimId))) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "calculation claims and narrative placeholders must match one-to-one", path: ["narrativeMarkdown"] });
   }
+};
+
+const f6ModelInterpretationWorksheetSchema = f6ModelInterpretationWorksheetBaseSchema.superRefine((worksheet, context) => {
+  validateF6ModelInterpretationWorksheet(worksheet, context);
 });
 
-export const f6ModelInterpretationArtifactSchema = z.object({
+const f6ModelInterpretationV1ArtifactBaseSchema = z.object({
   contractVersion: contractVersionSchema,
   inputClassification: z.literal("confidential"),
   interpretationVersion: z.literal("f6-model-interpretation-v1"),
   workbookContentHash: sha256Schema,
   generatedAt: z.string().datetime(),
-  worksheets: z.array(f6ModelInterpretationWorksheetSchema).min(1),
-}).strict().superRefine((artifact, context) => {
+  worksheets: z.array(f6ModelInterpretationWorksheetBaseSchema).min(1),
+}).strict();
+
+const validateF6ModelInterpretationArtifact = (
+  artifact: {
+    workbookContentHash: string;
+    worksheets: Array<z.infer<typeof f6ModelInterpretationWorksheetBaseSchema>>;
+  },
+  context: z.RefinementCtx,
+): void => {
   const worksheetKeys = new Set<string>();
   artifact.worksheets.forEach((worksheet, worksheetIndex) => {
+    validateF6ModelInterpretationWorksheet(worksheet, {
+      addIssue: (issue) => context.addIssue({ ...issue, path: ["worksheets", worksheetIndex, ...(issue.path ?? [])] }),
+      path: ["worksheets", worksheetIndex],
+    });
+
+    const worksheetKey = `${worksheet.worksheetName}\u0000${worksheet.tableId}`;
+    if (worksheetKeys.has(worksheetKey)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet and table identities must be unique", path: ["worksheets", worksheetIndex] });
+    }
+    worksheetKeys.add(worksheetKey);
+    if (worksheet.baselineIdentity.workbookContentHash !== artifact.workbookContentHash) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline workbook must match the artifact workbook", path: ["worksheets", worksheetIndex, "baselineIdentity", "workbookContentHash"] });
+    }
+  });
+};
+
+export const f6ModelInterpretationV1ArtifactSchema = f6ModelInterpretationV1ArtifactBaseSchema.superRefine((artifact, context) => {
+  validateF6ModelInterpretationArtifact(artifact, context);
+});
+
+export const f6AdjustmentClassSchema = z.enum([
+  "factor_nominal",
+  "system_mean_shift",
+  "system_specification",
+  "factor_tolerance",
+]);
+
+const f6AssessmentDispositionSchema = z.enum([
+  "RECOMMENDED",
+  "CONSIDER",
+  "INSUFFICIENT_EVIDENCE",
+  "NOT_RECOMMENDED",
+]);
+
+const f6AssessmentEvidenceReferenceSchema = z.union([
+  f6F4ReferenceSchema,
+  f6F5ReferenceSchema,
+  f6ArtifactReferenceSchema,
+]);
+
+const f6OptimizationAssessmentBaseSchema = {
+  disposition: f6AssessmentDispositionSchema,
+  priority: z.number().int().positive(),
+  rationale: z.string().trim().min(1),
+  evidenceReferences: z.array(f6AssessmentEvidenceReferenceSchema).min(1),
+};
+
+export const f6OptimizationAssessmentSchema = z.discriminatedUnion("adjustmentClass", [
+  z.object({
+    adjustmentClass: z.literal("factor_nominal"),
+    factor: f6FactorIdentitySchema,
+    ...f6OptimizationAssessmentBaseSchema,
+  }).strict(),
+  z.object({
+    adjustmentClass: z.literal("factor_tolerance"),
+    factor: f6FactorIdentitySchema,
+    ...f6OptimizationAssessmentBaseSchema,
+  }).strict(),
+  z.object({
+    adjustmentClass: z.literal("system_mean_shift"),
+    ...f6OptimizationAssessmentBaseSchema,
+  }).strict(),
+  z.object({
+    adjustmentClass: z.literal("system_specification"),
+    ...f6OptimizationAssessmentBaseSchema,
+  }).strict(),
+]);
+
+const f6ModelInterpretationWorksheetV2BaseSchema = f6ModelInterpretationWorksheetBaseSchema.extend({
+  optimizationAssessment: z.array(f6OptimizationAssessmentSchema).length(4),
+}).strict();
+
+const validateF6ModelInterpretationWorksheetV2 = (
+  worksheet: z.infer<typeof f6ModelInterpretationWorksheetV2BaseSchema>,
+  context: z.RefinementCtx,
+): void => {
+  validateF6ModelInterpretationWorksheet(worksheet, context);
+  const adjustmentClasses = worksheet.optimizationAssessment.map(({ adjustmentClass }) => adjustmentClass);
+  const requiredClasses = [
+    "factor_nominal",
+    "system_mean_shift",
+    "system_specification",
+    "factor_tolerance",
+  ] as const;
+  if (new Set(adjustmentClasses).size !== worksheet.optimizationAssessment.length
+    || requiredClasses.some((requiredClass) => !adjustmentClasses.includes(requiredClass))) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "optimization assessment must contain each governed adjustmentClass exactly once", path: ["optimizationAssessment"] });
+  }
+
+  const priorities = worksheet.optimizationAssessment.map(({ priority }) => priority);
+  if (new Set(priorities).size !== priorities.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "optimization assessment priorities must be unique", path: ["optimizationAssessment"] });
+  }
+
+  worksheet.optimizationAssessment.forEach((assessment, index) => {
+    if ((assessment.adjustmentClass === "factor_nominal" || assessment.adjustmentClass === "factor_tolerance")
+      && !factorBelongsToF6Worksheet(assessment.factor, worksheet.worksheetName, worksheet.tableId)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "assessment factor must belong to the containing worksheet", path: ["optimizationAssessment", index, "factor"] });
+    }
+  });
+};
+
+const f6ModelInterpretationWorksheetV2Schema = f6ModelInterpretationWorksheetV2BaseSchema.superRefine((worksheet, context) => {
+  validateF6ModelInterpretationWorksheetV2(worksheet, context);
+});
+
+const f6ModelInterpretationV2ArtifactBaseSchema = z.object({
+  contractVersion: contractVersionSchema,
+  inputClassification: z.literal("confidential"),
+  interpretationVersion: z.literal("f6-model-interpretation-v2"),
+  workbookContentHash: sha256Schema,
+  generatedAt: z.string().datetime(),
+  worksheets: z.array(f6ModelInterpretationWorksheetV2BaseSchema).min(1),
+}).strict();
+
+export const f6ModelInterpretationV2ArtifactSchema = f6ModelInterpretationV2ArtifactBaseSchema.superRefine((artifact, context) => {
+  const worksheetKeys = new Set<string>();
+  artifact.worksheets.forEach((worksheet, worksheetIndex) => {
+    validateF6ModelInterpretationWorksheetV2(worksheet, {
+      addIssue: (issue) => context.addIssue({ ...issue, path: ["worksheets", worksheetIndex, ...(issue.path ?? [])] }),
+      path: ["worksheets", worksheetIndex],
+    });
+
+    const worksheetKey = `${worksheet.worksheetName}\u0000${worksheet.tableId}`;
+    if (worksheetKeys.has(worksheetKey)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet and table identities must be unique", path: ["worksheets", worksheetIndex] });
+    }
+    worksheetKeys.add(worksheetKey);
+    if (worksheet.baselineIdentity.workbookContentHash !== artifact.workbookContentHash) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline workbook must match the artifact workbook", path: ["worksheets", worksheetIndex, "baselineIdentity", "workbookContentHash"] });
+    }
+  });
+});
+
+export const f6ModelInterpretationArtifactSchema = z.discriminatedUnion("interpretationVersion", [
+  f6ModelInterpretationV1ArtifactBaseSchema,
+  f6ModelInterpretationV2ArtifactBaseSchema,
+]).superRefine((artifact, context) => {
+  if (artifact.interpretationVersion === "f6-model-interpretation-v1") {
+    validateF6ModelInterpretationArtifact(artifact, context);
+    return;
+  }
+  const worksheetKeys = new Set<string>();
+  artifact.worksheets.forEach((worksheet, worksheetIndex) => {
+    validateF6ModelInterpretationWorksheetV2(worksheet, {
+      addIssue: (issue) => context.addIssue({ ...issue, path: ["worksheets", worksheetIndex, ...(issue.path ?? [])] }),
+      path: ["worksheets", worksheetIndex],
+    });
     const worksheetKey = `${worksheet.worksheetName}\u0000${worksheet.tableId}`;
     if (worksheetKeys.has(worksheetKey)) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet and table identities must be unique", path: ["worksheets", worksheetIndex] });
@@ -7910,9 +8260,18 @@ export const f6OptimizationResultSchema = z.object({
 export type F6OptionKind = z.infer<typeof f6OptionKindSchema>;
 export type F6FactorIdentity = z.infer<typeof f6FactorIdentitySchema>;
 export type F6InputBaselineIdentity = z.infer<typeof f6InputBaselineIdentitySchema>;
+export type F6OptimizationTargetV1 = z.infer<typeof f6OptimizationTargetV1Schema>;
+export type F6OptimizationTargetV2 = z.infer<typeof f6OptimizationTargetV2Schema>;
 export type F6OptimizationTargets = z.infer<typeof f6OptimizationTargetsSchema>;
+export type F6OptimizationTargetsV1 = z.infer<typeof f6OptimizationTargetsV1Schema>;
+export type F6OptimizationTargetsV2 = z.infer<typeof f6OptimizationTargetsV2Schema>;
 export type F6AnalysisContext = z.infer<typeof f6AnalysisContextSchema>;
+export type F6AnalysisContextV1 = z.infer<typeof f6AnalysisContextV1Schema>;
+export type F6AnalysisContextV2 = z.infer<typeof f6AnalysisContextV2Schema>;
 export type F6ModelInterpretationArtifact = z.infer<typeof f6ModelInterpretationArtifactSchema>;
+export type F6ModelInterpretationV1Artifact = z.infer<typeof f6ModelInterpretationV1ArtifactSchema>;
+export type F6ModelInterpretationV2Artifact = z.infer<typeof f6ModelInterpretationV2ArtifactSchema>;
+export type F6OptimizationAssessment = z.infer<typeof f6OptimizationAssessmentSchema>;
 export type F6InputDecision = z.infer<typeof f6InputDecisionSchema>;
 export type F6Metrics = z.infer<typeof f6MetricsSchema>;
 export type F6ToleranceChange = z.infer<typeof f6ToleranceChangeSchema>;

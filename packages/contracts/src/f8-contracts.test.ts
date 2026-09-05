@@ -1044,6 +1044,94 @@ describe("F8 session and host contracts", () => {
       lowerTolerance: -0.1,
       additionalMeanShift: 0,
     };
+    const promotionPreviewV2 = {
+      contractVersion: "v1" as const,
+      inputClassification: "confidential" as const,
+      targetVersion: "f6-optimization-targets-v2" as const,
+      workbookContentHash: WORKBOOK_HASH,
+      worksheets: [
+        {
+          worksheetName: "AJ_GAP",
+          tableId: "table-a",
+          baselineIdentity: {
+            calculationVersion: "excel-ta-v1" as const,
+            projectReference: "project-a",
+            runReference: "run-a",
+            workbookContentHash: WORKBOOK_HASH,
+            worksheetName: "AJ_GAP",
+            tableId: "table-a",
+          },
+          targets: [
+            {
+              targetId: "factor-nominal-1",
+              targetType: "factor_nominal" as const,
+              factor: {
+                worksheetName: "AJ_GAP",
+                tableId: "table-a",
+                sourceRow: 12,
+                factorName: "Gap contributor A",
+                unit: "mm",
+              },
+              nominalValue: 1.25,
+              unit: "mm",
+            },
+            {
+              targetId: "system-mean-1",
+              targetType: "system_mean_shift" as const,
+              systemIdentity: {
+                baselineIdentity: {
+                  calculationVersion: "excel-ta-v1" as const,
+                  projectReference: "project-a",
+                  runReference: "run-a",
+                  workbookContentHash: WORKBOOK_HASH,
+                  worksheetName: "AJ_GAP",
+                  tableId: "table-a",
+                },
+                designNominal: 0,
+                mean: 0,
+                rssSigma: 0.04,
+                lowerSpecLimit: -0.1,
+                upperSpecLimit: 0.2,
+                targetCpk: 1,
+                traceReferences: [],
+              },
+              target: {
+                targetMean: 0.02,
+                unit: "mm",
+              },
+            },
+            {
+              targetId: "system-spec-1",
+              targetType: "system_specification" as const,
+              systemIdentity: {
+                baselineIdentity: {
+                  calculationVersion: "excel-ta-v1" as const,
+                  projectReference: "project-a",
+                  runReference: "run-a",
+                  workbookContentHash: WORKBOOK_HASH,
+                  worksheetName: "AJ_GAP",
+                  tableId: "table-a",
+                },
+                designNominal: 0,
+                mean: 0,
+                rssSigma: 0.04,
+                lowerSpecLimit: -0.1,
+                upperSpecLimit: 0.2,
+                targetCpk: 1,
+                traceReferences: [],
+              },
+              lowerSpecLimit: -0.1,
+              upperSpecLimit: 0.2,
+              unit: "mm",
+            },
+          ],
+        },
+      ],
+    };
+    const draftWithPromotionPreviewV2 = {
+      ...draft,
+      promotionPreview: promotionPreviewV2,
+    };
 
     expect(conversationTurnSchema.parse(conversationTurn)).toEqual(conversationTurn);
     expect(hostActionRequestSchema.parse(hostActionRequest)).toEqual(hostActionRequest);
@@ -1053,6 +1141,7 @@ describe("F8 session and host contracts", () => {
     expect(hostActionResultSchema.parse(reconcileResult)).toEqual(reconcileResult);
     expect(hostActionResultSchema.parse(failedHostActionResult)).toEqual(failedHostActionResult);
     expect(f8ScenarioDraftSchema.parse(draft)).toEqual(draft);
+    expect(f8ScenarioDraftSchema.parse(draftWithPromotionPreviewV2)).toEqual(draftWithPromotionPreviewV2);
 
     expect(() => conversationTurnSchema.parse({ ...conversationTurn, outputRoot: "C:/arbitrary" })).toThrow();
     expect(() => conversationTurnSchema.parse({

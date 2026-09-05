@@ -26,6 +26,8 @@ import {
   f5DataInterpretationResultSchema,
   f6ApportionmentResultSchema,
   f6AnalysisContextSchema,
+  f6AnalysisContextV1Schema,
+  f6AnalysisContextV2Schema,
   f6CapabilityBoundSchema,
   f6ControlledScenarioSchema,
   f6CostEvidenceSchema,
@@ -34,9 +36,12 @@ import {
   f6InputFindingSchema,
   f6LegacyOptimizationResultSchema,
   f6ModelInterpretationArtifactSchema,
+  f6ModelInterpretationV2ArtifactSchema,
   f6OptimizationRequestSchema,
   f6OptimizationResultSchema,
   f6OptimizationTargetsSchema,
+  f6OptimizationTargetsV1Schema,
+  f6OptimizationTargetsV2Schema,
   f6ReverseSolveResultSchema,
   f6SupplierCapabilityEvidenceSchema,
   f6ToleranceChangeSchema,
@@ -4466,6 +4471,76 @@ describe("F5.1 objective interpretation contracts", () => {
           },
         }],
       };
+      const analysisContextV2 = {
+        contractVersion: "v1" as const,
+        inputClassification: "confidential" as const,
+        contextVersion: "f6-analysis-context-v2" as const,
+        workbookContentHash: "a".repeat(64),
+        projectName: "Project A",
+        worksheets: [
+          {
+            ...analysisContext.worksheets[0],
+            engineeringNarrative: "Assembly preload and cosmetic flushness must both be protected.",
+          },
+        ],
+      };
+      const optimizationTargetsV2 = {
+        contractVersion: "v1" as const,
+        inputClassification: "confidential" as const,
+        targetVersion: "f6-optimization-targets-v2" as const,
+        workbookContentHash: "a".repeat(64),
+        worksheets: [
+          {
+            worksheetName: "Analysis-A",
+            tableId: "table-a",
+            baselineIdentity,
+            targets: [
+              {
+                targetId: "target-factor-nominal",
+                targetType: "factor_nominal" as const,
+                factor: factorIdentity,
+                nominalValue: 1.25,
+                unit: "mm",
+              },
+              {
+                targetId: "target-system-mean",
+                targetType: "system_mean_shift" as const,
+                systemIdentity: {
+                  baselineIdentity,
+                  designNominal: 0,
+                  mean: 0,
+                  rssSigma: 0.05,
+                  lowerSpecLimit: -0.1,
+                  upperSpecLimit: 0.2,
+                  targetCpk: 1,
+                  traceReferences: [],
+                },
+                target: {
+                  targetMean: 0.02,
+                  unit: "mm",
+                },
+              },
+              {
+                targetId: "target-system-spec",
+                targetType: "system_specification" as const,
+                systemIdentity: {
+                  baselineIdentity,
+                  designNominal: 0,
+                  mean: 0,
+                  rssSigma: 0.05,
+                  lowerSpecLimit: -0.1,
+                  upperSpecLimit: 0.2,
+                  targetCpk: 1,
+                  traceReferences: [],
+                },
+                lowerSpecLimit: -0.1,
+                upperSpecLimit: 0.2,
+                unit: "mm",
+              },
+            ],
+          },
+        ],
+      };
       const artifactReference = (artifact: string) => ({ artifact, contentHash: "b".repeat(64) });
       const modelInterpretation = {
         contractVersion: "v1" as const,
@@ -4504,14 +4579,266 @@ describe("F5.1 objective interpretation contracts", () => {
           reviewStatus: "ME_REVIEW_REQUIRED" as const,
         }],
       };
+      const f4Reference = {
+        ...artifactReference("Feature4-Calculation.json"),
+        runId: "f4-run-a",
+        calculationVersion: "excel-ta-v1" as const,
+      };
+      const f5Reference = {
+        ...artifactReference("Feature5-Report.json"),
+        interpretationVersion: "f5-data-interpretation-v1" as const,
+      };
+      const modelInterpretationV2 = {
+        contractVersion: "v1" as const,
+        inputClassification: "confidential" as const,
+        interpretationVersion: "f6-model-interpretation-v2" as const,
+        workbookContentHash: "a".repeat(64),
+        generatedAt: "2026-09-04T12:00:00.000Z",
+        worksheets: [
+          {
+            worksheetName: "Analysis-A",
+            tableId: "table-a",
+            baselineIdentity,
+            sourceReferences: {
+              f2: artifactReference("Feature2-Report.json"),
+              f4: f4Reference,
+              f5: f5Reference,
+              image: {
+                ...artifactReference("Analysis-A.png"),
+                worksheetName: "Analysis-A",
+              },
+            },
+            narrativeMarkdown: "优先通过 {{calc:top-contribution}} 解决主要风险。",
+            calculationClaims: [
+              {
+                claimId: "top-contribution",
+                outputField: "factors[0].contribution",
+                rawValue: 0.72,
+                displayFormat: "percent" as const,
+                unit: null,
+              },
+            ],
+            optimizationAssessment: [
+              {
+                adjustmentClass: "factor_nominal" as const,
+                disposition: "RECOMMENDED" as const,
+                priority: 1,
+                rationale: "Center the stack through the controlled locating factor.",
+                factor: factorIdentity,
+                evidenceReferences: [f4Reference],
+              },
+              {
+                adjustmentClass: "system_mean_shift" as const,
+                disposition: "CONSIDER" as const,
+                priority: 2,
+                rationale: "The governed mean is off center.",
+                evidenceReferences: [f4Reference],
+              },
+              {
+                adjustmentClass: "system_specification" as const,
+                disposition: "INSUFFICIENT_EVIDENCE" as const,
+                priority: 3,
+                rationale: "Requirement authority is absent.",
+                evidenceReferences: [f5Reference],
+              },
+              {
+                adjustmentClass: "factor_tolerance" as const,
+                disposition: "RECOMMENDED" as const,
+                priority: 4,
+                rationale: "Variance is concentrated.",
+                factor: factorIdentity,
+                evidenceReferences: [f4Reference],
+              },
+            ],
+            reviewStatus: "ME_REVIEW_REQUIRED" as const,
+          },
+        ],
+      };
 
       it("accepts strict identity-bound Optimization Targets and Analysis Context", () => {
         expect(f6OptimizationTargetsSchema.parse(targets)).toEqual(targets);
         expect(f6AnalysisContextSchema.parse(analysisContext)).toEqual(analysisContext);
+        expect(f6OptimizationTargetsV1Schema.parse(targets)).toEqual(targets);
+        expect(f6AnalysisContextV1Schema.parse(analysisContext)).toEqual(analysisContext);
+      });
+
+      it("accepts v2 analysis context and optimization targets through versioned and compatible schemas", () => {
+        expect(f6AnalysisContextV2Schema.parse(analysisContextV2)).toEqual(analysisContextV2);
+        expect(f6OptimizationTargetsV2Schema.parse(optimizationTargetsV2)).toEqual(optimizationTargetsV2);
+        expect(f6AnalysisContextSchema.parse(analysisContextV2)).toEqual(analysisContextV2);
+        expect(f6OptimizationTargetsSchema.parse(optimizationTargetsV2)).toEqual(optimizationTargetsV2);
+      });
+
+      it("rejects v2 mean/system target invariants and identity drift", () => {
+        const worksheet = optimizationTargetsV2.worksheets[0];
+        const meanTarget = worksheet.targets[1];
+        const specificationTarget = worksheet.targets[2];
+        expect(f6OptimizationTargetsV2Schema.safeParse({
+          ...optimizationTargetsV2,
+          worksheets: [{
+            ...worksheet,
+            targets: [
+              worksheet.targets[0],
+              {
+                ...meanTarget,
+                target: {
+                  targetMean: 0.02,
+                  resultingAdditionalMeanShift: -0.01,
+                  unit: "mm",
+                },
+              },
+              specificationTarget,
+            ],
+          }],
+        }).success).toBe(false);
+        expect(f6OptimizationTargetsV2Schema.safeParse({
+          ...optimizationTargetsV2,
+          worksheets: [{
+            ...worksheet,
+            targets: [
+              worksheet.targets[0],
+              meanTarget,
+              {
+                ...specificationTarget,
+                lowerSpecLimit: undefined,
+                upperSpecLimit: undefined,
+              },
+            ],
+          }],
+        }).success).toBe(false);
+        expect(f6OptimizationTargetsV2Schema.safeParse({
+          ...optimizationTargetsV2,
+          worksheets: [{
+            ...worksheet,
+            targets: [
+              {
+                ...worksheet.targets[0],
+                factor: { ...worksheet.targets[0].factor, tableId: "table-b" },
+              },
+              meanTarget,
+              specificationTarget,
+            ],
+          }],
+        }).success).toBe(false);
+        expect(f6OptimizationTargetsV2Schema.safeParse({
+          ...optimizationTargetsV2,
+          worksheets: [{
+            ...worksheet,
+            baselineIdentity: { ...worksheet.baselineIdentity, worksheetName: "Analysis-B" },
+          }],
+        }).success).toBe(false);
+      });
+
+      it("rejects v2 system specification bounds that violate lower-less-than-upper after baseline composition", () => {
+        const worksheet = optimizationTargetsV2.worksheets[0];
+        const meanTarget = worksheet.targets[1];
+        const specificationTarget = worksheet.targets[2];
+        expect(f6OptimizationTargetsV2Schema.safeParse({
+          ...optimizationTargetsV2,
+          worksheets: [{
+            ...worksheet,
+            targets: [
+              worksheet.targets[0],
+              meanTarget,
+              {
+                ...specificationTarget,
+                lowerSpecLimit: 0.3,
+                upperSpecLimit: undefined,
+              },
+            ],
+          }],
+        }).success).toBe(false);
       });
 
       it("accepts a strict identity-bound freeform model interpretation", () => {
         expect(f6ModelInterpretationArtifactSchema.parse(modelInterpretation)).toEqual(modelInterpretation);
+      });
+
+      it("accepts v2 interpretation assessments with four governed adjustment classes", () => {
+        expect(f6ModelInterpretationV2ArtifactSchema.parse(modelInterpretationV2)).toEqual(modelInterpretationV2);
+      });
+
+      it("rejects missing or duplicate assessment classes and duplicate priorities", () => {
+        const worksheet = modelInterpretationV2.worksheets[0];
+        expect(f6ModelInterpretationV2ArtifactSchema.safeParse({
+          ...modelInterpretationV2,
+          worksheets: [{
+            ...worksheet,
+            optimizationAssessment: worksheet.optimizationAssessment.slice(0, 3),
+          }],
+        }).success).toBe(false);
+        expect(f6ModelInterpretationV2ArtifactSchema.safeParse({
+          ...modelInterpretationV2,
+          worksheets: [{
+            ...worksheet,
+            optimizationAssessment: [
+              worksheet.optimizationAssessment[0],
+              worksheet.optimizationAssessment[1],
+              worksheet.optimizationAssessment[2],
+              { ...worksheet.optimizationAssessment[3], adjustmentClass: "factor_nominal" },
+            ],
+          }],
+        }).success).toBe(false);
+        expect(f6ModelInterpretationV2ArtifactSchema.safeParse({
+          ...modelInterpretationV2,
+          worksheets: [{
+            ...worksheet,
+            optimizationAssessment: [
+              worksheet.optimizationAssessment[0],
+              worksheet.optimizationAssessment[1],
+              worksheet.optimizationAssessment[2],
+              { ...worksheet.optimizationAssessment[3], priority: 1 },
+            ],
+          }],
+        }).success).toBe(false);
+      });
+
+      it("rejects invalid v2 assessment factor identity, rationale, unknown keys, and numeric override fields", () => {
+        const worksheet = modelInterpretationV2.worksheets[0];
+        const assessment = worksheet.optimizationAssessment[0];
+        expect(f6ModelInterpretationV2ArtifactSchema.safeParse({
+          ...modelInterpretationV2,
+          worksheets: [{
+            ...worksheet,
+            optimizationAssessment: [
+              {
+                ...assessment,
+                factor: { ...assessment.factor!, tableId: "table-b" },
+              },
+              ...worksheet.optimizationAssessment.slice(1),
+            ],
+          }],
+        }).success).toBe(false);
+        expect(f6ModelInterpretationV2ArtifactSchema.safeParse({
+          ...modelInterpretationV2,
+          worksheets: [{
+            ...worksheet,
+            optimizationAssessment: [
+              { ...assessment, rationale: "" },
+              ...worksheet.optimizationAssessment.slice(1),
+            ],
+          }],
+        }).success).toBe(false);
+        expect(f6ModelInterpretationV2ArtifactSchema.safeParse({
+          ...modelInterpretationV2,
+          worksheets: [{
+            ...worksheet,
+            optimizationAssessment: [
+              { ...assessment, unexpected: true },
+              ...worksheet.optimizationAssessment.slice(1),
+            ],
+          }],
+        }).success).toBe(false);
+        expect(f6ModelInterpretationV2ArtifactSchema.safeParse({
+          ...modelInterpretationV2,
+          worksheets: [{
+            ...worksheet,
+            optimizationAssessment: [
+              { ...assessment, nominalValue: 1.25 },
+              ...worksheet.optimizationAssessment.slice(1),
+            ],
+          }],
+        }).success).toBe(false);
       });
 
       it("rejects invalid model interpretation identity, claims, placeholders, and unknown fields", () => {
