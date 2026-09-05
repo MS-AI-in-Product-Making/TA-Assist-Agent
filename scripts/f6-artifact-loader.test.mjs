@@ -205,6 +205,26 @@ describe("loadF6ArtifactBundle", () => {
     );
   });
 
+  it.each([
+    "system_mean_shift",
+    "system_specification",
+  ])("rejects v2 %s target when systemIdentity baseline drifts", (targetType) => {
+    const bundle = setupBundle();
+    const installed = installF6VersionedContextAndTargets(bundle, {
+      contextVersion: "v2",
+      targetVersion: "v2",
+    });
+    rewriteJson(
+      path.join(installed.evidenceArtifactRoot, installed.optimizationTargetsArtifact),
+      (artifact) => {
+        const target = artifact.worksheets[0].targets.find((item) => item.targetType === targetType);
+        target.systemIdentity.baselineIdentity.tableId = "other-table";
+      },
+    );
+
+    expectRejected(loadF6ArtifactBundle(bundle), "artifact_contract_invalid", "targets.json");
+  });
+
   it("closes each descriptor exactly once after a normal bounded read", () => {
     const bundle = setupBundle();
     let closeCalls = 0;
@@ -721,6 +741,28 @@ describe("F6 optional governed evidence", () => {
       "system_specification",
       "factor_tolerance",
     ]);
+  });
+
+  it.each([
+    ["disposition", (artifact) => {
+      artifact.worksheets[0].optimizationAssessment[0].disposition = "MAYBE";
+    }],
+    ["adjustment class", (artifact) => {
+      artifact.worksheets[0].optimizationAssessment[0].adjustmentClass = "factor_shift";
+    }],
+  ])("soft-rejects a v2 model interpretation with invalid optimization assessment %s", (_label, mutate) => {
+    const bundle = setupBundle();
+    const installed = installF6ModelInterpretation(bundle, { version: "v2" });
+    rewriteJson(installed.filePath, mutate);
+
+    const result = loadF6ArtifactBundle(bundle);
+
+    expect(result.status, JSON.stringify(result)).toBe("accepted");
+    expect(result.modelInterpretation).toBeUndefined();
+    expect(result.inputDecisions.modelInterpretation).toMatchObject({
+      outcome: "REJECTED",
+      reasonCode: "schema_invalid",
+    });
   });
 
   it("loads model interpretation bound to accepted v2 image observations", () => {

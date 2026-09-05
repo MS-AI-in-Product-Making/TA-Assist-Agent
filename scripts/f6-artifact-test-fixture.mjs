@@ -405,6 +405,16 @@ export function installF6VersionedContextAndTargets(
   const calculation = bundle.calculations.find((item) => item.worksheetSelection.worksheetName === worksheet);
   const baseline = baselineIdentity(calculation, worksheet);
   const factor = factorIdentity(calculation);
+  const systemIdentity = {
+    baselineIdentity: baseline,
+    designNominal: calculation.system.designNominal,
+    mean: calculation.system.mean,
+    rssSigma: calculation.system.rssSigma,
+    lowerSpecLimit: calculation.capability.lowerSpecLimit,
+    upperSpecLimit: calculation.capability.upperSpecLimit,
+    targetCpk: calculation.capability.targetCpk,
+    traceReferences: [],
+  };
   const evidence = {
     artifactReference: { artifact: "Feature4-Calculation.json", contentHash: fixtureFileSha256(bundle.paths.f4) },
     worksheetName: worksheet,
@@ -451,23 +461,13 @@ export function installF6VersionedContextAndTargets(
           {
             targetId: "target-system-mean-shift",
             targetType: "system_mean_shift",
-            systemIdentity: {
-              baselineIdentity: baseline,
-              designNominal: calculation.system.designNominal,
-              lowerSpecLimit: calculation.capability.lowerSpecLimit,
-              upperSpecLimit: calculation.capability.upperSpecLimit,
-            },
+            systemIdentity,
             target: { resultingAdditionalMeanShift: 0, unit: factor.unit },
           },
           {
             targetId: "target-system-specification",
             targetType: "system_specification",
-            systemIdentity: {
-              baselineIdentity: baseline,
-              designNominal: calculation.system.designNominal,
-              lowerSpecLimit: calculation.capability.lowerSpecLimit,
-              upperSpecLimit: calculation.capability.upperSpecLimit,
-            },
+            systemIdentity,
             lowerSpecLimit: calculation.capability.lowerSpecLimit + 0.05,
             unit: factor.unit,
           },
