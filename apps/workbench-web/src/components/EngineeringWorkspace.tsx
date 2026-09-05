@@ -13,7 +13,7 @@ import { WorkspacePreparation } from "./WorkspacePreparation.js";
 import { WorkspaceToolbar } from "./WorkspaceToolbar.js";
 import type { DrawingGovernanceResultV2, F2UserReport, F4WorkflowCalculationResult, F6OptimizationResultV2, F8AdoProjection, F8AdoWriteConfirmation, F8ScenarioDraft } from "@ai-assist/contracts";
 import type { F8SessionSnapshot } from "@ai-assist/workbench";
-import { selectCompleteReviewContext } from "@ai-assist/workbench";
+import { selectCompleteReviewContext } from "@ai-assist/workbench/review";
 import { F6Summary } from "./F6Summary.js";
 import { EvidenceImagePane } from "./EvidenceImagePane.js";
 import { WorkbookHealth } from "./WorkbookHealth.js";
