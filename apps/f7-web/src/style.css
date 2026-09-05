@@ -378,26 +378,44 @@ body {
 
 .worksheet-confirmation-busy,
 .worksheet-confirmation-busy .action-button,
-.worksheet-confirmation-busy input {
+.worksheet-confirmation-busy input,
+.workbook-import-busy,
+.workbook-import-busy input {
   cursor: wait;
 }
 
-.worksheet-analysis-spinner {
+.worksheet-analysis-spinner,
+.workbook-import-spinner {
   animation: worksheet-analysis-spin 0.9s linear infinite;
+}
+
+.workbook-import-feedback {
+  margin-top: 12px;
+}
+
+.workbook-import-feedback > p:first-child {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  color: var(--ink);
+  font-weight: 600;
 }
 
 .worksheet-analysis-feedback {
   margin-bottom: 8px;
 }
 
-.worksheet-analysis-progress {
+.worksheet-analysis-progress,
+.workbook-import-progress {
   height: 4px;
   overflow: hidden;
   border-radius: 2px;
   background: #dfe4eb;
 }
 
-.worksheet-analysis-progress span {
+.worksheet-analysis-progress span,
+.workbook-import-progress span {
   display: block;
   width: 38%;
   height: 100%;
@@ -410,6 +428,54 @@ body {
   margin: 6px 0 0;
   color: var(--ink-soft);
   font-size: 0.78rem;
+}
+
+.workbook-import-feedback .subtle {
+  margin: 6px 0 0;
+  font-size: 0.78rem;
+}
+
+.workbook-file-control {
+  display: grid;
+  grid-template-columns: 108px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.workbook-file-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  border: 1px solid var(--ink);
+  border-radius: 6px;
+  padding: 6px 10px;
+  background: var(--ink);
+  color: #fff;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.workbook-file-name {
+  min-width: 0;
+  min-height: 34px;
+  padding: 7px 0;
+  color: var(--ink-soft);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+#workbook-file:focus-visible + .workbook-file-button {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.workbook-file-button[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: wait;
 }
 
 @keyframes worksheet-analysis-spin {
@@ -701,6 +767,14 @@ textarea {
 @media (max-width: 620px) {
   .workflow-steps {
     grid-template-columns: 1fr;
+  }
+
+  .workbook-file-control {
+    grid-template-columns: 1fr;
+  }
+
+  .workbook-file-button {
+    width: 108px;
   }
 }
 
@@ -2351,6 +2425,11 @@ textarea {
   color: #fff;
 }
 
+.dimension-chain-orientation button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .dimension-chain-background-controls {
   display: flex;
   align-items: center;
@@ -2839,6 +2918,11 @@ textarea {
 
 .nominal-positive {
   color: var(--additive);
+  font-weight: 700;
+}
+
+.nominal-neutral {
+  color: var(--ink);
   font-weight: 700;
 }
 

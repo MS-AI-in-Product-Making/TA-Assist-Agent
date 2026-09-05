@@ -413,7 +413,7 @@ describe("F7 phase 1 factor contracts", () => {
     } as const;
 
     expect(f7FactorSetupConfirmationSchema.parse(subtractive)).toEqual(subtractive);
-    expect(f7FactorSetupConfirmationSchema.safeParse({ ...subtractive, designNominal: 0 }).success).toBe(false);
+    expect(f7FactorSetupConfirmationSchema.safeParse({ ...subtractive, designNominal: 0 }).success).toBe(true);
     expect(f7FactorSetupConfirmationSchema.safeParse({ ...subtractive, upperTolerance: -0.01 }).success).toBe(false);
     expect(f7FactorSetupConfirmationSchema.safeParse({ ...subtractive, lowerTolerance: 0.01 }).success).toBe(false);
     expect(f7FactorSetupConfirmationSchema.safeParse({
@@ -598,10 +598,43 @@ describe("F7 phase 1 factor contracts", () => {
     expect(f7FactorEvidenceSchema.safeParse(missingFactorId).success).toBe(false);
   });
 
-  it("limits coefficient to -1|+1 and rejects unknown fields", () => {
+  it("uses coefficient zero for neutral Assembly Shift factors and rejects unknown fields", () => {
     expect(f7LoopCoefficientSchema.safeParse(-1).success).toBe(true);
+    expect(f7LoopCoefficientSchema.safeParse(0).success).toBe(true);
     expect(f7LoopCoefficientSchema.safeParse(1).success).toBe(true);
-    expect(f7LoopCoefficientSchema.safeParse(0).success).toBe(false);
+    expect(f7FactorEvidenceSchema.safeParse({
+      workbookContentHash: SHA256,
+      worksheetName: "Analysis-A",
+      tableId: "table-1",
+      sourceRow: 2,
+      sourceCells: { mean: "Analysis-A!D2" },
+      factorCandidateId: SHA256_2,
+      factorId: SHA256,
+      factorName: "Assembly shift",
+      unit: "mm",
+      unitSource: "user_confirmed",
+      designNominal: 0,
+      upperTolerance: 0.05,
+      lowerTolerance: -0.05,
+      longTermSafetyFactor: 1,
+      sigmaLevel: 2.5,
+      distribution: "Normal",
+      calculatedMean: 0,
+      tolerance: 0.05,
+      oneSigma: 0.02,
+      percentContributionToSigma: 1,
+      loopCoefficient: 0,
+      physicalMean: 0,
+      signedContributionMean: 0,
+      baselineSampler: {
+        samplerId: "NORMAL_LOCATION_SCALE_V1",
+        physicalMean: 0,
+        standardDeviation: 0.02,
+        support: "REAL",
+      },
+      lowerSpecLimit: 0,
+      upperSpecLimit: 0.05,
+    }).success).toBe(true);
 
     const candidate = {
       workbookContentHash: SHA256,

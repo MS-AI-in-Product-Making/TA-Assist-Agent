@@ -12,6 +12,16 @@ describe("F7 factor normalization", () => {
       .toMatchObject({ physicalMean: 0.22, signedContributionMean: 0.22 });
   });
 
+  it("normalizes a zero-mean Assembly Shift with neutral loop coefficient", () => {
+    expect(normalizeF7Factor({ excelSignedMean: 0, loopCoefficient: 0, standardDeviation: 0.0125 }))
+      .toMatchObject({ physicalMean: 0, signedContributionMean: 0 });
+  });
+
+  it("rejects a neutral loop coefficient with a nonzero contribution mean", () => {
+    expect(() => normalizeF7Factor({ excelSignedMean: 0.2, loopCoefficient: 0, standardDeviation: 0.0125 }))
+      .toThrow("F7 factor direction is inconsistent with the Excel contribution mean.");
+  });
+
   it("rejects inconsistent factor direction when physical mean would be negative", () => {
     expect(() => normalizeF7Factor({ excelSignedMean: 0.57, loopCoefficient: -1, standardDeviation: 0.0125 }))
       .toThrow("F7 factor direction is inconsistent with the Excel contribution mean.");
@@ -38,7 +48,7 @@ describe("F7 factor normalization", () => {
   it("rejects runtime-invalid loop coefficient via unknown cast", () => {
     expect(() => normalizeF7Factor({
       excelSignedMean: 0.2,
-      loopCoefficient: 0 as unknown as -1 | 1,
+      loopCoefficient: 2 as unknown as -1 | 0 | 1,
       standardDeviation: 0.0125,
     })).toThrow("F7 factor input is invalid.");
   });
@@ -66,7 +76,7 @@ describe("F7 factor normalization", () => {
     try {
       normalizeF7Factor({
         excelSignedMean: marker,
-        loopCoefficient: 0 as unknown as -1 | 1,
+        loopCoefficient: 2 as unknown as -1 | 0 | 1,
         standardDeviation: 0.0125,
       });
       expect.unreachable();

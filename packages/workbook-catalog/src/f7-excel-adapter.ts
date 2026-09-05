@@ -9,6 +9,7 @@ import {
   type F7FactorCandidate,
   type F7FactorEvidence,
   type F7FactorSetupConfirmation,
+  type F7LoopCoefficient,
   type F7ToleranceDistribution,
   type Distribution,
   type WorksheetSelectionPrompt,
@@ -336,7 +337,7 @@ function buildCandidateId(workbookContentHash: string, worksheetName: string, ta
   ]);
 }
 
-function buildFactorId(candidateId: string, loopCoefficient: -1 | 1): string {
+function buildFactorId(candidateId: string, loopCoefficient: F7LoopCoefficient): string {
   return sha256LengthPrefixed([
     candidateId,
     String(loopCoefficient),
@@ -637,7 +638,7 @@ export function confirmF7FactorSetup(request: {
     const unit = workbookUnitEvidence ?? "unspecified";
     const unitSource = workbookUnitEvidence ? "workbook" : "unspecified";
 
-    const loopCoefficient = Math.sign(confirmation.designNominal) as -1 | 1;
+    const loopCoefficient = Math.sign(confirmation.designNominal) as F7LoopCoefficient;
     const physicalMean = Math.abs(calculatedFactor.calculatedMean);
     const lowerEndpoint = confirmation.designNominal + confirmation.lowerTolerance;
     const upperEndpoint = confirmation.designNominal + confirmation.upperTolerance;
