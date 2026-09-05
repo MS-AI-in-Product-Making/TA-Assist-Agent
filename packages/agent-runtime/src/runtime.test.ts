@@ -285,7 +285,7 @@ describe("handleAgentTurn", () => {
     expect(assistant?.content).toContainEqual({
       kind: "artifact_reference",
       artifactId: "f6-report:7",
-      label: "Feature6-Report.md",
+      label: "Design Optimization Report",
     });
   });
 

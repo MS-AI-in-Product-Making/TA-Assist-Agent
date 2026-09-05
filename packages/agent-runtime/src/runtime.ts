@@ -21,7 +21,7 @@ type StoredResultReceipt = {
 
 type CanonicalReportReference = {
 	readonly artifactId: string;
-	readonly label: "Feature6-Report.md";
+	readonly label: "Design Optimization Report";
 	readonly action: AgentAction;
 };
 
@@ -527,7 +527,7 @@ function selectCanonicalReportReference(snapshot: RuntimeSnapshot): CanonicalRep
 
 	return {
 		artifactId: report.artifactId,
-		label: "Feature6-Report.md",
+		label: "Design Optimization Report",
 		action: { type: "open_report", target: "/report/current", label: "打开当前报告" },
 	};
 }

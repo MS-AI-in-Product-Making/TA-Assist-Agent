@@ -234,7 +234,7 @@ describe("EngineeringWorkspace", () => {
       />,
     );
 
-    expect(screen.getByRole("link", { name: "Feature6-Report.md" })).toHaveAttribute("href", "/api/sessions/session-1/artifacts/f6-report-current");
+    expect(screen.getByRole("link", { name: "Design Optimization Report" })).toHaveAttribute("href", "/api/sessions/session-1/artifacts/f6-report-current");
 
     cleanup();
     render(
@@ -246,7 +246,7 @@ describe("EngineeringWorkspace", () => {
         snapshot={reviewSnapshotWithoutCanonicalReport()}
       />,
     );
-    expect(screen.queryByRole("link", { name: "Feature6-Report.md" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Design Optimization Report" })).not.toBeInTheDocument();
   }, 15_000);
 
   it("keeps workbook full name accessible in the toolbar", () => {

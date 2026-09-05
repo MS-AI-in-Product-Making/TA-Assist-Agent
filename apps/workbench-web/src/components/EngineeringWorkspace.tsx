@@ -93,7 +93,7 @@ export function EngineeringWorkspace(props: EngineeringWorkspaceProps) {
     ? undefined
     : (() => {
         const report = selectCompleteReviewContext(props.snapshot)?.artifacts.get("f6_report");
-        return report === undefined ? undefined : { artifactId: report.artifactId, label: "Feature6-Report.md" };
+        return report === undefined ? undefined : { artifactId: report.artifactId, label: "Design Optimization Report" };
       })();
 
   return (

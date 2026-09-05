@@ -95,7 +95,7 @@ describe("handleParticipant", () => {
     expect(handleTurn).not.toHaveBeenCalled();
   });
 
-  it("shows a controlled Feature6-Report.md entry for canonical open_report action", async () => {
+  it("shows a controlled Design Optimization Report entry for canonical open_report action", async () => {
     const stream = { progress: vi.fn(), markdown: vi.fn(), button: vi.fn() };
     const handleTurn = vi.fn(async () => ({
       responseText: "当前分析已同步。",
@@ -109,6 +109,6 @@ describe("handleParticipant", () => {
       commandId: () => "canonical-report",
     });
 
-    expect(stream.button).toHaveBeenCalledWith({ command: "ta-assist.openCurrentReport", title: "Feature6-Report.md", arguments: [] });
+    expect(stream.button).toHaveBeenCalledWith({ command: "ta-assist.openCurrentReport", title: "Design Optimization Report", arguments: [] });
   });
 });
