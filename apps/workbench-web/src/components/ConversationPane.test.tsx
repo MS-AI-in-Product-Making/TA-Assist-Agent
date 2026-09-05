@@ -9,6 +9,8 @@ describe("ConversationPane", () => {
     render(
       <ConversationPane
         disabled={false}
+        sessionId="session-1"
+        api={{ artifactUrl: (sessionId: string, artifactId: string) => `/api/sessions/${sessionId}/artifacts/${artifactId}` } as never}
         onSubmit={onSubmit}
         turns={[
           {
@@ -44,7 +46,7 @@ describe("ConversationPane", () => {
 
     expect(screen.getByText("Waiting for VS Code model response...")).toBeVisible();
     expect(screen.getByText("Pending model response")).toBeVisible();
-    expect(screen.getByText("Evidence: Data Cleaning factor table")).toBeVisible();
+    expect(screen.getByRole("link", { name: "Data Cleaning factor table" })).toHaveAttribute("href", "/api/sessions/session-1/artifacts/f2-current");
     expect(screen.getByText("Decision record available.")).toBeVisible();
     expect(screen.getByText("Governed command available.")).toBeVisible();
     expect(screen.queryByText(/f6-review|workflow:f6/i)).not.toBeInTheDocument();

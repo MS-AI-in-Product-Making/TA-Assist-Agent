@@ -13,6 +13,7 @@ import { WorkspacePreparation } from "./WorkspacePreparation.js";
 import { WorkspaceToolbar } from "./WorkspaceToolbar.js";
 import type { DrawingGovernanceResultV2, F2UserReport, F4WorkflowCalculationResult, F6OptimizationResultV2, F8AdoProjection, F8AdoWriteConfirmation, F8ScenarioDraft } from "@ai-assist/contracts";
 import type { F8SessionSnapshot } from "@ai-assist/workbench";
+import { selectCompleteReviewContext } from "@ai-assist/workbench";
 import { F6Summary } from "./F6Summary.js";
 import { EvidenceImagePane } from "./EvidenceImagePane.js";
 import { WorkbookHealth } from "./WorkbookHealth.js";
@@ -22,6 +23,7 @@ import { AnalysisProgress } from "./AnalysisProgress.js";
 import { SourceText } from "./SourceText.js";
 import type { FeatureLedgerEntry, ProductStageEntry } from "../workbench-session.js";
 import type { RunnerProgressEvent } from "../api.js";
+import { ReportLink } from "./ReportLink.js";
 
 export interface EngineeringWorkspaceProps {
   readonly model: EngineeringWorkspaceModel;
@@ -87,6 +89,12 @@ export function EngineeringWorkspace(props: EngineeringWorkspaceProps) {
     f4Report: props.f4Report,
     scenarioDrafts: props.scenarioDrafts,
   });
+  const currentReport = props.snapshot === undefined
+    ? undefined
+    : (() => {
+        const report = selectCompleteReviewContext(props.snapshot)?.artifacts.get("f6_report");
+        return report === undefined ? undefined : { artifactId: report.artifactId, label: "Feature6-Report.md" };
+      })();
 
   return (
     <main className="engineering-shell">
@@ -102,6 +110,7 @@ export function EngineeringWorkspace(props: EngineeringWorkspaceProps) {
               <section className="workbook-overview" aria-label="Workbook overview">
                 <WorkbookHealth model={projectWorkbookHealth(props.f2Report)} onNavigate={props.onSelectWorksheet} />
                 <F6Summary report={props.f6Report} selectedWorksheetName={worksheet.worksheetName} />
+                {props.sessionId === undefined ? null : <ReportLink sessionId={props.sessionId} report={currentReport} />}
               </section>
               <header className="worksheet-heading">
                 <div><span>Current worksheet</span><h1>{worksheet.worksheetName}</h1></div>
@@ -129,7 +138,7 @@ export function EngineeringWorkspace(props: EngineeringWorkspaceProps) {
       {assistantOpen ? (
         <aside className="assistant-drawer" aria-label="TA Assistant drawer">
           <button type="button" className="assistant-drawer__close" aria-label="Close TA Assistant" onClick={() => setAssistantOpen(false)}>×</button>
-          <TaAssistantPanel worksheetName={worksheet?.worksheetName} factorName={selectedFactor?.factorName.displayText} turns={props.conversation} disabled={props.loading} onSubmit={(message) => props.onSubmitConversation(message, {
+          <TaAssistantPanel worksheetName={worksheet?.worksheetName} factorName={selectedFactor?.factorName.displayText} turns={props.conversation} api={props.api} sessionId={props.sessionId} disabled={props.loading} onSubmit={(message) => props.onSubmitConversation(message, {
             ...(worksheet === undefined ? {} : { worksheetName: worksheet.worksheetName }),
             ...(selectedFactor === undefined ? {} : { tableId: selectedFactor.tableId, sourceRow: selectedFactor.sourceRow, factorName: selectedFactor.factorName.sourceText }),
             ...(savedScenario?.calculationReference === undefined ? {} : { calculationReference: savedScenario.calculationReference }),

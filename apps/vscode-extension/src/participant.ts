@@ -53,6 +53,10 @@ export async function handleParticipant(
   if (cancellation.isCancellationRequested) return;
   stream.markdown(result.responseText);
   for (const action of result.actions) {
+    if (action.type === "open_report" && action.target === "/report/current") {
+      stream.button({ command: "ta-assist.openCurrentReport", title: "Feature6-Report.md", arguments: [] });
+      continue;
+    }
     stream.button({ command: "ta-assist.openAction", title: action.label, arguments: [action.target] });
   }
 }

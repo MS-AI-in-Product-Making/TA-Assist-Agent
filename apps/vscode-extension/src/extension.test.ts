@@ -93,6 +93,10 @@ function extensionContext() {
   };
 }
 
+async function bindSessionThroughAnalyze() {
+  await registeredCommands.get("ta-assist.analyze")!();
+}
+
 function chatResponse() {
   return { progress: vi.fn(), markdown: vi.fn(), button: vi.fn() };
 }
@@ -260,6 +264,30 @@ describe("extension workbench binding", () => {
 
     expect(importWorkbookMock).toHaveBeenCalledWith({ sessionId: SESSION_ID, workbookPath: "C:\\TA Reports\\report.csv" }, expect.any(Object));
     expect(response.markdown).toHaveBeenCalledWith("Workbook import failed. Open TA Assist Workbench and upload the workbook again.");
+    context.subscriptions.forEach((subscription) => subscription.dispose());
+  });
+
+  it("opens current report only through the controlled loopback command", async () => {
+    const context = await activateExtension();
+    const vscode = await import("vscode");
+    await bindSessionThroughAnalyze();
+
+    await registeredCommands.get("ta-assist.openCurrentReport")!("https://evil.test/ignored");
+
+    expect(vscode.env.openExternal).toHaveBeenCalledWith(expect.objectContaining({ value: expect.stringContaining("#/report/current") }));
+    expect(vscode.env.openExternal).not.toHaveBeenCalledWith(expect.objectContaining({ value: expect.stringContaining("evil.test") }));
+    context.subscriptions.forEach((subscription) => subscription.dispose());
+  });
+
+  it("rejects arbitrary URL targets for action navigation", async () => {
+    const context = await activateExtension();
+    const vscode = await import("vscode");
+    await bindSessionThroughAnalyze();
+    vi.mocked(vscode.env.openExternal).mockClear();
+
+    await registeredCommands.get("ta-assist.openAction")!("https://evil.test/path");
+
+    expect(vscode.env.openExternal).not.toHaveBeenCalled();
     context.subscriptions.forEach((subscription) => subscription.dispose());
   });
 });

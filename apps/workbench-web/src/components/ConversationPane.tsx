@@ -2,16 +2,19 @@ import { useEffect, useState } from "react";
 
 import type { ConversationTurn } from "@ai-assist/conversation";
 
+import type { WorkbenchApi } from "../api.js";
 import { projectProductText } from "../web-projection.js";
 
 export interface ConversationPaneProps {
   readonly turns: readonly ConversationTurn[];
+  readonly api?: WorkbenchApi;
+  readonly sessionId?: string;
   readonly disabled?: boolean;
   readonly suggestedMessage?: string;
   readonly onSubmit: (message: string) => Promise<void>;
 }
 
-export function ConversationPane({ turns, disabled = false, suggestedMessage, onSubmit }: ConversationPaneProps) {
+export function ConversationPane({ turns, api, sessionId, disabled = false, suggestedMessage, onSubmit }: ConversationPaneProps) {
   const [draft, setDraft] = useState("");
   useEffect(() => { if (suggestedMessage !== undefined) setDraft(suggestedMessage); }, [suggestedMessage]);
 
@@ -38,7 +41,13 @@ export function ConversationPane({ turns, disabled = false, suggestedMessage, on
                 if (part.kind === "markdown") return <p key={`${turn.turnId}-${index}`}>{part.markdown}</p>;
                 if (part.kind === "error") return <p key={`${turn.turnId}-${index}`}>Error: {part.error.summary}</p>;
                 if (part.kind === "decision_reference") return <p key={`${turn.turnId}-${index}`}>Decision record available.</p>;
-                if (part.kind === "artifact_reference") return <p key={`${turn.turnId}-${index}`}>Evidence: {projectProductText(part.label ?? part.artifactId)}</p>;
+                if (part.kind === "artifact_reference") {
+                  const label = projectProductText(part.label ?? part.artifactId);
+                  if (api !== undefined && sessionId !== undefined) {
+                    return <p key={`${turn.turnId}-${index}`}>Evidence: <a href={api.artifactUrl(sessionId, part.artifactId)}>{label}</a></p>;
+                  }
+                  return <p key={`${turn.turnId}-${index}`}>Evidence: {label}</p>;
+                }
                 if (part.kind === "command") return <p key={`${turn.turnId}-${index}`}>Governed command available.</p>;
                 return <p key={`${turn.turnId}-${index}`}>Generated governed tool action.</p>;
               })}

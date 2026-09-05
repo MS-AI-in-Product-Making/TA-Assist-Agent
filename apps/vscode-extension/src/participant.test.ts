@@ -94,4 +94,21 @@ describe("handleParticipant", () => {
     await handleParticipant({ prompt: "继续", command: undefined, model: { id: "current" } }, { history: [] }, { progress: vi.fn(), markdown: vi.fn(), button: vi.fn() }, { isCancellationRequested: true }, { sessionId: SESSION_ID, handleTurn, commandId: () => "cancelled" });
     expect(handleTurn).not.toHaveBeenCalled();
   });
+
+  it("shows a controlled Feature6-Report.md entry for canonical open_report action", async () => {
+    const stream = { progress: vi.fn(), markdown: vi.fn(), button: vi.fn() };
+    const handleTurn = vi.fn(async () => ({
+      responseText: "当前分析已同步。",
+      actions: [{ type: "open_report" as const, target: "/report/current", label: "打开当前报告" }],
+      commands: [],
+    }));
+
+    await handleParticipant({ prompt: "open report", command: undefined, model: {} }, { history: [] }, stream, { isCancellationRequested: false }, {
+      sessionId: SESSION_ID,
+      handleTurn,
+      commandId: () => "canonical-report",
+    });
+
+    expect(stream.button).toHaveBeenCalledWith({ command: "ta-assist.openCurrentReport", title: "Feature6-Report.md", arguments: [] });
+  });
 });

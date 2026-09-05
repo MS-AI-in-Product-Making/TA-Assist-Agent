@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { createAnonymousWorkbookZip } from "../../../packages/workbook-catalog/src/test-support.js";
+import { createReviewContextId, openSessionStore } from "@ai-assist/workbench";
 import { buildWorkbenchServer, startWorkbenchServer } from "./server.js";
 import { createBrowserBootstrapRendezvous } from "./bootstrap.js";
 
@@ -407,6 +408,147 @@ describe("workbench server security boundary", () => {
       server.registerArtifactForTest(auth.sessionId, "link", "links/escape/package.json", "package.json", "public", "application/json");
       const linked = await server.inject({ method: "GET", url: `/api/sessions/${auth.sessionId}/artifacts/link`, headers: auth.headers });
       expect(linked.statusCode).toBe(403);
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("serves persisted current f6 report as markdown with safe filename and hash/path/session guards", async () => {
+    const rootDir = testRoot("workbench-server-f6-report-security");
+    await rm(rootDir, { recursive: true, force: true });
+    const server = await buildWorkbenchServer({ rootDir });
+    try {
+      const sessionId = "96969696-9696-4969-8969-969696969696";
+      const auth = await server.testAuthenticate(sessionId);
+      const other = await server.testAuthenticate("97979797-9797-4979-8979-979797979797");
+      const reviewContext = {
+        workbookHash: "a".repeat(64),
+        downstreamSelectionHash: "b".repeat(64),
+        baselineRunReference: "f4-run-current",
+      };
+      const reviewContextId = createReviewContextId(reviewContext);
+      const reportRelativePath = "managed/f6/Feature6-Report.md";
+      const reportPath = join(rootDir, reportRelativePath);
+      const reportBody = "# Final report\n\nValidated content.";
+      await mkdir(dirname(reportPath), { recursive: true });
+      await writeFile(reportPath, reportBody, "utf8");
+
+      const store = await openSessionStore({ rootDir, sessionId });
+      try {
+        await store.applyCommand({
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "seed-review",
+          expectedRevision: 0,
+          command: "upload_workbook",
+          payload: { fileName: "book.xlsx", workbookBytes: new Uint8Array([80, 75, 3, 4]), inputClassification: "confidential" },
+        }, async (snapshot) => ({
+          snapshot: {
+            ...snapshot,
+            revision: 1,
+            inputRevision: 1,
+            state: "review_required",
+            activeAttempt: null,
+            downstreamScopeSelection: {
+              workbookContentHash: "a".repeat(64),
+              selectedWorksheetNames: ["Analysis-A"],
+              confirmed: true,
+              provenance: "user",
+            },
+            artifactRefs: [
+              { artifactId: "f4-current", kind: "f4_calculation", revision: 1, validated: true, reviewContextId },
+              { artifactId: "f5-current", kind: "f5_report", revision: 1, validated: true, reviewContextId },
+              { artifactId: "f6-current", kind: "f6_report", revision: 1, validated: true, reviewContextId },
+            ],
+          },
+          artifactReferences: [
+            {
+              artifactId: "f4-current",
+              sessionId,
+              inputRevision: 1,
+              kind: "f4_calculation",
+              relativePath: "managed/f6/f4.json",
+              reviewContext,
+            },
+            {
+              artifactId: "f5-current",
+              sessionId,
+              inputRevision: 1,
+              kind: "f5_report",
+              relativePath: "managed/f6/f5.json",
+              reviewContext,
+            },
+            {
+              artifactId: "f6-current",
+              sessionId,
+              inputRevision: 1,
+              kind: "f6_report",
+              relativePath: reportRelativePath,
+              contentHash: createHash("sha256").update(reportBody).digest("hex"),
+              reviewContext,
+            },
+          ],
+        }));
+      } finally {
+        await store.close();
+      }
+
+      const seededStore = await openSessionStore({ rootDir, sessionId });
+      try {
+        const seeded = await seededStore.readSnapshot();
+        expect(seeded.inputRevision).toBe(1);
+        expect(await seededStore.readArtifactReference("f6-current")).toMatchObject({
+          kind: "f6_report",
+          relativePath: reportRelativePath,
+          contentHash: createHash("sha256").update(reportBody).digest("hex"),
+        });
+      } finally {
+        await seededStore.close();
+      }
+
+      const ok = await server.inject({ method: "GET", url: `/api/sessions/${sessionId}/artifacts/f6-current`, headers: auth.headers });
+      expect(ok.statusCode).toBe(200);
+      expect(ok.headers["content-type"]).toContain("text/markdown");
+      expect(ok.headers["content-disposition"]).toContain("attachment; filename=\"Feature6-Report.md\"");
+      expect(ok.body).toContain("Validated content.");
+
+      const crossSession = await server.inject({ method: "GET", url: `/api/sessions/${sessionId}/artifacts/f6-current`, headers: other.headers });
+      expect(crossSession.statusCode).toBe(403);
+
+      await writeFile(reportPath, "# Final report\n\nTampered.", "utf8");
+      const hashMismatch = await server.inject({ method: "GET", url: `/api/sessions/${sessionId}/artifacts/f6-current`, headers: auth.headers });
+      expect(hashMismatch.statusCode).toBe(409);
+
+      const staleStore = await openSessionStore({ rootDir, sessionId });
+      try {
+        await staleStore.applyCommand({
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "seed-stale-link",
+          expectedRevision: 1,
+          command: "retry",
+          payload: { stage: "f4_running" },
+        }, async (snapshot) => ({
+          snapshot: {
+            ...snapshot,
+            revision: 2,
+          },
+          artifactReferences: [{
+            artifactId: "f6-stale",
+            sessionId,
+            inputRevision: 1,
+            kind: "f6_report",
+            relativePath: "../package.json",
+            contentHash: "0".repeat(64),
+            reviewContext,
+          }],
+        }));
+      } finally {
+        await staleStore.close();
+      }
+      const stalePath = await server.inject({ method: "GET", url: `/api/sessions/${sessionId}/artifacts/f6-stale`, headers: auth.headers });
+      expect(stalePath.statusCode).toBe(404);
     } finally {
       await server.close();
       await rm(rootDir, { recursive: true, force: true });

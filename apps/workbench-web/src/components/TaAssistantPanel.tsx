@@ -1,6 +1,7 @@
 import type { ConversationTurn } from "@ai-assist/conversation";
 import { useState } from "react";
 
+import type { WorkbenchApi } from "../api.js";
 import { ConversationPane } from "./ConversationPane.js";
 
 export interface RequestContextChip {
@@ -15,12 +16,15 @@ export function TaAssistantPanel({ worksheetName, factorName, turns, disabled, o
   readonly worksheetName?: string;
   readonly factorName?: string;
   readonly turns: readonly ConversationTurn[];
+  readonly api?: WorkbenchApi;
+  readonly sessionId?: string;
   readonly disabled: boolean;
   readonly onSubmit: (message: string) => Promise<void>;
   readonly requestContextChips?: readonly RequestContextChip[];
 }) {
   const [suggestedMessage, setSuggestedMessage] = useState<string>();
   const contextChips = arguments[0].requestContextChips ?? [];
+  const { api, sessionId } = arguments[0];
   return (
     <section className="ta-assistant" aria-label="TA Assistant">
       <div className="assistant-context">
@@ -52,7 +56,7 @@ export function TaAssistantPanel({ worksheetName, factorName, turns, disabled, o
           "Compare the baseline and saved Scenario",
         ].map((prompt) => <button key={prompt} type="button" disabled={disabled} onClick={() => setSuggestedMessage(prompt)}>{prompt}</button>)}
       </div>
-      <ConversationPane turns={turns} disabled={disabled} suggestedMessage={suggestedMessage} onSubmit={onSubmit} />
+      <ConversationPane turns={turns} api={api} sessionId={sessionId} disabled={disabled} suggestedMessage={suggestedMessage} onSubmit={onSubmit} />
     </section>
   );
 }

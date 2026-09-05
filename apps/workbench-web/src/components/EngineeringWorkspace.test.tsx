@@ -220,6 +220,35 @@ describe("EngineeringWorkspace", () => {
     expect(screen.getAllByRole("region", { name: "Optimization summary" })).toHaveLength(1);
   }, 15_000);
 
+  it("shows the current validated report link in workbook overview and avoids synthetic links", () => {
+    const api = {
+      artifactUrl: (sessionId: string, artifactId: string) => `/api/sessions/${sessionId}/artifacts/${artifactId}`,
+    } as never;
+    render(
+      <EngineeringWorkspace
+        {...handlers}
+        model={readyModelWithFactor()}
+        api={api}
+        sessionId="session-1"
+        snapshot={reviewSnapshotWithCanonicalReport()}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: "Feature6-Report.md" })).toHaveAttribute("href", "/api/sessions/session-1/artifacts/f6-report-current");
+
+    cleanup();
+    render(
+      <EngineeringWorkspace
+        {...handlers}
+        model={readyModelWithFactor()}
+        api={api}
+        sessionId="session-1"
+        snapshot={reviewSnapshotWithoutCanonicalReport()}
+      />,
+    );
+    expect(screen.queryByRole("link", { name: "Feature6-Report.md" })).not.toBeInTheDocument();
+  }, 15_000);
+
   it("keeps workbook full name accessible in the toolbar", () => {
     const workbookName = "anonymous-workbook-with-a-very-long-name-for-layout-verification-v2026-09-01.xlsx";
     render(<EngineeringWorkspace {...handlers} model={{ ...readyModelWithFactor(), workbookName }} />);
@@ -313,6 +342,38 @@ function reviewSnapshot(): F8SessionSnapshot {
       calculationMetrics: { mean: 1.7, rssSigma: 0.06, cp: 1.2, cpkL: 1.0, cpkU: 1.2, cpk: 1.0, statisticalMargin: 0.12, worstCaseMargin: 0.05 },
       factorOverrides: [],
     }],
+  };
+}
+
+function reviewSnapshotWithCanonicalReport(): F8SessionSnapshot {
+  return {
+    contractVersion: "f8-session-snapshot-v1",
+    sessionId: "session-1",
+    revision: 5,
+    inputRevision: 2,
+    state: "review_required",
+    activeAttempt: null,
+    priorRunReferences: [],
+    downstreamScopeSelection: {
+      workbookContentHash: "d".repeat(64),
+      selectedWorksheetNames: ["Analysis-A"],
+      confirmed: true,
+      provenance: "user",
+    },
+    artifactRefs: [
+      { artifactId: "f4-current", kind: "f4_calculation", revision: 2, validated: true, reviewContextId: "context-review-1" },
+      { artifactId: "f5-current", kind: "f5_report", revision: 2, validated: true, reviewContextId: "context-review-1" },
+      { artifactId: "f6-report-current", kind: "f6_report", revision: 2, validated: true, reviewContextId: "context-review-1" },
+    ],
+    worksheetCapabilities: [],
+  };
+}
+
+function reviewSnapshotWithoutCanonicalReport(): F8SessionSnapshot {
+  const snapshot = reviewSnapshotWithCanonicalReport();
+  return {
+    ...snapshot,
+    artifactRefs: snapshot.artifactRefs?.map((reference) => reference.kind === "f6_report" ? { ...reference, revision: 1 } : reference),
   };
 }
 

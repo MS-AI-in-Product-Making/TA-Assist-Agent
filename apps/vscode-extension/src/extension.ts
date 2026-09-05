@@ -177,9 +177,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await vscode.commands.executeCommand("revealFileInOS", recordUri);
     }),
     vscode.commands.registerCommand("ta-assist.openAction", async (target: string) => {
-      if (activeWorkbenchUrl === undefined) return;
-      const url = new URL(activeWorkbenchUrl);
+      const origin = requireActiveLoopbackWorkbench(activeWorkbenchUrl);
+      if (origin === undefined || !isAllowedWorkbenchRoute(target)) return;
+      const url = new URL(origin);
       url.hash = target;
+      await vscode.env.openExternal(vscode.Uri.parse(url.toString()));
+    }),
+    vscode.commands.registerCommand("ta-assist.openCurrentReport", async () => {
+      const origin = requireActiveLoopbackWorkbench(activeWorkbenchUrl);
+      if (origin === undefined) return;
+      const url = new URL(origin);
+      url.hash = "/report/current";
       await vscode.env.openExternal(vscode.Uri.parse(url.toString()));
     }),
     vscode.commands.registerCommand("ta-assist.executeHostAction", async () => {
@@ -229,6 +237,26 @@ function isLoopbackWorkbenchUrl(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+function requireActiveLoopbackWorkbench(workbenchUrl: string | undefined): string | undefined {
+  if (workbenchUrl === undefined || !isLoopbackWorkbenchUrl(workbenchUrl)) return undefined;
+  return new URL(workbenchUrl).origin;
+}
+
+function isAllowedWorkbenchRoute(target: string): boolean {
+  return [
+    "/scope",
+    "/scope/downstream",
+    "/ado/preview",
+    "/images/decision",
+    "/analysis/context",
+    "/optimization/targets",
+    "/review",
+    "/status",
+    "/report/current",
+    "/what-if",
+  ].includes(target);
 }
 
 

@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 
 import type { FastifyPluginAsync } from "fastify";
-import { openSessionStore } from "@ai-assist/workbench";
+import { openSessionStore, selectCompleteReviewContext } from "@ai-assist/workbench";
 import { f2UserReportSchema } from "@ai-assist/contracts";
 
 import type { WorkbenchServerContext } from "../server.js";
@@ -50,8 +50,8 @@ export const artifactsRoutes: FastifyPluginAsync<{ readonly context: WorkbenchSe
   });
 };
 
-const ALLOWED_MIME_TYPES = new Set(["text/plain", "application/json", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "image/png", "image/jpeg"]);
-const JSON_ARTIFACT_KINDS = new Set(["f2_report", "f3_report", "f4_calculation", "f4_report", "f5_report", "f6_optimization", "f6_report", "engineering_summary_projection"]);
+const ALLOWED_MIME_TYPES = new Set(["text/plain", "text/markdown; charset=utf-8", "application/json", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "image/png", "image/jpeg"]);
+const JSON_ARTIFACT_KINDS = new Set(["f2_report", "f3_report", "f4_calculation", "f4_report", "f5_report", "f6_optimization", "engineering_summary_projection"]);
 
 async function readPersistedArtifact(
   rootDir: string,
@@ -71,7 +71,21 @@ async function readPersistedArtifact(
   const store = await openSessionStore({ rootDir, sessionId });
   try {
     const reference = await store.readArtifactReference(artifactId);
-    if (reference === undefined || !JSON_ARTIFACT_KINDS.has(reference.kind)) return undefined;
+    if (reference === undefined) return undefined;
+    if (reference.kind === "f6_report") {
+      const snapshot = await store.readSnapshot();
+      const report = selectCompleteReviewContext(snapshot)?.artifacts.get("f6_report");
+      if (report === undefined || report.artifactId !== reference.artifactId || report.revision !== snapshot.inputRevision) return undefined;
+      if (reference.contentHash === undefined || !/^[a-f0-9]{64}$/.test(reference.contentHash)) return undefined;
+      return {
+        relativePath: reference.relativePath,
+        fileName: "Feature6-Report.md",
+        classification: "confidential" as const,
+        mimeType: "text/markdown; charset=utf-8",
+        contentHash: reference.contentHash,
+      };
+    }
+    if (!JSON_ARTIFACT_KINDS.has(reference.kind)) return undefined;
     const fileName = reference.relativePath.split(/[\\/]/).at(-1);
     if (fileName === undefined) return undefined;
     return {
