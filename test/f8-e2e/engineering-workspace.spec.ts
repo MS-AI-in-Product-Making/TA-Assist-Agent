@@ -165,9 +165,29 @@ test("creates a governed model HostAction prompt from the selected worksheet con
   await page.goto(`${workbench.origin}/?session=${workbench.sessionId}`);
   await expect(page.getByRole("combobox", { name: "Worksheet" })).toHaveAttribute("placeholder", "AJ_GAP");
   await page.getByRole("button", { name: "AJ center to C-bucket", description: "中心间隙" }).click();
+  const baselineSystemSpecification = await page.getByLabel("Analysis target details").innerText();
   await page.getByRole("button", { name: "Open TA Assistant" }).click();
   await expect(page.getByRole("button", { name: "Close TA Assistant" })).toBeVisible();
   await workbench.seedConversationTurn({ sessionId: workbench.sessionId, turnId: "external-model-context", sequence: 1 });
+
+  const currentF6ReportArtifactId = reviewArtifactId("f6-report-e2e", workbench.sessionId);
+  const projectionArtifactId = `engineering-summary-projection:1:${workbench.sessionId}`;
+  const webReportResponse = await page.request.get(`${workbench.origin}/api/sessions/${encodeURIComponent(workbench.sessionId)}/artifacts/${encodeURIComponent(currentF6ReportArtifactId)}`);
+  if (!webReportResponse.ok()) throw new Error(`f6 report fetch failed (${webReportResponse.status()})`);
+  const webReportHash = createHash("sha256").update(await webReportResponse.body()).digest("hex");
+  const projectionResponse = await page.request.get(`${workbench.origin}/api/sessions/${encodeURIComponent(workbench.sessionId)}/artifacts/${encodeURIComponent(projectionArtifactId)}`);
+  if (!projectionResponse.ok()) throw new Error(`projection fetch failed (${projectionResponse.status()})`);
+  const webProjection = JSON.parse((await projectionResponse.body()).toString("utf8"));
+  expect(webProjection).toMatchObject({
+    schemaVersion: "ta-engineering-report-projection-v1",
+    worksheetDispositions: [{ worksheetName: "AJ_GAP", disposition: "FAIL" }],
+    worksheets: [
+      expect.objectContaining({
+        worksheetName: "AJ_GAP",
+        gatingEvidenceReferences: expect.arrayContaining(["F6:AJ_GAP:summary"]),
+      }),
+    ],
+  });
 
   const postedSelectionPromise = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith(`/api/sessions/${encodeURIComponent(workbench.sessionId)}/conversation`));
   const postedResponsePromise = page.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith(`/api/sessions/${encodeURIComponent(workbench.sessionId)}/conversation`));
@@ -230,6 +250,8 @@ test("creates a governed model HostAction prompt from the selected worksheet con
       responseText: [
         "Governed evidence: Knowledge Library, Data Parsing, Data Cleaning, TA Calculation, and saved Scenario identities were provided.",
         "Open interpretation: Risk appears driven by the selected factor and Scenario delta.",
+        "Adjustment category: system_specification (model suggestion only).",
+        "Suggested spec delta: LSL -0.15 mm -> -0.10 mm (requires requirement-owner authorization).",
         "Missing evidence: None identified in the current governed context.",
         "Suggested checks: Confirm the selected factor identity before action.",
       ].join("\n"),
@@ -263,6 +285,20 @@ test("creates a governed model HostAction prompt from the selected worksheet con
     role: "assistant",
     content: [{ kind: "text", text: expect.stringContaining("Governed evidence: Knowledge Library, Data Parsing, Data Cleaning, TA Calculation, and saved Scenario identities were provided.") }],
   });
+  const modelTurn = conversation.turns.find((entry) => entry.turnId === `${turnId}:model`);
+  expect(modelTurn).toBeDefined();
+  expect(modelTurn.relatedArtifactIds).toEqual([currentF6ReportArtifactId]);
+  expect(modelTurn.content).toEqual(expect.arrayContaining([
+    { kind: "artifact_reference", artifactId: currentF6ReportArtifactId, label: "Feature6-Report.md" },
+    { kind: "tool_result", actions: [{ type: "open_report", target: "/report/current", label: "打开当前报告" }], commands: [] },
+  ]));
+
+  const vscodeReportResponse = await page.request.get(`${workbench.origin}/api/sessions/${encodeURIComponent(workbench.sessionId)}/artifacts/${encodeURIComponent(modelTurn.relatedArtifactIds[0])}`);
+  if (!vscodeReportResponse.ok()) throw new Error(`vscode report fetch failed (${vscodeReportResponse.status()})`);
+  const vscodeReportHash = createHash("sha256").update(await vscodeReportResponse.body()).digest("hex");
+  expect(vscodeReportHash).toBe(webReportHash);
+
+  await expect(page.getByLabel("Analysis target details")).toHaveText(baselineSystemSpecification);
 });
 
 test("keeps conversation closed by default and toggles drawer without reserving layout width", async ({ page, workbench }) => {
