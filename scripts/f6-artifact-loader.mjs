@@ -234,7 +234,7 @@ function validatedGovernedRoot(artifactRoot, artifactReference, publishRoot = CO
   }
 }
 
-function readOptionalArtifact(evidenceRoot, relativePath, schema, hooks) {
+function readOptionalArtifact(evidenceRoot, relativePath, schema, hooks, options = {}) {
   const artifactReference = path.basename(String(relativePath)) || "artifact.json";
   if (typeof relativePath !== "string" || relativePath.trim().length === 0) {
     return { rejection: inputRejected("artifact_contract_invalid", artifactReference) };
@@ -255,15 +255,39 @@ function readOptionalArtifact(evidenceRoot, relativePath, schema, hooks) {
     }
     const loaded = readVerifiedBytes(realPath, artifactReference, hooks);
     if (loaded.rejection) return loaded;
-    const parsed = schema.safeParse(JSON.parse(loaded.bytes.toString("utf8")));
-    if (!parsed.success) return { rejection: inputRejected("artifact_contract_invalid", artifactReference) };
+    const raw = JSON.parse(loaded.bytes.toString("utf8"));
+    const reference = { artifact: artifactReference, contentHash: createHash("sha256").update(loaded.bytes).digest("hex") };
+    const parsed = schema.safeParse(raw);
+    if (!parsed.success) {
+      const declaredV2 = typeof options.versionField === "string"
+        && typeof options.v2Version === "string"
+        && raw !== null
+        && typeof raw === "object"
+        && !Array.isArray(raw)
+        && raw[options.versionField] === options.v2Version;
+      if (declaredV2) {
+        return {
+          softRejection: { reasonCode: "schema_invalid", raw },
+          reference,
+        };
+      }
+      return { rejection: inputRejected("artifact_contract_invalid", artifactReference) };
+    }
     return {
       value: parsed.data,
-      reference: { artifact: artifactReference, contentHash: createHash("sha256").update(loaded.bytes).digest("hex") },
+      reference,
     };
   } catch (error) {
     return { rejection: inputRejected(error instanceof SyntaxError ? "artifact_contract_invalid" : ioReason(error), artifactReference) };
   }
+}
+
+function rejectedInputDecision(reference, reasonCode) {
+  return {
+    outcome: "REJECTED",
+    ...(reference === undefined ? {} : { artifactReference: reference }),
+    reasonCode,
+  };
 }
 
 function exactUniqueSelection(selectedWorksheetNames, readyNames) {
@@ -632,46 +656,121 @@ export function loadF6ArtifactBundle({
       && record.tableId === requestWorksheet.baselineCalculation.worksheetSelection.tableId
       && isDeepStrictEqual(record.baselineIdentity, baselineIdentityFor(requestWorksheet));
   });
-  if (analysisContextArtifact !== undefined) {
-    const loaded = readOptionalArtifact(evidenceRoot, analysisContextArtifact, f6AnalysisContextSchema, hooks);
-    if (loaded.rejection) return loaded.rejection;
-    if (loaded.value.workbookContentHash !== workbook.contentHash || !exactBaseline(loaded.value.worksheets)) {
-      return inputRejected("artifact_identity_mismatch", loaded.reference.artifact);
-    }
-    for (const worksheet of loaded.value.worksheets) {
-      const requestWorksheet = requestWorksheets.find(({ worksheetName }) => worksheetName === worksheet.worksheetName);
+  const factorMismatchReason = (identity, factors) => {
+    if (factors.some((candidate) => isDeepStrictEqual(candidate, identity))) return undefined;
+    const unitOnlyMismatch = factors.some((candidate) => candidate.worksheetName === identity?.worksheetName
+      && candidate.tableId === identity?.tableId
+      && candidate.sourceRow === identity?.sourceRow
+      && candidate.factorName === identity?.factorName
+      && candidate.unit !== identity?.unit);
+    return unitOnlyMismatch ? "unit_mismatch" : "identity_mismatch";
+  };
+  const contextFailureReason = (artifact) => {
+    if (artifact?.workbookContentHash !== workbook.contentHash) return "identity_mismatch";
+    if (!Array.isArray(artifact?.worksheets)) return "schema_invalid";
+    for (const worksheet of artifact.worksheets) {
+      const requestWorksheet = requestWorksheets.find(({ worksheetName }) => worksheetName === worksheet?.worksheetName);
+      if (!requestWorksheet
+        || worksheet?.tableId !== requestWorksheet.baselineCalculation.worksheetSelection.tableId
+        || !isDeepStrictEqual(worksheet?.baselineIdentity, baselineIdentityFor(requestWorksheet))) {
+        return "identity_mismatch";
+      }
       const factors = requestWorksheet.baselineCalculation.factors.map(factorIdentityFor);
-      if ((worksheet.loopDefinition?.factors ?? []).some(({ factor }) => !factors.some((candidate) => isDeepStrictEqual(candidate, factor)))) {
-        return inputRejected("artifact_identity_mismatch", loaded.reference.artifact);
+      for (const loopFactor of worksheet?.loopDefinition?.factors ?? []) {
+        const reasonCode = factorMismatchReason(loopFactor?.factor, factors);
+        if (reasonCode !== undefined) return reasonCode;
       }
     }
-    analysisContext = loaded.value;
-    inputDecisions.analysisContext = { outcome: "CALLER_AUTHORIZED", artifactReference: loaded.reference };
-    sourceReferences.analysisContext = loaded.reference;
-  }
-  if (optimizationTargetsArtifact !== undefined) {
-    const loaded = readOptionalArtifact(evidenceRoot, optimizationTargetsArtifact, f6OptimizationTargetsSchema, hooks);
-    if (loaded.rejection) return loaded.rejection;
-    if (loaded.value.workbookContentHash !== workbook.contentHash || !exactBaseline(loaded.value.worksheets)) {
-      return inputRejected("artifact_identity_mismatch", loaded.reference.artifact);
-    }
-    for (const worksheet of loaded.value.worksheets) {
-      const requestWorksheet = requestWorksheets.find(({ worksheetName }) => worksheetName === worksheet.worksheetName);
+    return undefined;
+  };
+  const targetsFailureReason = (artifact) => {
+    if (artifact?.workbookContentHash !== workbook.contentHash) return "identity_mismatch";
+    if (!Array.isArray(artifact?.worksheets)) return "schema_invalid";
+    for (const worksheet of artifact.worksheets) {
+      const requestWorksheet = requestWorksheets.find(({ worksheetName }) => worksheetName === worksheet?.worksheetName);
+      if (!requestWorksheet
+        || worksheet?.tableId !== requestWorksheet.baselineCalculation.worksheetSelection.tableId
+        || !isDeepStrictEqual(worksheet?.baselineIdentity, baselineIdentityFor(requestWorksheet))) {
+        return "identity_mismatch";
+      }
+      if (!Array.isArray(worksheet?.targets)) return "schema_invalid";
       const factors = requestWorksheet.baselineCalculation.factors.map(factorIdentityFor);
       for (const target of worksheet.targets) {
-        const identities = target.targetType === "system_target"
-          ? target.apportionment.selectedFactors
-          : Object.hasOwn(target, "factor")
+        const identities = target?.targetType === "system_target"
+          ? target?.apportionment?.selectedFactors ?? []
+          : Object.hasOwn(target ?? {}, "factor")
             ? [target.factor]
             : [];
-        if (identities.some((identity) => !factors.some((candidate) => isDeepStrictEqual(candidate, identity)))) {
-          return inputRejected("artifact_identity_mismatch", loaded.reference.artifact);
+        for (const identity of identities) {
+          const reasonCode = factorMismatchReason(identity, factors);
+          if (reasonCode !== undefined) return reasonCode;
+        }
+        if ((target?.targetType === "system_mean_shift" || target?.targetType === "system_specification")
+          && !isDeepStrictEqual(target?.systemIdentity?.baselineIdentity, baselineIdentityFor(requestWorksheet))) {
+          return "identity_mismatch";
         }
       }
     }
-    optimizationTargets = loaded.value;
-    inputDecisions.optimizationTargets = { outcome: "CALLER_AUTHORIZED", artifactReference: loaded.reference };
-    sourceReferences.optimizationTargets = loaded.reference;
+    return undefined;
+  };
+  if (analysisContextArtifact !== undefined) {
+    const loaded = readOptionalArtifact(
+      evidenceRoot,
+      analysisContextArtifact,
+      f6AnalysisContextSchema,
+      hooks,
+      { versionField: "contextVersion", v2Version: "f6-analysis-context-v2" },
+    );
+    if (loaded.rejection) return loaded.rejection;
+    if (loaded.softRejection) {
+      inputDecisions.analysisContext = rejectedInputDecision(
+        loaded.reference,
+        contextFailureReason(loaded.softRejection.raw) ?? loaded.softRejection.reasonCode,
+      );
+    } else {
+      const isV2Context = loaded.value.contextVersion === "f6-analysis-context-v2";
+      const reasonCode = contextFailureReason(loaded.value);
+      if (reasonCode !== undefined) {
+        if (!isV2Context) return inputRejected("artifact_identity_mismatch", loaded.reference.artifact);
+        inputDecisions.analysisContext = rejectedInputDecision(loaded.reference, reasonCode);
+      } else {
+        analysisContext = loaded.value;
+        inputDecisions.analysisContext = { outcome: "CALLER_AUTHORIZED", artifactReference: loaded.reference };
+        sourceReferences.analysisContext = loaded.reference;
+      }
+    }
+  }
+  if (optimizationTargetsArtifact !== undefined) {
+    const loaded = readOptionalArtifact(
+      evidenceRoot,
+      optimizationTargetsArtifact,
+      f6OptimizationTargetsSchema,
+      hooks,
+      { versionField: "targetVersion", v2Version: "f6-optimization-targets-v2" },
+    );
+    if (loaded.rejection) return loaded.rejection;
+    if (loaded.softRejection) {
+      inputDecisions.optimizationTargets = rejectedInputDecision(
+        loaded.reference,
+        targetsFailureReason(loaded.softRejection.raw) ?? loaded.softRejection.reasonCode,
+      );
+    } else {
+      const isV2Targets = loaded.value.targetVersion === "f6-optimization-targets-v2";
+      const reasonCode = targetsFailureReason(loaded.value);
+      if (reasonCode !== undefined) {
+        if (!isV2Targets) {
+          return inputRejected(
+            reasonCode === "identity_mismatch" ? "artifact_identity_mismatch" : "artifact_contract_invalid",
+            loaded.reference.artifact,
+          );
+        }
+        inputDecisions.optimizationTargets = rejectedInputDecision(loaded.reference, reasonCode);
+      } else {
+        optimizationTargets = loaded.value;
+        inputDecisions.optimizationTargets = { outcome: "CALLER_AUTHORIZED", artifactReference: loaded.reference };
+        sourceReferences.optimizationTargets = loaded.reference;
+      }
+    }
   }
 
   if (modelInterpretationArtifactRoot !== undefined || modelInterpretationArtifact !== undefined) {

@@ -208,7 +208,7 @@ describe("loadF6ArtifactBundle", () => {
   it.each([
     "system_mean_shift",
     "system_specification",
-  ])("rejects v2 %s target when systemIdentity baseline drifts", (targetType) => {
+  ])("soft-rejects v2 %s target when systemIdentity baseline drifts", (targetType) => {
     const bundle = setupBundle();
     const installed = installF6VersionedContextAndTargets(bundle, {
       contextVersion: "v2",
@@ -222,7 +222,72 @@ describe("loadF6ArtifactBundle", () => {
       },
     );
 
+    const result = loadF6ArtifactBundle(bundle);
+
+    expect(result.status, JSON.stringify(result)).toBe("accepted");
+    expect(result.optimizationTargets).toBeUndefined();
+    expect(result.inputDecisions.optimizationTargets).toMatchObject({
+      outcome: "REJECTED",
+      reasonCode: "identity_mismatch",
+      artifactReference: {
+        artifact: "targets.json",
+      },
+    });
+    expect(result.inputDecisions.analysisContext.outcome).toBe("CALLER_AUTHORIZED");
+  });
+
+  it("soft-rejects a v2 Optimization Targets artifact when target unit is schema-invalid", () => {
+    const bundle = setupBundle();
+    const installed = installF6VersionedContextAndTargets(bundle, {
+      contextVersion: "v2",
+      targetVersion: "v2",
+    });
+    rewriteJson(
+      path.join(installed.evidenceArtifactRoot, installed.optimizationTargetsArtifact),
+      (artifact) => {
+        const nominal = artifact.worksheets[0].targets.find((target) => target.targetType === "factor_nominal");
+        nominal.factor.unit = "inch";
+      },
+    );
+
+    const result = loadF6ArtifactBundle(bundle);
+
+    expect(result.status, JSON.stringify(result)).toBe("accepted");
+    expect(result.optimizationTargets).toBeUndefined();
+    expect(result.inputDecisions.optimizationTargets).toMatchObject({
+      outcome: "REJECTED",
+      reasonCode: "unit_mismatch",
+      artifactReference: {
+        artifact: "targets.json",
+      },
+    });
+  });
+
+  it("keeps v1 Optimization Targets unit drift as hard inputRejected", () => {
+    const bundle = setupBundle();
+    const installed = installF6VersionedContextAndTargets(bundle, {
+      contextVersion: "v1",
+      targetVersion: "v1",
+    });
+    rewriteJson(
+      path.join(installed.evidenceArtifactRoot, installed.optimizationTargetsArtifact),
+      (artifact) => {
+        artifact.worksheets[0].targets[0].factor.unit = "inch";
+      },
+    );
+
     expectRejected(loadF6ArtifactBundle(bundle), "artifact_contract_invalid", "targets.json");
+  });
+
+  it("keeps v2 Optimization Targets traversal/path violations as hard inputRejected", () => {
+    const bundle = setupBundle();
+    installF6VersionedContextAndTargets(bundle, {
+      contextVersion: "v2",
+      targetVersion: "v2",
+    });
+    bundle.optimizationTargetsArtifact = `..${path.sep}targets.json`;
+
+    expectRejected(loadF6ArtifactBundle(bundle), "artifact_identity_mismatch", "targets.json");
   });
 
   it("closes each descriptor exactly once after a normal bounded read", () => {
