@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { mkdir, open, realpath, stat } from "node:fs/promises";
+import { lstat, mkdir, open, realpath, stat } from "node:fs/promises";
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1377,6 +1377,31 @@ async function assertOpenedFileContained(
   }
 }
 
+async function assertPathHasNoSymlinkOrJunctionAncestors(rootRealPath: string, absolutePath: string, referencePath: string): Promise<void> {
+  const delta = relative(rootRealPath, absolutePath);
+  if (delta === "" || delta.startsWith("..") || delta.split(/[\\/]/).includes("..")) {
+    throw createTypedError({
+      code: "policy_denied",
+      summary: "Managed file reference was rejected.",
+      suggestedAction: "Retry using a newly uploaded managed file.",
+      affectedInputReferences: [referencePath],
+    });
+  }
+  const segments = delta.split(/[\\/]/).filter(Boolean);
+  let current = rootRealPath;
+  for (const segment of segments) {
+    current = join(current, segment);
+    if ((await lstat(current)).isSymbolicLink()) {
+      throw createTypedError({
+        code: "policy_denied",
+        summary: "Managed file reference was rejected.",
+        suggestedAction: "Retry using a newly uploaded managed file.",
+        affectedInputReferences: [referencePath],
+      });
+    }
+  }
+}
+
 async function artifactReferenceOpsFromRunnerResult(
   rootDir: string,
   snapshot: F8SessionSnapshot,
@@ -1533,7 +1558,7 @@ async function resolveAndValidateBoundF6Artifact(
   label: "analysis context" | "optimization targets",
   validateSchema: (value: unknown) => boolean,
 ): Promise<string> {
-  const managedRoot = resolve(rootDir);
+  const managedRoot = await realpath(resolve(rootDir));
   const absolutePath = resolve(managedRoot, reference.relativePath);
   const boundedPath = relative(managedRoot, absolutePath);
   if (boundedPath.startsWith("..") || resolve(managedRoot, boundedPath) !== absolutePath) {
@@ -1544,16 +1569,39 @@ async function resolveAndValidateBoundF6Artifact(
       affectedInputReferences: [reference.relativePath],
     });
   }
+  const expectedName = basename(boundedPath);
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
   let bytes: Buffer;
   try {
-    bytes = await readFile(absolutePath);
-  } catch {
+    await assertPathHasNoSymlinkOrJunctionAncestors(managedRoot, absolutePath, reference.relativePath);
+    handle = await open(absolutePath, "r");
+    await assertOpenedFileContained(handle, managedRoot, boundedPath, expectedName);
+    await assertPathHasNoSymlinkOrJunctionAncestors(managedRoot, absolutePath, reference.relativePath);
+    const [handleStats, pathStats] = await Promise.all([handle.stat(), stat(absolutePath)]);
+    if (handleStats.dev !== pathStats.dev || handleStats.ino !== pathStats.ino) {
+      throw createTypedError({
+        code: "policy_denied",
+        summary: "Managed file reference was rejected.",
+        suggestedAction: "Retry using a newly uploaded managed file.",
+        affectedInputReferences: [reference.relativePath],
+      });
+    }
+    bytes = await handle.readFile();
+  } catch (error) {
+    const errorCode = typeof error === "object" && error !== null && "code" in error
+      ? (error as { code?: unknown }).code
+      : undefined;
+    if (errorCode === "policy_denied") {
+      throw error;
+    }
     throw createTypedError({
       code: "evidence_mismatch",
       summary: `Feature 6 ${label} artifact is unavailable at the confirmed path.`,
       suggestedAction: "Reconfirm the decision with an existing managed artifact.",
       affectedInputReferences: [reference.relativePath],
     });
+  } finally {
+    await handle?.close();
   }
   const contentHash = createHash("sha256").update(bytes).digest("hex");
   if (contentHash !== reference.contentHash) {

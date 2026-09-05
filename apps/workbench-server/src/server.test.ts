@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -585,6 +585,162 @@ describe("workbench server routes", () => {
     } finally {
       await server.close();
       await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects F6 decision-bound optimization targets that escape managed root via a junction", async ({ skip }) => {
+    const rootDir = testRoot("workbench-server-f6-bound-junction-escape");
+    const outsideRoot = testRoot("workbench-server-f6-bound-junction-outside");
+    await rm(rootDir, { recursive: true, force: true });
+    await rm(outsideRoot, { recursive: true, force: true });
+    const sessionId = "64646464-6464-4646-8646-646464646464";
+    const workbookHash = REVIEW_CONTEXT.workbookHash;
+    const optimizationTargets = {
+      contractVersion: "v1" as const,
+      inputClassification: "confidential" as const,
+      targetVersion: "f6-optimization-targets-v1" as const,
+      workbookContentHash: workbookHash,
+      worksheets: [{
+        worksheetName: "Analysis-A",
+        tableId: "table-a",
+        baselineIdentity: {
+          calculationVersion: "excel-ta-v1" as const,
+          projectReference: "project-a",
+          runReference: REVIEW_CONTEXT.baselineRunReference,
+          workbookContentHash: workbookHash,
+          worksheetName: "Analysis-A",
+          tableId: "table-a",
+        },
+        targets: [{
+          targetId: "target-factor-a",
+          targetType: "factor_tolerance" as const,
+          factor: {
+            worksheetName: "Analysis-A",
+            tableId: "table-a",
+            sourceRow: 14,
+            factorName: "Bracket height",
+            unit: "mm",
+          },
+          upperTolerance: 0.08,
+          lowerTolerance: -0.08,
+          unit: "mm",
+        }],
+      }],
+    };
+
+    await mkdir(outsideRoot, { recursive: true });
+    const externalRelativePath = "external/f6-optimization-targets.json";
+    const contentHash = await writeJsonArtifact(outsideRoot, externalRelativePath, optimizationTargets);
+    const externalAbsolute = join(outsideRoot, externalRelativePath);
+    const linkedParent = join(rootDir, "links");
+    const linkedRoot = join(linkedParent, "escape");
+    await mkdir(linkedParent, { recursive: true });
+    try {
+      await symlink(dirname(externalAbsolute), linkedRoot, "junction");
+    } catch {
+      skip("Junction creation unavailable in this environment.");
+      return;
+    }
+
+    await mkdir(join(rootDir, "runtime", "workbench", "registries", "production-roots"), { recursive: true });
+    await writeFile(
+      join(rootDir, "runtime", "workbench", "registries", "production-roots", `${sessionId}.json`),
+      JSON.stringify({ f1Root: "managed/f1", f2Root: "managed/f2" }),
+    );
+
+    const orchestrator = {
+      runStage: vi.fn(async () => ({ status: "completed" })),
+    } as unknown as TaWorkbookOrchestrator;
+    let stageWorker: PersistentWorkerQueueOptions["worker"];
+    const server = await buildWorkbenchServer({
+      rootDir,
+      orchestrator,
+      skipWebAssets: true,
+      queueFactory: async (options) => {
+        stageWorker = options.worker;
+        return {
+        async enqueue(job) { return { jobId: job.jobId, attemptId: job.attemptId, status: "queued" as const }; },
+        async cancel() { return false; },
+        async reconcile() {},
+      };
+      },
+    });
+    try {
+      await server.testAuthenticate(sessionId);
+      expect(stageWorker).toBeDefined();
+      const store = await openSessionStore({ rootDir, sessionId });
+      try {
+        await store.applyCommand({
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "seed-f6-retry",
+          expectedRevision: 0,
+          command: "upload_workbook",
+          payload: { fileName: "book.xlsx", workbookBytes: new Uint8Array([80, 75, 3, 4]), inputClassification: "confidential" },
+        }, async (snapshot) => ({
+          snapshot: {
+            ...snapshot,
+            revision: 1,
+            inputRevision: 1,
+            state: "f6_running",
+            initialScopeSelection: {
+              workbookContentHash: workbookHash,
+              selectedWorksheetNames: ["Analysis-A"],
+              confirmed: true,
+              provenance: "user",
+            },
+            downstreamScopeSelection: {
+              workbookContentHash: workbookHash,
+              selectedWorksheetNames: ["Analysis-A"],
+              confirmed: true,
+              provenance: "user",
+            },
+            priorRunReferences: [
+              {
+                featureId: "F2",
+                referenceId: "f2-run-2026-09-05",
+                contractVersion: "v1",
+                workbookHash,
+                runReference: REVIEW_CONTEXT.baselineRunReference,
+              },
+              {
+                featureId: "F6",
+                referenceId: "f6-analysis-context:not_provided",
+                contractVersion: "f6-input-decision-v1",
+                workbookHash,
+              },
+              {
+                featureId: "F6",
+                referenceId: "f6-optimization-targets:provided",
+                contractVersion: "f6-input-decision-v1",
+                workbookHash,
+                runReference: `links/escape/f6-optimization-targets.json#sha256:${contentHash}`,
+              },
+            ],
+            activeAttempt: {
+              attemptId: "seed-f6-retry:f6_running",
+              stage: "f6_running",
+              status: "running",
+              startedAt: "2026-09-05T00:00:00.000Z",
+            },
+          },
+        }));
+      } finally {
+        await store.close();
+      }
+
+      await expect(stageWorker!({
+        jobId: "job-f6-security",
+        attemptId: "attempt-f6-security",
+        kind: "calculation",
+        stage: "f6_running",
+        payload: { sessionId },
+      } as StageJob)).rejects.toMatchObject({ code: "policy_denied" });
+      expect(orchestrator.runStage).not.toHaveBeenCalled();
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+      await rm(outsideRoot, { recursive: true, force: true });
     }
   });
 
