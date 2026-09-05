@@ -417,7 +417,7 @@ const f8ReviewArtifactRefSchema = z
 const f8NonReviewArtifactRefSchema = z
   .object({
     artifactId: boundedContextIdSchema,
-    kind: z.enum(["f2_report", "what_if_draft"]),
+    kind: z.enum(["f2_report", "what_if_draft", "f6_optimization_markdown", "f6_run_summary", "f6_manifest"]),
     revision: z.number().int().nonnegative(),
     validated: z.boolean(),
     sourceReferenceId: promptVisibleIdentitySchema.optional(),

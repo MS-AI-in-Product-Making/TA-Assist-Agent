@@ -288,6 +288,16 @@ function requireDecisionOrder(inputDecisions: any, loaded: any): void {
   }
 }
 
+function verifyCallerAuthorizedHash(
+  expectedHash: string | undefined,
+  decision: { readonly outcome?: unknown; readonly artifactReference?: { readonly contentHash?: unknown } } | undefined,
+): boolean {
+  if (expectedHash === undefined) return true;
+  return decision?.outcome === "CALLER_AUTHORIZED"
+    && typeof decision.artifactReference?.contentHash === "string"
+    && decision.artifactReference.contentHash === expectedHash;
+}
+
 function throwIfAborted(context: RunContext, stage: string): void {
   if (!context.signal.aborted) return;
   throw normalizeRunnerError(new Error(`AbortError: signal already aborted before ${stage}.`), {
@@ -351,6 +361,10 @@ export function runF6Optimization(
       optimizationTargets: loaded.inputDecisions?.optimizationTargets ?? { outcome: "NOT_PROVIDED" },
       modelInterpretation: loaded.inputDecisions?.modelInterpretation ?? { outcome: "NOT_PROVIDED" },
     };
+    if (!verifyCallerAuthorizedHash(request.expectedAnalysisContextContentHash, inputDecisions.analysisContext)
+      || !verifyCallerAuthorizedHash(request.expectedOptimizationTargetsContentHash, inputDecisions.optimizationTargets)) {
+      return failedResult(layout, paths, artifacts, "input_rejected", boundary, staging, { realpath, stat, lstat, randomUUID: randomUuid, open, writeFd, close, rename, beforeRename, afterRename, rm });
+    }
     requireDecisionOrder(inputDecisions, loaded);
 
     failureStage = "optimization";

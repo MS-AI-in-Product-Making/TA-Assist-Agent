@@ -9,7 +9,9 @@ import type { RunContext } from "@ai-assist/workflow-runners";
 export interface ProductionRoots { readonly f1Root: string; readonly f2Root: string; readonly f3Root?: string; readonly f4Root?: string; readonly f5Root?: string; readonly f6Root?: string }
 export interface CallerAuthorizedF6Inputs {
   readonly analysisContextPath?: string;
+  readonly expectedAnalysisContextContentHash?: string;
   readonly optimizationTargetsPath?: string;
+  readonly expectedOptimizationTargetsContentHash?: string;
 }
 
 export interface ProductionStageEnvironment {
@@ -108,7 +110,9 @@ export async function runProductionStage(stage: string, environment: ProductionS
       f5ArtifactRoot: environment.roots.f5Root,
       selectedWorksheetNames: selected,
       ...(environment.callerAuthorizedF6Inputs?.analysisContextPath === undefined ? {} : { analysisContextPath: environment.callerAuthorizedF6Inputs.analysisContextPath }),
+      ...(environment.callerAuthorizedF6Inputs?.expectedAnalysisContextContentHash === undefined ? {} : { expectedAnalysisContextContentHash: environment.callerAuthorizedF6Inputs.expectedAnalysisContextContentHash }),
       ...(environment.callerAuthorizedF6Inputs?.optimizationTargetsPath === undefined ? {} : { optimizationTargetsPath: environment.callerAuthorizedF6Inputs.optimizationTargetsPath }),
+      ...(environment.callerAuthorizedF6Inputs?.expectedOptimizationTargetsContentHash === undefined ? {} : { expectedOptimizationTargetsContentHash: environment.callerAuthorizedF6Inputs.expectedOptimizationTargetsContentHash }),
     };
     const result = requireRuntimeSkillOutput(await orchestrator.runStage("f6_running", {
       inputRevision: environment.snapshot.inputRevision,
@@ -162,10 +166,10 @@ export async function runProductionStage(stage: string, environment: ProductionS
         reviewContext: environment.reviewContext,
         artifactReferences: [
           await artifact(environment.serverRoot, `f6-optimization:${environment.snapshot.inputRevision}`, "f6_optimization", result.optimizationJsonPath),
-          await artifact(environment.serverRoot, `f6-optimization-markdown:${environment.snapshot.inputRevision}`, "f6_report", result.optimizationMdPath),
+          await artifact(environment.serverRoot, `f6-optimization-markdown:${environment.snapshot.inputRevision}`, "f6_optimization_markdown", result.optimizationMdPath),
           await artifact(environment.serverRoot, `f6-report:${environment.snapshot.inputRevision}`, "f6_report", result.finalReportMdPath),
-          await artifact(environment.serverRoot, `f6-run-summary:${environment.snapshot.inputRevision}`, "f6_report", result.runSummaryPath),
-          await artifact(environment.serverRoot, `f6-manifest:${environment.snapshot.inputRevision}`, "f6_report", result.manifestPath),
+          await artifact(environment.serverRoot, `f6-run-summary:${environment.snapshot.inputRevision}`, "f6_run_summary", result.runSummaryPath),
+          await artifact(environment.serverRoot, `f6-manifest:${environment.snapshot.inputRevision}`, "f6_manifest", result.manifestPath),
           await artifact(environment.serverRoot, `engineering-summary-projection:${environment.snapshot.inputRevision}`, "engineering_summary_projection", projectionPath),
         ],
       },
@@ -211,7 +215,7 @@ export function reviewContextFor(snapshot: F8SessionSnapshot, baselineRunReferen
   return { workbookHash: scope.workbookContentHash, downstreamSelectionHash: canonicalSelectedWorksheetSetHash(scope.selectedWorksheetNames), baselineRunReference };
 }
 
-async function artifact(rootDir: string, artifactId: string, kind: "f3_report" | "f4_calculation" | "f4_report" | "f5_report" | "f6_optimization" | "f6_report" | "engineering_summary_projection", absolutePath: string) {
+async function artifact(rootDir: string, artifactId: string, kind: "f3_report" | "f4_calculation" | "f4_report" | "f5_report" | "f6_optimization" | "f6_report" | "f6_optimization_markdown" | "f6_run_summary" | "f6_manifest" | "engineering_summary_projection", absolutePath: string) {
   const bytes = await readFile(absolutePath);
   const relativePath = relative(resolve(rootDir), resolve(absolutePath));
   if (relativePath.startsWith("..")) throw new Error(`${kind} escaped the managed root.`);

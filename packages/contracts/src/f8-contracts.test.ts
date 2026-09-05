@@ -787,6 +787,52 @@ describe("F8 session and host contracts", () => {
     })).toThrow();
   });
 
+  it("accepts non-review F6 artifacts as distinct kinds without expanding review kinds", () => {
+    const snapshot = {
+      contractVersion: "f8-session-snapshot-v1",
+      sessionId: SESSION_ID,
+      revision: 6,
+      inputRevision: 2,
+      state: "review_required",
+      activeAttempt: null,
+      priorRunReferences: [],
+      artifactRefs: [
+        {
+          artifactId: "artifact-f6-markdown-1",
+          kind: "f6_optimization_markdown",
+          revision: 6,
+          validated: true,
+        },
+        {
+          artifactId: "artifact-f6-summary-1",
+          kind: "f6_run_summary",
+          revision: 6,
+          validated: true,
+        },
+        {
+          artifactId: "artifact-f6-manifest-1",
+          kind: "f6_manifest",
+          revision: 6,
+          validated: true,
+        },
+      ],
+    } as const;
+
+    expect(f8SessionSnapshotSchema.parse(snapshot).artifactRefs).toEqual(snapshot.artifactRefs);
+    expect(() => f8SessionSnapshotSchema.parse({
+      ...snapshot,
+      artifactRefs: [
+        {
+          artifactId: "artifact-f6-markdown-1",
+          kind: "f6_optimization_markdown",
+          revision: 6,
+          validated: true,
+          reviewContextId: "a".repeat(64),
+        },
+      ],
+    })).toThrow();
+  });
+
   it("accepts only canonical navigate target and label pairs", () => {
     for (const action of CANONICAL_NAVIGATE_ACTIONS) {
       expect(conversationTurnSchema.parse(conversationTurnWithActions([action])).content[1]).toEqual({

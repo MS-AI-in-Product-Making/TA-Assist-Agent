@@ -1031,7 +1031,13 @@ function withArtifactReferences(
   operations.delete?.forEach((artifactId) => references.delete(artifactId));
   operations.upsert?.forEach((reference) => {
     if (!isReviewArtifactKind(reference.kind)) {
-      if (reference.kind === "f2_report" || reference.kind === "what_if_draft") {
+      if (
+        reference.kind === "f2_report"
+        || reference.kind === "what_if_draft"
+        || reference.kind === "f6_optimization_markdown"
+        || reference.kind === "f6_run_summary"
+        || reference.kind === "f6_manifest"
+      ) {
         references.set(reference.artifactId, {
           artifactId: reference.artifactId,
           kind: reference.kind,

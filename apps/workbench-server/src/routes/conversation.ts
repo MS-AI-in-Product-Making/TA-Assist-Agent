@@ -69,8 +69,14 @@ export const conversationRoutes: FastifyPluginAsync<{ readonly context: Workbenc
     let userTurn;
     try {
       userTurn = await context.conversation.append(conversationTurnSchema.parse({
-        ...envelope.data.turn,
+        contractVersion: "ta-conversation-turn-v1",
+        turnId: envelope.data.turn.turnId,
+        sessionId,
         sequence: nextConversationSequence(turnsBeforeUser),
+        source: "web",
+        role: "user",
+        content: [{ kind: "text", text }],
+        createdAt: new Date().toISOString(),
         relatedArtifactIds: taContext.relatedArtifactIds,
       }));
     } catch {

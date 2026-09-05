@@ -19,7 +19,7 @@ import { readOoxmlWorkbook } from "@ai-assist/workbook-catalog";
 
 interface RunnerArtifactReference {
   readonly artifactId: string;
-  readonly kind: "f1_image" | "f3_report" | "f4_calculation" | "f4_report" | "f5_report" | "f6_optimization" | "f6_report" | "engineering_summary_projection";
+  readonly kind: "f1_image" | "f3_report" | "f4_calculation" | "f4_report" | "f5_report" | "f6_optimization" | "f6_report" | "f6_optimization_markdown" | "f6_run_summary" | "f6_manifest" | "engineering_summary_projection";
   readonly relativePath: string;
   readonly contentHash: string;
 }
@@ -1466,25 +1466,34 @@ async function artifactReferenceOpsFromRunnerResult(
   };
 }
 
-async function resolveCallerAuthorizedF6Inputs(rootDir: string, snapshot: F8SessionSnapshot): Promise<{ readonly analysisContextPath?: string; readonly optimizationTargetsPath?: string }> {
+async function resolveCallerAuthorizedF6Inputs(rootDir: string, snapshot: F8SessionSnapshot): Promise<{
+  readonly analysisContextPath?: string;
+  readonly expectedAnalysisContextContentHash?: string;
+  readonly optimizationTargetsPath?: string;
+  readonly expectedOptimizationTargetsContentHash?: string;
+}> {
   const analysisReference = readF6InputDecisionReference(snapshot, F6_ANALYSIS_CONTEXT_REFERENCE_PREFIX, "analysis context");
   const optimizationReference = readF6InputDecisionReference(snapshot, F6_OPTIMIZATION_TARGETS_REFERENCE_PREFIX, "optimization targets");
+  const parsedAnalysisReference = analysisReference === undefined ? undefined : parseF6BoundReference(analysisReference, "analysis context");
+  const parsedOptimizationReference = optimizationReference === undefined ? undefined : parseF6BoundReference(optimizationReference, "optimization targets");
   return {
-    ...(analysisReference === undefined ? {} : {
+    ...(parsedAnalysisReference === undefined ? {} : {
       analysisContextPath: await resolveAndValidateBoundF6Artifact(
         rootDir,
-        parseF6BoundReference(analysisReference, "analysis context"),
+        parsedAnalysisReference,
         "analysis context",
         (value) => f6AnalysisContextSchema.safeParse(value).success,
       ),
+      expectedAnalysisContextContentHash: parsedAnalysisReference.contentHash,
     }),
-    ...(optimizationReference === undefined ? {} : {
+    ...(parsedOptimizationReference === undefined ? {} : {
       optimizationTargetsPath: await resolveAndValidateBoundF6Artifact(
         rootDir,
-        parseF6BoundReference(optimizationReference, "optimization targets"),
+        parsedOptimizationReference,
         "optimization targets",
         (value) => f6OptimizationTargetsSchema.safeParse(value).success,
       ),
+      expectedOptimizationTargetsContentHash: parsedOptimizationReference.contentHash,
     }),
   };
 }

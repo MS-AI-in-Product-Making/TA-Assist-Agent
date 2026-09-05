@@ -136,4 +136,69 @@ describe("runF6Optimization", () => {
       expect.objectContaining({ modelInterpretation }),
     );
   });
+
+  it("fails closed with input_rejected when caller-confirmed analysis context hash mismatches loaded bundle hash", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "f6-runner-test-"));
+    const runRoot = path.join(root, "publish", "f6-runs", "run-1");
+    const createOptimization = vi.fn(() => ({
+      runStatus: "COMPLETED",
+      summary: {
+        completedWorksheetCount: 0,
+        partiallyCompletedWorksheetCount: 0,
+        calculationFailedWorksheetCount: 0,
+        inputRejectedWorksheetCount: 0,
+        candidateOptionCount: 0,
+        completedOptionCount: 0,
+        failedOptionCount: 0,
+        calculationFailedOptionCount: 0,
+        insufficientEvidenceOptionCount: 0,
+      },
+      worksheets: [],
+    }));
+
+    const result = runF6Optimization({
+      f2ArtifactRoot: "C:/repo/test/demo-output/f2",
+      f3ArtifactRoot: "C:/repo/test/demo-output/f3",
+      f4ArtifactRoot: "C:/repo/test/demo-output/f4",
+      f5ArtifactRoot: "C:/repo/test/demo-output/f5",
+      selectedWorksheetNames: ["Analysis-A"],
+      expectedAnalysisContextContentHash: "a".repeat(64),
+    } as any, context(), {
+      resolveOutputLayout: vi.fn(() => ({
+        runId: "2026-08-24T01-02-03-000Z",
+        runRoot,
+        publishRoot: path.join(root, "publish"),
+        optimizationJsonName: "Feature6-Optimization.json",
+        optimizationMdName: "Feature6-Optimization.md",
+        finalReportMdName: "Feature6-Report.md",
+        runSummaryJsonName: "Feature6-Run-Summary.json",
+        manifestName: "manifest.json",
+      })),
+      loadBundle: vi.fn(() => ({
+        status: "accepted",
+        request: { worksheets: [] },
+        f2Report: { artifactRoot: "C:/repo/test/demo-output/f1" },
+        f3Report: {},
+        f4Report: {},
+        f5Report: {},
+        analysisContext: { contractVersion: "v1", contextVersion: "f6-analysis-context-v2", inputClassification: "confidential", workbookContentHash: "a".repeat(64), worksheets: [] },
+        inputDecisions: {
+          analysisContext: {
+            outcome: "CALLER_AUTHORIZED",
+            artifactReference: { artifact: "Feature6-Analysis-Context.json", contentHash: "b".repeat(64) },
+          },
+          optimizationTargets: { outcome: "NOT_PROVIDED" },
+          modelInterpretation: { outcome: "NOT_PROVIDED" },
+        },
+        sourceReferences: {},
+      })),
+      createOptimization,
+      createFinalReport: vi.fn(() => ({ markdown: "# F6 report\n", reportSummary: { workbookDisposition: "PASS", worksheetDispositions: [] }, projection: {} })),
+      renderOptimization: vi.fn(() => "# F6 optimization\n"),
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.reasonCode).toBe("input_rejected");
+    expect(createOptimization).not.toHaveBeenCalled();
+  });
 });

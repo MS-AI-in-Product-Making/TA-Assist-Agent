@@ -172,7 +172,9 @@ export interface F6OptimizationRequest {
   readonly costPath?: string;
   readonly imageObservationsPath?: string;
   readonly analysisContextPath?: string;
+  readonly expectedAnalysisContextContentHash?: string;
   readonly optimizationTargetsPath?: string;
+  readonly expectedOptimizationTargetsContentHash?: string;
   readonly modelInterpretationPath?: string;
 }
 

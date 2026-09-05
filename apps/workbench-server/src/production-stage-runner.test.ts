@@ -184,7 +184,9 @@ describe("runProductionStage output gating", () => {
           },
           callerAuthorizedF6Inputs: {
             analysisContextPath: "uploads/session/analysis-context-v2.json",
+            expectedAnalysisContextContentHash: "a".repeat(64),
             optimizationTargetsPath: "uploads/session/optimization-targets-v2.json",
+            expectedOptimizationTargetsContentHash: "b".repeat(64),
           },
         },
         {
@@ -214,7 +216,9 @@ describe("runProductionStage output gating", () => {
 
       expect(capturedRequest).toMatchObject({
         analysisContextPath: "uploads/session/analysis-context-v2.json",
+        expectedAnalysisContextContentHash: "a".repeat(64),
         optimizationTargetsPath: "uploads/session/optimization-targets-v2.json",
+        expectedOptimizationTargetsContentHash: "b".repeat(64),
       });
 
       const artifactReferences = (result.result as { artifactReferences: Array<{ artifactId: string; relativePath: string }> }).artifactReferences;
@@ -226,6 +230,15 @@ describe("runProductionStage output gating", () => {
         "f6-manifest:2",
         "engineering-summary-projection:2",
       ]);
+      expect(artifactReferences.map((artifact) => ({ artifactId: artifact.artifactId, kind: (artifact as { kind: string }).kind }))).toEqual([
+        { artifactId: "f6-optimization:2", kind: "f6_optimization" },
+        { artifactId: "f6-optimization-markdown:2", kind: "f6_optimization_markdown" },
+        { artifactId: "f6-report:2", kind: "f6_report" },
+        { artifactId: "f6-run-summary:2", kind: "f6_run_summary" },
+        { artifactId: "f6-manifest:2", kind: "f6_manifest" },
+        { artifactId: "engineering-summary-projection:2", kind: "engineering_summary_projection" },
+      ]);
+      expect(artifactReferences.filter((artifact) => (artifact as { kind: string }).kind === "f6_report")).toHaveLength(1);
       const normalizedPaths = artifactReferences.map((artifact) => artifact.relativePath.replace(/\\/g, "/"));
       expect(normalizedPaths.some((path) => path.endsWith("/managed/f6/Feature6-Optimization.json"))).toBe(true);
       expect(normalizedPaths.some((path) => path.endsWith("/managed/f6/Feature6-Optimization.md"))).toBe(true);

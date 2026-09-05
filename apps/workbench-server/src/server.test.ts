@@ -744,6 +744,138 @@ describe("workbench server routes", () => {
     }
   });
 
+  it("rejects changed caller-authorized analysis context content before running F6 optimization", async () => {
+    const rootDir = testRoot("workbench-server-f6-analysis-context-hash-mismatch");
+    await rm(rootDir, { recursive: true, force: true });
+    const sessionId = "65656565-6565-4656-8656-656565656565";
+    const workbookHash = REVIEW_CONTEXT.workbookHash;
+    const analysisContext = {
+      contractVersion: "v1" as const,
+      inputClassification: "confidential" as const,
+      contextVersion: "f6-analysis-context-v2" as const,
+      workbookContentHash: workbookHash,
+      worksheetCount: 1,
+      defaultSupplierConfidence: "unknown",
+      defaultDatumMaturity: "legacy_unknown",
+      defaultCostBand: "unknown",
+      worksheets: [{
+        worksheetName: "Analysis-A",
+        tableId: "table-a",
+        baselineIdentity: {
+          calculationVersion: "excel-ta-v1" as const,
+          projectReference: "project-a",
+          runReference: REVIEW_CONTEXT.baselineRunReference,
+          workbookContentHash: workbookHash,
+          worksheetName: "Analysis-A",
+          tableId: "table-a",
+        },
+        factors: [],
+      }],
+    };
+    const relativePath = "uploads/session/f6-analysis-context.json";
+    await writeJsonArtifact(rootDir, relativePath, analysisContext);
+
+    await mkdir(join(rootDir, "runtime", "workbench", "registries", "production-roots"), { recursive: true });
+    await writeFile(
+      join(rootDir, "runtime", "workbench", "registries", "production-roots", `${sessionId}.json`),
+      JSON.stringify({ f1Root: "managed/f1", f2Root: "managed/f2" }),
+    );
+
+    const orchestrator = {
+      runStage: vi.fn(async () => ({ status: "completed" })),
+    } as unknown as TaWorkbookOrchestrator;
+    let stageWorker: PersistentWorkerQueueOptions["worker"];
+    const server = await buildWorkbenchServer({
+      rootDir,
+      orchestrator,
+      skipWebAssets: true,
+      queueFactory: async (options) => {
+        stageWorker = options.worker;
+        return {
+          async enqueue(job) { return { jobId: job.jobId, attemptId: job.attemptId, status: "queued" as const }; },
+          async cancel() { return false; },
+          async reconcile() {},
+        };
+      },
+    });
+    try {
+      await server.testAuthenticate(sessionId);
+      expect(stageWorker).toBeDefined();
+      const store = await openSessionStore({ rootDir, sessionId });
+      try {
+        await store.applyCommand({
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "seed-f6-retry",
+          expectedRevision: 0,
+          command: "upload_workbook",
+          payload: { fileName: "book.xlsx", workbookBytes: new Uint8Array([80, 75, 3, 4]), inputClassification: "confidential" },
+        }, async (snapshot) => ({
+          snapshot: {
+            ...snapshot,
+            revision: 1,
+            inputRevision: 1,
+            state: "f6_running",
+            initialScopeSelection: {
+              workbookContentHash: workbookHash,
+              selectedWorksheetNames: ["Analysis-A"],
+              confirmed: true,
+              provenance: "user",
+            },
+            downstreamScopeSelection: {
+              workbookContentHash: workbookHash,
+              selectedWorksheetNames: ["Analysis-A"],
+              confirmed: true,
+              provenance: "user",
+            },
+            priorRunReferences: [
+              {
+                featureId: "F2",
+                referenceId: "f2-run-2026-09-05",
+                contractVersion: "v1",
+                workbookHash,
+                runReference: REVIEW_CONTEXT.baselineRunReference,
+              },
+              {
+                featureId: "F6",
+                referenceId: "f6-analysis-context:provided",
+                contractVersion: "f6-input-decision-v1",
+                workbookHash,
+                runReference: `${relativePath}#sha256:${"f".repeat(64)}`,
+              },
+              {
+                featureId: "F6",
+                referenceId: "f6-optimization-targets:not_provided",
+                contractVersion: "f6-input-decision-v1",
+                workbookHash,
+              },
+            ],
+            activeAttempt: {
+              attemptId: "seed-f6-retry:f6_running",
+              stage: "f6_running",
+              status: "running",
+              startedAt: "2026-09-05T00:00:00.000Z",
+            },
+          },
+        }));
+      } finally {
+        await store.close();
+      }
+
+      await expect(stageWorker!({
+        jobId: "job-f6-hash-mismatch",
+        attemptId: "attempt-f6-hash-mismatch",
+        kind: "calculation",
+        stage: "f6_running",
+        payload: { sessionId },
+      } as StageJob)).rejects.toMatchObject({ code: "evidence_mismatch" });
+      expect(orchestrator.runStage).not.toHaveBeenCalled();
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
   it("imports a host workbook through existing upload validation and queues one upload command", async () => {
     const rootDir = testRoot("workbench-server-host-import");
     await rm(rootDir, { recursive: true, force: true });
