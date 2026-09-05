@@ -9,7 +9,7 @@ Issue #97 要求 Design Optimization 根据前序 Data Cleaning、Drawing Govern
 ## 目标
 
 1. 接收与当前工作簿、worksheet、table 和 baseline calculation 严格绑定的补充工程背景。
-2. 接收并单独确认 nominal、mean shift、system specification 和 tolerance 等优化方向。
+2. 由模型基于当前受治理证据判断应优先调整 nominal、mean shift、system specification 还是 tolerance，并对判断给出可追溯理由。
 3. 使用现有 F4 计算内核重新计算每个可执行方案，不允许模型生成或重算受治理数值。
 4. 按工程优先级组织建议，同时区分设计改善、需求变更和制造能力改善。
 5. 在 Web Workbench 和 VS Code Chat 中强制展示当前、已验证的最终报告链接。
@@ -26,9 +26,26 @@ Issue #97 要求 Design Optimization 根据前序 Data Cleaning、Drawing Govern
 
 ## 方案选择
 
-采用“版本化治理输入 + 确定性方案计算 + 宿主强制报告投影”。
+采用“结构化模型判断 + 版本化治理输入 + 确定性方案计算 + 宿主强制报告投影”。
 
-仅修改 Skill 文案无法保证模型每次输出链接；仅挂载现有报告组件无法补齐 nominal、mean 和 specification 目标，也无法覆盖 VS Code Chat。因此，报告链接必须成为 Agent response contract 和 conversation artifact 的确定性部分，优化方向必须成为版本化 schema 的显式输入。
+仅修改 Skill 文案无法保证模型每次输出链接，也无法校验模型对优化类别的判断；仅挂载现有报告组件无法补齐 nominal、mean 和 specification 目标，也无法覆盖 VS Code Chat。因此，报告链接必须成为 Agent response contract 和 conversation artifact 的确定性部分，模型判断和优化方向必须成为版本化 schema 的显式输入。
+
+## 模型优化判断
+
+新增 `f6-model-interpretation-v2`。它保留 v1 的自然语言解读、受治理数值占位符和 ME review 要求，并为每个 worksheet 增加结构化 `optimizationAssessment`。
+
+模型必须分别评估以下 adjustment class：
+
+- `factor_nominal`
+- `system_mean_shift`
+- `system_specification`
+- `factor_tolerance`
+
+每个评估包含 `RECOMMENDED`、`CONSIDER`、`NOT_RECOMMENDED` 或 `INSUFFICIENT_EVIDENCE` 结论、优先级、工程理由、所用 evidence references，以及适用时严格绑定的 Factor identity。模型不得在该结构中填写 nominal、mean、LSL、USL 或 tolerance 数值。
+
+模型判断只决定应探索哪些优化类别以及报告中的建议顺序，不直接修改 baseline，也不替代计算。F6 deterministic runner 根据被推荐的类别调用现有 F4 calculation kernel 生成候选值并重新计算；无法由确定性求解器安全求值的类别必须标记为需要 caller target 或 ME clarification。
+
+如果 v2 模型判断缺失、校验失败或证据不足，F6 继续使用现有确定性规则作为降级路径，不得让模型失败阻断最终报告。现有 `f6-model-interpretation-v1` 保持只读兼容，但不具备驱动优化类别的权限。
 
 ## 受治理输入
 
@@ -56,20 +73,20 @@ Issue #97 要求 Design Optimization 根据前序 Data Cleaning、Drawing Govern
 
 每个目标必须有唯一 target ID，并通过 workbook、worksheet、table、Factor source row、unit、run reference 和 calculation version 校验。v1 输入继续按原语义读取，不原地扩展 v1 schema。
 
-所有目标在执行前使用单独的 Optimization Targets 预览和确认。自由文本中的“把 nominal 改成 1.2”不能直接触发计算；系统必须先形成受治理 v2 artifact，再由用户确认。
+Optimization Targets 用于用户明确提供具体目标值或覆盖模型建议。所有目标在执行前使用单独的 Optimization Targets 预览和确认。自由文本中的“把 nominal 改成 1.2”不能直接触发计算；系统必须先形成受治理 v2 artifact，再由用户确认。
 
 ## 优化策略
 
 ### 执行顺序
 
-每个 worksheet 的 caller-authorized 方案按以下顺序生成和展示：
+每个 worksheet 先按 `f6-model-interpretation-v2.optimizationAssessment` 选择适用类别，再由确定性 runner 生成方案。多个类别同时被推荐时按以下工程顺序生成和展示：
 
 1. `factor_nominal` 和 `system_mean_shift`
 2. `system_specification`
 3. `factor_tolerance`、`factor_sigma`、`improvement_ratio` 和 `system_target`
 4. 未被 caller target 取代的内置 Top 3 tolerance policy
 
-该顺序是报告和建议排序，不改变 target ID，也不跨 worksheet 合并输入。
+模型可以将证据不足的高优先级类别标记为不适用，但不能自行改变类别的全局排序。该顺序是报告和建议排序，不改变 target ID，也不跨 worksheet 合并输入。Caller-authorized target 可以使对应类别进入计算，但不能绕过其身份、单位、证据和确认校验。
 
 ### 计算边界
 
@@ -79,13 +96,14 @@ Issue #97 要求 Design Optimization 根据前序 Data Cleaning、Drawing Govern
 - tolerance 和 sigma 继续使用现有受治理 solver 和 scenario adapter。
 - 每个方案都保留 baseline metrics、result metrics、delta、scenario calculation reference 和 source artifact references。
 - 任何身份不一致、单位不一致、数值无效或计算失败只阻断对应方案，并以明确 reason code 报告；不得回退为模型估算。
+- 模型只选择 adjustment class、优先级和适用 Factor；目标数值、scenario 和 delta 均由确定性代码产生。
 
 ### 工程语义
 
 - Mean centering 是优化建议，但必须标记物理约束需要 ME 复核。
 - Specification 改动是 requirement change，不得与制造或设计能力改善混为一谈，也不得自动执行。
 - Tolerance tightening 必须保留 supplier capability evidence gate；无证据时维持 `requires_engineering_review` 或 `insufficient_evidence`。
-- 没有 caller targets 时，系统可以生成基于当前计算结果的 centering 建议和既有 Top 3 policy；不得自动生成 specification relaxation。
+- 没有 caller targets 时，系统根据有效的模型分类生成可确定求值的 nominal/centering/tolerance 候选，并保留既有 Top 3 policy 作为降级；不得自动生成 specification relaxation。
 - 模型解释只能说明已有受治理结果，不能产生新的计算值或替代 deterministic option ordering。
 
 ## Workbench 数据流
@@ -93,8 +111,8 @@ Issue #97 要求 Design Optimization 根据前序 Data Cleaning、Drawing Govern
 1. F5 完成后，Workbench 进入 Analysis Context 决策。
 2. 用户可以提供 v1/v2 artifact，系统完成身份校验、完整预览和独立确认；也可以明确选择不提供。
 3. 随后进入 Optimization Targets 决策，执行同样的 artifact 校验、完整预览和独立确认。
-4. F6 production runner 只接收已授权 artifact 的路径和 hash。
-5. F6 runner 调用现有 F4 calculation kernel 计算各方案，生成五件套 artifact，并以 manifest 最后提交。
+4. F6 production runner 只接收通过校验的模型判断和已授权 caller artifact 的路径与 hash。
+5. F6 runner 根据结构化模型判断选择调整类别，再调用现有 F4 calculation kernel 计算各方案，生成五件套 artifact，并以 manifest 最后提交。
 6. server 为当前 revision 注册所有 F6 artifact，至少将 `Feature6-Report.md` 标记为 validated `f6_report`。
 7. session 进入 `review_required` 后，Agent runtime 从 snapshot 投影最终报告引用和打开动作。
 
@@ -142,12 +160,14 @@ Production runner 应注册五个当前 revision artifact reference。最终 Age
 
 ### Contract
 
+- v2 model interpretation 要求四类 adjustment assessment、合法优先级、证据引用和 Factor 身份；拒绝模型提供数值 override。
 - v2 接受正确绑定的 nominal、mean shift 和 specification target。
 - 拒绝重复 target ID、错误 Factor、错误 baseline、单位不一致和无效规格区间。
 - v1 fixture 继续通过原 schema。
 
 ### Optimization
 
+- 模型 assessment 控制进入候选集的 adjustment class，但不能注入任何计算值。
 - 每种新增 target 都通过真实 calculation kernel 产生可复算 scenario。
 - 断言方案排序为 nominal/mean、specification、tolerance。
 - 断言 specification 不会在没有 caller authorization 时自动变化。
@@ -193,9 +213,18 @@ Production runner 应注册五个当前 revision artifact reference。最终 Age
 - `apps/vscode-extension`：Chat 窗口中的受控报告入口。
 - `.github/skills/design-optimization`：更新产品流程与最终 output ledger 规则。
 
+## 范围约束
+
+- 不修改 F1、F2、F3、F4、F5 或 F7 的业务行为、artifact contract 和工作流顺序。
+- 不调整 monorepo package/app 结构，不移动现有目录，不进行无关重构。
+- 对 F4 的使用仅限调用既有 calculation kernel 和 scenario override 能力；不修改 F4 数学定义。
+- 对 Workbench、Agent runtime、Web 和 VS Code extension 的修改仅限传递 F6 输入、注册 F6 artifact 和显示最终报告链接所必需的连接点。
+- 如果实现中发现必须突破上述边界，停止实施并先请求用户确认。
+
 ## 完成标准
 
 - 新目标类型及优先级通过 contract、optimizer 和 report tests。
+- 模型基于每个 worksheet 的受治理证据选择 adjustment class，且不能生成或覆盖受治理数值。
 - 两个可选输入保持独立、显式、可审计的确认状态。
 - F6 所有建议数值均来自 F4-backed scenario。
 - 未授权时不会更改 specification。
