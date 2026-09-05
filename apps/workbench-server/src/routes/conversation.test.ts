@@ -12,6 +12,7 @@ import { buildEvidenceLabeledModelPrompt } from "../model-prompt.js";
 import type { WorkbenchServerContext } from "../server.js";
 
 const SESSION_ID = "68686868-6868-4868-8868-686868686868";
+const REVIEW_CONTEXT_ID = "c".repeat(64);
 
 describe("conversation routes", () => {
   it("rejects client-composed prompt context payloads", async () => {
@@ -208,9 +209,80 @@ describe("conversation routes", () => {
       await app.close();
     }
   });
+
+  it("persists canonical current report reference/action on host-action model result writes", async () => {
+    const modelContext = taModelContextEnvelopeSchema.parse({
+      contractVersion: "ta-model-context-envelope-v1",
+      session: { sessionId: SESSION_ID, revision: 5 },
+      inputRevision: 2,
+      worksheet: { worksheetName: "Analysis-A" },
+      f0Knowledge: [],
+      factorTable: [],
+      relatedArtifactIds: ["f2-current", "f4-current"],
+    });
+    const app = await routeHarness(modelContext, { snapshot: reviewReadySnapshot() });
+    try {
+      const createResponse = await app.inject({
+        method: "POST",
+        url: `/api/sessions/${SESSION_ID}/conversation`,
+        payload: { turn: turn(), selection: { worksheetName: "Analysis-A" } },
+      });
+      expect(createResponse.statusCode).toBe(201);
+
+      const claimResponse = await app.inject({
+        method: "POST",
+        url: `/api/sessions/${SESSION_ID}/host-actions/model:turn-route-1/claim`,
+        headers: { authorization: "Bearer host-claim" },
+        payload: { hostInstanceId: "host-a" },
+      });
+      expect(claimResponse.statusCode).toBe(200);
+
+      const modelPayload = {
+        status: "completed" as const,
+        outcome: { kind: "model_response" as const, turnId: "turn-route-1", responseText: "Review complete." },
+      };
+      const resultResponse = await app.inject({
+        method: "POST",
+        url: `/api/sessions/${SESSION_ID}/host-actions/model:turn-route-1/result`,
+        headers: { authorization: "Bearer host-result" },
+        payload: {
+          contractVersion: "f8-host-action-result-v1",
+          actionId: "model:turn-route-1",
+          hostInstanceId: "host-a",
+          leaseId: claimResponse.json<{ leaseId: string }>().leaseId,
+          status: "completed",
+          resultHash: createHash("sha256").update(JSON.stringify(modelPayload)).digest("hex"),
+          payload: modelPayload,
+        },
+      });
+
+      expect(resultResponse.statusCode).toBe(204);
+      const modelTurn = app.turns().find((entry) => entry.turnId === "turn-route-1:model");
+      expect(modelTurn).toBeDefined();
+      expect(modelTurn).toMatchObject({
+        role: "assistant",
+        relatedArtifactIds: ["f6-report:7"],
+      });
+      expect(modelTurn?.content).toContainEqual({
+        kind: "artifact_reference",
+        artifactId: "f6-report:7",
+        label: "Feature6-Report.md",
+      });
+      expect(modelTurn?.content).toContainEqual({
+        kind: "tool_result",
+        actions: [{ type: "open_report", target: "/report/current", label: "打开当前报告" }],
+        commands: [],
+      });
+    } finally {
+      await app.close();
+    }
+  });
 });
 
-async function routeHarness(modelContext: TaModelContextEnvelope = minimalContext(), options: { readonly turns?: readonly unknown[] } = {}) {
+async function routeHarness(
+  modelContext: TaModelContextEnvelope = minimalContext(),
+  options: { readonly turns?: readonly unknown[]; readonly snapshot?: Record<string, unknown> } = {},
+) {
   let prompt = "";
   const turns: unknown[] = [...(options.turns ?? [])];
   const actions = new Map<string, {
@@ -226,6 +298,7 @@ async function routeHarness(modelContext: TaModelContextEnvelope = minimalContex
   }>();
   const createdActions: Array<{ readonly actionId: string; readonly turnId?: string; readonly prompt?: string }> = [];
   const buildConversationContext = vi.fn(async () => modelContext);
+  const sessionSnapshot = options.snapshot ?? { sessionId: SESSION_ID, revision: 5, state: "review_required" };
   const app = Fastify({ logger: false }) as ReturnType<typeof Fastify> & {
     capturedPrompt(): string;
     turns(): unknown[];
@@ -251,7 +324,7 @@ async function routeHarness(modelContext: TaModelContextEnvelope = minimalContex
     requireBrowserSession: () => ({ kind: "browser", sessionId: SESSION_ID }),
     requireBrowserMutation: () => ({ kind: "browser", sessionId: SESSION_ID }),
     requireAuthenticated: authenticateHost,
-    sessions: { read: async () => ({ sessionId: SESSION_ID, revision: 5 }) },
+    sessions: { read: async () => sessionSnapshot },
     conversation: {
       append: async (value: unknown) => {
         const parsed = conversationTurnSchema.parse(value);
@@ -282,7 +355,7 @@ async function routeHarness(modelContext: TaModelContextEnvelope = minimalContex
     requireBrowserSession: () => ({ kind: "browser", sessionId: SESSION_ID }),
     requireBrowserMutation: () => ({ kind: "browser", sessionId: SESSION_ID }),
     requireAuthenticated: authenticateHost,
-    sessions: { read: async () => ({ sessionId: SESSION_ID, revision: 5, state: "review_required" }) },
+    sessions: { read: async () => sessionSnapshot },
     conversation: {
       append: async (value: unknown) => conversationTurnSchema.parse(value),
       read: readConversation,
@@ -297,7 +370,7 @@ async function routeHarness(modelContext: TaModelContextEnvelope = minimalContex
   await app.register(hostActionsRoutes, { context: {
     requireBrowserMutation: () => ({ kind: "browser", sessionId: SESSION_ID }),
     requireAuthenticated: authenticateHost,
-    sessions: { read: async () => ({ sessionId: SESSION_ID, revision: 5, state: "review_required" }) },
+    sessions: { read: async () => sessionSnapshot },
     conversation: {
       append: async (value: unknown) => {
         const parsed = conversationTurnSchema.parse(value);
@@ -460,4 +533,28 @@ function richContext(): TaModelContextEnvelope {
     },
     relatedArtifactIds: ["f2-current", "f4-current", "f1-current-image"],
   });
+}
+
+function reviewReadySnapshot() {
+  return {
+    contractVersion: "f8-session-snapshot-v1",
+    sessionId: SESSION_ID,
+    revision: 5,
+    inputRevision: 2,
+    state: "review_required",
+    activeAttempt: null,
+    priorRunReferences: [],
+    downstreamScopeSelection: {
+      workbookContentHash: "d".repeat(64),
+      selectedWorksheetNames: ["Analysis-A"],
+      confirmed: true,
+      provenance: "user",
+    },
+    artifactRefs: [
+      { artifactId: "f4-calculation:7", kind: "f4_calculation", revision: 2, validated: true, reviewContextId: REVIEW_CONTEXT_ID },
+      { artifactId: "f5-report:7", kind: "f5_report", revision: 2, validated: true, reviewContextId: REVIEW_CONTEXT_ID },
+      { artifactId: "f6-report:7", kind: "f6_report", revision: 2, validated: true, reviewContextId: REVIEW_CONTEXT_ID },
+    ],
+    worksheetCapabilities: [],
+  };
 }

@@ -1,5 +1,6 @@
 import { conversationTurnSchema, type conversationTurnSchema as conversationTurnSchemaType, type f8SessionSnapshotSchema } from "@ai-assist/contracts";
 import { detectUserLanguage, type UserLanguage } from "@ai-assist/product-language";
+import { selectCompleteReviewContext } from "@ai-assist/workbench";
 
 import { buildAgentContext, projectPendingActions, type AgentContext } from "./context-builder.js";
 import { detectAgentIntent, type AgentIntentType } from "./intents.js";
@@ -16,6 +17,12 @@ type ModelActionCandidate = {
 type StoredResultReceipt = {
 	readonly actions: readonly AgentAction[];
 	readonly commands: readonly AgentCommand[];
+};
+
+type CanonicalReportReference = {
+	readonly artifactId: string;
+	readonly label: "Feature6-Report.md";
+	readonly action: AgentAction;
 };
 
 const inFlightTurnResults = new Map<string, Promise<AgentTurnResult>>();
@@ -141,9 +148,10 @@ async function handleAgentTurnOnce(
 	const policy = createToolPolicy({ state: snapshot.state, intent: intentType });
 
 	const language = detectUserLanguage(request.text);
-	const deterministic = buildDeterministicResponse(snapshot, intentType, wantsWrite, language);
+	const canonicalReport = selectCanonicalReportReference(snapshot);
+	const deterministic = buildDeterministicResponse(snapshot, intentType, wantsWrite, language, canonicalReport);
 	const modelResponse = await maybeCompleteWithModel(wantsWrite, dependencies.model, request.text, context, policy);
-	const resolved = resolveTurnResult(snapshot, intentType, deterministic, modelResponse, language);
+	const resolved = resolveTurnResult(snapshot, intentType, deterministic, modelResponse, language, canonicalReport);
 
 	await dependencies.conversationStore.appendTurn(
 		createAssistantTurn({
@@ -158,6 +166,7 @@ async function handleAgentTurnOnce(
 				actions: resolved.actions,
 				commands: resolved.commands,
 			},
+			reportReference: canonicalReport,
 		}),
 		`${request.commandId}:assistant`,
 	);
@@ -189,12 +198,16 @@ function resolveTurnResult(
 	deterministic: AgentTurnResult,
 	modelResponse: { readonly responseText: string; readonly actions?: readonly ModelActionCandidate[] } | undefined,
 	language: UserLanguage,
+	canonicalReport: CanonicalReportReference | undefined,
 ): AgentTurnResult {
 	if (modelResponse === undefined || !isSafeResponseText(modelResponse.responseText, language)) {
 		return deterministic;
 	}
 
-	const actions = sanitizeActions(snapshot, intent, modelResponse.actions, deterministic.actions, language);
+	const actions = mergeCanonicalReportAction(
+		sanitizeActions(snapshot, intent, modelResponse.actions, deterministic.actions, language),
+		canonicalReport,
+	);
 	return {
 		responseText: sanitizeResponseText(modelResponse.responseText),
 		actions,
@@ -207,6 +220,7 @@ function buildDeterministicResponse(
 	intent: AgentIntentType,
 	wantsWrite: boolean,
 	language: UserLanguage,
+	canonicalReport: CanonicalReportReference | undefined,
 ): AgentTurnResult {
 	const pendingActions = projectPendingActions(snapshot.state);
 	const primaryAction = selectPrimaryAction(snapshot, snapshot.state, intent, pendingActions, language);
@@ -241,7 +255,7 @@ function buildDeterministicResponse(
 			responseText: language === "zh"
 				? `当前分析已同步。下一步请先${primaryAction.label}。`
 				: `The current analysis is synchronized. ${responseActionLabel} before continuing.`,
-			actions: [primaryAction],
+			actions: mergeCanonicalReportAction([primaryAction], canonicalReport),
 			commands: [],
 		};
 	}
@@ -250,7 +264,7 @@ function buildDeterministicResponse(
 		responseText: language === "zh"
 			? "当前分析已同步。可继续查看状态、证据或报告，模型不会直接生成受治理写入命令。"
 			: "The current analysis is synchronized. You can review its status, evidence, or report. The model cannot create governed write commands directly.",
-		actions: [],
+		actions: mergeCanonicalReportAction([], canonicalReport),
 		commands: [],
 	};
 }
@@ -326,6 +340,7 @@ function createAssistantTurn(input: {
 	readonly text: string;
 	readonly createdAt: string;
 	readonly receipt: StoredResultReceipt;
+	readonly reportReference: CanonicalReportReference | undefined;
 }): RuntimeTurn {
 	return conversationTurnSchema.parse({
 		contractVersion: "ta-conversation-turn-v1",
@@ -336,10 +351,13 @@ function createAssistantTurn(input: {
 		role: input.role,
 		content: [
 			{ kind: "text", text: sanitizeResponseText(input.text) },
+			...(input.reportReference === undefined
+				? []
+				: [{ kind: "artifact_reference" as const, artifactId: input.reportReference.artifactId, label: input.reportReference.label }]),
 			{ kind: "tool_result", actions: input.receipt.actions, commands: input.receipt.commands },
 		],
 		createdAt: input.createdAt,
-		relatedArtifactIds: [],
+		relatedArtifactIds: input.reportReference === undefined ? [] : [input.reportReference.artifactId],
 	});
 }
 
@@ -398,9 +416,7 @@ function allowedActionsFor(snapshot: RuntimeSnapshot, intent: AgentIntentType, l
 }
 
 function hasValidatedReport(snapshot: RuntimeSnapshot): boolean {
-	return (snapshot.artifactRefs ?? []).some((reference) => reference.kind === "f6_report"
-		&& reference.validated
-		&& reference.revision === snapshot.revision);
+	return selectCanonicalReportReference(snapshot) !== undefined;
 }
 
 function hasWhatIfWorksheet(snapshot: RuntimeSnapshot): boolean {
@@ -443,7 +459,13 @@ function readStoredResult(
 
 	return {
 		responseText,
-		...(readAssistantReceipt(assistantTurn, snapshot, intent, language) ?? { actions: [], commands: [] }),
+		...(() => {
+			const receipt = readAssistantReceipt(assistantTurn, snapshot, intent, language) ?? { actions: [], commands: [] };
+			return {
+				actions: mergeCanonicalReportAction(receipt.actions, selectCanonicalReportReference(snapshot)),
+				commands: receipt.commands,
+			};
+		})(),
 	};
 }
 
@@ -490,6 +512,35 @@ function canonicalizeStoredActions(
 	}
 
 	return canonical;
+}
+
+function selectCanonicalReportReference(snapshot: RuntimeSnapshot): CanonicalReportReference | undefined {
+	const reviewContext = selectCompleteReviewContext(snapshot);
+	if (reviewContext === undefined) {
+		return undefined;
+	}
+
+	const report = reviewContext.artifacts.get("f6_report");
+	if (report === undefined || !report.validated || report.revision !== snapshot.inputRevision) {
+		return undefined;
+	}
+
+	return {
+		artifactId: report.artifactId,
+		label: "Feature6-Report.md",
+		action: { type: "open_report", target: "/report/current", label: "打开当前报告" },
+	};
+}
+
+function mergeCanonicalReportAction(
+	actions: readonly AgentAction[],
+	canonicalReport: CanonicalReportReference | undefined,
+): readonly AgentAction[] {
+	if (canonicalReport === undefined) {
+		return actions;
+	}
+
+	return dedupeActions([canonicalReport.action, ...actions]);
 }
 
 function isSafeResponseText(text: string, language: UserLanguage): boolean {

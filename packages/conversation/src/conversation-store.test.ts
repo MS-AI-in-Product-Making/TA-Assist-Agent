@@ -100,6 +100,34 @@ describe("ConversationStore", () => {
       await store.close();
     }
   });
+
+  it("round-trips assistant report references and canonical open_report actions", async () => {
+    const rootDir = await createTempRoot();
+    const store = await createConversationStore({ rootDir });
+    try {
+      await store.appendTurn({
+        ...turn("web", "assistant", 1),
+        turnId: "assistant-report-1",
+        content: [
+          { kind: "text", text: "当前分析已同步。" },
+          { kind: "artifact_reference", artifactId: "f6-report:7", label: "Feature6-Report.md" },
+          { kind: "tool_result", actions: [{ type: "open_report", target: "/report/current", label: "打开当前报告" }], commands: [] },
+        ],
+        relatedArtifactIds: ["f6-report:7"],
+      }, "assistant-report-command-1");
+
+      const stored = await store.readTurns(SESSION_ID, { afterSequence: 0 });
+      expect(stored).toHaveLength(1);
+      expect(stored[0]?.content).toContainEqual({
+        kind: "artifact_reference",
+        artifactId: "f6-report:7",
+        label: "Feature6-Report.md",
+      });
+      expect(stored[0]?.relatedArtifactIds).toEqual(["f6-report:7"]);
+    } finally {
+      await store.close();
+    }
+  });
 });
 
 function turn(source: "web" | "vscode" | "cli", role: "user" | "assistant" | "tool", sequence: number) {

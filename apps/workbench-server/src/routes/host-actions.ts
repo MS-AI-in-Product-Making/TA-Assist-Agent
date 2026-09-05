@@ -1,5 +1,6 @@
 import { conversationTurnSchema, hostActionClaimSchema, hostActionRequestSchema, hostActionResultSchema } from "@ai-assist/contracts";
 import { detectUserLanguage, projectProductCapabilityReferences } from "@ai-assist/product-language";
+import { selectCompleteReviewContext, type F8SessionSnapshot } from "@ai-assist/workbench";
 import { createHash } from "node:crypto";
 import type { FastifyPluginAsync } from "fastify";
 
@@ -121,9 +122,25 @@ export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: Workbench
       }
       if (action?.kind === "vscode_model_request" && outcome?.kind === "model_response") {
         if (outcome.turnId !== action.turnId) return reply.code(400).send({ error: "host_action_result_integrity_rejected" });
+        const snapshot = await context.sessions.read(sessionId);
+        const report = snapshot === undefined ? undefined : selectCanonicalReportReference(snapshot);
         const turns = await context.conversation.read(sessionId);
         const responseText = projectProductCapabilityReferences(outcome.responseText, detectUserLanguage(outcome.responseText));
-        const turn = await context.conversation.append(conversationTurnSchema.parse({ contractVersion: "ta-conversation-turn-v1", turnId: `${action.turnId}:model`, sessionId, sequence: nextConversationSequence(turns), source: "vscode", role: "assistant", content: [{ kind: "text", text: responseText }], createdAt: new Date().toISOString(), relatedArtifactIds: [] }));
+        const turn = await context.conversation.append(conversationTurnSchema.parse({
+          contractVersion: "ta-conversation-turn-v1",
+          turnId: `${action.turnId}:model`,
+          sessionId,
+          sequence: nextConversationSequence(turns),
+          source: "vscode",
+          role: "assistant",
+          content: [
+            { kind: "text", text: responseText },
+            ...(report === undefined ? [] : [{ kind: "artifact_reference" as const, artifactId: report.artifactId, label: report.label }]),
+            ...(report === undefined ? [] : [{ kind: "tool_result" as const, actions: [report.action], commands: [] }]),
+          ],
+          createdAt: new Date().toISOString(),
+          relatedArtifactIds: report === undefined ? [] : [report.artifactId],
+        }));
         context.events.publish(sessionId, "conversation_turn_appended", turn);
         await context.syncSessionRecord(sessionId);
       }
@@ -141,4 +158,16 @@ function readHostInstanceId(body: unknown): string {
 
 function nextConversationSequence(turns: readonly { readonly sequence: number }[]): number {
   return Math.max(0, ...turns.map((turn) => turn.sequence)) + 1;
+}
+
+function selectCanonicalReportReference(snapshot: F8SessionSnapshot): { readonly artifactId: string; readonly label: "Feature6-Report.md"; readonly action: { readonly type: "open_report"; readonly target: "/report/current"; readonly label: "打开当前报告" } } | undefined {
+  const reviewContext = selectCompleteReviewContext(snapshot);
+  if (reviewContext === undefined) return undefined;
+  const report = reviewContext.artifacts.get("f6_report");
+  if (report === undefined || !report.validated || report.revision !== snapshot.inputRevision) return undefined;
+  return {
+    artifactId: report.artifactId,
+    label: "Feature6-Report.md",
+    action: { type: "open_report", target: "/report/current", label: "打开当前报告" },
+  };
 }

@@ -8,6 +8,7 @@ import { createConversationStore } from "../../conversation/src/conversation-sto
 import { handleAgentTurn } from "./runtime.js";
 
 const SESSION_ID = "session-task-8-runtime";
+const REVIEW_CONTEXT_ID = "a".repeat(64);
 const stores: InMemoryConversationStore[] = [];
 const tempRoots: string[] = [];
 
@@ -231,10 +232,7 @@ describe("handleAgentTurn", () => {
   });
 
   it("replays a valid stored action with the current canonical label", async () => {
-    const deps = await createDeps(baseSnapshot({
-      state: "review_required",
-      artifactRefs: [{ artifactId: "artifact-report-1", kind: "f6_report", revision: 3, validated: true }],
-    }), {
+    const deps = await createDeps(snapshotWithCurrentValidatedReport(), {
       seedTurns: [
         turnRecord({
           turnId: "canonical-replay-1:user",
@@ -268,6 +266,93 @@ describe("handleAgentTurn", () => {
 
     expect(result.actions).toEqual([{ type: "open_report", target: "/report/current", label: "打开当前报告" }]);
     expect(result.commands).toEqual([]);
+  });
+
+  it("projects a canonical current report reference into the assistant turn and action list", async () => {
+    const deps = await createDeps(snapshotWithCurrentValidatedReport());
+
+    const result = await handleAgentTurn({
+      text: "状态",
+      sessionId: SESSION_ID,
+      commandId: "report-projection-1",
+      source: "web",
+    }, deps);
+
+    expect(result.actions).toContainEqual({ type: "open_report", target: "/report/current", label: "打开当前报告" });
+    const persisted = await deps.conversationStore.readTurns(SESSION_ID);
+    const assistant = persisted.find((turn) => turn.turnId === "report-projection-1:assistant");
+    expect(assistant?.relatedArtifactIds).toEqual(["f6-report:7"]);
+    expect(assistant?.content).toContainEqual({
+      kind: "artifact_reference",
+      artifactId: "f6-report:7",
+      label: "Feature6-Report.md",
+    });
+  });
+
+  it("keeps canonical report action on stored-turn replay even when stored tool_result omits actions", async () => {
+    const deps = await createDeps(snapshotWithCurrentValidatedReport(), {
+      seedTurns: [
+        turnRecord({
+          turnId: "report-replay-1:user",
+          sequence: 1,
+          role: "user",
+          content: [{ kind: "text", text: "状态" }],
+        }),
+        turnRecord({
+          turnId: "report-replay-1:assistant",
+          sequence: 2,
+          source: "system",
+          role: "assistant",
+          content: [
+            { kind: "text", text: "当前分析已同步。" },
+            { kind: "tool_result", actions: [], commands: [] },
+          ],
+          relatedArtifactIds: [],
+        }),
+      ],
+    });
+
+    const result = await handleAgentTurn({
+      text: "状态",
+      sessionId: SESSION_ID,
+      commandId: "report-replay-1",
+      source: "web",
+    }, deps);
+
+    expect(result.actions).toContainEqual({ type: "open_report", target: "/report/current", label: "打开当前报告" });
+  });
+
+  it("does not project report links when the current review context is incomplete", async () => {
+    const deps = await createDeps(baseSnapshot({
+      state: "review_required",
+      artifactRefs: [
+        {
+          artifactId: "f6-report:7",
+          kind: "f6_report",
+          revision: 1,
+          validated: true,
+          reviewContextId: REVIEW_CONTEXT_ID,
+        },
+      ],
+      downstreamScopeSelection: {
+        workbookContentHash: "b".repeat(64),
+        selectedWorksheetNames: ["Analysis-A"],
+        confirmed: true,
+        provenance: "user",
+      },
+    }));
+
+    const result = await handleAgentTurn({
+      text: "状态",
+      sessionId: SESSION_ID,
+      commandId: "report-incomplete-context-1",
+      source: "web",
+    }, deps);
+
+    expect(result.actions).not.toContainEqual({ type: "open_report", target: "/report/current", label: "打开当前报告" });
+    const persisted = await deps.conversationStore.readTurns(SESSION_ID);
+    const assistant = persisted.find((turn) => turn.turnId === "report-incomplete-context-1:assistant");
+    expect(assistant?.content.some((part) => part.kind === "artifact_reference")).toBe(false);
   });
 
   it("single-flights concurrent duplicate handleAgentTurn calls to one model completion and one stored result", async () => {
@@ -385,16 +470,7 @@ describe("handleAgentTurn", () => {
         };
       }),
     };
-    const deps = await createDeps(baseSnapshot({
-      state: "review_required",
-      artifactRefs: [
-        {
-          artifactId: "artifact-report-1",
-          kind: "f6_report",
-          revision: 3,
-          validated: true,
-        },
-      ],
+    const deps = await createDeps(snapshotWithCurrentValidatedReport({
       worksheetCapabilities: [
         {
           worksheetName: "Sheet-1",
@@ -560,6 +636,42 @@ function baseSnapshot(overrides = {}) {
     worksheetCapabilities: [],
     ...overrides,
   };
+}
+
+function snapshotWithCurrentValidatedReport(overrides = {}) {
+  return baseSnapshot({
+    state: "review_required",
+    artifactRefs: [
+      {
+        artifactId: "f4-calculation:7",
+        kind: "f4_calculation",
+        revision: 1,
+        validated: true,
+        reviewContextId: REVIEW_CONTEXT_ID,
+      },
+      {
+        artifactId: "f5-report:7",
+        kind: "f5_report",
+        revision: 1,
+        validated: true,
+        reviewContextId: REVIEW_CONTEXT_ID,
+      },
+      {
+        artifactId: "f6-report:7",
+        kind: "f6_report",
+        revision: 1,
+        validated: true,
+        reviewContextId: REVIEW_CONTEXT_ID,
+      },
+    ],
+    downstreamScopeSelection: {
+      workbookContentHash: "b".repeat(64),
+      selectedWorksheetNames: ["Analysis-A"],
+      confirmed: true,
+      provenance: "user",
+    },
+    ...overrides,
+  });
 }
 
 class InMemoryConversationStore {
