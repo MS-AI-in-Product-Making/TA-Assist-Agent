@@ -15,6 +15,7 @@ describe("parseF6CliArgs", () => {
       "--image-observations", "evidence/observations.json",
       "--analysis-context", "evidence/context.json",
       "--optimization-targets", "evidence/targets.json",
+      "--model-interpretation", "model/run-id/Feature6-Model-Interpretation.json",
     ])).toEqual({
       f2ArtifactRoot: "f2 run",
       f3ArtifactRoot: "f3 run",
@@ -27,6 +28,7 @@ describe("parseF6CliArgs", () => {
       imageObservationArtifact: "evidence/observations.json",
       analysisContextArtifact: "evidence/context.json",
       optimizationTargetsArtifact: "evidence/targets.json",
+      modelInterpretationArtifact: "model/run-id/Feature6-Model-Interpretation.json",
     });
   });
 
@@ -43,6 +45,7 @@ describe("parseF6CliArgs", () => {
       imageObservationArtifact: undefined,
       analysisContextArtifact: undefined,
       optimizationTargetsArtifact: undefined,
+      modelInterpretationArtifact: undefined,
     });
   });
 
@@ -61,7 +64,7 @@ describe("parseF6CliArgs", () => {
     expect(() => parseF6CliArgs([...ROOTS, "extra"])).toThrow(/unexpected argument/i);
   });
 
-  it.each(["--worksheet", "--supplier-capability", "--datum-strategy", "--cost", "--image-observations", "--analysis-context", "--optimization-targets"])(
+  it.each(["--worksheet", "--supplier-capability", "--datum-strategy", "--cost", "--image-observations", "--analysis-context", "--optimization-targets", "--model-interpretation"])(
     "rejects a missing value for %s",
     (option) => expect(() => parseF6CliArgs([...ROOTS, option])).toThrow(/requires/i),
   );
@@ -71,7 +74,7 @@ describe("parseF6CliArgs", () => {
       .toThrow(/duplicate/i);
   });
 
-  it.each(["--supplier-capability", "--datum-strategy", "--cost", "--image-observations", "--analysis-context", "--optimization-targets"])(
+  it.each(["--supplier-capability", "--datum-strategy", "--cost", "--image-observations", "--analysis-context", "--optimization-targets", "--model-interpretation"])(
     "rejects duplicate singleton option %s",
     (option) => expect(() => parseF6CliArgs([...ROOTS, option, "a.json", option, "b.json"]))
       .toThrow(/duplicate/i),

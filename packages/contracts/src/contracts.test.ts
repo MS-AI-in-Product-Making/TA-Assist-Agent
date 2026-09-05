@@ -33,6 +33,7 @@ import {
   f6FeasibilityAssessmentSchema,
   f6InputFindingSchema,
   f6LegacyOptimizationResultSchema,
+  f6ModelInterpretationArtifactSchema,
   f6OptimizationRequestSchema,
   f6OptimizationResultSchema,
   f6OptimizationTargetsSchema,
@@ -4465,10 +4466,115 @@ describe("F5.1 objective interpretation contracts", () => {
           },
         }],
       };
+      const artifactReference = (artifact: string) => ({ artifact, contentHash: "b".repeat(64) });
+      const modelInterpretation = {
+        contractVersion: "v1" as const,
+        inputClassification: "confidential" as const,
+        interpretationVersion: "f6-model-interpretation-v1" as const,
+        workbookContentHash: "a".repeat(64),
+        generatedAt: "2026-09-04T12:00:00.000Z",
+        worksheets: [{
+          worksheetName: "Analysis-A",
+          tableId: "table-a",
+          baselineIdentity,
+          sourceReferences: {
+            f2: artifactReference("Feature2-Report.json"),
+            f4: {
+              ...artifactReference("Feature4-Calculation.json"),
+              runId: "f4-run-a",
+              calculationVersion: "excel-ta-v1" as const,
+            },
+            f5: {
+              ...artifactReference("Feature5-Report.json"),
+              interpretationVersion: "f5-data-interpretation-v1" as const,
+            },
+            image: {
+              ...artifactReference("Analysis-A.png"),
+              worksheetName: "Analysis-A",
+            },
+          },
+          narrativeMarkdown: "主要风险由 {{calc:top-contribution}} 主导。",
+          calculationClaims: [{
+            claimId: "top-contribution",
+            outputField: "factors[0].contribution",
+            rawValue: 0.72,
+            displayFormat: "percent" as const,
+            unit: null,
+          }],
+          reviewStatus: "ME_REVIEW_REQUIRED" as const,
+        }],
+      };
 
       it("accepts strict identity-bound Optimization Targets and Analysis Context", () => {
         expect(f6OptimizationTargetsSchema.parse(targets)).toEqual(targets);
         expect(f6AnalysisContextSchema.parse(analysisContext)).toEqual(analysisContext);
+      });
+
+      it("accepts a strict identity-bound freeform model interpretation", () => {
+        expect(f6ModelInterpretationArtifactSchema.parse(modelInterpretation)).toEqual(modelInterpretation);
+      });
+
+      it("rejects invalid model interpretation identity, claims, placeholders, and unknown fields", () => {
+        const worksheet = modelInterpretation.worksheets[0];
+        expect(f6ModelInterpretationArtifactSchema.safeParse({ ...modelInterpretation, unknown: true }).success).toBe(false);
+        expect(f6ModelInterpretationArtifactSchema.safeParse({ ...modelInterpretation, generatedAt: "not-a-date" }).success).toBe(false);
+        expect(f6ModelInterpretationArtifactSchema.safeParse({
+          ...modelInterpretation,
+          worksheets: [{ ...worksheet, reviewStatus: "APPROVED" }],
+        }).success).toBe(false);
+        expect(f6ModelInterpretationArtifactSchema.safeParse({
+          ...modelInterpretation,
+          worksheets: [{
+            ...worksheet,
+            baselineIdentity: { ...worksheet.baselineIdentity, tableId: "table-b" },
+          }],
+        }).success).toBe(false);
+        expect(f6ModelInterpretationArtifactSchema.safeParse({
+          ...modelInterpretation,
+          worksheets: [{
+            ...worksheet,
+            sourceReferences: {
+              ...worksheet.sourceReferences,
+              image: { ...worksheet.sourceReferences.image, worksheetName: "Analysis-B" },
+            },
+          }],
+        }).success).toBe(false);
+        expect(f6ModelInterpretationArtifactSchema.safeParse({
+          ...modelInterpretation,
+          worksheets: [worksheet, { ...worksheet }],
+        }).success).toBe(false);
+        expect(f6ModelInterpretationArtifactSchema.safeParse({
+          ...modelInterpretation,
+          worksheets: [{
+            ...worksheet,
+            narrativeMarkdown: "主要风险由 {{calc:unknown-claim}} 主导。",
+          }],
+        }).success).toBe(false);
+        expect(f6ModelInterpretationArtifactSchema.safeParse({
+          ...modelInterpretation,
+          worksheets: [{
+            ...worksheet,
+            narrativeMarkdown: "非法标记 {{calc:Invalid_Id}}。",
+            calculationClaims: [],
+          }],
+        }).success).toBe(false);
+        expect(f6ModelInterpretationArtifactSchema.safeParse({
+          ...modelInterpretation,
+          worksheets: [{
+            ...worksheet,
+            narrativeMarkdown: `${worksheet.narrativeMarkdown} 再次引用 {{calc:top-contribution}}。`,
+          }],
+        }).success).toBe(false);
+        expect(f6ModelInterpretationArtifactSchema.safeParse({
+          ...modelInterpretation,
+          worksheets: [{
+            ...worksheet,
+            calculationClaims: [{
+              ...worksheet.calculationClaims[0],
+              outputField: "system.unknown",
+            }],
+          }],
+        }).success).toBe(false);
       });
 
       it("rejects invalid target ratios, duplicate IDs, and factor identity drift", () => {

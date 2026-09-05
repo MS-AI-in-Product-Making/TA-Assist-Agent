@@ -559,6 +559,22 @@ describe("result-interpretation skill contract", () => {
       "Each direction linkedVisualLabels label exists in visualObservation.visibleLabels, and direction label/source row key sets align exactly.",
       "Non-direction scopes keep linkedVisualLabels empty but may link unique snapshot source rows and may use indicated_consistent or indicated_conflict when evidence permits.",
       "With no reliable mapping, linkedVisualLabels and linkedSourceRows are empty and signalValue is ambiguous or insufficient_evidence.",
+      "Use the validated structured Factor rows as the only numeric source; do not OCR, reconstruct, or recalculate Factor values from the image.",
+      "Do not state pass/fail, compliance, or capability conclusions unless the validated deterministic evidence contains the required specification.",
+      "Model-generated reference interpretation may contain hallucinations, label mismatches, or omissions and must be reviewed by ME.",
+    ]) {
+      expect(normalizedSkill).toContain(phrase);
+    }
+  });
+
+  it("requires direct image-to-Table anomaly comparison and a bounded user-facing narrative", () => {
+    const normalizedSkill = normalizeContractText(readSkill());
+
+    for (const phrase of [
+      "Compare visible arrow direction and label mapping directly against linked structured Factor descriptions and nominal signs when both sides are explicit.",
+      "Report each indicated_conflict prominently as a direct image-to-Table anomaly, preserving textBasis and linked Factor names, and label it as requiring ME review.",
+      "The user-facing TA interpretation narrative must summarize tolerance-chain and Target understanding, capability results, major contributors and engineering risk, direct image-to-Table anomalies, and required clarifications.",
+      "Do not include datum_chain or stack_start in the user-facing narrative; retain them only in governed internal evidence and the audit appendix.",
     ]) {
       expect(normalizedSkill).toContain(phrase);
     }

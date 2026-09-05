@@ -3372,18 +3372,18 @@ export declare const f7ReportFactorSchema: z.ZodObject<{
     sourceReferences: z.ZodArray<z.ZodString, "many">;
 }, "strict", z.ZodTypeAny, {
     factorName: string;
+    sourceReferences: string[];
     factorId: string;
     loopCoefficient: 0 | 1 | -1;
     sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
     approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
-    sourceReferences: string[];
 }, {
     factorName: string;
+    sourceReferences: string[];
     factorId: string;
     loopCoefficient: 0 | 1 | -1;
     sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
     approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
-    sourceReferences: string[];
 }>;
 export declare const f7ReportSpecificationSourceCellsSchema: z.ZodObject<{
     lowerSpecLimit: z.ZodOptional<z.ZodString>;
@@ -4260,18 +4260,18 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
         sourceReferences: z.ZodArray<z.ZodString, "many">;
     }, "strict", z.ZodTypeAny, {
         factorName: string;
+        sourceReferences: string[];
         factorId: string;
         loopCoefficient: 0 | 1 | -1;
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
-        sourceReferences: string[];
     }, {
         factorName: string;
+        sourceReferences: string[];
         factorId: string;
         loopCoefficient: 0 | 1 | -1;
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
-        sourceReferences: string[];
     }>, "many">;
     analysis: z.ZodOptional<z.ZodDiscriminatedUnion<"status", [z.ZodObject<{
         status: z.ZodLiteral<"available">;
@@ -4599,11 +4599,11 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
     };
     factors: {
         factorName: string;
+        sourceReferences: string[];
         factorId: string;
         loopCoefficient: 0 | 1 | -1;
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
-        sourceReferences: string[];
     }[];
     evidence: {
         worksheetName: string;
@@ -4755,11 +4755,11 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
     };
     factors: {
         factorName: string;
+        sourceReferences: string[];
         factorId: string;
         loopCoefficient: 0 | 1 | -1;
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
-        sourceReferences: string[];
     }[];
     evidence: {
         worksheetName: string;
@@ -4911,11 +4911,11 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
     };
     factors: {
         factorName: string;
+        sourceReferences: string[];
         factorId: string;
         loopCoefficient: 0 | 1 | -1;
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
-        sourceReferences: string[];
     }[];
     evidence: {
         worksheetName: string;
@@ -5067,11 +5067,11 @@ export declare const f7ReportProjectionSchema: z.ZodEffects<z.ZodObject<{
     };
     factors: {
         factorName: string;
+        sourceReferences: string[];
         factorId: string;
         loopCoefficient: 0 | 1 | -1;
         sourceMode: "MEASURED" | "BASELINE_ASSUMPTION";
         approvedDistribution: "normal" | "uniform" | "lognormal" | "weibull" | "gamma";
-        sourceReferences: string[];
     }[];
     evidence: {
         worksheetName: string;

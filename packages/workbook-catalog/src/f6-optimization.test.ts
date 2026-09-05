@@ -1209,6 +1209,7 @@ describe("createF6Optimization V2", () => {
     expect(result.optimizationVersion).toBe("f6-optimization-v2");
     expect(result.runStatus).toBe("COMPLETED");
     expect(result.provenance.reportScope).toEqual({ worksheetNames: ["Analysis-A"], blockedWorksheetNames: [] });
+    expect(result.provenance.modelInterpretationDecision).toEqual({ outcome: "NOT_PROVIDED" });
     expect(worksheet.runStatus).toBe("COMPLETED");
     expect(worksheet.options.map(({ optionId }) => optionId)).toEqual([
       "Analysis-A:builtin-top3:OP1",

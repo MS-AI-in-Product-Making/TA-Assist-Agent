@@ -13,6 +13,7 @@ const OPTIONAL_PATHS = Object.freeze({
   "--image-observations": "imageObservationArtifact",
   "--analysis-context": "analysisContextArtifact",
   "--optimization-targets": "optimizationTargetsArtifact",
+  "--model-interpretation": "modelInterpretationArtifact",
 });
 
 export function parseF6CliArgs(args = []) {

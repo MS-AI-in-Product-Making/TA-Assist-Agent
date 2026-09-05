@@ -49,8 +49,8 @@
     "tsx": "^4.0.0",
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.0.0",
-    "vue-eslint-parser": "^10.0.0",
     "vitest": "^3.0.0",
+    "vue-eslint-parser": "^10.0.0",
     "xlsx": "^0.18.5"
   },
   "overrides": {
@@ -60,5 +60,8 @@
         "js-yaml": "4.3.1"
       }
     }
+  },
+  "dependencies": {
+    "marked": "16.4.1"
   }
 }

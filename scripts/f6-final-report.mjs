@@ -7,6 +7,7 @@ import {
   f4WorkflowCalculationResultSchema,
   f5DataInterpretationResultSchema,
   f6AnalysisContextSchema,
+  f6ModelInterpretationArtifactSchema,
   f6OptimizationResultSchema,
 } from "../packages/contracts/dist/contracts.js";
 import { createCalculation } from "../packages/workbook-catalog/dist/calculation.js";
@@ -16,7 +17,11 @@ import {
 } from "../packages/workbook-catalog/dist/f4-handoff.js";
 import { createF6ReportProjection, F6_DISPOSITION_RANK, worstDisposition } from "../packages/workbook-catalog/dist/index.js";
 import { formatEngineering, formatPercent } from "./engineering-format.mjs";
-import { safeText } from "./f6-markdown-sanitizer.mjs";
+import {
+  renderCalculationClaims,
+  safeText,
+  validateModelMarkdown,
+} from "./f6-markdown-sanitizer.mjs";
 
 export { F6_DISPOSITION_RANK, worstDisposition };
 
@@ -374,23 +379,8 @@ function factorGovernanceBySource(f3Worksheet) {
   ]));
 }
 
-function controlledVersions({ f2Report, f4Report, f5Report }) {
-  return [
-    `public=${clean(f2Report.knowledgeBaseVersions?.[0], NA)}`,
-    `internal=${clean(f2Report.knowledgeBaseVersions?.[1], NA)}`,
-    `F4=${clean(f4Report.calculations[0]?.calculationVersion, NA)}`,
-    `F5=${clean(f5Report.knowledgeBaseVersion, NA)}`,
-  ].join("; ");
-}
-
 function reviewStatus(analysisContext) {
   return clean(analysisContext?.reviewedBy ?? analysisContext?.reviewer ?? analysisContext?.review?.reviewedBy, "PENDING");
-}
-
-function f1ImageReference(f3Worksheet) {
-  const reference = f3Worksheet?.rows?.[0]?.imageReference;
-  if (reference === undefined) return NA;
-  return `artifact=${clean(reference.artifact)}; worksheet=${clean(reference.worksheetName)}; path=${clean(reference.relativePath)}; sha256=${clean(reference.contentHash)}`;
 }
 
 function primaryFinding(context) {
@@ -697,35 +687,181 @@ function renderReadyWorksheet(worksheet) {
   ];
 }
 
-function renderTraceability(context) {
-  const f1References = context.worksheets
-    .map((worksheet) => `${worksheet.worksheetName}: ${f1ImageReference(worksheet.f3Worksheet)}`)
-    .join("; ");
-  const f2References = context.f2Report.worksheets
-    .map((worksheet) => `${worksheet.worksheetName}: status=${worksheet.status}`)
-    .join("; ");
-  const f3References = context.f3Report.worksheets
-    .map((worksheet) => `${worksheet.worksheetName}: rows=${worksheet.rows.length}`)
-    .join("; ");
-  const f4References = context.f4Report.calculations
-    .map((calculation) => `${calculation.worksheetSelection.worksheetName}: ${calculation.traceRecords.map((trace) => trace.formulaId).join(", ")}`)
-    .join("; ");
-  const f5References = context.f5Report.worksheets
-    .map((worksheet) => `${worksheet.worksheetName}: statements=${worksheet.statements.length}; clarifications=${worksheet.clarifications.length}`)
-    .join("; ");
-  return [
-    "# 4. Appendix: Reference Traceability",
+function isSummaryExcludedScope(scope) {
+  return scope === "datum_chain" || scope === "stack_start";
+}
+
+function isSummaryExcludedText(value) {
+  return typeof value === "string" && (value.includes("datum_chain") || value.includes("stack_start"));
+}
+
+function imageFacts(f5Worksheet) {
+  return f5Worksheet.statements.filter((statement) => (
+    statement.type === "FACT"
+    && statement.content.provenanceKind === "image_observation"
+    && !isSummaryExcludedScope(statement.content.scope)
+  ));
+}
+
+function imageContextSignals(f5Worksheet) {
+  return f5Worksheet.statements.filter((statement) => (
+    statement.type === "SIGNAL"
+    && statement.content.signalKind === "image_text_context_review"
+    && !isSummaryExcludedScope(statement.content.scope)
+  ));
+}
+
+function linkedFactorNames(f5Worksheet, signal) {
+  const rowBySource = new Map((f5Worksheet.contextSnapshot?.rows ?? []).map((snapshotRow) => [
+    `${snapshotRow.tableId}:${snapshotRow.sourceRow}`,
+    snapshotRow.factorName,
+  ]));
+  return signal.content.linkedSourceRows.map(({ tableId, sourceRow }) => (
+    rowBySource.get(`${tableId}:${sourceRow}`) ?? `${tableId}:${sourceRow}`
+  ));
+}
+
+function renderSummaryBoundary(lines, worksheet, prefix) {
+  lines.push(
+    `### ${prefix}.1 输出边界`,
     "",
-    "| Reference | Traceability |",
-    "|---|---|",
-    row(["F0 controlled versions", controlledVersions(context)]),
-    row(["F1 workbook cells / source rows / image identity", clean(f1References, NA)]),
-    row(["F2 specification / readiness / missing inputs", clean(f2References, NA)]),
-    row(["F3 Drawing Number / DIM ID governance", clean(f3References, NA)]),
-    row(["F4 calculation / formula IDs / precision", clean(f4References, NA)]),
-    row(["F5 FACT / RULE / SIGNAL / OPTION / clarification IDs", clean(f5References, NA)]),
-    row(["F6 optimization artifact provenance", clean(context.f6Optimization.artifactReference, NA)]),
-  ];
+    "- 图片可见事实仅来自受控图片观察；图示标签不直接视为已验证的 Drawing Number、DIM ID 或 Factor 映射。",
+    "- 表格数值来自经验证的结构化输入与确定性计算，不从图片 OCR、补算或改写。",
+    "- 工程推断与待确认项不等于最终工程结论；涉及图片的判断必须由 ME 复核。",
+  );
+  if (worksheet.f5Worksheet.observationVersion === "f5-image-observation-v2") {
+    lines.push("- 模型图像解读可能存在幻觉、标签误配或遗漏，不能替代工程结论。");
+  }
+}
+
+function renderSummaryImageFacts(lines, worksheet, prefix) {
+  const facts = imageFacts(worksheet.f5Worksheet);
+  lines.push("", `### ${prefix}.2 图片可见事实`, "");
+  if (worksheet.f5Worksheet.observationVersion !== "f5-image-observation-v2") {
+    lines.push("图片证据状态：`not_evaluated`。未形成受控图片观察事实。");
+    return;
+  }
+  if (facts.length === 0) {
+    lines.push("当前 V2 证据未形成满足 FACT gate 的图片可见事实；保留为待 ME 复核的 SIGNAL。");
+    return;
+  }
+  for (const fact of facts) {
+    const labels = (fact.content.visibleLabels ?? []).join("、");
+    lines.push(`- ${clean(fact.content.visibleBasis)}${labels ? ` 可见标签：${clean(labels)}。` : ""}（${clean(fact.content.scope)}；${clean(fact.content.confidence)}；${clean(fact.content.reviewStatus)}）`);
+  }
+}
+
+function renderSummaryCalculations(lines, worksheet, prefix) {
+  const calculation = worksheet.f4Calculation;
+  const unit = calculation.factors[0]?.unit ?? "unit";
+  const projection = createF6ReportProjection({ calculation, inputResolution: 1e-12 });
+  const stat = projection.margins.statistical;
+  const worstCase = projection.margins.worstCase;
+  lines.push(
+    "",
+    `### ${prefix}.3 表格可计算结果`,
+    "",
+    `- Mean Response：${engineeringText(calculation.system.mean, unit)}`,
+    `- RSS 1σ：${engineeringText(calculation.system.rssSigma, unit)}`,
+    `- ${numberText(stat.sigmaLevel)}σ 预测范围：${engineeringText(stat.lowerBound, unit)} ～ ${engineeringText(stat.upperBound, unit)}`,
+    `- Worst-Case 范围：${engineeringText(worstCase.lowerBound, unit)} ～ ${engineeringText(worstCase.upperBound, unit)}`,
+    `- Predictive Cp / Cpk：${numberText(calculation.capability.cp)} / ${numberText(calculation.capability.cpk)}`,
+    `- Predicted Yield：${percentText(calculation.capability.yield)}`,
+    "- 以上能力与良率来自设计公差模型，不等同于实测量产能力。",
+  );
+}
+
+function renderSummaryInference(lines, worksheet, prefix) {
+  const sorted = [...worksheet.f4Calculation.factors].sort((left, right) => right.contribution - left.contribution);
+  const leaders = sorted.slice(0, 3);
+  const cumulative = leaders.reduce((sum, factor) => sum + factor.contribution, 0);
+  lines.push("", `### ${prefix}.4 工程推断与主要风险`, "");
+  if (leaders.length === 0) {
+    lines.push("当前没有可排序的 Factor contribution。" );
+    return;
+  }
+  lines.push(
+    `- 主要贡献项：${leaders.map((factor) => `${clean(factor.factorName)} (${percentText(factor.contribution)})`).join("、")}。`,
+    `- 前 ${leaders.length} 项累计贡献约 ${percentText(cumulative)}；改善优先级应先围绕这些项目验证。`,
+    "- 贡献率表示模型方差占比，不等于已确认的物理根因、供应商责任或可制造性结论。",
+  );
+}
+
+function renderSummaryAnomalies(lines, worksheet, prefix) {
+  const conflicts = imageContextSignals(worksheet.f5Worksheet)
+    .filter((signal) => signal.content.signalValue === "indicated_conflict");
+  lines.push("", `### ${prefix}.5 图片与 Table 一致性异常`, "");
+  if (conflicts.length === 0) {
+    lines.push("未发现由当前受控图文证据直接证明的冲突；这不代表图片方向或标签映射已经工程确认。" );
+    return;
+  }
+  lines.push(`发现 ${conflicts.length} 项直接可比异常：`);
+  for (const signal of conflicts) {
+    const factors = linkedFactorNames(worksheet.f5Worksheet, signal);
+    lines.push(`- ${clean(signal.content.textBasis)} 关联 Factor：${clean(factors.join("；"), NA)}。证据状态：${clean(signal.content.signalValue)}；需要 ME 复核。`);
+  }
+}
+
+function renderSummaryClarifications(lines, worksheet, prefix) {
+  const signals = imageContextSignals(worksheet.f5Worksheet)
+    .filter((signal) => signal.content.signalValue !== "indicated_conflict")
+    .map((signal) => `${signal.content.textBasis}（${signal.content.signalValue}）`);
+  const clarifications = worksheet.f5Worksheet.clarifications
+    .filter((item) => !isSummaryExcludedScope(item.structuralScope))
+    .map((item) => item.questionForReviewer ?? item.text)
+    .filter((text) => typeof text === "string" && text.trim() !== "" && !isSummaryExcludedText(text));
+  const questions = [...new Set([...signals, ...clarifications])];
+  lines.push("", `### ${prefix}.6 必须澄清的问题`, "");
+  if (questions.length === 0) {
+    lines.push("当前没有新增澄清项。" );
+    return;
+  }
+  for (const question of questions) lines.push(`- ${clean(question)}`);
+}
+
+function renderSummaryJudgment(lines, worksheet, prefix) {
+  const calculation = worksheet.f4Calculation;
+  const top = topFactor(calculation);
+  const capability = Number.isFinite(calculation.capability.cpk) && Number.isFinite(calculation.capability.targetCpk)
+    ? `Predictive Cpk ${numberText(calculation.capability.cpk)} ${calculation.capability.cpk >= calculation.capability.targetCpk ? "达到" : "未达到"} Target Cpk ${numberText(calculation.capability.targetCpk)}`
+    : "缺少完整规格或能力结果，不能判定 PASS/FAIL";
+  const hasConflict = imageContextSignals(worksheet.f5Worksheet)
+    .some((signal) => signal.content.signalValue === "indicated_conflict");
+  lines.push(
+    "",
+    `### ${prefix}.7 初步工程判断`,
+    "",
+    `${capability}。当前首要变差贡献项为 ${top === undefined ? NA : `${clean(top.factorName)} (${percentText(top.contribution)})`}。${hasConflict ? "图片与 Table 存在待 ME 处理的直接冲突，在确认前不能将图片作为方向正确性的受控证据。" : "图片方向与标签映射仍须按待确认项完成 ME 复核。"}`,
+  );
+}
+
+function modelInterpretationByWorksheet(context) {
+  if (context.f6Optimization.provenance.modelInterpretationDecision?.outcome !== "CALLER_AUTHORIZED"
+    || context.modelInterpretation === undefined) {
+    return new Map();
+  }
+  return new Map(context.modelInterpretation.worksheets.map((worksheet) => [worksheet.worksheetName, worksheet]));
+}
+
+function renderAnalysisSummary(context) {
+  const lines = ["# 4. TA 总结性分析"];
+  const interpretations = modelInterpretationByWorksheet(context);
+  context.worksheets.forEach((worksheet, index) => {
+    const section = `4.${index + 1}`;
+    lines.push("", `## ${section} Worksheet：${clean(worksheet.worksheetName)}`, "");
+    const interpretation = interpretations.get(worksheet.worksheetName);
+    if (worksheet.f2Worksheet.status !== "ready"
+      || worksheet.f4Calculation === undefined
+      || interpretation === undefined
+      || interpretation.tableId !== worksheet.f4Calculation.worksheetSelection.tableId) {
+      lines.push("模型解读 unavailable");
+      return;
+    }
+    const declaredLinks = Object.values(interpretation.sourceReferences).map(({ artifact }) => artifact);
+    const validated = validateModelMarkdown(interpretation.narrativeMarkdown, declaredLinks);
+    lines.push(renderCalculationClaims(validated, interpretation.calculationClaims));
+  });
+  return lines;
 }
 
 function renderMarkdown(context) {
@@ -746,7 +882,7 @@ function renderMarkdown(context) {
     );
   }
 
-  lines.push("", ...renderTraceability(context));
+  lines.push("", ...renderAnalysisSummary(context));
   return `${lines.join("\n").trimEnd()}\n`;
 }
 
@@ -814,6 +950,9 @@ export function createF6FinalReportProjection(input = {}, options = {}) {
   const analysisContext = input.analysisContext === undefined
     ? undefined
     : parseOrThrow(f6AnalysisContextSchema, input.analysisContext, "analysisContext");
+  const modelInterpretation = input.modelInterpretation === undefined
+    ? undefined
+    : parseOrThrow(f6ModelInterpretationArtifactSchema, input.modelInterpretation, "modelInterpretation");
   void analysisContext;
 
   const worksheets = buildWorksheetPolicyInputs({ f2Report, f3Report, f4Report, f5Report, f6Optimization });
@@ -844,6 +983,7 @@ export function createF6FinalReportProjection(input = {}, options = {}) {
       f5Report,
       f6Optimization,
       analysisContext,
+      modelInterpretation,
       generatedAt: options.generatedAt ?? input.generatedAt,
       reportSummary,
       worksheets,

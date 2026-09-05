@@ -36,17 +36,27 @@ function loaderOptions(parsed) {
     "optimizationTargetsArtifact",
   ];
   const paths = fields.map((field) => parsed[field]).filter((value) => value !== undefined);
-  if (paths.length === 0) return parsed;
-  const parents = new Set(paths.map((value) => path.resolve(path.dirname(value))));
-  if (parents.size !== 1) throw new Error("Feature 6 governed evidence files must share one directory.");
-  return {
-    ...parsed,
-    evidenceArtifactRoot: [...parents][0],
-    ...Object.fromEntries(fields.map((field) => [
-      field,
-      parsed[field] === undefined ? undefined : path.basename(parsed[field]),
-    ])),
-  };
+  let normalized = parsed;
+  if (paths.length > 0) {
+    const parents = new Set(paths.map((value) => path.resolve(path.dirname(value))));
+    if (parents.size !== 1) throw new Error("Feature 6 governed evidence files must share one directory.");
+    normalized = {
+      ...normalized,
+      evidenceArtifactRoot: [...parents][0],
+      ...Object.fromEntries(fields.map((field) => [
+        field,
+        parsed[field] === undefined ? undefined : path.basename(parsed[field]),
+      ])),
+    };
+  }
+  if (parsed.modelInterpretationArtifact !== undefined) {
+    normalized = {
+      ...normalized,
+      modelInterpretationArtifactRoot: path.resolve(path.dirname(parsed.modelInterpretationArtifact)),
+      modelInterpretationArtifact: path.basename(parsed.modelInterpretationArtifact),
+    };
+  }
+  return normalized;
 }
 
 function normalizeDependencies(overrides = {}) {
@@ -124,6 +134,7 @@ export function runF6FullValidation(options = {}, dependencyOverrides = {}) {
       imageObservationsPath: parsed.imageObservationArtifact,
       analysisContextPath: parsed.analysisContextArtifact,
       optimizationTargetsPath: parsed.optimizationTargetsArtifact,
+      modelInterpretationPath: parsed.modelInterpretationArtifact,
     }, {
       repositoryRoot: process.cwd(),
       managedOutputRoot: process.env.AI_TVA_F6_OUTPUT_ROOT ?? process.cwd(),
@@ -144,6 +155,7 @@ export function runF6FullValidation(options = {}, dependencyOverrides = {}) {
         imageObservationArtifact: request.imageObservationsPath,
         analysisContextArtifact: request.analysisContextPath,
         optimizationTargetsArtifact: request.optimizationTargetsPath,
+        modelInterpretationArtifact: request.modelInterpretationPath,
         publishRoot: layout.publishRoot,
       })),
       createOptimization: (...args) => normalizeOptimizationResult(dependencies.createOptimization(...args)),

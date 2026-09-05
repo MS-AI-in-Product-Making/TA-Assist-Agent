@@ -237,6 +237,7 @@ export function renderF6Report(result, options = {}) {
       `- Highest Impact Action：${worksheet.highestImpactAction === null ? "未提供受支持的量化方案" : cell(worksheet.highestImpactAction.optionId)}`,
       `- Optimization Targets decision：${cell(parsed.provenance.optimizationTargetsDecision.outcome)}`,
       `- Analysis Context decision：${cell(parsed.provenance.analysisContextDecision.outcome)}`,
+      `- Model Interpretation decision：${cell(parsed.provenance.modelInterpretationDecision?.outcome ?? "NOT_PROVIDED")}`,
     );
   }
   return `${lines.join("\n").trimEnd()}\n`;

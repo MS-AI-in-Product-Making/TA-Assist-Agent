@@ -690,6 +690,7 @@ interface F6OptimizationV2Inputs {
   readonly inputDecisions: {
     readonly analysisContext: F6InputDecision;
     readonly optimizationTargets: F6InputDecision;
+    readonly modelInterpretation?: F6InputDecision;
   };
 }
 
@@ -1106,6 +1107,7 @@ export function createF6Optimization(
       costDecision: requestEvidenceDecision(request.costEvidence),
       analysisContextDecision: inputs.inputDecisions.analysisContext,
       optimizationTargetsDecision: inputs.inputDecisions.optimizationTargets,
+      modelInterpretationDecision: inputs.inputDecisions.modelInterpretation ?? { outcome: "NOT_PROVIDED" },
     },
     worksheets,
     summary,

@@ -13,7 +13,7 @@ const allowedCommands = [
   "npm run workflow:f4 -- --f2-report <f2-output-dir>/Feature2-Report.json",
   "npm run workflow:f5 -- <f1-output-dir> <f3-output-dir> <f4-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...]",
   "npm run workflow:f5 -- <f1-output-dir> <f3-output-dir> <f4-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] --image-observations <artifact-path>",
-  "npm run workflow:f6 -- <f2-output-dir> <f3-output-dir> <f4-output-dir> <f5-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] [--analysis-context <artifact-path>] [--optimization-targets <artifact-path>]",
+  "npm run workflow:f6 -- <f2-output-dir> <f3-output-dir> <f4-output-dir> <f5-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] [--model-interpretation <artifact-path>] [--analysis-context <artifact-path>] [--optimization-targets <artifact-path>]",
 ];
 
 function readSkill() {
@@ -119,6 +119,7 @@ describe("Design Optimization skill contract", () => {
       "### Phase W5 - Run F4",
       "### Phase W6 - Evaluate optional F5 v2 image evidence",
       "### Phase W7 - Run and validate F5",
+      "### Phase W8 - Generate governed model interpretation",
       "### Phase W8A - Collect optional TA Analysis Context",
       "Confirm analysis context",
       "### Phase W8B - Collect optional Optimization Targets",
@@ -191,6 +192,18 @@ describe("Design Optimization skill contract", () => {
     const { internal } = splitSkillSections(readSkill());
     expect(internal).toContain("New image mode creates only `f5-image-observation-v2`");
     expect(internal).toContain("all active factor rows");
+    expect(internal).toContain("each selected worksheet independently");
+    expect(internal).toContain("validated F5 evidence for image facts, contextual signals, and clarifications");
+    expect(internal).toContain("hallucinations, label mismatches, or omissions");
+    expect(internal).toContain("must be reviewed by ME");
+    expect(internal).toContain("Compare explicit visible arrow direction and label mapping with linked structured Factor descriptions and nominal signs");
+    expect(internal).toContain("Section 3.3 contains only the verified tolerance-path image and its link; do not render the F5 model reference interpretation there");
+    expect(internal).toContain("Section 4 consumes only accepted W8 Markdown and deterministic calculation claim substitution");
+    expect(internal).toContain("prominently summarize each `indicated_conflict` with its `textBasis`, linked Factor names, and required ME review");
+    expect(internal).toContain("Exclude `datum_chain` and `stack_start` from the user-facing summary while retaining them in governed internal artifacts");
+    expect(internal).toContain("Never hard-code screenshot-specific labels, values, loads, or conclusions into the report template");
+    expect(internal).toContain("Feature6-Report.md");
+    expect(internal).toContain("not_evaluated");
     for (const scope of [
       "tolerance_loop_closure",
       "datum_chain",
@@ -207,6 +220,36 @@ describe("Design Optimization skill contract", () => {
     expect(internal).toContain("OP2");
     expect(internal).toContain("OP3");
     expect(internal).toContain("No other automatic percentage scenario is permitted");
+  });
+
+  it("governs freeform model interpretation as an immutable pre-F6 artifact", () => {
+    const { internal } = splitSkillSections(readSkill());
+    expectOrdered(internal, [
+      "### Phase W7 - Run and validate F5",
+      "### Phase W8 - Generate governed model interpretation",
+      "### Phase W8A - Collect optional TA Analysis Context",
+      "### Phase W8B - Collect optional Optimization Targets",
+      "### Phase W9 - Run and validate F6",
+    ]);
+    for (const marker of [
+      "f6-model-interpretation-v1",
+      "test/demo-output/f6-model-interpretations/<workbook-content-hash>/<system-generated-uuid>/Feature6-Model-Interpretation.json",
+      "f6ModelInterpretationArtifactSchema",
+      "each selected worksheet independently",
+      "all active Factor rows",
+      "validated F4 calculation",
+      "validated F5 evidence",
+      "calculation claim placeholders",
+      "must be reviewed by ME",
+      "hallucinations, label mismatches, or omissions",
+      "soft-rejected",
+      "模型解读 unavailable",
+      "--model-interpretation <artifact-path>",
+    ]) expect(internal).toContain(marker);
+    expect(internal).toContain("Never edit, overwrite, append to, repair, or reuse a model interpretation target");
+    expect(internal).toContain("does not require an additional caller confirmation");
+    expect(internal).not.toContain("Replace the former Reference Traceability appendix with a per-worksheet TA summary");
+    expect(internal).not.toContain("separates image-visible FACTs, deterministic table calculations, engineering inference and risk, direct image-to-Table anomalies, required clarifications, and the preliminary engineering judgment");
   });
 
   it("validates every Feature output and supports an existing F6 artifact fast path", () => {

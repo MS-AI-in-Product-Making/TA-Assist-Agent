@@ -37,6 +37,7 @@ const ALLOWED_DISPOSITIONS = new Set(["FAIL", "INCOMPLETE", "CONDITIONAL_PASS", 
 const DECISION_PROVENANCE_FIELDS = Object.freeze({
   analysisContext: "analysisContextDecision",
   optimizationTargets: "optimizationTargetsDecision",
+  modelInterpretation: "modelInterpretationDecision",
 });
 const SOURCE_PROVENANCE_FIELDS = Object.freeze({
   f2: "f2Reference",
@@ -51,6 +52,7 @@ const SOURCE_PROVENANCE_FIELDS = Object.freeze({
 const SOURCE_DECISION_FIELDS = Object.freeze({
   analysisContext: "analysisContextDecision",
   optimizationTargets: "optimizationTargetsDecision",
+  modelInterpretation: "modelInterpretationDecision",
 });
 
 function rejected(reasonCode) {

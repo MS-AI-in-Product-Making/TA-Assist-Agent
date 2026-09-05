@@ -217,6 +217,8 @@ describe("runF6FullValidation", () => {
       inputDecisions: {
         analysisContext: { outcome: "NOT_PROVIDED" },
         optimizationTargets: { outcome: "NOT_PROVIDED" },
+        modelInterpretation: { outcome: "NOT_PROVIDED" },
+        modelInterpretation: { outcome: "NOT_PROVIDED" },
       },
     });
   });
@@ -226,18 +228,22 @@ describe("runF6FullValidation", () => {
     const inputDecisions = {
       analysisContext: { outcome: "CALLER_AUTHORIZED", artifactReference: { artifact: "context.json", contentHash: "e".repeat(64) } },
       optimizationTargets: { outcome: "CALLER_AUTHORIZED", artifactReference: { artifact: "targets.json", contentHash: "f".repeat(64) } },
+      modelInterpretation: { outcome: "CALLER_AUTHORIZED", artifactReference: { artifact: "Feature6-Model-Interpretation.json", contentHash: "d".repeat(64) } },
     };
     const analysisContext = { contextVersion: "f6-analysis-context-v1" };
     const optimizationTargets = { targetVersion: "f6-optimization-targets-v1" };
+    const modelInterpretation = { interpretationVersion: "f6-model-interpretation-v1" };
     context.deps.loadBundle.mockReturnValue({
       ...context.deps.loadBundle(),
       analysisContext,
       optimizationTargets,
+      modelInterpretation,
       inputDecisions,
       sourceReferences: {
         ...context.deps.loadBundle().sourceReferences,
         analysisContext: inputDecisions.analysisContext.artifactReference,
         optimizationTargets: inputDecisions.optimizationTargets.artifactReference,
+        modelInterpretation: inputDecisions.modelInterpretation.artifactReference,
       },
     });
 
@@ -255,6 +261,7 @@ describe("runF6FullValidation", () => {
       f6Optimization: context.optimization,
       generatedAt: "2026-08-17T01:02:03.456Z",
       analysisContext,
+      modelInterpretation,
     }, {
       outputRoot: context.runRoot,
       f1ArtifactRoot: undefined,
@@ -511,6 +518,7 @@ describe("F6 real artifact full flow", () => {
       inputDecisions: {
         analysisContext: { outcome: "NOT_PROVIDED" },
         optimizationTargets: { outcome: "NOT_PROVIDED" },
+        modelInterpretation: { outcome: "NOT_PROVIDED" },
       },
       artifacts: {
         optimizationJson: "Feature6-Optimization.json",
@@ -633,6 +641,7 @@ describe("F6 real artifact full flow", () => {
     expect(summary.inputDecisions).toEqual({
       analysisContext: { outcome: "NOT_PROVIDED" },
       optimizationTargets: { outcome: "NOT_PROVIDED" },
+      modelInterpretation: { outcome: "NOT_PROVIDED" },
     });
     expect(summary.hashes).toEqual({
       optimizationJsonSha256: artifactHash(path.join(runRoot, "Feature6-Optimization.json")),

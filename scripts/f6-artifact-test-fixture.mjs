@@ -368,3 +368,77 @@ export function installF6V2Evidence(bundle) {
   Object.assign(bundle, { evidenceArtifactRoot, imageObservationArtifact });
   return { artifact, evidenceArtifactRoot, imageObservationArtifact };
 }
+
+export function installF6ModelInterpretation(bundle) {
+  const f4 = readFixtureJson(bundle.paths.f4);
+  const f5 = readFixtureJson(bundle.paths.f5);
+  const modelInterpretationArtifactRoot = path.join(
+    bundle.publishRoot,
+    "f6-model-interpretations",
+    F6_FIXTURE_WORKBOOK_HASH,
+    "00000000-0000-4000-8000-000000000001",
+  );
+  const modelInterpretationArtifact = "Feature6-Model-Interpretation.json";
+  const artifact = {
+    contractVersion: "v1",
+    inputClassification: "confidential",
+    interpretationVersion: "f6-model-interpretation-v1",
+    workbookContentHash: F6_FIXTURE_WORKBOOK_HASH,
+    generatedAt: "2026-09-04T12:00:00.000Z",
+    worksheets: bundle.selectedWorksheetNames.map((worksheetName) => {
+      const calculation = bundle.calculations.find((item) => item.worksheetSelection.worksheetName === worksheetName);
+      const interpretation = f5.worksheets.find((item) => item.worksheetName === worksheetName);
+      return {
+        worksheetName,
+        tableId: calculation.worksheetSelection.tableId,
+        baselineIdentity: {
+          calculationVersion: calculation.calculationVersion,
+          projectReference: calculation.projectReference,
+          runReference: calculation.runReference,
+          workbookContentHash: calculation.workbookContentHash,
+          worksheetName,
+          tableId: calculation.worksheetSelection.tableId,
+        },
+        sourceReferences: {
+          f2: { artifact: "Feature2-Report.json", contentHash: fixtureFileSha256(bundle.paths.f2) },
+          f4: {
+            artifact: "Feature4-Calculation.json",
+            contentHash: fixtureFileSha256(bundle.paths.f4),
+            runId: f4.runId,
+            calculationVersion: calculation.calculationVersion,
+          },
+          f5: {
+            artifact: "Feature5-Report.json",
+            contentHash: fixtureFileSha256(bundle.paths.f5),
+            interpretationVersion: f5.interpretationVersion,
+          },
+          image: {
+            artifact: interpretation.imageReference.relativePath,
+            contentHash: interpretation.imageReference.contentHash,
+            worksheetName,
+          },
+          ...(bundle.imageObservationArtifact === undefined ? {} : {
+            imageObservation: {
+              artifact: bundle.imageObservationArtifact,
+              contentHash: fixtureFileSha256(path.join(bundle.evidenceArtifactRoot, bundle.imageObservationArtifact)),
+              observationVersion: "f5-image-observation-v2",
+            },
+          }),
+        },
+        narrativeMarkdown: "### 模型生成的自由段落标题\n\n该回路的 RSS 为 {{calc:rss-sigma}}。",
+        calculationClaims: [{
+          claimId: "rss-sigma",
+          outputField: "system.rssSigma",
+          rawValue: calculation.system.rssSigma,
+          displayFormat: "engineering",
+          unit: calculation.factors[0]?.unit ?? null,
+        }],
+        reviewStatus: "ME_REVIEW_REQUIRED",
+      };
+    }),
+  };
+  const filePath = path.join(modelInterpretationArtifactRoot, modelInterpretationArtifact);
+  writeFixtureJson(filePath, artifact);
+  Object.assign(bundle, { modelInterpretationArtifactRoot, modelInterpretationArtifact });
+  return { artifact, filePath, modelInterpretationArtifactRoot, modelInterpretationArtifact };
+}

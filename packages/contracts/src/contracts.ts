@@ -6463,6 +6463,89 @@ const f6F5ReferenceSchema = f6ArtifactReferenceSchema.extend({
   interpretationVersion: z.literal("f5-data-interpretation-v1"),
 }).strict();
 
+const f6ModelInterpretationOutputFieldSchema = z.string().regex(
+  /^(?:factors\[(?:0|[1-9]\d*)\]\.(?:mean|halfTolerance|sigma|contribution)|system\.(?:designNominal|mean|additionalMeanShift|worstCaseUpper|worstCaseLower|rssSigma)|capability\.(?:lowerSpecLimit|upperSpecLimit|targetSigmaLevel|targetCpk|cp|lowerCpk|upperCpk|cpk|lowerZ|upperZ|lowerDpm|upperDpm|totalDpm|outOfSpecRatio|yield))$/,
+);
+
+const f6ModelInterpretationClaimSchema = z.object({
+  claimId: z.string().regex(/^[a-z][a-z0-9-]*$/),
+  outputField: f6ModelInterpretationOutputFieldSchema,
+  rawValue: z.number().finite(),
+  displayFormat: z.enum(["engineering", "number", "percent"]),
+  unit: z.string().min(1).nullable(),
+}).strict();
+
+const f6ModelInterpretationWorksheetSchema = z.object({
+  worksheetName: z.string().min(1),
+  tableId: z.string().min(1),
+  baselineIdentity: f6InputBaselineIdentitySchema,
+  sourceReferences: z.object({
+    f2: f6ArtifactReferenceSchema,
+    f4: f6F4ReferenceSchema,
+    f5: f6F5ReferenceSchema,
+    image: f6ArtifactReferenceSchema.extend({ worksheetName: z.string().min(1) }).strict(),
+    imageObservation: f6ArtifactReferenceSchema.extend({
+      observationVersion: z.literal("f5-image-observation-v2"),
+    }).strict().optional(),
+  }).strict(),
+  narrativeMarkdown: z.string().trim().min(1),
+  calculationClaims: z.array(f6ModelInterpretationClaimSchema),
+  reviewStatus: z.literal("ME_REVIEW_REQUIRED"),
+}).strict().superRefine((worksheet, context) => {
+  if (!sameF6BaselineIdentity(
+    worksheet.baselineIdentity,
+    worksheet.baselineIdentity.workbookContentHash,
+    worksheet.worksheetName,
+    worksheet.tableId,
+  )) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline identity must match the containing worksheet", path: ["baselineIdentity"] });
+  }
+  if (worksheet.sourceReferences.f4.calculationVersion !== worksheet.baselineIdentity.calculationVersion) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "F4 reference must match baseline calculation identity", path: ["sourceReferences", "f4"] });
+  }
+  if (worksheet.sourceReferences.image.worksheetName !== worksheet.worksheetName) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "image reference must match the containing worksheet", path: ["sourceReferences", "image", "worksheetName"] });
+  }
+  const claimIds = worksheet.calculationClaims.map(({ claimId }) => claimId);
+  const referencedClaimIds = [...worksheet.narrativeMarkdown.matchAll(/\{\{calc:([a-z][a-z0-9-]*)\}\}/g)]
+    .flatMap((match) => match[1] === undefined ? [] : [match[1]]);
+  const claimMarkerCount = worksheet.narrativeMarkdown.split("{{calc:").length - 1;
+  if (claimMarkerCount !== referencedClaimIds.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "narrative contains an invalid calculation placeholder", path: ["narrativeMarkdown"] });
+  }
+  if (new Set(claimIds).size !== claimIds.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "calculation claim IDs must be unique", path: ["calculationClaims"] });
+  }
+  const claimIdSet = new Set(claimIds);
+  const referencedClaimIdSet = new Set(referencedClaimIds);
+  if (referencedClaimIdSet.size !== referencedClaimIds.length
+    || claimIds.some((claimId) => !referencedClaimIdSet.has(claimId))
+    || referencedClaimIds.some((claimId) => !claimIdSet.has(claimId))) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "calculation claims and narrative placeholders must match one-to-one", path: ["narrativeMarkdown"] });
+  }
+});
+
+export const f6ModelInterpretationArtifactSchema = z.object({
+  contractVersion: contractVersionSchema,
+  inputClassification: z.literal("confidential"),
+  interpretationVersion: z.literal("f6-model-interpretation-v1"),
+  workbookContentHash: sha256Schema,
+  generatedAt: z.string().datetime(),
+  worksheets: z.array(f6ModelInterpretationWorksheetSchema).min(1),
+}).strict().superRefine((artifact, context) => {
+  const worksheetKeys = new Set<string>();
+  artifact.worksheets.forEach((worksheet, worksheetIndex) => {
+    const worksheetKey = `${worksheet.worksheetName}\u0000${worksheet.tableId}`;
+    if (worksheetKeys.has(worksheetKey)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet and table identities must be unique", path: ["worksheets", worksheetIndex] });
+    }
+    worksheetKeys.add(worksheetKey);
+    if (worksheet.baselineIdentity.workbookContentHash !== artifact.workbookContentHash) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline workbook must match the artifact workbook", path: ["worksheets", worksheetIndex, "baselineIdentity", "workbookContentHash"] });
+    }
+  });
+});
+
 export const f6OptionKindSchema = z.enum([
   "reduce_top_contributor_20",
   "reduce_top_3_contributors_30",
@@ -7754,6 +7837,7 @@ const f6ProvenanceV2Schema = z.object({
   costDecision: f6InputDecisionSchema,
   analysisContextDecision: f6InputDecisionSchema,
   optimizationTargetsDecision: f6InputDecisionSchema,
+  modelInterpretationDecision: f6InputDecisionSchema.optional(),
 }).strict().superRefine((provenance, context) => {
   const scopeNames = provenance.reportScope.worksheetNames;
   const blockedScopeNames = provenance.reportScope.blockedWorksheetNames;
@@ -7828,6 +7912,7 @@ export type F6FactorIdentity = z.infer<typeof f6FactorIdentitySchema>;
 export type F6InputBaselineIdentity = z.infer<typeof f6InputBaselineIdentitySchema>;
 export type F6OptimizationTargets = z.infer<typeof f6OptimizationTargetsSchema>;
 export type F6AnalysisContext = z.infer<typeof f6AnalysisContextSchema>;
+export type F6ModelInterpretationArtifact = z.infer<typeof f6ModelInterpretationArtifactSchema>;
 export type F6InputDecision = z.infer<typeof f6InputDecisionSchema>;
 export type F6Metrics = z.infer<typeof f6MetricsSchema>;
 export type F6ToleranceChange = z.infer<typeof f6ToleranceChangeSchema>;

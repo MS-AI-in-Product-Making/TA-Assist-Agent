@@ -261,6 +261,7 @@ describe("renderF6Report V2", () => {
         costDecision: notProvided,
         analysisContextDecision: notProvided,
         optimizationTargetsDecision: notProvided,
+        modelInterpretationDecision: notProvided,
       },
       worksheets: [{
         worksheetName: "Analysis-A",
@@ -420,5 +421,18 @@ describe("renderF6Report V2", () => {
     expect(markdown).toContain("scenario-c");
     expect(markdown).toContain(String.raw`EQUAL\_SELECTED`);
     expect(markdown).toContain(String.raw`CALLER\_AUTHORIZED`);
+  });
+
+  it("renders the model interpretation decision without narrative content", () => {
+    const input = resultV2();
+    input.provenance.modelInterpretationDecision = {
+      outcome: "CALLER_AUTHORIZED",
+      artifactReference: { artifact: "Feature6-Model-Interpretation.json", contentHash: "7".repeat(64) },
+    };
+
+    const markdown = renderF6ReportV2(input);
+
+    expect(markdown).toContain(String.raw`Model Interpretation decision：CALLER\_AUTHORIZED`);
+    expect(markdown).not.toContain("Feature6-Model-Interpretation.json");
   });
 });

@@ -8,6 +8,7 @@ import {
   f2UserReportSchema,
   f4WorkflowCalculationResultSchema,
   f5DataInterpretationResultSchema,
+  f6ModelInterpretationArtifactSchema,
   f6OptimizationResultSchema,
 } from "../packages/contracts/dist/contracts.js";
 import { formatEngineering, formatPercent } from "./engineering-format.mjs";
@@ -87,8 +88,19 @@ function buildSupportedF5Report(bundle) {
   }));
 }
 
-function buildOpenF5Report(bundle) {
+function buildOpenF5Report(bundle, { directionConflict = false } = {}) {
   const artifact = createF6V2ObservationArtifact(bundle);
+  if (directionConflict) {
+    const direction = artifact.worksheets[0].observations.find((observation) => observation.scope === "direction");
+    const linkedRow = artifact.worksheets[0].contextSnapshot.rows[0];
+    direction.visualObservation.observedValue = "visible";
+    direction.visualObservation.confidence = "high";
+    direction.visualObservation.visibleLabels = ["D"];
+    direction.contextualSignal.signalValue = "indicated_conflict";
+    direction.contextualSignal.textBasis = "Label D arrow points upward while the linked table factor has a negative nominal sign.";
+    direction.contextualSignal.linkedSourceRows = [{ tableId: linkedRow.tableId, sourceRow: linkedRow.sourceRow }];
+    direction.contextualSignal.linkedVisualLabels = [{ label: "D", tableId: linkedRow.tableId, sourceRow: linkedRow.sourceRow }];
+  }
   return f5DataInterpretationResultSchema.parse(createF5DataInterpretation({
     contractVersion: "v1",
     inputClassification: "confidential",
@@ -134,8 +146,8 @@ function loadRealF6Inputs({ worksheetNames = ["Analysis-A"], blockedWorksheetNam
     f4Report: f4WorkflowCalculationResultSchema.parse(readJson(bundle.paths.f4)),
     f5Report: f5Variant === "supported"
       ? buildSupportedF5Report(bundle)
-      : f5Variant === "open"
-        ? buildOpenF5Report(bundle)
+      : f5Variant === "open" || f5Variant === "open-conflict"
+        ? buildOpenF5Report(bundle, { directionConflict: f5Variant === "open-conflict" })
       : f5DataInterpretationResultSchema.parse(readJson(bundle.paths.f5)),
     f6Optimization: f6OptimizationResultSchema.parse(readJson(path.join(runRoot, "Feature6-Optimization.json"))),
   };
@@ -188,6 +200,49 @@ function recountF6Summary(worksheets) {
   };
 }
 
+function addModelInterpretation(inputs, narrativeForWorksheet) {
+  const artifactHash = "9".repeat(64);
+  const modelInterpretation = f6ModelInterpretationArtifactSchema.parse({
+    contractVersion: "v1",
+    inputClassification: "confidential",
+    interpretationVersion: "f6-model-interpretation-v1",
+    workbookContentHash: inputs.f2Report.workbook.contentHash,
+    generatedAt: inputs.generatedAt,
+    worksheets: inputs.f6Optimization.worksheets.map((optimizationWorksheet, index) => {
+      const calculation = inputs.f4Report.calculations.find(({ worksheetSelection }) => (
+        worksheetSelection.worksheetName === optimizationWorksheet.worksheetName
+      ));
+      if (calculation === undefined) throw new Error("expected fixture F4 calculation");
+      const claimId = `cpk-${index + 1}`;
+      return {
+        worksheetName: optimizationWorksheet.worksheetName,
+        tableId: optimizationWorksheet.tableId,
+        baselineIdentity: optimizationWorksheet.baselineIdentity,
+        sourceReferences: {
+          f2: { artifact: "Feature2-Report.json", contentHash: "2".repeat(64) },
+          f4: { artifact: "Feature4-Calculation.json", contentHash: "4".repeat(64), runId: inputs.f4Report.runId, calculationVersion: calculation.calculationVersion },
+          f5: { artifact: "Feature5-Report.json", contentHash: "5".repeat(64), interpretationVersion: "f5-data-interpretation-v1" },
+          image: { artifact: `${optimizationWorksheet.worksheetName}.png`, contentHash: "8".repeat(64), worksheetName: optimizationWorksheet.worksheetName },
+        },
+        narrativeMarkdown: narrativeForWorksheet(optimizationWorksheet.worksheetName, claimId),
+        calculationClaims: [{
+          claimId,
+          outputField: "capability.cpk",
+          rawValue: calculation.capability.cpk,
+          displayFormat: "number",
+          unit: null,
+        }],
+        reviewStatus: "ME_REVIEW_REQUIRED",
+      };
+    }),
+  });
+  inputs.f6Optimization.provenance.modelInterpretationDecision = {
+    outcome: "CALLER_AUTHORIZED",
+    artifactReference: { artifact: "Feature6-Model-Interpretation.json", contentHash: artifactHash },
+  };
+  return { ...inputs, modelInterpretation };
+}
+
 describe("createF6FinalReportProjection policy", () => {
   it("keeps blocked F2 worksheets in the report summary and fails the workbook", () => {
     const inputs = loadRealF6Inputs({
@@ -222,6 +277,69 @@ describe("createF6FinalReportProjection policy", () => {
       expect.objectContaining({ worksheetName: "Analysis-A", disposition: "CONDITIONAL_PASS" }),
     ]);
     expect(projection.markdown).toContain("| Analysis-A | Loop Analysis-A | 数值达到要求，但仍需补齐 Drawing Number、DIM ID 或完成图像与工程复核。 | CONDITIONAL_PASS |");
+  });
+
+  it("renders governed freeform model prose and calculation claims instead of the seven-part template", () => {
+    const baseInputs = loadRealF6Inputs({
+      worksheetNames: ["Analysis-A"],
+      f5Variant: "open",
+    });
+    const calculation = baseInputs.f4Report.calculations[0];
+    const inputs = addModelInterpretation(baseInputs, (_worksheetName, claimId) => [
+      "### 模型生成的自由段落标题",
+      "",
+      `当前 Predictive Cpk 为 {{calc:${claimId}}}，结论需要 ME 复核。`,
+    ].join("\n"));
+
+    const { markdown } = createF6FinalReportProjection(inputs);
+
+    expect(markdown).toContain("# 4. TA 总结性分析");
+    expect(markdown).toContain("## 4.1 Worksheet：Analysis-A");
+    expect(markdown).toContain("### 模型生成的自由段落标题");
+    expect(markdown).toContain(`当前 Predictive Cpk 为 ${numberText(calculation.capability.cpk)}，结论需要 ME 复核。`);
+    expect(markdown).not.toContain("### 4.1.1 输出边界");
+    expect(markdown).not.toContain("### 4.1.7 初步工程判断");
+    expect(markdown).not.toContain("### F5 模型图文联合参考解读");
+    expect(markdown).not.toContain("# 4. Appendix: Reference Traceability");
+  });
+
+  it("keeps model prose isolated by worksheet", () => {
+    const baseInputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A", "Analysis-B"], f5Variant: "supported" });
+    const inputs = addModelInterpretation(baseInputs, (worksheetName, claimId) => (
+      `### ${worksheetName} 专属判断\n\nCpk {{calc:${claimId}}}，需要 ME 复核。`
+    ));
+
+    const { markdown } = createF6FinalReportProjection(inputs);
+    const first = markdown.slice(markdown.indexOf("## 4.1 Worksheet：Analysis-A"), markdown.indexOf("## 4.2 Worksheet：Analysis-B"));
+    const second = markdown.slice(markdown.indexOf("## 4.2 Worksheet：Analysis-B"));
+
+    expect(first).toContain("Analysis-A 专属判断");
+    expect(first).not.toContain("Analysis-B 专属判断");
+    expect(second).toContain("Analysis-B 专属判断");
+    expect(second).not.toContain("Analysis-A 专属判断");
+  });
+
+  it.each(["NOT_PROVIDED", "REJECTED"])("renders model interpretation unavailable for %s", (outcome) => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"] });
+    inputs.f6Optimization.provenance.modelInterpretationDecision = outcome === "REJECTED"
+      ? { outcome, inputReferenceHash: "7".repeat(64), reasonCode: "schema_invalid" }
+      : { outcome };
+
+    const { markdown } = createF6FinalReportProjection(inputs);
+
+    expect(markdown).toContain("# 4. TA 总结性分析");
+    expect(markdown).toContain("模型解读 unavailable");
+    expect(markdown).toContain("# 1. 文档控制 Document Control");
+    expect(markdown).toContain("# 3. Worksheet：Analysis-A");
+  });
+
+  it("renders model interpretation unavailable for a blocked worksheet", () => {
+    const inputs = loadRealF6Inputs({ worksheetNames: ["Analysis-A"], blockedWorksheetNames: ["Blocked-A"] });
+
+    const { markdown } = createF6FinalReportProjection(inputs);
+    const blocked = markdown.slice(markdown.indexOf("## 4.2 Worksheet：Blocked-A"));
+
+    expect(blocked).toContain("模型解读 unavailable");
   });
 
   it("keeps supported structural SIGNALs on pass", () => {
@@ -429,6 +547,8 @@ describe("createF6FinalReportProjection final report template", () => {
     expect(markdown).toContain("| Design Nominal |");
     expect(markdown).toContain("## 3.3 Tolerance Path Image");
     expect(markdown).toContain("[Open tolerance path image](<");
+    expect(markdown.indexOf("## 3.4 输入数据")).toBeGreaterThan(markdown.indexOf("[Open tolerance path image](<"));
+    expect(markdown.slice(markdown.indexOf("## 3.3 Tolerance Path Image"), markdown.indexOf("## 3.4 输入数据"))).not.toContain("F5 模型图文联合参考解读");
     expect(markdown).not.toContain("Image Evaluation");
     expect(markdown).toContain("## 3.4 输入数据");
     expect(markdown).toContain("Design Nominal | Mean");
@@ -437,7 +557,8 @@ describe("createF6FinalReportProjection final report template", () => {
     expect(markdown).toContain("## 3.5 结果与规格符合性");
     expect(markdown).toContain("## 3.6 贡献与敏感度");
     expect(markdown).not.toContain("## 3.7 Optimize");
-    expect(markdown).toContain("# 4. Appendix: Reference Traceability");
+    expect(markdown).toContain("# 4. TA 总结性分析");
+    expect(markdown).not.toContain("# 4. Appendix: Reference Traceability");
     expect(markdown).not.toContain(deprecatedF6ReportArtifactName);
     expect(markdown.match(/Predictive Cpk \|/g)).toHaveLength(1);
     expect(markdown.match(/RSS 1σ/g)).toHaveLength(1);

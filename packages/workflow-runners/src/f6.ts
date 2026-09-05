@@ -346,9 +346,10 @@ export function runF6Optimization(
       return failedResult(layout, paths, artifacts, "input_rejected", boundary, staging, { realpath, stat, lstat, randomUUID: randomUuid, open, writeFd, close, rename, beforeRename, afterRename, rm });
     }
 
-    const inputDecisions = loaded.inputDecisions ?? {
-      analysisContext: { outcome: "NOT_PROVIDED" },
-      optimizationTargets: { outcome: "NOT_PROVIDED" },
+    const inputDecisions = {
+      analysisContext: loaded.inputDecisions?.analysisContext ?? { outcome: "NOT_PROVIDED" },
+      optimizationTargets: loaded.inputDecisions?.optimizationTargets ?? { outcome: "NOT_PROVIDED" },
+      modelInterpretation: loaded.inputDecisions?.modelInterpretation ?? { outcome: "NOT_PROVIDED" },
     };
     requireDecisionOrder(inputDecisions, loaded);
 
@@ -368,6 +369,7 @@ export function runF6Optimization(
       f6Optimization: optimization,
       generatedAt: generatedAtFromRunId(layout.runId),
       ...(loaded.analysisContext === undefined ? {} : { analysisContext: loaded.analysisContext }),
+      ...(loaded.modelInterpretation === undefined ? {} : { modelInterpretation: loaded.modelInterpretation }),
     }, {
       outputRoot: layout.runRoot,
       f1ArtifactRoot: loaded.f2Report.artifactRoot,

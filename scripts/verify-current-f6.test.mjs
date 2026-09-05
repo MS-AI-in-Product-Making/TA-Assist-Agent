@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   createF6ArtifactBundleFixture,
   fixtureFileSha256,
+  installF6ModelInterpretation,
   installF6V2Evidence,
 } from "./f6-artifact-test-fixture.mjs";
 import { runF6FullValidation } from "./run-f6-full-validation.mjs";
@@ -17,6 +18,7 @@ const OPTIONAL_SOURCE_KEYS = [
   "cost",
   "analysisContext",
   "optimizationTargets",
+  "modelInterpretation",
 ];
 
 function readJson(filePath) {
@@ -167,6 +169,7 @@ function installAllOptionalInputs(bundle) {
     effectiveVersion: "v1",
     contentHash: "e".repeat(64),
   });
+  const modelInterpretation = installF6ModelInterpretation(bundle);
 
   return {
     imageObservationArtifact: path.join(evidence.evidenceArtifactRoot, evidence.imageObservationArtifact),
@@ -175,6 +178,7 @@ function installAllOptionalInputs(bundle) {
     costArtifact: path.join(evidence.evidenceArtifactRoot, costArtifact),
     analysisContextArtifact: path.join(evidence.evidenceArtifactRoot, contextArtifact),
     optimizationTargetsArtifact: path.join(evidence.evidenceArtifactRoot, targetsArtifact),
+    modelInterpretationArtifact: modelInterpretation.filePath,
   };
 }
 
@@ -274,6 +278,7 @@ describe("validateExistingF6Artifact", () => {
       "f4",
       "f5",
       "imageObservation",
+      "modelInterpretation",
       "optimizationTargets",
       "supplierCapability",
     ]);
@@ -282,6 +287,7 @@ describe("validateExistingF6Artifact", () => {
     expect(summary.sources.cost).toEqual(optimization.provenance.costReference);
     expect(summary.sources.analysisContext).toEqual(optimization.provenance.analysisContextDecision.artifactReference);
     expect(summary.sources.optimizationTargets).toEqual(optimization.provenance.optimizationTargetsDecision.artifactReference);
+    expect(summary.sources.modelInterpretation).toEqual(optimization.provenance.modelInterpretationDecision.artifactReference);
   });
 
   it.each(OPTIONAL_SOURCE_KEYS)("rejects optional source %s when its run summary hash drifts", (sourceKey) => {

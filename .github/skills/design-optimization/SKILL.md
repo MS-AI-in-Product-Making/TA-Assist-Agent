@@ -107,7 +107,7 @@ The `F4` output is the validated F4 root, `Feature4-Calculation.json`, report, r
 
 Ask whether to evaluate the already verified F1 images. If the user skips, image capability is unavailable, or no valid observation artifact can be created, continue deterministic F5 with `not_evaluated` and clarifications. A missing F1 image or image reference is different: that worksheet was excluded in W3 and cannot continue.
 
-For image mode, inspect only each W3-verified physical image and use all active factor rows, not only top contributors. Keep visible image FACTs separate from contextual SIGNALs. Evaluate exactly these five core scopes per worksheet: `tolerance_loop_closure`, `datum_chain`, `assembly_datum_face`, `stack_start`, and `direction`. Do not infer unseen geometry, Drawing Number, DIM ID, datum identity, or label-to-row mappings.
+For image mode, analyze each selected worksheet independently using only that worksheet's W3-verified physical image, all active factor rows, and matching F3/F4 evidence; never combine image or Factor context across worksheets. Keep visible image FACTs separate from contextual SIGNALs. Evaluate exactly these five core scopes per worksheet: `tolerance_loop_closure`, `datum_chain`, `assembly_datum_face`, `stack_start`, and `direction`. Do not infer unseen geometry, Drawing Number, DIM ID, datum identity, or label-to-row mappings.
 
 New image mode creates only `f5-image-observation-v2`; v1 is historical read-only compatibility. Create one immutable artifact beneath `test/demo-output/f5-observations/<workbook-content-hash>/<system-generated-uuid>/Feature5-Image-Observations.json`. Validate lexical containment and every existing ancestor before creation. Never edit, overwrite, append to, repair, or reuse an observation target. Read back with `f5ImageObservationArtifactSchema` and require exact workbook hash, downstream worksheet set, image references, all-row snapshots, source rows, and five scopes. Any mismatch discards the whole optional artifact and uses deterministic fallback.
 
@@ -116,6 +116,18 @@ New image mode creates only `f5-image-observation-v2`; v1 is historical read-onl
 Run F5 with the current F1, F3, and F4 roots and one repeated `--worksheet` per downstream worksheet. Add `--image-observations` only for a W6 artifact that passed readback validation. Require F5 to publish the observation copy when v2 was accepted; reject an unexpected `enhanced_observation_rejected` fallback in image mode.
 
 Validate `Feature5-Report.json`, run summary, manifest, output containment, source identities, worksheet set, classifications, and recorded hashes. The `F5` output is the validated F5 root and all published F5 artifacts.
+
+### Phase W8 - Generate governed model interpretation
+
+Generate at most one optional `f6-model-interpretation-v1` artifact after F5 validation and before the two caller-input gates. This workflow-owned artifact does not require an additional caller confirmation. Generate each selected worksheet independently using only that worksheet's verified image, all active Factor rows, validated F4 calculation, and validated F5 evidence; never combine prose, image observations, Factor context, or calculation claims across worksheets.
+
+Author natural engineering Markdown rather than a fixed section template. Use validated F5 evidence for image facts, contextual signals, and clarifications, and keep image-visible FACTs distinct from engineering INFERENCE and required CLARIFICATION. Compare explicit visible arrow direction and label mapping with linked structured Factor descriptions and nominal signs, but do not infer missing label-to-row mappings. Exclude `datum_chain` and `stack_start` from user-facing prose. State that model interpretation may contain hallucinations, label mismatches, or omissions and must be reviewed by ME.
+
+Represent every governed F4 number only through declared calculation claim placeholders; do not copy numeric values into narrative text or recalculate Factor values. Include each declared placeholder exactly once so deterministic F6 can substitute it with the governed formatter. Preserve worksheet isolation and source bindings for F4, F5, and any accepted v2 image observation.
+
+Create the artifact only at `test/demo-output/f6-model-interpretations/<workbook-content-hash>/<system-generated-uuid>/Feature6-Model-Interpretation.json`. Validate lexical containment and every existing ancestor before creation. Never edit, overwrite, append to, repair, or reuse a model interpretation target. Read the new file back and validate it with `f6ModelInterpretationArtifactSchema`, exact workbook identity, exact downstream worksheet set, source hashes, worksheet/table identities, calculation claim values, optional image-observation identity, and Markdown link containment.
+
+Any generation, read-back, contract, identity, claim, or Markdown failure is soft-rejected: discard the whole optional artifact, omit `--model-interpretation`, continue deterministic F6, and require section 4 to show `模型解读 unavailable`. Only a fully accepted artifact may be passed as `--model-interpretation <artifact-path>`.
 
 ### Phase W8A - Collect optional TA Analysis Context
 
@@ -141,7 +153,7 @@ Run F6 with the current F2, F3, F4, and F5 roots and one repeated `--worksheet` 
 
 Validate `Feature6-Optimization.json` as `f6-optimization-v2` with `f6OptimizationResultSchema` and validate the hash-bound `Feature6-Report.md` only through the recorded SHA-256 before presentation. Validate the run summary, manifest, five-file output set, exact downstream worksheet set, F2 blocked worksheet placement, input decisions, input provenance hashes, output hashes, option counts, evidence gates, ROI gates, built-in policy IDs/ratios/side-Cpk trigger/F4 scenario references, and `reportSummary`. Require Optimization worksheet names to be a unique subset of `reportSummary` worksheet names. Any `reportSummary` worksheet not present in Optimization is blocked `FAIL`; reportSummary extras with any other disposition are blocked FAIL. The exact full report scope comes from the validated run summary and manifest, not from Optimization alone. Reject current-entry v1 artifacts as unsupported rather than converting or presenting them. Never parse Markdown to derive disposition.
 
-The `F6` output is the validated F6 root, optimization JSON/Markdown, final report Markdown, run summary, and manifest.
+The `F6` output is the validated F6 root, optimization JSON/Markdown, final report Markdown, run summary, and manifest. Section 3.3 contains only the verified tolerance-path image and its link; do not render the F5 model reference interpretation there. Section 4 consumes only accepted W8 Markdown and deterministic calculation claim substitution; it never regenerates or mechanically reconstructs interpretation prose. In `Feature6-Report.md`, prominently summarize each `indicated_conflict` with its `textBasis`, linked Factor names, and required ME review, using only accepted model prose. Exclude `datum_chain` and `stack_start` from the user-facing summary while retaining them in governed internal artifacts. If v2 evidence was not accepted, the W8 artifact must not invent image analysis. When v2 evidence is present, warn that model interpretation may contain hallucinations, label mismatches, or omissions and must be reviewed by ME. Never hard-code screenshot-specific labels, values, loads, or conclusions into the report template. Do not call the model again or recalculate Factor values while composing F6 output.
 
 ### Phase W10 - Present every Feature output
 
@@ -153,7 +165,7 @@ Present one concise run ledger containing:
 - `F3` output: status, root, report, governance-complete and governance-required counts, plus the optional ADO publishing outcome and sanitized work item reference when one was validated.
 - `F4` output: status, root, calculation/report paths, and accepted downstream calculation count.
 - `F5` output: status, root, report paths, image mode (`v2` or `not_evaluated`), and clarification count.
-- `F6` output: status, root, five artifact paths, Context/Targets decision outcomes and controlled hashes, candidate/completed/failed option counts, four-state report status (`PASS`, `CONDITIONAL_PASS`, `FAIL`, or `INCOMPLETE`), and blocked worksheet section.
+- `F6` output: status, root, five artifact paths, model interpretation mode, decision, path/hash or unavailable reason, Context/Targets decision outcomes and controlled hashes, candidate/completed/failed option counts, four-state report status (`PASS`, `CONDITIONAL_PASS`, `FAIL`, or `INCOMPLETE`), and blocked worksheet section.
 
 Do not report a phase as completed until its contract, containment, identity, manifest, and recorded hashes have passed. Keep FACT, RULE, SIGNAL, OPTION, assumptions, clarifications, risks, and evidence-gated options distinct.
 
@@ -173,9 +185,9 @@ If validation succeeds, present the validated F6 report without rerunning F0, F1
 - `npm run workflow:f4 -- --f2-report <f2-output-dir>/Feature2-Report.json`
 - `npm run workflow:f5 -- <f1-output-dir> <f3-output-dir> <f4-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...]`
 - `npm run workflow:f5 -- <f1-output-dir> <f3-output-dir> <f4-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] --image-observations <artifact-path>`
-- `npm run workflow:f6 -- <f2-output-dir> <f3-output-dir> <f4-output-dir> <f5-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] [--analysis-context <artifact-path>] [--optimization-targets <artifact-path>]`
+- `npm run workflow:f6 -- <f2-output-dir> <f3-output-dir> <f4-output-dir> <f5-output-dir> --worksheet <worksheet-name> [--worksheet <worksheet-name> ...] [--model-interpretation <artifact-path>] [--analysis-context <artifact-path>] [--optimization-targets <artifact-path>]`
 
-The two F2 commands are separate gates and must not be merged, omitted, or reordered. Do not add an F4 worksheet flag. Workbook mode always supplies the exact downstream worksheet set to F3, F5, and F6. Only W9 may append the two documented, separately authorized V2 input pairs to the final allowed command.
+The two F2 commands are separate gates and must not be merged, omitted, or reordered. Do not add an F4 worksheet flag. Workbook mode always supplies the exact downstream worksheet set to F3, F5, and F6. Only W9 may append the accepted W8 model artifact and the two documented, separately authorized V2 caller input pairs to the final allowed command.
 
 W4A does not add F3 ADO commands to this local runner list. When W4A is entered, use drawing-governance as the required sub-skill authority for local reminder commands and Surface MCP operations. F6 must not invent, duplicate, or broaden that allowlist.
 

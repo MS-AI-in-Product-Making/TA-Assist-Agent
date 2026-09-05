@@ -272,6 +272,10 @@ function engineeringSummary(markdown) {
   return section(markdown, "## 工程审查摘要", "## 审计附录");
 }
 
+function interpretationNarrative(markdown) {
+  return section(markdown, "## TA 解读总结与异常发现", "## 审计附录");
+}
+
 function auditAppendix(markdown) {
   return section(markdown, "## 审计附录");
 }
@@ -407,6 +411,70 @@ describe("renderF5Report", () => {
     }
     expect(contextSignals).toContain("direction-label");
     expect(contextSignals).toContain("table-a:2");
+  });
+
+  it("renders a hallucination warning and governed model reference interpretation for v2 evidence", () => {
+    const report = completedReport({ contextual: true });
+    const expectedContribution = report.worksheets[0].sections.majorContributors.items
+      .find(({ factorName }) => factorName === "factor|one").contributionPercent;
+    const markdown = chapter(
+      renderF5Report(report),
+      "## 1. 公差链有效性",
+      "## 2. 能力与规格对比",
+    );
+
+    const interpretation = section(markdown, "#### 模型图文联合参考解读", "#### Worksheet context SIGNAL");
+    expect(interpretation).toContain("模型生成");
+    expect(interpretation).toContain("可能存在幻觉、标签误配或遗漏");
+    expect(interpretation).toContain("不能替代工程结论");
+    expect(interpretation).toContain("必须由 ME 复核");
+    expect(interpretation).toContain("Image and worksheet context require review for direction.");
+    expect(interpretation).toContain("factor\\|one");
+    expect(interpretation).toContain("contribution");
+    expect(interpretation).toContain(`${expectedContribution}%`);
+  });
+
+  it("renders a concise TA narrative that highlights direct image-table conflicts without datum-chain or stack-start content", () => {
+    const report = clone(completedReport({ contextual: true }));
+    const worksheet = report.worksheets[0];
+    const directionSignal = worksheet.statements.find((statement) => (
+      statement.type === "SIGNAL"
+      && statement.content.signalKind === "image_text_context_review"
+      && statement.content.scope === "direction"
+    ));
+    directionSignal.content.signalValue = "indicated_conflict";
+    directionSignal.content.textBasis = "Label D arrow points upward while the linked table factor has a negative nominal sign.";
+
+    const markdown = renderF5Report(report);
+    const narrative = interpretationNarrative(markdown);
+    const rssSigma = worksheet.statements.find((statement) => statement.content.metric === "rss_sigma").content.value;
+    const yieldValue = worksheet.statements.find((statement) => statement.content.metric === "yield").content.value;
+
+    for (const heading of [
+      "### 1. 公差链与 Target 理解",
+      "### 2. 统计与能力结果",
+      "### 3. 主要贡献与工程风险",
+      "### 4. 图片与 Table 一致性异常",
+      "### 5. 必须澄清的问题",
+    ]) expect(narrative).toContain(heading);
+    expect(narrative).toContain("发现 1 项直接可比异常");
+    expect(narrative).toContain(`RSS 1σ=${rssSigma}`);
+    expect(narrative).toContain(`预测 Yield=${yieldValue}`);
+    expect(narrative).toContain("Label D arrow points upward while the linked table factor has a negative nominal sign.");
+    expect(narrative).toContain("factor\\|one");
+    expect(narrative).not.toContain("datum_chain");
+    expect(narrative).not.toContain("stack_start");
+
+    const appendix = auditAppendix(markdown);
+    expect(appendix).toContain("datum_chain");
+    expect(appendix).toContain("stack_start");
+  });
+
+  it("does not render a model reference interpretation without v2 contextual evidence", () => {
+    const markdown = renderF5Report(completedReport({ observations: [observation()] }));
+
+    expect(markdown).not.toContain("模型图文联合参考解读");
+    expect(markdown).not.toContain("可能存在幻觉、标签误配或遗漏");
   });
 
   it("renders every v2 context snapshot row in source order with original, mapped, numeric, and source-cell fields", () => {

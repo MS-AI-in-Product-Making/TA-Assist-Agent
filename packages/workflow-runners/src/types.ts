@@ -172,6 +172,7 @@ export interface F6OptimizationRequest {
   readonly imageObservationsPath?: string;
   readonly analysisContextPath?: string;
   readonly optimizationTargetsPath?: string;
+  readonly modelInterpretationPath?: string;
 }
 
 export interface F6OptimizationResult {
@@ -189,6 +190,7 @@ export interface F6OptimizationResult {
   readonly inputDecisions?: {
     readonly analysisContext: { readonly outcome: string; readonly artifactReference?: { readonly artifact: string; readonly contentHash: string } };
     readonly optimizationTargets: { readonly outcome: string; readonly artifactReference?: { readonly artifact: string; readonly contentHash: string } };
+    readonly modelInterpretation: { readonly outcome: string; readonly artifactReference?: { readonly artifact: string; readonly contentHash: string } };
   };
   readonly summary?: F6OptimizationResultV2["summary"];
 }

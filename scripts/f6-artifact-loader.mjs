@@ -12,6 +12,7 @@ import {
   f6AnalysisContextSchema,
   f6CostEvidenceSchema,
   f6DatumEvidenceSchema,
+  f6ModelInterpretationArtifactSchema,
   f6OptimizationRequestSchema,
   f6OptimizationTargetsSchema,
   f6SupplierCapabilityEvidenceSchema,
@@ -35,6 +36,26 @@ const CONTROLLED_OUTPUT_ROOT = path.join(REPOSITORY_ROOT, "test", "demo-output")
 
 function inputRejected(reasonCode, artifactReference) {
   return { status: "inputRejected", reasonCode, artifactReference };
+}
+
+function modelInputReferenceHash(artifactRoot, artifactReference) {
+  return createHash("sha256")
+    .update(`${String(artifactRoot ?? "")}\0${String(artifactReference ?? "")}`)
+    .digest("hex");
+}
+
+function rejectedModelDecision(artifactRoot, artifactReference, rejection, reference, reasonCode) {
+  const mappedReason = reasonCode ?? (rejection?.reasonCode === "artifact_contract_invalid"
+    ? "schema_invalid"
+    : rejection?.reasonCode === "artifact_identity_mismatch"
+      ? "identity_mismatch"
+      : "path_invalid");
+  return {
+    outcome: "REJECTED",
+    ...(reference === undefined ? {} : { artifactReference: reference }),
+    inputReferenceHash: modelInputReferenceHash(artifactRoot, artifactReference),
+    reasonCode: mappedReason,
+  };
 }
 
 function ioReason(error) {
@@ -356,6 +377,8 @@ export function loadF6ArtifactBundle({
   costArtifact,
   analysisContextArtifact,
   optimizationTargetsArtifact,
+  modelInterpretationArtifactRoot,
+  modelInterpretationArtifact,
 }, hooks) {
   const governedRoots = [
     [f2ArtifactRoot, ARTIFACTS.f2],
@@ -582,9 +605,11 @@ export function loadF6ArtifactBundle({
 
   let analysisContext;
   let optimizationTargets;
+  let modelInterpretation;
   const inputDecisions = {
     analysisContext: { outcome: "NOT_PROVIDED" },
     optimizationTargets: { outcome: "NOT_PROVIDED" },
+    modelInterpretation: { outcome: "NOT_PROVIDED" },
   };
   const baselineIdentityFor = (requestWorksheet) => ({
     calculationVersion: requestWorksheet.baselineCalculation.calculationVersion,
@@ -645,6 +670,113 @@ export function loadF6ArtifactBundle({
     sourceReferences.optimizationTargets = loaded.reference;
   }
 
+  if (modelInterpretationArtifactRoot !== undefined || modelInterpretationArtifact !== undefined) {
+    const validatedRoot = validatedGovernedRoot(
+      modelInterpretationArtifactRoot,
+      "modelInterpretationArtifactRoot",
+      publishRoot,
+    );
+    if (validatedRoot.rejection || typeof modelInterpretationArtifact !== "string" || modelInterpretationArtifact.trim() === "") {
+      inputDecisions.modelInterpretation = rejectedModelDecision(
+        modelInterpretationArtifactRoot,
+        modelInterpretationArtifact,
+        validatedRoot.rejection,
+      );
+    } else {
+      const loaded = readOptionalArtifact(
+        validatedRoot.filePath,
+        modelInterpretationArtifact,
+        f6ModelInterpretationArtifactSchema,
+        hooks,
+      );
+      if (loaded.rejection) {
+        inputDecisions.modelInterpretation = rejectedModelDecision(
+          modelInterpretationArtifactRoot,
+          modelInterpretationArtifact,
+          loaded.rejection,
+        );
+      } else {
+        let rejectionReason;
+        if (loaded.value.workbookContentHash !== workbook.contentHash
+          || !exactBaseline(loaded.value.worksheets)
+          || !isDeepStrictEqual(loaded.value.worksheets.map(({ worksheetName }) => worksheetName), selection)) {
+          rejectionReason = "identity_mismatch";
+        }
+        for (const worksheet of loaded.value.worksheets) {
+          if (rejectionReason !== undefined) break;
+          const requestWorksheet = requestWorksheets.find(({ worksheetName }) => worksheetName === worksheet.worksheetName);
+          const f5Worksheet = f5ByName.get(worksheet.worksheetName);
+          const expectedImageReference = {
+            artifact: f5Worksheet.imageReference.relativePath,
+            contentHash: f5Worksheet.imageReference.contentHash,
+            worksheetName: worksheet.worksheetName,
+          };
+          const expectedObservationReference = sourceReferences.imageObservation === undefined
+            ? undefined
+            : { ...sourceReferences.imageObservation, observationVersion: "f5-image-observation-v2" };
+          if (!requestWorksheet
+            || !isDeepStrictEqual(worksheet.sourceReferences.f2, sourceReferences.f2)
+            || !isDeepStrictEqual(worksheet.sourceReferences.f4, sourceReferences.f4)
+            || !isDeepStrictEqual(worksheet.sourceReferences.f5, sourceReferences.f5)
+            || !isDeepStrictEqual(worksheet.sourceReferences.image, expectedImageReference)
+            || !isDeepStrictEqual(worksheet.sourceReferences.imageObservation, expectedObservationReference)) {
+            rejectionReason = "identity_mismatch";
+            break;
+          }
+          for (const claim of worksheet.calculationClaims) {
+            const factorMatch = /^factors\[(\d+)\]\.(mean|halfTolerance|sigma|contribution)$/.exec(claim.outputField);
+            let expectedValue;
+            let expectedUnit = null;
+            let expectedDisplayFormat;
+            if (factorMatch !== null) {
+              const factor = requestWorksheet.baselineCalculation.factors[Number(factorMatch[1])];
+              expectedValue = factor?.[factorMatch[2]];
+              expectedUnit = factorMatch[2] === "contribution" ? null : factor?.unit ?? null;
+              expectedDisplayFormat = factorMatch[2] === "contribution" ? "percent" : "engineering";
+            } else {
+              const [group, field] = claim.outputField.split(".");
+              expectedValue = requestWorksheet.baselineCalculation[group]?.[field];
+              const dimensionalCapability = group === "capability" && new Set(["lowerSpecLimit", "upperSpecLimit"]).has(field);
+              expectedUnit = group === "system" || dimensionalCapability
+                ? requestWorksheet.baselineCalculation.factors[0]?.unit ?? null
+                : null;
+              expectedDisplayFormat = group === "system" || dimensionalCapability
+                ? "engineering"
+                : new Set(["outOfSpecRatio", "yield"]).has(field)
+                  ? "percent"
+                  : "number";
+            }
+            if (!Object.is(claim.rawValue, expectedValue)) {
+              rejectionReason = "identity_mismatch";
+              break;
+            }
+            if (claim.unit !== expectedUnit) {
+              rejectionReason = "unit_mismatch";
+              break;
+            }
+            if (claim.displayFormat !== expectedDisplayFormat) {
+              rejectionReason = "identity_mismatch";
+              break;
+            }
+          }
+        }
+        if (rejectionReason !== undefined) {
+          inputDecisions.modelInterpretation = rejectedModelDecision(
+            modelInterpretationArtifactRoot,
+            modelInterpretationArtifact,
+            undefined,
+            loaded.reference,
+            rejectionReason,
+          );
+        } else {
+          modelInterpretation = loaded.value;
+          inputDecisions.modelInterpretation = { outcome: "CALLER_AUTHORIZED", artifactReference: loaded.reference };
+          sourceReferences.modelInterpretation = loaded.reference;
+        }
+      }
+    }
+  }
+
   const request = f6OptimizationRequestSchema.safeParse({
     contractVersion: "v1",
     inputClassification: "confidential",
@@ -678,6 +810,7 @@ export function loadF6ArtifactBundle({
     sourceReferences,
     analysisContext,
     optimizationTargets,
+    modelInterpretation,
     inputDecisions,
   };
 }

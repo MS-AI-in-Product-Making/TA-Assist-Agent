@@ -267,6 +267,50 @@ function renderContextSignals(lines, signals) {
   }
 }
 
+function renderModelReferenceInterpretation(lines, worksheet, signals) {
+  const snapshotRowBySource = new Map(worksheet.contextSnapshot.rows.map((row) => [
+    `${row.tableId}\u0000${row.sourceRow}`,
+    row,
+  ]));
+  const contributorBySource = new Map(worksheet.sections.majorContributors.items.map((item) => [
+    `${item.source.tableId}\u0000${item.source.sourceRow}`,
+    item,
+  ]));
+
+  lines.push(
+    "",
+    "#### 模型图文联合参考解读",
+    "",
+    "> 本区域由模型生成，可能存在幻觉、标签误配或遗漏；不能替代工程结论，必须由 ME 复核。",
+    "",
+    "| scope | 模型参考解读 | 关联 Factor | evidenceStatus |",
+    "| --- | --- | --- | --- |",
+  );
+  for (const signal of signals) {
+    const linkedFactors = signal.content.linkedSourceRows.map(({ tableId, sourceRow }) => {
+      const row = snapshotRowBySource.get(`${tableId}\u0000${sourceRow}`);
+      return row?.factorName ?? `${tableId}:${sourceRow}`;
+    });
+    lines.push(`| ${cell(signal.content.scope)} | ${cell(signal.content.textBasis)} | ${cell(linkedFactors.join("; "))} | ${cell(signal.content.signalValue)} |`);
+  }
+
+  lines.push(
+    "",
+    "受控 Factor 依据（来自确定性计算，不由模型重算）：",
+    "",
+    "| factor | contribution | nominal | upperTolerance | lowerTolerance | sigmaLevel | source |",
+    "| --- | ---: | ---: | ---: | ---: | ---: | --- |",
+  );
+  for (const row of [...worksheet.contextSnapshot.rows].sort((left, right) => {
+    const leftContribution = contributorBySource.get(`${left.tableId}\u0000${left.sourceRow}`)?.contributionPercent ?? -1;
+    const rightContribution = contributorBySource.get(`${right.tableId}\u0000${right.sourceRow}`)?.contributionPercent ?? -1;
+    return rightContribution - leftContribution || left.sourceRow - right.sourceRow;
+  })) {
+    const contributor = contributorBySource.get(`${row.tableId}\u0000${row.sourceRow}`);
+    lines.push(`| ${cell(row.factorName)} | ${cell(contributor === undefined ? null : `${contributor.contributionPercent}%`)} | ${cell(row.nominal)} | ${cell(row.upperTolerance)} | ${cell(row.lowerTolerance)} | ${cell(row.sigmaLevel)} | ${cell(`${row.tableId}:${row.sourceRow}`)} |`);
+  }
+}
+
 function renderContextSnapshot(lines, worksheet) {
   const rows = [...worksheet.contextSnapshot.rows]
     .sort((left, right) => (
@@ -317,6 +361,7 @@ function renderTolerance(lines, worksheet, options) {
 
   renderVisualFacts(lines, facts, options, contextual);
   if (contextual) {
+    renderModelReferenceInterpretation(lines, worksheet, contextSignals);
     renderContextSignals(lines, contextSignals);
     renderContextSnapshot(lines, worksheet);
   }
@@ -461,7 +506,6 @@ function renderCompletedWorksheet(lines, worksheet, chapterKey, options) {
 function capabilityMetricValue(worksheet, metric) {
   const statement = worksheet.statements.find((candidate) => (
     candidate.type === "FACT"
-    && candidate.section === "capability-vs-specification"
     && candidate.content.metric === metric
   ));
   if (statement === undefined) return undefined;
@@ -593,6 +637,114 @@ function renderEngineeringSummary(lines, parsed, options) {
   }
 }
 
+function contextSignalsForWorksheet(worksheet) {
+  return worksheet.statements.filter((statement) => (
+    statement.type === "SIGNAL"
+    && "signalKind" in statement.content
+    && statement.content.signalKind === "image_text_context_review"
+  ));
+}
+
+function linkedFactorNames(worksheet, signal) {
+  if (worksheet.contextSnapshot === undefined) return [];
+  const rows = new Map(worksheet.contextSnapshot.rows.map((row) => [
+    `${row.tableId}\u0000${row.sourceRow}`,
+    row.factorName,
+  ]));
+  return signal.content.linkedSourceRows.map(({ tableId, sourceRow }) => (
+    rows.get(`${tableId}\u0000${sourceRow}`) ?? `${tableId}:${sourceRow}`
+  ));
+}
+
+function isInternalOnlyClarification(clarification) {
+  const controlledText = [
+    clarification.clarificationId,
+    ...(clarification.missingEvidence ?? []),
+  ].join(" ");
+  return controlledText.includes("datum_chain") || controlledText.includes("stack_start");
+}
+
+function renderInterpretationWorksheet(lines, worksheet) {
+  lines.push("", `## Worksheet 解读：${cell(worksheet.worksheetName)}`);
+  if (worksheet.status === "input_rejected") {
+    lines.push("", "输入证据未通过验证，无法生成工程解读。" );
+    return;
+  }
+
+  const contextSignals = contextSignalsForWorksheet(worksheet);
+  const signalByScope = new Map(contextSignals.map((signal) => [signal.content.scope, signal]));
+  const loopSignal = signalByScope.get("tolerance_loop_closure");
+  const directionSignal = signalByScope.get("direction");
+  const cpk = capabilityMetricValue(worksheet, "cpk");
+  const targetCpk = capabilityMetricValue(worksheet, "target_cpk");
+  const rssSigma = capabilityMetricValue(worksheet, "rss_sigma");
+  const yieldValue = capabilityMetricValue(worksheet, "yield");
+  const contributors = [...worksheet.sections.majorContributors.items]
+    .sort((left, right) => right.contributionPercent - left.contributionPercent)
+    .slice(0, 3);
+  const conflicts = contextSignals.filter((signal) => signal.content.signalValue === "indicated_conflict");
+  const reviewSignals = [loopSignal, directionSignal]
+    .filter((signal) => signal !== undefined && signal.content.signalValue !== "indicated_conflict");
+
+  lines.push(
+    "",
+    "### 1. 公差链与 Target 理解",
+    "",
+    worksheet.contextSnapshot === undefined
+      ? "未提供可验证的图文上下文，公差链图片关系未评估。"
+      : `本分析对象为 ${inline(worksheet.contextSnapshot.dimensionDescription)}。${loopSignal === undefined ? "未形成公差链闭合观察。" : inline(loopSignal.content.textBasis)}`,
+    "",
+    "### 2. 统计与能力结果",
+    "",
+    `确定性计算结果：Cpk=${inline(cpk)}，Target Cpk=${inline(targetCpk)}，RSS 1σ=${inline(rssSigma)}，预测 Yield=${inline(yieldValue)}。`,
+    Number.isFinite(cpk) && Number.isFinite(targetCpk)
+      ? `Cpk ${cpk >= targetCpk ? "达到" : "未达到"}当前 Target Cpk；该判断来自受控规格与计算结果，不由图片推断。`
+      : "缺少完整规格或能力结果，不能给出 Cpk 达标判断。",
+    "",
+    "### 3. 主要贡献与工程风险",
+    "",
+  );
+  if (contributors.length === 0) {
+    lines.push("未形成可验证的主要贡献因子排序。" );
+  } else {
+    lines.push(`主要贡献集中在 ${contributors.map((item) => `${inline(item.factorName)} (${inline(item.contributionPercent)}%)`).join("、")}。贡献率表示方差占比，不等于已确认的物理根因或供应商责任。`);
+  }
+
+  lines.push("", "### 4. 图片与 Table 一致性异常", "");
+  if (worksheet.observationVersion !== "f5-image-observation-v2") {
+    lines.push("图片与 Table 的一致性未评估。" );
+  } else if (conflicts.length === 0) {
+    lines.push("未发现由当前受控图文证据直接证明的冲突；这不代表图片已完成工程确认。" );
+  } else {
+    lines.push(`发现 ${conflicts.length} 项直接可比异常：`);
+    for (const signal of conflicts) {
+      const factors = linkedFactorNames(worksheet, signal);
+      lines.push(`- ${inline(signal.content.textBasis)} 关联 Factor：${factors.length > 0 ? factors.map(inline).join("；") : "未可靠映射"}。证据状态：${code(signal.content.signalValue)}；需要 ME 复核。`);
+    }
+  }
+
+  lines.push("", "### 5. 必须澄清的问题", "");
+  const questions = [
+    ...reviewSignals.map((signal) => `${signal.content.textBasis}（${signal.content.signalValue}）`),
+    ...worksheet.clarifications
+      .filter((item) => !isInternalOnlyClarification(item))
+      .map((item) => item.questionForReviewer),
+  ];
+  if (questions.length === 0) {
+    lines.push("当前没有新增澄清项。" );
+  } else {
+    for (const question of [...new Set(questions)]) lines.push(`- ${inline(question)}`);
+  }
+  if (worksheet.observationVersion === "f5-image-observation-v2") {
+    lines.push("", "> 模型图文解读可能存在幻觉、标签误配或遗漏；不能替代工程结论，必须由 ME 复核。" );
+  }
+}
+
+function renderInterpretationNarrative(lines, parsed) {
+  lines.push("", "## TA 解读总结与异常发现");
+  for (const worksheet of parsed.worksheets) renderInterpretationWorksheet(lines, worksheet);
+}
+
 export function renderF5Report(report, { outputRoot, f1ArtifactRoot, publishRoot } = {}) {
   let parsed;
   try {
@@ -614,6 +766,7 @@ export function renderF5Report(report, { outputRoot, f1ArtifactRoot, publishRoot
   ];
 
   renderEngineeringSummary(lines, parsed, options);
+  renderInterpretationNarrative(lines, parsed);
   lines.push("", "## 审计附录");
 
   for (const chapter of CHAPTERS) {

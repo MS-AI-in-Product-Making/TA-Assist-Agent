@@ -24,6 +24,8 @@ import {
   createF6ArtifactBundleFixture,
   F6_FIXTURE_RUN_ID,
   F6_FIXTURE_WORKBOOK_HASH,
+  installF6ModelInterpretation,
+  installF6V2Evidence,
   readFixtureJson as readJson,
   rewriteFixtureJson as rewriteJson,
   writeFixtureJson as writeJson,
@@ -647,10 +649,116 @@ describe("F6 optional governed evidence", () => {
     const result = loadF6ArtifactBundle(setupBundle());
 
     expect(result.status).toBe("accepted");
+    expect(result.inputDecisions.modelInterpretation).toEqual({ outcome: "NOT_PROVIDED" });
+    expect(result.modelInterpretation).toBeUndefined();
     expect(result.request).not.toHaveProperty("imageObservationReference");
     expect(result.request).not.toHaveProperty("supplierCapabilityEvidence");
     expect(result.request).not.toHaveProperty("datumEvidence");
     expect(result.request).not.toHaveProperty("costEvidence");
+  });
+
+  it("loads an identity-bound model interpretation from its independent root", () => {
+    const bundle = setupBundle();
+    const installed = installF6ModelInterpretation(bundle);
+
+    const result = loadF6ArtifactBundle(bundle);
+
+    expect(result.status, JSON.stringify(result)).toBe("accepted");
+    expect(result.modelInterpretation).toEqual(installed.artifact);
+    expect(result.inputDecisions.modelInterpretation).toEqual({
+      outcome: "CALLER_AUTHORIZED",
+      artifactReference: {
+        artifact: installed.modelInterpretationArtifact,
+        contentHash: sha256(installed.filePath),
+      },
+    });
+    expect(result.sourceReferences.modelInterpretation).toEqual(
+      result.inputDecisions.modelInterpretation.artifactReference,
+    );
+  });
+
+  it("loads model interpretation bound to accepted v2 image observations", () => {
+    const bundle = setupBundle();
+    installF6V2Evidence(bundle);
+    const installed = installF6ModelInterpretation(bundle);
+
+    const result = loadF6ArtifactBundle(bundle);
+
+    expect(result.status, JSON.stringify(result)).toBe("accepted");
+    expect(result.modelInterpretation).toEqual(installed.artifact);
+    expect(result.modelInterpretation.worksheets[0].sourceReferences.imageObservation).toEqual({
+      ...result.sourceReferences.imageObservation,
+      observationVersion: "f5-image-observation-v2",
+    });
+  });
+
+  it("soft-rejects a model interpretation whose F4 claim value drifts", () => {
+    const bundle = setupBundle();
+    const installed = installF6ModelInterpretation(bundle);
+    rewriteJson(installed.filePath, (artifact) => {
+      artifact.worksheets[0].calculationClaims[0].rawValue += 0.01;
+    });
+
+    const result = loadF6ArtifactBundle(bundle);
+
+    expect(result.status, JSON.stringify(result)).toBe("accepted");
+    expect(result.modelInterpretation).toBeUndefined();
+    expect(result.inputDecisions.modelInterpretation.outcome).toBe("REJECTED");
+  });
+
+  it("soft-rejects malformed and traversal model interpretation inputs", () => {
+    const malformedBundle = setupBundle();
+    const malformed = installF6ModelInterpretation(malformedBundle);
+    writeFileSync(malformed.filePath, "{", "utf8");
+    const malformedResult = loadF6ArtifactBundle(malformedBundle);
+    expect(malformedResult.status).toBe("accepted");
+    expect(malformedResult.inputDecisions.modelInterpretation).toMatchObject({
+      outcome: "REJECTED",
+      reasonCode: "schema_invalid",
+    });
+
+    const traversalBundle = setupBundle();
+    installF6ModelInterpretation(traversalBundle);
+    traversalBundle.modelInterpretationArtifact = `..${path.sep}Feature6-Model-Interpretation.json`;
+    const traversalResult = loadF6ArtifactBundle(traversalBundle);
+    expect(traversalResult.status).toBe("accepted");
+    expect(traversalResult.inputDecisions.modelInterpretation).toMatchObject({
+      outcome: "REJECTED",
+      reasonCode: "identity_mismatch",
+    });
+  });
+
+  it("soft-rejects a model interpretation root outside the governed publish root", () => {
+    const bundle = setupBundle();
+    installF6ModelInterpretation(bundle);
+    bundle.modelInterpretationArtifactRoot = path.join(bundle.root, "outside-model-root");
+    mkdirSync(bundle.modelInterpretationArtifactRoot);
+
+    const result = loadF6ArtifactBundle(bundle);
+
+    expect(result.status).toBe("accepted");
+    expect(result.inputDecisions.modelInterpretation).toMatchObject({
+      outcome: "REJECTED",
+      reasonCode: "identity_mismatch",
+    });
+  });
+
+  it.each([
+    ["F4 source hash", (artifact) => { artifact.worksheets[0].sourceReferences.f4.contentHash = "f".repeat(64); }, "identity_mismatch"],
+    ["image hash", (artifact) => { artifact.worksheets[0].sourceReferences.image.contentHash = "f".repeat(64); }, "identity_mismatch"],
+    ["worksheet identity", (artifact) => { artifact.worksheets[0].baselineIdentity.tableId = "other-table"; }, "schema_invalid"],
+    ["claim unit", (artifact) => { artifact.worksheets[0].calculationClaims[0].unit = "inch"; }, "unit_mismatch"],
+    ["claim display format", (artifact) => { artifact.worksheets[0].calculationClaims[0].displayFormat = "percent"; }, "identity_mismatch"],
+  ])("soft-rejects model interpretation %s drift", (_label, mutate, reasonCode) => {
+    const bundle = setupBundle();
+    const installed = installF6ModelInterpretation(bundle);
+    rewriteJson(installed.filePath, mutate);
+
+    const result = loadF6ArtifactBundle(bundle);
+
+    expect(result.status).toBe("accepted");
+    expect(result.modelInterpretation).toBeUndefined();
+    expect(result.inputDecisions.modelInterpretation).toMatchObject({ outcome: "REJECTED", reasonCode });
   });
 
   it("validates a supplied evidence root even when optional evidence is absent", () => {
