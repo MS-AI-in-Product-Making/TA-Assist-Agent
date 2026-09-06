@@ -145,8 +145,13 @@ describe("Design Optimization skill contract", () => {
       "### Phase W9 - Run and validate F6",
     ]);
     expect(internal).toContain("two separate `vscode_askQuestions` calls");
-    expect(internal).toContain("Declined analysis context omits `--analysis-context`");
-    expect(internal).toContain("Declined optimization targets omit `--optimization-targets`");
+    expect(internal).toContain("Declined or not-provided analysis context omits `--analysis-context`");
+    expect(internal).toContain("Declined or not-provided optimization targets omit `--optimization-targets`");
+    expect(internal).toContain("Collect analysis context from chat natural language only");
+    expect(internal).toContain("Collect optimization targets from chat natural language only");
+    expect(internal).toContain("Do not ask for JSON content, filesystem paths, artifact IDs, or hashes in user-facing prompts");
+    expect(internal).toContain("Do not ask for JSON payloads, local paths, artifact locations, or hash strings in user-facing prompts");
+    expect(internal).toContain("shared governed proposal materializer");
     expect(internal).toContain("Caller-target optimization scenarios may not be generated before target confirmation");
     expect(internal).toContain("`CALLER_AUTHORIZED`, `DECLINED`, `REJECTED`, or `NOT_PROVIDED`");
     expect(internal).toContain("must not be combined with the F3 ADO confirmation");
@@ -211,10 +216,9 @@ describe("Design Optimization skill contract", () => {
       "stack_start",
       "direction",
     ]) expect(internal).toContain(`\`${scope}\``);
-    expect(internal).toContain("f6-analysis-context-v1");
-    expect(internal).toContain("f6-analysis-context-v2");
-    expect(internal).toContain("f6-optimization-targets-v1");
-    expect(internal).toContain("f6-optimization-targets-v2");
+    expect(internal).toContain("chat natural language only");
+    expect(internal).toContain("governed proposal materializer");
+    expect(internal).toContain("preview-ready pending draft");
     expect(internal).toContain("f6-top3-tolerance-policy-v1");
     expect(internal).toContain("CpkL");
     expect(internal).toContain("CpkU");

@@ -20,6 +20,8 @@ import {
   type F8ScenarioDraft,
   type F8AdoProjection,
   type F8AdoWriteConfirmation,
+  type F6InputProposal,
+  type F8PendingF6InputDraft,
   type F8WorksheetWhatIfCalculationRequest,
   type TypedError,
 } from "@ai-assist/contracts";
@@ -97,6 +99,11 @@ export interface WorkbenchApi {
   ): Promise<F8SessionSnapshot>;
   calculateWhatIf(sessionId: string, input: { readonly draftId: string; readonly worksheetName: string; readonly tableId: string; readonly sourceRow: number; readonly inputRevision: number; readonly patch: NonNullable<F8ScenarioDraft["change"]>; readonly signedDirectionEvidence?: true }): Promise<F8ScenarioDraft>;
   calculateWorksheetWhatIf(sessionId: string, input: F8WorksheetWhatIfCalculationRequest): Promise<F8ScenarioDraft>;
+  createF6InputDraft(
+    sessionId: string,
+    input: { readonly expectedRevision: number; readonly kind: "analysis_context" | "optimization_targets"; readonly proposal: F6InputProposal },
+  ): Promise<F6InputDraftCreateResult>;
+  readF6InputDraft(sessionId: string, draftId: string): Promise<F6InputDraftReadResult>;
   appendConversationTurn(turn: ConversationTurn, selection: TaConversationSelection): Promise<ConversationTurn>;
   readConversation(sessionId: string): Promise<readonly ConversationTurn[]>;
   readAdoProjection(sessionId: string): Promise<F8AdoProjection>;
@@ -112,6 +119,28 @@ export interface WorkbenchApi {
 }
 
 export interface TaConversationSelection { readonly worksheetName: string; readonly tableId?: string; readonly sourceRow?: number; readonly factorName?: string; readonly calculationReference?: string }
+
+export interface F6InputDraftCreateResult {
+  readonly status: string;
+  readonly pendingDraft?: F8PendingF6InputDraft;
+  readonly preview?: unknown;
+  readonly snapshotRevision?: number;
+  readonly clarifications?: readonly {
+    readonly clarificationId: string;
+    readonly reasonCode: string;
+    readonly question: string;
+    readonly requiredFields: readonly string[];
+  }[];
+}
+
+export interface F6InputDraftReadResult {
+  readonly pendingDraft: F8PendingF6InputDraft;
+  readonly materialization: {
+    readonly proposal: F6InputProposal;
+    readonly preview?: unknown;
+  };
+  readonly confirmed: boolean;
+}
 
 const SESSION_QUERY_KEY = "session";
 
@@ -223,6 +252,21 @@ export function createWorkbenchApi(): WorkbenchApi {
         method: "POST", credentials: "same-origin", headers: await mutationHeaders(), body: JSON.stringify(input),
       });
       return f8ScenarioDraftSchema.parse(await parseJsonResponse(response));
+    },
+    async createF6InputDraft(sessionId, input) {
+      const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/f6-input-drafts`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: await mutationHeaders(),
+        body: JSON.stringify(input),
+      });
+      return await parseJsonResponse(response) as F6InputDraftCreateResult;
+    },
+    async readF6InputDraft(sessionId, draftId) {
+      const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/f6-input-drafts/${encodeURIComponent(draftId)}`, {
+        credentials: "same-origin",
+      });
+      return await parseJsonResponse(response) as F6InputDraftReadResult;
     },
     async appendConversationTurn(turn, selection) {
       const response = await fetch(`/api/sessions/${encodeURIComponent(turn.sessionId)}/conversation`, {

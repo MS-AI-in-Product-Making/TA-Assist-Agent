@@ -314,6 +314,89 @@ describe("conversation routes", () => {
     }
   });
 
+  it("forwards model proposal to shared F6 draft materializer without issuing confirmation commands", async () => {
+    const modelContext = taModelContextEnvelopeSchema.parse({
+      contractVersion: "ta-model-context-envelope-v1",
+      session: { sessionId: SESSION_ID, revision: 5 },
+      inputRevision: 2,
+      worksheet: { worksheetName: "Analysis-A" },
+      f0Knowledge: [],
+      factorTable: [],
+      relatedArtifactIds: ["f2-current", "f4-current"],
+    });
+    const app = await routeHarness(modelContext, {
+      snapshot: {
+        contractVersion: "f8-session-snapshot-v1",
+        sessionId: SESSION_ID,
+        revision: 5,
+        inputRevision: 2,
+        state: "analysis_context_decision_required",
+        activeAttempt: null,
+        priorRunReferences: [],
+      },
+    });
+    try {
+      const createResponse = await app.inject({
+        method: "POST",
+        url: `/api/sessions/${SESSION_ID}/conversation`,
+        payload: { turn: turn(), selection: { worksheetName: "Analysis-A" } },
+      });
+      expect(createResponse.statusCode).toBe(201);
+
+      const claimResponse = await app.inject({
+        method: "POST",
+        url: `/api/sessions/${SESSION_ID}/host-actions/model:turn-route-1/claim`,
+        headers: { authorization: "Bearer host-claim" },
+        payload: { hostInstanceId: "host-a" },
+      });
+      expect(claimResponse.statusCode).toBe(200);
+
+      const modelPayload = {
+        status: "completed" as const,
+        outcome: {
+          kind: "model_response" as const,
+          turnId: "turn-route-1",
+          responseText: "Captured draft proposal.",
+          proposal: {
+            proposalVersion: "f6-analysis-context-proposal-v1" as const,
+            userText: "Focus on assembly stack-up around Gap.",
+            worksheetSelectors: ["Analysis-A"],
+            clarifications: [],
+          },
+        },
+      };
+      const resultResponse = await app.inject({
+        method: "POST",
+        url: `/api/sessions/${SESSION_ID}/host-actions/model:turn-route-1/result`,
+        headers: { authorization: "Bearer host-result" },
+        payload: {
+          contractVersion: "f8-host-action-result-v1",
+          actionId: "model:turn-route-1",
+          hostInstanceId: "host-a",
+          leaseId: claimResponse.json<{ leaseId: string }>().leaseId,
+          status: "completed",
+          resultHash: createHash("sha256").update(JSON.stringify(modelPayload)).digest("hex"),
+          payload: modelPayload,
+        },
+      });
+
+      expect(resultResponse.statusCode).toBe(204);
+      expect(app.materializedProposals()).toEqual([
+        {
+          sessionId: SESSION_ID,
+          expectedRevision: 5,
+          proposalVersion: "f6-analysis-context-proposal-v1",
+        },
+      ]);
+      const modelTurn = app.turns().find((entry) => entry.turnId === "turn-route-1:model");
+      expect(modelTurn).toMatchObject({ role: "assistant" });
+      expect(modelTurn?.content).toContainEqual({ kind: "text", text: "Captured draft proposal." });
+      expect(modelTurn?.content).not.toContainEqual(expect.objectContaining({ kind: "command" }));
+    } finally {
+      await app.close();
+    }
+  });
+
   it.each([
     ["stale revision", reviewSnapshotVariant({ f6Revision: 1 })],
     ["unvalidated report", reviewSnapshotVariant({ f6Validated: false })],
@@ -406,16 +489,19 @@ async function routeHarness(
     result?: unknown;
   }>();
   const createdActions: Array<{ readonly actionId: string; readonly turnId?: string; readonly prompt?: string }> = [];
+  const materializedProposals: Array<{ readonly sessionId: string; readonly expectedRevision: number; readonly proposalVersion: string }> = [];
   const buildConversationContext = vi.fn(async () => modelContext);
   const sessionSnapshot = options.snapshot ?? { sessionId: SESSION_ID, revision: 5, state: "review_required" };
   const app = Fastify({ logger: false }) as ReturnType<typeof Fastify> & {
     capturedPrompt(): string;
     turns(): unknown[];
     createdActions(): Array<{ readonly actionId: string; readonly turnId?: string; readonly prompt?: string }>;
+    materializedProposals(): Array<{ readonly sessionId: string; readonly expectedRevision: number; readonly proposalVersion: string }>;
   };
   app.decorate("capturedPrompt", () => prompt);
   app.decorate("turns", () => turns.map((value) => conversationTurnSchema.parse(value)));
   app.decorate("createdActions", () => createdActions);
+  app.decorate("materializedProposals", () => materializedProposals);
   const authenticateHost = (request: { headers: Record<string, string | undefined> }) => {
     switch (request.headers.authorization) {
       case "Bearer host-read":
@@ -512,6 +598,10 @@ async function routeHarness(
         const action = actions.get(actionId);
         return action?.sessionId === sessionId ? action : undefined;
       },
+    },
+    materializeF6InputDraftFromProposal: async (sessionId: string, input: { readonly expectedRevision: number; readonly proposal: { readonly proposalVersion: string } }) => {
+      materializedProposals.push({ sessionId, expectedRevision: input.expectedRevision, proposalVersion: input.proposal.proposalVersion });
+      return { status: "draft_ready", pendingDraft: { draftId: "draft-1" } };
     },
     events: { publish: () => undefined },
     syncSessionRecord: async () => undefined,

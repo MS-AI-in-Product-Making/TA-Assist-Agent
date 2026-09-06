@@ -133,15 +133,15 @@ Any generation, read-back, contract, identity, claim, or Markdown failure is sof
 
 ### Phase W8A - Collect optional TA Analysis Context
 
-Collect at most one optional `f6-analysis-context-v1` or `f6-analysis-context-v2` artifact. Require an existing, contained, non-linked JSON file accepted by the current schema and bound to the same workbook and selected worksheet identities. Invalid input is `REJECTED`; absent input is `NOT_PROVIDED`. Do not infer a context artifact from workbook prose, images, historical runs, or free-form chat.
+Collect analysis context from chat natural language only, then route the text through the same governed proposal materializer used by the web gate. Do not ask for JSON content, filesystem paths, artifact IDs, or hashes in user-facing prompts. The materializer either returns clarifications or a preview-ready pending draft bound to the current workbook lineage.
 
-For a valid supplied artifact, show a complete sanitized preview and make a dedicated `vscode_askQuestions` call with the exact affirmative choice `Confirm analysis context`. Record confirmation as `CALLER_AUTHORIZED`; record a declined confirmation as `DECLINED`. Declined analysis context omits `--analysis-context` and continues with explicit context gaps.
+Present the complete sanitized clarification and preview result, then run a dedicated `vscode_askQuestions` confirmation with the exact affirmative choice `Confirm analysis context`. Record confirmation as `CALLER_AUTHORIZED`; record a declined confirmation as `DECLINED`; missing user input is `NOT_PROVIDED`. Declined or not-provided analysis context omits `--analysis-context` and continues with explicit context gaps.
 
 ### Phase W8B - Collect optional Optimization Targets
 
-Collect at most one optional `f6-optimization-targets-v1` or `f6-optimization-targets-v2` artifact after W8A is terminal. Require an existing, contained, non-linked JSON file accepted by the current schema and bound to the same baseline workbook, worksheet, factor, unit, and calculation identities. Invalid input is `REJECTED`; absent input is `NOT_PROVIDED`.
+Collect optimization targets from chat natural language only after W8A is terminal, using the shared governed proposal materializer for the active gate. Do not ask for JSON payloads, local paths, artifact locations, or hash strings in user-facing prompts. The materializer returns clarifications or a preview-ready pending draft with workbook/worksheet/factor/unit identity preserved.
 
-For a valid supplied artifact, show every target, policy, selected factor, value, ratio, and unit in a complete sanitized preview. Make a second dedicated `vscode_askQuestions` call with the exact affirmative choice `Confirm optimization targets`. Record confirmation as `CALLER_AUTHORIZED`; record a declined confirmation as `DECLINED`. Declined optimization targets omit `--optimization-targets`; caller-target options remain unavailable.
+Show every target, policy, selected factor, value, ratio, and unit from the sanitized preview. Then run a second dedicated `vscode_askQuestions` confirmation with the exact affirmative choice `Confirm optimization targets`. Record confirmation as `CALLER_AUTHORIZED`; record a declined confirmation as `DECLINED`; missing user input is `NOT_PROVIDED`. Declined or not-provided optimization targets omit `--optimization-targets`; caller-target options remain unavailable.
 
 W8A and W8B use two separate `vscode_askQuestions` calls. Neither call may be merged with the other, and each must not be combined with the F3 ADO confirmation. Caller-target optimization scenarios may not be generated before target confirmation. Only caller-authorized targets may create caller-target quantified scenarios.
 

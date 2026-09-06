@@ -31,6 +31,19 @@ const routePayloadSchema = z.object({
 
 const DRAFT_REFERENCE_PATTERN = /^draft:([^#\r\n]+)#sha256:([a-f0-9]{64})$/;
 
+export interface MaterializeF6InputDraftResult {
+  readonly status: string;
+  readonly pendingDraft?: ReturnType<typeof f8PendingF6InputDraftSchema.parse>;
+  readonly preview?: unknown;
+  readonly snapshotRevision?: number;
+  readonly clarifications?: readonly {
+    readonly clarificationId: string;
+    readonly reasonCode: string;
+    readonly question: string;
+    readonly requiredFields: readonly string[];
+  }[];
+}
+
 export const f6InputsRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServerContext }> = async (app, { context }) => {
   app.post("/api/sessions/:sessionId/f6-input-drafts", async (request, reply) => {
     const auth = context.requireBrowserMutation(request, reply);
@@ -61,54 +74,22 @@ export const f6InputsRoutes: FastifyPluginAsync<{ readonly context: WorkbenchSer
         return reply.code(409).send({ error: "session_revision_conflict" });
       }
 
-      const lineage = await resolveMaterializationLineage(context.rootDir, sessionId, snapshot);
-      const materialized = materializeF6InputProposal(parsed.data.proposal, lineage);
-      if (materialized.status !== "draft_ready") {
+      const materialized = await materializeF6InputDraftFromProposal({
+        rootDir: context.rootDir,
+        sessionId,
+        snapshot,
+        kind: parsed.data.kind,
+        proposal: parsed.data.proposal,
+      });
+      await context.syncSessionRecord(sessionId);
+      if (materialized.pendingDraft === undefined) {
         return reply.code(200).send({
           status: materialized.status,
           clarifications: materialized.clarifications,
         });
       }
-      if (materialized.artifact === undefined) {
-        return reply.code(422).send({
-          error: "f6_input_draft_artifact_required",
-          clarifications: [{
-            clarificationId: "proposal_ambiguous",
-            reasonCode: "proposal_ambiguous",
-            question: "A governed draft artifact is required before confirmation. Provide numeric targets or use not_provided/decline.",
-            requiredFields: ["directions"],
-          }],
-        });
-      }
 
-      const draftId = randomUUID();
-      const artifactBytes = Buffer.from(`${JSON.stringify(materialized.artifact, null, 2)}\n`, "utf8");
-      const contentHash = createHash("sha256").update(artifactBytes).digest("hex");
-      const relativePath = join("runtime", "workbench", "managed-artifacts", sessionId, "f6-input-drafts", parsed.data.kind, `${draftId}.json`).replace(/\\/g, "/");
-      await writeImmutableArtifact(context.rootDir, relativePath, artifactBytes);
-
-      const pendingDraft = f8PendingF6InputDraftSchema.parse({
-        draftId,
-        kind: parsed.data.kind,
-        inputRevision: snapshot.inputRevision,
-        reviewContextId: lineage.reviewContextId,
-        artifactId: draftArtifactId(parsed.data.kind, draftId),
-        contentHash,
-        status: "preview_required",
-      });
-
-      const nextSnapshot = await persistPendingDraft(context.rootDir, snapshot, pendingDraft, {
-        proposal: parsed.data.proposal,
-        preview: materialized.preview,
-      }, relativePath);
-      await context.syncSessionRecord(sessionId);
-
-      return reply.code(201).send({
-        status: "draft_ready",
-        pendingDraft,
-        preview: materialized.preview,
-        snapshotRevision: nextSnapshot.revision,
-      });
+      return reply.code(201).send(materialized);
     } catch (error) {
       return reply.code(errorStatusCode(error)).send(safeErrorResponse(error));
     }
@@ -158,6 +139,83 @@ export const f6InputsRoutes: FastifyPluginAsync<{ readonly context: WorkbenchSer
   });
 };
 
+export async function materializeF6InputDraftFromProposal(input: {
+  readonly rootDir: string;
+  readonly sessionId: string;
+  readonly snapshot: {
+    readonly sessionId: string;
+    readonly revision: number;
+    readonly inputRevision: number;
+    readonly state: ReturnType<typeof z.string>["_type"];
+    readonly pendingAnalysisContextDraft?: unknown;
+    readonly pendingOptimizationTargetsDraft?: unknown;
+    readonly downstreamScopeSelection?: {
+      readonly workbookContentHash: string;
+      readonly selectedWorksheetNames: readonly string[];
+      readonly confirmed: true;
+      readonly provenance?: "user" | "internal_fixture" | "legacy_unverified" | undefined;
+    } | undefined;
+    readonly priorRunReferences: readonly { readonly featureId: string; readonly workbookHash?: string | undefined; readonly runReference?: string | undefined }[];
+    readonly artifactRefs?: readonly {
+      readonly artifactId: string;
+      readonly kind: string;
+      readonly revision: number;
+      readonly validated: boolean;
+      readonly reviewContextId?: string | undefined;
+    }[] | undefined;
+  };
+  readonly kind: "analysis_context" | "optimization_targets";
+  readonly proposal: F6InputProposal;
+}): Promise<MaterializeF6InputDraftResult> {
+  const lineage = await resolveMaterializationLineage(input.rootDir, input.sessionId, input.snapshot);
+  const materialized = materializeF6InputProposal(input.proposal, lineage);
+  if (materialized.status !== "draft_ready") {
+    return {
+      status: materialized.status,
+      clarifications: materialized.clarifications,
+    };
+  }
+  if (materialized.artifact === undefined) {
+    return {
+      status: "clarification_required",
+      clarifications: [{
+        clarificationId: "proposal_ambiguous",
+        reasonCode: "proposal_ambiguous",
+        question: "A governed draft artifact is required before confirmation. Provide numeric targets or use not_provided/decline.",
+        requiredFields: ["directions"],
+      }],
+    };
+  }
+
+  const draftId = randomUUID();
+  const artifactBytes = Buffer.from(`${JSON.stringify(materialized.artifact, null, 2)}\n`, "utf8");
+  const contentHash = createHash("sha256").update(artifactBytes).digest("hex");
+  const relativePath = join("runtime", "workbench", "managed-artifacts", input.sessionId, "f6-input-drafts", input.kind, `${draftId}.json`).replace(/\\/g, "/");
+  await writeImmutableArtifact(input.rootDir, relativePath, artifactBytes);
+
+  const pendingDraft = f8PendingF6InputDraftSchema.parse({
+    draftId,
+    kind: input.kind,
+    inputRevision: input.snapshot.inputRevision,
+    reviewContextId: lineage.reviewContextId,
+    artifactId: draftArtifactId(input.kind, draftId),
+    contentHash,
+    status: "preview_required",
+  });
+
+  const nextSnapshot = await persistPendingDraft(input.rootDir, input.snapshot, pendingDraft, {
+    proposal: input.proposal,
+    preview: materialized.preview,
+  }, relativePath);
+
+  return {
+    status: "draft_ready",
+    pendingDraft,
+    preview: materialized.preview,
+    snapshotRevision: nextSnapshot.revision,
+  };
+}
+
 function kindMatchesProposal(kind: "analysis_context" | "optimization_targets", proposal: F6InputProposal): boolean {
   return (kind === "analysis_context" && proposal.proposalVersion === "f6-analysis-context-proposal-v1")
     || (kind === "optimization_targets" && proposal.proposalVersion === "f6-optimization-targets-proposal-v1");
@@ -171,7 +229,7 @@ function pendingFieldName(kind: "analysis_context" | "optimization_targets"): "p
   return kind === "analysis_context" ? "pendingAnalysisContextDraft" : "pendingOptimizationTargetsDraft";
 }
 
-function readDraftReference(snapshot: { readonly priorRunReferences: readonly { readonly featureId: string; readonly referenceId: string; readonly runReference?: string }[] }, kind: "analysis_context" | "optimization_targets"): string | undefined {
+function readDraftReference(snapshot: { readonly priorRunReferences: readonly { readonly featureId: string; readonly referenceId: string; readonly runReference?: string | undefined }[] }, kind: "analysis_context" | "optimization_targets"): string | undefined {
   const prefix = kind === "analysis_context" ? "f6-analysis-context:" : "f6-optimization-targets:";
   const decision = snapshot.priorRunReferences.findLast((reference) => reference.featureId === "F6" && reference.referenceId.startsWith(prefix));
   return decision?.runReference;
@@ -247,16 +305,16 @@ async function resolveMaterializationLineage(
       readonly workbookContentHash: string;
       readonly selectedWorksheetNames: readonly string[];
       readonly confirmed: true;
-      readonly provenance?: "user" | "internal_fixture" | "legacy_unverified";
-    };
-    readonly priorRunReferences: readonly { readonly featureId: string; readonly workbookHash?: string; readonly runReference?: string }[];
+      readonly provenance?: "user" | "internal_fixture" | "legacy_unverified" | undefined;
+    } | undefined;
+    readonly priorRunReferences: readonly { readonly featureId: string; readonly workbookHash?: string | undefined; readonly runReference?: string | undefined }[];
     readonly artifactRefs?: readonly {
       readonly artifactId: string;
       readonly kind: string;
       readonly revision: number;
       readonly validated: boolean;
-      readonly reviewContextId?: string;
-    }[];
+      readonly reviewContextId?: string | undefined;
+    }[] | undefined;
   },
 ) {
   const scope = snapshot.downstreamScopeSelection;

@@ -18,6 +18,7 @@ type ConfirmDownstreamScopeCommand = PublicSessionCommand & {
   readonly command: "confirm_downstream_scope";
   readonly payload: DownstreamScopePayload;
 };
+type ConfirmF6DraftCommand = Extract<PublicSessionCommand, { readonly command: "confirm_analysis_context" | "confirm_optimization_targets" }>;
 
 export const commandsRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServerContext }> = async (app, { context }) => {
   app.post("/api/sessions/:sessionId/commands", async (request, reply) => {
@@ -87,7 +88,7 @@ async function createInternalCommand(command: PublicSessionCommand, context: Wor
     const { promotionPreview } = await context.createWhatIfPromotion(command.sessionId, payload.draftId);
     return { ...command, payload: { ...payload, promotionPreview } };
   }
-  if (command.command === "confirm_analysis_context" || command.command === "confirm_optimization_targets") {
+  if (isConfirmF6DraftCommand(command)) {
     await validateF6DraftConfirmation(command, context);
   }
   if (isConfirmDownstreamScopeCommand(command)) {
@@ -97,12 +98,10 @@ async function createInternalCommand(command: PublicSessionCommand, context: Wor
 }
 
 async function validateF6DraftConfirmation(
-  command: Extract<PublicSessionCommand, { command: "confirm_analysis_context" | "confirm_optimization_targets" }>,
+  command: ConfirmF6DraftCommand,
   context: WorkbenchServerContext,
 ): Promise<void> {
-  const payload = command.payload as
-    | { readonly decision: "confirm"; readonly draftId: string; readonly draftHash: string }
-    | { readonly decision: "not_provided" | "decline" };
+  const payload = command.payload;
   if (payload.decision !== "confirm") {
     return;
   }
@@ -176,8 +175,8 @@ function resolveCurrentReviewContextId(snapshot: {
     readonly kind: string;
     readonly validated: boolean;
     readonly revision: number;
-    readonly reviewContextId?: string;
-  }[];
+    readonly reviewContextId?: string | undefined;
+  }[] | undefined;
 }): string {
   const f4 = (snapshot.artifactRefs ?? []).filter((reference) =>
     reference.kind === "f4_calculation" && reference.validated && reference.revision === snapshot.inputRevision,
@@ -286,6 +285,18 @@ function bindUploadedWorkbook(command: PublicSessionCommand, context: WorkbenchS
 function isConfirmDownstreamScopeCommand(command: PublicSessionCommand): command is ConfirmDownstreamScopeCommand {
   if (command.command !== "confirm_downstream_scope") return false;
   return isDownstreamScopePayload(command.payload);
+}
+
+function isConfirmF6DraftCommand(command: PublicSessionCommand): command is ConfirmF6DraftCommand {
+  if (command.command !== "confirm_analysis_context" && command.command !== "confirm_optimization_targets") return false;
+  const payload = command.payload;
+  if (typeof payload !== "object" || payload === null || !("decision" in payload)) return false;
+  const decision = (payload as { readonly decision?: unknown }).decision;
+  if (decision === "confirm") {
+    return typeof (payload as { readonly draftId?: unknown }).draftId === "string"
+      && typeof (payload as { readonly draftHash?: unknown }).draftHash === "string";
+  }
+  return decision === "not_provided" || decision === "decline";
 }
 
 function isDownstreamScopePayload(payload: unknown): payload is DownstreamScopePayload {

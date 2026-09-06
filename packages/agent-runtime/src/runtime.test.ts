@@ -590,6 +590,62 @@ describe("handleAgentTurn", () => {
     expect(thrownResult.actions).toEqual([{ type: "navigate", target: "/scope", label: "选择 Worksheets" }]);
     expect(thrownResult.responseText).toContain("选择 Worksheets");
   });
+
+  it("accepts model proposal only when it matches the active F6 input gate", async () => {
+    const deps = await createDeps(baseSnapshot({ state: "analysis_context_decision_required" }), {
+      model: {
+        complete: async () => ({
+          responseText: "已整理分析背景草案。",
+          proposal: {
+            proposalVersion: "f6-analysis-context-proposal-v1",
+            userText: "Focus on assembly stack-up risk around Gap.",
+            worksheetSelectors: ["Analysis-A"],
+            clarifications: [],
+          },
+        }),
+      },
+    });
+
+    const result = await handleAgentTurn({
+      text: "补充分析背景",
+      sessionId: SESSION_ID,
+      commandId: "proposal-gate-accept-1",
+      source: "web",
+    }, deps);
+
+    expect(result.proposal).toMatchObject({
+      proposalVersion: "f6-analysis-context-proposal-v1",
+      userText: "Focus on assembly stack-up risk around Gap.",
+    });
+    expect(result.commands).toEqual([]);
+  });
+
+  it("rejects mismatched model proposal kind and falls back to deterministic response", async () => {
+    const deps = await createDeps(baseSnapshot({ state: "analysis_context_decision_required" }), {
+      model: {
+        complete: async () => ({
+          responseText: "已整理优化方向草案。",
+          proposal: {
+            proposalVersion: "f6-optimization-targets-proposal-v1",
+            userText: "Prioritize tolerance narrowing on Gap.",
+            directions: [],
+            clarifications: [],
+          },
+        }),
+      },
+    });
+
+    const result = await handleAgentTurn({
+      text: "补充分析背景",
+      sessionId: SESSION_ID,
+      commandId: "proposal-gate-reject-1",
+      source: "web",
+    }, deps);
+
+    expect(result.responseText).toContain("补充/确认分析背景");
+    expect(result.proposal).toBeUndefined();
+    expect(result.commands).toEqual([]);
+  });
 });
 
 async function createDeps(
@@ -599,6 +655,7 @@ async function createDeps(
       complete: (input: { text: string; context: unknown; policy: unknown }) => Promise<{
         responseText: string;
         actions?: readonly Array<{ type: string; target: string; label: string }>;
+        proposal?: unknown;
       }>;
     };
     readonly seedTurns?: readonly ReturnType<typeof turnRecord>[];

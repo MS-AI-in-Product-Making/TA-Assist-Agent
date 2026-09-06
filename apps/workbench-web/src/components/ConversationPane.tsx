@@ -65,7 +65,7 @@ export function ConversationPane({ turns, api, sessionId, disabled = false, sugg
         }}
       >
         <label className="field">
-          <span>Ask TA Assist from governed evidence</span>
+          <span>Describe your request in natural language</span>
           <textarea
             name="conversation"
             value={draft}
@@ -75,7 +75,7 @@ export function ConversationPane({ turns, api, sessionId, disabled = false, sugg
           />
         </label>
         <button type="submit" className="button button--primary" disabled={disabled || draft.trim().length === 0}>
-          Send message
+          Send request
         </button>
       </form>
     </section>

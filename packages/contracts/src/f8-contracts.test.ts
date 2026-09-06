@@ -27,8 +27,8 @@ const CANONICAL_NAVIGATE_ACTIONS = [
   { type: "navigate", target: "/scope/downstream", label: "确认下游 Worksheets" },
   { type: "navigate", target: "/ado/preview", label: "查看 ADO 预览" },
   { type: "navigate", target: "/images/decision", label: "确认图片上下文" },
-  { type: "navigate", target: "/analysis/context", label: "确认 Analysis Context" },
-  { type: "navigate", target: "/optimization/targets", label: "确认 Optimization Targets" },
+  { type: "navigate", target: "/analysis/context", label: "补充/确认分析背景" },
+  { type: "navigate", target: "/optimization/targets", label: "补充/确认优化方向" },
   { type: "navigate", target: "/review", label: "完成评审" },
   { type: "navigate", target: "/status", label: "查看运行状态" },
 ] as const;

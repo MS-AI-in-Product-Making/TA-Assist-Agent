@@ -489,8 +489,12 @@ const worksheetScopePayloadBaseSchema = z
   })
   .strict();
 
-const withUniqueWorksheetNames = <T extends z.ZodType<{ worksheetNames: string[] }>>(schema: T) => schema.superRefine((payload, context) => {
-  if (new Set(payload.worksheetNames).size !== payload.worksheetNames.length) {
+const withUniqueWorksheetNames = <T extends z.ZodTypeAny>(schema: T) => schema.superRefine((payload, context) => {
+  const worksheetNames = (payload as { worksheetNames?: unknown }).worksheetNames;
+  if (!Array.isArray(worksheetNames)) {
+    return;
+  }
+  if (new Set(worksheetNames).size !== worksheetNames.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheetNames must be unique", path: ["worksheetNames"] });
   }
 });
@@ -611,7 +615,7 @@ const confirmWhatIfPromotionInternalPayloadSchema = z.object({
   promotionPreview: f6OptimizationTargetsSchema,
 }).strict();
 
-const commandEnvelopeSchema = <T extends z.ZodTypeAny>(command: string, payloadSchema: T) => z
+const commandEnvelopeSchema = <Command extends string, T extends z.ZodTypeAny>(command: Command, payloadSchema: T) => z
   .object({
     contractVersion: z.literal("f8-session-command-v1"),
     sessionId: nonEmptyStringSchema,
@@ -700,8 +704,8 @@ const conversationToolActionSchema = z.union([
   z.object({ type: z.literal("navigate"), target: z.literal("/scope/downstream"), label: z.literal("确认下游 Worksheets") }).strict(),
   z.object({ type: z.literal("navigate"), target: z.literal("/ado/preview"), label: z.literal("查看 ADO 预览") }).strict(),
   z.object({ type: z.literal("navigate"), target: z.literal("/images/decision"), label: z.literal("确认图片上下文") }).strict(),
-  z.object({ type: z.literal("navigate"), target: z.literal("/analysis/context"), label: z.literal("确认 Analysis Context") }).strict(),
-  z.object({ type: z.literal("navigate"), target: z.literal("/optimization/targets"), label: z.literal("确认 Optimization Targets") }).strict(),
+  z.object({ type: z.literal("navigate"), target: z.literal("/analysis/context"), label: z.literal("补充/确认分析背景") }).strict(),
+  z.object({ type: z.literal("navigate"), target: z.literal("/optimization/targets"), label: z.literal("补充/确认优化方向") }).strict(),
   z.object({ type: z.literal("navigate"), target: z.literal("/review"), label: z.literal("完成评审") }).strict(),
   z.object({ type: z.literal("navigate"), target: z.literal("/status"), label: z.literal("查看运行状态") }).strict(),
   z.object({

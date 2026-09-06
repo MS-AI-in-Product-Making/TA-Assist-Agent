@@ -74,6 +74,8 @@ export function projectProductText(text: string): string {
 
 export function actionDisplay(action: string): string {
   if (action === "cancel") return "Cancel analysis";
+  if (action === "confirm_analysis_context") return "Add or confirm analysis context";
+  if (action === "confirm_optimization_targets") return "Add or confirm optimization targets";
   const words = action.split(/[_-]+/).filter((part) => part.length > 0).map((part) => part.toLowerCase());
   return words.length === 0 ? "Action required" : `${words[0]![0]!.toUpperCase()}${words[0]!.slice(1)}${words.length > 1 ? ` ${words.slice(1).join(" ")}` : ""}`;
 }

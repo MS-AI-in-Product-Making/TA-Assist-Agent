@@ -10,7 +10,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import { DatabaseSync } from "node:sqlite";
 
 import { createConversationStore, type ConversationStore, type ConversationTurn } from "@ai-assist/conversation";
-import { drawingGovernanceResultV2Schema, f2UserReportSchema, f4WorkflowCalculationResultSchema, f6AnalysisContextSchema, f6OptimizationTargetsSchema, f8PublicSessionCommandSchema, f8SessionCommandSchema, f8SessionSnapshotSchema, worksheetSelectionPromptSchema, type F6OptimizationTargets, type F8ScenarioDraft, type F8WorksheetWhatIfCalculationRequest, type hostActionClaimSchema, type hostActionRequestSchema, type hostActionResultSchema } from "@ai-assist/contracts";
+import { drawingGovernanceResultV2Schema, f2UserReportSchema, f4WorkflowCalculationResultSchema, f6AnalysisContextSchema, f6InputProposalSchema, f6OptimizationTargetsSchema, f8PublicSessionCommandSchema, f8SessionCommandSchema, f8SessionSnapshotSchema, worksheetSelectionPromptSchema, type F6InputProposal, type F6OptimizationTargets, type F8ScenarioDraft, type F8WorksheetWhatIfCalculationRequest, type hostActionClaimSchema, type hostActionRequestSchema, type hostActionResultSchema } from "@ai-assist/contracts";
 import { acceptAttemptResult, canonicalSelectedWorksheetSetHash, createSessionStore, createTaWorkbookOrchestrator, createToleranceTargetsPreview, openSessionStore, reduceSessionCommand, type F8SessionCommand, type F8SessionSnapshot, type ReviewContextIdentity, type RuntimeSkillResult, type ScenarioBaseline, type SessionArtifactReference, type SessionDeltaOperations, type TaWorkbookOrchestrator } from "@ai-assist/workbench";
 import { createTypedError } from "@ai-assist/contracts";
 import { createHostActionStore, type HostActionRecord } from "@ai-assist/workbench";
@@ -59,7 +59,7 @@ import { adoRoutes } from "./routes/ado.js";
 import { productExportRoutes } from "./routes/product-export.js";
 import { sessionsRoutes } from "./routes/sessions.js";
 import { whatIfRoutes } from "./routes/what-if.js";
-import { f6InputsRoutes, resolveDraftReferenceFromRunReference, resolveF6DraftArtifactReference, verifyF6DraftArtifactIdentity } from "./routes/f6-inputs.js";
+import { f6InputsRoutes, materializeF6InputDraftFromProposal, resolveDraftReferenceFromRunReference, resolveF6DraftArtifactReference, verifyF6DraftArtifactIdentity } from "./routes/f6-inputs.js";
 import { createPersistentWorkerQueue, type PersistentWorkerQueue, type PersistentWorkerQueueOptions, type QueueSessionStore, type StageJob } from "./sqlite-worker-queue.js";
 import { createSqliteEventSource, type SqliteEventSource } from "./sse.js";
 import { createAutoEntryDecision } from "./auto-entry.js";
@@ -190,6 +190,7 @@ export interface WorkbenchServerContext {
   buildConversationContext(sessionId: string, selection: ConversationContextSelection): ReturnType<typeof buildConversationContext>;
   validateConversationContext(sessionId: string, input: { readonly worksheetName?: string; readonly tableId?: string; readonly sourceRow?: number; readonly factorName?: string; readonly calculationReference?: string; readonly relatedArtifactIds: readonly string[] }): Promise<boolean>;
   createAdoPreview(sessionId: string, prepareRequest: Extract<HostActionRequest, { kind: "surface_validate" }>["prepareRequest"]): Promise<AdoPreviewIdentity>;
+  materializeF6InputDraftFromProposal(sessionId: string, input: { readonly expectedRevision: number; readonly proposal: F6InputProposal }): Promise<{ readonly status: string; readonly pendingDraft?: unknown; readonly preview?: unknown; readonly snapshotRevision?: number; readonly clarifications?: readonly { readonly clarificationId: string; readonly reasonCode: string; readonly question: string; readonly requiredFields: readonly string[] }[] }>;
   syncSessionRecord(sessionId: string): Promise<void>;
   createPendingHostAction(snapshot: F8SessionSnapshot, command: F8SessionCommand): Promise<void>;
   enqueueActiveAttempt(snapshot: F8SessionSnapshot): Promise<void>;
@@ -460,6 +461,43 @@ async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth
         throw createTypedError({ code: "evidence_mismatch", summary: "ADO preview requires a pending ADO action.", suggestedAction: "Refresh the ADO workspace before previewing again.", affectedInputReferences: [sessionId] });
       }
       return createAdoPreview(rootDir, snapshot, prepareRequest);
+    },
+    async materializeF6InputDraftFromProposal(sessionId, input) {
+      const parsedProposal = f6InputProposalSchema.parse(input.proposal);
+      const snapshot = await sessions.read(sessionId);
+      if (snapshot === undefined) {
+        throw createTypedError({
+          code: "validation_error",
+          summary: "Session is unavailable for F6 input materialization.",
+          suggestedAction: "Refresh the session and try again.",
+          affectedInputReferences: [sessionId],
+        });
+      }
+      if (snapshot.revision !== input.expectedRevision) {
+        throw createTypedError({
+          code: "evidence_mismatch",
+          summary: "Model proposal revision is stale for the current F6 input gate.",
+          suggestedAction: "Resubmit the latest natural-language guidance from the active gate.",
+          affectedInputReferences: [sessionId],
+        });
+      }
+      const kind = parsedProposal.proposalVersion === "f6-analysis-context-proposal-v1" ? "analysis_context" : "optimization_targets";
+      const expectedState = kind === "analysis_context" ? "analysis_context_decision_required" : "optimization_targets_decision_required";
+      if (snapshot.state !== expectedState) {
+        throw createTypedError({
+          code: "evidence_mismatch",
+          summary: "Model proposal does not match the active F6 input gate.",
+          suggestedAction: "Use the currently active gate in TA Assistant to provide input.",
+          affectedInputReferences: [sessionId],
+        });
+      }
+      return materializeF6InputDraftFromProposal({
+        rootDir,
+        sessionId,
+        snapshot,
+        kind,
+        proposal: parsedProposal,
+      });
     },
     async syncSessionRecord(sessionId) {
       const snapshot = await sessions.read(sessionId);

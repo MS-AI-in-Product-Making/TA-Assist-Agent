@@ -29,7 +29,8 @@ describe("web-projection", () => {
   });
 
   it("projects internal action values into human-readable labels", () => {
-    expect(actionDisplay("confirm_optimization_targets")).toBe("Confirm optimization targets");
+    expect(actionDisplay("confirm_analysis_context")).toBe("Add or confirm analysis context");
+    expect(actionDisplay("confirm_optimization_targets")).toBe("Add or confirm optimization targets");
     expect(actionDisplay("complete_review")).toBe("Complete review");
     expect(actionDisplay("cancel")).toBe("Cancel analysis");
   });

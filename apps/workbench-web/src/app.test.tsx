@@ -523,8 +523,8 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Gap", description: "中心间隙" }));
   fireEvent.click(screen.getByRole("button", { name: "Open TA Assistant" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "Ask TA Assist from governed evidence" }), { target: { value: "Explain the current tolerance risk." } });
-    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Describe your request in natural language" }), { target: { value: "Explain the current tolerance risk." } });
+    fireEvent.click(screen.getByRole("button", { name: "Send request" }));
 
     await waitFor(() => expect(submitted).toHaveLength(1));
     expect(submitted[0]).toEqual({

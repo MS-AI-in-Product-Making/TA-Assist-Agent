@@ -88,6 +88,7 @@ export function App({ api, preloadedState, initialWorksheetOptions, downstreamWo
         onUpload={session.uploadWorkbook}
         onSelectWorksheet={setSelectedWorksheetName}
         onSubmitConversation={session.appendConversation}
+        onSubmitCommand={(command, payload) => session.submitCommand(command, payload)}
         f4Report={session.f4Report}
         f6Report={session.f6Report}
         f2Report={session.f2Report}

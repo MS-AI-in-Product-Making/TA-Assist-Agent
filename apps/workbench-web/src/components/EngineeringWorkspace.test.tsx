@@ -175,8 +175,8 @@ describe("EngineeringWorkspace", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Gap factor", description: "间隙因子" }));
     fireEvent.click(screen.getByRole("button", { name: "Open TA Assistant" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "Ask TA Assist from governed evidence" }), { target: { value: "Compare baseline and scenario." } });
-    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Describe your request in natural language" }), { target: { value: "Compare baseline and scenario." } });
+    fireEvent.click(screen.getByRole("button", { name: "Send request" }));
 
     await waitFor(() => expect(onSubmitConversation).toHaveBeenCalledWith("Compare baseline and scenario.", {
       worksheetName: "Analysis-A",

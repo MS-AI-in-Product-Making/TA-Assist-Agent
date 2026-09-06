@@ -44,6 +44,7 @@ export interface EngineeringWorkspaceProps {
   readonly onUpload: (file: File) => Promise<void>;
   readonly onSelectWorksheet: (worksheetName: string) => void;
   readonly onSubmitConversation: (message: string, selection: TaConversationSelection) => Promise<void>;
+  readonly onSubmitCommand?: (command: "confirm_analysis_context" | "confirm_optimization_targets", payload: Record<string, unknown>) => Promise<void>;
   readonly f6Report?: F6OptimizationResultV2;
   readonly f2Report?: F2UserReport;
   readonly f4Report?: F4WorkflowCalculationResult;
@@ -142,7 +143,11 @@ export function EngineeringWorkspace(props: EngineeringWorkspaceProps) {
             ...(worksheet === undefined ? {} : { worksheetName: worksheet.worksheetName }),
             ...(selectedFactor === undefined ? {} : { tableId: selectedFactor.tableId, sourceRow: selectedFactor.sourceRow, factorName: selectedFactor.factorName.sourceText }),
             ...(savedScenario?.calculationReference === undefined ? {} : { calculationReference: savedScenario.calculationReference }),
-          })} requestContextChips={requestContextChips} />
+          })}
+          snapshot={props.snapshot}
+          onSubmitCommand={props.onSubmitCommand}
+          requestContextChips={requestContextChips}
+          />
         </aside>
       ) : null}
       <button type="button" className="assistant-drawer__open icon-button" aria-label="Open TA Assistant" aria-expanded={assistantOpen} onClick={() => setAssistantOpen(true)}>?</button>

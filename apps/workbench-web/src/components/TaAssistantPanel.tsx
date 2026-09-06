@@ -2,7 +2,9 @@ import type { ConversationTurn } from "@ai-assist/conversation";
 import { useState } from "react";
 
 import type { WorkbenchApi } from "../api.js";
+import type { F8SessionSnapshot } from "../workbench-session.js";
 import { ConversationPane } from "./ConversationPane.js";
+import { F6InputGate } from "./F6InputGate.js";
 
 export interface RequestContextChip {
   readonly key: string;
@@ -18,8 +20,10 @@ export function TaAssistantPanel({ worksheetName, factorName, turns, api, sessio
   readonly turns: readonly ConversationTurn[];
   readonly api?: WorkbenchApi;
   readonly sessionId?: string;
+  readonly snapshot?: F8SessionSnapshot;
   readonly disabled: boolean;
   readonly onSubmit: (message: string) => Promise<void>;
+  readonly onSubmitCommand?: (command: "confirm_analysis_context" | "confirm_optimization_targets", payload: Record<string, unknown>) => Promise<void>;
   readonly requestContextChips?: readonly RequestContextChip[];
 }) {
   const [suggestedMessage, setSuggestedMessage] = useState<string>();
@@ -55,6 +59,28 @@ export function TaAssistantPanel({ worksheetName, factorName, turns, api, sessio
           "Compare the baseline and saved Scenario",
         ].map((prompt) => <button key={prompt} type="button" disabled={disabled} onClick={() => setSuggestedMessage(prompt)}>{prompt}</button>)}
       </div>
+      {arguments[0].onSubmitCommand === undefined ? null : (
+        <>
+          <F6InputGate
+            kind="analysis_context"
+            snapshot={arguments[0].snapshot}
+            api={api}
+            sessionId={sessionId}
+            disabled={disabled}
+            onSendMessage={onSubmit}
+            onSubmitDecision={arguments[0].onSubmitCommand}
+          />
+          <F6InputGate
+            kind="optimization_targets"
+            snapshot={arguments[0].snapshot}
+            api={api}
+            sessionId={sessionId}
+            disabled={disabled}
+            onSendMessage={onSubmit}
+            onSubmitDecision={arguments[0].onSubmitCommand}
+          />
+        </>
+      )}
       <ConversationPane turns={turns} api={api} sessionId={sessionId} disabled={disabled} suggestedMessage={suggestedMessage} onSubmit={onSubmit} />
     </section>
   );

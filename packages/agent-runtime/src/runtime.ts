@@ -1,4 +1,4 @@
-import { conversationTurnSchema, type conversationTurnSchema as conversationTurnSchemaType, type f8SessionSnapshotSchema } from "@ai-assist/contracts";
+import { conversationTurnSchema, f6InputProposalSchema, type F6InputProposal, type conversationTurnSchema as conversationTurnSchemaType, type f8SessionSnapshotSchema } from "@ai-assist/contracts";
 import { detectUserLanguage, type UserLanguage } from "@ai-assist/product-language";
 import { selectCompleteReviewContext } from "@ai-assist/workbench";
 
@@ -49,6 +49,7 @@ export interface AgentTurnResult {
 	readonly responseText: string;
 	readonly actions: readonly AgentAction[];
 	readonly commands: readonly AgentCommand[];
+	readonly proposal?: F6InputProposal;
 }
 
 type StoredActionCandidate = {
@@ -73,6 +74,7 @@ export interface LanguageModelAdapter {
 	}): Promise<{
 		readonly responseText: string;
 		readonly actions?: readonly ModelActionCandidate[];
+		readonly proposal?: unknown;
 	}>;
 }
 
@@ -180,7 +182,7 @@ async function maybeCompleteWithModel(
 	text: string,
 	context: AgentContext,
 	policy: ToolPolicy,
-): Promise<{ readonly responseText: string; readonly actions?: readonly ModelActionCandidate[] } | undefined> {
+): Promise<{ readonly responseText: string; readonly actions?: readonly ModelActionCandidate[]; readonly proposal?: unknown } | undefined> {
 	if (wantsWrite || model === undefined || !policy.allowModelCompletion) {
 		return undefined;
 	}
@@ -196,11 +198,16 @@ function resolveTurnResult(
 	snapshot: RuntimeSnapshot,
 	intent: AgentIntentType,
 	deterministic: AgentTurnResult,
-	modelResponse: { readonly responseText: string; readonly actions?: readonly ModelActionCandidate[] } | undefined,
+	modelResponse: { readonly responseText: string; readonly actions?: readonly ModelActionCandidate[]; readonly proposal?: unknown } | undefined,
 	language: UserLanguage,
 	canonicalReport: CanonicalReportReference | undefined,
 ): AgentTurnResult {
 	if (modelResponse === undefined || !isSafeResponseText(modelResponse.responseText, language)) {
+		return deterministic;
+	}
+
+	const resolvedProposal = resolveProposalForGate(snapshot, modelResponse.proposal);
+	if (modelResponse.proposal !== undefined && resolvedProposal === undefined) {
 		return deterministic;
 	}
 
@@ -212,6 +219,7 @@ function resolveTurnResult(
 		responseText: sanitizeResponseText(modelResponse.responseText),
 		actions,
 		commands: deterministic.commands,
+		...(resolvedProposal === undefined ? {} : { proposal: resolvedProposal }),
 	};
 }
 
@@ -269,6 +277,23 @@ function buildDeterministicResponse(
 	};
 }
 
+function resolveProposalForGate(snapshot: RuntimeSnapshot, proposal: unknown): F6InputProposal | undefined {
+	if (proposal === undefined) {
+		return undefined;
+	}
+	const parsed = f6InputProposalSchema.safeParse(proposal);
+	if (!parsed.success) {
+		return undefined;
+	}
+	if (snapshot.state === "analysis_context_decision_required" && parsed.data.proposalVersion === "f6-analysis-context-proposal-v1") {
+		return parsed.data;
+	}
+	if (snapshot.state === "optimization_targets_decision_required" && parsed.data.proposalVersion === "f6-optimization-targets-proposal-v1") {
+		return parsed.data;
+	}
+	return undefined;
+}
+
 function selectPrimaryAction(
 	snapshot: RuntimeSnapshot,
 	state: RuntimeSnapshot["state"],
@@ -295,9 +320,9 @@ function selectPrimaryAction(
 		case "confirm_image_decision":
 			return { type: "navigate", target: "/images/decision", label: "确认图片上下文" };
 		case "confirm_analysis_context":
-			return { type: "navigate", target: "/analysis/context", label: "确认 Analysis Context" };
+			return { type: "navigate", target: "/analysis/context", label: "补充/确认分析背景" };
 		case "confirm_optimization_targets":
-			return { type: "navigate", target: "/optimization/targets", label: "确认 Optimization Targets" };
+			return { type: "navigate", target: "/optimization/targets", label: "补充/确认优化方向" };
 		case "complete_review":
 			return { type: "navigate", target: "/review", label: "完成评审" };
 		case "retry":
@@ -573,8 +598,8 @@ function englishActionLabel(action: AgentAction): string {
 		"/scope/downstream": "Confirm downstream worksheets",
 		"/ado/preview": "Review ADO preview",
 		"/images/decision": "Confirm image context",
-		"/analysis/context": "Confirm analysis context",
-		"/optimization/targets": "Confirm optimization targets",
+		"/analysis/context": "Add or confirm analysis context",
+		"/optimization/targets": "Add or confirm optimization targets",
 		"/review": "Complete review",
 		"/status": "Review run status",
 		"/report/current": "Open current report",

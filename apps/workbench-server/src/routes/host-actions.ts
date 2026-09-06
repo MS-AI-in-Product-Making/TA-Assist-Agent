@@ -122,6 +122,16 @@ export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: Workbench
       }
       if (action?.kind === "vscode_model_request" && outcome?.kind === "model_response") {
         if (outcome.turnId !== action.turnId) return reply.code(400).send({ error: "host_action_result_integrity_rejected" });
+        if (outcome.proposal !== undefined) {
+          try {
+            await context.materializeF6InputDraftFromProposal(sessionId, {
+              expectedRevision: action.expectedRevision,
+              proposal: outcome.proposal,
+            });
+          } catch {
+            return reply.code(409).send({ error: "host_action_session_stale" });
+          }
+        }
         const snapshot = await context.sessions.read(sessionId);
         const report = snapshot === undefined ? undefined : selectCanonicalReportReference(snapshot);
         const turns = await context.conversation.read(sessionId);

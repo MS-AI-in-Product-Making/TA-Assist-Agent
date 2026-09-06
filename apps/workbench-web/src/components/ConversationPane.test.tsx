@@ -51,10 +51,10 @@ describe("ConversationPane", () => {
     expect(screen.getByText("Governed command available.")).toBeVisible();
     expect(screen.queryByText(/f6-review|workflow:f6/i)).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Ask TA Assist from governed evidence" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "Describe your request in natural language" }), {
       target: { value: "Compare the baseline and Scenario." },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send request" }));
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalledWith("Compare the baseline and Scenario."));
   });

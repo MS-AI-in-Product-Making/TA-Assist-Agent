@@ -201,6 +201,20 @@ body {
 }
 
 .ta-assistant > .panel { border: 0; padding: 0; box-shadow: none; background: transparent; }
+.f6-input-gate {
+  margin: 10px 0 14px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-medium);
+  background: var(--md-sys-color-surface-container-low);
+}
+.f6-input-gate .conversation-form {
+  margin-bottom: 8px;
+}
+.f6-input-gate__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 .suggested-prompts { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 16px; }
 .suggested-prompts button { min-height: 32px; padding: 5px 12px; border: 1px solid var(--md-sys-color-outline); border-radius: 8px; background: transparent; color: var(--md-sys-color-primary); }
 
