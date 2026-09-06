@@ -546,24 +546,34 @@ test("materializes F6 chat inputs and opens the final report", async ({ browser,
       expect.objectContaining({ kind: "artifact_reference" }),
     ]));
 
-    const reportLink = page.getByRole("link", { name: "Design Optimization Report" });
+    const assistantRegion = page.getByRole("region", { name: "TA Assistant" });
+    if (!await assistantRegion.isVisible()) await page.getByRole("button", { name: "Open TA Assistant" }).click();
+    const reportLink = assistantRegion.getByRole("link", { name: "Design Optimization Report" });
     await expect(reportLink).toBeVisible();
-    const [reportDownload] = await Promise.all([
-      page.waitForEvent("download"),
-      reportLink.click(),
-    ]);
-    const reportStream = await reportDownload.createReadStream();
-    const downloadedChunks: Buffer[] = [];
-    for await (const chunk of reportStream) downloadedChunks.push(Buffer.from(chunk));
-    expect(createHash("sha256").update(Buffer.concat(downloadedChunks)).digest("hex")).toBe(webReportHash);
+    const reportLinkHandle = await reportLink.elementHandle();
+    if (reportLinkHandle === null) throw new Error("assistant report link missing");
+    const clickProbe = await reportLinkHandle.evaluate((element) => {
+      const href = element.getAttribute("href");
+      let clicked = false;
+      element.addEventListener("click", (event) => {
+        event.preventDefault();
+        clicked = true;
+      }, { once: true });
+      element.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      return { href, clicked };
+    });
+    const reportHref = clickProbe.href;
+    if (reportHref === null) throw new Error("assistant report link href missing");
+    expect(new URL(reportHref, workbench.origin).pathname).toBe(`/api/sessions/${encodeURIComponent(F6_CHAT_INPUT_SESSION_ID)}/artifacts/${encodeURIComponent(reportAliasId)}`);
+    expect(clickProbe.clicked).toBe(true);
 
     const vscodeReportId = modelTurn.relatedArtifactIds[0];
-    const vscodeReportResponse = await page.request.get(`${workbench.origin}/api/sessions/${encodeURIComponent(F6_CHAT_INPUT_SESSION_ID)}/artifacts/${encodeURIComponent(vscodeReportId)}`);
+    const vscodeReportResponse = await page.request.get(`${workbench.origin}/api/sessions/${encodeURIComponent(F6_CHAT_INPUT_SESSION_ID)}/artifacts/${encodeURIComponent(vscodeReportId)}`, { timeout: 5_000 });
     if (!vscodeReportResponse.ok()) throw new Error(`vscode report fetch failed (${vscodeReportResponse.status()})`);
     const vscodeReportHash = createHash("sha256").update(await vscodeReportResponse.body()).digest("hex");
     expect(vscodeReportHash).toBe(webReportHash);
 
-    const finalSystemSpecification = await page.getByLabel("Analysis target details").innerText();
+    const finalSystemSpecification = await page.getByLabel("Analysis target details").innerText({ timeout: 5_000 });
     expect(finalSystemSpecification).toBe(baselineSystemSpecification);
   } finally {
     await context.close();

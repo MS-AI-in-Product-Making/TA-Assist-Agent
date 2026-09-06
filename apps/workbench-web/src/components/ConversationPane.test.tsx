@@ -65,6 +65,7 @@ describe("ConversationPane", () => {
     expect(screen.getByText("Decision record available.")).toBeVisible();
     expect(screen.getByText("Governed command available.")).toBeVisible();
     expect(screen.getByRole("link", { name: "Design Optimization Report" })).toHaveAttribute("href", "/api/sessions/session-1/artifacts/f6-report-current");
+    expect(screen.getByRole("link", { name: "Design Optimization Report" })).toHaveAttribute("download", "Feature6-Report.md");
     expect(screen.queryByText(/f6-review|workflow:f6/i)).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByRole("textbox", { name: "Describe your request in natural language" }), {
