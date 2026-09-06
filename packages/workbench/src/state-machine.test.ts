@@ -504,7 +504,7 @@ describe("workbench state machine", () => {
     ]);
   });
 
-  it("requires a bound path/hash decisionReference for non-not_provided F6 decisions", () => {
+  it("requires server-owned draft identity for confirm F6 decisions", () => {
     const api = requireApi();
 
     expect(() => api.reduceSessionCommand(
@@ -512,27 +512,79 @@ describe("workbench state machine", () => {
       {
         contractVersion: "f8-session-command-v1",
         sessionId: SESSION_ID,
-        commandId: "analysis-context-unbound",
+        commandId: "analysis-context-missing-draft",
         expectedRevision: 0,
         command: "confirm_analysis_context",
-        payload: { decision: "approve" },
+        payload: { decision: "confirm", draftId: "", draftHash: "abc" },
       },
-    )).toThrow(/bind a relative artifact path and SHA-256 hash/i);
+    )).toThrow();
 
     expect(() => api.reduceSessionCommand(
       baseSnapshot({ state: "analysis_context_decision_required", inputRevision: 2 }),
       {
         contractVersion: "f8-session-command-v1",
         sessionId: SESSION_ID,
-        commandId: "analysis-context-not-provided-with-reference",
+        commandId: "analysis-context-confirm",
         expectedRevision: 0,
         command: "confirm_analysis_context",
         payload: {
-          decision: "not_provided",
-          decisionReference: "uploads/session/analysis-context.json#sha256:aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899",
+          decision: "confirm",
+          draftId: "draft-analysis-context-1",
+          draftHash: "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899",
         },
       },
-    )).toThrow(/must be omitted when decision is not_provided/i);
+    )).not.toThrow();
+  });
+
+  it("keeps not_provided/decline decisions independent across the two F6 gates", () => {
+    const api = requireApi();
+
+    const afterContextNotProvided = api.reduceSessionCommand(
+      baseSnapshot({
+        state: "analysis_context_decision_required",
+        inputRevision: 2,
+        pendingAnalysisContextDraft: {
+          draftId: "draft-analysis-context-pending",
+          kind: "analysis_context",
+          inputRevision: 2,
+          reviewContextId: "a".repeat(64),
+          artifactId: "f6-input-draft:analysis_context:draft-analysis-context-pending",
+          contentHash: "b".repeat(64),
+          status: "preview_required",
+        },
+        pendingOptimizationTargetsDraft: {
+          draftId: "draft-targets-pending",
+          kind: "optimization_targets",
+          inputRevision: 2,
+          reviewContextId: "a".repeat(64),
+          artifactId: "f6-input-draft:optimization_targets:draft-targets-pending",
+          contentHash: "c".repeat(64),
+          status: "preview_required",
+        },
+      }),
+      analysisContextCommand(0, "not_provided"),
+    );
+
+    expect(afterContextNotProvided.state).toBe("optimization_targets_decision_required");
+    expect(afterContextNotProvided.pendingAnalysisContextDraft).toBeUndefined();
+    expect(afterContextNotProvided.pendingOptimizationTargetsDraft).toMatchObject({
+      draftId: "draft-targets-pending",
+    });
+    const contextRef = afterContextNotProvided.priorRunReferences.findLast((reference) =>
+      reference.featureId === "F6" && reference.referenceId.startsWith("f6-analysis-context:"));
+    expect(contextRef).toMatchObject({ referenceId: "f6-analysis-context:not_provided" });
+    expect(contextRef?.runReference).toBeUndefined();
+
+    const afterTargetsDecline = api.reduceSessionCommand(
+      afterContextNotProvided,
+      optimizationTargetsCommand(afterContextNotProvided.revision, "decline"),
+    );
+    expect(afterTargetsDecline.state).toBe("f6_running");
+    expect(afterTargetsDecline.pendingOptimizationTargetsDraft).toBeUndefined();
+    const targetsRef = afterTargetsDecline.priorRunReferences.findLast((reference) =>
+      reference.featureId === "F6" && reference.referenceId.startsWith("f6-optimization-targets:"));
+    expect(targetsRef).toMatchObject({ referenceId: "f6-optimization-targets:decline" });
+    expect(targetsRef?.runReference).toBeUndefined();
   });
 });
 
@@ -630,34 +682,40 @@ function cancelledAttemptResult() {
 }
 
 function confirmAnalysisContextCommand(expectedRevision: number): SessionCommand {
-  return analysisContextCommand(expectedRevision, "approve");
+  return analysisContextCommand(expectedRevision, "confirm");
 }
 
-function analysisContextCommand(expectedRevision: number, decision: "approve" | "decline"): SessionCommand {
+function analysisContextCommand(expectedRevision: number, decision: "confirm" | "not_provided" | "decline"): SessionCommand {
   return {
     contractVersion: "f8-session-command-v1",
     sessionId: SESSION_ID,
     commandId: `analysis-context-${decision}`,
     expectedRevision,
     command: "confirm_analysis_context",
-    payload: {
-      decision,
-      decisionReference: "uploads/session/analysis-context.json#sha256:aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899",
-    },
+    payload: decision === "confirm"
+      ? {
+          decision,
+          draftId: "draft-analysis-context-1",
+          draftHash: "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899",
+        }
+      : { decision },
   };
 }
 
-function optimizationTargetsCommand(expectedRevision: number): SessionCommand {
+function optimizationTargetsCommand(expectedRevision: number, decision: "confirm" | "not_provided" | "decline" = "confirm"): SessionCommand {
   return {
     contractVersion: "f8-session-command-v1",
     sessionId: SESSION_ID,
-    commandId: "optimization-targets-approve",
+    commandId: `optimization-targets-${decision}`,
     expectedRevision,
     command: "confirm_optimization_targets",
-    payload: {
-      decision: "approve",
-      decisionReference: "uploads/session/optimization-targets.json#sha256:11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff",
-    },
+    payload: decision === "confirm"
+      ? {
+          decision,
+          draftId: "draft-optimization-targets-1",
+          draftHash: "11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff",
+        }
+      : { decision },
   };
 }
 

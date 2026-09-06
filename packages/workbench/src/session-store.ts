@@ -57,10 +57,23 @@ export interface SessionCommandMutation {
   readonly hostActionOps?: SessionDeltaOperations<SessionHostActionRecord>;
 }
 
+export interface SessionSnapshotMutation {
+  readonly snapshot: F8SessionSnapshot;
+  readonly artifactReferences?: readonly SessionArtifactReference[];
+  readonly artifactReferenceOps?: SessionDeltaOperations<SessionArtifactReference>;
+  readonly scenarioDrafts?: F8SessionSnapshot["scenarioDrafts"];
+  readonly hostActions?: readonly SessionHostActionRecord[];
+  readonly hostActionOps?: SessionDeltaOperations<SessionHostActionRecord>;
+}
+
 export type SessionCommandReducer = (
   snapshot: F8SessionSnapshot,
   command: F8SessionCommand,
 ) => SessionCommandMutation | Promise<SessionCommandMutation>;
+
+export type SessionSnapshotReducer = (
+  snapshot: F8SessionSnapshot,
+) => SessionSnapshotMutation | Promise<SessionSnapshotMutation>;
 
 export interface SessionAttemptResultRecord {
   readonly attemptId: string;
@@ -89,6 +102,7 @@ export interface SessionStore {
   readCommandReceipt(commandId: string): Promise<F8SessionSnapshot | null>;
   readCommittedCommand(commandId: string): Promise<F8SessionCommand | undefined>;
   applyCommand(command: F8SessionCommand, reducer: SessionCommandReducer): Promise<F8SessionSnapshot>;
+  applySnapshotMutation(expectedRevision: number, reducer: SessionSnapshotReducer): Promise<F8SessionSnapshot>;
   recordAttemptResult(result: SessionAttemptResultRecord): Promise<SessionAttemptResultReceipt>;
   close(): Promise<void>;
 }
@@ -605,6 +619,83 @@ class SqliteSessionStore implements SessionStore {
 
       this.database.exec("COMMIT");
       return { accepted: true, snapshot: snapshotWithArtifactReferences };
+    } catch (error) {
+      rollbackQuietly(this.database);
+      throw error;
+    }
+  }
+
+  async applySnapshotMutation(expectedRevision: number, reducer: SessionSnapshotReducer): Promise<F8SessionSnapshot> {
+    const currentSnapshot = this.readCommittedSnapshot();
+    if (currentSnapshot.revision !== expectedRevision) {
+      throw createRevisionError(`Expected revision ${expectedRevision}, found ${currentSnapshot.revision}.`);
+    }
+
+    const mutation = await reducer(currentSnapshot);
+    const snapshotTransition = prepareSnapshotTransition(currentSnapshot, mutation.snapshot, mutation.scenarioDrafts);
+    const nextSnapshot = snapshotTransition.snapshot;
+    if (stableStringify(nextSnapshot.activeAttempt) !== stableStringify(currentSnapshot.activeAttempt)) {
+      throw createTypedError({
+        code: "validation_error",
+        summary: `Snapshot mutation for session ${this.sessionId} must not modify activeAttempt.`,
+        suggestedAction: "Use applyCommand or recordAttemptResult when attempt state changes are required.",
+        affectedInputReferences: [this.sessionId],
+      });
+    }
+
+    const artifactReferenceOps = normalizeArtifactReferenceOps(
+      this.sessionId,
+      mutation.artifactReferences,
+      mutation.artifactReferenceOps,
+    );
+    const hostActionOps = normalizeHostActionOps(
+      this.sessionId,
+      mutation.hostActions,
+      mutation.hostActionOps,
+    );
+    const timestamp = new Date().toISOString();
+
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      const sessionRow = this.readSessionRow();
+      if (sessionRow === undefined) {
+        throw createTypedError({
+          code: "validation_error",
+          summary: `Session ${this.sessionId} does not exist.`,
+          suggestedAction: "Create the session before applying snapshot mutations.",
+          affectedInputReferences: [this.sessionId],
+        });
+      }
+      if (sessionRow.revision !== expectedRevision) {
+        throw createRevisionError(`Expected revision ${expectedRevision}, found ${sessionRow.revision}.`);
+      }
+
+      const sessionUpdate = this.updateSessionStatement.run(
+        nextSnapshot.revision,
+        stringifyJson(nextSnapshot),
+        timestamp,
+        this.sessionId,
+        expectedRevision,
+      );
+      if (toNumber(sessionUpdate.changes) !== 1) {
+        throw createRevisionError(`Revision ${expectedRevision} was not current during commit.`);
+      }
+
+      persistSideTables({
+        deleteScenarioDraftsStatement: this.deleteScenarioDraftsStatement,
+        insertScenarioDraftStatement: this.insertScenarioDraftStatement,
+        upsertArtifactRefStatement: this.upsertArtifactRefStatement,
+        deleteArtifactRefStatement: this.deleteArtifactRefStatement,
+        upsertHostActionStatement: this.upsertHostActionStatement,
+        deleteHostActionStatement: this.deleteHostActionStatement,
+        sessionId: this.sessionId,
+        scenarioDrafts: snapshotTransition.scenarioDrafts,
+        artifactReferenceOps,
+        hostActionOps,
+      });
+
+      this.database.exec("COMMIT");
+      return nextSnapshot;
     } catch (error) {
       rollbackQuietly(this.database);
       throw error;

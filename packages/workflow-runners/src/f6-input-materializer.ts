@@ -10,6 +10,7 @@ import {
 import type {
   F6AnalysisContextMaterializationResult,
   F6InputMaterializationClarification,
+  F6InputMaterializationClarificationResult,
   F6InputMaterializationLineage,
   F6InputMaterializationResult,
   F6InputProposalForMaterialization,
@@ -57,7 +58,7 @@ function baselineIdentity(lineage: F6InputMaterializationLineage, worksheet: { w
 
 function clarificationResult(
   clarifications: readonly F6InputMaterializationClarification[],
-): F6AnalysisContextMaterializationResult | F6OptimizationTargetsMaterializationResult {
+): F6InputMaterializationClarificationResult {
   return {
     status: "clarification_required",
     clarifications,

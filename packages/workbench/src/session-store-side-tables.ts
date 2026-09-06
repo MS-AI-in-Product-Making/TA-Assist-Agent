@@ -1,6 +1,6 @@
 import { StatementSync } from "node:sqlite";
 
-import { createTypedError, f8ScenarioDraftSchema } from "@ai-assist/contracts";
+import { createTypedError, f8PendingF6InputDraftSchema, f8ScenarioDraftSchema } from "@ai-assist/contracts";
 
 import { createReviewContextId, type ReviewContextIdentity } from "./review-context.js";
 
@@ -84,6 +84,18 @@ export function normalizeArtifactReferenceOps(
       ensureNonEmptyString(reference.kind, `artifact reference ${reference.artifactId} kind`);
       ensureNonEmptyString(reference.relativePath, `artifact reference ${reference.artifactId} relativePath`);
       ensureSessionOwnership(reference.sessionId, sessionId, `artifact reference ${reference.artifactId}`);
+      if (reference.kind === "f6_input_draft") {
+        const pendingDraft = f8PendingF6InputDraftSchema.safeParse(reference.metadata?.pendingDraft);
+        if (!pendingDraft.success) {
+          throw createSideTableValidationError(`F6 pending draft metadata is invalid for artifact ${reference.artifactId}.`, reference.artifactId);
+        }
+        if (pendingDraft.data.artifactId !== reference.artifactId
+          || pendingDraft.data.inputRevision !== reference.inputRevision
+          || pendingDraft.data.contentHash !== reference.contentHash
+          || pendingDraft.data.kind !== "analysis_context" && pendingDraft.data.kind !== "optimization_targets") {
+          throw createSideTableValidationError(`F6 pending draft metadata does not match artifact identity ${reference.artifactId}.`, reference.artifactId);
+        }
+      }
       if (!REVIEW_ARTIFACT_KINDS.has(reference.kind)) return reference;
       if (reference.reviewContext === undefined) {
         throw createSideTableValidationError(`Review artifact ${reference.artifactId} requires review context identity.`, reference.artifactId);

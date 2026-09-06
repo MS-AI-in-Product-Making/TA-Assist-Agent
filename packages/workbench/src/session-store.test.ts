@@ -486,6 +486,138 @@ describe("SessionStore", () => {
     }
   });
 
+  it("rejects malformed F6 pending draft artifact metadata and rolls back", async () => {
+    const rootDir = await createTempRoot();
+    const store = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+    try {
+      await expect(store.applyCommand(commandAt(0, COMMAND_ID), (snapshot) => ({
+        snapshot: snapshotWithAttempt({
+          revision: snapshot.revision,
+          state: "analysis_context_decision_required",
+          activeAttempt: null,
+          pendingAnalysisContextDraft: {
+            draftId: "draft-a",
+            kind: "analysis_context",
+            inputRevision: 0,
+            reviewContextId: "a".repeat(64),
+            artifactId: "f6-input-draft:analysis_context:draft-a",
+            contentHash: "b".repeat(64),
+            status: "preview_required",
+          },
+        }),
+        artifactReferenceOps: {
+          upsert: [{
+            artifactId: "f6-input-draft:analysis_context:draft-a",
+            sessionId: SESSION_ID,
+            inputRevision: 0,
+            kind: "f6_input_draft",
+            relativePath: "runtime/workbench/managed-artifacts/session-001/f6-input-drafts/analysis_context/draft-a.json",
+            contentHash: "b".repeat(64),
+            metadata: {
+              pendingDraft: {
+                draftId: "draft-a",
+                kind: "analysis_context",
+                inputRevision: 0,
+                reviewContextId: "a".repeat(64),
+                artifactId: "f6-input-draft:analysis_context:draft-a",
+                contentHash: "c".repeat(64),
+                status: "preview_required",
+              },
+            },
+          }],
+        },
+      }))).rejects.toMatchObject({ code: "validation_error" });
+
+      expect(readArtifactRefRows(rootDir)).toEqual([]);
+      expect((await store.readSnapshot()).pendingAnalysisContextDraft).toBeUndefined();
+    } finally {
+      await store.close();
+    }
+  });
+
+  it("persists and projects both pending F6 draft kinds independently", async () => {
+    const rootDir = await createTempRoot();
+    const store = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+    try {
+      const snapshot = await store.applyCommand(commandAt(0, COMMAND_ID), (current) => ({
+        snapshot: snapshotWithAttempt({
+          revision: current.revision,
+          state: "optimization_targets_decision_required",
+          activeAttempt: null,
+          pendingAnalysisContextDraft: {
+            draftId: "draft-analysis",
+            kind: "analysis_context",
+            inputRevision: 0,
+            reviewContextId: "a".repeat(64),
+            artifactId: "f6-input-draft:analysis_context:draft-analysis",
+            contentHash: "b".repeat(64),
+            status: "preview_required",
+          },
+          pendingOptimizationTargetsDraft: {
+            draftId: "draft-targets",
+            kind: "optimization_targets",
+            inputRevision: 0,
+            reviewContextId: "a".repeat(64),
+            artifactId: "f6-input-draft:optimization_targets:draft-targets",
+            contentHash: "c".repeat(64),
+            status: "preview_required",
+          },
+        }),
+        artifactReferenceOps: {
+          upsert: [
+            {
+              artifactId: "f6-input-draft:analysis_context:draft-analysis",
+              sessionId: SESSION_ID,
+              inputRevision: 0,
+              kind: "f6_input_draft",
+              relativePath: "runtime/workbench/managed-artifacts/session-001/f6-input-drafts/analysis_context/draft-analysis.json",
+              contentHash: "b".repeat(64),
+              metadata: {
+                pendingDraft: {
+                  draftId: "draft-analysis",
+                  kind: "analysis_context",
+                  inputRevision: 0,
+                  reviewContextId: "a".repeat(64),
+                  artifactId: "f6-input-draft:analysis_context:draft-analysis",
+                  contentHash: "b".repeat(64),
+                  status: "preview_required",
+                },
+              },
+            },
+            {
+              artifactId: "f6-input-draft:optimization_targets:draft-targets",
+              sessionId: SESSION_ID,
+              inputRevision: 0,
+              kind: "f6_input_draft",
+              relativePath: "runtime/workbench/managed-artifacts/session-001/f6-input-drafts/optimization_targets/draft-targets.json",
+              contentHash: "c".repeat(64),
+              metadata: {
+                pendingDraft: {
+                  draftId: "draft-targets",
+                  kind: "optimization_targets",
+                  inputRevision: 0,
+                  reviewContextId: "a".repeat(64),
+                  artifactId: "f6-input-draft:optimization_targets:draft-targets",
+                  contentHash: "c".repeat(64),
+                  status: "preview_required",
+                },
+              },
+            },
+          ],
+        },
+      }));
+
+      expect(snapshot.pendingAnalysisContextDraft?.draftId).toBe("draft-analysis");
+      expect(snapshot.pendingOptimizationTargetsDraft?.draftId).toBe("draft-targets");
+      expect(readArtifactRefRows(rootDir).map((row) => row.artifact_id)).toEqual([
+        "f6-input-draft:analysis_context:draft-analysis",
+        "f6-input-draft:optimization_targets:draft-targets",
+      ]);
+    } finally {
+      await store.close();
+    }
+  });
+
   it("projects validated F2 reports without requiring a review context", async () => {
     const rootDir = await createTempRoot();
     const store = await createSessionStore({ rootDir, sessionId: SESSION_ID });
@@ -576,6 +708,24 @@ function snapshotWithAttempt(options: {
     endedAt?: string;
   } | null;
   scenarioDrafts?: Array<ReturnType<typeof scenarioDraft>>;
+  pendingAnalysisContextDraft?: {
+    draftId: string;
+    kind: "analysis_context";
+    inputRevision: number;
+    reviewContextId: string;
+    artifactId: string;
+    contentHash: string;
+    status: "preview_required";
+  };
+  pendingOptimizationTargetsDraft?: {
+    draftId: string;
+    kind: "optimization_targets";
+    inputRevision: number;
+    reviewContextId: string;
+    artifactId: string;
+    contentHash: string;
+    status: "preview_required";
+  };
 }) {
   return {
     contractVersion: "f8-session-snapshot-v1",
@@ -586,6 +736,8 @@ function snapshotWithAttempt(options: {
     activeAttempt: options.activeAttempt,
     priorRunReferences: [],
     ...(options.scenarioDrafts === undefined ? {} : { scenarioDrafts: options.scenarioDrafts }),
+    ...(options.pendingAnalysisContextDraft === undefined ? {} : { pendingAnalysisContextDraft: options.pendingAnalysisContextDraft }),
+    ...(options.pendingOptimizationTargetsDraft === undefined ? {} : { pendingOptimizationTargetsDraft: options.pendingOptimizationTargetsDraft }),
   };
 }
 

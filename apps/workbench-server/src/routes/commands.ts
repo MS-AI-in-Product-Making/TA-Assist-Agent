@@ -7,6 +7,7 @@ import type { FastifyPluginAsync } from "fastify";
 
 import { errorStatusCode, safeErrorResponse } from "../security.js";
 import type { WorkbenchServerContext } from "../server.js";
+import { resolveF6DraftArtifactReference, verifyF6DraftArtifactIdentity } from "./f6-inputs.js";
 
 type PublicSessionCommand = ReturnType<typeof f8PublicSessionCommandSchema.parse>;
 type DownstreamScopePayload = {
@@ -86,10 +87,114 @@ async function createInternalCommand(command: PublicSessionCommand, context: Wor
     const { promotionPreview } = await context.createWhatIfPromotion(command.sessionId, payload.draftId);
     return { ...command, payload: { ...payload, promotionPreview } };
   }
+  if (command.command === "confirm_analysis_context" || command.command === "confirm_optimization_targets") {
+    await validateF6DraftConfirmation(command, context);
+  }
   if (isConfirmDownstreamScopeCommand(command)) {
     await validateDownstreamScopeReadiness(command, context);
   }
   return command;
+}
+
+async function validateF6DraftConfirmation(
+  command: Extract<PublicSessionCommand, { command: "confirm_analysis_context" | "confirm_optimization_targets" }>,
+  context: WorkbenchServerContext,
+): Promise<void> {
+  const payload = command.payload as
+    | { readonly decision: "confirm"; readonly draftId: string; readonly draftHash: string }
+    | { readonly decision: "not_provided" | "decline" };
+  if (payload.decision !== "confirm") {
+    return;
+  }
+
+  const snapshot = await context.sessions.read(command.sessionId);
+  if (snapshot === undefined || snapshot.revision !== command.expectedRevision) {
+    throw createTypedError({
+      code: "evidence_mismatch",
+      summary: "Current session revision changed before F6 confirmation.",
+      suggestedAction: "Refresh the workspace and reconfirm with the current pending draft.",
+      affectedInputReferences: [command.sessionId, command.commandId],
+    });
+  }
+
+  const kind = command.command === "confirm_analysis_context" ? "analysis_context" : "optimization_targets";
+  const pending = command.command === "confirm_analysis_context"
+    ? snapshot.pendingAnalysisContextDraft
+    : snapshot.pendingOptimizationTargetsDraft;
+  if (pending === undefined || pending.kind !== kind) {
+    throw createTypedError({
+      code: "evidence_mismatch",
+      summary: "draft_identity_mismatch",
+      suggestedAction: "Regenerate and confirm the current pending draft for this gate.",
+      affectedInputReferences: [command.commandId],
+    });
+  }
+  if (pending.inputRevision !== snapshot.inputRevision) {
+    throw createTypedError({
+      code: "evidence_mismatch",
+      summary: "draft_identity_mismatch",
+      suggestedAction: "Refresh the current workbook revision and regenerate the draft.",
+      affectedInputReferences: [command.commandId],
+    });
+  }
+
+  const currentReviewContextId = resolveCurrentReviewContextId(snapshot);
+  if (pending.reviewContextId !== currentReviewContextId) {
+    throw createTypedError({
+      code: "evidence_mismatch",
+      summary: "draft_identity_mismatch",
+      suggestedAction: "Regenerate the pending draft from the current validated review context.",
+      affectedInputReferences: [command.commandId],
+    });
+  }
+
+  if (payload.draftId !== pending.draftId || payload.draftHash !== pending.contentHash) {
+    throw createTypedError({
+      code: "evidence_mismatch",
+      summary: payload.draftId !== pending.draftId ? "draft_identity_mismatch" : "draft_hash_mismatch",
+      suggestedAction: "Use the exact pending draftId and draftHash from current snapshot.",
+      affectedInputReferences: [command.commandId],
+    });
+  }
+
+  const persisted = await resolveF6DraftArtifactReference(context.rootDir, snapshot.sessionId, kind, pending.draftId);
+  if (persisted === undefined || persisted.artifactId !== pending.artifactId) {
+    throw createTypedError({
+      code: "evidence_mismatch",
+      summary: "draft_identity_mismatch",
+      suggestedAction: "Regenerate the pending draft and retry confirmation.",
+      affectedInputReferences: [command.commandId],
+    });
+  }
+
+  await verifyF6DraftArtifactIdentity(context.rootDir, persisted, pending.contentHash, kind);
+}
+
+function resolveCurrentReviewContextId(snapshot: {
+  readonly inputRevision: number;
+  readonly artifactRefs?: readonly {
+    readonly kind: string;
+    readonly validated: boolean;
+    readonly revision: number;
+    readonly reviewContextId?: string;
+  }[];
+}): string {
+  const f4 = (snapshot.artifactRefs ?? []).filter((reference) =>
+    reference.kind === "f4_calculation" && reference.validated && reference.revision === snapshot.inputRevision,
+  );
+  const f5 = (snapshot.artifactRefs ?? []).filter((reference) =>
+    reference.kind === "f5_report" && reference.validated && reference.revision === snapshot.inputRevision,
+  );
+  const reviewContextId = f4[0]?.reviewContextId;
+  if (f4.length !== 1 || f5.length !== 1 || typeof reviewContextId !== "string" || f5[0]?.reviewContextId !== reviewContextId) {
+    throw createTypedError({
+      code: "evidence_mismatch",
+      summary: "Current review context is ambiguous for F6 confirmation.",
+      suggestedAction: "Regenerate F4/F5 and retry confirmation in current session.",
+      affectedInputReferences: ["reviewContextId"],
+    });
+  }
+  return reviewContextId;
 }
 
 async function validateDownstreamScopeReadiness(

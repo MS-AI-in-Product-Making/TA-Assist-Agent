@@ -25,7 +25,7 @@ export type { SessionAttemptResult } from "./attempts.js";
 const F6_ANALYSIS_CONTEXT_REFERENCE_PREFIX = "f6-analysis-context:";
 const F6_OPTIMIZATION_TARGETS_REFERENCE_PREFIX = "f6-optimization-targets:";
 const F6_INPUT_DECISION_CONTRACT_VERSION = "f6-input-decision-v1";
-const F6_BOUND_REFERENCE_PATTERN = /^(?![A-Za-z]:)(?!file:\/\/)(?!\\\\)(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[^#\r\n]+#sha256:[a-f0-9]{64}$/;
+const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 
 export function reduceSessionCommand(snapshotInput: F8SessionSnapshot, commandInput: F8SessionCommand): F8SessionSnapshot {
   const snapshot = parseSnapshot(snapshotInput);
@@ -72,10 +72,12 @@ export function reduceSessionCommand(snapshotInput: F8SessionSnapshot, commandIn
       return nextSnapshot(snapshot, {
         state: "optimization_targets_decision_required",
         activeAttempt: null,
+        pendingAnalysisContextDraft: undefined,
         priorRunReferences: appendF6InputDecisionReference(snapshot, command, F6_ANALYSIS_CONTEXT_REFERENCE_PREFIX),
       });
     case "confirm_optimization_targets":
       return transitionWithAttempt(snapshot, command, "f6_running", {
+        pendingOptimizationTargetsDraft: undefined,
         priorRunReferences: appendF6InputDecisionReference(snapshot, command, F6_OPTIMIZATION_TARGETS_REFERENCE_PREFIX),
       });
     case "retry": {
@@ -209,6 +211,8 @@ function startWorkbookValidation(
     inputRevision: nextInputRevision,
     initialScopeSelection: undefined,
     downstreamScopeSelection: undefined,
+    pendingAnalysisContextDraft: undefined,
+    pendingOptimizationTargetsDraft: undefined,
     priorRunReferences: snapshot.priorRunReferences,
     scenarioDrafts: preservedDrafts?.length ? preservedDrafts : undefined,
     ...(replacingWorkbook ? {} : {}),
@@ -413,31 +417,24 @@ function appendF6InputDecisionReference(
   command: F8SessionCommand,
   referencePrefix: typeof F6_ANALYSIS_CONTEXT_REFERENCE_PREFIX | typeof F6_OPTIMIZATION_TARGETS_REFERENCE_PREFIX,
 ): F8SessionSnapshot["priorRunReferences"] {
-  const payload = command.payload as {
-    readonly decision: string;
-    readonly decisionReference?: string;
-  };
-  const decision = payload.decision.trim();
-  const decisionReference = payload.decisionReference?.trim();
+  const payload = command.payload as
+    | { readonly decision: "confirm"; readonly draftId: string; readonly draftHash: string }
+    | { readonly decision: "not_provided" | "decline" };
+  const decision = payload.decision;
+  let decisionReference: string | undefined;
 
-  if (decision === "not_provided") {
-    if (decisionReference !== undefined) {
+  if (payload.decision === "confirm") {
+    if (payload.draftId.trim().length === 0 || !SHA256_PATTERN.test(payload.draftHash)) {
       throw createTypedError({
         code: "validation_error",
-        summary: "F6 input decision reference must be omitted when decision is not_provided.",
-        suggestedAction: "Provide no decisionReference for not_provided decisions.",
+        summary: "F6 confirm decision must include a valid draftId and draftHash.",
+        suggestedAction: "Use the current pending server-owned draft identity and retry confirmation.",
         affectedInputReferences: [command.commandId],
       });
     }
+    decisionReference = `draft:${payload.draftId}#sha256:${payload.draftHash}`;
   } else {
-    if (decisionReference === undefined || !F6_BOUND_REFERENCE_PATTERN.test(decisionReference)) {
-      throw createTypedError({
-        code: "validation_error",
-        summary: "F6 input decision must bind a relative artifact path and SHA-256 hash.",
-        suggestedAction: "Provide decisionReference as relative/path.json#sha256:<64-hex> or use not_provided.",
-        affectedInputReferences: [command.commandId],
-      });
-    }
+    // not_provided and decline must not carry a decision reference.
   }
 
   const workbookHash = snapshot.downstreamScopeSelection?.workbookContentHash ?? snapshot.initialScopeSelection?.workbookContentHash;

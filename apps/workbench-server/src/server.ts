@@ -35,6 +35,7 @@ const F6_INPUT_DECISION_CONTRACT_VERSION = "f6-input-decision-v1";
 const F6_ANALYSIS_CONTEXT_REFERENCE_PREFIX = "f6-analysis-context:";
 const F6_OPTIMIZATION_TARGETS_REFERENCE_PREFIX = "f6-optimization-targets:";
 const F6_BOUND_REFERENCE_PATTERN = /^(?![A-Za-z]:)(?!file:\/\/)(?!\\\\)(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))([^#\r\n]+)#sha256:([a-f0-9]{64})$/;
+const F6_DRAFT_REFERENCE_PATTERN = /^draft:[^#\r\n]+#sha256:[a-f0-9]{64}$/;
 
 interface BoundF6DecisionReference {
   readonly relativePath: string;
@@ -58,6 +59,7 @@ import { adoRoutes } from "./routes/ado.js";
 import { productExportRoutes } from "./routes/product-export.js";
 import { sessionsRoutes } from "./routes/sessions.js";
 import { whatIfRoutes } from "./routes/what-if.js";
+import { f6InputsRoutes, resolveDraftReferenceFromRunReference, resolveF6DraftArtifactReference, verifyF6DraftArtifactIdentity } from "./routes/f6-inputs.js";
 import { createPersistentWorkerQueue, type PersistentWorkerQueue, type PersistentWorkerQueueOptions, type QueueSessionStore, type StageJob } from "./sqlite-worker-queue.js";
 import { createSqliteEventSource, type SqliteEventSource } from "./sse.js";
 import { createAutoEntryDecision } from "./auto-entry.js";
@@ -285,6 +287,7 @@ export async function buildWorkbenchServer(options: StartWorkbenchServerOptions)
   await app.register(productExportRoutes, { context });
   await app.register(artifactsRoutes, { context });
   await app.register(whatIfRoutes, { context });
+  await app.register(f6InputsRoutes, { context });
   app.addHook("onClose", async () => {
     (context.events as SqliteEventSource).close();
     await context.conversation.close();
@@ -1474,8 +1477,12 @@ async function resolveCallerAuthorizedF6Inputs(rootDir: string, snapshot: F8Sess
 }> {
   const analysisReference = readF6InputDecisionReference(snapshot, F6_ANALYSIS_CONTEXT_REFERENCE_PREFIX, "analysis context");
   const optimizationReference = readF6InputDecisionReference(snapshot, F6_OPTIMIZATION_TARGETS_REFERENCE_PREFIX, "optimization targets");
-  const parsedAnalysisReference = analysisReference === undefined ? undefined : parseF6BoundReference(analysisReference, "analysis context");
-  const parsedOptimizationReference = optimizationReference === undefined ? undefined : parseF6BoundReference(optimizationReference, "optimization targets");
+  const parsedAnalysisReference = analysisReference === undefined
+    ? undefined
+    : await resolveF6DecisionArtifactReference(rootDir, snapshot.sessionId, "analysis_context", analysisReference, "analysis context");
+  const parsedOptimizationReference = optimizationReference === undefined
+    ? undefined
+    : await resolveF6DecisionArtifactReference(rootDir, snapshot.sessionId, "optimization_targets", optimizationReference, "optimization targets");
   return {
     ...(parsedAnalysisReference === undefined ? {} : {
       analysisContextPath: await resolveAndValidateBoundF6Artifact(
@@ -1526,12 +1533,12 @@ function readF6InputDecisionReference(
     });
   }
   const outcome = decision.referenceId.slice(decisionPrefix.length);
-  if (outcome === "not_provided") {
+  if (outcome === "not_provided" || outcome === "decline") {
     if (decision.runReference !== undefined) {
       throw createTypedError({
         code: "validation_error",
-        summary: `Feature 6 ${label} not_provided decision must not include a decisionReference.`,
-        suggestedAction: "Resubmit the decision without a decisionReference.",
+        summary: `Feature 6 ${label} ${outcome} decision must not include a decision reference.`,
+        suggestedAction: "Resubmit the decision without a draft reference.",
         affectedInputReferences: [decision.referenceId],
       });
     }
@@ -1546,6 +1553,31 @@ function readF6InputDecisionReference(
     });
   }
   return decision.runReference;
+}
+
+async function resolveF6DecisionArtifactReference(
+  rootDir: string,
+  sessionId: string,
+  kind: "analysis_context" | "optimization_targets",
+  runReference: string,
+  label: "analysis context" | "optimization targets",
+): Promise<BoundF6DecisionReference> {
+  const trimmed = runReference.trim();
+  if (F6_DRAFT_REFERENCE_PATTERN.test(trimmed)) {
+    const draftReference = resolveDraftReferenceFromRunReference(trimmed);
+    const artifactReference = await resolveF6DraftArtifactReference(rootDir, sessionId, kind, draftReference.draftId);
+    if (artifactReference === undefined) {
+      throw createTypedError({
+        code: "evidence_mismatch",
+        summary: `Feature 6 ${label} draft reference does not exist in current session lineage.`,
+        suggestedAction: "Regenerate and reconfirm the current pending draft.",
+        affectedInputReferences: [runReference],
+      });
+    }
+    const relativePath = await verifyF6DraftArtifactIdentity(rootDir, artifactReference, draftReference.contentHash, kind);
+    return { relativePath, contentHash: draftReference.contentHash };
+  }
+  return parseF6BoundReference(trimmed, label);
 }
 
 function parseF6BoundReference(reference: string, label: "analysis context" | "optimization targets"): BoundF6DecisionReference {
