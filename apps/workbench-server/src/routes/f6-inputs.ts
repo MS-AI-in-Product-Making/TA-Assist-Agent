@@ -293,24 +293,28 @@ async function resolveMaterializationLineage(
     });
   }
 
-  const baseline = snapshot.priorRunReferences.findLast((reference) =>
-    reference.featureId === "F2" && reference.workbookHash === scope.workbookContentHash && typeof reference.runReference === "string" && reference.runReference.length > 0,
+  const baselineMatches = snapshot.priorRunReferences.filter((reference) =>
+    reference.featureId === "F2"
+    && reference.workbookHash === scope.workbookContentHash
+    && typeof reference.runReference === "string"
+    && reference.runReference.length > 0,
   );
-  if (baseline?.runReference === undefined) {
+  if (baselineMatches.length !== 1) {
     throw createTypedError({
       code: "evidence_mismatch",
-      summary: "F6 input materialization requires the current validated F2 baseline lineage.",
+      summary: "F6 input materialization requires exactly one current validated F2 baseline lineage for the workbook.",
       suggestedAction: "Regenerate Data Cleaning for the current workbook lineage and retry.",
       affectedInputReferences: [sessionId],
     });
   }
+  const baselineRunReference = baselineMatches[0]!.runReference as string;
 
   const f4Reference = await readPersistedArtifactReference(rootDir, sessionId, f4Refs[0]!.artifactId);
   const reviewContext = parseReviewContext(f4Reference.metadata?.reviewContext);
   const expectedReviewContext: ReviewContextIdentity = {
     workbookHash: scope.workbookContentHash,
     downstreamSelectionHash: canonicalSelectedWorksheetSetHash(scope.selectedWorksheetNames),
-    baselineRunReference: baseline.runReference,
+    baselineRunReference: baselineRunReference,
   };
   if (reviewContext.workbookHash !== expectedReviewContext.workbookHash
     || reviewContext.downstreamSelectionHash !== expectedReviewContext.downstreamSelectionHash
@@ -364,7 +368,7 @@ async function resolveMaterializationLineage(
     workbookContentHash: scope.workbookContentHash,
     calculationVersion: "excel-ta-v1" as const,
     projectReference: sessionId,
-    runReference: baseline.runReference,
+    runReference: baselineRunReference,
     worksheets,
   };
 }

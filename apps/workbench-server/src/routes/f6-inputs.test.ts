@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -212,6 +212,55 @@ describe("f6 input drafts routes", () => {
     }
   });
 
+  it("fails closed when current lineage has duplicate matching F2 baselines", async () => {
+    const rootDir = testRoot("workbench-server-f6-input-drafts-duplicate-f2");
+    await rm(rootDir, { recursive: true, force: true });
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate(SESSION_ID);
+      await seedSessionLineage(rootDir, SESSION_ID, { duplicateF2: true });
+
+      const response = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${SESSION_ID}/f6-input-drafts`,
+        headers: browser.headers,
+        payload: {
+          expectedRevision: 1,
+          kind: "analysis_context",
+          proposal: {
+            proposalVersion: "f6-analysis-context-proposal-v1",
+            userText: "test duplicate f2 baseline",
+            worksheetSelectors: ["Analysis-A"],
+            clarifications: [],
+          },
+        },
+      });
+
+      expect(response.statusCode).toBe(409);
+      expect(response.json<{ error: { code: string; summary: string } }>()).toMatchObject({
+        error: {
+          code: "evidence_mismatch",
+          summary: "F6 input materialization requires exactly one current validated F2 baseline lineage for the workbook.",
+        },
+      });
+
+      const store = await openSessionStore({ rootDir, sessionId: SESSION_ID });
+      try {
+        const snapshot = await store.readSnapshot();
+        expect(snapshot.revision).toBe(1);
+        expect(snapshot.pendingAnalysisContextDraft).toBeUndefined();
+        expect(snapshot.pendingOptimizationTargetsDraft).toBeUndefined();
+      } finally {
+        await store.close();
+      }
+
+      await expect(stat(join(rootDir, "runtime", "workbench", "managed-artifacts", SESSION_ID, "f6-input-drafts"))).rejects.toThrow();
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
   it("rejects cross-session access and enforces draft identity/hash without client path authority", async () => {
     const rootDir = testRoot("workbench-server-f6-input-drafts-confirm-boundary");
     await rm(rootDir, { recursive: true, force: true });
@@ -337,7 +386,7 @@ describe("f6 input drafts routes", () => {
   });
 });
 
-async function seedSessionLineage(rootDir: string, sessionId: string, options: { duplicateF4?: boolean } = {}): Promise<void> {
+async function seedSessionLineage(rootDir: string, sessionId: string, options: { duplicateF4?: boolean; duplicateF2?: boolean } = {}): Promise<void> {
   const f4PrimaryPath = "runtime/workbench/managed-artifacts/f4-primary.json";
   const f4SecondaryPath = "runtime/workbench/managed-artifacts/f4-secondary.json";
   const f5Path = "runtime/workbench/managed-artifacts/f5-report.json";
@@ -376,7 +425,15 @@ async function seedSessionLineage(rootDir: string, sessionId: string, options: {
           contractVersion: "f2-user-report-v1",
           workbookHash: WORKBOOK_HASH,
           runReference: REVIEW_CONTEXT.baselineRunReference,
-        }],
+        }, ...(options.duplicateF2 === true
+          ? [{
+              featureId: "F2",
+              referenceId: "f2-run-2026-09-06",
+              contractVersion: "f2-user-report-v1",
+              workbookHash: WORKBOOK_HASH,
+              runReference: "f2-run-2026-09-06",
+            }]
+          : [])],
         artifactRefs: [
           {
             artifactId: "f4-calculation-primary",
