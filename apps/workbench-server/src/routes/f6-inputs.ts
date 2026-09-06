@@ -402,8 +402,8 @@ async function resolveMaterializationLineage(
         const sourceRow = readNumber(factor, ["source", "sourceRow"]);
         const factorName = readString(factor, ["factorName"]);
         const unit = readString(factor, ["unit"]) ?? "mm";
-        const lowerTolerance = readNumber(factor, ["lowerTolerance"]);
-        const upperTolerance = readNumber(factor, ["upperTolerance"]);
+        const lowerTolerance = readNumber(factor, ["input", "lowerTolerance"]) ?? readNumber(factor, ["lowerTolerance"]);
+        const upperTolerance = readNumber(factor, ["input", "upperTolerance"]) ?? readNumber(factor, ["upperTolerance"]);
         if (sourceRow === undefined || factorName === undefined || lowerTolerance === undefined || upperTolerance === undefined) return [];
         return [{ sourceRow, factorName, unit, lowerTolerance, upperTolerance }];
       }),
@@ -575,9 +575,9 @@ function readSystem(value: unknown): {
   const designNominal = readNumber(system, ["designNominal"]);
   const mean = readNumber(system, ["mean"]);
   const rssSigma = readNumber(system, ["rssSigma"]);
-  const lowerSpecLimit = readNumber(system, ["lowerSpecLimit"]);
-  const upperSpecLimit = readNumber(system, ["upperSpecLimit"]);
-  const targetCpk = readNumber(system, ["targetCpk"]);
+  const lowerSpecLimit = readNumber(value, ["capability", "lowerSpecLimit"]) ?? readNumber(system, ["lowerSpecLimit"]);
+  const upperSpecLimit = readNumber(value, ["capability", "upperSpecLimit"]) ?? readNumber(system, ["upperSpecLimit"]);
+  const targetCpk = readNumber(value, ["capability", "targetCpk"]) ?? readNumber(system, ["targetCpk"]);
   if (designNominal === undefined || mean === undefined || rssSigma === undefined || lowerSpecLimit === undefined || upperSpecLimit === undefined || targetCpk === undefined) {
     return undefined;
   }

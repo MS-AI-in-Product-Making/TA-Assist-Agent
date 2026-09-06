@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
 
-import { expect, test } from "./workbench-fixture.js";
+import { expect, installSessionCookie, test } from "./workbench-fixture.js";
 
 const ADO_SELECTION_SESSION_ID = "50505050-5050-4505-8505-505050505050";
 const ADO_CREATE_PREVIEW_SESSION_ID = "60606060-6060-4606-8606-606060606060";
 const ADO_UPDATE_PREVIEW_SESSION_ID = "70707070-7070-4707-8707-707070707070";
+const F6_CHAT_INPUT_SESSION_ID = "90909090-9090-4909-8909-909090909090";
 const LONG_WORKBOOK_FILE_NAME = "anonymous-ta-workbook-very-long-governed-ui-filename-for-layout-overlap-validation-2026-09-01.xlsx";
 const CANONICAL_FACTOR_HEADERS = [
   "Loop Label",
@@ -308,6 +309,254 @@ test("creates a governed model HostAction prompt from the selected worksheet con
 
   const currentSystemSpecification = await page.getByLabel("Analysis target details").innerText();
   expect(currentSystemSpecification).toBe(baselineSystemSpecification);
+});
+
+test("materializes F6 chat inputs and opens the final report", async ({ browser, workbench }) => {
+  const context = await browser.newContext();
+  try {
+    await installSessionCookie(context, workbench.origin, workbench.child, F6_CHAT_INPUT_SESSION_ID);
+    const page = await context.newPage();
+    const bootstrap = await workbench.issueBootstrap(F6_CHAT_INPUT_SESSION_ID);
+    await page.goto(`${workbench.origin}/?session=${F6_CHAT_INPUT_SESSION_ID}#bootstrap=${bootstrap}`);
+    await page.waitForLoadState("domcontentloaded");
+    await expect(page.locator(".connection-indicator")).toHaveText("Connected");
+
+    const baselineSystemSpecification = await page.getByLabel("Analysis target details").innerText();
+    const csrfToken = await readCsrf(page, workbench.origin);
+
+    const startSnapshotResponse = await page.request.get(`${workbench.origin}/api/sessions/${encodeURIComponent(F6_CHAT_INPUT_SESSION_ID)}`);
+    expect(startSnapshotResponse.status()).toBe(200);
+    const startSnapshot = await startSnapshotResponse.json();
+    expect(startSnapshot.state).toBe("analysis_context_decision_required");
+
+    const reportAliasId = reviewArtifactId("f6-report-e2e", F6_CHAT_INPUT_SESSION_ID);
+    const reportBeforeF6 = await page.request.get(`${workbench.origin}/api/sessions/${encodeURIComponent(F6_CHAT_INPUT_SESSION_ID)}/artifacts/${encodeURIComponent(reportAliasId)}`);
+    expect(reportBeforeF6.status()).toBe(404);
+
+    const analysisDraftResponse = await page.request.post(`${workbench.origin}/api/sessions/${encodeURIComponent(F6_CHAT_INPUT_SESSION_ID)}/f6-input-drafts`, {
+      headers: { "x-csrf-token": csrfToken },
+      data: {
+        expectedRevision: startSnapshot.revision,
+        kind: "analysis_context",
+        proposal: {
+          proposalVersion: "f6-analysis-context-proposal-v1",
+          userText: "Prioritize thermal preload risk interpretation on AJ_GAP using current governed evidence.",
+          worksheetSelectors: ["AJ_GAP"],
+          clarifications: [],
+        },
+      },
+    });
+    const analysisDraft = await analysisDraftResponse.json();
+    expect({ status: analysisDraftResponse.status(), body: analysisDraft }).toEqual(expect.objectContaining({ status: 201 }));
+    expect(analysisDraft).toMatchObject({
+      status: "draft_ready",
+      pendingDraft: {
+        kind: "analysis_context",
+        status: "preview_required",
+        artifactId: expect.stringContaining("f6-input-draft:analysis_context:"),
+      },
+    });
+    expect(JSON.stringify(analysisDraft.preview)).not.toMatch(/\bjson\b|(?:[A-Za-z]:\\\\|file:\/\/|\\\\\\\\|\/Users\/|\/home\/|\/tmp\/|\/var\/)/i);
+
+    const analysisPreviewBeforeConfirm = await page.request.get(`${workbench.origin}/api/sessions/${encodeURIComponent(F6_CHAT_INPUT_SESSION_ID)}/f6-input-drafts/${encodeURIComponent(analysisDraft.pendingDraft.draftId)}`);
+    expect(analysisPreviewBeforeConfirm.status()).toBe(200);
+    expect(await analysisPreviewBeforeConfirm.json()).toMatchObject({ confirmed: false });
+
+    const confirmAnalysisResponse = await page.request.post(`${workbench.origin}/api/sessions/${encodeURIComponent(F6_CHAT_INPUT_SESSION_ID)}/commands`, {
+      headers: { "x-csrf-token": csrfToken },
+      data: {
+        contractVersion: "f8-session-command-v1",
+        sessionId: F6_CHAT_INPUT_SESSION_ID,
+        commandId: "task7-confirm-analysis-context",
+        expectedRevision: analysisDraft.snapshotRevision,
+        command: "confirm_analysis_context",
+        payload: {
+          decision: "confirm",
+          draftId: analysisDraft.pendingDraft.draftId,
+          draftHash: analysisDraft.pendingDraft.contentHash,
+        },
+      },
+    });
+    expect(confirmAnalysisResponse.status()).toBe(202);
+
+    const analysisPreviewAfterConfirm = await page.request.get(`${workbench.origin}/api/sessions/${encodeURIComponent(F6_CHAT_INPUT_SESSION_ID)}/f6-input-drafts/${encodeURIComponent(analysisDraft.pendingDraft.draftId)}`);
+    expect(analysisPreviewAfterConfirm.status()).toBe(200);
+    expect(await analysisPreviewAfterConfirm.json()).toMatchObject({ confirmed: true });
+
+    const afterAnalysisSnapshotResponse = await page.request.get(`${workbench.origin}/api/sessions/${encodeURIComponent(F6_CHAT_INPUT_SESSION_ID)}`);
+    expect(afterAnalysisSnapshotResponse.status()).toBe(200);
+    const afterAnalysisSnapshot = await afterAnalysisSnapshotResponse.json();
+    expect(afterAnalysisSnapshot.state).toBe("optimization_targets_decision_required");
+
+    const targetsDraftResponse = await page.request.post(`${workbench.origin}/api/sessions/${encodeURIComponent(F6_CHAT_INPUT_SESSION_ID)}/f6-input-drafts`, {
+      headers: { "x-csrf-token": csrfToken },
+      data: {
+        expectedRevision: afterAnalysisSnapshot.revision,
+        kind: "optimization_targets",
+        proposal: {
+          proposalVersion: "f6-optimization-targets-proposal-v1",
+          userText: "Tighten the AJ center to C-bucket tolerance symmetrically to plus or minus 0.04 mm.",
+          directions: [
+            {
+              adjustmentClass: "factor_tolerance",
+              worksheetSelector: "AJ_GAP",
+              factorSelector: "AJ center to C-bucket",
+              numericTarget: { field: "lower_tolerance", value: -0.04, unit: "mm" },
+            },
+            {
+              adjustmentClass: "factor_tolerance",
+              worksheetSelector: "AJ_GAP",
+              factorSelector: "AJ center to C-bucket",
+              numericTarget: { field: "upper_tolerance", value: 0.04, unit: "mm" },
+            },
+          ],
+          clarifications: [],
+        },
+      },
+    });
+    expect(targetsDraftResponse.status()).toBe(201);
+    const targetsDraft = await targetsDraftResponse.json();
+    expect(targetsDraft).toMatchObject({
+      status: "draft_ready",
+      pendingDraft: {
+        kind: "optimization_targets",
+        status: "preview_required",
+        artifactId: expect.stringContaining("f6-input-draft:optimization_targets:"),
+      },
+    });
+    expect(JSON.stringify(targetsDraft.preview)).not.toMatch(/\bjson\b|(?:[A-Za-z]:\\\\|file:\/\/|\\\\\\\\|\/Users\/|\/home\/|\/tmp\/|\/var\/)/i);
+
+    const targetsPreviewBeforeConfirm = await page.request.get(`${workbench.origin}/api/sessions/${encodeURIComponent(F6_CHAT_INPUT_SESSION_ID)}/f6-input-drafts/${encodeURIComponent(targetsDraft.pendingDraft.draftId)}`);
+    expect(targetsPreviewBeforeConfirm.status()).toBe(200);
+    expect(await targetsPreviewBeforeConfirm.json()).toMatchObject({ confirmed: false });
+
+    const confirmTargetsResponse = await page.request.post(`${workbench.origin}/api/sessions/${encodeURIComponent(F6_CHAT_INPUT_SESSION_ID)}/commands`, {
+      headers: { "x-csrf-token": csrfToken },
+      data: {
+        contractVersion: "f8-session-command-v1",
+        sessionId: F6_CHAT_INPUT_SESSION_ID,
+        commandId: "task7-confirm-optimization-targets",
+        expectedRevision: targetsDraft.snapshotRevision,
+        command: "confirm_optimization_targets",
+        payload: {
+          decision: "confirm",
+          draftId: targetsDraft.pendingDraft.draftId,
+          draftHash: targetsDraft.pendingDraft.contentHash,
+        },
+      },
+    });
+    expect(confirmTargetsResponse.status()).toBe(202);
+
+    const targetsPreviewAfterConfirm = await page.request.get(`${workbench.origin}/api/sessions/${encodeURIComponent(F6_CHAT_INPUT_SESSION_ID)}/f6-input-drafts/${encodeURIComponent(targetsDraft.pendingDraft.draftId)}`);
+    expect(targetsPreviewAfterConfirm.status()).toBe(200);
+    expect(await targetsPreviewAfterConfirm.json()).toMatchObject({ confirmed: true });
+
+    await expect.poll(async () => {
+      const response = await page.request.get(`${workbench.origin}/api/sessions/${encodeURIComponent(F6_CHAT_INPUT_SESSION_ID)}`);
+      if (!response.ok()) return "request_failed";
+      const snapshot = await response.json();
+      return snapshot.state;
+    }).toBe("review_required");
+
+    const webReportResponse = await page.request.get(`${workbench.origin}/api/sessions/${encodeURIComponent(F6_CHAT_INPUT_SESSION_ID)}/artifacts/${encodeURIComponent(reportAliasId)}`);
+    if (!webReportResponse.ok()) throw new Error(`f6 report fetch failed (${webReportResponse.status()})`);
+    const webReportBytes = await webReportResponse.body();
+    const webReportText = webReportBytes.toString("utf8");
+    const webReportHash = createHash("sha256").update(webReportBytes).digest("hex");
+    expect(webReportText).toContain("Model interpretation decision: CALLER_AUTHORIZED");
+    expect(webReportText).toContain("F5 observation auto lineage: Feature5-Image-Observations.json");
+    expect(webReportText).toContain("Adjustment assessment");
+
+    await page.getByRole("button", { name: "AJ center to C-bucket", description: "中心间隙" }).click();
+    await page.getByRole("button", { name: "Open TA Assistant" }).click();
+
+    const conversationTurnId = `task7-${Date.now()}`;
+    const createConversationResponse = await page.request.post(`${workbench.origin}/api/sessions/${encodeURIComponent(F6_CHAT_INPUT_SESSION_ID)}/conversation`, {
+      headers: { "x-csrf-token": csrfToken },
+      data: {
+        turn: {
+          contractVersion: "ta-conversation-turn-v1",
+          turnId: conversationTurnId,
+          sessionId: F6_CHAT_INPUT_SESSION_ID,
+          sequence: 0,
+          source: "web",
+          role: "user",
+          content: [{ kind: "text", text: "Summarize the governed optimization decision and publish the final report action." }],
+          createdAt: new Date().toISOString(),
+          relatedArtifactIds: [],
+        },
+        selection: {
+          worksheetName: "AJ_GAP",
+          tableId: "table-a",
+          sourceRow: 2,
+          factorName: "中心间隙",
+          calculationReference: "what-if:e2e-draft",
+        },
+      },
+    });
+    const createConversationBody = await createConversationResponse.text();
+    expect(createConversationResponse.status(), createConversationBody).toBe(201);
+
+    const actionId = `model:${conversationTurnId}`;
+    const hostInstanceId = "playwright-model-host";
+    const claimToken = await workbench.issueHostBearer({ sessionId: F6_CHAT_INPUT_SESSION_ID, scopes: ["host-actions:claim"], actionId, hostInstanceId });
+    const claimResponse = await page.request.post(`${workbench.origin}/api/sessions/${encodeURIComponent(F6_CHAT_INPUT_SESSION_ID)}/host-actions/${encodeURIComponent(actionId)}/claim`, {
+      headers: { authorization: `Bearer ${claimToken}` },
+      data: { hostInstanceId },
+    });
+    expect(claimResponse.status()).toBe(200);
+    const claim = await claimResponse.json();
+    expect(claim.request.kind).toBe("vscode_model_request");
+    expect(claim.request.prompt).not.toMatch(/\bjson\b|(?:[A-Za-z]:\\\\|file:\/\/|\\\\\\\\|\/Users\/|\/home\/|\/tmp\/|\/var\/)/i);
+
+    const modelPayload = {
+      status: "completed" as const,
+      outcome: {
+        kind: "model_response" as const,
+        turnId: conversationTurnId,
+        responseText: [
+          "Governed context and optimization targets were confirmed through independent preview and confirmation steps.",
+          "Final report action is available in this turn.",
+        ].join("\n"),
+      },
+    };
+    const resultToken = await workbench.issueHostBearer({ sessionId: F6_CHAT_INPUT_SESSION_ID, scopes: ["host-actions:result"], actionId, hostInstanceId });
+    const resultResponse = await page.request.post(`${workbench.origin}/api/sessions/${encodeURIComponent(F6_CHAT_INPUT_SESSION_ID)}/host-actions/${encodeURIComponent(actionId)}/result`, {
+      headers: { authorization: `Bearer ${resultToken}` },
+      data: {
+        contractVersion: "f8-host-action-result-v1",
+        actionId,
+        hostInstanceId,
+        leaseId: claim.leaseId,
+        status: "completed",
+        resultHash: createHash("sha256").update(JSON.stringify(modelPayload)).digest("hex"),
+        payload: modelPayload,
+      },
+    });
+    expect(resultResponse.status()).toBe(204);
+
+    const conversationResponse = await page.request.get(`${workbench.origin}/api/sessions/${encodeURIComponent(F6_CHAT_INPUT_SESSION_ID)}/conversation`);
+    expect(conversationResponse.status()).toBe(200);
+    const conversation = await conversationResponse.json();
+    const modelTurn = conversation.turns.find((turn) => turn.turnId === `${conversationTurnId}:model`);
+    expect(modelTurn).toBeDefined();
+    if (modelTurn === undefined) throw new Error("model turn missing");
+    expect(modelTurn.content).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "tool_result", actions: expect.arrayContaining([{ type: "open_report", target: "/report/current", label: "打开当前报告" }]) }),
+      expect.objectContaining({ kind: "artifact_reference" }),
+    ]));
+
+    const vscodeReportId = modelTurn.relatedArtifactIds[0];
+    const vscodeReportResponse = await page.request.get(`${workbench.origin}/api/sessions/${encodeURIComponent(F6_CHAT_INPUT_SESSION_ID)}/artifacts/${encodeURIComponent(vscodeReportId)}`);
+    if (!vscodeReportResponse.ok()) throw new Error(`vscode report fetch failed (${vscodeReportResponse.status()})`);
+    const vscodeReportHash = createHash("sha256").update(await vscodeReportResponse.body()).digest("hex");
+    expect(vscodeReportHash).toBe(webReportHash);
+
+    const finalSystemSpecification = await page.getByLabel("Analysis target details").innerText();
+    expect(finalSystemSpecification).toBe(baselineSystemSpecification);
+  } finally {
+    await context.close();
+  }
 });
 
 test("keeps conversation closed by default and toggles drawer without reserving layout width", async ({ page, workbench }) => {

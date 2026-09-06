@@ -4,9 +4,10 @@ import { dirname, join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { canonicalSelectedWorksheetSetHash, openSessionStore } from "@ai-assist/workbench";
+import { canonicalSelectedWorksheetSetHash, createSessionStore, openSessionStore } from "@ai-assist/workbench";
 
 import { buildWorkbenchServer } from "../server.js";
+import { materializeF6InputDraftFromProposal } from "./f6-inputs.js";
 
 const WORKBOOK_HASH = "a".repeat(64);
 const REVIEW_CONTEXT = {
@@ -139,6 +140,59 @@ describe("f6 input drafts routes", () => {
       expect(previewAfterConfirm.json()).toMatchObject({ confirmed: true });
     } finally {
       await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("binds system targets to specification values from the F4 capability contract", async () => {
+    const rootDir = testRoot("workbench-server-f6-input-drafts-system-identity");
+    await rm(rootDir, { recursive: true, force: true });
+    try {
+      const createdStore = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+      await createdStore.close();
+      await seedSessionLineage(rootDir, SESSION_ID);
+      const store = await openSessionStore({ rootDir, sessionId: SESSION_ID });
+      const snapshot = await store.readSnapshot();
+      await store.close();
+
+      const materialized = await materializeF6InputDraftFromProposal({
+        rootDir,
+        sessionId: SESSION_ID,
+        snapshot,
+        kind: "optimization_targets",
+        proposal: {
+          proposalVersion: "f6-optimization-targets-proposal-v1",
+          userText: "Shift the Analysis-A mean to 0.05 mm.",
+          directions: [{
+            adjustmentClass: "system_mean_shift",
+            worksheetSelector: "Analysis-A",
+            numericTarget: { field: "target_mean", value: 0.05, unit: "mm" },
+          }],
+          clarifications: [],
+        },
+      });
+
+      expect(materialized).toMatchObject({
+        status: "draft_ready",
+        preview: {
+          artifact: {
+            worksheets: [{
+              targets: [{
+                targetType: "system_mean_shift",
+                systemIdentity: {
+                  designNominal: 0,
+                  mean: 0,
+                  rssSigma: 0.1,
+                  lowerSpecLimit: -0.4,
+                  upperSpecLimit: 0.4,
+                  targetCpk: 1.33,
+                },
+              }],
+            }],
+          },
+        },
+      });
+    } finally {
       await rm(rootDir, { recursive: true, force: true });
     }
   });
@@ -576,14 +630,18 @@ function f4CalculationFixture(tableId: string): unknown {
             source: { sourceRow: 14 },
             factorName: "Battery flatness",
             unit: "mm",
-            lowerTolerance: -0.15,
-            upperTolerance: 0.15,
+            input: {
+              lowerTolerance: -0.15,
+              upperTolerance: 0.15,
+            },
           },
         ],
         system: {
           designNominal: 0,
           mean: 0,
           rssSigma: 0.1,
+        },
+        capability: {
           lowerSpecLimit: -0.4,
           upperSpecLimit: 0.4,
           targetCpk: 1.33,

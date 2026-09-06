@@ -8,7 +8,7 @@ describe("ActionQueue", () => {
     render(<ActionQueue items={[{ featureId: "F6", action: "confirm_optimization_targets", blocking: true }]} />);
 
     expect(screen.getByText("Design Optimization")).toBeVisible();
-    expect(screen.getByText("Confirm optimization targets")).toBeVisible();
+    expect(screen.getByText("Add or confirm optimization targets")).toBeVisible();
     expect(screen.queryByText("F6")).not.toBeInTheDocument();
     expect(screen.queryByText("confirm_optimization_targets")).not.toBeInTheDocument();
   });
