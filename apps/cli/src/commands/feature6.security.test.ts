@@ -43,6 +43,7 @@ async function fixture() {
     writeFile(join(f3Root, "Feature3-Report.json"), "{}", "utf8"),
     writeFile(join(f4Root, "Feature4-Calculation.json"), "{}", "utf8"),
     writeFile(join(f5Root, "Feature5-Report.json"), "{}", "utf8"),
+    writeFile(join(outputDirectory, "Feature6-Report.md"), "# report\n", "utf8"),
   ]);
   return {
     base,
@@ -56,7 +57,14 @@ async function fixture() {
 }
 
 function successfulExecutor(outputDirectory: string, status = "completed"): ExecuteFile {
-  return async () => ({ stdout: JSON.stringify({ status, outputDirectory }), stderr: "" });
+  return async () => ({
+    stdout: JSON.stringify({
+      status,
+      outputDirectory,
+      finalReportMdPath: `${outputDirectory.replaceAll("\\", "/")}/Feature6-Report.md`,
+    }),
+    stderr: "",
+  });
 }
 
 async function run(
@@ -113,7 +121,14 @@ describe("Feature 6 CLI trust boundary", () => {
     const calls: Array<{ file: string; args: readonly string[]; options: ExecuteOptions }> = [];
     const executeFile: ExecuteFile = async (file, args, options) => {
       calls.push({ file, args, options });
-      return { stdout: JSON.stringify({ status: "partially_completed", outputDirectory: setup.outputRelative }), stderr: "" };
+      return {
+        stdout: JSON.stringify({
+          status: "partially_completed",
+          outputDirectory: setup.outputRelative,
+          finalReportMdPath: `${setup.outputRelative}/Feature6-Report.md`,
+        }),
+        stderr: "",
+      };
     };
 
     const result = await runFeature6WorkflowCommand(
@@ -128,7 +143,7 @@ describe("Feature 6 CLI trust boundary", () => {
       { executeFile },
     );
 
-    expect(result).toBe(`Feature 6 workflow completed.\nf6: ${setup.outputRelative}\nstatus: partially_completed`);
+    expect(result).toBe(`Feature 6 workflow completed.\nreport: ${join(setup.outputDirectory, "Feature6-Report.md")}\nstatus: partially_completed`);
     expect(calls).toHaveLength(1);
     expect(calls[0].file).toBe(process.execPath);
     expect(calls[0].args).toEqual([
@@ -194,11 +209,11 @@ describe("Feature 6 CLI trust boundary", () => {
   });
 
   it.each(["completed", "partially_completed", "calculation_failed"])(
-    "accepts governed status %s and returns the canonical relative output directory",
+    "accepts governed status %s and returns the canonical final report path",
     async (status) => {
       const setup = await fixture();
       await expect(run(setup, successfulExecutor(setup.outputRelative, status)))
-        .resolves.toBe(`Feature 6 workflow completed.\nf6: ${setup.outputRelative}\nstatus: ${status}`);
+        .resolves.toBe(`Feature 6 workflow completed.\nreport: ${join(setup.outputDirectory, "Feature6-Report.md")}\nstatus: ${status}`);
     },
   );
 
@@ -228,6 +243,40 @@ describe("Feature 6 CLI trust boundary", () => {
       await expect(run(setup, successfulExecutor(outputDirectory)))
         .rejects.toMatchObject({ code: "internal_error", summary: "Feature 6 workflow execution failed." });
     }
+  });
+
+  it.each([
+    "test/demo-output/f6-runs/run-1/report.md",
+    "test/demo-output/f6-runs/run-1/missing.md",
+    "../private/Feature6-Report.md",
+  ])("rejects unsafe final report path %j", async (finalReportMdPath) => {
+    const setup = await fixture();
+    const executeFile: ExecuteFile = async () => ({
+      stdout: JSON.stringify({ status: "completed", outputDirectory: setup.outputRelative, finalReportMdPath }),
+      stderr: "",
+    });
+
+    await expect(run(setup, executeFile)).rejects.toMatchObject({
+      code: "internal_error",
+      summary: "Feature 6 workflow execution failed.",
+    });
+  });
+
+  it("rejects report paths that do not stay inside the reported output directory", async () => {
+    const setup = await fixture();
+    const siblingOutput = join(setup.base, "f6-runs", "run-2");
+    await mkdir(siblingOutput, { recursive: true });
+    await writeFile(join(siblingOutput, "Feature6-Report.md"), "# report\n", "utf8");
+    const siblingRelative = relative(trustedRoot, siblingOutput).replaceAll(sep, "/");
+
+    await expect(run(setup, async () => ({
+      stdout: JSON.stringify({
+        status: "completed",
+        outputDirectory: setup.outputRelative,
+        finalReportMdPath: `${siblingRelative}/Feature6-Report.md`,
+      }),
+      stderr: "",
+    }))).rejects.toMatchObject({ code: "internal_error", summary: "Feature 6 workflow execution failed." });
   });
 
   it("rejects a linked root even when it resolves to the trusted repository", async () => {

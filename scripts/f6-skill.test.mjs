@@ -280,6 +280,14 @@ describe("Design Optimization skill contract", () => {
     expect(internal).toContain("contract, containment, identity, manifest, and recorded hashes");
   });
 
+  it("requires a validator-confirmed workspace-relative Markdown final report link for every successful completion", () => {
+    const { internal } = splitSkillSections(readSkill());
+    expect(internal).toContain("For every successful completion response");
+    expect(internal).toContain("[Design Optimization Report](test/demo-output/f6-runs/<run-id>/Feature6-Report.md)");
+    expect(internal).toContain("use only the validated final report path");
+    expect(internal).toContain("do not present any report link");
+  });
+
   it("documents final report scope from validated summary and manifest instead of Optimization alone", () => {
     const { internal } = splitSkillSections(readSkill());
     expect(internal).toContain("Optimization worksheet names must be a unique subset of reportSummary worksheet names");

@@ -289,6 +289,29 @@ describe("handleAgentTurn", () => {
     });
   });
 
+  it("keeps canonical report action even when the model omits actions", async () => {
+    const deps = await createDeps(snapshotWithCurrentValidatedReport(), {
+      model: {
+        complete: async () => ({
+          responseText: "当前结果可继续查看。",
+          actions: [],
+        }),
+      },
+    });
+
+    const result = await handleAgentTurn({
+      text: "状态",
+      sessionId: SESSION_ID,
+      commandId: "report-no-suppress-1",
+      source: "web",
+    }, deps);
+
+    expect(result.actions).toContainEqual({ type: "open_report", target: "/report/current", label: "打开当前报告" });
+    const persisted = await deps.conversationStore.readTurns(SESSION_ID);
+    const assistant = persisted.find((turn) => turn.turnId === "report-no-suppress-1:assistant");
+    expect(assistant?.relatedArtifactIds).toEqual(["f6-report:7"]);
+  });
+
   it("keeps canonical report action on stored-turn replay even when stored tool_result omits actions", async () => {
     const deps = await createDeps(snapshotWithCurrentValidatedReport(), {
       seedTurns: [

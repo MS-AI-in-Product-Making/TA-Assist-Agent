@@ -249,6 +249,29 @@ describe("EngineeringWorkspace", () => {
     expect(screen.queryByRole("link", { name: "Design Optimization Report" })).not.toBeInTheDocument();
   }, 15_000);
 
+  it.each([
+    ["stale revision", reviewSnapshotReportVariant({ revision: 1 })],
+    ["unvalidated report", reviewSnapshotReportVariant({ validated: false })],
+    ["mismatched review context", reviewSnapshotReportVariant({ reviewContextId: "context-review-other" })],
+    ["non-final artifact kind", reviewSnapshotReportVariant({ kind: "f6_optimization" })],
+  ])("hides report link when canonical report eligibility fails (%s)", (_name, snapshot) => {
+    const api = {
+      artifactUrl: (sessionId: string, artifactId: string) => `/api/sessions/${sessionId}/artifacts/${artifactId}`,
+    } as never;
+
+    render(
+      <EngineeringWorkspace
+        {...handlers}
+        model={readyModelWithFactor()}
+        api={api}
+        sessionId="session-1"
+        snapshot={snapshot}
+      />,
+    );
+
+    expect(screen.queryByRole("link", { name: "Design Optimization Report" })).not.toBeInTheDocument();
+  }, 15_000);
+
   it("keeps workbook full name accessible in the toolbar", () => {
     const workbookName = "anonymous-workbook-with-a-very-long-name-for-layout-verification-v2026-09-01.xlsx";
     render(<EngineeringWorkspace {...handlers} model={{ ...readyModelWithFactor(), workbookName }} />);
@@ -374,6 +397,28 @@ function reviewSnapshotWithoutCanonicalReport(): F8SessionSnapshot {
   return {
     ...snapshot,
     artifactRefs: snapshot.artifactRefs?.map((reference) => reference.kind === "f6_report" ? { ...reference, revision: 1 } : reference),
+  };
+}
+
+function reviewSnapshotReportVariant(options: {
+  readonly revision?: number;
+  readonly validated?: boolean;
+  readonly reviewContextId?: string;
+  readonly kind?: "f6_report" | "f6_optimization";
+}): F8SessionSnapshot {
+  const snapshot = reviewSnapshotWithCanonicalReport();
+  return {
+    ...snapshot,
+    artifactRefs: snapshot.artifactRefs?.map((reference) => {
+      if (reference.kind !== "f6_report") return reference;
+      return {
+        ...reference,
+        revision: options.revision ?? reference.revision,
+        validated: options.validated ?? reference.validated,
+        reviewContextId: options.reviewContextId ?? reference.reviewContextId,
+        kind: options.kind ?? reference.kind,
+      };
+    }),
   };
 }
 

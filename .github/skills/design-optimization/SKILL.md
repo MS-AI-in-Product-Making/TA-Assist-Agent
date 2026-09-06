@@ -169,6 +169,8 @@ Present one concise run ledger containing:
 - `F5` output: status, root, report paths, image mode (`v2` or `not_evaluated`), and clarification count.
 - `F6` output: status, root, five artifact paths, final report link, model interpretation mode, decision, path/hash or unavailable reason, Context/Targets decision outcomes and controlled hashes, candidate/completed/failed option counts, four-state report status (`PASS`, `CONDITIONAL_PASS`, `FAIL`, or `INCOMPLETE`), adjustment assessment disclosure status, and blocked worksheet section.
 
+For every successful completion response (workbook mode or existing-artifact mode), render exactly one workspace-relative Markdown link built from the validator-confirmed final report path, in this form: `[Design Optimization Report](test/demo-output/f6-runs/<run-id>/Feature6-Report.md)`. Never guess, synthesize, or rewrite the path from directory names; use only the validated final report path. If the final report path is missing, not final, outside controlled containment, linked, stale, or validation fails, do not present any report link.
+
 Do not report a phase as completed until its contract, containment, identity, manifest, and recorded hashes have passed. Keep FACT, RULE, SIGNAL, OPTION, assumptions, clarifications, risks, and evidence-gated options distinct.
 
 ## Entry mode 2 - Existing F6 artifact

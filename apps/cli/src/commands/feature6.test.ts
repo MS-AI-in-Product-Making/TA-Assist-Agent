@@ -49,7 +49,7 @@ afterEach(async () => {
   await Promise.all(cleanup.splice(0).map((target) => rm(target, { recursive: true, force: true })));
 });
 
-async function fixture(scriptBody = `console.log(JSON.stringify({status:"completed",outputDirectory:"test/demo-output/f6-runs/demo/run-1"}));\n`): Promise<{
+async function fixture(scriptBody = `console.log(JSON.stringify({status:"completed",outputDirectory:"test/demo-output/f6-runs/demo/run-1",finalReportMdPath:"test/demo-output/f6-runs/demo/run-1/Feature6-Report.md"}));\n`): Promise<{
   rootDir: string;
   f2Root: string;
   f3Root: string;
@@ -68,6 +68,7 @@ async function fixture(scriptBody = `console.log(JSON.stringify({status:"complet
   await Promise.all([
     ...roots.map((root) => mkdir(root, { recursive: true })),
     mkdir(join(publishRoot, "f6-runs", "demo", "run-1"), { recursive: true }),
+    writeFile(join(publishRoot, "f6-runs", "demo", "run-1", "Feature6-Report.md"), "# report\n", "utf8"),
   ]);
   await Promise.all([
     writeFile(join(f2Root, "Feature2-Report.json"), "{}", "utf8"),
@@ -85,7 +86,7 @@ describe("Feature 6 CLI command", () => {
     const setup = await fixture(`
 import { writeFileSync } from "node:fs";
 writeFileSync("invocation.json", JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd() }));
-console.log(JSON.stringify({ status: "partially_completed", outputDirectory: "test/demo-output/f6-runs/demo/run-1" }));
+console.log(JSON.stringify({ status: "partially_completed", outputDirectory: "test/demo-output/f6-runs/demo/run-1", finalReportMdPath: "test/demo-output/f6-runs/demo/run-1/Feature6-Report.md" }));
 `);
     const options = {
       selectedWorksheetNames: ["Overview", "Details"],
@@ -101,7 +102,7 @@ console.log(JSON.stringify({ status: "partially_completed", outputDirectory: "te
       setup.rootDir, setup.f2Root, setup.f3Root, setup.f4Root, setup.f5Root, options,
     );
 
-    expect(result).toBe("Feature 6 workflow completed.\nf6: test/demo-output/f6-runs/demo/run-1\nstatus: partially_completed");
+    expect(result).toBe(`Feature 6 workflow completed.\nreport: ${join(publishRoot, "f6-runs", "demo", "run-1", "Feature6-Report.md")}\nstatus: partially_completed`);
     expect(JSON.parse(await readFile(join(setup.rootDir, "invocation.json"), "utf8"))).toEqual({
       argv: [
         setup.f2Root, setup.f3Root, setup.f4Root, setup.f5Root,
@@ -125,7 +126,7 @@ console.log(JSON.stringify({ status: "partially_completed", outputDirectory: "te
   it.each(["completed", "partially_completed", "calculation_failed"])(
     "accepts the governed nonfailed runner status %s",
     async (status) => {
-      const setup = await fixture(`console.log(JSON.stringify({status:${JSON.stringify(status)},outputDirectory:"test/demo-output/f6-runs/demo/run-1"}));\n`);
+      const setup = await fixture(`console.log(JSON.stringify({status:${JSON.stringify(status)},outputDirectory:"test/demo-output/f6-runs/demo/run-1",finalReportMdPath:"test/demo-output/f6-runs/demo/run-1/Feature6-Report.md"}));\n`);
 
       await expect(runFeature6WorkflowCommand(
         setup.rootDir, setup.f2Root, setup.f3Root, setup.f4Root, setup.f5Root,
@@ -136,9 +137,9 @@ console.log(JSON.stringify({ status: "partially_completed", outputDirectory: "te
 
   it("rejects failed, invalid, and polluted runner output with safe typed errors", async () => {
     for (const scriptBody of [
-      `console.log(JSON.stringify({status:"failed",reasonCode:"secret C:/private/input.xlsx"}));\n`,
+      `console.log(JSON.stringify({status:"failed",reasonCode:"secret C:/private/input.xlsx",finalReportMdPath:"test/demo-output/f6-runs/demo/run-1/Feature6-Report.md"}));\n`,
       `console.log("not-json");\n`,
-      `process.stdout.write(JSON.stringify({status:"completed",outputDirectory:"test/demo-output/f6-runs/demo/run-1"}) + "\\n{}\\n");\n`,
+      `process.stdout.write(JSON.stringify({status:"completed",outputDirectory:"test/demo-output/f6-runs/demo/run-1",finalReportMdPath:"test/demo-output/f6-runs/demo/run-1/Feature6-Report.md"}) + "\\n{}\\n");\n`,
     ]) {
       const setup = await fixture(scriptBody);
       await expect(runFeature6WorkflowCommand(
@@ -151,7 +152,7 @@ console.log(JSON.stringify({ status: "partially_completed", outputDirectory: "te
   it.each(["", " test/demo-output/f6", "test/demo-output/f6 ", "test/demo-output/f6\r\nforged", "test/demo-output/f6\u0000forged"])(
     "rejects a polluted runner output directory %j",
     async (outputDirectory) => {
-      const setup = await fixture(`console.log(${JSON.stringify(JSON.stringify({ status: "completed", outputDirectory }))});\n`);
+      const setup = await fixture(`console.log(${JSON.stringify(JSON.stringify({ status: "completed", outputDirectory, finalReportMdPath: "test/demo-output/f6-runs/demo/run-1/Feature6-Report.md" }))});\n`);
       await expect(runFeature6WorkflowCommand(
         setup.rootDir, setup.f2Root, setup.f3Root, setup.f4Root, setup.f5Root,
         { selectedWorksheetNames: ["Overview"] },
@@ -169,7 +170,7 @@ console.log(JSON.stringify({ status: "partially_completed", outputDirectory: "te
     ]) {
       await writeFile(
         setup.scriptPath,
-        `console.log(${JSON.stringify(JSON.stringify({ status: "completed", outputDirectory }))});\n`,
+        `console.log(${JSON.stringify(JSON.stringify({ status: "completed", outputDirectory, finalReportMdPath: "test/demo-output/f6-runs/demo/run-1/Feature6-Report.md" }))});\n`,
         "utf8",
       );
 
@@ -230,6 +231,42 @@ console.log(JSON.stringify({ status: "partially_completed", outputDirectory: "te
         { selectedWorksheetNames },
       )).rejects.toMatchObject({ code: "validation_error" });
     }
+  });
+
+  it.each([
+    undefined,
+    "",
+    " test/demo-output/f6-runs/demo/run-1/Feature6-Report.md",
+    "test/demo-output/f6-runs/demo/run-1/Feature6-Report.md ",
+    "test/demo-output/f6-runs/demo/run-1/report.md",
+    "test/demo-output/f6-runs/demo/run-1/missing.md",
+    "../outside/Feature6-Report.md",
+  ])("rejects unsafe or invalid final report path %j", async (finalReportMdPath) => {
+    const setup = await fixture(`console.log(${JSON.stringify(JSON.stringify({
+      status: "completed",
+      outputDirectory: "test/demo-output/f6-runs/demo/run-1",
+      finalReportMdPath,
+    }))});\n`);
+
+    await expect(runFeature6WorkflowCommand(
+      setup.rootDir, setup.f2Root, setup.f3Root, setup.f4Root, setup.f5Root,
+      { selectedWorksheetNames: ["Overview"] },
+    )).rejects.toMatchObject({ code: "internal_error", summary: "Feature 6 workflow execution failed." });
+  });
+
+  it("rejects final report path when it is outside the reported output directory", async () => {
+    const setup = await fixture(`console.log(${JSON.stringify(JSON.stringify({
+      status: "completed",
+      outputDirectory: "test/demo-output/f6-runs/demo/run-1",
+      finalReportMdPath: "test/demo-output/f6-runs/demo/run-2/Feature6-Report.md",
+    }))});\n`);
+    await mkdir(join(publishRoot, "f6-runs", "demo", "run-2"), { recursive: true });
+    await writeFile(join(publishRoot, "f6-runs", "demo", "run-2", "Feature6-Report.md"), "# report\n", "utf8");
+
+    await expect(runFeature6WorkflowCommand(
+      setup.rootDir, setup.f2Root, setup.f3Root, setup.f4Root, setup.f5Root,
+      { selectedWorksheetNames: ["Overview"] },
+    )).rejects.toMatchObject({ code: "internal_error", summary: "Feature 6 workflow execution failed." });
   });
 
 });

@@ -164,10 +164,26 @@ function formatFeature6Output(value: unknown): string {
   const realPublishRoot = realpathSync(trustedPublishRoot);
   const realOutput = realpathSync(resolvedOutput);
   if (!isContained(realPublishRoot, realOutput)) throw new Error("invalid runner output");
-  const safeOutputDirectory = relative(trustedRepositoryRoot, realOutput).replaceAll(sep, "/");
+  if (typeof output.finalReportMdPath !== "string" || output.finalReportMdPath.length === 0
+    || output.finalReportMdPath.trim() !== output.finalReportMdPath
+    || containsControlCharacter(output.finalReportMdPath)
+    || containsBidiCharacter(output.finalReportMdPath)) {
+    throw new Error("invalid runner output");
+  }
+  const resolvedFinalReport = resolve(trustedRepositoryRoot, output.finalReportMdPath);
+  if (!existsSync(resolvedFinalReport)) throw new Error("invalid runner output");
+  const finalReportStats = lstatSync(resolvedFinalReport);
+  if (!finalReportStats.isFile() || finalReportStats.isSymbolicLink() || hasLinkedPathComponent(resolvedFinalReport)) {
+    throw new Error("invalid runner output");
+  }
+  const realFinalReport = realpathSync(resolvedFinalReport);
+  if (parse(realFinalReport).base !== "Feature6-Report.md") throw new Error("invalid runner output");
+  if (!isContained(realPublishRoot, realFinalReport) || !isContained(realOutput, realFinalReport)) {
+    throw new Error("invalid runner output");
+  }
   return [
     "Feature 6 workflow completed.",
-    `f6: ${safeOutputDirectory}`,
+    `report: ${realFinalReport}`,
     `status: ${output.status}`,
   ].join("\n");
 }
