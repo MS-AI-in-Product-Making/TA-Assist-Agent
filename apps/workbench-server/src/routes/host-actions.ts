@@ -71,7 +71,8 @@ export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: Workbench
       return reply.code(400).send({ error: "host_action_result_integrity_rejected" });
     }
 
-    const action = await context.hostActions.read(sessionId, actionId);
+    const actionRecord = await context.hostActions.readRecord(sessionId, actionId);
+    const action = actionRecord?.request;
     const submittedOutcome = parsed.data.payload.status === "completed" ? parsed.data.payload.outcome : undefined;
     if (parsed.data.status === "completed" && action?.kind === "surface_validate" && submittedOutcome?.kind !== "surface_validation") {
       return reply.code(400).send({ error: "host_action_result_integrity_rejected" });
@@ -103,7 +104,9 @@ export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: Workbench
       }
     }
     const completion = await context.hostActions.complete(sessionId, parsed.data);
-    if (completion === "accepted") {
+    const resumableDuplicate = completion === "duplicate"
+      && actionRecord?.result?.resultHash === parsed.data.resultHash;
+    if (completion === "accepted" || resumableDuplicate) {
       const outcome = parsed.data.payload.status === "completed" ? parsed.data.payload.outcome : undefined;
       if (action?.kind === "surface_write" && outcome?.kind === "surface_write") {
         const snapshot = await context.sessions.read(sessionId);
@@ -122,6 +125,11 @@ export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: Workbench
       }
       if (action?.kind === "vscode_model_request" && outcome?.kind === "model_response") {
         if (outcome.turnId !== action.turnId) return reply.code(400).send({ error: "host_action_result_integrity_rejected" });
+        const existingTurns = await context.conversation.read(sessionId);
+        if (existingTurns.some((turn) => turn.turnId === `${action.turnId}:model`)) {
+          await context.syncSessionRecord(sessionId);
+          return reply.code(204).send();
+        }
         if (outcome.proposal !== undefined) {
           try {
             await context.materializeF6InputDraftFromProposal(sessionId, {
@@ -129,7 +137,7 @@ export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: Workbench
               proposal: outcome.proposal,
             });
           } catch {
-            return reply.code(409).send({ error: "host_action_session_stale" });
+            // The model response remains deliverable; the user can retry draft materialization from the current gate.
           }
         }
         const snapshot = await context.sessions.read(sessionId);

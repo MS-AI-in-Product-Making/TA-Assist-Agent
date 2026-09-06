@@ -397,6 +397,109 @@ describe("conversation routes", () => {
     }
   });
 
+  it("delivers the model response when proposal materialization fails after host completion", async () => {
+    const modelContext = taModelContextEnvelopeSchema.parse({
+      contractVersion: "ta-model-context-envelope-v1",
+      session: { sessionId: SESSION_ID, revision: 5 },
+      inputRevision: 2,
+      worksheet: { worksheetName: "Analysis-A" },
+      f0Knowledge: [],
+      factorTable: [],
+      relatedArtifactIds: [],
+    });
+    const app = await routeHarness(modelContext, { materializationFailure: true });
+    try {
+      expect((await app.inject({
+        method: "POST",
+        url: `/api/sessions/${SESSION_ID}/conversation`,
+        payload: { turn: turn(), selection: { worksheetName: "Analysis-A" } },
+      })).statusCode).toBe(201);
+      const claimResponse = await app.inject({
+        method: "POST",
+        url: `/api/sessions/${SESSION_ID}/host-actions/model:turn-route-1/claim`,
+        headers: { authorization: "Bearer host-claim" },
+        payload: { hostInstanceId: "host-a" },
+      });
+      const modelPayload = {
+        status: "completed" as const,
+        outcome: {
+          kind: "model_response" as const,
+          turnId: "turn-route-1",
+          responseText: "The proposal needs to be regenerated from the current gate.",
+          proposal: {
+            proposalVersion: "f6-analysis-context-proposal-v1" as const,
+            userText: "Focus on Analysis-A.",
+            worksheetSelectors: ["Analysis-A"],
+            clarifications: [],
+          },
+        },
+      };
+      const resultResponse = await app.inject({
+        method: "POST",
+        url: `/api/sessions/${SESSION_ID}/host-actions/model:turn-route-1/result`,
+        headers: { authorization: "Bearer host-result" },
+        payload: {
+          contractVersion: "f8-host-action-result-v1",
+          actionId: "model:turn-route-1",
+          hostInstanceId: "host-a",
+          leaseId: claimResponse.json<{ leaseId: string }>().leaseId,
+          status: "completed",
+          resultHash: createHash("sha256").update(JSON.stringify(modelPayload)).digest("hex"),
+          payload: modelPayload,
+        },
+      });
+
+      expect(resultResponse.statusCode).toBe(204);
+      expect(app.turns()).toContainEqual(expect.objectContaining({
+        turnId: "turn-route-1:model",
+        content: expect.arrayContaining([{ kind: "text", text: "The proposal needs to be regenerated from the current gate." }]),
+      }));
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("resumes model turn persistence when the same completed host result is replayed", async () => {
+    const app = await routeHarness(minimalContext(), { hostAppendFailureCount: 1 });
+    try {
+      expect((await app.inject({
+        method: "POST",
+        url: `/api/sessions/${SESSION_ID}/conversation`,
+        payload: { turn: turn(), selection: { worksheetName: "Analysis-A" } },
+      })).statusCode).toBe(201);
+      const claimResponse = await app.inject({
+        method: "POST",
+        url: `/api/sessions/${SESSION_ID}/host-actions/model:turn-route-1/claim`,
+        headers: { authorization: "Bearer host-claim" },
+        payload: { hostInstanceId: "host-a" },
+      });
+      const modelPayload = {
+        status: "completed" as const,
+        outcome: { kind: "model_response" as const, turnId: "turn-route-1", responseText: "Recovered response." },
+      };
+      const resultRequest = {
+        method: "POST" as const,
+        url: `/api/sessions/${SESSION_ID}/host-actions/model:turn-route-1/result`,
+        headers: { authorization: "Bearer host-result" },
+        payload: {
+          contractVersion: "f8-host-action-result-v1",
+          actionId: "model:turn-route-1",
+          hostInstanceId: "host-a",
+          leaseId: claimResponse.json<{ leaseId: string }>().leaseId,
+          status: "completed",
+          resultHash: createHash("sha256").update(JSON.stringify(modelPayload)).digest("hex"),
+          payload: modelPayload,
+        },
+      };
+
+      expect((await app.inject(resultRequest)).statusCode).toBe(500);
+      expect((await app.inject(resultRequest)).statusCode).toBe(204);
+      expect(app.turns().filter((entry) => entry.turnId === "turn-route-1:model")).toHaveLength(1);
+    } finally {
+      await app.close();
+    }
+  });
+
   it.each([
     ["stale revision", reviewSnapshotVariant({ f6Revision: 1 })],
     ["unvalidated report", reviewSnapshotVariant({ f6Validated: false })],
@@ -473,7 +576,7 @@ describe("conversation routes", () => {
 
 async function routeHarness(
   modelContext: TaModelContextEnvelope = minimalContext(),
-  options: { readonly turns?: readonly unknown[]; readonly snapshot?: Record<string, unknown> } = {},
+  options: { readonly turns?: readonly unknown[]; readonly snapshot?: Record<string, unknown>; readonly materializationFailure?: boolean; readonly hostAppendFailureCount?: number } = {},
 ) {
   let prompt = "";
   const turns: unknown[] = [...(options.turns ?? [])];
@@ -490,6 +593,7 @@ async function routeHarness(
   }>();
   const createdActions: Array<{ readonly actionId: string; readonly turnId?: string; readonly prompt?: string }> = [];
   const materializedProposals: Array<{ readonly sessionId: string; readonly expectedRevision: number; readonly proposalVersion: string }> = [];
+  let hostAppendFailuresRemaining = options.hostAppendFailureCount ?? 0;
   const buildConversationContext = vi.fn(async () => modelContext);
   const sessionSnapshot = options.snapshot ?? { sessionId: SESSION_ID, revision: 5, state: "review_required" };
   const app = Fastify({ logger: false }) as ReturnType<typeof Fastify> & {
@@ -568,6 +672,10 @@ async function routeHarness(
     sessions: { read: async () => sessionSnapshot },
     conversation: {
       append: async (value: unknown) => {
+        if (hostAppendFailuresRemaining > 0) {
+          hostAppendFailuresRemaining -= 1;
+          throw new Error("simulated host conversation append failure");
+        }
         const parsed = conversationTurnSchema.parse(value);
         turns.push(parsed);
         return parsed;
@@ -585,7 +693,8 @@ async function routeHarness(
       },
       complete: async (sessionId: string, result: { readonly actionId: string; readonly leaseId: string; readonly payload: unknown }) => {
         const action = actions.get(result.actionId);
-        if (action?.sessionId !== sessionId || action.leaseId !== result.leaseId || action.status !== "pending") return "rejected" as const;
+        if (action?.sessionId !== sessionId || action.leaseId !== result.leaseId) return "rejected" as const;
+        if (action.status === "completed") return "duplicate" as const;
         action.status = "completed";
         action.result = result;
         return "accepted" as const;
@@ -601,6 +710,7 @@ async function routeHarness(
     },
     materializeF6InputDraftFromProposal: async (sessionId: string, input: { readonly expectedRevision: number; readonly proposal: { readonly proposalVersion: string } }) => {
       materializedProposals.push({ sessionId, expectedRevision: input.expectedRevision, proposalVersion: input.proposal.proposalVersion });
+      if (options.materializationFailure === true) throw new Error("simulated materialization failure");
       return { status: "draft_ready", pendingDraft: { draftId: "draft-1" } };
     },
     events: { publish: () => undefined },

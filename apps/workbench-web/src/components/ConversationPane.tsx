@@ -49,6 +49,11 @@ export function ConversationPane({ turns, api, sessionId, disabled = false, sugg
                   return <p key={`${turn.turnId}-${index}`}>Evidence: {label}</p>;
                 }
                 if (part.kind === "command") return <p key={`${turn.turnId}-${index}`}>Governed command available.</p>;
+                const reportAction = part.actions.find((action) => action.type === "open_report");
+                const reportArtifactId = turn.content.find((candidate) => candidate.kind === "artifact_reference" && candidate.label === "Feature6-Report.md")?.artifactId;
+                if (reportAction !== undefined && reportArtifactId !== undefined && api !== undefined && sessionId !== undefined) {
+                  return <p key={`${turn.turnId}-${index}`}><a href={api.artifactUrl(sessionId, reportArtifactId)}>Design Optimization Report</a></p>;
+                }
                 return <p key={`${turn.turnId}-${index}`}>Generated governed tool action.</p>;
               })}
             </div>

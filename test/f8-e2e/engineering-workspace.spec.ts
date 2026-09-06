@@ -546,6 +546,17 @@ test("materializes F6 chat inputs and opens the final report", async ({ browser,
       expect.objectContaining({ kind: "artifact_reference" }),
     ]));
 
+    const reportLink = page.getByRole("link", { name: "Design Optimization Report" });
+    await expect(reportLink).toBeVisible();
+    const [reportDownload] = await Promise.all([
+      page.waitForEvent("download"),
+      reportLink.click(),
+    ]);
+    const reportStream = await reportDownload.createReadStream();
+    const downloadedChunks: Buffer[] = [];
+    for await (const chunk of reportStream) downloadedChunks.push(Buffer.from(chunk));
+    expect(createHash("sha256").update(Buffer.concat(downloadedChunks)).digest("hex")).toBe(webReportHash);
+
     const vscodeReportId = modelTurn.relatedArtifactIds[0];
     const vscodeReportResponse = await page.request.get(`${workbench.origin}/api/sessions/${encodeURIComponent(F6_CHAT_INPUT_SESSION_ID)}/artifacts/${encodeURIComponent(vscodeReportId)}`);
     if (!vscodeReportResponse.ok()) throw new Error(`vscode report fetch failed (${vscodeReportResponse.status()})`);

@@ -40,6 +40,21 @@ describe("ConversationPane", () => {
             createdAt: "2026-08-31T00:00:05.000Z",
             relatedArtifactIds: ["f2-current", "f4-current"],
           },
+          {
+            contractVersion: "ta-conversation-turn-v1",
+            turnId: "turn-model-1",
+            sessionId: "session-1",
+            sequence: 2,
+            source: "vscode",
+            role: "assistant",
+            content: [
+              { kind: "text", text: "The governed report is ready." },
+              { kind: "artifact_reference", artifactId: "f6-report-current", label: "Feature6-Report.md" },
+              { kind: "tool_result", actions: [{ type: "open_report", target: "/report/current", label: "打开当前报告" }], commands: [] },
+            ],
+            createdAt: "2026-08-31T00:00:06.000Z",
+            relatedArtifactIds: ["f6-report-current"],
+          },
         ]}
       />,
     );
@@ -49,6 +64,7 @@ describe("ConversationPane", () => {
     expect(screen.getByRole("link", { name: "Data Cleaning factor table" })).toHaveAttribute("href", "/api/sessions/session-1/artifacts/f2-current");
     expect(screen.getByText("Decision record available.")).toBeVisible();
     expect(screen.getByText("Governed command available.")).toBeVisible();
+    expect(screen.getByRole("link", { name: "Design Optimization Report" })).toHaveAttribute("href", "/api/sessions/session-1/artifacts/f6-report-current");
     expect(screen.queryByText(/f6-review|workflow:f6/i)).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByRole("textbox", { name: "Describe your request in natural language" }), {
