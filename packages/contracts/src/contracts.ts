@@ -4118,6 +4118,7 @@ const f2EnhancedRowSchema = z.object({
   worksheetName: z.string().min(1),
   tableId: z.string().min(1),
   sourceRow: z.number().int().positive(),
+  factorOrdinal: factorOrdinalEvidenceSchema.optional(),
   actualFields: f2ActualFieldsSchema,
   displayFields: f2DisplayFieldsSchema.optional(),
   sourceCells: z.record(worksheetFieldNameSchema, worksheetSourceCellSchema),
@@ -4174,7 +4175,7 @@ export const f2SystemSpecificationIssueSchema = z.object({
 }).strict();
 
 export const f2F4CalculabilityIssueSchema = z.object({
-  reasonCode: z.enum(["factor_tables_missing", "factor_table_has_no_rows", "factor_tolerance_range_invalid", "long_term_safety_factor_invalid", "sigma_level_invalid", "f4_calculation_not_possible"]),
+  reasonCode: z.enum(["factor_tables_missing", "factor_table_has_no_rows", "factor_ordinal_missing", "factor_ordinal_duplicate", "factor_tolerance_range_invalid", "long_term_safety_factor_invalid", "sigma_level_invalid", "f4_calculation_not_possible"]),
   tableId: z.string().min(1).optional(),
   sourceRow: z.number().int().positive().optional(),
 }).strict();
@@ -4182,6 +4183,7 @@ export const f2F4CalculabilityIssueSchema = z.object({
 const f4HandoffFactorSchema = z.object({
   tableId: z.string().min(1),
   sourceRow: z.number().int().positive(),
+  factorOrdinal: factorOrdinalEvidenceSchema.optional(),
   unit: z.literal("mm"),
   actualFields: f2ActualFieldsSchema,
   sourceCells: z.record(worksheetFieldNameSchema, worksheetSourceCellSchema),
@@ -4488,6 +4490,7 @@ export const drawingGovernanceRequestV2Schema = z.object({
     f2Status: z.literal("ready"),
     rows: z.array(f2EnhancedRowSchema),
   }).strict().superRefine((worksheet, context) => {
+    const ordinalIndexes = new Map<string, number>();
     worksheet.rows.forEach((row, index) => {
       if (row.worksheetName !== worksheet.worksheetName) {
         context.addIssue({ code: z.ZodIssueCode.custom, message: "row worksheet must match the containing worksheet", path: ["rows", index, "worksheetName"] });
@@ -4496,6 +4499,14 @@ export const drawingGovernanceRequestV2Schema = z.object({
         context.addIssue({ code: z.ZodIssueCode.custom, message: "F3 rows require an F1 image reference", path: ["rows", index, "imageReference"] });
       } else if (row.imageReference.worksheetName !== worksheet.worksheetName) {
         context.addIssue({ code: z.ZodIssueCode.custom, message: "image reference worksheet must match the containing worksheet", path: ["rows", index, "imageReference", "worksheetName"] });
+      }
+      const ordinal = row.factorOrdinal?.value.trim().toUpperCase() ?? "";
+      if (ordinal.length === 0) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "Factor ordinal is required", path: ["rows", index, "factorOrdinal"] });
+      } else if (ordinalIndexes.has(ordinal)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "Factor ordinal must be unique within a worksheet", path: ["rows", index, "factorOrdinal"] });
+      } else {
+        ordinalIndexes.set(ordinal, index);
       }
     });
   })).min(1),
@@ -4511,6 +4522,7 @@ const f3QualitySignalSchema = z.enum([
 
 const f3GovernanceRowSchema = z.object({
   factorInstanceId: sha256Schema,
+  factorOrdinal: factorOrdinalEvidenceSchema.optional(),
   drawingDimensionKey: sha256Schema.optional(),
   deviceLevelDim: z.string().min(1),
   dimensionDescription: z.string().min(1),
@@ -4635,6 +4647,7 @@ export const f5ImageObservationArtifactV1Schema = z.object({
 export const f5ContextSnapshotRowV2Schema = z.object({
   tableId: z.string().min(1),
   sourceRow: z.number().int().positive(),
+  factorOrdinal: factorOrdinalEvidenceSchema,
   partName: z.string().min(1).nullable(),
   partSubsystem: z.string().min(1).nullable(),
   partCategory: z.string().min(1).nullable(),
@@ -4718,6 +4731,13 @@ function validateF5ContextSnapshotGovernanceRows(
         code: z.ZodIssueCode.custom,
         message: "context snapshot factorName must match factorDescription",
         path: ["contextSnapshot", "rows", snapshotRowIndex, "factorName"],
+      });
+    }
+    if (JSON.stringify(snapshotRow.factorOrdinal) !== JSON.stringify(governanceRow.factorOrdinal)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "context snapshot Factor ordinal must match the F3 governance row",
+        path: ["contextSnapshot", "rows", snapshotRowIndex, "factorOrdinal"],
       });
     }
     for (const field of mappedFields) {
@@ -5074,6 +5094,7 @@ const f5DataInterpretationRequestWorksheetSchema = z.union([
     `${source.worksheetName}\u0000${source.tableId}\u0000${source.sourceRow}`
   );
   const governanceSourceIndexes = new Map<string, number>();
+  const governanceOrdinalIndexes = new Map<string, number>();
   worksheet.governanceRows.forEach((row, rowIndex) => {
     if (row.source.worksheetName !== worksheetName || row.source.tableId !== tableId) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: "governance source must match calculation worksheet and table", path: ["governanceRows", rowIndex, "source"] });
@@ -5088,6 +5109,14 @@ const f5DataInterpretationRequestWorksheetSchema = z.union([
       context.addIssue({ code: z.ZodIssueCode.custom, message: "governance source key must be unique", path: ["governanceRows", rowIndex, "source"] });
     } else {
       governanceSourceIndexes.set(key, rowIndex);
+    }
+    const ordinal = row.factorOrdinal?.value.trim().toUpperCase() ?? "";
+    if (ordinal.length === 0) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "Factor ordinal is required", path: ["governanceRows", rowIndex, "factorOrdinal"] });
+    } else if (governanceOrdinalIndexes.has(ordinal)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "Factor ordinal must be unique within a worksheet", path: ["governanceRows", rowIndex, "factorOrdinal"] });
+    } else {
+      governanceOrdinalIndexes.set(ordinal, rowIndex);
     }
   });
 

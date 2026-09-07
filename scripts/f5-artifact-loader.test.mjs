@@ -135,6 +135,7 @@ function systemSpecification() {
 function governanceRow(worksheetName, tableId, imageReference) {
   return {
     factorInstanceId: createHash("sha256").update(`${worksheetName}-factor`).digest("hex"),
+    factorOrdinal: { value: "A", rawText: "A", sourceCell: `${worksheetName}!Z2` },
     drawingDimensionKey: createHash("sha256").update(`${worksheetName}-dimension`).digest("hex"),
     deviceLevelDim: worksheetName,
     dimensionDescription: `Tolerance loop ${worksheetName}`,
@@ -211,6 +212,7 @@ function setupBundle({ worksheetNames = ["Analysis-A", "Analysis-B"], artifactCo
         columns: [],
         rows: [{
           sourceRow: 2,
+          factorOrdinal: { value: "A", rawText: "A", sourceCell: `${worksheetName}!Z2` },
           fields: {},
           actualFields: {
             ...actualFields(),
@@ -309,6 +311,7 @@ function addSecondMappedRow(bundle, worksheetName) {
     table.dataRange.endRow = 3;
     table.rows.unshift({
       sourceRow: 3,
+      factorOrdinal: { value: "B", rawText: "B", sourceCell: `${worksheetName}!Z3` },
       fields: {},
       actualFields: {
         ...actualFields(),
@@ -327,6 +330,7 @@ function addSecondMappedRow(bundle, worksheetName) {
     const worksheet = report.worksheets.find((candidate) => candidate.worksheetName === worksheetName);
     const secondRow = cloneJson(worksheet.rows[0]);
     secondRow.factorInstanceId = createHash("sha256").update(`${worksheetName}-factor-second`).digest("hex");
+    secondRow.factorOrdinal = { value: "B", rawText: "B", sourceCell: `${worksheetName}!Z3` };
     secondRow.drawingDimensionKey = createHash("sha256").update(`${worksheetName}-dimension-second`).digest("hex");
     secondRow.partCategory = "Sheet Metal";
     secondRow.partSubsystem = "Anonymous bracket second";
@@ -409,6 +413,7 @@ function v2ObservationArtifact(bundle, worksheetNames = [...bundle.imageReferenc
               return {
                 tableId: row.source.tableId,
                 sourceRow: row.source.sourceRow,
+                factorOrdinal: row.factorOrdinal,
                 partName: f1Row.actualFields.partName,
                 partSubsystem: row.partSubsystem,
                 partCategory: row.partCategory,
@@ -538,6 +543,7 @@ describe("loadF5ArtifactBundle", () => {
         f4: "Feature4-Calculation.json",
       },
     });
+    expect(result.request.worksheets[0].governanceRows[0].factorOrdinal).toEqual({ value: "A", rawText: "A", sourceCell: "Analysis-A!Z2" });
     expect(f5DataInterpretationRequestSchema.parse(result.request)).toEqual(result.request);
   });
 
@@ -995,6 +1001,7 @@ describe("loadF5ArtifactBundle", () => {
       rows: [{
         tableId: "table-1",
         sourceRow: 2,
+        factorOrdinal: { value: "A", rawText: "A", sourceCell: "Analysis-A!Z2" },
         partName: "Anonymous bracket",
         partSubsystem: "Anonymous bracket",
         partCategory: "CNC",
@@ -1011,6 +1018,7 @@ describe("loadF5ArtifactBundle", () => {
       }, {
         tableId: "table-1",
         sourceRow: 3,
+        factorOrdinal: { value: "B", rawText: "B", sourceCell: "Analysis-A!Z3" },
         partName: "Anonymous bracket second",
         partSubsystem: "Anonymous bracket second",
         partCategory: "Sheet Metal",

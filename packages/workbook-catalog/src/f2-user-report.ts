@@ -179,6 +179,7 @@ export function createF2UserReport(
         worksheetName: worksheet.worksheetName,
         tableId: table.tableId,
         sourceRow: row.sourceRow,
+        factorOrdinal: row.factorOrdinal ?? { value: "", rawText: "" },
         actualFields: row.actualFields,
         displayFields: projectDisplayFields(row.fields),
         sourceCells,
@@ -200,12 +201,20 @@ export function createF2UserReport(
     if (worksheet.factorTables.length === 0) {
       f4CalculabilityIssues.push({ reasonCode: "factor_tables_missing" });
     }
+    const ordinalCounts = new Map<string, number>();
+    for (const row of worksheet.factorTables.flatMap((table) => table.rows)) {
+      const ordinal = row.factorOrdinal?.value.trim().toUpperCase() ?? "";
+      if (ordinal.length > 0) ordinalCounts.set(ordinal, (ordinalCounts.get(ordinal) ?? 0) + 1);
+    }
     for (const table of worksheet.factorTables) {
       if (table.rows.length === 0) {
         f4CalculabilityIssues.push({ reasonCode: "factor_table_has_no_rows", tableId: table.tableId });
       }
       for (const row of table.rows) {
         const fields = row.actualFields;
+        const ordinal = row.factorOrdinal?.value.trim().toUpperCase() ?? "";
+        if (ordinal.length === 0) f4CalculabilityIssues.push({ reasonCode: "factor_ordinal_missing", tableId: table.tableId, sourceRow: row.sourceRow });
+        else if ((ordinalCounts.get(ordinal) ?? 0) > 1) f4CalculabilityIssues.push({ reasonCode: "factor_ordinal_duplicate", tableId: table.tableId, sourceRow: row.sourceRow });
         if (typeof fields.upperTolerance === "number" && typeof fields.lowerTolerance === "number" && !(fields.upperTolerance > fields.lowerTolerance)) f4CalculabilityIssues.push({ reasonCode: "factor_tolerance_range_invalid", tableId: table.tableId, sourceRow: row.sourceRow });
         if (typeof fields.longTermSafetyFactor === "number" && !(fields.longTermSafetyFactor > 0)) f4CalculabilityIssues.push({ reasonCode: "long_term_safety_factor_invalid", tableId: table.tableId, sourceRow: row.sourceRow });
         if (typeof fields.sigmaLevel === "number" && !(fields.sigmaLevel > 0)) f4CalculabilityIssues.push({ reasonCode: "sigma_level_invalid", tableId: table.tableId, sourceRow: row.sourceRow });

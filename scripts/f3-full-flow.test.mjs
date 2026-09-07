@@ -15,6 +15,7 @@ function f2Report() {
     worksheetName: "Analysis-A",
     tableId: "factor-table-1",
     sourceRow: 14,
+    factorOrdinal: { value: "A", rawText: "A", sourceCell: "Analysis-A!D14" },
     actualFields: {
       factorName: "Anonymous offset",
       partName: "Anonymous bracket",
@@ -78,7 +79,7 @@ function f2Report() {
         designNominal: -0.05, lowerSpecLimit: systemSpecification.lowerSpecLimit, upperSpecLimit: systemSpecification.upperSpecLimit,
         targetSigmaLevel: systemSpecification.targetSigmaLevel, targetCpk: 1, additionalMeanShift: systemSpecification.additionalMeanShift,
       },
-      factors: [{ tableId: row.tableId, sourceRow: row.sourceRow, unit: "mm", actualFields: row.actualFields, sourceCells: row.sourceCells }],
+      factors: [{ tableId: row.tableId, sourceRow: row.sourceRow, factorOrdinal: row.factorOrdinal, unit: "mm", actualFields: row.actualFields, sourceCells: row.sourceCells }],
     }],
     adoEvents: [],
     summary: {

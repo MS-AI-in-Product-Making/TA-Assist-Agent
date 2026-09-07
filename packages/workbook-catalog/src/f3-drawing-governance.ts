@@ -89,6 +89,7 @@ export function createF3DrawingGovernance(request: unknown): DrawingGovernanceRe
         row.tableId,
         row.sourceRow,
       ]),
+      factorOrdinal: row.factorOrdinal!,
       ...(drawingNumber !== undefined && dimIdStatus === "valid"
         ? { drawingDimensionKey: stableHash([normalizeDrawingNumber(drawingNumber), dimId!]) }
         : {}),

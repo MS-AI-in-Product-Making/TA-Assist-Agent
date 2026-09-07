@@ -25,6 +25,7 @@ function calculationRequest(factorCount = 4) {
     const row = index + 2;
     return {
       sourceRow: row,
+      factorOrdinal: { value: String(index + 1), rawText: ` ${index + 1} `, sourceCell: `Analysis-A!Z${row}` },
       fields: {
         factorName: availableText(`factor-${index + 1}`, `Analysis-A!A${row}`),
         nominalValue: availableNumber("0", `Analysis-A!B${row}`, 0),
@@ -124,6 +125,7 @@ function request(options: {
   const calculationResult = completedCalculation(options.factorCount);
   const governanceRows = calculationResult.factors.map((factor, index) => ({
     factorInstanceId: String(index + 1).padStart(64, "0"),
+    factorOrdinal: { value: String(index + 1), rawText: ` ${index + 1} `, sourceCell: `Analysis-A!Z${factor.source.sourceRow}` },
     drawingDimensionKey: options.governanceStatus === undefined || options.governanceStatus === "complete"
       ? String(index + 11).padStart(64, "0")
       : undefined,
@@ -210,6 +212,7 @@ function v2Request() {
         rows: Array<{
           tableId: string;
           sourceRow: number;
+          factorOrdinal: { value: string; rawText: string; sourceCell?: string };
           partName: string | null;
           partSubsystem: string | null;
           partCategory: string | null;
@@ -255,6 +258,7 @@ function v2Request() {
     rows: worksheet.governanceRows.map((row) => ({
       tableId: row.source.tableId,
       sourceRow: row.source.sourceRow,
+      factorOrdinal: structuredClone(row.factorOrdinal!),
       partName: row.partSubsystem,
       partSubsystem: row.partSubsystem,
       partCategory: row.partCategory,
@@ -311,6 +315,32 @@ function captureThrown(action: () => unknown): unknown {
 }
 
 describe("createF5DataInterpretation", () => {
+  it("requires unique Factor ordinals and preserves their evidence in the F5 request", () => {
+    const valid = request({ factorCount: 2 });
+    const parsed = f5DataInterpretationRequestSchema.parse(valid);
+    expect(parsed.worksheets[0]?.governanceRows.map((row) => row.factorOrdinal)).toEqual([
+      { value: "1", rawText: " 1 ", sourceCell: "Analysis-A!Z2" },
+      { value: "2", rawText: " 2 ", sourceCell: "Analysis-A!Z3" },
+    ]);
+
+    const blank = structuredClone(valid);
+    blank.worksheets[0]!.governanceRows[0]!.factorOrdinal = { value: "", rawText: "" };
+    expect(f5DataInterpretationRequestSchema.safeParse(blank).success).toBe(false);
+
+    const duplicate = structuredClone(valid);
+    duplicate.worksheets[0]!.governanceRows[1]!.factorOrdinal = { value: " 1 ", rawText: " 1 ", sourceCell: "Analysis-A!Z3" };
+    expect(f5DataInterpretationRequestSchema.safeParse(duplicate).success).toBe(false);
+  });
+
+  it("requires the v2 model context snapshot to match governance Factor ordinal evidence", () => {
+    const valid = v2Request();
+    expect(f5DataInterpretationRequestSchema.safeParse(valid).success).toBe(true);
+
+    valid.worksheets[0]!.contextSnapshot.rows[0]!.factorOrdinal.rawText = "changed";
+
+    expect(f5DataInterpretationRequestSchema.safeParse(valid).success).toBe(false);
+  });
+
   it.each([
     "C:\\private\\Demo.xlsx",
     "\\\\server\\share\\Demo.xlsx",

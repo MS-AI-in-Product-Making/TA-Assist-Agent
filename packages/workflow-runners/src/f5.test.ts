@@ -119,6 +119,7 @@ describe("runF5Interpretation", () => {
           rows: [{
             tableId: "table-a",
             sourceRow: 2,
+            factorOrdinal: { value: "A", rawText: "A", sourceCell: "Analysis-A!Z2" },
             partName: "controlled-subsystem",
             partSubsystem: "controlled-subsystem",
             partCategory: "controlled-category",
@@ -165,6 +166,7 @@ describe("runF5Interpretation", () => {
         },
         governanceRows: [{
           factorInstanceId: "1".padStart(64, "0"),
+          factorOrdinal: { value: "A", rawText: "A", sourceCell: "Analysis-A!Z2" },
           drawingDimensionKey: "2".padStart(64, "0"),
           deviceLevelDim: "device-dim-1",
           dimensionDescription: "dimension-1",

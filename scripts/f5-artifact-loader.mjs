@@ -318,12 +318,14 @@ function buildExpectedContextSnapshot(f1Worksheet, f3Worksheet, tableId) {
     if (row.source.tableId !== tableId
       || !f1Row
       || f1Row.actualFields.partName !== row.partSubsystem
-      || f1Row.actualFields.factorName !== row.factorDescription) {
+      || f1Row.actualFields.factorName !== row.factorDescription
+      || !sameStableValue(f1Row.factorOrdinal, row.factorOrdinal)) {
       return undefined;
     }
     rows.push({
       tableId: row.source.tableId,
       sourceRow: row.source.sourceRow,
+      factorOrdinal: row.factorOrdinal,
       partName: f1Row.actualFields.partName,
       partSubsystem: row.partSubsystem,
       partCategory: row.partCategory,

@@ -1694,6 +1694,7 @@ describe("F3 drawing governance v2 contracts", () => {
     worksheetName: "Analysis-A",
     tableId: "factor-table-1",
     sourceRow: 14,
+    factorOrdinal: { value: "A", rawText: "A", sourceCell: "Analysis-A!D14" },
     actualFields,
     sourceCells,
     imageReference,
@@ -1717,6 +1718,7 @@ describe("F3 drawing governance v2 contracts", () => {
   };
   const governanceRow = {
     factorInstanceId,
+    factorOrdinal: enhancedRow.factorOrdinal,
     drawingDimensionKey,
     deviceLevelDim: "Analysis-A",
     dimensionDescription: "Anonymous device gap",
@@ -2684,6 +2686,7 @@ describe("F5.1 objective interpretation contracts", () => {
           rows: [{
             tableId: "table-a",
             sourceRow: 14,
+            factorOrdinal: { value: "A", rawText: "A", sourceCell: "Analysis-A!F14" },
             partName: "Bracket",
             partSubsystem: "Bracket",
             partCategory: "CNC",
@@ -2717,6 +2720,7 @@ describe("F5.1 objective interpretation contracts", () => {
     };
     const governanceRow = {
       factorInstanceId: "e".repeat(64),
+      factorOrdinal: { value: "A", rawText: "A", sourceCell: "Analysis-A!F2" },
       drawingDimensionKey: "f".repeat(64),
       deviceLevelDim: "Analysis-A",
       dimensionDescription: "Anonymous device gap",
@@ -2796,6 +2800,7 @@ describe("F5.1 objective interpretation contracts", () => {
       Object.assign(snapshotRow, {
         tableId: row.source.tableId,
         sourceRow: row.source.sourceRow,
+        factorOrdinal: structuredClone(row.factorOrdinal),
         partName: row.partSubsystem,
         partSubsystem: row.partSubsystem,
         partCategory: row.partCategory,
@@ -3603,6 +3608,7 @@ describe("F5.1 objective interpretation contracts", () => {
           rows: worksheet.governanceRows.map((row) => ({
             tableId: row.source.tableId,
             sourceRow: row.source.sourceRow,
+            factorOrdinal: structuredClone(row.factorOrdinal!),
             partName: row.partSubsystem,
             partSubsystem: row.partSubsystem,
             partCategory: row.partCategory,

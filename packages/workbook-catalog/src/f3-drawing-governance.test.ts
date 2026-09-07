@@ -11,6 +11,7 @@ function row(overrides: { drawingNumber?: string | null; dimId?: string | null; 
     worksheetName: "Analysis-A",
     tableId: "factor-table-1",
     sourceRow,
+    factorOrdinal: { value: sourceRow === 14 ? "A" : "B", rawText: sourceRow === 14 ? " A " : "B", sourceCell: `Analysis-A!D${sourceRow}` },
     actualFields: {
       factorName: `Anonymous offset ${sourceRow}`,
       partName: "Anonymous bracket",
@@ -74,6 +75,27 @@ function requestWithDimId(dimId: string | null) {
 }
 
 describe("createF3DrawingGovernance", () => {
+  it("preserves Factor ordinal evidence in governance rows", () => {
+    const report = createF3DrawingGovernance(requestWithRows([row()]));
+
+    expect(report.worksheets[0]?.rows[0]?.factorOrdinal).toEqual({
+      value: "A",
+      rawText: " A ",
+      sourceCell: "Analysis-A!D14",
+    });
+  });
+
+  it("rejects blank or duplicate Factor ordinals at the F3 request boundary", () => {
+    const blank = row();
+    blank.factorOrdinal = { value: "", rawText: "" };
+    expect(() => createF3DrawingGovernance(requestWithRows([blank]))).toThrow(/Factor ordinal/i);
+
+    const first = row({ sourceRow: 14 });
+    const second = row({ sourceRow: 15 });
+    second.factorOrdinal = { value: "a", rawText: "a", sourceCell: "Analysis-A!D15" };
+    expect(() => createF3DrawingGovernance(requestWithRows([first, second]))).toThrow(/Factor ordinal/i);
+  });
+
   it("preserves F1 image provenance", () => {
     const request = requestWithRows([row()]);
     const report = createF3DrawingGovernance(request);

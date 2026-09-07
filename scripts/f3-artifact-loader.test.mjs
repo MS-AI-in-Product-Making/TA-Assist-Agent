@@ -16,6 +16,7 @@ function enhancedRow(worksheetName = "Analysis-A") {
     worksheetName,
     tableId: "factor-table-1",
     sourceRow: 14,
+    factorOrdinal: { value: "A", rawText: "A", sourceCell: `${worksheetName}!D14` },
     actualFields: {
       factorName: "Anonymous offset",
       partName: "Anonymous bracket",
@@ -68,7 +69,7 @@ function f4Handoff(row, worksheetName = "Analysis-A", toleranceLoopDescription =
       designNominal: -0.05, lowerSpecLimit: specification.lowerSpecLimit, upperSpecLimit: specification.upperSpecLimit,
       targetSigmaLevel: specification.targetSigmaLevel, targetCpk: 1, additionalMeanShift: specification.additionalMeanShift,
     },
-    factors: [{ tableId: row.tableId, sourceRow: row.sourceRow, unit: "mm", actualFields: row.actualFields, sourceCells: row.sourceCells }],
+    factors: [{ tableId: row.tableId, sourceRow: row.sourceRow, factorOrdinal: row.factorOrdinal, unit: "mm", actualFields: row.actualFields, sourceCells: row.sourceCells }],
   };
 }
 
@@ -154,7 +155,19 @@ describe("loadF2ArtifactBundle", () => {
     expect(loaded.status).toBe("accepted");
     expect(loaded.request.worksheets[0].toleranceLoopDescription).toBe("Anonymous device gap");
     expect(loaded.request.worksheets[0].f2Status).toBe("ready");
+    expect(loaded.request.worksheets[0].rows[0].factorOrdinal).toEqual({ value: "A", rawText: "A", sourceCell: "Analysis-A!D14" });
     expect(loaded.request.artifactRoot).toBe("controlled/f1");
+  });
+
+  it.each(["missing", "blank"])("rejects a ready worksheet with %s Factor ordinal evidence", (state) => {
+    const report = f2Report();
+    if (state === "missing") delete report.worksheets[0].rows[0].factorOrdinal;
+    else report.worksheets[0].rows[0].factorOrdinal = { value: "", rawText: "" };
+
+    expect(loadF2ArtifactBundle(createF2Output(report))).toMatchObject({
+      status: "inputRejected",
+      report: { artifactIssues: [{ reasonCode: "f2_report_invalid", artifactReference: "Feature2-Report.json" }] },
+    });
   });
 
   it("filters ready worksheets in the requested order", () => {
