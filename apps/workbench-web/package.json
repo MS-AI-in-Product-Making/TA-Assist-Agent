@@ -14,7 +14,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "test": "vitest run --workspace ../../vitest.workspace.ts apps/workbench-web/src"
+    "test": "vitest run --root ../.. --config vitest.config.ts apps/workbench-web/src"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
