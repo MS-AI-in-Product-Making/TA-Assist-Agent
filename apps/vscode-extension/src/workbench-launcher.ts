@@ -1,3 +1,5 @@
+import type { InteractionLanguage } from "@ai-assist/product-language";
+
 export interface WorkbookImportIpcRequest {
   readonly requestId: string;
   readonly sessionId: string;
@@ -18,8 +20,8 @@ export interface WorkbenchProcessLauncher {
   issueHostBearer?(input: { readonly sessionId: string; readonly actionId?: string; readonly hostInstanceId?: string; readonly scopes: readonly ("host-actions:claim" | "host-actions:result" | "sessions:read")[] }): Promise<string>;
 }
 
-export async function launchNewWorkbench(rootDir: string, process: WorkbenchProcessLauncher): Promise<{ readonly sessionId: string; readonly url: string }> {
-  const result = await process.launch(["agent", "analyze", "--root", rootDir]);
+export async function launchNewWorkbench(rootDir: string, process: WorkbenchProcessLauncher, interactionLanguage: InteractionLanguage): Promise<{ readonly sessionId: string; readonly url: string }> {
+  const result = await process.launch(["agent", "analyze", "--root", rootDir, "--interaction-language", JSON.stringify(interactionLanguage)]);
   assertLoopbackUrl(result.url);
   if (result.sessionId === undefined || result.sessionId === "pending") throw new Error("Workbench launcher did not return a real session.");
   const url = new URL(result.url);

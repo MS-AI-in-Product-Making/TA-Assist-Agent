@@ -9,6 +9,8 @@ import { handleAgentTurn } from "./runtime.js";
 
 const SESSION_ID = "session-task-8-runtime";
 const REVIEW_CONTEXT_ID = "a".repeat(64);
+const ENGLISH_LOCK = { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "turn-en", source: "workflow_start", fallbackUsed: false } as const;
+const CHINESE_LOCK = { languageTag: "zh-CN", uiCatalogLanguage: "zh", lockedAtTurnId: "turn-zh", source: "workflow_start", fallbackUsed: false } as const;
 const stores: InMemoryConversationStore[] = [];
 const tempRoots: string[] = [];
 
@@ -33,6 +35,20 @@ describe("handleAgentTurn", () => {
     expect(result.responseText).not.toMatch(/\bF[0-7]\b/u);
   });
 
+  it("keeps a Chinese session in Chinese when the next user text is English", async () => {
+    const deps = await createDeps(baseSnapshot({ state: "initial_scope_required", interactionLanguage: CHINESE_LOCK }));
+
+    const result = await handleAgentTurn({
+      text: "Continue with worksheet Housing",
+      sessionId: SESSION_ID,
+      commandId: "turn-chinese-lock-1",
+      source: "web",
+    }, { ...deps, model: undefined });
+
+    expect(result.responseText).toContain("选择 Worksheets");
+    expect(result.actions).toEqual([{ type: "navigate", target: "/scope", label: "选择 Worksheets" }]);
+  });
+
   it("rejects model responses containing internal feature identifiers", async () => {
     const deps = await createDeps(baseSnapshot({ state: "review_required" }));
 
@@ -51,7 +67,7 @@ describe("handleAgentTurn", () => {
   });
 
   it("opens the next required action without a model", async () => {
-    const deps = await createDeps(baseSnapshot({ state: "initial_scope_required" }));
+    const deps = await createDeps(baseSnapshot({ state: "initial_scope_required", interactionLanguage: CHINESE_LOCK }));
 
     const result = await handleAgentTurn({
       text: "继续分析",
@@ -66,7 +82,7 @@ describe("handleAgentTurn", () => {
   });
 
   it("does not turn free text into an ADO write confirmation", async () => {
-    const deps = await createDeps(baseSnapshot({ state: "ado_decision_required" }));
+    const deps = await createDeps(baseSnapshot({ state: "ado_decision_required", interactionLanguage: CHINESE_LOCK }));
 
     const result = await handleAgentTurn({
       text: "全部确认并写入 ADO",
@@ -114,7 +130,7 @@ describe("handleAgentTurn", () => {
     };
     const deps = {
       snapshotStore: {
-        readSnapshot: async () => baseSnapshot({ state: "review_required" }),
+        readSnapshot: async () => baseSnapshot({ state: "review_required", interactionLanguage: CHINESE_LOCK }),
       },
       conversationStore,
       model,
@@ -348,6 +364,7 @@ describe("handleAgentTurn", () => {
   it("does not project report links when the current review context is incomplete", async () => {
     const deps = await createDeps(baseSnapshot({
       state: "review_required",
+      interactionLanguage: CHINESE_LOCK,
       artifactRefs: [
         {
           artifactId: "f6-report:7",
@@ -439,7 +456,7 @@ describe("handleAgentTurn", () => {
     stores.push(conversationStore);
     const deps = {
       snapshotStore: {
-        readSnapshot: async () => baseSnapshot({ state: "review_required" }),
+        readSnapshot: async () => baseSnapshot({ state: "review_required", interactionLanguage: CHINESE_LOCK }),
       },
       conversationStore,
       model: undefined,
@@ -528,6 +545,7 @@ describe("handleAgentTurn", () => {
   it("does not authorize report or what-if actions from unrelated artifacts or unavailable worksheet capabilities", async () => {
     const deps = await createDeps(baseSnapshot({
       state: "review_required",
+      interactionLanguage: CHINESE_LOCK,
       priorRunReferences: [
         {
           featureId: "F6",
@@ -573,7 +591,7 @@ describe("handleAgentTurn", () => {
   });
 
   it("falls back safely when the model response shape is invalid or the model throws", async () => {
-    const invalidDeps = await createDeps(baseSnapshot({ state: "initial_scope_required" }), {
+    const invalidDeps = await createDeps(baseSnapshot({ state: "initial_scope_required", interactionLanguage: CHINESE_LOCK }), {
       model: {
         complete: async () => ({
           responseText: "x".repeat(5000),
@@ -595,7 +613,7 @@ describe("handleAgentTurn", () => {
       commands: [],
     });
 
-    const throwingDeps = await createDeps(baseSnapshot({ state: "initial_scope_required" }), {
+    const throwingDeps = await createDeps(baseSnapshot({ state: "initial_scope_required", interactionLanguage: CHINESE_LOCK }), {
       model: {
         complete: async () => {
           throw new Error("cancelled by model");
@@ -615,7 +633,7 @@ describe("handleAgentTurn", () => {
   });
 
   it("accepts model proposal only when it matches the active F6 input gate", async () => {
-    const deps = await createDeps(baseSnapshot({ state: "analysis_context_decision_required" }), {
+    const deps = await createDeps(baseSnapshot({ state: "analysis_context_decision_required", interactionLanguage: CHINESE_LOCK }), {
       model: {
         complete: async () => ({
           responseText: "已整理分析背景草案。",
@@ -644,7 +662,7 @@ describe("handleAgentTurn", () => {
   });
 
   it("rejects mismatched model proposal kind and falls back to deterministic response", async () => {
-    const deps = await createDeps(baseSnapshot({ state: "analysis_context_decision_required" }), {
+    const deps = await createDeps(baseSnapshot({ state: "analysis_context_decision_required", interactionLanguage: CHINESE_LOCK }), {
       model: {
         complete: async () => ({
           responseText: "已整理优化方向草案。",
@@ -714,12 +732,14 @@ function baseSnapshot(overrides = {}) {
     priorRunReferences: [],
     artifactRefs: [],
     worksheetCapabilities: [],
+    interactionLanguage: ENGLISH_LOCK,
     ...overrides,
   };
 }
 
 function snapshotWithCurrentValidatedReport(overrides = {}) {
   return baseSnapshot({
+    interactionLanguage: CHINESE_LOCK,
     state: "review_required",
     artifactRefs: [
       {

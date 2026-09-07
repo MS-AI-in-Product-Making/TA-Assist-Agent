@@ -9,6 +9,7 @@ import { runAgentCommand } from "./agent.js";
 import { createLauncherForTest, handleWorkbenchHostIpcMessage, resolveBrowserArgs, resolveBrowserCommand } from "./agent-launcher.js";
 
 const SESSION_ID = "30303030-3030-4303-8303-303030303030";
+const ENGLISH_LOCK = { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "turn-1", source: "workflow_start", fallbackUsed: false } as const;
 
 const tempRoots: string[] = [];
 
@@ -37,10 +38,10 @@ describe("runAgentCommand", () => {
     const analyze = vi.fn(async () => ({ sessionId: SESSION_ID, url: "http://127.0.0.1:4317/" }));
     const workbench = vi.fn(async () => ({ sessionId: SESSION_ID, url: "http://127.0.0.1:4317/" }));
 
-    await runAgentCommand({ action: "analyze", rootDir: "repo" }, { analyze, workbench });
+    await runAgentCommand({ action: "analyze", rootDir: "repo", interactionLanguage: ENGLISH_LOCK }, { analyze, workbench });
     await runAgentCommand({ action: "workbench", rootDir: "repo" }, { analyze, workbench });
 
-    expect(analyze).toHaveBeenCalledWith("repo");
+    expect(analyze).toHaveBeenCalledWith("repo", ENGLISH_LOCK);
     expect(workbench).toHaveBeenCalledWith("repo");
   });
 
@@ -54,7 +55,7 @@ describe("runAgentCommand", () => {
         const store = await openSessionStore({ rootDir, sessionId: options.resumeSessionId! });
         try {
           const snapshot = await store.readSnapshot();
-          expect(snapshot).toMatchObject({ sessionId: options.resumeSessionId, revision: 0, state: "created" });
+          expect(snapshot).toMatchObject({ sessionId: options.resumeSessionId, revision: 0, state: "created", interactionLanguage: ENGLISH_LOCK });
         } finally {
           await store.close();
         }
@@ -65,7 +66,7 @@ describe("runAgentCommand", () => {
       openBrowser: (url) => { openedUrls.push(url); },
     });
 
-    const result = await runAgentCommand({ action: "analyze", rootDir }, launcher);
+    const result = await runAgentCommand({ action: "analyze", rootDir, interactionLanguage: ENGLISH_LOCK }, launcher);
     const sessionId = result.match(/^session: (.+)$/m)?.[1];
 
     expect(sessionId).toMatch(/[0-9a-f-]{36}/);

@@ -1,3 +1,5 @@
+import type { InteractionLanguage } from "@ai-assist/product-language";
+
 export type AgentCliAction = "analyze" | "resume" | "status" | "workbench";
 
 export type AgentCliRequest = {
@@ -5,12 +7,16 @@ export type AgentCliRequest = {
   readonly rootDir: string;
   readonly sessionId: string;
 } | {
-  readonly action: "analyze" | "workbench";
+  readonly action: "analyze";
+  readonly rootDir: string;
+  readonly interactionLanguage: InteractionLanguage;
+} | {
+  readonly action: "workbench";
   readonly rootDir: string;
 };
 
 export interface AgentLauncher {
-  analyze(rootDir: string): Promise<{ readonly sessionId: string; readonly url: string }>;
+  analyze(rootDir: string, interactionLanguage: InteractionLanguage): Promise<{ readonly sessionId: string; readonly url: string }>;
   resume(rootDir: string, sessionId: string): Promise<{ readonly sessionId: string; readonly url: string }>;
   status(rootDir: string, sessionId: string): Promise<{ readonly sessionId: string; readonly url: string }>;
   workbench(rootDir: string): Promise<{ readonly sessionId: string; readonly url: string }>;
@@ -21,7 +27,7 @@ export async function runAgentCommand(request: AgentCliRequest, launcher: Partia
   switch (request.action) {
     case "analyze":
       if (launcher.analyze === undefined) throw new Error("dependency_error: Workbench launcher is unavailable");
-      result = await launcher.analyze(request.rootDir);
+      result = await launcher.analyze(request.rootDir, request.interactionLanguage);
       break;
     case "workbench":
       if (launcher.workbench === undefined) throw new Error("dependency_error: Workbench launcher is unavailable");

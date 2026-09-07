@@ -5,11 +5,13 @@ import { taModelContextEnvelopeSchema } from "@ai-assist/contracts";
 import { buildEvidenceLabeledModelPrompt } from "./model-prompt.js";
 
 const SESSION_ID = "68686868-6868-4868-8868-686868686868";
+const ENGLISH_LOCK = { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "turn-en", source: "workflow_start", fallbackUsed: false } as const;
+const CHINESE_LOCK = { languageTag: "zh-CN", uiCatalogLanguage: "zh", lockedAtTurnId: "turn-zh", source: "workflow_start", fallbackUsed: false } as const;
 
 describe("buildEvidenceLabeledModelPrompt", () => {
-  it("uses product capability names and follows the user request language", () => {
-    const englishPrompt = buildEvidenceLabeledModelPrompt("Explain the current risk.", richContext());
-    const chinesePrompt = buildEvidenceLabeledModelPrompt("请解释当前风险。", richContext());
+  it("uses product capability names and follows the locked session language across turns", () => {
+    const englishPrompt = buildEvidenceLabeledModelPrompt("请解释工作表 Housing 的当前风险。", richContext(), ENGLISH_LOCK);
+    const chinesePrompt = buildEvidenceLabeledModelPrompt("Explain the current risk for worksheet Housing.", richContext(), CHINESE_LOCK);
 
     expect(englishPrompt).toContain("Respond entirely in English");
     expect(englishPrompt).toContain("Knowledge Library excerpts");
@@ -23,8 +25,8 @@ describe("buildEvidenceLabeledModelPrompt", () => {
   });
 
   it("projects legacy stage references before they enter the model prompt", () => {
-    const englishPrompt = buildEvidenceLabeledModelPrompt("Explain the Feature 6 result.", richContext());
-    const chinesePrompt = buildEvidenceLabeledModelPrompt("请解释 F5 结果。", richContext());
+    const englishPrompt = buildEvidenceLabeledModelPrompt("Explain the Feature 6 result.", richContext(), ENGLISH_LOCK);
+    const chinesePrompt = buildEvidenceLabeledModelPrompt("请解释 F5 结果。", richContext(), CHINESE_LOCK);
 
     expect(englishPrompt).toContain("Explain the Design Optimization result.");
     expect(englishPrompt).not.toContain("Feature 6");
@@ -33,7 +35,7 @@ describe("buildEvidenceLabeledModelPrompt", () => {
   });
 
   it("builds an evidence-labeled prompt with governed capability and Scenario identities", () => {
-    const prompt = buildEvidenceLabeledModelPrompt("Explain the current risk.", richContext());
+    const prompt = buildEvidenceLabeledModelPrompt("Explain the current risk.", richContext(), ENGLISH_LOCK);
 
     expect(prompt).toContain(`- Session: ${SESSION_ID} (revision 5, inputRevision 2)`);
     expect(prompt).toContain("- Selected factor identity: factor-table-1 / row 14 / Gap X");
@@ -65,7 +67,7 @@ describe("buildEvidenceLabeledModelPrompt", () => {
         worstCaseMargin: 0.2,
       },
       relatedArtifactIds: ["f2-current", "f4-current"],
-    }));
+    }), ENGLISH_LOCK);
 
     expect(prompt).toContain("Missing evidence");
     expect(prompt).toContain("Data Parsing managed image reference is unavailable in the current governed context.");
@@ -83,7 +85,7 @@ describe("buildEvidenceLabeledModelPrompt", () => {
       },
     } as const;
 
-    const prompt = buildEvidenceLabeledModelPrompt("Summarize the worksheet.", legacyContext as never);
+    const prompt = buildEvidenceLabeledModelPrompt("Summarize the worksheet.", legacyContext as never, ENGLISH_LOCK);
 
     expect(prompt).toContain("Missing evidence");
     expect(prompt).toContain("Data Parsing managed image reference is unavailable in the current governed context.");
@@ -106,7 +108,7 @@ describe("buildEvidenceLabeledModelPrompt", () => {
         ...richContext().factorTable[0]!,
         notes: "password=demo-value",
       }],
-    } as never);
+    } as never, ENGLISH_LOCK);
 
     expect(prompt).toContain("[redacted credential]");
     expect(prompt).not.toContain("demo-token");

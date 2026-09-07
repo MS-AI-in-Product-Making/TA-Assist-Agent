@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { createConversationStore } from "@ai-assist/conversation";
 import { handleAgentTurn } from "@ai-assist/agent-runtime";
 import { openSessionStore } from "@ai-assist/workbench";
+import { resolveInteractionLanguage } from "@ai-assist/product-language";
 import * as vscode from "vscode";
 
 import { syncConversationUnread } from "./conversation-sync.js";
@@ -131,7 +132,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push({ dispose: () => clearInterval(hostPumpHandle) });
 
   const bindNewSession = async () => {
-    const launched = await launchNewWorkbench(workspaceRoot, processLauncher);
+    const interactionLanguage = resolveInteractionLanguage({ text: "", turnId: randomUUID(), hostLocale: vscode.env.language });
+    const launched = await launchNewWorkbench(workspaceRoot, processLauncher, interactionLanguage);
     activeSessionId = launched.sessionId;
     activeWorkbenchUrl = launched.url;
     await context.globalState.update(HOST_BINDING_KEY, { sessionId: launched.sessionId, workbenchUrl: launched.url });

@@ -12,6 +12,8 @@ import { buildEvidenceLabeledModelPrompt } from "../model-prompt.js";
 import type { WorkbenchServerContext } from "../server.js";
 
 const SESSION_ID = "68686868-6868-4868-8868-686868686868";
+const ENGLISH_LOCK = { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "turn-en", source: "workflow_start", fallbackUsed: false } as const;
+const CHINESE_LOCK = { languageTag: "zh-CN", uiCatalogLanguage: "zh", lockedAtTurnId: "turn-zh", source: "workflow_start", fallbackUsed: false } as const;
 const REVIEW_CONTEXT_ID = "c".repeat(64);
 
 describe("conversation routes", () => {
@@ -58,7 +60,7 @@ describe("conversation routes", () => {
       });
 
       expect(response.statusCode).toBe(201);
-      expect(app.capturedPrompt()).toBe(buildEvidenceLabeledModelPrompt("Explain the current risk.", modelContext));
+      expect(app.capturedPrompt()).toBe(buildEvidenceLabeledModelPrompt("Explain the current risk.", modelContext, ENGLISH_LOCK));
       expect(app.capturedPrompt()).toContain("Governed evidence");
       expect(app.capturedPrompt()).toContain("Open interpretation");
       expect(app.capturedPrompt()).toContain("Missing evidence");
@@ -80,7 +82,7 @@ describe("conversation routes", () => {
       });
 
       expect(response.statusCode).toBe(201);
-      expect(app.capturedPrompt()).toBe(buildEvidenceLabeledModelPrompt("Explain the current risk.", modelContext));
+      expect(app.capturedPrompt()).toBe(buildEvidenceLabeledModelPrompt("Explain the current risk.", modelContext, ENGLISH_LOCK));
       expect(response.json()).toMatchObject({ role: "assistant", relatedArtifactIds: ["f2-current", "f4-current", "f1-current-image"] });
       expect(app.turns()).toMatchObject([
         { turnId: "turn-route-1", role: "user", relatedArtifactIds: ["f2-current", "f4-current", "f1-current-image"] },
@@ -275,7 +277,7 @@ describe("conversation routes", () => {
 
       const modelPayload = {
         status: "completed" as const,
-        outcome: { kind: "model_response" as const, turnId: "turn-route-1", responseText: "Review complete." },
+        outcome: { kind: "model_response" as const, turnId: "turn-route-1", responseText: "F6 review complete." },
       };
       const resultResponse = await app.inject({
         method: "POST",
@@ -299,6 +301,7 @@ describe("conversation routes", () => {
         role: "assistant",
         relatedArtifactIds: ["f6-report:7"],
       });
+      expect(modelTurn?.content).toContainEqual({ kind: "text", text: "设计优化 review complete." });
       expect(modelTurn?.content).toContainEqual({
         kind: "artifact_reference",
         artifactId: "f6-report:7",
@@ -333,6 +336,7 @@ describe("conversation routes", () => {
         state: "analysis_context_decision_required",
         activeAttempt: null,
         priorRunReferences: [],
+        interactionLanguage: ENGLISH_LOCK,
       },
     });
     try {
@@ -595,7 +599,7 @@ async function routeHarness(
   const materializedProposals: Array<{ readonly sessionId: string; readonly expectedRevision: number; readonly proposalVersion: string }> = [];
   let hostAppendFailuresRemaining = options.hostAppendFailureCount ?? 0;
   const buildConversationContext = vi.fn(async () => modelContext);
-  const sessionSnapshot = options.snapshot ?? { sessionId: SESSION_ID, revision: 5, state: "review_required" };
+  const sessionSnapshot = options.snapshot ?? { sessionId: SESSION_ID, revision: 5, state: "review_required", interactionLanguage: ENGLISH_LOCK };
   const app = Fastify({ logger: false }) as ReturnType<typeof Fastify> & {
     capturedPrompt(): string;
     turns(): unknown[];
@@ -865,6 +869,7 @@ function reviewReadySnapshot() {
       { artifactId: "f6-report:7", kind: "f6_report", revision: 2, validated: true, reviewContextId: REVIEW_CONTEXT_ID },
     ],
     worksheetCapabilities: [],
+    interactionLanguage: CHINESE_LOCK,
   };
 }
 
@@ -899,5 +904,6 @@ function reviewSnapshotVariant(options: {
       },
     ],
     worksheetCapabilities: [],
+    interactionLanguage: ENGLISH_LOCK,
   };
 }

@@ -11,6 +11,19 @@ import { formatF4Status } from "./commands/smoke.js";
 import { executeCli } from "./index.js";
 
 const execFileAsync = promisify(execFile);
+const ENGLISH_LOCK = { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "turn-1", source: "workflow_start", fallbackUsed: false } as const;
+
+it("parses the internal interaction language for a new Agent session", async () => {
+  const runAgent = vi.fn(async () => "started");
+  const result = await executeCli(["agent", "analyze", "--root", "repo", "--interaction-language", JSON.stringify(ENGLISH_LOCK)], {
+    cwd: () => "ignored",
+    runFeature2: async () => "unused",
+    runAgent,
+  });
+
+  expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+  expect(runAgent).toHaveBeenCalledWith({ action: "analyze", rootDir: "repo", interactionLanguage: ENGLISH_LOCK });
+});
 
 it("routes the CLI Agent to the same workbench session", async () => {
   const resume = vi.fn(async () => "resumed");

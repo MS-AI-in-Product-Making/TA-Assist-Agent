@@ -1,5 +1,5 @@
 import { conversationTurnSchema, hostActionClaimSchema, hostActionRequestSchema, hostActionResultSchema } from "@ai-assist/contracts";
-import { detectUserLanguage, projectProductCapabilityReferences } from "@ai-assist/product-language";
+import { projectProductCapabilityReferences } from "@ai-assist/product-language";
 import { selectCompleteReviewContext, type F8SessionSnapshot } from "@ai-assist/workbench";
 import { createHash } from "node:crypto";
 import type { FastifyPluginAsync } from "fastify";
@@ -143,7 +143,7 @@ export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: Workbench
         const snapshot = await context.sessions.read(sessionId);
         const report = snapshot === undefined ? undefined : selectCanonicalReportReference(snapshot);
         const turns = await context.conversation.read(sessionId);
-        const responseText = projectProductCapabilityReferences(outcome.responseText, detectUserLanguage(outcome.responseText));
+        const responseText = projectProductCapabilityReferences(outcome.responseText, snapshot?.interactionLanguage.uiCatalogLanguage ?? "en");
         const turn = await context.conversation.append(conversationTurnSchema.parse({
           contractVersion: "ta-conversation-turn-v1",
           turnId: `${action.turnId}:model`,

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { launchNewWorkbench, launchWorkbench, resumeWorkbench } from "./workbench-launcher.js";
 
 const SESSION_ID = "30303030-3030-4303-8303-303030303030";
+const ENGLISH_LOCK = { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "turn-1", source: "workflow_start", fallbackUsed: false } as const;
 
 describe("workbench launcher", () => {
   it("returns the real session ID created by analyze launch", async () => {
@@ -10,9 +11,9 @@ describe("workbench launcher", () => {
       launch: vi.fn(async () => ({ sessionId: SESSION_ID, url: `http://127.0.0.1:4317/?session=${SESSION_ID}` })),
     };
 
-    const launched = await launchNewWorkbench("repo", process);
+    const launched = await launchNewWorkbench("repo", process, ENGLISH_LOCK);
 
-    expect(process.launch).toHaveBeenCalledWith(["agent", "analyze", "--root", "repo"]);
+    expect(process.launch).toHaveBeenCalledWith(["agent", "analyze", "--root", "repo", "--interaction-language", JSON.stringify(ENGLISH_LOCK)]);
     expect(launched).toEqual({ sessionId: SESSION_ID, url: `http://127.0.0.1:4317/?session=${SESSION_ID}` });
   });
 
@@ -21,7 +22,7 @@ describe("workbench launcher", () => {
       launch: vi.fn(async () => ({ sessionId: "pending", url: "http://127.0.0.1:4317/" })),
     };
 
-    await expect(launchNewWorkbench("repo", process)).rejects.toThrow("real session");
+    await expect(launchNewWorkbench("repo", process, ENGLISH_LOCK)).rejects.toThrow("real session");
     });
 
     it("preserves pure workbench launch without requiring a session", async () => {
