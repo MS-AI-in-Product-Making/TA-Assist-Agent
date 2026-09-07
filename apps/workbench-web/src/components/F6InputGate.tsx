@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type { F8PendingF6InputDraft } from "@ai-assist/contracts";
-import { inputMetadata, type UiCatalogLanguage, type UserInputId } from "@ai-assist/product-language";
+import { inputMetadata, type UiCatalogLanguage, type UserInputId } from "@ai-assist/product-language/input-metadata";
 
 import type { F6InputDraftReadResult, WorkbenchApi } from "../api.js";
 import type { F8SessionSnapshot } from "../workbench-session.js";

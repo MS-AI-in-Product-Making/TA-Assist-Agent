@@ -116,23 +116,23 @@ describe("App", () => {
             },
           }),
           submitCommand,
+          f2Findings: findingsProjection(["AJ_GAP", "B_STACK"]),
           conversation: [],
           loading: false,
           connected: true,
         }}
-        downstreamWorksheetOptions={[
-          { worksheetName: "AJ_GAP", status: "ready" },
-          { worksheetName: "B_STACK", status: "ready" },
-        ]}
       />,
     );
 
-    fireEvent.click(screen.getByRole("checkbox", { name: "B_STACK" }));
-    fireEvent.click(screen.getByRole("button", { name: "Confirm engineering scope" }));
+    expect(screen.queryByRole("checkbox", { name: "B_STACK" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Review workbook findings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue with ready worksheets" }));
 
     expect(commands).toEqual([
       { command: "confirm_initial_scope", worksheetNames: ["AJ_GAP"], workbookHash: "a".repeat(64) },
-      { command: "confirm_downstream_scope", worksheetNames: ["B_STACK"], workbookHash: "b".repeat(64) },
+      { command: "confirm_downstream_scope", worksheetNames: ["AJ_GAP", "B_STACK"], workbookHash: "b".repeat(64) },
     ]);
   }, 15_000);
 
@@ -943,6 +943,15 @@ function snapshot(state: F8SessionSnapshot["state"], overrides: Partial<F8Sessio
       { worksheetName: "B_STACK", whatIfAvailable: false },
     ],
     ...overrides,
+  };
+}
+
+function findingsProjection(worksheetNames: string[]) {
+  return {
+    contractVersion: "f2-findings-decision-projection-v1" as const,
+    workbookHash: "b".repeat(64), inputRevision: 1, f2ReportArtifactId: "f2-current", f2ReportContentHash: "c".repeat(64), findingDigest: "d".repeat(64),
+    worksheetFindings: worksheetNames.map((worksheetName) => ({ contractVersion: "f2-worksheet-finding-projection-v1" as const, worksheetName, readiness: "downstream_ready" as const, identifierWarnings: [], blockers: [], sourceRows: [] })),
+    downstreamReadyWorksheetNames: worksheetNames,
   };
 }
 

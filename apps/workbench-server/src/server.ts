@@ -129,6 +129,7 @@ export type ArtifactClassification = "public" | "confidential";
 export interface ArtifactRegistry {
   authorize(sessionId: string, artifactId: string, relativePath: string, fileName: string, classification: ArtifactClassification, mimeType: string): void;
   read(sessionId: string, artifactId: string): { readonly relativePath: string; readonly fileName: string; readonly classification: ArtifactClassification; readonly mimeType: string } | undefined;
+  revokeUnboundWorkbook(sessionId: string, artifactId: string): void;
 }
 
 export interface SessionRegistry {
@@ -411,7 +412,7 @@ async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth
       writeRegistry(rootDir, "active-workbooks", sessionId, { artifactId });
     },
     async recoverCommittedCommand(snapshot, command) {
-      if (command.command === "upload_workbook" && "managedArtifactId" in command.payload && typeof command.payload.managedArtifactId === "string") {
+      if ((command.command === "upload_workbook" || command.command === "replace_workbook") && "managedArtifactId" in command.payload && typeof command.payload.managedArtifactId === "string") {
         await context.resolveManagedWorkbook(command.sessionId, command.payload.managedArtifactId);
         context.bindManagedWorkbook(command.sessionId, command.payload.managedArtifactId);
       }
@@ -647,7 +648,7 @@ async function recoverActiveAttempts(rootDir: string, sessions: SessionRegistry,
       if (current?.activeAttempt === null || current === undefined) continue;
       if (current.activeAttempt.commandId !== undefined) {
         const command = await sessions.readCommittedCommand(row.session_id, current.activeAttempt.commandId);
-        if (command?.command === "upload_workbook" && "managedArtifactId" in command.payload && typeof command.payload.managedArtifactId === "string") {
+        if ((command?.command === "upload_workbook" || command?.command === "replace_workbook") && "managedArtifactId" in command.payload && typeof command.payload.managedArtifactId === "string") {
           const artifact = artifacts.read(row.session_id, command.payload.managedArtifactId);
           if (artifact === undefined) continue;
           writeRegistry(rootDir, "active-workbooks", row.session_id, { artifactId: command.payload.managedArtifactId });
@@ -813,6 +814,17 @@ class FileBackedArtifactRegistry implements ArtifactRegistry {
   read(sessionId: string, artifactId: string): { readonly relativePath: string; readonly fileName: string; readonly classification: ArtifactClassification; readonly mimeType: string } | undefined {
     const artifact = readRegistry<Record<string, { readonly sessionId: string; readonly relativePath: string; readonly fileName: string; readonly classification: ArtifactClassification; readonly mimeType: string }>>(this.rootDir, "artifacts", sessionId)?.[artifactId];
     return artifact?.sessionId === sessionId ? artifact : undefined;
+  }
+
+  revokeUnboundWorkbook(sessionId: string, artifactId: string): void {
+    const active = readRegistry<{ readonly artifactId: string }>(this.rootDir, "active-workbooks", sessionId);
+    if (active?.artifactId === artifactId) return;
+    const artifacts = readRegistry<Record<string, { readonly sessionId: string; readonly relativePath: string; readonly fileName: string; readonly classification: ArtifactClassification; readonly mimeType: string }>>(this.rootDir, "artifacts", sessionId) ?? {};
+    const artifact = artifacts[artifactId];
+    if (artifact === undefined || artifact.sessionId !== sessionId || artifact.relativePath !== `uploads/${sessionId}/workbook/${artifactId}-${artifact.fileName}`) return;
+    const { [artifactId]: _removed, ...remaining } = artifacts;
+    writeRegistry(this.rootDir, "artifacts", sessionId, remaining);
+    rmSync(resolve(this.rootDir, artifact.relativePath), { force: true });
   }
 }
 

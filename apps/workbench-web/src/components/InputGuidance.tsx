@@ -1,4 +1,4 @@
-import { inputMetadata, type UiCatalogLanguage, type UserInputId } from "@ai-assist/product-language";
+import { inputMetadata, type UiCatalogLanguage, type UserInputId } from "@ai-assist/product-language/input-metadata";
 
 export function inputGuidanceId(inputId: UserInputId): string {
   return `${inputId}-guidance`;

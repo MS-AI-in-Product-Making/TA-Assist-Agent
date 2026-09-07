@@ -483,6 +483,10 @@ const workbookReplacePayloadSchema = workbookUploadPayloadSchema.extend({
   previousWorkbookHash: sha256Schema,
 }).strict();
 
+const managedWorkbookReplacePayloadSchema = managedWorkbookUploadPayloadSchema.extend({
+  previousWorkbookHash: sha256Schema,
+}).strict();
+
 const worksheetScopePayloadBaseSchema = z
   .object({
     workbookHash: sha256Schema,
@@ -702,7 +706,7 @@ export const f8SessionCommandSchema = z.discriminatedUnion("command", [
 
 export const f8PublicSessionCommandSchema = z.discriminatedUnion("command", [
   commandEnvelopeSchema("upload_workbook", managedWorkbookUploadPayloadSchema),
-  commandEnvelopeSchema("replace_workbook", workbookReplacePayloadSchema),
+  commandEnvelopeSchema("replace_workbook", managedWorkbookReplacePayloadSchema),
   commandEnvelopeSchema("set_interaction_language", setInteractionLanguagePayloadSchema),
   commandEnvelopeSchema("confirm_initial_scope", worksheetScopePayloadSchema),
   commandEnvelopeSchema("confirm_downstream_scope", worksheetScopePayloadSchema),

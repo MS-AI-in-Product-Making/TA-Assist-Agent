@@ -112,7 +112,7 @@ async function writeImageArtifactFixture(rootDir: string, relativePath: string, 
   await writeFile(target, bytes);
 }
 
-function f2ImageBindingReportForArtifactTest(contentHash: string, entries: Array<{ worksheetName: string; relativePath: string }>) {
+function f2ImageBindingReportForArtifactTest(contentHash: string, entries: Array<{ worksheetName: string; relativePath: string }>, workbookHash = "a".repeat(64)) {
   const worksheets = entries.map((entry, index) => ({
     worksheetName: entry.worksheetName,
     toleranceLoopDescription: `${entry.worksheetName} loop`,
@@ -161,7 +161,7 @@ function f2ImageBindingReportForArtifactTest(contentHash: string, entries: Array
     handoffVersion: "f4-handoff-v1",
     inputClassification: "confidential",
     status: "ready",
-    workbookContentHash: "a".repeat(64),
+    workbookContentHash: workbookHash,
     worksheetName: entry.worksheetName,
     toleranceLoopDescription: `${entry.worksheetName} loop`,
     systemSpecification: {
@@ -185,7 +185,7 @@ function f2ImageBindingReportForArtifactTest(contentHash: string, entries: Array
     contractVersion: "v1",
     inputClassification: "confidential",
     status: "completed",
-    workbook: { fileName: "anonymous.xlsx", contentHash: "a".repeat(64), f1GeneratedAt: "2026-08-31T00:00:00.000Z" },
+    workbook: { fileName: "anonymous.xlsx", contentHash: workbookHash, f1GeneratedAt: "2026-08-31T00:00:00.000Z" },
     knowledgeBaseVersions: ["v1", "internal-v1"],
     mappingRuleVersion: "v1",
     artifactRoot: "managed/f2",
@@ -1820,6 +1820,26 @@ describe("workbench server routes", () => {
       expect(uploaded.statusCode).toBe(202);
       expect(uploaded.json()).toMatchObject({ state: "initial_scope_required" });
 
+      const uploadReplayArtifactId = "managed-upload-replay-mismatch";
+      const uploadReplayRelativePath = `uploads/${auth.sessionId}/workbook/${uploadReplayArtifactId}-upload-replay.xlsx`;
+      server.registerArtifactForTest(auth.sessionId, uploadReplayArtifactId, uploadReplayRelativePath, "upload-replay.xlsx", "confidential", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      await writeFile(join(rootDir, uploadReplayRelativePath), createAnonymousWorkbookZip());
+      const mismatchedUploadReplay = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${auth.sessionId}/commands`,
+        headers: auth.headers,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId: auth.sessionId,
+          commandId: "second-stop-upload",
+          expectedRevision: 0,
+          command: "upload_workbook",
+          payload: { artifactId: uploadReplayArtifactId, inputClassification: "confidential" },
+        },
+      });
+      expect(mismatchedUploadReplay.statusCode).toBe(409);
+      await expect(readFile(join(rootDir, uploadReplayRelativePath))).rejects.toThrow();
+
       const afterInitial = await server.inject({
         method: "POST",
         url: `/api/sessions/${auth.sessionId}/commands`,
@@ -1840,6 +1860,63 @@ describe("workbench server routes", () => {
         initialScopeSelection: { workbookContentHash: workbookHash, selectedWorksheetNames: ["Analysis-A"], confirmed: true, provenance: "user" },
       });
       expect(afterInitial.json()).not.toHaveProperty("downstreamScopeSelection");
+
+      const invalidArtifactId = "managed-invalid-replacement";
+      const invalidRelativePath = `uploads/${auth.sessionId}/workbook/${invalidArtifactId}-invalid.xlsx`;
+      server.registerArtifactForTest(auth.sessionId, invalidArtifactId, invalidRelativePath, "invalid.xlsx", "confidential", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      await writeFile(join(rootDir, invalidRelativePath), createAnonymousWorkbookZip());
+      const invalidReplacement = await server.inject({ method: "POST", url: `/api/sessions/${auth.sessionId}/commands`, headers: auth.headers, payload: {
+        contractVersion: "f8-session-command-v1", sessionId: auth.sessionId, commandId: "second-stop-invalid-replace", expectedRevision: afterInitial.json<{ revision: number }>().revision, command: "replace_workbook",
+        payload: { artifactId: invalidArtifactId, previousWorkbookHash: "invalid", inputClassification: "confidential" },
+      } });
+      expect(invalidReplacement.statusCode).toBe(400);
+      await expect(readFile(join(rootDir, invalidRelativePath))).rejects.toThrow();
+
+      const staleArtifactId = "managed-stale-replacement";
+      const staleRelativePath = `uploads/${auth.sessionId}/workbook/${staleArtifactId}-stale.xlsx`;
+      server.registerArtifactForTest(auth.sessionId, staleArtifactId, staleRelativePath, "stale.xlsx", "confidential", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      await writeFile(join(rootDir, staleRelativePath), createAnonymousWorkbookZip());
+      const staleReplacement = await server.inject({ method: "POST", url: `/api/sessions/${auth.sessionId}/commands`, headers: auth.headers, payload: {
+        contractVersion: "f8-session-command-v1", sessionId: auth.sessionId, commandId: "second-stop-stale-replace", expectedRevision: 0, command: "replace_workbook",
+        payload: { artifactId: staleArtifactId, previousWorkbookHash: workbookHash, inputClassification: "confidential" },
+      } });
+      expect(staleReplacement.statusCode).toBe(409);
+      await expect(readFile(join(rootDir, staleRelativePath))).rejects.toThrow();
+
+      const replacementArtifactId = "managed-replacement";
+      const replacementRelativePath = `uploads/${auth.sessionId}/workbook/${replacementArtifactId}-replacement.xlsx`;
+      server.registerArtifactForTest(auth.sessionId, replacementArtifactId, replacementRelativePath, "replacement.xlsx", "confidential", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      await writeFile(join(rootDir, replacementRelativePath), createAnonymousWorkbookZip());
+      const replaceCommand = {
+        contractVersion: "f8-session-command-v1" as const,
+        sessionId: auth.sessionId,
+        commandId: "second-stop-replace",
+        expectedRevision: afterInitial.json<{ revision: number }>().revision,
+        command: "replace_workbook" as const,
+        payload: { artifactId: replacementArtifactId, previousWorkbookHash: workbookHash, inputClassification: "confidential" as const },
+      };
+      const replaced = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${auth.sessionId}/commands`,
+        headers: auth.headers,
+        payload: replaceCommand,
+      });
+      expect(replaced.statusCode, JSON.stringify(replaced.json())).toBe(202);
+      expect(replaced.json()).toMatchObject({ inputRevision: 2, state: "initial_scope_required" });
+      expect(replaced.json()).not.toHaveProperty("initialScopeSelection");
+
+      const replayArtifactId = "managed-replacement-replay-mismatch";
+      const replayRelativePath = `uploads/${auth.sessionId}/workbook/${replayArtifactId}-replay.xlsx`;
+      server.registerArtifactForTest(auth.sessionId, replayArtifactId, replayRelativePath, "replay.xlsx", "confidential", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      await writeFile(join(rootDir, replayRelativePath), createAnonymousWorkbookZip());
+      const mismatchedReplay = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${auth.sessionId}/commands`,
+        headers: auth.headers,
+        payload: { ...replaceCommand, payload: { ...replaceCommand.payload, artifactId: replayArtifactId } },
+      });
+      expect(mismatchedReplay.statusCode).toBe(409);
+      await expect(readFile(join(rootDir, replayRelativePath))).rejects.toThrow();
     } finally {
       await server.close();
       await rm(rootDir, { recursive: true, force: true });
@@ -1893,6 +1970,20 @@ describe("workbench server routes", () => {
         await store.close();
       }
 
+      const findings = await server.inject({
+        method: "GET",
+        url: `/api/sessions/${sessionId}/findings/f2`,
+        headers: browser.headers,
+      });
+      expect(findings.statusCode).toBe(200);
+      expect(findings.json()).toMatchObject({
+        contractVersion: "f2-findings-decision-projection-v1",
+        inputRevision: 1,
+        f2ReportArtifactId: "f2-current",
+        f2ReportContentHash: reportHash,
+        downstreamReadyWorksheetNames: ["Analysis-A", "Analysis-B"],
+      });
+
       const omitted = await server.inject({
         method: "POST",
         url: `/api/sessions/${sessionId}/commands`,
@@ -1910,6 +2001,13 @@ describe("workbench server routes", () => {
       expect(omitted.json()).toMatchObject({ error: { code: "evidence_mismatch" } });
 
       await writeFile(join(rootDir, reportRelativePath), "{}", "utf8");
+      const tamperedFindings = await server.inject({
+        method: "GET",
+        url: `/api/sessions/${sessionId}/findings/f2`,
+        headers: browser.headers,
+      });
+      expect(tamperedFindings.statusCode).toBe(409);
+      expect(tamperedFindings.json()).toMatchObject({ error: { code: "evidence_mismatch" } });
       const tampered = await server.inject({
         method: "POST",
         url: `/api/sessions/${sessionId}/commands`,
@@ -1968,6 +2066,42 @@ describe("workbench server routes", () => {
       });
       expect(mismatchedReplay.statusCode).toBe(409);
       expect(mismatchedReplay.json()).toEqual({ error: "command_receipt_mismatch" });
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects current-revision F2 findings whose workbook identity differs from the confirmed scope", async () => {
+    const rootDir = testRoot("workbench-server-downstream-workbook-mismatch");
+    await rm(rootDir, { recursive: true, force: true });
+    const sessionId = "87878787-8787-4787-8787-878787878787";
+    const confirmedWorkbookHash = "a".repeat(64);
+    const report = f2ImageBindingReportForArtifactTest("1".repeat(64), [{ worksheetName: "Analysis-A", relativePath: "worksheets/analysis-a/tolerance-path.png" }], "e".repeat(64));
+    const reportRelativePath = "f2/downstream-workbook-mismatch.json";
+    const reportHash = await writeJsonArtifact(rootDir, reportRelativePath, report);
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate(sessionId);
+      const store = await openSessionStore({ rootDir, sessionId });
+      try {
+        await store.applyCommand({
+          contractVersion: "f8-session-command-v1", sessionId, commandId: "seed-downstream-workbook-mismatch", expectedRevision: 0,
+          command: "upload_workbook", payload: { fileName: "book.xlsx", workbookBytes: new Uint8Array([80, 75, 3, 4]), inputClassification: "confidential" },
+        }, async (snapshot) => ({
+          snapshot: { ...snapshot, revision: 1, inputRevision: 1, state: "downstream_scope_required", activeAttempt: null, initialScopeSelection: { workbookContentHash: confirmedWorkbookHash, selectedWorksheetNames: ["Analysis-A"], confirmed: true, provenance: "user" }, artifactRefs: [{ artifactId: "f2-wrong-workbook", kind: "f2_report", revision: 1, validated: true }] },
+          artifactReferenceOps: { upsert: [{ artifactId: "f2-wrong-workbook", sessionId, inputRevision: 1, kind: "f2_report", relativePath: reportRelativePath, contentHash: reportHash }] },
+        }));
+      } finally { await store.close(); }
+
+      const findings = await server.inject({ method: "GET", url: `/api/sessions/${sessionId}/findings/f2`, headers: browser.headers });
+      expect(findings.statusCode).toBe(409);
+      expect(findings.json()).toMatchObject({ error: { code: "evidence_mismatch" } });
+      const confirmation = await server.inject({ method: "POST", url: `/api/sessions/${sessionId}/commands`, headers: browser.headers, payload: {
+        contractVersion: "f8-session-command-v1", sessionId, commandId: "confirm-wrong-workbook", expectedRevision: 1, command: "confirm_downstream_scope", payload: { workbookHash: confirmedWorkbookHash, worksheetNames: ["Analysis-A"] },
+      } });
+      expect(confirmation.statusCode).toBe(409);
+      expect(confirmation.json()).toMatchObject({ error: { code: "evidence_mismatch" } });
     } finally {
       await server.close();
       await rm(rootDir, { recursive: true, force: true });
@@ -2341,6 +2475,45 @@ describe("workbench server routes", () => {
       await rm(rootDir, { recursive: true, force: true });
     }
   }, 15_000);
+
+  it("restores the managed workbook binding for a committed replacement after restart", async () => {
+    const rootDir = testRoot("workbench-server-replacement-recovery");
+    await rm(rootDir, { recursive: true, force: true });
+    const sessionId = "15151515-1515-4515-8515-151515151515";
+    const artifactId = "replacement-book";
+    const relativePath = `uploads/${sessionId}/workbook/${artifactId}-book.xlsx`;
+    const store = await createSessionStore({ rootDir, sessionId, interactionLanguage: ENGLISH_LOCK });
+    try {
+      const committed = await store.applyCommand({
+        contractVersion: "f8-session-command-v1", sessionId, commandId: "crash-window-replace", expectedRevision: 0, command: "replace_workbook",
+        payload: { fileName: "book.xlsx", workbookBytes: new Uint8Array([80, 75, 3, 4]), inputClassification: "confidential", managedArtifactId: artifactId, previousWorkbookHash: "a".repeat(64) },
+      }, async (snapshot, command) => ({ snapshot: reduceSessionCommand({ ...snapshot, state: "completed" }, command) }));
+      expect(committed.activeAttempt?.commandId).toBe("crash-window-replace");
+      expect((await store.readCommittedCommand("crash-window-replace"))?.command).toBe("replace_workbook");
+    } finally { await store.close(); }
+    await mkdir(dirname(join(rootDir, relativePath)), { recursive: true });
+    await writeFile(join(rootDir, relativePath), createAnonymousWorkbookZip());
+    const artifactRegistry = join(rootDir, "runtime", "workbench", "registries", "artifacts");
+    await mkdir(artifactRegistry, { recursive: true });
+    await writeFile(join(artifactRegistry, `${sessionId}.json`), JSON.stringify({ [artifactId]: { sessionId, relativePath, fileName: "book.xlsx", classification: "confidential", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" } }));
+    const recovered: StageJob[] = [];
+    const queueFactory = async () => ({
+      async enqueue(job: StageJob) { return { jobId: job.jobId, attemptId: job.attemptId, status: "queued" as const }; },
+      async recover(job: StageJob) { recovered.push(job); return { jobId: job.jobId, attemptId: job.attemptId, status: "queued" as const }; },
+      async cancel() { return false; },
+      async reconcile() {},
+    });
+
+    const server = await buildWorkbenchServer({ rootDir, queueFactory, skipWebAssets: true });
+    try {
+      const active = JSON.parse(await readFile(join(rootDir, "runtime", "workbench", "registries", "active-workbooks", `${sessionId}.json`), "utf8"));
+      expect(active).toEqual({ artifactId });
+      expect(recovered).toEqual([expect.objectContaining({ attemptId: "crash-window-replace:f0_validating", stage: "f0_validating", payload: { sessionId } })]);
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
 
   it("keeps create/use ADO decisions pending for Task 13 Surface validation and independent Confirm write", async () => {
     const rootDir = testRoot("workbench-server-ado-host-action");

@@ -5,6 +5,22 @@ import type { WorkbenchApi } from "./api.js";
 import { useWorkbenchSession } from "./use-session.js";
 
 describe("useWorkbenchSession review artifacts", () => {
+  it("loads the server-projected F2 findings at the downstream decision gate", async () => {
+    const current = { ...snapshot("session-findings"), state: "downstream_scope_required" as const, revision: 3, inputRevision: 1 };
+    const projection = { contractVersion: "f2-findings-decision-projection-v1", downstreamReadyWorksheetNames: ["Analysis-A"] };
+    const api = {
+      bootstrap: vi.fn(async () => ({ sessionId: current.sessionId, snapshot: current, conversation: [] })),
+      subscribe: vi.fn(() => () => undefined),
+      loadArtifactJson: vi.fn(),
+      readF2Findings: vi.fn(async () => projection),
+    } as unknown as WorkbenchApi;
+
+    const { result } = renderHook(() => useWorkbenchSession(api));
+
+    await waitFor(() => expect(result.current.f2Findings).toEqual(projection));
+    expect(api.readF2Findings).toHaveBeenCalledWith("session-findings");
+  });
+
   it("treats locally computed conversation sequence as non-authoritative", async () => {
     vi.stubGlobal("crypto", { randomUUID: () => "web-turn-1" });
     const appended = {

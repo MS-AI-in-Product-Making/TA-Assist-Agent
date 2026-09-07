@@ -6,6 +6,7 @@ import {
   f5DataInterpretationResultSchema,
   f6OptimizationResultSchema,
   f2UserReportSchema,
+  f2FindingsDecisionProjectionSchema,
   f8SessionEventSchema,
   f8SessionSnapshotSchema,
   f8ScenarioDraftSchema,
@@ -17,6 +18,7 @@ import {
   type F5DataInterpretationResult,
   type F6OptimizationResultV2,
   type F2UserReport,
+  type F2FindingsDecisionProjection,
   type F8ScenarioDraft,
   type F8AdoProjection,
   type F8AdoWriteConfirmation,
@@ -91,6 +93,8 @@ export interface WorkbenchApi {
   bootstrap(): Promise<BootstrapResult>;
   subscribe(sessionId: string, handlers: WorkbenchSubscriptionHandlers, lastEventId?: string): () => void;
   uploadWorkbook(sessionId: string, expectedRevision: number, file: File): Promise<{ readonly snapshot: F8SessionSnapshot; readonly workbookHash: string }>;
+  replaceWorkbook(sessionId: string, expectedRevision: number, previousWorkbookHash: string, file: File): Promise<{ readonly snapshot: F8SessionSnapshot; readonly workbookHash: string }>;
+  readF2Findings(sessionId: string): Promise<F2FindingsDecisionProjection>;
   submitCommand<TPayload extends F8PublicSessionCommand["payload"]>(
     sessionId: string,
     expectedRevision: number,
@@ -234,6 +238,27 @@ export function createWorkbenchApi(): WorkbenchApi {
         } as F8PublicSessionCommand["payload"],
       });
       return { snapshot, workbookHash: upload.contentHash };
+    },
+    async replaceWorkbook(sessionId, expectedRevision, previousWorkbookHash, file) {
+      const form = new FormData();
+      form.set("kind", "workbook");
+      form.set("file", file);
+      const uploadResponse = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/files`, {
+        method: "POST", credentials: "same-origin", headers: { "x-csrf-token": await readCsrfToken() }, body: form,
+      });
+      const upload = await parseJsonResponse(uploadResponse) as { readonly artifactId?: unknown; readonly contentHash?: unknown };
+      if (typeof upload.artifactId !== "string" || typeof upload.contentHash !== "string") {
+        throw createTypedError({ code: "validation_error", summary: "The server did not return a governed replacement workbook reference.", suggestedAction: "Upload the replacement workbook again.", affectedInputReferences: [sessionId] });
+      }
+      const snapshot = await submitCommandInternal({
+        sessionId, expectedRevision, command: "replace_workbook",
+        payload: { artifactId: upload.artifactId, previousWorkbookHash, inputClassification: "confidential" },
+      });
+      return { snapshot, workbookHash: upload.contentHash };
+    },
+    async readF2Findings(sessionId) {
+      const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/findings/f2`, { credentials: "same-origin" });
+      return f2FindingsDecisionProjectionSchema.parse(await parseJsonResponse(response));
     },
     async submitCommand(sessionId, expectedRevision, command, payload) {
       return submitCommandInternal({ sessionId, expectedRevision, command, payload });

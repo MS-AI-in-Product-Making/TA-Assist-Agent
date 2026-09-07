@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { inputMetadata, type UiCatalogLanguage } from "@ai-assist/product-language";
+import { inputMetadata, type UiCatalogLanguage } from "@ai-assist/product-language/input-metadata";
 import { InputGuidance, inputGuidanceId } from "./InputGuidance.js";
 
 export interface WorksheetOption {

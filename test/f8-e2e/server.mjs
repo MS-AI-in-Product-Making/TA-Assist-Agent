@@ -36,7 +36,8 @@ const calculatedDraft = {
   factorIdentity: { worksheetName: "AJ_GAP", tableId: "table-a", sourceRow: 2, factorName: "AJ center to C-bucket", unit: "mm" },
 };
 await rm(rootDir, { recursive: true, force: true });
-const started = await startWorkbenchServer({ rootDir, port: 0, runner: runSeededAttempt, whatIfService: { calculate: async () => calculatedDraft, createPromotionPreview: async () => { throw new Error("not used"); } } });
+const interactionLanguage = { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "turn-en", source: "workflow_start", fallbackUsed: false };
+const started = await startWorkbenchServer({ rootDir, port: 0, interactionLanguage, runner: runSeededAttempt, whatIfService: { calculate: async () => calculatedDraft, createPromotionPreview: async () => { throw new Error("not used"); } } });
 const apiOrigin = new URL(started.url).origin;
 const auth = await started.server.testAuthenticate(SESSION_ID);
 const adoSelectionAuth = await started.server.testAuthenticate(ADO_SELECTION_SESSION_ID);

@@ -18,6 +18,10 @@
     "./review": {
       "types": "./dist/review.d.ts",
       "import": "./dist/review.js"
+    },
+    "./product-stage-projections": {
+      "types": "./dist/product-stage-projections.d.ts",
+      "import": "./dist/product-stage-projections.js"
     }
   },
   "dependencies": {

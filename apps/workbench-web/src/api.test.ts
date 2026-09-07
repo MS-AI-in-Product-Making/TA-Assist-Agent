@@ -159,6 +159,37 @@ describe("workbench browser API", () => {
     });
   });
 
+  it("reads and validates the governed current F2 findings projection", async () => {
+    const projection = {
+      contractVersion: "f2-findings-decision-projection-v1",
+      workbookHash: "a".repeat(64), inputRevision: 2, f2ReportArtifactId: "f2-current", f2ReportContentHash: "b".repeat(64), findingDigest: "c".repeat(64),
+      worksheetFindings: [{ contractVersion: "f2-worksheet-finding-projection-v1", worksheetName: "Analysis-A", readiness: "downstream_ready", identifierWarnings: [], blockers: [], sourceRows: [] }],
+      downstreamReadyWorksheetNames: ["Analysis-A"],
+    };
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify(projection), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(await createWorkbenchApi().readF2Findings("session-1")).toEqual(projection);
+    expect(fetchMock).toHaveBeenCalledWith("/api/sessions/session-1/findings/f2", { credentials: "same-origin" });
+  });
+
+  it("replaces a workbook through managed upload without sending browser file bytes in JSON", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ csrfToken: "csrf" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ artifactId: "managed-replacement", contentHash: "d".repeat(64) }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(snapshot({ revision: 4 })), { status: 202 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const api = createWorkbenchApi();
+
+    await api.replaceWorkbook("session-1", 3, "a".repeat(64), new File(["replacement"], "replacement.xlsx"));
+
+    expect((fetchMock.mock.calls[1]![1] as RequestInit).body).toBeInstanceOf(FormData);
+    expect(JSON.parse(String((fetchMock.mock.calls[2]![1] as RequestInit).body))).toMatchObject({
+      command: "replace_workbook",
+      payload: { artifactId: "managed-replacement", previousWorkbookHash: "a".repeat(64), inputClassification: "confidential" },
+    });
+  });
+
   it("refreshes CSRF after browser session rotation before the first upload", async () => {
     vi.stubGlobal("location", { href: "http://127.0.0.1/" });
     vi.stubGlobal("history", { replaceState: vi.fn() });

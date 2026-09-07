@@ -1,5 +1,5 @@
 import type { F8AdoProjection, F8AdoWriteConfirmation } from "@ai-assist/contracts";
-import { inputMetadata, type UiCatalogLanguage } from "@ai-assist/product-language";
+import { inputMetadata, type UiCatalogLanguage } from "@ai-assist/product-language/input-metadata";
 import { useState } from "react";
 import { InputGuidance, inputGuidanceId } from "./InputGuidance.js";
 

@@ -413,7 +413,7 @@ class SqliteSessionStore implements SessionStore {
   async readCommittedCommand(commandId: string): Promise<F8SessionCommand | undefined> {
     const row = this.readCommandRow(commandId);
     if (row?.result_json === null || row === undefined) return undefined;
-    return f8SessionCommandSchema.parse(JSON.parse(row.command_json) as unknown);
+    return f8SessionCommandSchema.parse(parseStoredCommand(row.command_json));
   }
 
   async applyCommand(commandInput: F8SessionCommand, reducer: SessionCommandReducer): Promise<F8SessionSnapshot> {
@@ -1144,7 +1144,40 @@ function rollbackQuietly(database: DatabaseSync): void {
 }
 
 function stringifyJson(value: unknown): string {
-  return JSON.stringify(value);
+  return JSON.stringify(value, (_key, candidate: unknown) => candidate instanceof Uint8Array
+    ? { $type: "Uint8Array", data: Array.from(candidate) }
+    : candidate);
+}
+
+function parseStoredCommand(value: string): unknown {
+  const parsed = JSON.parse(value) as unknown;
+  if (typeof parsed !== "object" || parsed === null || !("payload" in parsed)) return parsed;
+  const payload = (parsed as { readonly payload?: unknown }).payload;
+  if (typeof payload !== "object" || payload === null || !("workbookBytes" in payload)) return parsed;
+  const workbookBytes = (payload as { readonly workbookBytes?: unknown }).workbookBytes;
+  const byteValues = storedByteValues(workbookBytes);
+  return byteValues === undefined ? parsed : { ...parsed, payload: { ...payload, workbookBytes: Uint8Array.from(byteValues) } };
+}
+
+function storedByteValues(value: unknown): number[] | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  if ("$type" in value && "data" in value) {
+    const tagged = value as { readonly $type?: unknown; readonly data?: unknown };
+    return tagged.$type === "Uint8Array" && Array.isArray(tagged.data) && tagged.data.every(isByte) ? tagged.data : undefined;
+  }
+  if ("type" in value && "data" in value) {
+    const buffer = value as { readonly type?: unknown; readonly data?: unknown };
+    return buffer.type === "Buffer" && Array.isArray(buffer.data) && buffer.data.every(isByte) ? buffer.data : undefined;
+  }
+  const entries = Object.entries(value);
+  if (!entries.every(([key, byte]) => /^(0|[1-9]\d*)$/.test(key) && isByte(byte))) return undefined;
+  const sorted = entries.sort(([left], [right]) => Number(left) - Number(right));
+  if (!sorted.every(([key], index) => Number(key) === index)) return undefined;
+  return sorted.map(([, byte]) => byte as number);
+}
+
+function isByte(value: unknown): value is number {
+  return Number.isInteger(value) && typeof value === "number" && value >= 0 && value <= 255;
 }
 
 function canonicalizeJson(value: string): string {

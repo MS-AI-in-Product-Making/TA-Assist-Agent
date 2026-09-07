@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import type { ConversationTurn } from "@ai-assist/conversation";
-import { inputMetadata, type UiCatalogLanguage } from "@ai-assist/product-language";
+import { inputMetadata, type UiCatalogLanguage } from "@ai-assist/product-language/input-metadata";
 
 import type { WorkbenchApi } from "../api.js";
 import { projectProductText } from "../web-projection.js";

@@ -231,6 +231,29 @@ describe("SessionStore", () => {
     await store.close();
   });
 
+  it("reopens committed workbook bytes supplied as a Node Buffer", async () => {
+    const rootDir = await createTempRoot();
+    const store = await createStore(rootDir);
+    await store.applyCommand({
+      contractVersion: "f8-session-command-v1",
+      sessionId: SESSION_ID,
+      commandId: COMMAND_ID,
+      expectedRevision: 0,
+      command: "upload_workbook",
+      payload: { fileName: "book.xlsx", workbookBytes: Buffer.from([80, 75, 3, 4]), inputClassification: "confidential", managedArtifactId: "managed-book" },
+    }, acceptWorkbook);
+    await store.close();
+
+    const reopened = await openSessionStore({ rootDir, sessionId: SESSION_ID });
+    try {
+      const command = await reopened.readCommittedCommand(COMMAND_ID);
+      expect(command?.command).toBe("upload_workbook");
+      expect(command?.payload.workbookBytes).toEqual(new Uint8Array([80, 75, 3, 4]));
+    } finally {
+      await reopened.close();
+    }
+  });
+
   it("rejects attempt results that switch to a different active attempt", async () => {
     const rootDir = await createTempRoot();
     const store = await createStore(rootDir);
