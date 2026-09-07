@@ -52,7 +52,7 @@ import { WorkbenchAuth, SESSION_COOKIE_NAME, type HostBearerOptions, type Authen
 import { createBrowserBootstrapRendezvous, renderBootstrapPage, renderBootstrapScript, type BrowserBootstrapRendezvous } from "./bootstrap.js";
 import { applySecurityHeaders, isMutation, LOOPBACK_HOST, rejectIfUnsafeBrowserBoundary, safeErrorResponse } from "./security.js";
 import { artifactsRoutes } from "./routes/artifacts.js";
-import { commandsRoutes } from "./routes/commands.js";
+import { commandsRoutes, materializeDownstreamScopeDecision } from "./routes/commands.js";
 import { conversationRoutes } from "./routes/conversation.js";
 import { filesRoutes } from "./routes/files.js";
 import { hostActionsRoutes } from "./routes/host-actions.js";
@@ -1281,7 +1281,9 @@ class StoreBackedQueueSessionStore implements QueueSessionStore {
     if (!report.success || report.data.status === "inputRejected") return;
     const worksheetNames = report.data.worksheets.filter(({ status }) => status === "ready").map(({ worksheetName }) => worksheetName);
     if (worksheetNames.length === 0 || snapshot.initialScopeSelection === undefined) return;
-    const next = await this.sessions.applyCommand({ contractVersion: "f8-session-command-v1", sessionId: snapshot.sessionId, commandId: `${completedAttemptId}:auto-downstream`, expectedRevision: snapshot.revision, command: "confirm_downstream_scope", payload: { workbookHash: snapshot.initialScopeSelection.workbookContentHash, worksheetNames, provenance: "internal_fixture" } });
+    const command = { contractVersion: "f8-session-command-v1" as const, sessionId: snapshot.sessionId, commandId: `${completedAttemptId}:auto-downstream`, expectedRevision: snapshot.revision, command: "confirm_downstream_scope" as const, payload: { workbookHash: snapshot.initialScopeSelection.workbookContentHash, worksheetNames } };
+    const payload = await materializeDownstreamScopeDecision(command, { rootDir: this.rootDir, sessions: this.sessions });
+    const next = await this.sessions.applyCommand({ ...command, payload: { ...(payload as Record<string, unknown>), provenance: "internal_fixture" } });
     await this.followUp?.(next);
   }
 

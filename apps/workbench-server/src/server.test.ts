@@ -85,6 +85,20 @@ function f3Report(factorDescription: string, overrides: Record<string, unknown> 
   } as const;
 }
 
+function governedDownstreamSelection(workbookContentHash: string, inputRevision: number) {
+  return {
+    workbookContentHash,
+    selectedWorksheetNames: ["Analysis-A"],
+    confirmed: true as const,
+    provenance: "user" as const,
+    decision: "continue_ready" as const,
+    inputRevision,
+    f2ReportArtifactId: `f2-report-${inputRevision}`,
+    f2ReportContentHash: "b".repeat(64),
+    findingDigest: "c".repeat(64),
+  };
+}
+
 async function writeJsonArtifact(rootDir: string, relativePath: string, data: unknown): Promise<string> {
   const text = `${JSON.stringify(data, null, 2)}\n`;
   await mkdir(dirname(join(rootDir, relativePath)), { recursive: true });
@@ -530,12 +544,7 @@ describe("workbench server routes", () => {
             revision: snapshot.revision + 1,
             inputRevision: 1,
             state: "failed",
-            downstreamScopeSelection: {
-              workbookContentHash: REVIEW_CONTEXT.workbookHash,
-              selectedWorksheetNames: ["Analysis-A"],
-              confirmed: true,
-              provenance: "user",
-            },
+            downstreamScopeSelection: governedDownstreamSelection(REVIEW_CONTEXT.workbookHash, 1),
             priorRunReferences: [{ featureId: "F2", referenceId: "f2-run-2026-08-25", contractVersion: "v1", workbookHash: REVIEW_CONTEXT.workbookHash, runReference: REVIEW_CONTEXT.baselineRunReference }],
             activeAttempt: { attemptId: "seed-f4:f4_running", stage: "f4_running", status: "failed", startedAt: "2026-08-25T00:00:00.000Z", endedAt: "2026-08-25T00:00:01.000Z" },
           },
@@ -695,12 +704,7 @@ describe("workbench server routes", () => {
               confirmed: true,
               provenance: "user",
             },
-            downstreamScopeSelection: {
-              workbookContentHash: workbookHash,
-              selectedWorksheetNames: ["Analysis-A"],
-              confirmed: true,
-              provenance: "user",
-            },
+            downstreamScopeSelection: governedDownstreamSelection(workbookHash, 1),
             priorRunReferences: [
               {
                 featureId: "F2",
@@ -828,12 +832,7 @@ describe("workbench server routes", () => {
               confirmed: true,
               provenance: "user",
             },
-            downstreamScopeSelection: {
-              workbookContentHash: workbookHash,
-              selectedWorksheetNames: ["Analysis-A"],
-              confirmed: true,
-              provenance: "user",
-            },
+            downstreamScopeSelection: governedDownstreamSelection(workbookHash, 1),
             priorRunReferences: [
               {
                 featureId: "F2",
@@ -1034,7 +1033,7 @@ describe("workbench server routes", () => {
             revision: 1,
             inputRevision: 1,
             state: "image_decision_required",
-            downstreamScopeSelection: { workbookContentHash: REVIEW_CONTEXT.workbookHash, selectedWorksheetNames: ["Analysis-A"], confirmed: true },
+            downstreamScopeSelection: governedDownstreamSelection(REVIEW_CONTEXT.workbookHash, 1),
             priorRunReferences: [{ featureId: "F2", referenceId: "f2-run-2026-08-25", contractVersion: "v1", workbookHash: REVIEW_CONTEXT.workbookHash, runReference: REVIEW_CONTEXT.baselineRunReference }],
             activeAttempt: null,
           },
@@ -1097,11 +1096,7 @@ describe("workbench server routes", () => {
             revision: snapshot.revision + 1,
             inputRevision: 1,
             state: "failed",
-            downstreamScopeSelection: {
-              workbookContentHash: REVIEW_CONTEXT.workbookHash,
-              selectedWorksheetNames: ["Analysis-A"],
-              confirmed: true,
-            },
+            downstreamScopeSelection: governedDownstreamSelection(REVIEW_CONTEXT.workbookHash, 1),
             priorRunReferences: seedF2Lineage
               ? [{ featureId: "F2", referenceId: "f2-run-2026-08-25", contractVersion: "v1", workbookHash: REVIEW_CONTEXT.workbookHash, runReference: REVIEW_CONTEXT.baselineRunReference }]
               : [],
@@ -1851,6 +1846,134 @@ describe("workbench server routes", () => {
     }
   }, 15_000);
 
+  it("materializes the exact downstream-ready set with revision-bound F2 evidence", async () => {
+    const rootDir = testRoot("workbench-server-downstream-exact-set");
+    await rm(rootDir, { recursive: true, force: true });
+    const sessionId = "88888888-8888-4888-8888-888888888888";
+    const workbookHash = "a".repeat(64);
+    const report = f2ImageBindingReportForArtifactTest("1".repeat(64), [
+      { worksheetName: "Analysis-A", relativePath: "worksheets/analysis-a/tolerance-path.png" },
+      { worksheetName: "Analysis-B", relativePath: "worksheets/analysis-b/tolerance-path.png" },
+    ]);
+    const reportRelativePath = "f2/downstream-exact-set.json";
+    const reportHash = await writeJsonArtifact(rootDir, reportRelativePath, report);
+
+    const server = await buildWorkbenchServer({ rootDir, skipWebAssets: true });
+    try {
+      const browser = await server.testAuthenticate(sessionId);
+      const store = await openSessionStore({ rootDir, sessionId });
+      try {
+        await store.applyCommand({
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "seed-downstream-exact-set",
+          expectedRevision: 0,
+          command: "upload_workbook",
+          payload: { fileName: "book.xlsx", workbookBytes: new Uint8Array([80, 75, 3, 4]), inputClassification: "confidential" },
+        }, async (snapshot) => ({
+          snapshot: {
+            ...snapshot,
+            revision: 1,
+            inputRevision: 1,
+            state: "downstream_scope_required",
+            activeAttempt: null,
+            initialScopeSelection: {
+              workbookContentHash: workbookHash,
+              selectedWorksheetNames: ["Analysis-A", "Analysis-B"],
+              confirmed: true,
+              provenance: "user",
+            },
+            artifactRefs: [{ artifactId: "f2-current", kind: "f2_report", revision: 1, validated: true }],
+          },
+          artifactReferenceOps: {
+            upsert: [{ artifactId: "f2-current", sessionId, inputRevision: 1, kind: "f2_report", relativePath: reportRelativePath, contentHash: reportHash }],
+          },
+        }));
+      } finally {
+        await store.close();
+      }
+
+      const omitted = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${sessionId}/commands`,
+        headers: browser.headers,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "confirm-downstream-omitted",
+          expectedRevision: 1,
+          command: "confirm_downstream_scope",
+          payload: { workbookHash, worksheetNames: ["Analysis-A"] },
+        },
+      });
+      expect(omitted.statusCode).toBe(409);
+      expect(omitted.json()).toMatchObject({ error: { code: "evidence_mismatch" } });
+
+      await writeFile(join(rootDir, reportRelativePath), "{}", "utf8");
+      const tampered = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${sessionId}/commands`,
+        headers: browser.headers,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "confirm-downstream-tampered",
+          expectedRevision: 1,
+          command: "confirm_downstream_scope",
+          payload: { workbookHash, worksheetNames: ["Analysis-A", "Analysis-B"] },
+        },
+      });
+      expect(tampered.statusCode).toBe(409);
+      expect(tampered.json()).toMatchObject({ error: { code: "evidence_mismatch" } });
+      expect(await writeJsonArtifact(rootDir, reportRelativePath, report)).toBe(reportHash);
+
+      const exact = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${sessionId}/commands`,
+        headers: browser.headers,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "confirm-downstream-exact",
+          expectedRevision: 1,
+          command: "confirm_downstream_scope",
+          payload: { workbookHash, worksheetNames: ["Analysis-A", "Analysis-B"] },
+        },
+      });
+      expect(exact.statusCode).toBe(202);
+      expect(exact.json()).toMatchObject({
+        downstreamScopeSelection: {
+          decision: "continue_ready",
+          workbookContentHash: workbookHash,
+          selectedWorksheetNames: ["Analysis-A", "Analysis-B"],
+          inputRevision: 1,
+          f2ReportArtifactId: "f2-current",
+          f2ReportContentHash: reportHash,
+          findingDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+        },
+      });
+
+      const mismatchedReplay = await server.inject({
+        method: "POST",
+        url: `/api/sessions/${sessionId}/commands`,
+        headers: browser.headers,
+        payload: {
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "confirm-downstream-exact",
+          expectedRevision: 1,
+          command: "confirm_downstream_scope",
+          payload: { workbookHash, worksheetNames: ["Analysis-A"] },
+        },
+      });
+      expect(mismatchedReplay.statusCode).toBe(409);
+      expect(mismatchedReplay.json()).toEqual({ error: "command_receipt_mismatch" });
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
   it("rejects blocked worksheets during downstream confirmation using current F2 readiness evidence", async () => {
     const rootDir = testRoot("workbench-server-downstream-blocked");
     await rm(rootDir, { recursive: true, force: true });
@@ -2148,6 +2271,14 @@ describe("workbench server routes", () => {
           },
         };
       }
+      if (job.stage === "f1_f2_running") {
+        const report = f2ImageBindingReportForArtifactTest("1".repeat(64), [
+          { worksheetName: "Analysis-A", relativePath: "worksheets/analysis-a/tolerance-path.png" },
+        ]);
+        const f2Root = join(rootDir, "fixture-f2");
+        await writeJsonArtifact(rootDir, "fixture-f2/Feature2-Report.json", report);
+        return { featureId: "F2", status: "completed", runId: "fixture-f2", f2Root, workbookContentHash: "a".repeat(64), report };
+      }
       return { status: "completed" };
     });
     const server = await buildWorkbenchServer({ rootDir, runner, queueFactory: immediateQueue, skipWebAssets: true, allowInternalFixtureAutoConfirmation: true });
@@ -2162,11 +2293,19 @@ describe("workbench server routes", () => {
       const response = await server.inject({ method: "POST", url: `/api/sessions/${auth.sessionId}/commands`, headers: auth.headers, payload: { contractVersion: "f8-session-command-v1", sessionId: auth.sessionId, commandId: "auto-upload-fixture", expectedRevision: 0, command: "upload_workbook", payload: { artifactId, inputClassification: "confidential" } } });
 
       expect(response.statusCode).toBe(202);
+      expect(stages).toEqual(expect.arrayContaining(["f0_validating", "f1_f2_running", "f3_running"]));
       expect(response.json()).toMatchObject({
-        state: "downstream_scope_required",
         initialScopeSelection: { selectedWorksheetNames: ["Analysis-A"], confirmed: true, provenance: "internal_fixture" },
+        downstreamScopeSelection: {
+          selectedWorksheetNames: ["Analysis-A"],
+          confirmed: true,
+          provenance: "internal_fixture",
+          decision: "continue_ready",
+          inputRevision: 1,
+          f2ReportContentHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+          findingDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+        },
       });
-      expect(stages).toEqual(["f0_validating", "f1_f2_running"]);
     } finally {
       await server.close();
       await rm(rootDir, { recursive: true, force: true });
@@ -2229,7 +2368,7 @@ describe("workbench server routes", () => {
           revision: snapshot.revision + 1,
           inputRevision: 1,
           activeAttempt: null,
-          downstreamScopeSelection: { workbookContentHash: "a".repeat(64), selectedWorksheetNames: ["Analysis-A"], confirmed: true, provenance: "user" },
+          downstreamScopeSelection: governedDownstreamSelection("a".repeat(64), 1),
           priorRunReferences: [{ featureId: "F2", referenceId: "f2-run-a", contractVersion: "v1", workbookHash: "a".repeat(64), runReference: "f2-baseline-a" }],
           artifactRefs: [{ artifactId: "f3-current-host-action", kind: "f3_report", revision: 1, validated: true, reviewContextId: REVIEW_CONTEXT_ID }],
         }, artifactReferenceOps: { upsert: [{ artifactId: "f3-current-host-action", sessionId: browser.sessionId, inputRevision: 1, kind: "f3_report", relativePath: "f3/current-host-action.json", contentHash: reportHash, reviewContext: REVIEW_CONTEXT }] } }));
@@ -2337,7 +2476,7 @@ describe("workbench server routes", () => {
           inputRevision: 2,
           state: "ado_decision_required",
           activeAttempt: null,
-          downstreamScopeSelection: { workbookContentHash: "a".repeat(64), selectedWorksheetNames: ["Analysis-A"], confirmed: true, provenance: "user" },
+          downstreamScopeSelection: governedDownstreamSelection("a".repeat(64), 2),
           priorRunReferences: [{ featureId: "F2", referenceId: "f2-run-a", contractVersion: "v1", workbookHash: "a".repeat(64), runReference: "f2-baseline-a" }],
           artifactRefs: [
             { artifactId: "f3-old", kind: "f3_report", revision: 1, validated: true, reviewContextId: REVIEW_CONTEXT_ID },

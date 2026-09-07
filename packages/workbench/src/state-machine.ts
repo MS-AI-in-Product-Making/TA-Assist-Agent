@@ -135,7 +135,16 @@ function reduceConfirmDownstreamScope(
   snapshot: F8SessionSnapshot,
   command: F8SessionCommand,
 ): F8SessionSnapshot {
-  const payload = command.payload as { workbookHash: string; worksheetNames: string[]; provenance?: "user" | "internal_fixture" };
+  const payload = command.payload as {
+    decision: "continue_ready";
+    workbookHash: string;
+    inputRevision: number;
+    worksheetNames: string[];
+    f2ReportArtifactId: string;
+    f2ReportContentHash: string;
+    findingDigest: string;
+    provenance?: "user" | "internal_fixture";
+  };
   const initial = snapshot.initialScopeSelection;
   if (initial === undefined || initial.confirmed !== true) {
     throw createTypedError({
@@ -153,6 +162,14 @@ function reduceConfirmDownstreamScope(
       affectedInputReferences: [command.commandId, snapshot.sessionId],
     });
   }
+  if (payload.inputRevision !== snapshot.inputRevision) {
+    throw createTypedError({
+      code: "evidence_mismatch",
+      summary: "Downstream worksheet confirmation does not match the current input revision.",
+      suggestedAction: "Refresh the session and confirm the findings for the current workbook revision.",
+      affectedInputReferences: [command.commandId, snapshot.sessionId],
+    });
+  }
   const initialWorksheetSet = new Set(initial.selectedWorksheetNames);
   const outOfScope = payload.worksheetNames.filter((worksheetName) => !initialWorksheetSet.has(worksheetName));
   if (outOfScope.length > 0) {
@@ -163,12 +180,28 @@ function reduceConfirmDownstreamScope(
       affectedInputReferences: [command.commandId, ...outOfScope],
     });
   }
+  const currentF2References = (snapshot.artifactRefs ?? []).filter((reference) =>
+    reference.kind === "f2_report" && reference.validated && reference.revision === snapshot.inputRevision,
+  );
+  if (currentF2References.length !== 1 || currentF2References[0]!.artifactId !== payload.f2ReportArtifactId) {
+    throw createTypedError({
+      code: "evidence_mismatch",
+      summary: "Downstream worksheet confirmation does not match the current Data Cleaning report identity.",
+      suggestedAction: "Refresh the current Data Cleaning findings and confirm again.",
+      affectedInputReferences: [command.commandId, payload.f2ReportArtifactId],
+    });
+  }
   return transitionWithAttempt(snapshot, command, "f3_running", {
     downstreamScopeSelection: {
       workbookContentHash: payload.workbookHash,
       selectedWorksheetNames: payload.worksheetNames,
       confirmed: true,
       provenance: payload.provenance ?? "user",
+      decision: payload.decision,
+      inputRevision: payload.inputRevision,
+      f2ReportArtifactId: payload.f2ReportArtifactId,
+      f2ReportContentHash: payload.f2ReportContentHash,
+      findingDigest: payload.findingDigest,
     },
   });
 }

@@ -93,7 +93,10 @@ describe("workbench state machine", () => {
   it("records two distinct worksheet confirmations with user provenance", () => {
     const api = requireApi();
     const initial = api.reduceSessionCommand(
-      baseSnapshot({ state: "initial_scope_required" }),
+      baseSnapshot({
+        state: "initial_scope_required",
+        artifactRefs: [{ artifactId: "f2-report-0", kind: "f2_report", revision: 0, validated: true }],
+      }),
       {
         contractVersion: "f8-session-command-v1",
         sessionId: SESSION_ID,
@@ -117,7 +120,7 @@ describe("workbench state machine", () => {
         commandId: "confirm-downstream-user",
         expectedRevision: ready.revision,
         command: "confirm_downstream_scope",
-        payload: { workbookHash: "a".repeat(64), worksheetNames: ["Analysis-A"] },
+        payload: downstreamPayload({ inputRevision: ready.inputRevision }),
       },
     );
 
@@ -132,7 +135,37 @@ describe("workbench state machine", () => {
       selectedWorksheetNames: ["Analysis-A"],
       confirmed: true,
       provenance: "user",
+      decision: "continue_ready",
+      inputRevision: ready.inputRevision,
+      f2ReportArtifactId: "f2-report-0",
+      f2ReportContentHash: "b".repeat(64),
+      findingDigest: "c".repeat(64),
     });
+  });
+
+  it("rejects downstream confirmation bound to a different input revision", () => {
+    const api = requireApi();
+    const snapshot = baseSnapshot({
+      state: "downstream_scope_required",
+      revision: 2,
+      inputRevision: 4,
+      initialScopeSelection: {
+        workbookContentHash: "a".repeat(64),
+        selectedWorksheetNames: ["Analysis-A"],
+        confirmed: true,
+        provenance: "user",
+      },
+      artifactRefs: [{ artifactId: "f2-report-4", kind: "f2_report", revision: 4, validated: true }],
+    });
+
+    expect(() => api.reduceSessionCommand(snapshot, {
+      contractVersion: "f8-session-command-v1",
+      sessionId: SESSION_ID,
+      commandId: "confirm-downstream-stale-input",
+      expectedRevision: 2,
+      command: "confirm_downstream_scope",
+      payload: downstreamPayload({ inputRevision: 3, f2ReportArtifactId: "f2-report-4" }),
+    })).toThrow(/input revision/i);
   });
 
   it("records fixture provenance for auto initial confirmation", () => {
@@ -176,7 +209,7 @@ describe("workbench state machine", () => {
       commandId: "confirm-downstream-hash-drift",
       expectedRevision: 2,
       command: "confirm_downstream_scope",
-      payload: { workbookHash: "b".repeat(64), worksheetNames: ["Analysis-A"] },
+      payload: downstreamPayload({ workbookHash: "b".repeat(64) }),
     })).toThrow(/workbook hash/i);
   });
 
@@ -199,7 +232,7 @@ describe("workbench state machine", () => {
       commandId: "confirm-downstream-out-of-scope",
       expectedRevision: 2,
       command: "confirm_downstream_scope",
-      payload: { workbookHash: "a".repeat(64), worksheetNames: ["Analysis-B"] },
+      payload: downstreamPayload({ worksheetNames: ["Analysis-B"] }),
     })).toThrow(/outside the confirmed initial scope/i);
   });
 
@@ -864,4 +897,17 @@ async function importStateMachineWithGovernanceStatus(status: string): Promise<R
   }
 
   return api as Required<WorkbenchExports>;
+}
+
+function downstreamPayload(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
+  return {
+    decision: "continue_ready",
+    workbookHash: "a".repeat(64),
+    inputRevision: 0,
+    worksheetNames: ["Analysis-A"],
+    f2ReportArtifactId: "f2-report-0",
+    f2ReportContentHash: "b".repeat(64),
+    findingDigest: "c".repeat(64),
+    ...overrides,
+  };
 }

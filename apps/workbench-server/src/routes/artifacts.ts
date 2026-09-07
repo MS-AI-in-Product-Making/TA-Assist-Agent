@@ -120,9 +120,10 @@ async function isSafeManagedPath(rootDir: string, targetPath: string): Promise<b
   }
 }
 
-async function readManagedArtifact(rootDir: string, targetPath: string): Promise<Buffer | undefined> {
+export async function readManagedArtifact(rootDir: string, targetPath: string): Promise<Buffer | undefined> {
   let handle: Awaited<ReturnType<typeof open>> | undefined;
   try {
+    if (!await isSafeManagedPath(rootDir, targetPath)) return undefined;
     handle = await open(targetPath, "r");
     const handleStat = await handle.stat();
     if (!handleStat.isFile() || handleStat.isBlockDevice() || handleStat.isCharacterDevice() || !await isSafeManagedPath(rootDir, targetPath)) return undefined;

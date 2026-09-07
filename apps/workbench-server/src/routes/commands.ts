@@ -1,12 +1,13 @@
-import { open } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 
 import { createTypedError, f2UserReportSchema, f8PublicSessionCommandSchema, f8SessionCommandSchema } from "@ai-assist/contracts";
-import { openSessionStore } from "@ai-assist/workbench";
+import { openSessionStore, projectF2FindingsDecision } from "@ai-assist/workbench";
 import type { FastifyPluginAsync } from "fastify";
 
 import { errorStatusCode, safeErrorResponse } from "../security.js";
 import type { WorkbenchServerContext } from "../server.js";
+import { readManagedArtifact } from "./artifacts.js";
 import { resolveF6DraftArtifactReference, verifyF6DraftArtifactIdentity } from "./f6-inputs.js";
 
 type PublicSessionCommand = ReturnType<typeof f8PublicSessionCommandSchema.parse>;
@@ -41,6 +42,9 @@ export const commandsRoutes: FastifyPluginAsync<{ readonly context: WorkbenchSer
     if (receipt !== undefined) {
       const committedCommand = await context.sessions.readCommittedCommand(sessionId, publicCommand.data.commandId);
       if (committedCommand === undefined) return reply.code(409).send({ error: "command_receipt_mismatch" });
+      if (!matchesCommittedPublicCommand(publicCommand.data, committedCommand)) {
+        return reply.code(409).send({ error: "command_receipt_mismatch" });
+      }
       await context.recoverCommittedCommand(receipt, committedCommand);
       return reply.code(202).send((await context.sessions.read(sessionId)) ?? receipt);
     }
@@ -92,7 +96,8 @@ async function createInternalCommand(command: PublicSessionCommand, context: Wor
     await validateF6DraftConfirmation(command, context);
   }
   if (isConfirmDownstreamScopeCommand(command)) {
-    await validateDownstreamScopeReadiness(command, context);
+    const payload = await materializeDownstreamScopeDecision(command, context);
+    return { ...command, payload };
   }
   return command;
 }
@@ -196,13 +201,18 @@ function resolveCurrentReviewContextId(snapshot: {
   return reviewContextId;
 }
 
-async function validateDownstreamScopeReadiness(
+export async function materializeDownstreamScopeDecision(
   command: ConfirmDownstreamScopeCommand,
-  context: WorkbenchServerContext,
-): Promise<void> {
+  context: Pick<WorkbenchServerContext, "rootDir" | "sessions">,
+): Promise<unknown> {
   const snapshot = await context.sessions.read(command.sessionId);
-  if (snapshot === undefined) {
-    return;
+  if (snapshot === undefined || snapshot.revision !== command.expectedRevision) {
+    throw createTypedError({
+      code: "evidence_mismatch",
+      summary: "Current session revision changed before downstream confirmation.",
+      suggestedAction: "Refresh the workspace and confirm the current Data Cleaning findings.",
+      affectedInputReferences: [command.sessionId, command.commandId],
+    });
   }
 
   const f2References = snapshot.artifactRefs?.filter((reference) =>
@@ -220,18 +230,29 @@ async function validateDownstreamScopeReadiness(
   const store = await openSessionStore({ rootDir: context.rootDir, sessionId: command.sessionId });
   try {
     const persisted = await store.readArtifactReference(f2References[0]!.artifactId);
-    if (persisted?.contentHash === undefined) {
-      return;
+    if (persisted?.contentHash === undefined
+      || persisted.artifactId !== f2References[0]!.artifactId
+      || persisted.sessionId !== command.sessionId
+      || persisted.inputRevision !== snapshot.inputRevision
+      || persisted.kind !== "f2_report") {
+      throw createTypedError({
+        code: "evidence_mismatch",
+        summary: "Current Data Cleaning artifact registry identity is incomplete or stale.",
+        suggestedAction: "Rerun Data Cleaning for the current workbook revision.",
+        affectedInputReferences: [f2References[0]!.artifactId],
+      });
     }
 
-    const handle = await open(resolve(context.rootDir, persisted.relativePath), "r");
-    let report: ReturnType<typeof f2UserReportSchema.parse>;
-    try {
-      const bytes = await handle.readFile();
-      report = f2UserReportSchema.parse(JSON.parse(bytes.toString("utf8")) as unknown);
-    } finally {
-      await handle.close();
+    const bytes = await readManagedArtifact(context.rootDir, resolve(context.rootDir, persisted.relativePath));
+    if (bytes === undefined || createHash("sha256").update(bytes).digest("hex") !== persisted.contentHash) {
+      throw createTypedError({
+        code: "evidence_mismatch",
+        summary: "Current Data Cleaning report bytes do not match the artifact registry.",
+        suggestedAction: "Rerun Data Cleaning and confirm the regenerated findings.",
+        affectedInputReferences: [persisted.artifactId],
+      });
     }
+    const report = f2UserReportSchema.parse(JSON.parse(bytes.toString("utf8")) as unknown);
 
     if (report.status === "inputRejected") {
       throw createTypedError({
@@ -251,7 +272,12 @@ async function validateDownstreamScopeReadiness(
       });
     }
 
-    const worksheetStatus = new Map(report.worksheets.map((worksheet) => [worksheet.worksheetName, worksheet.status]));
+    const projection = projectF2FindingsDecision(report, {
+      inputRevision: snapshot.inputRevision,
+      f2ReportArtifactId: persisted.artifactId,
+      f2ReportContentHash: persisted.contentHash,
+    });
+    const worksheetStatus = new Map(projection.worksheetFindings.map((finding) => [finding.worksheetName, finding.readiness]));
     for (const worksheetName of command.payload.worksheetNames) {
       const status = worksheetStatus.get(worksheetName);
       if (status === undefined) {
@@ -262,7 +288,7 @@ async function validateDownstreamScopeReadiness(
           affectedInputReferences: [worksheetName, persisted.artifactId],
         });
       }
-      if (status !== "ready") {
+      if (status !== "downstream_ready") {
         throw createTypedError({
           code: "validation_error",
           summary: "Downstream confirmation includes blocked worksheets from the current Data Cleaning report.",
@@ -271,6 +297,25 @@ async function validateDownstreamScopeReadiness(
         });
       }
     }
+    if (command.payload.worksheetNames.length !== projection.downstreamReadyWorksheetNames.length
+      || command.payload.worksheetNames.some((worksheetName: string, index: number) => worksheetName !== projection.downstreamReadyWorksheetNames[index])) {
+      throw createTypedError({
+        code: "evidence_mismatch",
+        summary: "Downstream confirmation must match the exact current downstream-ready worksheet set.",
+        suggestedAction: "Refresh the findings and continue with every downstream-ready worksheet in report order.",
+        affectedInputReferences: [persisted.artifactId],
+      });
+    }
+    return {
+      decision: "continue_ready",
+      workbookHash: projection.workbookHash,
+      inputRevision: projection.inputRevision,
+      worksheetNames: projection.downstreamReadyWorksheetNames,
+      f2ReportArtifactId: projection.f2ReportArtifactId,
+      f2ReportContentHash: projection.f2ReportContentHash,
+      findingDigest: projection.findingDigest,
+      provenance: "user",
+    };
   } finally {
     await store.close();
   }
@@ -305,4 +350,17 @@ function isDownstreamScopePayload(payload: unknown): payload is DownstreamScopeP
   return typeof candidate.workbookHash === "string"
     && Array.isArray(candidate.worksheetNames)
     && candidate.worksheetNames.every((value) => typeof value === "string");
+}
+
+function matchesCommittedPublicCommand(publicCommand: PublicSessionCommand, committedCommand: ReturnType<typeof f8SessionCommandSchema.parse>): boolean {
+  if (publicCommand.sessionId !== committedCommand.sessionId
+    || publicCommand.commandId !== committedCommand.commandId
+    || publicCommand.command !== committedCommand.command
+    || publicCommand.expectedRevision !== committedCommand.expectedRevision) return false;
+  if (!isConfirmDownstreamScopeCommand(publicCommand)) return true;
+  if (committedCommand.command !== "confirm_downstream_scope") return false;
+  const committedPayload = committedCommand.payload;
+  return publicCommand.payload.workbookHash === committedPayload.workbookHash
+    && publicCommand.payload.worksheetNames.length === committedPayload.worksheetNames.length
+    && publicCommand.payload.worksheetNames.every((name: string, index: number) => name === committedPayload.worksheetNames[index]);
 }

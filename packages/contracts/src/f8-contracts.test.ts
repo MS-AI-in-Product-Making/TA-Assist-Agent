@@ -840,6 +840,38 @@ describe("F8 session and host contracts", () => {
     expect(() => f8PublicSessionCommandSchema.parse(command)).toThrow();
   });
 
+  it("persists revision-bound evidence on governed downstream selections", () => {
+    const snapshot = f8SessionSnapshotSchema.parse({
+      contractVersion: "f8-session-snapshot-v1",
+      sessionId: SESSION_ID,
+      revision: 5,
+      inputRevision: 2,
+      state: "f3_running",
+      activeAttempt: null,
+      interactionLanguage: ENGLISH_LOCK,
+      priorRunReferences: [],
+      downstreamScopeSelection: {
+        workbookContentHash: WORKBOOK_HASH,
+        selectedWorksheetNames: ["AJ_GAP"],
+        confirmed: true,
+        provenance: "user",
+        decision: "continue_ready",
+        inputRevision: 2,
+        f2ReportArtifactId: "f2-report-2",
+        f2ReportContentHash: "b".repeat(64),
+        findingDigest: "c".repeat(64),
+      },
+    });
+
+    expect(snapshot.downstreamScopeSelection).toMatchObject({
+      decision: "continue_ready",
+      inputRevision: 2,
+      f2ReportArtifactId: "f2-report-2",
+      f2ReportContentHash: "b".repeat(64),
+      findingDigest: "c".repeat(64),
+    });
+  });
+
   it("allows only one active WHAT_IF draft in a session snapshot", () => {
     const draft = {
       contractVersion: "f8-scenario-draft-v1",

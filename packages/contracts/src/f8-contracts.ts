@@ -540,19 +540,38 @@ export const confirmDownstreamScopeInternalPayloadSchema = withUniqueWorksheetNa
   provenance: worksheetDecisionProvenanceSchema.optional(),
 }).strict());
 
-const worksheetSelectionDecisionSchema = z
+const worksheetSelectionDecisionBaseSchema = z
   .object({
     workbookContentHash: sha256Schema,
     selectedWorksheetNames: z.array(nonEmptyStringSchema),
     confirmed: z.literal(true),
     provenance: worksheetSnapshotProvenanceSchema.optional(),
   })
-  .strict()
-  .superRefine((selection, context) => {
+  .strict();
+
+function requireUniqueSelectedWorksheetNames<Schema extends z.ZodTypeAny>(schema: Schema): z.ZodEffects<Schema> {
+  return schema.superRefine((selection: { selectedWorksheetNames?: unknown }, context) => {
+    if (!Array.isArray(selection.selectedWorksheetNames)) return;
     if (new Set(selection.selectedWorksheetNames).size !== selection.selectedWorksheetNames.length) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet names must be unique", path: ["selectedWorksheetNames"] });
     }
   });
+}
+
+const worksheetSelectionDecisionSchema = requireUniqueSelectedWorksheetNames(worksheetSelectionDecisionBaseSchema);
+
+const governedDownstreamSelectionDecisionSchema = requireUniqueSelectedWorksheetNames(worksheetSelectionDecisionBaseSchema.extend({
+  decision: z.literal("continue_ready"),
+  inputRevision: z.number().int().nonnegative(),
+  f2ReportArtifactId: boundedContextIdSchema,
+  f2ReportContentHash: sha256Schema,
+  findingDigest: sha256Schema,
+}).strict());
+
+const downstreamSelectionDecisionSchema = z.union([
+  governedDownstreamSelectionDecisionSchema,
+  worksheetSelectionDecisionSchema,
+]);
 
 const confirmationDecisionPayloadSchema = z
   .object({
@@ -1131,7 +1150,7 @@ export const f8SessionSnapshotSchema = z
     artifactRefs: z.array(f8ArtifactRefSchema).optional(),
     worksheetCapabilities: z.array(f8WorksheetCapabilitySchema).optional(),
     initialScopeSelection: worksheetSelectionDecisionSchema.optional(),
-    downstreamScopeSelection: worksheetSelectionDecisionSchema.optional(),
+    downstreamScopeSelection: downstreamSelectionDecisionSchema.optional(),
     pendingAnalysisContextDraft: f8PendingF6InputDraftSchema.optional(),
     pendingOptimizationTargetsDraft: f8PendingF6InputDraftSchema.optional(),
     scenarioDrafts: z.array(z.lazy(() => f8ScenarioDraftSchema)).optional(),

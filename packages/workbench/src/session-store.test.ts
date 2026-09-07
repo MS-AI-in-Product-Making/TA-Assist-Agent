@@ -93,6 +93,30 @@ describe("SessionStore", () => {
     await reopened.close();
   });
 
+  it("rejects newly created evidence-free downstream selections at the storage boundary", async () => {
+    const rootDir = await createTempRoot();
+    const store = await createStore(rootDir);
+    try {
+      await expect(store.applyCommand(commandAt(0, COMMAND_ID), async (snapshot) => {
+        const mutation = acceptWorkbook(snapshot);
+        return {
+          ...mutation,
+          snapshot: {
+            ...mutation.snapshot,
+            downstreamScopeSelection: {
+              workbookContentHash: "a".repeat(64),
+              selectedWorksheetNames: ["Analysis-A"],
+              confirmed: true as const,
+              provenance: "user" as const,
+            },
+          },
+        };
+      })).rejects.toThrow(/revision-bound evidence/i);
+    } finally {
+      await store.close();
+    }
+  });
+
   it("backfills historical worksheet selection provenance from committed command evidence", async () => {
     const rootDir = await createTempRoot();
     const store = await createStore(rootDir);

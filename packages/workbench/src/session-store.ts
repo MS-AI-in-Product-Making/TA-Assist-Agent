@@ -32,6 +32,7 @@ type F8SessionCommand = ReturnType<typeof f8SessionCommandSchema.parse>;
 type F8SessionEvent = ReturnType<typeof f8SessionEventSchema.parse>;
 type F8SessionSnapshot = ReturnType<typeof f8SessionSnapshotSchema.parse>;
 type F8ScenarioDraft = NonNullable<F8SessionSnapshot["scenarioDrafts"]>[number];
+const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 
 type StageAttempt = NonNullable<F8SessionSnapshot["activeAttempt"]>;
 
@@ -426,6 +427,7 @@ class SqliteSessionStore implements SessionStore {
     const mutation = await reducer(currentSnapshot, command);
     const snapshotTransition = prepareSnapshotTransition(currentSnapshot, mutation.snapshot, mutation.scenarioDrafts);
     const nextSnapshot = snapshotTransition.snapshot;
+    assertNoNewLegacyDownstreamSelection(currentSnapshot, nextSnapshot);
     const artifactReferenceOps = normalizeArtifactReferenceOps(
       this.sessionId,
       mutation.artifactReferences,
@@ -551,6 +553,7 @@ class SqliteSessionStore implements SessionStore {
       result.artifactReferenceOps,
     );
     const snapshotWithArtifactReferences = withArtifactReferences(nextSnapshot, artifactReferenceOps);
+    assertNoNewLegacyDownstreamSelection(currentSnapshot, snapshotWithArtifactReferences);
     const hostActionOps = normalizeHostActionOps(
       this.sessionId,
       result.hostActions,
@@ -1277,14 +1280,23 @@ function parseCommittedScopeCommandRow(row: CommittedScopeCommandRow): {
   readonly payload: { readonly workbookHash: string; readonly worksheetNames: string[] };
 } | undefined {
   try {
-    const parsed = f8SessionCommandSchema.parse(JSON.parse(row.command_json) as unknown);
-    if (!isWorksheetScopeCommand(parsed.command) || !isWorksheetScopePayload(parsed.payload)) {
+    const stored = JSON.parse(row.command_json) as unknown;
+    const current = f8SessionCommandSchema.safeParse(stored);
+    const parsed = current.success ? current.data : stored;
+    if (typeof parsed !== "object" || parsed === null) return undefined;
+    const candidate = parsed as { readonly contractVersion?: unknown; readonly commandId?: unknown; readonly expectedRevision?: unknown; readonly command?: unknown; readonly payload?: unknown };
+    if (!current.success && (candidate.contractVersion !== "f8-session-command-v1"
+      || candidate.commandId !== row.command_id
+      || typeof candidate.expectedRevision !== "number"
+      || !Number.isInteger(candidate.expectedRevision)
+      || candidate.expectedRevision < 0)) return undefined;
+    if (!isWorksheetScopeCommand(candidate.command) || !isWorksheetScopePayload(candidate.payload)) {
       return undefined;
     }
     return {
       commandId: row.command_id,
-      command: parsed.command,
-      payload: parsed.payload,
+      command: candidate.command,
+      payload: candidate.payload,
     };
   } catch {
     return undefined;
@@ -1316,8 +1328,11 @@ function isWorksheetScopePayload(payload: unknown): payload is { readonly workbo
   if (typeof payload !== "object" || payload === null) return false;
   const candidate = payload as { readonly workbookHash?: unknown; readonly worksheetNames?: unknown };
   return typeof candidate.workbookHash === "string"
+    && SHA256_PATTERN.test(candidate.workbookHash)
     && Array.isArray(candidate.worksheetNames)
-    && candidate.worksheetNames.every((name) => typeof name === "string");
+    && candidate.worksheetNames.length > 0
+    && candidate.worksheetNames.every((name) => typeof name === "string")
+    && new Set(candidate.worksheetNames).size === candidate.worksheetNames.length;
 }
 
 function sameWorksheetSet(left: readonly string[], right: readonly string[]): boolean {
@@ -1325,4 +1340,21 @@ function sameWorksheetSet(left: readonly string[], right: readonly string[]): bo
   const rightSet = new Set(right);
   if (rightSet.size !== right.length) return false;
   return left.every((name) => rightSet.has(name));
+}
+
+function assertNoNewLegacyDownstreamSelection(current: F8SessionSnapshot, next: F8SessionSnapshot): void {
+  const nextSelection = next.downstreamScopeSelection;
+  if (nextSelection === undefined || "decision" in nextSelection) return;
+  const currentSelection = current.downstreamScopeSelection;
+  const preservesHistoricalSelection = currentSelection !== undefined
+    && !("decision" in currentSelection)
+    && stringifyJson(currentSelection) === stringifyJson(nextSelection);
+  if (!preservesHistoricalSelection) {
+    throw createTypedError({
+      code: "evidence_mismatch",
+      summary: "New downstream selections require revision-bound evidence.",
+      suggestedAction: "Materialize the downstream decision from the current validated Data Cleaning report.",
+      affectedInputReferences: [next.sessionId],
+    });
+  }
 }
