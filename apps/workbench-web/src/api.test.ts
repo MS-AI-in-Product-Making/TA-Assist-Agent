@@ -224,6 +224,13 @@ function snapshot(overrides: Record<string, unknown> = {}) {
     state: "created",
     activeAttempt: null,
     priorRunReferences: [],
+    interactionLanguage: {
+      languageTag: "en-US",
+      uiCatalogLanguage: "en",
+      lockedAtTurnId: "turn-en",
+      source: "workflow_start",
+      fallbackUsed: false,
+    },
     ...overrides,
   };
 }

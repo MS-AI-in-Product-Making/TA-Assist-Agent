@@ -1,4 +1,5 @@
 import type { AgentTurnRequest, AgentTurnResult } from "@ai-assist/agent-runtime";
+import type { UiCatalogLanguage } from "@ai-assist/product-language";
 import {
   classifyTopLevelWorkflowIntent,
   detectUserLanguage,
@@ -31,7 +32,8 @@ export interface ParticipantCancellation {
 export interface ParticipantDependencies {
   readonly sessionId?: string;
   readonly commandId: () => string;
-  readonly handleAnalyzeIntent?: (intent: TaAnalyzeIntent) => Promise<string>;
+  readonly handleAnalyzeIntent?: (intent: TaAnalyzeIntent, requestText: string) => Promise<string>;
+  readonly uiCatalogLanguage?: UiCatalogLanguage;
   readonly handleTurn: (request: AgentTurnRequest, dependencies: { readonly model?: unknown }) => Promise<AgentTurnResult>;
 }
 
@@ -46,10 +48,12 @@ export async function handleParticipant(
   const handledAnalyzeIntent = await handleAnalyzeIntent(request, stream, cancellation, dependencies);
   if (handledAnalyzeIntent) return;
   if (dependencies.sessionId === undefined) {
-    stream.markdown("请先使用 `/analyze` 或 `/resume <session-id>` 绑定 TA Assist session。");
+    stream.markdown(dependencies.uiCatalogLanguage === "zh"
+      ? "请先使用 `/analyze` 或 `/resume <session-id>` 绑定 TA Assist session。"
+      : "Use `/analyze` or `/resume <session-id>` to bind a TA Assist session first.");
     return;
   }
-  stream.progress("正在读取 TA Assist session...");
+  stream.progress(dependencies.uiCatalogLanguage === "zh" ? "正在读取 TA Assist session..." : "Reading the TA Assist session...");
   const result = await dependencies.handleTurn({
     text: request.prompt,
     sessionId: dependencies.sessionId,
@@ -60,7 +64,7 @@ export async function handleParticipant(
   stream.markdown(result.responseText);
   for (const action of result.actions) {
     if (action.type === "open_report" && action.target === "/report/current") {
-      stream.button({ command: "ta-assist.openCurrentReport", title: "Design Optimization Report", arguments: [] });
+      stream.button({ command: "ta-assist.openCurrentReport", title: dependencies.uiCatalogLanguage === "zh" ? "设计优化报告" : "Design Optimization Report", arguments: [] });
       continue;
     }
     stream.button({ command: "ta-assist.openAction", title: action.label, arguments: [action.target] });
@@ -104,7 +108,7 @@ async function handleAnalyzeIntent(
   }
   if (dependencies.handleAnalyzeIntent === undefined) return false;
   stream.progress("正在准备 TA Assist Workbench...");
-  const response = await dependencies.handleAnalyzeIntent(classification ?? { kind: "analyze_ta" });
+  const response = await dependencies.handleAnalyzeIntent(classification ?? { kind: "analyze_ta" }, request.prompt);
   if (cancellation.isCancellationRequested) return true;
   stream.markdown(response);
   return true;

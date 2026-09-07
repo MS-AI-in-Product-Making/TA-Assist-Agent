@@ -35,7 +35,7 @@ describe("TaAssistantPanel", () => {
     expect(screen.getByRole("button", { name: "Compare the baseline and saved Scenario" })).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Compare the baseline and saved Scenario" }));
-    expect(screen.getByRole("textbox", { name: "Describe your request in natural language" })).toHaveValue("Compare the baseline and saved Scenario");
+    expect(screen.getByRole("textbox", { name: "Conversation input" })).toHaveValue("Compare the baseline and saved Scenario");
     expect(onSubmit).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "Send request" }));
@@ -49,7 +49,7 @@ describe("TaAssistantPanel", () => {
     expect(screen.getAllByText("Analysis-A").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Gap").length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "Summarize the current governed evidence" }));
-    expect(screen.getByRole("textbox", { name: "Describe your request in natural language" })).toHaveValue("Summarize the current governed evidence");
+    expect(screen.getByRole("textbox", { name: "Conversation input" })).toHaveValue("Summarize the current governed evidence");
     expect(onSubmit).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Send request" }));
     await waitFor(() => expect(onSubmit).toHaveBeenCalledWith("Summarize the current governed evidence"));

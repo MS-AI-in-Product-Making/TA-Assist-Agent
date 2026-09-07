@@ -80,3 +80,10 @@ export function changeInteractionLanguage(current: InteractionLanguage, input: R
   void input.hostLocale;
   return current;
 }
+
+export function detectExplicitLanguageTag(text: string): "en-US" | "zh-CN" | undefined {
+  const normalized = text.trim();
+  if (/(?:用|使用|切换到)\s*(?:中文|汉语)|(?:respond|answer|analy[sz]e|write|output)\s+(?:this\s+)?(?:in|using)\s+chinese/i.test(normalized)) return "zh-CN";
+  if (/(?:用|使用|切换到)\s*(?:英文|英语)|(?:respond|answer|analy[sz]e|write|output)\s+(?:this\s+)?(?:in|using)\s+english/i.test(normalized)) return "en-US";
+  return undefined;
+}

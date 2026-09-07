@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { changeInteractionLanguage, resolveInteractionLanguage } from "./interaction-language.js";
+import { changeInteractionLanguage, detectExplicitLanguageTag, resolveInteractionLanguage } from "./interaction-language.js";
 
 describe("interaction language", () => {
+  it("detects only explicit Chinese and English output-language requests", () => {
+    expect(detectExplicitLanguageTag("请用中文分析 report.xlsx")).toBe("zh-CN");
+    expect(detectExplicitLanguageTag("Respond in English with the result")).toBe("en-US");
+    expect(detectExplicitLanguageTag("请分析这个工作簿")).toBeUndefined();
+  });
+
   it("locks a Japanese request while falling fixed UI back to English", () => {
     expect(resolveInteractionLanguage({ text: "公差解析を開始", turnId: "turn-1", explicitLanguageTag: "ja-JP" })).toEqual({
       languageTag: "ja-JP",

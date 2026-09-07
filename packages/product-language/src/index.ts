@@ -15,6 +15,7 @@ export type { LocalizedInputMetadata, UserInputId, UserInputKind } from "./input
 export type { TaProductCapabilityId, TaProductCapabilityLookupId, TaProductCapabilityName, TaWorkbookStage, UserLanguage } from "./ta-workbook-language.js";
 export {
 	changeInteractionLanguage,
+	detectExplicitLanguageTag,
 	resolveInteractionLanguage,
 } from "./interaction-language.js";
 export {

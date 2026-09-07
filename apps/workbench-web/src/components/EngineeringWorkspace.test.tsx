@@ -175,7 +175,7 @@ describe("EngineeringWorkspace", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Gap factor", description: "间隙因子" }));
     fireEvent.click(screen.getByRole("button", { name: "Open TA Assistant" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "Describe your request in natural language" }), { target: { value: "Compare baseline and scenario." } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Conversation input" }), { target: { value: "Compare baseline and scenario." } });
     fireEvent.click(screen.getByRole("button", { name: "Send request" }));
 
     await waitFor(() => expect(onSubmitConversation).toHaveBeenCalledWith("Compare baseline and scenario.", {
@@ -324,6 +324,7 @@ function reviewSnapshot(): F8SessionSnapshot {
     state: "review_required",
     activeAttempt: null,
     priorRunReferences: [],
+    interactionLanguage: ENGLISH_LOCK,
     downstreamScopeSelection: { workbookContentHash: "a".repeat(64), selectedWorksheetNames: ["Analysis-A"], confirmed: true },
     scenarioDrafts: [{
       contractVersion: "f8-scenario-draft-v1",
@@ -377,6 +378,7 @@ function reviewSnapshotWithCanonicalReport(): F8SessionSnapshot {
     state: "review_required",
     activeAttempt: null,
     priorRunReferences: [],
+    interactionLanguage: ENGLISH_LOCK,
     downstreamScopeSelection: {
       workbookContentHash: "d".repeat(64),
       selectedWorksheetNames: ["Analysis-A"],
@@ -391,6 +393,14 @@ function reviewSnapshotWithCanonicalReport(): F8SessionSnapshot {
     worksheetCapabilities: [],
   };
 }
+
+const ENGLISH_LOCK = {
+  languageTag: "en-US",
+  uiCatalogLanguage: "en",
+  lockedAtTurnId: "turn-en",
+  source: "workflow_start",
+  fallbackUsed: false,
+} as const;
 
 function reviewSnapshotWithoutCanonicalReport(): F8SessionSnapshot {
   const snapshot = reviewSnapshotWithCanonicalReport();

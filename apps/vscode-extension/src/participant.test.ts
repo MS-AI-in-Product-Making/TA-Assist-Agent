@@ -45,7 +45,7 @@ describe("handleParticipant", () => {
       commandId: () => "participant-analyze-intent",
     });
 
-    expect(handleAnalyzeIntent).toHaveBeenCalledWith({ kind: "analyze_ta", workbookPath: "C:\\TA Reports\\report.xlsx" });
+    expect(handleAnalyzeIntent).toHaveBeenCalledWith({ kind: "analyze_ta", workbookPath: "C:\\TA Reports\\report.xlsx" }, "帮我分析 \"C:\\TA Reports\\report.xlsx\"");
     expect(handleTurn).not.toHaveBeenCalled();
     expect(stream.markdown).toHaveBeenCalledWith("TA Assist Workbench is ready. Upload a workbook to begin.");
   });

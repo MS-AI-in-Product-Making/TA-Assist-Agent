@@ -1,4 +1,5 @@
 import { productCapabilityLabel } from "@ai-assist/product-language/ta-workbook-language";
+import type { UiCatalogLanguage } from "@ai-assist/product-language";
 
 export interface ProjectedText {
   readonly displayText: string;
@@ -64,12 +65,12 @@ export function projectSourceText(sourceText: string, translation?: string): Pro
   };
 }
 
-export function featureDisplay(featureId: FeatureId): string {
-  return productCapabilityLabel(featureId, "en");
+export function featureDisplay(featureId: FeatureId, language: UiCatalogLanguage = "en"): string {
+  return productCapabilityLabel(featureId, language);
 }
 
-export function projectProductText(text: string): string {
-  return text.replace(/\b(?:F|Feature)([0-7])\b/gi, (_match, capabilityNumber: string) => productCapabilityLabel(`F${capabilityNumber}` as FeatureId, "en"));
+export function projectProductText(text: string, language: UiCatalogLanguage = "en"): string {
+  return text.replace(/\b(?:F|Feature)([0-7])\b/gi, (_match, capabilityNumber: string) => productCapabilityLabel(`F${capabilityNumber}` as FeatureId, language));
 }
 
 export function actionDisplay(action: string): string {

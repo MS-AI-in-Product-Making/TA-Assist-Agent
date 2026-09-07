@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { createConversationStore } from "@ai-assist/conversation";
 import { handleAgentTurn } from "@ai-assist/agent-runtime";
 import { openSessionStore } from "@ai-assist/workbench";
-import { resolveInteractionLanguage } from "@ai-assist/product-language";
+import { detectExplicitLanguageTag, inputMetadata, resolveInteractionLanguage, type InteractionLanguage, type UiCatalogLanguage } from "@ai-assist/product-language";
 import * as vscode from "vscode";
 
 import { syncConversationUnread } from "./conversation-sync.js";
@@ -42,7 +42,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     activeSessionId = restoredBinding.sessionId;
     activeWorkbenchUrl = restoredBinding.workbenchUrl;
   }
+  let activeInteractionLanguage: InteractionLanguage | undefined;
   let hostPumpRunning = false;
+
+  const readSessionLanguage = async (sessionId: string): Promise<InteractionLanguage> => {
+    const store = await openSessionStore({ rootDir: workspaceRoot, sessionId });
+    const snapshot = await store.readSnapshot().finally(async () => store.close());
+    return snapshot.interactionLanguage;
+  };
 
   const executeHostAction = async (actionId: string) => {
     if (activeSessionId === undefined || activeWorkbenchUrl === undefined) return;
@@ -131,26 +138,39 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const hostPumpHandle = setInterval(() => { void pollHostActions(); }, 1_000);
   context.subscriptions.push({ dispose: () => clearInterval(hostPumpHandle) });
 
-  const bindNewSession = async () => {
-    const interactionLanguage = resolveInteractionLanguage({ text: "", turnId: randomUUID(), hostLocale: vscode.env.language });
+  const bindNewSession = async (requestedLanguage?: ReturnType<typeof resolveInteractionLanguage>) => {
+    const interactionLanguage = requestedLanguage ?? resolveInteractionLanguage({ text: "", turnId: randomUUID(), hostLocale: vscode.env.language });
     const launched = await launchNewWorkbench(workspaceRoot, processLauncher, interactionLanguage);
     activeSessionId = launched.sessionId;
     activeWorkbenchUrl = launched.url;
+    activeInteractionLanguage = interactionLanguage;
     await context.globalState.update(HOST_BINDING_KEY, { sessionId: launched.sessionId, workbenchUrl: launched.url });
     return launched;
   };
   const openNew = async () => {
     await bindNewSession();
   };
-  const handleAnalyzeIntent = async (intent: TaAnalyzeIntent): Promise<string> => {
-    const launched = await bindNewSession();
-    const resolvedWorkbookPath = await resolveAnalyzeWorkbookPath(intent);
-    if (resolvedWorkbookPath === undefined) return "TA Assist Workbench is ready. Upload a workbook to begin.";
+  const handleAnalyzeIntent = async (intent: TaAnalyzeIntent, requestText: string): Promise<string> => {
+    const explicitLanguageTag = detectExplicitLanguageTag(requestText);
+    const interactionLanguage = resolveInteractionLanguage({
+      text: requestText,
+      turnId: randomUUID(),
+      hostLocale: vscode.env.language,
+      ...(explicitLanguageTag === undefined ? {} : { explicitLanguageTag }),
+    });
+    const launched = await bindNewSession(interactionLanguage);
+    const resolvedWorkbookPath = await resolveAnalyzeWorkbookPath(intent, interactionLanguage.uiCatalogLanguage);
+    const copy = interactionLanguage.uiCatalogLanguage === "zh"
+      ? { ready: "TA Assist Workbench 已就绪。请上传工作簿以开始分析。", accepted: "工作簿已接受" }
+      : { ready: "TA Assist Workbench is ready. Upload a workbook to begin.", accepted: "Workbook accepted" };
+    if (resolvedWorkbookPath === undefined) return copy.ready;
     try {
       await importWorkbook({ sessionId: launched.sessionId, workbookPath: resolvedWorkbookPath }, processLauncher);
-      return `Workbook accepted. Session ${launched.sessionId} is running in TA Assist Workbench.`;
+      return interactionLanguage.uiCatalogLanguage === "zh"
+        ? `${copy.accepted}。Session ${launched.sessionId} 正在 TA Assist Workbench 中运行。`
+        : `${copy.accepted}. Session ${launched.sessionId} is running in TA Assist Workbench.`;
     } catch (error) {
-      return formatWorkbookImportFailure(error);
+      return formatWorkbookImportFailure(error, interactionLanguage.uiCatalogLanguage);
     }
   };
   const openPureWorkbench = async () => {
@@ -164,6 +184,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const launched = await resumeWorkbench(workspaceRoot, selected.trim(), processLauncher);
     activeSessionId = launched.sessionId;
     activeWorkbenchUrl = launched.url;
+    activeInteractionLanguage = await readSessionLanguage(launched.sessionId);
     await context.globalState.update(HOST_BINDING_KEY, { sessionId: launched.sessionId, workbenchUrl: launched.url });
     const sync = await syncConversationUnread({ sessionId: launched.sessionId, consumerId: `vscode:${vscode.env.machineId}`, store: conversation, status });
     await sync.markRead();
@@ -199,13 +220,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       url.hash = "/report/current";
       await vscode.env.openExternal(vscode.Uri.parse(url.toString()));
     }),
-    vscode.commands.registerCommand("ta-assist.executeHostAction", async () => {
+    vscode.commands.registerCommand("ta-assist.executeHostAction", async (actionId?: string) => {
       if (activeSessionId === undefined || activeWorkbenchUrl === undefined) {
         await vscode.window.showErrorMessage("请先绑定 TA Assist session。");
         return;
       }
-      const actionId = await vscode.window.showInputBox({ prompt: "Host action ID", ignoreFocusOut: true });
-      if (actionId === undefined || actionId.trim().length === 0) return;
+      if (actionId === undefined || actionId.trim().length === 0) {
+        await vscode.window.showInformationMessage("Host actions run automatically from the bound Web session. Return to TA Assist Workbench to continue.", { modal: false });
+        return;
+      }
       await executeHostAction(actionId.trim());
       await vscode.window.showInformationMessage("Surface HostAction 已提交。后续确认与结果请返回 Web 查看。", { modal: false });
     }),
@@ -214,17 +237,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const participant = vscode.chat.createChatParticipant("ta-assist", async (request, chatContext, response, token) => {
     if (request.command === "workbench") {
       await openNew();
-      response.markdown("TA Assist Workbench is ready. Upload a workbook to begin.");
+      response.markdown(activeInteractionLanguage?.uiCatalogLanguage === "zh"
+        ? "TA Assist Workbench 已就绪。请上传工作簿以开始分析。"
+        : "TA Assist Workbench is ready. Upload a workbook to begin.");
       return;
     }
     if (request.command === "resume") {
       await resume(request.prompt.trim() || undefined);
-      response.markdown(activeSessionId === undefined ? "未绑定 session。" : `已绑定 TA Assist session ${activeSessionId}。`);
+      response.markdown(activeSessionId === undefined
+        ? (vscode.env.language.toLowerCase().startsWith("zh") ? "未绑定 session。" : "No session is bound.")
+        : activeInteractionLanguage?.uiCatalogLanguage === "zh" ? `已绑定 TA Assist session ${activeSessionId}。` : `TA Assist session ${activeSessionId} is bound.`);
       return;
+    }
+    if (activeSessionId !== undefined && activeInteractionLanguage === undefined) {
+      activeInteractionLanguage = await readSessionLanguage(activeSessionId);
     }
     await handleParticipant(request, chatContext, response, token, {
       commandId: randomUUID,
       handleAnalyzeIntent,
+      uiCatalogLanguage: activeInteractionLanguage?.uiCatalogLanguage ?? (vscode.env.language.toLowerCase().startsWith("zh") ? "zh" : "en"),
       ...(activeSessionId === undefined ? {} : { sessionId: activeSessionId }),
       handleTurn: async (turn) => {
         const store = await openSessionStore({ rootDir: workspaceRoot, sessionId: turn.sessionId });
@@ -272,15 +303,17 @@ function isAllowedWorkbenchRoute(target: string): boolean {
 
 export function deactivate(): void {}
 
-async function resolveAnalyzeWorkbookPath(intent: TaAnalyzeIntent): Promise<string | undefined> {
+async function resolveAnalyzeWorkbookPath(intent: TaAnalyzeIntent, language: UiCatalogLanguage): Promise<string | undefined> {
   if (intent.workbookPath !== undefined) return intent.workbookPath;
   if (intent.workbookFileName === undefined) return undefined;
 
   const resolution = await resolveWorkspaceWorkbook(intent.workbookFileName, (pattern) => vscode.workspace.findFiles(pattern));
+  const metadata = inputMetadata(language).workbook_file;
   if (resolution.kind === "unique") return resolution.uri.fsPath;
   if (resolution.kind === "ambiguous") {
     const picked = await vscode.window.showQuickPick(resolution.candidates.map((candidate) => ({ label: candidate.fsPath, uri: candidate })), {
-      title: `Select workbook for ${intent.workbookFileName}`,
+      title: metadata.title,
+      placeHolder: `${metadata.whatToEnter} ${metadata.example}`,
       ignoreFocusOut: true,
       canPickMany: false,
     });
@@ -289,17 +322,17 @@ async function resolveAnalyzeWorkbookPath(intent: TaAnalyzeIntent): Promise<stri
 
   const selected = await vscode.window.showOpenDialog({
     canSelectMany: false,
-    openLabel: "Select Workbook",
-    title: `Workbook ${intent.workbookFileName} was not found. Select one workbook to continue`,
+    openLabel: metadata.title,
+    title: `${metadata.whatToEnter} ${metadata.validationHint}`,
     filters: { "Excel Workbook": ["xlsx"] },
   });
   return selected?.[0]?.fsPath;
 }
 
-function formatWorkbookImportFailure(error: unknown): string {
+function formatWorkbookImportFailure(error: unknown, language: UiCatalogLanguage): string {
   const typed = error as { readonly summary?: unknown; readonly suggestedAction?: unknown };
-  const summary = safeChatFailureText(typed.summary, "Workbook import failed.");
-  const suggestedAction = safeChatFailureText(typed.suggestedAction, "Open TA Assist Workbench and upload the workbook again.");
+  const summary = safeChatFailureText(typed.summary, language === "zh" ? "工作簿导入失败。" : "Workbook import failed.");
+  const suggestedAction = safeChatFailureText(typed.suggestedAction, language === "zh" ? "请打开 TA Assist Workbench 并重新上传工作簿。" : "Open TA Assist Workbench and upload the workbook again.");
   return `${trimTerminalPeriod(summary)}. ${trimTerminalPeriod(suggestedAction)}.`;
 }
 

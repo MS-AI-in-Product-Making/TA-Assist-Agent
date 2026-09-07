@@ -201,16 +201,16 @@ body {
 }
 
 .ta-assistant > .panel { border: 0; padding: 0; box-shadow: none; background: transparent; }
-.f6-input-gate {
+.design-optimization-input-gate {
   margin: 10px 0 14px;
   border: 1px solid var(--md-sys-color-outline-variant);
   border-radius: var(--md-sys-shape-corner-medium);
   background: var(--md-sys-color-surface-container-low);
 }
-.f6-input-gate .conversation-form {
+.design-optimization-input-gate .conversation-form {
   margin-bottom: 8px;
 }
-.f6-input-gate__actions {
+.design-optimization-input-gate__actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;

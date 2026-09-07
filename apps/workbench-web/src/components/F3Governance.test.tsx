@@ -87,7 +87,7 @@ describe("F3Governance", () => {
 
     fireEvent.click(localOnly);
     fireEvent.click(create);
-    fireEvent.change(within(section).getByRole("textbox", { name: "Existing work item URL" }), { target: { value: "https://dev.azure.com/MSFTDEVICES/Project/_workitems/edit/123" } });
+    fireEvent.change(within(section).getByRole("textbox", { name: "Existing work item" }), { target: { value: "https://dev.azure.com/MSFTDEVICES/Project/_workitems/edit/123" } });
     fireEvent.click(update);
 
     expect(onSubmit).toHaveBeenCalledWith("local_only");

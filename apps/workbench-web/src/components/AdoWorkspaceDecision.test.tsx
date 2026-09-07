@@ -8,7 +8,10 @@ describe("AdoWorkspaceDecision", () => {
   it("requires a complete Azure DevOps URL for an existing target", async () => {
     const onSubmit = vi.fn(async () => undefined);
     render(<AdoWorkspaceDecision visible onSubmit={onSubmit} />);
-    const input = screen.getByRole("textbox", { name: "Existing work item URL" });
+    const input = screen.getByRole("textbox", { name: "Existing work item" });
+    expect(input).toHaveAttribute("data-user-input-id", "existing_work_item");
+    expect(input).toHaveAttribute("aria-describedby", "existing_work_item-guidance");
+    expect(screen.getByText("Work item 12345")).toBeVisible();
     fireEvent.change(input, { target: { value: "123" } });
     expect(screen.getByRole("button", { name: "Validate existing work item" })).toBeDisabled();
     fireEvent.change(input, { target: { value: "https://dev.azure.com/MSFTDEVICES/Project/_workitems/edit/123" } });

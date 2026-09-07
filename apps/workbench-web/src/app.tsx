@@ -20,12 +20,34 @@ export function App({ api, preloadedState, initialWorksheetOptions, downstreamWo
   const liveSession = useWorkbenchSession(api, { enabled: preloadedState === undefined });
   const session = preloadedState === undefined ? liveSession : createPreloadedSession(liveSession, preloadedState);
   const [selectedWorksheetName, setSelectedWorksheetName] = useState<string>();
+  const language = session.snapshot?.interactionLanguage.uiCatalogLanguage ?? "en";
+  const scopeCopy = language === "zh" ? {
+    initialTitle: "初始工作表选择",
+    initialDescription: "首次选择使用当前受治理的工作簿上传上下文。如果恢复此阶段时没有本地工作簿哈希，提交将保持阻止状态。",
+    initialAction: "确认初始范围",
+    initialBlocked: "当前工作簿标识缺失，无法提交初始选择。请重新上传工作簿。",
+    downstreamTitle: "后续工作表选择",
+    downstreamDescription: "第二次选择仅允许已通过输入校验的工作表。被阻止的工作表会保留在状态面板中，不会进入工程分析。",
+    downstreamAction: "确认工程范围",
+    downstreamBlocked: "此前确认的工作簿标识缺失，无法发送后续选择。",
+  } : {
+    initialTitle: "Initial worksheet selection",
+    initialDescription: "Your first selection uses the current governed workbook upload context. If this stage is restored without a local workbook hash, submission stays blocked.",
+    initialAction: "Confirm initial scope",
+    initialBlocked: "The current workbook identity is missing, so the initial selection cannot be submitted. Upload the workbook again.",
+    downstreamTitle: "Downstream worksheet selection",
+    downstreamDescription: "The second selection only allows worksheets that passed input validation. Blocked worksheets stay in the status panel and do not enter engineering analysis.",
+    downstreamAction: "Confirm engineering scope",
+    downstreamBlocked: "The previously confirmed workbook identity is missing, so the downstream selection cannot be sent.",
+  };
   const initialOptions: WorksheetOption[] = (initialWorksheetOptions ?? session.snapshot?.worksheetCapabilities)?.map((option) => "status" in option
     ? option
     : {
       worksheetName: option.worksheetName,
       status: "available",
-      detail: option.whatIfAvailable ? "What-if available" : "What-if pending",
+      detail: option.whatIfAvailable
+        ? (language === "zh" ? "What-if 可用" : "What-if available")
+        : (language === "zh" ? "What-if 待处理" : "What-if pending"),
     }) ?? [];
   const downstreamOptions = downstreamWorksheetOptions !== undefined
     ? [...downstreamWorksheetOptions]
@@ -45,11 +67,12 @@ export function App({ api, preloadedState, initialWorksheetOptions, downstreamWo
     <>
       {session.snapshot?.state !== "initial_scope_required" ? null : (
         <WorksheetSelection
-          title="Initial worksheet selection"
-          description="Your first selection uses the current governed workbook upload context. If this stage is restored without a local workbook hash, submission stays blocked."
-          actionLabel="Confirm initial scope"
+          title={scopeCopy.initialTitle}
+          description={scopeCopy.initialDescription}
+          actionLabel={scopeCopy.initialAction}
           options={initialOptions}
-          blockedReason={!canSubmitInitialScope ? "The current workbook identity is missing, so the initial selection cannot be submitted. Upload the workbook again." : undefined}
+          blockedReason={!canSubmitInitialScope ? scopeCopy.initialBlocked : undefined}
+          language={language}
           onSubmit={(worksheetNames) => session.submitCommand("confirm_initial_scope", {
             workbookHash: session.pendingWorkbookHash,
             worksheetNames,
@@ -58,11 +81,12 @@ export function App({ api, preloadedState, initialWorksheetOptions, downstreamWo
       )}
       {session.snapshot?.state !== "downstream_scope_required" ? null : (
         <WorksheetSelection
-          title="Downstream worksheet selection"
-             description="The second selection only allows worksheets that passed input validation. Blocked worksheets stay in the status panel and do not enter engineering analysis."
-          actionLabel="Confirm engineering scope"
+           title={scopeCopy.downstreamTitle}
+           description={scopeCopy.downstreamDescription}
+           actionLabel={scopeCopy.downstreamAction}
           options={downstreamOptions}
-          blockedReason={!canSubmitDownstreamScope ? "The previously confirmed workbook identity is missing, so the downstream selection cannot be sent." : undefined}
+          blockedReason={!canSubmitDownstreamScope ? scopeCopy.downstreamBlocked : undefined}
+          language={language}
           onSubmit={(worksheetNames) => session.submitCommand("confirm_downstream_scope", {
             workbookHash: session.snapshot?.initialScopeSelection?.workbookContentHash,
             worksheetNames,

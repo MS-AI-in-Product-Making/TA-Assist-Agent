@@ -83,7 +83,7 @@ const INPUT_METADATA_BY_LANGUAGE = {
       recovery: "If the wrong file is chosen, replace it before continuing.",
     },
     worksheet_scope: {
-      kind: "combobox",
+      kind: "checkbox",
       title: "Worksheet scope",
       whatToEnter: "Choose the worksheet or worksheet set to include in the analysis.",
       purpose: "Limits the workflow to the relevant workbook surface.",
@@ -184,7 +184,7 @@ const INPUT_METADATA_BY_LANGUAGE = {
       recovery: "如果选错文件，请重新选择正确的工作簿。",
     },
     worksheet_scope: {
-      kind: "combobox",
+      kind: "checkbox",
       title: "工作表范围",
       whatToEnter: "选择要纳入分析的工作表或工作表集合。",
       purpose: "将流程限制在相关的工作簿内容上。",
