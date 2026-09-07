@@ -112,12 +112,12 @@ F0 解读规则范围与维护边界见 [F0 TA 结果解读规则库设计](../s
   解析 organization/project/ID，与 Surface readback 目标一致，且不持久化 URL；校验范围限定为
   Surface MCP-only 的 `organization/project/type or ID` 并允许 candidate correction；新建类型默认
   `Default: Task`；完整预览后再执行 Question call 2 终确认；Comment 与本地提醒模板均固定英文，
-  11 列固定表头为 `Device Level Dim | Dimension Description | Part / Subsystem | Drawing Number | Dim ID | Factor Description | Nominal | Upper Tolerance (+) | Lower Tolerance (-) | σ Level | Governance issue`；
+  12 列固定表头为 `Worksheet Source | Device Level Dim | Dimension Description | Part / Subsystem | Drawing Number | Dim ID | Factor Description | Nominal | Upper Tolerance (+) | Lower Tolerance (-) | σ Level | Governance issue`；
   用户拒绝/能力不足/写后校验失败分别使用 `user_declined_write`、`surface_mcp_comment_body_unsupported`、
   `write_verification_failed` 并写本地 `Feature3-ADO-Reminder.md`；Bodyless direct comment schemas may use the
   schema-qualified Surface MCP `System.History` channel. Direct comments use `confirmedMarkdownBody`; System.History
   uses `confirmedHistoryHtml` from `Feature3-ADO-History.html`, and one write must produce exactly one new comment with
-  comment format `html`, one 11-header payload, counted rows marked `data-f3-factor-row=true`, excluded rows marked
+  comment format `html`, one 12-header payload, counted rows marked `data-f3-factor-row=true`, excluded rows marked
   `data-f3-group-row=true`, matching ADO-safe canonical HTML body/hash, and unchanged `top: 200` readback scope.
   两种正文通道都不合格时必须阻断并拒绝空评论；
   Never use Azure DevOps MCP/REST/browser/shell HTTP；no scheduler/milestone timer，且 no F4 calculation/handoff impact。

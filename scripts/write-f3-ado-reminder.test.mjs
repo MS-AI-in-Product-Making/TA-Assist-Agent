@@ -96,7 +96,7 @@ describe("writeF3AdoReminder", () => {
     expect(reminder).toContain("F3 DIM ID / Drawing Governance Reminder");
     expect(historyHtml).toContain("<h2>F3 DIM ID / Drawing Governance Reminder</h2>");
     expect(historyHtml).toContain("<table>");
-    expect(historyHtml.match(/<th>/g)).toHaveLength(11);
+    expect(historyHtml.match(/<th>/g)).toHaveLength(12);
     expect(json.ado.status).toBe("not_requested");
     expect(reportMd).toContain("ADO 状态：`not_requested`");
     const href = path.relative(
