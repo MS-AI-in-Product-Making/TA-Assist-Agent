@@ -518,6 +518,28 @@ const worksheetScopeInternalPayloadSchema = withUniqueWorksheetNames(worksheetSc
   })
   .strict());
 
+export interface ConfirmDownstreamScopeInternalPayload {
+  readonly decision: "continue_ready";
+  readonly workbookHash: string;
+  readonly inputRevision: number;
+  readonly worksheetNames: readonly string[];
+  readonly f2ReportArtifactId: string;
+  readonly f2ReportContentHash: string;
+  readonly findingDigest: string;
+  readonly provenance?: "user" | "internal_fixture";
+}
+
+export const confirmDownstreamScopeInternalPayloadSchema = withUniqueWorksheetNames(z.object({
+  decision: z.literal("continue_ready"),
+  workbookHash: sha256Schema,
+  inputRevision: z.number().int().nonnegative(),
+  worksheetNames: z.array(boundedContextNameSchema).min(1),
+  f2ReportArtifactId: boundedContextIdSchema,
+  f2ReportContentHash: sha256Schema,
+  findingDigest: sha256Schema,
+  provenance: worksheetDecisionProvenanceSchema.optional(),
+}).strict());
+
 const worksheetSelectionDecisionSchema = z
   .object({
     workbookContentHash: sha256Schema,
@@ -645,7 +667,7 @@ export const f8SessionCommandSchema = z.discriminatedUnion("command", [
   commandEnvelopeSchema("set_interaction_language", setInteractionLanguagePayloadSchema),
   commandEnvelopeSchema("confirm_initial_scope", worksheetScopeInternalPayloadSchema),
   commandEnvelopeSchema("auto_confirm_initial_scope", worksheetScopeInternalPayloadSchema),
-  commandEnvelopeSchema("confirm_downstream_scope", worksheetScopeInternalPayloadSchema),
+  commandEnvelopeSchema("confirm_downstream_scope", confirmDownstreamScopeInternalPayloadSchema),
   commandEnvelopeSchema("confirm_ado_decision", adoDecisionPayloadSchema),
   commandEnvelopeSchema("reset_ado_decision", z.object({}).strict()),
   commandEnvelopeSchema("confirm_image_decision", confirmationDecisionPayloadSchema),

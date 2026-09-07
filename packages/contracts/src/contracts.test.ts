@@ -57,6 +57,8 @@ import {
   f2InitialWorkflowRequestSchema,
   f2InitialWorkflowResultSchema,
   f2ArtifactInputSchema,
+  f2FindingsDecisionProjectionSchema,
+  f2WorksheetFindingProjectionSchema,
   f4HandoffReadySchema,
   f2UserReportSchema,
   f8AdoProjectionSchema,
@@ -182,6 +184,85 @@ describe("F8 Web ADO contracts", () => {
       confirmed: true,
     };
     expect(f8AdoWriteConfirmationSchema.parse(request)).toEqual(request);
+  });
+});
+
+describe("F2 findings decision projection contracts", () => {
+  const workbookHash = "a".repeat(64);
+  const reportContentHash = "b".repeat(64);
+  const findingDigest = "c".repeat(64);
+
+  it("accepts Drawing Number and DIM ID warnings without blocking", () => {
+    const finding = {
+      contractVersion: "f2-worksheet-finding-projection-v1",
+      worksheetName: "Gap",
+      readiness: "downstream_ready",
+      identifierWarnings: ["drawing_number_missing", "dim_id_missing"],
+      blockers: [],
+      sourceRows: [12],
+    } as const;
+
+    expect(f2WorksheetFindingProjectionSchema.parse(finding)).toEqual(finding);
+  });
+
+  it.each(["drawing_number_missing", "dim_id_missing"])("rejects warning-only identifier code %s as a blocker", (blocker) => {
+    expect(f2WorksheetFindingProjectionSchema.safeParse({
+      contractVersion: "f2-worksheet-finding-projection-v1",
+      worksheetName: "Gap",
+      readiness: "blocked",
+      identifierWarnings: [],
+      blockers: [blocker],
+      sourceRows: [12],
+    }).success).toBe(false);
+  });
+
+  it("uses current identifier semantics for new projections while the historical report reader accepts partNumber", () => {
+    const legacyWarning = {
+      contractVersion: "f2-worksheet-finding-projection-v1",
+      worksheetName: "Gap",
+      readiness: "downstream_ready",
+      identifierWarnings: ["part_number_missing"],
+      blockers: [],
+      sourceRows: [12],
+    };
+
+    expect(f2WorksheetFindingProjectionSchema.safeParse(legacyWarning).success).toBe(false);
+  });
+
+  it("binds the exact downstream-ready worksheet set to report order and evidence", () => {
+    const projection = {
+      contractVersion: "f2-findings-decision-projection-v1",
+      workbookHash,
+      inputRevision: 3,
+      f2ReportArtifactId: "f2-report-3",
+      f2ReportContentHash: reportContentHash,
+      findingDigest,
+      worksheetFindings: [
+        {
+          contractVersion: "f2-worksheet-finding-projection-v1",
+          worksheetName: "Gap-B",
+          readiness: "downstream_ready",
+          identifierWarnings: ["drawing_number_missing"],
+          blockers: [],
+          sourceRows: [22],
+        },
+        {
+          contractVersion: "f2-worksheet-finding-projection-v1",
+          worksheetName: "Gap-A",
+          readiness: "blocked",
+          identifierWarnings: [],
+          blockers: ["tolerance_path_image_missing"],
+          sourceRows: [],
+        },
+      ],
+      downstreamReadyWorksheetNames: ["Gap-B"],
+    } as const;
+
+    expect(f2FindingsDecisionProjectionSchema.parse(projection)).toEqual(projection);
+    expect(() => f2FindingsDecisionProjectionSchema.parse({
+      ...projection,
+      downstreamReadyWorksheetNames: [],
+    })).toThrow(/exact downstream-ready worksheet set/i);
   });
 });
 

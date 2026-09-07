@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
 import {
+  confirmDownstreamScopeInternalPayloadSchema,
   f8SessionCommandSchema,
   f8PublicSessionCommandSchema,
   f8SessionSnapshotSchema,
@@ -727,8 +728,13 @@ describe("F8 session and host contracts", () => {
       expectedRevision: 4,
       command: "confirm_downstream_scope",
       payload: {
+        decision: "continue_ready",
         worksheetNames: ["AJ_GAP"],
         workbookHash: WORKBOOK_HASH,
+        inputRevision: 2,
+        f2ReportArtifactId: "f2-report-2",
+        f2ReportContentHash: "b".repeat(64),
+        findingDigest: "c".repeat(64),
         provenance: "internal_fixture",
       },
     } as const;
@@ -738,6 +744,12 @@ describe("F8 session and host contracts", () => {
     expect(() => f8SessionCommandSchema.parse({
       ...internal,
       payload: { ...internal.payload, provenance: "external" },
+    })).toThrow();
+  });
+
+  it("rejects a downstream internal decision without revision-bound evidence", () => {
+    expect(() => confirmDownstreamScopeInternalPayloadSchema.parse({
+      decision: "continue_ready",
     })).toThrow();
   });
 

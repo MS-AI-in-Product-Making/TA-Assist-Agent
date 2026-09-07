@@ -4341,6 +4341,59 @@ export const f2UserReportSchema = z.union([
   f2AcceptedReportSchema,
 ]);
 
+const f2IdentifierWarningSchema = z.enum([
+  "drawing_number_missing",
+  "dim_id_missing",
+]);
+
+export const f2WorksheetFindingProjectionSchema = z.object({
+  contractVersion: z.literal("f2-worksheet-finding-projection-v1"),
+  worksheetName: z.string().min(1),
+  readiness: z.enum(["downstream_ready", "blocked"]),
+  identifierWarnings: z.array(f2IdentifierWarningSchema),
+  blockers: z.array(z.string().min(1)),
+  sourceRows: z.array(z.number().int().positive()),
+}).strict().superRefine((finding, context) => {
+  if (new Set(finding.identifierWarnings).size !== finding.identifierWarnings.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "identifier warnings must be unique", path: ["identifierWarnings"] });
+  }
+  if (new Set(finding.blockers).size !== finding.blockers.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "blockers must be unique", path: ["blockers"] });
+  }
+  if (finding.blockers.some((blocker) => f2IdentifierWarningSchema.safeParse(blocker).success)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Drawing Number and DIM ID findings must remain warning-only", path: ["blockers"] });
+  }
+  if (new Set(finding.sourceRows).size !== finding.sourceRows.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "source rows must be unique", path: ["sourceRows"] });
+  }
+  if ((finding.readiness === "blocked") !== (finding.blockers.length > 0)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "readiness must match blockers", path: ["readiness"] });
+  }
+});
+
+export const f2FindingsDecisionProjectionSchema = z.object({
+  contractVersion: z.literal("f2-findings-decision-projection-v1"),
+  workbookHash: sha256Schema,
+  inputRevision: z.number().int().nonnegative(),
+  f2ReportArtifactId: z.string().min(1),
+  f2ReportContentHash: sha256Schema,
+  findingDigest: sha256Schema,
+  worksheetFindings: z.array(f2WorksheetFindingProjectionSchema).min(1),
+  downstreamReadyWorksheetNames: z.array(z.string().min(1)),
+}).strict().superRefine((projection, context) => {
+  const worksheetNames = projection.worksheetFindings.map((finding) => finding.worksheetName);
+  if (new Set(worksheetNames).size !== worksheetNames.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet findings must be unique by worksheetName", path: ["worksheetFindings"] });
+  }
+  const expectedReadyNames = projection.worksheetFindings
+    .filter((finding) => finding.readiness === "downstream_ready")
+    .map((finding) => finding.worksheetName);
+  if (projection.downstreamReadyWorksheetNames.length !== expectedReadyNames.length
+    || projection.downstreamReadyWorksheetNames.some((worksheetName, index) => worksheetName !== expectedReadyNames[index])) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "downstreamReadyWorksheetNames must be the exact downstream-ready worksheet set in report order", path: ["downstreamReadyWorksheetNames"] });
+  }
+});
+
 export const f3DimIdStatusSchema = z.enum([
   "missing",
   "suspected_invalid",
@@ -6148,6 +6201,8 @@ export type F2InitialWorkflowRequest = z.infer<typeof f2InitialWorkflowRequestSc
 export type F2InitialWorkflowResult = z.infer<typeof f2InitialWorkflowResultSchema>;
 export type F2ArtifactInput = z.infer<typeof f2ArtifactInputSchema>;
 export type F2UserReport = z.infer<typeof f2UserReportSchema>;
+export type F2WorksheetFindingProjection = z.infer<typeof f2WorksheetFindingProjectionSchema>;
+export type F2FindingsDecisionProjection = z.infer<typeof f2FindingsDecisionProjectionSchema>;
 export type F2SystemSpecificationIssue = z.infer<typeof f2SystemSpecificationIssueSchema>;
 export type F2F4CalculabilityIssue = z.infer<typeof f2F4CalculabilityIssueSchema>;
 export type F2ReadyWorksheet = z.infer<typeof f2ReadyWorksheetSchema>;
