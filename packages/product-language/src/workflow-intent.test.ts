@@ -15,6 +15,8 @@ describe("classifyTopLevelWorkflowIntent", () => {
     ["分析这些实测尺寸", { kind: "measured_analysis" }],
     ["Analyze measurement results from inspection", { kind: "measured_analysis" }],
     ["Resume the current session", { kind: "session_operation", operation: "resume" }],
+    ["Open the current report", { kind: "session_operation", operation: "status" }],
+    ["Explain the governed evidence", { kind: "session_operation", operation: "status" }],
     ["切换到中文", { kind: "session_operation", operation: "change_language" }],
     ["Help me with this", {
       kind: "clarification_required",

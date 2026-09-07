@@ -97,6 +97,13 @@ async function handleAnalyzeIntent(
     return true;
   }
 
+  if (workflowIntent.kind === "unsupported") {
+    stream.markdown(dependencies.uiCatalogLanguage === "zh"
+      ? "无法将此请求路由到受支持的 TA Assist 产品能力。请明确请求知识库、TA 工作簿分析、真实量测分析或反馈应用。"
+      : "TA Assist cannot route this request to a supported product capability. Ask for Knowledge Library, TA workbook analysis, real-measurement analysis, or feedback application.");
+    return true;
+  }
+
   if (workflowIntent.kind !== "workbook_analysis") return false;
 
   const classification = classifyParticipantAnalyzeIntent(request);

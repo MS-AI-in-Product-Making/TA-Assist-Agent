@@ -236,6 +236,32 @@ describe("workbench state machine", () => {
     })).toThrow(/outside the confirmed initial scope/i);
   });
 
+  it("rejects downstream confirmation that differs from the materialized exact ready set", () => {
+    const api = requireApi();
+    const snapshot = baseSnapshot({
+      state: "downstream_scope_required",
+      revision: 2,
+      initialScopeSelection: { workbookContentHash: "a".repeat(64), selectedWorksheetNames: ["Analysis-A", "Analysis-B"], confirmed: true, provenance: "user" },
+    });
+
+    expect(() => api.reduceSessionCommand(snapshot, {
+      contractVersion: "f8-session-command-v1",
+      sessionId: SESSION_ID,
+      commandId: "confirm-downstream-forged-subset",
+      expectedRevision: 2,
+      command: "confirm_downstream_scope",
+      payload: downstreamPayload({ worksheetNames: ["Analysis-A"], downstreamReadyWorksheetNames: ["Analysis-A", "Analysis-B"] }),
+    })).toThrow(/exact downstream-ready set/i);
+    expect(() => api.reduceSessionCommand(snapshot, {
+      contractVersion: "f8-session-command-v1",
+      sessionId: SESSION_ID,
+      commandId: "confirm-downstream-reordered",
+      expectedRevision: 2,
+      command: "confirm_downstream_scope",
+      payload: downstreamPayload({ worksheetNames: ["Analysis-B", "Analysis-A"], downstreamReadyWorksheetNames: ["Analysis-A", "Analysis-B"] }),
+    })).toThrow(/exact downstream-ready set/i);
+  });
+
   it("saves one What-if draft and requires a separate promotion confirmation", () => {
     const api = requireApi();
     const draft = {
@@ -905,6 +931,7 @@ function downstreamPayload(overrides: Partial<Record<string, unknown>> = {}): Re
     workbookHash: "a".repeat(64),
     inputRevision: 0,
     worksheetNames: ["Analysis-A"],
+    downstreamReadyWorksheetNames: ["Analysis-A"],
     f2ReportArtifactId: "f2-report-0",
     f2ReportContentHash: "b".repeat(64),
     findingDigest: "c".repeat(64),

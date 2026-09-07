@@ -527,6 +527,7 @@ export interface ConfirmDownstreamScopeInternalPayload {
   readonly workbookHash: string;
   readonly inputRevision: number;
   readonly worksheetNames: readonly string[];
+  readonly downstreamReadyWorksheetNames: readonly string[];
   readonly f2ReportArtifactId: string;
   readonly f2ReportContentHash: string;
   readonly findingDigest: string;
@@ -538,6 +539,7 @@ export const confirmDownstreamScopeInternalPayloadSchema = withUniqueWorksheetNa
   workbookHash: sha256Schema,
   inputRevision: z.number().int().nonnegative(),
   worksheetNames: z.array(boundedContextNameSchema).min(1),
+  downstreamReadyWorksheetNames: z.array(boundedContextNameSchema).min(1),
   f2ReportArtifactId: boundedContextIdSchema,
   f2ReportContentHash: sha256Schema,
   findingDigest: sha256Schema,

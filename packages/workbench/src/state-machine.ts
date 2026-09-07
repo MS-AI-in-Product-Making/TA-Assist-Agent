@@ -140,6 +140,7 @@ function reduceConfirmDownstreamScope(
     workbookHash: string;
     inputRevision: number;
     worksheetNames: string[];
+    downstreamReadyWorksheetNames: string[];
     f2ReportArtifactId: string;
     f2ReportContentHash: string;
     findingDigest: string;
@@ -178,6 +179,15 @@ function reduceConfirmDownstreamScope(
       summary: "Downstream worksheet confirmation contains worksheets outside the confirmed initial scope.",
       suggestedAction: "Select only worksheets that were included in the initial worksheet confirmation.",
       affectedInputReferences: [command.commandId, ...outOfScope],
+    });
+  }
+  if (payload.worksheetNames.length !== payload.downstreamReadyWorksheetNames.length
+    || payload.worksheetNames.some((worksheetName, index) => worksheetName !== payload.downstreamReadyWorksheetNames[index])) {
+    throw createTypedError({
+      code: "evidence_mismatch",
+      summary: "Downstream confirmation must match the exact downstream-ready set.",
+      suggestedAction: "Refresh the current findings and continue with every downstream-ready worksheet in report order.",
+      affectedInputReferences: [command.commandId, payload.f2ReportArtifactId],
     });
   }
   const currentF2References = (snapshot.artifactRefs ?? []).filter((reference) =>

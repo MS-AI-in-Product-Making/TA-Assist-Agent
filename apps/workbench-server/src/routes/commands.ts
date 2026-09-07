@@ -279,6 +279,7 @@ export async function materializeDownstreamScopeDecision(
     workbookHash: projection.workbookHash,
     inputRevision: projection.inputRevision,
     worksheetNames: projection.downstreamReadyWorksheetNames,
+    downstreamReadyWorksheetNames: projection.downstreamReadyWorksheetNames,
     f2ReportArtifactId: projection.f2ReportArtifactId,
     f2ReportContentHash: projection.f2ReportContentHash,
     findingDigest: projection.findingDigest,

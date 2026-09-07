@@ -730,6 +730,7 @@ describe("F8 session and host contracts", () => {
       payload: {
         decision: "continue_ready",
         worksheetNames: ["AJ_GAP"],
+        downstreamReadyWorksheetNames: ["AJ_GAP"],
         workbookHash: WORKBOOK_HASH,
         inputRevision: 2,
         f2ReportArtifactId: "f2-report-2",

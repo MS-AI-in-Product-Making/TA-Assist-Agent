@@ -113,6 +113,20 @@ describe("handleParticipant", () => {
     expect(stream.markdown).toHaveBeenCalledWith(expect.not.stringContaining("F7"));
   });
 
+  it("rejects unsupported requests instead of falling through to session analysis", async () => {
+    const handleTurn = vi.fn(async () => ({ responseText: "should not run", actions: [], commands: [] }));
+    const stream = { progress: vi.fn(), markdown: vi.fn(), button: vi.fn() };
+
+    await handleParticipant({ prompt: "Hello there", command: undefined, model: {} }, { history: [] }, stream, { isCancellationRequested: false }, {
+      sessionId: SESSION_ID,
+      handleTurn,
+      commandId: () => "participant-unsupported",
+    });
+
+    expect(handleTurn).not.toHaveBeenCalled();
+    expect(stream.markdown).toHaveBeenCalledWith(expect.stringContaining("cannot route"));
+  });
+
   it("prioritizes current-session continuation over natural-language analyze", async () => {
     const handleTurn = vi.fn(async () => ({ responseText: "继续沿用当前 session。", actions: [], commands: [] }));
     const handleAnalyzeIntent = vi.fn(async () => "should not run");
