@@ -63,7 +63,7 @@ describe("App", () => {
     );
 
     const mountedIds = [...container.querySelectorAll<HTMLElement>("[data-user-input-id]")].map((element) => element.dataset.userInputId);
-    const applicableIds = (["workbook_file", "worksheet_scope"] satisfies UserInputId[])
+    const applicableIds = (["workbook_file", "worksheet_scope", "worksheet_search"] satisfies UserInputId[])
       .filter((inputId) => inputId in inputMetadata("zh"));
     expect(mountedIds.sort()).toEqual(applicableIds.sort());
     expect(screen.getByText("选择 TA.xlsx 或对应该工作流的 .xlsx 文件。")).toBeInTheDocument();

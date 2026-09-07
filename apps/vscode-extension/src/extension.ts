@@ -45,6 +45,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   let activeInteractionLanguage: InteractionLanguage | undefined;
   let hostPumpRunning = false;
 
+  const sessionRecoveryInputOptions = () => {
+    const hostCatalogLanguage: UiCatalogLanguage = vscode.env.language.toLowerCase().startsWith("zh") ? "zh" : "en";
+    const metadata = inputMetadata(activeInteractionLanguage?.uiCatalogLanguage ?? hostCatalogLanguage).session_recovery;
+    return {
+      title: metadata.title,
+      prompt: `${metadata.whatToEnter} ${metadata.purpose}`,
+      placeHolder: metadata.example,
+      ignoreFocusOut: true,
+    };
+  };
+
   const readSessionLanguage = async (sessionId: string): Promise<InteractionLanguage> => {
     const store = await openSessionStore({ rootDir: workspaceRoot, sessionId });
     const snapshot = await store.readSnapshot().finally(async () => store.close());
@@ -179,7 +190,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     activeWorkbenchUrl = launched.url;
   };
   const resume = async (sessionId?: string) => {
-    const selected = sessionId ?? await vscode.window.showInputBox({ prompt: "TA Assist session ID", ignoreFocusOut: true });
+    const selected = sessionId ?? await vscode.window.showInputBox(sessionRecoveryInputOptions());
     if (selected === undefined || selected.trim().length === 0) return;
     const launched = await resumeWorkbench(workspaceRoot, selected.trim(), processLauncher);
     activeSessionId = launched.sessionId;
@@ -201,7 +212,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await vscode.commands.executeCommand("workbench.action.chat.open", { query: "Use TA Real-Measurement Analysis for my measured data." });
     }),
     vscode.commands.registerCommand("ta-assist.openSessionRecord", async () => {
-      const sessionId = activeSessionId ?? await vscode.window.showInputBox({ prompt: "TA Assist session ID", ignoreFocusOut: true });
+      const sessionId = activeSessionId ?? await vscode.window.showInputBox(sessionRecoveryInputOptions());
       if (sessionId === undefined || sessionId.trim().length === 0) return;
       const recordUri = vscode.Uri.file(join(workspaceRoot, "runtime", "workbench", "session-records", sessionId.trim()));
       await vscode.commands.executeCommand("revealFileInOS", recordUri);

@@ -21,6 +21,17 @@ export type UserInputId =
   | "optimization_target"
   | "workbook_file"
   | "worksheet_scope"
+  | "worksheet_search"
+  | "factor_nominal_value"
+  | "factor_upper_tolerance"
+  | "factor_lower_tolerance"
+  | "lower_spec_limit"
+  | "upper_spec_limit"
+  | "what_if_factor"
+  | "what_if_nominal_value"
+  | "what_if_upper_tolerance"
+  | "what_if_lower_tolerance"
+  | "what_if_additional_mean_shift"
   | "missing_item_decision"
   | "session_recovery"
   | "conversation_input";
@@ -92,6 +103,39 @@ const INPUT_METADATA_BY_LANGUAGE = {
       consequence: "Only the selected worksheets will be parsed and validated.",
       nextStep: "Continue with missing-item decisions or actual calculations.",
       recovery: "If the scope is wrong, select the correct worksheet group.",
+    },
+    worksheet_search: {
+      kind: "combobox", title: "Worksheet search", whatToEnter: "Search for the worksheet to review.", purpose: "Moves the engineering workspace to one governed worksheet without changing analysis scope.", example: "AJ_GAP", validationHint: "Choose a worksheet from the available list.", consequence: "The table, image, and metrics switch to that worksheet.", nextStep: "Review its evidence or edit an allowed scenario input.", recovery: "Clear the search or choose another worksheet.",
+    },
+    factor_nominal_value: {
+      kind: "number", title: "Factor nominal value", whatToEnter: "Enter the proposed nominal value for this Factor.", purpose: "Previews a governed scenario without changing the source workbook.", example: "1.25", validationHint: "Enter a finite number in the Factor table unit.", consequence: "Scenario metrics are recalculated from this value.", nextStep: "Review the updated metrics before saving a draft.", recovery: "Restore the baseline value to discard the edit.",
+    },
+    factor_upper_tolerance: {
+      kind: "number", title: "Factor upper tolerance", whatToEnter: "Enter the proposed positive tolerance for this Factor.", purpose: "Tests the upper tolerance contribution in a governed scenario.", example: "0.10", validationHint: "Enter a finite non-negative value in the Factor unit.", consequence: "Scenario variation and capability are recalculated.", nextStep: "Review the result before saving a draft.", recovery: "Restore the baseline tolerance to discard the edit.",
+    },
+    factor_lower_tolerance: {
+      kind: "number", title: "Factor lower tolerance", whatToEnter: "Enter the proposed negative-side tolerance magnitude for this Factor.", purpose: "Tests the lower tolerance contribution in a governed scenario.", example: "-0.10", validationHint: "Use the sign convention shown in the Factor table.", consequence: "Scenario variation and capability are recalculated.", nextStep: "Review the result before saving a draft.", recovery: "Restore the baseline tolerance to discard the edit.",
+    },
+    lower_spec_limit: {
+      kind: "number", title: "Lower specification limit", whatToEnter: "Enter or drag the proposed lower specification limit.", purpose: "Evaluates a governed specification scenario without modifying the workbook.", example: "0.50", validationHint: "LSL must be a finite number below USL.", consequence: "Capability metrics are recalculated against the proposed limit.", nextStep: "Review the scenario result and approval warning.", recovery: "Restore the baseline specification to discard the edit.",
+    },
+    upper_spec_limit: {
+      kind: "number", title: "Upper specification limit", whatToEnter: "Enter or drag the proposed upper specification limit.", purpose: "Evaluates a governed specification scenario without modifying the workbook.", example: "1.50", validationHint: "USL must be a finite number above LSL.", consequence: "Capability metrics are recalculated against the proposed limit.", nextStep: "Review the scenario result and approval warning.", recovery: "Restore the baseline specification to discard the edit.",
+    },
+    what_if_factor: {
+      kind: "combobox", title: "What-if Factor", whatToEnter: "Choose the Factor to modify in this draft.", purpose: "Keeps each scenario edit bound to one structured Factor identity.", example: "A - Bracket thickness", validationHint: "Choose one Factor from the governed worksheet table.", consequence: "The editor loads that Factor's baseline values.", nextStep: "Enter proposed values and review the recalculation.", recovery: "Choose another Factor or restore the baseline.",
+    },
+    what_if_nominal_value: {
+      kind: "number", title: "What-if nominal value", whatToEnter: "Enter the proposed nominal or mean for the selected Factor.", purpose: "Tests a center shift in the saved scenario draft.", example: "1.25", validationHint: "Enter a finite number in the Factor unit.", consequence: "The preview recalculates after the edit.", nextStep: "Review metrics before saving the draft.", recovery: "Use Restore baseline to discard the proposal.",
+    },
+    what_if_upper_tolerance: {
+      kind: "number", title: "What-if upper tolerance", whatToEnter: "Enter the proposed upper tolerance for the selected Factor.", purpose: "Tests a tolerance change in the saved scenario draft.", example: "0.10", validationHint: "Enter a finite value using the table convention.", consequence: "The preview recalculates after the edit.", nextStep: "Review metrics before saving the draft.", recovery: "Use Restore baseline to discard the proposal.",
+    },
+    what_if_lower_tolerance: {
+      kind: "number", title: "What-if lower tolerance", whatToEnter: "Enter the proposed lower tolerance for the selected Factor.", purpose: "Tests a tolerance change in the saved scenario draft.", example: "-0.10", validationHint: "Enter a finite value using the table sign convention.", consequence: "The preview recalculates after the edit.", nextStep: "Review metrics before saving the draft.", recovery: "Use Restore baseline to discard the proposal.",
+    },
+    what_if_additional_mean_shift: {
+      kind: "number", title: "What-if additional mean shift", whatToEnter: "Enter an additional process mean shift for the selected Factor.", purpose: "Separates an assumed process shift from the design nominal.", example: "0.02", validationHint: "Enter a finite signed value in the Factor unit.", consequence: "The preview includes the additional shift.", nextStep: "Review metrics before saving the draft.", recovery: "Set the shift to zero or restore the baseline.",
     },
     missing_item_decision: {
       kind: "radio",
@@ -193,6 +237,39 @@ const INPUT_METADATA_BY_LANGUAGE = {
       consequence: "只有所选工作表会被解析和校验。",
       nextStep: "继续处理缺失项决策或后续计算。",
       recovery: "如果范围不对，请改选正确的工作表组。",
+    },
+    worksheet_search: {
+      kind: "combobox", title: "工作表搜索", whatToEnter: "搜索要查看的工作表。", purpose: "在不改变分析范围的情况下切换工程工作区。", example: "AJ_GAP", validationHint: "请从可用列表中选择工作表。", consequence: "表格、图片和指标会切换到该工作表。", nextStep: "查看证据或编辑允许的场景输入。", recovery: "清空搜索或选择其他工作表。",
+    },
+    factor_nominal_value: {
+      kind: "number", title: "Factor 名义值", whatToEnter: "输入该 Factor 的建议名义值。", purpose: "在不修改源工作簿的情况下预览受治理场景。", example: "1.25", validationHint: "请输入使用 Factor 单位的有限数字。", consequence: "系统会据此重算场景指标。", nextStep: "保存草稿前检查更新后的指标。", recovery: "恢复 baseline 值即可放弃编辑。",
+    },
+    factor_upper_tolerance: {
+      kind: "number", title: "Factor 上公差", whatToEnter: "输入该 Factor 的建议正公差。", purpose: "测试受治理场景中的上公差贡献。", example: "0.10", validationHint: "请输入使用 Factor 单位的有限非负值。", consequence: "系统会重算场景波动和能力。", nextStep: "保存草稿前检查结果。", recovery: "恢复 baseline 公差即可放弃编辑。",
+    },
+    factor_lower_tolerance: {
+      kind: "number", title: "Factor 下公差", whatToEnter: "输入该 Factor 的建议负侧公差幅值。", purpose: "测试受治理场景中的下公差贡献。", example: "-0.10", validationHint: "请使用 Factor 表中显示的符号约定。", consequence: "系统会重算场景波动和能力。", nextStep: "保存草稿前检查结果。", recovery: "恢复 baseline 公差即可放弃编辑。",
+    },
+    lower_spec_limit: {
+      kind: "number", title: "规格下限", whatToEnter: "输入或拖动建议的规格下限。", purpose: "在不修改工作簿的情况下评估规格场景。", example: "0.50", validationHint: "LSL 必须是小于 USL 的有限数字。", consequence: "系统会按建议下限重算能力指标。", nextStep: "检查场景结果和审批提醒。", recovery: "恢复 baseline 规格即可放弃编辑。",
+    },
+    upper_spec_limit: {
+      kind: "number", title: "规格上限", whatToEnter: "输入或拖动建议的规格上限。", purpose: "在不修改工作簿的情况下评估规格场景。", example: "1.50", validationHint: "USL 必须是大于 LSL 的有限数字。", consequence: "系统会按建议上限重算能力指标。", nextStep: "检查场景结果和审批提醒。", recovery: "恢复 baseline 规格即可放弃编辑。",
+    },
+    what_if_factor: {
+      kind: "combobox", title: "What-if Factor", whatToEnter: "选择要在草稿中修改的 Factor。", purpose: "将每次场景编辑绑定到唯一结构化 Factor。", example: "A - 支架厚度", validationHint: "请从受治理工作表中选择一个 Factor。", consequence: "编辑器会载入该 Factor 的 baseline 值。", nextStep: "输入建议值并检查重算结果。", recovery: "选择其他 Factor 或恢复 baseline。",
+    },
+    what_if_nominal_value: {
+      kind: "number", title: "What-if 名义值", whatToEnter: "输入所选 Factor 的建议名义值或均值。", purpose: "在已保存场景草稿中测试中心偏移。", example: "1.25", validationHint: "请输入使用 Factor 单位的有限数字。", consequence: "编辑后系统会重新计算预览。", nextStep: "保存草稿前检查指标。", recovery: "使用恢复 baseline 放弃建议。",
+    },
+    what_if_upper_tolerance: {
+      kind: "number", title: "What-if 上公差", whatToEnter: "输入所选 Factor 的建议上公差。", purpose: "在已保存场景草稿中测试公差变更。", example: "0.10", validationHint: "请按表格约定输入有限数字。", consequence: "编辑后系统会重新计算预览。", nextStep: "保存草稿前检查指标。", recovery: "使用恢复 baseline 放弃建议。",
+    },
+    what_if_lower_tolerance: {
+      kind: "number", title: "What-if 下公差", whatToEnter: "输入所选 Factor 的建议下公差。", purpose: "在已保存场景草稿中测试公差变更。", example: "-0.10", validationHint: "请按表格符号约定输入有限数字。", consequence: "编辑后系统会重新计算预览。", nextStep: "保存草稿前检查指标。", recovery: "使用恢复 baseline 放弃建议。",
+    },
+    what_if_additional_mean_shift: {
+      kind: "number", title: "What-if 附加均值偏移", whatToEnter: "输入所选 Factor 的附加工艺均值偏移。", purpose: "将假设的工艺偏移与设计名义值分开。", example: "0.02", validationHint: "请输入使用 Factor 单位的有限有符号数字。", consequence: "预览会包含该附加偏移。", nextStep: "保存草稿前检查指标。", recovery: "将偏移设为零或恢复 baseline。",
     },
     missing_item_decision: {
       kind: "radio",

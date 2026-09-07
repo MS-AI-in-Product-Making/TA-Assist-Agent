@@ -46,7 +46,10 @@ describe("F2FindingsDecisionDialog", () => {
 
     expect(screen.getByRole("button", { name: "Continue with ready worksheets" })).toBeDisabled();
     const file = new File(["workbook"], "replacement.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-    fireEvent.change(screen.getByLabelText("Replace workbook"), { target: { files: [file] } });
+    const replacementInput = screen.getByLabelText("Replace workbook");
+    expect(replacementInput).toHaveAttribute("data-user-input-id", "workbook_file");
+    expect(replacementInput).toHaveAttribute("aria-describedby", "workbook_file-guidance");
+    fireEvent.change(replacementInput, { target: { files: [file] } });
     expect(onReplace).toHaveBeenCalledWith(file);
     const cancel = screen.getByRole("button", { name: "Cancel" });
     await waitFor(() => expect(cancel).toBeEnabled());

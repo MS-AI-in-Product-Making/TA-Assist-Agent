@@ -2,6 +2,22 @@ import { describe, expect, it } from "vitest";
 import { inputMetadata } from "./input-metadata.js";
 
 describe("input metadata", () => {
+  const productionInputIds = [
+    "workbook_file", "worksheet_scope", "worksheet_search", "missing_item_decision", "existing_work_item",
+    "analysis_context", "optimization_target", "conversation_input", "session_recovery",
+    "factor_nominal_value", "factor_upper_tolerance", "factor_lower_tolerance",
+    "lower_spec_limit", "upper_spec_limit", "what_if_factor", "what_if_nominal_value",
+    "what_if_upper_tolerance", "what_if_lower_tolerance", "what_if_additional_mean_shift",
+  ] as const;
+
+  it("covers every production input in both UI catalogs", () => {
+    for (const language of ["en", "zh"] as const) {
+      const registry = inputMetadata(language);
+      expect(productionInputIds.every((inputId) => inputId in registry)).toBe(true);
+      expect(Object.keys(registry).sort()).toEqual(Object.keys(inputMetadata(language === "en" ? "zh" : "en")).sort());
+    }
+  });
+
   it("exposes the governed registry entries in a stable order", () => {
     expect(Object.keys(inputMetadata("en"))).toEqual([
       "ado_task_title",
@@ -10,6 +26,17 @@ describe("input metadata", () => {
       "optimization_target",
       "workbook_file",
       "worksheet_scope",
+      "worksheet_search",
+      "factor_nominal_value",
+      "factor_upper_tolerance",
+      "factor_lower_tolerance",
+      "lower_spec_limit",
+      "upper_spec_limit",
+      "what_if_factor",
+      "what_if_nominal_value",
+      "what_if_upper_tolerance",
+      "what_if_lower_tolerance",
+      "what_if_additional_mean_shift",
       "missing_item_decision",
       "session_recovery",
       "conversation_input",

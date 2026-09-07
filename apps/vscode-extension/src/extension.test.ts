@@ -306,6 +306,19 @@ describe("extension workbench binding", () => {
     context.subscriptions.forEach((subscription) => subscription.dispose());
   });
 
+  it("uses governed session recovery metadata for the resume input", async () => {
+    const context = await activateExtension();
+    showInputBoxMock.mockResolvedValueOnce(undefined);
+
+    await registeredCommands.get("ta-assist.resume")!();
+
+    expect(showInputBoxMock).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Session recovery",
+      placeHolder: "Resume the saved session.",
+    }));
+    context.subscriptions.forEach((subscription) => subscription.dispose());
+  });
+
   it("rejects arbitrary URL targets for action navigation", async () => {
     const context = await activateExtension();
     const vscode = await import("vscode");

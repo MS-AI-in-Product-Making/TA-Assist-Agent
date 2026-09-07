@@ -117,6 +117,15 @@ describe("SpecificationPlot", () => {
     expect(commits).toEqual(["lowerSpecLimit", "upperSpecLimit"]);
   });
 
+  it("links numeric and slider specification controls to persistent guidance", () => {
+    render(<SpecificationPlot model={model()} />);
+    for (const control of [screen.getByRole("spinbutton", { name: "Lower Spec Limit" }), screen.getByRole("slider", { name: "Lower Spec Limit line" })]) {
+      expect(control).toHaveAttribute("data-user-input-id", "lower_spec_limit");
+      expect(control).toHaveAttribute("aria-describedby", "lower_spec_limit-guidance");
+    }
+    expect(screen.getByText(/Enter or drag the proposed lower specification limit/)).toBeVisible();
+  });
+
   it("routes keyboard arrows through clamping and shows an English inline reason", () => {
     const edits: Array<["lowerSpecLimit" | "upperSpecLimit", string]> = [];
     render(<SpecificationPlot model={model()} systemValues={{ lowerSpecLimit: "1.4", upperSpecLimit: "1.401" }} onSystemEdit={(field, value) => edits.push([field, value])} />);

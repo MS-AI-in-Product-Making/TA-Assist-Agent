@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { MetricComparison, type WhatIfMetrics } from "./MetricComparison.js";
+import { InputGuidance, inputGuidanceId } from "./InputGuidance.js";
 
 export interface WhatIfBaseline {
   readonly worksheetName: string;
@@ -38,6 +39,13 @@ const fields: readonly [keyof WhatIfValues, string][] = [
   ["lowerTolerance", "-Tol"],
   ["additionalMeanShift", "Additional Mean Shift"],
 ];
+
+const WHAT_IF_INPUT_IDS = {
+  nominalValue: "what_if_nominal_value",
+  upperTolerance: "what_if_upper_tolerance",
+  lowerTolerance: "what_if_lower_tolerance",
+  additionalMeanShift: "what_if_additional_mean_shift",
+} as const;
 
 function baselineInputs(baseline: WhatIfBaseline): Record<keyof WhatIfValues, string> {
   return {
@@ -98,14 +106,19 @@ export function WhatIfEditor({ baseline, api, factors, onSelectFactor }: { reado
     <section className="panel" aria-labelledby="what-if-title">
       <div className="panel__header"><div><p className="eyebrow">WHAT_IF Draft</p><h2 id="what-if-title">Tolerance preview</h2></div></div>
       {factors !== undefined && factors.length > 1 ? <label>Factor
-        <select value={factorKey(baseline)} onChange={(event) => onSelectFactor?.(event.target.value)}>
+        <select aria-describedby={inputGuidanceId("what_if_factor")} data-user-input-id="what_if_factor" value={factorKey(baseline)} onChange={(event) => onSelectFactor?.(event.target.value)}>
           {factors.map((factor) => <option key={factorKey(factor)} value={factorKey(factor)}>{factor.factorName}</option>)}
         </select>
       </label> : null}
+      {factors !== undefined && factors.length > 1 ? <InputGuidance inputId="what_if_factor" /> : null}
       <div className="form-grid">
-        {fields.map(([field, label]) => (
+        {fields.map(([field, label]) => {
+          const inputId = WHAT_IF_INPUT_IDS[field];
+          return (
           <label key={field}>{baseline.factorName} {label}
             <input
+              aria-describedby={inputGuidanceId(inputId)}
+              data-user-input-id={inputId}
               type="number"
               step="any"
               value={values[field]}
@@ -119,8 +132,10 @@ export function WhatIfEditor({ baseline, api, factors, onSelectFactor }: { reado
               }}
             />
           </label>
-        ))}
+          );
+        })}
       </div>
+      <div className="input-guidance-group">{Object.values(WHAT_IF_INPUT_IDS).map((inputId) => <InputGuidance key={inputId} inputId={inputId} />)}</div>
       {error === undefined ? null : <p role="alert">{error}</p>}
       <MetricComparison baseline={baseline.metrics} draft={lastValidResult?.metrics} />
       <div className="button-row">

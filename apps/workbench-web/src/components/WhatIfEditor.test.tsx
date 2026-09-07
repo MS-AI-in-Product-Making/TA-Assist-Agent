@@ -25,6 +25,16 @@ afterEach(() => {
 });
 
 describe("WhatIfEditor", () => {
+  it("links every editable scenario control to persistent guidance", () => {
+    render(<WhatIfEditor baseline={{ ...baseline, tableId: "T1", sourceRow: 1 }} factors={[{ ...baseline, tableId: "T1", sourceRow: 1 }, { ...baseline, factorName: "Second", tableId: "T1", sourceRow: 2 }]} api={{ calculate: vi.fn(), save: vi.fn() }} />);
+    expect(screen.getByRole("combobox", { name: "Factor" })).toHaveAttribute("data-user-input-id", "what_if_factor");
+    expect(screen.getByLabelText("AJ center to C-bucket Nominal / Mean")).toHaveAttribute("data-user-input-id", "what_if_nominal_value");
+    expect(screen.getByLabelText("AJ center to C-bucket +Tol")).toHaveAttribute("data-user-input-id", "what_if_upper_tolerance");
+    expect(screen.getByLabelText("AJ center to C-bucket -Tol")).toHaveAttribute("data-user-input-id", "what_if_lower_tolerance");
+    expect(screen.getByLabelText("AJ center to C-bucket Additional Mean Shift")).toHaveAttribute("data-user-input-id", "what_if_additional_mean_shift");
+    expect(screen.getByText(/Choose the Factor to modify/)).toBeVisible();
+  });
+
   it("recalculates immediately on Enter and resets to baseline", async () => {
     const calculate = vi.fn(async () => calculated);
     render(<WhatIfEditor baseline={baseline} api={{ calculate, save: vi.fn() }} />);

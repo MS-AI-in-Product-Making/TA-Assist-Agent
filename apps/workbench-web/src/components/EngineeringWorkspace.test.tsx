@@ -38,7 +38,7 @@ describe("EngineeringWorkspace", () => {
     const onSelectWorksheet = vi.fn();
     render(<EngineeringWorkspace {...handlers} model={readyModel()} onSelectWorksheet={onSelectWorksheet} />);
 
-    const picker = screen.getByRole("combobox", { name: "Worksheet" });
+    const picker = screen.getByRole("combobox", { name: "Worksheet search" });
     fireEvent.focus(picker);
     fireEvent.change(picker, { target: { value: "Analysis" } });
     const options = screen.getByRole("listbox", { name: "Worksheet options" });

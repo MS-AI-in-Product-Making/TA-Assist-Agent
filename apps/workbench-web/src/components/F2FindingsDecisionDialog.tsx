@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { F2FindingsDecisionProjection } from "@ai-assist/contracts";
 import { inputMetadata, type UiCatalogLanguage } from "@ai-assist/product-language/input-metadata";
-import { InputGuidance } from "./InputGuidance.js";
+import { InputGuidance, inputGuidanceId } from "./InputGuidance.js";
 
 export interface F2FindingsDecisionDialogProps {
   readonly projection: F2FindingsDecisionProjection;
@@ -96,6 +96,7 @@ export function F2FindingsDecisionDialog({ projection, language = "en", onContin
           })}
         </div>
 
+        <InputGuidance inputId="workbook_file" language={language} />
         <footer className="decision-dialog__actions">
           <button type="button" className="button button--ghost" disabled={busy} onClick={onCancel}>{copy.cancel}</button>
           <label className="button decision-dialog__replace" aria-disabled={busy}>
@@ -105,6 +106,8 @@ export function F2FindingsDecisionDialog({ projection, language = "en", onContin
               disabled={busy}
               accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               aria-label={copy.replace}
+              aria-describedby={inputGuidanceId("workbook_file")}
+              data-user-input-id="workbook_file"
               onChange={(event) => {
                 const file = event.target.files?.[0];
                 if (file !== undefined) void runAction(() => onReplace(file));
