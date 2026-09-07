@@ -9,6 +9,7 @@ import {
   F6SolverError,
   scaleToleranceBandAroundCenter,
   selectTopContributors,
+  solveOneSidedSpecificationLimits,
   solveCenteringShift,
   solveSingleFactorTolerance,
   solveTargetRssSigma,
@@ -57,6 +58,50 @@ function expectFiniteNumericFields(value: unknown): void {
 }
 
 describe("F6 deterministic solver primitives", () => {
+  it.each([
+    { failedSides: ["lower"] as const, expected: { lowerSpecLimit: -1.2, upperSpecLimit: 1 } },
+    { failedSides: ["upper"] as const, expected: { lowerSpecLimit: -1, upperSpecLimit: 1.2 } },
+    { failedSides: ["lower", "upper"] as const, expected: { lowerSpecLimit: -1.2, upperSpecLimit: 1.2 } },
+    { failedSides: [] as const, expected: { lowerSpecLimit: -1, upperSpecLimit: 1 } },
+  ])("solves only failed specification sides for $failedSides", ({ failedSides, expected }) => {
+    const result = solveOneSidedSpecificationLimits({ mean: 0, rssSigma: 0.3, targetCpk: 4 / 3, lowerSpecLimit: -1, upperSpecLimit: 1, failedSides });
+    expect(result).toMatchObject({ status: "completed", changedSides: [...failedSides] });
+    if (result.status === "completed") {
+      expect(result.lowerSpecLimit).toBeCloseTo(expected.lowerSpecLimit, 12);
+      expect(result.upperSpecLimit).toBeCloseTo(expected.upperSpecLimit, 12);
+      if (!failedSides.includes("lower")) expect(result.lowerSpecLimit).toBe(-1);
+      if (!failedSides.includes("upper")) expect(result.upperSpecLimit).toBe(1);
+    }
+  });
+
+  it.each([
+    { mean: Number.NaN, rssSigma: 0.3, targetCpk: 1, lowerSpecLimit: -1, upperSpecLimit: 1, failedSides: ["lower"] as const },
+    { mean: 0, rssSigma: 0, targetCpk: 1, lowerSpecLimit: -1, upperSpecLimit: 1, failedSides: ["lower"] as const },
+    { mean: 0, rssSigma: 0.3, targetCpk: 0, lowerSpecLimit: -1, upperSpecLimit: 1, failedSides: ["upper"] as const },
+    { mean: 0, rssSigma: 0.3, targetCpk: 1, lowerSpecLimit: 1, upperSpecLimit: -1, failedSides: ["lower"] as const },
+    { mean: 10, rssSigma: 0.1, targetCpk: 1, lowerSpecLimit: -1, upperSpecLimit: 1, failedSides: ["lower"] as const },
+  ])("returns clarification for invalid one-sided specification input %#", (input) => {
+    expect(solveOneSidedSpecificationLimits(input)).toMatchObject({ status: "clarification_required", reasonCode: expect.any(String) });
+  });
+
+  it.each(["lower", "upper"] as const)("rejects an unrepresentable %s limit that rounds to the mean", (side) => {
+    expect(solveOneSidedSpecificationLimits({ mean: 1e308, rssSigma: 1, targetCpk: 1, lowerSpecLimit: 0, upperSpecLimit: 1.1e308, failedSides: [side] }))
+      .toEqual({ status: "clarification_required", reasonCode: "target_unrepresentable" });
+  });
+
+  it.each(["lower", "upper"] as const)("rejects a represented %s distance that remains below target", (side) => {
+    const mean = 2 ** 100;
+    const ulp = 2 ** 48;
+    const requestedDistance = (side === "lower" ? 0.7 : 1.4) * ulp;
+    expect(solveOneSidedSpecificationLimits({ mean, rssSigma: requestedDistance / 3, targetCpk: 1, lowerSpecLimit: 0, upperSpecLimit: 2 * mean, failedSides: [side] }))
+      .toEqual({ status: "clarification_required", reasonCode: "target_unrepresentable" });
+  });
+
+  it("avoids intermediate overflow for a finite target distance", () => {
+    expect(solveOneSidedSpecificationLimits({ mean: 0, rssSigma: 1e308, targetCpk: 0.1, lowerSpecLimit: -1.7e308, upperSpecLimit: 1.7e308, failedSides: ["lower"] }))
+      .toMatchObject({ status: "completed", lowerSpecLimit: -3e307, upperSpecLimit: 1.7e308 });
+  });
+
   it("scales an asymmetric tolerance band around its center", () => {
     const result = scaleToleranceBandAroundCenter({
       lowerTolerance: -0.1,
