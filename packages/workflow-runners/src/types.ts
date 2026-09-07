@@ -185,7 +185,9 @@ export interface F6OptimizationRequest {
   readonly expectedAnalysisContextContentHash?: string;
   readonly optimizationTargetsPath?: string;
   readonly expectedOptimizationTargetsContentHash?: string;
-  readonly modelInterpretationPath?: string;
+  readonly modelInterpretationPath: string;
+  readonly expectedModelInterpretationContentHash: string;
+  readonly requireMultimodalV3?: boolean;
 }
 
 export interface F6OptimizationResult {

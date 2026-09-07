@@ -35,7 +35,7 @@ export interface F6Dependencies {
   readonly resolveOutputLayout?: (request: F6OptimizationRequest, context: RunContext) => F6Layout;
   readonly loadBundle?: (request: F6OptimizationRequest & { publishRoot?: string }) => any;
   readonly createOptimization?: typeof createF6Optimization;
-  readonly createFinalReport?: (input: any, options: { outputRoot: string; f1ArtifactRoot: string; publishRoot: string }) => { markdown: string; reportSummary: unknown; projection: unknown };
+  readonly createFinalReport?: (input: any, options: { outputRoot: string; f1ArtifactRoot: string; publishRoot: string; requireMultimodalV3?: boolean }) => { markdown: string; reportSummary: unknown; projection: unknown };
   readonly renderOptimization?: (optimization: any, options: { outputRoot: string }) => string;
   readonly mkdir?: typeof mkdirSync;
   readonly randomUUID?: typeof randomUUID;
@@ -361,11 +361,15 @@ export function runF6Optimization(
       optimizationTargets: loaded.inputDecisions?.optimizationTargets ?? { outcome: "NOT_PROVIDED" },
       modelInterpretation: loaded.inputDecisions?.modelInterpretation ?? { outcome: "NOT_PROVIDED" },
     };
+    requireDecisionOrder(inputDecisions, loaded);
     if (!verifyCallerAuthorizedHash(request.expectedAnalysisContextContentHash, inputDecisions.analysisContext)
-      || !verifyCallerAuthorizedHash(request.expectedOptimizationTargetsContentHash, inputDecisions.optimizationTargets)) {
+      || !verifyCallerAuthorizedHash(request.expectedOptimizationTargetsContentHash, inputDecisions.optimizationTargets)
+      || loaded.modelInterpretation === undefined
+      || loaded.modelInterpretation.contractVersion !== "f5-multimodal-artifact-v3"
+      || typeof request.expectedModelInterpretationContentHash !== "string"
+      || !verifyCallerAuthorizedHash(request.expectedModelInterpretationContentHash, inputDecisions.modelInterpretation)) {
       return failedResult(layout, paths, artifacts, "input_rejected", boundary, staging, { realpath, stat, lstat, randomUUID: randomUuid, open, writeFd, close, rename, beforeRename, afterRename, rm });
     }
-    requireDecisionOrder(inputDecisions, loaded);
 
     failureStage = "optimization";
     const optimization = createOptimization(loaded.request, {
@@ -389,6 +393,7 @@ export function runF6Optimization(
       outputRoot: layout.runRoot,
       f1ArtifactRoot: loaded.f2Report.artifactRoot,
       publishRoot: layout.publishRoot,
+      requireMultimodalV3: request.requireMultimodalV3 === true,
     });
 
     const contents = {

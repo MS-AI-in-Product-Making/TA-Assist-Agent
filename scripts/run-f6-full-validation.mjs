@@ -1,9 +1,10 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   closeSync,
   lstatSync,
   mkdirSync,
   openSync,
+  readFileSync,
   realpathSync,
   renameSync,
   rmdirSync,
@@ -135,6 +136,10 @@ export function runF6FullValidation(options = {}, dependencyOverrides = {}) {
       analysisContextPath: parsed.analysisContextArtifact,
       optimizationTargetsPath: parsed.optimizationTargetsArtifact,
       modelInterpretationPath: parsed.modelInterpretationArtifact,
+      expectedModelInterpretationContentHash: typeof parsed.modelInterpretationArtifact === "string"
+        ? createHash("sha256").update(readFileSync(parsed.modelInterpretationArtifact)).digest("hex")
+        : undefined,
+      requireMultimodalV3: true,
     }, {
       repositoryRoot: process.cwd(),
       managedOutputRoot: process.env.AI_TVA_F6_OUTPUT_ROOT ?? process.cwd(),
@@ -156,6 +161,8 @@ export function runF6FullValidation(options = {}, dependencyOverrides = {}) {
         analysisContextArtifact: request.analysisContextPath,
         optimizationTargetsArtifact: request.optimizationTargetsPath,
         modelInterpretationArtifact: request.modelInterpretationPath,
+        expectedModelInterpretationContentHash: request.expectedModelInterpretationContentHash,
+        requireMultimodalV3: request.requireMultimodalV3,
         publishRoot: layout.publishRoot,
       })),
       createOptimization: (...args) => normalizeOptimizationResult(dependencies.createOptimization(...args)),

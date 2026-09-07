@@ -1,5 +1,6 @@
 import {
   calculationRequestSchema,
+  f5MultimodalArtifactV3Schema,
   f6AnalysisContextSchema,
   f6LegacyOptimizationResultSchema,
   f6ModelInterpretationArtifactSchema,
@@ -9,6 +10,7 @@ import {
   type CalculationCompletedResult,
   type CalculationFactorResult,
   type CalculationRequest,
+  type F5MultimodalArtifactV3,
   type F6ControlledScenario,
   type F6AnalysisContext,
   type F6FactorIdentity,
@@ -691,7 +693,7 @@ export function createLegacyF6Optimization(input: unknown, dependencies: Optimiz
 interface F6OptimizationV2Inputs {
   readonly analysisContext?: F6AnalysisContext;
   readonly optimizationTargets?: F6OptimizationTargets;
-  readonly modelInterpretation?: F6ModelInterpretationArtifact;
+  readonly modelInterpretation?: F6ModelInterpretationArtifact | F5MultimodalArtifactV3;
   readonly inputDecisions: {
     readonly analysisContext: F6InputDecision;
     readonly optimizationTargets: F6InputDecision;
@@ -1089,10 +1091,12 @@ function targetClass(target: F6OptimizationTargetV2): ModelAdjustmentClass {
 }
 
 function modelAssessmentWorksheet(
-  modelInterpretation: F6ModelInterpretationArtifact | undefined,
+  modelInterpretation: F6ModelInterpretationArtifact | F5MultimodalArtifactV3 | undefined,
   worksheet: F6OptimizationRequest["worksheets"][number],
 ) {
-  if (modelInterpretation === undefined || modelInterpretation.interpretationVersion !== "f6-model-interpretation-v2") {
+  if (modelInterpretation === undefined
+    || !("interpretationVersion" in modelInterpretation)
+    || modelInterpretation.interpretationVersion !== "f6-model-interpretation-v2") {
     return undefined;
   }
   return modelInterpretation.worksheets.find((candidate) =>
@@ -1165,7 +1169,9 @@ export function createF6Optimization(
   const optimizationTargets = inputs.optimizationTargets === undefined ? undefined : f6OptimizationTargetsSchema.parse(inputs.optimizationTargets);
   const modelInterpretation = inputs.modelInterpretation === undefined
     ? undefined
-    : f6ModelInterpretationArtifactSchema.parse(inputs.modelInterpretation);
+    : "contractVersion" in inputs.modelInterpretation && inputs.modelInterpretation.contractVersion === "f5-multimodal-artifact-v3"
+      ? f5MultimodalArtifactV3Schema.parse(inputs.modelInterpretation)
+      : f6ModelInterpretationArtifactSchema.parse(inputs.modelInterpretation);
   if ((analysisContext !== undefined) !== authorizedDecision(inputs.inputDecisions.analysisContext)) {
     throw new Error("Analysis Context decision does not match the provided artifact.");
   }

@@ -10,6 +10,7 @@ import {
   f6ModelInterpretationArtifactSchema,
   f6OptimizationResultSchema,
 } from "../packages/contracts/dist/contracts.js";
+import { f5MultimodalArtifactV3Schema } from "../packages/contracts/dist/ta-multimodal-contracts.js";
 import { createCalculation } from "../packages/workbook-catalog/dist/calculation.js";
 import {
   createCalculationRequestFromF4Handoff,
@@ -883,11 +884,36 @@ function modelInterpretationByWorksheet(context) {
     || context.modelInterpretation === undefined) {
     return new Map();
   }
+  if (context.modelInterpretation.contractVersion === "f5-multimodal-artifact-v3") {
+    return new Map(context.modelInterpretation.worksheets.map(({ result }) => [result.worksheetName, result]));
+  }
   return new Map(context.modelInterpretation.worksheets.map((worksheet) => [worksheet.worksheetName, worksheet]));
 }
 
 function usesModelInterpretationV2(context) {
   return context.modelInterpretation?.interpretationVersion === "f6-model-interpretation-v2";
+}
+
+function usesMultimodalV3(context) {
+  return context.modelInterpretation?.contractVersion === "f5-multimodal-artifact-v3";
+}
+
+function renderMultimodalInterpretation(lines, interpretation, prefix) {
+  lines.push(
+    `### ${prefix}.1 图片 + Factor Table 模型解读`,
+    "",
+    clean(interpretation.imageTableInterpretation),
+    "",
+    "| Factor | Source Row | 图片与表格上下文解读 |",
+    "|---|---:|---|",
+  );
+  for (const mapping of interpretation.rowMappings) {
+    lines.push(row([
+      mapping.factorOrdinal.value,
+      mapping.sourceRow,
+      mapping.interpretation,
+    ]));
+  }
 }
 
 function classFromOption(option) {
@@ -973,6 +999,7 @@ function renderAnalysisSummary(context) {
   const lines = ["# 4. TA 总结性分析"];
   const interpretations = modelInterpretationByWorksheet(context);
   const useV2 = usesModelInterpretationV2(context);
+  const useMultimodalV3 = usesMultimodalV3(context);
   context.worksheets.forEach((worksheet, index) => {
     const section = `4.${index + 1}`;
     lines.push("", `## ${section} Worksheet：${clean(worksheet.worksheetName)}`, "");
@@ -987,6 +1014,11 @@ function renderAnalysisSummary(context) {
 
     if (useV2) {
       renderStructuredRecommendationBasis(lines, worksheet, interpretation, section);
+      return;
+    }
+
+    if (useMultimodalV3) {
+      renderMultimodalInterpretation(lines, interpretation, section);
       return;
     }
 
@@ -1097,7 +1129,57 @@ function worksheetProjection(worksheet, interpretation, modelInterpretationVersi
   };
 }
 
+function assertMultimodalV3Authority(artifact, { f2Report, f3Report, f4Report, f5Report }) {
+  const readyWorksheets = f2Report.worksheets.filter(({ status }) => status === "ready");
+  const readyNames = readyWorksheets.map(({ worksheetName }) => worksheetName);
+  if (artifact.workbookContentHash !== f2Report.workbook.contentHash
+    || !isDeepStrictEqual(artifact.selectedWorksheetNames, readyNames)) {
+    throw new Error("multimodal v3 scope must exactly match the governed F2 workbook and ready worksheets");
+  }
+  for (const pair of artifact.worksheets) {
+    const { request } = pair;
+    const f2Worksheet = readyWorksheets.find(({ worksheetName }) => worksheetName === request.worksheetName);
+    const f3Worksheet = f3Report.worksheets.find(({ worksheetName }) => worksheetName === request.worksheetName);
+    const calculation = f4Report.calculations.find(({ worksheetSelection }) => (
+      worksheetSelection.worksheetName === request.worksheetName && worksheetSelection.tableId === request.tableId
+    ));
+    const f5Worksheet = f5Report.worksheets.find(({ worksheetName }) => worksheetName === request.worksheetName);
+    if (request.workbook.fileName !== f2Report.workbook.fileName
+      || f2Worksheet === undefined || f3Worksheet === undefined || calculation === undefined || f5Worksheet === undefined
+      || request.image.contentHash !== f5Worksheet.imageReference.contentHash
+      || request.image.artifactPath !== f5Worksheet.imageReference.relativePath
+      || request.factorRows.length !== calculation.factors.length) {
+      throw new Error("multimodal v3 authority does not match governed worksheet evidence");
+    }
+    for (const factorRow of request.factorRows) {
+      const f2Row = f2Worksheet.rows.find(({ tableId, sourceRow }) => tableId === factorRow.tableId && sourceRow === factorRow.sourceRow);
+      const f3Row = f3Worksheet.rows.find(({ source }) => source.tableId === factorRow.tableId && source.sourceRow === factorRow.sourceRow);
+      const factor = calculation.factors.find(({ source }) => source.tableId === factorRow.tableId && source.sourceRow === factorRow.sourceRow);
+      if (f2Row === undefined || f3Row === undefined || factor === undefined
+        || !isDeepStrictEqual(factorRow.factorOrdinal, f2Row.factorOrdinal)
+        || !isDeepStrictEqual(factorRow.factorOrdinal, f3Row.factorOrdinal)
+        || factorRow.factorName !== factor.factorName
+        || factorRow.partName !== f2Row.actualFields.partName
+        || factorRow.partCategory !== f2Row.actualFields.partCategory
+        || factorRow.drawingNumber !== f2Row.actualFields.drawingNumber
+        || factorRow.dimId !== f2Row.actualFields.dimCharacteristicId
+        || factorRow.nominal !== factor.input.nominalValue
+        || factorRow.upperTolerance !== factor.input.upperTolerance
+        || factorRow.lowerTolerance !== factor.input.lowerTolerance
+        || factorRow.longTermSafetyFactor !== factor.input.longTermSafetyFactor
+        || factorRow.sigmaLevel !== factor.input.sigmaLevel
+        || factorRow.distribution !== factor.input.distribution
+        || !isDeepStrictEqual(factorRow.sourceCells, f2Row.sourceCells)) {
+        throw new Error("multimodal v3 Factor authority does not match governed worksheet evidence");
+      }
+    }
+  }
+}
+
 export function createF6FinalReportProjection(input = {}, options = {}) {
+  const requiredMultimodalV3 = options.requireMultimodalV3 === true
+    ? parseOrThrow(f5MultimodalArtifactV3Schema, input.modelInterpretation, "multimodal v3 modelInterpretation")
+    : undefined;
   const f2Report = parseOrThrow(f2UserReportSchema, input.f2Report, "f2Report");
   const f3Report = parseOrThrow(drawingGovernanceResultV2Schema, input.f3Report, "f3Report");
   const f4Report = parseOrThrow(f4WorkflowCalculationResultSchema, input.f4Report, "f4Report");
@@ -1106,9 +1188,12 @@ export function createF6FinalReportProjection(input = {}, options = {}) {
   const analysisContext = input.analysisContext === undefined
     ? undefined
     : parseOrThrow(f6AnalysisContextSchema, input.analysisContext, "analysisContext");
-  const modelInterpretation = input.modelInterpretation === undefined
+  const modelInterpretation = requiredMultimodalV3 ?? (input.modelInterpretation === undefined
     ? undefined
-    : parseOrThrow(f6ModelInterpretationArtifactSchema, input.modelInterpretation, "modelInterpretation");
+    : parseOrThrow(f6ModelInterpretationArtifactSchema, input.modelInterpretation, "modelInterpretation"));
+  if (requiredMultimodalV3 !== undefined) {
+    assertMultimodalV3Authority(requiredMultimodalV3, { f2Report, f3Report, f4Report, f5Report });
+  }
   void analysisContext;
 
   const worksheets = buildWorksheetPolicyInputs({ f2Report, f3Report, f4Report, f5Report, f6Optimization });

@@ -75,7 +75,7 @@ describe("runF6Optimization", () => {
     const root = mkdtempSync(path.join(tmpdir(), "f6-runner-test-"));
     const runRoot = path.join(root, "publish", "f6-runs", "run-1");
     const modelInterpretation = {
-      interpretationVersion: "f6-model-interpretation-v2",
+      contractVersion: "f5-multimodal-artifact-v3",
       worksheets: [{ worksheetName: "Analysis-A", tableId: "table-1", optimizationAssessment: [] }],
     };
     const createOptimization = vi.fn(() => ({
@@ -100,6 +100,8 @@ describe("runF6Optimization", () => {
       f4ArtifactRoot: "C:/repo/test/demo-output/f4",
       f5ArtifactRoot: "C:/repo/test/demo-output/f5",
       selectedWorksheetNames: ["Analysis-A"],
+      modelInterpretationPath: "C:/repo/managed/interpretation-v3.json",
+      expectedModelInterpretationContentHash: "a".repeat(64),
     }, context(), {
       resolveOutputLayout: vi.fn(() => ({
         runId: "2026-08-24T01-02-03-000Z",
@@ -200,5 +202,42 @@ describe("runF6Optimization", () => {
     expect(result.status).toBe("failed");
     expect(result.reasonCode).toBe("input_rejected");
     expect(createOptimization).not.toHaveBeenCalled();
+  });
+
+  it("writes no optimization or final report when mandatory multimodal authority is absent", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "f6-runner-multimodal-gate-"));
+    const runRoot = path.join(root, "publish", "f6-runs", "run-1");
+    const createOptimization = vi.fn();
+    const createFinalReport = vi.fn();
+    const result = runF6Optimization({
+      f2ArtifactRoot: "C:/repo/test/demo-output/f2",
+      f3ArtifactRoot: "C:/repo/test/demo-output/f3",
+      f4ArtifactRoot: "C:/repo/test/demo-output/f4",
+      f5ArtifactRoot: "C:/repo/test/demo-output/f5",
+      selectedWorksheetNames: ["Analysis-A"],
+      modelInterpretationPath: "C:/repo/managed/interpretation-v3.json",
+      expectedModelInterpretationContentHash: "a".repeat(64),
+    }, context(), {
+      resolveOutputLayout: vi.fn(() => ({ runId: "2026-08-24T01-02-03-000Z", runRoot, publishRoot: path.join(root, "publish"), optimizationJsonName: "Feature6-Optimization.json", optimizationMdName: "Feature6-Optimization.md", finalReportMdName: "Feature6-Report.md", runSummaryJsonName: "Feature6-Run-Summary.json", manifestName: "manifest.json" })),
+      loadBundle: vi.fn(() => ({
+        status: "accepted",
+        request: { worksheets: [] },
+        f2Report: { artifactRoot: "C:/repo/test/demo-output/f1" },
+        f3Report: {},
+        f4Report: {},
+        f5Report: {},
+        inputDecisions: { analysisContext: { outcome: "NOT_PROVIDED" }, optimizationTargets: { outcome: "NOT_PROVIDED" }, modelInterpretation: { outcome: "NOT_PROVIDED" } },
+        sourceReferences: {},
+      })),
+      createOptimization,
+      createFinalReport,
+      renderOptimization: vi.fn(),
+    });
+
+    expect(result).toMatchObject({ status: "failed", reasonCode: "input_rejected" });
+    expect(createOptimization).not.toHaveBeenCalled();
+    expect(createFinalReport).not.toHaveBeenCalled();
+    expect(result.optimizationJsonPath).toBeUndefined();
+    expect(result.finalReportMdPath).toBeUndefined();
   });
 });

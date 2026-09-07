@@ -40,6 +40,7 @@ function calculationRequest(
     const row = index + 2;
     return {
       sourceRow: row,
+      factorOrdinal: { value: String.fromCharCode(65 + index), rawText: String.fromCharCode(65 + index), sourceCell: `${worksheetName}!Z${row}` },
       fields: {
         factorName: text(`factor-${index + 1}`, `${worksheetName}!A${row}`),
         nominalValue: number("0", `${worksheetName}!B${row}`, 0),
@@ -132,6 +133,7 @@ function request(
   };
   const governanceRows = calculation.factors.map((factor, index) => ({
     factorInstanceId: String(index + 1).padStart(64, "0"),
+    factorOrdinal: { value: String.fromCharCode(65 + index), rawText: String.fromCharCode(65 + index), sourceCell: `${worksheetName}!Z${factor.source.sourceRow}` },
     drawingDimensionKey: String(index + 11).padStart(64, "0"),
     deviceLevelDim: `device-${index + 1}`,
     dimensionDescription: `dimension-${index + 1}`,

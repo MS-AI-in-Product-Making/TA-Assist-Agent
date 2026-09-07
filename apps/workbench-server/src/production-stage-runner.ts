@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { basename, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { f5MultimodalArtifactV3Schema } from "@ai-assist/contracts";
 
@@ -116,6 +116,7 @@ export async function runProductionStage(stage: string, environment: ProductionS
       selectedWorksheetNames: selected,
       modelInterpretationPath: multimodal.path,
       expectedModelInterpretationContentHash: multimodal.contentHash,
+      requireMultimodalV3: true,
       ...(environment.callerAuthorizedF6Inputs?.analysisContextPath === undefined ? {} : { analysisContextPath: environment.callerAuthorizedF6Inputs.analysisContextPath }),
       ...(environment.callerAuthorizedF6Inputs?.expectedAnalysisContextContentHash === undefined ? {} : { expectedAnalysisContextContentHash: environment.callerAuthorizedF6Inputs.expectedAnalysisContextContentHash }),
       ...(environment.callerAuthorizedF6Inputs?.optimizationTargetsPath === undefined ? {} : { optimizationTargetsPath: environment.callerAuthorizedF6Inputs.optimizationTargetsPath }),
@@ -141,7 +142,8 @@ export async function runProductionStage(stage: string, environment: ProductionS
             publishRoot: layout.publishRoot,
             analysisContextArtifact: request.analysisContextPath,
             optimizationTargetsArtifact: request.optimizationTargetsPath,
-            modelInterpretationArtifact: request.modelInterpretationPath,
+            modelInterpretationArtifactRoot: dirname(request.modelInterpretationPath),
+            modelInterpretationArtifact: basename(request.modelInterpretationPath),
             expectedModelInterpretationContentHash: request.expectedModelInterpretationContentHash,
           } as never),
           createFinalReport: scripts.createF6FinalReportProjection,
