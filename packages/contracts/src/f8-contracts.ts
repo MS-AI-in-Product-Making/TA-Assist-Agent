@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { InteractionLanguage } from "@ai-assist/product-language";
 import { distributionSchema, f6InputProposalSchema, f6OptimizationTargetsSchema, worksheetSelectionConfirmationSchema, workbookCatalogFileNameSchema } from "./contracts.js";
 import { typedErrorSchema } from "./errors.js";
 
@@ -503,6 +504,13 @@ const worksheetScopePayloadSchema = withUniqueWorksheetNames(worksheetScopePaylo
 
 const worksheetDecisionProvenanceSchema = z.enum(["user", "internal_fixture"]);
 const worksheetSnapshotProvenanceSchema = z.enum(["user", "internal_fixture", "legacy_unverified"]);
+const interactionLanguageSchema: z.ZodType<InteractionLanguage> = z.object({
+  languageTag: nonEmptyStringSchema,
+  uiCatalogLanguage: z.enum(["en", "zh"]),
+  lockedAtTurnId: promptVisibleIdentitySchema,
+  source: z.enum(["workflow_start", "explicit_user_change", "legacy_fallback"]),
+  fallbackUsed: z.boolean(),
+}).strict();
 
 const worksheetScopeInternalPayloadSchema = withUniqueWorksheetNames(worksheetScopePayloadBaseSchema
   .extend({
@@ -615,6 +623,11 @@ const confirmWhatIfPromotionInternalPayloadSchema = z.object({
   promotionPreview: f6OptimizationTargetsSchema,
 }).strict();
 
+const setInteractionLanguagePayloadSchema = z.object({
+  turnId: promptVisibleIdentitySchema,
+  explicitLanguageTag: nonEmptyStringSchema,
+}).strict();
+
 const commandEnvelopeSchema = <Command extends string, T extends z.ZodTypeAny>(command: Command, payloadSchema: T) => z
   .object({
     contractVersion: z.literal("f8-session-command-v1"),
@@ -629,6 +642,7 @@ const commandEnvelopeSchema = <Command extends string, T extends z.ZodTypeAny>(c
 export const f8SessionCommandSchema = z.discriminatedUnion("command", [
   commandEnvelopeSchema("upload_workbook", z.union([workbookUploadPayloadSchema, managedWorkbookUploadPayloadSchema])),
   commandEnvelopeSchema("replace_workbook", workbookReplacePayloadSchema),
+  commandEnvelopeSchema("set_interaction_language", setInteractionLanguagePayloadSchema),
   commandEnvelopeSchema("confirm_initial_scope", worksheetScopeInternalPayloadSchema),
   commandEnvelopeSchema("auto_confirm_initial_scope", worksheetScopeInternalPayloadSchema),
   commandEnvelopeSchema("confirm_downstream_scope", worksheetScopeInternalPayloadSchema),
@@ -648,6 +662,7 @@ export const f8SessionCommandSchema = z.discriminatedUnion("command", [
 export const f8PublicSessionCommandSchema = z.discriminatedUnion("command", [
   commandEnvelopeSchema("upload_workbook", managedWorkbookUploadPayloadSchema),
   commandEnvelopeSchema("replace_workbook", workbookReplacePayloadSchema),
+  commandEnvelopeSchema("set_interaction_language", setInteractionLanguagePayloadSchema),
   commandEnvelopeSchema("confirm_initial_scope", worksheetScopePayloadSchema),
   commandEnvelopeSchema("confirm_downstream_scope", worksheetScopePayloadSchema),
   commandEnvelopeSchema("confirm_ado_decision", adoDecisionPayloadSchema),
@@ -1089,6 +1104,7 @@ export const f8SessionSnapshotSchema = z
     inputRevision: z.number().int().nonnegative(),
     state: f8SessionStateSchema,
     activeAttempt: f8StageAttemptSchema.nullable(),
+    interactionLanguage: interactionLanguageSchema,
     priorRunReferences: z.array(f8PriorRunReferenceSchema),
     artifactRefs: z.array(f8ArtifactRefSchema).optional(),
     worksheetCapabilities: z.array(f8WorksheetCapabilitySchema).optional(),

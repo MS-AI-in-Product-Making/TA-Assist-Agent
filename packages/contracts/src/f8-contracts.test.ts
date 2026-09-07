@@ -22,6 +22,13 @@ import {
 const SESSION_ID = "session-8d2a2d73-7f55-4f7d-8fa1-b4f6d2f66d31";
 const COMMAND_ID = "command-5a9fba33-2c18-4a74-9d4d-6f8b21efc01d";
 const WORKBOOK_HASH = "a".repeat(64);
+const ENGLISH_LOCK = {
+  languageTag: "en-US",
+  uiCatalogLanguage: "en",
+  lockedAtTurnId: "turn-start-en",
+  source: "workflow_start",
+  fallbackUsed: false,
+} as const;
 const CANONICAL_NAVIGATE_ACTIONS = [
   { type: "navigate", target: "/scope", label: "选择 Worksheets" },
   { type: "navigate", target: "/scope/downstream", label: "确认下游 Worksheets" },
@@ -543,6 +550,29 @@ describe("F8 session and host contracts", () => {
     expect(() => f8SessionCommandSchema.parse({ ...command, outputRoot: "C:/arbitrary" })).toThrow();
   });
 
+  it("accepts an explicit interaction language change command with revision and turn binding", () => {
+    const command = {
+      contractVersion: "f8-session-command-v1",
+      sessionId: SESSION_ID,
+      commandId: "set-language-1",
+      expectedRevision: 3,
+      command: "set_interaction_language",
+      payload: {
+        turnId: "turn-language-2",
+        explicitLanguageTag: "zh-CN",
+      },
+    } as const;
+
+    expect(f8SessionCommandSchema.parse(command)).toEqual(command);
+    expect(f8PublicSessionCommandSchema.parse(command)).toEqual(command);
+    expect(() => f8SessionCommandSchema.parse({
+      ...command,
+      payload: {
+        explicitLanguageTag: "zh-CN",
+      },
+    })).toThrow();
+  });
+
   it("accepts pending F6 context draft snapshots and rejects client-governed fields", () => {
     const pendingAnalysisContextDraft = {
       draftId: "f6-context-draft-1",
@@ -719,6 +749,7 @@ describe("F8 session and host contracts", () => {
       inputRevision: 2,
       state: "review_required",
       activeAttempt: null,
+      interactionLanguage: ENGLISH_LOCK,
       priorRunReferences: [],
       artifactRefs: [
         {
@@ -762,6 +793,7 @@ describe("F8 session and host contracts", () => {
       inputRevision: 2,
       state: "downstream_scope_required",
       activeAttempt: null,
+      interactionLanguage: ENGLISH_LOCK,
       priorRunReferences: [],
       initialScopeSelection: {
         workbookContentHash: WORKBOOK_HASH,
@@ -814,6 +846,7 @@ describe("F8 session and host contracts", () => {
       inputRevision: 2,
       state: "review_required",
       activeAttempt: null,
+      interactionLanguage: ENGLISH_LOCK,
       priorRunReferences: [],
       scenarioDrafts: [draft, { ...draft, draftId: "draft-b", worksheetName: "B_STACK" }],
     };
@@ -833,6 +866,7 @@ describe("F8 session and host contracts", () => {
       inputRevision: 2,
       state: "review_required",
       activeAttempt: null,
+      interactionLanguage: ENGLISH_LOCK,
       priorRunReferences: [],
       artifactRefs: [
         {
@@ -928,6 +962,7 @@ describe("F8 session and host contracts", () => {
       inputRevision: 2,
       state: "review_required",
       activeAttempt: null,
+      interactionLanguage: ENGLISH_LOCK,
       priorRunReferences: [],
       artifactRefs: [
         {

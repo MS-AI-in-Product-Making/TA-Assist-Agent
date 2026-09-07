@@ -6,6 +6,13 @@ import * as workbench from "./index.js";
 const SESSION_ID = "session-task-4";
 const PREVIOUS_WORKBOOK_HASH = "b".repeat(64);
 const HISTORICAL_WORKBOOK_HASH = "c".repeat(64);
+const ENGLISH_LOCK = {
+  languageTag: "en-US",
+  uiCatalogLanguage: "en",
+  lockedAtTurnId: "turn-start-en",
+  source: "workflow_start",
+  fallbackUsed: false,
+} as const;
 
 type WorkbenchExports = typeof import("./index.js") & {
   reduceSessionCommand?: (snapshot: SessionSnapshot, command: SessionCommand) => SessionSnapshot;
@@ -23,6 +30,7 @@ type SessionCommand = {
   command:
     | "upload_workbook"
     | "replace_workbook"
+    | "set_interaction_language"
     | "confirm_initial_scope"
     | "confirm_downstream_scope"
     | "confirm_ado_decision"
@@ -323,6 +331,7 @@ describe("workbench state machine", () => {
 
     expect(replaced.inputRevision).toBe(3);
     expect(replaced.state).toBe("f0_validating");
+    expect(replaced.interactionLanguage).toEqual(ENGLISH_LOCK);
     expect(replaced.initialScopeSelection).toBeUndefined();
     expect(replaced.downstreamScopeSelection).toBeUndefined();
     expect(replaced.activeAttempt).toMatchObject({
@@ -361,6 +370,34 @@ describe("workbench state machine", () => {
       expect.objectContaining({ featureId: "F4", referenceId: "f4-old", workbookHash: HISTORICAL_WORKBOOK_HASH }),
       expect.objectContaining({ featureId: "F5", referenceId: "f5-current", workbookHash: PREVIOUS_WORKBOOK_HASH }),
     ]);
+  });
+
+  it("changes interaction language only through the dedicated revision-bound command", () => {
+    const api = requireApi();
+    const changed = api.reduceSessionCommand(
+      baseSnapshot({ state: "review_required", revision: 9 }),
+      {
+        contractVersion: "f8-session-command-v1",
+        sessionId: SESSION_ID,
+        commandId: "set-language-zh",
+        expectedRevision: 9,
+        command: "set_interaction_language",
+        payload: {
+          turnId: "turn-language-zh",
+          explicitLanguageTag: "zh-CN",
+        },
+      },
+    );
+
+    expect(changed.interactionLanguage).toEqual({
+      languageTag: "zh-CN",
+      uiCatalogLanguage: "zh",
+      lockedAtTurnId: "turn-language-zh",
+      source: "explicit_user_change",
+      fallbackUsed: false,
+    });
+    expect(changed.state).toBe("review_required");
+    expect(changed.activeAttempt).toBeNull();
   });
 
   it("keeps failed attempts retryable only when the typed error allows retry", () => {
@@ -620,6 +657,7 @@ function baseSnapshotShape() {
     inputRevision: 0,
     state: "created",
     activeAttempt: null,
+    interactionLanguage: ENGLISH_LOCK,
     priorRunReferences: [] as Array<{
       featureId: "F0" | "F1" | "F2" | "F3" | "F4" | "F5" | "F6" | "F7";
       referenceId: string;

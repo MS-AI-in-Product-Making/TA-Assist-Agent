@@ -6,7 +6,7 @@ import {
   f8SessionCommandSchema,
   f8SessionEventSchema,
   f8SessionSnapshotSchema,
-} from "@ai-assist/contracts";
+} from "../../contracts/src/index.js";
 
 import { resolveManagedWorkbenchPaths } from "./managed-paths.js";
 import { CREATE_SESSION_STORE_SCHEMA_SQL } from "./session-store-schema.js";
@@ -44,6 +44,7 @@ export interface SessionStoreTestHooks {
 export interface SessionStoreOptions {
   readonly rootDir: string;
   readonly sessionId: string;
+  readonly interactionLanguage?: F8SessionSnapshot["interactionLanguage"];
   readonly testHooks?: SessionStoreTestHooks;
 }
 
@@ -169,7 +170,7 @@ async function initializeStore(options: SessionStoreOptions): Promise<SqliteSess
     throw error;
   }
 
-  return new SqliteSessionStore(database, options.sessionId, options.testHooks);
+  return new SqliteSessionStore(database, options.sessionId, options.interactionLanguage, options.testHooks);
 }
 
 class SqliteSessionStore implements SessionStore {
@@ -210,6 +211,7 @@ class SqliteSessionStore implements SessionStore {
   constructor(
     private readonly database: DatabaseSync,
     private readonly sessionId: string,
+    private readonly interactionLanguage: F8SessionSnapshot["interactionLanguage"] | undefined,
     private readonly testHooks: SessionStoreTestHooks | undefined,
   ) {
     this.selectSessionStatement = this.database.prepare(`
@@ -348,7 +350,7 @@ class SqliteSessionStore implements SessionStore {
     }
 
     const now = new Date().toISOString();
-    const snapshot = createInitialSnapshot(this.sessionId);
+    const snapshot = createInitialSnapshot(this.sessionId, this.interactionLanguage);
 
     this.insertSessionStatement.run(
       this.sessionId,
@@ -720,16 +722,20 @@ class SqliteSessionStore implements SessionStore {
     }
 
     const snapshot = parseSnapshotJson(row.snapshot_json);
-    return this.backfillHistoricalWorksheetSelectionProvenance(row, snapshot);
+    return this.backfillHistoricalCompatibility(row, snapshot);
   }
 
-  private backfillHistoricalWorksheetSelectionProvenance(row: SessionRow, snapshot: F8SessionSnapshot): F8SessionSnapshot {
+  private backfillHistoricalCompatibility(row: SessionRow, snapshot: F8SessionSnapshot): F8SessionSnapshot {
     const commandRows = parseCommittedScopeCommandRows(this.selectCommittedScopeCommandsStatement.all(this.sessionId) as unknown);
-    const migrated = migrateLegacyWorksheetSelectionProvenance(
+    const migratedSelections = migrateLegacyWorksheetSelectionProvenance(
       snapshot,
       commandRows,
       row.revision,
     );
+    const persistedSnapshot = JSON.parse(row.snapshot_json) as Record<string, unknown>;
+    const migrated = "interactionLanguage" in persistedSnapshot
+      ? migratedSelections
+      : { ...migratedSelections, interactionLanguage: snapshot.interactionLanguage };
     if (migrated === snapshot) return snapshot;
 
     this.updateSessionStatement.run(
@@ -752,7 +758,10 @@ class SqliteSessionStore implements SessionStore {
   }
 }
 
-function createInitialSnapshot(sessionId: string): F8SessionSnapshot {
+function createInitialSnapshot(
+  sessionId: string,
+  interactionLanguage: F8SessionSnapshot["interactionLanguage"] | undefined,
+): F8SessionSnapshot {
   return f8SessionSnapshotSchema.parse({
     contractVersion: "f8-session-snapshot-v1",
     sessionId,
@@ -760,6 +769,7 @@ function createInitialSnapshot(sessionId: string): F8SessionSnapshot {
     inputRevision: 0,
     state: "created",
     activeAttempt: null,
+    interactionLanguage: interactionLanguage ?? createLegacyFallbackInteractionLanguage(sessionId, 0, undefined),
     priorRunReferences: [],
   });
 }
@@ -1030,16 +1040,49 @@ function isTerminalAttemptStatus(status: SessionAttemptResultRecord["status"]): 
 
 function parseSnapshotJson(value: string): F8SessionSnapshot {
   const parsed = JSON.parse(value) as Record<string, unknown>;
+  const candidate = materializeLegacyInteractionLanguage(parsed) ?? parsed;
   try {
-    return f8SessionSnapshotSchema.parse(parsed);
+    return f8SessionSnapshotSchema.parse(candidate);
   } catch (error) {
-    const normalized = normalizeLegacySelectionProvenanceForValidation(parsed);
+    const normalized = normalizeLegacySelectionProvenanceForValidation(candidate);
     if (normalized === undefined) {
       throw error;
     }
     f8SessionSnapshotSchema.parse(normalized);
-    return parsed as F8SessionSnapshot;
+    return candidate as F8SessionSnapshot;
   }
+}
+
+function materializeLegacyInteractionLanguage(snapshot: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (snapshot.interactionLanguage !== undefined) {
+    return undefined;
+  }
+
+  const sessionId = typeof snapshot.sessionId === "string" && snapshot.sessionId.length > 0
+    ? snapshot.sessionId
+    : "legacy-session";
+  const revision = typeof snapshot.revision === "number" && Number.isInteger(snapshot.revision) && snapshot.revision >= 0
+    ? snapshot.revision
+    : 0;
+
+  return {
+    ...snapshot,
+    interactionLanguage: createLegacyFallbackInteractionLanguage(sessionId, revision, undefined),
+  };
+}
+
+function createLegacyFallbackInteractionLanguage(
+  sessionId: string,
+  revision: number,
+  turnId: string | undefined,
+): F8SessionSnapshot["interactionLanguage"] {
+  return {
+    languageTag: "und",
+    uiCatalogLanguage: "en",
+    lockedAtTurnId: turnId ?? `legacy:${sessionId}:revision-${revision}`,
+    source: "legacy_fallback",
+    fallbackUsed: true,
+  };
 }
 
 function normalizeLegacySelectionProvenanceForValidation(

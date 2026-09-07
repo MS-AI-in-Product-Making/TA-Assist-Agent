@@ -11,6 +11,13 @@ const SESSION_ID = "session-001";
 const COMMAND_ID = "command-001";
 const OTHER_COMMAND_ID = "command-002";
 const ATTEMPT_ID = "attempt-001";
+const ENGLISH_LOCK = {
+  languageTag: "en-US",
+  uiCatalogLanguage: "en",
+  lockedAtTurnId: "turn-start-en",
+  source: "workflow_start",
+  fallbackUsed: false,
+} as const;
 
 const tempRoots: string[] = [];
 
@@ -19,6 +26,52 @@ afterEach(async () => {
 });
 
 describe("SessionStore", () => {
+  it("reopens a session with the original interaction language", async () => {
+    const rootDir = await createTempRoot();
+    const store = await createSessionStore({
+      rootDir,
+      sessionId: SESSION_ID,
+      interactionLanguage: ENGLISH_LOCK,
+    });
+
+    expect((await store.readSnapshot()).interactionLanguage).toEqual(ENGLISH_LOCK);
+    await store.close();
+
+    const reopened = await openSessionStore({ rootDir, sessionId: SESSION_ID });
+    expect((await reopened.readSnapshot()).interactionLanguage).toEqual(ENGLISH_LOCK);
+    expect(readPersistedSnapshot(rootDir).interactionLanguage).toEqual(ENGLISH_LOCK);
+    await reopened.close();
+  });
+
+  it("materializes missing historical interaction language as legacy_fallback and persists it", async () => {
+    const rootDir = await createTempRoot();
+    const store = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+    await store.close();
+
+    seedLegacySnapshot(rootDir, {
+      contractVersion: "f8-session-snapshot-v1",
+      sessionId: SESSION_ID,
+      revision: 0,
+      inputRevision: 0,
+      state: "created",
+      activeAttempt: null,
+      priorRunReferences: [],
+    });
+
+    const reopened = await openSessionStore({ rootDir, sessionId: SESSION_ID });
+    const migrated = await reopened.readSnapshot();
+    await reopened.close();
+
+    expect(migrated.interactionLanguage).toEqual({
+      languageTag: "und",
+      uiCatalogLanguage: "en",
+      lockedAtTurnId: "legacy:session-001:revision-0",
+      source: "legacy_fallback",
+      fallbackUsed: true,
+    });
+    expect(readPersistedSnapshot(rootDir).interactionLanguage).toEqual(migrated.interactionLanguage);
+  });
+
   it("applies a command once and recovers the same revision", async () => {
     const rootDir = await createTempRoot();
     const store = await createSessionStore({ rootDir, sessionId: SESSION_ID });
@@ -734,6 +787,7 @@ function snapshotWithAttempt(options: {
     inputRevision: 0,
     state: options.state,
     activeAttempt: options.activeAttempt,
+    interactionLanguage: ENGLISH_LOCK,
     priorRunReferences: [],
     ...(options.scenarioDrafts === undefined ? {} : { scenarioDrafts: options.scenarioDrafts }),
     ...(options.pendingAnalysisContextDraft === undefined ? {} : { pendingAnalysisContextDraft: options.pendingAnalysisContextDraft }),
@@ -854,10 +908,21 @@ function acceptWorkbook(snapshot: {
         commandId: COMMAND_ID,
         startedAt: "2026-08-24T00:00:00.000Z",
       },
+      interactionLanguage: ENGLISH_LOCK,
       priorRunReferences: snapshot.priorRunReferences,
     },
     events: [],
   };
+}
+
+function readPersistedSnapshot(rootDir: string): Record<string, unknown> {
+  const database = openDatabase(rootDir);
+  try {
+    const row = database.prepare("SELECT snapshot_json FROM sessions WHERE session_id = ?").get(SESSION_ID) as { snapshot_json: string };
+    return JSON.parse(row.snapshot_json) as Record<string, unknown>;
+  } finally {
+    database.close();
+  }
 }
 
 function readArtifactRefMetadata(rootDir: string): unknown[] {
@@ -913,16 +978,6 @@ function insertCommittedCommand(rootDir: string, input: {
       "2026-08-24T00:00:00.000Z",
       "2026-08-24T00:00:01.000Z",
     );
-  } finally {
-    database.close();
-  }
-}
-
-function readPersistedSnapshot(rootDir: string): Record<string, unknown> {
-  const database = openDatabase(rootDir);
-  try {
-    const row = database.prepare("SELECT snapshot_json FROM sessions WHERE session_id = ?").get(SESSION_ID) as { snapshot_json: string };
-    return JSON.parse(row.snapshot_json) as Record<string, unknown>;
   } finally {
     database.close();
   }

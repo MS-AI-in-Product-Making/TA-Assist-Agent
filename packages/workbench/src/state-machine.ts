@@ -1,4 +1,9 @@
-import { createTypedError, f8SessionSnapshotSchema } from "@ai-assist/contracts";
+import {
+  createTypedError,
+  f8SessionCommandSchema,
+  f8SessionSnapshotSchema,
+} from "../../contracts/src/index.js";
+import { changeInteractionLanguage } from "../../product-language/src/index.js";
 
 import {
   annotateSnapshot,
@@ -12,8 +17,6 @@ import {
 import {
   assertCommandAllowed,
   isRunningState,
-  parseCommand,
-  parseSnapshot,
   type F8SessionCommand,
   type F8SessionSnapshot,
   type F8SessionState,
@@ -28,9 +31,11 @@ const F6_INPUT_DECISION_CONTRACT_VERSION = "f6-input-decision-v1";
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 
 export function reduceSessionCommand(snapshotInput: F8SessionSnapshot, commandInput: F8SessionCommand): F8SessionSnapshot {
-  const snapshot = parseSnapshot(snapshotInput);
-  const command = parseCommand(commandInput);
-  assertCommandAllowed(snapshot, command);
+  const snapshot = f8SessionSnapshotSchema.parse(snapshotInput);
+  const command = f8SessionCommandSchema.parse(commandInput);
+  if (command.command !== "set_interaction_language") {
+    assertCommandAllowed(snapshot, command);
+  }
 
   if (command.sessionId !== snapshot.sessionId) {
     throw createTypedError({
@@ -48,6 +53,10 @@ export function reduceSessionCommand(snapshotInput: F8SessionSnapshot, commandIn
       suggestedAction: "Refresh the session snapshot before sending another command.",
       affectedInputReferences: [command.commandId, snapshot.sessionId],
     });
+  }
+
+  if (command.command === "set_interaction_language") {
+    return reduceSetInteractionLanguage(snapshot, command);
   }
 
   switch (command.command) {
@@ -165,7 +174,7 @@ function reduceConfirmDownstreamScope(
 }
 
 export function acceptAttemptResult(snapshotInput: F8SessionSnapshot, result: SessionAttemptResult): F8SessionSnapshot {
-  const snapshot = parseSnapshot(snapshotInput);
+  const snapshot = f8SessionSnapshotSchema.parse(snapshotInput);
   if (!attemptMatchesActiveAttempt(snapshot, result.attemptId)) {
     return snapshot;
   }
@@ -216,6 +225,29 @@ function startWorkbookValidation(
     priorRunReferences: snapshot.priorRunReferences,
     scenarioDrafts: preservedDrafts?.length ? preservedDrafts : undefined,
     ...(replacingWorkbook ? {} : {}),
+  });
+}
+
+function reduceSetInteractionLanguage(
+  snapshot: F8SessionSnapshot,
+  command: F8SessionCommand,
+): F8SessionSnapshot {
+  if (isRunningState(snapshot.state) || snapshot.activeAttempt !== null) {
+    throw createTypedError({
+      code: "validation_error",
+      summary: "Interaction language can change only while the session is waiting for user input.",
+      suggestedAction: "Wait for the active run to finish before changing the interaction language.",
+      affectedInputReferences: [command.commandId, snapshot.sessionId],
+    });
+  }
+
+  const payload = command.payload as { turnId: string; explicitLanguageTag: string };
+  return nextSnapshot(snapshot, {
+    interactionLanguage: changeInteractionLanguage(snapshot.interactionLanguage, {
+      text: "",
+      turnId: payload.turnId,
+      explicitLanguageTag: payload.explicitLanguageTag,
+    }),
   });
 }
 
