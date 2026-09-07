@@ -193,8 +193,8 @@ test("creates a governed model HostAction prompt from the selected worksheet con
 
   const postedSelectionPromise = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith(`/api/sessions/${encodeURIComponent(workbench.sessionId)}/conversation`));
   const postedResponsePromise = page.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith(`/api/sessions/${encodeURIComponent(workbench.sessionId)}/conversation`));
-  await page.getByRole("textbox", { name: "Ask TA Assist from governed evidence" }).fill("Explain the current tolerance risk and identify missing evidence.");
-  await page.getByRole("button", { name: "Send message" }).click();
+  await page.getByRole("textbox", { name: "Conversation input" }).fill("Explain the current tolerance risk and identify missing evidence.");
+  await page.getByRole("button", { name: "Send request" }).click();
   const postedJson = (await postedSelectionPromise).postDataJSON();
   expect(postedJson.selection).toEqual({
     worksheetName: "AJ_GAP",
