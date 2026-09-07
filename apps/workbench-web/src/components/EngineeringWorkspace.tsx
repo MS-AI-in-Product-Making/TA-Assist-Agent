@@ -41,6 +41,7 @@ export interface EngineeringWorkspaceProps {
   readonly scenarioDrafts?: readonly F8ScenarioDraft[];
   readonly snapshot?: F8SessionSnapshot;
   readonly issue?: WorkspaceIssue;
+  readonly onIssueAction?: (action: NonNullable<WorkspaceIssue["action"]>) => void;
   readonly onUpload: (file: File) => Promise<void>;
   readonly onSelectWorksheet: (worksheetName: string) => void;
   readonly onSubmitConversation: (message: string, selection: TaConversationSelection) => Promise<void>;
@@ -102,7 +103,7 @@ export function EngineeringWorkspace(props: EngineeringWorkspaceProps) {
     <main className="engineering-shell">
       <WorkspaceToolbar model={props.model} loading={props.loading} language={language} onUpload={props.onUpload} onSelectWorksheet={props.onSelectWorksheet} onUndo={scenario.undo} onReset={() => scenario.reset()} onSave={() => { void scenario.save(selectedFactor?.key); }} canUndo={scenario.canUndo} canSave={scenario.dirty && scenarioResult !== undefined} />
       <AnalysisProgress stages={props.productStages} connected={props.connected} {...(props.runnerProgress === undefined ? {} : { progress: props.runnerProgress })} {...(props.adoProjection === undefined ? {} : { adoProjection: props.adoProjection })} {...(props.activeAttemptStartedAt === undefined ? {} : { activeAttemptStartedAt: props.activeAttemptStartedAt })} />
-      <WorkspaceIssuePanel issue={props.issue} />
+      <WorkspaceIssuePanel issue={props.issue} onAction={props.onIssueAction} />
       <div className="engineering-layout">
         <section className="engineering-layout__workbench">
           {preparing ? <WorkspacePreparation message={props.model.preparationMessage} /> : worksheet === undefined ? (

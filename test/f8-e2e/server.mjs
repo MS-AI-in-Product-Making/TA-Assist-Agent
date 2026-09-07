@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
 import { f2UserReportSchema, f4WorkflowCalculationResultSchema, hostActionResultSchema, hostActionRequestSchema } from "@ai-assist/contracts";
 import { createConversationStore } from "@ai-assist/conversation";
@@ -16,12 +17,20 @@ const ADO_CREATE_PREVIEW_SESSION_ID = "60606060-6060-4606-8606-606060606060";
 const ADO_UPDATE_PREVIEW_SESSION_ID = "70707070-7070-4707-8707-707070707070";
 const PRODUCT_EXPORT_FAILED_SESSION_ID = "80808080-8080-4808-8808-808080808080";
 const F6_CHAT_INPUT_SESSION_ID = "90909090-9090-4909-8909-909090909090";
+const MULTIMODAL_SESSION_ID = "31313131-3131-4313-8313-313131313131";
+const MODEL_UNAVAILABLE_SESSION_ID = "32323232-3232-4323-8323-323232323232";
+const AMBIGUOUS_MAPPING_SESSION_ID = "33333333-3333-4333-8333-333333333333";
+const isMultimodalSession = (sessionId) => [MULTIMODAL_SESSION_ID, MODEL_UNAVAILABLE_SESSION_ID, AMBIGUOUS_MAPPING_SESSION_ID].includes(sessionId);
 const sourceWorkbookPath = "test/f8-e2e/fixtures/anonymous-ta-workbook.xlsx";
 const sourceWorkbookBytes = await readFile(sourceWorkbookPath);
 const HASH = createHash("sha256").update(sourceWorkbookBytes).digest("hex");
 const rootDir = join(".tmp", `f8-e2e-${randomUUID()}`);
-const f1ContentHash = "f".repeat(64);
+const f1Bytes = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+const f1ContentHash = createHash("sha256").update(f1Bytes).digest("hex");
 const f1RelativePath = "e2e/f1.png";
+const f1BRelativePath = "e2e/f1-b.png";
+const f1BBytes = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/w8AAgMBgN2XxQAAAABJRU5ErkJggg==", "base64");
+const f1BContentHash = createHash("sha256").update(f1BBytes).digest("hex");
 const f3RelativePath = "e2e/f3.json";
 const f3AdoReminderRelativePath = "e2e/Feature3-ADO-Reminder.json";
 const f5RelativePath = "e2e/f5.json";
@@ -45,18 +54,28 @@ const adoCreatePreviewAuth = await started.server.testAuthenticate(ADO_CREATE_PR
 const adoUpdatePreviewAuth = await started.server.testAuthenticate(ADO_UPDATE_PREVIEW_SESSION_ID);
 const productExportFailedAuth = await started.server.testAuthenticate(PRODUCT_EXPORT_FAILED_SESSION_ID);
 const f6ChatInputAuth = await started.server.testAuthenticate(F6_CHAT_INPUT_SESSION_ID);
+const multimodalAuth = await started.server.testAuthenticate(MULTIMODAL_SESSION_ID);
+const modelUnavailableAuth = await started.server.testAuthenticate(MODEL_UNAVAILABLE_SESSION_ID);
+const ambiguousMappingAuth = await started.server.testAuthenticate(AMBIGUOUS_MAPPING_SESSION_ID);
 const f2Report = buildF2Report();
+const multimodalF2Report = buildF2Report({ includeBStack: true, englishFactorIdentity: true });
 const f3Report = buildF3Report();
+const multimodalF3Report = buildF3Report({ includeBStack: true });
 const f3AdoReminder = renderF3AdoMarkdown(f3Report);
 const f4Report = buildF4Report();
+const multimodalF4Report = buildMultimodalF4Report(f4Report);
 const f2RelativePath = "e2e/f2.json";
 const f4RelativePath = "e2e/f4.json";
+const multimodalF4RelativePath = "e2e/f4-multimodal.json";
 const downstreamSelectionHash = createHash("sha256").update(JSON.stringify(["AJ_GAP"])).digest("hex");
+const multimodalDownstreamSelectionHash = createHash("sha256").update(JSON.stringify(["AJ_GAP", "B_STACK"])).digest("hex");
 await mkdir(join(rootDir, "e2e"), { recursive: true });
 const f2Bytes = Buffer.from(JSON.stringify(f2Report));
 const f3Bytes = Buffer.from(JSON.stringify(f3Report));
+const multimodalF3Bytes = Buffer.from(JSON.stringify(multimodalF3Report));
 const f3AdoReminderBytes = Buffer.from(JSON.stringify(f3AdoReminder));
 const f4Bytes = Buffer.from(JSON.stringify(f4Report));
+const multimodalF4Bytes = Buffer.from(JSON.stringify(multimodalF4Report));
 const f5Bytes = await readFile(downstreamFixture.paths.f5);
 const f6ReportBytes = Buffer.from([
   "# TA engineering review complete",
@@ -67,9 +86,10 @@ const f6ReportBytes = Buffer.from([
   "- Adjustment assessment: no explicit system specification rewrite was authorized in this run.",
   "",
 ].join("\n"), "utf8");
-const f1Bytes = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4////fwAJ+wP9KobjigAAAABJRU5ErkJggg==", "base64");
 const f3ContentHash = createHash("sha256").update(f3Bytes).digest("hex");
+const multimodalF3ContentHash = createHash("sha256").update(multimodalF3Bytes).digest("hex");
 const f4ContentHash = createHash("sha256").update(f4Bytes).digest("hex");
+const multimodalF4ContentHash = createHash("sha256").update(multimodalF4Bytes).digest("hex");
 const f5ContentHash = createHash("sha256").update(f5Bytes).digest("hex");
 const f6ContentHash = createHash("sha256").update(f6ReportBytes).digest("hex");
 const trustedF3ContentHash = createHash("sha256").update(`${JSON.stringify(f3Report)}\n`, "utf8").digest("hex");
@@ -78,30 +98,57 @@ const trustedF6OptimizationContentHash = createHash("sha256").update('{"status":
 const trustedProjectionContentHash = createHash("sha256").update(`${JSON.stringify(projectionTemplate(), null, 2)}\n`, "utf8").digest("hex");
 await writeFile(join(rootDir, f2RelativePath), f2Bytes);
 await writeFile(join(rootDir, f3RelativePath), f3Bytes);
+await writeFile(join(rootDir, "e2e/f3-multimodal.json"), multimodalF3Bytes);
 await writeFile(join(rootDir, f3AdoReminderRelativePath), f3AdoReminderBytes);
 await writeFile(join(rootDir, f4RelativePath), f4Bytes);
+await writeFile(join(rootDir, multimodalF4RelativePath), multimodalF4Bytes);
 await writeFile(join(rootDir, f5RelativePath), f5Bytes);
 await writeFile(join(rootDir, f6ReportRelativePath), f6ReportBytes);
 await writeFile(join(rootDir, f1RelativePath), f1Bytes);
+await writeFile(join(rootDir, f1BRelativePath), f1BBytes);
 await writeFile(join(rootDir, workbookUploadRelativePath), sourceWorkbookBytes);
+for (const sessionId of [SESSION_ID, ADO_SELECTION_SESSION_ID, ADO_CREATE_PREVIEW_SESSION_ID, ADO_UPDATE_PREVIEW_SESSION_ID, PRODUCT_EXPORT_FAILED_SESSION_ID, F6_CHAT_INPUT_SESSION_ID, MULTIMODAL_SESSION_ID, MODEL_UNAVAILABLE_SESSION_ID, AMBIGUOUS_MAPPING_SESSION_ID]) {
+  const imageRoot = join(rootDir, "runtime", "workbench", "runner-output", sessionId, "production", "f1", "e2e");
+  await mkdir(imageRoot, { recursive: true });
+  await writeFile(join(imageRoot, "f1.png"), f1Bytes);
+  if (isMultimodalSession(sessionId)) await writeFile(join(imageRoot, "f1-b.png"), f1BBytes);
+}
+for (const sessionId of [SESSION_ID, ADO_SELECTION_SESSION_ID, ADO_CREATE_PREVIEW_SESSION_ID, ADO_UPDATE_PREVIEW_SESSION_ID, PRODUCT_EXPORT_FAILED_SESSION_ID, F6_CHAT_INPUT_SESSION_ID]) {
+  started.server.registerArtifactForTest(sessionId, `f1-image:${f1ContentHash}`, f1RelativePath, "f1.png", "confidential", "image/png");
+}
+started.server.registerArtifactForTest(MULTIMODAL_SESSION_ID, `f1-image:${f1ContentHash}`, f1RelativePath, "f1.png", "confidential", "image/png");
+started.server.registerArtifactForTest(MULTIMODAL_SESSION_ID, `f1-image:${f1BContentHash}`, f1BRelativePath, "f1-b.png", "confidential", "image/png");
+for (const sessionId of [MODEL_UNAVAILABLE_SESSION_ID, AMBIGUOUS_MAPPING_SESSION_ID]) {
+  started.server.registerArtifactForTest(sessionId, `f1-image:${f1ContentHash}`, f1RelativePath, "f1.png", "confidential", "image/png");
+  started.server.registerArtifactForTest(sessionId, `f1-image:${f1BContentHash}`, f1BRelativePath, "f1-b.png", "confidential", "image/png");
+}
 registerWorkbookUploadArtifact(SESSION_ID);
 registerWorkbookUploadArtifact(ADO_SELECTION_SESSION_ID);
 registerWorkbookUploadArtifact(ADO_CREATE_PREVIEW_SESSION_ID);
 registerWorkbookUploadArtifact(ADO_UPDATE_PREVIEW_SESSION_ID);
 registerWorkbookUploadArtifact(PRODUCT_EXPORT_FAILED_SESSION_ID);
 registerWorkbookUploadArtifact(F6_CHAT_INPUT_SESSION_ID);
+registerWorkbookUploadArtifact(MULTIMODAL_SESSION_ID);
+registerWorkbookUploadArtifact(MODEL_UNAVAILABLE_SESSION_ID);
+registerWorkbookUploadArtifact(AMBIGUOUS_MAPPING_SESSION_ID);
 await seedReviewSession(SESSION_ID, "review_required", auth.headers.cookie);
 await seedReviewSession(ADO_SELECTION_SESSION_ID, "ado_decision_required", adoSelectionAuth.headers.cookie);
 await seedPreviewSession(ADO_CREATE_PREVIEW_SESSION_ID, { mode: "create", title: `TA Drawing Governance - ${f3Report.workbook.fileName}` }, adoCreatePreviewAuth.headers.cookie);
 await seedPreviewSession(ADO_UPDATE_PREVIEW_SESSION_ID, { mode: "existing", workItemReference: "https://dev.azure.com/MSFTDEVICES/Project/_workitems/edit/42" }, adoUpdatePreviewAuth.headers.cookie);
 await seedFailedExecutionSession(PRODUCT_EXPORT_FAILED_SESSION_ID, productExportFailedAuth.headers.cookie);
 await seedReviewSession(F6_CHAT_INPUT_SESSION_ID, "analysis_context_decision_required", f6ChatInputAuth.headers.cookie);
+await seedReviewSession(MULTIMODAL_SESSION_ID, "f5_running", multimodalAuth.headers.cookie);
+await seedReviewSession(MODEL_UNAVAILABLE_SESSION_ID, "f5_running", modelUnavailableAuth.headers.cookie);
+await seedReviewSession(AMBIGUOUS_MAPPING_SESSION_ID, "f5_running", ambiguousMappingAuth.headers.cookie);
 registerRunnerF2Artifact(SESSION_ID);
 registerRunnerF2Artifact(ADO_SELECTION_SESSION_ID);
 registerRunnerF2Artifact(ADO_CREATE_PREVIEW_SESSION_ID);
 registerRunnerF2Artifact(ADO_UPDATE_PREVIEW_SESSION_ID);
 registerRunnerF2Artifact(PRODUCT_EXPORT_FAILED_SESSION_ID);
 registerRunnerF2Artifact(F6_CHAT_INPUT_SESSION_ID);
+registerRunnerF2Artifact(MULTIMODAL_SESSION_ID);
+registerRunnerF2Artifact(MODEL_UNAVAILABLE_SESSION_ID);
+registerRunnerF2Artifact(AMBIGUOUS_MAPPING_SESSION_ID);
 started.server.registerArtifactForTest(SESSION_ID, reviewArtifactId("f2-e2e", SESSION_ID), f2RelativePath, "f2.json", "confidential", "application/json");
 started.server.registerArtifactForTest(SESSION_ID, reviewArtifactId("f3-e2e", SESSION_ID), f3RelativePath, "f3.json", "confidential", "application/json");
 started.server.registerArtifactForTest(SESSION_ID, trustedArtifactId("f4-calculation", SESSION_ID), trustedProductionRelativePath(SESSION_ID, "f4"), "Tolerance-Calculation.json", "confidential", "application/json");
@@ -143,6 +190,9 @@ process.on("message", async (message) => {
       || message.sessionId === ADO_UPDATE_PREVIEW_SESSION_ID
       || message.sessionId === PRODUCT_EXPORT_FAILED_SESSION_ID
       || message.sessionId === F6_CHAT_INPUT_SESSION_ID
+      || message.sessionId === MULTIMODAL_SESSION_ID
+      || message.sessionId === MODEL_UNAVAILABLE_SESSION_ID
+      || message.sessionId === AMBIGUOUS_MAPPING_SESSION_ID
       ? message.sessionId
       : SESSION_ID;
     const cookie = sessionId === ADO_SELECTION_SESSION_ID
@@ -155,6 +205,12 @@ process.on("message", async (message) => {
             ? productExportFailedAuth.headers.cookie
           : sessionId === F6_CHAT_INPUT_SESSION_ID
             ? f6ChatInputAuth.headers.cookie
+          : sessionId === MULTIMODAL_SESSION_ID
+            ? multimodalAuth.headers.cookie
+          : sessionId === MODEL_UNAVAILABLE_SESSION_ID
+            ? modelUnavailableAuth.headers.cookie
+          : sessionId === AMBIGUOUS_MAPPING_SESSION_ID
+            ? ambiguousMappingAuth.headers.cookie
           : auth.headers.cookie;
     process.send?.({ type: "cookie", requestId: message.requestId, cookie });
     return;
@@ -232,7 +288,7 @@ function trustedProductionRelativePath(sessionId, feature) {
 }
 
 function reviewIdentityForSession(sessionId) {
-  return { workbookHash: HASH, downstreamSelectionHash, baselineRunReference: seededF2RunReference(sessionId) };
+  return { workbookHash: HASH, downstreamSelectionHash: isMultimodalSession(sessionId) ? multimodalDownstreamSelectionHash : downstreamSelectionHash, baselineRunReference: seededF2RunReference(sessionId) };
 }
 
 function reviewContextIdForSession(sessionId) {
@@ -286,9 +342,9 @@ async function seedTrustedProductionArtifacts(sessionId) {
   const f6Root = join(productionRoot, "f6", trustedF6Stamp());
   const projectionRoot = join(rootDir, "runtime", "workbench", "managed-artifacts", sessionId, "engineering-summary-projection");
 
-  const f2 = await writeArtifact(join(f2Root, "Feature2-Report.json"), `${JSON.stringify(f2Report)}\n`, "utf8");
-  const f3 = await writeArtifact(join(f3Root, "Feature3-Report.json"), `${JSON.stringify(f3Report)}\n`, "utf8");
-  const f4 = await writeArtifact(join(f4Root, "Feature4-Calculation.json"), `${JSON.stringify(f4Report)}\n`, "utf8");
+  const f2 = await writeArtifact(join(f2Root, "Feature2-Report.json"), `${JSON.stringify(isMultimodalSession(sessionId) ? multimodalF2Report : f2Report)}\n`, "utf8");
+  const f3 = await writeArtifact(join(f3Root, "Feature3-Report.json"), `${JSON.stringify(isMultimodalSession(sessionId) ? multimodalF3Report : f3Report)}\n`, "utf8");
+  const f4 = await writeArtifact(join(f4Root, "Feature4-Calculation.json"), `${JSON.stringify(isMultimodalSession(sessionId) ? multimodalF4Report : f4Report)}\n`, "utf8");
   const f5 = await writeArtifact(join(f5Root, "Feature5-Report.json"), Buffer.from(f5Bytes));
   const f6Optimization = await writeArtifact(join(f6Root, "Feature6-Optimization.json"), "{\"status\":\"completed\"}\n", "utf8");
   const f6Report = await writeArtifact(join(f6Root, "Feature6-Report.md"), f6ReportBytes);
@@ -309,6 +365,7 @@ async function seedTrustedProductionArtifacts(sessionId) {
 function buildReviewArtifactUpserts(sessionId, trustedArtifacts) {
   const reviewIdentity = reviewIdentityForSession(sessionId);
   const reviewArtifacts = [
+    { artifactId: `f2-report:1:${seededF2RunReference(sessionId)}`, sessionId, inputRevision: 1, kind: "f2_report", relativePath: trustedArtifacts.f2.relativePath, contentHash: trustedArtifacts.f2.contentHash },
     { artifactId: reviewArtifactId("f3-e2e", sessionId), sessionId, inputRevision: 1, kind: "f3_report", relativePath: f3RelativePath, contentHash: createHash("sha256").update(f3Bytes).digest("hex"), reviewContext: reviewIdentity },
     sessionId === SESSION_ID
       ? { artifactId: trustedArtifactId("f4-calculation", sessionId), sessionId, inputRevision: 1, kind: "f4_calculation", relativePath: trustedArtifacts.f4.relativePath, contentHash: trustedArtifacts.f4.contentHash, reviewContext: reviewIdentity }
@@ -331,7 +388,7 @@ function buildReviewArtifactUpserts(sessionId, trustedArtifacts) {
 }
 
 async function seedReviewSession(sessionId, targetState, cookie) {
-  const preseedReviewArtifacts = sessionId !== F6_CHAT_INPUT_SESSION_ID;
+  const preseedReviewArtifacts = sessionId !== F6_CHAT_INPUT_SESSION_ID && !isMultimodalSession(sessionId);
   const trustedArtifacts = await seedTrustedProductionArtifacts(sessionId);
   const reviewContextId = reviewContextIdForSession(sessionId);
   const store = await openSessionStore({ rootDir, sessionId });
@@ -351,6 +408,7 @@ async function seedReviewSession(sessionId, targetState, cookie) {
         scenarioDrafts: [savedScenarioDraft(sessionId)],
         artifactRefs: preseedReviewArtifacts
           ? [
+              { artifactId: `f2-report:1:${seededF2RunReference(sessionId)}`, kind: "f2_report", revision: 1, validated: true },
               { artifactId: reviewArtifactId("f3-e2e", sessionId), kind: "f3_report", revision: 1, validated: true, reviewContextId },
               { artifactId: sessionId === SESSION_ID ? trustedArtifactId("f4-calculation", sessionId) : reviewArtifactId("f4-calculation", sessionId), kind: "f4_calculation", revision: 1, validated: true, reviewContextId },
               { artifactId: reviewArtifactId("f5-e2e", sessionId), kind: "f5_report", revision: 1, validated: true, reviewContextId },
@@ -514,7 +572,7 @@ async function postSessionCommand(sessionId, cookie, commandEnvelope) {
     }),
   });
   if (!response.ok) {
-    throw new Error(`session command ${commandEnvelope.command} failed (${response.status})`);
+    throw new Error(`session command ${commandEnvelope.command} failed (${response.status}): ${await response.text()}`);
   }
 }
 
@@ -528,14 +586,10 @@ async function waitForSessionState(sessionId, cookie, expectedState, timeoutMs =
     lastState = snapshot.state;
     lastRevision = snapshot.revision;
     if (snapshot.activeAttempt !== null) {
-      lastAttempt = JSON.stringify({
-        stage: snapshot.activeAttempt.stage,
-        status: snapshot.activeAttempt.status,
-        result: snapshot.activeAttempt.result,
-      });
+      lastAttempt = JSON.stringify(snapshot.activeAttempt);
     }
     if (snapshot.state === expectedState) return snapshot;
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await delay(100);
   }
   throw new Error(`timed out waiting for ${sessionId} to reach ${expectedState}; last state=${lastState} revision=${lastRevision} attempt=${lastAttempt}`);
 }
@@ -559,7 +613,7 @@ async function driveSessionScopeByHttp(sessionId, cookie, targetState) {
     command: "confirm_downstream_scope",
     payload: {
       workbookHash: HASH,
-      worksheetNames: ["AJ_GAP"],
+      worksheetNames: isMultimodalSession(sessionId) ? ["B_STACK", "AJ_GAP"] : ["AJ_GAP"],
     },
   });
 
@@ -575,6 +629,13 @@ async function driveSessionScopeByHttp(sessionId, cookie, targetState) {
     command: "confirm_ado_decision",
     payload: { decision: "local_only" },
   });
+
+  if (targetState === "f5_running") {
+    await waitForSessionState(sessionId, cookie, "f5_running");
+    return;
+  }
+
+  await completePendingMultimodalAction(sessionId, cookie);
 
   if (targetState === "analysis_context_decision_required") {
     await waitForSessionState(sessionId, cookie, "analysis_context_decision_required");
@@ -604,6 +665,54 @@ async function driveSessionScopeByHttp(sessionId, cookie, targetState) {
   await waitForSessionState(sessionId, cookie, "review_required");
 }
 
+async function completePendingMultimodalAction(sessionId, cookie) {
+  await waitForSessionState(sessionId, cookie, "f5_running");
+  const pendingToken = started.server.issueHostBearer(sessionId, ["sessions:read"]);
+  let pendingResponse;
+  const deadline = Date.now() + 5_000;
+  do {
+    pendingResponse = await fetch(`${apiOrigin}/api/sessions/${sessionId}/host-actions/pending`, { headers: { authorization: `Bearer ${pendingToken}` } });
+    if (pendingResponse.status === 200) break;
+    if (pendingResponse.status !== 204) throw new Error(`pending multimodal action unavailable (${pendingResponse.status}): ${await pendingResponse.text()}`);
+    await delay(25);
+  } while (Date.now() < deadline);
+  if (pendingResponse.status !== 200) throw new Error("pending multimodal action was not materialized");
+  const pending = await pendingResponse.json();
+  const hostInstanceId = `seed-multimodal-${sessionId}`;
+  const claimToken = started.server.issueHostBearer(sessionId, ["host-actions:claim"], { actionId: pending.actionId, hostInstanceId });
+  const claimResponse = await fetch(`${apiOrigin}/api/sessions/${sessionId}/host-actions/${encodeURIComponent(pending.actionId)}/claim`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${claimToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ hostInstanceId }),
+  });
+  if (!claimResponse.ok) throw new Error(`multimodal claim failed (${claimResponse.status})`);
+  const claim = await claimResponse.json();
+  const request = claim.request.request;
+  const result = {
+    contractVersion: "f5-multimodal-result-v3",
+    outputClassification: "confidential",
+    requestHash: request.requestHash,
+    sessionId: request.sessionId,
+    revision: request.revision,
+    inputRevision: request.inputRevision,
+    workbookContentHash: request.workbook.contentHash,
+    worksheetName: request.worksheetName,
+    tableId: request.tableId,
+    imageContentHash: request.image.contentHash,
+    model: { modelId: "seed-vision", supportsImage: true },
+    imageTableInterpretation: `Seed interpretation for ${request.worksheetName}.`,
+    rowMappings: request.factorRows.map((row) => ({ worksheetName: row.worksheetName, tableId: row.tableId, sourceRow: row.sourceRow, factorOrdinal: row.factorOrdinal, mappingStatus: "matched", visibleStatus: "visible", interpretation: `${row.factorOrdinal.value}:${row.factorName}` })),
+  };
+  const payload = { status: "completed", outcome: { kind: "worksheet_multimodal_response", result } };
+  const resultToken = started.server.issueHostBearer(sessionId, ["host-actions:result"], { actionId: pending.actionId, hostInstanceId });
+  const response = await fetch(`${apiOrigin}/api/sessions/${sessionId}/host-actions/${encodeURIComponent(pending.actionId)}/result`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${resultToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ contractVersion: "f8-host-action-result-v1", actionId: pending.actionId, hostInstanceId, leaseId: claim.leaseId, status: "completed", resultHash: createHash("sha256").update(JSON.stringify(payload)).digest("hex"), payload }),
+  });
+  if (!response.ok) throw new Error(`multimodal completion failed (${response.status}): ${await response.text()}`);
+}
+
 async function runSeededAttempt(job) {
   const sessionId = readSessionIdFromJob(job);
   if (sessionId === undefined) throw new Error("seeded runner job missing sessionId");
@@ -615,8 +724,10 @@ async function runSeededAttempt(job) {
       runId: seededF2RunReference(sessionId),
       f2Root: join(rootDir, "runtime", "workbench", "runner-output", sessionId, "production", "f2"),
       workbookContentHash: HASH,
-      report: f2Report,
-      worksheetCapabilities: [{ worksheetName: "AJ_GAP", whatIfAvailable: true }],
+      report: isMultimodalSession(sessionId) ? multimodalF2Report : f2Report,
+      worksheetCapabilities: isMultimodalSession(sessionId)
+        ? [{ worksheetName: "AJ_GAP", whatIfAvailable: true }, { worksheetName: "B_STACK", whatIfAvailable: true }]
+        : [{ worksheetName: "AJ_GAP", whatIfAvailable: true }],
     };
   }
 
@@ -627,7 +738,7 @@ async function runSeededAttempt(job) {
       governance: { status: "governance_required" },
       reviewContext: reviewIdentityForSession(sessionId),
       artifactReferences: [
-        { artifactId: reviewArtifactId("f3-e2e", sessionId), kind: "f3_report", relativePath: f3RelativePath, contentHash: f3ContentHash },
+        { artifactId: reviewArtifactId("f3-e2e", sessionId), kind: "f3_report", relativePath: isMultimodalSession(sessionId) ? "e2e/f3-multimodal.json" : f3RelativePath, contentHash: isMultimodalSession(sessionId) ? multimodalF3ContentHash : f3ContentHash },
         ...(sessionId === SESSION_ID ? [{ artifactId: trustedArtifactId("f3-report", sessionId), kind: "f3_report", relativePath: trustedProductionRelativePath(sessionId, "f3"), contentHash: trustedF3ContentHash }] : []),
       ],
     };
@@ -641,17 +752,19 @@ async function runSeededAttempt(job) {
       artifactReferences: [
         sessionId === SESSION_ID
           ? { artifactId: trustedArtifactId("f4-calculation", sessionId), kind: "f4_calculation", relativePath: trustedProductionRelativePath(sessionId, "f4"), contentHash: trustedF4ContentHash }
-          : { artifactId: reviewArtifactId("f4-e2e", sessionId), kind: "f4_calculation", relativePath: f4RelativePath, contentHash: f4ContentHash },
+          : { artifactId: reviewArtifactId("f4-e2e", sessionId), kind: "f4_calculation", relativePath: isMultimodalSession(sessionId) ? multimodalF4RelativePath : f4RelativePath, contentHash: isMultimodalSession(sessionId) ? multimodalF4ContentHash : f4ContentHash },
       ],
     };
   }
 
   if (job.stage === "f5_running") {
+    const multimodalRegistry = JSON.parse(await readFile(join(rootDir, "runtime", "workbench", "registries", "multimodal-artifacts", `${sessionId}.json`), "utf8"));
     return {
       featureId: "F5",
       status: "completed",
       reviewContext: reviewIdentityForSession(sessionId),
       artifactReferences: [
+        { artifactId: "f5-multimodal:1", kind: "f5_multimodal", relativePath: relative(rootDir, multimodalRegistry.path), contentHash: multimodalRegistry.contentHash },
         { artifactId: reviewArtifactId("f5-e2e", sessionId), kind: "f5_report", relativePath: f5RelativePath, contentHash: f5ContentHash },
         ...(sessionId === SESSION_ID ? [{ artifactId: trustedArtifactId("f5-report", sessionId), kind: "f5_report", relativePath: trustedProductionRelativePath(sessionId, "f5"), contentHash: f5ContentHash }] : []),
       ],
@@ -707,8 +820,8 @@ function previewConfirmation(target, nextContent, confirmationHash, factorCount)
   };
 }
 
-function buildF3Report() {
-  return {
+function buildF3Report({ includeBStack = false } = {}) {
+  const report = {
     contractVersion: "v1",
     modelVersion: "drawing-governance-v2",
     outputClassification: "confidential",
@@ -723,6 +836,7 @@ function buildF3Report() {
         rows: [
           {
             factorInstanceId: "a".repeat(64),
+            factorOrdinal: { value: "A", rawText: "A", sourceCell: "AJ_GAP!Z2" },
             deviceLevelDim: "TP_Gap_X",
             dimensionDescription: "Gap X",
             partCategory: "Display",
@@ -742,6 +856,7 @@ function buildF3Report() {
           },
           {
             factorInstanceId: "b".repeat(64),
+            factorOrdinal: { value: "B", rawText: "B", sourceCell: "AJ_GAP!Z3" },
             deviceLevelDim: "TP_Gap_Y",
             dimensionDescription: "Gap Y",
             partCategory: "Display",
@@ -767,6 +882,7 @@ function buildF3Report() {
         rows: [
           {
             factorInstanceId: "c".repeat(64),
+            factorOrdinal: { value: "C", rawText: "C", sourceCell: "B_STACK!Z8" },
             deviceLevelDim: "TP_Stack_Z",
             dimensionDescription: "Stack Z",
             partCategory: "CNC",
@@ -790,6 +906,12 @@ function buildF3Report() {
     ado: { status: "not_requested" },
     summary: { worksheetCount: 2, factorCount: 3, completeCount: 0, governanceRequiredCount: 3, duplicateConflictCount: 0 },
   };
+  if (includeBStack) {
+    report.worksheets[1].rows[0].imageReference = { artifact: "f1", relativePath: f1BRelativePath, contentHash: f1BContentHash, worksheetName: "B_STACK" };
+    report.worksheets.reverse();
+    return report;
+  }
+  return report;
 }
 
 function buildSystemSpecification(worksheetName) {
@@ -803,10 +925,10 @@ function buildSystemSpecification(worksheetName) {
   };
 }
 
-function buildF2Report() {
+function buildF2Report({ includeBStack = false, englishFactorIdentity = false } = {}) {
   const systemSpecification = buildSystemSpecification("AJ_GAP");
   const actualFields = {
-    factorName: "中心间隙",
+    factorName: englishFactorIdentity ? "AJ center to C-bucket" : "中心间隙",
     partName: "支架加强组件",
     drawingNumber: "DRW-001-A",
     dimCharacteristicId: "DIM-17",
@@ -816,7 +938,7 @@ function buildF2Report() {
     lowerTolerance: -0.05,
     longTermSafetyFactor: 1,
     sigmaLevel: 3,
-    distribution: "Normal",
+    distribution: "normal",
     mean: 0,
     tolerance: 0.1,
     oneSigma: 0.02,
@@ -845,6 +967,7 @@ function buildF2Report() {
     worksheetName: "AJ_GAP",
     tableId: "table-a",
     sourceRow: 2,
+    factorOrdinal: { value: "A", rawText: "A", sourceCell: "AJ_GAP!Z2" },
     imageReference: { artifact: "f1", relativePath: f1RelativePath, contentHash: f1ContentHash, worksheetName: "AJ_GAP" },
     actualFields,
     displayFields,
@@ -879,29 +1002,59 @@ function buildF2Report() {
       targetCpk: 1,
       additionalMeanShift: systemSpecification.additionalMeanShift,
     },
-    factors: [{ tableId: row.tableId, sourceRow: row.sourceRow, unit: "mm", actualFields: row.actualFields, sourceCells: row.sourceCells }],
+    factors: [{ tableId: row.tableId, sourceRow: row.sourceRow, factorOrdinal: row.factorOrdinal, unit: "mm", actualFields: row.actualFields, sourceCells: row.sourceCells }],
+  };
+  const bRow = {
+    ...structuredClone(row),
+    worksheetName: "B_STACK",
+    tableId: "table-b",
+    sourceRow: 8,
+    factorOrdinal: { value: "C", rawText: "C", sourceCell: "B_STACK!Z8" },
+    imageReference: { artifact: "f1", relativePath: f1BRelativePath, contentHash: f1BContentHash, worksheetName: "B_STACK" },
+    actualFields: { ...structuredClone(actualFields), factorName: "B bracket stack", partName: "B支架" },
+    displayFields: { ...structuredClone(displayFields), factorName: "B bracket stack", partName: "B bracket" },
+    sourceCells: { factorName: "B_STACK!A8" },
+  };
+  const bSpecification = buildSystemSpecification("B_STACK");
+  const bHandoff = {
+    ...structuredClone(handoff),
+    worksheetName: "B_STACK",
+    systemSpecification: {
+      designNominal: bSpecification.designNominal.actualValue,
+      lowerSpecLimit: bSpecification.lowerSpecLimit,
+      upperSpecLimit: bSpecification.upperSpecLimit,
+      targetSigmaLevel: bSpecification.targetSigmaLevel,
+      targetCpk: 1,
+      additionalMeanShift: bSpecification.additionalMeanShift,
+    },
+    factors: [{ tableId: bRow.tableId, sourceRow: bRow.sourceRow, factorOrdinal: bRow.factorOrdinal, unit: "mm", actualFields: bRow.actualFields, sourceCells: bRow.sourceCells }],
   };
 
   return f2UserReportSchema.parse({
     contractVersion: "v1",
     inputClassification: "confidential",
     status: "completed",
-    workbook: { fileName: "anonymous-ta-workbook.xlsx", contentHash: HASH, f1GeneratedAt: "2026-08-25T00:00:00.000Z" },
+    workbook: { fileName: longWorkbookFileName, contentHash: HASH, f1GeneratedAt: "2026-08-25T00:00:00.000Z" },
     knowledgeBaseVersions: ["v1", "internal-v1"],
     mappingRuleVersion: "v1",
     artifactRoot: "test/f8-e2e/generated",
-    worksheets: [{ worksheetName: "AJ_GAP", status: "ready", toleranceLoopDescription: "Synthetic gap", tolerancePathImageStatus: "available", systemSpecification, systemSpecificationIssues: [], rows: [row], missingFieldSummary: [], f4CalculabilityIssues: [] }],
-    f4Handoffs: [handoff],
+    worksheets: includeBStack
+      ? [
+          { worksheetName: "B_STACK", status: "ready", toleranceLoopDescription: "Stack", tolerancePathImageStatus: "available", systemSpecification: bSpecification, systemSpecificationIssues: [], rows: [bRow], missingFieldSummary: [], f4CalculabilityIssues: [] },
+          { worksheetName: "AJ_GAP", status: "ready", toleranceLoopDescription: "Synthetic gap", tolerancePathImageStatus: "available", systemSpecification, systemSpecificationIssues: [], rows: [row], missingFieldSummary: [], f4CalculabilityIssues: [] },
+        ]
+      : [{ worksheetName: "AJ_GAP", status: "ready", toleranceLoopDescription: "Synthetic gap", tolerancePathImageStatus: "available", systemSpecification, systemSpecificationIssues: [], rows: [row], missingFieldSummary: [], f4CalculabilityIssues: [] }],
+    f4Handoffs: includeBStack ? [bHandoff, handoff] : [handoff],
     adoEvents: [],
     summary: {
-      worksheetsChecked: 1,
+      worksheetsChecked: includeBStack ? 2 : 1,
       blockedWorksheetCount: 0,
-      readyWorksheetCount: 1,
-      factorRowCount: 1,
+      readyWorksheetCount: includeBStack ? 2 : 1,
+      factorRowCount: includeBStack ? 2 : 1,
       rowsWithRequiredMissing: 0,
       requiredMissingFieldCount: 0,
       missingImageWorksheetCount: 0,
-      internalWithinGuidanceCount: 1,
+      internalWithinGuidanceCount: includeBStack ? 2 : 1,
       internalGuidanceExceededCount: 0,
       f0InformationInsufficientCount: 0,
       publicLibraryMatchCount: 0,
@@ -928,7 +1081,20 @@ function buildF4Report() {
     targetCpk: systemSpecification.targetSigmaLevel.actualValue / 3,
     additionalMeanShift: systemSpecification.additionalMeanShift.actualValue,
   };
+  request.worksheetAnalysisAssets.worksheets[0].factorTables[0].rows[0].factorOrdinal = { value: "A", rawText: "A", sourceCell: "AJ_GAP!Z2" };
+  request.worksheetAnalysisAssets.worksheets[0].factorTables[0].rows[0].fields.factorName = text("中心间隙", "AJ_GAP!A2");
   const calculation = createCalculation(request);
   if (calculation.status !== "completed") throw new Error("synthetic calculation failed");
   return f4WorkflowCalculationResultSchema.parse({ contractVersion: "v1", workflowVersion: "f4-f2-v1", outputClassification: "confidential", featureId: "F4", status: "completed", runId: "e2e-run", generatedAt: "2026-08-25T00:00:00.000Z", source: { artifactReference: "Feature2-Report.json", workbookFileName: longWorkbookFileName, workbookContentHash: HASH }, calculations: [calculation], summary: { selectedWorksheetCount: 1, completedWorksheetCount: 1 } });
+}
+
+function buildMultimodalF4Report(report) {
+  const calculation = structuredClone(report.calculations[0]);
+  calculation.factors[0].factorName = "AJ center to C-bucket";
+  const calculationB = structuredClone(calculation);
+  calculationB.runReference = "run-2";
+  calculationB.worksheetSelection = { worksheetName: "B_STACK", tableId: "table-b" };
+  calculationB.factors[0].factorName = "B bracket stack";
+  calculationB.factors[0].source = { ...calculationB.factors[0].source, worksheetName: "B_STACK", tableId: "table-b", sourceRow: 8 };
+  return f4WorkflowCalculationResultSchema.parse({ ...structuredClone(report), calculations: [calculationB, calculation], summary: { selectedWorksheetCount: 2, completedWorksheetCount: 2 } });
 }

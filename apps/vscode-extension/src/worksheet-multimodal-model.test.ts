@@ -20,7 +20,7 @@ describe("executeWorksheetMultimodalModel", () => {
     const execution = await executeWorksheetMultimodalModel({
       request,
       fetchImage: async () => ({ bytes: IMAGE_BYTES, mediaType: "image/png" }),
-      models: [{ id: "vision-model", sendRequest }],
+      models: [{ id: "vision-model", supportsImage: true, sendRequest }],
       createImagePart(bytes, mediaType) { const part = { kind: "image", bytes, mediaType }; parts.push(part); return part; },
       createTextPart(text) { const part = { kind: "text", text }; parts.push(part); return part; },
       createUserMessage: (content) => ({ content }),
@@ -40,7 +40,7 @@ describe("executeWorksheetMultimodalModel", () => {
     const execution = await executeWorksheetMultimodalModel({
       request: multimodalRequest(),
       fetchImage: async () => ({ bytes: new Uint8Array([1, 2, 3]), mediaType: "image/png" }),
-      models: [{ id: "vision-model", sendRequest }],
+      models: [{ id: "vision-model", supportsImage: true, sendRequest }],
       createImagePart: vi.fn(),
       createTextPart: vi.fn(),
       createUserMessage: vi.fn(),
@@ -61,6 +61,17 @@ describe("executeWorksheetMultimodalModel", () => {
     });
 
     expect(execution).toEqual({ status: "blocked", reason: "model_capability_unavailable" });
+  });
+
+  it("blocks without dispatch when host image capability is unknown", async () => {
+    const sendRequest = vi.fn();
+    const execution = await executeWorksheetMultimodalModel({
+      ...dependencies(multimodalRequest(), "unused"),
+      models: [{ id: "unknown-model", sendRequest }],
+    });
+
+    expect(execution).toEqual({ status: "blocked", reason: "model_capability_unavailable" });
+    expect(sendRequest).not.toHaveBeenCalled();
   });
 
   it("skips an explicitly text-only model and uses an image-capable model once", async () => {
@@ -105,7 +116,7 @@ function dependencies(request: ReturnType<typeof multimodalRequest>, responseTex
   return {
     request,
     fetchImage: async () => ({ bytes: IMAGE_BYTES, mediaType: "image/png" as const }),
-    models: [{ id: "vision-model", sendRequest: async () => ({ text: stream(responseText) }) }],
+    models: [{ id: "vision-model", supportsImage: true, sendRequest: async () => ({ text: stream(responseText) }) }],
     createImagePart: (bytes: Uint8Array, mediaType: string) => ({ bytes, mediaType }),
     createTextPart: (text: string) => ({ text }),
     createUserMessage: (content: readonly unknown[]) => ({ content }),

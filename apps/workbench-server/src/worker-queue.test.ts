@@ -125,6 +125,22 @@ describe("persistent workbench worker queue", () => {
     expect(starts).toEqual(["queued"]);
   });
 
+  it("discards a persisted F5 job before startup reconciliation reaches the external evidence gate", async () => {
+    const store = new MemoryQueueSessionStore();
+    await createPersistentWorkerQueue({ rootDir, sessionStore: store });
+    insertQueueJob(rootDir, { jobId: "attempt-f5", attemptId: "attempt-f5", kind: "calculation", stage: "f5_running", status: "queued" });
+    const worker = vi.fn(async () => ({ ok: true }));
+    const queue = await createPersistentWorkerQueue({ rootDir, sessionStore: store, worker });
+
+    await expect(queue.assertNoUnreconciledExternalGateJobs()).rejects.toThrow(/not reconciled/i);
+    expect(await queue.discardForExternalGate!("attempt-f5")).toBe(true);
+    await expect(queue.assertNoUnreconciledExternalGateJobs()).resolves.toBeUndefined();
+    await queue.reconcile();
+
+    expect(worker).not.toHaveBeenCalled();
+    expect(readQueueJobs(rootDir)).toEqual([]);
+  });
+
   it("fails surviving queued jobs on restart when no executor is configured", async () => {
     const store = new MemoryQueueSessionStore();
     const queue = await createPersistentWorkerQueue({ rootDir, sessionStore: store });

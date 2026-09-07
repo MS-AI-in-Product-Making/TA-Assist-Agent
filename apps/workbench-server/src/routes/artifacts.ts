@@ -51,7 +51,7 @@ export const artifactsRoutes: FastifyPluginAsync<{ readonly context: WorkbenchSe
 };
 
 const ALLOWED_MIME_TYPES = new Set(["text/plain", "text/markdown; charset=utf-8", "application/json", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "image/png", "image/jpeg"]);
-const JSON_ARTIFACT_KINDS = new Set(["f2_report", "f3_report", "f4_calculation", "f4_report", "f5_report", "f6_optimization", "engineering_summary_projection"]);
+const JSON_ARTIFACT_KINDS = new Set(["f2_report", "f3_report", "f4_calculation", "f4_report", "f5_report", "f5_multimodal", "f6_optimization", "engineering_summary_projection"]);
 
 async function readPersistedArtifact(
   rootDir: string,
@@ -70,7 +70,15 @@ async function readPersistedArtifact(
   }
   const store = await openSessionStore({ rootDir, sessionId });
   try {
-    const reference = await store.readArtifactReference(artifactId);
+    const persistedReference = await store.readArtifactReference(artifactId);
+    const snapshotReference = artifactId.startsWith("f5-multimodal:")
+      ? (await store.readSnapshot()).artifactRefs?.find((candidate) => candidate.artifactId === artifactId
+        && candidate.kind === "f5_multimodal"
+        && candidate.validated
+        && "relativePath" in candidate
+        && "contentHash" in candidate)
+      : undefined;
+    const reference = persistedReference ?? snapshotReference as typeof persistedReference;
     if (reference === undefined) return undefined;
     if (reference.kind === "f6_report") {
       const snapshot = await store.readSnapshot();
@@ -93,6 +101,7 @@ async function readPersistedArtifact(
       fileName,
       classification: "confidential" as const,
       mimeType: "application/json",
+      ...(reference.kind === "f5_multimodal" && reference.contentHash !== undefined ? { contentHash: reference.contentHash } : {}),
     };
   } finally {
     await store.close();

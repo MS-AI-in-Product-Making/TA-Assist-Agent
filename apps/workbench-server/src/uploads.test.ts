@@ -42,6 +42,8 @@ async function immediateQueue(options: PersistentWorkerQueueOptions) {
       }
     },
     async cancel() { return false; },
+    async discardForExternalGate() { return false; },
+    async assertNoUnreconciledExternalGateJobs() {},
     async reconcile() {},
   };
 }

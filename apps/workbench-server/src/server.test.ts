@@ -250,6 +250,8 @@ async function immediateQueue(options: PersistentWorkerQueueOptions) {
       }
     },
     async cancel() { return false; },
+    async discardForExternalGate() { return false; },
+    async assertNoUnreconciledExternalGateJobs() {},
     async reconcile() {},
   };
 }
@@ -676,6 +678,8 @@ describe("workbench server routes", () => {
         return {
         async enqueue(job) { return { jobId: job.jobId, attemptId: job.attemptId, status: "queued" as const }; },
         async cancel() { return false; },
+        async discardForExternalGate() { return false; },
+        async assertNoUnreconciledExternalGateJobs() {},
         async reconcile() {},
       };
       },
@@ -804,6 +808,8 @@ describe("workbench server routes", () => {
         return {
           async enqueue(job) { return { jobId: job.jobId, attemptId: job.attemptId, status: "queued" as const }; },
           async cancel() { return false; },
+          async discardForExternalGate() { return false; },
+          async assertNoUnreconciledExternalGateJobs() {},
           async reconcile() {},
         };
       },
@@ -895,6 +901,8 @@ describe("workbench server routes", () => {
           return { jobId: job.jobId, attemptId: job.attemptId, status: "queued" as const };
         },
         async cancel() { return false; },
+        async discardForExternalGate() { return false; },
+        async assertNoUnreconciledExternalGateJobs() {},
         async reconcile() {},
       }),
       skipWebAssets: true,
@@ -984,11 +992,14 @@ describe("workbench server routes", () => {
       runner: async () => ({ status: "ok" }),
       queueFactory: async (options) => ({
         async enqueue(job) {
+          await uploadGate;
           enqueued.push(job);
           await options.sessionStore.persistAttempt({ attemptId: job.attemptId, status: "running", jobId: job.jobId, stage: job.stage });
           return { jobId: job.jobId, attemptId: job.attemptId, status: "queued" as const };
         },
         async cancel() { return false; },
+        async discardForExternalGate() { return false; },
+        async assertNoUnreconciledExternalGateJobs() {},
         async reconcile() {},
       }),
       skipWebAssets: true,
@@ -2464,6 +2475,8 @@ describe("workbench server routes", () => {
       async enqueue(job: StageJob) { return { jobId: job.jobId, attemptId: job.attemptId, status: "queued" as const }; },
       async recover(job: StageJob) { recovered.push(job); return { jobId: job.jobId, attemptId: job.attemptId, status: "queued" as const }; },
       async cancel() { return false; },
+      async discardForExternalGate() { return false; },
+      async assertNoUnreconciledExternalGateJobs() {},
       async reconcile() {},
     });
 
@@ -2475,6 +2488,33 @@ describe("workbench server routes", () => {
       await rm(rootDir, { recursive: true, force: true });
     }
   }, 15_000);
+
+  it("aborts startup before queue reconciliation when persisted session recovery fails", async () => {
+    const rootDir = testRoot("workbench-server-corrupt-recovery");
+    await rm(rootDir, { recursive: true, force: true });
+    const sessionId = "16161616-1616-4616-8616-161616161616";
+    const store = await createSessionStore({ rootDir, sessionId, interactionLanguage: ENGLISH_LOCK });
+    await store.close();
+    const database = new DatabaseSync(join(rootDir, "runtime", "workbench", "workbench.sqlite"));
+    try {
+      database.prepare("UPDATE sessions SET snapshot_json = ? WHERE session_id = ?").run("{}", sessionId);
+    } finally {
+      database.close();
+    }
+    const reconcile = vi.fn(async () => undefined);
+    const queueFactory = async () => ({
+      async enqueue(job: StageJob) { return { jobId: job.jobId, attemptId: job.attemptId, status: "queued" as const }; },
+      async recover(job: StageJob) { return { jobId: job.jobId, attemptId: job.attemptId, status: "queued" as const }; },
+      async cancel() { return false; },
+      async discardForExternalGate() { return false; },
+      async assertNoUnreconciledExternalGateJobs() {},
+      reconcile,
+    });
+
+    await expect(buildWorkbenchServer({ rootDir, queueFactory, skipWebAssets: true })).rejects.toThrow();
+    expect(reconcile).not.toHaveBeenCalled();
+    await rm(rootDir, { recursive: true, force: true });
+  });
 
   it("restores the managed workbook binding for a committed replacement after restart", async () => {
     const rootDir = testRoot("workbench-server-replacement-recovery");
@@ -2501,6 +2541,8 @@ describe("workbench server routes", () => {
       async enqueue(job: StageJob) { return { jobId: job.jobId, attemptId: job.attemptId, status: "queued" as const }; },
       async recover(job: StageJob) { recovered.push(job); return { jobId: job.jobId, attemptId: job.attemptId, status: "queued" as const }; },
       async cancel() { return false; },
+      async discardForExternalGate() { return false; },
+      async assertNoUnreconciledExternalGateJobs() {},
       async reconcile() {},
     });
 

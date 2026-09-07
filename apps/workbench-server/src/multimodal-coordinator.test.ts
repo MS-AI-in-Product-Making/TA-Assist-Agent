@@ -5,9 +5,9 @@ import { join, relative } from "node:path";
 
 import { createF5MultimodalFactorSetHash, createF5MultimodalRequestHash } from "@ai-assist/contracts";
 import type { F8SessionSnapshot } from "@ai-assist/workbench";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { assertF5MultimodalRunnerReference, materializeCompletedMultimodalArtifact, type WorkbenchServerContext } from "./server.js";
+import { assertF5MultimodalRunnerReference, materializeCompletedMultimodalArtifact, reconcileActiveMultimodalAttempt, type WorkbenchServerContext } from "./server.js";
 
 const SESSION_ID = "91919191-9191-4191-8191-919191919191";
 const roots: string[] = [];
@@ -40,6 +40,43 @@ describe("materializeCompletedMultimodalArtifact", () => {
     const relativePath = relative(rootDir, registry.path);
     expect(() => assertF5MultimodalRunnerReference(rootDir, snapshot(), [{ artifactId: "f5-multimodal:3", kind: "f5_multimodal", relativePath, contentHash: "f".repeat(64) }])).toThrow(/server-owned aggregate/i);
     expect(() => assertF5MultimodalRunnerReference(rootDir, snapshot(), [{ artifactId: "f5-multimodal:3", kind: "f5_multimodal", relativePath, contentHash: registry.contentHash }])).not.toThrow();
+  });
+
+  it("replays a persisted terminal failure instead of starting the F5 runner", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "ta-multimodal-recovery-"));
+    roots.push(rootDir);
+    const requestValue = request("Analysis-A", "table-a", "A", 11);
+    const failActiveMultimodalAttempt = vi.fn(async () => undefined);
+    const actionRequest = completedRecord(requestValue).request;
+    const context = {
+      buildWorksheetInterpretationRequests: async () => [requestValue],
+      hostActions: {
+        readRecord: async () => ({
+          status: "blocked",
+          request: actionRequest,
+          result: { payload: { status: "blocked", reason: "model_capability_unavailable" } },
+        }),
+      },
+      failActiveMultimodalAttempt,
+    } as unknown as Pick<WorkbenchServerContext, "buildWorksheetInterpretationRequests" | "hostActions" | "failActiveMultimodalAttempt">;
+
+    await expect(reconcileActiveMultimodalAttempt(rootDir, snapshot(), context)).resolves.toBe(false);
+    expect(failActiveMultimodalAttempt).toHaveBeenCalledWith(snapshot(), "model_capability_unavailable");
+  });
+
+  it("keeps F5 waiting while a required HostAction is pending", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "ta-multimodal-pending-"));
+    roots.push(rootDir);
+    const requestValue = request("Analysis-A", "table-a", "A", 11);
+    const failActiveMultimodalAttempt = vi.fn();
+    const context = {
+      buildWorksheetInterpretationRequests: async () => [requestValue],
+      hostActions: { readRecord: async () => ({ status: "pending", request: completedRecord(requestValue).request }) },
+      failActiveMultimodalAttempt,
+    } as unknown as Pick<WorkbenchServerContext, "buildWorksheetInterpretationRequests" | "hostActions" | "failActiveMultimodalAttempt">;
+
+    await expect(reconcileActiveMultimodalAttempt(rootDir, snapshot(), context)).resolves.toBe(false);
+    expect(failActiveMultimodalAttempt).not.toHaveBeenCalled();
   });
 });
 

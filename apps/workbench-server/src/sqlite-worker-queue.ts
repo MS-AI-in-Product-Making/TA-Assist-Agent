@@ -62,6 +62,8 @@ export interface PersistentWorkerQueue {
   enqueue(job: StageJob, options?: EnqueueOptions): Promise<QueueReceipt>;
   recover(job: StageJob): Promise<QueueReceipt>;
   cancel(jobId: string): Promise<boolean>;
+  discardForExternalGate(jobId: string): Promise<boolean>;
+  assertNoUnreconciledExternalGateJobs(): Promise<void>;
   reconcile(): Promise<void>;
 }
 
@@ -208,6 +210,31 @@ class SqliteWorkerQueue implements PersistentWorkerQueue {
       UPDATE worker_jobs SET status = 'cancelled', updated_at = ?
       WHERE job_id = ? AND status = 'queued'
     `).run(new Date().toISOString(), jobId).changes === 1);
+  }
+
+  async discardForExternalGate(jobId: string): Promise<boolean> {
+    if (!isSafeId(jobId)) return false;
+    return this.transaction((database) => {
+      const row = database.prepare(`
+        SELECT status, owner_id, owner_pid FROM worker_jobs WHERE job_id = ?
+      `).get(jobId) as { readonly status: string; readonly owner_id: string | null; readonly owner_pid: number | null } | undefined;
+      if (row === undefined || !["pending", "queued", "running"].includes(row.status)) return false;
+      if (row.status === "running" && isOwnerAlive(row.owner_id, row.owner_pid)) {
+        throw new Error("Externally gated worker job is still owned by a live worker.");
+      }
+      return database.prepare(`
+        DELETE FROM worker_jobs WHERE job_id = ? AND status = ? AND owner_id IS ?
+      `).run(jobId, row.status, row.owner_id).changes === 1;
+    });
+  }
+
+  async assertNoUnreconciledExternalGateJobs(): Promise<void> {
+    const remaining = this.withDatabase((database) => database.prepare(`
+      SELECT job_id FROM worker_jobs
+      WHERE stage = 'f5_running' AND status IN ('pending', 'queued', 'running')
+      LIMIT 1
+    `).get() as { readonly job_id: string } | undefined);
+    if (remaining !== undefined) throw new Error("Externally gated F5 worker job was not reconciled.");
   }
 
   async reconcile(): Promise<void> {

@@ -6,6 +6,7 @@ import { isDeepStrictEqual } from "node:util";
 import type { FastifyPluginAsync } from "fastify";
 
 import { hasScope, hostBearerMatches } from "../auth.js";
+import { errorStatusCode, safeErrorResponse } from "../security.js";
 import type { WorkbenchServerContext } from "../server.js";
 
 export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServerContext }> = async (app, { context }) => {
@@ -18,12 +19,26 @@ export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: Workbench
     let requests;
     try {
       requests = await context.buildWorksheetInterpretationRequests(sessionId);
-    } catch {
-      return reply.code(204).send();
+    } catch (error) {
+      return reply.code(errorStatusCode(error)).send(safeErrorResponse(error));
     }
     for (const candidate of requests) {
       const actionId = `multimodal:${candidate.requestHash}`;
-      const record = await context.hostActions.readRecord(sessionId, actionId);
+      let record = await context.hostActions.readRecord(sessionId, actionId);
+      if (record === undefined) {
+        const created = await context.hostActions.create({
+          contractVersion: "f8-host-action-request-v1",
+          actionId,
+          sessionId,
+          expectedRevision: candidate.revision,
+          expiresAt: new Date(Date.now() + 24 * 60 * 60_000).toISOString(),
+          kind: "vscode_worksheet_multimodal_request",
+          confirmationHash: candidate.requestHash,
+          expectedTargetVersion: "vscode-worksheet-multimodal-v3",
+          request: candidate,
+        });
+        if (created !== undefined) record = await context.hostActions.readRecord(sessionId, actionId);
+      }
       if (record?.status === "pending" && record.request.kind === "vscode_worksheet_multimodal_request") {
         return reply.send({ actionId, kind: record.request.kind });
       }
@@ -235,7 +250,13 @@ export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: Workbench
       if (action?.kind === "vscode_worksheet_multimodal_request") {
         const snapshot = await context.sessions.read(sessionId);
         if (snapshot?.state === "f5_running" && snapshot.revision === action.expectedRevision) {
-          await context.enqueueActiveAttempt(snapshot);
+          if (parsed.data.payload.status === "completed") await context.enqueueActiveAttempt(snapshot);
+          else await context.failActiveMultimodalAttempt(
+            snapshot,
+            parsed.data.payload.status === "blocked"
+              ? parsed.data.payload.reason ?? "Worksheet multimodal interpretation is blocked."
+              : parsed.data.payload.error.summary,
+          );
         }
       }
       return reply.code(204).send();

@@ -35,6 +35,35 @@ describe("multimodal HostAction image route", () => {
     }
   });
 
+  it("rebuilds a missing pending action from the canonical worksheet request", async () => {
+    const auth = new WorkbenchAuth(new Uint8Array(32).fill(6));
+    const nestedRequest = multimodalRequest();
+    const actionId = `multimodal:${nestedRequest.requestHash}`;
+    const readRecord = vi.fn()
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ status: "pending", request: { kind: "vscode_worksheet_multimodal_request" } });
+    const create = vi.fn(async () => ({ actionId }));
+    const context = {
+      auth,
+      buildWorksheetInterpretationRequests: vi.fn(async () => [nestedRequest]),
+      hostActions: { readRecord, create },
+      requireAuthenticated(request: Parameters<WorkbenchServerContext["requireAuthenticated"]>[0]) { return auth.authenticate(request); },
+    } as unknown as WorkbenchServerContext;
+    const app = Fastify();
+    await app.register(hostActionsRoutes, { context });
+    await app.ready();
+    try {
+      const token = auth.issueHostBearer(SESSION_ID, ["sessions:read"]);
+      const response = await app.inject({ method: "GET", url: `/api/sessions/${SESSION_ID}/host-actions/pending`, headers: { authorization: `Bearer ${token}` } });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ actionId, kind: "vscode_worksheet_multimodal_request" });
+      expect(create).toHaveBeenCalledWith(expect.objectContaining({ actionId, expectedRevision: nestedRequest.revision, request: nestedRequest }));
+    } finally {
+      await app.close();
+    }
+  });
+
   it("serves image bytes only through an action-bound image-read bearer", async () => {
     const auth = new WorkbenchAuth(new Uint8Array(32).fill(7));
     const readClaimedWorksheetImage = vi.fn(async () => ({ bytes: PNG_BYTES, mediaType: "image/png" as const }));

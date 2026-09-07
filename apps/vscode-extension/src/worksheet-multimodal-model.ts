@@ -33,8 +33,7 @@ export async function executeWorksheetMultimodalModel(
   const parsedRequest = f5MultimodalWorksheetRequestV3Schema.safeParse(dependencies.request);
   if (!parsedRequest.success) return failed("model_result_invalid");
   const request = parsedRequest.data;
-  const model = dependencies.models.find(({ supportsImage }) => supportsImage === true)
-    ?? dependencies.models.find(({ supportsImage }) => supportsImage !== false);
+  const model = dependencies.models.find(({ supportsImage }) => supportsImage === true);
   if (model === undefined) return { status: "blocked", reason: "model_capability_unavailable" };
 
   let image: Awaited<ReturnType<WorksheetMultimodalModelDependencies["fetchImage"]>>;

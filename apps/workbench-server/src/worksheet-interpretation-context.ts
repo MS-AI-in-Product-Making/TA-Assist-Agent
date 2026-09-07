@@ -219,11 +219,17 @@ async function buildRequest(
     throw contextError("Selected worksheet does not have exactly one governed image identity.", [worksheetName]);
   }
   const imageReference = [...imageIdentities.values()][0]!;
-  const inspectedImage = await artifacts.inspectWorksheetImage({
-    worksheetName,
-    artifactPath: imageReference.relativePath,
-    expectedContentHash: imageReference.contentHash,
-  });
+  let inspectedImage;
+  try {
+    inspectedImage = await artifacts.inspectWorksheetImage({
+      worksheetName,
+      artifactPath: imageReference.relativePath,
+      expectedContentHash: imageReference.contentHash,
+    });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "unknown image inspection failure";
+    throw contextError(`Governed worksheet image could not be inspected: ${reason}.`, [worksheetName, imageReference.relativePath]);
+  }
   if (inspectedImage.artifactPath !== imageReference.relativePath
     || inspectedImage.contentHash !== imageReference.contentHash
     || inspectedImage.byteLength <= 0) {
@@ -246,7 +252,12 @@ async function buildRequest(
     factorRows,
   };
   request.requestHash = createF5MultimodalRequestHash(request);
-  return f5MultimodalWorksheetRequestV3Schema.parse(request);
+  const parsedRequest = f5MultimodalWorksheetRequestV3Schema.safeParse(request);
+  if (!parsedRequest.success) {
+    const invalidFields = parsedRequest.error.issues.map((issue) => issue.path.join(".")).filter(Boolean).join(", ");
+    throw contextError(`Generated multimodal worksheet request is invalid${invalidFields.length === 0 ? "" : `: ${invalidFields}`}.`, [worksheetName]);
+  }
+  return parsedRequest.data;
 }
 
 async function readCurrentReference(

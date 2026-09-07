@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { get } from "node:http";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -549,6 +549,66 @@ describe("workbench server security boundary", () => {
       }
       const stalePath = await server.inject({ method: "GET", url: `/api/sessions/${sessionId}/artifacts/f6-stale`, headers: auth.headers });
       expect(stalePath.statusCode).toBe(404);
+    } finally {
+      await server.close();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("serves a validated multimodal aggregate projected into a snapshot with a relative server root", async () => {
+    const rootDir = testRoot("workbench-server-multimodal-artifact");
+    await rm(rootDir, { recursive: true, force: true });
+    const server = await buildWorkbenchServer({
+      rootDir,
+      interactionLanguage: { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "test-start", source: "workflow_start", fallbackUsed: false },
+    });
+    try {
+      const sessionId = "98989898-9898-4989-8989-989898989898";
+      const auth = await server.testAuthenticate(sessionId);
+      const aggregate = { contractVersion: "f5-multimodal-artifact-v3", worksheets: [] };
+      const bytes = Buffer.from(`${JSON.stringify(aggregate)}\n`, "utf8");
+      const contentHash = createHash("sha256").update(bytes).digest("hex");
+      const artifactPath = resolve(rootDir, "runtime", "workbench", "multimodal", sessionId, "1", `${contentHash}.json`);
+      await mkdir(dirname(artifactPath), { recursive: true });
+      await writeFile(artifactPath, bytes);
+
+      const store = await openSessionStore({ rootDir, sessionId });
+      try {
+        await store.applyCommand({
+          contractVersion: "f8-session-command-v1",
+          sessionId,
+          commandId: "seed-multimodal-projection",
+          expectedRevision: 0,
+          command: "upload_workbook",
+          payload: { fileName: "book.xlsx", workbookBytes: new Uint8Array([80, 75, 3, 4]), inputClassification: "confidential" },
+        }, async (snapshot) => ({
+          snapshot: {
+            ...snapshot,
+            revision: 1,
+            inputRevision: 1,
+            state: "review_required",
+            artifactRefs: [{
+              artifactId: "f5-multimodal:1",
+              kind: "f5_multimodal",
+              revision: 1,
+              validated: true,
+              reviewContextId: "a".repeat(64),
+              relativePath: artifactPath,
+              contentHash,
+            }],
+          },
+        }));
+      } finally {
+        await store.close();
+      }
+
+      const response = await server.inject({ method: "GET", url: `/api/sessions/${sessionId}/artifacts/f5-multimodal%3A1`, headers: auth.headers });
+      expect(response.statusCode).toBe(200);
+      expect(response.headers["content-type"]).toContain("application/json");
+      expect(response.json()).toEqual(aggregate);
+
+      await writeFile(artifactPath, "{}\n", "utf8");
+      expect((await server.inject({ method: "GET", url: `/api/sessions/${sessionId}/artifacts/f5-multimodal%3A1`, headers: auth.headers })).statusCode).toBe(409);
     } finally {
       await server.close();
       await rm(rootDir, { recursive: true, force: true });

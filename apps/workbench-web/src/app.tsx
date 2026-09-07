@@ -106,6 +106,11 @@ export function App({ api, preloadedState, initialWorksheetOptions }: AppProps) 
         onSaveScenario={(payload) => session.submitCommand("save_what_if_draft", payload)}
         scenarioDrafts={session.snapshot?.scenarioDrafts}
         issue={projectWorkspaceIssue(session.snapshot, session.error)}
+        onIssueAction={(action) => {
+          if (action === "retry" && session.snapshot?.activeAttempt?.stage !== undefined) {
+            void session.submitCommand("retry", { stage: session.snapshot.activeAttempt.stage });
+          }
+        }}
         onUpload={session.uploadWorkbook}
         onSelectWorksheet={setSelectedWorksheetName}
         onSubmitConversation={session.appendConversation}
