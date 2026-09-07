@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
+import { createF5MultimodalFactorSetHash, createF5MultimodalRequestHash } from "@ai-assist/contracts";
 
 import { createSessionStore, openSessionStore } from "./session-store.js";
 import { createHostActionStore } from "./host-actions.js";
@@ -18,6 +19,24 @@ afterEach(async () => {
 });
 
 describe("host action lease lifecycle", () => {
+  it("never reuses a canonical multimodal action identity after terminal retention", async () => {
+    const rootDir = await createTempRoot();
+    const sessionStore = await createSessionStore({ rootDir, sessionId: SESSION_ID, interactionLanguage: { languageTag: "en", uiCatalogLanguage: "en", lockedAtTurnId: "turn-1", source: "workflow_start", fallbackUsed: false } });
+    await sessionStore.close();
+    let now = new Date("2026-08-24T00:00:00.000Z");
+    const hostActions = await createHostActionStore({ rootDir, sessionId: SESSION_ID, leaseDurationMs: 1_000, terminalRetentionMs: 60_000, now: () => now });
+    const request = multimodalHostActionRequest();
+    await hostActions.createHostAction(request);
+    const claim = await hostActions.claimHostAction(request.actionId, "vscode-1");
+    now = new Date("2026-08-24T00:00:02.000Z");
+    await hostActions.expireHostAction(request.actionId, "vscode-1", claim.leaseId);
+    now = new Date("2026-08-24T00:02:00.000Z");
+
+    await expect(hostActions.createHostAction({ ...request, expiresAt: "2026-08-24T00:10:00.000Z" })).rejects.toMatchObject({ code: "validation_error" });
+    expect((await hostActions.getHostAction(request.actionId)).status).toBe("blocked");
+    await hostActions.close();
+  });
+
   it("allows one host claim and rejects duplicate terminal completion mutations", async () => {
     const rootDir = await createTempRoot();
     const sessionStore = await createSessionStore({ rootDir, sessionId: SESSION_ID });
@@ -555,6 +574,13 @@ function modelRequest(
     kind: "model_request" as const,
     expiresAt: "2026-08-24T00:05:00.000Z",
   };
+}
+
+function multimodalHostActionRequest() {
+  const factorRows = [{ worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 11, factorOrdinal: { value: "A", rawText: "A", sourceCell: "Analysis-A!Z11" }, factorName: "Factor A", partName: "Part A", partCategory: "CNC", drawingNumber: null, dimId: null, nominal: 0, upperTolerance: 0.1, lowerTolerance: -0.1, longTermSafetyFactor: 1, sigmaLevel: 4, distribution: "normal", sourceCells: { factorName: "Analysis-A!A11" } }];
+  const nested = { contractVersion: "f5-multimodal-request-v3" as const, inputClassification: "confidential" as const, requestHash: "", sessionId: SESSION_ID, revision: 0, inputRevision: 0, workbook: { fileName: "anonymous.xlsx", contentHash: WORKBOOK_HASH }, worksheetName: "Analysis-A", tableId: "table-a", activeFactorCount: 1, factorSetHash: createF5MultimodalFactorSetHash(factorRows), image: { mediaType: "image/png" as const, contentHash: "b".repeat(64), byteLength: 100, artifactPath: "images/analysis-a.png" }, factorRows };
+  nested.requestHash = createF5MultimodalRequestHash(nested);
+  return { contractVersion: "f8-host-action-request-v1" as const, actionId: `multimodal:${nested.requestHash}`, sessionId: SESSION_ID, expectedRevision: 0, expiresAt: "2026-08-24T00:05:00.000Z", kind: "vscode_worksheet_multimodal_request" as const, confirmationHash: nested.requestHash, expectedTargetVersion: "vscode-worksheet-multimodal-v3" as const, request: nested };
 }
 
 function completedResult(

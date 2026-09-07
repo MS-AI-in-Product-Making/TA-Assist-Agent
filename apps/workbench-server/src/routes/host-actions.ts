@@ -1,13 +1,34 @@
-import { conversationTurnSchema, hostActionClaimSchema, hostActionRequestSchema, hostActionResultSchema } from "@ai-assist/contracts";
+import { conversationTurnSchema, f5MultimodalWorksheetPairV3Schema, hostActionClaimSchema, hostActionRequestSchema, hostActionResultSchema } from "@ai-assist/contracts";
 import { projectProductCapabilityReferences } from "@ai-assist/product-language";
 import { selectCompleteReviewContext, type F8SessionSnapshot } from "@ai-assist/workbench";
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import type { FastifyPluginAsync } from "fastify";
 
 import { hasScope, hostBearerMatches } from "../auth.js";
 import type { WorkbenchServerContext } from "../server.js";
 
 export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServerContext }> = async (app, { context }) => {
+  app.get("/api/sessions/:sessionId/host-actions/:actionId/leases/:leaseId/image", async (request, reply) => {
+    const auth = context.requireAuthenticated(request, reply);
+    if (auth === undefined || !hasScope(auth, "host-actions:image:read")) {
+      return reply.code(403).send({ error: "host_scope_rejected" });
+    }
+    const { sessionId, actionId, leaseId } = request.params as { readonly sessionId: string; readonly actionId: string; readonly leaseId: string };
+    if (auth.sessionId !== sessionId
+      || auth.hostInstanceId === undefined
+      || !hostBearerMatches(auth, actionId, auth.hostInstanceId)) {
+      return reply.code(403).send({ error: "host_scope_rejected" });
+    }
+    try {
+      const image = await context.readClaimedWorksheetImage({ sessionId, actionId, hostInstanceId: auth.hostInstanceId, leaseId });
+      reply.type(image.mediaType);
+      return reply.send(Buffer.from(image.bytes));
+    } catch {
+      return reply.code(403).send({ error: "worksheet_image_read_rejected" });
+    }
+  });
+
   app.post("/api/sessions/:sessionId/host-actions", async (request, reply) => {
     const auth = context.requireBrowserMutation(request, reply);
     if (auth === undefined) {
@@ -18,6 +39,11 @@ export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: Workbench
     const parsed = hostActionRequestSchema.safeParse(request.body);
     if (!parsed.success || parsed.data.sessionId !== sessionId || auth.sessionId !== sessionId) {
       return reply.code(400).send({ error: "host_action_schema_rejected" });
+    }
+    if (parsed.data.kind === "vscode_worksheet_multimodal_request"
+      && (parsed.data.actionId !== `multimodal:${parsed.data.request.requestHash}`
+        || !await context.validateWorksheetInterpretationRequest(sessionId, parsed.data.request))) {
+      return reply.code(409).send({ error: "worksheet_interpretation_request_stale" });
     }
 
     const created = await context.hostActions.create(parsed.data);
@@ -44,6 +70,12 @@ export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: Workbench
     const hostInstanceId = readHostInstanceId(request.body);
     if (!hostBearerMatches(auth, actionId, hostInstanceId)) {
       return reply.code(403).send({ error: "host_scope_rejected" });
+    }
+
+    const pending = await context.hostActions.read(sessionId, actionId);
+    if (pending?.kind === "vscode_worksheet_multimodal_request"
+      && !await context.validateWorksheetInterpretationRequest(sessionId, pending.request)) {
+      return reply.code(409).send({ error: "worksheet_interpretation_request_stale" });
     }
 
     const claim = await context.hostActions.claim(sessionId, actionId, hostInstanceId);
@@ -81,6 +113,13 @@ export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: Workbench
       return reply.code(400).send({ error: "host_action_result_integrity_rejected" });
     }
     if (parsed.data.status === "completed" && action?.kind === "vscode_model_request" && submittedOutcome?.kind !== "model_response") return reply.code(400).send({ error: "host_action_result_integrity_rejected" });
+    if (parsed.data.status === "completed" && action?.kind === "vscode_worksheet_multimodal_request") {
+      if (submittedOutcome?.kind !== "worksheet_multimodal_response"
+        || !f5MultimodalWorksheetPairV3Schema.safeParse({ request: action.request, result: submittedOutcome.result }).success
+        || !await context.validateWorksheetInterpretationRequest(sessionId, action.request)) {
+        return reply.code(400).send({ error: "host_action_result_integrity_rejected" });
+      }
+    }
     if (action?.kind === "surface_validate" && submittedOutcome?.kind === "surface_validation") {
       const confirmation = submittedOutcome.confirmation;
       const expectedConfirmationHash = createHash("sha256").update(JSON.stringify([
@@ -111,7 +150,7 @@ export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: Workbench
     }
     const completion = await context.hostActions.complete(sessionId, parsed.data);
     const resumableDuplicate = completion === "duplicate"
-      && actionRecord?.result?.resultHash === parsed.data.resultHash;
+      && isDeepStrictEqual(actionRecord?.result, parsed.data);
     if (completion === "accepted" || resumableDuplicate) {
       const outcome = parsed.data.payload.status === "completed" ? parsed.data.payload.outcome : undefined;
       if (action?.kind === "surface_write" && outcome?.kind === "surface_write") {

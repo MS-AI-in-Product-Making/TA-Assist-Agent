@@ -60,7 +60,7 @@ async function readPersistedArtifact(
   query: { readonly worksheet?: unknown; readonly path?: unknown },
 ) {
   if (artifactId.startsWith("f1-image:")) {
-    return readF1ImageArtifact(
+    return resolveF1ImageArtifact(
       rootDir,
       sessionId,
       artifactId.slice("f1-image:".length),
@@ -137,7 +137,7 @@ export async function readManagedArtifact(rootDir: string, targetPath: string): 
   }
 }
 
-async function readF1ImageArtifact(
+export async function resolveF1ImageArtifact(
   rootDir: string,
   sessionId: string,
   contentHash: string,

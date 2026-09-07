@@ -5,7 +5,7 @@ import type { FastifyRequest } from "fastify";
 export const SESSION_COOKIE_NAME = "ta_session";
 export const CSRF_HEADER_NAME = "x-csrf-token";
 
-export type HostBearerScope = "host-actions:claim" | "host-actions:result" | "host-actions:read" | "sessions:read";
+export type HostBearerScope = "host-actions:claim" | "host-actions:result" | "host-actions:read" | "host-actions:image:read" | "sessions:read";
 
 export interface AuthenticatedRequest {
   readonly kind: "browser" | "host";

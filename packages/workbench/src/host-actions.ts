@@ -215,11 +215,16 @@ class SqliteHostActionStore implements HostActionStore {
       const sessionRow = this.requireSessionRow();
       ensureExpectedRevisionCurrent(request.expectedRevision, sessionRow.revision, request.actionId);
 
-      this.deleteExpiredTerminalHostActionStatement.run(
-        request.actionId,
-        this.options.sessionId,
-        toIso(new Date(this.now().getTime() - this.terminalRetentionMs)),
-      );
+      const existingBeforeCleanup = this.readHostActionRow(request.actionId);
+      const preservesCanonicalIdentity = existingBeforeCleanup !== undefined
+        && parseStoredRequest(existingBeforeCleanup, request.actionId).kind === "vscode_worksheet_multimodal_request";
+      if (!preservesCanonicalIdentity) {
+        this.deleteExpiredTerminalHostActionStatement.run(
+          request.actionId,
+          this.options.sessionId,
+          toIso(new Date(this.now().getTime() - this.terminalRetentionMs)),
+        );
+      }
       const existingRow = this.readHostActionRow(request.actionId);
       const requestJson = stableStringify(request);
       if (existingRow !== undefined) {

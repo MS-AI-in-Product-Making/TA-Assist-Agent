@@ -272,3 +272,4 @@ export type F5MultimodalWorksheetRequestV3 = z.infer<typeof f5MultimodalWorkshee
 export type F5MultimodalWorksheetResultV3 = z.infer<typeof f5MultimodalWorksheetResultV3Schema>;
 export type F5MultimodalArtifactV3 = z.infer<typeof f5MultimodalArtifactV3Schema>;
 export type F5MultimodalArtifactAuthorityV3 = z.infer<typeof f5MultimodalArtifactAuthorityV3Schema>;
+export type F5MultimodalFactorRowV3 = z.infer<typeof f5MultimodalFactorRowV3Schema>;

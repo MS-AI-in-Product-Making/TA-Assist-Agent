@@ -10,7 +10,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import { DatabaseSync } from "node:sqlite";
 
 import { createConversationStore, type ConversationStore, type ConversationTurn } from "@ai-assist/conversation";
-import { drawingGovernanceResultV2Schema, f2UserReportSchema, f4WorkflowCalculationResultSchema, f6AnalysisContextSchema, f6InputProposalSchema, f6OptimizationTargetsSchema, f8PublicSessionCommandSchema, f8SessionCommandSchema, f8SessionSnapshotSchema, worksheetSelectionPromptSchema, type F6InputProposal, type F6OptimizationTargets, type F8ScenarioDraft, type F8WorksheetWhatIfCalculationRequest, type hostActionClaimSchema, type hostActionRequestSchema, type hostActionResultSchema } from "@ai-assist/contracts";
+import { drawingGovernanceResultV2Schema, f2UserReportSchema, f4WorkflowCalculationResultSchema, f6AnalysisContextSchema, f6InputProposalSchema, f6OptimizationTargetsSchema, f8PublicSessionCommandSchema, f8SessionCommandSchema, f8SessionSnapshotSchema, worksheetSelectionPromptSchema, type F5MultimodalWorksheetRequestV3, type F6InputProposal, type F6OptimizationTargets, type F8ScenarioDraft, type F8WorksheetWhatIfCalculationRequest, type hostActionClaimSchema, type hostActionRequestSchema, type hostActionResultSchema } from "@ai-assist/contracts";
 import { acceptAttemptResult, canonicalSelectedWorksheetSetHash, createSessionStore, createTaWorkbookOrchestrator, createToleranceTargetsPreview, openSessionStore, reduceSessionCommand, type F8SessionCommand, type F8SessionSnapshot, type ReviewContextIdentity, type RuntimeSkillResult, type ScenarioBaseline, type SessionArtifactReference, type SessionDeltaOperations, type TaWorkbookOrchestrator } from "@ai-assist/workbench";
 import { createTypedError } from "@ai-assist/contracts";
 import { createHostActionStore, type HostActionRecord } from "@ai-assist/workbench";
@@ -51,7 +51,7 @@ function classifyScopeDiscoveryWarningStatus(error: unknown): F1ScopeDiscoveryWa
 import { WorkbenchAuth, SESSION_COOKIE_NAME, type HostBearerOptions, type AuthenticatedRequest, type TestAuthentication } from "./auth.js";
 import { createBrowserBootstrapRendezvous, renderBootstrapPage, renderBootstrapScript, type BrowserBootstrapRendezvous } from "./bootstrap.js";
 import { applySecurityHeaders, isMutation, LOOPBACK_HOST, rejectIfUnsafeBrowserBoundary, safeErrorResponse } from "./security.js";
-import { artifactsRoutes } from "./routes/artifacts.js";
+import { artifactsRoutes, readManagedArtifact, resolveF1ImageArtifact } from "./routes/artifacts.js";
 import { commandsRoutes, materializeDownstreamScopeDecision } from "./routes/commands.js";
 import { conversationRoutes } from "./routes/conversation.js";
 import { filesRoutes } from "./routes/files.js";
@@ -65,6 +65,7 @@ import { createPersistentWorkerQueue, type PersistentWorkerQueue, type Persisten
 import { createSqliteEventSource, type SqliteEventSource } from "./sse.js";
 import { createAutoEntryDecision } from "./auto-entry.js";
 import { buildConversationContext, type ConversationContextSelection } from "./conversation-context.js";
+import { assertCurrentWorksheetInterpretationRequest, buildSelectedWorksheetInterpretationContexts, detectDecodableImageMediaType, readClaimedWorksheetImage, type WorksheetInterpretationArtifactReader } from "./worksheet-interpretation-context.js";
 import { reviewContextFor, runProductionStage, type ProductionRoots } from "./production-stage-runner.js";
 import { createTaRuntimeSkillFacades } from "./ta-runtime-skill-facades.js";
 import { writeSessionRecord } from "./session-records.js";
@@ -192,6 +193,9 @@ export interface WorkbenchServerContext {
   recoverCommittedCommand(snapshot: F8SessionSnapshot, command: F8SessionCommand): Promise<void>;
   buildConversationContext(sessionId: string, selection: ConversationContextSelection): ReturnType<typeof buildConversationContext>;
   validateConversationContext(sessionId: string, input: { readonly worksheetName?: string; readonly tableId?: string; readonly sourceRow?: number; readonly factorName?: string; readonly calculationReference?: string; readonly relatedArtifactIds: readonly string[] }): Promise<boolean>;
+  buildWorksheetInterpretationRequests(sessionId: string): Promise<readonly F5MultimodalWorksheetRequestV3[]>;
+  validateWorksheetInterpretationRequest(sessionId: string, request: F5MultimodalWorksheetRequestV3): Promise<boolean>;
+  readClaimedWorksheetImage(input: { readonly sessionId: string; readonly actionId: string; readonly hostInstanceId: string; readonly leaseId: string }): Promise<{ readonly bytes: Uint8Array; readonly mediaType: "image/png" | "image/jpeg" }>;
   createAdoPreview(sessionId: string, prepareRequest: Extract<HostActionRequest, { kind: "surface_validate" }>["prepareRequest"]): Promise<AdoPreviewIdentity>;
   materializeF6InputDraftFromProposal(sessionId: string, input: { readonly expectedRevision: number; readonly proposal: F6InputProposal }): Promise<{ readonly status: string; readonly pendingDraft?: unknown; readonly preview?: unknown; readonly snapshotRevision?: number; readonly clarifications?: readonly { readonly clarificationId: string; readonly reasonCode: string; readonly question: string; readonly requiredFields: readonly string[] }[] }>;
   syncSessionRecord(sessionId: string): Promise<void>;
@@ -458,6 +462,46 @@ async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth
       if (factor === undefined) return false;
       if (input.calculationReference === undefined) return true;
       return snapshot.scenarioDrafts?.some((draft) => draft.worksheetName === input.worksheetName && draft.calculationReference === input.calculationReference) ?? false;
+    },
+    async buildWorksheetInterpretationRequests(sessionId) {
+      const snapshot = await context.sessions.read(sessionId);
+      if (snapshot === undefined) {
+        throw createTypedError({ code: "validation_error", summary: "Session is unavailable for worksheet interpretation.", suggestedAction: "Refresh the workbench and retry.", affectedInputReferences: [sessionId] });
+      }
+      return buildSelectedWorksheetInterpretationContexts(snapshot, worksheetInterpretationArtifactReader(rootDir, sessionId));
+    },
+    async validateWorksheetInterpretationRequest(sessionId, request) {
+      const snapshot = await context.sessions.read(sessionId);
+      if (snapshot === undefined) return false;
+      try {
+        await assertCurrentWorksheetInterpretationRequest(snapshot, request, worksheetInterpretationArtifactReader(rootDir, sessionId));
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    async readClaimedWorksheetImage(input) {
+      const record = await context.hostActions.readRecord(input.sessionId, input.actionId);
+      return readClaimedWorksheetImage(record, { ...input, now: new Date() }, async (descriptor) => {
+        const artifact = await resolveF1ImageArtifact(
+          rootDir,
+          input.sessionId,
+          descriptor.contentHash,
+          record?.request.kind === "vscode_worksheet_multimodal_request" ? record.request.request.worksheetName : undefined,
+          descriptor.artifactPath,
+        );
+        if (artifact === undefined || artifact.mimeType !== descriptor.mediaType) {
+          throw createTypedError({ code: "evidence_mismatch", summary: "Governed worksheet image artifact is unavailable.", suggestedAction: "Regenerate Data Parsing artifacts before interpretation.", affectedInputReferences: [input.actionId] });
+        }
+        const bytes = await readManagedArtifact(rootDir, resolve(rootDir, artifact.relativePath));
+        if (bytes === undefined) {
+          throw createTypedError({ code: "evidence_mismatch", summary: "Governed worksheet image bytes are unavailable.", suggestedAction: "Regenerate Data Parsing artifacts before interpretation.", affectedInputReferences: [input.actionId] });
+        }
+        return { bytes, mediaType: artifact.mimeType };
+      }, async () => ({
+        record: await context.hostActions.readRecord(input.sessionId, input.actionId),
+        now: new Date(),
+      }));
     },
     async createAdoPreview(sessionId, prepareRequest) {
       const snapshot = await sessions.read(sessionId);
@@ -1872,4 +1916,29 @@ function requireRuntimeSkillOutput<Output>(result: RuntimeSkillResult<Output>, s
     });
   }
   return result.output;
+}
+
+function worksheetInterpretationArtifactReader(rootDir: string, sessionId: string): WorksheetInterpretationArtifactReader {
+  return {
+    async readReference(artifactId) {
+      const store = await openSessionStore({ rootDir, sessionId });
+      try {
+        return await store.readArtifactReference(artifactId);
+      } finally {
+        await store.close();
+      }
+    },
+    async readJson(artifactId) {
+      return readSessionArtifactJson(rootDir, sessionId, artifactId);
+    },
+    async inspectWorksheetImage(input) {
+      const artifact = await resolveF1ImageArtifact(rootDir, sessionId, input.expectedContentHash, input.worksheetName, input.artifactPath);
+      if (artifact === undefined || (artifact.mimeType !== "image/png" && artifact.mimeType !== "image/jpeg")) throw new Error("worksheet image identity mismatch");
+      const bytes = await readManagedArtifact(rootDir, resolve(rootDir, artifact.relativePath));
+      if (bytes === undefined
+        || createHash("sha256").update(bytes).digest("hex") !== input.expectedContentHash
+        || await detectDecodableImageMediaType(bytes) !== artifact.mimeType) throw new Error("worksheet image bytes mismatch");
+      return { mediaType: artifact.mimeType, contentHash: input.expectedContentHash, byteLength: bytes.byteLength, artifactPath: input.artifactPath };
+    },
+  };
 }
