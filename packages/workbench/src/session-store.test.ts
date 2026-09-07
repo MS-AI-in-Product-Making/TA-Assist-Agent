@@ -26,13 +26,18 @@ afterEach(async () => {
 });
 
 describe("SessionStore", () => {
+  it("rejects creating a new session without an interaction language lock", async () => {
+    const rootDir = await createTempRoot();
+
+    await expect(createSessionStore({ rootDir, sessionId: SESSION_ID })).rejects.toMatchObject({
+      code: "validation_error",
+    });
+    expect(readPersistedSessionCount(rootDir)).toBe(0);
+  });
+
   it("reopens a session with the original interaction language", async () => {
     const rootDir = await createTempRoot();
-    const store = await createSessionStore({
-      rootDir,
-      sessionId: SESSION_ID,
-      interactionLanguage: ENGLISH_LOCK,
-    });
+    const store = await createStore(rootDir);
 
     expect((await store.readSnapshot()).interactionLanguage).toEqual(ENGLISH_LOCK);
     await store.close();
@@ -45,7 +50,7 @@ describe("SessionStore", () => {
 
   it("materializes missing historical interaction language as legacy_fallback and persists it", async () => {
     const rootDir = await createTempRoot();
-    const store = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+    const store = await createStore(rootDir);
     await store.close();
 
     seedLegacySnapshot(rootDir, {
@@ -74,7 +79,7 @@ describe("SessionStore", () => {
 
   it("applies a command once and recovers the same revision", async () => {
     const rootDir = await createTempRoot();
-    const store = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+    const store = await createStore(rootDir);
 
     const first = await store.applyCommand(commandAt(0, COMMAND_ID), acceptWorkbook);
     const duplicate = await store.applyCommand(commandAt(0, COMMAND_ID), acceptWorkbook);
@@ -90,7 +95,7 @@ describe("SessionStore", () => {
 
   it("backfills historical worksheet selection provenance from committed command evidence", async () => {
     const rootDir = await createTempRoot();
-    const store = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+    const store = await createStore(rootDir);
     await store.close();
 
     seedLegacySnapshot(rootDir, {
@@ -135,7 +140,7 @@ describe("SessionStore", () => {
 
   it("marks ambiguous or missing historical evidence as legacy_unverified and persists migration", async () => {
     const rootDir = await createTempRoot();
-    const store = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+    const store = await createStore(rootDir);
     await store.close();
 
     seedLegacySnapshot(rootDir, {
@@ -187,7 +192,7 @@ describe("SessionStore", () => {
 
   it("rejects stale revisions and late worker results", async () => {
     const rootDir = await createTempRoot();
-    const store = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+    const store = await createStore(rootDir);
 
     await store.applyCommand(commandAt(0, COMMAND_ID), acceptWorkbook);
 
@@ -204,7 +209,7 @@ describe("SessionStore", () => {
 
   it("rejects attempt results that switch to a different active attempt", async () => {
     const rootDir = await createTempRoot();
-    const store = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+    const store = await createStore(rootDir);
     try {
       await store.applyCommand(commandAt(0, COMMAND_ID), acceptWorkbook);
 
@@ -241,7 +246,7 @@ describe("SessionStore", () => {
 
   it("rejects terminal attempt results without a snapshot transition", async () => {
     const rootDir = await createTempRoot();
-    const store = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+    const store = await createStore(rootDir);
     try {
       await store.applyCommand(commandAt(0, COMMAND_ID), acceptWorkbook);
 
@@ -267,7 +272,7 @@ describe("SessionStore", () => {
 
   it("rolls back malformed or wrong-session drafts before persisting side tables", async () => {
     const rootDir = await createTempRoot();
-    const store = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+    const store = await createStore(rootDir);
     try {
       await store.applyCommand(commandAt(0, COMMAND_ID), acceptWorkbook);
 
@@ -305,7 +310,7 @@ describe("SessionStore", () => {
 
   it("clears persisted scenario drafts when applyCommand snapshot omits them", async () => {
     const rootDir = await createTempRoot();
-    const store = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+    const store = await createStore(rootDir);
     try {
       await store.applyCommand(commandAt(0, COMMAND_ID), (snapshot) => ({
         snapshot: snapshotWithAttempt({
@@ -341,7 +346,7 @@ describe("SessionStore", () => {
 
   it("preserves scenario drafts only when the next snapshot explicitly includes them", async () => {
     const rootDir = await createTempRoot();
-    const store = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+    const store = await createStore(rootDir);
     try {
       const persistedDraft = scenarioDraft("draft-keep");
       await store.applyCommand(commandAt(0, COMMAND_ID), (snapshot) => ({
@@ -377,7 +382,7 @@ describe("SessionStore", () => {
 
   it("clears persisted scenario drafts when recordAttemptResult snapshot omits them", async () => {
     const rootDir = await createTempRoot();
-    const store = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+    const store = await createStore(rootDir);
     try {
       await store.applyCommand(commandAt(0, COMMAND_ID), (snapshot) => ({
         snapshot: snapshotWithAttempt({
@@ -414,7 +419,7 @@ describe("SessionStore", () => {
 
   it("rejects compatibility scenario drafts when the next snapshot omits them", async () => {
     const rootDir = await createTempRoot();
-    const store = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+    const store = await createStore(rootDir);
     try {
       const persistedDraft = scenarioDraft("draft-compat-override");
       await store.applyCommand(commandAt(0, COMMAND_ID), (snapshot) => ({
@@ -462,7 +467,7 @@ describe("SessionStore", () => {
 
   it("preserves side-table rows unless explicitly deleted", async () => {
     const rootDir = await createTempRoot();
-    const store = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+    const store = await createStore(rootDir);
     try {
       await store.applyCommand(commandAt(0, COMMAND_ID), (snapshot) => ({
         snapshot: snapshotWithAttempt({
@@ -517,7 +522,7 @@ describe("SessionStore", () => {
 
   it("requires and persists a deterministic opaque review context for review artifacts", async () => {
     const rootDir = await createTempRoot();
-    const store = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+    const store = await createStore(rootDir);
     try {
       await expect(store.applyCommand(commandAt(0, COMMAND_ID), (snapshot) => ({
         snapshot: snapshotWithAttempt({ revision: snapshot.revision, state: "f1_f2_running", activeAttempt: { attemptId: ATTEMPT_ID, stage: "f1_f2_running", status: "running", commandId: COMMAND_ID, startedAt: "2026-08-24T00:00:00.000Z" } }),
@@ -541,7 +546,7 @@ describe("SessionStore", () => {
 
   it("rejects malformed F6 pending draft artifact metadata and rolls back", async () => {
     const rootDir = await createTempRoot();
-    const store = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+    const store = await createStore(rootDir);
     try {
       await expect(store.applyCommand(commandAt(0, COMMAND_ID), (snapshot) => ({
         snapshot: snapshotWithAttempt({
@@ -590,7 +595,7 @@ describe("SessionStore", () => {
 
   it("persists and projects both pending F6 draft kinds independently", async () => {
     const rootDir = await createTempRoot();
-    const store = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+    const store = await createStore(rootDir);
     try {
       const snapshot = await store.applyCommand(commandAt(0, COMMAND_ID), (current) => ({
         snapshot: snapshotWithAttempt({
@@ -673,7 +678,7 @@ describe("SessionStore", () => {
 
   it("projects validated F2 reports without requiring a review context", async () => {
     const rootDir = await createTempRoot();
-    const store = await createSessionStore({ rootDir, sessionId: SESSION_ID });
+    const store = await createStore(rootDir);
     try {
       await store.applyCommand(commandAt(0, COMMAND_ID), (snapshot) => ({
         snapshot: snapshotWithAttempt({ revision: snapshot.revision, state: "f1_f2_running", activeAttempt: { attemptId: ATTEMPT_ID, stage: "f1_f2_running", status: "running", commandId: COMMAND_ID, startedAt: "2026-08-24T00:00:00.000Z" } }),
@@ -700,9 +705,7 @@ describe("SessionStore", () => {
     "afterResultUpdate",
   ] as const)("rolls back injected failures at %s", async (failurePoint) => {
     const rootDir = await createTempRoot();
-    const store = await createSessionStore({
-      rootDir,
-      sessionId: SESSION_ID,
+    const store = await createStore(rootDir, {
       testHooks: {
         [failurePoint]: () => {
           throw new Error(`Injected failure at ${failurePoint}`);
@@ -732,6 +735,18 @@ async function createTempRoot(): Promise<string> {
   const rootDir = await mkdtemp(join(tmpdir(), "f8-session-store-"));
   tempRoots.push(rootDir);
   return rootDir;
+}
+
+async function createStore(
+  rootDir: string,
+  overrides: Partial<Parameters<typeof createSessionStore>[0]> = {},
+) {
+  return createSessionStore({
+    rootDir,
+    sessionId: SESSION_ID,
+    interactionLanguage: ENGLISH_LOCK,
+    ...overrides,
+  });
 }
 
 function commandAt(expectedRevision: number, commandId: string) {
@@ -920,6 +935,16 @@ function readPersistedSnapshot(rootDir: string): Record<string, unknown> {
   try {
     const row = database.prepare("SELECT snapshot_json FROM sessions WHERE session_id = ?").get(SESSION_ID) as { snapshot_json: string };
     return JSON.parse(row.snapshot_json) as Record<string, unknown>;
+  } finally {
+    database.close();
+  }
+}
+
+function readPersistedSessionCount(rootDir: string): number {
+  const database = openDatabase(rootDir);
+  try {
+    const row = database.prepare("SELECT COUNT(*) AS count FROM sessions WHERE session_id = ?").get(SESSION_ID) as { count: number };
+    return row.count;
   } finally {
     database.close();
   }

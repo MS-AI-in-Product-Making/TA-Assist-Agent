@@ -2,8 +2,8 @@ import {
   createTypedError,
   f8SessionCommandSchema,
   f8SessionSnapshotSchema,
-} from "../../contracts/src/index.js";
-import { changeInteractionLanguage } from "../../product-language/src/index.js";
+} from "@ai-assist/contracts";
+import { changeInteractionLanguage } from "@ai-assist/product-language";
 
 import {
   annotateSnapshot,

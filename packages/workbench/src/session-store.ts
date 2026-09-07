@@ -6,7 +6,7 @@ import {
   f8SessionCommandSchema,
   f8SessionEventSchema,
   f8SessionSnapshotSchema,
-} from "../../contracts/src/index.js";
+} from "@ai-assist/contracts";
 
 import { resolveManagedWorkbenchPaths } from "./managed-paths.js";
 import { CREATE_SESSION_STORE_SCHEMA_SQL } from "./session-store-schema.js";
@@ -762,6 +762,15 @@ function createInitialSnapshot(
   sessionId: string,
   interactionLanguage: F8SessionSnapshot["interactionLanguage"] | undefined,
 ): F8SessionSnapshot {
+  if (interactionLanguage === undefined) {
+    throw createTypedError({
+      code: "validation_error",
+      summary: `Session ${sessionId} requires an interaction language lock when it is first created.`,
+      suggestedAction: "Provide the workflow-start interaction language when creating a new session, or open an existing persisted session to backfill legacy data.",
+      affectedInputReferences: [sessionId],
+    });
+  }
+
   return f8SessionSnapshotSchema.parse({
     contractVersion: "f8-session-snapshot-v1",
     sessionId,
@@ -769,7 +778,7 @@ function createInitialSnapshot(
     inputRevision: 0,
     state: "created",
     activeAttempt: null,
-    interactionLanguage: interactionLanguage ?? createLegacyFallbackInteractionLanguage(sessionId, 0, undefined),
+    interactionLanguage,
     priorRunReferences: [],
   });
 }

@@ -29,7 +29,7 @@ function isEnglishLanguageTag(languageTag: string): boolean {
   return /^en(?:[-_].+)?$/iu.test(languageTag);
 }
 
-function isReliableHostLocale(hostLocale: string | undefined): boolean {
+function isReliableHostLocale(hostLocale: string | undefined): hostLocale is string {
   if (hostLocale === undefined) {
     return false;
   }
