@@ -74,14 +74,12 @@ export const TA_PRODUCT_CAPABILITIES = [
   { internalId: "F7", skillName: "feedback-application", englishLabel: "Feedback Application", chineseLabel: "反馈应用" },
 ] as const;
 
-export type TaProductCapabilityName = (typeof TA_PRODUCT_CAPABILITIES)[number]["skillName"] | "ta_calculation";
+export type TaProductCapabilityName = (typeof TA_PRODUCT_CAPABILITIES)[number]["skillName"];
 export type TaProductCapabilityLookupId = TaProductCapabilityId | TaProductCapabilityName;
 
 export const TA_PRODUCT_CAPABILITY_CATALOG = Object.fromEntries(
   TA_PRODUCT_CAPABILITIES.map((entry) => [entry.skillName, entry] as const),
 ) as Record<TaProductCapabilityName, (typeof TA_PRODUCT_CAPABILITIES)[number]>;
-
-TA_PRODUCT_CAPABILITY_CATALOG.ta_calculation = TA_PRODUCT_CAPABILITIES.find((entry) => entry.skillName === "ta-calculation")!;
 
 const INTERNAL_STATE_TO_STAGE = new Map<string, TaWorkbookStage>(
   Object.entries(TA_STAGE_TO_INTERNAL_STATES).flatMap(([stage, states]) =>
@@ -97,7 +95,7 @@ const TA_PRODUCT_CAPABILITY_BY_NAME = new Map<TaProductCapabilityName, (typeof T
   TA_PRODUCT_CAPABILITIES.map((entry) => [entry.skillName, entry]),
 );
 
-TA_PRODUCT_CAPABILITY_BY_NAME.set("ta_calculation", TA_PRODUCT_CAPABILITIES.find((entry) => entry.skillName === "ta-calculation")!);
+const TA_PRODUCT_CAPABILITY_ALIAS_BY_LOOKUP_ID = new Map<string, TaProductCapabilityName>([["ta_calculation", "ta-calculation"]]);
 
 export type TaWorkbookStage = (typeof TA_WORKBOOK_STAGES)[number];
 export type TaProductCapabilityId = (typeof TA_PRODUCT_CAPABILITIES)[number]["internalId"];
@@ -108,7 +106,8 @@ export function projectTaWorkbookStage(internalState: string): TaWorkbookStage {
 }
 
 function resolveCapabilityEntry(identifier: TaProductCapabilityLookupId): (typeof TA_PRODUCT_CAPABILITIES)[number] | undefined {
-  return TA_PRODUCT_CAPABILITY_BY_INTERNAL_ID.get(identifier as TaProductCapabilityId) ?? TA_PRODUCT_CAPABILITY_BY_NAME.get(identifier as TaProductCapabilityName);
+  const alias = TA_PRODUCT_CAPABILITY_ALIAS_BY_LOOKUP_ID.get(identifier);
+  return TA_PRODUCT_CAPABILITY_BY_INTERNAL_ID.get(identifier as TaProductCapabilityId) ?? TA_PRODUCT_CAPABILITY_BY_NAME.get(alias ?? (identifier as TaProductCapabilityName));
 }
 
 export function productCapabilityLabel(identifier: TaProductCapabilityLookupId, language: UserLanguage): string {

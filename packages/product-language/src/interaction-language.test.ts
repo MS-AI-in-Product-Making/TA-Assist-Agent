@@ -33,4 +33,16 @@ describe("interaction language", () => {
       fallbackUsed: false,
     });
   });
+
+  it("keeps the current lock unchanged when no explicit language tag is provided", () => {
+    const current = resolveInteractionLanguage({ text: "请分析这个工作簿", turnId: "turn-1", explicitLanguageTag: "zh-CN" });
+
+    expect(
+      changeInteractionLanguage(current, {
+        text: "Analyze this workbook",
+        turnId: "turn-2",
+        hostLocale: "zh-CN",
+      }),
+    ).toBe(current);
+  });
 });

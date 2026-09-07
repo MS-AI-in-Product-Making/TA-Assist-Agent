@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   detectUserLanguage,
+  TA_PRODUCT_CAPABILITY_CATALOG,
   productCapabilityLabel,
   projectProductCapabilityReferences,
   resolveProductCapabilityReference,
@@ -41,6 +42,17 @@ describe("TA product capabilities", () => {
     expect(productCapabilityLabel("F3", "en")).toBe("Drawing Governance");
     expect(productCapabilityLabel("F3", "zh")).toBe("图纸治理");
     expect(productCapabilityLabel("ta_calculation", "zh")).toBe("公差分析计算");
+    expect(Object.keys(TA_PRODUCT_CAPABILITY_CATALOG)).toEqual([
+      "knowledge-library",
+      "data-parsing",
+      "data-cleaning",
+      "drawing-governance",
+      "ta-calculation",
+      "result-interpretation",
+      "design-optimization",
+      "feedback-application",
+    ]);
+    expect(TA_PRODUCT_CAPABILITY_CATALOG.ta_calculation).toBeUndefined();
   });
 
   it("uses Chinese for messages containing Han characters and English otherwise", () => {

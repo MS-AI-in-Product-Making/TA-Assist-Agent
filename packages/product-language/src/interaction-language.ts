@@ -77,13 +77,6 @@ export function changeInteractionLanguage(current: InteractionLanguage, input: R
     return buildInteractionLanguage(input.explicitLanguageTag, input.turnId, "explicit_user_change");
   }
 
-  if (isReliableHostLocale(input.hostLocale)) {
-    return buildInteractionLanguage(input.hostLocale, input.turnId, "explicit_user_change");
-  }
-
-  return {
-    ...current,
-    lockedAtTurnId: input.turnId,
-    source: "explicit_user_change",
-  };
+  void input.hostLocale;
+  return current;
 }
