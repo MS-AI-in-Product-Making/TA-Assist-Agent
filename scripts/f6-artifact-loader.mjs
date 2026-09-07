@@ -59,7 +59,7 @@ const f5ManifestSchema = {
     const runSummary = asArtifactName(artifacts.runSummary);
     const imageObservations = asArtifactName(artifacts.imageObservations);
     if (reportJson === undefined) return { success: false };
-    if ((runSummary === undefined) !== (imageObservations === undefined)) return { success: false };
+    if (imageObservations !== undefined && runSummary === undefined) return { success: false };
     return {
       success: true,
       data: {

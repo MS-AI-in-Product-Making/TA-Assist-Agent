@@ -116,6 +116,25 @@ describe("loadF6ArtifactBundle", () => {
     expect(JSON.stringify(result)).not.toContain(rootPath(bundle));
   });
 
+  it("accepts an F5 manifest with a run summary and no image observations", () => {
+    const bundle = setupBundle();
+    writeJson(path.join(bundle.f5ArtifactRoot, "manifest.json"), {
+      contractVersion: "v1",
+      featureId: "F5",
+      status: "completed",
+      runId: "2026-09-07T02-53-42-698Z",
+      artifacts: {
+        reportJson: "Feature5-Report.json",
+        reportMarkdown: "Feature5-Report.md",
+        runSummary: "Feature5-Run-Summary.json",
+      },
+    });
+
+    const result = loadF6ArtifactBundle(bundle);
+
+    expect(result.status, JSON.stringify(result)).toBe("accepted");
+  });
+
   it("loads identity-bound Analysis Context and Optimization Targets with caller-authorized decisions", () => {
     const bundle = setupBundle();
     const baseline = loadF6ArtifactBundle(bundle);
