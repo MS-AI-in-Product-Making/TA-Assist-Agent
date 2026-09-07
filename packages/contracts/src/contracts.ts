@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { InteractionLanguage } from "@ai-assist/product-language";
 
 export const contractVersionSchema = z.literal("v1");
 
@@ -8489,7 +8490,7 @@ const f6ProvenanceV2Schema = z.object({
   }
 });
 
-export const f6OptimizationResultSchema = z.object({
+export const f6OptimizationResultV2Schema = z.object({
   contractVersion: contractVersionSchema,
   outputClassification: z.literal("confidential"),
   featureId: z.literal("F6"),
@@ -8542,6 +8543,245 @@ export const f6OptimizationResultSchema = z.object({
   }
 });
 
+const f6InteractionLanguageSchema: z.ZodType<InteractionLanguage> = z.object({
+  languageTag: z.string().min(1),
+  uiCatalogLanguage: z.enum(["en", "zh"]),
+  lockedAtTurnId: z.string().min(1),
+  source: z.enum(["workflow_start", "explicit_user_change", "legacy_fallback"]),
+  fallbackUsed: z.boolean(),
+}).strict();
+
+const f6CenterAssessmentV3Schema = z.union([
+  z.object({
+    step: z.literal("centerAssessment"),
+    status: z.literal("aligned"),
+    adjustedMean: z.number().finite(),
+    specificationMidpoint: z.number().finite(),
+    offset: z.literal(0),
+  }).strict().superRefine((assessment, context) => {
+    if (!f6NearlyEqual(assessment.adjustedMean, assessment.specificationMidpoint)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "aligned center assessment requires equal mean and midpoint", path: ["offset"] });
+    }
+  }),
+  z.object({
+    step: z.literal("centerAssessment"),
+    status: z.literal("offset"),
+    adjustedMean: z.number().finite(),
+    specificationMidpoint: z.number().finite(),
+    offset: z.number().finite().refine((value) => value !== 0, "offset must be nonzero"),
+    interpretation: z.string().min(1),
+  }).strict().superRefine((assessment, context) => {
+    if (f6NearlyEqual(assessment.adjustedMean, assessment.specificationMidpoint)
+      || !f6NearlyEqual(assessment.offset, assessment.adjustedMean - assessment.specificationMidpoint)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "center offset must equal adjusted mean minus midpoint", path: ["offset"] });
+    }
+  }),
+  z.object({
+    step: z.literal("centerAssessment"),
+    status: z.literal("clarification_required"),
+    reasonCode: z.string().min(1),
+    requiredInputs: z.array(z.string().min(1)).min(1),
+  }).strict(),
+]);
+
+const f6ContributorPrioritiesV3Schema = z.object({
+  step: z.literal("contributorPriorities"),
+  priorities: z.array(z.object({
+    rank: z.number().int().positive(),
+    factor: f6FactorIdentitySchema,
+    contribution: z.number().finite().nonnegative(),
+    guidance: z.literal("tighten_tolerance"),
+    rationale: z.string().min(1).optional(),
+  }).strict()),
+}).strict().superRefine((step, context) => {
+  const identities = new Set<string>();
+  step.priorities.forEach((priority, index) => {
+    if (priority.rank !== index + 1) context.addIssue({ code: z.ZodIssueCode.custom, message: "contributor ranks must be contiguous and ordered", path: ["priorities", index, "rank"] });
+    const identity = f6FactorIdentityKey(priority.factor);
+    if (identities.has(identity)) context.addIssue({ code: z.ZodIssueCode.custom, message: "contributor Factor identities must be unique", path: ["priorities", index, "factor"] });
+    identities.add(identity);
+    const previous = step.priorities[index - 1];
+    if (previous !== undefined && (priority.contribution > previous.contribution
+      || (priority.contribution === previous.contribution
+        && f6CompareFactorIdentity(previous.factor, priority.factor) >= 0))) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "contributors must use descending contribution and stable source identity order", path: ["priorities", index] });
+    }
+  });
+});
+
+const f6SpecificationChangesV3Schema = z.object({
+  step: z.literal("specificationChanges"),
+  proposals: z.array(z.object({
+    side: z.enum(["lower", "upper"]),
+    currentLimit: z.number().finite(),
+    proposedLimit: z.number().finite(),
+    targetCpk: z.number().finite().positive(),
+    currentSideCpk: z.number().finite(),
+    approvalRequired: z.literal(true),
+    capabilityImprovementClaim: z.literal(false),
+    scenarioEvidence: z.object({
+      featureId: z.literal("F4"),
+      calculationVersion: z.literal("excel-ta-v1"),
+      baselineIdentity: f6InputBaselineIdentitySchema,
+      specificationOverride: z.object({
+        lowerSpecLimit: z.number().finite().optional(),
+        upperSpecLimit: z.number().finite().optional(),
+      }).strict().refine((override) => (override.lowerSpecLimit === undefined) !== (override.upperSpecLimit === undefined), "exactly one specification side must be overridden"),
+      result: z.object({
+        lowerCpk: z.number().finite(),
+        upperCpk: z.number().finite(),
+      }).strict(),
+      calculationReference: f6ArtifactReferenceSchema,
+    }).strict(),
+  }).strict()).max(2),
+  clarifications: z.array(z.object({
+    reasonCode: z.string().min(1),
+    requiredInputs: z.array(z.string().min(1)).min(1),
+  }).strict()),
+}).strict().superRefine((step, context) => {
+  if (new Set(step.proposals.map(({ side }) => side)).size !== step.proposals.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "specification proposal sides must be unique", path: ["proposals"] });
+  }
+  step.proposals.forEach((proposal, index) => {
+    if (proposal.currentSideCpk >= proposal.targetCpk) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "specification proposal requires a failed side", path: ["proposals", index, "currentSideCpk"] });
+    }
+    const verifiedSideCpk = proposal.side === "lower" ? proposal.scenarioEvidence.result.lowerCpk : proposal.scenarioEvidence.result.upperCpk;
+    if (verifiedSideCpk < proposal.targetCpk && !f6NearlyEqual(verifiedSideCpk, proposal.targetCpk)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "F4 verification must meet target Cpk", path: ["proposals", index, "verifiedSideCpk"] });
+    }
+    if ((proposal.side === "lower" && proposal.proposedLimit >= proposal.currentLimit)
+      || (proposal.side === "upper" && proposal.proposedLimit <= proposal.currentLimit)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "specification proposal must relax only the failed side", path: ["proposals", index, "proposedLimit"] });
+    }
+    const override = proposal.scenarioEvidence.specificationOverride;
+    const overrideMatches = proposal.side === "lower"
+      ? override.upperSpecLimit === undefined && override.lowerSpecLimit === proposal.proposedLimit
+      : override.lowerSpecLimit === undefined && override.upperSpecLimit === proposal.proposedLimit;
+    if (!overrideMatches) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "F4 specification override must match the proposed side and limit", path: ["proposals", index, "scenarioEvidence", "specificationOverride"] });
+    }
+  });
+});
+
+const f6OptimizationWorksheetV3Schema = z.object({
+  worksheetName: z.string().min(1),
+  tableId: z.string().min(1),
+  runStatus: z.enum(["COMPLETED", "CLARIFICATION_REQUIRED"]),
+  baselineIdentity: f6InputBaselineIdentitySchema,
+  steps: z.tuple([
+    f6CenterAssessmentV3Schema,
+    f6ContributorPrioritiesV3Schema,
+    f6SpecificationChangesV3Schema,
+  ]),
+}).strict().superRefine((worksheet, context) => {
+  if (worksheet.baselineIdentity.worksheetName !== worksheet.worksheetName
+    || worksheet.baselineIdentity.tableId !== worksheet.tableId) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "baseline identity must match worksheet and table", path: ["baselineIdentity"] });
+  }
+  const clarificationRequired = worksheet.steps[0].status === "clarification_required"
+    || worksheet.steps[2].clarifications.length > 0;
+  if ((worksheet.runStatus === "CLARIFICATION_REQUIRED") !== clarificationRequired) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet status must match sequential step clarifications", path: ["runStatus"] });
+  }
+  worksheet.steps[2].proposals.forEach((proposal, index) => {
+    const evidenceBaseline = proposal.scenarioEvidence.baselineIdentity;
+    const worksheetBaseline = worksheet.baselineIdentity;
+    if (evidenceBaseline.calculationVersion !== worksheetBaseline.calculationVersion
+      || evidenceBaseline.projectReference !== worksheetBaseline.projectReference
+      || evidenceBaseline.runReference !== worksheetBaseline.runReference
+      || evidenceBaseline.workbookContentHash !== worksheetBaseline.workbookContentHash
+      || evidenceBaseline.worksheetName !== worksheetBaseline.worksheetName
+      || evidenceBaseline.tableId !== worksheetBaseline.tableId) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "F4 scenario baseline must match worksheet baseline", path: ["steps", 2, "proposals", index, "scenarioEvidence", "baselineIdentity"] });
+    }
+  });
+});
+
+const f6OptimizationSummaryV3Schema = z.object({
+  worksheetCount: z.number().int().nonnegative(),
+  completedWorksheetCount: z.number().int().nonnegative(),
+  clarificationRequiredWorksheetCount: z.number().int().nonnegative(),
+}).strict();
+
+const f6ProvenanceV3Schema = z.object({
+  f2Reference: f6ArtifactReferenceSchema,
+  f3Reference: f6ArtifactReferenceSchema,
+  f4Reference: f6ArtifactReferenceSchema,
+  f5Reference: f6ArtifactReferenceSchema,
+  multimodalReference: f6ArtifactReferenceSchema,
+  reportScope: z.object({ worksheetNames: z.array(z.string().min(1)).min(1) }).strict(),
+}).strict();
+
+export const f6OptimizationResultV3Schema = z.object({
+  contractVersion: contractVersionSchema,
+  outputClassification: z.literal("confidential"),
+  featureId: z.literal("F6"),
+  optimizationVersion: z.literal("f6-optimization-v3"),
+  sequentialPolicyId: z.literal("f6-sequential-optimization-policy-v1"),
+  interactionLanguage: f6InteractionLanguageSchema,
+  runStatus: z.enum(["COMPLETED", "CLARIFICATION_REQUIRED"]),
+  workbook: z.object({ fileName: workbookCatalogFileNameSchema, contentHash: sha256Schema }).strict(),
+  worksheets: z.array(f6OptimizationWorksheetV3Schema).min(1),
+  summary: f6OptimizationSummaryV3Schema,
+  provenance: f6ProvenanceV3Schema,
+}).strict().superRefine((result, context) => {
+  const worksheetNames = result.worksheets.map(({ worksheetName }) => worksheetName);
+  if (new Set(worksheetNames).size !== worksheetNames.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet names must be unique", path: ["worksheets"] });
+  }
+  if (result.provenance.reportScope.worksheetNames.length !== worksheetNames.length
+    || result.provenance.reportScope.worksheetNames.some((name, index) => name !== worksheetNames[index])) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "report scope must match worksheet order", path: ["provenance", "reportScope", "worksheetNames"] });
+  }
+  result.worksheets.forEach((worksheet, index) => {
+    if (worksheet.baselineIdentity.workbookContentHash !== result.workbook.contentHash) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "worksheet baseline workbook must match root workbook", path: ["worksheets", index, "baselineIdentity", "workbookContentHash"] });
+    }
+  });
+  const completedWorksheetCount = result.worksheets.filter(({ runStatus }) => runStatus === "COMPLETED").length;
+  const clarificationRequiredWorksheetCount = result.worksheets.length - completedWorksheetCount;
+  if (result.summary.worksheetCount !== result.worksheets.length
+    || result.summary.completedWorksheetCount !== completedWorksheetCount
+    || result.summary.clarificationRequiredWorksheetCount !== clarificationRequiredWorksheetCount) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "summary must match worksheet results", path: ["summary"] });
+  }
+  const expectedStatus = clarificationRequiredWorksheetCount > 0 ? "CLARIFICATION_REQUIRED" : "COMPLETED";
+  if (result.runStatus !== expectedStatus) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "root runStatus must match worksheet statuses", path: ["runStatus"] });
+  }
+  if (containsForbiddenF6V3Token(result)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "F6 v3 must not contain legacy option policy tokens", path: [] });
+  }
+});
+
+function f6FactorIdentityKey(factor: z.infer<typeof f6FactorIdentitySchema>): string {
+  return JSON.stringify([factor.worksheetName, factor.tableId, factor.sourceRow, factor.factorName, factor.unit]);
+}
+
+function f6CompareFactorIdentity(left: z.infer<typeof f6FactorIdentitySchema>, right: z.infer<typeof f6FactorIdentitySchema>): number {
+  return left.worksheetName.localeCompare(right.worksheetName)
+    || left.tableId.localeCompare(right.tableId)
+    || left.sourceRow - right.sourceRow
+    || left.factorName.localeCompare(right.factorName)
+    || left.unit.localeCompare(right.unit);
+}
+
+function containsForbiddenF6V3Token(value: unknown): boolean {
+  if (typeof value === "string") return /\bOP[123]\b|BUILT_IN_POLICY|f6-top3-tolerance-policy-v1/u.test(value);
+  if (Array.isArray(value)) return value.some(containsForbiddenF6V3Token);
+  if (typeof value !== "object" || value === null) return false;
+  return Object.entries(value).some(([key, child]) => /^(?:optionCode|optionSource|policyContext|ratio|reductionRatio|scale)$/iu.test(key)
+    || containsForbiddenF6V3Token(child));
+}
+
+export const f6ReadableOptimizationResultSchema = z.union([
+  f6OptimizationResultV2Schema,
+  f6OptimizationResultV3Schema,
+]);
+
+export const f6OptimizationResultSchema = f6OptimizationResultV2Schema;
+
 export type F6OptionKind = z.infer<typeof f6OptionKindSchema>;
 export type F6FactorIdentity = z.infer<typeof f6FactorIdentitySchema>;
 export type F6InputBaselineIdentity = z.infer<typeof f6InputBaselineIdentitySchema>;
@@ -8587,7 +8827,9 @@ export type F6WorksheetResult = z.infer<typeof f6WorksheetResultSchema>;
 export type F6Summary = z.infer<typeof f6SummarySchema>;
 export type F6Provenance = z.infer<typeof f6ProvenanceSchema>;
 export type F6LegacyOptimizationResult = z.infer<typeof f6LegacyOptimizationResultSchema>;
-export type F6OptimizationResultV2 = z.infer<typeof f6OptimizationResultSchema>;
+export type F6OptimizationResultV2 = z.infer<typeof f6OptimizationResultV2Schema>;
+export type F6OptimizationResultV3 = z.infer<typeof f6OptimizationResultV3Schema>;
+export type F6ReadableOptimizationResult = z.infer<typeof f6ReadableOptimizationResultSchema>;
 export type F6OptimizationResult = F6LegacyOptimizationResult;
 
 export type CalculationScenarioOverride = z.infer<typeof calculationScenarioOverrideSchema>;

@@ -43,6 +43,9 @@ import {
   f6ModelInterpretationArtifactSchema,
   f6ModelInterpretationV2ArtifactSchema,
   f6OptimizationRequestSchema,
+  f6OptimizationResultV2Schema,
+  f6OptimizationResultV3Schema,
+  f6ReadableOptimizationResultSchema,
   f6OptimizationResultSchema,
   f6OptimizationTargetsProposalSchema,
   f6OptimizationTargetsSchema,
@@ -5221,6 +5224,76 @@ describe("F5.1 objective interpretation contracts", () => {
       it("accepts a candidate-only completed V2 result and rejects V1", () => {
         expect(f6OptimizationResultSchema.parse(resultV2)).toEqual(resultV2);
         expect(f6OptimizationResultSchema.safeParse({ ...resultV2, optimizationVersion: "f6-optimization-v1" }).success).toBe(false);
+      });
+
+      it("keeps V2 readable while accepting strict sequential V3 without legacy options", () => {
+        const resultV3 = {
+          contractVersion: "v1" as const,
+          outputClassification: "confidential" as const,
+          featureId: "F6" as const,
+          optimizationVersion: "f6-optimization-v3" as const,
+          sequentialPolicyId: "f6-sequential-optimization-policy-v1" as const,
+          interactionLanguage: { languageTag: "en-US", uiCatalogLanguage: "en" as const, lockedAtTurnId: "turn-1", source: "workflow_start" as const, fallbackUsed: false },
+          runStatus: "COMPLETED" as const,
+          workbook: { fileName: "Demo.xlsx", contentHash: "b".repeat(64) },
+          worksheets: [{
+            worksheetName: "Analysis-A",
+            tableId: "table-a",
+            runStatus: "COMPLETED" as const,
+            baselineIdentity,
+            steps: [
+              { step: "centerAssessment" as const, status: "aligned" as const, adjustedMean: 0, specificationMidpoint: 0, offset: 0 },
+              { step: "contributorPriorities" as const, priorities: [{ rank: 1, factor, contribution: 0.7, guidance: "tighten_tolerance" as const }] },
+              { step: "specificationChanges" as const, proposals: [], clarifications: [] },
+            ],
+          }],
+          summary: { worksheetCount: 1, completedWorksheetCount: 1, clarificationRequiredWorksheetCount: 0 },
+          provenance: {
+            f2Reference: artifactReference("Feature2-Report.json"),
+            f3Reference: artifactReference("Feature3-Report.json"),
+            f4Reference: artifactReference("Feature4-Calculation.json"),
+            f5Reference: artifactReference("Feature5-Report.json"),
+            multimodalReference: artifactReference("Feature5-Multimodal.json"),
+            reportScope: { worksheetNames: ["Analysis-A"] },
+          },
+        };
+
+        expect(f6OptimizationResultV2Schema.parse(resultV2)).toEqual(resultV2);
+        expect(f6ReadableOptimizationResultSchema.parse(resultV2)).toEqual(resultV2);
+        expect(f6OptimizationResultV3Schema.parse(resultV3)).toEqual(resultV3);
+        expect(f6ReadableOptimizationResultSchema.parse(resultV3)).toEqual(resultV3);
+        expect(f6OptimizationResultV3Schema.safeParse(resultV2).success).toBe(false);
+        for (const legacy of [
+          { optionCode: "OP1" },
+          { optionSource: "BUILT_IN_POLICY" },
+          { policyContext: { reductionRatio: 0.25 } },
+          { ratio: 0.25 },
+          { optionName: "OP2" },
+        ]) {
+          expect(f6OptimizationResultV3Schema.safeParse({ ...resultV3, ...legacy }).success).toBe(false);
+        }
+        expect(f6OptimizationResultV3Schema.safeParse({
+          ...resultV3,
+          worksheets: [{ ...resultV3.worksheets[0], steps: [{ ...resultV3.worksheets[0].steps[0], adjustedMean: 1 }, resultV3.worksheets[0].steps[1], resultV3.worksheets[0].steps[2]] }],
+        }).success).toBe(false);
+        const lowerRankedFactor = { ...factor, sourceRow: factor.sourceRow + 1, factorName: "Factor B" };
+        expect(f6OptimizationResultV3Schema.safeParse({
+          ...resultV3,
+          worksheets: [{ ...resultV3.worksheets[0], steps: [resultV3.worksheets[0].steps[0], { step: "contributorPriorities", priorities: [{ rank: 1, factor, contribution: 0.1, guidance: "tighten_tolerance" }, { rank: 2, factor: lowerRankedFactor, contribution: 0.9, guidance: "tighten_tolerance" }] }, resultV3.worksheets[0].steps[2]] }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultV3Schema.safeParse({
+          ...resultV3,
+          worksheets: [{ ...resultV3.worksheets[0], steps: [resultV3.worksheets[0].steps[0], { step: "contributorPriorities", priorities: [{ rank: 1, factor, contribution: 0.7, guidance: "tighten_tolerance" }, { rank: 2, factor, contribution: 0.6, guidance: "tighten_tolerance" }] }, resultV3.worksheets[0].steps[2]] }],
+        }).success).toBe(false);
+        const invalidProposal = { side: "lower" as const, currentLimit: -1, proposedLimit: 0, targetCpk: 1.33, currentSideCpk: 0.8, verifiedSideCpk: 1.33, verificationStatus: "target_met" as const, approvalRequired: true as const, capabilityImprovementClaim: false as const, calculationReference: artifactReference("F4-Proposal.json") };
+        expect(f6OptimizationResultV3Schema.safeParse({
+          ...resultV3,
+          worksheets: [{ ...resultV3.worksheets[0], steps: [resultV3.worksheets[0].steps[0], resultV3.worksheets[0].steps[1], { step: "specificationChanges", proposals: [invalidProposal], clarifications: [] }] }],
+        }).success).toBe(false);
+        expect(f6OptimizationResultV3Schema.safeParse({
+          ...resultV3,
+          worksheets: [{ ...resultV3.worksheets[0], steps: [resultV3.worksheets[0].steps[0], { ...resultV3.worksheets[0].steps[1], priorities: [{ ...resultV3.worksheets[0].steps[1].priorities[0], rationale: "Use OP1" }] }, resultV3.worksheets[0].steps[2]] }],
+        }).success).toBe(false);
       });
 
       it("accepts governed observation and model-ledger rejected reason codes in provenance decisions", () => {
