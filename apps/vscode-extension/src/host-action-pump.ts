@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { hostActionRequestSchema } from "@ai-assist/contracts";
+import { hostActionRequestSchema, type F5MultimodalWorksheetResultV3 } from "@ai-assist/contracts";
 import type { SurfaceMcpConfirmationPayload, SurfaceMcpUpdateReceipt } from "@ai-assist/adapters";
 
 type BoundHostActionRequest = ReturnType<typeof hostActionRequestSchema.parse>;
@@ -30,6 +30,9 @@ export type HostExecutionPayload = { readonly status: "completed"; readonly outc
   readonly kind: "model_response";
   readonly turnId: string;
   readonly responseText: string;
+} | {
+  readonly kind: "worksheet_multimodal_response";
+  readonly result: F5MultimodalWorksheetResultV3;
 } }
   | { readonly status: "blocked"; readonly reason?: string }
   | { readonly status: "failed"; readonly error: unknown };
@@ -61,7 +64,8 @@ export async function pumpOneHostAction(
   }
   const supportedSurface = (claimed.request.kind === "surface_validate" || claimed.request.kind === "surface_write" || claimed.request.kind === "surface_reconcile") && claimed.request.expectedTargetVersion === "ado-decision-v1";
   const supportedModel = claimed.request.kind === "vscode_model_request" && claimed.request.expectedTargetVersion === "vscode-model-v1";
-  if (!supportedSurface && !supportedModel) {
+  const supportedMultimodal = claimed.request.kind === "vscode_worksheet_multimodal_request" && claimed.request.expectedTargetVersion === "vscode-worksheet-multimodal-v3";
+  if (!supportedSurface && !supportedModel && !supportedMultimodal) {
     throw new Error("Host action kind or target version is unsupported.");
   }
   if (claimed.leaseId.length === 0 || !/^[a-f0-9]{64}$/.test(claimed.request.confirmationHash ?? "")) {

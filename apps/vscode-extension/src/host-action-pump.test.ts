@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { createF5MultimodalFactorSetHash, createF5MultimodalRequestHash } from "@ai-assist/contracts";
 import { describe, expect, it, vi } from "vitest";
 
 import { pumpOneHostAction, type HostActionTerminalResult } from "./host-action-pump.js";
@@ -83,6 +84,21 @@ describe("pumpOneHostAction", () => {
     expect(submit).toHaveBeenCalledOnce();
   });
 
+  it("supports a typed worksheet multimodal action", async () => {
+    const request = multimodalHostActionRequest();
+    const execute = vi.fn(async () => ({ status: "blocked" as const, reason: "model_capability_unavailable" }));
+    const submit = vi.fn(async () => undefined);
+
+    await expect(pumpOneHostAction({ sessionId: SESSION_ID, actionId: request.actionId }, {
+      hostInstanceId: "vscode-host",
+      claim: async () => ({ actionId: request.actionId, request, hostInstanceId: "vscode-host", leaseId: "lease-multimodal" }),
+      execute,
+      submit,
+    })).resolves.toBe("submitted");
+    expect(execute).toHaveBeenCalledOnce();
+    expect(submit).toHaveBeenCalledWith(expect.objectContaining({ status: "blocked", payload: { status: "blocked", reason: "model_capability_unavailable" } }));
+  });
+
   it("fails closed when a Surface action target version does not match the supported ADO contract", async () => {
     const execute = vi.fn();
     await expect(pumpOneHostAction({ sessionId: SESSION_ID, actionId: "action-c" }, {
@@ -109,3 +125,10 @@ describe("pumpOneHostAction", () => {
     expect(execute).not.toHaveBeenCalled();
   });
 });
+
+function multimodalHostActionRequest() {
+  const factorRows = [{ worksheetName: "Analysis-A", tableId: "table-a", sourceRow: 11, factorOrdinal: { value: "A", rawText: "A", sourceCell: "Analysis-A!Z11" }, factorName: "Factor A", partName: "Part A", partCategory: "CNC", drawingNumber: null, dimId: null, nominal: 0, upperTolerance: 0.1, lowerTolerance: -0.1, longTermSafetyFactor: 1, sigmaLevel: 4, distribution: "normal", sourceCells: { factorName: "Analysis-A!A11" } }];
+  const nested = { contractVersion: "f5-multimodal-request-v3" as const, inputClassification: "confidential" as const, requestHash: "", sessionId: SESSION_ID, revision: 1, inputRevision: 0, workbook: { fileName: "anonymous.xlsx", contentHash: "b".repeat(64) }, worksheetName: "Analysis-A", tableId: "table-a", activeFactorCount: 1, factorSetHash: createF5MultimodalFactorSetHash(factorRows), image: { mediaType: "image/png" as const, contentHash: "c".repeat(64), byteLength: 100, artifactPath: "images/analysis-a.png" }, factorRows };
+  nested.requestHash = createF5MultimodalRequestHash(nested);
+  return { contractVersion: "f8-host-action-request-v1" as const, actionId: `multimodal:${nested.requestHash}`, sessionId: SESSION_ID, expectedRevision: 1, expiresAt: "2026-08-25T01:00:00.000Z", kind: "vscode_worksheet_multimodal_request" as const, confirmationHash: nested.requestHash, expectedTargetVersion: "vscode-worksheet-multimodal-v3" as const, request: nested };
+}

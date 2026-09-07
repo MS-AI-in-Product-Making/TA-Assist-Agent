@@ -17,7 +17,7 @@ export interface WorkbookImportReceipt {
 export interface WorkbenchProcessLauncher {
   launch(args: readonly string[]): Promise<{ readonly sessionId?: string; readonly url: string }>;
   importWorkbook?(input: WorkbookImportIpcRequest): Promise<WorkbookImportReceipt>;
-  issueHostBearer?(input: { readonly sessionId: string; readonly actionId?: string; readonly hostInstanceId?: string; readonly scopes: readonly ("host-actions:claim" | "host-actions:result" | "sessions:read")[] }): Promise<string>;
+  issueHostBearer?(input: { readonly sessionId: string; readonly actionId?: string; readonly hostInstanceId?: string; readonly scopes: readonly ("host-actions:claim" | "host-actions:result" | "host-actions:image:read" | "sessions:read")[] }): Promise<string>;
 }
 
 export async function launchNewWorkbench(rootDir: string, process: WorkbenchProcessLauncher, interactionLanguage: InteractionLanguage): Promise<{ readonly sessionId: string; readonly url: string }> {

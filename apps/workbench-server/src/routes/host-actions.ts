@@ -9,6 +9,28 @@ import { hasScope, hostBearerMatches } from "../auth.js";
 import type { WorkbenchServerContext } from "../server.js";
 
 export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: WorkbenchServerContext }> = async (app, { context }) => {
+  app.get("/api/sessions/:sessionId/host-actions/pending", async (request, reply) => {
+    const auth = context.requireAuthenticated(request, reply);
+    const { sessionId } = request.params as { readonly sessionId: string };
+    if (auth === undefined || !hasScope(auth, "sessions:read") || auth.sessionId !== sessionId) {
+      return reply.code(403).send({ error: "host_scope_rejected" });
+    }
+    let requests;
+    try {
+      requests = await context.buildWorksheetInterpretationRequests(sessionId);
+    } catch {
+      return reply.code(204).send();
+    }
+    for (const candidate of requests) {
+      const actionId = `multimodal:${candidate.requestHash}`;
+      const record = await context.hostActions.readRecord(sessionId, actionId);
+      if (record?.status === "pending" && record.request.kind === "vscode_worksheet_multimodal_request") {
+        return reply.send({ actionId, kind: record.request.kind });
+      }
+    }
+    return reply.code(204).send();
+  });
+
   app.get("/api/sessions/:sessionId/host-actions/:actionId/leases/:leaseId/image", async (request, reply) => {
     const auth = context.requireAuthenticated(request, reply);
     if (auth === undefined || !hasScope(auth, "host-actions:image:read")) {

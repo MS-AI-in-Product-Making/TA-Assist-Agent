@@ -19,6 +19,7 @@ import { createSurfaceHostClient, reconcileSurfaceWrite } from "./surface-host-c
 import { pumpOneHostAction, type ClaimedHostAction } from "./host-action-pump.js";
 import { executeSurfaceValidation } from "./surface-validation.js";
 import { resolveWorkspaceWorkbook } from "./workspace-workbook-resolver.js";
+import { executeWorksheetMultimodalModel } from "./worksheet-multimodal-model.js";
 
 let activeSessionId: string | undefined;
 let activeWorkbenchUrl: string | undefined;
@@ -126,6 +127,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           let responseText = "";
           for await (const chunk of response.text) responseText += chunk;
           return responseText.trim().length === 0 ? { status: "failed", error: new Error("VS Code model returned an empty response.") } : { status: "completed", outcome: { kind: "model_response", turnId: claim.request.turnId, responseText } };
+        }
+        if (claim.request.kind === "vscode_worksheet_multimodal_request") {
+          const imageBearer = await processLauncher.issueHostBearer!({ sessionId, actionId, hostInstanceId, scopes: ["host-actions:image:read"] });
+          const models = await vscode.lm.selectChatModels();
+          return executeWorksheetMultimodalModel({
+            request: claim.request.request,
+            fetchImage: () => fetchClaimedWorksheetImage(workbenchUrl, sessionId, actionId, claim.leaseId, imageBearer),
+            models: models.map((model) => {
+              const supportsImage = (model as unknown as { readonly capabilities?: { readonly imageInput?: boolean } }).capabilities?.imageInput;
+              return {
+                id: model.id,
+                ...(supportsImage === undefined ? {} : { supportsImage }),
+                sendRequest: async (messages: readonly unknown[]) => model.sendRequest(messages as vscode.LanguageModelChatMessage[]),
+              };
+            }),
+            createImagePart: (bytes, mediaType) => vscode.LanguageModelDataPart.image(bytes, mediaType),
+            createTextPart: (text) => new vscode.LanguageModelTextPart(text),
+            createUserMessage: (content) => vscode.LanguageModelChatMessage.User(content as Array<vscode.LanguageModelTextPart | vscode.LanguageModelDataPart>),
+          });
         }
         return { status: "blocked", reason: "Unsupported HostAction kind." };
       },
@@ -459,12 +479,26 @@ async function hostRequest<Result>(originValue: string, sessionId: string, actio
   return (response.status === 204 ? undefined : await response.json()) as Result;
 }
 
-async function readPendingHostAction(originValue: string, sessionId: string, bearer: string): Promise<{ readonly actionId: string; readonly kind: "surface_validate" | "surface_write" | "surface_reconcile" | "vscode_model_request" } | undefined> {
+async function fetchClaimedWorksheetImage(originValue: string, sessionId: string, actionId: string, leaseId: string, bearer: string): Promise<{ readonly bytes: Uint8Array; readonly mediaType: string }> {
   const origin = new URL(originValue).origin;
+  const response = await fetch(`${origin}/api/sessions/${encodeURIComponent(sessionId)}/host-actions/${encodeURIComponent(actionId)}/leases/${encodeURIComponent(leaseId)}/image`, {
+    headers: { authorization: `Bearer ${bearer}` },
+  });
+  if (!response.ok) throw new Error(`Worksheet image read was rejected (${response.status}).`);
+  const mediaType = response.headers.get("content-type")?.split(";", 1)[0]?.trim();
+  if (mediaType !== "image/png" && mediaType !== "image/jpeg") throw new Error("Worksheet image response media type is invalid.");
+  return { bytes: new Uint8Array(await response.arrayBuffer()), mediaType };
+}
+
+async function readPendingHostAction(originValue: string, sessionId: string, bearer: string): Promise<{ readonly actionId: string; readonly kind: "surface_validate" | "surface_write" | "surface_reconcile" | "vscode_model_request" | "vscode_worksheet_multimodal_request" } | undefined> {
+  const origin = new URL(originValue).origin;
+  const multimodal = await fetch(`${origin}/api/sessions/${encodeURIComponent(sessionId)}/host-actions/pending`, { headers: { authorization: `Bearer ${bearer}` } });
+  if (!multimodal.ok) throw new Error(`Pending multimodal HostAction discovery was rejected (${multimodal.status}).`);
+  if (multimodal.status !== 204) return await multimodal.json() as { readonly actionId: string; readonly kind: "vscode_worksheet_multimodal_request" };
   const response = await fetch(`${origin}/api/sessions/${encodeURIComponent(sessionId)}/ado/pending`, { headers: { authorization: `Bearer ${bearer}` } });
   if (response.status === 204) return undefined;
   if (!response.ok) throw new Error(`Pending ADO HostAction discovery was rejected (${response.status}).`);
-  return await response.json() as { readonly actionId: string; readonly kind: "surface_validate" | "surface_write" | "surface_reconcile" | "vscode_model_request" };
+  return await response.json() as { readonly actionId: string; readonly kind: "surface_validate" | "surface_write" | "surface_reconcile" | "vscode_model_request" | "vscode_worksheet_multimodal_request" };
 }
 
 function outputUrl(stdout: string): string {
