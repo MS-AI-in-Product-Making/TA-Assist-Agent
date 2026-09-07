@@ -1235,6 +1235,26 @@ function withArtifactReferences(
         affectedInputReferences: [reference.artifactId],
       });
     }
+    if (reference.kind === "f5_multimodal") {
+      if (reference.contentHash === undefined) {
+        throw createTypedError({
+          code: "evidence_mismatch",
+          summary: `Multimodal artifact ${reference.artifactId} has no content hash.`,
+          suggestedAction: "Register the immutable multimodal artifact with its validated SHA-256 identity.",
+          affectedInputReferences: [reference.artifactId],
+        });
+      }
+      references.set(reference.artifactId, {
+        artifactId: reference.artifactId,
+        kind: reference.kind,
+        revision: snapshot.inputRevision,
+        validated: true,
+        reviewContextId,
+        relativePath: reference.relativePath,
+        contentHash: reference.contentHash,
+      });
+      return;
+    }
     references.set(reference.artifactId, {
       artifactId: reference.artifactId,
       kind: reference.kind,
@@ -1249,8 +1269,8 @@ function withArtifactReferences(
   });
 }
 
-function isReviewArtifactKind(kind: string): kind is "f1_image" | "f3_report" | "f4_calculation" | "f4_report" | "f5_report" | "f6_optimization" | "f6_report" {
-  return ["f1_image", "f3_report", "f4_calculation", "f4_report", "f5_report", "f6_optimization", "f6_report"].includes(kind);
+function isReviewArtifactKind(kind: string): kind is "f1_image" | "f3_report" | "f4_calculation" | "f4_report" | "f5_multimodal" | "f5_report" | "f6_optimization" | "f6_report" {
+  return ["f1_image", "f3_report", "f4_calculation", "f4_report", "f5_multimodal", "f5_report", "f6_optimization", "f6_report"].includes(kind);
 }
 
 function migrateLegacyWorksheetSelectionProvenance(

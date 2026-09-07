@@ -151,6 +151,8 @@ export interface F5InterpretationRequest {
   readonly f4ArtifactRoot: string;
   readonly selectedWorksheetNames?: readonly string[];
   readonly imageObservationsPath?: string;
+  readonly modelInterpretationPath: string;
+  readonly expectedModelInterpretationContentHash: string;
 }
 
 export interface F5InterpretationResult {

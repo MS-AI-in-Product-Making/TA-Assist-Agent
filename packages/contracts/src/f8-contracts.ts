@@ -431,6 +431,18 @@ const f8ReviewArtifactRefSchema = z
   })
   .strict();
 
+const f8MultimodalArtifactRefSchema = z
+  .object({
+    artifactId: boundedContextIdSchema,
+    kind: z.literal("f5_multimodal"),
+    revision: z.number().int().nonnegative(),
+    validated: z.literal(true),
+    reviewContextId: sha256Schema,
+    relativePath: nonEmptyStringSchema,
+    contentHash: sha256Schema,
+  })
+  .strict();
+
 const f8NonReviewArtifactRefSchema = z
   .object({
     artifactId: boundedContextIdSchema,
@@ -441,7 +453,7 @@ const f8NonReviewArtifactRefSchema = z
   })
   .strict();
 
-const f8ArtifactRefSchema = z.union([f8ReviewArtifactRefSchema, f8NonReviewArtifactRefSchema]);
+const f8ArtifactRefSchema = z.union([f8ReviewArtifactRefSchema, f8MultimodalArtifactRefSchema, f8NonReviewArtifactRefSchema]);
 
 const f8WorksheetCapabilitySchema = z
   .object({

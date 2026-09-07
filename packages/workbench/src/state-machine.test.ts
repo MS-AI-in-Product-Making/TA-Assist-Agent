@@ -74,9 +74,28 @@ describe("workbench state machine", () => {
       completedAttemptResult(),
     ).state).toBe("image_decision_required");
 
-    expect(api.acceptAttemptResult(
+    expect(() => api.acceptAttemptResult(
       runningSnapshot("f5_running"),
       completedAttemptResult(),
+    )).toThrow(/multimodal/i);
+
+    const multimodalReference = {
+      artifactId: "f5-multimodal:2",
+      kind: "f5_multimodal" as const,
+      revision: 2,
+      validated: true,
+      reviewContextId: "c".repeat(64),
+      relativePath: "runtime/workbench/multimodal/session-task-4/5/artifact.json",
+      contentHash: "d".repeat(64),
+    };
+    expect(() => api.acceptAttemptResult(
+      runningSnapshot("f5_running", [multimodalReference]),
+      completedAttemptResult({ artifactReferences: [{ ...multimodalReference, contentHash: "e".repeat(64) }] }),
+    )).toThrow(/multimodal/i);
+
+    expect(api.acceptAttemptResult(
+      runningSnapshot("f5_running", [multimodalReference]),
+      completedAttemptResult({ artifactReferences: [multimodalReference] }),
     ).state).toBe("analysis_context_decision_required");
 
     expect(api.reduceSessionCommand(
@@ -728,7 +747,7 @@ function baseSnapshotShape() {
   };
 }
 
-function runningSnapshot(state: "f3_running" | "f4_running" | "f5_running" | "f6_running") {
+function runningSnapshot(state: "f3_running" | "f4_running" | "f5_running" | "f6_running", artifactRefs?: unknown[]) {
   return baseSnapshot({
     revision: 5,
     inputRevision: 2,
@@ -740,6 +759,7 @@ function runningSnapshot(state: "f3_running" | "f4_running" | "f5_running" | "f6
       commandId: "command-running",
       startedAt: "2026-08-24T00:00:00.000Z",
     },
+    ...(artifactRefs === undefined ? {} : { artifactRefs }),
   });
 }
 

@@ -230,6 +230,7 @@ export function acceptAttemptResult(snapshotInput: F8SessionSnapshot, result: Se
   const terminalStatus = result.status ?? "completed";
   switch (terminalStatus) {
     case "completed": {
+      if (activeAttempt.stage === "f5_running") assertCompletedF5MultimodalReference(snapshot, result.result);
       const nextState = resolveCompletionState(activeAttempt.stage, result.result);
       const transitioned = transitionAfterCompletion(snapshot, activeAttempt.stage, nextState, activeAttempt.commandId ?? result.attemptId);
       return annotateSnapshot(transitioned, undefined);
@@ -529,4 +530,27 @@ function appendF6InputDecisionReference(
       ...(decisionReference === undefined ? {} : { runReference: decisionReference }),
     },
   ];
+}
+
+function assertCompletedF5MultimodalReference(snapshot: F8SessionSnapshot, result: unknown): void {
+  const expectedArtifactId = `f5-multimodal:${snapshot.inputRevision}`;
+  const authorized = snapshot.artifactRefs?.filter((reference) => reference.kind === "f5_multimodal"
+    && reference.artifactId === expectedArtifactId
+    && reference.revision === snapshot.inputRevision
+    && reference.validated) ?? [];
+  const authorizedReference = authorized[0];
+  const references = (result as { readonly artifactReferences?: readonly { readonly artifactId?: unknown; readonly kind?: unknown; readonly relativePath?: unknown; readonly contentHash?: unknown }[] } | undefined)?.artifactReferences ?? [];
+  const matches = references.filter((reference) => reference.kind === "f5_multimodal" && reference.artifactId === expectedArtifactId);
+  if (authorized.length !== 1
+    || authorizedReference?.kind !== "f5_multimodal"
+    || matches.length !== 1
+    || matches[0]!.relativePath !== authorizedReference.relativePath
+    || matches[0]!.contentHash !== authorizedReference.contentHash) {
+    throw createTypedError({
+      code: "evidence_mismatch",
+      summary: "Result Interpretation cannot complete without the current governed multimodal artifact.",
+      suggestedAction: "Complete image and Factor-table interpretation for every selected worksheet.",
+      affectedInputReferences: [snapshot.sessionId, String(snapshot.inputRevision)],
+    });
+  }
 }

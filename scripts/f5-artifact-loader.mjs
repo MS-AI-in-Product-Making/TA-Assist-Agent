@@ -9,6 +9,7 @@ import {
   f5ImageObservationArtifactSchema,
   workbookCatalogFileNameSchema,
 } from "../packages/contracts/dist/contracts.js";
+import { f5MultimodalArtifactV3Schema } from "../packages/contracts/dist/ta-multimodal-contracts.js";
 
 const SOURCE_REFERENCES = Object.freeze({
   f1: "Feature1-Report.json",
@@ -384,6 +385,8 @@ export function loadF5ArtifactBundle({
   f4ArtifactRoot,
   selectedWorksheetNames,
   imageObservationArtifact,
+  modelInterpretationArtifact,
+  expectedModelInterpretationContentHash,
 }) {
   const f1IndexLoaded = loadF1Index(f1ArtifactRoot);
   if (f1IndexLoaded.rejection) return f1IndexLoaded.rejection;
@@ -402,6 +405,37 @@ export function loadF5ArtifactBundle({
   if (workbook.contentHash !== f4.source.workbookContentHash
     || workbook.fileName !== f4.source.workbookFileName) {
     return inputRejected("artifact_identity_mismatch", SOURCE_REFERENCES.f4);
+  }
+
+  let validatedModelInterpretation;
+  if (modelInterpretationArtifact !== undefined || expectedModelInterpretationContentHash !== undefined) {
+    const artifactReference = safeReference(modelInterpretationArtifact);
+    if (modelInterpretationArtifact === undefined || expectedModelInterpretationContentHash === undefined) {
+      return inputRejected("artifact_identity_mismatch", artifactReference);
+    }
+    let bytes;
+    try {
+      if (statSync(modelInterpretationArtifact).size > MAX_JSON_ARTIFACT_BYTES) return inputRejected("artifact_contract_invalid", artifactReference);
+      bytes = readFileSync(modelInterpretationArtifact);
+    } catch (error) {
+      return inputRejected(ioReason(error), artifactReference);
+    }
+    if (createHash("sha256").update(bytes).digest("hex") !== expectedModelInterpretationContentHash) {
+      return inputRejected("artifact_identity_mismatch", artifactReference);
+    }
+    let parsedJson;
+    try {
+      parsedJson = JSON.parse(bytes.toString("utf8"));
+    } catch {
+      return inputRejected("artifact_contract_invalid", artifactReference);
+    }
+    const parsed = f5MultimodalArtifactV3Schema.safeParse(parsedJson);
+    if (!parsed.success
+      || parsed.data.workbookContentHash !== workbook.contentHash
+      || !sameWorksheetSet(parsed.data.selectedWorksheetNames, selection)) {
+      return inputRejected("artifact_identity_mismatch", artifactReference);
+    }
+    validatedModelInterpretation = parsed.data;
   }
 
   const f1Loaded = loadSelectedF1Artifacts(f1ArtifactRoot, f1IndexLoaded.value, selection);
@@ -494,8 +528,13 @@ export function loadF5ArtifactBundle({
     request,
     rejectedWorksheets,
     worksheetOrder: [...selection],
-    sourceReferences: SOURCE_REFERENCES,
     ...extras,
+    sourceReferences: {
+      ...SOURCE_REFERENCES,
+      ...(validatedModelInterpretation === undefined ? {} : { modelInterpretation: safeReference(modelInterpretationArtifact) }),
+      ...(extras.sourceReferences ?? {}),
+    },
+    ...(validatedModelInterpretation === undefined ? {} : { modelInterpretationArtifact: validatedModelInterpretation }),
   });
   if (imageObservationArtifact === undefined) return acceptedResult(baselineRequest);
 

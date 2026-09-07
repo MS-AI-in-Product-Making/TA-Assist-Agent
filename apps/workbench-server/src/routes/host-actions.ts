@@ -171,8 +171,11 @@ export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: Workbench
       return reply.code(409).send({ error: "host_action_session_stale" });
     }
     const completion = await context.hostActions.complete(sessionId, parsed.data);
+    const completedRecord = completion === "duplicate"
+      ? await context.hostActions.readRecord(sessionId, actionId)
+      : actionRecord;
     const resumableDuplicate = completion === "duplicate"
-      && isDeepStrictEqual(actionRecord?.result, parsed.data);
+      && isDeepStrictEqual(completedRecord?.result, parsed.data);
     if (completion === "accepted" || resumableDuplicate) {
       const outcome = parsed.data.payload.status === "completed" ? parsed.data.payload.outcome : undefined;
       if (action?.kind === "surface_write" && outcome?.kind === "surface_write") {
@@ -228,6 +231,12 @@ export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: Workbench
         }));
         context.events.publish(sessionId, "conversation_turn_appended", turn);
         await context.syncSessionRecord(sessionId);
+      }
+      if (action?.kind === "vscode_worksheet_multimodal_request") {
+        const snapshot = await context.sessions.read(sessionId);
+        if (snapshot?.state === "f5_running" && snapshot.revision === action.expectedRevision) {
+          await context.enqueueActiveAttempt(snapshot);
+        }
       }
       return reply.code(204).send();
     }
