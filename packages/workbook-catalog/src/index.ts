@@ -61,6 +61,8 @@ export type {
 	F2ArtifactInput,
 	F2UserReport,
 	F2ReadyWorksheet,
+	F2WorksheetFindingProjection,
+	F2FindingsDecisionProjection,
 	F2SystemSpecificationIssue,
 	F4HandoffReady,
 	RequiredFieldCheckRequest,

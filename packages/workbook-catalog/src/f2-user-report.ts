@@ -60,11 +60,6 @@ function text(value: string | number | null): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
 
-function hasAvailableValue(field: ArtifactField | undefined): boolean {
-  if (field?.status !== "available") return false;
-  return typeof field.actualValue === "number" || field.actualValue.trim().length > 0;
-}
-
 function displayValue(field: ArtifactField | undefined): string | null {
   return field?.status === "available" && field.displayValue.length > 0 ? field.displayValue : null;
 }
@@ -150,16 +145,16 @@ export function createF2UserReport(
   dependencies: { readonly capabilityRouter: { assess(row: { readonly partCategory: string; readonly factorName: string; readonly partName: string; readonly nominalValue: number; readonly upperTolerance: number; readonly lowerTolerance: number; readonly distribution: string }): F0CapabilityAssessment } } = { capabilityRouter: createF0CapabilityRouter() },
 ): F2UserReport {
   const { artifact, knowledgeBaseVersions, mappingRuleVersion } = parseRequest(request);
-  const eventGroups = new Map<string, { category: string; worksheetName: string; missingFields: Set<"dimCharacteristicId" | "partNumber">; factorRows: number[] }>();
+  const eventGroups = new Map<string, { category: string; worksheetName: string; missingFields: Set<"dimCharacteristicId" | "drawingNumber">; factorRows: number[] }>();
 
   const worksheets = artifact.worksheets.map((worksheet) => {
     const worksheetImageReference = imageReference(worksheet);
     const rows = worksheet.factorTables.flatMap((table) => table.rows.map((row) => {
       const missingRequiredFields = REQUIRED_FIELDS.filter((fieldName) => isMissing(fieldName, row.actualFields));
       const sourceCells = Object.fromEntries(Object.entries(row.fields).flatMap(([fieldName, field]) => field.sourceCell ? [[fieldName, field.sourceCell]] : []));
-      const missingIdentifiers = (["dimCharacteristicId", "partNumber"] as const).filter((fieldName) => fieldName === "dimCharacteristicId"
+      const missingIdentifiers = (["dimCharacteristicId", "drawingNumber"] as const).filter((fieldName) => fieldName === "dimCharacteristicId"
         ? text(row.actualFields.dimCharacteristicId) === undefined
-        : !hasAvailableValue(row.fields.partNumber));
+        : text(row.actualFields.drawingNumber) === undefined);
       if (missingIdentifiers.length > 0) {
         const category = text(row.actualFields.partCategory) ?? MISSING;
         const key = `${category}\u0000${worksheet.worksheetName}`;
@@ -247,7 +242,7 @@ export function createF2UserReport(
       eventType: "adoReminderRequested" as const,
       category: group.category,
       worksheetName: group.worksheetName,
-      missingFields: (["dimCharacteristicId", "partNumber"] as const).filter((fieldName) => group.missingFields.has(fieldName)),
+      missingFields: (["dimCharacteristicId", "drawingNumber"] as const).filter((fieldName) => group.missingFields.has(fieldName)),
       factorRows: [...new Set(group.factorRows)].sort((left, right) => left - right),
       workbookContentHash: artifact.workbook.contentHash,
     }));
@@ -279,7 +274,7 @@ export function createF2UserReport(
       publicToleranceDifferenceCount: allRows.filter((row) => row.capabilityStatus === "in_library_tolerance_outside" || row.capabilityStatus === "in_library_tolerance_and_distribution_differ").length,
       publicDistributionDifferenceCount: allRows.filter((row) => row.capabilityStatus === "in_library_distribution_differs" || row.capabilityStatus === "in_library_tolerance_and_distribution_differ").length,
         missingDimIdCount: allRows.filter((row) => row.missingIdentifiers.includes("dimCharacteristicId")).length,
-        missingPartNumberCount: allRows.filter((row) => row.missingIdentifiers.includes("partNumber")).length,
+        missingPartNumberCount: allRows.filter((row) => row.missingIdentifiers.includes("drawingNumber")).length,
     },
   });
   return deepFreeze(structuredClone(result));

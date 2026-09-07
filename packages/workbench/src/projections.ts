@@ -1,4 +1,10 @@
-import { f7PlaceholderStatusSchema } from "@ai-assist/contracts";
+import { createHash } from "node:crypto";
+
+import {
+  f7PlaceholderStatusSchema,
+  type F2FindingsDecisionProjection,
+  type F2UserReport,
+} from "@ai-assist/contracts";
 import { TA_WORKBOOK_STAGES, TA_WORKBOOK_STAGE_LABELS, projectTaWorkbookStage, type TaWorkbookStage } from "@ai-assist/product-language/ta-workbook-language";
 
 import { canRetryAttempt } from "./attempts.js";
@@ -348,4 +354,84 @@ function stageForFeature(featureId: typeof FEATURE_IDS[number]): TaWorkbookStage
     default:
       return "prepare_workbook";
   }
+}
+
+export interface F2FindingsDecisionEvidence {
+  readonly inputRevision: number;
+  readonly f2ReportArtifactId: string;
+  readonly f2ReportContentHash: string;
+}
+
+export function projectF2FindingsDecision(
+  report: F2UserReport,
+  evidence: F2FindingsDecisionEvidence,
+): F2FindingsDecisionProjection {
+  if (report.status === "inputRejected") {
+    throw new Error("F2 findings cannot be projected from an input-rejected report.");
+  }
+
+  const worksheetFindings = report.worksheets.map((worksheet) => {
+    const identifierWarnings = unique([
+      ...(worksheet.rows.some((row) => row.missingIdentifiers.includes("drawingNumber") || row.missingIdentifiers.includes("partNumber")) ? ["drawing_number_missing" as const] : []),
+      ...(worksheet.rows.some((row) => row.missingIdentifiers.includes("dimCharacteristicId")) ? ["dim_id_missing" as const] : []),
+    ]).sort();
+    const blockers = unique([
+      ...worksheet.rows.flatMap((row) => row.missingRequiredFields.map((field) => `required_field_missing:${field}`)),
+      ...(worksheet.tolerancePathImageStatus === "unavailable" ? ["tolerance_path_image_missing"] : []),
+      ...worksheet.systemSpecificationIssues.map((issue) => `system_specification:${issue.field}:${issue.reasonCode}`),
+      ...worksheet.f4CalculabilityIssues.map((issue) => `f4_calculability:${issue.reasonCode}`),
+    ]).sort();
+    const sourceRows = unique([
+      ...worksheet.rows
+        .filter((row) => row.missingRequiredFields.length > 0 || row.missingIdentifiers.length > 0)
+        .map((row) => row.sourceRow),
+      ...worksheet.f4CalculabilityIssues.flatMap((issue) => issue.sourceRow === undefined ? [] : [issue.sourceRow]),
+      ...worksheet.systemSpecificationIssues.flatMap((issue) => sourceRowFromCell(issue.sourceCell)),
+    ]).sort((left, right) => left - right);
+
+    return {
+      contractVersion: "f2-worksheet-finding-projection-v1" as const,
+      worksheetName: worksheet.worksheetName,
+      readiness: blockers.length === 0 ? "downstream_ready" as const : "blocked" as const,
+      identifierWarnings,
+      blockers,
+      sourceRows,
+    };
+  });
+  const downstreamReadyWorksheetNames = worksheetFindings
+    .filter((finding) => finding.readiness === "downstream_ready")
+    .map((finding) => finding.worksheetName);
+  const canonicalProjection = {
+    contractVersion: "f2-findings-decision-projection-v1" as const,
+    workbookHash: report.workbook.contentHash,
+    inputRevision: evidence.inputRevision,
+    f2ReportArtifactId: evidence.f2ReportArtifactId,
+    f2ReportContentHash: evidence.f2ReportContentHash,
+    worksheetFindings,
+    downstreamReadyWorksheetNames,
+  };
+
+  return {
+    ...canonicalProjection,
+    findingDigest: createHash("sha256").update(canonicalJson(canonicalProjection)).digest("hex"),
+  };
+}
+
+function unique<Value>(values: readonly Value[]): Value[] {
+  return [...new Set(values)];
+}
+
+function sourceRowFromCell(sourceCell: string | undefined): number[] {
+  const match = sourceCell?.match(/![A-Z]+([1-9]\d*)$/);
+  return match?.[1] === undefined ? [] : [Number(match[1])];
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right));
+    return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
 }

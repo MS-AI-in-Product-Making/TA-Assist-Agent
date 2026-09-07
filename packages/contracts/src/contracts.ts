@@ -4115,7 +4115,7 @@ const f2EnhancedRowSchema = z.object({
   sourceCells: z.record(worksheetFieldNameSchema, worksheetSourceCellSchema),
   imageReference: f1ImageReferenceSchema.optional(),
   missingRequiredFields: z.array(requiredFieldNameSchema),
-  missingIdentifiers: z.array(z.enum(["dimCharacteristicId", "partNumber"])),
+  missingIdentifiers: z.array(z.enum(["dimCharacteristicId", "drawingNumber", "partNumber"])),
   capabilityStatus: f2CapabilityStatusSchema,
   f0KnowledgeBaseVersion: z.enum(["v1", "internal-v1"]).optional(),
   recommendation: z.discriminatedUnion("kind", [f2PublicRecommendationSchema, f2InternalRecommendationSchema]).optional(),
@@ -4238,7 +4238,7 @@ const f2AdoEventSchema = z.object({
   eventType: z.literal("adoReminderRequested"),
   category: z.string().min(1),
   worksheetName: z.string().min(1),
-  missingFields: z.array(z.enum(["dimCharacteristicId", "partNumber"])).min(1),
+  missingFields: z.array(z.enum(["dimCharacteristicId", "drawingNumber", "partNumber"])).min(1),
   factorRows: z.array(z.number().int().positive()).min(1),
   workbookContentHash: sha256Schema,
 }).strict();
@@ -4317,7 +4317,7 @@ const f2AcceptedReportSchema = z.object({
     publicToleranceDifferenceCount: rows.filter((row) => row.capabilityStatus === "in_library_tolerance_outside" || row.capabilityStatus === "in_library_tolerance_and_distribution_differ").length,
     publicDistributionDifferenceCount: rows.filter((row) => row.capabilityStatus === "in_library_distribution_differs" || row.capabilityStatus === "in_library_tolerance_and_distribution_differ").length,
     missingDimIdCount: rows.filter((row) => row.missingIdentifiers.includes("dimCharacteristicId")).length,
-    missingPartNumberCount: rows.filter((row) => row.missingIdentifiers.includes("partNumber")).length,
+    missingPartNumberCount: rows.filter((row) => row.missingIdentifiers.includes("drawingNumber") || row.missingIdentifiers.includes("partNumber")).length,
   };
   for (const [field, value] of Object.entries(expectedSummary)) {
     if (report.summary[field as keyof typeof expectedSummary] !== value) context.addIssue({ code: z.ZodIssueCode.custom, message: `${field} must match report records`, path: ["summary", field] });
@@ -4336,10 +4336,61 @@ const f2InputRejectedReportSchema = z.object({
   }).strict()).min(1),
 }).strict();
 
-export const f2UserReportSchema = z.union([
+function normalizeLegacyF2IdentifierFields(value: unknown): unknown {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return value;
+  const fields = { ...value } as Record<string, unknown>;
+  if (Object.prototype.hasOwnProperty.call(fields, "partNumber")) {
+    if (!Object.prototype.hasOwnProperty.call(fields, "drawingNumber")) fields.drawingNumber = fields.partNumber;
+    delete fields.partNumber;
+  }
+  return fields;
+}
+
+function normalizeLegacyF2Report(value: unknown): unknown {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return value;
+  const report = value as Record<string, unknown>;
+  if (!Array.isArray(report.worksheets)) return value;
+  return {
+    ...report,
+    worksheets: report.worksheets.map((worksheet) => {
+      if (typeof worksheet !== "object" || worksheet === null || Array.isArray(worksheet)) return worksheet;
+      const current = worksheet as Record<string, unknown>;
+      if (!Array.isArray(current.rows)) return worksheet;
+      return {
+        ...current,
+        rows: current.rows.map((row) => {
+          if (typeof row !== "object" || row === null || Array.isArray(row)) return row;
+          const currentRow = row as Record<string, unknown>;
+          return {
+            ...currentRow,
+            actualFields: normalizeLegacyF2IdentifierFields(currentRow.actualFields),
+            ...(currentRow.displayFields === undefined ? {} : { displayFields: normalizeLegacyF2IdentifierFields(currentRow.displayFields) }),
+          };
+        }),
+      };
+    }),
+    ...(Array.isArray(report.f4Handoffs) ? {
+      f4Handoffs: report.f4Handoffs.map((handoff) => {
+        if (typeof handoff !== "object" || handoff === null || Array.isArray(handoff)) return handoff;
+        const current = handoff as Record<string, unknown>;
+        if (!Array.isArray(current.factors)) return handoff;
+        return {
+          ...current,
+          factors: current.factors.map((factor) => {
+            if (typeof factor !== "object" || factor === null || Array.isArray(factor)) return factor;
+            const currentFactor = factor as Record<string, unknown>;
+            return { ...currentFactor, actualFields: normalizeLegacyF2IdentifierFields(currentFactor.actualFields) };
+          }),
+        };
+      }),
+    } : {}),
+  };
+}
+
+export const f2UserReportSchema = z.preprocess(normalizeLegacyF2Report, z.union([
   f2InputRejectedReportSchema,
   f2AcceptedReportSchema,
-]);
+]));
 
 const f2IdentifierWarningSchema = z.enum([
   "drawing_number_missing",

@@ -409,6 +409,25 @@ describe("F2 artifact user report contracts", () => {
     }).success).toBe(false);
   });
 
+  it("normalizes historical partNumber field keys at the F2 report reader boundary", () => {
+    const legacyActualFields = { ...actualFields, partNumber: actualFields.drawingNumber } as Record<string, unknown>;
+    const legacyDisplayFields = { ...displayFields, partNumber: displayFields.drawingNumber } as Record<string, unknown>;
+    delete legacyActualFields.drawingNumber;
+    delete legacyDisplayFields.drawingNumber;
+    const legacyReport = structuredClone(completedReport);
+    legacyReport.worksheets[0]!.rows[0]!.actualFields = legacyActualFields as typeof actualFields;
+    legacyReport.worksheets[0]!.rows[0]!.displayFields = legacyDisplayFields as typeof displayFields;
+    legacyReport.f4Handoffs[0]!.factors[0]!.actualFields = legacyActualFields as typeof actualFields;
+
+    const parsed = f2UserReportSchema.parse(legacyReport);
+
+    if (parsed.status === "inputRejected") throw new Error("expected accepted F2 report");
+    expect(parsed.worksheets[0]?.rows[0]?.actualFields).toHaveProperty("drawingNumber", null);
+    expect(parsed.worksheets[0]?.rows[0]?.actualFields).not.toHaveProperty("partNumber");
+    expect(parsed.worksheets[0]?.rows[0]?.displayFields).toHaveProperty("drawingNumber", null);
+    expect(parsed.f4Handoffs[0]?.factors[0]?.actualFields).toHaveProperty("drawingNumber", null);
+  });
+
   it("accepts an optional tolerance loop description during F2 migration", () => {
     const withDescription = {
       ...artifactInput,

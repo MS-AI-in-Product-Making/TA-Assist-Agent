@@ -126,7 +126,7 @@ describe("createF2UserReport", () => {
     expect(result.worksheets[0]?.rows[0]).toEqual(expect.objectContaining({
       actualFields: completeActualFields(),
       imageReference: { artifact: "f1", relativePath: "sheets/anonymous.xlsx/images/a.png", contentHash: "b".repeat(64), worksheetName: "Analysis-A" },
-      missingIdentifiers: ["dimCharacteristicId", "partNumber"],
+      missingIdentifiers: ["dimCharacteristicId", "drawingNumber"],
       missingRequiredFields: [],
       capabilityStatus: "in_library_tolerance_and_distribution_differ",
       f0KnowledgeBaseVersion: "v1",
@@ -137,13 +137,27 @@ describe("createF2UserReport", () => {
     expect(result.adoEvents).toEqual([expect.objectContaining({
       eventType: "adoReminderRequested",
       category: "demo-bracket",
-      missingFields: ["dimCharacteristicId", "partNumber"],
+      missingFields: ["dimCharacteristicId", "drawingNumber"],
       factorRows: [2],
     })]);
     expect(result.worksheets[0]?.rows[0]?.actualFields.drawingNumber).toBeNull();
     expect(result.worksheets[0]?.rows[0]?.missingRequiredFields).not.toContain("drawingNumber");
     expect(result.worksheets[0]?.rows[0]?.adoReminderRequested).toBe(true);
     expect(result.f4Handoffs).toHaveLength(1);
+  });
+
+  it("emits Drawing Number and DIM ID reminders from current identifier fields without blocking", () => {
+    const fields = completeFields();
+    fields.partNumber = available("Analysis-A!C2", "LEGACY-PART-123");
+
+    const result = createF2UserReport(input(fields));
+
+    expect(result.worksheets[0]?.status).toBe("ready");
+    expect(result.worksheets[0]?.rows[0]?.missingIdentifiers).toEqual(["dimCharacteristicId", "drawingNumber"]);
+    expect(result.adoEvents[0]).toMatchObject({
+      missingFields: ["dimCharacteristicId", "drawingNumber"],
+      factorRows: [2],
+    });
   });
 
   it("projects Excel display fields while preserving actual numeric values", () => {
