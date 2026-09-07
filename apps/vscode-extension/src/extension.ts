@@ -226,14 +226,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       commandId: randomUUID,
       handleAnalyzeIntent,
       ...(activeSessionId === undefined ? {} : { sessionId: activeSessionId }),
-      handleTurn: async (turn) => handleAgentTurn(turn, {
-        snapshotStore: { async readSnapshot(sessionId) {
-          const store = await openSessionStore({ rootDir: workspaceRoot, sessionId: sessionId ?? activeSessionId! });
-          try { return await store.readSnapshot(); } finally { await store.close(); }
-        } },
-        conversationStore: conversation,
-        ...(request.model === undefined ? {} : { model: createVsCodeLanguageModelAdapter({ model: request.model, token, createUserMessage: vscode.LanguageModelChatMessage.User }) }),
-      }),
+      handleTurn: async (turn) => {
+        const store = await openSessionStore({ rootDir: workspaceRoot, sessionId: turn.sessionId });
+        const snapshot = await store.readSnapshot().finally(async () => store.close());
+        return handleAgentTurn(turn, {
+          snapshotStore: { async readSnapshot() { return snapshot; } },
+          conversationStore: conversation,
+          ...(request.model === undefined ? {} : { model: createVsCodeLanguageModelAdapter({ model: request.model, token, createUserMessage: vscode.LanguageModelChatMessage.User, interactionLanguage: snapshot.interactionLanguage }) }),
+        });
+      },
     });
   });
   context.subscriptions.push(participant);

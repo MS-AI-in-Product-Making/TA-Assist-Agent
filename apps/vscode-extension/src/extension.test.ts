@@ -55,7 +55,15 @@ vi.mock("@ai-assist/conversation", () => ({
   createConversationStore: vi.fn(async () => ({ close: vi.fn() })),
 }));
 vi.mock("@ai-assist/agent-runtime", () => ({ handleAgentTurn: handleAgentTurnMock }));
-vi.mock("@ai-assist/workbench", () => ({ openSessionStore: vi.fn() }));
+vi.mock("@ai-assist/workbench", () => ({
+  openSessionStore: vi.fn(async () => ({
+    readSnapshot: async () => ({
+      sessionId: SESSION_ID,
+      interactionLanguage: { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "turn-en", source: "workflow_start", fallbackUsed: false },
+    }),
+    close: vi.fn(async () => undefined),
+  })),
+}));
 vi.mock("./conversation-sync.js", () => ({ syncConversationUnread: vi.fn(async () => ({ markRead: vi.fn() })) }));
 vi.mock("./language-model.js", () => ({ createVsCodeLanguageModelAdapter: vi.fn() }));
 vi.mock("./workbench-launcher.js", () => ({ launchNewWorkbench: launchNewWorkbenchMock, launchWorkbench: launchWorkbenchMock, resumeWorkbench: resumeWorkbenchMock }));

@@ -4,13 +4,14 @@ import { createVsCodeLanguageModelAdapter } from "./language-model.js";
 
 describe("createVsCodeLanguageModelAdapter", () => {
   it.each([
-    ["请解释当前风险", "全部使用中文回答"],
-    ["Explain the current risk", "Respond entirely in English"],
-  ])("builds a product-safe prompt for %s", async (requestText, languageInstruction) => {
+    ["请解释当前风险", { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "turn-en", source: "workflow_start", fallbackUsed: false }, "Respond entirely in English"],
+    ["Explain the current risk", { languageTag: "zh-CN", uiCatalogLanguage: "zh", lockedAtTurnId: "turn-zh", source: "workflow_start", fallbackUsed: false }, "全部使用中文回答"],
+  ] as const)("builds a product-safe prompt for %s using the session lock", async (requestText, interactionLanguage, languageInstruction) => {
     const sendRequest = vi.fn(async () => ({ text: stream("response") }));
     const adapter = createVsCodeLanguageModelAdapter({
       model: { sendRequest } as never,
       createUserMessage: (text) => ({ text }) as never,
+      interactionLanguage,
     });
 
     await adapter.complete({

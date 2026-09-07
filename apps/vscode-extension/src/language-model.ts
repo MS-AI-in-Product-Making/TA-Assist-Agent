@@ -1,14 +1,15 @@
 import type { LanguageModelAdapter } from "@ai-assist/agent-runtime";
+import type { InteractionLanguage } from "@ai-assist/product-language";
 import type { CancellationToken, LanguageModelChat, LanguageModelChatMessage } from "vscode";
 
 export function createVsCodeLanguageModelAdapter(input: {
   readonly model: LanguageModelChat;
   readonly token?: CancellationToken;
   readonly createUserMessage: (text: string) => LanguageModelChatMessage;
+  readonly interactionLanguage: InteractionLanguage;
 }): LanguageModelAdapter {
   return {
     async complete(request) {
-      const chinese = /\p{Script=Han}/u.test(request.text);
       const capabilityNames: Readonly<Record<string, string>> = {
         F0: "Knowledge Library",
         F1: "Data Parsing",
@@ -31,7 +32,7 @@ export function createVsCodeLanguageModelAdapter(input: {
         },
         turns: request.context.turns,
       };
-      const languageInstruction = chinese
+      const languageInstruction = input.interactionLanguage.uiCatalogLanguage === "zh"
         ? "全部使用中文回答，包括解释、建议、进度和操作说明。"
         : "Respond entirely in English, including explanations, recommendations, progress, and action text.";
       const response = await input.model.sendRequest([
