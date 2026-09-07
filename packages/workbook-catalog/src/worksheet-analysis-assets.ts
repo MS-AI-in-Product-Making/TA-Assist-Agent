@@ -99,6 +99,19 @@ function address(reference: string): { readonly column: string; readonly row: nu
   return match ? { column: match[1]!, row: Number(match[2]) } : undefined;
 }
 function cellKey(column: string, row: number): string { return `${column}${row}`; }
+function previousColumn(column: string): string | undefined {
+  let value = 0;
+  for (const character of column) value = value * 26 + character.charCodeAt(0) - 64;
+  if (value <= 1) return undefined;
+  value -= 1;
+  let result = "";
+  while (value > 0) {
+    value -= 1;
+    result = String.fromCharCode(65 + (value % 26)) + result;
+    value = Math.floor(value / 26);
+  }
+  return result;
+}
 function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
   if (value && typeof value === "object" && !seen.has(value)) {
     seen.add(value);
@@ -203,7 +216,18 @@ function sheetAssets(worksheet: OoxmlWorksheet, worksheetName: string, tolerance
           if (cell?.formula) tableFormulaReferences.add(cell.reference);
         }
       }
-      dataRows.push({ sourceRow, fields });
+      const factorNameColumn = mapped.get("factorName")?.length === 1 ? mapped.get("factorName")![0]!.sourceColumn : undefined;
+      const ordinalColumn = factorNameColumn === undefined ? undefined : previousColumn(factorNameColumn);
+      const ordinalRawText = ordinalColumn === undefined ? "" : cellValue(cells.get(cellKey(ordinalColumn, sourceRow)));
+      dataRows.push({
+        sourceRow,
+        factorOrdinal: {
+          value: ordinalRawText.trim(),
+          rawText: ordinalRawText,
+          ...(ordinalColumn === undefined ? {} : { sourceCell: `${worksheetName}!${ordinalColumn}${sourceRow}` }),
+        },
+        fields,
+      });
     }
     factorTables.push({
       tableId: createHash("sha256").update(`${worksheetName}:${headerRow}`).digest("hex").slice(0, 16),

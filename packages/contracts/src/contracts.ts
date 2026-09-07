@@ -621,6 +621,12 @@ const worksheetFieldNameSchema = z.enum([
 
 const worksheetSourceCellSchema = z.string().regex(/^[^!]+![A-Z]+[1-9]\d*$/);
 
+export const factorOrdinalEvidenceSchema = z.object({
+  value: z.string(),
+  rawText: z.string(),
+  sourceCell: worksheetSourceCellSchema.optional(),
+}).strict();
+
 const availableWorksheetFieldSchema = z
   .object({
     status: z.literal("available"),
@@ -778,6 +784,7 @@ const factorTableSchema = z
       z
         .object({
           sourceRow: z.number().int().positive(),
+          factorOrdinal: factorOrdinalEvidenceSchema,
           fields: z.record(worksheetFieldNameSchema, worksheetFieldSchema),
         })
         .strict(),
@@ -4021,6 +4028,7 @@ const f1ArtifactFactorTableSchema = z.object({
   columns: z.array(z.object({ semanticField: worksheetFieldNameSchema, headerText: z.string(), sourceColumn: z.string().regex(/^[A-Z]+$/) }).strict()),
   rows: z.array(z.object({
     sourceRow: z.number().int().positive(),
+    factorOrdinal: factorOrdinalEvidenceSchema.optional(),
     fields: z.record(worksheetFieldNameSchema, f1ArtifactFieldSchema),
     actualFields: f2ActualFieldsSchema,
   }).strict()),

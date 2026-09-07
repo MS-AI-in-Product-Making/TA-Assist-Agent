@@ -121,6 +121,17 @@ function actualFields() {
   };
 }
 
+function systemSpecification() {
+  return {
+    status: "available",
+    designNominal: { status: "available", actualValue: 12.5, displayValue: "12.5", sourceLabel: "*Design Nominal ►", sourceCell: "Analysis-A!P53", valueOrigin: "numeric_literal" },
+    lowerSpecLimit: { status: "available", actualValue: 12.1, displayValue: "12.1", sourceLabel: "*Lower Spec Limit ►", sourceCell: "Analysis-A!P54", valueOrigin: "numeric_literal" },
+    upperSpecLimit: { status: "available", actualValue: 12.9, displayValue: "12.9", sourceLabel: "*Upper Spec Limit ►", sourceCell: "Analysis-A!P55", valueOrigin: "numeric_literal" },
+    targetSigmaLevel: { status: "available", actualValue: 4, displayValue: "4", sourceLabel: "*Target σ Level ►", sourceCell: "Analysis-A!P56", valueOrigin: "numeric_literal" },
+    additionalMeanShift: { status: "available", actualValue: 0, displayValue: "0", sourceLabel: "Additional Mean Shift", valueOrigin: "defaulted" },
+  };
+}
+
 function governanceRow(worksheetName, tableId, imageReference) {
   return {
     factorInstanceId: createHash("sha256").update(`${worksheetName}-factor`).digest("hex"),
@@ -157,7 +168,7 @@ function writeJson(filePath, value) {
   writeFileSync(filePath, JSON.stringify(value), "utf8");
 }
 
-function setupBundle({ worksheetNames = ["Analysis-A", "Analysis-B"] } = {}) {
+function setupBundle({ worksheetNames = ["Analysis-A", "Analysis-B"], artifactContractVersion } = {}) {
   const base = mkdtempSync(path.join(tmpdir(), "f5-loader-"));
   tempRoots.push(base);
   const f1ArtifactRoot = path.join(base, "f1");
@@ -190,6 +201,9 @@ function setupBundle({ worksheetNames = ["Analysis-A", "Analysis-B"] } = {}) {
       workbook: { fileName: "anonymous.xlsx", contentHash: WORKBOOK_HASH },
       worksheetName,
       toleranceLoopDescription: `Tolerance loop ${worksheetName}`,
+      ...(new Set(["f1-semantic-v2", "f1-semantic-v3"]).has(artifactContractVersion)
+        ? { systemSpecification: systemSpecification() }
+        : {}),
       factorTables: [{
         tableId,
         headerRow: 1,
@@ -223,6 +237,7 @@ function setupBundle({ worksheetNames = ["Analysis-A", "Analysis-B"] } = {}) {
 
   writeJson(path.join(f1ArtifactRoot, "Feature1-Report.json"), {
     contractVersion: "v1",
+    ...(artifactContractVersion ? { artifactContractVersion } : {}),
     feature: "F1",
     generatedAt: "2026-08-11T00:00:00.000Z",
     workbooks: [{
@@ -441,6 +456,18 @@ function expectRejected(result, reasonCode, artifactReference) {
 }
 
 describe("loadF5ArtifactBundle", () => {
+  it("accepts and validates v3 system specification evidence", () => {
+    const bundle = setupBundle({ worksheetNames: ["Analysis-A"], artifactContractVersion: "f1-semantic-v3" });
+
+    expect(load(bundle).status).toBe("accepted");
+
+    rewriteJson(path.join(bundle.f1ArtifactRoot, "sheets/anonymous.xlsx/json/Analysis-A.json"), (worksheet) => {
+      delete worksheet.systemSpecification.lowerSpecLimit.sourceLabel;
+    });
+
+    expectRejected(load(bundle), "artifact_contract_invalid", "worksheet:Analysis-A");
+  });
+
   it("projects only controlled workbook identity fields from historical F1 reports", () => {
     const bundle = setupBundle({ worksheetNames: ["Analysis-A"] });
     rewriteJson(path.join(bundle.f1ArtifactRoot, "Feature1-Report.json"), (report) => {

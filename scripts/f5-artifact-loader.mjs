@@ -258,7 +258,7 @@ function loadSelectedF1Artifacts(f1ArtifactRoot, f1Index, selection) {
       worksheets: [{
       worksheetName,
       toleranceLoopDescription: worksheet.toleranceLoopDescription,
-      systemSpecification: artifactContractVersion === "f1-semantic-v2"
+      systemSpecification: new Set(["f1-semantic-v2", "f1-semantic-v3"]).has(artifactContractVersion)
         ? worksheet.systemSpecification
         : { status: "unavailable", reasonCode: "legacy_artifact_missing_system_specification" },
       worksheetJsonPath: index.jsonPath,

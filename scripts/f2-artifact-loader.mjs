@@ -131,7 +131,7 @@ export function loadF1ArtifactBundle(artifactRoot) {
     worksheets.push({
       worksheetName: sheet.worksheetName,
       toleranceLoopDescription: worksheet.toleranceLoopDescription,
-      systemSpecification: rootReport.artifactContractVersion === "f1-semantic-v2"
+      systemSpecification: new Set(["f1-semantic-v2", "f1-semantic-v3"]).has(rootReport.artifactContractVersion)
         ? worksheet.systemSpecification
         : { status: "unavailable", reasonCode: "legacy_artifact_missing_system_specification" },
       worksheetJsonPath: sheet.jsonPath,

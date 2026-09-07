@@ -328,7 +328,7 @@ describe("F2 artifact user report contracts", () => {
         headerRow: 1,
         dataRange: { startRow: 2, endRow: 2 },
         columns: [],
-        rows: [{ sourceRow: 2, fields: {}, actualFields }],
+        rows: [{ sourceRow: 2, factorOrdinal: { value: "A", rawText: "A", sourceCell: "Analysis-A!A2" }, fields: {}, actualFields }],
       }],
     }],
   };
@@ -760,6 +760,7 @@ describe("F4 calculation contracts", () => {
         columns: [{ semanticField: "factorName" as const, headerText: "Factor", sourceColumn: "A" }],
         rows: [{
           sourceRow: 2,
+          factorOrdinal: { value: "", rawText: "" },
           fields: {
             factorName: { status: "available" as const, rawText: "Feature-A", sourceCell: "Analysis-A!A2" },
           },
@@ -5471,7 +5472,7 @@ describe("F5.1 objective interpretation contracts", () => {
                 { semanticField: "distribution" as const, headerText: "Distribution", sourceColumn: "P" },
                 { semanticField: "unit" as const, headerText: "Unit", sourceColumn: "Q" },
               ],
-              rows: [{ sourceRow: 2, fields: {
+              rows: [{ sourceRow: 2, factorOrdinal: { value: "A", rawText: "A", sourceCell: "Analysis-A!I2" }, fields: {
                 factorName: { status: "available" as const, rawText: "Feature-A", sourceCell: "Analysis-A!J2" },
                 nominalValue: { status: "available" as const, rawText: "12.45", sourceCell: "Analysis-A!K2", numericValue: 12.45, unit: "mm" },
                 upperTolerance: { status: "available" as const, rawText: "0.2", sourceCell: "Analysis-A!L2", numericValue: 0.2, unit: "mm" },
@@ -7862,6 +7863,7 @@ describe("worksheet analysis asset contracts", () => {
             rows: [
               {
                 sourceRow: 13,
+                factorOrdinal: { value: "A", rawText: "A", sourceCell: "Analysis!A13" },
                 fields: {
                   factorName: {
                     status: "available",
@@ -7904,6 +7906,12 @@ describe("worksheet analysis asset contracts", () => {
     expect(worksheetAnalysisAssetsRequestSchema.parse({ ...request, worksheetSelection: { mode: "all" } }).worksheetSelection).toEqual({ mode: "all" });
     expect(worksheetAnalysisAssetsRequestSchema.parse({ ...request, worksheetSelection: { mode: "selected", worksheetNames: ["Analysis"] } }).worksheetSelection).toEqual({ mode: "selected", worksheetNames: ["Analysis"] });
     expect(worksheetAnalysisAssetsResultSchema.parse(result)).toEqual(result);
+    const rowWithoutOrdinal = { ...result.worksheets[0].factorTables[0].rows[0] };
+    delete (rowWithoutOrdinal as { factorOrdinal?: unknown }).factorOrdinal;
+    expect(worksheetAnalysisAssetsResultSchema.safeParse({
+      ...result,
+      worksheets: [{ ...result.worksheets[0], factorTables: [{ ...result.worksheets[0].factorTables[0], rows: [rowWithoutOrdinal] }] }],
+    }).success).toBe(false);
     expect(
       worksheetImageReadRequestSchema.parse({
         contractVersion: "v1",
