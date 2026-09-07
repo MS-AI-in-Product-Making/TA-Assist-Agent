@@ -16,6 +16,7 @@ import { createTypedError } from "@ai-assist/contracts";
 import { createHostActionStore, type HostActionRecord } from "@ai-assist/workbench";
 import { createF4WhatIfBaselineRequest, renderF3AdoMarkdown, runF4WhatIfCalculation } from "@ai-assist/workflow-runners";
 import { readOoxmlWorkbook } from "@ai-assist/workbook-catalog";
+import type { InteractionLanguage } from "@ai-assist/product-language";
 
 interface RunnerArtifactReference {
   readonly artifactId: string;
@@ -75,6 +76,7 @@ type HostActionResult = ReturnType<typeof hostActionResultSchema.parse>;
 
 export interface StartWorkbenchServerOptions {
   readonly rootDir: string;
+  readonly interactionLanguage?: InteractionLanguage;
   readonly port?: number;
   readonly webAssetsRoot?: string;
   readonly skipWebAssets?: boolean;
@@ -212,6 +214,7 @@ export async function buildWorkbenchServer(options: StartWorkbenchServerOptions)
     options.surfacePrepareService,
     options.orchestrator,
     options.allowInternalFixtureAutoConfirmation === true,
+    options.interactionLanguage,
   );
   const app = Fastify({ logger: false, bodyLimit: 1024 * 1024 }) as unknown as WorkbenchServer;
   const bootstrap = options.bootstrap ?? createBrowserBootstrapRendezvous();
@@ -307,8 +310,8 @@ export async function startWorkbenchServer(options: StartWorkbenchServerOptions)
   return { server, url: `http://${LOOPBACK_HOST}:${port}/${sessionQuery}#bootstrap=${bootstrapNonce}`, bootstrapNonce };
 }
 
-async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth, runner: StartWorkbenchServerOptions["runner"], queueFactory: StartWorkbenchServerOptions["queueFactory"], whatIfService: WhatIfService | undefined, surfacePrepareService: SurfacePrepareService | undefined, orchestratorOverride: TaWorkbookOrchestrator | undefined, allowInternalFixtureAutoConfirmation: boolean): Promise<WorkbenchServerContext> {
-  const sessions = new StoreBackedSessionRegistry(rootDir);
+async function createWorkbenchServerContext(rootDir: string, auth: WorkbenchAuth, runner: StartWorkbenchServerOptions["runner"], queueFactory: StartWorkbenchServerOptions["queueFactory"], whatIfService: WhatIfService | undefined, surfacePrepareService: SurfacePrepareService | undefined, orchestratorOverride: TaWorkbookOrchestrator | undefined, allowInternalFixtureAutoConfirmation: boolean, interactionLanguage: InteractionLanguage | undefined): Promise<WorkbenchServerContext> {
+  const sessions = new StoreBackedSessionRegistry(rootDir, interactionLanguage);
   const artifacts = new FileBackedArtifactRegistry(rootDir);
   const events = await createSqliteEventSource({ rootDir });
   const orchestrator = orchestratorOverride ?? createTaWorkbookOrchestrator(createTaRuntimeSkillFacades());
@@ -661,10 +664,10 @@ async function recoverActiveAttempts(rootDir: string, sessions: SessionRegistry,
 }
 
 class StoreBackedSessionRegistry implements SessionRegistry {
-  constructor(private readonly rootDir: string) {}
+  constructor(private readonly rootDir: string, private readonly interactionLanguage: InteractionLanguage | undefined) {}
 
   async create(sessionId: string): Promise<F8SessionSnapshot> {
-    const store = await createSessionStore({ rootDir: this.rootDir, sessionId });
+    const store = await createSessionStore({ rootDir: this.rootDir, sessionId, ...(this.interactionLanguage === undefined ? {} : { interactionLanguage: this.interactionLanguage }) });
     try {
       return await store.readSnapshot();
     } finally {

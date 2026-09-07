@@ -317,6 +317,46 @@ describe("conversation routes", () => {
     }
   });
 
+  it("rejects a model result before completion when the authoritative session snapshot disappears", async () => {
+    const app = await routeHarness(minimalContext());
+    try {
+      expect((await app.inject({
+        method: "POST",
+        url: `/api/sessions/${SESSION_ID}/conversation`,
+        payload: { turn: turn(), selection: { worksheetName: "Analysis-A" } },
+      })).statusCode).toBe(201);
+      const claimResponse = await app.inject({
+        method: "POST",
+        url: `/api/sessions/${SESSION_ID}/host-actions/model:turn-route-1/claim`,
+        headers: { authorization: "Bearer host-claim" },
+        payload: { hostInstanceId: "host-a" },
+      });
+      app.dropSession();
+      const modelPayload = { status: "completed" as const, outcome: { kind: "model_response" as const, turnId: "turn-route-1", responseText: "F6 review complete." } };
+
+      const resultResponse = await app.inject({
+        method: "POST",
+        url: `/api/sessions/${SESSION_ID}/host-actions/model:turn-route-1/result`,
+        headers: { authorization: "Bearer host-result" },
+        payload: {
+          contractVersion: "f8-host-action-result-v1",
+          actionId: "model:turn-route-1",
+          hostInstanceId: "host-a",
+          leaseId: claimResponse.json<{ leaseId: string }>().leaseId,
+          status: "completed",
+          resultHash: createHash("sha256").update(JSON.stringify(modelPayload)).digest("hex"),
+          payload: modelPayload,
+        },
+      });
+
+      expect(resultResponse.statusCode).toBe(409);
+      expect(resultResponse.json()).toEqual({ error: "host_action_session_stale" });
+      expect(app.turns().some((entry) => entry.turnId === "turn-route-1:model")).toBe(false);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("forwards model proposal to shared F6 draft materializer without issuing confirmation commands", async () => {
     const modelContext = taModelContextEnvelopeSchema.parse({
       contractVersion: "ta-model-context-envelope-v1",
@@ -583,6 +623,7 @@ async function routeHarness(
   options: { readonly turns?: readonly unknown[]; readonly snapshot?: Record<string, unknown>; readonly materializationFailure?: boolean; readonly hostAppendFailureCount?: number } = {},
 ) {
   let prompt = "";
+  let sessionAvailable = true;
   const turns: unknown[] = [...(options.turns ?? [])];
   const actions = new Map<string, {
     readonly actionId: string;
@@ -605,11 +646,14 @@ async function routeHarness(
     turns(): unknown[];
     createdActions(): Array<{ readonly actionId: string; readonly turnId?: string; readonly prompt?: string }>;
     materializedProposals(): Array<{ readonly sessionId: string; readonly expectedRevision: number; readonly proposalVersion: string }>;
+    dropSession(): void;
   };
   app.decorate("capturedPrompt", () => prompt);
   app.decorate("turns", () => turns.map((value) => conversationTurnSchema.parse(value)));
   app.decorate("createdActions", () => createdActions);
   app.decorate("materializedProposals", () => materializedProposals);
+  app.decorate("dropSession", () => { sessionAvailable = false; });
+  const readSession = async () => sessionAvailable ? sessionSnapshot : undefined;
   const authenticateHost = (request: { headers: Record<string, string | undefined> }) => {
     switch (request.headers.authorization) {
       case "Bearer host-read":
@@ -627,7 +671,7 @@ async function routeHarness(
     requireBrowserSession: () => ({ kind: "browser", sessionId: SESSION_ID }),
     requireBrowserMutation: () => ({ kind: "browser", sessionId: SESSION_ID }),
     requireAuthenticated: authenticateHost,
-    sessions: { read: async () => sessionSnapshot },
+    sessions: { read: readSession },
     conversation: {
       append: async (value: unknown) => {
         const parsed = conversationTurnSchema.parse(value);
@@ -658,7 +702,7 @@ async function routeHarness(
     requireBrowserSession: () => ({ kind: "browser", sessionId: SESSION_ID }),
     requireBrowserMutation: () => ({ kind: "browser", sessionId: SESSION_ID }),
     requireAuthenticated: authenticateHost,
-    sessions: { read: async () => sessionSnapshot },
+    sessions: { read: readSession },
     conversation: {
       append: async (value: unknown) => conversationTurnSchema.parse(value),
       read: readConversation,
@@ -673,7 +717,7 @@ async function routeHarness(
   await app.register(hostActionsRoutes, { context: {
     requireBrowserMutation: () => ({ kind: "browser", sessionId: SESSION_ID }),
     requireAuthenticated: authenticateHost,
-    sessions: { read: async () => sessionSnapshot },
+    sessions: { read: readSession },
     conversation: {
       append: async (value: unknown) => {
         if (hostAppendFailuresRemaining > 0) {

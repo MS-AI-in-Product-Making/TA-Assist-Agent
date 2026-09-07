@@ -139,7 +139,7 @@ describe("extension workbench binding", () => {
 
     await registeredCommands.get("ta-assist.workbench")!();
 
-    expect(launchWorkbenchMock).toHaveBeenCalledWith("repo", expect.any(Object));
+    expect(launchWorkbenchMock).toHaveBeenCalledWith("repo", expect.any(Object), expect.objectContaining({ languageTag: "en-US", uiCatalogLanguage: "en", source: "workflow_start" }));
     expect(context.globalState.update).not.toHaveBeenCalled();
     expect(globalStateValues.get("ta-assist.hostBinding")).toBeUndefined();
     context.subscriptions.forEach((subscription) => subscription.dispose());

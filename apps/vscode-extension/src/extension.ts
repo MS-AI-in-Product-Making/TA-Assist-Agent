@@ -154,7 +154,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
   };
   const openPureWorkbench = async () => {
-    const launched = await launchWorkbench(workspaceRoot, processLauncher);
+    const interactionLanguage = resolveInteractionLanguage({ text: "", turnId: randomUUID(), hostLocale: vscode.env.language });
+    const launched = await launchWorkbench(workspaceRoot, processLauncher, interactionLanguage);
     activeWorkbenchUrl = launched.url;
   };
   const resume = async (sessionId?: string) => {

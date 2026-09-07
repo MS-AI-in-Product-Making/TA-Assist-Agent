@@ -161,12 +161,11 @@ function parseArguments(argv: readonly string[]):
       return { command, request: { action, rootDir, sessionId: sessionId.trim() } };
     }
     if (sessionId !== undefined) throw new Error("validation_error: --session is not allowed for this agent action");
-    if (action === "analyze") {
+    if (action === "analyze" || action === "workbench") {
       if (typeof serializedInteractionLanguage !== "string") throw new Error("validation_error: --interaction-language is required");
       return { command, request: { action, rootDir, interactionLanguage: parseInteractionLanguage(serializedInteractionLanguage) } };
     }
-    if (serializedInteractionLanguage !== undefined) throw new Error("validation_error: --interaction-language is not allowed for this agent action");
-    return { command, request: { action, rootDir } };
+    throw new Error("validation_error: agent action is invalid");
   }
   if (command === "smoke") {
     rejectUnexpected(values, ["--root"]);

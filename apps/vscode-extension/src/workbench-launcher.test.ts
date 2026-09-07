@@ -30,9 +30,9 @@ describe("workbench launcher", () => {
         launch: vi.fn(async () => ({ sessionId: "pending", url: "http://127.0.0.1:4317/" })),
       };
 
-      const launched = await launchWorkbench("repo", process);
+      const launched = await launchWorkbench("repo", process, ENGLISH_LOCK);
 
-      expect(process.launch).toHaveBeenCalledWith(["agent", "workbench", "--root", "repo"]);
+      expect(process.launch).toHaveBeenCalledWith(["agent", "workbench", "--root", "repo", "--interaction-language", JSON.stringify(ENGLISH_LOCK)]);
       expect(launched).toEqual({ url: "http://127.0.0.1:4317/" });
   });
 

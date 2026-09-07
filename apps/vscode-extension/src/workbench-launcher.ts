@@ -29,8 +29,8 @@ export async function launchNewWorkbench(rootDir: string, process: WorkbenchProc
   return { sessionId: result.sessionId, url: result.url };
 }
 
-export async function launchWorkbench(rootDir: string, process: WorkbenchProcessLauncher): Promise<{ readonly url: string }> {
-  const result = await process.launch(["agent", "workbench", "--root", rootDir]);
+export async function launchWorkbench(rootDir: string, process: WorkbenchProcessLauncher, interactionLanguage: InteractionLanguage): Promise<{ readonly url: string }> {
+  const result = await process.launch(["agent", "workbench", "--root", rootDir, "--interaction-language", JSON.stringify(interactionLanguage)]);
   assertLoopbackUrl(result.url);
   return { url: result.url };
 }

@@ -7,7 +7,8 @@ import { describe, expect, it, vi } from "vitest";
 import { get } from "node:http";
 import { DatabaseSync } from "node:sqlite";
 
-import { buildWorkbenchServer } from "./server.js";
+import { buildWorkbenchServer as buildWorkbenchServerBase } from "./server.js";
+import type { StartWorkbenchServerOptions } from "./server.js";
 import { setAdoRouteClockForTest } from "./routes/ado.js";
 import { createConversationStore } from "@ai-assist/conversation";
 import { createTypedError } from "@ai-assist/contracts";
@@ -27,6 +28,11 @@ const REVIEW_CONTEXT = {
   baselineRunReference: "f2-run-2026-08-25",
 };
 const REVIEW_CONTEXT_ID = createReviewContextId(REVIEW_CONTEXT);
+const ENGLISH_LOCK = { languageTag: "en-US", uiCatalogLanguage: "en", lockedAtTurnId: "turn-en", source: "workflow_start", fallbackUsed: false } as const;
+
+function buildWorkbenchServer(options: StartWorkbenchServerOptions) {
+  return buildWorkbenchServerBase({ interactionLanguage: ENGLISH_LOCK, ...options });
+}
 
 function structuredReviewResult(featureId: "F4" | "F5" | "F6", includeContext = true) {
   const artifacts = featureId === "F4"
@@ -1132,7 +1138,7 @@ describe("workbench server routes", () => {
 
   it("exchanges a one-time bootstrap nonce for a browser cookie and CSRF-protected session", async () => {
     const rootDir = testRoot("workbench-server-bootstrap-session");
-    const server = await buildWorkbenchServer({ rootDir });
+    const server = await buildWorkbenchServer({ rootDir, interactionLanguage: ENGLISH_LOCK });
     try {
       const nonce = await server.bootstrap.issueBrowserBootstrap();
       const bootstrap = await server.inject({ method: "POST", url: "/api/bootstrap", payload: { nonce } });
@@ -1149,6 +1155,7 @@ describe("workbench server routes", () => {
         headers: { host: "127.0.0.1:0", cookie, "x-csrf-token": csrf.json<{ csrfToken: string }>().csrfToken },
       });
       expect(created.statusCode).toBe(201);
+      expect(created.json()).toMatchObject({ interactionLanguage: ENGLISH_LOCK });
     } finally {
       await server.close();
       await rm(rootDir, { recursive: true, force: true });
@@ -2170,7 +2177,7 @@ describe("workbench server routes", () => {
     const rootDir = testRoot("workbench-server-session-recovery");
     await rm(rootDir, { recursive: true, force: true });
     const sessionId = "14141414-1414-4414-8414-141414141414";
-    const store = await createSessionStore({ rootDir, sessionId });
+    const store = await createSessionStore({ rootDir, sessionId, interactionLanguage: ENGLISH_LOCK });
     try {
       await store.applyCommand({ contractVersion: "f8-session-command-v1", sessionId, commandId: "crash-window-upload", expectedRevision: 0, command: "upload_workbook", payload: { fileName: "book.xlsx", workbookBytes: new Uint8Array([80, 75, 3, 4]), inputClassification: "confidential", managedArtifactId: "uploaded-book" } }, async (snapshot, command) => ({ snapshot: reduceSessionCommand(snapshot, command) }));
     } finally {
@@ -3757,7 +3764,7 @@ describe("workbench server routes", () => {
   it("keeps event IDs monotonic after retention rollover and marks an expired replay cursor", async () => {
     const rootDir = testRoot("workbench-server-event-rollover");
     await rm(rootDir, { recursive: true, force: true });
-    const started = await (await import("./server.js")).startWorkbenchServer({ rootDir });
+    const started = await (await import("./server.js")).startWorkbenchServer({ rootDir, interactionLanguage: ENGLISH_LOCK });
     try {
       const auth = await started.server.testAuthenticate("25252525-2525-4252-8252-252525252525");
       for (let index = 1; index <= 301; index += 1) {
@@ -3792,7 +3799,7 @@ describe("workbench server routes", () => {
     const rootDir = testRoot("workbench-server-event-restart");
     const sessionId = "26262626-2626-4262-8262-262626262626";
     await rm(rootDir, { recursive: true, force: true });
-    const first = await (await import("./server.js")).startWorkbenchServer({ rootDir });
+    const first = await (await import("./server.js")).startWorkbenchServer({ rootDir, interactionLanguage: ENGLISH_LOCK });
     try {
       const auth = await first.server.testAuthenticate(sessionId);
       first.server.publishEventForTest(auth.sessionId, "progress", { sequence: 1 });
@@ -3802,7 +3809,7 @@ describe("workbench server routes", () => {
       await first.server.close();
     }
 
-    const second = await (await import("./server.js")).startWorkbenchServer({ rootDir });
+    const second = await (await import("./server.js")).startWorkbenchServer({ rootDir, interactionLanguage: ENGLISH_LOCK });
     try {
       const auth = await second.server.testAuthenticate(sessionId);
       const response = await new Promise<import("node:http").IncomingMessage>((resolve, reject) => {
@@ -3828,7 +3835,7 @@ describe("workbench server routes", () => {
     const rootDir = testRoot("workbench-server-external-session-progress");
     const sessionId = "27272727-2727-4272-8272-272727272727";
     await rm(rootDir, { recursive: true, force: true });
-    const started = await (await import("./server.js")).startWorkbenchServer({ rootDir });
+    const started = await (await import("./server.js")).startWorkbenchServer({ rootDir, interactionLanguage: ENGLISH_LOCK });
     try {
       const auth = await started.server.testAuthenticate(sessionId);
       const response = await new Promise<import("node:http").IncomingMessage>((resolve, reject) => {

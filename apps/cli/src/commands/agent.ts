@@ -13,13 +13,14 @@ export type AgentCliRequest = {
 } | {
   readonly action: "workbench";
   readonly rootDir: string;
+  readonly interactionLanguage: InteractionLanguage;
 };
 
 export interface AgentLauncher {
   analyze(rootDir: string, interactionLanguage: InteractionLanguage): Promise<{ readonly sessionId: string; readonly url: string }>;
   resume(rootDir: string, sessionId: string): Promise<{ readonly sessionId: string; readonly url: string }>;
   status(rootDir: string, sessionId: string): Promise<{ readonly sessionId: string; readonly url: string }>;
-  workbench(rootDir: string): Promise<{ readonly sessionId: string; readonly url: string }>;
+  workbench(rootDir: string, interactionLanguage: InteractionLanguage): Promise<{ readonly sessionId: string; readonly url: string }>;
 }
 
 export async function runAgentCommand(request: AgentCliRequest, launcher: Partial<AgentLauncher>): Promise<string> {
@@ -31,7 +32,7 @@ export async function runAgentCommand(request: AgentCliRequest, launcher: Partia
       break;
     case "workbench":
       if (launcher.workbench === undefined) throw new Error("dependency_error: Workbench launcher is unavailable");
-      result = await launcher.workbench(request.rootDir);
+      result = await launcher.workbench(request.rootDir, request.interactionLanguage);
       break;
     case "resume":
       if (launcher.resume === undefined) throw new Error("dependency_error: Workbench launcher is unavailable");

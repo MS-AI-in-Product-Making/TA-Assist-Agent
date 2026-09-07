@@ -39,10 +39,10 @@ describe("runAgentCommand", () => {
     const workbench = vi.fn(async () => ({ sessionId: SESSION_ID, url: "http://127.0.0.1:4317/" }));
 
     await runAgentCommand({ action: "analyze", rootDir: "repo", interactionLanguage: ENGLISH_LOCK }, { analyze, workbench });
-    await runAgentCommand({ action: "workbench", rootDir: "repo" }, { analyze, workbench });
+    await runAgentCommand({ action: "workbench", rootDir: "repo", interactionLanguage: ENGLISH_LOCK }, { analyze, workbench });
 
     expect(analyze).toHaveBeenCalledWith("repo", ENGLISH_LOCK);
-    expect(workbench).toHaveBeenCalledWith("repo");
+    expect(workbench).toHaveBeenCalledWith("repo", ENGLISH_LOCK);
   });
 
   it("creates a real SessionStore snapshot before analyze launches the browser", async () => {
@@ -77,7 +77,7 @@ describe("runAgentCommand", () => {
   });
 
   it("does not print the browser-created pending marker as a session query", async () => {
-    const result = await runAgentCommand({ action: "workbench", rootDir: "repo" }, { workbench: async () => ({ sessionId: "pending", url: "http://127.0.0.1:4317/" }) });
+    const result = await runAgentCommand({ action: "workbench", rootDir: "repo", interactionLanguage: ENGLISH_LOCK }, { workbench: async () => ({ sessionId: "pending", url: "http://127.0.0.1:4317/" }) });
     expect(result).toContain("session: created-in-browser");
     expect(result).toContain("url: http://127.0.0.1:4317/");
     expect(result).not.toContain("session=pending");

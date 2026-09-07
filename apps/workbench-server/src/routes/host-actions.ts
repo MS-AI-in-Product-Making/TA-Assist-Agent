@@ -103,6 +103,12 @@ export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: Workbench
         return reply.code(400).send({ error: "host_action_result_integrity_rejected" });
       }
     }
+    const modelSnapshot = action?.kind === "vscode_model_request" && submittedOutcome?.kind === "model_response"
+      ? await context.sessions.read(sessionId)
+      : undefined;
+    if (action?.kind === "vscode_model_request" && submittedOutcome?.kind === "model_response" && modelSnapshot === undefined) {
+      return reply.code(409).send({ error: "host_action_session_stale" });
+    }
     const completion = await context.hostActions.complete(sessionId, parsed.data);
     const resumableDuplicate = completion === "duplicate"
       && actionRecord?.result?.resultHash === parsed.data.resultHash;
@@ -140,10 +146,10 @@ export const hostActionsRoutes: FastifyPluginAsync<{ readonly context: Workbench
             // The model response remains deliverable; the user can retry draft materialization from the current gate.
           }
         }
-        const snapshot = await context.sessions.read(sessionId);
-        const report = snapshot === undefined ? undefined : selectCanonicalReportReference(snapshot);
+        const snapshot = modelSnapshot!;
+        const report = selectCanonicalReportReference(snapshot);
         const turns = await context.conversation.read(sessionId);
-        const responseText = projectProductCapabilityReferences(outcome.responseText, snapshot?.interactionLanguage.uiCatalogLanguage ?? "en");
+        const responseText = projectProductCapabilityReferences(outcome.responseText, snapshot.interactionLanguage.uiCatalogLanguage);
         const turn = await context.conversation.append(conversationTurnSchema.parse({
           contractVersion: "ta-conversation-turn-v1",
           turnId: `${action.turnId}:model`,

@@ -22,8 +22,8 @@ export function createLauncherForTest(dependencies: {
   readonly startWorkbenchServer: (options: StartWorkbenchServerOptions) => ReturnType<typeof startWorkbenchServer>;
   readonly openBrowser: (url: string) => void;
 }): AgentLauncher {
-  const start = async (rootDir: string) => {
-    const started = await dependencies.startWorkbenchServer({ rootDir, port: 0 });
+  const start = async (rootDir: string, interactionLanguage: InteractionLanguage) => {
+    const started = await dependencies.startWorkbenchServer({ rootDir, port: 0, interactionLanguage });
     registerHostCredentialIpc(started.server);
     dependencies.openBrowser(started.url);
     return { sessionId: "pending", url: new URL(started.url).origin };
